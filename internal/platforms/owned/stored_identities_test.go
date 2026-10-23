@@ -25,8 +25,7 @@ func TestBatchedStoredIdentitiesPreserveScopeAndPublication(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				row.Purged = true
-				if err := a.store.Mirror(t.Context(), row); err != nil {
+				if err := a.store.Scrub(t.Context(), sessioncatalog.Source{OwnerID: row.OwnerID, Platform: row.Platform, SourceKey: row.SourceKey}, row.NativeID); err != nil {
 					t.Fatal(err)
 				}
 			case "creating":

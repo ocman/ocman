@@ -33,51 +33,17 @@ func (g *IdentityGateway) catalogueParent(ctx context.Context, p platforms.Platf
 	}); ok {
 		return canonical.canonical(ctx, nativeID)
 	}
-	source, err := physicalSource(ctx, p)
-	if err != nil {
-		return sessioncatalog.Session{}, err
-	}
-	binding := sessioncatalog.Binding{OwnerID: g.owner, Platform: source.Platform, SourceKey: source.SourceKey, NativeID: nativeID}
-	row, err := g.store.FindBinding(ctx, binding)
-	if errors.Is(err, sessioncatalog.ErrNotFound) {
-		summary, summaryErr := platforms.ReadSessionSummary(ctx, p, nativeID)
-		if summaryErr != nil {
-			return row, summaryErr
-		}
-		if summary == nil || summary.ID != nativeID {
-			return row, platforms.ErrNotFound
-		}
-		_, err = g.store.Reconcile(ctx, sessioncatalog.Source{OwnerID: binding.OwnerID, Platform: binding.Platform, SourceKey: binding.SourceKey}, []sessioncatalog.NativeSession{{ID: nativeID, ParentID: summary.ParentID, Directory: summary.Directory, Title: summary.Title, CreatedAt: summary.TimeCreated}})
-		if err != nil {
-			return row, err
-		}
-		row, err = g.store.FindBinding(ctx, binding)
-		if errors.Is(err, sessioncatalog.ErrNotFound) {
-			return row, sessioncatalog.ErrCreating
-		}
-	}
-	if err != nil {
-		return row, err
-	}
-	if row.CreationState != sessioncatalog.Ready {
-		return row, sessioncatalog.ErrCreating
-	}
-	return row, nil
+	return sessioncatalog.Session{}, platforms.ErrUnsupported
 }
 
 func (g *IdentityGateway) legacyPlatform(ctx context.Context, reference string) (platforms.Platform, error) {
 	var selected platforms.Platform
 	var lookupErr error
-	canonical := false
 	for _, p := range g.registry().Platforms() {
-		if CanonicalSessionIDs(p) {
-			canonical = true
-		}
 		remote, _ := platforms.SplitPlatformID(string(p.ID()))
 		if remote != "" || !CanonicalSessionIDs(p) {
 			continue
 		}
-		canonical = true
 		if _, err := g.catalogueParent(ctx, p, reference); err != nil {
 			if !errors.Is(err, platforms.ErrNotFound) && lookupErr == nil {
 				lookupErr = err
@@ -89,18 +55,11 @@ func (g *IdentityGateway) legacyPlatform(ctx context.Context, reference string) 
 		}
 		selected = p
 	}
-	if canonical {
-		if lookupErr != nil {
-			return nil, lookupErr
-		}
-		if selected == nil {
-			return nil, platforms.ErrNotFound
-		}
-		return selected, nil
+	if lookupErr != nil {
+		return nil, lookupErr
 	}
-	p, ok := g.registry().PlatformForSession(ctx, reference)
-	if !ok {
+	if selected == nil {
 		return nil, platforms.ErrNotFound
 	}
-	return p, nil
+	return selected, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,8 +138,8 @@ func TestSidebarFiltersTagsAndReadsAuthoritativeFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity.Origin, identity.OriginID = sessioncatalog.Routine, "routine-1"
-	if err := a.store.Mirror(t.Context(), identity); err != nil {
+	catalogueSource := sessioncatalog.Source{OwnerID: identity.OwnerID, Platform: identity.Platform, SourceKey: identity.SourceKey}
+	if _, err := a.store.Reconcile(t.Context(), catalogueSource, []sessioncatalog.NativeSession{{ID: identity.NativeID, Title: identity.Title, Directory: identity.Directory, Origin: sessioncatalog.Routine, OriginID: "routine-1"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := core.PinSession(t.Context(), "test", id); err != nil {
@@ -170,8 +171,7 @@ func TestSidebarFiltersTagsAndReadsAuthoritativeFlags(t *testing.T) {
 			t.Fatalf("filter ignored: %+v %v", rows, err)
 		}
 	}
-	identity.Purged = true
-	if err := a.store.Mirror(t.Context(), identity); err != nil {
+	if err := a.store.Scrub(t.Context(), catalogueSource, identity.NativeID); err != nil {
 		t.Fatal(err)
 	}
 	if rows, err := a.SidebarSessions(t.Context(), platforms.SidebarQuery{}); err != nil || len(rows) != 0 {
@@ -245,15 +245,15 @@ func TestSidebarBubblesNativePromptsButNotApplicationLinks(t *testing.T) {
 	if err != nil || !detail.Session.PendingPermission || detail.Session.Status != db.StatusWaiting {
 		t.Fatalf("conversation lost native child prompt: %+v %v", detail, err)
 	}
-	publish(t, a, db.Session{ID: "linked", Directory: "/stored", Title: "application child"})
-	linked, err := a.store.FindBinding(t.Context(), a.binding("linked"))
+	linked, _, err := a.store.Reserve(t.Context(), sessioncatalog.Reservation{OwnerID: a.owner, Platform: a.source.Platform,
+		Directory: "/stored", ParentID: id, Origin: sessioncatalog.User, RequestKey: "application-child", PayloadHash: strings.Repeat("a", 64)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	linked.ParentID = id
-	if err := a.store.Mirror(t.Context(), linked); err != nil {
+	if _, err := a.store.Bind(t.Context(), linked.ID, a.binding("linked")); err != nil {
 		t.Fatal(err)
 	}
+	publish(t, a, db.Session{ID: "linked", Directory: "/stored", Title: "application child"})
 	native.observations = map[string]platforms.LiveState{"native": {Status: "busy"}, "linked": {Status: "busy", PendingPermission: true}}
 	detail, err = a.Session(t.Context(), id, 30, 0)
 	if err != nil || detail.Session.PendingPermission || detail.Session.Status != db.StatusBusy {

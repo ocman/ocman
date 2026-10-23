@@ -64,6 +64,9 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 	if err != nil {
 		return nil, platforms.ErrPlatformUnreachable
 	}
+	if !CanonicalSessionIDs(p) {
+		return nil, platforms.ErrUnsupported
+	}
 	if remote, base := platforms.SplitPlatformID(string(p.ID())); remote != "" {
 		resolver, ok := p.(platforms.SessionIdentityResolver)
 		if !ok {
@@ -73,10 +76,10 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 		if err != nil {
 			return nil, err
 		}
-		if info == nil || info.OwnerID != resolver.SessionOwnerID() || info.OwnerID != remote || info.Platform != base || info.OwnerID == g.owner || (req.ID != "" && info.ID != req.ID) || (!CanonicalSessionIDs(p) && req.NativeID != "" && info.NativeID != req.NativeID) || (CanonicalSessionIDs(p) && (info.NativeID != "" || info.NativeParentID != "")) {
+		if info == nil || info.OwnerID != resolver.SessionOwnerID() || info.OwnerID != remote || info.Platform != base || info.OwnerID == g.owner || (req.ID != "" && info.ID != req.ID) || info.NativeID != "" || info.NativeParentID != "" {
 			return nil, sessioncatalog.ErrBindingConflict
 		}
-		if err := g.mirror(ctx, p, info); err != nil {
+		if err := g.store.MirrorCanonical(ctx, identityRecord(info)); err != nil {
 			return nil, err
 		}
 		copy := *info
@@ -107,17 +110,8 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 		return nil, fmt.Errorf("%w: session belongs to an inactive source", platforms.ErrHistoryUnavailable)
 	}
 	info := identityInfo(record)
-	if CanonicalSessionIDs(p) {
-		info.NativeID, info.NativeParentID = "", ""
-	}
+	info.NativeID, info.NativeParentID = "", ""
 	return info, nil
-}
-
-func (g *IdentityGateway) mirror(ctx context.Context, p platforms.Platform, info *platforms.SessionIdentity) error {
-	if CanonicalSessionIDs(p) {
-		return g.store.MirrorCanonical(ctx, identityRecord(info))
-	}
-	return g.store.Mirror(ctx, identityRecord(info))
 }
 
 func identityInfo(row sessioncatalog.Session) *platforms.SessionIdentity {

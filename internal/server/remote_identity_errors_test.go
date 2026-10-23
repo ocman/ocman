@@ -20,7 +20,10 @@ type identityRPCHost struct{ hostsvc.Host }
 func (identityRPCHost) Projects(context.Context) ([]db.ProjectStats, error) { return nil, nil }
 
 func TestRemoteIdentityHTTPStatusMatchesLocalOwner(t *testing.T) {
-	owner, _, _ := identityHTTPFixture(t)
+	owner, _ := canonicalHTTPFixture(t)
+	if err := owner.registry.EnableCanonicalSessions(); err != nil {
+		t.Fatal(err)
+	}
 	catalogue, err := sessioncatalog.New(owner.stateDB)
 	if err != nil {
 		t.Fatal(err)

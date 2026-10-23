@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 )
 
 func TestModuleRouteOnlyResolvesDeclaredSessionPathParameters(t *testing.T) {
@@ -20,14 +18,8 @@ func TestModuleRouteOnlyResolvesDeclaredSessionPathParameters(t *testing.T) {
 		{"LocalSetting", moduleRouter.LocalSetting, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, registry := newSessionsTestServer(t)
-			catalogue, err := sessioncatalog.New(s.stateDB)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.sessions.WithSessionCatalogue(catalogue, "owner")
-			registry.Register(&canonicalSnoozePlatform{fakePlatform: &fakePlatform{id: "test"}})
-			if err := registry.EnableCanonicalSessions(); err != nil {
+			s, _ := canonicalHTTPFixture(t)
+			if err := s.registry.EnableCanonicalSessions(); err != nil {
 				t.Fatal(err)
 			}
 			mux := http.NewServeMux()
@@ -40,7 +32,7 @@ func TestModuleRouteOnlyResolvesDeclaredSessionPathParameters(t *testing.T) {
 				status     int
 			}{
 				{"/api/session/static-command", "127.0.0.1:1234", http.StatusNoContent},
-				{"/api/session/unknown/command", "127.0.0.1:1234", http.StatusNotFound},
+				{"/api/session/ocm_00000000-0000-0000-0000-000000000000/command", "127.0.0.1:1234", http.StatusNotFound},
 			} {
 				r := httptest.NewRequest(http.MethodPost, request.path, nil)
 				r.RemoteAddr = request.peer

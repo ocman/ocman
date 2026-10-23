@@ -31,20 +31,10 @@ func CanonicalSessionIDs(p platforms.Integration) bool {
 
 func (*Adapter) CanonicalSessionIDs() bool { return true }
 
-// CoreReference retains only test/legacy raw-adapter compatibility. Registered
-// canonical adapters always return their Ocman identity, including on remotes.
+// CoreReference returns the canonical identity, including on remote owners.
 func (g *IdentityGateway) CoreReference(info *platforms.SessionIdentity) string {
 	if info == nil {
 		return ""
 	}
-	if g == nil {
-		return info.ID
-	}
-	if g.registry().CanonicalSessionIDs() {
-		return info.ID
-	}
-	if p, ok := g.registry().Get(platforms.ID(info.Platform)); ok && CanonicalSessionIDs(p) {
-		return info.ID
-	}
-	return info.NativeID
+	return info.ID
 }

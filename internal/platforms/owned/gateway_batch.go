@@ -15,43 +15,7 @@ func (g *IdentityGateway) LookupBatch(ctx context.Context, platformID string, na
 	if len(nativeIDs) < 1 || len(nativeIDs) > 500 {
 		return nil, g.invalid("identity batch requires 1..500 native IDs")
 	}
-	if platformID == "" {
-		return g.lookupNative(ctx, "", nativeIDs)
-	}
-	p, err := g.pick(ctx, platformID)
-	if err != nil {
-		return nil, platforms.ErrPlatformUnreachable
-	}
-	if CanonicalSessionIDs(p) {
-		return g.lookupNative(ctx, platformID, nativeIDs)
-	}
-	if owner, base := platforms.SplitPlatformID(string(p.ID())); owner != "" {
-		resolver, ok := p.(platforms.SessionIdentityResolver)
-		if !ok {
-			return nil, platforms.ErrUnsupported
-		}
-		rows, err := resolver.SessionIdentities(ctx, nativeIDs)
-		if err != nil {
-			return nil, err
-		}
-		wanted := map[string]bool{}
-		for _, id := range nativeIDs {
-			wanted[id] = true
-		}
-		for i := range rows {
-			row := &rows[i]
-			if row.OwnerID != owner || row.OwnerID != resolver.SessionOwnerID() || row.Platform != base || !wanted[row.NativeID] {
-				return nil, sessioncatalog.ErrBindingConflict
-			}
-			delete(wanted, row.NativeID)
-			if err := g.store.Mirror(ctx, identityRecord(row)); err != nil {
-				return nil, err
-			}
-			row.Platform = string(p.ID())
-		}
-		return rows, nil
-	}
-	return g.lookupNative(ctx, string(p.ID()), nativeIDs)
+	return g.lookupNative(ctx, platformID, nativeIDs)
 }
 
 func (g *IdentityGateway) lookupNative(ctx context.Context, platformID string, ids []string) ([]platforms.SessionIdentity, error) {

@@ -97,6 +97,12 @@ func TestGatewayOwnershipAndCompatibilityProjectionFailClosed(t *testing.T) {
 		t.Fatalf("offline owner fell back: %v", err)
 	}
 	registry.Register(native)
+	if _, err := gateway.Lookup(t.Context(), "test", platforms.SessionIdentityRequest{NativeID: "native"}); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatalf("raw adapter gained legacy-link execution: %v", err)
+	}
+	if _, err := gateway.LookupBatch(t.Context(), "test", []string{"native"}); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatalf("batch bypassed canonical boundary: %v", err)
+	}
 	if _, err := gateway.OwnerPlatform(t.Context(), row.ID, ""); !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		t.Fatalf("raw adapter gained canonical execution: %v", err)
 	}
