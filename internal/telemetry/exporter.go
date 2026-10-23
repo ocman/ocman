@@ -3,86 +3,52 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
-// protocol describes the OTLP transport selected from the endpoint URL.
-type protocol string
-
-const (
-	protoHTTP protocol = "http"
-	protoGRPC protocol = "grpc"
-)
-
-// target holds the parsed --otel endpoint after URL-scheme detection.
+// target holds the parsed --otel endpoint. ocman exports OTLP/HTTP only.
 type target struct {
-	protocol protocol
 	endpoint string // "host:port" with no scheme; what the OTLP exporters expect.
-	urlPath  string // for HTTP, the path component (kept for non-default collectors).
+	urlPath  string // the path component (kept for non-default collectors).
 	insecure bool   // true when the URL scheme is plaintext.
+	// fromGRPC is set when a gRPC-style endpoint was rewritten to OTLP/HTTP.
+	fromGRPC bool
 }
 
-// newLogExporter uses the same endpoint and transport as traces and metrics.
-func newLogExporter(ctx context.Context, t target) (sdklog.Exporter, error) {
-	switch t.protocol {
-	case protoHTTP:
-		opts := []otlploghttp.Option{otlploghttp.WithEndpoint(t.endpoint)}
-		if t.insecure {
-			opts = append(opts, otlploghttp.WithInsecure())
-		}
-		if t.urlPath != "" && t.urlPath != "/" {
-			opts = append(opts, otlploghttp.WithURLPath(t.urlPath))
-		}
-		return otlploghttp.New(ctx, opts...)
-	case protoGRPC:
-		opts := []otlploggrpc.Option{otlploggrpc.WithEndpoint(t.endpoint)}
-		if t.insecure {
-			opts = append(opts, otlploggrpc.WithInsecure())
-		}
-		return otlploggrpc.New(ctx, opts...)
-	default:
-		return nil, fmt.Errorf("unknown protocol %q", t.protocol)
+// String renders the effective OTLP/HTTP URL.
+func (t target) String() string {
+	scheme := "https"
+	if t.insecure {
+		scheme = "http"
 	}
+	return scheme + "://" + t.endpoint + t.urlPath
 }
 
-// parseEndpoint inspects the URL scheme to decide between OTLP/HTTP
-// and OTLP/gRPC. The OTel exporter constructors take the host:port
-// part directly, not a full URL, so we strip the scheme after deciding.
+// parseEndpoint turns the --otel value into an OTLP/HTTP target:
 //
-// Defaults:
 //   - http://, https://       -> OTLP/HTTP (TLS implied by https://)
-//   - grpc://, grpcs://       -> OTLP/gRPC (TLS for grpcs://)
-//   - bare host[:port]        -> OTLP/gRPC, insecure (matches the
-//     spec's default for OTLP/gRPC).
+//   - grpc://, grpcs://       -> rewritten to http:// / https://
+//   - bare host[:port]        -> rewritten to http://
 //
-// The collector port hint isn't enforced — operators occasionally
-// front a collector with their own ingress and use 443/80 instead
-// of 4317/4318.
+// OTLP/gRPC is not supported. Endpoints that asked for it are rewritten
+// with fromGRPC set so Init can warn, and the conventional gRPC port 4317
+// becomes the OTLP/HTTP port 4318.
 func parseEndpoint(raw string) (target, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return target{}, fmt.Errorf("empty endpoint")
 	}
-
 	if !strings.Contains(raw, "://") {
-		// Bare host[:port] -> default to gRPC insecure, matching the
-		// OTel spec's default OTLP transport.
-		return target{
-			protocol: protoGRPC,
-			endpoint: raw,
-			insecure: true,
-		}, nil
+		return grpcFallback(raw, true), nil
 	}
 
 	u, err := url.Parse(raw)
@@ -95,60 +61,58 @@ func parseEndpoint(raw string) (target, error) {
 
 	switch strings.ToLower(u.Scheme) {
 	case "http":
-		return target{protocol: protoHTTP, endpoint: u.Host, urlPath: u.Path, insecure: true}, nil
+		return target{endpoint: u.Host, urlPath: u.Path, insecure: true}, nil
 	case "https":
-		return target{protocol: protoHTTP, endpoint: u.Host, urlPath: u.Path, insecure: false}, nil
+		return target{endpoint: u.Host, urlPath: u.Path}, nil
 	case "grpc":
-		return target{protocol: protoGRPC, endpoint: u.Host, insecure: true}, nil
+		return grpcFallback(u.Host, true), nil
 	case "grpcs":
-		return target{protocol: protoGRPC, endpoint: u.Host, insecure: false}, nil
+		return grpcFallback(u.Host, false), nil
 	default:
-		return target{}, fmt.Errorf("unsupported scheme %q (want http|https|grpc|grpcs)", u.Scheme)
+		return target{}, fmt.Errorf("unsupported scheme %q (want http|https)", u.Scheme)
 	}
 }
 
-// newTraceExporter builds the OTLP trace exporter for the given target.
+func grpcFallback(host string, insecure bool) target {
+	if h, port, err := net.SplitHostPort(host); err == nil && port == "4317" {
+		host = net.JoinHostPort(h, "4318")
+	}
+	return target{endpoint: host, insecure: insecure, fromGRPC: true}
+}
+
+// customPath reports whether the target overrides the per-signal default
+// paths (/v1/traces, /v1/metrics, /v1/logs).
+func (t target) customPath() bool { return t.urlPath != "" && t.urlPath != "/" }
+
 func newTraceExporter(ctx context.Context, t target) (*otlptrace.Exporter, error) {
-	switch t.protocol {
-	case protoHTTP:
-		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(t.endpoint)}
-		if t.insecure {
-			opts = append(opts, otlptracehttp.WithInsecure())
-		}
-		if t.urlPath != "" && t.urlPath != "/" {
-			opts = append(opts, otlptracehttp.WithURLPath(t.urlPath))
-		}
-		return otlptracehttp.New(ctx, opts...)
-	case protoGRPC:
-		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(t.endpoint)}
-		if t.insecure {
-			opts = append(opts, otlptracegrpc.WithInsecure())
-		}
-		return otlptracegrpc.New(ctx, opts...)
-	default:
-		return nil, fmt.Errorf("unknown protocol %q", t.protocol)
+	opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(t.endpoint)}
+	if t.insecure {
+		opts = append(opts, otlptracehttp.WithInsecure())
 	}
+	if t.customPath() {
+		opts = append(opts, otlptracehttp.WithURLPath(t.urlPath))
+	}
+	return otlptracehttp.New(ctx, opts...)
 }
 
-// newMetricExporter builds the OTLP metric exporter for the given target.
 func newMetricExporter(ctx context.Context, t target) (sdkmetric.Exporter, error) {
-	switch t.protocol {
-	case protoHTTP:
-		opts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(t.endpoint)}
-		if t.insecure {
-			opts = append(opts, otlpmetrichttp.WithInsecure())
-		}
-		if t.urlPath != "" && t.urlPath != "/" {
-			opts = append(opts, otlpmetrichttp.WithURLPath(t.urlPath))
-		}
-		return otlpmetrichttp.New(ctx, opts...)
-	case protoGRPC:
-		opts := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(t.endpoint)}
-		if t.insecure {
-			opts = append(opts, otlpmetricgrpc.WithInsecure())
-		}
-		return otlpmetricgrpc.New(ctx, opts...)
-	default:
-		return nil, fmt.Errorf("unknown protocol %q", t.protocol)
+	opts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(t.endpoint)}
+	if t.insecure {
+		opts = append(opts, otlpmetrichttp.WithInsecure())
 	}
+	if t.customPath() {
+		opts = append(opts, otlpmetrichttp.WithURLPath(t.urlPath))
+	}
+	return otlpmetrichttp.New(ctx, opts...)
+}
+
+func newLogExporter(ctx context.Context, t target) (sdklog.Exporter, error) {
+	opts := []otlploghttp.Option{otlploghttp.WithEndpoint(t.endpoint)}
+	if t.insecure {
+		opts = append(opts, otlploghttp.WithInsecure())
+	}
+	if t.customPath() {
+		opts = append(opts, otlploghttp.WithURLPath(t.urlPath))
+	}
+	return otlploghttp.New(ctx, opts...)
 }

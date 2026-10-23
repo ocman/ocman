@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -57,22 +58,67 @@ func (c RelayClient) client() *http.Client {
 	return http.DefaultClient
 }
 
-// Create allocates an empty relay share.
-func (c RelayClient) Create(ctx context.Context) (RelayAllocation, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/s", nil)
+// do sends one relay request and returns the response when its status is
+// one of ok; the caller must close the body. A non-empty token is sent as a
+// bearer credential. body is nil, raw []byte, or a value sent as JSON. op
+// names the operation in the returned RelayError.
+func (c RelayClient) do(ctx context.Context, op, method, path, token string, body any, ok ...int) (*http.Response, error) {
+	var reader io.Reader
+	contentType := ""
+	switch b := body.(type) {
+	case nil:
+	case []byte:
+		reader = bytes.NewReader(b)
+	default:
+		encoded, err := json.Marshal(b)
+		if err != nil {
+			return nil, err
+		}
+		reader, contentType = bytes.NewReader(encoded), "application/json"
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, reader)
 	if err != nil {
-		return RelayAllocation{}, err
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return RelayAllocation{}, relayTransportError("creating", err)
+		return nil, relayTransportError(op, err)
 	}
+	if !slices.Contains(ok, resp.StatusCode) {
+		defer resp.Body.Close()
+		return nil, relayStatusError(op, resp)
+	}
+	return resp, nil
+}
+
+// discard closes a successful response whose body is not needed.
+func discard(resp *http.Response, err error) error {
+	if err != nil {
+		return err
+	}
+	return resp.Body.Close()
+}
+
+// decodeBody decodes at most limit bytes of JSON from resp and closes it.
+func decodeBody(resp *http.Response, limit int64, out any) error {
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		return RelayAllocation{}, relayStatusError("creating", resp)
+	return json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(out)
+}
+
+// Create allocates an empty relay share.
+func (c RelayClient) Create(ctx context.Context) (RelayAllocation, error) {
+	resp, err := c.do(ctx, "creating", http.MethodPost, "/s", "", nil, http.StatusCreated)
+	if err != nil {
+		return RelayAllocation{}, err
 	}
 	var out RelayAllocation
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+	if err := decodeBody(resp, 64<<10, &out); err != nil {
 		return RelayAllocation{}, fmt.Errorf("decoding relay allocation: %w", err)
 	}
 	if out.ID == "" || out.DeleteToken == "" {
@@ -83,89 +129,37 @@ func (c RelayClient) Create(ctx context.Context) (RelayAllocation, error) {
 
 // Put stores one already-sealed chunk at a writer-chosen sequence.
 func (c RelayClient) Put(ctx context.Context, allocation RelayAllocation, seq uint64, ciphertext []byte) error {
-	u := strings.TrimRight(c.BaseURL, "/") + "/s/" + allocation.ID + "/" + strconv.FormatUint(seq, 10)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u, bytes.NewReader(ciphertext))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+allocation.DeleteToken)
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return relayTransportError("uploading", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		return relayStatusError("uploading", resp)
-	}
-	return nil
+	path := "/s/" + allocation.ID + "/" + strconv.FormatUint(seq, 10)
+	return discard(c.do(ctx, "uploading", http.MethodPut, path, allocation.DeleteToken, ciphertext, http.StatusNoContent))
 }
 
 // Delete revokes a relay share.
 func (c RelayClient) Delete(ctx context.Context, allocation RelayAllocation) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimRight(c.BaseURL, "/")+"/s/"+allocation.ID, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+allocation.DeleteToken)
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return relayTransportError("deleting", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return relayStatusError("deleting", resp)
-	}
-	return nil
+	return discard(c.do(ctx, "deleting", http.MethodDelete, "/s/"+allocation.ID, allocation.DeleteToken, nil, http.StatusNoContent, http.StatusNotFound))
 }
 
 func (c RelayClient) RegisterInboxWithSecret(ctx context.Context, recipient, enrollmentToken, secret, secretHeader string) (InboxAllocation, error) {
-	body, err := json.Marshal(map[string]string{"recipient": recipient, "secret": secret, "secretHeader": secretHeader})
+	body := map[string]string{"recipient": recipient, "secret": secret, "secretHeader": secretHeader}
+	resp, err := c.do(ctx, "registering", http.MethodPost, "/inboxes", enrollmentToken, body, http.StatusCreated)
 	if err != nil {
 		return InboxAllocation{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes", bytes.NewReader(body))
-	if err != nil {
-		return InboxAllocation{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+enrollmentToken)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return InboxAllocation{}, relayTransportError("registering", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		return InboxAllocation{}, relayStatusError("registering", resp)
 	}
 	var out InboxAllocation
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+	if err := decodeBody(resp, 64<<10, &out); err != nil {
 		return InboxAllocation{}, err
 	}
 	return out, nil
 }
 
 func (c RelayClient) RotateInbox(ctx context.Context, id, token, recipient string) (int, error) {
-	body, err := json.Marshal(map[string]string{"recipient": recipient})
+	resp, err := c.do(ctx, "rotating", http.MethodPost, "/inboxes/"+id+"/rotate", token, map[string]string{"recipient": recipient}, http.StatusOK)
 	if err != nil {
 		return 0, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+id+"/rotate", bytes.NewReader(body))
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return 0, relayTransportError("rotating", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return 0, relayStatusError("rotating", resp)
 	}
 	var out struct {
 		KeyVersion int `json:"keyVersion"`
 	}
+	defer resp.Body.Close()
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return 0, err
 	}
@@ -175,110 +169,48 @@ func (c RelayClient) RotateInbox(ctx context.Context, id, token, recipient strin
 // UpdateInboxSecret replaces the inbox's shared secret; an empty secret
 // clears it. It returns the header the relay will check.
 func (c RelayClient) UpdateInboxSecret(ctx context.Context, id, token, secret, secretHeader string) (string, error) {
-	body, err := json.Marshal(map[string]string{"secret": secret, "secretHeader": secretHeader})
+	body := map[string]string{"secret": secret, "secretHeader": secretHeader}
+	resp, err := c.do(ctx, "updating inbox secret", http.MethodPut, "/inboxes/"+id+"/secret", token, body, http.StatusOK)
 	if err != nil {
 		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+id+"/secret", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return "", relayTransportError("updating inbox secret", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", relayStatusError("updating inbox secret", resp)
 	}
 	var out struct {
 		SecretHeader string `json:"secretHeader"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+	if err := decodeBody(resp, 64<<10, &out); err != nil {
 		return "", err
 	}
 	return out.SecretHeader, nil
 }
 
 func (c RelayClient) RevokeInbox(ctx context.Context, id, token string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+id, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return relayTransportError("revoking", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return relayStatusError("revoking", resp)
-	}
-	return nil
+	return discard(c.do(ctx, "revoking", http.MethodDelete, "/inboxes/"+id, token, nil, http.StatusNoContent, http.StatusNotFound))
 }
 
 func (c RelayClient) ListInboxDeliveries(ctx context.Context, inboxID, token, cursor string) (InboxDeliveryPage, error) {
-	u := strings.TrimRight(c.BaseURL, "/") + "/inboxes/" + inboxID + "/deliveries"
+	path := "/inboxes/" + inboxID + "/deliveries"
 	if cursor != "" {
-		u += "?cursor=" + url.QueryEscape(cursor)
+		path += "?cursor=" + url.QueryEscape(cursor)
 	}
-	return c.inboxJSON(ctx, http.MethodGet, u, token, InboxDeliveryPage{})
+	var out InboxDeliveryPage
+	resp, err := c.do(ctx, "listing", http.MethodGet, path, token, nil, http.StatusOK)
+	if err != nil {
+		return out, err
+	}
+	return out, decodeBody(resp, 256<<10, &out)
 }
 
 func (c RelayClient) FetchInboxDelivery(ctx context.Context, inboxID, deliveryID, token string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+inboxID+"/deliveries/"+deliveryID, nil)
+	resp, err := c.do(ctx, "fetching", http.MethodGet, "/inboxes/"+inboxID+"/deliveries/"+deliveryID, token, nil, http.StatusOK)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return nil, relayTransportError("fetching", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, relayStatusError("fetching", resp)
-	}
 	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 }
 
 func (c RelayClient) AcknowledgeInboxDelivery(ctx context.Context, inboxID, deliveryID, token string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+inboxID+"/deliveries/"+deliveryID+"/ack", nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return relayTransportError("acknowledging", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		return relayStatusError("acknowledging", resp)
-	}
-	return nil
-}
-
-func (c RelayClient) inboxJSON(ctx context.Context, method, endpoint, token string, out InboxDeliveryPage) (InboxDeliveryPage, error) {
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
-	if err != nil {
-		return out, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.client().Do(req)
-	if err != nil {
-		return out, relayTransportError("listing", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return out, relayStatusError("listing", resp)
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&out); err != nil {
-		return out, err
-	}
-	return out, nil
+	return discard(c.do(ctx, "acknowledging", http.MethodPost, "/inboxes/"+inboxID+"/deliveries/"+deliveryID+"/ack", token, nil, http.StatusNoContent))
 }
 
 // RelayError reports a failed relay request. Status is 0 when the

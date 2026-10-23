@@ -1,13 +1,17 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -96,27 +100,42 @@ func TestInitEnabledFromEnvironment(t *testing.T) {
 	}
 }
 
-func TestGRPCExportersConstructAndShutdown(t *testing.T) {
-	otlpTarget := target{protocol: protoGRPC, endpoint: "127.0.0.1:1", insecure: true}
-	traceExporter, err := newTraceExporter(t.Context(), otlpTarget)
+func TestInitGRPCEndpointFallsBackToHTTP(t *testing.T) {
+	var hits atomic.Int32
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/traces" {
+			hits.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(collector.Close)
+	logger := log.StandardLogger()
+	oldHooks := logger.ReplaceHooks(make(log.LevelHooks))
+	oldOutput := logger.Out
+	var console bytes.Buffer
+	logger.SetOutput(&console)
+	t.Cleanup(func() {
+		logger.ReplaceHooks(oldHooks)
+		logger.SetOutput(oldOutput)
+	})
+	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+
+	shutdown, err := Init(t.Context(), "grpc://"+strings.TrimPrefix(collector.URL, "http://"), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	metricExporter, err := newMetricExporter(t.Context(), otlpTarget)
-	if err != nil {
+	_, span := otel.Tracer("test").Start(t.Context(), "fallback")
+	span.End()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := traceExporter.Shutdown(t.Context()); err != nil {
-		t.Fatal(err)
+	if hits.Load() == 0 {
+		t.Fatal("gRPC endpoint did not export over OTLP/HTTP")
 	}
-	if err := metricExporter.Shutdown(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := newTraceExporter(t.Context(), target{}); err == nil {
-		t.Fatal("trace exporter accepted an unknown protocol")
-	}
-	if _, err := newMetricExporter(t.Context(), target{}); err == nil {
-		t.Fatal("metric exporter accepted an unknown protocol")
+	if got := strings.Count(console.String(), "OTLP/gRPC is not supported"); got != 2 {
+		t.Fatalf("want endpoint and protocol warnings, got %d in %q", got, console.String())
 	}
 }
 
@@ -172,5 +191,15 @@ func TestTracerMeterNoOpWithoutInit(t *testing.T) {
 	meter := Meter()
 	if meter == nil {
 		t.Fatal("Meter() returned nil")
+	}
+}
+
+func TestBuildResource_DefaultsVersionToDev(t *testing.T) {
+	res, err := buildResource(t.Context(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := res.Set().Value("service.version"); !ok || v.AsString() != "dev" {
+		t.Fatalf("service.version = %v, want dev", v.AsString())
 	}
 }

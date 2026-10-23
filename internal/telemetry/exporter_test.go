@@ -4,40 +4,45 @@ import "testing"
 
 func TestParseEndpoint(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		want     target
-		wantErr  bool
+		name    string
+		input   string
+		want    target
+		wantErr bool
 	}{
 		{
-			name:  "bare host:port -> gRPC insecure",
+			name:  "bare host:4317 -> OTLP/HTTP on 4318",
 			input: "localhost:4317",
-			want:  target{protocol: protoGRPC, endpoint: "localhost:4317", insecure: true},
+			want:  target{endpoint: "localhost:4318", insecure: true, fromGRPC: true},
+		},
+		{
+			name:  "bare host without port -> OTLP/HTTP insecure",
+			input: "collector",
+			want:  target{endpoint: "collector", insecure: true, fromGRPC: true},
 		},
 		{
 			name:  "http -> OTLP/HTTP insecure",
 			input: "http://localhost:4318",
-			want:  target{protocol: protoHTTP, endpoint: "localhost:4318", insecure: true},
+			want:  target{endpoint: "localhost:4318", insecure: true},
 		},
 		{
 			name:  "https -> OTLP/HTTP TLS",
 			input: "https://collector.example.com:4318",
-			want:  target{protocol: protoHTTP, endpoint: "collector.example.com:4318", insecure: false},
+			want:  target{endpoint: "collector.example.com:4318", insecure: false},
 		},
 		{
-			name:  "grpc:// -> OTLP/gRPC insecure",
+			name:  "grpc:// -> OTLP/HTTP insecure",
 			input: "grpc://localhost:4317",
-			want:  target{protocol: protoGRPC, endpoint: "localhost:4317", insecure: true},
+			want:  target{endpoint: "localhost:4318", insecure: true, fromGRPC: true},
 		},
 		{
-			name:  "grpcs:// -> OTLP/gRPC TLS",
-			input: "grpcs://collector.example.com:4317",
-			want:  target{protocol: protoGRPC, endpoint: "collector.example.com:4317", insecure: false},
+			name:  "grpcs:// -> OTLP/HTTP TLS, custom port kept",
+			input: "grpcs://collector.example.com:443",
+			want:  target{endpoint: "collector.example.com:443", insecure: false, fromGRPC: true},
 		},
 		{
 			name:  "http with path",
 			input: "http://collector.example.com/v1/otlp",
-			want:  target{protocol: protoHTTP, endpoint: "collector.example.com", urlPath: "/v1/otlp", insecure: true},
+			want:  target{endpoint: "collector.example.com", urlPath: "/v1/otlp", insecure: true},
 		},
 		{
 			name:    "empty",
@@ -47,6 +52,11 @@ func TestParseEndpoint(t *testing.T) {
 		{
 			name:    "unknown scheme",
 			input:   "tcp://localhost:1234",
+			wantErr: true,
+		},
+		{
+			name:    "malformed URL",
+			input:   "http://[::1",
 			wantErr: true,
 		},
 		{
@@ -72,5 +82,14 @@ func TestParseEndpoint(t *testing.T) {
 				t.Fatalf("got %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestTargetString(t *testing.T) {
+	if got := (target{endpoint: "h:4318", insecure: true}).String(); got != "http://h:4318" {
+		t.Fatalf("insecure = %q", got)
+	}
+	if got := (target{endpoint: "h", urlPath: "/otlp"}).String(); got != "https://h/otlp" {
+		t.Fatalf("tls = %q", got)
 	}
 }

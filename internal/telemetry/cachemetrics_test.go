@@ -129,7 +129,7 @@ func TestCacheMetrics_RecordEvictions(t *testing.T) {
 
 	m.RecordEvictions(ctx, 5)
 	m.RecordEvictions(ctx, 2)
-	m.RecordEvictions(ctx, 0) // no-op
+	m.RecordEvictions(ctx, 0)  // no-op
 	m.RecordEvictions(ctx, -1) // no-op
 
 	metrics := collectMetrics(t, reader)

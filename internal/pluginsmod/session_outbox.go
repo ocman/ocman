@@ -81,7 +81,11 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 	if detail.TotalMessages > len(detail.Messages) {
 		usage = nil
 	}
-	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, sessionID+":"+messageID, text, usage)
+	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
+	if err != nil {
+		return
+	}
+	delivery, err := m.plugins.AppendPluginSessionCompletion(ctx, pluginID, platformID, sessionID, prefix+":"+messageID, text, usage)
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": pluginID, "session_id": sessionID}).
 			Error("recording completed session turn for delivery")
@@ -112,7 +116,11 @@ func (m *Module) sessionCompletionAlreadyRecorded(ctx context.Context, adapter p
 	if lifecycle.LatestMessageRole != "assistant" || lifecycle.LatestMessageID == "" {
 		return false, nil
 	}
-	return m.plugins.HasPluginSessionCompletion(ctx, pluginID, sessionID+":"+lifecycle.LatestMessageID)
+	prefix, err := pluginSessionReference(ctx, adapter, sessionID)
+	if err != nil {
+		return false, err
+	}
+	return m.plugins.HasPluginSessionCompletion(ctx, pluginID, prefix+":"+lifecycle.LatestMessageID)
 }
 
 // claimSessionCompletions pages through due head completions until a batch

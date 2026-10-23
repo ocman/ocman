@@ -499,7 +499,7 @@ console.table(__ocmanPerf.entries())  // API calls, now with serverTiming
   when built with `OCMAN_PROFILE=1`.
 - `switch`: time from a session switch to the first frame after the new
   thread renders, labelled `hit` or `miss` depending on the session cache.
-- `counters`: commit counts and `trackRender` counts per component.
+- `counters`: commit counts and `countRender` counts per component.
 
 When the tab is hidden, the summary is sent to `POST /api/debug/log` and
 written to the backend log as `[ocman:perf] summary`. Entries come from

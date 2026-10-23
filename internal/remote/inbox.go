@@ -70,74 +70,23 @@ func (s *Server) MarkInboxItemUnread(ctx context.Context, req *pb.JsonReq) (*pb.
 }
 
 func (c *RemoteConn) InboxItems(ctx context.Context) ([]state.InboxItem, error) {
-	client := c.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := client.InboxItems(ctx, &pb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	var items []state.InboxItem
-	if err := unmarshalJSON(resp.Payload, &items); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return hostQuery[[]state.InboxItem](ctx, c, pb.OcmanClient.InboxItems)
 }
 
 func (c *RemoteConn) ArchivedInboxItems(ctx context.Context) ([]state.InboxItem, error) {
-	client := c.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := client.ArchivedInboxItems(ctx, &pb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	var items []state.InboxItem
-	if err := unmarshalJSON(resp.Payload, &items); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return hostQuery[[]state.InboxItem](ctx, c, pb.OcmanClient.ArchivedInboxItems)
 }
 
 func (c *RemoteConn) MarkInboxItemRead(ctx context.Context, id string) error {
-	client := c.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	payload, err := marshalJSON(inboxMutation{ID: id})
-	if err != nil {
-		return err
-	}
-	_, err = client.MarkInboxItemRead(ctx, &pb.JsonReq{Payload: payload})
-	return err
+	return hostExec(ctx, c, pb.OcmanClient.MarkInboxItemRead, inboxMutation{ID: id})
 }
 
 func (c *RemoteConn) MarkInboxItemUnread(ctx context.Context, id string) error {
-	client := c.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	payload, err := marshalJSON(inboxMutation{ID: id})
-	if err != nil {
-		return err
-	}
-	_, err = client.MarkInboxItemUnread(ctx, &pb.JsonReq{Payload: payload})
-	return err
+	return hostExec(ctx, c, pb.OcmanClient.MarkInboxItemUnread, inboxMutation{ID: id})
 }
 
 func (c *RemoteConn) ArchiveInboxItems(ctx context.Context, ids []string, allRead bool) error {
-	client := c.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	payload, err := marshalJSON(inboxMutation{IDs: ids, AllRead: allRead})
-	if err != nil {
-		return err
-	}
-	_, err = client.ArchiveInboxItems(ctx, &pb.JsonReq{Payload: payload})
-	return err
+	return hostExec(ctx, c, pb.OcmanClient.ArchiveInboxItems, inboxMutation{IDs: ids, AllRead: allRead})
 }
 
 func (m *Manager) inboxOwner(source string) (*state.DB, *RemoteConn, error) {

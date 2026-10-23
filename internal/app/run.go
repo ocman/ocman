@@ -88,7 +88,7 @@ func run() {
 	authTrustLocalhost := flag.Bool("auth-trust-localhost", false, "exempt loopback clients from auth (dev-mode escape hatch; also OCMAN_AUTH_TRUST_LOCALHOST)")
 	opencodePasswordFile := flag.String("opencode-server-password-file", "", "read the managed OpenCode API password from a file")
 	opencodeGeneratePassword := flag.Bool("opencode-server-generate-password", false, "generate an ephemeral managed OpenCode API password at startup")
-	otelEndpoint := flag.String("otel", "", "OTLP endpoint URL (e.g. http://localhost:4318 or grpc://localhost:4317). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
+	otelEndpoint := flag.String("otel", "", "OTLP/HTTP endpoint URL (e.g. http://localhost:4318). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
 	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
 	mcpAddr := flag.String("mcp-addr", "127.0.0.1:8227", "loopback listen address for the MCP endpoint; local clients reach it without auth, so it must be a loopback address. Empty disables the dedicated listener (/mcp then only lives on -addr, behind auth).")
 	publicBaseURL := flag.String("public-base-url", "", "externally reachable base URL for share links (e.g. https://ocman.example.com); falls back to "+publicBaseURLEnv+" env, then the request Host")

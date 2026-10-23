@@ -363,15 +363,16 @@ for the full step-by-step guide, security notes, and troubleshooting.
 Pass `--otel=<endpoint>` (or set `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces, metrics, and logs to
 an OTLP collector. Empty or unset disables telemetry export.
 
-The URL scheme selects the transport:
-- `http(s)://...` → OTLP/HTTP
-- `grpc(s)://...` or bare `host:port` → OTLP/gRPC
+ocman exports OTLP/HTTP only; use an `http://` or `https://` endpoint, normally on
+port 4318. OTLP/gRPC is not supported. A `grpc(s)://` or bare `host:port` endpoint,
+or `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`, logs a warning and exports OTLP/HTTP instead,
+rewriting port 4317 to 4318.
 
 All other configuration uses standard `OTEL_*` env vars (`OTEL_SERVICE_NAME`,
 `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER`, `OTEL_EXPORTER_OTLP_HEADERS`, etc.).
 
-For local dev, `make otel-up` starts a bundled Grafana LGTM stack on `:3000`, `:4317` and
-`:4318`. The `make dev*` targets export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
+For local dev, `make otel-up` starts a bundled Grafana LGTM stack with Grafana on `:3000`
+and OTLP/HTTP on `:4318`. The `make dev*` targets export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
 and `OTEL_SERVICE_NAME=ocman-dev` for you. See `observability/` for dashboard provisioning.
 
 The provisioned dashboard selects an available `ocman*` service on load. Select

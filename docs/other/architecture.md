@@ -86,7 +86,7 @@ flowchart LR
 - **Browser push services.** Opt-in device subscriptions receive encrypted Web
   Push alerts even with the page closed. The browser service worker displays
   session-context notifications and opens an owner-qualified session route on click.
-- **Telemetry collector.** Optional OTLP/HTTP or gRPC export of traces, metrics,
+- **Telemetry collector.** Optional OTLP/HTTP export of traces, metrics,
   and batched Logrus logs through `internal/telemetry`. Logs retain structured
   fields and span context, console output stays enabled, and shutdown flushes
   all three signals. The bundled LGTM stack routes logs to Loki.

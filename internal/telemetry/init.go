@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,9 +37,10 @@ var noop ShutdownFunc = func(context.Context) error { return nil }
 //   - ""                            -> telemetry disabled, returns no-op.
 //   - "http://host:4318"            -> OTLP/HTTP.
 //   - "https://host:4318"           -> OTLP/HTTP over TLS.
-//   - "grpc://host:4317"            -> OTLP/gRPC (insecure).
-//   - "grpcs://host:4317"           -> OTLP/gRPC (TLS).
-//   - "host:4317" (no scheme)       -> OTLP/gRPC (insecure).
+//
+// OTLP/gRPC is not supported: grpc://, grpcs:// and bare host:port
+// endpoints, and OTEL_EXPORTER_OTLP_PROTOCOL=grpc, log a warning and
+// export OTLP/HTTP instead (port 4317 becomes 4318).
 //
 // If endpoint is empty but OTEL_EXPORTER_OTLP_ENDPOINT is set,
 // the env var wins and telemetry is enabled.
@@ -53,6 +55,14 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 	target, err := parseEndpoint(endpoint)
 	if err != nil {
 		return noop, fmt.Errorf("invalid --otel endpoint %q: %w", endpoint, err)
+	}
+	if target.fromGRPC {
+		log.WithFields(log.Fields{"endpoint": endpoint, "using": target.String()}).
+			Warn("OTLP/gRPC is not supported; exporting OTLP/HTTP instead")
+	}
+	if p := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL"); strings.HasPrefix(p, "grpc") {
+		log.WithField("OTEL_EXPORTER_OTLP_PROTOCOL", p).
+			Warn("OTLP/gRPC is not supported; exporting OTLP/HTTP instead")
 	}
 
 	// buildResource may return a partial resource alongside an error
@@ -127,9 +137,8 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 	))
 
 	log.WithFields(log.Fields{
-		"endpoint": endpoint,
-		"protocol": target.protocol,
-		"insecure": target.insecure,
+		"endpoint": target.String(),
+		"protocol": "http",
 	}).Info("OTel telemetry initialised")
 
 	shutdown := func(ctx context.Context) error {

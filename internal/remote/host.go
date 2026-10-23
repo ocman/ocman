@@ -2,8 +2,10 @@ package remote
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -30,35 +32,89 @@ func (h *remoteHost) RemoteID() string { return h.conn.RemoteID() }
 func (h *remoteHost) Doctor(context.Context) []hostsvc.DoctorCheck { return nil }
 
 func (h *remoteHost) Capabilities() hostsvc.HostCaps {
-	client := h.conn.Client()
-	if client == nil {
-		return hostsvc.HostCaps{}
-	}
-	resp, err := client.HostCapabilities(context.Background(), &pb.Empty{})
-	if err != nil {
-		return hostsvc.HostCaps{}
-	}
-	var caps hostsvc.HostCaps
-	_ = unmarshalJSON(resp.Payload, &caps)
+	caps, _ := hostQuery[hostsvc.HostCaps](context.Background(), h.conn, pb.OcmanClient.HostCapabilities)
 	return caps
 }
 
-func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
-	client := h.conn.Client()
+type (
+	jsonRPC  func(pb.OcmanClient, context.Context, *pb.JsonReq, ...grpc.CallOption) (*pb.JsonResp, error)
+	execRPC  func(pb.OcmanClient, context.Context, *pb.JsonReq, ...grpc.CallOption) (*pb.Empty, error)
+	queryRPC func(pb.OcmanClient, context.Context, *pb.Empty, ...grpc.CallOption) (*pb.JsonResp, error)
+)
+
+// connCall runs one RPC on c, failing closed with ErrRemoteOffline while
+// disconnected, and decodes the returned payload into T.
+func connCall[T any](c *RemoteConn, call func(pb.OcmanClient) ([]byte, error)) (T, error) {
+	var out T
+	client := c.Client()
 	if client == nil {
-		return nil, platforms.ErrRemoteOffline
+		return out, platforms.ErrRemoteOffline
 	}
-	b, _ := marshalJSON(map[string]string{"dir": dir})
-	resp, err := client.ProjectUpstreams(ctx, &pb.JsonReq{Payload: b})
+	payload, err := call(client)
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return nil, errors.Join(git.ErrNotARepo, err)
+		return out, err
+	}
+	if err := unmarshalJSON(payload, &out); err != nil {
+		var zero T
+		return zero, err
+	}
+	return out, nil
+}
+
+// hostCall sends args as a JsonReq payload and decodes the JsonResp into T.
+func hostCall[T any](ctx context.Context, c *RemoteConn, rpc jsonRPC, args any, opts ...grpc.CallOption) (T, error) {
+	return connCall[T](c, func(client pb.OcmanClient) ([]byte, error) {
+		b, err := marshalJSON(args)
+		if err != nil {
+			return nil, err
 		}
+		resp, err := rpc(client, ctx, &pb.JsonReq{Payload: b}, opts...)
+		return resp.GetPayload(), err
+	})
+}
+
+// hostExec is hostCall for RPCs with an empty reply.
+func hostExec(ctx context.Context, c *RemoteConn, rpc execRPC, args any) error {
+	_, err := connCall[struct{}](c, func(client pb.OcmanClient) ([]byte, error) {
+		b, err := marshalJSON(args)
+		if err != nil {
+			return nil, err
+		}
+		_, err = rpc(client, ctx, &pb.JsonReq{Payload: b})
+		return nil, err
+	})
+	return err
+}
+
+// hostQuery is hostCall for RPCs with an empty request.
+func hostQuery[T any](ctx context.Context, c *RemoteConn, rpc queryRPC) (T, error) {
+	return connCall[T](c, func(client pb.OcmanClient) ([]byte, error) {
+		resp, err := rpc(client, ctx, &pb.Empty{})
+		return resp.GetPayload(), err
+	})
+}
+
+// ptr adapts a by-value result to the pointer the Host interface returns.
+func ptr[T any](v T, err error) (*T, error) {
+	if err != nil {
 		return nil, err
 	}
-	var out hostsvc.ProjectUpstreams
-	if err := unmarshalJSON(resp.Payload, &out); err != nil {
-		return nil, err
+	return &v, nil
+}
+
+// notFoundAs joins sentinel onto a codes.NotFound error so callers can
+// errors.Is the owner's domain error across the wire.
+func notFoundAs(err, sentinel error) error {
+	if status.Code(err) == codes.NotFound {
+		return errors.Join(sentinel, err)
+	}
+	return err
+}
+
+func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
+	out, err := hostCall[hostsvc.ProjectUpstreams](ctx, h.conn, pb.OcmanClient.ProjectUpstreams, map[string]string{"dir": dir})
+	if err != nil {
+		return nil, notFoundAs(err, git.ErrNotARepo)
 	}
 	for i := range out.Remotes {
 		out.Remotes[i].URL = ""
@@ -67,212 +123,73 @@ func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 }
 
 func (h *remoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return "", platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return "", err
-	}
-	resp, err := client.FetchPRHead(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return "", err
-	}
-	var out struct {
+	out, err := hostCall[struct {
 		Branch string `json:"branch"`
-	}
-	if err := unmarshalJSON(resp.Payload, &out); err != nil {
-		return "", err
-	}
-	return out.Branch, nil
+	}](ctx, h.conn, pb.OcmanClient.FetchPRHead, req)
+	return out.Branch, err
 }
 
 func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, _ := marshalJSON(map[string]any{"dir": dir})
-	resp, err := client.ListWorktrees(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return nil, errors.Join(git.ErrNotARepo, err)
-		}
-		return nil, err
-	}
-	var out []git.Worktree
-	return out, unmarshalJSON(resp.Payload, &out)
+	out, err := hostCall[[]git.Worktree](ctx, h.conn, pb.OcmanClient.ListWorktrees, map[string]any{"dir": dir})
+	return out, notFoundAs(err, git.ErrNotARepo)
 }
 
 func (h *remoteHost) WorktreeDefaultBaseRef(ctx context.Context, dir string) (string, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return "", platforms.ErrRemoteOffline
-	}
-	b, _ := marshalJSON(map[string]any{"dir": dir})
-	resp, err := client.WorktreeDefaultBaseRef(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return "", err
-	}
-	var out struct {
+	out, err := hostCall[struct {
 		BaseRef string `json:"baseRef"`
-	}
-	return out.BaseRef, unmarshalJSON(resp.Payload, &out)
+	}](ctx, h.conn, pb.OcmanClient.WorktreeDefaultBaseRef, map[string]any{"dir": dir})
+	return out.BaseRef, err
 }
 
 func (h *remoteHost) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
+	raw, err := hostCall[json.RawMessage](ctx, h.conn, pb.OcmanClient.CreateWorktreeSession, req)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := client.CreateWorktreeSession(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return nil, err
-	}
-	return h.decodeWorktreeSession(resp.Payload)
+	return h.decodeWorktreeSession(raw)
 }
 
 func (h *remoteHost) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeRequest) error {
-	client := h.conn.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return err
-	}
-	_, err = client.RemoveWorktree(ctx, &pb.JsonReq{Payload: b})
-	return err
+	return hostExec(ctx, h.conn, pb.OcmanClient.RemoveWorktree, req)
 }
 
 func (h *remoteHost) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.LaunchTmux(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return nil, err
-	}
-	var out hostsvc.LaunchTmuxResult
-	return &out, unmarshalJSON(resp.Payload, &out)
+	return ptr(hostCall[hostsvc.LaunchTmuxResult](ctx, h.conn, pb.OcmanClient.LaunchTmux, req))
 }
 
 func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.EnsureProjectOpencode(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return nil, err
-	}
-	var out hostsvc.EnsureRuntimeResult
-	return &out, unmarshalJSON(resp.Payload, &out)
+	return ptr(hostCall[hostsvc.EnsureRuntimeResult](ctx, h.conn, pb.OcmanClient.EnsureProjectOpencode, req))
 }
 
 func (h *remoteHost) EnsureRuntime(ctx context.Context, platform, dir string) (*hostsvc.EnsureRuntimeResult, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(map[string]string{"platform": platform, "projectDir": dir})
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.EnsureRuntime(ctx, &pb.JsonReq{Payload: b})
+	out, err := hostCall[hostsvc.EnsureRuntimeResult](ctx, h.conn, pb.OcmanClient.EnsureRuntime, map[string]string{"platform": platform, "projectDir": dir})
 	if status.Code(err) == codes.Unimplemented && platform == string(platforms.OpenCodeID) {
 		return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 	}
-	if err != nil {
-		return nil, err
-	}
-	var out hostsvc.EnsureRuntimeResult
-	return &out, unmarshalJSON(resp.Payload, &out)
+	return ptr(out, err)
 }
 
 func (h *remoteHost) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
-	client := h.conn.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return err
-	}
-	_, err = client.StopProjectOpencode(ctx, &pb.JsonReq{Payload: b})
-	return err
+	return hostExec(ctx, h.conn, pb.OcmanClient.StopProjectOpencode, req)
 }
 
 func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.RestartProjectOpencode(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return nil, err
-	}
-	var out hostsvc.EnsureRuntimeResult
-	return &out, unmarshalJSON(resp.Payload, &out)
+	return ptr(hostCall[hostsvc.EnsureRuntimeResult](ctx, h.conn, pb.OcmanClient.RestartProjectOpencode, req))
 }
 
 func (h *remoteHost) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := client.ManagedOpencodes(ctx, &pb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	var out []hostsvc.ManagedOpencode
-	return out, unmarshalJSON(resp.Payload, &out)
+	return hostQuery[[]hostsvc.ManagedOpencode](ctx, h.conn, pb.OcmanClient.ManagedOpencodes)
 }
 
 func (h *remoteHost) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := client.TmuxSessions(ctx, &pb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	var out []hostsvc.TmuxSession
-	return out, unmarshalJSON(resp.Payload, &out)
+	return hostQuery[[]hostsvc.TmuxSession](ctx, h.conn, pb.OcmanClient.TmuxSessions)
 }
 
+// Projects maps the remote's ProjectIdentity records (identity + aggregate
+// stats) onto the ProjectStats the Host interface expects.
 func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
-	// The remote returns ProjectIdentity records (identity + aggregate
-	// stats); the Host interface expects ProjectStats. Map both across.
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := client.Projects(ctx, &pb.Empty{})
+	idents, err := h.ProjectIdentities(ctx)
 	if err != nil {
-		return nil, err
-	}
-	var idents []ProjectIdentity
-	if err := unmarshalJSON(resp.Payload, &idents); err != nil {
 		return nil, err
 	}
 	out := make([]db.ProjectStats, 0, len(idents))
@@ -291,43 +208,18 @@ func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 }
 
 func (h *remoteHost) TermWindows(ctx context.Context, dir string) ([]hostsvc.TermWindow, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, _ := marshalJSON(map[string]any{"dir": dir})
-	resp, err := client.TermWindows(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return nil, err
-	}
-	var out []hostsvc.TermWindow
-	return out, unmarshalJSON(resp.Payload, &out)
+	return hostCall[[]hostsvc.TermWindow](ctx, h.conn, pb.OcmanClient.TermWindows, map[string]any{"dir": dir})
 }
 
 func (h *remoteHost) TermCreateWindow(ctx context.Context, dir string) (string, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return "", platforms.ErrRemoteOffline
-	}
-	b, _ := marshalJSON(map[string]any{"dir": dir})
-	resp, err := client.TermCreateWindow(ctx, &pb.JsonReq{Payload: b})
-	if err != nil {
-		return "", err
-	}
-	var out struct {
+	out, err := hostCall[struct {
 		Window string `json:"window"`
-	}
-	return out.Window, unmarshalJSON(resp.Payload, &out)
+	}](ctx, h.conn, pb.OcmanClient.TermCreateWindow, map[string]any{"dir": dir})
+	return out.Window, err
 }
 
 func (h *remoteHost) TermKillWindow(ctx context.Context, dir, window string) error {
-	client := h.conn.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	b, _ := marshalJSON(map[string]any{"dir": dir, "window": window})
-	_, err := client.TermKillWindow(ctx, &pb.JsonReq{Payload: b})
-	return err
+	return hostExec(ctx, h.conn, pb.OcmanClient.TermKillWindow, map[string]any{"dir": dir, "window": window})
 }
 
 // TermAttach tunnels a browser terminal to the remote's PTY over the
@@ -396,14 +288,5 @@ func (h *remoteHost) TermAttach(ctx context.Context, req hostsvc.TermAttachReque
 // ProjectIdentities fetches the remote's project inventory directly (used
 // by the Manager's inventory cache, Phase 8).
 func (h *remoteHost) ProjectIdentities(ctx context.Context) ([]ProjectIdentity, error) {
-	client := h.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := client.Projects(ctx, &pb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	var idents []ProjectIdentity
-	return idents, unmarshalJSON(resp.Payload, &idents)
+	return hostQuery[[]ProjectIdentity](ctx, h.conn, pb.OcmanClient.Projects)
 }

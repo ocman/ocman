@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,11 +11,8 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	otlplogrus "go.opentelemetry.io/contrib/bridges/otellogrus"
 	"go.opentelemetry.io/otel"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collectorlog "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -114,61 +110,12 @@ func TestInitExportsLogs(t *testing.T) {
 	}
 }
 
-type logCollector struct {
-	collectorlog.UnimplementedLogsServiceServer
-	received chan *collectorlog.ExportLogsServiceRequest
-}
-
-func (c *logCollector) Export(_ context.Context, req *collectorlog.ExportLogsServiceRequest) (*collectorlog.ExportLogsServiceResponse, error) {
-	c.received <- req
-	return &collectorlog.ExportLogsServiceResponse{}, nil
-}
-
-func TestLogExporterGRPC(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+func TestLogExporterTLS(t *testing.T) {
+	exp, err := newLogExporter(t.Context(), target{endpoint: "localhost:4318"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
-	collector := &logCollector{received: make(chan *collectorlog.ExportLogsServiceRequest, 1)}
-	collectorlog.RegisterLogsServiceServer(server, collector)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	exp, err := newLogExporter(t.Context(), target{protocol: protoGRPC, endpoint: listener.Addr().String(), insecure: true})
-	if err != nil {
+	if err := exp.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
-	}
-	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)))
-	logger := log.New()
-	logger.SetOutput(io.Discard)
-	logger.AddHook(otlplogrus.NewHook("test", otlplogrus.WithLoggerProvider(provider)))
-	logger.Info("grpc log")
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	if err := provider.Shutdown(ctx); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case req := <-collector.received:
-		if got := req.ResourceLogs[0].ScopeLogs[0].LogRecords[0].Body.GetStringValue(); got != "grpc log" {
-			t.Fatalf("unexpected log: %q", got)
-		}
-	default:
-		t.Fatal("gRPC exporter did not deliver log")
-	}
-}
-
-func TestLogExporterTLSAndUnknownProtocol(t *testing.T) {
-	for _, transport := range []protocol{protoHTTP, protoGRPC} {
-		exp, err := newLogExporter(t.Context(), target{protocol: transport, endpoint: "localhost:4317"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := exp.Shutdown(t.Context()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := newLogExporter(t.Context(), target{}); err == nil {
-		t.Fatal("log exporter accepted an unknown protocol")
 	}
 }

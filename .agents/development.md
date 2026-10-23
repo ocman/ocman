@@ -41,7 +41,7 @@ make install-hooks    # pre-commit and pre-push hooks
 make clean            # removes binary, tmp/ and static/assets/
 make docs             # Hugo live reload, default :1313
 make docs-build       # site/public
-make otel-up          # local Grafana LGTM stack :3000/:4317/:4318
+make otel-up          # local Grafana LGTM stack :3000/:4318
 make otel-down
 make otel-logs
 make otel-reset       # also wipes persisted telemetry data

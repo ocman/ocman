@@ -1,6 +1,6 @@
 // Package telemetry owns ocman's OpenTelemetry lifecycle: parsing the
-// --otel endpoint, choosing an OTLP transport, building the trace and
-// metric providers, and installing them as the global OTel providers
+// --otel endpoint, building the OTLP/HTTP trace, metric and log
+// providers, and installing them as the global OTel providers
 // so the rest of the codebase can stay configuration-free.
 //
 // When the endpoint is empty, Init is a no-op and returns a no-op

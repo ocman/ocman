@@ -1,9 +1,8 @@
 # Local observability stack for ocman: Grafana + Loki + Tempo + Mimir +
 # an OTel collector, all bundled in a single image. Point ocman at it
-# with one of:
+# over OTLP/HTTP (ocman does not export OTLP/gRPC):
 #
-#   ./ocman --otel=http://localhost:4318     # OTLP/HTTP
-#   ./ocman --otel=grpc://localhost:4317     # OTLP/gRPC (or bare host:port)
+#   ./ocman --otel=http://localhost:4318
 #
 # Then open http://localhost:3000 (anonymous Admin enabled — local-dev
 # convenience, never use this image in shared environments).
@@ -17,7 +16,6 @@ services:
     container_name: ocman-lgtm
     ports:
       - "3000:3000"   # Grafana UI
-      - "4317:4317"   # OTLP/gRPC
       - "4318:4318"   # OTLP/HTTP
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
