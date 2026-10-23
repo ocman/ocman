@@ -32,6 +32,18 @@ beforeEach(() => {
 afterEach(() => useUiStore.setState({ compactToolCalls: false }));
 
 describe('compact exploration content', () => {
+  it.each([
+    [['Read a.go'], 'Explored: 1 file'],
+    [['Read a.go', 'Read b.go'], 'Explored: 2 files'],
+    [['Grep Session'], 'Explored: 1 search'],
+    [['Grep Session', 'Glob **/*.go'], 'Explored: 2 searches'],
+  ])('omits empty categories for %j', (labels, expected) => {
+    setMessages(labels.map(label => tool(label)));
+    render(<ExplorationContent />);
+    expect(screen.getByText(expected)).toBeVisible();
+    expect(screen.queryByText(/0 (searches|files)/)).not.toBeInTheDocument();
+  });
+
   it('includes glob calls in the search count and expanded group across messages', () => {
     setMessages([tool('Glob **/*.go'), tool('Read http.go')], [tool('Grep Session'), tool('Glob **/*.ts')]);
     render(<ExplorationContent />);
@@ -58,7 +70,7 @@ describe('compact exploration content', () => {
   it('updates the running label and counts without closing an expanded group', () => {
     setMessages([tool('Read a.go', 'pending')]);
     const { rerender } = render(<ExplorationContent />);
-    const summary = screen.getByText('Exploring: 0 searches 1 file');
+    const summary = screen.getByText('Exploring: 1 file');
     fireEvent.click(summary);
     setMessages([tool('Read a.go'), tool('Grep b', 'running')]);
     rerender(<ExplorationContent />);
@@ -99,7 +111,7 @@ describe('compact exploration content', () => {
     expect(screen.getByText('Part 3')).toBeInTheDocument();
     expect(screen.getByText('Part 5')).toBeInTheDocument();
     expect(screen.getByText('Explored: 1 search 1 file')).toBeInTheDocument();
-    expect(screen.getByText('Explored: 0 searches 1 file')).toBeInTheDocument();
+    expect(screen.getByText('Explored: 1 file')).toBeInTheDocument();
   });
 
   it('expands for printing unless print collapse is requested', () => {

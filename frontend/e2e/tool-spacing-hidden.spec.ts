@@ -21,7 +21,7 @@ test('hidden reasoning does not add gaps between compact tool rows', async ({ mo
   } }));
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const viewport = page.getByTestId('conversation-viewport');
-  const labels = ['$ echo command-0', '$ echo command-2', 'Explored: 0 searches 1 file', '$ echo command-4'];
+  const labels = ['$ echo command-0', '$ echo command-2', 'Explored: 1 file', '$ echo command-4'];
   await expect(viewport.getByText(labels[0], { exact: true })).toBeVisible();
   const positions = await Promise.all(labels.map(async label => (await viewport.getByText(label, { exact: true }).boundingBox())!.y));
   const withinMessage = positions[2] - positions[1];
@@ -54,7 +54,7 @@ test('shell completion notifications share the compact tool rhythm', async ({ mo
   } }));
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const viewport = page.getByTestId('conversation-viewport');
-  const labels = ['Explored: 0 searches 1 file', '$ echo command-1', '$ echo command-2', '$ echo command-3', '$ echo command-4'];
+  const labels = ['Explored: 1 file', '$ echo command-1', '$ echo command-2', '$ echo command-3', '$ echo command-4'];
   await expect(viewport.getByText(labels[0], { exact: true })).toBeVisible();
   const positions = await Promise.all(labels.map(async label => (await viewport.getByText(label, { exact: true }).boundingBox())!.y));
   const withinMessage = positions[4] - positions[3];

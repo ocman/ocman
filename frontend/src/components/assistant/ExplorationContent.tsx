@@ -13,6 +13,10 @@ function ExplorationGroup({ entries }: { entries: ExplorationEntry[] }) {
   const printCollapse = usePrintCollapse();
   const searches = entries.filter(entry => explorationKind(entry.part) === 'search').length;
   const files = entries.length - searches;
+  const counts = [
+    searches > 0 ? `${searches} ${searches === 1 ? 'search' : 'searches'}` : null,
+    files > 0 ? `${files} ${files === 1 ? 'file' : 'files'}` : null,
+  ].filter(Boolean).join(' ');
   const running = entries.some(entry => explorationRunning(entry.part));
   const messages = new Map<string, ExplorationPart[]>();
   for (const { messageId, part } of entries) {
@@ -24,7 +28,7 @@ function ExplorationGroup({ entries }: { entries: ExplorationEntry[] }) {
     <details className="oc-exploration" open={open || (printing && !printCollapse)} onToggle={event => { if (!printing) setOpen(event.currentTarget.open); }}>
       <summary className="oc-tool-compact-line">
         <span className="oc-read-arrow" aria-hidden="true">{running ? '◌' : '→'}</span>
-        <span>{running ? 'Exploring' : 'Explored'}: {searches} {searches === 1 ? 'search' : 'searches'} {files} {files === 1 ? 'file' : 'files'}</span>
+        <span>{running ? 'Exploring' : 'Explored'}: {counts}</span>
       </summary>
       <div className="oc-exploration-children">
         {[...messages].map(([messageId, parts]) => (
