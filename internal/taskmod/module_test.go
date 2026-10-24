@@ -7,18 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
 )
-
-type router struct{ *http.ServeMux }
-
-func (r router) Handle(path string, h http.HandlerFunc)       { r.HandleFunc(path, h) }
-func (r router) Local(path string, h http.HandlerFunc)        { r.Handle(path, h) }
-func (r router) Setting(path string, h http.HandlerFunc)      { r.Handle(path, h) }
-func (r router) LocalSetting(path string, h http.HandlerFunc) { r.Handle(path, h) }
 
 func TestQueryableTaskRoutesAreReadOnlyAndAuthenticated(t *testing.T) {
 	d, err := state.Open(statetest.Path(t, tasksvc.Schema), tasksvc.Schema)
@@ -36,7 +29,7 @@ func TestQueryableTaskRoutesAreReadOnlyAndAuthenticated(t *testing.T) {
 			h(w, r)
 		}
 	}
-	m := New(manager, module.Guards{Auth: guard})
+	m := New(manager)
 	if m.Name() != "background-tasks" {
 		t.Fatal(m.Name())
 	}
@@ -55,7 +48,7 @@ func TestQueryableTaskRoutesAreReadOnlyAndAuthenticated(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	m.Routes(router{mux})
+	m.Routes(moduletest.Router{Mux: mux, Auth: guard})
 	for _, test := range []struct {
 		method, path string
 		auth         bool
@@ -110,9 +103,9 @@ func TestQueryableTaskRoutesAreReadOnlyAndAuthenticated(t *testing.T) {
 }
 
 func TestUnavailableTaskManager(t *testing.T) {
-	m := New(tasksvc.New(nil, 1), module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }})
+	m := New(tasksvc.New(nil, 1))
 	mux := http.NewServeMux()
-	m.Routes(router{mux})
+	m.Routes(moduletest.Router{Mux: mux})
 	for _, path := range []string{"/api/background-tasks", "/api/background-tasks/id", "/api/background-tasks?view=active-count"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
@@ -129,7 +122,7 @@ func TestCancelledStartupIsNotFatal(t *testing.T) {
 	}
 	defer d.Close()
 	manager := tasksvc.New(d, 1)
-	m := New(manager, module.Guards{})
+	m := New(manager)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := m.Start(ctx); err != nil {
@@ -144,7 +137,7 @@ func TestStartupDatabaseFailureIsStillFatal(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.Close()
-	m := New(tasksvc.New(d, 1), module.Guards{})
+	m := New(tasksvc.New(d, 1))
 	if err := m.Start(t.Context()); err == nil {
 		t.Fatal("startup hid a database failure")
 	}

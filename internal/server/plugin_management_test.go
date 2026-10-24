@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/pluginsmod"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -45,7 +44,6 @@ func newPluginManagementTestWithTimeout(t *testing.T, readyTimeout time.Duration
 	if readyTimeout > 0 {
 		s.pluginsMod.set(pluginsmod.NewModule(pluginsmod.Deps{
 			Store: db, ReadyTimeout: readyTimeout,
-			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		}))
 	}
 	bindPlugins(s, context.Background())

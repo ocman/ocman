@@ -14,7 +14,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
@@ -35,15 +35,6 @@ func artifactServer(t *testing.T) (*Module, func(string, string) *httptest.Respo
 	}
 	t.Cleanup(func() { _ = store.Close(); relayURL = "" })
 	tree := map[string][]string{"top": {"top", "mid", "leaf"}, "mid": {"mid", "leaf"}}
-	localOnly := func(h http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if !strings.HasPrefix(r.RemoteAddr, "127.0.0.1:") {
-				http.Error(w, "forbidden", http.StatusForbidden)
-				return
-			}
-			h(w, r)
-		}
-	}
 	pass := func(h http.HandlerFunc) http.HandlerFunc { return h }
 	srv := NewModule(Deps{
 		Store: store,
@@ -65,20 +56,37 @@ func artifactServer(t *testing.T) (*Module, func(string, string) *httptest.Respo
 			}
 			return []string{id}, nil
 		},
-		Guards:      module.Guards{Auth: pass, Localhost: localOnly},
 		FileAuth:    pass,
 		SignFileURL: func(path string) string { return "https://ocman.example" + path },
 		PublicURL:   func(path string) string { return "https://ocman.example" + path },
 		RelayURL:    func() string { return relayURL },
 		Broadcast:   func(string, []byte) {},
 	})
+	mux := routed(srv)
 	return srv, func(method, target string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, target, nil)
 		req.RemoteAddr = "127.0.0.1:1234"
 		rec := httptest.NewRecorder()
-		srv.ServeHTTP(rec, req)
+		mux.ServeHTTP(rec, req)
 		return rec
 	}
+}
+
+func localOnly(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.RemoteAddr, "127.0.0.1:") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		h(w, r)
+	}
+}
+
+// routed mounts m's routes with a loopback-peer localhost guard.
+func routed(m *Module) *http.ServeMux {
+	r := moduletest.Router{Mux: http.NewServeMux(), Localhost: localOnly}
+	m.Routes(r)
+	return r.Mux
 }
 
 func mustArtifact(t *testing.T, srv *Module, in Input) state.Artifact {
@@ -236,7 +244,7 @@ func TestArtifactGetStatsDelete(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodDelete, "/api/artifacts/"+a.ID, nil)
 	remote := httptest.NewRecorder()
-	srv.ServeHTTP(remote, req)
+	routed(srv).ServeHTTP(remote, req)
 	if remote.Code != http.StatusForbidden {
 		t.Fatalf("non-local delete = %d", remote.Code)
 	}

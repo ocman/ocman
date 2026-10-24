@@ -1,7 +1,6 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/taskmod"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
 )
@@ -11,5 +10,5 @@ func (s *Server) taskManager() *tasksvc.Manager {
 }
 
 func (s *Server) backgroundTasksModule() *taskmod.Module {
-	return taskmod.New(s.taskManager(), module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost})
+	return taskmod.New(s.taskManager())
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
@@ -26,22 +26,28 @@ func openModuleStore(t *testing.T) *state.DB {
 // testRouter mounts routes on a plain mux, recording which helper each
 // pattern used so the guards can be checked.
 type testRouter struct {
-	mux  *http.ServeMux
+	moduletest.Router
 	kind map[string]string
 }
 
-func (r testRouter) add(kind, pattern string, h http.HandlerFunc) {
-	r.kind[pattern] = kind
-	r.mux.HandleFunc(pattern, h)
+func newTestRouter(deny func(http.HandlerFunc) http.HandlerFunc) testRouter {
+	return testRouter{Router: moduletest.Router{Mux: http.NewServeMux(), Auth: deny, Localhost: deny}, kind: map[string]string{}}
 }
-func (r testRouter) Handle(p string, h http.HandlerFunc)       { r.add("handle", p, h) }
-func (r testRouter) Local(p string, h http.HandlerFunc)        { r.add("local", p, h) }
-func (r testRouter) Setting(p string, h http.HandlerFunc)      { r.add("setting", p, h) }
-func (r testRouter) LocalSetting(p string, h http.HandlerFunc) { r.add("localSetting", p, h) }
+
+func (r testRouter) Handle(p string, h http.HandlerFunc) { r.kind[p] = "handle"; r.Router.Handle(p, h) }
+func (r testRouter) Public(p string, h http.HandlerFunc) { r.kind[p] = "public"; r.Router.Public(p, h) }
+func (r testRouter) Local(p string, h http.HandlerFunc)  { r.kind[p] = "local"; r.Router.Local(p, h) }
+func (r testRouter) Setting(p string, h http.HandlerFunc) {
+	r.kind[p] = "setting"
+	r.Router.Setting(p, h)
+}
+func (r testRouter) LocalSetting(p string, h http.HandlerFunc) {
+	r.kind[p] = "localSetting"
+	r.Router.LocalSetting(p, h)
+}
 
 func newTestModule(store *state.DB) *Module {
-	pass := func(h http.HandlerFunc) http.HandlerFunc { return h }
-	deps := ModuleDeps{Store: store, Guards: module.Guards{Auth: pass, Localhost: pass}}
+	deps := ModuleDeps{Store: store}
 	if store != nil { // a typed nil would defeat the pipeline's nil checks
 		deps.Engine.Store = store
 	}
@@ -49,10 +55,10 @@ func newTestModule(store *state.DB) *Module {
 }
 
 func serve(m *Module, method, path, body string) *httptest.ResponseRecorder {
-	r := testRouter{mux: http.NewServeMux(), kind: map[string]string{}}
+	r := newTestRouter(nil)
 	m.Routes(r)
 	rec := httptest.NewRecorder()
-	r.mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
+	r.Mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
 	return rec
 }
 
@@ -61,8 +67,8 @@ func TestModuleRoutesAreAuthGuarded(t *testing.T) {
 	denied := func(http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) }
 	}
-	m := NewModule(ModuleDeps{Store: openModuleStore(t), Guards: module.Guards{Auth: denied}})
-	r := testRouter{mux: http.NewServeMux(), kind: map[string]string{}}
+	m := NewModule(ModuleDeps{Store: openModuleStore(t)})
+	r := newTestRouter(denied)
 	m.Routes(r)
 	for pattern, kind := range r.kind {
 		method, path, ok := strings.Cut(pattern, " ")
@@ -71,7 +77,7 @@ func TestModuleRoutesAreAuthGuarded(t *testing.T) {
 		}
 		path = strings.ReplaceAll(path, "{id}", "ses-1")
 		rec := httptest.NewRecorder()
-		r.mux.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		r.Mux.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s answered %d without auth", pattern, rec.Code)
 		}

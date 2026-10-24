@@ -29,8 +29,7 @@ type Deps struct {
 	// Owner parses the required absolute ?dir= and ?remoteId= and resolves
 	// the owning machine, writing the error response itself (400, or 503
 	// for an explicit remote that is not connected).
-	Owner  func(w http.ResponseWriter, r *http.Request) (dir string, files RepoFiles, ok bool)
-	Guards module.Guards
+	Owner func(w http.ResponseWriter, r *http.Request) (dir string, files RepoFiles, ok bool)
 }
 
 type Module struct {
@@ -50,10 +49,11 @@ func (m *Module) Name() string { return "filesystem" }
 func (m *Module) Routes(r module.Router) {
 	r.Local("/api/filesystem/directories", getOnly(m.handleDirectories))
 	r.Local("/api/filesystem/directory-search", getOnly(m.handleDirectorySearch))
-	auth := m.Guards.Auth
-	r.Handle(filePathPrefix, getOnly(auth(m.handleFileProxy)))
-	r.Handle("/api/git/files", getOnly(auth(m.handleRepoFiles)))
-	r.Handle("/api/git/file", getOnly(auth(m.handleRepoFile)))
+	// Public so getOnly's 405 stays ahead of the login guard.
+	auth := r.Guards().Auth
+	r.Public(filePathPrefix, getOnly(auth(m.handleFileProxy)))
+	r.Public("/api/git/files", getOnly(auth(m.handleRepoFiles)))
+	r.Public("/api/git/file", getOnly(auth(m.handleRepoFile)))
 }
 
 // getOnly answers 405 itself: a "GET " mux pattern would hand other

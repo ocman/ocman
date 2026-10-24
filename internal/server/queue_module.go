@@ -28,7 +28,6 @@ func (s *Server) queueModule() *queuemod.Module {
 			},
 			PrepareSend: s.prepareQueuedSend,
 			Broadcast:   s.broadcastGlobalEvent, SessionChanged: s.broadcastSessionChanged,
-			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		}
 		if s.stateDB != nil {
 			d.Store = s.stateDB

@@ -10,8 +10,9 @@ package gitmod
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/git"
 	"net/http"
+
+	"github.com/NoUseFreak/ocman/internal/git"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/module"
@@ -37,7 +38,6 @@ type Deps struct {
 	InheritPermissions func(r *http.Request, platform, parentSessionID string) func(childSessionID string) (int, string)
 	// SendNow delivers the first message immediately, never queued.
 	SendNow   func(ctx context.Context, platformID string, req platforms.SendMessageRequest) error
-	Guards    module.Guards
 	OnGitInfo func(context.Context, string, map[string]git.Info, int64)
 }
 
@@ -55,13 +55,12 @@ func (m *Module) Name() string { return "git" }
 // before any guard runs. Reads need a login; mutations and launches are
 // localhost-only.
 func (m *Module) Routes(r module.Router) {
-	auth, local := m.Guards.Auth, m.Guards.Localhost
-	r.Handle("GET /api/git/diff", auth(m.handleGitDiff))
-	r.Handle("GET /api/git/info", auth(m.handleGitInfo))
-	r.Handle("GET /api/git/branches", auth(m.handleGitBranches))
-	r.Handle("POST /api/git/checkout", local(m.handleGitCheckout))
-	r.Handle("GET /api/worktree/list", auth(m.handleWorktreeList))
-	r.Handle("GET /api/worktree/default-base-ref", auth(m.handleWorktreeDefaultBaseRef))
-	r.Handle("POST /api/worktree/create-and-launch", local(m.handleWorktreeCreateAndLaunch))
-	r.Handle("POST /api/worktree/remove", local(m.handleWorktreeRemove))
+	r.Handle("GET /api/git/diff", m.handleGitDiff)
+	r.Handle("GET /api/git/info", m.handleGitInfo)
+	r.Handle("GET /api/git/branches", m.handleGitBranches)
+	r.Local("POST /api/git/checkout", m.handleGitCheckout)
+	r.Handle("GET /api/worktree/list", m.handleWorktreeList)
+	r.Handle("GET /api/worktree/default-base-ref", m.handleWorktreeDefaultBaseRef)
+	r.Local("POST /api/worktree/create-and-launch", m.handleWorktreeCreateAndLaunch)
+	r.Local("POST /api/worktree/remove", m.handleWorktreeRemove)
 }

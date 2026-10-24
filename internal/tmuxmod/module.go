@@ -32,7 +32,6 @@ type Deps struct {
 	// ResolveOwner resolves an explicit or inferred owner. It writes the
 	// response and returns false when an explicit remote is not connected.
 	ResolveOwner func(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool)
-	Guards       module.Guards
 	// Runner drives this machine's tmux clients; zero means the real tmux.
 	Runner tmux.SwitchRunner
 }
@@ -52,11 +51,10 @@ func (m *Module) Name() string { return "tmux" }
 // Routes uses method patterns, so the mux answers a wrong method with 405
 // without probing the peer.
 func (m *Module) Routes(r module.Router) {
-	local := m.deps.Guards.Localhost
-	r.Handle("GET /api/tmux/clients", local(m.handleClients))
-	r.Handle("GET /api/tmux/sessions", local(m.handleSessions))
-	r.Handle("POST /api/tmux/switch", local(m.handleSwitch))
-	r.Handle("POST /api/tmux/launch-opencode", local(m.handleLaunchOpencode))
+	r.Local("GET /api/tmux/clients", m.handleClients)
+	r.Local("GET /api/tmux/sessions", m.handleSessions)
+	r.Local("POST /api/tmux/switch", m.handleSwitch)
+	r.Local("POST /api/tmux/launch-opencode", m.handleLaunchOpencode)
 }
 
 func (m *Module) handleClients(w http.ResponseWriter, r *http.Request) {

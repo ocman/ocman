@@ -31,13 +31,13 @@ func (m *Module) handleFactoryQueue(w http.ResponseWriter, r *http.Request) {
 
 // Gate actions are validated before the localhost guard, so a malformed
 // action is a 400 wherever it comes from.
-func (m *Module) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Request, local func(http.HandlerFunc) http.HandlerFunc) {
 	action := r.PathValue("action")
 	if action != "resume" && action != "retry" && action != "cancel" {
 		http.Error(w, "invalid recovery gate action", http.StatusBadRequest)
 		return
 	}
-	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
+	local(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Response string `json:"response"`
 		}
@@ -53,13 +53,13 @@ func (m *Module) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Reques
 	})(w, r)
 }
 
-func (m *Module) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Request, local func(http.HandlerFunc) http.HandlerFunc) {
 	action := r.PathValue("action")
 	if action != "approve" && action != "reject" {
 		http.Error(w, "invalid authority gate action", http.StatusBadRequest)
 		return
 	}
-	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
+	local(func(w http.ResponseWriter, r *http.Request) {
 		gate, err := m.svc.ResolveAuthorityEscalationGate(r.Context(), r.PathValue("gate"), action)
 		if err != nil {
 			WriteError(w, err)
@@ -69,13 +69,13 @@ func (m *Module) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Reque
 	})(w, r)
 }
 
-func (m *Module) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request, local func(http.HandlerFunc) http.HandlerFunc) {
 	action := r.PathValue("action")
 	if action != "approve" && action != "reject" {
 		http.Error(w, "invalid project gate action", http.StatusBadRequest)
 		return
 	}
-	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
+	local(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Response                  string `json:"response"`
 			AcknowledgeLocalExecution bool   `json:"acknowledgeLocalExecution"`

@@ -12,6 +12,7 @@ import (
 )
 
 type recordingRouter struct {
+	guards   module.Guards
 	kinds    map[string]string
 	handlers map[string]http.HandlerFunc
 }
@@ -19,10 +20,18 @@ type recordingRouter struct {
 func (r *recordingRouter) add(kind, pattern string, h http.HandlerFunc) {
 	r.kinds[pattern], r.handlers[pattern] = kind, h
 }
-func (r *recordingRouter) Handle(p string, h http.HandlerFunc)       { r.add("handle", p, h) }
-func (r *recordingRouter) Local(p string, h http.HandlerFunc)        { r.add("local", p, h) }
-func (r *recordingRouter) Setting(p string, h http.HandlerFunc)      { r.add("setting", p, h) }
-func (r *recordingRouter) LocalSetting(p string, h http.HandlerFunc) { r.add("localsetting", p, h) }
+func (r *recordingRouter) Handle(p string, h http.HandlerFunc) { r.add("handle", p, r.guards.Auth(h)) }
+func (r *recordingRouter) Public(p string, h http.HandlerFunc) { r.add("public", p, h) }
+func (r *recordingRouter) Local(p string, h http.HandlerFunc) {
+	r.add("local", p, r.guards.Localhost(h))
+}
+func (r *recordingRouter) Setting(p string, h http.HandlerFunc) {
+	r.add("setting", p, r.guards.Auth(h))
+}
+func (r *recordingRouter) LocalSetting(p string, h http.HandlerFunc) {
+	r.add("localsetting", p, r.guards.Localhost(h))
+}
+func (r *recordingRouter) Guards() module.Guards { return r.guards }
 
 // The forge proxies and the launch are localhost-only, upstreams and the
 // templates need only a login, and a wrong method is 405 before any guard.
@@ -36,8 +45,8 @@ func TestRoutesGuards(t *testing.T) {
 			}
 		}
 	}
-	m := NewModule(Deps{Guards: module.Guards{Auth: guard("auth"), Localhost: guard("local")}})
-	r := &recordingRouter{kinds: map[string]string{}, handlers: map[string]http.HandlerFunc{}}
+	m := NewModule(Deps{})
+	r := &recordingRouter{guards: module.Guards{Auth: guard("auth"), Localhost: guard("local")}, kinds: map[string]string{}, handlers: map[string]http.HandlerFunc{}}
 	m.Routes(r)
 	mux := http.NewServeMux()
 	for pattern, handler := range r.handlers {
@@ -45,16 +54,16 @@ func TestRoutesGuards(t *testing.T) {
 	}
 	for pattern, want := range map[string]struct{ method, guard, kind string }{
 		"/api/project/upstreams":         {http.MethodGet, "auth", "handle"},
-		"/api/project/prs":               {http.MethodGet, "local", "handle"},
-		"/api/project/issues":            {http.MethodGet, "local", "handle"},
-		"/api/project/pr-checks":         {http.MethodGet, "local", "handle"},
-		"/api/project/pr-mergeability":   {http.MethodGet, "local", "handle"},
-		"/api/project/forge-user":        {http.MethodGet, "local", "handle"},
-		"/api/project/handle":            {http.MethodPost, "local", "handle"},
+		"/api/project/prs":               {http.MethodGet, "local", "local"},
+		"/api/project/issues":            {http.MethodGet, "local", "local"},
+		"/api/project/pr-checks":         {http.MethodGet, "local", "local"},
+		"/api/project/pr-mergeability":   {http.MethodGet, "local", "local"},
+		"/api/project/forge-user":        {http.MethodGet, "local", "local"},
+		"/api/project/handle":            {http.MethodPost, "local", "local"},
 		"/api/settings/prompt-templates": {http.MethodGet, "auth", "setting"},
 	} {
 		registered := pattern
-		if want.kind == "handle" {
+		if want.kind != "setting" {
 			registered = want.method + " " + pattern
 		}
 		if r.handlers[registered] == nil || r.kinds[registered] != want.kind {

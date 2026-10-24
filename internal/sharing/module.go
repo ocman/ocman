@@ -26,7 +26,6 @@ type Deps struct {
 	// ("flag", "env", "builtin"); both empty without a relay.
 	RelayURL    func() string
 	RelaySource func() string
-	Guards      module.Guards
 }
 
 type Module struct {
@@ -60,13 +59,12 @@ func (m *Module) Name() string { return "sharing" }
 // Routes are more specific than the server's /api/session/ dispatcher, so
 // the mux sends these here.
 func (m *Module) Routes(r module.Router) {
-	auth := m.Guards.Auth
-	r.Handle("GET /api/session/{id}/export.md", auth(m.withSession(m.handleExportMarkdown)))
-	r.Handle("GET /api/session/{id}/shares", auth(m.withSession(m.handleSessionShares)))
-	r.Handle("POST /api/session/{id}/share", auth(m.withSession(m.handleCreateSessionShare)))
-	r.Handle("DELETE /api/session/{id}/share/{token}", auth(m.withSession(m.handleRevokeSessionShare)))
-	r.Handle("GET /api/shares", auth(m.handleAllShares))
-	r.Setting("/api/settings/sharing", auth(m.handleSharingSetting))
+	r.Handle("GET /api/session/{id}/export.md", m.withSession(m.handleExportMarkdown))
+	r.Handle("GET /api/session/{id}/shares", m.withSession(m.handleSessionShares))
+	r.Handle("POST /api/session/{id}/share", m.withSession(m.handleCreateSessionShare))
+	r.Handle("DELETE /api/session/{id}/share/{token}", m.withSession(m.handleRevokeSessionShare))
+	r.Handle("GET /api/shares", m.handleAllShares)
+	r.Setting("/api/settings/sharing", m.handleSharingSetting)
 }
 
 // Subscribe appends each completed turn to the session's live shares.

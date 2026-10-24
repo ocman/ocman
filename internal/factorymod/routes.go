@@ -11,13 +11,16 @@ import (
 // rather than reaching the server's catch-all 404.
 func (m *Module) Routes(r module.Router) {
 	mux := http.NewServeMux()
-	local := m.deps.Guards.Localhost
+	local := r.Guards().Localhost
+	withLocal := func(h func(http.ResponseWriter, *http.Request, func(http.HandlerFunc) http.HandlerFunc)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) { h(w, r, local) }
+	}
 
 	mux.HandleFunc("GET /api/factory/status", m.handleFactoryStatus)
 	mux.HandleFunc("GET /api/factory/queue", m.handleFactoryQueue)
-	mux.HandleFunc("POST /api/factory/recovery-gates/{gate}/{action}", m.handleFactoryRecoveryGate)
-	mux.HandleFunc("POST /api/factory/authority-gates/{gate}/{action}", m.handleFactoryAuthorityGate)
-	mux.HandleFunc("POST /api/factory/project-gates/{gate}/{action}", m.handleFactoryProjectGate)
+	mux.HandleFunc("POST /api/factory/recovery-gates/{gate}/{action}", withLocal(m.handleFactoryRecoveryGate))
+	mux.HandleFunc("POST /api/factory/authority-gates/{gate}/{action}", withLocal(m.handleFactoryAuthorityGate))
+	mux.HandleFunc("POST /api/factory/project-gates/{gate}/{action}", withLocal(m.handleFactoryProjectGate))
 	mux.HandleFunc("GET /api/factory/configuration", m.handleGetConfiguration)
 	mux.HandleFunc("POST /api/factory/configuration", local(m.handleSetConfiguration))
 
@@ -47,7 +50,7 @@ func (m *Module) Routes(r module.Router) {
 	mux.HandleFunc("GET "+epic+"/control", m.handleGetControl)
 	mux.HandleFunc("POST "+epic+"/control", local(m.handleEnsureControl))
 	mux.HandleFunc("GET "+epic+"/control-actions/{action}", m.handleGetControlAction)
-	mux.HandleFunc("POST "+epic+"/control-actions/{action}/{verb}", m.handleDecideControlAction)
+	mux.HandleFunc("POST "+epic+"/control-actions/{action}/{verb}", withLocal(m.handleDecideControlAction))
 	mux.HandleFunc("POST "+epic+"/mutations", local(m.handleMutateGraph))
 	mux.HandleFunc("POST "+epic+"/pour", local(m.handlePour))
 	mux.HandleFunc("POST "+epic+"/deliver-as-is", local(m.handleDeliverAsIs))
@@ -63,5 +66,5 @@ func (m *Module) Routes(r module.Router) {
 	mux.HandleFunc("POST "+epic+"/proposals", local(m.handleSubmitProposal))
 	mux.HandleFunc("GET "+epic+"/proposals/{revision}", m.handleGetProposal)
 
-	r.Handle("/api/factory/", m.deps.Guards.Auth(mux.ServeHTTP))
+	r.Handle("/api/factory/", mux.ServeHTTP)
 }

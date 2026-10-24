@@ -22,7 +22,8 @@ type Deps struct {
 	Keepalive  func() time.Duration
 	// CaptureDir, when set, records raw source frames (CaptureEnv).
 	CaptureDir string
-	Guards     module.Guards
+	// Trace wraps the stream handler inside the login guard; may be nil.
+	Trace func(http.HandlerFunc) http.HandlerFunc
 }
 
 type Module struct {
@@ -44,7 +45,11 @@ func (*Module) Name() string { return "convstream" }
 func (m *Module) Hub() *Hub { return m.hub }
 
 func (m *Module) Routes(r module.Router) {
-	r.Handle("GET /api/session/{id}/stream", m.d.Guards.Auth(m.HandleStream))
+	h := m.HandleStream
+	if m.d.Trace != nil {
+		h = m.d.Trace(h)
+	}
+	r.Handle("GET /api/session/{id}/stream", h)
 }
 
 func (m *Module) Start(ctx context.Context) error {

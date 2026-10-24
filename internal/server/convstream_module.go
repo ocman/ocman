@@ -13,7 +13,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/convevents"
 	"github.com/NoUseFreak/ocman/internal/convstream"
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
@@ -43,10 +42,7 @@ func (s *Server) convStreamModule() *convstream.Module {
 			},
 			Keepalive:  func() time.Duration { return sseKeepaliveInterval },
 			CaptureDir: os.Getenv(convstream.CaptureEnv),
-			Guards: module.Guards{
-				Auth:      func(h http.HandlerFunc) http.HandlerFunc { return s.requireAuth(traceSessionStream(h)) },
-				Localhost: s.requireLocalhost,
-			},
+			Trace:      traceSessionStream,
 		})
 	})
 }

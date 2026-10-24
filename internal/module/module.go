@@ -22,21 +22,24 @@ type Module interface {
 
 // Router registers a module's HTTP routes behind the server's guards.
 type Router interface {
-	// Handle registers a route without a guard; the module guards each
-	// subroute itself with Guards.
+	// Handle registers a route behind the login guard.
 	Handle(pattern string, h http.HandlerFunc)
+	// Public registers a route without a guard: it is open by design or
+	// guards its subroutes itself with Guards.
+	Public(pattern string, h http.HandlerFunc)
 	// Local registers a localhost-only route (peer and browser origin).
 	Local(pattern string, h http.HandlerFunc)
-	// Setting registers a Settings route without a guard: a successful POST
-	// broadcasts that settings changed so other clients reload them.
+	// Setting is Handle for a Settings route: a successful POST broadcasts
+	// that settings changed so other clients reload them.
 	Setting(pattern string, h http.HandlerFunc)
-	// LocalSetting is Local for a Settings route: a successful POST
-	// broadcasts that settings changed so other clients reload them.
+	// LocalSetting is Local for a Settings route.
 	LocalSetting(pattern string, h http.HandlerFunc)
+	// Guards are the middleware behind those registrations, for a module
+	// that guards subroutes of one mount differently.
+	Guards() Guards
 }
 
-// Guards are the server's auth middleware, for a module that guards
-// subroutes of one mount differently.
+// Guards are the server's auth middleware.
 type Guards struct {
 	// Auth requires a valid login when password auth is on.
 	Auth func(http.HandlerFunc) http.HandlerFunc

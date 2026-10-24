@@ -53,7 +53,6 @@ type Deps struct {
 	// Registered reports whether a platform adapter is registered.
 	Registered func(platformID string) bool
 	Sessions   Sessions
-	Guards     module.Guards
 }
 
 // Module serves /api/project/{upstreams,prs,issues,pr-checks,
@@ -72,16 +71,15 @@ func (m *Module) Name() string { return "project-forge" }
 // Routes keeps the method check outside the auth guard, as the server's
 // method-pattern routes do, so a wrong method is 405 for every caller.
 func (m *Module) Routes(r module.Router) {
-	auth, local := m.Guards.Auth, m.Guards.Localhost
-	r.Handle("GET /api/project/upstreams", auth(m.handleUpstreams))
-	r.Handle("GET /api/project/prs", local(m.handlePRs))
-	r.Handle("GET /api/project/issues", local(m.handleIssues))
-	r.Handle("GET /api/project/pr-checks", local(m.handlePRChecks))
-	r.Handle("GET /api/project/pr-mergeability", local(m.handlePRMergeability))
-	r.Handle("GET /api/project/forge-user", local(m.handleForgeUser))
+	r.Handle("GET /api/project/upstreams", m.handleUpstreams)
+	r.Local("GET /api/project/prs", m.handlePRs)
+	r.Local("GET /api/project/issues", m.handleIssues)
+	r.Local("GET /api/project/pr-checks", m.handlePRChecks)
+	r.Local("GET /api/project/pr-mergeability", m.handlePRMergeability)
+	r.Local("GET /api/project/forge-user", m.handleForgeUser)
 	// Launch: spawns an OpenCode session or worktree on the owner.
-	r.Handle("POST /api/project/handle", local(m.handleHandle))
-	r.Setting("/api/settings/prompt-templates", auth(m.handlePromptTemplates))
+	r.Local("POST /api/project/handle", m.handleHandle)
+	r.Setting("/api/settings/prompt-templates", m.handlePromptTemplates)
 }
 
 // classify keeps the remotes the hub can serve, typed by its configuration.

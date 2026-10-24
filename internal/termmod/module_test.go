@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/term"
 )
 
@@ -49,13 +50,6 @@ func (h *fakeHost) TermAttach(ctx context.Context, req hostsvc.TermAttachRequest
 	return h.attach(ctx, req, c)
 }
 
-type router struct{ mux *http.ServeMux }
-
-func (r router) Handle(p string, h http.HandlerFunc)       { r.mux.HandleFunc(p, h) }
-func (r router) Local(p string, h http.HandlerFunc)        { r.mux.HandleFunc(p, h) }
-func (r router) Setting(p string, h http.HandlerFunc)      { r.mux.HandleFunc(p, h) }
-func (r router) LocalSetting(p string, h http.HandlerFunc) { r.mux.HandleFunc(p, h) }
-
 func newMux(host *fakeHost, privileged func(*http.Request) bool) *http.ServeMux {
 	mux := http.NewServeMux()
 	NewModule(Deps{
@@ -67,7 +61,7 @@ func newMux(host *fakeHost, privileged func(*http.Request) bool) *http.ServeMux 
 			return host, true
 		},
 		Privileged: privileged,
-	}).Routes(router{mux})
+	}).Routes(moduletest.Router{Mux: mux})
 	return mux
 }
 

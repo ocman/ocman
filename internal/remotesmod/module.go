@@ -49,7 +49,6 @@ type Deps struct {
 	// Identity is nil without a state DB.
 	Identity Identity
 	Access   func() Access
-	Guards   module.Guards
 	// Interval overrides InventoryInterval (tests).
 	Interval time.Duration
 }
@@ -67,11 +66,11 @@ func (m *Module) Name() string { return "remotes" }
 
 // Routes checks the method (mux pattern), then auth, then localhost.
 func (m *Module) Routes(r module.Router) {
-	auth, local := m.d.Guards.Auth, m.d.Guards.Localhost
-	r.Handle("GET /api/settings/remote-access", auth(m.handleAccess))
-	r.Handle("POST /api/settings/remote-access/reveal-token", auth(local(m.handleRevealToken)))
-	r.Handle("/api/remotes", auth(local(m.handleRemotes)))
-	r.Handle("/api/remotes/", auth(local(m.handleRemoteByID)))
+	local := r.Guards().Localhost
+	r.Handle("GET /api/settings/remote-access", m.handleAccess)
+	r.Handle("POST /api/settings/remote-access/reveal-token", local(m.handleRevealToken))
+	r.Handle("/api/remotes", local(m.handleRemotes))
+	r.Handle("/api/remotes/", local(m.handleRemoteByID))
 }
 
 // Run refreshes inventories among the server's joined workers, so the loop

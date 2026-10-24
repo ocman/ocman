@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
@@ -54,23 +54,13 @@ func TestWorkerWakesAndStops(t *testing.T) {
 	}
 }
 
-type testRouter struct{ *http.ServeMux }
-
-func (r testRouter) Handle(pattern string, handler http.HandlerFunc)  { r.HandleFunc(pattern, handler) }
-func (r testRouter) Local(pattern string, handler http.HandlerFunc)   { r.Handle(pattern, handler) }
-func (r testRouter) Setting(pattern string, handler http.HandlerFunc) { r.Handle(pattern, handler) }
-func (r testRouter) LocalSetting(pattern string, handler http.HandlerFunc) {
-	r.Handle(pattern, handler)
-}
-
 func TestUnavailableModule(t *testing.T) {
-	m := NewModule(Deps{Guards: module.Guards{Auth: func(handler http.HandlerFunc) http.HandlerFunc { return handler }}})
+	m := NewModule(Deps{})
 	if m.Name() != "snooze" {
 		t.Fatal(m.Name())
 	}
 	m.Run(t.Context())
-	mux := testRouter{http.NewServeMux()}
-	m.Routes(mux)
+	mux := moduletest.Mount(m)
 	for _, tc := range []struct {
 		method string
 		status int
@@ -91,8 +81,7 @@ func TestSnoozeRoute(t *testing.T) {
 	defer db.Close()
 	var events []string
 	m := NewModule(Deps{
-		Store:  db,
-		Guards: module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }},
+		Store: db,
 		Validate: func(w http.ResponseWriter, _ *http.Request, id, platform string) (string, bool) {
 			if id != "s1" {
 				http.Error(w, "invalid session", http.StatusBadRequest)
@@ -102,8 +91,7 @@ func TestSnoozeRoute(t *testing.T) {
 		},
 		Broadcast: func(event string, data []byte) { events = append(events, event+" "+string(data)) },
 	})
-	mux := testRouter{http.NewServeMux()}
-	m.Routes(mux)
+	mux := moduletest.Mount(m)
 	for _, tc := range []struct {
 		body   string
 		status int

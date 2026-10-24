@@ -110,11 +110,13 @@ func (m *Module) pluginProjectCatalog(ctx context.Context, input remote.PluginIn
 }
 
 // managementRoutes mounts /api/plugins/{id}/{action}: reads need auth (and
-// stderr localhost), mutations are localhost POSTs.
+// stderr localhost), mutations are localhost POSTs. Public mounts so
+// no-store also covers the guards' refusals.
 func (m *Module) managementRoutes(r module.Router) {
-	local := m.deps.Guards.Localhost
+	g := r.Guards()
+	local := g.Localhost
 	auth := func(h http.HandlerFunc) http.HandlerFunc {
-		h = m.deps.Guards.Auth(h)
+		h = g.Auth(h)
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			h(w, r)
@@ -126,16 +128,16 @@ func (m *Module) managementRoutes(r module.Router) {
 		}
 	}
 	for _, action := range []string{"health", "conversations", "grants", "configuration"} {
-		r.Handle("GET /api/plugins/{id}/"+action, auth(manage(action, true)))
+		r.Public("GET /api/plugins/{id}/"+action, auth(manage(action, true)))
 	}
-	r.Handle("GET /api/plugins/{id}/stderr", auth(local(manage("stderr", true))))
+	r.Public("GET /api/plugins/{id}/stderr", auth(local(manage("stderr", true))))
 	for _, action := range []string{"grants", "configuration", "enable", "disable", "restart", "retry",
 		"configuration/validate", "remove-data",
 		// Retrying or discarding a dead letter is a privileged control, not a
 		// read: it decides whether a reply reaches a thread. It takes the same
 		// localhost-only POST path as every other plugin mutation.
 		"conversations/retry", "conversations/discard"} {
-		r.Handle("POST /api/plugins/{id}/"+action, auth(local(manage(action, false))))
+		r.Public("POST /api/plugins/{id}/"+action, auth(local(manage(action, false))))
 	}
 }
 

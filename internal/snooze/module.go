@@ -19,7 +19,6 @@ type Deps struct {
 	// Validate resolves the session's platform and writes any rejection.
 	Validate  func(http.ResponseWriter, *http.Request, string, string) (string, bool)
 	Broadcast func(string, []byte)
-	Guards    module.Guards
 }
 
 // Module has no mutable state; routes and workers share its durable store.
@@ -32,7 +31,7 @@ func NewModule(d Deps) *Module { return &Module{d: d} }
 func (*Module) Name() string   { return "snooze" }
 
 func (m *Module) Routes(r module.Router) {
-	r.Handle("POST /api/session/snooze", m.d.Guards.Auth(m.handleSnooze))
+	r.Handle("POST /api/session/snooze", m.handleSnooze)
 }
 
 func (m *Module) handleSnooze(w http.ResponseWriter, r *http.Request) {

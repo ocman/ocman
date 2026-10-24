@@ -14,12 +14,11 @@ import (
 // lifetime. Launch gating stays with the server, which asks LaunchBlocked.
 type Module struct {
 	runner *Runner // nil when no OpenCode database is configured
-	guards module.Guards
 }
 
 // NewModule serves r; a nil r answers that maintenance is unavailable.
-func NewModule(r *Runner, guards module.Guards) *Module {
-	return &Module{runner: r, guards: guards}
+func NewModule(r *Runner) *Module {
+	return &Module{runner: r}
 }
 
 func (m *Module) Name() string { return "maintenance" }
@@ -27,11 +26,11 @@ func (m *Module) Name() string { return "maintenance" }
 // Routes checks the method (mux pattern), auth, then localhost for the
 // actions, which stop opencode and rewrite its database.
 func (m *Module) Routes(r module.Router) {
-	auth, local := m.guards.Auth, m.guards.Localhost
-	r.Handle("GET /api/maintenance/opencode-db", auth(m.handleStatus))
-	r.Handle("POST /api/maintenance/opencode-db/cleanup", auth(local(m.action((*Runner).Cleanup))))
-	r.Handle("POST /api/maintenance/opencode-db/restore", auth(local(m.action((*Runner).Restore))))
-	r.Handle("POST /api/maintenance/opencode-db/delete-dump", auth(local(m.action((*Runner).DeleteDump))))
+	local := r.Guards().Localhost
+	r.Handle("GET /api/maintenance/opencode-db", m.handleStatus)
+	r.Handle("POST /api/maintenance/opencode-db/cleanup", local(m.action((*Runner).Cleanup)))
+	r.Handle("POST /api/maintenance/opencode-db/restore", local(m.action((*Runner).Restore)))
+	r.Handle("POST /api/maintenance/opencode-db/delete-dump", local(m.action((*Runner).DeleteDump)))
 }
 
 // LaunchBlocked reports why opencode may not launch right now.

@@ -74,7 +74,6 @@ func (s *Server) tmuxModule() *tmuxmod.Module {
 	return tmuxmod.NewModule(tmuxmod.Deps{
 		Local:        func() hostsvc.Host { return s.router().Local() },
 		ResolveOwner: s.resolveOwner,
-		Guards:       module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	})
 }
 
@@ -98,7 +97,6 @@ func (s *Server) remotesModule() *remotesmod.Module {
 			return s.remotes
 		},
 		Access: func() remotesmod.Access { return s.remoteAccess },
-		Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	}
 	if s.stateDB != nil {
 		d.Identity = s.stateDB // untyped nil otherwise
@@ -130,7 +128,6 @@ func (s *Server) projectForgeModule() *projectforge.Module {
 				return ok
 			},
 			Sessions: s.sessions,
-			Guards:   module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		}
 		if s.stateDB != nil {
 			d.Store = s.stateDB // untyped nil otherwise
@@ -178,7 +175,6 @@ func (s *Server) newFactoryModule(svc factorymod.Service) *factorymod.Module {
 		OpenCodeAuth:   func() ocapi.Auth { return s.openCodeAuth },
 		MCPURL:         s.mcpServerURL,
 		CreatePlatform: s.createPlatform,
-		Guards:         module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	})
 }
 
@@ -193,7 +189,6 @@ func (s *Server) sharingModule() *sharing.Module {
 			Platform:    func(id platforms.ID) (platforms.Platform, bool) { return s.registry.Get(id) },
 			RelayURL:    func() string { return s.relayURL },
 			RelaySource: func() string { return s.relaySource },
-			Guards:      module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
 }
@@ -221,7 +216,6 @@ func (s *Server) newInboxModule(remotes func() inbox.Remotes) *inbox.Module {
 			s.autoapproveModule().EnsurePending(adapter, sessionID, prompts)
 		},
 		SessionTitle: s.sessionTitle,
-		Guards:       module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		Broadcast:    s.broadcastGlobalEvent,
 	})
 }
@@ -252,7 +246,6 @@ func (s *Server) artifactsModule() *artifacts.Module {
 			ResolveProject: factoryProjectResolver{s}.ResolveLocalProject,
 			Projects:       func(ctx context.Context) ([]db.ProjectStats, error) { return s.router().Local().Projects(ctx) },
 			Descendants:    s.sessionDescendants,
-			Guards:         module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 			FileAuth:       s.requireArtifactFileAuth,
 			SignFileURL:    s.signArtifactFileURL,
 			PublicURL:      s.publicURL,
@@ -377,7 +370,6 @@ func (s *Server) pluginsModule() *pluginsmod.Module {
 			SessionURL:       s.publicSessionURL,
 			ProjectDirectory: s.projectDirectory(),
 			LiveCatalog:      s.liveCatalog,
-			Guards:           module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
 }

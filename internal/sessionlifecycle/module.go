@@ -46,7 +46,6 @@ type Deps struct {
 	Privileged          func(*http.Request) bool
 	Router              func() *hostsvc.Router
 	UploadReadTimeout   func() time.Duration
-	Guards              module.Guards
 }
 
 type Module struct{ d Deps }
@@ -77,6 +76,6 @@ func (m *Module) Routes(r module.Router) {
 		{"GET /api/session/{id}/permission-rules", m.HandleSessionPermissionRulesGet},
 		{"PUT /api/session/{id}/permission-rules", m.HandleSessionPermissionRulesSet},
 	} {
-		r.Handle(route.pattern, m.d.Guards.Auth(route.handler))
+		r.Handle(route.pattern, route.handler)
 	}
 }

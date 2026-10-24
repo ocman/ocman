@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/sessionlifecycle"
 )
@@ -40,6 +39,5 @@ func (s *Server) sessionLifecycleModule() *sessionlifecycle.Module {
 		Privileged:        s.isPrivilegedRequest,
 		Router:            s.router,
 		UploadReadTimeout: func() time.Duration { return uploadReadTimeout },
-		Guards:            module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	})
 }

@@ -6,7 +6,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
@@ -33,7 +32,6 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 		Session:        s.resolvePlatformForSession,
 		DefaultEnabled: func() bool { return s.autoApproveDefault },
 		OpenCode:       s.openCodeEnabled,
-		Guards:         module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	})
 }
 

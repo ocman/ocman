@@ -14,16 +14,10 @@ import (
 
 	"filippo.io/age"
 
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
-
-type testRouter struct{ *http.ServeMux }
-
-func (r testRouter) Handle(p string, h http.HandlerFunc)       { r.HandleFunc(p, h) }
-func (r testRouter) Local(p string, h http.HandlerFunc)        { r.HandleFunc(p, h) }
-func (r testRouter) Setting(p string, h http.HandlerFunc)      { r.HandleFunc(p, h) }
-func (r testRouter) LocalSetting(p string, h http.HandlerFunc) { r.HandleFunc(p, h) }
 
 type fakeRoutines struct{ runs atomic.Int32 }
 
@@ -51,9 +45,7 @@ func testModule(t *testing.T) (*Module, http.Handler) {
 	}
 	t.Cleanup(func() { _ = store.Close(); relayURL = "" })
 	m := NewModule(Deps{Store: store, Routines: &fakeRoutines{}, RelayURL: func() string { return relayURL }})
-	mux := http.NewServeMux()
-	m.Routes(testRouter{mux})
-	return m, mux
+	return m, moduletest.Mount(m)
 }
 
 func do(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {

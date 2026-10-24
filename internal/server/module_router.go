@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/module"
 )
 
 // moduleRouter mounts module routes behind the server's guards and applies
@@ -13,6 +15,10 @@ type moduleRouter struct {
 }
 
 func (r moduleRouter) Handle(pattern string, h http.HandlerFunc) {
+	r.mux.HandleFunc(pattern, r.sessionPath(pattern, r.s.requireAuth(h)))
+}
+
+func (r moduleRouter) Public(pattern string, h http.HandlerFunc) {
 	r.mux.HandleFunc(pattern, r.sessionPath(pattern, h))
 }
 
@@ -21,11 +27,15 @@ func (r moduleRouter) Local(pattern string, h http.HandlerFunc) {
 }
 
 func (r moduleRouter) Setting(pattern string, h http.HandlerFunc) {
-	r.mux.HandleFunc(pattern, r.sessionPath(pattern, r.s.settingsHandler(h)))
+	r.mux.HandleFunc(pattern, r.sessionPath(pattern, r.s.settingsHandler(r.s.requireAuth(h))))
 }
 
 func (r moduleRouter) LocalSetting(pattern string, h http.HandlerFunc) {
 	r.mux.HandleFunc(pattern, r.sessionPath(pattern, r.s.settingsHandler(r.s.requireLocalhost(h))))
+}
+
+func (r moduleRouter) Guards() module.Guards {
+	return module.Guards{Auth: r.s.requireAuth, Localhost: r.s.requireLocalhost}
 }
 
 func (r moduleRouter) sessionPath(pattern string, h http.HandlerFunc) http.HandlerFunc {

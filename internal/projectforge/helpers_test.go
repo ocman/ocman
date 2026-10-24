@@ -2,16 +2,13 @@ package projectforge
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/module"
 )
 
 func newTestModule() *Module {
-	pass := func(h http.HandlerFunc) http.HandlerFunc { return h }
-	return NewModule(Deps{Guards: module.Guards{Auth: pass, Localhost: pass}})
+	return NewModule(Deps{})
 }
 
 func githubUpstreams(root string) *hostsvc.ProjectUpstreams {

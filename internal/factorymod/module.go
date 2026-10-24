@@ -113,7 +113,6 @@ type Deps struct {
 	// CreatePlatform resolves a requested platform, else the model
 	// reference's, else the owner's default, into its compound ID and base.
 	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested, model string) (id, base string, err error)
-	Guards         module.Guards
 }
 
 // Module is the mounted Factory feature.

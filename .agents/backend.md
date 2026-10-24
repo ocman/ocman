@@ -47,8 +47,10 @@ module under `internal/module`, not a collection of `*Server` methods.
   routes live on their own mux so the SPA fallback cannot shadow that 405.
   Privileged host-control routes also use `requireLocalhost`, checking both the
   peer and browser origin.
-- Modules use supplied guards: `Router.Local`/`LocalSetting` for whole mounts,
-  or `Router.Handle` with `Deps.Guards` for mixed routes.
+- Module routes are guarded by the router: `Router.Handle`/`Setting` require a
+  login, `Router.Local`/`LocalSetting` are localhost-only. `Router.Public` is
+  for routes that are open by design or guard subroutes themselves with
+  `Router.Guards()`. Tests mount modules with `module/moduletest`.
 - Use `internal/httpx` for shared JSON, request-body, inert-file and platform
   error behavior. Do not make module responses diverge from server responses.
 

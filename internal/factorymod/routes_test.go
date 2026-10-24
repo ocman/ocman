@@ -8,15 +8,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 )
-
-type muxRouter struct{ *http.ServeMux }
-
-func (r muxRouter) Handle(pattern string, h http.HandlerFunc)       { r.HandleFunc(pattern, h) }
-func (r muxRouter) Local(pattern string, h http.HandlerFunc)        { r.HandleFunc(pattern, h) }
-func (r muxRouter) Setting(pattern string, h http.HandlerFunc)      { r.HandleFunc(pattern, h) }
-func (r muxRouter) LocalSetting(pattern string, h http.HandlerFunc) { r.HandleFunc(pattern, h) }
 
 type routeService struct {
 	Service
@@ -43,13 +36,11 @@ func (s *routeService) SetEpicPaused(_ context.Context, id string, paused bool) 
 func routeMux(t *testing.T, svc Service) (*http.ServeMux, *int) {
 	t.Helper()
 	local := 0
-	pass := func(h http.HandlerFunc) http.HandlerFunc { return h }
-	guards := module.Guards{Auth: pass, Localhost: func(h http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) { local++; h(w, r) }
-	}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", http.NotFound)
-	NewModule(Deps{Service: svc, Guards: guards}).Routes(muxRouter{mux})
+	NewModule(Deps{Service: svc}).Routes(moduletest.Router{Mux: mux, Localhost: func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) { local++; h(w, r) }
+	}})
 	return mux, &local
 }
 

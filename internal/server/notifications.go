@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/notifications"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -19,7 +18,6 @@ func (s *Server) notificationsModule() *notifications.Module {
 	return s.notificationsMod.get(func() *notifications.Module {
 		return notifications.New(notifications.Deps{
 			Store: s.stateDB, Snapshot: s.pushSnapshot,
-			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
 }

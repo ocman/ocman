@@ -5,7 +5,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/analytics"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/module"
 )
 
 // analyticsModule exists without either database: its routes then answer
@@ -25,7 +24,6 @@ func (s *Server) analyticsModule() *analytics.Module {
 				config, err := autoapprove.LoadJudgeEndpoint(ctx, s.stateDB)
 				return config.HostedTypeSafe(), err
 			},
-			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 		})
 	})
 }

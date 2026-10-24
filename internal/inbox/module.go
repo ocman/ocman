@@ -44,7 +44,6 @@ type Deps struct {
 	EnsurePending func(platforms.Platform, string, []platforms.LivePrompt)
 	// SessionTitle is a local session's title, "" when unknown.
 	SessionTitle func(ctx context.Context, sessionID string) string
-	Guards       module.Guards
 	Broadcast    func(event string, data []byte)
 }
 
@@ -62,7 +61,7 @@ func NewModule(deps Deps) *Module { return &Module{deps} }
 func (m *Module) Name() string { return "inbox" }
 
 func (m *Module) Routes(r module.Router) {
-	h := m.Guards.Auth(m.ServeHTTP)
+	h := m.ServeHTTP
 	r.Handle("/api/inbox", h)
 	r.Handle("/api/inbox/", h)
 }

@@ -15,10 +15,16 @@ import (
 
 type routeTestRouter struct {
 	module.Router
-	mux *http.ServeMux
+	mux  *http.ServeMux
+	auth func(http.HandlerFunc) http.HandlerFunc
 }
 
-func (r routeTestRouter) Handle(pattern string, h http.HandlerFunc) { r.mux.HandleFunc(pattern, h) }
+func (r routeTestRouter) Handle(pattern string, h http.HandlerFunc) {
+	if r.auth != nil {
+		h = r.auth(h)
+	}
+	r.mux.HandleFunc(pattern, h)
+}
 func (r routeTestRouter) Local(pattern string, _ http.HandlerFunc) {
 	r.mux.HandleFunc(pattern, func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "local guard", http.StatusForbidden)
@@ -45,16 +51,16 @@ var directRoutes = []string{
 func TestRoutesGuardsAndSessionResolution(t *testing.T) {
 	allow := false
 	resolved := 0
-	d := Deps{
-		Guards: module.Guards{Auth: func(next http.HandlerFunc) http.HandlerFunc {
-			return func(w http.ResponseWriter, r *http.Request) {
-				if !allow {
-					http.Error(w, "auth guard", http.StatusUnauthorized)
-					return
-				}
-				next(w, r)
+	auth := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !allow {
+				http.Error(w, "auth guard", http.StatusUnauthorized)
+				return
 			}
-		}},
+			next(w, r)
+		}
+	}
+	d := Deps{
 		Privileged: func(*http.Request) bool { return true },
 		WithSessionPath: func(w http.ResponseWriter, _ *http.Request, _ func(http.ResponseWriter, *http.Request, string, string)) {
 			resolved++
@@ -67,7 +73,7 @@ func TestRoutesGuardsAndSessionResolution(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	m := NewModule(d)
-	m.Routes(routeTestRouter{mux: mux})
+	m.Routes(routeTestRouter{mux: mux, auth: auth})
 	if m.Name() != "sessionlifecycle" {
 		t.Fatal(m.Name())
 	}
@@ -114,7 +120,6 @@ func TestRoutesGuardsAndSessionResolution(t *testing.T) {
 func TestRestartAndReloadRequirePrivilegeAfterAuth(t *testing.T) {
 	mux := http.NewServeMux()
 	NewModule(Deps{
-		Guards:     module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }},
 		Privileged: func(*http.Request) bool { return false },
 	}).Routes(routeTestRouter{mux: mux})
 	for _, action := range []string{"restart-opencode", "reload-opencode"} {
@@ -198,7 +203,6 @@ func TestActionDependencies(t *testing.T) {
 			}}
 			m := NewModule(Deps{
 				Sessions: func() Sessions { return current },
-				Guards:   module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }},
 				WithSessionPath: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
 					fn(w, r, r.PathValue("id"), tc.name)
 				},
@@ -247,7 +251,6 @@ func TestAbortOutlivesClientDisconnect(t *testing.T) {
 		Sessions: func() Sessions {
 			return actionTestSessions{call: func(c context.Context, _ string, _ any) error { got = c.Err(); return nil }}
 		},
-		Guards: module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }},
 		WithSessionPath: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
 			fn(w, r, r.PathValue("id"), "")
 		},

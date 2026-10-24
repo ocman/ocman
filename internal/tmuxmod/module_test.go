@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/NoUseFreak/ocman/internal/tmux"
@@ -40,8 +40,6 @@ func (h *fakeHost) EnsureRuntime(_ context.Context, _, dir string) (*hostsvc.Ens
 	return &hostsvc.EnsureRuntimeResult{Runtime: ocruntime.Instance{ID: "managed-1"}}, nil
 }
 
-func passthrough(h http.HandlerFunc) http.HandlerFunc { return h }
-
 func newTestModule(host *fakeHost, runner tmux.SwitchRunner) *Module {
 	return NewModule(Deps{
 		Local: func() hostsvc.Host { return host },
@@ -52,21 +50,17 @@ func newTestModule(host *fakeHost, runner tmux.SwitchRunner) *Module {
 			}
 			return host, true
 		},
-		Guards: module.Guards{Auth: passthrough, Localhost: passthrough},
 		Runner: runner,
 	})
 }
 
-type muxRouter struct{ mux *http.ServeMux }
-
-func (r muxRouter) Handle(p string, h http.HandlerFunc)       { r.mux.HandleFunc(p, h) }
-func (r muxRouter) Local(p string, h http.HandlerFunc)        { r.mux.HandleFunc(p, h) }
-func (r muxRouter) Setting(p string, h http.HandlerFunc)      { r.mux.HandleFunc(p, h) }
-func (r muxRouter) LocalSetting(p string, h http.HandlerFunc) { r.mux.HandleFunc(p, h) }
-
 func serve(m *Module, method, path, body string) *httptest.ResponseRecorder {
+	return serveWith(m, nil, method, path, body)
+}
+
+func serveWith(m *Module, local func(http.HandlerFunc) http.HandlerFunc, method, path, body string) *httptest.ResponseRecorder {
 	mux := http.NewServeMux()
-	m.Routes(muxRouter{mux})
+	m.Routes(moduletest.Router{Mux: mux, Localhost: local})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
 	return rec
@@ -75,12 +69,13 @@ func serve(m *Module, method, path, body string) *httptest.ResponseRecorder {
 // Every route sits behind the localhost guard, after the method check.
 func TestRoutesUseLocalhostGuardAfterMethod(t *testing.T) {
 	var guarded []string
-	m := NewModule(Deps{Guards: module.Guards{Localhost: func(http.HandlerFunc) http.HandlerFunc {
+	m := NewModule(Deps{})
+	local := func(http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			guarded = append(guarded, r.URL.Path)
 			http.Error(w, "forbidden", http.StatusForbidden)
 		}
-	}}})
+	}
 	routes := map[string]string{
 		"/api/tmux/clients":         http.MethodGet,
 		"/api/tmux/sessions":        http.MethodGet,
@@ -92,10 +87,10 @@ func TestRoutesUseLocalhostGuardAfterMethod(t *testing.T) {
 		if method == http.MethodPost {
 			wrong = http.MethodGet
 		}
-		if rec := serve(m, wrong, path, ""); rec.Code != http.StatusMethodNotAllowed {
+		if rec := serveWith(m, local, wrong, path, ""); rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s %s = %d, want 405", wrong, path, rec.Code)
 		}
-		if rec := serve(m, method, path, "{}"); rec.Code != http.StatusForbidden {
+		if rec := serveWith(m, local, method, path, "{}"); rec.Code != http.StatusForbidden {
 			t.Errorf("%s %s = %d, want the guard's 403", method, path, rec.Code)
 		}
 	}
@@ -106,7 +101,7 @@ func TestRoutesUseLocalhostGuardAfterMethod(t *testing.T) {
 
 func TestStatus_NoServerReportsAvailable(t *testing.T) {
 	installFakeTmux(t, "error connecting to /private/tmp/tmux-501/default (No such file or directory)")
-	m := NewModule(Deps{Local: func() hostsvc.Host { return tmuxErrHost{} }, Guards: module.Guards{Localhost: passthrough}})
+	m := NewModule(Deps{Local: func() hostsvc.Host { return tmuxErrHost{} }})
 
 	for _, path := range []string{"/api/tmux/sessions", "/api/tmux/clients"} {
 		var got map[string]json.RawMessage
@@ -127,7 +122,7 @@ func TestStatus_NoServerReportsAvailable(t *testing.T) {
 
 func TestStatus_ConnectionPermissionErrorReportsUnavailable(t *testing.T) {
 	installFakeTmux(t, "error connecting to /private/tmp/tmux-501/default (Permission denied)")
-	m := NewModule(Deps{Local: func() hostsvc.Host { return tmuxErrHost{} }, Guards: module.Guards{Localhost: passthrough}})
+	m := NewModule(Deps{Local: func() hostsvc.Host { return tmuxErrHost{} }})
 
 	for _, path := range []string{"/api/tmux/sessions", "/api/tmux/clients"} {
 		var got struct{ Available bool }

@@ -15,21 +15,15 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/convevents"
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
-
-type muxRouter struct{ *http.ServeMux }
-
-func (r muxRouter) Handle(p string, h http.HandlerFunc)       { r.HandleFunc(p, h) }
-func (r muxRouter) Local(p string, h http.HandlerFunc)        { r.HandleFunc(p, h) }
-func (r muxRouter) Setting(p string, h http.HandlerFunc)      { r.HandleFunc(p, h) }
-func (r muxRouter) LocalSetting(p string, h http.HandlerFunc) { r.HandleFunc(p, h) }
 
 type streamFixture struct {
 	srv    *httptest.Server
 	frames chan string
 	authed atomic.Int32
+	traced atomic.Int32
 }
 
 func newStreamFixture(t *testing.T, fail error) *streamFixture {
@@ -57,15 +51,23 @@ func newStreamFixture(t *testing.T, fail error) *streamFixture {
 			}
 		},
 		Keepalive: func() time.Duration { return 20 * time.Millisecond },
-		Guards: module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc {
-			return func(w http.ResponseWriter, r *http.Request) { fx.authed.Add(1); h(w, r) }
-		}},
+		Trace: func(h http.HandlerFunc) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				if fx.authed.Load() == 0 {
+					panic("traced before the login guard")
+				}
+				fx.traced.Add(1)
+				h(w, r)
+			}
+		},
 	})
 	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	m.Routes(muxRouter{mux})
+	m.Routes(moduletest.Router{Mux: mux, Auth: func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) { fx.authed.Add(1); h(w, r) }
+	}})
 	fx.srv = httptest.NewServer(mux)
 	t.Cleanup(func() {
 		fx.srv.CloseClientConnections()
@@ -139,7 +141,7 @@ func TestStreamEndpointServesHelloLiveAndResume(t *testing.T) {
 	if c.resp.StatusCode != http.StatusOK || c.resp.Header.Get("Content-Type") != "text/event-stream" {
 		t.Fatalf("status %d, content type %q", c.resp.StatusCode, c.resp.Header.Get("Content-Type"))
 	}
-	if fx.authed.Load() != 1 {
+	if fx.authed.Load() != 1 || fx.traced.Load() != 1 {
 		t.Fatal("the stream route must be behind the auth guard")
 	}
 	id, hello := c.nextOCE(t)

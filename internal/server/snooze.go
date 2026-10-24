@@ -1,7 +1,6 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/snooze"
 )
 
@@ -11,6 +10,5 @@ func (s *Server) snoozeModule() *snooze.Module {
 		Store:     s.stateDB,
 		Validate:  s.validateStateRequest,
 		Broadcast: s.broadcastGlobalEvent,
-		Guards:    module.Guards{Auth: s.requireAuth},
 	})
 }

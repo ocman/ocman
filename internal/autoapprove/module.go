@@ -29,7 +29,6 @@ type ModuleDeps struct {
 	// OpenCode reports whether this machine runs OpenCode; without it the
 	// headless watcher and model discovery stay off. Nil means enabled.
 	OpenCode func() bool
-	Guards   module.Guards
 }
 
 // Module owns the auto-approve routes, the judge settings, the judge delay
@@ -61,17 +60,16 @@ func (m *Module) Service() *Service { return m.svc }
 // Routes are more specific than the server's /api/session/ dispatcher, so
 // the mux sends the session routes here.
 func (m *Module) Routes(r module.Router) {
-	auth := m.Guards.Auth
-	r.Handle("GET /api/session/{id}/auto-approve", auth(m.withSession(m.handleAutoApproveGet)))
-	r.Handle("POST /api/session/{id}/auto-approve", auth(m.withSession(m.handleAutoApproveSet)))
-	r.Handle("GET /api/session/{id}/approved-permissions", auth(m.withSession(m.handleApprovedPermissions)))
-	r.Handle("GET /api/session/{id}/permission-policy", auth(m.withSession(m.handleManualPolicy)))
-	r.Handle("PUT /api/session/{id}/permission-policy", auth(m.withSession(m.handleManualPolicy)))
-	r.Setting("/api/settings/prompt-sections", auth(m.handlePromptSections))
-	r.Setting("/api/settings/judge-delay", auth(m.handleJudgeDelay))
-	r.Setting("/api/settings/judge-model", auth(m.handleJudgeModel))
-	r.LocalSetting("/api/settings/judge-endpoint", auth(m.handleJudgeEndpoint))
-	r.Handle("GET /api/settings/judge-model/options", auth(m.handleJudgeModelOptions))
+	r.Handle("GET /api/session/{id}/auto-approve", m.withSession(m.handleAutoApproveGet))
+	r.Handle("POST /api/session/{id}/auto-approve", m.withSession(m.handleAutoApproveSet))
+	r.Handle("GET /api/session/{id}/approved-permissions", m.withSession(m.handleApprovedPermissions))
+	r.Handle("GET /api/session/{id}/permission-policy", m.withSession(m.handleManualPolicy))
+	r.Handle("PUT /api/session/{id}/permission-policy", m.withSession(m.handleManualPolicy))
+	r.Setting("/api/settings/prompt-sections", m.handlePromptSections)
+	r.Setting("/api/settings/judge-delay", m.handleJudgeDelay)
+	r.Setting("/api/settings/judge-model", m.handleJudgeModel)
+	r.LocalSetting("/api/settings/judge-endpoint", m.handleJudgeEndpoint)
+	r.Handle("GET /api/settings/judge-model/options", m.handleJudgeModelOptions)
 }
 
 // Start seeds the cached judge delay so the first permission event has it

@@ -136,7 +136,11 @@ func TestArtifactMCPSignedURLs(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: srv.auth.signToken(time.Now().Add(time.Hour))})
 	remote := httptest.NewRecorder()
 	req.RemoteAddr = "10.0.0.1:1"
-	srv.artifactsModule().ServeHTTP(remote, req)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux.ServeHTTP(remote, req)
 	if remote.Code != http.StatusForbidden {
 		t.Fatalf("non-local delete = %d", remote.Code)
 	}

@@ -48,7 +48,6 @@ type Deps struct {
 	PublicURL func(path string) string
 	// Forges returns the hub's forge credentials; nil means none.
 	Forges func() Forges
-	Guards module.Guards
 
 	// Test seams: extra providers/resolvers and the provider HTTP client
 	// (nil = previewauth's default).
@@ -71,9 +70,8 @@ func (m *Module) Name() string { return "previews" }
 // Routes keeps the method check outside the auth guard, as the server's
 // method-pattern routes do, so a wrong method is 405 for every caller.
 func (m *Module) Routes(r module.Router) {
-	auth := m.Guards.Auth
-	guard := func(h http.HandlerFunc) http.HandlerFunc { return auth(m.withStore(h)) }
-	r.Handle("GET /api/integrations/status", auth(m.handleIntegrationsStatus))
+	guard := m.withStore
+	r.Handle("GET /api/integrations/status", m.handleIntegrationsStatus)
 	// Machine credentials for private previews (auth.go).
 	r.Handle("GET /api/previews/providers", guard(m.handlePreviewProviders))
 	r.Handle("POST /api/previews/connect", guard(m.handlePreviewConnect))
@@ -85,7 +83,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("POST /api/previews/apps/save", guard(m.handleSavePreviewApp))
 	r.Handle("POST /api/previews/apps/remove", guard(m.handleRemovePreviewApp))
 	r.Handle("GET "+previewCallback, guard(m.handlePreviewCallback))
-	r.Setting("/api/settings/link-preview-rules", auth(m.withStore(m.handleLinkPreviewRules)))
+	r.Setting("/api/settings/link-preview-rules", m.withStore(m.handleLinkPreviewRules))
 }
 
 func (m *Module) withStore(h http.HandlerFunc) http.HandlerFunc {

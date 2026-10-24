@@ -14,6 +14,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -40,21 +41,14 @@ func realManager(t *testing.T, st *state.DB) *remote.Manager {
 
 func pass(h http.HandlerFunc) http.HandlerFunc { return h }
 
-func mux(d Deps) *http.ServeMux {
-	if d.Guards.Auth == nil {
-		d.Guards = module.Guards{Auth: pass, Localhost: pass}
+func mux(d Deps, guards ...module.Guards) *http.ServeMux {
+	r := moduletest.Router{Mux: http.NewServeMux()}
+	if len(guards) > 0 {
+		r.Auth, r.Localhost = guards[0].Auth, guards[0].Localhost
 	}
-	m := http.NewServeMux()
-	NewModule(d).Routes(muxRouter{m})
-	return m
+	NewModule(d).Routes(r)
+	return r.Mux
 }
-
-type muxRouter struct{ m *http.ServeMux }
-
-func (r muxRouter) Handle(p string, h http.HandlerFunc)       { r.m.HandleFunc(p, h) }
-func (r muxRouter) Local(p string, h http.HandlerFunc)        { r.m.HandleFunc(p, h) }
-func (r muxRouter) Setting(p string, h http.HandlerFunc)      { r.m.HandleFunc(p, h) }
-func (r muxRouter) LocalSetting(p string, h http.HandlerFunc) { r.m.HandleFunc(p, h) }
 
 func do(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -90,7 +84,7 @@ func TestRemoteCRUDIsLocalhostGuarded(t *testing.T) {
 	deny := func(http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) }
 	}
-	h := mux(Deps{Manager: managerOf(realManager(t, openStore(t))), Guards: module.Guards{Auth: pass, Localhost: deny}})
+	h := mux(Deps{Manager: managerOf(realManager(t, openStore(t)))}, module.Guards{Auth: pass, Localhost: deny})
 	for _, c := range []struct{ method, path, body string }{
 		{http.MethodGet, "/api/remotes", ""},
 		{http.MethodPost, "/api/remotes", `{"address":"a:1","token":"t"}`},
@@ -258,7 +252,7 @@ func TestGuardsWrapEveryRoute(t *testing.T) {
 			}
 		}
 	}
-	h := mux(Deps{Guards: module.Guards{Auth: guard(&auth), Localhost: guard(&local)}})
+	h := mux(Deps{}, module.Guards{Auth: guard(&auth), Localhost: guard(&local)})
 	do(h, http.MethodGet, "/api/settings/remote-access", "")
 	do(h, http.MethodPost, "/api/settings/remote-access/reveal-token", "")
 	do(h, http.MethodGet, "/api/remotes", "")
@@ -271,7 +265,7 @@ func TestGuardsWrapEveryRoute(t *testing.T) {
 		t.Fatalf("localhost ran before auth: %v", local)
 	}
 	auth, local = nil, nil
-	h = mux(Deps{Guards: module.Guards{Auth: pass, Localhost: guard(&local)}})
+	h = mux(Deps{}, module.Guards{Auth: pass, Localhost: guard(&local)})
 	do(h, http.MethodPost, "/api/settings/remote-access/reveal-token", "")
 	do(h, http.MethodGet, "/api/settings/remote-access", "")
 	if len(local) != 1 || local[0] != "/api/settings/remote-access/reveal-token" {

@@ -6,17 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 )
 
 // serveGit serves r through the git module wired to this server, without
 // guards, as the composition tests called the former server handlers.
 // Guard placement is covered in gitmod and TestGitModuleRouteGuards.
 func (s *Server) serveGit(w http.ResponseWriter, r *http.Request) {
-	pass := func(h http.HandlerFunc) http.HandlerFunc { return h }
-	mux := http.NewServeMux()
-	s.newGitModule(module.Guards{Auth: pass, Localhost: pass}).Routes(moduleRouter{s: s, mux: mux})
-	mux.ServeHTTP(w, r)
+	moduletest.Mount(s.gitModule()).ServeHTTP(w, r)
 }
 
 func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request)     { s.serveGit(w, r) }

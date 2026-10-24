@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/filesystem"
-	"github.com/NoUseFreak/ocman/internal/module"
 )
 
 // filesystemModule exists without a state DB too: browsing and repository
@@ -12,9 +11,8 @@ import (
 func (s *Server) filesystemModule() *filesystem.Module {
 	return s.filesystemMod.get(func() *filesystem.Module {
 		return filesystem.NewModule(filesystem.Deps{
-			Store:  s.stateDB,
-			Owner:  s.repoFilesOwner,
-			Guards: module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
+			Store: s.stateDB,
+			Owner: s.repoFilesOwner,
 		})
 	})
 }

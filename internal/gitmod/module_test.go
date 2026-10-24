@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -81,10 +82,11 @@ type harness struct {
 	sent   []platforms.SendMessageRequest
 	sendTo string
 	m      *Module
+	guards module.Guards
 }
 
 func newHarness(guards module.Guards) *harness {
-	h := &harness{host: &fakeHost{}}
+	h := &harness{host: &fakeHost{}, guards: guards}
 	h.m = NewModule(Deps{
 		Owner: func(w http.ResponseWriter, _, remoteID string) (hostsvc.Host, bool) {
 			if remoteID != "" && remoteID != "local" && remoteID != "rem1" {
@@ -110,7 +112,6 @@ func newHarness(guards module.Guards) *harness {
 			h.sent = append(h.sent, req)
 			return nil
 		},
-		Guards: guards,
 	})
 	return h
 }
@@ -119,18 +120,11 @@ func pass(h http.HandlerFunc) http.HandlerFunc { return h }
 
 func (h *harness) serve(method, target, body string) *httptest.ResponseRecorder {
 	mux := http.NewServeMux()
-	h.m.Routes(testRouter{mux})
+	h.m.Routes(moduletest.Router{Mux: mux, Auth: h.guards.Auth, Localhost: h.guards.Localhost})
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(method, target, strings.NewReader(body)))
 	return rr
 }
-
-type testRouter struct{ mux *http.ServeMux }
-
-func (r testRouter) Handle(p string, h http.HandlerFunc)       { r.mux.HandleFunc(p, h) }
-func (r testRouter) Local(p string, h http.HandlerFunc)        { panic("unused") }
-func (r testRouter) Setting(p string, h http.HandlerFunc)      { panic("unused") }
-func (r testRouter) LocalSetting(p string, h http.HandlerFunc) { panic("unused") }
 
 // Reads need a login, mutations need localhost, and a wrong method is 405
 // before either guard runs.

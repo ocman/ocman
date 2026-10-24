@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -27,7 +26,6 @@ func TestBackgroundTaskStopRoutesToOwner(t *testing.T) {
 					return nil
 				}}
 			},
-			Guards: module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }},
 			WithSessionPath: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
 				fn(w, r, r.PathValue("id"), "")
 			},

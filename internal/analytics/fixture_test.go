@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/conversationingest"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2"
@@ -91,32 +92,14 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-func passthrough(h http.HandlerFunc) http.HandlerFunc { return h }
+func newTestModule(deps Deps) *Module { return NewModule(deps) }
 
-// newTestModule fills in passthrough guards.
-func newTestModule(deps Deps) *Module {
-	if deps.Guards.Auth == nil {
-		deps.Guards.Auth = passthrough
-	}
-	if deps.Guards.Localhost == nil {
-		deps.Guards.Localhost = passthrough
-	}
-	return NewModule(deps)
-}
+func routes(m *Module) *http.ServeMux { return moduletest.Mount(m) }
 
-type muxRouter struct{ mux *http.ServeMux }
-
-func (r muxRouter) Handle(p string, h http.HandlerFunc)       { r.mux.HandleFunc(p, h) }
-func (r muxRouter) Local(p string, h http.HandlerFunc)        { r.mux.HandleFunc(p, h) }
-func (r muxRouter) Setting(p string, h http.HandlerFunc)      { r.mux.HandleFunc(p, h) }
-func (r muxRouter) LocalSetting(p string, h http.HandlerFunc) { r.mux.HandleFunc(p, h) }
-
-var _ module.Router = muxRouter{}
-
-func routes(m *Module) *http.ServeMux {
-	mux := http.NewServeMux()
-	m.Routes(muxRouter{mux})
-	return mux
+func routesWith(m *Module, g module.Guards) *http.ServeMux {
+	r := moduletest.Router{Mux: http.NewServeMux(), Auth: g.Auth, Localhost: g.Localhost}
+	m.Routes(r)
+	return r.Mux
 }
 
 // serve sends one request through the module's routes.

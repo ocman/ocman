@@ -39,7 +39,6 @@ type Deps struct {
 	Version func() string
 	// TypeSafeConfigured reports a keyed, hosted reviewer at request time.
 	TypeSafeConfigured func(context.Context) (bool, error)
-	Guards             module.Guards
 }
 
 // Module owns the analytics routes, their caches and refresh workers.
@@ -73,27 +72,26 @@ func (m *Module) Name() string { return "analytics" }
 // Routes keeps each route's method check ahead of its guard, as before the
 // extraction.
 func (m *Module) Routes(r module.Router) {
-	auth, local := m.deps.Guards.Auth, m.deps.Guards.Localhost
-	data := func(h http.HandlerFunc) http.HandlerFunc { return auth(m.analyticsRoute(h)) }
+	data := m.analyticsRoute
 	r.Handle("GET /api/stats", data(m.handleStats))
 	r.Handle("GET /api/analytics/overview", data(m.handleAnalyticsOverview))
-	r.Handle("GET /api/analytics/history-health", auth(m.handleHistoryHealth))
+	r.Handle("GET /api/analytics/history-health", m.handleHistoryHealth)
 	r.Handle("GET /api/analytics/session-concurrency", data(m.handleSessionConcurrency))
-	r.Handle("GET /api/analytics/database-sizes", auth(m.handleDatabaseSizes))
-	r.Handle("GET /api/analytics/ui-usage", auth(m.handleUIUsageDays))
+	r.Handle("GET /api/analytics/database-sizes", m.handleDatabaseSizes)
+	r.Handle("GET /api/analytics/ui-usage", m.handleUIUsageDays)
 	r.Handle("GET /api/analytics/agent-run-hours", data(m.handleAgentRunHours))
-	r.Handle("POST /api/ui-usage", auth(m.handleUIUsage))
-	r.Handle("GET /api/subscription-usage", local(m.handleSubscriptionUsage))
-	r.Handle("GET /api/provider-usage", local(m.handleSubscriptionUsage))
+	r.Handle("POST /api/ui-usage", m.handleUIUsage)
+	r.Local("GET /api/subscription-usage", m.handleSubscriptionUsage)
+	r.Local("GET /api/provider-usage", m.handleSubscriptionUsage)
 	r.Handle("GET /api/metrics", data(m.handleMetrics))
 	r.Handle("GET /api/metrics/performance", data(m.handleMetricsPerformance))
 	r.Handle("GET /api/metric-logs", data(m.handleMetricLogs))
-	r.Handle("GET /api/permission-stats", auth(m.handlePermissionStats))
+	r.Handle("GET /api/permission-stats", m.handlePermissionStats)
 	r.Handle("GET /api/activity", data(m.handleActivity))
 	r.Handle("GET /api/models", data(m.handleModels))
 	r.Handle("GET /api/hourly", data(m.handleHourly))
 	r.Handle("GET /api/hourly-tokens", data(m.handleHourlyTokens))
-	r.Handle("POST /api/cost/calc", auth(m.handleCalcCost))
+	r.Handle("POST /api/cost/calc", m.handleCalcCost)
 }
 
 // Run samples database sizes, scans LLM turns (only with telemetry on) and

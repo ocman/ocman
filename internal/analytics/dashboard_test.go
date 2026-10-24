@@ -140,7 +140,7 @@ func TestRoutesUseServerGuards(t *testing.T) {
 			}
 		}
 	}
-	mux := routes(NewModule(Deps{Guards: module.Guards{Auth: deny(&auth), Localhost: deny(&local)}}))
+	mux := routesWith(NewModule(Deps{}), module.Guards{Auth: deny(&auth), Localhost: deny(&local)})
 	for _, path := range []string{"/api/stats", "/api/analytics/overview", "/api/metrics", "/api/permission-stats", "/api/analytics/ui-usage"} {
 		if rec := serve(mux, http.MethodGet, path, ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s = %d, want the auth guard's 401", path, rec.Code)

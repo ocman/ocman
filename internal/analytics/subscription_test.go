@@ -66,14 +66,14 @@ func TestSubscriptionUsageRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := newTestModule(Deps{Guards: module.Guards{Localhost: loopbackOnly}})
+	srv := newTestModule(Deps{})
 	srv.subscription = subscriptionUsageClient{
 		http:         http.DefaultClient,
 		authPath:     authPath,
 		openAIURL:    openAI.URL,
 		anthropicURL: anthropic.URL,
 	}
-	mux := routes(srv)
+	mux := routesWith(srv, module.Guards{Localhost: loopbackOnly})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/subscription-usage", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
@@ -153,7 +153,7 @@ func TestSubscriptionUsageRejectsMalformedAuthFile(t *testing.T) {
 
 	srv := newTestModule(Deps{})
 	srv.subscription.authPath = authPath
-	mux := routes(srv)
+	mux := routesWith(srv, module.Guards{Localhost: loopbackOnly})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/subscription-usage", nil)
 	req.RemoteAddr = "127.0.0.1:1234"

@@ -85,7 +85,7 @@ func (m *Module) handleGetControlAction(w http.ResponseWriter, r *http.Request) 
 
 // handleDecideControlAction serves POST confirm, which runs a proposal, and
 // POST dismiss, which drops it. Only a human click reaches here.
-func (m *Module) handleDecideControlAction(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleDecideControlAction(w http.ResponseWriter, r *http.Request, local func(http.HandlerFunc) http.HandlerFunc) {
 	if _, err := m.factoryControlStore(); err != nil {
 		WriteError(w, err)
 		return
@@ -95,7 +95,7 @@ func (m *Module) handleDecideControlAction(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	m.deps.Guards.Localhost(func(w http.ResponseWriter, r *http.Request) {
+	local(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			AcknowledgeLocalExecution bool `json:"acknowledgeLocalExecution"`
 		}

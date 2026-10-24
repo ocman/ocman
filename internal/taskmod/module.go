@@ -15,11 +15,10 @@ import (
 
 type Module struct {
 	manager *tasksvc.Manager
-	guards  module.Guards
 }
 
-func New(manager *tasksvc.Manager, guards module.Guards) *Module {
-	return &Module{manager: manager, guards: guards}
+func New(manager *tasksvc.Manager) *Module {
+	return &Module{manager: manager}
 }
 func (*Module) Name() string { return "background-tasks" }
 func (m *Module) Start(ctx context.Context) error {
@@ -34,8 +33,8 @@ func (m *Module) Start(ctx context.Context) error {
 func (m *Module) Run(ctx context.Context) { <-ctx.Done(); m.manager.Stop() }
 
 func (m *Module) Routes(router module.Router) {
-	router.Handle("GET /api/background-tasks", m.guards.Auth(m.list))
-	router.Handle("GET /api/background-tasks/{id}", m.guards.Auth(m.get))
+	router.Handle("GET /api/background-tasks", m.list)
+	router.Handle("GET /api/background-tasks/{id}", m.get)
 }
 
 func (m *Module) local(w http.ResponseWriter, r *http.Request) bool {

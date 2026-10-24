@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -27,7 +27,7 @@ func fixture(t *testing.T) *Module {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return New(Deps{Store: db, Snapshot: func(context.Context) ([]Candidate, error) { return nil, nil }, Guards: module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }}})
+	return New(Deps{Store: db, Snapshot: func(context.Context) ([]Candidate, error) { return nil, nil }})
 }
 
 func subscription(t *testing.T) webpush.Subscription {
@@ -313,18 +313,9 @@ func TestDeviceLimitAllowsExistingDeviceRefresh(t *testing.T) {
 	}
 }
 
-type testRouter struct {
-	module.Router
-	mux *http.ServeMux
-}
-
-func (r testRouter) Handle(pattern string, h http.HandlerFunc)  { r.mux.HandleFunc(pattern, h) }
-func (r testRouter) Setting(pattern string, h http.HandlerFunc) { r.Handle(pattern, h) }
-
 func TestModuleRoutesEnforceMethodAndAuth(t *testing.T) {
 	m := fixture(t)
-	mux := http.NewServeMux()
-	m.d.Guards.Auth = func(h http.HandlerFunc) http.HandlerFunc {
+	auth := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("Authorization") == "" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -333,7 +324,8 @@ func TestModuleRoutesEnforceMethodAndAuth(t *testing.T) {
 			h(w, r)
 		}
 	}
-	m.Routes(testRouter{mux: mux})
+	mux := http.NewServeMux()
+	m.Routes(moduletest.Router{Mux: mux, Auth: auth})
 	if m.Name() != "notifications" {
 		t.Fatal(m.Name())
 	}

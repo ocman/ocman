@@ -30,7 +30,6 @@ type Candidate struct {
 type Deps struct {
 	Store    *state.DB
 	Snapshot func(context.Context) ([]Candidate, error)
-	Guards   module.Guards
 }
 
 type Module struct {
@@ -51,12 +50,12 @@ func New(d Deps) *Module {
 func (*Module) Name() string { return "notifications" }
 
 func (m *Module) Routes(r module.Router) {
-	r.Setting("GET /api/settings/notification-badge", m.d.Guards.Auth(m.badgeSettings))
-	r.Setting("POST /api/settings/notification-badge", m.d.Guards.Auth(m.badgeSettings))
-	r.Handle("GET /api/notifications/push-key", m.d.Guards.Auth(m.publicKey))
-	r.Handle("POST /api/notifications/subscribe", m.d.Guards.Auth(m.subscribe))
-	r.Handle("POST /api/notifications/subscription", m.d.Guards.Auth(m.subscriptionStatus))
-	r.Handle("POST /api/notifications/unsubscribe", m.d.Guards.Auth(m.unsubscribe))
+	r.Setting("GET /api/settings/notification-badge", m.badgeSettings)
+	r.Setting("POST /api/settings/notification-badge", m.badgeSettings)
+	r.Handle("GET /api/notifications/push-key", m.publicKey)
+	r.Handle("POST /api/notifications/subscribe", m.subscribe)
+	r.Handle("POST /api/notifications/subscription", m.subscriptionStatus)
+	r.Handle("POST /api/notifications/unsubscribe", m.unsubscribe)
 }
 
 func (m *Module) Run(ctx context.Context) {

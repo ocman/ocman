@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
@@ -18,7 +18,7 @@ func TestActiveCounterIncludesQueuedAndRunningWithoutListLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	m := New(tasksvc.New(d, 1), module.Guards{Auth: func(h http.HandlerFunc) http.HandlerFunc { return h }})
+	m := New(tasksvc.New(d, 1))
 	// The counter reads scalar status, not task JSON or a capped task list.
 	_, err = d.SQL().Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<205)
 	 INSERT INTO background_task SELECT printf('queued-%d',x),'test','','queued',x,'{}' FROM n;
@@ -27,7 +27,7 @@ func TestActiveCounterIncludesQueuedAndRunningWithoutListLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	m.Routes(router{mux})
+	m.Routes(moduletest.Router{Mux: mux})
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/background-tasks?view=active-count", nil))
 	var got struct {

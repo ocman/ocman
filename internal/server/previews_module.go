@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/previews"
 )
 
@@ -27,7 +26,6 @@ func (s *Server) previewDeps() previews.Deps {
 		},
 		PublicURL: s.publicURL,
 		Forges:    s.previewForges,
-		Guards:    module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost},
 	}
 }
 

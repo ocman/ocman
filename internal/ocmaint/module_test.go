@@ -13,19 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
-
-// routeMux collects a module's routes on a plain mux.
-type routeMux struct{ *http.ServeMux }
-
-func (r routeMux) Handle(p string, h http.HandlerFunc) { r.HandleFunc(p, h) }
-func (r routeMux) Local(p string, h http.HandlerFunc) {
-	panic("maintenance guards its routes itself: " + p)
-}
-func (r routeMux) Setting(p string, h http.HandlerFunc)      { panic("not a setting: " + p) }
-func (r routeMux) LocalSetting(p string, h http.HandlerFunc) { panic("not a setting: " + p) }
 
 // headerGuard rejects a request lacking header with code.
 func headerGuard(header string, code int) func(http.HandlerFunc) http.HandlerFunc {
@@ -42,10 +32,11 @@ func headerGuard(header string, code int) func(http.HandlerFunc) http.HandlerFun
 
 func mount(r *Runner) *http.ServeMux {
 	mux := http.NewServeMux()
-	NewModule(r, module.Guards{
+	NewModule(r).Routes(moduletest.Router{
+		Mux:       mux,
 		Auth:      headerGuard("X-Auth", http.StatusUnauthorized),
 		Localhost: headerGuard("X-Local", http.StatusForbidden),
-	}).Routes(routeMux{mux})
+	})
 	return mux
 }
 
@@ -134,7 +125,7 @@ func TestModuleStatus(t *testing.T) {
 
 func TestModuleActionErrors(t *testing.T) {
 	r := newRunner(t, &fakeHost{}, filepath.Join(t.TempDir(), "opencode.db"), 1<<50)
-	m := NewModule(r, module.Guards{})
+	m := NewModule(r)
 	post := func(do func(*Runner) error) int {
 		rec := httptest.NewRecorder()
 		m.action(do)(rec, httptest.NewRequest(http.MethodPost, "/", nil))
@@ -183,7 +174,7 @@ func TestModuleRunJoinsRunningJob(t *testing.T) {
 		<-release
 		return stop(ctx, root)
 	}
-	m := NewModule(r, module.Guards{})
+	m := NewModule(r)
 	if err := r.Cleanup(); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +210,7 @@ func TestModuleRunJoinsRunningJob(t *testing.T) {
 	if err := r.Cleanup(); !errors.Is(err, ErrShutdown) {
 		t.Errorf("cleanup after shutdown: %v, want ErrShutdown", err)
 	}
-	if err := NewModule(nil, module.Guards{}).LaunchBlocked(); err != nil {
+	if err := NewModule(nil).LaunchBlocked(); err != nil {
 		t.Errorf("unavailable module blocks launches: %v", err)
 	}
 }
@@ -227,7 +218,7 @@ func TestModuleRunJoinsRunningJob(t *testing.T) {
 func TestModuleRunWithoutRunner(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	NewModule(nil, module.Guards{}).Run(ctx) // must not block or panic
+	NewModule(nil).Run(ctx) // must not block or panic
 }
 
 func TestModuleCleanupRestoreDeleteRoutes(t *testing.T) {

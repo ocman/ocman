@@ -71,7 +71,6 @@ type Deps struct {
 	// LiveCatalog is the directory catalog of a running local instance, or
 	// nil when none answers live; nil disables launch-time catalogs.
 	LiveCatalog func(ctx context.Context, directory string) *platforms.DirectoryCatalog
-	Guards      module.Guards
 }
 
 // Module is the mounted plugin feature. mu is the lifecycle lock: it is
@@ -136,23 +135,23 @@ func NewModule(deps Deps) *Module {
 func (m *Module) Name() string { return "Plugins" }
 
 func (m *Module) Routes(r module.Router) {
-	auth, local := m.deps.Guards.Auth, m.deps.Guards.Localhost
-	r.Handle("GET /api/plugins", auth(m.handlePluginCatalog))
-	r.Handle("GET /api/plugins/discovery", auth(m.handlePluginDiscovery))
-	r.Handle("POST /api/plugins/rescan", auth(local(m.handlePluginRescan)))
-	r.Handle("POST /api/plugins/project-catalog", auth(local(m.handlePluginProjectCatalog)))
+	local := r.Guards().Localhost
+	r.Handle("GET /api/plugins", m.handlePluginCatalog)
+	r.Handle("GET /api/plugins/discovery", m.handlePluginDiscovery)
+	r.Handle("POST /api/plugins/rescan", local(m.handlePluginRescan))
+	r.Handle("POST /api/plugins/project-catalog", local(m.handlePluginProjectCatalog))
 	m.managementRoutes(r)
-	r.Handle("GET /api/plugins/actions", auth(m.handlePluginActions))
-	r.Handle("POST /api/plugins/actions/invoke", auth(m.handlePluginActionInvoke))
-	r.Handle("GET /api/plugins/actions/artifact", auth(m.handlePluginActionArtifact))
-	r.Handle("GET /api/plugins/panes", auth(m.handlePluginPanes))
-	r.Handle("GET /api/plugins/pages", auth(m.handlePluginPages))
-	r.Handle("POST /api/plugins/pages/call", auth(m.handlePluginPage))
-	r.Handle("GET /api/plugins/panes/read", auth(m.handlePluginPaneRead))
+	r.Handle("GET /api/plugins/actions", m.handlePluginActions)
+	r.Handle("POST /api/plugins/actions/invoke", m.handlePluginActionInvoke)
+	r.Handle("GET /api/plugins/actions/artifact", m.handlePluginActionArtifact)
+	r.Handle("GET /api/plugins/panes", m.handlePluginPanes)
+	r.Handle("GET /api/plugins/pages", m.handlePluginPages)
+	r.Handle("POST /api/plugins/pages/call", m.handlePluginPage)
+	r.Handle("GET /api/plugins/panes/read", m.handlePluginPaneRead)
 	// Profiles are Settings data (normal auth, like the other settings rows):
 	// they only take effect when an approved session.v1 plugin names one.
-	r.Handle("/api/permission-profiles", auth(m.handlePermissionProfiles))
-	r.Handle("/api/permission-profiles/", auth(m.handlePermissionProfiles))
+	r.Handle("/api/permission-profiles", m.handlePermissionProfiles)
+	r.Handle("/api/permission-profiles/", m.handlePermissionProfiles)
 }
 
 // Bind sets the lifetime context plugin processes run under. Start calls

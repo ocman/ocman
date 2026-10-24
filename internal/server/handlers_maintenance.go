@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -37,7 +36,7 @@ func (s *Server) WithOpenCodeDBPath(path string) *Server {
 		},
 		Holders:   ocmaint.LsofHolders,
 		FreeBytes: ocmaint.FreeBytes,
-	}), module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost})
+	}))
 	return s
 }
 
@@ -45,7 +44,7 @@ func (s *Server) WithOpenCodeDBPath(path string) *Server {
 // WithOpenCodeDBPath configured it.
 func (s *Server) maintenanceModule() *ocmaint.Module {
 	if s.maintMod == nil {
-		return ocmaint.NewModule(nil, module.Guards{Auth: s.requireAuth, Localhost: s.requireLocalhost})
+		return ocmaint.NewModule(nil)
 	}
 	return s.maintMod
 }
