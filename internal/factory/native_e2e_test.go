@@ -20,11 +20,7 @@ func (approvalListErrorStore) ListFactoryIssues(context.Context, string) ([]mode
 func TestApprovalRetriesAfterMaterializationFailure(t *testing.T) {
 	for _, failure := range []string{"list", "materialize"} {
 		t.Run(failure, func(t *testing.T) {
-			db, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
+			db := statetest.Open(t)
 			launcher := &fakeImplementationLauncher{}
 			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			epic := createPouredWorkEpic(t, svc, "Retry approval")
@@ -115,11 +111,7 @@ func TestNativeFactoryFlowPersistsAndDispatchesOnlyApprovedWork(t *testing.T) {
 	})
 
 	t.Run("rejected proposal creates no implementation", func(t *testing.T) {
-		db, err := state.Open(statetest.Path(t))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = db.Close() })
+		db := statetest.Open(t)
 		implementation := &fakeImplementationLauncher{}
 		svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, implementation)
 		epic := createPouredWorkEpic(t, svc, "Reject Factory")

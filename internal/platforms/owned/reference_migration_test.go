@@ -11,11 +11,7 @@ import (
 )
 
 func TestOfflineReferenceQuarantineRetainsRecordsWithoutMintingRemoteSessionIDs(t *testing.T) {
-	db, err := state.Open(statetest.Path(t, ReferenceSchema), ReferenceSchema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, ReferenceSchema)
 	store, err := NewReferences(db)
 	if err != nil {
 		t.Fatal(err)
@@ -71,11 +67,7 @@ func TestOfflineReferenceQuarantineRetainsRecordsWithoutMintingRemoteSessionIDs(
 }
 
 func TestUnattributedLegacyStateIsQuarantinedWithoutGuessingLocalOwner(t *testing.T) {
-	db, err := state.Open(statetest.Path(t, ReferenceSchema), ReferenceSchema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, ReferenceSchema)
 	store, err := NewReferences(db)
 	if err != nil {
 		t.Fatal(err)

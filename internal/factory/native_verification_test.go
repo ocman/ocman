@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -237,11 +236,7 @@ func (c *recordingChecker) NotifyImplementationSession(_ context.Context, _ Plan
 }
 
 func TestWorkflowVerificationCommandsGateCompletion(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &recordingChecker{fakeImplementationLauncher: &fakeImplementationLauncher{store: db}, notified: make(chan string, 1)}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	source := strings.Replace(tracerWorkflowSource, "  verify:\n    kind: verification\n", "  verify:\n    kind: verification\n    config:\n      commands: [make test]\n", 1)

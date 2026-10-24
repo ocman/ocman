@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -193,11 +192,7 @@ func TestIssueBranchName_VariousTitles(t *testing.T) {
 
 func newStoreModule(t *testing.T) *Module {
 	t.Helper()
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	m := newTestModule()
 	m.Store = store
 	return m

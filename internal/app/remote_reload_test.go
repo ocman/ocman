@@ -35,11 +35,7 @@ func (p remoteReloadPlatform) ProxyEvents(ctx context.Context, _ string, w io.Wr
 }
 
 func TestRemoteStreamStopsWithComposition(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	registry := platforms.NewRegistry()
 	p := remoteReloadPlatform{started: make(chan struct{}), exited: make(chan struct{})}
 	registry.Register(p)

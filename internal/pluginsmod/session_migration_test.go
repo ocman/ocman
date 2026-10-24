@@ -116,11 +116,7 @@ func TestPluginSessionMigrationPreservesReceiptsOutboxAndUnknownOwners(t *testin
 }
 
 func TestPluginSessionMigrationRollsBackConflictingClaims(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, Schema)
 	d := NewStore(core)
 	for _, id := range []string{"one", "two"} {
 		if err := d.LinkPluginSession(t.Context(), "test", id, id); err != nil {
@@ -144,11 +140,7 @@ func TestPluginSessionMigrationRollsBackConflictingClaims(t *testing.T) {
 var _ platforms.PluginSessionCompatibility = (*legacyPluginPlatform)(nil)
 
 func TestPluginSessionMigrationRetainsUniqueRunResultAndFingerprint(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, Schema)
 	d := NewStore(core)
 	if err := d.LinkPluginSession(t.Context(), "test", "native", "plugin"); err != nil {
 		t.Fatal(err)

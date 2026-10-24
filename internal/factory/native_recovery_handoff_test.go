@@ -19,11 +19,7 @@ func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
 			name = "success"
 		}
 		t.Run(name, func(t *testing.T) {
-			db, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
+			db := statetest.Open(t)
 			launcher := &fakeImplementationLauncher{}
 			store := &racingQueueStore{DB: db}
 			svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)

@@ -24,11 +24,7 @@ func (s *recoveryWakeStore) NextFactoryDispatchAt(ctx context.Context, interval 
 }
 
 func TestRecoveryCancellationDispatchesNextWorkWithoutIdleEvent(t *testing.T) {
-	d, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
+	d := statetest.Open(t)
 	store := &recoveryWakeStore{DB: d, settled: make(chan struct{}, 1)}
 	launcher := &fakeImplementationLauncher{store: d}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)

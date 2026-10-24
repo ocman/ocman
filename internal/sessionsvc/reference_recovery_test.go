@@ -6,7 +6,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -15,11 +14,7 @@ func TestReferenceRecoveryDelegatesProofsWithoutInventingMissingDependencies(t *
 	if _, err := s.RecoverSessionReferences(t.Context(), nil, "r-owner:test"); !errors.Is(err, platforms.ErrHistoryUnavailable) {
 		t.Fatalf("missing identity boundary accepted: %v", err)
 	}
-	core, err := state.Open(statetest.Path(t, owned.ReferenceSchema), owned.ReferenceSchema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, owned.ReferenceSchema)
 	references, err := owned.NewReferences(core)
 	if err != nil {
 		t.Fatal(err)

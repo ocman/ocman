@@ -34,11 +34,7 @@ func (s *dispatchCountingStore) ListFactoryDispatchEpics(ctx context.Context) ([
 }
 
 func TestFactoryDoesNotScanEverySecond(t *testing.T) {
-	d, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
+	d := statetest.Open(t)
 	store := &dispatchCountingStore{DB: d}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, &fakeImplementationLauncher{})
 	if err := svc.Start(t.Context()); err != nil {
@@ -77,11 +73,7 @@ func TestFactoryIdleWakeIsScopedAndCoalesced(t *testing.T) {
 }
 
 func TestFactoryDispatchRecoveryAndWake(t *testing.T) {
-	d, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
+	d := statetest.Open(t)
 	store := &dispatchCountingStore{DB: d}
 	svc := NewNativeWithExecution(store, nil, &fakePlanningLauncher{}, &fakeImplementationLauncher{})
 	done := make(chan struct{})

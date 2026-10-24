@@ -7,10 +7,11 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestManager_DisablePreservesConfigAndRemovesAvailability(t *testing.T) {
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	ctx := t.Context()
 	id, err := store.AddRemote(ctx, "grpc://127.0.0.1:59999", "saved-token", "Box")
 	if err != nil {
@@ -79,7 +80,7 @@ func TestManager_DoesNotRegisterAdaptersForAnUnmanagedRemote(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "tok", "inst-gone", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	localID, err := store.AddRemote(t.Context(), addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +299,7 @@ func TestSupersededSupervisorPersistsTheConnectItMade(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "tok", "inst-super", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	localID, err := store.AddRemote(t.Context(), addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)

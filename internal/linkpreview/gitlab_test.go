@@ -171,11 +171,7 @@ func TestGitLabCardsAndInstanceIsolation(t *testing.T) {
 	client := comSrv.Client()
 	client.Transport.(*http.Transport).TLSClientConfig.RootCAs.AddCert(corpSrv.Certificate())
 	// The real Manager: grants are keyed by provider, i.e. by instance.
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := statetest.Open(t)
 	for _, c := range []state.PreviewCredential{
 		{ViewerID: "alice", OwnerID: "owner", Provider: "gitlab:gitlab.com", WorkspaceID: "gitlab.com", AccessToken: "tok-com"},
 		{ViewerID: "bob", OwnerID: "owner", Provider: "gitlab:code.corp", WorkspaceID: "code.corp", AccessToken: "tok-corp"},
@@ -296,11 +292,7 @@ func TestGitLabDialGuard(t *testing.T) {
 func TestGitLabConnectRefreshAndRevoke(t *testing.T) {
 	allowLoopback(t)
 	f, srv := newGitLabServer(t)
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := statetest.Open(t)
 	ctx := context.Background()
 	m := previewauth.New(db, "https://ocman.test/cb", srv.Client(), GitLabOAuth("code.corp", "cid", "", srv.URL+"/api/v4", srv.URL))
 	svc := New(m, srv.Client(), GitLab{Host: "code.corp", APIBase: srv.URL + "/api/v4"})

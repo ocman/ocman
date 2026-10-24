@@ -3,16 +3,11 @@ package factory
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestGraphAmendmentDuringVerificationRunsNewWorkAndReverifies(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Amend during verification", InitialProject: "/repo", AcknowledgeLocalExecution: true})

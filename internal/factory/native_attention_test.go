@@ -80,11 +80,7 @@ func (s *attentionSnapshotStore) ListFactoryIssues(context.Context, string) ([]m
 }
 
 func TestFactoryAttentionRetiresObsoleteRequestsWhilePaused(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	store := &attentionSnapshotStore{DB: db}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, nil, nil)
 	ep, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{EpicID: "ship", Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true})
@@ -151,11 +147,7 @@ func TestFactoryAttentionReadErrorsPreserveInbox(t *testing.T) {
 }
 
 func TestReconcileFactoryAttention(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, nil, nil)
 	var heard []string
 	svc.OnAttention(func(_ context.Context, epicID string, actions []string) {
@@ -185,11 +177,7 @@ func TestReconcileFactoryAttention(t *testing.T) {
 }
 
 func TestFactoryAttentionSurvivesPauseResume(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, nil, nil)
 	ep, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{EpicID: "ship", Goal: "Ship", InitialProject: "/repo", InstantiationID: "pause-resume", AcknowledgeLocalExecution: true})
 	if err != nil {

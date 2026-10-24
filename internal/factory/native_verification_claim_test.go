@@ -4,18 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestAmendmentCannotDeliverBeforeFreshVerificationWithoutReconciliation(t *testing.T) {
 	for _, finishBeforeApproval := range []bool{true, false} {
 		t.Run(map[bool]string{true: "already verified", false: "old validator finishes after approval"}[finishBeforeApproval], func(t *testing.T) {
-			db, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
+			db := statetest.Open(t)
 			launcher := &fakeImplementationLauncher{store: db}
 			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Fresh verification fence", InitialProject: "/repo", AcknowledgeLocalExecution: true})

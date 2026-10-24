@@ -12,11 +12,7 @@ import (
 )
 
 func TestWorkflowChecksEveryChangedProjectBeforeDelivery(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other", "/unused": "/unused"}}, &fakePlanningLauncher{}, launcher)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Both projects", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}, {Path: "/unused", AcknowledgeLocalExecution: true}}})
@@ -121,11 +117,7 @@ func TestCompileWorkflow(t *testing.T) {
 }
 
 func TestWorkflowScopeExpansionFromVerification(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	planning := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "scope-plan"}}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, planning, launcher)

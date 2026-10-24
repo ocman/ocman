@@ -17,7 +17,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
@@ -92,11 +91,7 @@ func TestSubagentRuntimeHistoryCanonicalInspection(t *testing.T) {
 	if err != nil || metadata.ParentID != "root" || metadata.LiveConnection {
 		t.Fatalf("pre-transcript identity: %+v %v", metadata, err)
 	}
-	core, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer core.Close()
+	core := statetest.Open(t, sessioncatalog.Schema)
 	catalog, err := sessioncatalog.New(core)
 	if err != nil {
 		t.Fatal(err)

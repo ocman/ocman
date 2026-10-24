@@ -160,11 +160,7 @@ func newHarness(t *testing.T) *harness {
 
 func newHarnessWithHooks(t *testing.T, hooks sessionsvc.Hooks) *harness {
 	t.Helper()
-	sdb, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sdb.Close() })
+	sdb := statetest.Open(t)
 	h := &harness{db: sdb, host: &testHost{}, platform: &testPlatform{status: db.StatusBusy, directory: "/repo"}}
 	h.now.Store(time.Date(2030, 1, 1, 9, 0, 0, 0, time.UTC).UnixMilli())
 	registry := platforms.NewRegistry()
@@ -276,11 +272,7 @@ func TestRunWebhookAppendsPayload(t *testing.T) {
 }
 
 func TestDefaultsConflictsAndMissingOperations(t *testing.T) {
-	sdb, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sdb.Close()
+	sdb := statetest.Open(t)
 	svc := New(Deps{Store: sdb})
 
 	routine, err := svc.Create(t.Context(), validInput())

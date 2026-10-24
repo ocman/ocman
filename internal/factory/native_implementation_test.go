@@ -89,11 +89,7 @@ func (s *deliveryMutationStore) EnsureFactoryDeliveryIssue(ctx context.Context, 
 func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 	for _, requirement := range []string{"required", "optional"} {
 		t.Run(requirement, func(t *testing.T) {
-			db, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer db.Close()
+			db := statetest.Open(t)
 			store := &deliveryMutationStore{DB: db}
 			launcher := &fakeImplementationLauncher{}
 			svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
@@ -305,11 +301,7 @@ func TestCheckpointFlowDeliversOnlyAfterImplementation(t *testing.T) {
 }
 
 func TestLegacyAttemptCompletesWithoutPRThenAdoptsCheckpoint(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{branch: "factory/legacy-2", baseRef: "legacy-head"}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := createPouredWorkEpic(t, svc, "Legacy")
@@ -379,11 +371,7 @@ func TestTwoProjectFlowWaitsForSDKMergeAndBothDeliveries(t *testing.T) {
 	previousInterval := factoryMergeGatePollInterval
 	factoryMergeGatePollInterval = 0
 	defer func() { factoryMergeGatePollInterval = previousInterval }()
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db, observation: "open", observationSHA: "abc123"}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/app": "/app", "/sdk": "/sdk"}}, &fakePlanningLauncher{}, launcher)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Merge gate", InitialProject: "/app", FormulaID: "ocman/tracer", FormulaRevision: 2, AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/sdk", AcknowledgeLocalExecution: true}}})
@@ -474,11 +462,7 @@ func TestTwoProjectFlowWaitsForSDKMergeAndBothDeliveries(t *testing.T) {
 }
 
 func TestProjectDeliveryValidatesItsRecordedIdentity(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Project delivery", InitialProject: "/repo", FormulaID: "ocman/tracer", FormulaRevision: 2, AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
@@ -604,16 +588,12 @@ func (s *flakyAuthorityStore) CompleteFactoryAuthorityEscalationGate(ctx context
 }
 
 func TestNativeAuthorityEscalationIsOneTimeAndDoesNotWidenProfile(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	store := &flakyAuthorityStore{DB: db}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := approvedEpic(t, svc, "authority")
-	if err = svc.Dispatch(t.Context()); err != nil {
+	if err := svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if _, handled, err := svc.EscalatePermission(t.Context(), "implementation-1", "request-1", "bash", "git status"); err != nil || handled {
@@ -680,11 +660,7 @@ func TestNativeAuthorityEscalationIsOneTimeAndDoesNotWidenProfile(t *testing.T) 
 }
 
 func TestNativeIdentifiesImplementationSessions(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := createPouredWorkEpic(t, svc, "identify implementation")
@@ -713,11 +689,7 @@ func hasAuthorityGate(issues []Issue, id, resolution string) bool {
 }
 
 func TestNativeDispatchRunsReadyTask(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db, branch: "factory/replacement", baseRef: "factory/previous"}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := createPouredWorkEpic(t, svc, "Ship")
@@ -770,11 +742,7 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 }
 
 func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	if err := db.SetFactoryCapacityPolicy(context.Background(), model.FactoryCapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -850,11 +818,7 @@ func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity
 }
 
 func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := createPouredWorkEpic(t, svc, "Paused")
@@ -898,11 +862,7 @@ func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
 }
 
 func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	if err := db.SetFactoryCapacityPolicy(t.Context(), model.FactoryCapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -939,11 +899,7 @@ func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
 }
 
 func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{err: errors.New("unavailable")}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
 	// Recovery is driven by explicit Dispatch below, not a competing background
@@ -995,11 +951,7 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 }
 
 func TestNativeImplementationDispatchRejectsEmptySession(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{result: PlanningSession{Platform: "opencode"}}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := approvedEpic(t, svc, "Ship")
@@ -1013,11 +965,7 @@ func TestNativeImplementationDispatchRejectsEmptySession(t *testing.T) {
 }
 
 func TestNativeStartKeepsImplementationAttemptWhenProbeFails(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := approvedEpic(t, svc, "Ship")
@@ -1035,11 +983,7 @@ func TestNativeStartKeepsImplementationAttemptWhenProbeFails(t *testing.T) {
 }
 
 func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{result: PlanningSession{Platform: "opencode", ID: "partial"}, err: errors.New("unavailable")}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	// Explicit Dispatch calls drive this test; background retries would repeat the partial launch.
@@ -1083,11 +1027,7 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 }
 
 func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	if err := db.SetFactoryCapacityPolicy(context.Background(), model.FactoryCapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -1151,11 +1091,7 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 }
 
 func TestNativeProjectRequestRequiresOwnerAndLaunchesScopePlan(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	planning, implementation := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "scope-plan"}}, &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other/subdir": "/other"}}, planning, implementation)
 	epic := createPouredWorkEpic(t, svc, "Expand")
@@ -1230,11 +1166,7 @@ func TestNativeProjectRequestRequiresOwnerAndLaunchesScopePlan(t *testing.T) {
 }
 
 func TestNativeProjectRejectionRetriesWhenSessionWasLost(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	implementation := &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, implementation)
 	epic := createPouredWorkEpic(t, svc, "Reject scope")
@@ -1274,11 +1206,7 @@ func TestNativeProjectRejectionRetriesWhenSessionWasLost(t *testing.T) {
 }
 
 func TestNativeProjectRejectionRetriesDelivery(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	implementation := &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, implementation)
 	epic := createPouredWorkEpic(t, svc, "Retry rejection")
@@ -1318,11 +1246,7 @@ func TestNativeProjectRejectionRetriesDelivery(t *testing.T) {
 }
 
 func TestNativeRecoveryResumeDeliversBeforeClosingGate(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	if err := db.SetFactoryCapacityPolicy(t.Context(), model.FactoryCapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -1393,11 +1317,7 @@ func TestNativeRecoveryResumeDeliversBeforeClosingGate(t *testing.T) {
 }
 
 func TestNativeDispatchChargesIssueTargetAndFreezesItsRepository(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	if err := db.SetFactoryCapacityPolicy(t.Context(), model.FactoryCapacityPolicy{GlobalCapacity: 3, ProjectCapacity: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -1498,11 +1418,7 @@ func hasRecoveryGate(issues []Issue, id, resolution string) bool {
 func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {
 	for _, action := range []string{"retry", "cancel"} {
 		t.Run(action, func(t *testing.T) {
-			db, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
+			db := statetest.Open(t)
 			launcher := &fakeImplementationLauncher{}
 			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			epic := createPouredWorkEpic(t, svc, action)
@@ -1539,11 +1455,7 @@ func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {
 // A hand-built graph whose only remaining work exhausted its launch retries
 // must be reported stuck and become dispatchable again after ReopenIssue.
 func TestNativeStuckEpicRecoversThroughReopenIssue(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{err: errors.New("unavailable")}
 	store := &failingDispatchStore{DB: db}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)

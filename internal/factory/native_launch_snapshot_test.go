@@ -33,11 +33,7 @@ func (s *launchInterleavingStore) ClaimFactoryImplementation(ctx context.Context
 func TestDispatchFailsUnusableClaimSnapshot(t *testing.T) {
 	for _, missing := range []bool{true, false} {
 		t.Run(map[bool]string{true: "missing issue", false: "corrupt ancestry"}[missing], func(t *testing.T) {
-			db, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
+			db := statetest.Open(t)
 			planner := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 			epic := createPouredWorkEpic(t, planner, "Unusable claim")
 			approveProposal(t, planner, SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
@@ -62,11 +58,7 @@ func TestDispatchFailsUnusableClaimSnapshot(t *testing.T) {
 }
 
 func TestClaimSnapshotResolvesAncestryAndCriteriaWithoutLiveReads(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	svc := NewNativeWithExecution(db, nil, nil, nil)
 	formula, err := svc.SaveFormula(t.Context(), FormulaSaveRequest{ID: "custom/claim", Source: "prompt_implementation = \"Claimed ancestry\"\n" + tracerFormulaSource})
 	if err != nil {
@@ -85,11 +77,7 @@ func TestClaimSnapshotResolvesAncestryAndCriteriaWithoutLiveReads(t *testing.T) 
 }
 
 func TestDispatchLaunchesInputsFromTheClaimedRevision(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	planner := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, planner, "Consistent launch")
 	approveProposal(t, planner, SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", Title: "Original title", Description: "Original requirements", AcceptanceCriteria: []string{"done"}}}}})

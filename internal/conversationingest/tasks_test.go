@@ -6,18 +6,13 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
 )
 
 func taskManager(t *testing.T, m *Module) *tasksvc.Manager {
 	t.Helper()
-	d, err := state.Open(statetest.Path(t, tasksvc.Schema), tasksvc.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
+	d := statetest.Open(t, tasksvc.Schema)
 	manager := tasksvc.New(d, 2)
 	if err := manager.Start(t.Context()); err != nil {
 		t.Fatal(err)

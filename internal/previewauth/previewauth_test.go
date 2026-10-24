@@ -16,16 +16,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
-func openState(t *testing.T) *state.DB {
-	t.Helper()
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 func TestSafeReturnPath(t *testing.T) {
 	for in, want := range map[string]string{
 		"":                     "/",
@@ -60,7 +50,7 @@ func TestAccessTokenRefreshIsSynchronizedAndRotates(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "new-access", "refresh_token": "new-refresh", "expires_in": 3600})
 	}))
 	defer srv.Close()
-	db := openState(t)
+	db := statetest.Open(t)
 	ctx := context.Background()
 	m := New(db, "http://localhost/cb", nil, Provider{ID: "p", TokenURL: srv.URL, ClientID: "cid", ClientSecret: "sec", BasicAuth: true})
 	put := func(ws, refresh string, exp time.Time) {
@@ -127,7 +117,7 @@ func TestAccessTokenRefreshIsSynchronizedAndRotates(t *testing.T) {
 }
 
 func TestCompleteHandlesDenialAndUnknownState(t *testing.T) {
-	db := openState(t)
+	db := statetest.Open(t)
 	ctx := context.Background()
 	m := New(db, "http://localhost/cb", nil, Provider{ID: "p", AuthURL: "https://auth.example/authorize", TokenURL: "http://127.0.0.1:1/token", ClientID: "cid"})
 	if _, err := m.Begin(ctx, "v", "o", "nope", "/"); !errors.Is(err, ErrUnknownProvider) {
@@ -177,7 +167,7 @@ func TestJSONBodyExchangeAndRevoke(t *testing.T) {
 	}))
 	defer srv.Close()
 	ctx := context.Background()
-	m := New(openState(t), "https://ocman.test/cb", nil, Provider{
+	m := New(statetest.Open(t), "https://ocman.test/cb", nil, Provider{
 		ID: "p", AuthURL: srv.URL + "/auth", TokenURL: srv.URL + "/token", RevokeURL: srv.URL + "/revoke",
 		ClientID: "cid", ClientSecret: "sec", BasicAuth: true, JSONBody: true, Headers: map[string]string{"X-Version": "v1"},
 	})
@@ -202,7 +192,7 @@ func TestJSONBodyExchangeAndRevoke(t *testing.T) {
 }
 
 func TestConnectToken(t *testing.T) {
-	db := openState(t)
+	db := statetest.Open(t)
 	ctx := context.Background()
 	p := Provider{ID: "forge", Name: "Forge", TokenHelp: "paste",
 		Identify: func(_ context.Context, _ *http.Client, tok Token) ([]Grant, error) {

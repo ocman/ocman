@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/previewauth"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -202,11 +201,7 @@ func TestLinearIssueCards(t *testing.T) {
 
 func TestLinearConnectRefreshAndRetry(t *testing.T) {
 	api, srv := newLinearHarness(t)
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := statetest.Open(t)
 	ctx := context.Background()
 	m := previewauth.New(db, "https://ocman.test/cb", srv.Client(), LinearOAuth("cid", "", srv.URL))
 	svc := New(m, srv.Client(), Linear{APIBase: srv.URL})

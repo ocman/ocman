@@ -37,11 +37,7 @@ func (p *identityPlatform) CreateSession(ctx context.Context, req platforms.Crea
 
 func identityService(t *testing.T) (*Service, *identityPlatform, *sessioncatalog.Store, *state.DB) {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, sessioncatalog.Schema)
 	catalogue, err := sessioncatalog.New(db)
 	if err != nil {
 		t.Fatal(err)

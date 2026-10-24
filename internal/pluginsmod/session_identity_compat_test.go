@@ -9,17 +9,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/google/uuid"
 )
 
 func TestMigratedSessionRunReplaysOnlyItsLegacyWireResult(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, Schema)
 	project := t.TempDir()
 	params := plugins.SessionRunParams{Prompt: "once"}
 	p := &legacyPluginPlatform{conversationLifecyclePlatform: &conversationLifecyclePlatform{}}
@@ -60,11 +55,7 @@ func TestCanonicalPluginWireProjectionFailsClosedWithoutCompatibility(t *testing
 }
 
 func TestQuarantinedSessionCompletionDoesNotSpendRetryBudget(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, Schema)
 	m := NewModule(Deps{Store: core})
 	pending := identity.PendingReference()
 	id, err := m.plugins.AppendPluginSessionCompletion(t.Context(), "plugin", "r-offline:test", pending, "opaque-operation", "owed answer")
@@ -79,11 +70,7 @@ func TestQuarantinedSessionCompletionDoesNotSpendRetryBudget(t *testing.T) {
 }
 
 func TestDisabledCanonicalAdapterPausesCompletionUntilRestored(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, Schema)
 	available := false
 	p := &legacyPluginPlatform{conversationLifecyclePlatform: &conversationLifecyclePlatform{}}
 	m := NewModule(Deps{Store: core, Adapter: func(context.Context, string, string) (platforms.Platform, bool) { return p, available }})

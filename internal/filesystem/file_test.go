@@ -11,17 +11,12 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func newFileTestModule(t *testing.T) *Module {
 	t.Helper()
-	stDB, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatalf("state.Open: %v", err)
-	}
-	t.Cleanup(func() { stDB.Close() })
+	stDB := statetest.Open(t)
 	return NewModule(Deps{Store: stDB})
 }
 

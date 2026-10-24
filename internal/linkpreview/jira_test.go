@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/previewauth"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -215,11 +214,7 @@ func TestJiraIssueCards(t *testing.T) {
 
 func TestJiraConnectRotateAndRevoke(t *testing.T) {
 	api, srv := newJiraHarness(t)
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := statetest.Open(t)
 	ctx := context.Background()
 	m := previewauth.New(db, "https://ocman.test/cb", srv.Client(), JiraOAuth("cid", "sec", srv.URL, srv.URL))
 	svc := New(m, srv.Client(), Jira{APIBase: srv.URL})

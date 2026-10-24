@@ -10,7 +10,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -27,11 +26,7 @@ func (p *rejectionHistoryPlatform) HistoryIdentity(context.Context) (platforms.H
 func TestRejectedClaudeForkAllowsLaterExternalDiscovery(t *testing.T) {
 	h := startLive(t, "", nil)
 	parent := h.create(t)
-	db, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, sessioncatalog.Schema)
 	catalogue, err := sessioncatalog.New(db)
 	if err != nil {
 		t.Fatal(err)

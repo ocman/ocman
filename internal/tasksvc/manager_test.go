@@ -15,15 +15,12 @@ import (
 
 func testManager(t *testing.T, concurrency int) (*Manager, *state.DB) {
 	t.Helper()
-	d, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
+	d := statetest.Open(t, Schema)
 	m := New(d, concurrency)
 	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { m.Stop(); d.Close() })
+	t.Cleanup(m.Stop)
 	return m, d
 }
 

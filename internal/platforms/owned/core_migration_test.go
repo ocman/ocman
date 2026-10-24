@@ -15,11 +15,7 @@ import (
 )
 
 func TestPrepareCoreMigratesLocalStateWithoutGuessingRemoteOrAmbiguousOwners(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, ReferenceSchema, sessioncatalog.Schema), ReferenceSchema, sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, ReferenceSchema, sessioncatalog.Schema)
 	catalogue, err := sessioncatalog.New(core)
 	if err != nil {
 		t.Fatal(err)

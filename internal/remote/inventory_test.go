@@ -16,17 +16,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
-// newStateDB opens a fresh state.db for Manager tests.
-func newStateDB(t *testing.T) *state.DB {
-	t.Helper()
-	d, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	return d
-}
-
 // waitForRegister polls until the compound platform id appears in reg.
 func waitForRegister(t *testing.T, reg *platforms.Registry, id string) {
 	t.Helper()
@@ -42,7 +31,7 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{{ID: "rs1", Platform: "opencode"}}})
 	addr := startRealRemote(t, "tok", "abc123", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	hubReg := platforms.NewRegistry()
 	router := hostsvc.NewRouter(localStubHost{})
 	mgr := NewManager(hubReg, router, store, "opencode")
@@ -104,7 +93,7 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 }
 
 func TestManager_DisabledRemoteNotDialed(t *testing.T) {
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	id, err := store.AddRemote(t.Context(), "127.0.0.1:59998", "tok", "Off")
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +115,7 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "tok", "abc123", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
 	ctx := context.Background()
@@ -196,7 +185,7 @@ func TestManager_RemoveEvictsInventory(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "tok", "abc123", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
 	id, err := mgr.Add(t.Context(), addr, "tok", "Box")
@@ -234,7 +223,7 @@ func TestManager_RefreshInventories(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "tok", "abc123", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
 	ctx := context.Background()

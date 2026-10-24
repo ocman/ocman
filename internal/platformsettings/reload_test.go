@@ -10,16 +10,11 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestReloadDrainsAndFencesNewWork(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	m := New(store)
 	idle, reloads := false, 0
 	var readErr error

@@ -12,11 +12,7 @@ import (
 )
 
 func TestTransferIssueReservesAndResumes(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Transfer", InitialProject: "/repo", AcknowledgeLocalExecution: true})
@@ -134,11 +130,7 @@ func TestTransferIssueReservesAndResumes(t *testing.T) {
 // A live create call cannot be cancelled, and a call that may have reached
 // the tracker keeps its reservation for the user to check.
 func TestTransferIssueKeepsLiveAndUncertainReservations(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, &fakeImplementationLauncher{store: db})
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Transfer", InitialProject: "/repo", AcknowledgeLocalExecution: true})
 	if err != nil {
@@ -217,11 +209,7 @@ func (s *cancelDuringReserveStore) ReserveFactoryIssueTransfer(ctx context.Conte
 }
 
 func TestTransferCancelCannotSlipBetweenReserveAndCreate(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	store := &cancelDuringReserveStore{DB: db, cancelled: make(chan error, 1)}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, &fakeImplementationLauncher{store: db})
 	store.svc = svc

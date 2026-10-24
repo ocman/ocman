@@ -51,11 +51,7 @@ func (a idleAdapter) ID() platforms.ID { a.looked <- "opencode"; return "opencod
 // The idle edge publishes through the adapter that owns the session, and
 // an edge from an unknown platform is ignored.
 func TestSubscribePublishesOnSessionIdle(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	adapter := idleAdapter{looked: make(chan string, 1)}
 	m := NewModule(Deps{Store: store, Platform: func(id platforms.ID) (platforms.Platform, bool) {
 		return adapter, id == "opencode"
@@ -89,11 +85,7 @@ func (a blockingSessionAdapter) Session(ctx context.Context, _ string, _, _ int)
 // A publish started by an idle edge runs under the module's lifetime and is
 // joined by Run, so it never reads state.db after shutdown.
 func TestRunJoinsIdlePublisher(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	if _, err := store.CreateShareLink(t.Context(), "opencode", "s", 0); err != nil {
 		t.Fatal(err)
 	}

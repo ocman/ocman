@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -33,11 +32,7 @@ func (p blockedLifecycle) SessionLifecycle(ctx context.Context, _ string) (*plat
 func TestShutdownCancelsPreSendLifecycleRead(t *testing.T) {
 	for _, path := range []string{"sweep", "idle"} {
 		t.Run(path, func(t *testing.T) {
-			store, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = store.Close() })
+			store := statetest.Open(t)
 			p := blockedLifecycle{entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}), t: t}
 			sent := make(chan struct{}, 1)
 			m := NewModule(Deps{

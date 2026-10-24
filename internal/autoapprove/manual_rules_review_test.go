@@ -6,6 +6,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type scopedManualPlatform struct {
@@ -20,7 +21,7 @@ func (p scopedManualPlatform) ListPermissions(_ context.Context, id string) ([]p
 func TestParentPolicyUpdateSweepsSessionFilteredDescendants(t *testing.T) {
 	for _, action := range []string{"allow", "clear"} {
 		t.Run(action, func(t *testing.T) {
-			store := openModuleStore(t)
+			store := statetest.Open(t)
 			ask := []platforms.PermissionRule{{Permission: "bash", Pattern: "tea do *", Action: "ask"}}
 			saveManualRules(t, store, "fake", "root", ask)
 			rec := &replyRecorder{}
@@ -48,7 +49,7 @@ func TestParentPolicyUpdateSweepsSessionFilteredDescendants(t *testing.T) {
 }
 
 func TestManualDenyReplyBeforeReturnKeepsRuleAttribution(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	saveManualRules(t, store, "fake", "s", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "deny"}})
 	resolved := false
 	adapter := &fakePlatform{}

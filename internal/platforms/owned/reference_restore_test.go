@@ -28,11 +28,7 @@ func (p *restoringRemote) ResolveLegacyReferences(_ context.Context, refs []stri
 
 func restoreFixture(t *testing.T) (*state.DB, *ReferenceStore, *restoringRemote, *IdentityGateway) {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t, ReferenceSchema, sessioncatalog.Schema), ReferenceSchema, sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, ReferenceSchema, sessioncatalog.Schema)
 	refs, err := NewReferences(db)
 	if err != nil {
 		t.Fatal(err)

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
 )
@@ -40,11 +39,7 @@ func TestPageProcessHelper(t *testing.T) {
 }
 
 func TestLocalPagesRecheckEnablementGrantsAndProject(t *testing.T) {
-	db, err := state.Open(statetest.Path(t), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := statetest.Open(t, Schema)
 	root := t.TempDir()
 	executable, err := os.Executable()
 	if err != nil {

@@ -15,18 +15,13 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
 func fixture(t *testing.T) *Module {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, Schema)
 	return New(Deps{Store: db, Snapshot: func(context.Context) ([]Candidate, error) { return nil, nil }})
 }
 

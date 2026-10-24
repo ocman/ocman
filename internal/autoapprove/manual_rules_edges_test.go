@@ -11,6 +11,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type policyOutcomePlatform struct{ *fakePlatform }
@@ -18,7 +19,7 @@ type policyOutcomePlatform struct{ *fakePlatform }
 func (policyOutcomePlatform) ReplyOutcomes(context.Context, string) bool { return false }
 
 func TestManualRulesRequireConfirmedReplies(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	saveManualRules(t, store, "fake", "s", []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}})
 	rec := &replyRecorder{}
 	adapter := policyOutcomePlatform{&fakePlatform{respondPermissionFn: rec.record}}
@@ -30,7 +31,7 @@ func TestManualRulesRequireConfirmedReplies(t *testing.T) {
 }
 
 func TestManualRulesAncestryErrorsFailClosed(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	for _, parent := range []func(context.Context, platforms.Platform, string) (string, error){
 		func(context.Context, platforms.Platform, string) (string, error) {
 			return "", errors.New("unreachable")
@@ -52,7 +53,7 @@ func TestManualRulesAncestryErrorsFailClosed(t *testing.T) {
 }
 
 func TestManualPolicyHistoryIncludesOnlyNestedDescendants(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	for _, id := range []string{"root", "child", "grandchild", "unrelated"} {
 		if err := store.EnsurePermissionInboxItem(t.Context(), state.InboxPermission{Platform: "fake", SessionID: id, PermissionID: id, Permission: "bash", Patterns: []string{providerprotocol.ExactPattern("cat *")}}); err != nil {
 			t.Fatal(err)
@@ -77,7 +78,7 @@ func TestManualPolicyHistoryIncludesOnlyNestedDescendants(t *testing.T) {
 }
 
 func TestManualPolicySaveAppliesToPendingAndClearsRules(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	rec := &replyRecorder{}
 	adapter := manualPolicyPlatform{fakePlatform: &fakePlatform{detail: &platforms.SessionDetail{Session: &db.Session{ID: "s"}}, respondPermissionFn: rec.record}, pending: []platforms.LivePrompt{{"id": "p", "permission": "bash", "patterns": []string{"tea do something"}}}}
 	m := newTestModule(store)

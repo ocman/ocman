@@ -34,11 +34,7 @@ func TestEnabledPluginProcesses(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, Schema)
 	s := bound(NewModule(Deps{Store: db}), ctx)
 	t.Cleanup(s.Stop)
 	id := "org.example.test"
@@ -166,11 +162,7 @@ func TestRescanPlugins(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, Schema)
 	s := NewModule(Deps{Store: db})
 	path := writeDiscoveryPlugin(t, dir, "ocman-plugin-a", "org.example.test", "1.0")
 	rescan := func() []plugins.Discovery {

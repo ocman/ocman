@@ -15,7 +15,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
@@ -101,11 +100,7 @@ func (p *nativePlatform) ProxyEvents(_ context.Context, id string, out io.Writer
 
 func fixture(t *testing.T) (*Adapter, *nativePlatform, *sessioncatalog.Store) {
 	t.Helper()
-	database, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
+	database := statetest.Open(t, sessioncatalog.Schema)
 	store, err := sessioncatalog.New(database)
 	if err != nil {
 		t.Fatal(err)

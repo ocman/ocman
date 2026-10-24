@@ -6,6 +6,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type stableManualPolicyPlatform struct{ manualPolicyPlatform }
@@ -15,7 +16,7 @@ func (stableManualPolicyPlatform) PermissionInboxKey(context.Context, string, st
 }
 
 func TestManualPermissionPolicyKeepsMigratedInboxKeyForAskAndReply(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	const id = "ocm_00000000-0000-4000-8000-000000000001"
 	if err := store.EnsurePermissionInboxItem(t.Context(), state.InboxPermission{ItemID: "legacy-permission-key", Platform: "fake", SessionID: id, PermissionID: "prompt", Permission: "bash"}); err != nil {
 		t.Fatal(err)

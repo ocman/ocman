@@ -8,6 +8,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestSessionRoutineEnrichmentPropagatesOwnerFailures(t *testing.T) {
@@ -15,7 +16,7 @@ func TestSessionRoutineEnrichmentPropagatesOwnerFailures(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			registry := platforms.NewRegistry()
 			registry.Register(&fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s", Platform: "opencode"}}})
-			store := newStateDB(t)
+			store := statetest.Open(t)
 			owner := NewServer(registry, nil, "owner", "test").UseInboxStore(store)
 			ctx := t.Context()
 			if failure == "publication" {

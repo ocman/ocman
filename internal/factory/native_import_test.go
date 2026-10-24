@@ -113,11 +113,7 @@ func TestNativeImportedPlanKeepsApprovalGate(t *testing.T) {
 func TestNativeImportRejectsOwnedOrInvalidPlans(t *testing.T) {
 	for _, scenario := range []string{"claimed", "rejected", "credentials", "partial credentials", "wrong scope", "cycle", "no required work", "no acceptance criteria", "unavailable gate"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
+			db := statetest.Open(t)
 			svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, nil)
 			epic := createPouredWorkEpic(t, svc, "Import constraints")
 			req := SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}}

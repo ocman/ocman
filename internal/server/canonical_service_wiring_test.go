@@ -10,7 +10,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
 )
@@ -23,11 +22,7 @@ func (*canonicalRemotePlatform) CanonicalSessionIDs() bool { return true }
 // ownership from the catalogue. A stale reverse cache cannot redirect a
 // mutation to another owner, and the browser is told to resolve legacy links.
 func TestServerSessionServiceUsesCanonicalOwnerAuthority(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, ModuleSchemas()...), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, ModuleSchemas()...)
 	catalogue, err := sessioncatalog.New(core)
 	if err != nil {
 		t.Fatal(err)

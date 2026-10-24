@@ -31,11 +31,7 @@ func (l *rebasedCheckpointLauncher) ValidateImplementationCheckpoint(ctx context
 
 func checkpointRecoveryFixture(t *testing.T) (*NativeService, *state.DB, *rebasedCheckpointLauncher, ImplementationSessionRequest, model.FactoryAttempt) {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	l := &rebasedCheckpointLauncher{head: strings.Repeat("b", 40)}
 	l.checkpointSHA = strings.Repeat("a", 40)
 	s := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, l)
@@ -141,11 +137,7 @@ func TestRequestCheckpointRecoveryFailsClosed(t *testing.T) {
 
 func rebasedDeliveryFixture(t *testing.T) (*NativeService, *state.DB, *rebasedCheckpointLauncher, ImplementationSessionRequest) {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	l := &rebasedCheckpointLauncher{head: strings.Repeat("b", 40)}
 	l.checkpointSHA = strings.Repeat("a", 40)
 	s := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, l)

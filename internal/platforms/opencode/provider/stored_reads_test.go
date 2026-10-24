@@ -11,9 +11,8 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
-	"github.com/NoUseFreak/ocman/internal/state"
+	ocapi "github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	ocv2 "github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -91,11 +90,7 @@ func TestStoredPanelsEnrichOnlyLiveConfiguration(t *testing.T) {
 }
 
 func TestStoredHaltsUseCanonicalReceiptsAndStoredNativeHierarchy(t *testing.T) {
-	core, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer core.Close()
+	core := statetest.Open(t)
 	a := New(nil, nil, nil, ocapi.Auth{})
 	a.rt = NewDiscovery()
 	a.turns.disc = a.rt

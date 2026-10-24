@@ -13,16 +13,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
-func openModuleStore(t *testing.T) *state.DB {
-	t.Helper()
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
-}
-
 // testRouter mounts routes on a plain mux, recording which helper each
 // pattern used so the guards can be checked.
 type testRouter struct {
@@ -67,7 +57,7 @@ func TestModuleRoutesAreAuthGuarded(t *testing.T) {
 	denied := func(http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) }
 	}
-	m := NewModule(ModuleDeps{Store: openModuleStore(t)})
+	m := NewModule(ModuleDeps{Store: statetest.Open(t)})
 	r := newTestRouter(denied)
 	m.Routes(r)
 	for pattern, kind := range r.kind {
@@ -94,7 +84,7 @@ func TestModuleRoutesAreAuthGuarded(t *testing.T) {
 }
 
 func TestModuleStartSeedsJudgeDelay(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	if err := store.SetJudgeDelayMs(t.Context(), 1234); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +99,7 @@ func TestModuleStartSeedsJudgeDelay(t *testing.T) {
 }
 
 func TestModuleJudgeDelaySetting(t *testing.T) {
-	m := newTestModule(openModuleStore(t))
+	m := newTestModule(statetest.Open(t))
 	if rec := serve(m, http.MethodGet, "/api/settings/judge-delay", ""); !strings.Contains(rec.Body.String(), `"delayMs":`) {
 		t.Fatalf("GET: %d %s", rec.Code, rec.Body)
 	}
@@ -129,7 +119,7 @@ func TestModuleJudgeDelaySetting(t *testing.T) {
 }
 
 func TestModulePromptSections(t *testing.T) {
-	m := newTestModule(openModuleStore(t))
+	m := newTestModule(statetest.Open(t))
 	if rec := serve(m, http.MethodGet, "/api/settings/prompt-sections", ""); strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Fatalf("empty GET: %s", rec.Body)
 	}
@@ -163,7 +153,7 @@ func decodeModel(t *testing.T, body []byte) string {
 }
 
 func TestModuleJudgeModel(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	m := newTestModule(store)
 	if got := decodeModel(t, serve(m, http.MethodGet, "/api/settings/judge-model", "").Body.Bytes()); got != "" {
 		t.Fatalf("unset model = %q", got)
@@ -233,7 +223,7 @@ func TestModuleJudgeModelOptions(t *testing.T) {
 }
 
 func TestJudgeEndpointSettings(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	m := newTestModule(store)
 	call := func(method, body string) *httptest.ResponseRecorder {
 		return serve(m, method, "/api/settings/judge-endpoint", body)
@@ -279,7 +269,7 @@ func TestJudgeEndpointURLChangeDoesNotReuseCredentials(t *testing.T) {
 		{"replacement key", `,"apiKey":"replacement-key"`, "replacement-key"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := openModuleStore(t)
+			store := statetest.Open(t)
 			m := newTestModule(store)
 			call := func(method, body string) *httptest.ResponseRecorder {
 				return serve(m, method, "/api/settings/judge-endpoint", body)

@@ -22,11 +22,7 @@ func (s promptIssueStore) ListFactoryIssues(context.Context, string) ([]model.Na
 }
 
 func TestFormulaPromptAncestry(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	child, err := svc.SaveFormula(t.Context(), FormulaSaveRequest{ID: "custom/child", Source: "prompt_implementation = \"Child instructions\"\n" + tracerFormulaSource})
 	if err != nil {
@@ -169,11 +165,7 @@ func TestBuiltInFormulaAsksForDesignAndVerticalSlices(t *testing.T) {
 }
 
 func TestPlanningUsesPinnedFormulaPrompt(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, launcher, nil)
 	first, err := svc.SaveFormula(t.Context(), FormulaSaveRequest{ID: "custom/prompts", Source: "prompt_planning = \"First revision instructions\"\n" + tracerFormulaSource})
@@ -203,11 +195,7 @@ func TestPlanningUsesPinnedFormulaPrompt(t *testing.T) {
 }
 
 func TestDispatchUsesFormulaImplementationAndDeliveryPrompts(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	formula, err := svc.SaveFormula(t.Context(), FormulaSaveRequest{ID: "custom/execution", Source: "prompt_implementation = \"Implement with tests\"\nprompt_delivery = \"Check integration\"\n" + tracerFormulaSource})

@@ -13,7 +13,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -24,11 +23,7 @@ type usagePlatform struct {
 }
 
 func TestRemovedVerificationKeepsUsagePhase(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	ep, err := store.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "e", "Usage", "", "/repo", "usage", model.NativeFormula{ID: "usage", Version: 1, Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "verify", Kind: "task", Workflow: &model.WorkflowStep{Kind: "verification"}}}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)

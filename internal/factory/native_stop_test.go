@@ -134,11 +134,7 @@ func TestStopEpicUnavailable(t *testing.T) {
 }
 
 func TestStopEpicBeforePlanApproval(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "planner"}}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, launcher, nil)
 	epic := createPouredWorkEpic(t, svc, "Stop planning")

@@ -82,11 +82,7 @@ func (r *fakeRuntime) CullIdleProject(ctx context.Context, _ string, check func(
 
 func setup(t *testing.T) (*Module, *fakePlatform, *fakeRuntime) {
 	t.Helper()
-	s, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
+	s := statetest.Open(t)
 	p := &fakePlatform{sessions: []db.Session{{ID: "s", Directory: "/repo", TimeUpdated: 100, Status: db.StatusDone}}}
 	r := &fakeRuntime{roots: []string{"/repo"}}
 	m := New(Deps{Store: s, Targets: func() []Target { return []Target{{Platform: p, Runtime: r}} }})

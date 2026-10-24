@@ -10,16 +10,11 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestWorkerWakesAndStops(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := statetest.Open(t)
 	if err := db.SnoozeSession(t.Context(), "opencode", "s1", time.Now().Add(time.Hour).UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
@@ -74,11 +69,7 @@ func TestUnavailableModule(t *testing.T) {
 }
 
 func TestSnoozeRoute(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := statetest.Open(t)
 	var events []string
 	m := NewModule(Deps{
 		Store: db,

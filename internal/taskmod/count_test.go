@@ -7,20 +7,15 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
 )
 
 func TestActiveCounterIncludesQueuedAndRunningWithoutListLimit(t *testing.T) {
-	d, err := state.Open(statetest.Path(t, tasksvc.Schema), tasksvc.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
+	d := statetest.Open(t, tasksvc.Schema)
 	m := New(tasksvc.New(d, 1))
 	// The counter reads scalar status, not task JSON or a capped task list.
-	_, err = d.SQL().Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<205)
+	_, err := d.SQL().Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<205)
 	 INSERT INTO background_task SELECT printf('queued-%d',x),'test','','queued',x,'{}' FROM n;
 	 INSERT INTO background_task VALUES('running','test','','running',1,'{}'),('done','test','','succeeded',1,'{}'),('failed','test','','failed',1,'{}')`)
 	if err != nil {

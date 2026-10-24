@@ -22,6 +22,18 @@ func Path(tb testing.TB, schemas ...state.ModuleSchema) string {
 	return At(tb, filepath.Join(tb.TempDir(), "state.db"), schemas...)
 }
 
+// Open opens a fresh, fully migrated state.db with the given module schemas
+// and closes it when the test ends.
+func Open(tb testing.TB, schemas ...state.ModuleSchema) *state.DB {
+	tb.Helper()
+	db, err := state.Open(Path(tb, schemas...), schemas...)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
 // At writes a fresh, fully migrated state.db to path and returns path,
 // for tests that need the database inside a directory they already use.
 func At(tb testing.TB, path string, schemas ...state.ModuleSchema) string {

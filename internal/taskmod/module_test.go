@@ -14,11 +14,7 @@ import (
 )
 
 func TestQueryableTaskRoutesAreReadOnlyAndAuthenticated(t *testing.T) {
-	d, err := state.Open(statetest.Path(t, tasksvc.Schema), tasksvc.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
+	d := statetest.Open(t, tasksvc.Schema)
 	manager := tasksvc.New(d, 1)
 	guard := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -116,11 +112,7 @@ func TestUnavailableTaskManager(t *testing.T) {
 }
 
 func TestCancelledStartupIsNotFatal(t *testing.T) {
-	d, err := state.Open(statetest.Path(t, tasksvc.Schema), tasksvc.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
+	d := statetest.Open(t, tasksvc.Schema)
 	manager := tasksvc.New(d, 1)
 	m := New(manager)
 	ctx, cancel := context.WithCancel(t.Context())

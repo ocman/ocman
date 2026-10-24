@@ -15,11 +15,7 @@ import (
 )
 
 func TestPreServingReloadAppliesSavedOfflineProofWithoutConsumingQueueOrPluginLinks(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, server.ModuleSchemas()...), server.ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, server.ModuleSchemas()...)
 	history, err := statev2.Open(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
 		t.Fatal(err)

@@ -4,16 +4,11 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestPreparationReceiptMatchesSignatureUntilReferencesChange(t *testing.T) {
-	db, err := state.Open(statetest.Path(t, sessioncatalog.Schema, ReferenceSchema), sessioncatalog.Schema, ReferenceSchema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, sessioncatalog.Schema, ReferenceSchema)
 	store, err := NewReferences(db)
 	if err != nil {
 		t.Fatal(err)

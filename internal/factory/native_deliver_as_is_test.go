@@ -14,11 +14,7 @@ import (
 
 func deliverAsIsFixture(t *testing.T) (*NativeService, *fakeImplementationLauncher, string, func(int) ImplementationSessionRequest) {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Deliver as is", InitialProject: "/repo", AcknowledgeLocalExecution: true})

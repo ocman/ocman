@@ -5,18 +5,13 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestFactoryGateCreationAdmitsAnotherEpicWithoutIdleEvent(t *testing.T) {
 	for _, kind := range []string{"recovery", "project", "authority"} {
 		t.Run(kind, func(t *testing.T) {
-			d, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = d.Close() })
+			d := statetest.Open(t)
 			if err := d.SetFactoryCapacityPolicy(t.Context(), model.FactoryCapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1}); err != nil {
 				t.Fatal(err)
 			}

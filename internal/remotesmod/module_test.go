@@ -21,16 +21,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
-func openStore(t *testing.T) *state.DB {
-	t.Helper()
-	st, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	return st
-}
-
 // realManager dials nothing reachable: the tests never touch a real remote.
 func realManager(t *testing.T, st *state.DB) *remote.Manager {
 	t.Helper()
@@ -90,7 +80,7 @@ func TestRemoteCRUDIsLocalhostGuarded(t *testing.T) {
 	deny := func(http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) }
 	}
-	h := mux(Deps{Manager: managerOf(realManager(t, openStore(t)))}, module.Guards{Auth: pass, Localhost: deny})
+	h := mux(Deps{Manager: managerOf(realManager(t, statetest.Open(t)))}, module.Guards{Auth: pass, Localhost: deny})
 	for _, c := range []struct{ method, path, body string }{
 		{http.MethodGet, "/api/remotes", ""},
 		{http.MethodPost, "/api/remotes", `{"address":"a:1","token":"t"}`},
@@ -103,7 +93,7 @@ func TestRemoteCRUDIsLocalhostGuarded(t *testing.T) {
 }
 
 func TestMethodAndValidationErrors(t *testing.T) {
-	h := mux(Deps{Manager: managerOf(realManager(t, openStore(t)))})
+	h := mux(Deps{Manager: managerOf(realManager(t, statetest.Open(t)))})
 	cases := []struct {
 		method, path, body string
 		want               int
@@ -129,7 +119,7 @@ func TestMethodAndValidationErrors(t *testing.T) {
 }
 
 func TestAddListUpdateReconnectDelete(t *testing.T) {
-	st := openStore(t)
+	st := statetest.Open(t)
 	mgr := realManager(t, st)
 	h := mux(Deps{Manager: managerOf(mgr)})
 
@@ -282,7 +272,7 @@ func TestGuardsWrapEveryRoute(t *testing.T) {
 }
 
 func TestAccessReportsIdentityWithoutToken(t *testing.T) {
-	st := openStore(t)
+	st := statetest.Open(t)
 	ident, err := st.InstanceIdentity(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -314,7 +304,7 @@ func TestAccessReportsIdentityWithoutToken(t *testing.T) {
 }
 
 func TestRevealToken(t *testing.T) {
-	st := openStore(t)
+	st := statetest.Open(t)
 	ident, _ := st.InstanceIdentity(t.Context())
 	rr := do(mux(Deps{Identity: st}), http.MethodPost, "/api/settings/remote-access/reveal-token", "")
 	var got map[string]string

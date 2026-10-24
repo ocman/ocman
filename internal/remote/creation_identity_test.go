@@ -11,7 +11,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
 )
@@ -56,11 +55,7 @@ func (p *identityOwnerPlatform) ForkSession(context.Context, platforms.ForkSessi
 }
 
 func TestRemoteCreationReservesAndBindsOnOwnerOnly(t *testing.T) {
-	db, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = db.Close() }()
+	db := statetest.Open(t, sessioncatalog.Schema)
 	catalogue, err := sessioncatalog.New(db)
 	if err != nil {
 		t.Fatal(err)
@@ -117,11 +112,7 @@ func TestRemoteCreationReservesAndBindsOnOwnerOnly(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].ID != created || rows[0].NativeID != "native" || rows[0].CreationState != sessioncatalog.Ready || rows[0].SourceKey != "owner-source" {
 		t.Fatalf("owner binding: %+v %v", rows, err)
 	}
-	hubDB, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = hubDB.Close() }()
+	hubDB := statetest.Open(t, sessioncatalog.Schema)
 	hubCatalogue, err := sessioncatalog.New(hubDB)
 	if err != nil {
 		t.Fatal(err)

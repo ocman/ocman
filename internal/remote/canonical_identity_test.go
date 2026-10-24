@@ -8,17 +8,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
 )
 
 func TestCanonicalRemoteIdentityCarriesNoNativeBindingAndOwnerAllocatesAllIDs(t *testing.T) {
-	ownerDB, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = ownerDB.Close() })
+	ownerDB := statetest.Open(t, sessioncatalog.Schema)
 	ownerCatalogue, err := sessioncatalog.New(ownerDB)
 	if err != nil {
 		t.Fatal(err)
@@ -59,11 +54,7 @@ func TestCanonicalRemoteIdentityCarriesNoNativeBindingAndOwnerAllocatesAllIDs(t 
 		t.Fatalf("canonical owner response: %+v %v", rows, err)
 	}
 	id := rows["native"].ID
-	hubDB, err := state.Open(statetest.Path(t, sessioncatalog.Schema), sessioncatalog.Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = hubDB.Close() })
+	hubDB := statetest.Open(t, sessioncatalog.Schema)
 	hubCatalogue, err := sessioncatalog.New(hubDB)
 	if err != nil {
 		t.Fatal(err)

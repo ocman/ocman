@@ -21,11 +21,7 @@ func (r badgeRemotes) InboxItems(ctx context.Context, source string) ([]state.In
 }
 
 func TestBadgeCountLocalItems(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	for _, category := range []string{state.InboxGeneral, state.InboxFactory, state.InboxRoutine} {
 		if _, err := db.CreateSessionInboxItem(t.Context(), category, "message", category, nil); err != nil {
 			t.Fatal(err)

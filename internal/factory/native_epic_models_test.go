@@ -6,16 +6,11 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestEpicPlanModelOverridesPlanningDefault(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	planner := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "plan"}}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, planner, nil)
 	epic := createPouredWorkEpic(t, svc, "Plan with a chosen model")
@@ -40,11 +35,7 @@ func TestEpicPlanModelOverridesPlanningDefault(t *testing.T) {
 }
 
 func TestEpicModelsApplyToUnstartedWorkOnly(t *testing.T) {
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	source := strings.Replace(tracerWorkflowSource, "  verify:\n    kind: verification", "  verify:\n    kind: verification\n    config:\n      model: test/template", 1)

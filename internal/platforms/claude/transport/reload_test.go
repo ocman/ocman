@@ -72,11 +72,7 @@ func TestReloadIdleInspectsUnindexedAndRecoveringProjects(t *testing.T) {
 		{ID: "not-indexed", Status: db.StatusBusy}, {ID: "prompt", Status: db.StatusDone, PendingQuestion: true}, {ID: "idle", Status: db.StatusDone},
 	} {
 		project, socket := reloadTestAdapter(t, func(w http.ResponseWriter, _ *http.Request) { _ = json.NewEncoder(w).Encode([]db.Session{session}) })
-		store, err := state.Open(statetest.Path(t))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = store.Close() })
+		store := statetest.Open(t)
 		if err := store.UpsertManagedProvider(t.Context(), "claudecode", "/repo", state.ManagedInstance{Endpoint: "unix://" + socket}); err != nil {
 			t.Fatal(err)
 		}

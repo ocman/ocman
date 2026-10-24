@@ -3,10 +3,12 @@ package remote
 import (
 	"sync"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestManagerStoreConcurrentReadsShareState(t *testing.T) {
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	id, err := store.AddRemote(t.Context(), "127.0.0.1:59998", "token", "Saved remote")
 	if err != nil {
 		t.Fatal(err)

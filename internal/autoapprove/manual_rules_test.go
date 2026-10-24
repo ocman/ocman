@@ -11,6 +11,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func saveManualRules(t *testing.T, store *state.DB, platform, sid string, rules []platforms.PermissionRule) {
@@ -27,7 +28,7 @@ func saveManualRules(t *testing.T, store *state.DB, platform, sid string, rules 
 func TestManualRulesOverrideNativeRulesAndJudge(t *testing.T) {
 	for _, action := range []string{"allow", "ask", "deny"} {
 		t.Run(action, func(t *testing.T) {
-			store := openModuleStore(t)
+			store := statetest.Open(t)
 			if err := store.EnsurePermissionInboxItem(t.Context(), state.InboxPermission{Platform: "fake", SessionID: "child", PermissionID: "p1", Permission: "bash", Patterns: []string{"tea do something"}}); err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +66,7 @@ func TestManualRulesOverrideNativeRulesAndJudge(t *testing.T) {
 }
 
 func TestManualRulesScopeAndExactValues(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	saveManualRules(t, store, "fake", "root", []platforms.PermissionRule{{Permission: "bash", Pattern: `cat \*`, Action: "deny"}})
 	svc := NewService(Deps{Store: store, ParentSessionID: func(_ context.Context, id string) (string, bool) { return "root", id == "child" }})
 	for _, tc := range []struct{ platform, sid, command, want string }{
@@ -89,7 +90,7 @@ func TestManualRulesScopeAndExactValues(t *testing.T) {
 }
 
 func TestManualRulesFailClosedAndGuardLateJudge(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	svc := NewService(Deps{Store: store})
 	rec := &replyRecorder{}
 	adapter := &fakePlatform{respondPermissionFn: rec.record}
@@ -117,7 +118,7 @@ func TestManualRulesFailClosedAndGuardLateJudge(t *testing.T) {
 }
 
 func TestManualRuleReplyFailureStaysActionable(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	saveManualRules(t, store, "fake", "s", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}})
 	for _, replyErr := range []error{errors.New("offline"), platforms.ErrReplyUnrecorded} {
 		svc := NewService(Deps{Store: store})
@@ -139,7 +140,7 @@ func TestManualRuleReplyFailureStaysActionable(t *testing.T) {
 }
 
 func TestManualRuleEnsureReplayDoesNotReplyTwice(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	saveManualRules(t, store, "fake", "s", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}})
 	rec := &replyRecorder{}
 	adapter := &fakePlatform{respondPermissionFn: rec.record}
@@ -157,7 +158,7 @@ func TestManualRuleEnsureReplayDoesNotReplyTwice(t *testing.T) {
 func TestRemovingAskRuleResumesPendingRequest(t *testing.T) {
 	for _, running := range []bool{false, true} {
 		t.Run(map[bool]string{false: "settled", true: "cancelled judge releasing"}[running], func(t *testing.T) {
-			store := openModuleStore(t)
+			store := statetest.Open(t)
 			saveManualRules(t, store, "fake", "s", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "ask"}})
 			rec := &replyRecorder{}
 			adapter := &fakePlatform{rules: map[string][]platforms.PermissionRule{"s": yoloRules}, respondPermissionFn: rec.record}
@@ -194,7 +195,7 @@ func (p manualPolicyPlatform) ListPermissions(context.Context, string) ([]platfo
 }
 
 func TestManualPolicyHTTP(t *testing.T) {
-	store := openModuleStore(t)
+	store := statetest.Open(t)
 	adapter := manualPolicyPlatform{fakePlatform: &fakePlatform{detail: &platforms.SessionDetail{Session: &db.Session{ID: "s"}}}}
 	m := newTestModule(store)
 	m.Session = func(http.ResponseWriter, *http.Request, string) platforms.Platform { return adapter }

@@ -44,11 +44,7 @@ func (l *recoveryDeliveryLauncher) ResumeImplementationSession(ctx context.Conte
 
 func recoveryDeliveryFixture(t *testing.T) (*NativeService, *recoveryCompletionStore, *recoveryDeliveryLauncher, model.RecoveryGate) {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t)
 	store := &recoveryCompletionStore{DB: db}
 	launcher := &recoveryDeliveryLauncher{}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)

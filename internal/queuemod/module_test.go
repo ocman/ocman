@@ -31,11 +31,7 @@ func (p lifecyclePlatform) SessionLifecycle(context.Context, string) (*platforms
 }
 
 func TestShutdownSweptSendCommitsReceipt(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	entered, release := make(chan struct{}), make(chan struct{})
 	m := NewModule(Deps{
 		Store: store, Adapter: func(context.Context, string, string) (platforms.Platform, bool) {
@@ -74,11 +70,7 @@ func (lifecyclePlatform) Session(context.Context, string, int, int) (*platforms.
 }
 
 func TestShutdownJoinsAdmittedSendAndPreservesReceipt(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	entered, release := make(chan struct{}), make(chan struct{})
 	m := NewModule(Deps{
 		Store: store, Sessions: func() Sessions { return nil },
@@ -138,11 +130,7 @@ func TestRunWithoutStoreAndRecovery(t *testing.T) {
 }
 
 func TestSettingsAndProjectModelInvalidation(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	m := NewModule(Deps{Store: store})
 	if m.Name() != "queue" {
 		t.Fatal(m.Name())
@@ -182,11 +170,7 @@ func TestSettingsAndProjectModelInvalidation(t *testing.T) {
 func TestPreparationCancellationDoesNotSpendQueueRetries(t *testing.T) {
 	for _, preparationErr := range []error{context.Canceled, context.DeadlineExceeded} {
 		t.Run(preparationErr.Error(), func(t *testing.T) {
-			store, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = store.Close() })
+			store := statetest.Open(t)
 			m := NewModule(Deps{
 				Store: store, Adapter: func(context.Context, string, string) (platforms.Platform, bool) { return lifecyclePlatform{}, true },
 				PrepareSend: func(context.Context, string, platforms.SendMessageRequest) (func(context.Context) error, error) {
@@ -212,11 +196,7 @@ func serveSetting[T any](route httpx.SettingRoute[T]) http.Handler {
 }
 
 func TestModelFallthroughSettingsRoundTrip(t *testing.T) {
-	store, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t)
 	h := serveSetting(NewModule(Deps{Store: store}).Settings())
 	serve := func(method, body string) (int, string) {
 		rec := httptest.NewRecorder()

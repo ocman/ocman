@@ -18,6 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
@@ -76,7 +77,7 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	stop1 := startRealRemoteAt(t, addr, "tok", "inst-1", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	if _, err := store.AddRemote(t.Context(), "grpc://"+addr, "tok", "Box"); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	reconnectBaseDelay = 50 * time.Millisecond
 	t.Cleanup(func() { reconnectBaseDelay = prev })
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	localID, err := store.AddRemote(t.Context(), "grpc://"+addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +172,7 @@ func TestManager_AuthFailedDoesNotRetry(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "correct-token", "auth-remote", remoteReg)
 
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	// Wrong token.
 	localID, err := store.AddRemote(t.Context(), addr, "wrong-token", "Box")
 	if err != nil {
@@ -263,7 +264,7 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 	addr := startRealRemote(t, "tok", "abc123", remoteReg)
 
 	// Hub side: a real in-memory state.db with one saved remote.
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	if _, err := store.AddRemote(t.Context(), addr, "tok", "Workstation"); err != nil {
 		t.Fatal(err)
 	}

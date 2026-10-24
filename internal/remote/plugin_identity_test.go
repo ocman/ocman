@@ -8,17 +8,12 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/google/uuid"
 )
 
 func TestRestoredRemotePluginCorrelationsUseOnlyTheirScopedProof(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, owned.ReferenceSchema), owned.ReferenceSchema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, owned.ReferenceSchema)
 	p := canonicalRemotePlatform().withPluginReferences(core)
 	id := "ocm_" + uuid.NewString()
 	if got, err := p.PluginSessionReference(t.Context(), id); err != nil || got != id {

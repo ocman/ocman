@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type testInboxStore struct {
@@ -22,7 +23,7 @@ type testInboxStore struct {
 
 func openInboxStore(t *testing.T) *testInboxStore {
 	t.Helper()
-	store := newStateDB(t)
+	store := statetest.Open(t)
 	return &testInboxStore{DB: store, raw: store.SQL()}
 }
 

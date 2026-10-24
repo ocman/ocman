@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
@@ -56,11 +55,7 @@ func TestRecoveryReloadDrainsAdmissionAndWaitsForAuthoritativeIdle(t *testing.T)
 }
 
 func TestSavingUnchangedPlatformSelectionCannotCancelRecovery(t *testing.T) {
-	core, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t)
 	m := New(core)
 	m.Configure(func() {}, []string{"opencode"}, false, func(context.Context) (bool, error) { return true, nil })
 	m.RequestRecoveryReload()

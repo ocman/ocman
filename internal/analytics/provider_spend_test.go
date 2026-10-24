@@ -16,11 +16,7 @@ import (
 
 func spendModule(t *testing.T) *Module {
 	t.Helper()
-	store, err := state.Open(statetest.Path(t), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t, Schema)
 	m := newTestModule(Deps{Store: store, TypeSafeConfigured: func(context.Context) (bool, error) { return true, nil }})
 	m.subscription.authPath = filepath.Join(t.TempDir(), "missing.json")
 	return m

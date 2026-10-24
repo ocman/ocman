@@ -31,11 +31,7 @@ func TestReferenceRecoveryModuleRequiresCanonicalRegistry(t *testing.T) {
 }
 
 func TestQuarantinedLocalQueueDoesNotPreventRecoveryReload(t *testing.T) {
-	core, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t)
 	pending := identity.PendingReference()
 	if err := core.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "held", Platform: "opencode", SessionID: pending, Text: "retained"}); err != nil {
 		t.Fatal(err)

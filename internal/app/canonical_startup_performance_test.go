@@ -9,7 +9,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/server"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
@@ -33,11 +32,7 @@ func (p *startupInventoryNative) Sessions(ctx context.Context, dir string, after
 }
 
 func TestCompositionSchedulesHistoryWithoutPerformingIt(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, server.ModuleSchemas()...), server.ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, server.ModuleSchemas()...)
 	history, err := statev2.Open(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -80,11 +75,7 @@ func TestCompositionSchedulesHistoryWithoutPerformingIt(t *testing.T) {
 }
 
 func TestInterruptedHistoryPlanDoesNotRediscoverCanonicalParentsAsNative(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, server.ModuleSchemas()...), server.ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, server.ModuleSchemas()...)
 	history, err := statev2.Open(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -136,11 +127,7 @@ func TestInterruptedHistoryPlanDoesNotRediscoverCanonicalParentsAsNative(t *test
 }
 
 func TestCanonicalRestartDoesNotRepeatHistoricalInventory(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, server.ModuleSchemas()...), server.ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, server.ModuleSchemas()...)
 	history, err := statev2.Open(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -158,11 +145,7 @@ func TestCanonicalRestartDoesNotRepeatHistoricalInventory(t *testing.T) {
 }
 
 func TestRestartRestoresLocalReferencesDiscoveredAfterCutover(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, server.ModuleSchemas()...), server.ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, server.ModuleSchemas()...)
 	history, err := statev2.Open(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
 		t.Fatal(err)

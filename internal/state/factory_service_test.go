@@ -22,15 +22,6 @@ func init() {
 	}
 }
 
-func openFactoryTestDB(t *testing.T) *state.DB {
-	t.Helper()
-	db, err := state.Open(statetest.Path(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return db
-}
-
 func nativeTracerFormulaExternal() model.NativeFormula {
 	formula := factory.BuiltInTracerFormula()
 	return model.NativeFormula{
@@ -41,8 +32,7 @@ func nativeTracerFormulaExternal() model.NativeFormula {
 }
 
 func TestFactoryServicePoursCreatedBuiltInEpic(t *testing.T) {
-	db := openFactoryTestDB(t)
-	defer db.Close()
+	db := statetest.Open(t)
 	formula := nativeTracerFormulaExternal()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(context.Background(), "", "Ship search", "Keep it small", "/repo", "", formula, nil, nil)
 	if err != nil {
@@ -54,8 +44,7 @@ func TestFactoryServicePoursCreatedBuiltInEpic(t *testing.T) {
 }
 
 func TestFactoryPourNormalizesLegacyBuiltInSourceHash(t *testing.T) {
-	db := openFactoryTestDB(t)
-	defer db.Close()
+	db := statetest.Open(t)
 	ctx := context.Background()
 	formula := nativeTracerFormulaExternal()
 	legacy, err := factory.NewNativeWithExecution(db, nil, nil, nil).GetFormula(ctx, "ocman/tracer", 1)

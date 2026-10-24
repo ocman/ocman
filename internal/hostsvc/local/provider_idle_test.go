@@ -66,11 +66,7 @@ func TestIdleCullRollbackAndInterruptedCleanupRecovery(t *testing.T) {
 			}
 			go func() { _ = server.Serve(listener) }()
 			t.Cleanup(func() { _ = server.Close() })
-			store, err := state.Open(statetest.Path(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = store.Close() })
+			store := statetest.Open(t)
 			runtime := ocruntime.NewBackendRuntime("fake", "/unused", dir)
 			// An invalid cleanup handle makes Stop fail without invoking tmux.
 			mustIdle(t, store.UpsertManagedProvider(t.Context(), "fake", "/repo", state.ManagedInstance{Endpoint: "unix://" + socket, Kind: ocruntime.KindProviderTmux, RuntimeID: "invalid/name"}))

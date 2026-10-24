@@ -9,7 +9,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
 )
@@ -45,11 +44,7 @@ func (p *canonicalMetadataNative) SessionIdentityMetadata(ctx context.Context, i
 // Parent, directory and descendant lookups read the ingested read model
 // through the canonical adapter, never the native database or a transcript.
 func TestCanonicalMetadataUsesIngestedReadModel(t *testing.T) {
-	core, err := state.Open(statetest.Path(t, ModuleSchemas()...), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = core.Close() })
+	core := statetest.Open(t, ModuleSchemas()...)
 	catalogue, err := sessioncatalog.New(core)
 	if err != nil {
 		t.Fatal(err)

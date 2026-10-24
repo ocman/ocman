@@ -12,11 +12,7 @@ import (
 
 func openStore(t testing.TB) (*Store, *state.DB) {
 	t.Helper()
-	db, err := state.Open(statetest.Path(t, Schema), Schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, Schema)
 	s, err := New(db)
 	if err != nil {
 		t.Fatal(err)
