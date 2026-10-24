@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/startup"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
 	log "github.com/sirupsen/logrus"
@@ -105,18 +104,18 @@ func (s *Server) startServingServices(ctx context.Context, workers *sync.WaitGro
 		return err
 	}
 	ctx, p.cancel = context.WithCancel(ctx)
-	mods := s.modules() // materialize lazy dependencies before concurrent startup
-	workers.Go(func() { s.runSessionPreparation(ctx, p, mods) })
+	s.modules() // materialize lazy dependencies before concurrent startup
+	workers.Go(func() { s.runSessionPreparation(ctx, p) })
 	return nil
 }
 
-func (s *Server) runSessionPreparation(ctx context.Context, p *sessionPreparation, mods []module.Module) {
+func (s *Server) runSessionPreparation(ctx context.Context, p *sessionPreparation) {
 	lifetime := ctx
 	var workers sync.WaitGroup
-	closeModules := func() {}
+	closeFactory := func() {}
 	defer func() {
 		<-p.stopping // listeners/handlers must be fenced before module teardown
-		closeModules()
+		closeFactory()
 		s.stopPluginProcesses()
 		p.cancel()
 		workers.Wait()
@@ -138,7 +137,7 @@ func (s *Server) runSessionPreparation(ctx context.Context, p *sessionPreparatio
 		}
 		p.prepared.Store(true)
 		var err error
-		closeModules, err = launchModules(lifetime, mods)
+		closeFactory, err = s.launchFactory(lifetime)
 		if err != nil {
 			return err
 		}
@@ -162,7 +161,7 @@ func (s *Server) launchServingServices(ctx context.Context) (func(), error) {
 		close(p.mcpReady)
 		return s.stopSessionPreparation, nil
 	}
-	return launchModules(ctx, s.modules())
+	return s.launchFactory(ctx)
 }
 
 func (s *Server) stopSessionPreparation() {

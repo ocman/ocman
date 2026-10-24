@@ -61,22 +61,8 @@ type Runner interface {
 	Run(ctx context.Context)
 }
 
-// Launcher starts work whose agents call back into the server: Launch runs
-// once the MCP listener is up, before the HTTP server serves. An error
-// aborts startup.
-type Launcher interface {
-	Launch(ctx context.Context) error
-}
-
-// Closer stops a launched module after the HTTP and MCP listeners have shut
-// down, so no in-flight request reaches it mid-close, and before workers
-// are joined and databases closed.
-type Closer interface {
-	Close()
-}
-
 // Finalizer releases resources opened during Start after handlers are fenced
-// and all workers joined, including failed startup before Run or Launch. It
+// and all workers joined, including failed startup before Run. It
 // must tolerate unopened resources and repeated calls.
 type Finalizer interface {
 	Finalize()

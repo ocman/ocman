@@ -1030,9 +1030,9 @@ flowchart TD
   first successful input. `sessiontitles` handles it only on the owning machine:
   Claude's adapter runs a tool-free, non-persisted Haiku helper, then a guarded
   rename updates the title without adding a turn or overwriting a manual name.
-  Factory launches (`module.Launcher`) once the MCP listener is up, because
-  its sessions verify their ocman MCP connection, and closes (`module.Closer`)
-  after the HTTP and MCP listeners stop. Analytics (`internal/analytics`) owns
+  The server launches Factory once the MCP listener is up, because its
+  sessions verify their ocman MCP connection, and closes it after the HTTP and
+  MCP listeners stop. Analytics (`internal/analytics`) owns
   the Stats/Usage endpoints, UI-usage recording, provider usage and its cost ledger, and the
   database-size sampler, stats gauges and LLM-turn scanner, all joined in its
   `Run`. Accounting reads use statev2 projections through `internal/db`.
@@ -1231,7 +1231,7 @@ flowchart TD
   after auto-approve seeds the judge delay, before the other modules); `RescanPlugins` repeats the scan and records identities, checksums,
   and conflicts in state. Its `Run` drives the conversation reply pump and
   reconciliation; the server stops its processes after the listeners and
-  launched modules close, before workers are joined. The module supervises
+  Factory close, before workers are joined. The module supervises
   one serve process per enabled local plugin from its private data directory, with
   bounded calls/output, cancellation, restart cutoff and process-group shutdown.
   Process health is durable; sensitive stderr stays bounded in local memory.

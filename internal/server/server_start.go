@@ -57,7 +57,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	s.lifetimeCtx = ctx
 	s.lifetimeMu.Unlock()
 	// Plugins start (discovery, processes) with the other modules below; their
-	// processes stop here, after the listeners and launched modules close.
+	// processes stop here, after the listeners and Factory close.
 	defer s.stopPluginProcesses()
 	// The auto-approve module seeds the judge delay before the other
 	// modules start and runs the headless watcher among their workers.

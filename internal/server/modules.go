@@ -313,30 +313,15 @@ func startModules(ctx context.Context, mods []module.Module, workers *sync.WaitG
 	return nil
 }
 
-// launchModules runs every Launcher once the MCP listener is up. The
-// returned func closes the launched modules in reverse order; on error the
-// ones already launched are closed and the failing one is not.
-func launchModules(ctx context.Context, mods []module.Module) (func(), error) {
-	var launched []module.Closer
-	closeAll := func() {
-		for i := len(launched) - 1; i >= 0; i-- {
-			launched[i].Close()
-		}
+// launchFactory starts Factory dispatch once the MCP listener is up, because
+// its sessions verify their ocman MCP connection. The returned func stops it
+// after the listeners shut down; a failed launch is not closed.
+func (s *Server) launchFactory(ctx context.Context) (func(), error) {
+	f := s.factoryModule()
+	if err := f.Launch(ctx); err != nil {
+		return func() {}, fmt.Errorf("starting %s: %w", f.Name(), err)
 	}
-	for _, m := range mods {
-		l, ok := m.(module.Launcher)
-		if !ok {
-			continue
-		}
-		if err := l.Launch(ctx); err != nil {
-			closeAll()
-			return func() {}, fmt.Errorf("starting %s: %w", m.Name(), err)
-		}
-		if c, ok := m.(module.Closer); ok {
-			launched = append(launched, c)
-		}
-	}
-	return closeAll, nil
+	return f.Close, nil
 }
 
 // pluginsModule exists without a state DB too: plugin routes then answer

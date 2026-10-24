@@ -10,20 +10,20 @@ A feature owning routes, background work, MCP tools or event reactions is a
 module under `internal/module`, not a collection of `*Server` methods.
 `Server.modules()` in `internal/server/modules.go` is the only registry.
 
-- `Starter` runs before serving. `Launcher` runs after the MCP listener starts,
-  for work whose agents call MCP. `Runner` workers are joined at shutdown.
+- `Starter` runs before serving. `Runner` workers are joined at shutdown.
   During initial canonical cutover the server defers session consumers behind
   `sessionPreparation` while HTTP/auth/task status serve. Do not start a session
   worker outside `startSessionServices` or bypass the HTTP/MCP/gRPC fences.
-- `Closer` runs in reverse order after HTTP/MCP listeners stop and before workers
-  are joined. `ToolProvider` supplies MCP tools; `Subscriber` uses the typed bus.
+- `ToolProvider` supplies MCP tools; `Subscriber` uses the typed bus.
   `Finalizer` releases startup resources after workers join, even when startup
-  fails before `Run` or `Launch`; cleanup must tolerate unopened resources.
-- Factory is the Launcher/Closer and verifies launched sessions' MCP connection.
+  fails before `Run`; cleanup must tolerate unopened resources.
+- The server launches Factory directly once the MCP listener is up, because its
+  sessions verify their MCP connection, and closes it after HTTP/MCP listeners
+  stop and before workers are joined.
   Auto-approve comes first to seed judge delay and run the headless watcher.
   Plugins come next, binding their lifetime and discovering in `Start`, then
   pumping replies and reconciling in `Run`. Preserve the server's deferred plugin
-  process stop after listeners and launched modules close, before worker joins.
+  process stop after listeners and Factory close, before worker joins.
 - A module never imports `internal/server` or another module. Inject narrow
   interfaces and functions through `Deps`. Webhooks reach routines through
   `webhook.Routines`, for example.

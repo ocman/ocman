@@ -124,8 +124,6 @@ type Module struct {
 
 var (
 	_ module.Module       = (*Module)(nil)
-	_ module.Launcher     = (*Module)(nil)
-	_ module.Closer       = (*Module)(nil)
 	_ module.ToolProvider = (*Module)(nil)
 	_ module.Subscriber   = (*Module)(nil)
 )
