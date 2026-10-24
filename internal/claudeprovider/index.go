@@ -18,7 +18,7 @@ import (
 )
 
 // schemaVersion bumps wipe the index; it is disposable and has no migrations.
-const schemaVersion = 3
+const schemaVersion = 4
 
 const schema = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);

@@ -147,10 +147,10 @@ func TestProjectSupervisorFollowsDashboardConfiguration(t *testing.T) {
 	supervisor := e.endpoint(t)
 
 	// Hold the next turn open across a restart that rebinds the listener.
+	eventually(t, "first turn idle", func() bool { s := p.LiveStatus(id); return s != nil && s.Status == "done" })
 	if err := os.Remove(hold); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "first turn idle", func() bool { s := p.LiveStatus(id); return s != nil && s.Status == "done" })
 	if err := p.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: id, Message: "two"}); err != nil {
 		t.Fatal(err)
 	}
