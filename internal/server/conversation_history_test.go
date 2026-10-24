@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -105,6 +109,42 @@ func TestConversationHistoryModuleWiringAndInvalidation(t *testing.T) {
 	s.observeHistoryChange("other", nil)
 	s.observeHistoryChange("ocman.session.changed", []byte(`{`))
 	(&Server{}).observeHistoryChange("ocman.session.changed", nil)
+}
+
+type failingHistoryPlatform struct{ *historyTestPlatform }
+
+func (failingHistoryPlatform) HistoryInventory(context.Context) ([]db.HistoryEntry, error) {
+	return nil, errors.New("inventory unavailable")
+}
+
+func TestConversationHistoryLogsRepairFailures(t *testing.T) {
+	hook := logtest.NewGlobal()
+	store, err := statev2.Open(filepath.Join(t.TempDir(), "statev2.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	registry := platforms.NewRegistry()
+	registry.Register(failingHistoryPlatform{&historyTestPlatform{fakePlatform: &fakePlatform{id: "test"}}})
+	s := New(nil, nil, "127.0.0.1:0", registry, nil).WithConversationHistory(store, "owner")
+	if err := s.historyIngest.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { s.historyIngest.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	for deadline := time.Now().Add(4 * time.Second); ; {
+		for _, entry := range hook.AllEntries() {
+			if entry.Message == "conversation history repair failed; will retry" && entry.Level == log.WarnLevel {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("repair failure was not logged")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func TestConversationHistoryDoesNotRegisterNativeAnalyticsParity(t *testing.T) {

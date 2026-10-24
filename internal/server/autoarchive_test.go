@@ -98,6 +98,29 @@ func TestAutoArchivePreservesConcurrentSnooze(t *testing.T) {
 	}
 }
 
+type scannedArchivePlatform struct {
+	fakePlatform
+	scanned bool
+}
+
+func (p *scannedArchivePlatform) SessionsInactiveBefore(context.Context, int64) ([]db.SessionArchiveCandidate, error) {
+	p.scanned = true
+	return nil, nil
+}
+
+func TestAutoArchiveScansWhenUnarchiveLookupFails(t *testing.T) {
+	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
+	p := &scannedArchivePlatform{fakePlatform: fakePlatform{id: "fake"}}
+	srv.registry.Register(p)
+	if _, err := srv.stateDB.SQL().Exec(`DROP TABLE unarchived_entity`); err != nil {
+		t.Fatal(err)
+	}
+	srv.autoArchiveInactiveSessions(t.Context())
+	if !p.scanned {
+		t.Fatal("unarchive lookup failure aborted the inactivity scan")
+	}
+}
+
 func TestAutoArchivePreservesSnoozeThatWakesDuringScan(t *testing.T) {
 	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
 	srv.registry.Register(&snoozeDuringArchivePlatform{fakePlatform: fakePlatform{id: "fake"}, store: srv.stateDB, until: time.Now().Add(time.Hour).UnixMilli(), wake: true})

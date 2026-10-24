@@ -35,7 +35,6 @@ func testServer(t *testing.T) *Server {
 	t.Helper()
 	srv, setupDB := newOpenCodeTestServer(t)
 	setupDB.Close()
-	ownTestServer(t, srv)
 	return srv
 }
 
@@ -826,6 +825,11 @@ func TestServerRetainedStartupWiring(t *testing.T) {
 	if managedStoreOrNil(nil) != nil {
 		t.Fatal("nil state database produced a managed store")
 	}
+	closedState := openTestStateDB(t)
+	_ = closedState.Close()
+	if _, err := managedStoreOrNil(closedState).List(t.Context()); err == nil {
+		t.Fatal("managed store listing hid a database failure")
+	}
 
 	local := &projectHandleRemoteHost{remoteID: "local", upstreams: &hostsvc.ProjectUpstreams{RepoRoot: "/repo"}}
 	resolverServer := &Server{hostRouter: hostsvc.NewRouter(local)}
@@ -1021,7 +1025,7 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 
 // testServerWithRawDB is like testServer but also returns a raw *sql.DB
 // handle to the same OpenCode database so tests can seed additional rows.
-// It resets the process-wide OpenCode caches and is not owned by the test.
+// It also resets the process-wide OpenCode caches.
 func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	t.Helper()
 	// Process-wide OpenCode HTTP caches are keyed by port; start clean.
@@ -1029,8 +1033,9 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	return newOpenCodeTestServer(t)
 }
 
-// newOpenCodeTestServer builds the shared OpenCode test server and returns
-// the writable connection used to create the schema; the caller owns it.
+// newOpenCodeTestServer builds the shared OpenCode test server, owned by the
+// test (see ownTestServer), and returns the writable connection used to
+// create the schema; the caller owns it.
 func newOpenCodeTestServer(t *testing.T) (*Server, *sql.DB) {
 	t.Helper()
 	tmpDir := t.TempDir()
@@ -1098,6 +1103,7 @@ func newOpenCodeTestServer(t *testing.T) (*Server, *sql.DB) {
 	// session per run (the temp dir is cleaned up, the session isn't).
 	// Override before the host router is built lazily on first use.
 	srv.runtime = fakeRuntime{}
+	ownTestServer(t, srv)
 	return srv, setupDB
 }
 

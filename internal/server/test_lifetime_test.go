@@ -37,12 +37,24 @@ func ownTestServer(t *testing.T, srv *Server) {
 }
 
 func TestTestServerJoinsProjectRefreshBeforeTeardown(t *testing.T) {
+	for name, build := range map[string]func(*testing.T) *Server{
+		"testServer": testServer,
+		"testServerWithRawDB": func(t *testing.T) *Server {
+			srv, _ := testServerWithRawDB(t)
+			return srv
+		},
+	} {
+		t.Run(name, func(t *testing.T) { assertJoinsProjectRefreshBeforeTeardown(t, build) })
+	}
+}
+
+func assertJoinsProjectRefreshBeforeTeardown(t *testing.T, build func(*testing.T) *Server) {
 	finished := make(chan struct{})
 	release := make(chan struct{})
 	defer func() { close(release); <-finished }()
 	var srv *Server
 	t.Run("owner", func(t *testing.T) {
-		srv = testServer(t)
+		srv = build(t)
 		started := make(chan struct{})
 		srv.projects.fetch = func() ([]db.ProjectStats, error) {
 			ctx := srv.lifetime()
