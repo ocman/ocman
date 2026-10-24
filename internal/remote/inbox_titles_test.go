@@ -53,9 +53,9 @@ func TestInboxTitlesOwnerMetadata(t *testing.T) {
 			if err := store.ArchiveInboxItems(t.Context(), []string{items[0].ID}); err != nil {
 				t.Fatal(err)
 			}
-			resp, err = s.ArchivedInboxItems(t.Context(), &pb.Empty{})
+			resp, err = s.ArchivedInboxItems(t.Context(), &pb.CallReq{})
 		} else {
-			resp, err = s.InboxItems(t.Context(), &pb.Empty{})
+			resp, err = s.InboxItems(t.Context(), &pb.CallReq{})
 		}
 		if err != nil {
 			t.Fatal(err)

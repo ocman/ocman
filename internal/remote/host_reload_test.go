@@ -49,7 +49,7 @@ type oldReloadClient struct {
 	err error
 }
 
-func (c oldReloadClient) ReloadOpencode(context.Context, *pb.Empty, ...grpc.CallOption) (*pb.Empty, error) {
+func (c oldReloadClient) Call(context.Context, *pb.CallReq, ...grpc.CallOption) (*pb.JsonResp, error) {
 	if c.err != nil {
 		return nil, c.err
 	}

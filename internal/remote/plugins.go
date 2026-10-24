@@ -55,7 +55,7 @@ func (s *Server) UsePlugins(handler PluginHandler) *Server {
 	return s
 }
 
-func (s *Server) PluginOperation(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+func (s *Server) PluginOperation(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if s.plugins == nil {
 		return nil, status.Error(codes.Unavailable, "plugins unavailable")
 	}
@@ -76,20 +76,12 @@ func (s *Server) PluginOperation(ctx context.Context, req *pb.JsonReq) (*pb.Json
 }
 
 func (c *RemoteConn) PluginOperation(ctx context.Context, req PluginRequest) (PluginResponse, error) {
-	client := c.Client()
-	if client == nil {
-		return PluginResponse{}, platforms.ErrRemoteOffline
-	}
-	payload, err := marshalJSON(req)
-	if err != nil {
-		return PluginResponse{}, err
-	}
-	resp, err := client.PluginOperation(ctx, &pb.JsonReq{Payload: payload}, grpc.MaxCallRecvMsgSize(MaxPluginResponseBytes+(64<<10)))
+	payload, err := c.call(ctx, &pb.CallReq{Method: "PluginOperation"}, req, grpc.MaxCallRecvMsgSize(MaxPluginResponseBytes+(64<<10)))
 	if err != nil {
 		return PluginResponse{}, err
 	}
 	var result PluginResponse
-	err = unmarshalJSON(resp.Payload, &result)
+	err = unmarshalJSON(payload, &result)
 	return result, err
 }
 

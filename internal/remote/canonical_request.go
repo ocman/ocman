@@ -10,7 +10,7 @@ import (
 
 // decodeSessionRequest is the explicit v9 RPC request contract. Opaque prompt,
 // tool, model, message and permission IDs are never searched or rewritten.
-func (s *Server) decodeSessionRequest(req *pb.PlatformJsonReq, dst any) error {
+func (s *Server) decodeSessionRequest(req *pb.CallReq, dst any) error {
 	if err := unmarshalJSON(req.Payload, dst); err != nil {
 		return err
 	}

@@ -12,11 +12,7 @@ import (
 )
 
 func (h *remoteHost) ReloadOpencode(ctx context.Context) error {
-	client := h.conn.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	_, err := client.ReloadOpencode(ctx, &pb.Empty{})
+	_, err := h.conn.call(ctx, &pb.CallReq{Method: "ReloadOpencode"}, nil)
 	if status.Code(err) == codes.FailedPrecondition {
 		var rejection platforms.UpstreamError
 		if json.Unmarshal([]byte(status.Convert(err).Message()), &rejection) == nil {
@@ -26,12 +22,12 @@ func (h *remoteHost) ReloadOpencode(ctx context.Context) error {
 	return remotePlatformError(err)
 }
 
-func (s *Server) ReloadOpencode(ctx context.Context, _ *pb.Empty) (*pb.Empty, error) {
+func (s *Server) ReloadOpencode(ctx context.Context, _ *pb.CallReq) (*pb.JsonResp, error) {
 	err := s.host.ReloadOpencode(ctx)
 	var rejection *platforms.UpstreamError
 	if errors.As(err, &rejection) {
 		payload, _ := json.Marshal(rejection)
 		return nil, status.Error(codes.FailedPrecondition, string(payload))
 	}
-	return &pb.Empty{}, svcErr(err)
+	return &pb.JsonResp{}, svcErr(err)
 }

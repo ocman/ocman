@@ -30,15 +30,15 @@ func TestForgeHostRPCsRejectRelativePaths(t *testing.T) {
 		call func() error
 	}{
 		{"git info", func() error {
-			_, err := srv.GitInfo(context.Background(), &pb.JsonReq{Payload: []byte(`["/repo","relative"]`)})
+			_, err := srv.GitInfo(context.Background(), &pb.CallReq{Payload: []byte(`["/repo","relative"]`)})
 			return err
 		}},
 		{"project upstreams", func() error {
-			_, err := srv.ProjectUpstreams(context.Background(), &pb.JsonReq{Payload: []byte(`{"dir":"relative"}`)})
+			_, err := srv.ProjectUpstreams(context.Background(), &pb.CallReq{Payload: []byte(`{"dir":"relative"}`)})
 			return err
 		}},
 		{"fetch PR head", func() error {
-			_, err := srv.FetchPRHead(context.Background(), &pb.JsonReq{Payload: []byte(`{"repoRoot":"relative","remote":"origin","number":1}`)})
+			_, err := srv.FetchPRHead(context.Background(), &pb.CallReq{Payload: []byte(`{"repoRoot":"relative","remote":"origin","number":1}`)})
 			return err
 		}},
 	}
@@ -422,7 +422,7 @@ func TestServer_CreateSessionMapsUnreachableToUnavailable(t *testing.T) {
 		t.Fatalf("marshal request: %v", err)
 	}
 
-	_, err = srv.CreateSession(context.Background(), &pb.PlatformJsonReq{Platform: "opencode", Payload: b})
+	_, err = srv.CreateSession(context.Background(), &pb.CallReq{Platform: "opencode", Payload: b})
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("CreateSession error code = %v, want Unavailable (err=%v)", status.Code(err), err)
 	}
@@ -449,7 +449,7 @@ func TestServer_MutationsUseSharedSessionService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if _, err := srv.RespondPermission(ctx, &pb.PlatformJsonReq{Platform: "opencode", Payload: b}); err != nil {
+	if _, err := srv.RespondPermission(ctx, &pb.CallReq{Platform: "opencode", Payload: b}); err != nil {
 		t.Fatalf("RespondPermission: %v", err)
 	}
 	if len(replied) != 1 || replied[0] != "s1|p1" {
@@ -460,7 +460,7 @@ func TestServer_MutationsUseSharedSessionService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	_, err = srv.RespondPermission(ctx, &pb.PlatformJsonReq{Platform: "opencode", Payload: b})
+	_, err = srv.RespondPermission(ctx, &pb.CallReq{Platform: "opencode", Payload: b})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid reply error code = %v, want InvalidArgument (err=%v)", status.Code(err), err)
 	}
@@ -472,7 +472,7 @@ func TestServer_MutationsUseSharedSessionService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if _, err := srv.CreateSession(ctx, &pb.PlatformJsonReq{Platform: "opencode", Payload: b}); err != nil {
+	if _, err := srv.CreateSession(ctx, &pb.CallReq{Platform: "opencode", Payload: b}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 	if len(created) != 1 || created[0] != "new-sess" {
@@ -496,7 +496,7 @@ func TestServer_SendMessageRoundTrip(t *testing.T) {
 	client := pb.NewOcmanClient(conn)
 
 	payload, _ := marshalJSON(platforms.SendMessageRequest{SessionID: "s1", Message: "hello there"})
-	if _, err := client.SendMessage(context.Background(), &pb.PlatformJsonReq{Platform: "opencode", Payload: payload}); err != nil {
+	if _, err := client.Call(context.Background(), &pb.CallReq{Method: "SendMessage", Platform: "opencode", Payload: payload}); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	if fp.sent == nil || fp.sent.Message != "hello there" || fp.sent.SessionID != "s1" {
@@ -619,7 +619,7 @@ func TestServer_TermWindowsRoundTrip(t *testing.T) {
 	client := pb.NewOcmanClient(conn)
 
 	b, _ := marshalJSON(map[string]any{"dir": "/home/u/app"})
-	resp, err := client.TermWindows(context.Background(), &pb.JsonReq{Payload: b})
+	resp, err := client.Call(context.Background(), &pb.CallReq{Method: "TermWindows", Payload: b})
 	if err != nil {
 		t.Fatalf("TermWindows: %v", err)
 	}
@@ -631,7 +631,7 @@ func TestServer_TermWindowsRoundTrip(t *testing.T) {
 		t.Fatalf("windows mismatch: %+v", wins)
 	}
 
-	cresp, err := client.TermCreateWindow(context.Background(), &pb.JsonReq{Payload: b})
+	cresp, err := client.Call(context.Background(), &pb.CallReq{Method: "TermCreateWindow", Payload: b})
 	if err != nil {
 		t.Fatalf("TermCreateWindow: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestServer_TermWindowsRoundTrip(t *testing.T) {
 	}
 
 	killReq, _ := marshalJSON(map[string]any{"dir": "/home/u/app", "window": "ocman-abc-1"})
-	if _, err := client.TermKillWindow(context.Background(), &pb.JsonReq{Payload: killReq}); err != nil {
+	if _, err := client.Call(context.Background(), &pb.CallReq{Method: "TermKillWindow", Payload: killReq}); err != nil {
 		t.Fatalf("TermKillWindow: %v", err)
 	}
 }

@@ -42,8 +42,8 @@ func TestRemoteConnRequiresExplicitPlaintextOptIn(t *testing.T) {
 }
 
 func TestProtocolCompatible(t *testing.T) {
-	if ProtocolVersion != 10 {
-		t.Fatalf("ProtocolVersion = %d, want 10 after the webhook-inbox RPC removal", ProtocolVersion)
+	if ProtocolVersion != 11 {
+		t.Fatalf("ProtocolVersion = %d, want 11 for the generic Call RPC", ProtocolVersion)
 	}
 	if !protocolCompatible(ProtocolVersion) {
 		t.Error("current protocol version should be compatible")

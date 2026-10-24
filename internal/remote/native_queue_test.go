@@ -138,17 +138,23 @@ func TestRemoteNativeQueue_UnknownPlatformIsNotUnsupported(t *testing.T) {
 // hub reads as "no native queue" so it falls back to ocman's queue.
 func TestRemoteNativeQueue_OldRemoteIsUnsupported(t *testing.T) {
 	rp := nativeQueuePair(t, &fakePlatform{id: "opencode"})
-	rp.conn = &RemoteConn{client: unimplementedClient{rp.conn.Client()}}
+	rp.conn = &RemoteConn{client: unimplementedClient{rp.conn.Client(), "NativeQueued"}}
 	if _, err := rp.NativeQueued(t.Context(), "s1"); !errors.Is(err, platforms.ErrUnsupported) {
 		t.Fatalf("NativeQueued err = %v, want ErrUnsupported", err)
 	}
 }
 
-// unimplementedClient answers NativeQueued like a server without the RPC.
-type unimplementedClient struct{ pb.OcmanClient }
+// unimplementedClient answers method like an older owner without it.
+type unimplementedClient struct {
+	pb.OcmanClient
+	method string
+}
 
-func (unimplementedClient) NativeQueued(context.Context, *pb.SessionRef, ...grpc.CallOption) (*pb.JsonResp, error) {
-	return nil, status.Error(codes.Unimplemented, "unknown method NativeQueued")
+func (c unimplementedClient) Call(ctx context.Context, req *pb.CallReq, opts ...grpc.CallOption) (*pb.JsonResp, error) {
+	if req.Method != c.method {
+		return c.OcmanClient.Call(ctx, req, opts...)
+	}
+	return nil, status.Errorf(codes.Unimplemented, "unknown method %s", c.method)
 }
 
 func TestRemoteNativeQueue_Offline(t *testing.T) {

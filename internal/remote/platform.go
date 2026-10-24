@@ -70,16 +70,12 @@ func (p *remotePlatform) Capabilities() platforms.Capabilities {
 	}
 	p.mu.RUnlock()
 	// Fetch lazily and cache.
-	client := p.conn.Client()
-	if client == nil {
-		return platforms.Capabilities{}
-	}
-	resp, err := client.Capabilities(context.Background(), &pb.PlatformRef{Platform: p.base})
+	payload, err := p.call(context.Background(), "Capabilities", "", nil)
 	if err != nil {
 		return platforms.Capabilities{}
 	}
 	var caps platforms.Capabilities
-	if err := unmarshalJSON(resp.Payload, &caps); err != nil {
+	if err := unmarshalJSON(payload, &caps); err != nil {
 		return platforms.Capabilities{}
 	}
 	if p.base == string(platforms.OpenCodeID) {
@@ -174,15 +170,11 @@ func (p *remotePlatform) SessionsInactiveBefore(ctx context.Context, cutoff int6
 }
 
 func (p *remotePlatform) SessionChanges(ctx context.Context, sessionID string) (*platforms.SessionChanges, error) {
-	return jsonCall(ctx, p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.SessionChanges(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	}, &platforms.SessionChanges{})
+	return jsonCall(ctx, p, "SessionChanges", sessionID, nil, &platforms.SessionChanges{})
 }
 
 func (p *remotePlatform) SessionInfo(ctx context.Context, sessionID string) (*platforms.SessionInfo, error) {
-	return jsonCall(ctx, p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.SessionInfo(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	}, &platforms.SessionInfo{})
+	return jsonCall(ctx, p, "SessionInfo", sessionID, nil, &platforms.SessionInfo{})
 }
 
 // LiveStatus is in-memory/local-only; remote live status is reflected
@@ -191,185 +183,111 @@ func (p *remotePlatform) SessionInfo(ctx context.Context, sessionID string) (*pl
 func (p *remotePlatform) LiveStatus(string) *platforms.LiveState { return nil }
 
 func (p *remotePlatform) AgentCatalog(ctx context.Context, sessionID string) ([]platforms.AgentCatalogEntry, error) {
-	return sliceCall[platforms.AgentCatalogEntry](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.AgentCatalog(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	})
+	return sliceCall[platforms.AgentCatalogEntry](ctx, p, "AgentCatalog", sessionID)
 }
 
 func (p *remotePlatform) SlashCommands(ctx context.Context, sessionID string) ([]platforms.SlashCommandEntry, error) {
-	return sliceCall[platforms.SlashCommandEntry](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.SlashCommands(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	})
+	return sliceCall[platforms.SlashCommandEntry](ctx, p, "SlashCommands", sessionID)
 }
 
 func (p *remotePlatform) SessionModels(ctx context.Context, sessionID string) (*platforms.SessionModelsResponse, error) {
-	return jsonCall(ctx, p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.SessionModels(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	}, &platforms.SessionModelsResponse{})
+	return jsonCall(ctx, p, "SessionModels", sessionID, nil, &platforms.SessionModelsResponse{})
 }
 
 func (p *remotePlatform) DirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
-	b, err := marshalJSON(req)
-	if err != nil {
-		return nil, err
-	}
-	return jsonCall(ctx, p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.DirectoryCatalog(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-	}, &platforms.DirectoryCatalog{})
+	return jsonCall(ctx, p, "DirectoryCatalog", "", req, &platforms.DirectoryCatalog{})
 }
 
 func (p *remotePlatform) ListPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.ListPermissions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	})
+	return sliceCall[platforms.LivePrompt](ctx, p, "ListPermissions", sessionID)
 }
 
 // RefreshPermissions asks the owner for an authoritative permission list.
 func (p *remotePlatform) RefreshPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.RefreshPermissions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	})
+	return sliceCall[platforms.LivePrompt](ctx, p, "RefreshPermissions", sessionID)
 }
 
 func (p *remotePlatform) ListQuestions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.ListQuestions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	})
+	return sliceCall[platforms.LivePrompt](ctx, p, "ListQuestions", sessionID)
 }
 
 func (p *remotePlatform) PermissionRules(ctx context.Context, sessionID string) ([]platforms.PermissionRule, error) {
-	return sliceCall[platforms.PermissionRule](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.PermissionRules(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	})
+	return sliceCall[platforms.PermissionRule](ctx, p, "PermissionRules", sessionID)
 }
 
 // --- mutations ---
 
 func (p *remotePlatform) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.SendMessage(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "SendMessage", req)
 }
 
 func (p *remotePlatform) ExecuteCommand(ctx context.Context, req platforms.ExecuteCommandRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.ExecuteCommand(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "ExecuteCommand", req)
 }
 
 func (p *remotePlatform) RunShell(ctx context.Context, req platforms.RunShellRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.RunShell(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "RunShell", req)
 }
 
 func (p *remotePlatform) RespondPermission(ctx context.Context, req platforms.RespondPermissionRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.RespondPermission(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "RespondPermission", req)
 }
 
 func (p *remotePlatform) RespondQuestion(ctx context.Context, req platforms.RespondQuestionRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.RespondQuestion(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "RespondQuestion", req)
 }
 
 func (p *remotePlatform) RejectQuestion(ctx context.Context, req platforms.RejectQuestionRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.RejectQuestion(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "RejectQuestion", req)
 }
 
 func (p *remotePlatform) NativeQueued(ctx context.Context, sessionID string) ([]platforms.NativeQueuedMessage, error) {
-	return sliceCall[platforms.NativeQueuedMessage](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.NativeQueued(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	})
+	return sliceCall[platforms.NativeQueuedMessage](ctx, p, "NativeQueued", sessionID)
 }
 
 func (p *remotePlatform) CancelNativeQueued(ctx context.Context, req platforms.CancelNativeQueuedRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.CancelNativeQueued(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "CancelNativeQueued", req)
 }
 
 func (p *remotePlatform) Abort(ctx context.Context, req platforms.AbortRequest) error {
 	if req.TaskID != "" && !p.Capabilities().BackgroundTaskStop {
 		return platforms.ErrUnsupported
 	}
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.Abort(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "Abort", req)
 }
 
 func (p *remotePlatform) RenameSession(ctx context.Context, req platforms.RenameSessionRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.RenameSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "RenameSession", req)
 }
 
 func (p *remotePlatform) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.SetPermissionRules(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "SetPermissionRules", req)
 }
 
 func (p *remotePlatform) Compact(ctx context.Context, req platforms.CompactRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.Compact(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "Compact", req)
 }
 
 func (p *remotePlatform) MoveSession(ctx context.Context, req platforms.MoveSessionRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.MoveSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "MoveSession", req)
 }
 
 func (p *remotePlatform) ForkSession(ctx context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.ForkSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
+	payload, err := p.call(ctx, "ForkSession", "", req)
 	if err != nil {
 		return nil, remotePlatformError(err)
 	}
 	var out platforms.CreateSessionResponse
-	return canonicalDecodeResult(p, resp.Payload, &out)
+	return canonicalDecodeResult(p, payload, &out)
 }
 
 func (p *remotePlatform) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.CreateSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
+	payload, err := p.call(ctx, "CreateSession", "", req)
 	if err != nil {
 		return nil, remotePlatformError(err)
 	}
 	var out platforms.CreateSessionResponse
-	return canonicalDecodeResult(p, resp.Payload, &out)
+	return canonicalDecodeResult(p, payload, &out)
 }
 
 func (p *remotePlatform) proxySessionEvents(ctx context.Context, sessionID string, w io.Writer, flush func()) error {
@@ -398,49 +316,39 @@ func (p *remotePlatform) proxySessionEvents(ctx context.Context, sessionID strin
 	}
 }
 
-// mutate marshals req and runs fn against the live client.
-func (p *remotePlatform) mutate(_ context.Context, req any, fn func(pb.OcmanClient, []byte) error) error {
-	client := p.conn.Client()
-	if client == nil {
-		return platforms.ErrRemoteOffline
-	}
-	b, err := marshalJSON(req)
-	if err != nil {
-		return err
-	}
-	return remotePlatformError(fn(client, b))
+// call runs one Call operation scoped to this platform.
+func (p *remotePlatform) call(ctx context.Context, method, sessionID string, args any) ([]byte, error) {
+	return p.conn.call(ctx, &pb.CallReq{Method: method, Platform: p.base, SessionId: sessionID}, args)
 }
 
-// sliceCall runs a unary JsonResp RPC and decodes the payload into a
-// []T. Like jsonCall, RPC errors are mapped through
-// remotePlatformError so Unavailable surfaces as ErrPlatformUnreachable.
-func sliceCall[T any](p *remotePlatform, fn func(pb.OcmanClient) (*pb.JsonResp, error)) ([]T, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := fn(client)
+// mutate sends req as the JSON payload of method.
+func (p *remotePlatform) mutate(ctx context.Context, method string, req any) error {
+	_, err := p.call(ctx, method, "", req)
+	return remotePlatformError(err)
+}
+
+// sliceCall runs a session read and decodes the payload into a []T. Like
+// jsonCall, RPC errors are mapped through remotePlatformError so
+// Unavailable surfaces as ErrPlatformUnreachable.
+func sliceCall[T any](ctx context.Context, p *remotePlatform, method, sessionID string) ([]T, error) {
+	payload, err := p.call(ctx, method, sessionID, nil)
 	if err != nil {
 		return nil, remotePlatformError(err)
 	}
 	var out []T
-	if err := unmarshalJSON(resp.Payload, &out); err != nil {
+	if err := unmarshalJSON(payload, &out); err != nil {
 		return nil, err
 	}
 	return canonicalSliceResult(p, out)
 }
 
-// jsonCall runs a unary JsonResp RPC and decodes into dst.
-func jsonCall[T any](_ context.Context, p *remotePlatform, fn func(pb.OcmanClient) (*pb.JsonResp, error), dst *T) (*T, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := fn(client)
+// jsonCall runs a Call operation and decodes into dst.
+func jsonCall[T any](ctx context.Context, p *remotePlatform, method, sessionID string, args any, dst *T) (*T, error) {
+	payload, err := p.call(ctx, method, sessionID, args)
 	if err != nil {
 		return nil, remotePlatformError(err)
 	}
-	if err := unmarshalJSON(resp.Payload, dst); err != nil {
+	if err := unmarshalJSON(payload, dst); err != nil {
 		return nil, err
 	}
 	return canonicalJSONResult(p, dst)

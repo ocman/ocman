@@ -16,10 +16,10 @@ import (
 
 func TestCanonicalReadRPCsRejectNativeAndPendingBeforeAdapterCalls(t *testing.T) {
 	s := canonicalRPCServer(t)
-	reads := map[string]func(context.Context, *pb.SessionRef) (*pb.JsonResp, error){
+	reads := map[string]func(context.Context, *pb.CallReq) (*pb.JsonResp, error){
 		"changes": s.SessionChanges, "info": s.SessionInfo, "agents": s.AgentCatalog, "commands": s.SlashCommands, "models": s.SessionModels,
 		"permissions": s.ListPermissions, "refresh permissions": s.RefreshPermissions, "questions": s.ListQuestions, "queue": s.NativeQueued, "rules": s.PermissionRules,
-		"summary": s.SessionSummary, "lifecycle": s.SessionLifecycle, "usage": (&usageServer{owner: s}).SessionUsage,
+		"summary": s.SessionSummary, "lifecycle": s.SessionLifecycle, "usage": s.SessionUsage,
 	}
 	for name, read := range reads {
 		t.Run(name, func(t *testing.T) {
@@ -27,7 +27,7 @@ func TestCanonicalReadRPCsRejectNativeAndPendingBeforeAdapterCalls(t *testing.T)
 				id   string
 				code codes.Code
 			}{{"native", codes.InvalidArgument}, {identity.PendingReference(), codes.Unavailable}, {"", codes.InvalidArgument}} {
-				if _, err := read(t.Context(), &pb.SessionRef{Platform: "opencode", SessionId: tc.id}); status.Code(err) != tc.code {
+				if _, err := read(t.Context(), &pb.CallReq{Platform: "opencode", SessionId: tc.id}); status.Code(err) != tc.code {
 					t.Errorf("%q reached read adapter: %v", tc.id, err)
 				}
 			}
@@ -48,7 +48,7 @@ func TestCanonicalReadRPCsRejectNativeAndPendingBeforeAdapterCalls(t *testing.T)
 		code codes.Code
 	}{{"native", codes.InvalidArgument}, {identity.PendingReference(), codes.Unavailable}} {
 		payload, _ := json.Marshal(permissionPolicyRequest{SessionID: ref.id})
-		if _, err := s.SessionPermissionPolicy(t.Context(), &pb.PlatformJsonReq{Platform: "opencode", Payload: payload}); status.Code(err) != ref.code {
+		if _, err := s.SessionPermissionPolicy(t.Context(), &pb.CallReq{Platform: "opencode", Payload: payload}); status.Code(err) != ref.code {
 			t.Fatalf("policy accepted unproven reference: %v", err)
 		}
 		if err := s.StreamEvents(&pb.SessionRef{Platform: "opencode", SessionId: ref.id}, nil); status.Code(err) != ref.code {

@@ -10,16 +10,13 @@ import (
 var _ platforms.SessionDisposer = (*remotePlatform)(nil)
 
 func (p *remotePlatform) DisposeSession(ctx context.Context, req platforms.DisposeSessionRequest) error {
-	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
-		_, err := c.DisposeSession(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
-		return err
-	})
+	return p.mutate(ctx, "DisposeSession", req)
 }
 
-func (s *Server) DisposeSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) DisposeSession(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var dispose platforms.DisposeSessionRequest
 	if err := s.decodeSessionRequest(req, &dispose); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.Dispose(ctx, req.Platform, dispose))
+	return &pb.JsonResp{}, svcErr(s.sessions.Dispose(ctx, req.Platform, dispose))
 }

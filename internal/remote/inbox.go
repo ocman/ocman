@@ -18,7 +18,7 @@ type inboxMutation struct {
 	AllRead bool     `json:"allRead,omitempty"`
 }
 
-func (s *Server) InboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+func (s *Server) InboxItems(ctx context.Context, _ *pb.CallReq) (*pb.JsonResp, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
 	}
@@ -26,7 +26,7 @@ func (s *Server) InboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, err
 	return jsonResp(s.inboxSessionTitles(ctx, items), err)
 }
 
-func (s *Server) ArchivedInboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+func (s *Server) ArchivedInboxItems(ctx context.Context, _ *pb.CallReq) (*pb.JsonResp, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
 	}
@@ -34,7 +34,7 @@ func (s *Server) ArchivedInboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonR
 	return jsonResp(s.inboxSessionTitles(ctx, items), err)
 }
 
-func (s *Server) MarkInboxItemRead(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+func (s *Server) MarkInboxItemRead(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
 	}
@@ -42,10 +42,10 @@ func (s *Server) MarkInboxItemRead(ctx context.Context, req *pb.JsonReq) (*pb.Em
 	if err := unmarshalJSON(req.Payload, &mutation); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, s.inboxStore.MarkInboxItemRead(ctx, mutation.ID)
+	return &pb.JsonResp{}, s.inboxStore.MarkInboxItemRead(ctx, mutation.ID)
 }
 
-func (s *Server) ArchiveInboxItems(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+func (s *Server) ArchiveInboxItems(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
 	}
@@ -54,12 +54,12 @@ func (s *Server) ArchiveInboxItems(ctx context.Context, req *pb.JsonReq) (*pb.Em
 		return nil, err
 	}
 	if mutation.AllRead {
-		return &pb.Empty{}, s.inboxStore.ArchiveAllReadInboxItems(ctx)
+		return &pb.JsonResp{}, s.inboxStore.ArchiveAllReadInboxItems(ctx)
 	}
-	return &pb.Empty{}, s.inboxStore.ArchiveInboxItems(ctx, mutation.IDs)
+	return &pb.JsonResp{}, s.inboxStore.ArchiveInboxItems(ctx, mutation.IDs)
 }
 
-func (s *Server) MarkInboxItemUnread(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+func (s *Server) MarkInboxItemUnread(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
 	}
@@ -67,27 +67,27 @@ func (s *Server) MarkInboxItemUnread(ctx context.Context, req *pb.JsonReq) (*pb.
 	if err := unmarshalJSON(req.Payload, &mutation); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, s.inboxStore.MarkInboxItemUnread(ctx, mutation.ID)
+	return &pb.JsonResp{}, s.inboxStore.MarkInboxItemUnread(ctx, mutation.ID)
 }
 
 func (c *RemoteConn) InboxItems(ctx context.Context) ([]state.InboxItem, error) {
-	return hostQuery[[]state.InboxItem](ctx, c, pb.OcmanClient.InboxItems)
+	return hostCall[[]state.InboxItem](ctx, c, "InboxItems", nil)
 }
 
 func (c *RemoteConn) ArchivedInboxItems(ctx context.Context) ([]state.InboxItem, error) {
-	return hostQuery[[]state.InboxItem](ctx, c, pb.OcmanClient.ArchivedInboxItems)
+	return hostCall[[]state.InboxItem](ctx, c, "ArchivedInboxItems", nil)
 }
 
 func (c *RemoteConn) MarkInboxItemRead(ctx context.Context, id string) error {
-	return hostExec(ctx, c, pb.OcmanClient.MarkInboxItemRead, inboxMutation{ID: id})
+	return hostExec(ctx, c, "MarkInboxItemRead", inboxMutation{ID: id})
 }
 
 func (c *RemoteConn) MarkInboxItemUnread(ctx context.Context, id string) error {
-	return hostExec(ctx, c, pb.OcmanClient.MarkInboxItemUnread, inboxMutation{ID: id})
+	return hostExec(ctx, c, "MarkInboxItemUnread", inboxMutation{ID: id})
 }
 
 func (c *RemoteConn) ArchiveInboxItems(ctx context.Context, ids []string, allRead bool) error {
-	return hostExec(ctx, c, pb.OcmanClient.ArchiveInboxItems, inboxMutation{IDs: ids, AllRead: allRead})
+	return hostExec(ctx, c, "ArchiveInboxItems", inboxMutation{IDs: ids, AllRead: allRead})
 }
 
 func (m *Manager) inboxOwner(source string) (*state.DB, *RemoteConn, error) {

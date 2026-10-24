@@ -23,7 +23,7 @@ type permissionPolicyRequest struct {
 	Rules     *[]platforms.PermissionRule `json:"rules,omitempty"`
 }
 
-func (s *Server) SessionPermissionPolicy(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+func (s *Server) SessionPermissionPolicy(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if s.permissionPolicy == nil {
 		return nil, status.Error(codes.Unimplemented, "session permission policy unavailable")
 	}
@@ -51,24 +51,16 @@ func (s *Server) SessionPermissionPolicy(ctx context.Context, req *pb.PlatformJs
 }
 
 func (p *remotePlatform) SessionPermissionPolicy(ctx context.Context, id string, rules *[]platforms.PermissionRule) (*autoapprove.PermissionPolicy, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
 	if rules != nil && *rules == nil {
 		empty := []platforms.PermissionRule{}
 		rules = &empty
 	}
-	payload, err := json.Marshal(permissionPolicyRequest{SessionID: id, Rules: rules})
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.SessionPermissionPolicy(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: payload})
+	payload, err := p.call(ctx, "SessionPermissionPolicy", "", permissionPolicyRequest{SessionID: id, Rules: rules})
 	if err != nil {
 		return nil, remotePlatformError(err)
 	}
 	var result autoapprove.PermissionPolicy
-	if err := json.Unmarshal(resp.Payload, &result); err != nil {
+	if err := json.Unmarshal(payload, &result); err != nil {
 		return nil, err
 	}
 	for i := range result.Requests {

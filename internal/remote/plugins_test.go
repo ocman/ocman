@@ -38,7 +38,7 @@ func TestPluginOperationAuthenticationAndRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = unauth.Close() })
-	if _, err := pb.NewOcmanClient(unauth).PluginOperation(t.Context(), &pb.JsonReq{Payload: []byte(`{"operation":"catalog"}`)}); status.Code(err) != codes.Unauthenticated || calls.Load() != 0 {
+	if _, err := pb.NewOcmanClient(unauth).Call(t.Context(), &pb.CallReq{Method: "PluginOperation", Payload: []byte(`{"operation":"catalog"}`)}); status.Code(err) != codes.Unauthenticated || calls.Load() != 0 {
 		t.Fatalf("unauthenticated call: %v, calls=%d", err, calls.Load())
 	}
 	conn := NewRemoteConn("grpc://"+ln.Addr(), "tok")
@@ -74,7 +74,7 @@ func TestPluginOperationAuthenticationAndRouting(t *testing.T) {
 
 func TestPluginOperationInputValidation(t *testing.T) {
 	s := NewServer(nil, nil, "owner", "test")
-	if _, err := s.PluginOperation(t.Context(), &pb.JsonReq{}); status.Code(err) != codes.Unavailable {
+	if _, err := s.PluginOperation(t.Context(), &pb.CallReq{}); status.Code(err) != codes.Unavailable {
 		t.Fatal(err)
 	}
 	s.UsePlugins(func(context.Context, PluginRequest) PluginResponse {
@@ -82,14 +82,14 @@ func TestPluginOperationInputValidation(t *testing.T) {
 		return PluginResponse{}
 	})
 	for _, payload := range []string{"{", `{"unknown":"secret"}`, `{} {}`, strings.Repeat(" ", maxPluginRequestBytes+1)} {
-		if _, err := s.PluginOperation(t.Context(), &pb.JsonReq{Payload: []byte(payload)}); status.Code(err) != codes.InvalidArgument {
+		if _, err := s.PluginOperation(t.Context(), &pb.CallReq{Payload: []byte(payload)}); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("malformed request: %v", err)
 		}
 	}
 	for _, operation := range []string{"actions", "invoke"} {
 		for _, owners := range [][2]string{{"wrong", "owner"}, {"owner", "wrong"}} {
 			payload, _ := json.Marshal(PluginRequest{Operation: operation, Action: plugins.ActionRequest{OwnerID: owners[0], Context: plugins.ActionContext{OwnerID: owners[1]}}})
-			resp, err := s.PluginOperation(t.Context(), &pb.JsonReq{Payload: payload})
+			resp, err := s.PluginOperation(t.Context(), &pb.CallReq{Payload: payload})
 			if err != nil || !strings.Contains(string(resp.Payload), string(plugins.ErrorPermissionDenied)) {
 				t.Fatalf("owner mismatch: %v %v", resp, err)
 			}

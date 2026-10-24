@@ -59,7 +59,7 @@ func TestRemoteSessionSummaryUnsupportedAndOffline(t *testing.T) {
 		t.Fatalf("offline: %v", err)
 	}
 	srv := NewServer(platforms.NewRegistry(), nil, "rid", "test")
-	if _, err := srv.SessionSummary(t.Context(), &pb.SessionRef{Platform: "absent"}); err == nil {
+	if _, err := srv.SessionSummary(t.Context(), &pb.CallReq{Platform: "absent"}); err == nil {
 		t.Fatal("unknown platform accepted")
 	}
 }

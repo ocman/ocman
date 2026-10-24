@@ -16,7 +16,7 @@ import (
 
 func TestProjectUpstreamsRPCDoesNotSerializeRemoteURLs(t *testing.T) {
 	srv := NewServer(platforms.NewRegistry(), &forgeRoundTripHost{}, "rid", "v")
-	resp, err := srv.ProjectUpstreams(context.Background(), &pb.JsonReq{Payload: []byte(`{"dir":"/owner/repo"}`)})
+	resp, err := srv.ProjectUpstreams(context.Background(), &pb.CallReq{Payload: []byte(`{"dir":"/owner/repo"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}

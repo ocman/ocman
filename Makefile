@@ -447,7 +447,7 @@ proto:
 	PATH="$$(go env GOPATH)/bin:$$PATH" protoc \
 		--go_out=. --go_opt=module=github.com/NoUseFreak/ocman \
 		--go-grpc_out=. --go-grpc_opt=module=github.com/NoUseFreak/ocman \
-		internal/remote/proto/remote.proto internal/remote/proto/usage.proto
+		internal/remote/proto/remote.proto
 
 # --- Local observability stack (Grafana LGTM) ----------------------------
 #

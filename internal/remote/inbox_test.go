@@ -122,24 +122,24 @@ func TestRemoteInboxPermissionRoundTrip(t *testing.T) {
 
 func TestServerInboxRejectsMissingStoreAndMalformedJSON(t *testing.T) {
 	server := NewServer(platforms.NewRegistry(), localStubHost{}, "remote-1", "v-test")
-	if _, err := server.InboxItems(t.Context(), &pb.Empty{}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := server.InboxItems(t.Context(), &pb.CallReq{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("InboxItems without store = %v", err)
 	}
-	if _, err := server.ArchivedInboxItems(t.Context(), &pb.Empty{}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := server.ArchivedInboxItems(t.Context(), &pb.CallReq{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("ArchivedInboxItems without store = %v", err)
 	}
-	if _, err := server.MarkInboxItemRead(t.Context(), &pb.JsonReq{}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := server.MarkInboxItemRead(t.Context(), &pb.CallReq{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("MarkInboxItemRead without store = %v", err)
 	}
-	if _, err := server.MarkInboxItemUnread(t.Context(), &pb.JsonReq{}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := server.MarkInboxItemUnread(t.Context(), &pb.CallReq{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("MarkInboxItemUnread without store = %v", err)
 	}
-	if _, err := server.ArchiveInboxItems(t.Context(), &pb.JsonReq{}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := server.ArchiveInboxItems(t.Context(), &pb.CallReq{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("ArchiveInboxItems without store = %v", err)
 	}
 
 	server.UseInboxStore(openInboxStore(t).DB)
-	bad := &pb.JsonReq{Payload: []byte("{")}
+	bad := &pb.CallReq{Payload: []byte("{")}
 	if _, err := server.MarkInboxItemRead(t.Context(), bad); err == nil {
 		t.Fatal("MarkInboxItemRead accepted malformed JSON")
 	}

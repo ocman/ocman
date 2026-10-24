@@ -183,7 +183,9 @@ flowchart LR
   trusted code. Grants minimize brokered context, not operating-system access.
   See [Plugins](../features/plugins.md) for installation and operations.
 - **Remote ocman instances.** The hub dials remotes over gRPC and re-exposes
-  their sessions and hosts transparently. The owning remote enriches session
+  their sessions and hosts transparently. Unary JSON operations share one
+  generic `Call` RPC dispatched by method name on the owner; typed RPCs remain
+  for the handshake, typed session reads and streams. The owning remote enriches session
   detail with its persisted approvals and tees synthetic approval events into
   the gRPC event stream before the hub forwards them to the browser.
   Plugin catalog, management, health, actions and artifact reads use the same
@@ -770,8 +772,8 @@ flowchart LR
   Canonical HTTP/MCP request paths retain the Ocman ID, and pending feature
   references lose their executable links without losing the surrounding record.
   Catalogue v4 mirrors remote canonical metadata without a native binding on the
-  hub. Production negotiation requires protocol v10 (v9 plus the removal of
-  the unused webhook-inbox RPCs). Raw compatibility servers
+  hub. Production negotiation requires protocol v11 (v9 plus the removal of
+  the unused webhook-inbox RPCs and the generic `Call` RPC). Raw compatibility servers
   advertise v8; canonical managers reject them before publishing either their
   platform adapters or host execution routes.
   Declared v9 mutation contracts reject native and pending session references
@@ -1141,10 +1143,10 @@ flowchart TD
   retains retry history per Attempt, and flags unavailable reads as incomplete.
   Epic and Queue views poll these totals every ten seconds.
 - **Owner-local session usage.** Both Factory and routine statistics read
-  `platforms.UsageReader`. Remote adapters forward to `Usage.SessionUsage` over
-  the existing token-authenticated connection, returning the owner's recorded
-  and estimated costs keyed by session ID, including descendants. The additive
-  service lives in `internal/remote/proto/usage.proto`; older owners report
+  `platforms.UsageReader`. Remote adapters forward to the owner's `SessionUsage`
+  operation over the existing token-authenticated connection, returning the
+  owner's recorded and estimated costs keyed by session ID, including
+  descendants. Owners that answer Unimplemented report
   usage unsupported without falling back to hub-local sessions. Routine stats
   retain all-run counts and average duration and refresh billing at most every
   30 seconds while their tab is open.

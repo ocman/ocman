@@ -12,33 +12,22 @@ import (
 var _ platforms.UsageReader = (*remotePlatform)(nil)
 
 func (p *remotePlatform) SessionUsage(ctx context.Context, id string) (map[string]platforms.Usage, error) {
-	p.conn.mu.RLock()
-	conn := p.conn.conn
-	p.conn.mu.RUnlock()
-	if conn == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	resp, err := pb.NewUsageClient(conn).SessionUsage(ctx, &pb.SessionRef{Platform: p.base, SessionId: id})
+	payload, err := p.call(ctx, "SessionUsage", id, nil)
 	if err != nil {
 		return nil, remotePlatformError(err)
 	}
 	var usage map[string]platforms.Usage
-	if err := unmarshalJSON(resp.Payload, &usage); err != nil {
+	if err := unmarshalJSON(payload, &usage); err != nil {
 		return nil, err
 	}
 	return usage, nil
 }
 
-type usageServer struct {
-	pb.UnimplementedUsageServer
-	owner *Server
-}
-
-func (s *usageServer) SessionUsage(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) SessionUsage(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if req.SessionId == "" {
 		return nil, status.Error(codes.InvalidArgument, "session id is required")
 	}
-	adapter, err := s.owner.sessionPlatformFor(req.Platform, req.SessionId)
+	adapter, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}

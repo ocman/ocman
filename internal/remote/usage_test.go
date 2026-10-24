@@ -62,7 +62,7 @@ func TestRemoteSessionUsageConnectedOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = unauthenticated.Close() })
-	if _, err := pb.NewUsageClient(unauthenticated).SessionUsage(t.Context(), &pb.SessionRef{Platform: "opencode", SessionId: "same-id"}); status.Code(err) != codes.Unauthenticated {
+	if _, err := pb.NewOcmanClient(unauthenticated).Call(t.Context(), &pb.CallReq{Method: "SessionUsage", Platform: "opencode", SessionId: "same-id"}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unauthenticated usage call: %v", err)
 	}
 	registry.Register(&fakePlatform{id: "opencode"})
@@ -80,7 +80,7 @@ func TestRemoteSessionUsageConnectedOwner(t *testing.T) {
 
 func TestRemoteSessionUsageLegacyOwner(t *testing.T) {
 	wire := startTestServer(t, "secret", NewServer(platforms.NewRegistry(), localStubHost{}, "owner", "test"))
-	conn := &RemoteConn{conn: wire, client: pb.NewOcmanClient(wire), remoteID: "owner", health: HealthConnected}
+	conn := &RemoteConn{conn: wire, client: unimplementedClient{pb.NewOcmanClient(wire), "SessionUsage"}, remoteID: "owner", health: HealthConnected}
 	adapter := newRemotePlatform(conn, "opencode", func() string { return "Owner" })
 	if got, err := adapter.SessionUsage(t.Context(), "same-id"); !errors.Is(err, platforms.ErrUnsupported) || got != nil {
 		t.Fatalf("older owner: %+v, %v", got, err)
@@ -93,8 +93,8 @@ func TestRemoteSessionUsageLegacyOwner(t *testing.T) {
 func TestUsageServerPropagatesOwnerErrors(t *testing.T) {
 	registry := platforms.NewRegistry()
 	registry.Register(&usageTestPlatform{fakePlatform: &fakePlatform{id: "opencode"}, seen: make(chan string, 1), err: platforms.ErrPlatformUnreachable})
-	server := &usageServer{owner: NewServer(registry, localStubHost{}, "owner", "test")}
-	if _, err := server.SessionUsage(t.Context(), &pb.SessionRef{Platform: "opencode", SessionId: "s"}); status.Code(err) != codes.Unavailable {
+	server := NewServer(registry, localStubHost{}, "owner", "test")
+	if _, err := server.SessionUsage(t.Context(), &pb.CallReq{Platform: "opencode", SessionId: "s"}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("owner error: %v", err)
 	}
 }

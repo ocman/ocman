@@ -105,7 +105,7 @@ func TestOwnerRPCDefersPermissionsDuringJudgeDelay(t *testing.T) {
 	defer s.aaSvc().Cancel("child", "request")
 	owner := remote.NewServer(s.registry, nil, "machine", "test").UsePermissionNotificationDeferrer(s.PermissionNotificationDeferred)
 	for _, want := range []bool{true, false} {
-		resp, err := owner.ListPermissions(t.Context(), &pb.SessionRef{Platform: "owner", SessionId: "parent"})
+		resp, err := owner.ListPermissions(t.Context(), &pb.CallReq{Platform: "owner", SessionId: "parent"})
 		if err != nil {
 			t.Fatal(err)
 		}

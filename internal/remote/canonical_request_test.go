@@ -55,7 +55,7 @@ func TestCanonicalSessionRPCContractsRejectNativeAndPendingReferences(t *testing
 				t.Fatal(err)
 			}
 			dst := construct("")
-			err = s.decodeSessionRequest(&pb.PlatformJsonReq{Platform: "opencode", Payload: encoded}, dst)
+			err = s.decodeSessionRequest(&pb.CallReq{Platform: "opencode", Payload: encoded}, dst)
 			if status.Code(err) != ref.code {
 				t.Fatalf("contract %T reference %s: %v", dst, ref.id, err)
 			}
@@ -77,7 +77,7 @@ func TestCanonicalCreationRPCValidatesParentBeforeHostSideEffects(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.decodeSessionRequest(&pb.PlatformJsonReq{Platform: "opencode", Payload: encoded}, &platforms.CreateSessionRequest{}); status.Code(err) != ref.code {
+		if err := s.decodeSessionRequest(&pb.CallReq{Platform: "opencode", Payload: encoded}, &platforms.CreateSessionRequest{}); status.Code(err) != ref.code {
 			t.Fatalf("creation parent %s: %v", ref.id, err)
 		}
 		if err := s.validateWorktreeIdentity("opencode", creation); status.Code(err) != ref.code {
@@ -85,13 +85,13 @@ func TestCanonicalCreationRPCValidatesParentBeforeHostSideEffects(t *testing.T) 
 		}
 	}
 	encoded, _ := marshalJSON(platforms.SendMessageRequest{SessionID: "ocm_" + uuid.NewString()})
-	if err := s.decodeSessionRequest(&pb.PlatformJsonReq{Platform: "r-other:opencode", Payload: encoded}, &platforms.SendMessageRequest{}); status.Code(err) != codes.InvalidArgument {
+	if err := s.decodeSessionRequest(&pb.CallReq{Platform: "r-other:opencode", Payload: encoded}, &platforms.SendMessageRequest{}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("owner RPC forwarded to a different owner: %v", err)
 	}
-	if err := s.decodeSessionRequest(&pb.PlatformJsonReq{Platform: "opencode", Payload: []byte("invalid")}, &platforms.SendMessageRequest{}); err == nil {
+	if err := s.decodeSessionRequest(&pb.CallReq{Platform: "opencode", Payload: []byte("invalid")}, &platforms.SendMessageRequest{}); err == nil {
 		t.Fatal("malformed request accepted")
 	}
-	if err := s.decodeSessionRequest(&pb.PlatformJsonReq{Platform: "opencode", Payload: encoded}, &struct{ SessionID string }{}); status.Code(err) != codes.InvalidArgument {
+	if err := s.decodeSessionRequest(&pb.CallReq{Platform: "opencode", Payload: encoded}, &struct{ SessionID string }{}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("undeclared request contract accepted: %v", err)
 	}
 }

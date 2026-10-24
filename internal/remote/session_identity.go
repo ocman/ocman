@@ -12,20 +12,12 @@ import (
 func (p *remotePlatform) SessionOwnerID() string { return p.conn.RemoteID() }
 
 func (p *remotePlatform) SessionIdentity(ctx context.Context, req platforms.SessionIdentityRequest) (*platforms.SessionIdentity, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	encoded, err := marshalJSON(req)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.SessionIdentity(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: encoded})
+	payload, err := p.call(ctx, "SessionIdentity", "", req)
 	if err != nil {
 		return nil, identityClientError(err)
 	}
 	var info platforms.SessionIdentity
-	if err := unmarshalJSON(resp.Payload, &info); err != nil {
+	if err := unmarshalJSON(payload, &info); err != nil {
 		return nil, err
 	}
 	if info.OwnerID != p.conn.RemoteID() || info.Platform != p.base ||
@@ -36,7 +28,7 @@ func (p *remotePlatform) SessionIdentity(ctx context.Context, req platforms.Sess
 	return &info, nil
 }
 
-func (s *Server) SessionIdentity(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+func (s *Server) SessionIdentity(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if s.registry.CanonicalSessionIDs() {
 		if _, err := s.platformFor(req.Platform); err != nil {
 			return nil, err
@@ -51,20 +43,12 @@ func (s *Server) SessionIdentity(ctx context.Context, req *pb.PlatformJsonReq) (
 }
 
 func (p *remotePlatform) SessionIdentities(ctx context.Context, ids []string) ([]platforms.SessionIdentity, error) {
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	encoded, err := marshalJSON(ids)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.SessionIdentities(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: encoded})
+	payload, err := p.call(ctx, "SessionIdentities", "", ids)
 	if err != nil {
 		return nil, identityClientError(err)
 	}
 	var rows []platforms.SessionIdentity
-	if err := unmarshalJSON(resp.Payload, &rows); err != nil {
+	if err := unmarshalJSON(payload, &rows); err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
@@ -75,7 +59,7 @@ func (p *remotePlatform) SessionIdentities(ctx context.Context, ids []string) ([
 	return rows, nil
 }
 
-func (s *Server) SessionIdentities(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+func (s *Server) SessionIdentities(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	if s.registry.CanonicalSessionIDs() {
 		if _, err := s.platformFor(req.Platform); err != nil {
 			return nil, err

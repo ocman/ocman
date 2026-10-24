@@ -12,9 +12,7 @@ import (
 )
 
 func (p *remotePlatform) SessionSummary(ctx context.Context, id string) (*db.Session, error) {
-	row, err := jsonCall(ctx, p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.SessionSummary(ctx, &pb.SessionRef{Platform: p.base, SessionId: id})
-	}, &db.Session{})
+	row, err := jsonCall(ctx, p, "SessionSummary", id, nil, &db.Session{})
 	if status.Code(err) == codes.Unimplemented {
 		return nil, errors.Join(platforms.ErrUnsupported, err)
 	}
@@ -27,7 +25,7 @@ func (p *remotePlatform) SessionSummary(ctx context.Context, id string) (*db.Ses
 	return p.checkedSummary(row, id)
 }
 
-func (s *Server) SessionSummary(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) SessionSummary(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err

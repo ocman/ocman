@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 )
 
@@ -28,20 +27,12 @@ func (p *remotePlatform) ResolveLegacyReferences(ctx context.Context, refs []str
 	if !p.CanonicalSessionIDs() {
 		return nil, platforms.ErrUnsupported
 	}
-	client := p.conn.Client()
-	if client == nil {
-		return nil, platforms.ErrRemoteOffline
-	}
-	payload, err := marshalJSON(legacyReferenceRequest{References: refs})
-	if err != nil {
-		return nil, err
-	}
-	response, err := client.SessionIdentities(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: payload})
+	payload, err := p.call(ctx, "SessionIdentities", "", legacyReferenceRequest{References: refs})
 	if err != nil {
 		return nil, identityClientError(err)
 	}
 	var rows map[string]platforms.SessionIdentity
-	if err := unmarshalJSON(response.Payload, &rows); err != nil {
+	if err := unmarshalJSON(payload, &rows); err != nil {
 		return nil, err
 	}
 	wanted := map[string]bool{}

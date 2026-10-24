@@ -8,7 +8,7 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
 - A new conversation is only `/session/new?dir=…&remoteId=…&platform=…` until
   first submission. Do not create a session, worktree or placeholder earlier.
 - `/api/sessions/prepare` gets catalogs through `Platform.DirectoryCatalog`,
-  owner-routed with `PlatformJsonReq` for remotes. It never launches OpenCode:
+  owner-routed through the remote `Call` RPC. It never launches OpenCode:
   use an existing instance or historical models. Submission waits for catalog
   preparation; failures have a visible retry.
 - Worktree eligibility reads git info, the owner's worktrees and verified base

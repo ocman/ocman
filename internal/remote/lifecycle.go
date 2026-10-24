@@ -15,9 +15,7 @@ import (
 // SessionLifecycle RPC. An owner predating the RPC answers Unimplemented,
 // reported as ErrUnsupported so the caller falls back to Session.
 func (p *remotePlatform) SessionLifecycle(ctx context.Context, sessionID string) (*platforms.SessionLifecycle, error) {
-	l, err := jsonCall(ctx, p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
-		return c.SessionLifecycle(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
-	}, &platforms.SessionLifecycle{})
+	l, err := jsonCall(ctx, p, "SessionLifecycle", sessionID, nil, &platforms.SessionLifecycle{})
 	if status.Code(err) == codes.Unimplemented {
 		return nil, errors.Join(platforms.ErrUnsupported, err)
 	}
@@ -25,7 +23,7 @@ func (p *remotePlatform) SessionLifecycle(ctx context.Context, sessionID string)
 }
 
 // SessionLifecycle serves the owner's bounded lifecycle read.
-func (s *Server) SessionLifecycle(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) SessionLifecycle(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err

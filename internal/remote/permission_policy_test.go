@@ -88,7 +88,7 @@ func TestRemotePermissionPolicyValidation(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(policyTestPlatform{&fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s1"}}}})
 	srv := NewServer(reg, nil, "owner", "test")
-	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.PlatformJsonReq{}); status.Code(err) != codes.Unimplemented {
+	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.CallReq{}); status.Code(err) != codes.Unimplemented {
 		t.Fatal(err)
 	}
 	called := false
@@ -97,22 +97,22 @@ func TestRemotePermissionPolicyValidation(t *testing.T) {
 		return nil, errors.New("owner failed")
 	})
 	for _, payload := range []string{"bad", `{}`, `{"sessionId":""}`} {
-		if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.PlatformJsonReq{Platform: "opencode", Payload: []byte(payload)}); status.Code(err) != codes.InvalidArgument {
+		if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.CallReq{Platform: "opencode", Payload: []byte(payload)}); status.Code(err) != codes.InvalidArgument {
 			t.Fatal(err)
 		}
 	}
 	payload, _ := json.Marshal(permissionPolicyRequest{SessionID: "missing"})
-	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.PlatformJsonReq{Platform: "opencode", Payload: payload}); status.Code(err) != codes.NotFound {
+	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.CallReq{Platform: "opencode", Payload: payload}); status.Code(err) != codes.NotFound {
 		t.Fatal(err)
 	}
 	if called {
 		t.Fatal("invalid session reached policy handler")
 	}
 	payload, _ = json.Marshal(permissionPolicyRequest{SessionID: "s1"})
-	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.PlatformJsonReq{Platform: "unknown", Payload: payload}); status.Code(err) != codes.NotFound {
+	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.CallReq{Platform: "unknown", Payload: payload}); status.Code(err) != codes.NotFound {
 		t.Fatal(err)
 	}
-	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.PlatformJsonReq{Platform: "opencode", Payload: payload}); err == nil {
+	if _, err := srv.SessionPermissionPolicy(t.Context(), &pb.CallReq{Platform: "opencode", Payload: payload}); err == nil {
 		t.Fatal("lost owner error")
 	}
 }

@@ -65,14 +65,14 @@ func (s *Server) SessionsInactiveBefore(ctx context.Context, req *pb.CutoffReq) 
 	}
 	return jsonResp(p.SessionsInactiveBefore(ctx, req.Cutoff))
 }
-func (s *Server) SessionChanges(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) SessionChanges(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 	return jsonResp(p.SessionChanges(ctx, req.SessionId))
 }
-func (s *Server) SessionInfo(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) SessionInfo(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
@@ -96,28 +96,28 @@ func (s *Server) SessionInfo(ctx context.Context, req *pb.SessionRef) (*pb.JsonR
 	}
 	return jsonResp(info, nil)
 }
-func (s *Server) AgentCatalog(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) AgentCatalog(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 	return jsonResp(p.AgentCatalog(ctx, req.SessionId))
 }
-func (s *Server) SlashCommands(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) SlashCommands(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 	return jsonResp(p.SlashCommands(ctx, req.SessionId))
 }
-func (s *Server) SessionModels(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) SessionModels(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 	return jsonResp(p.SessionModels(ctx, req.SessionId))
 }
-func (s *Server) DirectoryCatalog(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+func (s *Server) DirectoryCatalog(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.platformFor(req.Platform)
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func (s *Server) DirectoryCatalog(ctx context.Context, req *pb.PlatformJsonReq) 
 	}
 	return jsonResp(p.DirectoryCatalog(ctx, in))
 }
-func (s *Server) ListPermissions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) ListPermissions(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (s *Server) ListPermissions(ctx context.Context, req *pb.SessionRef) (*pb.J
 }
 
 // An unsupported authoritative read must fail rather than use observed cache.
-func (s *Server) RefreshPermissions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) RefreshPermissions(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
@@ -148,14 +148,14 @@ func (s *Server) RefreshPermissions(ctx context.Context, req *pb.SessionRef) (*p
 	}
 	return jsonResp(live.RefreshPermissions(ctx, req.SessionId))
 }
-func (s *Server) ListQuestions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) ListQuestions(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 	return jsonResp(p.ListQuestions(ctx, req.SessionId))
 }
-func (s *Server) Capabilities(_ context.Context, req *pb.PlatformRef) (*pb.JsonResp, error) {
+func (s *Server) Capabilities(_ context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.platformFor(req.Platform)
 	if err != nil {
 		return nil, err
@@ -169,49 +169,49 @@ func (s *Server) Owns(ctx context.Context, req *pb.SessionRef) (*pb.OwnsResp, er
 	}
 	return &pb.OwnsResp{Owns: p.Owns(ctx, req.SessionId)}, nil
 }
-func (s *Server) SendMessage(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) SendMessage(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var mr platforms.SendMessageRequest
 	if err := s.decodeSessionRequest(req, &mr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.SendMessage(ctx, req.Platform, mr))
+	return &pb.JsonResp{}, svcErr(s.sessions.SendMessage(ctx, req.Platform, mr))
 }
-func (s *Server) ExecuteCommand(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) ExecuteCommand(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var cr platforms.ExecuteCommandRequest
 	if err := s.decodeSessionRequest(req, &cr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.ExecuteCommand(ctx, req.Platform, cr))
+	return &pb.JsonResp{}, svcErr(s.sessions.ExecuteCommand(ctx, req.Platform, cr))
 }
-func (s *Server) RunShell(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) RunShell(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var sr platforms.RunShellRequest
 	if err := s.decodeSessionRequest(req, &sr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.RunShell(ctx, req.Platform, sr))
+	return &pb.JsonResp{}, svcErr(s.sessions.RunShell(ctx, req.Platform, sr))
 }
-func (s *Server) RespondPermission(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) RespondPermission(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var rr platforms.RespondPermissionRequest
 	if err := s.decodeSessionRequest(req, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.RespondPermission(ctx, req.Platform, rr))
+	return &pb.JsonResp{}, svcErr(s.sessions.RespondPermission(ctx, req.Platform, rr))
 }
-func (s *Server) RespondQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) RespondQuestion(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var rr platforms.RespondQuestionRequest
 	if err := s.decodeSessionRequest(req, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.RespondQuestion(ctx, req.Platform, rr))
+	return &pb.JsonResp{}, svcErr(s.sessions.RespondQuestion(ctx, req.Platform, rr))
 }
-func (s *Server) RejectQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) RejectQuestion(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var rr platforms.RejectQuestionRequest
 	if err := s.decodeSessionRequest(req, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.RejectQuestion(ctx, req.Platform, rr))
+	return &pb.JsonResp{}, svcErr(s.sessions.RejectQuestion(ctx, req.Platform, rr))
 }
-func (s *Server) NativeQueued(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) NativeQueued(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
@@ -226,7 +226,7 @@ func (s *Server) NativeQueued(ctx context.Context, req *pb.SessionRef) (*pb.Json
 	}
 	return jsonResp(msgs, nil)
 }
-func (s *Server) CancelNativeQueued(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) CancelNativeQueued(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var cr platforms.CancelNativeQueuedRequest
 	if err := s.decodeSessionRequest(req, &cr); err != nil {
 		return nil, err
@@ -239,44 +239,44 @@ func (s *Server) CancelNativeQueued(ctx context.Context, req *pb.PlatformJsonReq
 	if !ok {
 		return nil, svcErr(platforms.ErrUnsupported)
 	}
-	return &pb.Empty{}, svcErr(nq.CancelNativeQueued(ctx, cr))
+	return &pb.JsonResp{}, svcErr(nq.CancelNativeQueued(ctx, cr))
 }
-func (s *Server) Abort(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) Abort(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var ar platforms.AbortRequest
 	if err := s.decodeSessionRequest(req, &ar); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.Abort(ctx, req.Platform, ar))
+	return &pb.JsonResp{}, svcErr(s.sessions.Abort(ctx, req.Platform, ar))
 }
-func (s *Server) RenameSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) RenameSession(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var rr platforms.RenameSessionRequest
 	if err := s.decodeSessionRequest(req, &rr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.Rename(ctx, req.Platform, rr))
+	return &pb.JsonResp{}, svcErr(s.sessions.Rename(ctx, req.Platform, rr))
 }
-func (s *Server) PermissionRules(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+func (s *Server) PermissionRules(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 	return jsonResp(p.PermissionRules(ctx, req.SessionId))
 }
-func (s *Server) SetPermissionRules(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) SetPermissionRules(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var sr platforms.SetPermissionRulesRequest
 	if err := s.decodeSessionRequest(req, &sr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.SetPermissionRules(ctx, req.Platform, sr))
+	return &pb.JsonResp{}, svcErr(s.sessions.SetPermissionRules(ctx, req.Platform, sr))
 }
-func (s *Server) Compact(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) Compact(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var cr platforms.CompactRequest
 	if err := s.decodeSessionRequest(req, &cr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.Compact(ctx, req.Platform, cr))
+	return &pb.JsonResp{}, svcErr(s.sessions.Compact(ctx, req.Platform, cr))
 }
-func (s *Server) ForkSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+func (s *Server) ForkSession(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var fr platforms.ForkSessionRequest
 	if err := s.decodeSessionRequest(req, &fr); err != nil {
 		return nil, err
@@ -284,14 +284,14 @@ func (s *Server) ForkSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.
 	resp, err := s.sessions.Fork(ctx, req.Platform, fr)
 	return jsonResp(resp, svcErr(err))
 }
-func (s *Server) MoveSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+func (s *Server) MoveSession(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var mr platforms.MoveSessionRequest
 	if err := s.decodeSessionRequest(req, &mr); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, svcErr(s.sessions.Move(ctx, req.Platform, mr))
+	return &pb.JsonResp{}, svcErr(s.sessions.Move(ctx, req.Platform, mr))
 }
-func (s *Server) CreateSession(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+func (s *Server) CreateSession(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var cr platforms.CreateSessionRequest
 	if err := s.decodeSessionRequest(req, &cr); err != nil {
 		return nil, err

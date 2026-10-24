@@ -45,7 +45,10 @@ type blockedInventoryServer struct {
 	resume  chan struct{}
 }
 
-func (s blockedInventoryServer) Projects(context.Context, *pb.Empty) (*pb.JsonResp, error) {
+func (s blockedInventoryServer) Call(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
+	if req.Method != "Projects" {
+		return s.Server.Call(ctx, req)
+	}
 	close(s.started)
 	<-s.resume
 	return jsonResp([]ProjectIdentity{{Dir: "/remote/repo"}}, nil)

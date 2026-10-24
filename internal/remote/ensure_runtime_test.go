@@ -21,7 +21,7 @@ func TestEnsureRuntimeAndLegacyRPC(t *testing.T) {
 		t.Fatalf("provider result = %+v, %v", result, err)
 	}
 	// An old peer sends the unchanged old method and payload, with no platform.
-	response, err := conn.Client().EnsureProjectOpencode(t.Context(), &pb.JsonReq{Payload: []byte(`{"projectDir":"/repo"}`)})
+	response, err := conn.Client().Call(t.Context(), &pb.CallReq{Method: "EnsureProjectOpencode", Payload: []byte(`{"projectDir":"/repo"}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,10 +40,10 @@ type oldRuntimeClient struct {
 	calls int
 }
 
-func (*oldRuntimeClient) EnsureRuntime(context.Context, *pb.JsonReq, ...grpc.CallOption) (*pb.JsonResp, error) {
-	return nil, status.Error(codes.Unimplemented, "old remote")
-}
-func (c *oldRuntimeClient) EnsureProjectOpencode(context.Context, *pb.JsonReq, ...grpc.CallOption) (*pb.JsonResp, error) {
+func (c *oldRuntimeClient) Call(_ context.Context, req *pb.CallReq, _ ...grpc.CallOption) (*pb.JsonResp, error) {
+	if req.Method == "EnsureRuntime" {
+		return nil, status.Error(codes.Unimplemented, "old remote")
+	}
 	c.calls++
 	return &pb.JsonResp{Payload: []byte(`{"endpoint":"http://127.0.0.1:1234"}`)}, nil
 }
@@ -61,7 +61,7 @@ func TestEnsureRuntimeFallsBackOnlyForOpenCode(t *testing.T) {
 		t.Fatalf("offline = %v", err)
 	}
 	conn := connectedPair(t, &fakePlatform{id: "opencode"})
-	if _, err := conn.Client().EnsureRuntime(t.Context(), &pb.JsonReq{Payload: []byte(`invalid`)}); err == nil {
+	if _, err := conn.Client().Call(t.Context(), &pb.CallReq{Method: "EnsureRuntime", Payload: []byte(`invalid`)}); err == nil {
 		t.Fatal("invalid runtime payload accepted")
 	}
 }
@@ -80,7 +80,7 @@ func TestLegacyWorktreeRPCPinsOpenCode(t *testing.T) {
 	host := &worktreeRuntimeHost{}
 	srv := NewServer(nil, host, "id", "test")
 	for _, test := range []struct{ payload, want string }{{`{"ProjectDir":"/repo"}`, "opencode"}, {`{"ProjectDir":"/repo","Platform":"fake"}`, "fake"}} {
-		if _, err := srv.CreateWorktreeSession(t.Context(), &pb.JsonReq{Payload: []byte(test.payload)}); err != nil {
+		if _, err := srv.CreateWorktreeSession(t.Context(), &pb.CallReq{Payload: []byte(test.payload)}); err != nil {
 			t.Fatal(err)
 		}
 		if host.platform != test.want {

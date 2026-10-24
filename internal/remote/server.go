@@ -143,7 +143,7 @@ func (w *eventStreamWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+func (s *Server) TermWindows(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var args struct {
 		Dir string `json:"dir"`
 	}
@@ -159,7 +159,7 @@ func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp
 	}
 	return jsonResp(wins, nil)
 }
-func (s *Server) TermCreateWindow(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+func (s *Server) TermCreateWindow(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var args struct {
 		Dir string `json:"dir"`
 	}
@@ -169,7 +169,7 @@ func (s *Server) TermCreateWindow(ctx context.Context, req *pb.JsonReq) (*pb.Jso
 	name, err := s.host.TermCreateWindow(ctx, args.Dir)
 	return jsonResp(map[string]string{"window": name}, err)
 }
-func (s *Server) TermKillWindow(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+func (s *Server) TermKillWindow(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var args struct {
 		Dir    string `json:"dir"`
 		Window string `json:"window"`
@@ -177,7 +177,7 @@ func (s *Server) TermKillWindow(ctx context.Context, req *pb.JsonReq) (*pb.Empty
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, s.host.TermKillWindow(ctx, args.Dir, args.Window)
+	return &pb.JsonResp{}, s.host.TermKillWindow(ctx, args.Dir, args.Window)
 }
 func (s *Server) TerminalStream(stream pb.Ocman_TerminalStreamServer) error {
 	first, err := stream.Recv()
@@ -213,7 +213,7 @@ func (c *streamTermConn) Write(p []byte) error {
 	return c.stream.Send(&pb.TermServerMsg{Data: chunk})
 }
 func (c *streamTermConn) Close() error { return nil }
-func (s *Server) Projects(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+func (s *Server) Projects(ctx context.Context, _ *pb.CallReq) (*pb.JsonResp, error) {
 	projects, err := s.host.Projects(ctx)
 	if err != nil {
 		return nil, err
