@@ -28,7 +28,7 @@ func TestConnectedRemoteDoesNotBlockLocalHistoryAnalytics(t *testing.T) {
 		t.Fatal(err)
 	}
 	go func() { s.historyIngest.Run(ctx); close(done) }()
-	defer func() { cancel(); <-done; s.analyticsModule().Close() }()
+	defer func() { cancel(); <-done; s.analyticsModule().Finalize() }()
 	for deadline := time.Now().Add(3 * time.Second); ; {
 		if ids, ready := s.historyIngest.ReadyInstances(); ready {
 			if len(ids) != 1 {

@@ -1,7 +1,6 @@
 package analytics
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -77,7 +76,7 @@ func TestAnalyticsUnavailableAndQueryErrorsNeverUseLegacy(t *testing.T) {
 	if w.Code != http.StatusInternalServerError || calls != 1 || !strings.Contains(w.Body.String(), "projection failed") || w.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
 		t.Fatalf("query error retried legacy: %d %s %v calls=%d", w.Code, w.Body, w.Header(), calls)
 	}
-	f.Close()
+	f.Finalize()
 }
 
 func TestUnrelatedAnalyticsKeepTheirSources(t *testing.T) {
@@ -87,9 +86,6 @@ func TestUnrelatedAnalyticsKeepTheirSources(t *testing.T) {
 		if rec.Code != http.StatusOK || rec.Header().Get("X-Ocman-Analytics-Source") != "" {
 			t.Fatalf("%s incorrectly cut over: %d %v", route, rec.Code, rec.Header())
 		}
-	}
-	if err := f.Launch(context.Background()); err != nil {
-		t.Fatal(err)
 	}
 	// Confirm the response encoder remains untouched by middleware.
 	var ignored any
@@ -130,7 +126,7 @@ func TestAnalyticsStrictSourceErrorsAndMissingLegacyRuntime(t *testing.T) {
 			t.Fatalf("%s: %d %s", route, rec.Code, rec.Body)
 		}
 	}
-	f.Close()
+	f.Finalize()
 }
 
 func TestEveryAnalyticsRouteRejectsIncompleteHistory(t *testing.T) {

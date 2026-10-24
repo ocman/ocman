@@ -105,7 +105,9 @@ func setAnalyticsSource(header http.Header, source, reason string) {
 	}
 }
 
-func (m *Module) Close() {
+// Finalize closes the lazily opened projection readers once handlers are
+// fenced at shutdown.
+func (m *Module) Finalize() {
 	if m.deps.HistoryAnalytics == nil {
 		return
 	}
@@ -120,7 +122,3 @@ func (m *Module) Close() {
 	}
 	h.projections.readers = nil
 }
-
-// Launcher registration pairs the reader cleanup with listener shutdown.
-// Readers themselves are opened lazily only after imports become ready.
-func (m *Module) Launch(context.Context) error { return nil }

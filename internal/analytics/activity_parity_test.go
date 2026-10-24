@@ -85,7 +85,7 @@ func analyticsSummaryFixture(t *testing.T, seed func(*fixture, time.Time)) (*fix
 	h := &HistoryAnalytics{Store: store, Instances: func() ([]string, bool) { return []string{"one"}, true }}
 	f.deps.HistoryAnalytics = func() *HistoryAnalytics { return h }
 	f.mux = routes(f.Module)
-	t.Cleanup(f.Close)
+	t.Cleanup(f.Finalize)
 	return f, h, now
 }
 
