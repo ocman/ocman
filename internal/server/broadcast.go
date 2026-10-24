@@ -241,44 +241,29 @@ func (s *Server) broadcastGlobalEvent(event string, data []byte) {
 	s.observeHistoryChange(event, data)
 }
 
-// broadcastPermissionResolved broadcasts that a permission prompt is no
-// longer pending (auto-approved, or answered via the TUI / another tab),
-// so cross-page prompt toasts for the session clear immediately. reason
-// is a short tag for diagnostics ("auto-approved", "replied").
+// broadcastPermissionResolved resolves the permission's Inbox item, then
+// broadcasts that the prompt is no longer pending (auto-approved, or
+// answered via the TUI / another tab). reason is a short tag for
+// diagnostics ("auto-approved", "replied").
 func (s *Server) broadcastPermissionResolved(platform, sessionID, permissionID, reason string) {
 	s.resolvePermissionInbox(context.Background(), platform, sessionID, permissionID)
-	if sessionID == "" {
-		return
-	}
-	payload, err := json.Marshal(map[string]interface{}{
-		"platform":     platform,
-		"sessionID":    sessionID,
-		"permissionId": permissionID,
-		"reason":       reason,
-	})
-	if err != nil {
-		return
-	}
-	s.broadcastGlobalEvent("ocman.permission.resolved", payload)
+	s.broadcastResolved("ocman.permission.resolved", "permissionId", platform, sessionID, permissionID, reason)
 }
 
-// broadcastQuestionResolved broadcasts that a question prompt is no
-// longer pending (answered or rejected), so cross-page prompt toasts
-// for the session clear immediately.
-func (s *Server) broadcastQuestionResolved(platform, sessionID, requestID, reason string) {
+// broadcastResolved broadcasts that a prompt is no longer pending, so
+// cross-page prompt toasts for the session clear immediately. idKey names
+// the prompt ID field: "permissionId" or "requestId" for questions.
+func (s *Server) broadcastResolved(event, idKey, platform, sessionID, id, reason string) {
 	if sessionID == "" {
 		return
 	}
-	payload, err := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]string{ // A string map cannot fail to marshal.
 		"platform":  platform,
 		"sessionID": sessionID,
-		"requestId": requestID,
+		idKey:       id,
 		"reason":    reason,
 	})
-	if err != nil {
-		return
-	}
-	s.broadcastGlobalEvent("ocman.question.resolved", payload)
+	s.broadcastGlobalEvent(event, payload)
 }
 
 // sseKeepaliveInterval is how often browser streams carry a named

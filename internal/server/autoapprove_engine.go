@@ -74,7 +74,7 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		PromptNeedsUser: s.onPromptNeedsUser,
 		BroadcastQuestionResolved: func(platform, session, request, reason string) {
 			s.onAgentPromptResolved(platform, session, "question", request)
-			s.broadcastQuestionResolved(platform, session, request, reason)
+			s.broadcastResolved("ocman.question.resolved", "requestId", platform, session, request, reason)
 		},
 		BroadcastSessionIdle: func(platform, session string) {
 			s.onAgentWaitIdle(platform, session)

@@ -116,7 +116,7 @@ func TestPromptResolvedBroadcastsCarryPlatform(t *testing.T) {
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 	srv.broadcastPermissionResolved("claudecode", "s", "p", "replied")
-	srv.broadcastQuestionResolved("claudecode", "s", "q", "rejected")
+	srv.broadcastResolved("ocman.question.resolved", "requestId", "claudecode", "s", "q", "rejected")
 	for _, want := range []string{
 		`{"permissionId":"p","platform":"claudecode","reason":"replied","sessionID":"s"}`,
 		`{"platform":"claudecode","reason":"rejected","requestId":"q","sessionID":"s"}`,
