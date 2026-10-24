@@ -185,6 +185,19 @@ func TestInstallCreatesConfig(t *testing.T) {
 	if !strings.Contains(string(raw), "https://opencode.ai/config.json") {
 		t.Errorf("fresh config should carry $schema: %s", raw)
 	}
+	// Without OpenCode v2 the entry is the flat mcp.<name> layout, with no
+	// codemode and no mcp.servers section.
+	doc, servers := readDoc(t, filepath.Join(dir, "opencode.json"))
+	var entry map[string]any
+	if err := json.Unmarshal(doc.MCP[ServerName], &entry); err != nil {
+		t.Fatalf("flat entry: %v", err)
+	}
+	if _, has := entry["codemode"]; has {
+		t.Errorf("v1 entry carries codemode: %v", entry)
+	}
+	if len(servers) != 0 {
+		t.Errorf("v1 install wrote mcp.servers: %v", servers)
+	}
 }
 
 func TestInstallPreservesOtherKeysAndBacksUp(t *testing.T) {

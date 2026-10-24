@@ -18,7 +18,9 @@ const (
 	pageB = "fedcba9876543210fedcba9876543210"
 )
 
-func dashed(h string) string { return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:] }
+func dashed(h string) string {
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
 
 func notionPageJSON(id, title string, extra map[string]any) map[string]any {
 	p := map[string]any{
@@ -106,32 +108,6 @@ var ticketRule = []IdentifierRule{{Pattern: `\bABC-\d+\b`, Provider: "notion"}}
 
 func notionResolve(svc *Service, viewer, text string) []Preview {
 	return svc.Resolve(context.Background(), viewer, "owner", svc.Discover(text, ticketRule))
-}
-
-func TestNotionParseURL(t *testing.T) {
-	text := "https://www.notion.so/acme/Launch-plan-" + pageA + " " +
-		"https://notion.so/" + pageA + "#block " + // dup
-		"https://app.notion.com/p/" + dashed(pageB) + " " +
-		"https://acme.notion.site/Public-" + strings.ToUpper("11111111111111111111111111111111") + " " +
-		"https://www.notion.so/acme/Board-" + pageB + "?v=abc&p=22222222222222222222222222222222&pm=s " +
-		"http://www.notion.so/" + pageA + " https://notion.so.evil.com/" + pageA + " https://www.notion.so/acme/Short-0123 " +
-		"https://www.notion.so:8443/" + pageA
-	var got []string
-	for _, r := range Discover(text, []Resolver{Notion{}}, nil) {
-		got = append(got, r.Kind+" "+r.ID+" "+r.URL)
-	}
-	want := []string{
-		"page " + dashed(pageA) + " https://www.notion.so/acme/Launch-plan-" + pageA,
-		"page " + dashed(pageB) + " https://app.notion.com/p/" + dashed(pageB),
-		"page 11111111-1111-1111-1111-111111111111 https://acme.notion.site/Public-11111111111111111111111111111111",
-		"page 22222222-2222-2222-2222-222222222222 https://www.notion.so/acme/Board-" + pageB + "?p=22222222222222222222222222222222",
-	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("refs:\n%s", strings.Join(got, "\n"))
-	}
-	if _, ok := (Notion{}).ParseIdentifier("../x"); ok {
-		t.Fatal("unsafe identifier accepted")
-	}
 }
 
 func TestNotionDirectPage(t *testing.T) {

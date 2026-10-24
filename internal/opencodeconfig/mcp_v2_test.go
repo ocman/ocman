@@ -43,27 +43,6 @@ func readDoc(t *testing.T, path string) (configDoc, map[string]map[string]any) {
 	return doc, servers
 }
 
-func TestInstallV1WritesFlatEntryWithoutCodemode(t *testing.T) {
-	dir := configHome(t)
-	if _, err := Install(testURL); err != nil {
-		t.Fatalf("Install: %v", err)
-	}
-	doc, servers := readDoc(t, filepath.Join(dir, "opencode.json"))
-	var entry map[string]any
-	if err := json.Unmarshal(doc.MCP[ServerName], &entry); err != nil {
-		t.Fatalf("flat entry: %v", err)
-	}
-	if _, has := entry["codemode"]; has {
-		t.Errorf("v1 entry carries codemode: %v", entry)
-	}
-	if len(servers) != 0 {
-		t.Errorf("v1 install wrote mcp.servers: %v", servers)
-	}
-	if st, err := Check(testURL); err != nil || !st.Configured {
-		t.Errorf("Check after Install: %+v, %v", st, err)
-	}
-}
-
 // OpenCode v2 converts v1's flat mcp.<name> entries field by field and
 // drops codemode, so the entry must live in v2's own mcp.servers layout
 // for Code Mode to stay off.

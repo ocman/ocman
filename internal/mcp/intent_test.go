@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
 	"github.com/mark3labs/mcp-go/server"
@@ -46,8 +47,8 @@ func TestToolsAcceptOptionalIntent(t *testing.T) {
 		if intent != "" {
 			args["intent"] = intent
 		}
-		result := callTool(t, srv, "contributed", args)
-		if result.IsError || resultText(result) != "list" {
+		result := testutil.CallTool(t, srv, "contributed", args)
+		if result.IsError || testutil.ResultText(result) != "list" {
 			t.Fatalf("intent changed operation: %#v", result)
 		}
 	}

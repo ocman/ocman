@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -101,9 +102,9 @@ func TestCalcCost(t *testing.T) {
 	})
 
 	cases := []struct {
-		name                                string
-		in, out, cacheRead, cacheWrite      int64
-		want                                float64
+		name                           string
+		in, out, cacheRead, cacheWrite int64
+		want                           float64
 	}{
 		{"all zero", 0, 0, 0, 0, 0},
 		{"only input", 1000, 0, 0, 0, 1.0},
@@ -229,7 +230,7 @@ func TestLoad_FetchFailureLogsWarning(t *testing.T) {
 
 	var found bool
 	for _, e := range hook.AllEntries() {
-		if e.Level == logrus.WarnLevel && contains(e.Message, "pricing") {
+		if e.Level == logrus.WarnLevel && strings.Contains(e.Message, "pricing") {
 			found = true
 			break
 		}
@@ -237,17 +238,4 @@ func TestLoad_FetchFailureLogsWarning(t *testing.T) {
 	if !found {
 		t.Fatalf("expected a WARN log line mentioning 'pricing'; got %d entries", len(hook.AllEntries()))
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (substr == "" || indexOf(s, substr) >= 0)
-}
-
-func indexOf(s, substr string) int {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
 }

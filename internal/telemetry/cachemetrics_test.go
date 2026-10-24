@@ -96,32 +96,6 @@ func attrSetMatches(set attribute.Set, want map[string]string) bool {
 	return true
 }
 
-func TestCacheMetrics_RecordHitMiss(t *testing.T) {
-	reader := withTestMeterProvider(t)
-	m := NewCacheMetrics("test.cache")
-	ctx := context.Background()
-
-	m.RecordHit(ctx)
-	m.RecordHit(ctx)
-	m.RecordHit(ctx)
-	m.RecordMiss(ctx)
-
-	metrics := collectMetrics(t, reader)
-	lookups, ok := metrics["ocman.cache.lookups"]
-	if !ok {
-		t.Fatalf("expected ocman.cache.lookups metric; got %v", keys(metrics))
-	}
-
-	hits := findInt64SumDataPoint(t, lookups, map[string]string{"cache": "test.cache", "result": "hit"})
-	if hits != 3 {
-		t.Errorf("hits = %d, want 3", hits)
-	}
-	misses := findInt64SumDataPoint(t, lookups, map[string]string{"cache": "test.cache", "result": "miss"})
-	if misses != 1 {
-		t.Errorf("misses = %d, want 1", misses)
-	}
-}
-
 func TestCacheMetrics_RecordEvictions(t *testing.T) {
 	reader := withTestMeterProvider(t)
 	m := NewCacheMetrics("test.cache")
@@ -143,7 +117,7 @@ func TestCacheMetrics_RecordEvictions(t *testing.T) {
 	}
 }
 
-func TestCacheMetrics_DistinctNamesAreSeparateSeries(t *testing.T) {
+func TestCacheMetrics_RecordHitMissPerName(t *testing.T) {
 	reader := withTestMeterProvider(t)
 	a := NewCacheMetrics("cache.a")
 	b := NewCacheMetrics("cache.b")
@@ -151,16 +125,27 @@ func TestCacheMetrics_DistinctNamesAreSeparateSeries(t *testing.T) {
 
 	a.RecordHit(ctx)
 	a.RecordHit(ctx)
+	a.RecordHit(ctx)
+	a.RecordMiss(ctx)
 	b.RecordMiss(ctx)
 
 	metrics := collectMetrics(t, reader)
-	lookups := metrics["ocman.cache.lookups"]
-
-	if v := findInt64SumDataPoint(t, lookups, map[string]string{"cache": "cache.a", "result": "hit"}); v != 2 {
-		t.Errorf("cache.a hits = %d, want 2", v)
+	lookups, ok := metrics["ocman.cache.lookups"]
+	if !ok {
+		t.Fatalf("expected ocman.cache.lookups metric; got %v", keys(metrics))
 	}
-	if v := findInt64SumDataPoint(t, lookups, map[string]string{"cache": "cache.b", "result": "miss"}); v != 1 {
-		t.Errorf("cache.b misses = %d, want 1", v)
+
+	for _, tc := range []struct {
+		cache, result string
+		want          int64
+	}{
+		{"cache.a", "hit", 3},
+		{"cache.a", "miss", 1},
+		{"cache.b", "miss", 1},
+	} {
+		if v := findInt64SumDataPoint(t, lookups, map[string]string{"cache": tc.cache, "result": tc.result}); v != tc.want {
+			t.Errorf("%s %s = %d, want %d", tc.cache, tc.result, v, tc.want)
+		}
 	}
 }
 
@@ -189,6 +174,8 @@ func TestRegisterCacheSizeGauge(t *testing.T) {
 	reader := withTestMeterProvider(t)
 
 	var size int64 = 42
+	// The latest registration under a name wins.
+	RegisterCacheSizeGauge("sized.cache", func() int64 { return 1 })
 	RegisterCacheSizeGauge("sized.cache", func() int64 { return size })
 	t.Cleanup(func() { UnregisterCacheSizeGauge("sized.cache") })
 
@@ -198,7 +185,7 @@ func TestRegisterCacheSizeGauge(t *testing.T) {
 		t.Fatalf("expected ocman.cache.entries metric; got %v", keys(metrics))
 	}
 	if v := findInt64GaugeDataPoint(t, entries, map[string]string{"cache": "sized.cache"}); v != 42 {
-		t.Errorf("size = %d, want 42", v)
+		t.Errorf("size = %d, want 42 (latest registration should win)", v)
 	}
 
 	// Mutate the underlying value and re-collect — the gauge should
@@ -207,19 +194,6 @@ func TestRegisterCacheSizeGauge(t *testing.T) {
 	metrics = collectMetrics(t, reader)
 	if v := findInt64GaugeDataPoint(t, metrics["ocman.cache.entries"], map[string]string{"cache": "sized.cache"}); v != 100 {
 		t.Errorf("size after mutation = %d, want 100", v)
-	}
-}
-
-func TestRegisterCacheSizeGauge_OverwritesPriorRegistration(t *testing.T) {
-	reader := withTestMeterProvider(t)
-
-	RegisterCacheSizeGauge("name", func() int64 { return 1 })
-	RegisterCacheSizeGauge("name", func() int64 { return 99 })
-	t.Cleanup(func() { UnregisterCacheSizeGauge("name") })
-
-	metrics := collectMetrics(t, reader)
-	if v := findInt64GaugeDataPoint(t, metrics["ocman.cache.entries"], map[string]string{"cache": "name"}); v != 99 {
-		t.Errorf("size = %d, want 99 (latest registration should win)", v)
 	}
 }
 

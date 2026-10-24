@@ -173,13 +173,17 @@ func TestAPIRejectsUnsafeRequests(t *testing.T) {
 	h := newHarness(t)
 	n := 0
 	for name, target := range map[string]func(Ref) (string, []string){
-		"invalid host":   func(Ref) (string, []string) { return "https://evil.example.com", []string{"issues", "A-1"} },
-		"http scheme":    func(Ref) (string, []string) { return strings.Replace(h.srv.URL, "https", "http", 1), []string{"issues"} },
+		"invalid host": func(Ref) (string, []string) { return "https://evil.example.com", []string{"issues", "A-1"} },
+		"http scheme": func(Ref) (string, []string) {
+			return strings.Replace(h.srv.URL, "https", "http", 1), []string{"issues"}
+		},
 		"traversal":      func(Ref) (string, []string) { return h.srv.URL, []string{"issues", ".."} },
 		"slash in id":    func(Ref) (string, []string) { return h.srv.URL, []string{"issues", "a/../../admin"} },
 		"escaped":        func(Ref) (string, []string) { return h.srv.URL, []string{"%2e%2e"} },
 		"base traversal": func(Ref) (string, []string) { return h.srv.URL + "/v1/../admin", []string{"x"} },
-		"userinfo":       func(Ref) (string, []string) { return "https://u:p@" + strings.TrimPrefix(h.srv.URL, "https://"), []string{"x"} },
+		"userinfo": func(Ref) (string, []string) {
+			return "https://u:p@" + strings.TrimPrefix(h.srv.URL, "https://"), []string{"x"}
+		},
 	} {
 		h.res.target = target
 		n++
@@ -369,5 +373,75 @@ func TestTokenState(t *testing.T) {
 	ref := Ref{Provider: "mock", Workspace: "gone", Kind: "issue", ID: "ABC-1"}
 	if p := h.svc.Resolve(context.Background(), "alice", "owner", []Ref{ref})[0]; p.State != StateConnect {
 		t.Fatalf("explicit disconnected workspace = %+v", p)
+	}
+}
+
+// TestParseURL pins which URLs each provider claims: only https on the exact
+// host and path shape, normalized and deduplicated. Unsafe identifiers are
+// never accepted.
+func TestParseURL(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		resolver Resolver
+		text     string
+		want     []string
+	}{
+		{"jira", Jira{},
+			"https://acme.atlassian.net/browse/ABC-12 https://Beta.Atlassian.NET/browse/abc-13 " +
+				"http://acme.atlassian.net/browse/ABC-14 https://acme.atlassian.net.evil.com/browse/ABC-15 " +
+				"https://a.b.atlassian.net/browse/ABC-16 https://acme.atlassian.net/jira/ABC-17 https://acme.atlassian.net:444/browse/ABC-18 " +
+				"https://acme.atlassian.net/browse/ABC-0 https://atlassian.net/browse/ABC-19",
+			[]string{
+				"issue ABC-12 https://acme.atlassian.net/browse/ABC-12",
+				"issue ABC-13 https://beta.atlassian.net/browse/ABC-13",
+			}},
+		{"linear", Linear{},
+			"https://linear.app/acme/issue/ENG-12/fix-the-thing https://LINEAR.app/Acme/issue/eng-13 " +
+				"http://linear.app/acme/issue/ENG-14 https://linear.app.evil.com/acme/issue/ENG-15 https://linear.app/acme/project/ENG-16 " +
+				"https://linear.app/acme/issue/ENG-0 https://linear.app:444/acme/issue/ENG-17 https://linear.app/../issue/ENG-18",
+			[]string{
+				"issue ENG-12 https://linear.app/acme/issue/ENG-12",
+				"issue ENG-13 https://linear.app/acme/issue/ENG-13",
+			}},
+		{"slack", Slack{},
+			"https://acme.slack.com/archives/C1/p1700000000000100 " +
+				"https://acme.slack.com/archives/C1/p1700000000000200?thread_ts=1700000000.000100&cid=C1 " +
+				"https://acme.slack.com/archives/C1/p1700000000000100?thread_ts=1700000000.000100 " + // parent: dup
+				"http://acme.slack.com/archives/C1/p1700000000000300 https://evil.com/archives/C1/p1700000000000100 " +
+				"https://acme.slack.com.evil.com/archives/C1/p1700000000000100 https://acme.slack.com/archives/c1/p1 " +
+				"https://acme.slack.com/archives/C1/p1700000000000400/../x",
+			[]string{
+				"message C1/p1700000000000100 https://acme.slack.com/archives/C1/p1700000000000100",
+				"reply C1/p1700000000000200 https://acme.slack.com/archives/C1/p1700000000000200?cid=C1&thread_ts=1700000000.000100",
+			}},
+		{"notion", Notion{},
+			"https://www.notion.so/acme/Launch-plan-" + pageA + " " +
+				"https://notion.so/" + pageA + "#block " + // dup
+				"https://app.notion.com/p/" + dashed(pageB) + " " +
+				"https://acme.notion.site/Public-" + strings.ToUpper("11111111111111111111111111111111") + " " +
+				"https://www.notion.so/acme/Board-" + pageB + "?v=abc&p=22222222222222222222222222222222&pm=s " +
+				"http://www.notion.so/" + pageA + " https://notion.so.evil.com/" + pageA + " https://www.notion.so/acme/Short-0123 " +
+				"https://www.notion.so:8443/" + pageA,
+			[]string{
+				"page " + dashed(pageA) + " https://www.notion.so/acme/Launch-plan-" + pageA,
+				"page " + dashed(pageB) + " https://app.notion.com/p/" + dashed(pageB),
+				"page 11111111-1111-1111-1111-111111111111 https://acme.notion.site/Public-11111111111111111111111111111111",
+				"page 22222222-2222-2222-2222-222222222222 https://www.notion.so/acme/Board-" + pageB + "?p=22222222222222222222222222222222",
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			for _, r := range Discover(tc.text, []Resolver{tc.resolver}, nil) {
+				got = append(got, r.Kind+" "+r.ID+" "+r.URL)
+			}
+			if strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
+				t.Fatalf("refs:\n%s", strings.Join(got, "\n"))
+			}
+			for _, id := range []string{"../1", "../x"} {
+				if _, ok := tc.resolver.ParseIdentifier(id); ok {
+					t.Fatalf("unsafe identifier %q accepted", id)
+				}
+			}
+		})
 	}
 }

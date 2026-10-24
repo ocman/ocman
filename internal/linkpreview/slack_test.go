@@ -79,26 +79,6 @@ func slackResolve(svc *Service, viewer, text string) []Preview {
 	return svc.Resolve(context.Background(), viewer, "owner", refs)
 }
 
-func TestSlackParseURL(t *testing.T) {
-	text := "https://acme.slack.com/archives/C1/p1700000000000100 " +
-		"https://acme.slack.com/archives/C1/p1700000000000200?thread_ts=1700000000.000100&cid=C1 " +
-		"https://acme.slack.com/archives/C1/p1700000000000100?thread_ts=1700000000.000100 " + // parent: dup
-		"http://acme.slack.com/archives/C1/p1700000000000300 https://evil.com/archives/C1/p1700000000000100 " +
-		"https://acme.slack.com.evil.com/archives/C1/p1700000000000100 https://acme.slack.com/archives/c1/p1 " +
-		"https://acme.slack.com/archives/C1/p1700000000000400/../x"
-	var got []string
-	for _, r := range Discover(text, []Resolver{Slack{}}, nil) {
-		got = append(got, r.Kind+" "+r.ID+" "+r.URL)
-	}
-	want := []string{
-		"message C1/p1700000000000100 https://acme.slack.com/archives/C1/p1700000000000100",
-		"reply C1/p1700000000000200 https://acme.slack.com/archives/C1/p1700000000000200?cid=C1&thread_ts=1700000000.000100",
-	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("refs:\n%s", strings.Join(got, "\n"))
-	}
-}
-
 func TestSlackPublicMessageAndThreadReply(t *testing.T) {
 	svc, _, _, _, _ := newSlackHarness(t)
 	ps := slackResolve(svc, "alice", "https://acme.slack.com/archives/C1/p1700000000000100 "+

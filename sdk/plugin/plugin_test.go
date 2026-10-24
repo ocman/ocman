@@ -1,11 +1,9 @@
 package plugin_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"strings"
 	"testing"
@@ -203,33 +201,6 @@ func TestProtocolAliases(t *testing.T) {
 	}
 	d := description()
 	if err := s.Accept(plugin.FromPlugin, plugin.Envelope{Type: plugin.TypeHello, Hello: &plugin.Hello{Mode: plugin.ModeDescribe, Token: strings.Repeat("cd", 32), Description: &d}}); !errors.Is(err, plugin.ErrHandshake) {
-		t.Fatal(err)
-	}
-	if _, err := plugin.Negotiate(plugin.Version{Major: 2}, nil, d); !errors.Is(err, plugin.ErrIncompatibleVersion) {
-		t.Fatal(err)
-	}
-	for _, body := range []string{
-		`{"type":"shutdown","shutdown":{},"future":true}` + "\n",
-		`{"type":"shutdown","shutdown":{"future":true}}` + "\r\n",
-	} {
-		if _, err := plugin.NewDecoder(strings.NewReader(body)).Decode(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, body := range []string{`{"type":"shutdown","shutdown":{}}`, "\n", `{"type":"shutdown","type":"shutdown","shutdown":{}}` + "\n"} {
-		if _, err := plugin.NewDecoder(strings.NewReader(body)).Decode(); err == nil {
-			t.Fatal("accepted invalid framing")
-		}
-	}
-	var b bytes.Buffer
-	if err := plugin.NewEncoder(&b).Encode(plugin.Envelope{Type: plugin.TypeShutdown, Shutdown: &plugin.Shutdown{}}); err != nil {
-		t.Fatal(err)
-	}
-	dec := plugin.NewDecoder(&b)
-	if _, err := dec.Decode(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := dec.Decode(); !errors.Is(err, io.EOF) {
 		t.Fatal(err)
 	}
 }

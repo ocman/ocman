@@ -37,8 +37,11 @@ func TestClaudeOnlyStartup(t *testing.T) {
 	copyTree(t, filepath.Join("..", "claudeprovider", "testdata", "projects"), filepath.Join(dir, ".claude", "projects"))
 	bin := filepath.Join(dir, "bin")
 	marker := filepath.Join(dir, "opencode-called")
-	writeScript(t, filepath.Join(bin, "opencode"), ": > \"$OCMAN_TEST_EXEC_MARKER\"\nexit 1")
-	writeScript(t, filepath.Join(bin, "claude"), "echo '2.1.220 (Claude Code)'")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteScript(t, filepath.Join(bin, "opencode"), "#!/bin/sh\n: > \"$OCMAN_TEST_EXEC_MARKER\"\nexit 1\n")
+	testutil.WriteScript(t, filepath.Join(bin, "claude"), "#!/bin/sh\necho '2.1.220 (Claude Code)'\n")
 	base, out, stop := startClaudeOcman(t, "TestClaudeOnlyStartup", dir, "OCMAN_TEST_EXEC_MARKER="+marker)
 	defer stop()
 
@@ -300,16 +303,6 @@ func partTexts(d platforms.SessionDetail) []string {
 		out = append(out, part.Text)
 	}
 	return out
-}
-
-func writeScript(t *testing.T, path, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func copyTree(t *testing.T, from, to string) {

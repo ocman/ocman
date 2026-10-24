@@ -28,102 +28,64 @@ func TestSealOpen_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestSeal_Deterministic proves an append retry is byte-identical, which
-// is what makes PUT /s/{id}/{seq} idempotent (nonce is derived from seq,
-// never random).
-func TestSeal_Deterministic(t *testing.T) {
+// TestSeal_NonceDerivedFromSeq proves an append retry is byte-identical,
+// which is what makes PUT /s/{id}/{seq} idempotent (nonce is derived from
+// seq, never random). It is also the catastrophic-failure guard: AES-GCM
+// nonce reuse across two different plaintexts under one key leaks the XOR
+// of the plaintexts and the auth key, so a different seq must mean a
+// different keystream.
+func TestSeal_NonceDerivedFromSeq(t *testing.T) {
 	k := NewKey()
 	plain := []byte("same turn, retried")
+	seal := func(seq uint64) []byte {
+		t.Helper()
+		ct, err := Seal(k, "id", seq, plain)
+		if err != nil {
+			t.Fatalf("Seal: %v", err)
+		}
+		return ct
+	}
 
-	a, err := Seal(k, "id", 3, plain)
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	b, err := Seal(k, "id", 3, plain)
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	if !bytes.Equal(a, b) {
+	if !bytes.Equal(seal(3), seal(3)) {
 		t.Fatal("Seal is not deterministic; a retried append would not be idempotent")
 	}
-}
-
-// TestSeal_NonceVariesWithSeq is the catastrophic-failure guard: AES-GCM
-// nonce reuse across two different plaintexts under one key leaks the
-// XOR of the plaintexts and the auth key. Different seq must mean a
-// different keystream.
-func TestSeal_NonceVariesWithSeq(t *testing.T) {
-	k := NewKey()
-	plain := []byte("identical plaintext")
-
-	a, err := Seal(k, "id", 1, plain)
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	b, err := Seal(k, "id", 2, plain)
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	if bytes.Equal(a, b) {
+	if bytes.Equal(seal(1), seal(2)) {
 		t.Fatal("identical ciphertext for different seq: nonce is being reused")
 	}
 }
 
-// TestOpen_RejectsResequencedChunk proves the sequence number is bound
-// into the AAD. Without it a relay could renumber or reorder chunks
-// undetected, since each chunk is individually authentic.
-func TestOpen_RejectsResequencedChunk(t *testing.T) {
+// TestOpen_Rejects proves the key, the share id and the sequence number
+// are all authenticated. Binding seq and id into the AAD stops a relay
+// from renumbering, reordering or transplanting chunks, since each chunk
+// is individually authentic.
+func TestOpen_Rejects(t *testing.T) {
 	k := NewKey()
-	ct, err := Seal(k, "id", 5, []byte("turn five"))
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	if _, err := Open(k, "id", 6, ct); err == nil {
-		t.Fatal("chunk opened under a different seq: sequence is not authenticated")
-	}
-}
-
-// TestOpen_RejectsCrossShareChunk proves the share id is bound into the
-// AAD, so a chunk cannot be transplanted into another share.
-func TestOpen_RejectsCrossShareChunk(t *testing.T) {
-	k := NewKey()
-	ct, err := Seal(k, "share-a", 1, []byte("secret"))
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	if _, err := Open(k, "share-b", 1, ct); err == nil {
-		t.Fatal("chunk opened under a different share id: id is not authenticated")
-	}
-}
-
-func TestOpen_RejectsWrongKey(t *testing.T) {
-	a, b := NewKey(), NewKey()
-	ct, err := Seal(a, "id", 1, []byte("secret"))
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	if _, err := Open(b, "id", 1, ct); err == nil {
-		t.Fatal("chunk opened under the wrong key")
-	}
-}
-
-func TestOpen_RejectsTamperedCiphertext(t *testing.T) {
-	k := NewKey()
-	ct, err := Seal(k, "id", 1, []byte("secret payload"))
+	ct, err := Seal(k, "share-a", 5, []byte("secret payload"))
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
 	}
 	tampered := bytes.Clone(ct)
 	tampered[len(tampered)/2] ^= 0xff
-	if _, err := Open(k, "id", 1, tampered); err == nil {
-		t.Fatal("tampered ciphertext opened")
-	}
-}
 
-func TestOpen_RejectsShortCiphertext(t *testing.T) {
-	k := NewKey()
-	if _, err := Open(k, "id", 1, []byte{0x01, 0x02}); err == nil {
-		t.Fatal("truncated ciphertext opened")
+	tests := []struct {
+		name string
+		key  Key
+		id   string
+		seq  uint64
+		ct   []byte
+	}{
+		{"different seq", k, "share-a", 6, ct},
+		{"different share id", k, "share-b", 5, ct},
+		{"wrong key", NewKey(), "share-a", 5, ct},
+		{"tampered ciphertext", k, "share-a", 5, tampered},
+		{"short ciphertext", k, "share-a", 5, []byte{0x01, 0x02}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := Open(tc.key, tc.id, tc.seq, tc.ct); err == nil {
+				t.Fatal("Open succeeded, want error")
+			}
+		})
 	}
 }
 

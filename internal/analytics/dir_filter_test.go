@@ -70,200 +70,142 @@ func dirFilterFixture(t *testing.T) *fixture {
 	return srv
 }
 
-// scopedRequest builds a GET request to `path` with `dir=value` URL-encoded
-// in the query string. Uses url.Values to ensure encoding matches what a
-// real client (URLSearchParams) sends.
-func scopedRequest(path, dir string) *http.Request {
-	q := url.Values{}
-	q.Set("dir", dir)
-	return httptest.NewRequest(http.MethodGet, path+"?"+q.Encode(), nil)
-}
-
-func TestHandleMetrics_DirFilter(t *testing.T) {
+// TestDirFilterRoutes seeds the fixture once and checks each route. Scoped
+// requests carry `dir` URL-encoded through url.Values so encoding matches
+// what a real client (URLSearchParams) sends.
+func TestDirFilterRoutes(t *testing.T) {
 	srv := dirFilterFixture(t)
 
-	// Unfiltered: 4 requests, 1500 input tokens.
-	rr := httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metrics", nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("unfiltered metrics: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var unfiltered struct {
-		Summary struct {
-			Requests    int   `json:"requests"`
-			InputTokens int64 `json:"inputTokens"`
-		} `json:"summary"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &unfiltered); err != nil {
-		t.Fatalf("unfiltered metrics decode: %v", err)
-	}
-	if unfiltered.Summary.Requests != 4 || unfiltered.Summary.InputTokens != 1500 {
-		t.Fatalf("unfiltered metrics summary unexpected: %+v", unfiltered.Summary)
-	}
-
-	// Scoped to /repo/foo: 2 requests, 300 tokens. Sibling /repo/foobar
-	// must NOT contribute (AD-7).
-	rr = httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, scopedRequest("/api/metrics", "/repo/foo"))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("scoped metrics: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var scoped struct {
-		Summary struct {
-			Requests    int   `json:"requests"`
-			InputTokens int64 `json:"inputTokens"`
-		} `json:"summary"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &scoped); err != nil {
-		t.Fatalf("scoped metrics decode: %v", err)
-	}
-	if scoped.Summary.Requests != 2 {
-		t.Errorf("scoped Requests = %d, want 2", scoped.Summary.Requests)
-	}
-	if scoped.Summary.InputTokens != 300 {
-		t.Errorf("scoped InputTokens = %d, want 300 (sibling /repo/foobar should be excluded)", scoped.Summary.InputTokens)
-	}
-}
-
-func TestHandleMetricLogs_SelectsKindAndDir(t *testing.T) {
-	srv := dirFilterFixture(t)
-	q := url.Values{"kind": {"request"}, "dir": {"/repo/foo"}}
-	rr := httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?"+q.Encode(), nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("metric logs: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var got struct {
-		Kind     string        `json:"kind"`
-		Total    int           `json:"total"`
-		Requests []interface{} `json:"requests"`
-		Sessions []interface{} `json:"sessions"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode metric logs: %v", err)
-	}
-	if got.Kind != "request" || got.Total != 2 || len(got.Requests) != 2 || got.Sessions != nil {
-		t.Fatalf("unexpected metric logs: %+v", got)
-	}
-
-	rr = httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?kind=unknown", nil))
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("invalid kind returned HTTP %d, want 400", rr.Code)
-	}
-}
-
-func TestHandleMetricsPerformance_OmitsLogs(t *testing.T) {
-	srv := dirFilterFixture(t)
-	rr := httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metrics/performance", nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("performance metrics: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var got map[string]interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode performance metrics: %v", err)
-	}
-	if _, ok := got["summary"]; !ok {
-		t.Fatal("performance response has no summary")
-	}
-	for _, field := range []string{"requests", "sessions", "projects"} {
-		if _, ok := got[field]; ok {
-			t.Fatalf("performance response unexpectedly contains %q", field)
+	// get serves path with query q, requires HTTP 200 and decodes into out.
+	get := func(t *testing.T, path string, q url.Values, out any) {
+		t.Helper()
+		target := path
+		if len(q) > 0 {
+			target += "?" + q.Encode()
+		}
+		rr := httptest.NewRecorder()
+		srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, target, nil))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: HTTP %d: %s", target, rr.Code, rr.Body.String())
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), out); err != nil {
+			t.Fatalf("%s decode: %v", target, err)
 		}
 	}
-}
+	scoped := url.Values{"dir": {"/repo/foo"}}
 
-func TestHandleActivity_DirFilter(t *testing.T) {
-	srv := dirFilterFixture(t)
+	t.Run("metrics", func(t *testing.T) {
+		type metrics struct {
+			Summary struct {
+				Requests    int   `json:"requests"`
+				InputTokens int64 `json:"inputTokens"`
+			} `json:"summary"`
+		}
+		// Unfiltered: 4 requests, 1500 input tokens.
+		var unfiltered metrics
+		get(t, "/api/metrics", nil, &unfiltered)
+		if unfiltered.Summary.Requests != 4 || unfiltered.Summary.InputTokens != 1500 {
+			t.Fatalf("unfiltered metrics summary unexpected: %+v", unfiltered.Summary)
+		}
+		// Scoped to /repo/foo: 2 requests, 300 tokens. Sibling /repo/foobar
+		// must NOT contribute (AD-7).
+		var got metrics
+		get(t, "/api/metrics", scoped, &got)
+		if got.Summary.Requests != 2 {
+			t.Errorf("scoped Requests = %d, want 2", got.Summary.Requests)
+		}
+		if got.Summary.InputTokens != 300 {
+			t.Errorf("scoped InputTokens = %d, want 300 (sibling /repo/foobar should be excluded)", got.Summary.InputTokens)
+		}
+	})
 
-	rr := httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, scopedRequest("/api/activity", "/repo/foo"))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("scoped activity: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var days []struct {
-		Date     string `json:"date"`
-		Sessions int    `json:"sessions"`
-		Messages int    `json:"messages"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &days); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	var totalMsg int
-	for _, d := range days {
-		totalMsg += d.Messages
-	}
-	if totalMsg != 2 {
-		t.Errorf("scoped messages total = %d, want 2", totalMsg)
-	}
-}
+	t.Run("metric logs select kind and dir", func(t *testing.T) {
+		var got struct {
+			Kind     string        `json:"kind"`
+			Total    int           `json:"total"`
+			Requests []interface{} `json:"requests"`
+			Sessions []interface{} `json:"sessions"`
+		}
+		get(t, "/api/metric-logs", url.Values{"kind": {"request"}, "dir": {"/repo/foo"}}, &got)
+		if got.Kind != "request" || got.Total != 2 || len(got.Requests) != 2 || got.Sessions != nil {
+			t.Fatalf("unexpected metric logs: %+v", got)
+		}
 
-func TestHandleModels_DirFilter(t *testing.T) {
-	srv := dirFilterFixture(t)
+		rr := httptest.NewRecorder()
+		srv.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?kind=unknown", nil))
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("invalid kind returned HTTP %d, want 400", rr.Code)
+		}
+	})
 
-	rr := httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, scopedRequest("/api/models", "/repo/foo"))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("scoped models: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var models []struct {
-		Provider string `json:"provider"`
-		Model    string `json:"model"`
-		Count    int    `json:"count"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &models); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(models) != 1 || models[0].Count != 2 {
-		t.Errorf("scoped models = %#v, want one row with Count=2", models)
-	}
-}
+	t.Run("performance omits logs", func(t *testing.T) {
+		var got map[string]interface{}
+		get(t, "/api/metrics/performance", nil, &got)
+		if _, ok := got["summary"]; !ok {
+			t.Fatal("performance response has no summary")
+		}
+		for _, field := range []string{"requests", "sessions", "projects"} {
+			if _, ok := got[field]; ok {
+				t.Fatalf("performance response unexpectedly contains %q", field)
+			}
+		}
+	})
 
-func TestHandleHourly_DirFilter(t *testing.T) {
-	srv := dirFilterFixture(t)
+	t.Run("activity", func(t *testing.T) {
+		var days []struct {
+			Date     string `json:"date"`
+			Sessions int    `json:"sessions"`
+			Messages int    `json:"messages"`
+		}
+		get(t, "/api/activity", scoped, &days)
+		var totalMsg int
+		for _, d := range days {
+			totalMsg += d.Messages
+		}
+		if totalMsg != 2 {
+			t.Errorf("scoped messages total = %d, want 2", totalMsg)
+		}
+	})
 
-	rr := httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, scopedRequest("/api/hourly", "/repo/foo"))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("scoped hourly: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var hours []struct {
-		Hour     int `json:"hour"`
-		Sessions int `json:"sessions"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &hours); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	var totalSess int
-	for _, h := range hours {
-		totalSess += h.Sessions
-	}
-	if totalSess != 2 {
-		t.Errorf("scoped sessions = %d, want 2 (exact + descendant only)", totalSess)
-	}
-}
+	t.Run("models", func(t *testing.T) {
+		var models []struct {
+			Provider string `json:"provider"`
+			Model    string `json:"model"`
+			Count    int    `json:"count"`
+		}
+		get(t, "/api/models", scoped, &models)
+		if len(models) != 1 || models[0].Count != 2 {
+			t.Errorf("scoped models = %#v, want one row with Count=2", models)
+		}
+	})
 
-func TestHandleHourlyTokens_DirFilter(t *testing.T) {
-	srv := dirFilterFixture(t)
+	t.Run("hourly", func(t *testing.T) {
+		var hours []struct {
+			Hour     int `json:"hour"`
+			Sessions int `json:"sessions"`
+		}
+		get(t, "/api/hourly", scoped, &hours)
+		var totalSess int
+		for _, h := range hours {
+			totalSess += h.Sessions
+		}
+		if totalSess != 2 {
+			t.Errorf("scoped sessions = %d, want 2 (exact + descendant only)", totalSess)
+		}
+	})
 
-	rr := httptest.NewRecorder()
-	srv.mux.ServeHTTP(rr, scopedRequest("/api/hourly-tokens", "/repo/foo"))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("scoped hourly-tokens: HTTP %d: %s", rr.Code, rr.Body.String())
-	}
-	var rows []struct {
-		Datetime string `json:"datetime"`
-		TokensIn int64  `json:"tokensIn"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &rows); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	var total int64
-	for _, r := range rows {
-		total += r.TokensIn
-	}
-	if total != 300 {
-		t.Errorf("scoped tokensIn total = %d, want 300", total)
-	}
+	t.Run("hourly tokens", func(t *testing.T) {
+		var rows []struct {
+			Datetime string `json:"datetime"`
+			TokensIn int64  `json:"tokensIn"`
+		}
+		get(t, "/api/hourly-tokens", scoped, &rows)
+		var total int64
+		for _, r := range rows {
+			total += r.TokensIn
+		}
+		if total != 300 {
+			t.Errorf("scoped tokensIn total = %d, want 300", total)
+		}
+	})
 }

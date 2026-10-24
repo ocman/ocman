@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,7 +77,7 @@ func TestPreviewProviders_Catalog(t *testing.T) {
 		"notion":                  {false, "", "*.notion.site"},
 	} {
 		p := got[id]
-		if p.Configured != want.configured || p.Source != want.source || !contains(p.Hosts, want.host) || !p.Token || p.TokenHelp == "" {
+		if p.Configured != want.configured || p.Source != want.source || !slices.Contains(p.Hosts, want.host) || !p.Token || p.TokenHelp == "" {
 			t.Fatalf("%s = %+v", id, p)
 		}
 	}
@@ -87,15 +88,6 @@ func TestPreviewProviders_Catalog(t *testing.T) {
 	if len(resp.Rules) != 0 || len(resp.HostKinds) != 2 {
 		t.Fatalf("rules = %v, host kinds = %v", resp.Rules, resp.HostKinds)
 	}
-}
-
-func contains(list []string, v string) bool {
-	for _, s := range list {
-		if s == v {
-			return true
-		}
-	}
-	return false
 }
 
 // A pasted token is checked with the provider, saved for the machine and

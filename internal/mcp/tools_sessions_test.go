@@ -11,6 +11,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/mark3labs/mcp-go/mcptest"
 )
 
@@ -61,26 +62,26 @@ func TestSessionToolReadActions(t *testing.T) {
 	}, detail: detail}
 	srv := sessionServer(t, svc)
 
-	help := callTool(t, srv, "sessions", map[string]any{"action": "help"})
+	help := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "help"})
 	for _, text := range []string{"list", "search", "get", "create", "provider/model", "message_limit", "output_schema"} {
-		if !strings.Contains(resultText(help), text) {
-			t.Fatalf("help result missing %q: %s", text, resultText(help))
+		if !strings.Contains(testutil.ResultText(help), text) {
+			t.Fatalf("help result missing %q: %s", text, testutil.ResultText(help))
 		}
 	}
 
-	listed := callTool(t, srv, "sessions", map[string]any{"action": "list", "directory": "/repo", "limit": 1})
-	if listed.IsError || svc.dir != "/repo" || !strings.Contains(resultText(listed), "ses-review") || strings.Contains(resultText(listed), "ses-build") {
-		t.Fatalf("list result = %q, directory = %q", resultText(listed), svc.dir)
+	listed := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "list", "directory": "/repo", "limit": 1})
+	if listed.IsError || svc.dir != "/repo" || !strings.Contains(testutil.ResultText(listed), "ses-review") || strings.Contains(testutil.ResultText(listed), "ses-build") {
+		t.Fatalf("list result = %q, directory = %q", testutil.ResultText(listed), svc.dir)
 	}
 
-	searched := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "build"})
-	if searched.IsError || strings.Contains(resultText(searched), "ses-review") || !strings.Contains(resultText(searched), "ses-build") {
-		t.Fatalf("search result = %q", resultText(searched))
+	searched := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "search", "query": "build"})
+	if searched.IsError || strings.Contains(testutil.ResultText(searched), "ses-review") || !strings.Contains(testutil.ResultText(searched), "ses-build") {
+		t.Fatalf("search result = %q", testutil.ResultText(searched))
 	}
 
-	got := callTool(t, srv, "sessions", map[string]any{"action": "get", "session_id": "ses-review", "platform": "opencode", "message_limit": 10})
-	if got.IsError || svc.id != "ses-review" || svc.platform != "opencode" || svc.limit != 10 || !strings.Contains(resultText(got), "Review API") {
-		t.Fatalf("get result = %q, service = %#v", resultText(got), svc)
+	got := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "get", "session_id": "ses-review", "platform": "opencode", "message_limit": 10})
+	if got.IsError || svc.id != "ses-review" || svc.platform != "opencode" || svc.limit != 10 || !strings.Contains(testutil.ResultText(got), "Review API") {
+		t.Fatalf("get result = %q, service = %#v", testutil.ResultText(got), svc)
 	}
 }
 
@@ -101,9 +102,9 @@ func TestSessionToolContentSearch(t *testing.T) {
 	srv := sessionServer(t, svc)
 
 	before := time.Now().AddDate(0, 0, -3).UnixMilli()
-	result := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli", "content": true, "since_days": 3, "directory": "/repo"})
+	result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli", "content": true, "since_days": 3, "directory": "/repo"})
 	if result.IsError || svc.query != "weave-cli" || svc.dir != "/repo" || svc.since < before-1000 || svc.since > before+1000 {
-		t.Fatalf("result = %q, service = %#v", resultText(result), svc)
+		t.Fatalf("result = %q, service = %#v", testutil.ResultText(result), svc)
 	}
 	var got []struct {
 		ID       string `json:"id"`
@@ -113,7 +114,7 @@ func TestSessionToolContentSearch(t *testing.T) {
 			Snippet string `json:"snippet"`
 		} `json:"matches"`
 	}
-	if err := json.Unmarshal([]byte(resultText(result)), &got); err != nil {
+	if err := json.Unmarshal([]byte(testutil.ResultText(result)), &got); err != nil {
 		t.Fatal(err)
 	}
 	// Title hit without content, content hit capped at 5; the remote twin,
@@ -123,18 +124,18 @@ func TestSessionToolContentSearch(t *testing.T) {
 		t.Fatalf("results = %+v", got)
 	}
 
-	if limited := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli", "content": true, "limit": 1}); strings.Contains(resultText(limited), "ses-body") {
-		t.Fatalf("limit not applied: %q", resultText(limited))
+	if limited := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli", "content": true, "limit": 1}); strings.Contains(testutil.ResultText(limited), "ses-body") {
+		t.Fatalf("limit not applied: %q", testutil.ResultText(limited))
 	}
 
 	svc.query = ""
-	if plain := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli"}); plain.IsError || svc.query != "" || strings.Contains(resultText(plain), "ses-body") {
-		t.Fatalf("content search ran without opt-in: %q", resultText(plain))
+	if plain := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli"}); plain.IsError || svc.query != "" || strings.Contains(testutil.ResultText(plain), "ses-body") {
+		t.Fatalf("content search ran without opt-in: %q", testutil.ResultText(plain))
 	}
 
 	for _, days := range []int{0, 366} {
-		if bad := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "x", "content": true, "since_days": days}); !bad.IsError || resultText(bad) != "since_days must be between 1 and 365" {
-			t.Fatalf("since_days %d: %q", days, resultText(bad))
+		if bad := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "search", "query": "x", "content": true, "since_days": days}); !bad.IsError || testutil.ResultText(bad) != "since_days must be between 1 and 365" {
+			t.Fatalf("since_days %d: %q", days, testutil.ResultText(bad))
 		}
 	}
 }
@@ -143,8 +144,8 @@ func TestSessionToolContentSearchError(t *testing.T) {
 	svc := &fakeSessionService{}
 	srv := sessionServer(t, svc)
 	svc.textErr = errors.New("disk")
-	if result := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "x", "content": true}); !result.IsError || resultText(result) != "session request failed" || svc.query != "x" {
-		t.Fatalf("result = %q", resultText(result))
+	if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "search", "query": "x", "content": true}); !result.IsError || testutil.ResultText(result) != "session request failed" || svc.query != "x" {
+		t.Fatalf("result = %q", testutil.ResultText(result))
 	}
 }
 
@@ -163,22 +164,22 @@ func TestSessionToolValidationAndErrors(t *testing.T) {
 		{args: map[string]any{"action": "get"}, want: "session_id is required"},
 		{args: map[string]any{"action": "get", "platform": "opencode", "session_id": "x", "message_limit": 101}, want: "message_limit must be between 0 and 100"},
 	} {
-		result := callTool(t, srv, "sessions", test.args)
-		if !result.IsError || resultText(result) != test.want {
-			t.Fatalf("args %#v: result = %q", test.args, resultText(result))
+		result := testutil.CallTool(t, srv, "sessions", test.args)
+		if !result.IsError || testutil.ResultText(result) != test.want {
+			t.Fatalf("args %#v: result = %q", test.args, testutil.ResultText(result))
 		}
 	}
 
 	svc.err = platforms.ErrNotFound
-	if result := callTool(t, srv, "sessions", map[string]any{"action": "get", "platform": "opencode", "session_id": "missing"}); !result.IsError || resultText(result) != "session not found" {
-		t.Fatalf("not found result = %q", resultText(result))
+	if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "get", "platform": "opencode", "session_id": "missing"}); !result.IsError || testutil.ResultText(result) != "session not found" {
+		t.Fatalf("not found result = %q", testutil.ResultText(result))
 	}
 	svc.err = internalmcp.AmbiguousSessionError{Platforms: []string{"opencode", "r-box:opencode"}}
-	if result := callTool(t, srv, "sessions", map[string]any{"action": "get", "session_id": "dup"}); !result.IsError || resultText(result) != "session_id exists on multiple platforms (opencode, r-box:opencode); pass platform" {
-		t.Fatalf("ambiguous result = %q", resultText(result))
+	if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "get", "session_id": "dup"}); !result.IsError || testutil.ResultText(result) != "session_id exists on multiple platforms (opencode, r-box:opencode); pass platform" {
+		t.Fatalf("ambiguous result = %q", testutil.ResultText(result))
 	}
 	svc.err = errors.New("database details")
-	if result := callTool(t, srv, "sessions", map[string]any{"action": "list"}); !result.IsError || resultText(result) != "session request failed" {
-		t.Fatalf("internal error result = %q", resultText(result))
+	if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "list"}); !result.IsError || testutil.ResultText(result) != "session request failed" {
+		t.Fatalf("internal error result = %q", testutil.ResultText(result))
 	}
 }

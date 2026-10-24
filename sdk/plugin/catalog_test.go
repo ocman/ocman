@@ -1,7 +1,6 @@
 package plugin_test
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/sdk/plugin"
@@ -35,46 +34,33 @@ func TestParseConfigurationWithCatalog(t *testing.T) {
 
 func TestParseConfigurationWithoutCatalog(t *testing.T) {
 	// Opted-out plugins and opted-in plugins whose platform was unreachable
-	// receive settings only; the section is simply absent.
-	cfg, err := plugin.ParseConfiguration([]byte(`{"project":"/srv/repo"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Catalog != nil {
-		t.Fatalf("unexpected catalog: %+v", cfg.Catalog)
-	}
-	if cfg.Catalog != nil || len(cfg.Values) != 1 || string(cfg.Values["project"]) != `"/srv/repo"` {
-		t.Fatalf("values: %v", cfg.Values)
-	}
-	if _, err := plugin.ParseConfiguration([]byte(`{`)); err == nil {
-		t.Fatal("accepted invalid JSON")
-	}
-	if _, err := plugin.ParseConfiguration([]byte(`{"catalog":{"agents":"not-a-list"}}`)); err == nil {
-		t.Fatal("accepted invalid catalog")
-	}
-}
-
-func TestParseConfigurationOptedOutCatalogSetting(t *testing.T) {
-	// Setting values are never JSON objects, so an opted-out plugin's own
-	// "catalog" setting stays an ordinary value.
-	for _, raw := range []string{`"weekly"`, `["a","b"]`, `true`, `3`} {
-		cfg, err := plugin.ParseConfiguration([]byte(`{"catalog":` + raw + `}`))
+	// receive settings only; the section is simply absent. Setting values are
+	// never JSON objects, so an opted-out plugin's own "catalog" setting stays
+	// an ordinary value.
+	for _, tc := range []struct {
+		line, key, want string
+		bad             bool
+	}{
+		{line: `{"project":"/srv/repo"}`, key: "project", want: `"/srv/repo"`},
+		{line: `{"catalog":"weekly"}`, key: plugin.CatalogLaunchKey, want: `"weekly"`},
+		{line: `{"catalog":["a","b"]}`, key: plugin.CatalogLaunchKey, want: `["a","b"]`},
+		{line: `{"catalog":true}`, key: plugin.CatalogLaunchKey, want: `true`},
+		{line: `{"catalog":3}`, key: plugin.CatalogLaunchKey, want: `3`},
+		{line: `{`, bad: true},
+		{line: `{"catalog":{"agents":"not-a-list"}}`, bad: true},
+	} {
+		cfg, err := plugin.ParseConfiguration([]byte(tc.line))
+		if tc.bad {
+			if err == nil {
+				t.Fatalf("%s: accepted invalid input", tc.line)
+			}
+			continue
+		}
 		if err != nil {
-			t.Fatalf("%s: %v", raw, err)
+			t.Fatalf("%s: %v", tc.line, err)
 		}
-		if cfg.Catalog != nil || string(cfg.Values[plugin.CatalogLaunchKey]) != raw {
-			t.Fatalf("%s: %+v", raw, cfg)
+		if cfg.Catalog != nil || len(cfg.Values) != 1 || string(cfg.Values[tc.key]) != tc.want {
+			t.Fatalf("%s: %+v", tc.line, cfg)
 		}
-	}
-}
-
-func TestLaunchCatalogAliasSharesHostType(t *testing.T) {
-	// The SDK reader must agree with the host on the wire shape.
-	data, err := json.Marshal(plugin.LaunchCatalog{Agents: []plugin.CatalogAgent{{Name: "build"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != `{"agents":[{"name":"build"}]}` {
-		t.Fatalf("wire shape: %s", data)
 	}
 }

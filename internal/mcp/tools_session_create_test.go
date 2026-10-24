@@ -9,6 +9,7 @@ import (
 
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/mark3labs/mcp-go/mcptest"
 )
 
@@ -32,15 +33,15 @@ func TestCreateSessionTool(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 
-	result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": " fix it ", "model": "anthropic/claude", "agent": "plan", "platform": "opencode", "session_id": "ses-caller"})
+	result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": " fix it ", "model": "anthropic/claude", "agent": "plan", "platform": "opencode", "session_id": "ses-caller"})
 	want := internalmcp.CreateSessionRequest{Prompt: "fix it", Model: "anthropic/claude", Agent: "plan", Platform: "opencode", SessionID: "ses-caller"}
-	if result.IsError || svc.got != want || !strings.Contains(resultText(result), `"session_id": "ses-new"`) {
-		t.Fatalf("result = %q, request = %#v", resultText(result), svc.got)
+	if result.IsError || svc.got != want || !strings.Contains(testutil.ResultText(result), `"session_id": "ses-new"`) {
+		t.Fatalf("result = %q, request = %#v", testutil.ResultText(result), svc.got)
 	}
 	for _, value := range []bool{false, true} {
-		result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "worktree": value})
+		result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "worktree": value})
 		if result.IsError || svc.got.Worktree == nil || *svc.got.Worktree != value {
-			t.Fatalf("worktree override = %#v, %q", svc.got, resultText(result))
+			t.Fatalf("worktree override = %#v, %q", svc.got, testutil.ResultText(result))
 		}
 	}
 
@@ -56,8 +57,8 @@ func TestCreateSessionTool(t *testing.T) {
 		{args: map[string]any{"prompt": "x"}, want: "directory or the calling session's platform and session_id is required"},
 		{args: map[string]any{"prompt": "x", "directory": "/repo", "worktree": "false"}, want: "worktree must be a boolean"},
 	} {
-		if result := callTool(t, srv, "sessions", withCreate(test.args)); !result.IsError || resultText(result) != test.want {
-			t.Fatalf("args %#v: result = %q", test.args, resultText(result))
+		if result := testutil.CallTool(t, srv, "sessions", withCreate(test.args)); !result.IsError || testutil.ResultText(result) != test.want {
+			t.Fatalf("args %#v: result = %q", test.args, testutil.ResultText(result))
 		}
 	}
 
@@ -72,8 +73,8 @@ func TestCreateSessionTool(t *testing.T) {
 		{err: errors.New("send"), created: internalmcp.CreatedSession{Platform: "opencode", SessionID: "ses-half"}, want: "session ses-half was created on opencode but the prompt failed"},
 	} {
 		svc.err, svc.created = test.err, test.created
-		if result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo"}); !result.IsError || resultText(result) != test.want {
-			t.Fatalf("err %v: result = %q", test.err, resultText(result))
+		if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo"}); !result.IsError || testutil.ResultText(result) != test.want {
+			t.Fatalf("err %v: result = %q", test.err, testutil.ResultText(result))
 		}
 	}
 }
@@ -88,8 +89,8 @@ func withCreate(args map[string]any) map[string]any {
 
 func TestCreateSessionUnavailableWithoutCreator(t *testing.T) {
 	srv := sessionServer(t, &fakeSessionService{})
-	if result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo"}); !result.IsError || resultText(result) != "session creation is unavailable" {
-		t.Fatalf("result = %q", resultText(result))
+	if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo"}); !result.IsError || testutil.ResultText(result) != "session creation is unavailable" {
+		t.Fatalf("result = %q", testutil.ResultText(result))
 	}
 }
 
@@ -102,9 +103,9 @@ func TestCreateSessionToolExplicitPlatformWithoutCaller(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(srv.Close)
-			result := callTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "platform": platform})
+			result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "platform": platform})
 			if result.IsError || svc.got.Platform != platform || svc.got.SessionID != "" {
-				t.Fatalf("create on %s = %q, request = %#v", platform, resultText(result), svc.got)
+				t.Fatalf("create on %s = %q, request = %#v", platform, testutil.ResultText(result), svc.got)
 			}
 		})
 	}

@@ -153,24 +153,6 @@ func jiraResolve(svc *Service, viewer, text string) []Preview {
 	return svc.Resolve(context.Background(), viewer, "owner", svc.Discover(text, jiraRule))
 }
 
-func TestJiraParseURL(t *testing.T) {
-	text := "https://acme.atlassian.net/browse/ABC-12 https://Beta.Atlassian.NET/browse/abc-13 " +
-		"http://acme.atlassian.net/browse/ABC-14 https://acme.atlassian.net.evil.com/browse/ABC-15 " +
-		"https://a.b.atlassian.net/browse/ABC-16 https://acme.atlassian.net/jira/ABC-17 https://acme.atlassian.net:444/browse/ABC-18 " +
-		"https://acme.atlassian.net/browse/ABC-0 https://atlassian.net/browse/ABC-19"
-	var got []string
-	for _, r := range Discover(text, []Resolver{Jira{}}, nil) {
-		got = append(got, r.Kind+" "+r.ID+" "+r.URL)
-	}
-	want := "issue ABC-12 https://acme.atlassian.net/browse/ABC-12\nissue ABC-13 https://beta.atlassian.net/browse/ABC-13"
-	if strings.Join(got, "\n") != want {
-		t.Fatalf("refs:\n%s", strings.Join(got, "\n"))
-	}
-	if _, ok := (Jira{}).ParseIdentifier("../1"); ok {
-		t.Fatal("unsafe identifier accepted")
-	}
-}
-
 func TestJiraIssueCards(t *testing.T) {
 	api, srv := newJiraHarness(t)
 	tokens := &fakeTokens{grants: map[string]string{

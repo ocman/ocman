@@ -9,6 +9,7 @@ import (
 
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/mark3labs/mcp-go/mcptest"
 )
 
@@ -54,8 +55,8 @@ func TestModelsTool(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(srv.Close)
-			result := callTool(t, srv, "models", tc.args)
-			text := resultText(result)
+			result := testutil.CallTool(t, srv, "models", tc.args)
+			text := testutil.ResultText(result)
 			if tc.wantErr != "" {
 				if !result.IsError || !strings.Contains(text, tc.wantErr) || strings.Contains(text, "private upstream detail") {
 					t.Fatalf("result = %s", text)

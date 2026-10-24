@@ -146,23 +146,6 @@ func linearResolve(svc *Service, viewer, text string) []Preview {
 	return svc.Resolve(context.Background(), viewer, "owner", svc.Discover(text, linearRule))
 }
 
-func TestLinearParseURL(t *testing.T) {
-	text := "https://linear.app/acme/issue/ENG-12/fix-the-thing https://LINEAR.app/Acme/issue/eng-13 " +
-		"http://linear.app/acme/issue/ENG-14 https://linear.app.evil.com/acme/issue/ENG-15 https://linear.app/acme/project/ENG-16 " +
-		"https://linear.app/acme/issue/ENG-0 https://linear.app:444/acme/issue/ENG-17 https://linear.app/../issue/ENG-18"
-	var got []string
-	for _, r := range Discover(text, []Resolver{Linear{}}, nil) {
-		got = append(got, r.Kind+" "+r.ID+" "+r.URL)
-	}
-	want := "issue ENG-12 https://linear.app/acme/issue/ENG-12\nissue ENG-13 https://linear.app/acme/issue/ENG-13"
-	if strings.Join(got, "\n") != want {
-		t.Fatalf("refs:\n%s", strings.Join(got, "\n"))
-	}
-	if _, ok := (Linear{}).ParseIdentifier("../1"); ok {
-		t.Fatal("unsafe identifier accepted")
-	}
-}
-
 func TestLinearIssueCards(t *testing.T) {
 	_, srv := newLinearHarness(t)
 	tokens := &fakeTokens{grants: map[string]string{
