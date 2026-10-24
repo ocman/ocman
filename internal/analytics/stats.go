@@ -71,46 +71,26 @@ func (m *Module) registerStatsMetrics(ctx context.Context, meter metric.Meter) (
 		return nil, nil
 	}
 
-	sessions, err := meter.Int64ObservableGauge("ocman.stats.sessions",
-		metric.WithDescription("Total number of sessions."),
-		metric.WithUnit("{session}"),
-	)
-	if err != nil {
-		return nil, err
+	gauges := []struct {
+		name, desc, unit string
+		value            func(*db.Stats) int64
+	}{
+		{"ocman.stats.sessions", "Total number of sessions.", "{session}", func(s *db.Stats) int64 { return int64(s.TotalSessions) }},
+		{"ocman.stats.messages", "Total number of user messages.", "{message}", func(s *db.Stats) int64 { return int64(s.TotalMessages) }},
+		{"ocman.stats.projects", "Total number of distinct projects.", "{project}", func(s *db.Stats) int64 { return int64(s.TotalProjects) }},
+		{"ocman.stats.tokens.input", "Lifetime input tokens across all sessions.", "{token}", func(s *db.Stats) int64 { return s.TotalTokensIn }},
+		{"ocman.stats.tokens.output", "Lifetime output tokens across all sessions.", "{token}", func(s *db.Stats) int64 { return s.TotalTokensOut }},
 	}
-
-	messages, err := meter.Int64ObservableGauge("ocman.stats.messages",
-		metric.WithDescription("Total number of user messages."),
-		metric.WithUnit("{message}"),
-	)
-	if err != nil {
-		return nil, err
+	ints := make([]metric.Int64ObservableGauge, len(gauges))
+	instruments := make([]metric.Observable, 0, len(gauges)+1)
+	for i, g := range gauges {
+		gauge, err := meter.Int64ObservableGauge(g.name, metric.WithDescription(g.desc), metric.WithUnit(g.unit))
+		if err != nil {
+			return nil, err
+		}
+		ints[i] = gauge
+		instruments = append(instruments, gauge)
 	}
-
-	projects, err := meter.Int64ObservableGauge("ocman.stats.projects",
-		metric.WithDescription("Total number of distinct projects."),
-		metric.WithUnit("{project}"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	tokensIn, err := meter.Int64ObservableGauge("ocman.stats.tokens.input",
-		metric.WithDescription("Lifetime input tokens across all sessions."),
-		metric.WithUnit("{token}"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	tokensOut, err := meter.Int64ObservableGauge("ocman.stats.tokens.output",
-		metric.WithDescription("Lifetime output tokens across all sessions."),
-		metric.WithUnit("{token}"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	cost, err := meter.Float64ObservableGauge("ocman.stats.cost",
 		metric.WithDescription("Lifetime API cost across all sessions."),
 		metric.WithUnit("{USD}"),
@@ -118,6 +98,7 @@ func (m *Module) registerStatsMetrics(ctx context.Context, meter metric.Meter) (
 	if err != nil {
 		return nil, err
 	}
+	instruments = append(instruments, cost)
 
 	requested := make(chan struct{}, 1)
 	reg, err := meter.RegisterCallback(
@@ -130,15 +111,13 @@ func (m *Module) registerStatsMetrics(ctx context.Context, meter metric.Meter) (
 			if stats == nil {
 				return nil // first refresh still pending (or failing); observe nothing
 			}
-			o.ObserveInt64(sessions, int64(stats.TotalSessions))
-			o.ObserveInt64(messages, int64(stats.TotalMessages))
-			o.ObserveInt64(projects, int64(stats.TotalProjects))
-			o.ObserveInt64(tokensIn, stats.TotalTokensIn)
-			o.ObserveInt64(tokensOut, stats.TotalTokensOut)
+			for i, g := range gauges {
+				o.ObserveInt64(ints[i], g.value(stats))
+			}
 			o.ObserveFloat64(cost, stats.TotalCost)
 			return nil
 		},
-		sessions, messages, projects, tokensIn, tokensOut, cost,
+		instruments...,
 	)
 	if err != nil {
 		return nil, err

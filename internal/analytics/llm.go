@@ -32,50 +32,34 @@ type llmMetrics struct {
 // telemetry is disabled (the meter returns no-op instruments).
 func newLLMMetrics(meter metric.Meter) (*llmMetrics, error) {
 	m := &llmMetrics{}
+	for _, c := range []struct {
+		name, desc, unit string
+		dst              *metric.Int64Counter
+	}{
+		{"ocman.llm.requests", "LLM assistant turns processed.", "{request}", &m.requests},
+		{"ocman.llm.tokens.input", "Input tokens consumed by LLM turns.", "{token}", &m.tokensInput},
+		{"ocman.llm.tokens.output", "Output tokens produced by LLM turns.", "{token}", &m.tokensOutput},
+		{"ocman.llm.tokens.cache_read", "Cache-read tokens across LLM turns.", "{token}", &m.cacheRead},
+		{"ocman.llm.tokens.cache_write", "Cache-write tokens across LLM turns.", "{token}", &m.cacheWrite},
+	} {
+		var err error
+		if *c.dst, err = meter.Int64Counter(c.name, metric.WithDescription(c.desc), metric.WithUnit(c.unit)); err != nil {
+			return nil, err
+		}
+	}
+	for _, c := range []struct {
+		name, desc string
+		dst        *metric.Float64Counter
+	}{
+		{"ocman.llm.cost", "Platform-reported API cost of LLM turns.", &m.cost},
+		{"ocman.llm.calc_cost", "Estimated API cost calculated from token counts and public pricing.", &m.calcCost},
+	} {
+		var err error
+		if *c.dst, err = meter.Float64Counter(c.name, metric.WithDescription(c.desc), metric.WithUnit("{USD}")); err != nil {
+			return nil, err
+		}
+	}
 	var err error
-
-	if m.requests, err = meter.Int64Counter("ocman.llm.requests",
-		metric.WithDescription("LLM assistant turns processed."),
-		metric.WithUnit("{request}"),
-	); err != nil {
-		return nil, err
-	}
-	if m.tokensInput, err = meter.Int64Counter("ocman.llm.tokens.input",
-		metric.WithDescription("Input tokens consumed by LLM turns."),
-		metric.WithUnit("{token}"),
-	); err != nil {
-		return nil, err
-	}
-	if m.tokensOutput, err = meter.Int64Counter("ocman.llm.tokens.output",
-		metric.WithDescription("Output tokens produced by LLM turns."),
-		metric.WithUnit("{token}"),
-	); err != nil {
-		return nil, err
-	}
-	if m.cacheRead, err = meter.Int64Counter("ocman.llm.tokens.cache_read",
-		metric.WithDescription("Cache-read tokens across LLM turns."),
-		metric.WithUnit("{token}"),
-	); err != nil {
-		return nil, err
-	}
-	if m.cacheWrite, err = meter.Int64Counter("ocman.llm.tokens.cache_write",
-		metric.WithDescription("Cache-write tokens across LLM turns."),
-		metric.WithUnit("{token}"),
-	); err != nil {
-		return nil, err
-	}
-	if m.cost, err = meter.Float64Counter("ocman.llm.cost",
-		metric.WithDescription("Platform-reported API cost of LLM turns."),
-		metric.WithUnit("{USD}"),
-	); err != nil {
-		return nil, err
-	}
-	if m.calcCost, err = meter.Float64Counter("ocman.llm.calc_cost",
-		metric.WithDescription("Estimated API cost calculated from token counts and public pricing."),
-		metric.WithUnit("{USD}"),
-	); err != nil {
-		return nil, err
-	}
 	if m.duration, err = meter.Float64Histogram("ocman.llm.request.duration",
 		metric.WithDescription("LLM turn duration (wall-clock time from request to completion)."),
 		metric.WithUnit("s"),
