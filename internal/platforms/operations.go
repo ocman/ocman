@@ -314,3 +314,28 @@ type DirectoryCatalog struct {
 // LivePrompt is one pending permission/question prompt from a running
 // platform instance.
 type LivePrompt map[string]interface{}
+
+// StringField returns the string at key, or "" when absent or not a string.
+func (p LivePrompt) StringField(key string) string {
+	value, _ := p[key].(string)
+	return value
+}
+
+// StringsField returns the strings listed at key, skipping non-string items.
+// It is nil when the key is absent or not a list.
+func (p LivePrompt) StringsField(key string) []string {
+	switch values := p[key].(type) {
+	case []string:
+		return values
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}

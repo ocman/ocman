@@ -157,6 +157,26 @@ func TestSessionContract(t *testing.T) {
 	}
 }
 
+func TestRuntimeSessionsAndHooks(t *testing.T) {
+	caps := allCapabilities()
+	caps.Hooks = true
+	f := newFake(t, caps)
+	f.reply("GET", "/sessions", []db.Session{{ID: "helper"}})
+	a := f.adapter(t)
+	sessions, err := a.RuntimeSessions(t.Context())
+	requireNoError(t, err)
+	if len(sessions) != 1 || !a.Knows("helper") {
+		t.Fatalf("runtime sessions = %+v", sessions)
+	}
+	requireNoError(t, a.Hook(t.Context(), providerprotocol.HookEvent{Event: "Stop", SessionID: "outside"}))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	last := f.calls[len(f.calls)-1]
+	if f.calls[len(f.calls)-2].query != "runtime=1" || last.method != "POST" || last.path != "/hooks" {
+		t.Fatal(f.calls)
+	}
+}
+
 func TestMutationContract(t *testing.T) {
 	f := newFake(t, allCapabilities())
 	f.reply("POST", "/sessions", platforms.CreateSessionResponse{ID: "created"})

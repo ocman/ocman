@@ -91,7 +91,7 @@ func (a *Adapter) observedPromptEntriesChecked(ctx context.Context, kind, sessio
 	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		prompt := entry.prompt
-		ids = append(ids, promptString(prompt, "sessionID"))
+		ids = append(ids, prompt.StringField("sessionID"))
 	}
 	parents := map[string]string{}
 	var lookupErr error
@@ -101,7 +101,7 @@ func (a *Adapter) observedPromptEntriesChecked(ctx context.Context, kind, sessio
 	out := make([]livePromptEntry, 0, len(entries))
 	for _, entry := range entries {
 		prompt := entry.prompt
-		promptSessionID := promptString(prompt, "sessionID")
+		promptSessionID := prompt.StringField("sessionID")
 		nativeAncestor := parents[promptSessionID]
 		if promptSessionID == sessionID || nativeAncestor == sessionID {
 			out = append(out, entry)

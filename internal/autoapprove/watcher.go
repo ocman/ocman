@@ -335,23 +335,6 @@ func (w *autoApproveWatcher) broadcastSessionStatus(adapter platforms.OpenCodeEv
 	w.svc.deps.BroadcastSessionStatus(sessionID, status)
 }
 
-func promptStrings(value any) []string {
-	switch values := value.(type) {
-	case []string:
-		return values
-	case []any:
-		out := make([]string, 0, len(values))
-		for _, value := range values {
-			if text, ok := value.(string); ok {
-				out = append(out, text)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
 func (w *autoApproveWatcher) directoriesForPort(port string) []string {
 	byDirectory := w.discoverPorts()
 	directories := make([]string, 0, len(byDirectory))

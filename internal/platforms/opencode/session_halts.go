@@ -11,7 +11,7 @@ import (
 // Caller holds the prompt registry lock. Replayed snapshots keep the request's
 // original receipt. Test adapters without state retain receipts in memory.
 func (r *livePromptRegistry) recordHalt(kind string, prompt platforms.LivePrompt) {
-	sessionID, requestID := promptString(prompt, "sessionID"), promptString(prompt, "id")
+	sessionID, requestID := prompt.StringField("sessionID"), prompt.StringField("id")
 	if sessionID == "" || requestID == "" {
 		return
 	}

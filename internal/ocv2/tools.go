@@ -71,7 +71,7 @@ func convertTool(item map[string]any) map[string]any {
 	v1State := map[string]any{
 		"status":   status,
 		"input":    input,
-		"title":    toolTitle(input),
+		"title":    ToolTitle(input),
 		"metadata": v1Metadata(name, obj(state, "metadata"), output),
 		"time":     span("start", t["created"], "end", t["completed"]),
 	}
@@ -102,7 +102,8 @@ func v1Input(tool string, in map[string]any) map[string]any {
 	return out
 }
 
-func toolTitle(input map[string]any) string {
+// ToolTitle picks the display title OpenCode shows for a tool call input.
+func ToolTitle(input map[string]any) string {
 	for _, k := range []string{"description", "filePath", "command", "pattern", "url"} {
 		if s, ok := input[k].(string); ok && s != "" {
 			return s

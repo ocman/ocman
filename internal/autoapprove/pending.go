@@ -20,7 +20,7 @@ func PromptSessionID(entry platforms.LivePrompt, fallback string) string {
 
 // PromptPatterns reads a prompt's "patterns", tolerating []string and the
 // []any a generic json.Unmarshal produces.
-func PromptPatterns(entry platforms.LivePrompt) []string { return promptStrings(entry["patterns"]) }
+func PromptPatterns(entry platforms.LivePrompt) []string { return entry.StringsField("patterns") }
 
 // PromptMetadata reads a prompt's "metadata" object, nil when absent.
 func PromptMetadata(entry platforms.LivePrompt) map[string]any {

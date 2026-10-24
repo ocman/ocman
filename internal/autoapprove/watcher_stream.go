@@ -58,7 +58,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			permissionID, _ := prompt["id"].(string)
 			permission, _ := prompt["permission"].(string)
 			metadata, _ := prompt["metadata"].(map[string]any)
-			patterns := promptStrings(prompt["patterns"])
+			patterns := prompt.StringsField("patterns")
 			if sessionID != "" && permissionID != "" {
 				w.onPermission(opencode.PlatformID, adapter, sessionID, permissionID, permission, patterns, metadata)
 				if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {

@@ -146,7 +146,7 @@ func (m *Module) applyManualToPending(ctx context.Context, adapter platforms.Pla
 		if err != nil {
 			return
 		}
-		_ = m.Store.EnsurePermissionInboxItem(ctx, state.InboxPermission{ItemID: key, Platform: string(adapter.ID()), SessionID: sid, PermissionID: pid, Permission: permission, Patterns: PromptPatterns(entry), Always: promptStrings(entry["always"]), Metadata: PromptMetadata(entry)})
+		_ = m.Store.EnsurePermissionInboxItem(ctx, state.InboxPermission{ItemID: key, Platform: string(adapter.ID()), SessionID: sid, PermissionID: pid, Permission: permission, Patterns: PromptPatterns(entry), Always: entry.StringsField("always"), Metadata: PromptMetadata(entry)})
 		asked := m.svc.rememberAsked(string(adapter.ID()), sid, pid, permission, PromptPatterns(entry), PromptMetadata(entry))
 		if m.svc.applyManualRules(ctx, adapter, sid, pid, asked) {
 			m.svc.Cancel(sid, pid)

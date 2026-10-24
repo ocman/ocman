@@ -47,11 +47,6 @@ func promptKey(kind, sessionID, requestID string) string {
 
 func promptScope(directory, kind string) string { return directory + "\x00" + kind }
 
-func promptString(prompt platforms.LivePrompt, key string) string {
-	value, _ := prompt[key].(string)
-	return value
-}
-
 func clonePrompt(prompt platforms.LivePrompt) platforms.LivePrompt {
 	out := make(platforms.LivePrompt, len(prompt))
 	for key, value := range prompt {

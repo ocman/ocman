@@ -169,7 +169,7 @@ func (r *Rules) Decide(prompt platforms.LivePrompt) string {
 	r.mu.Lock()
 	rules := append(append([]platforms.PermissionRule{}, r.data.Rules[id]...), r.data.Approved[id]...)
 	r.mu.Unlock()
-	patterns := promptStrings(prompt["patterns"])
+	patterns := prompt.StringsField("patterns")
 	if len(patterns) == 0 {
 		patterns = []string{"*"}
 	}
@@ -194,17 +194,6 @@ func (r *Rules) Decide(prompt platforms.LivePrompt) string {
 		return "once"
 	}
 	return ""
-}
-
-func promptStrings(v any) []string {
-	items, _ := v.([]any)
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if s, ok := item.(string); ok {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // SetRules makes the adapter answer rule-decided prompts itself and serve
@@ -298,9 +287,9 @@ func (a *Adapter) rememberAlways(prompt platforms.LivePrompt) error {
 	}
 	id, _ := prompt["sessionID"].(string)
 	permission, _ := prompt["permission"].(string)
-	patterns := promptStrings(prompt["always"])
+	patterns := prompt.StringsField("always")
 	if len(patterns) == 0 {
-		patterns = promptStrings(prompt["patterns"])
+		patterns = prompt.StringsField("patterns")
 	}
 	if len(patterns) == 0 {
 		patterns = []string{"*"}

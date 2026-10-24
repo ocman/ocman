@@ -27,8 +27,8 @@ func (a *Adapter) observePromptAsked(port string, generation uint64, directory, 
 	if a == nil || a.prompts == nil {
 		return
 	}
-	sessionID := promptString(prompt, "sessionID")
-	requestID := promptString(prompt, "id")
+	sessionID := prompt.StringField("sessionID")
+	requestID := prompt.StringField("id")
 	if sessionID == "" || requestID == "" {
 		return
 	}
@@ -296,8 +296,8 @@ func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64,
 	}
 	var callbacks []platforms.LivePrompt
 	for _, prompt := range prompts {
-		sessionID := promptString(prompt, "sessionID")
-		requestID := promptString(prompt, "id")
+		sessionID := prompt.StringField("sessionID")
+		requestID := prompt.StringField("id")
 		key := promptKey(kind, sessionID, requestID)
 		if sessionID != "" && requestID != "" && r.changed[key] <= token {
 			r.recordHalt(kind, prompt)
@@ -326,7 +326,7 @@ func (r *livePromptRegistry) find(kind, requestID string) (livePromptEntry, bool
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for key, entry := range r.entries {
-		if strings.HasPrefix(key, kind+"\x00") && promptString(entry.prompt, "id") == requestID {
+		if strings.HasPrefix(key, kind+"\x00") && entry.prompt.StringField("id") == requestID {
 			return livePromptEntry{directory: entry.directory, prompt: clonePrompt(entry.prompt)}, true
 		}
 	}
@@ -339,7 +339,7 @@ func (r *livePromptRegistry) pendingSessionIDs() (map[string]bool, map[string]bo
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for key, entry := range r.entries {
-		sessionID := promptString(entry.prompt, "sessionID")
+		sessionID := entry.prompt.StringField("sessionID")
 		if len(key) >= len("permission") && key[:len("permission")] == "permission" {
 			permissions[sessionID] = true
 		} else {

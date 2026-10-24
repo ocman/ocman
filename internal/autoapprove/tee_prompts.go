@@ -1,6 +1,7 @@
 package autoapprove
 
 import (
+	"cmp"
 	"encoding/json"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"maps"
@@ -124,7 +125,7 @@ func (t *Tee) dispatchPermissionReplied(directory, dataJSON, fallbackReply strin
 
 func (t *Tee) dispatchQuestionAsked(directory, dataJSON string) {
 	prompt := eventProperties(dataJSON)
-	if promptString(prompt, "sessionID") == "" || promptString(prompt, "id") == "" {
+	if prompt.StringField("sessionID") == "" || prompt.StringField("id") == "" {
 		return
 	}
 	if t.OnPromptAsked != nil {
@@ -162,8 +163,8 @@ func (t *Tee) dispatchQuestionResolved(directory, dataJSON, reason string) {
 			return
 		}
 	}
-	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
-	requestID := firstNonEmpty(props.RequestID, props.RequestID2, props.ID)
+	sessionID := cmp.Or(props.SessionID, props.SessionID2)
+	requestID := cmp.Or(props.RequestID, props.RequestID2, props.ID)
 	if sessionID == "" {
 		return
 	}
@@ -193,11 +194,6 @@ func eventProperties(dataJSON string) platforms.LivePrompt {
 	return prompt
 }
 
-func promptString(prompt platforms.LivePrompt, key string) string {
-	value, _ := prompt[key].(string)
-	return value
-}
-
 // dispatchSessionIdle extracts the session ID from a session.idle event
 // and fires onSessionIdle. Accepts both casings and both the enveloped
 // and flat payload shapes.
@@ -223,7 +219,7 @@ func (t *Tee) dispatchSessionIdle(dataJSON string) {
 			return
 		}
 	}
-	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	sessionID := cmp.Or(props.SessionID, props.SessionID2)
 	if sessionID == "" {
 		return
 	}
@@ -266,7 +262,7 @@ func (t *Tee) dispatchSessionStatus(dataJSON string) {
 			return
 		}
 	}
-	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	sessionID := cmp.Or(props.SessionID, props.SessionID2)
 	if sessionID == "" {
 		return
 	}
@@ -280,9 +276,9 @@ func (t *Tee) dispatchSessionChanged(dataJSON string) {
 		return
 	}
 	props := parseSessionRef(dataJSON)
-	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	sessionID := cmp.Or(props.SessionID, props.SessionID2)
 	if sessionID == "" && props.Info != nil {
-		sessionID = firstNonEmpty(props.Info.SessionID, props.Info.ID)
+		sessionID = cmp.Or(props.Info.SessionID, props.Info.ID)
 	}
 	if sessionID == "" {
 		return
@@ -345,16 +341,16 @@ func messageEventSessionID(dataJSON string) string {
 			ids = append(ids, child.SessionID)
 		}
 	}
-	return firstNonEmpty(ids...)
+	return cmp.Or(ids...)
 }
 
 // deletedSessionID resolves the session a session.deleted event refers
 // to. Here the nested record IS the session, so its own id counts.
 func deletedSessionID(dataJSON string) string {
 	props := parseSessionRef(dataJSON)
-	id := firstNonEmpty(props.SessionID, props.SessionID2)
+	id := cmp.Or(props.SessionID, props.SessionID2)
 	if id == "" && props.Info != nil {
-		id = firstNonEmpty(props.Info.SessionID, props.Info.ID)
+		id = cmp.Or(props.Info.SessionID, props.Info.ID)
 	}
 	return id
 }
@@ -363,17 +359,6 @@ func (t *Tee) dispatchSessionDataChanged(sessionID string) {
 	if t.OnSessionDataChanged != nil {
 		t.OnSessionDataChanged(sessionID)
 	}
-}
-
-// firstNonEmpty returns the first non-empty string from the arguments,
-// or "" if all are empty.
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // metadataKeys returns the sorted key list for log fields. Useful for

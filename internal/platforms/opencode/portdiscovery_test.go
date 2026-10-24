@@ -229,6 +229,12 @@ func TestDiscoverDuplicateOpenCodeServerPorts_CachesServerDiscovery(t *testing.T
 	if got := td.discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
 		t.Fatalf("cached duplicate ports = %v, want [1111 2222]", got)
 	}
+	if warnings := td.sessionWarningsForDirectory(dir); len(warnings) != 1 || warnings[0].Kind != duplicateOpenCodeServersWarningKind || !slices.Equal(warnings[0].Ports, []string{"1111", "2222"}) {
+		t.Fatalf("duplicate server warning = %+v", warnings)
+	}
+	if warnings := td.sessionWarningsForDirectory("/repo/other"); warnings != nil {
+		t.Fatalf("single-server directory warned: %+v", warnings)
+	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("server discovery calls before invalidation = %d, want 1", got)
 	}

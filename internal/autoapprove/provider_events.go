@@ -25,7 +25,7 @@ func (s *Service) HandleProviderEvent(ctx context.Context, adapter platforms.Pla
 		permission, _ := prompt["permission"].(string)
 		metadata, _ := prompt["metadata"].(map[string]any)
 		s.ObservePermissionPrompt(adapter.ID(), sessionID, prompt)
-		s.Ensure(adapter.ID(), adapter, sessionID, id, permission, promptStrings(prompt["patterns"]), metadata)
+		s.Ensure(adapter.ID(), adapter, sessionID, id, permission, prompt.StringsField("patterns"), metadata)
 	case "permission.replied":
 		id, _ := prompt["requestID"].(string)
 		reply, _ := prompt["reply"].(string)

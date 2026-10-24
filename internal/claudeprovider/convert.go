@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 // Converter is the single Claude -> OpenCode v1 message/part converter.
@@ -270,7 +271,7 @@ func (c *Converter) toolUse(b block, ts int64) {
 	if name != "task" {
 		input = v1Input(input)
 	}
-	state := map[string]any{"status": "running", "input": input, "title": toolTitle(input),
+	state := map[string]any{"status": "running", "input": input, "title": ocv2.ToolTitle(input),
 		"metadata": metadata, "time": map[string]any{"start": ts}}
 	c.cur.tools[b.ID] = state
 	c.part(map[string]any{"type": "tool", "tool": name, "callID": b.ID, "state": state}, ts)
@@ -320,15 +321,6 @@ func v1Input(in map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
-}
-
-func toolTitle(input map[string]any) string {
-	for _, k := range []string{"description", "filePath", "command", "pattern", "url"} {
-		if s, ok := input[k].(string); ok && s != "" {
-			return s
-		}
-	}
-	return ""
 }
 
 // toolResultContent preserves displayable blocks in the v1 tool-result shape.

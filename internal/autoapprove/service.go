@@ -146,7 +146,7 @@ func (s *Service) ObservePermissionPrompt(platformID platforms.ID, sessionID str
 	permissionID, _ := prompt["id"].(string)
 	permission, _ := prompt["permission"].(string)
 	metadata, _ := prompt["metadata"].(map[string]any)
-	s.deps.PermissionAsked(state.InboxPermission{Platform: string(platformID), SessionID: sessionID, PermissionID: permissionID, Permission: permission, Patterns: promptStrings(prompt["patterns"]), Always: promptStrings(prompt["always"]), Metadata: metadata})
+	s.deps.PermissionAsked(state.InboxPermission{Platform: string(platformID), SessionID: sessionID, PermissionID: permissionID, Permission: permission, Patterns: prompt.StringsField("patterns"), Always: prompt.StringsField("always"), Metadata: metadata})
 }
 
 // promptNeedsUser reports a prompt the user has to answer. Nil-safe, and safe

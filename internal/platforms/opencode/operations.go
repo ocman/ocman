@@ -352,7 +352,7 @@ func (a *Adapter) RespondPermission(ctx context.Context, req platforms.RespondPe
 	v2 := false
 	if entry, ok := a.prompts.find("permission", req.PermissionID); ok {
 		directory = entry.directory
-		promptSessionID = promptString(entry.prompt, "sessionID")
+		promptSessionID = entry.prompt.StringField("sessionID")
 		_, v2 = entry.prompt["action"]
 		if v2 {
 			path = fmt.Sprintf("/api/session/%s/permission/%s/reply", promptSessionID, req.PermissionID)
@@ -392,7 +392,7 @@ func (a *Adapter) RespondQuestion(ctx context.Context, req platforms.RespondQues
 	promptSessionID := req.SessionID
 	if entry, ok := a.prompts.find("question", req.RequestID); ok {
 		directory = entry.directory
-		promptSessionID = promptString(entry.prompt, "sessionID")
+		promptSessionID = entry.prompt.StringField("sessionID")
 	}
 	err = postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), directory, payload)
 	if err != nil && !isUpstreamNotFound(err) {
@@ -412,7 +412,7 @@ func (a *Adapter) RejectQuestion(ctx context.Context, req platforms.RejectQuesti
 	promptSessionID := req.SessionID
 	if entry, ok := a.prompts.find("question", req.RequestID); ok {
 		directory = entry.directory
-		promptSessionID = promptString(entry.prompt, "sessionID")
+		promptSessionID = entry.prompt.StringField("sessionID")
 	}
 	err = postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reject", req.RequestID), directory, []byte("{}"))
 	if err != nil && !isUpstreamNotFound(err) {

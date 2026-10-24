@@ -101,23 +101,6 @@ func TestServiceDiscoversThroughOpenCodeAdapter(t *testing.T) {
 	}
 }
 
-func TestFirstNonEmpty(t *testing.T) {
-	cases := []struct {
-		in   []string
-		want string
-	}{
-		{[]string{"", "b", "c"}, "b"},
-		{[]string{"a", "b"}, "a"},
-		{[]string{"", ""}, ""},
-		{nil, ""},
-	}
-	for _, c := range cases {
-		if got := firstNonEmpty(c.in...); got != c.want {
-			t.Errorf("firstNonEmpty(%v) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 // openCodePlatform keeps the native adapter's optional capabilities visible
 // while satisfying the application contract in tests.
 type openCodePlatform struct {
