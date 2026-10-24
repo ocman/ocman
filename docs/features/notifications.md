@@ -38,6 +38,13 @@ A session needing both permission and question input counts once; same-id
 sessions on different owners count separately. Inbox permission requests never
 add another count. Reading, resolving or archiving items removes their count
 when the app refreshes its notification state.
+
+The session sidebar shows a **Needs attention** group for counted sessions that
+are missing from the normal list. This includes older sessions outside its
+recent-history window and sessions hidden by Factory, child, project or search
+filters. Sessions already visible in the list are not repeated. Opening an item
+uses its owning machine; acknowledging it removes it from the group on refresh.
+
 Archived sessions, including sessions in archived projects, do not count or
 generate alerts until new activity resurfaces them under your archive settings.
 Push alerts also carry the current count so a closed app can update its badge.

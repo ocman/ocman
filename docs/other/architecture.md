@@ -1606,6 +1606,7 @@ flowchart TD
     Comp -->|first execution: resolve workspace, then dispatch on same owner| API
     Stores -->|visible pane reads; session rows carry Factory tags| API[lib/ API client]
     Stores --> SSE[SSE subscription]
+    Stores -->|shared notify snapshot: badge count + unfiltered Needs attention| Comp
     Pages --> Scopes[Ref-counted activity scopes]
     Comp --> Scopes
     Scopes --> Reporter[Client activity lease reporter]
@@ -1626,6 +1627,12 @@ flowchart TD
   Settled checks retain the bounded repository/SHA localStorage cache. Project
   settings use owner/project/generation query keys, so invalidation cannot let
   an older in-flight read restore stale settings.
+- **Session attention.** The app badge and the sidebar's Needs attention group
+  share the notify snapshot and one owner-qualified eligibility rule. Notification
+  metadata renders directly without loading individual conversations or widening
+  the recent-history query. Attention rows bypass history filters and collapsed
+  projects. Sessions already visible in ordinary rows are not repeated; hidden
+  rows leave the group when the shared snapshot acknowledges or resolves them.
 - **Feature registry.** `src/features/index.tsx` is a static list in which
   Factory, routines and artifacts contribute their routes, with layout tier and
   header titles, plus their main-nav link. Plugins, auto-approve, sharing and

@@ -288,6 +288,7 @@ vi.mock('../../../lib/useWorkingTreeDiff', () => ({
 }));
 
 vi.mock('../../../lib/useNotifyData', () => ({
+  useNotifySnapshot: vi.fn(() => undefined),
   recheckNotifyData: vi.fn(),
 }));
 

@@ -4,10 +4,10 @@ import { useNotifySnapshot } from './useNotifyData';
 import { dismissIrrelevantSessionNotifications } from './pushNotifications';
 import { useInbox } from './queries';
 import { useBadgeSettings } from './badgeSettings';
+import { attentionSessionEntries } from './sessionAttention';
 
 export function attentionSessionCount(entries: NotifyEntry[]): number {
-  return new Set(entries.filter((entry) => entry.pendingPermission || entry.pendingQuestion ||
-    (!entry.seen && !entry.suppressTerminal)).map((entry) => `${entry.platform ?? ''}:${entry.id}`)).size;
+  return attentionSessionEntries(entries).length;
 }
 
 export async function updateAppBadge(count: number): Promise<void> {

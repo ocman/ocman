@@ -161,6 +161,10 @@ export function mergeSidebarSessions(
 // ponytail: module-level ref, there is one sidebar. Move to a store if a second one appears.
 export const visibleSidebarSessions: { current: readonly Session[] | null } = { current: null };
 
+export function setVisibleSidebarSessions(sessions: readonly Session[] | null): void {
+  visibleSidebarSessions.current = sessions;
+}
+
 /** Candidates for "the next session": what the sidebar shows, else `fallback`. */
 export function sidebarNavigableSessions(fallback: readonly Session[]): readonly Session[] {
   return visibleSidebarSessions.current ?? fallback;

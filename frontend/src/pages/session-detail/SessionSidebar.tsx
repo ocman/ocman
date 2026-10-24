@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -23,7 +23,7 @@ import { Resizer } from '../../components/Resizer';
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useUiStore } from '../../lib/uiStore';
 import { SkeletonLines } from '../../components/Skeleton';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
-import { rollupGroupStatus, visibleSidebarSessions } from '../../lib/sidebarHelpers';
+import { rollupGroupStatus, setVisibleSidebarSessions } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { useDraftSessionIds } from '../../lib/composerDraft';
 import { SidebarProjectGroup as ProjectGroup } from './SidebarProjectGroup';
@@ -44,6 +44,9 @@ import { useSidebarDraftGroups } from './useSidebarDraftGroups';
 import { hasPendingPrompt } from '../../lib/sessionVisibility';
 import { useIsPhone } from '../../lib/useIsPhone';
 import { InlineAlert } from '../../components/InlineAlert';
+import { useNotifySnapshot } from '../../lib/useNotifyData';
+import { attentionSessionEntries, sessionAttentionKey } from '../../lib/sessionAttention';
+import { SidebarAttentionGroup } from './SidebarAttentionGroup';
 
 export interface SidebarProjectGroup {
   key?: string;
@@ -130,6 +133,7 @@ export function SessionSidebar({
   onArchiveProject,
 }: SessionSidebarProps) {
   countRender('SessionSidebar');
+  const notify = useNotifySnapshot();
   const phone = useIsPhone();
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const [searchQuery, setSearchQuery] = useState('');
@@ -209,28 +213,31 @@ export function SessionSidebar({
       hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
   );
 
+  const sections = useMemo(() => sidebarView === 'recent'
+    ? [filteredPinnedSessions, flatUnpinned]
+    : [
+      filteredPinnedSessions,
+      ...sortableGroups
+        .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory) || alwaysShowPrompts && group.sessions.some(hasPendingPrompt))
+        .map((group) => group.sessions),
+    ], [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet, alwaysShowPrompts]);
+  const visibleKeys = new Set(sections.flat().map(sessionAttentionKey));
+  const attention = attentionSessionEntries(notify?.entries ?? []).filter((entry) => !visibleKeys.has(sessionAttentionKey(entry)));
+
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.
   useEffect(() => {
-    const sections = sidebarView === 'recent'
-      ? [filteredPinnedSessions, flatUnpinned]
-      : [
-        filteredPinnedSessions,
-        ...sortableGroups
-          .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory) || alwaysShowPrompts && group.sessions.some(hasPendingPrompt))
-          .map((group) => group.sessions),
-      ];
     const seen = new Set<string>();
-    visibleSidebarSessions.current = sections
+    setVisibleSidebarSessions(sections
       .flatMap((rows) => nestSessions(rows).map(({ session }) => session))
       .filter((session) => {
         const key = `${session.platform}\0${session.id}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
-      });
-  }, [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet, alwaysShowPrompts]);
-  useEffect(() => () => { visibleSidebarSessions.current = null; }, []);
+      }));
+  }, [sections]);
+  useEffect(() => () => { setVisibleSidebarSessions(null); }, []);
 
   const dndSensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
@@ -349,13 +356,14 @@ export function SessionSidebar({
         <TmuxClientPopover pickerRef={pickerRef} pos={pickerPos} clients={tmux.clients} onSelect={onClientSelect} />
       )}
       <div className="session-sidebar-list" ref={sidebarListRef}>
+        <SidebarAttentionGroup entries={attention} activeId={activeId} />
         {loadingRecentSessions ? (
           <SkeletonLines rows={10} label="Loading sessions" />
-        ) : sidebarView === 'recent' && allRecentSessions.length === 0 && !preparedDrafts.length ? (
+        ) : sidebarView === 'recent' && allRecentSessions.length === 0 && !preparedDrafts.length && !attention.length ? (
           <GettingStartedEmpty compact />
         ) : sidebarView === 'recent' ? (
           renderFlatView()
-        ) : draftGroups.length === 0 ? (
+        ) : draftGroups.length === 0 && !attention.length ? (
           <GettingStartedEmpty compact />
         ) : (
           renderProjectsView()
