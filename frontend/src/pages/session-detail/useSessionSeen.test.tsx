@@ -16,8 +16,8 @@ vi.hoisted(() => {
   });
 });
 
-const recheckFaviconNotify = vi.fn();
-vi.mock('../../lib/useFaviconNotify', () => ({ recheckFaviconNotify: () => recheckFaviconNotify() }));
+const recheckNotifyData = vi.fn();
+vi.mock('../../lib/useNotifyData', () => ({ recheckNotifyData: () => recheckNotifyData() }));
 const navigate = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 type ChangedListener = (id: string, session?: unknown, patch?: Partial<Session>, platform?: string) => void;
@@ -243,7 +243,7 @@ describe('useSessionSeen', () => {
     expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false, snoozedUntil: 0 });
     expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false, snoozedUntil: 0 }, 'opencode');
     expect(markSessionSeen).toHaveBeenCalledWith('opencode', 's1', 42);
-    await waitFor(() => expect(recheckFaviconNotify).toHaveBeenCalled());
+    await waitFor(() => expect(recheckNotifyData).toHaveBeenCalled());
     expect(useUiStore.getState().lastOpenedSessionId).toBe('s1');
     expect(document.title).toBe('Fix bug - ocman');
     expect(setInfo).toHaveBeenCalledWith(expect.objectContaining<HeaderInfo>({
@@ -370,7 +370,7 @@ describe('useSessionSeen', () => {
     expect(markSessionSeen).toHaveBeenCalledTimes(2);
     expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 200);
     expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, seenTimeUpdated: 200 }, 'opencode');
-    expect(recheckFaviconNotify).toHaveBeenCalledTimes(2);
+    expect(recheckNotifyData).toHaveBeenCalledTimes(2);
     rerender({ value: { ...session, timeUpdated: 200 } });
     await act(async () => vi.advanceTimersByTime(1000));
     expect(markSessionSeen).toHaveBeenCalledTimes(2);

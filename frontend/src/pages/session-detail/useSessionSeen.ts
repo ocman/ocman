@@ -4,7 +4,7 @@ import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
-import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
+import { recheckNotifyData } from '../../lib/useNotifyData';
 import { onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
 import { projectRootForDirectory } from '../../lib/worktrees';
@@ -65,7 +65,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
       : markSessionSeen(platform, id, updated);
     void request
       .then(() => {
-        recheckFaviconNotify();
+        recheckNotifyData();
       })
       .catch((err) => remoteLog.error('Failed to mark session seen', err));
   }, [markSessionSeen, sessionSeenInterrupted]);

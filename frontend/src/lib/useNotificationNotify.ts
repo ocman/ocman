@@ -13,9 +13,6 @@ import { pushSubscribed, showSystemNotification } from './pushNotifications';
  * enable any subset of {favicon, bell, notification} without one
  * affecting the others.
  *
- * Now consumes the shared `useNotifyStore` instead of polling
- * `/api/sessions/notify` independently (P2 fix).
- *
  * Two trigger paths:
  *
  *   - **completed**: an unseen session transitioned to `waiting` or `error`.
@@ -214,7 +211,7 @@ export function useNotificationNotify() {
       // Snapshot at mount even when visible, so a prompt that arrives
       // while the user is on another app still triggers — but a prompt
       // that was *already* there before mount doesn't.
-      initialBaselineWhenVisible: true,
+      initialBaseline: 'always',
       // Reset the per-tab dedupe set when the tab becomes visible so the
       // next hide-then-complete cycle starts fresh.
       onVisibleReset: () => {

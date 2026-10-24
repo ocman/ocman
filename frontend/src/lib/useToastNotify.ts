@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { NotifyEntry } from './api';
-import { useNotifyStore } from './useNotifyData';
+import { notifyStateKey, useNotifyBaseline } from './useNotifyBaseline';
 
 /**
  * In-app Radix toast notifier for sessions that need user input
@@ -10,9 +10,6 @@ import { useNotifyStore } from './useNotifyData';
  * Sibling to useFaviconNotify / useBellNotify / useNotificationNotify
  * — same data source, same baseline-snapshot pattern. Each hook is
  * independent.
- *
- * Now consumes the shared `useNotifyStore` instead of polling
- * `/api/sessions/notify` independently (P2 fix).
  *
  * Why a fourth hook rather than reusing the OS notification path:
  *
@@ -43,11 +40,6 @@ export type ToastDecision = {
   title: string;
   directory: string;
 };
-
-/** State key used to dedupe across polls. Mirrors useNotificationNotify. */
-function stateKey(s: ToastNotifyShape): string {
-  return `${s.status}|${s.pendingPermission ? '1' : '0'}|${s.pendingQuestion ? '1' : '0'}`;
-}
 
 // Sessions that have *already triggered* a toast for their current
 // state key. Tracked at module scope so re-renders don't drop dedupe
@@ -104,7 +96,7 @@ export function __evaluateForTests(input: EvaluateInput): ToastDecision[] {
   // (e.g. user answers, agent asks again 30s later).
   const liveDedupe = new Set<string>();
   for (const s of input.sessions) {
-    liveDedupe.add(`${s.id}|${stateKey(s)}`);
+    liveDedupe.add(`${s.id}|${notifyStateKey(s)}`);
   }
   for (const k of firedKeys) {
     if (!liveDedupe.has(k)) firedKeys.delete(k);
@@ -120,7 +112,7 @@ export function __evaluateForTests(input: EvaluateInput): ToastDecision[] {
     // Baseline filter: skip sessions whose state already matched at
     // baseline-snapshot time. Null baseline means "no snapshot taken
     // yet" — treat everything as new (mirrors sibling hooks).
-    const key = stateKey(s);
+    const key = notifyStateKey(s);
     if (input.baseline !== null && input.baseline.get(s.id) === key) continue;
 
     // Per-session dedupe across polls.
@@ -181,7 +173,6 @@ export function useToastNotify(): UseToastNotifyResult {
     pathRef.current = location.pathname;
   }, [location.pathname]);
 
-  const baselineRef = useRef<Map<string, string> | null>(null);
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
 
   const dismiss = (toastId: string) => {
@@ -210,65 +201,45 @@ export function useToastNotify(): UseToastNotifyResult {
     };
   }, []);
 
-  useEffect(() => {
-    // Subscribe to the shared notify store.
-    useNotifyStore.getState().subscribe();
-
-    function check(sessions: NotifyEntry[]) {
-      // Build the "still has a pending prompt of kind X" set so we
-      // can prune resolved toasts. Defensive backstop for cross-tab
-      // resolutions and any same-tab path that didn't fire
-      // notifyPromptDismissed (e.g. session.idle event flow).
-      const stillPending = new Set<string>();
-      for (const s of sessions) {
-        if (s.pendingPermission) stillPending.add(`${s.id}|permission`);
-        if (s.pendingQuestion) stillPending.add(`${s.id}|question`);
-      }
-
-      const decisions = __evaluateForTests({
-        sessions,
-        currentPath: pathRef.current,
-        baseline: baselineRef.current,
-      });
-
-      const now = Date.now();
-      setToasts((prev) => {
-        // First prune toasts whose underlying prompt resolved.
-        const pruned = prev.filter((t) =>
-          stillPending.has(`${t.sessionId}|${t.kind}`),
-        );
-        if (decisions.length === 0) return pruned;
-
-        // Drop any pre-existing toast for the same session — the
-        // newest decision supersedes it (e.g. question -> permission).
-        const ids = new Set(decisions.map((d) => d.sessionId));
-        const kept = pruned.filter((t) => !ids.has(t.sessionId));
-        const next = decisions.map<ToastEntry>((d) => ({
-          ...d,
-          toastId: `${d.sessionId}:${now}`,
-          createdAt: now,
-        }));
-        return [...kept, ...next];
-      });
+  // Prompts already present in data cached at mount do not toast
+  // retroactively; the baseline is kept across visibility changes.
+  useNotifyBaseline((sessions, baseline) => {
+    // Build the "still has a pending prompt of kind X" set so we
+    // can prune resolved toasts. Defensive backstop for cross-tab
+    // resolutions and any same-tab path that didn't fire
+    // notifyPromptDismissed (e.g. session.idle event flow).
+    const stillPending = new Set<string>();
+    for (const s of sessions) {
+      if (s.pendingPermission) stillPending.add(`${s.id}|permission`);
+      if (s.pendingQuestion) stillPending.add(`${s.id}|question`);
     }
 
-    // Snapshot baseline at mount so prompts that were *already* there
-    // when the app loaded don't toast retroactively.
-    const initial = useNotifyStore.getState().data;
-    if (initial) {
-      baselineRef.current = new Map(initial.map((s) => [s.id, stateKey(s)]));
-    }
-
-    // Subscribe to store changes to react when new data arrives.
-    const unsub = useNotifyStore.subscribe((state) => {
-      if (state.data) check(state.data);
+    const decisions = __evaluateForTests({
+      sessions,
+      currentPath: pathRef.current,
+      baseline,
     });
 
-    return () => {
-      unsub();
-      useNotifyStore.getState().unsubscribe();
-    };
-  }, []);
+    const now = Date.now();
+    setToasts((prev) => {
+      // First prune toasts whose underlying prompt resolved.
+      const pruned = prev.filter((t) =>
+        stillPending.has(`${t.sessionId}|${t.kind}`),
+      );
+      if (decisions.length === 0) return pruned;
+
+      // Drop any pre-existing toast for the same session — the
+      // newest decision supersedes it (e.g. question -> permission).
+      const ids = new Set(decisions.map((d) => d.sessionId));
+      const kept = pruned.filter((t) => !ids.has(t.sessionId));
+      const next = decisions.map<ToastEntry>((d) => ({
+        ...d,
+        toastId: `${d.sessionId}:${now}`,
+        createdAt: now,
+      }));
+      return [...kept, ...next];
+    });
+  }, { initialBaseline: 'always', ignoreVisibility: true });
 
   return { toasts: visibleToasts, dismiss };
 }

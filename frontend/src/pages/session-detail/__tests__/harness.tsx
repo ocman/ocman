@@ -287,8 +287,8 @@ vi.mock('../../../lib/useWorkingTreeDiff', () => ({
   }),
 }));
 
-vi.mock('../../../lib/useFaviconNotify', () => ({
-  recheckFaviconNotify: vi.fn(),
+vi.mock('../../../lib/useNotifyData', () => ({
+  recheckNotifyData: vi.fn(),
 }));
 
 vi.mock('../../../lib/useToastNotify', () => ({

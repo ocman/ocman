@@ -10,7 +10,7 @@ import { SIDEBAR_SESSIONS_KEY } from '../../lib/sessionsCache';
 import { queryClient } from '../../lib/queryClient';
 
 vi.mock('../../lib/useGlobalEvents', () => ({ onSessionChanged: () => () => {}, onSseConnect: () => () => {} }));
-vi.mock('../../lib/useFaviconNotify', () => ({ recheckFaviconNotify: () => {} }));
+vi.mock('../../lib/useNotifyData', () => ({ recheckNotifyData: () => {} }));
 
 afterEach(() => {
   Reflect.deleteProperty(performance, 'getEntriesByType');

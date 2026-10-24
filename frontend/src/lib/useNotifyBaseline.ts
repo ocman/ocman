@@ -13,28 +13,42 @@ export function notifyStateKey(
   return `${s.status}|${s.pendingPermission ? '1' : '0'}|${s.pendingQuestion ? '1' : '0'}`;
 }
 
+export type NotifyBaselineOptions = {
+  /** Per-session state compared against the baseline; defaults to notifyStateKey. */
+  key?: (s: NotifyEntry) => string;
+  /**
+   * When data already exists at mount, snapshot it as the baseline only if
+   * the tab is hidden (`'hidden'`, default), always, or never.
+   */
+  initialBaseline?: 'hidden' | 'always' | 'never';
+  /** Check existing data at mount and again whenever the tab becomes visible. */
+  checkWhenShown?: boolean;
+  /** Keep the baseline across visibility changes. */
+  ignoreVisibility?: boolean;
+  /** Clear extra caller state when the tab becomes visible. */
+  onVisibleReset?: () => void;
+};
+
 /**
- * useNotifyBaseline owns the boilerplate shared by useBellNotify and
- * useNotificationNotify:
+ * useNotifyBaseline owns the boilerplate shared by the favicon, bell,
+ * OS-notification and in-app-toast hooks:
  *
  *   - subscribing to / unsubscribing from the shared useNotifyStore,
  *   - reacting to new store data by invoking `check(sessions)`,
- *   - maintaining a baseline snapshot (id -> stateKey) that resets when
+ *   - maintaining a baseline snapshot (id -> key) that resets when
  *     the tab becomes visible and is re-taken (then checked once) when
  *     it goes hidden,
- *   - taking an initial baseline when the tab is already hidden at mount.
+ *   - taking an initial baseline from data that exists at mount.
  *
  * The caller supplies `check`, which receives the current baseline (or
  * null when no snapshot has been taken) so it can skip sessions whose
  * state matched at snapshot time. Returning `true` asks the hook to
  * re-snapshot the baseline from the just-checked sessions (the bell uses
  * this after ringing so it doesn't ring again for the same events).
- * `onVisibleReset` lets a caller clear extra state (e.g. the
- * OS-notification dedupe set) when the tab becomes visible.
  */
 export function useNotifyBaseline(
   check: (sessions: NotifyEntry[], baseline: Map<string, string> | null) => boolean | void,
-  opts?: { initialBaselineWhenVisible?: boolean; onVisibleReset?: () => void },
+  opts?: NotifyBaselineOptions,
 ): void {
   const baselineRef = useRef<Map<string, string> | null>(null);
   // Keep the latest callbacks in refs so the store subscription closure
@@ -49,8 +63,10 @@ export function useNotifyBaseline(
   useEffect(() => {
     useNotifyStore.getState().subscribe();
 
-    const snapshot = (sessions: NotifyEntry[]) =>
-      new Map(sessions.map((s) => [s.id, notifyStateKey(s)]));
+    const snapshot = (sessions: NotifyEntry[]) => {
+      const key = optsRef.current?.key ?? notifyStateKey;
+      return new Map(sessions.map((s) => [s.id, key(s)]));
+    };
 
     // Run check and honour its "re-snapshot" request.
     const runCheck = (sessions: NotifyEntry[]) => {
@@ -60,10 +76,12 @@ export function useNotifyBaseline(
     };
 
     function onVisibilityChange() {
+      if (optsRef.current?.ignoreVisibility) return;
       const sessions = useNotifyStore.getState().data;
       if (!document.hidden) {
         baselineRef.current = null;
         optsRef.current?.onVisibleReset?.();
+        if (sessions && optsRef.current?.checkWhenShown) runCheck(sessions);
       } else if (sessions) {
         baselineRef.current = snapshot(sessions);
         runCheck(sessions);
@@ -72,18 +90,17 @@ export function useNotifyBaseline(
 
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Initial baseline. Bell only snapshots when already hidden;
-    // useNotificationNotify also snapshots when visible so a prompt that
-    // arrives while the user is away still triggers without re-firing for
-    // prompts that predate mount.
     const initial = useNotifyStore.getState().data;
-    if (initial && (document.hidden || optsRef.current?.initialBaselineWhenVisible)) {
+    const initialBaseline = optsRef.current?.initialBaseline ?? 'hidden';
+    if (initial && (initialBaseline === 'always' || (initialBaseline === 'hidden' && document.hidden))) {
       baselineRef.current = snapshot(initial);
     }
 
     const unsub = useNotifyStore.subscribe((state) => {
       if (state.data) runCheck(state.data);
     });
+
+    if (initial && optsRef.current?.checkWhenShown) runCheck(initial);
 
     return () => {
       unsub();
