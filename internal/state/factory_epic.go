@@ -13,11 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
-func (d *DB) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule, platform ...string) (model.NativeEpic, error) {
-	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, rules, platform...)
-}
-
-func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule, requested ...string) (model.NativeEpic, error) {
+func (d *DB) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule, requested ...string) (model.NativeEpic, error) {
 	var platform string
 	if len(requested) > 0 {
 		platform = requested[0]

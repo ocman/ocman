@@ -16,7 +16,7 @@ import {
   useSessionConcurrency,
 } from './queries';
 import { useGitInfo } from './useGitInfo';
-import { __resetForTests as resetNotify, useNotifyData } from './useNotifyData';
+import { __resetForTests as resetNotify, useNotifySnapshot } from './useNotifyData';
 import { useSession } from '../pages/session-detail/useSession';
 
 vi.mock('./api', () => ({
@@ -116,8 +116,8 @@ describe('activity scope wiring', () => {
   });
 
   it('tracks the shared notify poller only while it has consumers', () => {
-    const first = renderHook(() => useNotifyData());
-    const second = renderHook(() => useNotifyData());
+    const first = renderHook(() => useNotifySnapshot());
+    const second = renderHook(() => useNotifySnapshot());
     expect(activityScopeSnapshot()).toEqual(['sessions']);
 
     first.unmount();

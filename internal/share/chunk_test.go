@@ -7,14 +7,8 @@ import (
 	"testing"
 )
 
-func mustKey(t *testing.T) Key {
-	t.Helper()
-	k := NewKey()
-	return k
-}
-
 func TestSealOpen_RoundTrip(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	plain := []byte(`{"session":{"id":"ses_1"},"messages":[]}`)
 
 	ct, err := Seal(k, "20260813-abc", 7, plain)
@@ -38,7 +32,7 @@ func TestSealOpen_RoundTrip(t *testing.T) {
 // is what makes PUT /s/{id}/{seq} idempotent (nonce is derived from seq,
 // never random).
 func TestSeal_Deterministic(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	plain := []byte("same turn, retried")
 
 	a, err := Seal(k, "id", 3, plain)
@@ -59,7 +53,7 @@ func TestSeal_Deterministic(t *testing.T) {
 // XOR of the plaintexts and the auth key. Different seq must mean a
 // different keystream.
 func TestSeal_NonceVariesWithSeq(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	plain := []byte("identical plaintext")
 
 	a, err := Seal(k, "id", 1, plain)
@@ -79,7 +73,7 @@ func TestSeal_NonceVariesWithSeq(t *testing.T) {
 // into the AAD. Without it a relay could renumber or reorder chunks
 // undetected, since each chunk is individually authentic.
 func TestOpen_RejectsResequencedChunk(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	ct, err := Seal(k, "id", 5, []byte("turn five"))
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
@@ -92,7 +86,7 @@ func TestOpen_RejectsResequencedChunk(t *testing.T) {
 // TestOpen_RejectsCrossShareChunk proves the share id is bound into the
 // AAD, so a chunk cannot be transplanted into another share.
 func TestOpen_RejectsCrossShareChunk(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	ct, err := Seal(k, "share-a", 1, []byte("secret"))
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
@@ -103,7 +97,7 @@ func TestOpen_RejectsCrossShareChunk(t *testing.T) {
 }
 
 func TestOpen_RejectsWrongKey(t *testing.T) {
-	a, b := mustKey(t), mustKey(t)
+	a, b := NewKey(), NewKey()
 	ct, err := Seal(a, "id", 1, []byte("secret"))
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
@@ -114,7 +108,7 @@ func TestOpen_RejectsWrongKey(t *testing.T) {
 }
 
 func TestOpen_RejectsTamperedCiphertext(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	ct, err := Seal(k, "id", 1, []byte("secret payload"))
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
@@ -127,21 +121,21 @@ func TestOpen_RejectsTamperedCiphertext(t *testing.T) {
 }
 
 func TestOpen_RejectsShortCiphertext(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	if _, err := Open(k, "id", 1, []byte{0x01, 0x02}); err == nil {
 		t.Fatal("truncated ciphertext opened")
 	}
 }
 
 func TestSeal_RejectsSeqOverflow(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	if _, err := Seal(k, "id", MaxSeq+1, []byte("x")); err == nil {
 		t.Fatalf("Seal accepted seq above MaxSeq (%d)", MaxSeq)
 	}
 }
 
 func TestKey_EncodeDecodeRoundTrip(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	s := k.String()
 	if strings.ContainsAny(s, "+/=") {
 		t.Fatalf("key encoding %q is not URL-fragment safe", s)
@@ -175,7 +169,7 @@ func TestParseKey_Rejects(t *testing.T) {
 }
 
 func TestNewKey_NotAllZero(t *testing.T) {
-	k := mustKey(t)
+	k := NewKey()
 	if k == (Key{}) {
 		t.Fatal("NewKey returned a zero key")
 	}

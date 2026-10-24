@@ -108,17 +108,12 @@ func (s *Module) Move(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid queued message ID", http.StatusBadRequest)
 		return
 	}
-	moved, err := s.queue.Move(r.Context(), sessionID, qmid, req.Direction)
-	if err != nil {
+	if _, err := s.queue.Move(r.Context(), sessionID, qmid, req.Direction); err != nil {
 		log.WithError(err).WithField("queued", qmid).Error("moving queued message")
 		http.Error(w, "failed to move queued message", http.StatusInternalServerError)
 		return
 	}
-	if !moved {
-		// Boundary (already first/last) or unknown id — nothing to do.
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
+	// A boundary move (already first/last) or unknown id is a no-op.
 	w.WriteHeader(http.StatusNoContent)
 }
 

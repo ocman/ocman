@@ -99,11 +99,6 @@ export function useNotifySnapshot(): NotifySnapshot | undefined {
   }, queryClient).data;
 }
 
-/** Latest notify entries, or null before the first successful fetch. */
-export function useNotifyData(): NotifyEntry[] | null {
-  return useNotifySnapshot()?.entries ?? null;
-}
-
 /**
  * Force a refetch soon (e.g. after marking a session seen). Pass the
  * complete identity of the prompt just resolved, if any.

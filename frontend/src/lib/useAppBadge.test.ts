@@ -2,17 +2,13 @@
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { attentionSessionCount, updateAppBadge, useAppBadge } from './useAppBadge';
-import { useNotifyData } from './useNotifyData';
+import { useNotifySnapshot } from './useNotifyData';
 import { useInbox } from './queries';
 import { useBadgeSettings } from './badgeSettings';
 
-vi.mock('./useNotifyData', () => {
-  const useNotifyData = vi.fn();
-  return { useNotifyData, useNotifySnapshot: () => {
-    const entries = useNotifyData();
-    return entries ? { entries, fetchedAt: 100 } : undefined;
-  } };
-});
+vi.mock('./useNotifyData', () => ({ useNotifySnapshot: vi.fn() }));
+const mockEntries = (entries: unknown[] | null) =>
+  vi.mocked(useNotifySnapshot).mockReturnValue(entries ? { entries, fetchedAt: 100 } as ReturnType<typeof useNotifySnapshot> : undefined);
 vi.mock('./queries', () => ({ useInbox: vi.fn() }));
 vi.mock('./badgeSettings', () => ({ useBadgeSettings: vi.fn() }));
 beforeEach(() => {
@@ -36,17 +32,17 @@ it('updates the icon count and clears it when attention is resolved', async () =
   const setAppBadge = vi.fn().mockResolvedValue(undefined);
   const clearAppBadge = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('navigator', { setAppBadge, clearAppBadge });
-  vi.mocked(useNotifyData).mockReturnValue([{ id: 'session', status: 'waiting', seen: false }]);
+  mockEntries([{ id: 'session', status: 'waiting', seen: false }]);
   const hook = renderHook(() => useAppBadge());
   await waitFor(() => expect(setAppBadge).toHaveBeenCalledWith(1));
-  vi.mocked(useNotifyData).mockReturnValue([]);
+  mockEntries([]);
   hook.rerender();
   await waitFor(() => expect(clearAppBadge).toHaveBeenCalledOnce());
 });
 
 it('does not clear an existing badge while the initial snapshot is loading', () => {
   const clearAppBadge = vi.fn(); vi.stubGlobal('navigator', { clearAppBadge, setAppBadge: vi.fn() });
-  vi.mocked(useNotifyData).mockReturnValue(null);
+  mockEntries(null);
   renderHook(() => useAppBadge());
   expect(clearAppBadge).not.toHaveBeenCalled();
 });
@@ -60,7 +56,7 @@ it('handles unsupported browsers and rejected OS updates', async () => {
 it('combines selected unread Inbox categories with sessions, excluding permission items', async () => {
   const setAppBadge = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('navigator', { setAppBadge });
-  vi.mocked(useNotifyData).mockReturnValue([{ id: 'session', status: 'busy', seen: true, pendingQuestion: true }]);
+  mockEntries([{ id: 'session', status: 'busy', seen: true, pendingQuestion: true }]);
   vi.mocked(useInbox).mockReturnValue({ data: { items: [
     { id: 'same', remoteId: 'local', category: 'general' }, { id: 'same', remoteId: 'remote' },
     { id: 'factory', category: 'factory' }, { id: 'routine', category: 'routine' },
@@ -81,7 +77,7 @@ it('combines selected unread Inbox categories with sessions, excluding permissio
 it('preserves the current badge until settings and Inbox data are loaded', () => {
   const setAppBadge = vi.fn();
   vi.stubGlobal('navigator', { setAppBadge });
-  vi.mocked(useNotifyData).mockReturnValue([]);
+  mockEntries([]);
   vi.mocked(useInbox).mockReturnValue({ data: undefined } as ReturnType<typeof useInbox>);
   const hook = renderHook(() => useAppBadge());
   expect(setAppBadge).not.toHaveBeenCalled();
@@ -94,7 +90,7 @@ it('preserves the current badge until settings and Inbox data are loaded', () =>
 it('clears the badge when all sources are disabled even if snapshots are unavailable', async () => {
   const clearAppBadge = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('navigator', { setAppBadge: vi.fn(), clearAppBadge });
-  vi.mocked(useNotifyData).mockReturnValue(null);
+  mockEntries(null);
   vi.mocked(useInbox).mockReturnValue({ data: undefined } as ReturnType<typeof useInbox>);
   vi.mocked(useBadgeSettings).mockReturnValue({ data: { sessions: false, primary: false, factory: false, routines: false } } as ReturnType<typeof useBadgeSettings>);
   renderHook(() => useAppBadge());

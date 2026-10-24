@@ -85,16 +85,14 @@ a new version.
 
 The importer reads the retained revision and checkpoint before taking a source
 snapshot. One statev2 transaction commits normalized content, revision, fingerprint
-and invalidation. A concurrent writer or purge cannot be overwritten by a stale
+and invalidation. A concurrent writer cannot be overwritten by a stale
 snapshot. Failed reads, normalization or commits are retried; progress is recorded
 only after success. Retrying sessions that already failed records a new failed
 task only when the failure changes. A restart safely revisits all sources using persisted progress.
 
 Missing sessions are marked source-deleted only after a complete successful
 inventory. Missing messages/parts are marked only from a successful complete
-snapshot. All content remains retained. Explicitly purged identities are skipped
-before their source content is read, and statev2 checks the tombstone again at
-commit if a purge raced an in-flight snapshot.
+snapshot. All content remains retained.
 
 Unresolved creation reservations defer only the affected identities. Adapters
 return the resolvable inventory with `platforms.HistoryDeferred`; workers import

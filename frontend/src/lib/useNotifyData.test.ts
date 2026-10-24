@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetForTests, NOTIFY_RECHECK_DELAY_MS, NOTIFY_TIMEOUT_MS, notifyQueryKey, recheckNotifyData,
-  useNotifyData, useNotifySnapshot, type NotifySnapshot,
+  useNotifySnapshot, type NotifySnapshot,
 } from './useNotifyData';
 import { api, type Session } from './api';
 import { queryClient } from './queryClient';
@@ -55,9 +55,9 @@ describe('useNotifySnapshot', () => {
     vi.restoreAllMocks();
   });
 
-  it('starts with null data', () => {
-    const { result, unmount } = renderHook(() => useNotifyData());
-    expect(result.current).toBeNull();
+  it('starts without a snapshot', () => {
+    const { result, unmount } = renderHook(() => useNotifySnapshot());
+    expect(result.current).toBeUndefined();
     unmount();
   });
 

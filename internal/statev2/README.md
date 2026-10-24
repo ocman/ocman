@@ -96,27 +96,19 @@ no-op, even after restart. Other predecessor mismatches fail with `ErrConflict`.
 Stream IDs must distinguish source generations when a supervisor resets its
 sequence; separate supervisors must not share one checkpoint stream.
 
-Only acknowledge upstream input after `Commit` succeeds. Read the durable
-`Changes` stream after commit, persist each consumer's cursor, and accept
-at-least-once invalidation delivery. The outbox is not a queue of executable
-turn-end events. Reconstructing history must never directly dispatch follow-up
+Only acknowledge upstream input after `Commit` succeeds. Each commit appends a
+`change_outbox` row; readers use its highest sequence as a cache revision. The
+outbox is not a queue of executable turn-end events. Reconstructing history must never directly dispatch follow-up
 messages, permissions, routines, or plugin actions. Completion reconciliation
 will need separate idempotent application receipts.
 
-## Retention and purge
+## Retention
 
 Source deletion marks a record `SourceDeleted`; it never removes Ocman's
 history. Readers include source-deleted records. Disabled or disconnected
 platform instances must not be removed by cascading database deletion.
-
-Only an explicit `Purge` removes a session's queryable content. It atomically
-removes messages, parts, and previous invalidations, leaves an identity-only
-tombstone, and publishes a purge invalidation. Repeated purges are no-ops.
-
-Later live input and repairs for a purged identity are suppressed. Their source
-checkpoints still advance, so a purged conversation cannot stall ingestion of
-other sessions. A purge is logical deletion, not secure erasure from database
-pages, WAL files, or backups. No purge UI or HTTP endpoint ships in this increment.
+statev2 has no purge operation; the `purged_session` table is retained for
+schema compatibility only.
 
 ## Next increments
 

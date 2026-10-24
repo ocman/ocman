@@ -251,8 +251,7 @@ flowchart LR
     Reader -->|bounded wait for initial import or stale snapshot| Import
     Reader -->|active sessions only| Live[Platform live transcript]
     History -->|owner-scoped metadata, affected facts<br/>and UTC-hour summaries| Analytics[Projects, text search,<br/>analytics and telemetry]
-    History --> Changes[Durable invalidation stream<br/>no lifecycle actions]
-    Purge[Explicit Ocman purge] -->|remove queryable content<br/>retain identity tombstone| History
+    History --> Changes[Change outbox revision<br/>cache invalidation only]
 ```
 
 - Platform type and platform instance are separate. Native session identities
@@ -269,8 +268,7 @@ flowchart LR
   transactions during the pause. Requested conversation reads interrupt the
   background wait and bypass its budget; live updates are not CPU-throttled.
   Shutdown cancels the wait, preserving each completed snapshot's checkpoint.
-- Source deletion never removes retained history. Purged identities suppress
-  later imports while still allowing source checkpoints to advance.
+- Source deletion never removes retained history.
 - Unresolved creation reservations defer affected identities, not the entire
   import. Partial inventories never authorize deletion or complete verification.
   Claude supervisor discovery failures return available transcript/runtime rows
@@ -422,13 +420,12 @@ Full repairs replace the session's summaries. Incremental updates replace only
 affected message facts, question timings and old/new UTC-hour buckets, and adjust
 session totals by their net change. Human activity uses the persisted subagent
 flag for both session and user-message counts. Tool-only changes recompute the
-owning message's timing summaries too. Purges cascade through these
-tables and cannot resurrect suppressed history. Native payloads stay intact.
+owning message's timing summaries too. Native payloads stay intact.
 `internal/analyticsdata` supplies the same metadata and interval-union rules to
 both legacy readers and ingestion; there is no second timing engine.
 
 The one-time upgrade builds summaries from stored compact projections, preserving
-history, checkpoints, source hints and purge markers. It does not reimport from
+history, checkpoints and source hints. It does not reimport from
 platforms. Startup logs identify this backfill. Failure rolls back the upgrade.
 
 `internal/db.OpenHistoryAnalytics` opens statev2 read-only with bounded pooled
@@ -446,7 +443,7 @@ timezone-dependent rollup. Pricing remains dynamic. Request timestamp ties use
 native ID as a stable secondary sort key in both readers for pagination.
 
 Native-ID validation checks the sparse conflict markers against active selected
-sources, with a per-reader/outbox-revision cache. Imports and purges invalidate
+sources, with a per-reader/outbox-revision cache. Imports invalidate
 the cache. The mark and collision checks share one read transaction.
 
 Inspect the response headers in the browser's Network panel:
