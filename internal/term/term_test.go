@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -202,56 +201,6 @@ func TestAllTermWindowNames_TmuxPermissionErrorReturnsError(t *testing.T) {
 	_, err := allTermWindowNames(t.Context())
 	if err == nil {
 		t.Fatal("allTermWindowNames() error = nil, want error")
-	}
-}
-
-// TestSweepLegacySessions asserts the boot-time sweep kills exactly the
-// legacy `ocman-view-<uuid>` sessions and leaves everything else — the
-// user's own sessions and the shared ocman-term session — alone.
-func TestSweepLegacySessions(t *testing.T) {
-	listErr := errors.New("tmux not running")
-	tests := []struct {
-		name     string
-		sessions []string
-		listErr  error
-		killErr  error
-		want     []string
-	}{
-		{
-			name:     "kills only legacy view sessions",
-			sessions: []string{"ocman-view-abc", "my-work", SessionName, "ocman-view-def"},
-			want:     []string{"ocman-view-abc", "ocman-view-def"},
-		},
-		{
-			name:     "leaves the shared term session alone",
-			sessions: []string{SessionName},
-		},
-		{
-			name:    "list failure is a silent no-op",
-			listErr: listErr,
-		},
-		{
-			name:     "kill failure does not abort the sweep",
-			sessions: []string{"ocman-view-abc", "ocman-view-def"},
-			killErr:  errors.New("session not found"),
-			want:     []string{"ocman-view-abc", "ocman-view-def"},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var killed []string
-			sweepLegacySessions(
-				func() ([]string, error) { return tc.sessions, tc.listErr },
-				func(name string) error {
-					killed = append(killed, name)
-					return tc.killErr
-				},
-			)
-			if !slices.Equal(killed, tc.want) {
-				t.Fatalf("killed %v, want %v", killed, tc.want)
-			}
-		})
 	}
 }
 

@@ -248,13 +248,9 @@ func TestWSAttachErrorSendsCloseFrame(t *testing.T) {
 	}
 }
 
-func TestStartSweepsLegacySessions(t *testing.T) {
-	swept := 0
-	if err := NewModule(Deps{SweepLegacy: func(context.Context) { swept++ }}).Start(t.Context()); err != nil || swept != 1 {
-		t.Fatalf("Start = %v, swept %d times", err, swept)
-	}
-	if err := NewModule(Deps{}).Start(t.Context()); err != nil {
-		t.Fatal(err)
+func TestModuleName(t *testing.T) {
+	if got := NewModule(Deps{}).Name(); got != "terminals" {
+		t.Fatalf("Name() = %q", got)
 	}
 }
 

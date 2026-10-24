@@ -87,7 +87,7 @@ tool inventory in instructions. Feature modules register through `Deps.Tools`.
   into a temporary destroy-on-detach session so shell exit cannot switch it to
   another project. Poll away exited windows and close an empty dock. The terminal
   server is `tmux -L ocman-term`, separate from managed agents. Keep terminal HTTP
-  routes localhost-only; startup sweeps legacy orphaned `ocman-view-*` sessions.
+  routes localhost-only.
 - Tmux listing/launch routes use the owner Host. Client listing and switching
   affect only this machine's TTY. Keep these routes localhost-only.
 - Link previews own their routes, grants and lazily reset auth/service state in

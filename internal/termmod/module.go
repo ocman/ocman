@@ -32,9 +32,6 @@ type Deps struct {
 	// Privileged is the server's privileged-request check (loopback peer,
 	// browser origin, auth), used as the WebSocket CheckOrigin.
 	Privileged func(*http.Request) bool
-	// SweepLegacy removes the previous implementation's orphaned viewer
-	// sessions at startup; nil skips it.
-	SweepLegacy func(context.Context)
 }
 
 // Module owns the /api/term routes.
@@ -61,15 +58,6 @@ func (m *Module) Name() string { return "terminals" }
 func (m *Module) Routes(r module.Router) {
 	r.Local("/api/term/ws", m.handleWS)
 	r.Local("/api/term/windows", m.handleWindows)
-}
-
-// Start sweeps orphaned viewer sessions an earlier process left behind
-// (they can never belong to a live connection at boot).
-func (m *Module) Start(ctx context.Context) error {
-	if m.deps.SweepLegacy != nil {
-		m.deps.SweepLegacy(ctx)
-	}
-	return nil
 }
 
 // handleWS attaches a browser xterm.js terminal to a terminal window of

@@ -27,7 +27,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/sharing"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/tasksvc"
-	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/termmod"
 	"github.com/NoUseFreak/ocman/internal/tmuxmod"
 	"github.com/NoUseFreak/ocman/internal/webhook"
@@ -82,7 +81,6 @@ func (s *Server) termModule() *termmod.Module {
 	return termmod.NewModule(termmod.Deps{
 		ResolveOwner: s.resolveOwner,
 		Privileged:   s.isPrivilegedRequest,
-		SweepLegacy:  term.SweepLegacySessions,
 	})
 }
 
