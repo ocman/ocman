@@ -29,20 +29,6 @@ type favoriteEntry struct {
 	Model    string `json:"model"`
 }
 
-// handleFavoritesRoot routes /api/favorites by method.
-func (s *Server) handleFavoritesRoot(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleListFavorites(w, r)
-	case http.MethodPost:
-		s.handleAddFavorite(w, r)
-	case http.MethodDelete:
-		s.handleRemoveFavorite(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 // handleListFavorites returns every favorite for the given platform.
 // The ?platform= query is required: we don't leak favorites across
 // platforms, and there's no obvious "default" when multiple are

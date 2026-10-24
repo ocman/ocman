@@ -61,38 +61,53 @@ func (m *Module) handleRevealToken(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]string{"token": ident.RemoteToken})
 }
 
-// handleRemotes serves GET (list) and POST (add) on /api/remotes.
-func (m *Module) handleRemotes(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 	mgr := m.manager()
 	if mgr == nil {
 		// Single-host: an empty list keeps the settings page clean.
-		if r.Method == http.MethodGet {
-			httpx.WriteJSON(w, []any{})
-			return
-		}
-		http.Error(w, "remote management not available", http.StatusServiceUnavailable)
+		httpx.WriteJSON(w, []any{})
 		return
 	}
-	switch r.Method {
-	case http.MethodGet:
-		list, err := mgr.List(r.Context())
-		if err != nil {
-			httpx.ServerError(w, "listing remotes", err)
-			return
-		}
-		if list == nil {
-			httpx.WriteJSON(w, []any{})
-			return
-		}
-		httpx.WriteJSON(w, list)
-	case http.MethodPost:
-		handleAdd(w, r, mgr)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	list, err := mgr.List(r.Context())
+	if err != nil {
+		httpx.ServerError(w, "listing remotes", err)
+		return
 	}
+	if list == nil {
+		httpx.WriteJSON(w, []any{})
+		return
+	}
+	httpx.WriteJSON(w, list)
 }
 
-func handleAdd(w http.ResponseWriter, r *http.Request, mgr Manager) {
+// available answers 503 and returns nil without remote management.
+func (m *Module) available(w http.ResponseWriter) Manager {
+	mgr := m.manager()
+	if mgr == nil {
+		http.Error(w, "remote management not available", http.StatusServiceUnavailable)
+	}
+	return mgr
+}
+
+// remote resolves the manager and the {id} path value of /api/remotes/{id}.
+func (m *Module) remote(w http.ResponseWriter, r *http.Request) (Manager, int64, bool) {
+	mgr := m.available(w)
+	if mgr == nil {
+		return nil, 0, false
+	}
+	localID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid remote id", http.StatusBadRequest)
+		return nil, 0, false
+	}
+	return mgr, localID, true
+}
+
+func (m *Module) handleAdd(w http.ResponseWriter, r *http.Request) {
+	mgr := m.available(w)
+	if mgr == nil {
+		return
+	}
 	var req struct {
 		Address     string `json:"address"`
 		Token       string `json:"token"`
@@ -123,50 +138,35 @@ func handleAdd(w http.ResponseWriter, r *http.Request, mgr Manager) {
 	httpx.WriteJSON(w, map[string]int64{"localId": id})
 }
 
-// handleRemoteByID serves /api/remotes/{localId}: PUT edits, DELETE
-// removes, POST .../reconnect reconnects.
-func (m *Module) handleRemoteByID(w http.ResponseWriter, r *http.Request) {
-	mgr := m.manager()
-	if mgr == nil {
-		http.Error(w, "remote management not available", http.StatusServiceUnavailable)
+func (m *Module) handleReconnect(w http.ResponseWriter, r *http.Request) {
+	mgr, localID, ok := m.remote(w, r)
+	if !ok {
 		return
 	}
-	idStr, action, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/api/remotes/"), "/")
-	localID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		http.Error(w, "invalid remote id", http.StatusBadRequest)
+	if err := mgr.Reconnect(r.Context(), localID); err != nil {
+		httpx.ServerError(w, "reconnecting remote", err)
 		return
 	}
-	switch action {
-	case "reconnect":
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if err := mgr.Reconnect(r.Context(), localID); err != nil {
-			httpx.ServerError(w, "reconnecting remote", err)
-			return
-		}
-		httpx.WriteJSON(w, map[string]bool{"ok": true})
-	case "":
-		switch r.Method {
-		case http.MethodPut:
-			handleUpdate(w, r, mgr, localID)
-		case http.MethodDelete:
-			if err := mgr.Remove(r.Context(), localID); err != nil {
-				httpx.ServerError(w, "removing remote", err)
-				return
-			}
-			httpx.WriteJSON(w, map[string]bool{"ok": true})
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	default:
-		http.Error(w, "not found", http.StatusNotFound)
-	}
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }
 
-func handleUpdate(w http.ResponseWriter, r *http.Request, mgr Manager, localID int64) {
+func (m *Module) handleRemove(w http.ResponseWriter, r *http.Request) {
+	mgr, localID, ok := m.remote(w, r)
+	if !ok {
+		return
+	}
+	if err := mgr.Remove(r.Context(), localID); err != nil {
+		httpx.ServerError(w, "removing remote", err)
+		return
+	}
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
+}
+
+func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	mgr, localID, ok := m.remote(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		DisplayName string  `json:"displayName"`
 		Address     string  `json:"address"`

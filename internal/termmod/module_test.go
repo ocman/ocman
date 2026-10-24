@@ -27,22 +27,23 @@ type fakeHost struct {
 	killed   string
 	windows  []hostsvc.TermWindow
 	createAs string
+	err      error
 }
 
 func (h *fakeHost) TermWindows(context.Context, string) ([]hostsvc.TermWindow, error) {
 	h.calls++
-	return h.windows, nil
+	return h.windows, h.err
 }
 
 func (h *fakeHost) TermCreateWindow(context.Context, string) (string, error) {
 	h.calls++
-	return h.createAs, nil
+	return h.createAs, h.err
 }
 
 func (h *fakeHost) TermKillWindow(_ context.Context, _, window string) error {
 	h.calls++
 	h.killed = window
-	return nil
+	return h.err
 }
 
 func (h *fakeHost) TermAttach(ctx context.Context, req hostsvc.TermAttachRequest, c hostsvc.TermConn) error {
@@ -88,6 +89,8 @@ func TestWindowsValidation(t *testing.T) {
 		{"delete cross-dir window", http.MethodDelete, "/api/term/windows", `{"dir":"` + dir + `","window":"` + foreign + `"}`, http.StatusNotFound},
 		{"method", http.MethodPut, "/api/term/windows", "", http.StatusMethodNotAllowed},
 		{"list gone owner", http.MethodGet, "/api/term/windows?dir=" + dir + "&remoteId=gone", "", http.StatusServiceUnavailable},
+		{"create gone owner", http.MethodPost, "/api/term/windows", `{"dir":"` + dir + `","remoteId":"gone"}`, http.StatusServiceUnavailable},
+		{"delete gone owner", http.MethodDelete, "/api/term/windows", `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"gone"}`, http.StatusServiceUnavailable},
 		{"ws relative dir", http.MethodGet, "/api/term/ws?dir=rel", "", http.StatusBadRequest},
 		{"ws foreign window", http.MethodGet, "/api/term/ws?dir=" + dir + "&window=" + foreign, "", http.StatusBadRequest},
 	}
@@ -118,6 +121,20 @@ func TestWindowsCRUD(t *testing.T) {
 	win := term.WindowPrefix(dir) + "1"
 	if rec := serve(mux, http.MethodDelete, "/api/term/windows", `{"dir":"`+dir+`","window":"`+win+`"}`); rec.Code != http.StatusNoContent || host.killed != win {
 		t.Fatalf("delete = %d, killed %q", rec.Code, host.killed)
+	}
+}
+
+func TestWindowsHostErrors(t *testing.T) {
+	dir := "/home/u/proj"
+	mux := newMux(&fakeHost{err: errors.New("tmux failed")}, allow)
+	for _, c := range []struct{ method, target, body string }{
+		{http.MethodGet, "/api/term/windows?dir=" + dir, ""},
+		{http.MethodPost, "/api/term/windows", `{"dir":"` + dir + `"}`},
+		{http.MethodDelete, "/api/term/windows", `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1"}`},
+	} {
+		if rec := serve(mux, c.method, c.target, c.body); rec.Code != http.StatusInternalServerError {
+			t.Errorf("%s %s = %d, want 500", c.method, c.target, rec.Code)
+		}
 	}
 }
 

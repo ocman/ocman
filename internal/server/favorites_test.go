@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// callFavorites invokes handleFavoritesRoot directly (bypassing the
-// mux) with the given method, query, and body. Returns the recorder so
+// callFavorites serves /api/favorites through the route table with the
+// given method, query, and body. Returns the recorder so
 // callers can assert on status + body.
 func callFavorites(t *testing.T, srv *Server, method, query, body string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -24,8 +24,12 @@ func callFavorites(t *testing.T, srv *Server, method, query, body string) *httpt
 	} else {
 		r = httptest.NewRequest(method, url, nil)
 	}
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := httptest.NewRecorder()
-	srv.handleFavoritesRoot(w, r)
+	mux.ServeHTTP(w, r)
 	return w
 }
 

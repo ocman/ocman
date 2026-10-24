@@ -69,8 +69,11 @@ func (m *Module) Routes(r module.Router) {
 	local := r.Guards().Localhost
 	r.Handle("GET /api/settings/remote-access", m.handleAccess)
 	r.Handle("POST /api/settings/remote-access/reveal-token", local(m.handleRevealToken))
-	r.Handle("/api/remotes", local(m.handleRemotes))
-	r.Handle("/api/remotes/", local(m.handleRemoteByID))
+	r.Handle("GET /api/remotes", local(m.handleList))
+	r.Handle("POST /api/remotes", local(m.handleAdd))
+	r.Handle("PUT /api/remotes/{id}", local(m.handleUpdate))
+	r.Handle("DELETE /api/remotes/{id}", local(m.handleRemove))
+	r.Handle("POST /api/remotes/{id}/reconnect", local(m.handleReconnect))
 }
 
 // Run refreshes inventories among the server's joined workers, so the loop

@@ -71,8 +71,14 @@ func TestNoManager(t *testing.T) {
 		if rr := do(h, http.MethodPost, "/api/remotes", `{}`); rr.Code != http.StatusServiceUnavailable {
 			t.Fatalf("POST = %d, want 503", rr.Code)
 		}
-		if rr := do(h, http.MethodDelete, "/api/remotes/1", ""); rr.Code != http.StatusServiceUnavailable {
-			t.Fatalf("DELETE = %d, want 503", rr.Code)
+		for _, c := range []struct{ method, path string }{
+			{http.MethodPut, "/api/remotes/1"},
+			{http.MethodDelete, "/api/remotes/1"},
+			{http.MethodPost, "/api/remotes/1/reconnect"},
+		} {
+			if rr := do(h, c.method, c.path, `{}`); rr.Code != http.StatusServiceUnavailable {
+				t.Fatalf("%s %s = %d, want 503", c.method, c.path, rr.Code)
+			}
 		}
 	}
 }
@@ -106,6 +112,8 @@ func TestMethodAndValidationErrors(t *testing.T) {
 		{http.MethodPost, "/api/remotes", `{"address":""}`, 400},
 		{http.MethodPost, "/api/remotes", `{"address":"a:1","token":"  "}`, 400},
 		{http.MethodDelete, "/api/remotes/notanint", "", 400},
+		{http.MethodPut, "/api/remotes/notanint", `{}`, 400},
+		{http.MethodPost, "/api/remotes/notanint/reconnect", "", 400},
 		{http.MethodGet, "/api/remotes/1/bogus", "", 404},
 		{http.MethodGet, "/api/remotes/1/reconnect", "", 405},
 		{http.MethodPatch, "/api/remotes/1", "", 405},

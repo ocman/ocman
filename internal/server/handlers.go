@@ -146,19 +146,6 @@ func sortAndLimitSessions(sessions []db.Session, limit int) []db.Session {
 	return sessions
 }
 
-// --- /api/sessions (GET = list, POST = create) ---
-
-func (s *Server) handleSessionsRoot(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleSessions(w, r)
-	case http.MethodPost:
-		s.handleCreateSession(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		newSessionTarget

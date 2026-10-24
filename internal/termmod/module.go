@@ -53,11 +53,15 @@ func NewModule(deps Deps) *Module {
 func (m *Module) Name() string { return "terminals" }
 
 // Routes are localhost-only: both are a live shell. The WS upgrade is a
-// GET that hijacks the connection, so it has no method wrapper; the
-// windows route dispatches on method itself.
+// GET that hijacks the connection, so it has no method wrapper. The windows
+// routes list (GET ?dir=), create (POST {dir}) or kill (DELETE {dir,window})
+// the terminal windows of dir; only windows named for dir are listed or
+// killed.
 func (m *Module) Routes(r module.Router) {
 	r.Local("/api/term/ws", m.handleWS)
-	r.Local("/api/term/windows", m.handleWindows)
+	r.Local("GET /api/term/windows", m.listWindows)
+	r.Local("POST /api/term/windows", m.createWindow)
+	r.Local("DELETE /api/term/windows", m.killWindow)
 }
 
 // handleWS attaches a browser xterm.js terminal to a terminal window of
@@ -148,22 +152,6 @@ type windowsRequest struct {
 	Dir      string `json:"dir"`
 	Window   string `json:"window"`
 	RemoteID string `json:"remoteId"`
-}
-
-// handleWindows lists (GET ?dir=), creates (POST {dir}) or kills
-// (DELETE {dir,window}) the terminal windows of dir. Only windows named
-// for dir are listed or killed.
-func (m *Module) handleWindows(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		m.listWindows(w, r)
-	case http.MethodPost:
-		m.createWindow(w, r)
-	case http.MethodDelete:
-		m.killWindow(w, r)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
 }
 
 func (m *Module) listWindows(w http.ResponseWriter, r *http.Request) {

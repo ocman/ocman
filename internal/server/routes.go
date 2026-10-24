@@ -26,7 +26,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	api.HandleFunc("GET /api/projects", auth(s.handleProjects))
 	api.HandleFunc("GET /api/system/stats", auth(s.handleSystemStats))
 	api.HandleFunc("GET /api/session-identity", auth(s.handleSessionIdentity))
-	api.HandleFunc("/api/sessions", auth(s.handleSessionsRoot)) // GET = list, POST = create
+	api.HandleFunc("GET /api/sessions", auth(s.handleSessions))
+	api.HandleFunc("POST /api/sessions", auth(s.handleCreateSession))
 	api.HandleFunc("GET /api/sessions/notify", auth(s.handleSessionsNotify))
 	api.HandleFunc("GET /api/events", auth(s.handleGlobalEvents))
 	api.HandleFunc("POST /api/client-activity", auth(s.handleClientActivity))
@@ -37,7 +38,9 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	api.HandleFunc("GET /api/hook-plugin", s.requireLocalhost(s.handleHookPlugin))
 	api.HandleFunc("POST /api/hook-plugin/install", s.requireLocalhost(s.handleHookPlugin))
 	api.HandleFunc("POST /api/hook-plugin/uninstall", s.requireLocalhost(s.handleHookPlugin))
-	api.HandleFunc("/api/favorites", auth(s.handleFavoritesRoot)) // GET = list, POST = add, DELETE = remove
+	api.HandleFunc("GET /api/favorites", auth(s.handleListFavorites))
+	api.HandleFunc("POST /api/favorites", auth(s.handleAddFavorite))
+	api.HandleFunc("DELETE /api/favorites", auth(s.handleRemoveFavorite))
 	api.HandleFunc("GET /api/whisper/status", auth(s.handleWhisperStatus))
 	api.HandleFunc("POST /api/transcribe", auth(s.handleTranscribe))
 	// Git and worktree endpoints belong to the git module.
