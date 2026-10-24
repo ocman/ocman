@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { weightedSearch, type SearchKey } from '../../lib/weightedSearch';
 import { Modal } from '../Modal';
@@ -158,27 +158,18 @@ export function CommandListPicker<T extends PickerEntryBase>({
   }, [open, searchable]);
 
   // Normalize whitespace and short-circuit empty queries.
-  const extendedQuery = useMemo(() => query.trim().split(/\s+/).filter(Boolean).join(' '), [query]);
+  const extendedQuery = query.trim().split(/\s+/).filter(Boolean).join(' ');
 
-  const filteredEntries = useMemo(
-    () => (extendedQuery ? weightedSearch(entries, extendedQuery, fuseKeys ?? ['value'], pinned).slice(0, 200) : entries),
-    [entries, extendedQuery, fuseKeys, pinned],
-  );
+  const filteredEntries = extendedQuery ? weightedSearch(entries, extendedQuery, fuseKeys ?? ['value'], pinned).slice(0, 200) : entries;
 
   // Section only when not searching; on search show a flat filtered list.
-  const items = useMemo(
-    () => groupIntoItems(filteredEntries, !query.trim(), sectionOf, sectionOrder),
-    [filteredEntries, query, sectionOf, sectionOrder],
-  );
+  const items = groupIntoItems(filteredEntries, !query.trim(), sectionOf, sectionOrder);
 
   // Precompute selectable (entry) indexes so arrow keys skip headers.
-  const entryIndexes = useMemo(
-    () => items.reduce<number[]>((acc, it, i) => {
-      if (it.kind === 'entry') acc.push(i);
-      return acc;
-    }, []),
-    [items],
-  );
+  const entryIndexes = items.reduce<number[]>((acc, it, i) => {
+    if (it.kind === 'entry') acc.push(i);
+    return acc;
+  }, []);
 
   // selectedIndex indexes into entryIndexes, so we never land on a header.
   const effectiveIndex = entryIndexes.length === 0
@@ -192,12 +183,12 @@ export function CommandListPicker<T extends PickerEntryBase>({
     item?.scrollIntoView({ block: 'nearest' });
   }, [activeItemIndex]);
 
-  const pick = useCallback((value: string) => {
+  const pick = (value: string) => {
     onSelect(value);
     onClose();
-  }, [onSelect, onClose]);
+  };
 
-  const onInputKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const onInputKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
@@ -215,7 +206,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
       e.preventDefault();
       onBack();
     }
-  }, [entryIndexes.length, effectiveIndex, items, activeItemIndex, pick, onClose, onBack, query]);
+  };
 
   if (!open) return null;
 

@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { buildScopeTree, flattenForOptions } from '../lib/projectTree';
 import { shortPath } from '../lib/format';
 import { SearchSelect } from './SearchSelect';
@@ -63,7 +62,7 @@ export function ProjectScopePicker({
   // Memoise so we don't rebuild the trie on every parent re-render. The
   // input list reference changes whenever `projects` is reloaded, which
   // is rare relative to render frequency.
-  const options = useMemo(() => flattenForOptions(buildScopeTree(projects)).flatMap((option) => {
+  const options = flattenForOptions(buildScopeTree(projects)).flatMap((option) => {
     const leaves = [...new Map(projects.filter((project) => project.directory === option.path)
       .map((project) => [project.key ?? project.directory, project])).values()];
     const label = `${INDENT.repeat(option.depth)}${shortPath(option.path)}`;
@@ -75,7 +74,7 @@ export function ProjectScopePicker({
     if (onlyProjects) return projectOptions;
     if (!scopePrefix && !leaves.some((project) => project.key)) return [scope];
     return [...(!leaves.length || option.projectCount > 1 ? [scope] : []), ...projectOptions];
-  }), [projects, scopePrefix, onlyProjects]);
+  });
 
   const unavailable = !!value && !options.some((option) => option.value === value);
   const disabled = options.length === 0 && !value;

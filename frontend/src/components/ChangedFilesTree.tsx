@@ -25,12 +25,9 @@ interface ChangedFilesTreeProps {
 export function ChangedFilesTree({ files, selectedKey, onSelect }: ChangedFilesTreeProps) {
   const byPath = useMemo(() => new Map(files.map((f) => [treePath(f), f])), [files]);
   const paths = useMemo(() => [...byPath.keys()], [byPath]);
-  const gitStatus = useMemo<GitStatusEntry[]>(
-    () => files.flatMap((f) => (f.status && GIT_STATUSES.has(f.status)
-      ? [{ path: treePath(f), status: f.status as GitStatus }]
-      : [])),
-    [files],
-  );
+  const gitStatus: GitStatusEntry[] = files.flatMap((f) => (f.status && GIT_STATUSES.has(f.status)
+    ? [{ path: treePath(f), status: f.status as GitStatus }]
+    : []));
   const selectedPath = files.find((f) => f.key === selectedKey);
 
   const live = useRef({ byPath, onSelect });

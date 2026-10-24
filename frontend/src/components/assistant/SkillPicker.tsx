@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import type { SlashCommand } from '../../lib/api';
 import { CommandListPicker, type PickerEntryBase } from './CommandListPicker';
 import './ModelPicker.css';
@@ -24,13 +23,9 @@ interface PickerEntry extends PickerEntryBase {
 // them and, on select, prefills `/<skill> ` in the composer — it does not
 // send, matching OpenCode's DialogSkill.
 export function SkillPicker({ open, commands, initialQuery, onSelect, onClose }: SkillPickerProps) {
-  const entries = useMemo<PickerEntry[]>(
-    () =>
-      commands
-        .filter((c) => c.source === 'skill')
-        .map((c) => ({ value: c.name, label: c.name, description: c.description ?? '' })),
-    [commands],
-  );
+  const entries: PickerEntry[] = commands
+    .filter((c) => c.source === 'skill')
+    .map((c) => ({ value: c.name, label: c.name, description: c.description ?? '' }));
 
   const renderRow = (e: PickerEntry) => (
     <div className="oc-cmd-item-content">

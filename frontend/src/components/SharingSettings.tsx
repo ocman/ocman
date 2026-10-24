@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type GlobalShareLink, type RelaySource, type Session } from '../lib/api';
 import { useSessions } from '../lib/queries';
@@ -48,7 +48,7 @@ export function SharingSettings() {
     if (loadError) setError(loadError instanceof Error ? loadError.message : 'Failed to load sharing settings');
   }, [loadError, setError]);
 
-  const handleToggle = useCallback(async (want: boolean) => {
+  const handleToggle = async (want: boolean) => {
     const setEnabled = (value: boolean) => queryClient.setQueryData<SharingSettingsView>(['sharing-settings'],
       (prev) => ({ relayUrl: '', relaySource: '', ...prev, enabled: value }));
     setEnabled(want); // optimistic
@@ -60,7 +60,7 @@ export function SharingSettings() {
       setError(err instanceof Error ? err.message : 'Failed to save setting');
       throw err; // let SettingToggle surface the failure indicator
     }
-  }, [queryClient, setError]);
+  };
 
   return (
     <div data-testid="sharing-settings">

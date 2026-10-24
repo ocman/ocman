@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
 import type { AgentInfo } from '../../lib/api';
 
@@ -48,7 +48,7 @@ export function useComposerPickers({
   // Try to resolve `args` to a concrete model without opening the palette.
   // Matches against the full `provider/model` string or the bare model name,
   // case-insensitively. Returns the resolved value if there's exactly one match.
-  const resolveModelArg = useCallback((arg: string): string | null => {
+  const resolveModelArg = (arg: string): string | null => {
     const list = models || [];
     if (!arg) return null;
     const q = arg.toLowerCase();
@@ -61,12 +61,12 @@ export function useComposerPickers({
     });
     if (byModelName.length === 1) return byModelName[0];
     return null;
-  }, [models]);
+  };
 
   // Open the /model palette. If `arg` uniquely identifies a model, apply it
   // directly instead of opening the modal. The arg is otherwise pre-filled
   // as the palette's initial query.
-  const openModelPicker = useCallback((arg = '') => {
+  const openModelPicker = (arg = '') => {
     const resolved = resolveModelArg(arg);
     if (resolved) {
       onModelChange?.(resolved);
@@ -78,11 +78,11 @@ export function useComposerPickers({
     onRefreshModels?.();
     setModelPickerQuery(arg);
     setModelPickerOpen(true);
-  }, [resolveModelArg, onModelChange, onRefreshModels]);
+  };
 
   // Same shape as resolveModelArg: case-insensitive exact match against
   // known agent names, so `/agent plan` applies without opening the palette.
-  const resolveAgentArg = useCallback((arg: string): string | null => {
+  const resolveAgentArg = (arg: string): string | null => {
     if (!arg) return null;
     const q = arg.toLowerCase();
     const names = new Set<string>();
@@ -92,9 +92,9 @@ export function useComposerPickers({
       if (n.toLowerCase() === q) return n;
     }
     return null;
-  }, [agents, agentOptions]);
+  };
 
-  const openAgentPicker = useCallback((arg = '') => {
+  const openAgentPicker = (arg = '') => {
     if (!agentSelection) return;
     const resolved = resolveAgentArg(arg);
     if (resolved) {
@@ -103,20 +103,20 @@ export function useComposerPickers({
     }
     setAgentPickerQuery(arg);
     setAgentPickerOpen(true);
-  }, [agentSelection, resolveAgentArg, onAgentChange]);
+  };
 
-  const openSkillPicker = useCallback((arg: string) => {
+  const openSkillPicker = (arg: string) => {
     setSkillPickerQuery(arg);
     setSkillPickerOpen(true);
-  }, []);
+  };
 
-  const openRoutinePicker = useCallback((arg: string) => {
+  const openRoutinePicker = (arg: string) => {
     setRoutinePickerQuery(arg);
     setRoutinePickerOpen(true);
-  }, []);
+  };
 
   /** Put `text` in the textarea, focus it, and persist as the draft. */
-  const insertText = useCallback((text: string) => {
+  const insertText = (text: string) => {
     const el = inputRef.current;
     if (!el) return;
     el.value = text;
@@ -124,26 +124,26 @@ export function useComposerPickers({
     el.focus();
     const sid = sessionIdRef.current;
     if (sid) scheduleDraftSave(sid, () => el.value);
-  }, [inputRef, sessionIdRef, scheduleDraftSave, onTextChange]);
+  };
 
   // On skill select: prefill `/<skill> ` into the composer — do not send.
   // Matches OpenCode's DialogSkill, which inserts the command for the user
   // to complete/submit themselves.
-  const insertSkill = useCallback((skill: string) => {
+  const insertSkill = (skill: string) => {
     setSkillPickerOpen(false);
     insertText('/' + skill + ' ');
-  }, [insertText]);
+  };
 
-  const insertRoutine = useCallback((routine: { prompt: string }) => {
+  const insertRoutine = (routine: { prompt: string }) => {
     setRoutinePickerOpen(false);
     insertText(routine.prompt);
-  }, [insertText]);
+  };
 
   /** Close the picker and hand focus back to the textarea. */
-  const closeAndFocus = useCallback((setOpen: (v: boolean) => void) => () => {
+  const closeAndFocus = (setOpen: (v: boolean) => void) => () => {
     setOpen(false);
     inputRef.current?.focus();
-  }, [inputRef]);
+  };
 
   return {
     model: { open: modelPickerOpen, query: modelPickerQuery, close: closeAndFocus(setModelPickerOpen), setOpen: setModelPickerOpen },

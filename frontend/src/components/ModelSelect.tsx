@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import type { SessionModelEntry } from '../lib/api';
 import { weightedSearch } from '../lib/weightedSearch';
 import { splitModelRef } from '../lib/modelRef';
@@ -34,7 +34,7 @@ export function ModelSelect({ value, onChange, models, modelEntries, ariaLabel =
     return value && !built.entries.some((e) => e.value === value) ? { ...built, entries: [...fromStrings([value], value), ...built.entries] } : built;
   }, [models, modelEntries, value]);
 
-  const toOption = useCallback((e: ModelEntry): SearchSelectOption => ({
+  const toOption = (e: ModelEntry): SearchSelectOption => ({
     value: e.value,
     label: e.value,
     section: rich ? modelSectionOf(e) : undefined,
@@ -42,8 +42,8 @@ export function ModelSelect({ value, onChange, models, modelEntries, ariaLabel =
       <ModelLabel model={e.value}>{splitModelRef(e.value).model}</ModelLabel><ModelBadges entry={e} rich={rich} />
       {multiPlatform && e.platformName && <span className="oc-model-picker-badge oc-model-picker-badge--platform">{e.platformName}</span>}
     </>,
-  }), [rich, multiPlatform]);
-  const options = useMemo(() => [{ value: '', label: defaultLabel }, ...entries.map(toOption)], [defaultLabel, entries, toOption]);
+  });
+  const options = [{ value: '', label: defaultLabel }, ...entries.map(toOption)];
 
   return (
     <SearchSelect

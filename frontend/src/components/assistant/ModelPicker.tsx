@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import type { SessionModelEntry } from '../../lib/api';
 import { ModelLabel } from '../ModelLogo';
 import { PlatformLogo } from '../PlatformBadge';
@@ -40,15 +40,12 @@ export function ModelPicker({
   onClose,
   onBack,
 }: ModelPickerProps) {
-  const { rich: useRich, multiPlatform, entries } = useMemo(
-    () => buildModelEntries(models, modelEntries, currentModel),
-    [modelEntries, models, currentModel],
-  );
+  const { rich: useRich, multiPlatform, entries } = buildModelEntries(models, modelEntries, currentModel);
   const [platform, setPlatform] = useState('all');
-  const platforms = useMemo(() => Array.from(
+  const platforms = Array.from(
     new Map(entries.filter((entry) => entry.platform).map((entry) => [entry.platform, entry.platformName])),
     ([value, label]) => ({ value, label: <><PlatformLogo platform={value} />{label}</> }),
-  ), [entries]);
+  );
   const showTabs = platforms.length > 1;
   const activePlatform = showTabs && platforms.some((tab) => tab.value === platform) ? platform : 'all';
   const visibleEntries = activePlatform === 'all' ? entries : entries.filter((entry) => entry.platform === activePlatform);
@@ -56,10 +53,7 @@ export function ModelPicker({
   // Re-render every second while a cooldown is running so the countdown
   // moves and the badge drops the moment it expires.
   const [, tick] = useReducer((n: number) => n + 1, 0);
-  const cooldownEnd = useMemo(
-    () => Math.max(0, ...entries.map((e) => (e.cooldownUntil ? Date.parse(e.cooldownUntil) || 0 : 0))),
-    [entries],
-  );
+  const cooldownEnd = Math.max(0, ...entries.map((e) => (e.cooldownUntil ? Date.parse(e.cooldownUntil) || 0 : 0)));
   useEffect(() => {
     if (!open || cooldownEnd <= Date.now()) return;
     const id = setInterval(() => {

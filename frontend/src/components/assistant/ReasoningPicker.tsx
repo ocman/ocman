@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { CommandListPicker, type PickerEntryBase } from './CommandListPicker';
 import './ReasoningPicker.css';
 
@@ -30,10 +29,7 @@ export function ReasoningPicker({
   onSelect,
   onClose,
 }: ReasoningPickerProps) {
-  const entries = useMemo<ReasoningEntry[]>(
-    () => [DEFAULT_VALUE, ...options].map((value) => ({ value, label: value || DEFAULT_LABEL })),
-    [options],
-  );
+  const entries: ReasoningEntry[] = [DEFAULT_VALUE, ...options].map((value) => ({ value, label: value || DEFAULT_LABEL }));
 
   if (!open || options.length === 0) return null;
 

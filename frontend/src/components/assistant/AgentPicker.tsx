@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import type { AgentInfo } from '../../lib/api';
 import { agentColor } from '../../lib/agentColor';
 import { CommandListPicker, type PickerEntryBase } from './CommandListPicker';
@@ -92,10 +91,7 @@ export function AgentPicker({
   onSelect,
   onClose,
 }: AgentPickerProps) {
-  const entries = useMemo<PickerEntry[]>(
-    () => buildEntries(agentNames, agents, activeAgent, currentAgent),
-    [agentNames, agents, activeAgent, currentAgent],
-  );
+  const entries: PickerEntry[] = buildEntries(agentNames, agents, activeAgent, currentAgent);
 
   const renderRow = (e: PickerEntry) => (
     <div className="oc-cmd-item-content">

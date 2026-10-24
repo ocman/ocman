@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { markHandledByPrompt, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
 import '../PermissionPrompt.css';
 
@@ -127,7 +127,7 @@ export function PermissionPrompt({
   // reads the live value without re-subscribing. Initialised to 0 and armed
   // in an effect to keep render pure (no Date.now() during render).
   const settleUntilRef = useRef(0);
-  const isSettling = useCallback(() => Date.now() < settleUntilRef.current, []);
+  const isSettling = () => Date.now() < settleUntilRef.current;
   useLayoutEffect(() => {
     stepRef.current = step;
     focusedIdxRef.current = focusedIdx;
@@ -198,12 +198,12 @@ export function PermissionPrompt({
     wrapRef.current?.focus();
   }, [step]);
 
-  const submit = useCallback((reply: Reply) => {
+  const submit = (reply: Reply) => {
     if (disabled) return;
     onReply(reply);
-  }, [disabled, onReply]);
+  };
 
-  const pick = useCallback((reply: Reply) => {
+  const pick = (reply: Reply) => {
     if (disabled) return;
     if (reply === 'always') {
       // Two-step: show a confirmation screen with the patterns that will be
@@ -215,9 +215,9 @@ export function PermissionPrompt({
       return;
     }
     submit(reply);
-  }, [disabled, submit]);
+  };
 
-  const handleChooseKeyDown = useCallback((e: KeyEvent) => {
+  const handleChooseKeyDown = (e: KeyEvent) => {
     if (disabled || wasHandledByPrompt(e)) return;
 
     if (e.key === 'Escape') {
@@ -276,9 +276,9 @@ export function PermissionPrompt({
       if (isSettling() && CHOICES[idx].reply !== 'reject') return;
       pick(CHOICES[idx].reply);
     }
-  }, [disabled, isSettling, pick, submit]);
+  };
 
-  const handleConfirmKeyDown = useCallback((e: KeyEvent) => {
+  const handleConfirmKeyDown = (e: KeyEvent) => {
     if (disabled || wasHandledByPrompt(e)) return;
 
     if (e.key === 'Escape') {
@@ -318,7 +318,7 @@ export function PermissionPrompt({
       // keydown handlers are silently ignored in some browsers).
       setTimeout(() => { targetRef.current?.focus(); }, 0);
     }
-  }, [disabled, isSettling, submit]);
+  };
 
   // Keep stable refs so the window listener always calls the latest handlers
   // regardless of when deps (like onReply) change due to SSE updates.

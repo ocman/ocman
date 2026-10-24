@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './SidebarResizer.css';
 
 // Amount the sidebar grows/shrinks per arrow-key press when the handle
@@ -42,39 +42,33 @@ export function Resizer({ width, setWidth, min, max, defaultWidth, mirrored, ari
   const dragWidthRef = useRef<number | null>(null);
   const sign = mirrored ? -1 : 1;
 
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      // Ignore anything but primary button; still accept touch / pen.
-      if (e.button !== 0 && e.pointerType === 'mouse') return;
-      e.preventDefault();
-      startXRef.current = e.clientX;
-      startWidthRef.current = width;
-      dragWidthRef.current = null;
-      setDragging(true);
-      // Capture so we keep getting move events even if the pointer
-      // leaves the handle (e.g. during a fast drag).
-      e.currentTarget.setPointerCapture(e.pointerId);
-    },
-    [width],
-  );
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Ignore anything but primary button; still accept touch / pen.
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.preventDefault();
+    startXRef.current = e.clientX;
+    startWidthRef.current = width;
+    dragWidthRef.current = null;
+    setDragging(true);
+    // Capture so we keep getting move events even if the pointer
+    // leaves the handle (e.g. during a fast drag).
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
 
   // The drag only previews the width on the sized panel (the handle's
   // parent). Writing the persisted store per pointermove would hit
   // localStorage and re-render the whole session page on every event,
   // so the store gets the final width once, on release.
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging) return;
-      const delta = e.clientX - startXRef.current;
-      const next = Math.min(max, Math.max(min, startWidthRef.current + sign * delta));
-      dragWidthRef.current = next;
-      const panel = e.currentTarget.parentElement;
-      if (panel) panel.style.width = `${next}px`;
-    },
-    [dragging, sign, min, max],
-  );
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    const delta = e.clientX - startXRef.current;
+    const next = Math.min(max, Math.max(min, startWidthRef.current + sign * delta));
+    dragWidthRef.current = next;
+    const panel = e.currentTarget.parentElement;
+    if (panel) panel.style.width = `${next}px`;
+  };
 
-  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragging) return;
     setDragging(false);
     if (dragWidthRef.current !== null) setWidth(dragWidthRef.current);
@@ -84,7 +78,7 @@ export function Resizer({ width, setWidth, min, max, defaultWidth, mirrored, ari
     } catch {
       // ignore — capture may already be lost
     }
-  }, [dragging, setWidth]);
+  };
 
   // Toggle a body class while dragging so we can force the cursor and
   // kill text selection across the whole page (not just the handle).
@@ -96,33 +90,30 @@ export function Resizer({ width, setWidth, min, max, defaultWidth, mirrored, ari
     };
   }, [dragging]);
 
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      switch (e.key) {
-        case 'ArrowLeft':
-          e.preventDefault();
-          setWidth(width - sign * KEYBOARD_STEP);
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          setWidth(width + sign * KEYBOARD_STEP);
-          break;
-        case 'Home':
-          e.preventDefault();
-          setWidth(min);
-          break;
-        case 'End':
-          e.preventDefault();
-          setWidth(max);
-          break;
-      }
-    },
-    [setWidth, width, sign, min, max],
-  );
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        setWidth(width - sign * KEYBOARD_STEP);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        setWidth(width + sign * KEYBOARD_STEP);
+        break;
+      case 'Home':
+        e.preventDefault();
+        setWidth(min);
+        break;
+      case 'End':
+        e.preventDefault();
+        setWidth(max);
+        break;
+    }
+  };
 
-  const onDoubleClick = useCallback(() => {
+  const onDoubleClick = () => {
     setWidth(defaultWidth);
-  }, [setWidth, defaultWidth]);
+  };
 
   return (
     <div

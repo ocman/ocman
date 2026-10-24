@@ -1,7 +1,7 @@
 // Plan graph thumbnail for inline Factory cards. The thumbnail is plain SVG so it
 // stays phrasing content inside a markdown paragraph. Nodes open task details;
 // the expand button opens the full ReactFlow graph with pan and zoom.
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { EpicGraph } from '../pages/EpicGraph';
 import { IssueDrawer } from '../pages/FactoryIssues';
@@ -16,7 +16,7 @@ const PAD = 20;
 export function FactoryPlanGraph({ issues }: { issues: FactoryIssue[] }) {
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<FactoryIssue>();
-  const { nodes, edges } = useMemo(() => factoryGraphModel(issues, true), [issues]);
+  const { nodes, edges } = factoryGraphModel(issues, true);
   if (!nodes.length) return null;
   const at = new Map(nodes.map((node) => [node.id, node]));
   const minX = Math.min(...nodes.map((node) => node.x)) - PAD;

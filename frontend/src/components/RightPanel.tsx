@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useState } from 'react';
 import './SessionChangesSidebar.css';
 import './RightPanel.css';
 import {
@@ -122,28 +122,20 @@ export function RightPanel({
   const upstreamTarget = useProjectTarget(directory, session);
   const upstreamsResult = useUpstreams(visible && openTabs.includes('upstream') ? upstreamTarget.directory : undefined, upstreamTarget.remoteId);
   const pluginPanesResult = usePluginPanes(visible && session ? session.remoteId || 'local' : undefined, documentVisible);
-  const pluginPanes = useMemo(() => pluginPanesResult.isError ? [] : pluginPanesResult.data ?? [], [pluginPanesResult.data, pluginPanesResult.isError]);
-  const tabLabels = useMemo(() => ({ ...TAB_LABELS, ...Object.fromEntries(pluginPanes.map((pane) => [pluginPaneTab(pane), pane.pane.label])) }), [pluginPanes]);
+  const pluginPanes = pluginPanesResult.isError ? [] : pluginPanesResult.data ?? [];
+  const tabLabels = { ...TAB_LABELS, ...Object.fromEntries(pluginPanes.map((pane) => [pluginPaneTab(pane), pane.pane.label])) };
 
   // Reconcile the persisted order against the known tab set: this
   // tolerates older persisted state that's missing newer tabs.
-  const allTabOrder = useMemo(
-    () => reconcileTabOrder(persistedOrder, pluginPanes.map(pluginPaneTab)),
-    [persistedOrder, pluginPanes],
-  );
+  const allTabOrder = reconcileTabOrder(persistedOrder, pluginPanes.map(pluginPaneTab));
   const stripOrder = allTabOrder;
 
   // Render panes in the user-defined strip order (stripOrder),
   // filtered down to the panes currently open. Sorting follows the
   // strip so dragging an icon visually moves the corresponding pane
   // alongside it.
-  const orderedOpenTabs = useMemo(
-    () => {
-      const tabs = stripOrder.filter((t) => openTabs.includes(t));
-      return phone ? tabs.slice(0, 1) : tabs;
-    },
-    [stripOrder, openTabs, phone],
-  );
+  const stripOpenTabs = stripOrder.filter((t) => openTabs.includes(t));
+  const orderedOpenTabs = phone ? stripOpenTabs.slice(0, 1) : stripOpenTabs;
   const collapsed = !phone && orderedOpenTabs.length === 0 && !pluginPanesResult.isError;
   const handleToggleTab = (tab: ChangesSidebarTab) => {
     if (!phone) { toggleTab(tab); return; }
@@ -155,16 +147,13 @@ export function RightPanel({
   // Normalise the size fractions so they sum to 1 across the ordered
   // open tabs. Tabs without a stored size get an even share of
   // whatever's left after the explicit sizes are honoured.
-  const normalisedSizes = useMemo(
-    () => normaliseSizes(orderedOpenTabs, sizes),
-    [orderedOpenTabs, sizes],
-  );
+  const normalisedSizes = normaliseSizes(orderedOpenTabs, sizes);
 
   // Stable handler factory for the per-pair resize.
-  const handlePaneResize = useCallback((idx: number, beforeSize: number, afterSize: number) => {
+  const handlePaneResize = (idx: number, beforeSize: number, afterSize: number) => {
     setTabSize(orderedOpenTabs[idx], beforeSize);
     setTabSize(orderedOpenTabs[idx + 1], afterSize);
-  }, [orderedOpenTabs, setTabSize]);
+  };
 
   // dnd-kit sensors: split Mouse + Touch sensors (instead of
   // PointerSensor) because PointerSensor on a <button> tends to
@@ -183,26 +172,23 @@ export function RightPanel({
   // can show a floating preview that isn't clipped by the strip.
   const [draggingTab, setDraggingTab] = useState<ChangesSidebarTab | null>(null);
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
+  const handleDragStart = (event: DragStartEvent) => {
     setDraggingTab(event.active.id as ChangesSidebarTab);
-  }, []);
+  };
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      setDraggingTab(null);
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
-      const from = allTabOrder.indexOf(active.id as ChangesSidebarTab);
-      const to = allTabOrder.indexOf(over.id as ChangesSidebarTab);
-      if (from === -1 || to === -1) return;
-      setTabOrder(mergeVisibleTabOrder(persistedOrder, arrayMove(allTabOrder, from, to)));
-    },
-    [allTabOrder, persistedOrder, setTabOrder],
-  );
-
-  const handleDragCancel = useCallback(() => {
+  const handleDragEnd = (event: DragEndEvent) => {
     setDraggingTab(null);
-  }, []);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const from = allTabOrder.indexOf(active.id as ChangesSidebarTab);
+    const to = allTabOrder.indexOf(over.id as ChangesSidebarTab);
+    if (from === -1 || to === -1) return;
+    setTabOrder(mergeVisibleTabOrder(persistedOrder, arrayMove(allTabOrder, from, to)));
+  };
+
+  const handleDragCancel = () => {
+    setDraggingTab(null);
+  };
 
   // Strip is rendered identically in every mode — it's the panel's
   // right edge. Active tabs are highlighted; clicking an active tab

@@ -80,7 +80,7 @@ function PreviewCI({ preview, onReappear }: { preview: PreviewResult; onReappear
 
 function PreviewPRStatus({ preview, owner, visible }: { preview: PreviewResult; owner: string; visible: boolean }) {
   const url = preview.url!;
-  const loadStatus = useCallback((signal: AbortSignal, refresh: boolean) => fetchPreviewPRStatus(url, owner, signal, refresh), [url, owner]);
+  const loadStatus = (signal: AbortSignal, refresh: boolean) => fetchPreviewPRStatus(url, owner, signal, refresh);
   const status = preview.status === 'Merged' ? 'merged' : preview.status === 'Closed' ? 'closed' : preview.status === 'Draft' ? 'draft' : 'open';
   const supported = preview.provider === 'github' || preview.provider.startsWith('forgejo:');
   const { mergeable, approved } = usePRMergeability({ host: new URL(url).host, repo: preview.id.split('#')[0], number: Number(preview.id.split('#')[1]), headSha: preview.headSha, updatedAt: preview.updatedAt ?? '', status }, '', owner, '', visible && supported, loadStatus, true);

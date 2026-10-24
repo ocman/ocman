@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './AssistantThread.css';
 import {
   ThreadPrimitive,
@@ -634,7 +634,7 @@ export function AssistantThread({
   // Alt+L past the last user message scrolls to the very bottom of the
   // viewport so the most recent assistant response is visible — otherwise we'd
   // re-snap to the last user message and leave the response hidden below.
-  const jumpToUserMessage = useCallback((direction: 'prev' | 'next') => {
+  const jumpToUserMessage = (direction: 'prev' | 'next') => {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
@@ -680,25 +680,25 @@ export function AssistantThread({
     const target = userMsgs[targetIndex];
     const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
     viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'auto' });
-  }, []);
+  };
 
-  const prevUserMessageShortcut = useMemo(() => ({
+  const prevUserMessageShortcut = {
     id: 'session.prev-user-message',
     scope: 'session' as const,
     keys: { code: 'KeyH', alt: true },
     description: 'Jump to previous user message',
     runInEditable: true,
     handler: () => jumpToUserMessage('prev'),
-  }), [jumpToUserMessage]);
+  };
 
-  const nextUserMessageShortcut = useMemo(() => ({
+  const nextUserMessageShortcut = {
     id: 'session.next-user-message',
     scope: 'session' as const,
     keys: { code: 'KeyL', alt: true },
     description: 'Jump to next user message',
     runInEditable: true,
     handler: () => jumpToUserMessage('next'),
-  }), [jumpToUserMessage]);
+  };
 
   useShortcut(prevUserMessageShortcut);
   useShortcut(nextUserMessageShortcut);
@@ -706,9 +706,9 @@ export function AssistantThread({
   // Merge our viewportRef with the library's auto-scroll ref callback.
   // ThreadPrimitive.Viewport provides auto-scroll, isAtBottom tracking,
   // and content-resize handling out of the box.
-  const setViewportRef = useCallback((el: HTMLDivElement | null) => {
+  const setViewportRef = (el: HTMLDivElement | null) => {
     (viewportRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-  }, []);
+  };
 
   useEffect(() => {
     if (!scrollToMessageId || !scrollToMessageTick) return;
@@ -764,7 +764,7 @@ export function AssistantThread({
   // (positioned absolute inside .oc-thread) can float just above it.
   // RAF-coalesced to avoid layout thrash when the textarea resizes on
   // every keystroke.
-  const footerRef = useCallback((el: HTMLDivElement | null) => {
+  const footerRef = (el: HTMLDivElement | null) => {
     if (!el) return;
     let rafId = 0;
     const update = () => {
@@ -782,12 +782,13 @@ export function AssistantThread({
       ro.disconnect();
       cancelAnimationFrame(rafId);
     };
-  }, []);
+  };
 
-  const bookmarkContextValue = useMemo(() => ({
+  // eslint-disable-next-line react/jsx-no-constructed-context-values -- React Compiler memoizes bookmarkContextValue.
+  const bookmarkContextValue = {
     bookmarkedIds: bookmarkedMessageIds ?? EMPTY_BOOKMARK_IDS,
     onToggleBookmark: onToggleMessageBookmark,
-  }), [bookmarkedMessageIds, onToggleMessageBookmark]);
+  };
 
   return (
     <div ref={threadRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryProjectRequestGate } from '../lib/api';
 import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useFactoryProposals, useMaterializeFactoryPlan, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useWorkEpic } from '../lib/queries';
 import { Button, TextField } from './Control';
@@ -22,7 +22,7 @@ function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate 
   const proposals = useFactoryProposals(epicID);
   // The gate decides one exact revision; draw that one, not whatever is newest.
   const proposal = (proposals.data ?? (epic.proposal ? [epic.proposal] : [])).find((candidate) => candidate.revision === gate.proposalRevision);
-  const planIssues = useMemo(() => proposal && proposalIssues(proposal.manifest), [proposal]);
+  const planIssues = proposal && proposalIssues(proposal.manifest);
   return <div className="oc-factory-action-issue">
     <span>Plan revision {gate.proposalRevision}. Approval starts implementation.</span>
     {planIssues && <FactoryPlanGraph issues={planIssues} />}
