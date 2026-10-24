@@ -747,15 +747,17 @@ func TestFormatMetadataSection(t *testing.T) {
 }
 
 // TestSsePermissionTeeDispatch verifies that the tee correctly parses
-// permission.asked events in both the OpenCode envelope shape
-// ({type, properties}) and the legacy flat shape ({id, permission, ...}).
+// permission.asked and permission.replied events in both the OpenCode
+// envelope shape ({type, properties}) and the legacy flat shape. Replies
+// use the OpenCode `requestID` field as the permission ID. Both route by
+// the payload's sessionID, NOT the connection's owning session.
 func TestSsePermissionTeeDispatch(t *testing.T) {
 	tests := []struct {
 		name          string
 		sseData       string // raw SSE bytes written to the tee
+		wantKind      string // "asked", "replied", or "" when nothing fires
 		wantID        string
 		wantSessionID string
-		wantFired     bool
 		wantMetadata  map[string]any // expected metadata propagated to onPermission
 	}{
 		{
@@ -770,7 +772,7 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 				"\n\n",
 			wantID:        "perm-0",
 			wantSessionID: "ses-1",
-			wantFired:     true,
+			wantKind:      "asked",
 			wantMetadata:  map[string]any{"command": "rm bla"},
 		},
 		{
@@ -780,7 +782,7 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 				"\n\n",
 			wantID:        "perm-1",
 			wantSessionID: "ses-1",
-			wantFired:     true,
+			wantKind:      "asked",
 		},
 		{
 			name: "flat shape (legacy)",
@@ -789,7 +791,7 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 				"\n\n",
 			wantID:        "perm-2",
 			wantSessionID: "ses-1",
-			wantFired:     true,
+			wantKind:      "asked",
 			wantMetadata:  map[string]any{"path": "/tmp/x"},
 		},
 		{
@@ -805,7 +807,7 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 				"\n\n",
 			wantID:        "perm-cross",
 			wantSessionID: "ses-B",
-			wantFired:     true,
+			wantKind:      "asked",
 			wantMetadata:  map[string]any{"command": "ls"},
 		},
 		{
@@ -813,175 +815,114 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 			sseData: "event: permission.asked\ndata: " +
 				`{"type":"permission.asked","properties":{"permission":"Read file","sessionID":"ses-1"}}` +
 				"\n\n",
-			wantFired: false,
 		},
 		{
 			name: "missing sessionID — should not fire",
 			sseData: "event: permission.asked\ndata: " +
 				`{"type":"permission.asked","properties":{"id":"perm-x","permission":"Read file"}}` +
 				"\n\n",
-			wantFired: false,
 		},
 		{
 			name: "different event type (named channel) — should not fire",
 			sseData: "event: message.created\ndata: " +
 				`{"type":"message.created","properties":{"id":"msg-1"}}` +
 				"\n\n",
-			wantFired: false,
 		},
 		{
 			name: "different event type (default channel) — should not fire",
 			sseData: "data: " +
 				`{"id":"evt_2","type":"message.created","properties":{"id":"msg-1"}}` +
 				"\n\n",
-			wantFired: false,
 		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var gotID, gotSessionID string
-			var gotMetadata map[string]any
-			fired := make(chan struct{}, 1)
-
-			tee := &Tee{
-				W:     &bytes.Buffer{},
-				Flush: nil,
-				OnPermission: func(sessionID, permissionID, _ string, _ []string, metadata map[string]any) {
-					gotSessionID = sessionID
-					gotID = permissionID
-					gotMetadata = metadata
-					select {
-					case fired <- struct{}{}:
-					default:
-					}
-				},
-			}
-
-			// Write the SSE bytes via Write so drain runs inline (as it
-			// would in production). onPermission is invoked inline from
-			// dispatchEvent — callers are responsible for keeping it cheap.
-			if _, err := tee.Write([]byte(tc.sseData)); err != nil {
-				t.Fatalf("Write: %v", err)
-			}
-
-			if tc.wantFired {
-				select {
-				case <-fired:
-				case <-time.After(time.Second):
-					t.Fatalf("onPermission was not called within 1s")
-				}
-				if gotID != tc.wantID {
-					t.Errorf("onPermission got permissionID=%q, want %q", gotID, tc.wantID)
-				}
-				if gotSessionID != tc.wantSessionID {
-					t.Errorf("onPermission got sessionID=%q, want %q", gotSessionID, tc.wantSessionID)
-				}
-				if tc.wantMetadata != nil {
-					if !reflect.DeepEqual(gotMetadata, tc.wantMetadata) {
-						t.Errorf("onPermission got metadata=%v, want %v", gotMetadata, tc.wantMetadata)
-					}
-				}
-			} else {
-				select {
-				case <-fired:
-					t.Errorf("onPermission fired unexpectedly with %q", gotID)
-				case <-time.After(50 * time.Millisecond):
-				}
-			}
-		})
-	}
-}
-
-// TestSsePermissionTeeRepliedDispatch verifies the tee fires
-// onPermissionReplied for permission.replied events using the OpenCode
-// `requestID` field as the permission ID and the payload's sessionID
-// (NOT the connection's owning session) for routing.
-func TestSsePermissionTeeRepliedDispatch(t *testing.T) {
-	tests := []struct {
-		name          string
-		sseData       string
-		wantID        string
-		wantSessionID string
-		wantFire      bool
-	}{
 		{
-			name: "default channel (OpenCode current)",
+			name: "replied default channel (OpenCode current)",
 			sseData: "data: " +
 				`{"id":"evt_1","type":"permission.replied","properties":{"sessionID":"ses-1","requestID":"perm-1","reply":"once"}}` +
 				"\n\n",
+			wantKind:      "replied",
 			wantID:        "perm-1",
 			wantSessionID: "ses-1",
-			wantFire:      true,
 		},
 		{
-			name: "named channel",
+			name: "replied named channel",
 			sseData: "event: permission.replied\ndata: " +
 				`{"type":"permission.replied","properties":{"sessionID":"ses-1","requestID":"perm-2","reply":"reject"}}` +
 				"\n\n",
+			wantKind:      "replied",
 			wantID:        "perm-2",
 			wantSessionID: "ses-1",
-			wantFire:      true,
 		},
 		{
 			name: "cross-session reply uses payload sessionID",
 			sseData: "data: " +
 				`{"type":"permission.replied","properties":{"sessionID":"ses-B","requestID":"perm-cross","reply":"once"}}` +
 				"\n\n",
+			wantKind:      "replied",
 			wantID:        "perm-cross",
 			wantSessionID: "ses-B",
-			wantFire:      true,
 		},
 		{
-			name: "flat shape fallback (id instead of requestID)",
+			name: "replied flat shape fallback (id instead of requestID)",
 			sseData: "data: " +
 				`{"type":"permission.replied","id":"perm-3","sessionID":"ses-1","reply":"always"}` +
 				"\n\n",
+			wantKind:      "replied",
 			wantID:        "perm-3",
 			wantSessionID: "ses-1",
-			wantFire:      true,
 		},
 		{
-			name: "missing requestID — should not fire",
+			name: "replied missing requestID — should not fire",
 			sseData: "data: " +
 				`{"type":"permission.replied","properties":{"sessionID":"ses-1","reply":"once"}}` +
 				"\n\n",
-			wantFire: false,
 		},
 		{
-			name: "missing sessionID — should not fire",
+			name: "replied missing sessionID — should not fire",
 			sseData: "data: " +
 				`{"type":"permission.replied","properties":{"requestID":"perm-x","reply":"once"}}` +
 				"\n\n",
-			wantFire: false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var gotID, gotSessionID string
+			var gotKind, gotID, gotSessionID string
+			var gotMetadata map[string]any
 			fired := make(chan struct{}, 1)
+			record := func(kind, sessionID, permissionID string, metadata map[string]any) {
+				gotKind, gotSessionID, gotID, gotMetadata = kind, sessionID, permissionID, metadata
+				select {
+				case fired <- struct{}{}:
+				default:
+				}
+			}
 
 			tee := &Tee{
 				W:     &bytes.Buffer{},
 				Flush: nil,
+				OnPermission: func(sessionID, permissionID, _ string, _ []string, metadata map[string]any) {
+					record("asked", sessionID, permissionID, metadata)
+				},
 				OnPermissionReplied: func(sessionID, permissionID, _ string) {
-					gotSessionID = sessionID
-					gotID = permissionID
-					select {
-					case fired <- struct{}{}:
-					default:
-					}
+					record("replied", sessionID, permissionID, nil)
 				},
 			}
+
+			// Write the SSE bytes via Write so drain runs inline (as it
+			// would in production). The callbacks are invoked inline from
+			// dispatchEvent — callers are responsible for keeping them cheap.
 			if _, err := tee.Write([]byte(tc.sseData)); err != nil {
 				t.Fatalf("Write: %v", err)
 			}
-			if tc.wantFire {
+
+			if tc.wantKind != "" {
 				select {
 				case <-fired:
 				case <-time.After(time.Second):
-					t.Fatalf("onPermissionReplied was not called within 1s")
+					t.Fatalf("%s callback was not called within 1s", tc.wantKind)
+				}
+				if gotKind != tc.wantKind {
+					t.Errorf("fired %s callback, want %s", gotKind, tc.wantKind)
 				}
 				if gotID != tc.wantID {
 					t.Errorf("got permissionID=%q, want %q", gotID, tc.wantID)
@@ -989,10 +930,15 @@ func TestSsePermissionTeeRepliedDispatch(t *testing.T) {
 				if gotSessionID != tc.wantSessionID {
 					t.Errorf("got sessionID=%q, want %q", gotSessionID, tc.wantSessionID)
 				}
+				if tc.wantMetadata != nil {
+					if !reflect.DeepEqual(gotMetadata, tc.wantMetadata) {
+						t.Errorf("got metadata=%v, want %v", gotMetadata, tc.wantMetadata)
+					}
+				}
 			} else {
 				select {
 				case <-fired:
-					t.Errorf("onPermissionReplied fired unexpectedly with %q", gotID)
+					t.Errorf("%s callback fired unexpectedly with %q", gotKind, gotID)
 				case <-time.After(50 * time.Millisecond):
 				}
 			}
@@ -1412,78 +1358,28 @@ func TestBackgroundAutoApprove_SafeFilepathCacheHit(t *testing.T) {
 	}
 }
 
-// TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession is
-// the per-session-scoping regression: caching `pnpm test` as safe in
-// session A must NOT auto-approve the same raw command in session B.
-// Cache scope is per-session by design.
-//
-// We exercise this by seeding session A's cache with a "safe" entry,
-// then calling backgroundAutoApprove for session B. With s.judge=nil
-// and no session-directory resolver, the function should fall through
-// past the cache check (no hit) and attempt the normal judge path; the
-// directory lookup fails because deps.SessionDir is nil, so the function
-// leaves the permission for human review before touching the nil judge.
-// Observable: no RespondPermission call.
-func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.T) {
-	const command = "pnpm test"
-
-	respondCalls := 0
-	fp := &fakePlatform{
-		id: "opencode",
-		respondPermissionFn: func(req platforms.RespondPermissionRequest) error {
-			respondCalls++
-			return nil
-		},
-	}
-
-	s := &Service{
-		sseSessions:      make(map[string]map[*Sink]struct{}),
-		autoApprove:      make(map[string]*autoApproveStatus),
-		deps:             Deps{DefaultEnabled: true},
-		safeCommandCache: make(map[string]map[string]string),
-	}
-
-	// Cache hit exists for session A only.
-	hash := permissionHash("Bash command", nil, map[string]any{"command": command})
-	s.recordSafeCommandVerdict("ses-A", hash, "Read-only.")
-
-	// Run for session B — different sessionID, same hash.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	s.backgroundAutoApprove(
-		ctx,
-		platforms.ID("opencode"),
-		fp,
-		"ses-B",
-		"perm-B",
-		askedPermission{platformID: "opencode", permission: "Bash command", metadata: map[string]any{"command": command}, askedAt: 123},
-	)
-
-	if respondCalls != 0 {
-		t.Errorf("session B should NOT have been auto-approved from session A's cache; RespondPermission called %d times", respondCalls)
-	}
-	if verdict, ok := lookupJudged(s, "ses-B", "perm-B"); !ok || verdict != verdictUnsafe {
-		t.Errorf("session B verdict = (%q, %v), want unsafe", verdict, ok)
-	}
-	if s.DeferPermissionNotification("ses-B", "perm-B") {
-		t.Error("session B permission should be released for human review")
-	}
-}
-
-// TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentInput covers a
-// cached safe verdict being replayed for a request the judge never saw.
+// TestBackgroundAutoApprove_SafeCommandCacheMiss covers a cached safe
+// verdict being replayed for a request the judge never saw. Cache scope is
+// per-session by design, so the same command in another session misses.
 // Claude passes the whole tool input as metadata, so the same command with
 // dangerouslyDisableSandbox, or with other patterns, is a different request.
-func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentInput(t *testing.T) {
+//
+// With s.judge=nil and no session-directory resolver, a miss falls through
+// to the normal judge path; the directory lookup fails because
+// deps.SessionDir is nil, so the permission is left for human review
+// before the nil judge is touched. Observable: no RespondPermission call.
+func TestBackgroundAutoApprove_SafeCommandCacheMiss(t *testing.T) {
 	judged := map[string]any{"command": "ls"}
 	tests := []struct {
-		name     string
-		patterns []string
-		metadata map[string]any
+		name          string
+		cachedSession string
+		patterns      []string
+		metadata      map[string]any
 	}{
-		{"extra tool input", nil, map[string]any{"command": "ls", "dangerouslyDisableSandbox": true}},
-		{"different patterns", []string{"ls /"}, map[string]any{"command": "ls"}},
-		{"nested input differs", nil, map[string]any{"command": "ls", "env": map[string]any{"A": "1"}}},
+		{"different session", "other-ses", nil, map[string]any{"command": "ls"}},
+		{"extra tool input", "ses", nil, map[string]any{"command": "ls", "dangerouslyDisableSandbox": true}},
+		{"different patterns", "ses", []string{"ls /"}, map[string]any{"command": "ls"}},
+		{"nested input differs", "ses", nil, map[string]any{"command": "ls", "env": map[string]any{"A": "1"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1499,14 +1395,20 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentInput(t *testing.T)
 				safeCommandCache: make(map[string]map[string]string),
 			}
 			// The key the judge path records after a safe verdict.
-			s.recordSafeCommandVerdict("ses", permissionHash("Bash", nil, judged), "Read-only.")
+			s.recordSafeCommandVerdict(tt.cachedSession, permissionHash("Bash", nil, judged), "Read-only.")
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			s.backgroundAutoApprove(ctx, "claudecode", fp, "ses", "perm", askedPermission{
 				platformID: "claudecode", permission: "Bash", patterns: tt.patterns, metadata: tt.metadata, askedAt: 1,
 			})
 			if respondCalls != 0 {
-				t.Fatalf("approved from a cached verdict for different input; RespondPermission called %d times", respondCalls)
+				t.Fatalf("approved from a cached verdict for a different request; RespondPermission called %d times", respondCalls)
+			}
+			if verdict, ok := lookupJudged(s, "ses", "perm"); !ok || verdict != verdictUnsafe {
+				t.Errorf("verdict = (%q, %v), want unsafe", verdict, ok)
+			}
+			if s.DeferPermissionNotification("ses", "perm") {
+				t.Error("permission should be released for human review")
 			}
 		})
 	}

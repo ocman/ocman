@@ -40,13 +40,7 @@ func TestDispatchFailsUnusableClaimSnapshot(t *testing.T) {
 			t.Cleanup(func() { _ = db.Close() })
 			planner := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 			epic := createPouredWorkEpic(t, planner, "Unusable claim")
-			proposal, err := planner.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := planner.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-				t.Fatal(err)
-			}
+			approveProposal(t, planner, SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 			store := &launchInterleavingStore{DB: db, afterClaim: func(attempt *model.FactoryAttempt) {
 				if missing {
 					attempt.LaunchIssues = nil
@@ -98,13 +92,7 @@ func TestDispatchLaunchesInputsFromTheClaimedRevision(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	planner := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
 	epic := createPouredWorkEpic(t, planner, "Consistent launch")
-	proposal, err := planner.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", Title: "Original title", Description: "Original requirements", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := planner.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
+	approveProposal(t, planner, SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, planner, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", Title: "Original title", Description: "Original requirements", AcceptanceCriteria: []string{"done"}}}}})
 	work := pouredIssueID(t, planner, epic.ID, "implementation")
 	store := &launchInterleavingStore{DB: db}
 	var approved PlanGate

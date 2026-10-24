@@ -29,16 +29,10 @@ func TestDispatchHandsOffCheckpointedRecovery(t *testing.T) {
 			svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			epic := createPouredWorkEpic(t, svc, "Paused acceptance")
 			mol := pouredIssueID(t, svc, epic.ID, "mol")
-			proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: mol, Project: "/repo", Nodes: []ManifestNode{
+			approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: mol, Project: "/repo", Nodes: []ManifestNode{
 				{Key: "acceptance", Type: "implementation", Requirement: "required", Title: "Acceptance", AcceptanceCriteria: []string{"passes"}},
 				{Key: "prerequisite", Type: "implementation", Requirement: "required", Title: "Prerequisite", AcceptanceCriteria: []string{"passes"}},
 			}}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-				t.Fatal(err)
-			}
 			if len(launcher.calls) != 1 {
 				t.Fatalf("initial launches: %#v", launcher.calls)
 			}

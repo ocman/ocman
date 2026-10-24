@@ -3,6 +3,7 @@ package autoapprove
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -38,28 +39,13 @@ func newRecordingWatcher(t *testing.T) (*autoApproveWatcher, *dirtyRecorder) {
 	return w, rec
 }
 
-// TestHandleSessionChangedMarksEveryUpdateDirty pins that dirty marking
-// is not gated on the first-sighting dedup: the first session.updated
-// says "a session appeared", every later one says "this session's row
-// changed", and the snapshot needs both.
-func TestHandleSessionChangedMarksEveryUpdateDirty(t *testing.T) {
-	w, rec := newRecordingWatcher(t)
-
-	w.handleSessionChanged(t.Context(), "")
-	w.handleSessionChanged(t.Context(), "ses-1")
-	w.handleSessionChanged(t.Context(), "ses-1")
-	w.handleSessionChanged(t.Context(), "ses-2")
-
-	want := []string{"ses-1", "ses-1", "ses-2"}
-	if got := rec.sortedIDs(); len(got) != len(want) {
-		t.Fatalf("dirty marks = %v, want %v (every update, empty id ignored)", got, want)
-	}
-}
-
-// TestHandleSessionChangedBroadcastUnchanged pins that adding dirty
-// marking did not change what the watcher broadcasts: still exactly one
-// broadcast per first-seen session.
-func TestHandleSessionChangedBroadcastUnchanged(t *testing.T) {
+// TestHandleSessionChangedDedup pins that session.updated handling
+// records and broadcasts only the first sighting of a session ID (so
+// per-turn/token updates don't repeatedly bust the cache), while dirty
+// marking is not gated on that dedup: the first update says "a session
+// appeared", every later one says "this session's row changed", and the
+// snapshot needs both. An empty ID is ignored throughout.
+func TestHandleSessionChangedDedup(t *testing.T) {
 	var mu sync.Mutex
 	var broadcasts []string
 	svc := &Service{}
@@ -73,17 +59,26 @@ func TestHandleSessionChangedBroadcastUnchanged(t *testing.T) {
 	w := newAutoApproveWatcher(svc)
 	w.markSessionDirty = rec.markSession
 
+	w.handleSessionChanged(t.Context(), "")
 	w.handleSessionChanged(t.Context(), "ses-1")
 	w.handleSessionChanged(t.Context(), "ses-1")
 	w.handleSessionChanged(t.Context(), "ses-2")
 
+	w.seenMu.Lock()
+	_, seen1 := w.seenSessions["ses-1"]
+	_, seen2 := w.seenSessions["ses-2"]
+	seen := len(w.seenSessions)
+	w.seenMu.Unlock()
+	if seen != 2 || !seen1 || !seen2 {
+		t.Fatalf("seen sessions = %v, want ses-1 and ses-2 only", w.seenSessions)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(broadcasts) != 2 || broadcasts[0] != "ses-1" || broadcasts[1] != "ses-2" {
 		t.Fatalf("broadcasts = %v, want one per first-seen session", broadcasts)
 	}
-	if got := len(rec.sortedIDs()); got != 3 {
-		t.Errorf("dirty marks = %d, want 3 (marking is independent of the broadcast dedup)", got)
+	if got, want := rec.sortedIDs(), []string{"ses-1", "ses-1", "ses-2"}; !slices.Equal(got, want) {
+		t.Fatalf("dirty marks = %v, want %v (every update, empty id ignored)", got, want)
 	}
 }
 

@@ -22,16 +22,10 @@ func TestAmendmentCannotDeliverBeforeFreshVerificationWithoutReconciliation(t *t
 			if err != nil {
 				t.Fatal(err)
 			}
-			proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+			approveProposal(t, svc, SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
 				{Key: "work", Title: "Required", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}},
 				{Key: "optional", Title: "Optional", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}},
 			}}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-				t.Fatal(err)
-			}
 			issues, err := svc.ListIssues(t.Context(), epic.ID)
 			if err != nil {
 				t.Fatal(err)

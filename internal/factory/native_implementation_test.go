@@ -99,13 +99,7 @@ func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 			svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			epic := createPouredWorkEpic(t, svc, "Delivery admission")
 			mol := pouredIssueID(t, svc, epic.ID, "mol")
-			proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: mol, Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-				t.Fatal(err)
-			}
+			approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: mol, Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 			first := launcher.calls[0]
 			if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "first", ""); err != nil {
 				t.Fatal(err)
@@ -208,20 +202,10 @@ func TestCheckpointFlowDeliversOnlyAfterImplementation(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
-	epic := createPouredWorkEpic(t, svc, "Checkpoint delivery")
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+	epic := approvedEpic(t, svc, "Checkpoint delivery", []ManifestNode{
 		{Key: "first", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}},
 		{Key: "second", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, DependsOn: []string{"first"}},
-	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Materialize(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	}...)
 	first := launcher.calls[0]
 	if first.Delivery {
 		t.Fatal("delivery started before implementation")
@@ -409,17 +393,11 @@ func TestTwoProjectFlowWaitsForSDKMergeAndBothDeliveries(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/app", Nodes: []ManifestNode{
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/app", Nodes: []ManifestNode{
 		{Key: "sdk", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/sdk"},
 		{Key: "sdk-delivery", Type: "delivery", Requirement: "required", Project: "/sdk"},
 		{Key: "app", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/app"},
 	}, Edges: []ManifestEdge{{From: "app", To: "sdk-delivery", Type: "merge_gated"}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
 	if len(launcher.calls) != 1 || launcher.calls[0].Repository != "/sdk" || launcher.calls[0].Delivery {
 		t.Fatalf("first launch = %#v", launcher.calls)
 	}
@@ -634,17 +612,7 @@ func TestNativeAuthorityEscalationIsOneTimeAndDoesNotWidenProfile(t *testing.T) 
 	launcher := &fakeImplementationLauncher{store: db}
 	store := &flakyAuthorityStore{DB: db}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
-	epic := createPouredWorkEpic(t, svc, "authority")
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.Materialize(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	epic := approvedEpic(t, svc, "authority")
 	if err = svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -819,13 +787,7 @@ func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	for _, goal := range []string{"First", "Second"} {
 		epic := createPouredWorkEpic(t, svc, goal)
-		proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-			t.Fatal(err)
-		}
+		approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 		if _, err := db.MaterializeFactoryPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization"), "factory-materialize/v1", time.Now()); err != nil {
 			t.Fatal(err)
 		}
@@ -899,13 +861,7 @@ func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
 	if err := svc.SetEpicPaused(t.Context(), epic.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if _, err := db.MaterializeFactoryPlan(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization"), "factory-materialize/v1", time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -954,16 +910,7 @@ func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	for _, goal := range []string{"First", "Second"} {
 		epic := createPouredWorkEpic(t, svc, goal)
-		proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := svc.Materialize(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-			t.Fatal(err)
-		}
+		approvePlan(t, svc, epic.ID)
 	}
 	attempts, err := db.ListFactoryAttempts(t.Context(), "")
 	if err != nil || len(attempts) != 1 {
@@ -1009,13 +956,7 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other"}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other"}}}})
 	if _, err := db.MaterializeFactoryPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization"), "factory-materialize/v1", time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -1061,17 +1002,7 @@ func TestNativeImplementationDispatchRejectsEmptySession(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakeImplementationLauncher{result: PlanningSession{Platform: "opencode"}}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
-	epic := createPouredWorkEpic(t, svc, "Ship")
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Materialize(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	epic := approvedEpic(t, svc, "Ship")
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -1089,17 +1020,7 @@ func TestNativeStartKeepsImplementationAttemptWhenProbeFails(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakeImplementationLauncher{store: db}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
-	epic := createPouredWorkEpic(t, svc, "Ship")
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Materialize(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	epic := approvedEpic(t, svc, "Ship")
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -1124,17 +1045,7 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 	// Explicit Dispatch calls drive this test; background retries would repeat the partial launch.
 	svc.startOnce.Do(func() {})
 	t.Cleanup(svc.Close)
-	epic := createPouredWorkEpic(t, svc, "Ship")
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Materialize(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	approvedEpic(t, svc, "Ship")
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -1148,17 +1059,7 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 
 	launcher.err = nil
 	launcher.result = PlanningSession{Platform: "opencode", ID: "implementation-1"}
-	recoveryEpic := createPouredWorkEpic(t, svc, "Recover")
-	recoveryProposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: recoveryEpic.ID, Manifest: ProposalManifest{EpicID: recoveryEpic.ID, MolID: pouredIssueID(t, svc, recoveryEpic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(context.Background(), recoveryEpic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: recoveryProposal.Revision, ExpectedHash: recoveryProposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Materialize(context.Background(), recoveryEpic.ID, pouredIssueID(t, svc, recoveryEpic.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	recoveryEpic := approvedEpic(t, svc, "Recover")
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -1199,16 +1100,7 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 	first := createPouredWorkEpic(t, svc, "First")
 	second := createPouredWorkEpic(t, svc, "Second")
 	for _, epic := range []WorkEpic{first, second} {
-		proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := svc.Materialize(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-			t.Fatal(err)
-		}
+		approvePlan(t, svc, epic.ID)
 	}
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
@@ -1564,16 +1456,10 @@ func TestNativeDispatchDoesNotCarryWorkspaceHistoryAcrossIssueProjects(t *testin
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
 		{Key: "first", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}},
 		{Key: "second", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other", DependsOn: []string{"first"}},
 	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
 	first := launcher.calls[0]
 	if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "done", ""); err != nil {
 		t.Fatal(err)
@@ -1620,16 +1506,7 @@ func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {
 			launcher := &fakeImplementationLauncher{}
 			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			epic := createPouredWorkEpic(t, svc, action)
-			proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := svc.Materialize(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-				t.Fatal(err)
-			}
+			approvePlan(t, svc, epic.ID)
 			if err := svc.Dispatch(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -1675,13 +1552,7 @@ func TestNativeStuckEpicRecoversThroughReopenIssue(t *testing.T) {
 	if err := svc.MutateGraph(context.Background(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: molID, Kind: "task", Title: "Only task"}); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: molID, Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: molID, Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	taskID := pouredIssueID(t, svc, epic.ID, "task")
 	for i := 0; i < 4; i++ {
 		if err := db.WakeFactoryRetries(context.Background(), time.Now().Add(time.Hour)); err != nil {

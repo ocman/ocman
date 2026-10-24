@@ -545,61 +545,6 @@ func TestAutoApproveWatcherAuthenticatesSSE(t *testing.T) {
 	}
 }
 
-// TestAutoApproveWatcher_FiresOnPermissionWithoutFrontend is the
-// primary regression: with no SSE client connected (no browser tab),
-// the watcher must still drive Ensure when OpenCode emits
-// permission.asked. This was the bug — the legacy path only fired
-// when a frontend session opened its per-session event stream.
-func TestAutoApproveWatcher_FiresOnPermissionWithoutFrontend(t *testing.T) {
-	fake := newFakeOpenCodeEventServer([]string{
-		permissionAskedEvent("ses-A", "perm-1", "Bash command", "rm bla"),
-	})
-	fake.setEvents([]string{
-		permissionAskedEvent("ses-A", "perm-1", "Bash command", "rm bla"),
-	}, true) // hold open so the watcher doesn't reconnect-flap during the test
-	defer fake.close()
-
-	// Capture Ensure calls by intercepting at the seam: we
-	// install a fake onPermission that mirrors what the real wiring
-	// does. The watcher pushes events through a tee whose onPermission
-	// is exactly svc.Ensure — so the test instead asks
-	// the watcher to use a custom onPermission callback.
-	type ask struct {
-		sessionID    string
-		permissionID string
-		permission   string
-		patterns     []string
-		metadata     map[string]any
-	}
-	asks := make(chan ask, 4)
-
-	w := newAutoApproveWatcher(nil)
-	w.discoverPorts = func() map[string]string {
-		return map[string]string{"/repo/a": fake.port()}
-	}
-	w.onPermission = func(_ platforms.ID, _ platforms.Platform, sessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
-		asks <- ask{sessionID, permissionID, permission, patterns, metadata}
-	}
-	w.rescanInterval = 10 * time.Millisecond
-	w.reconnectDelay = 10 * time.Millisecond
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go w.run(ctx)
-
-	select {
-	case got := <-asks:
-		if got.sessionID != "ses-A" || got.permissionID != "perm-1" {
-			t.Errorf("got asked=%+v, want sessionID=ses-A permissionID=perm-1", got)
-		}
-		if cmd, _ := got.metadata["command"].(string); cmd != "rm bla" {
-			t.Errorf("metadata.command = %v, want %q", got.metadata["command"], "rm bla")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("watcher did not call onPermission within 2s")
-	}
-}
-
 // TestAutoApproveWatcher_CancelsSubscriptionWhenPortDisappears verifies
 // that the per-port goroutine is torn down when the OpenCode process
 // stops listening (e.g. user killed the TUI). The next tick's
@@ -761,10 +706,12 @@ func TestServer_RunAutoApproveWatcher_RespectsContext(t *testing.T) {
 	}
 }
 
-// TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients is an
-// integration-style sanity check: with no browser clients or SSE sinks,
-// constructing the watcher with a real Service still routes the permission
-// to the judge path. The fake judge reports when port discovery starts, which
+// TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients is the
+// primary regression for headless auto-approve: with no browser clients or
+// SSE sinks, the watcher must still drive Ensure (with the command metadata)
+// when OpenCode emits permission.asked, and route the permission to the
+// judge path. The legacy path only fired when a frontend session opened its
+// per-session event stream. The fake judge reports when port discovery starts, which
 // occurs inside JudgeWithCallback rather than in the watcher or denylist path.
 func TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients(t *testing.T) {
 	fake := newFakeOpenCodeEventServer(nil)
@@ -820,7 +767,8 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients(t *testing.T)
 	real := w.onPermission
 	w.onPermission = func(pid platforms.ID, adapter platforms.Platform, sessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
 		real(pid, adapter, sessionID, permissionID, permission, patterns, metadata)
-		got <- string(pid) + "|" + sessionID + "|" + permissionID
+		cmd, _ := metadata["command"].(string)
+		got <- string(pid) + "|" + sessionID + "|" + permissionID + "|" + cmd
 	}
 	w.rescanInterval = 10 * time.Millisecond
 	w.reconnectDelay = 10 * time.Millisecond
@@ -831,7 +779,7 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients(t *testing.T)
 
 	select {
 	case key := <-got:
-		if !strings.HasPrefix(key, "opencode|ses-A|perm-route") {
+		if key != "opencode|ses-A|perm-route|ls" {
 			t.Errorf("default onPermission routed wrong key: %q", key)
 		}
 	case <-time.After(2 * time.Second):
@@ -842,39 +790,6 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients(t *testing.T)
 	case <-judgeStarted:
 	case <-time.After(2 * time.Second):
 		t.Fatal("headless permission did not start the judge")
-	}
-}
-
-// TestHandleSessionChangedDedup verifies that session.updated handling
-// only acts on the first sighting of a session ID (so per-turn/token
-// updates don't repeatedly bust the cache and broadcast), and that an
-// empty ID is ignored. svc is nil so broadcast is skipped; we assert
-// on the seen-set, which is the dedup gate.
-func TestHandleSessionChangedDedup(t *testing.T) {
-	w := newAutoApproveWatcher(nil)
-
-	seen := func() int {
-		w.seenMu.Lock()
-		defer w.seenMu.Unlock()
-		return len(w.seenSessions)
-	}
-
-	w.handleSessionChanged(t.Context(), "")
-	if seen() != 0 {
-		t.Fatalf("empty session ID was recorded; seen=%d", seen())
-	}
-
-	w.handleSessionChanged(t.Context(), "ses-1")
-	w.handleSessionChanged(t.Context(), "ses-1") // duplicate: must be a no-op
-	w.handleSessionChanged(t.Context(), "ses-2")
-	if got := seen(); got != 2 {
-		t.Fatalf("seen sessions = %d, want 2 (ses-1 deduped)", got)
-	}
-	if _, ok := w.seenSessions["ses-1"]; !ok {
-		t.Error("ses-1 not recorded")
-	}
-	if _, ok := w.seenSessions["ses-2"]; !ok {
-		t.Error("ses-2 not recorded")
 	}
 }
 

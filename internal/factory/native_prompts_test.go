@@ -221,16 +221,7 @@ func TestDispatchUsesFormulaImplementationAndDeliveryPrompts(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Materialize(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	approvePlan(t, svc, epic.ID)
 	if err := svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}

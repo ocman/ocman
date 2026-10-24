@@ -39,20 +39,10 @@ func checkpointRecoveryFixture(t *testing.T) (*NativeService, *state.DB, *rebase
 	l := &rebasedCheckpointLauncher{head: strings.Repeat("b", 40)}
 	l.checkpointSHA = strings.Repeat("a", 40)
 	s := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, l)
-	ep := createPouredWorkEpic(t, s, "Rebased checkpoint")
-	proposal, err := s.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: ep.ID, Manifest: ProposalManifest{EpicID: ep.ID, MolID: pouredIssueID(t, s, ep.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+	approvedEpic(t, s, "Rebased checkpoint", []ManifestNode{
 		{Key: "first", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}},
 		{Key: "rebase", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, DependsOn: []string{"first"}},
-	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.DecidePlanGate(t.Context(), ep.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Materialize(t.Context(), ep.ID, pouredIssueID(t, s, ep.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	}...)
 	first := l.calls[0]
 	if err := s.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "first", ""); err != nil {
 		t.Fatal(err)
@@ -159,19 +149,9 @@ func rebasedDeliveryFixture(t *testing.T) (*NativeService, *state.DB, *rebasedCh
 	l := &rebasedCheckpointLauncher{head: strings.Repeat("b", 40)}
 	l.checkpointSHA = strings.Repeat("a", 40)
 	s := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, l)
-	ep := createPouredWorkEpic(t, s, "Rebased delivery")
-	proposal, err := s.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: ep.ID, Manifest: ProposalManifest{EpicID: ep.ID, MolID: pouredIssueID(t, s, ep.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+	approvedEpic(t, s, "Rebased delivery", []ManifestNode{
 		{Key: "only", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}},
-	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.DecidePlanGate(t.Context(), ep.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Materialize(t.Context(), ep.ID, pouredIssueID(t, s, ep.ID, "materialization")); err != nil {
-		t.Fatal(err)
-	}
+	}...)
 	if err := s.CompleteAttempt(t.Context(), l.calls[0].AttemptID, l.calls[0].AgentToken, "only", ""); err != nil {
 		t.Fatal(err)
 	}

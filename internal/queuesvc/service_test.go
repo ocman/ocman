@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -415,94 +416,75 @@ func TestSweep_DrainsForceQueuedBacklogWithNoIdleEdge(t *testing.T) {
 	}
 }
 
-func TestSweep_DrainsAfterStaleGuardAndMissedIdleEdge(t *testing.T) {
-	store := &memStore{}
-	sender := &recSender{}
-	status := &statusStub{running: false, ok: true, messageID: "user-1", createdAt: 1}
-	svc := New(store, sender, status, nil)
-
-	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
-	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
-	status.messageID = "assistant-1"
-	status.createdAt = 2
-	status.completed = true
-
-	svc.Sweep(context.Background())
-	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
-		t.Fatalf("sweep after missed idle = %v, want [one two]", got)
+// TestSweep_CompletionGuard enqueues an idle "one" then a held "two",
+// changes the latest-message state, sweeps, and checks whether the
+// completion guard let "two" drain.
+func TestSweep_CompletionGuard(t *testing.T) {
+	cases := []struct {
+		name   string
+		status statusStub
+		onSend func(*statusStub)
+		after  func(*statusStub, *Service)
+		want   []string
+	}{
+		{
+			name:   "drains after stale guard and missed idle edge",
+			status: statusStub{ok: true, messageID: "user-1", createdAt: 1},
+			after: func(s *statusStub, _ *Service) {
+				s.messageID, s.createdAt, s.completed = "assistant-1", 2, true
+			},
+			want: []string{"one", "two"},
+		},
+		{
+			name:   "uses pre-send message as completion baseline",
+			status: statusStub{ok: true, messageID: "assistant-old", createdAt: 1, completed: true},
+			onSend: func(s *statusStub) { s.messageID, s.createdAt = "assistant-new", 2 },
+			want:   []string{"one", "two"},
+		},
+		{
+			name:   "keeps guard for older completed message",
+			status: statusStub{ok: true, messageID: "assistant-new", createdAt: 2, completed: true},
+			after:  func(s *statusStub, _ *Service) { s.messageID, s.createdAt = "assistant-old", 1 },
+			want:   []string{"one"},
+		},
+		{
+			name:   "rechecks guard generation before drain",
+			status: statusStub{ok: true, messageID: "user-1", createdAt: 1},
+			after: func(s *statusStub, svc *Service) {
+				s.messageID, s.createdAt, s.completed = "assistant-1", 2, true
+				s.onLatest = func() { svc.markDrained(sessionKey{Platform: "opencode", SessionID: "s1"}, "replacement", 3) }
+			},
+			want: []string{"one"},
+		},
+		{
+			name:   "defers send until baseline is available",
+			status: statusStub{ok: false},
+			after: func(s *statusStub, _ *Service) {
+				s.ok, s.messageID, s.createdAt, s.completed = true, "assistant-old", 1, true
+			},
+			want: []string{"one"},
+		},
 	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status := &tc.status
+			sender := &recSender{}
+			if tc.onSend != nil {
+				sender.onSend = func() { tc.onSend(status) }
+			}
+			svc := New(&memStore{}, sender, status, nil)
 
-func TestSweep_UsesPreSendMessageAsCompletionBaseline(t *testing.T) {
-	store := &memStore{}
-	status := &statusStub{running: false, ok: true, messageID: "assistant-old", createdAt: 1, completed: true}
-	sender := &recSender{onSend: func() {
-		status.messageID = "assistant-new"
-		status.createdAt = 2
-	}}
-	svc := New(store, sender, status, nil)
+			_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
+			_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
+			if tc.after != nil {
+				tc.after(status, svc)
+			}
+			svc.Sweep(context.Background())
 
-	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
-	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
-	svc.Sweep(context.Background())
-
-	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
-		t.Fatalf("fast completion sweep = %v, want [one two]", got)
-	}
-}
-
-func TestSweep_KeepsGuardForOlderCompletedMessage(t *testing.T) {
-	store := &memStore{}
-	sender := &recSender{}
-	status := &statusStub{running: false, ok: true, messageID: "assistant-new", createdAt: 2, completed: true}
-	svc := New(store, sender, status, nil)
-
-	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
-	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
-	status.messageID = "assistant-old"
-	status.createdAt = 1
-	svc.Sweep(context.Background())
-
-	if got := sender.messages(); len(got) != 1 {
-		t.Fatalf("older completion sweep = %v, want only [one]", got)
-	}
-}
-
-func TestSweep_RechecksGuardGenerationBeforeDrain(t *testing.T) {
-	store := &memStore{}
-	sender := &recSender{}
-	status := &statusStub{running: false, ok: true, messageID: "user-1", createdAt: 1}
-	svc := New(store, sender, status, nil)
-
-	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
-	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
-	status.messageID = "assistant-1"
-	status.createdAt = 2
-	status.completed = true
-	status.onLatest = func() { svc.markDrained(sessionKey{Platform: "opencode", SessionID: "s1"}, "replacement", 3) }
-	svc.Sweep(context.Background())
-
-	if got := sender.messages(); len(got) != 1 {
-		t.Fatalf("changed guard sweep = %v, want only [one]", got)
-	}
-}
-
-func TestSweep_DefersSendUntilBaselineIsAvailable(t *testing.T) {
-	store := &memStore{}
-	sender := &recSender{}
-	status := &statusStub{running: false, ok: false}
-	svc := New(store, sender, status, nil)
-
-	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "one"})
-	_ = svc.Enqueue(context.Background(), "opencode", true, platforms.SendMessageRequest{SessionID: "s1", Message: "two"})
-	status.ok = true
-	status.messageID = "assistant-old"
-	status.createdAt = 1
-	status.completed = true
-	svc.Sweep(context.Background())
-
-	if got := sender.messages(); len(got) != 1 {
-		t.Fatalf("recovered baseline sweep = %v, want only [one]", got)
+			if got := sender.messages(); !slices.Equal(got, tc.want) {
+				t.Fatalf("sweep = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -596,63 +578,6 @@ func TestFlush_SendErrorLeavesHead(t *testing.T) {
 	}
 }
 
-func TestRemove_RejectsWrongSession(t *testing.T) {
-	store := &memStore{}
-	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
-	svc := New(store, &recSender{}, statusStub{ok: true}, nil)
-
-	// Deleting with a mismatched session id must not remove the row.
-	removed, err := svc.Remove(t.Context(), "s2", "x")
-	if err != nil || removed {
-		t.Fatalf("Remove wrong session = (%v,%v), want (false,nil)", removed, err)
-	}
-	// Correct session removes it.
-	removed, err = svc.Remove(t.Context(), "s1", "x")
-	if err != nil || !removed {
-		t.Fatalf("Remove right session = (%v,%v), want (true,nil)", removed, err)
-	}
-}
-
-func TestMove_RejectsWrongSessionAndBoundary(t *testing.T) {
-	store := &memStore{}
-	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a"})
-	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b"})
-	svc := New(store, &recSender{}, statusStub{ok: true}, nil)
-
-	// Wrong session: no-op.
-	if moved, _ := svc.Move(t.Context(), "s2", "a", 1); moved {
-		t.Fatal("Move wrong session reported a swap")
-	}
-	// 'a' is first; moving up is a boundary no-op.
-	if moved, _ := svc.Move(t.Context(), "s1", "a", -1); moved {
-		t.Fatal("Move at boundary reported a swap")
-	}
-	// Moving 'a' down swaps with 'b'.
-	if moved, _ := svc.Move(t.Context(), "s1", "a", 1); !moved {
-		t.Fatal("Move down did not swap")
-	}
-	got, _ := svc.List(t.Context(), "opencode", "s1")
-	if len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
-		t.Fatalf("order after move = %v, want [b a]", got)
-	}
-}
-
-func TestEnqueue_FiresNotify(t *testing.T) {
-	var mu sync.Mutex
-	var notified []string
-	svc := New(&memStore{}, &recSender{}, statusStub{running: true, ok: true}, func(_ context.Context, platform, sid string) {
-		mu.Lock()
-		notified = append(notified, platform+"/"+sid)
-		mu.Unlock()
-	})
-	_ = svc.Enqueue(context.Background(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: "hi"})
-	mu.Lock()
-	defer mu.Unlock()
-	if len(notified) == 0 || notified[0] != "opencode/s1" {
-		t.Fatalf("notified = %v, want [opencode/s1]", notified)
-	}
-}
-
 // notifyRec records every notify(platform, sessionID) call, thread-safe.
 type notifyRec struct {
 	mu   sync.Mutex
@@ -684,8 +609,8 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 		svc := New(&memStore{}, &recSender{}, statusStub{running: true, ok: true}, rec.fn())
 		_ = svc.Enqueue(context.Background(), "opencode", true,
 			platforms.SendMessageRequest{SessionID: "s1", Message: "hi"})
-		if rec.count() != 1 {
-			t.Fatalf("mid-turn enqueue notify count = %d, want 1", rec.count())
+		if rec.count() != 1 || rec.sids[0] != "opencode/s1" {
+			t.Fatalf("mid-turn enqueue notify = %v, want [opencode/s1]", rec.sids)
 		}
 	})
 
@@ -742,15 +667,15 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 		svc := New(store, &recSender{}, statusStub{ok: true}, rec.fn())
 
 		// Wrong session: no removal, no notify.
-		if removed, _ := svc.Remove(t.Context(), "s2", "x"); removed {
-			t.Fatal("remove wrong session reported removal")
+		if removed, err := svc.Remove(t.Context(), "s2", "x"); err != nil || removed {
+			t.Fatalf("remove wrong session = (%v,%v), want (false,nil)", removed, err)
 		}
 		if rec.count() != 0 {
 			t.Fatalf("rejected remove notify count = %d, want 0", rec.count())
 		}
 		// Right session: removed → notify.
-		if removed, _ := svc.Remove(t.Context(), "s1", "x"); !removed {
-			t.Fatal("remove right session did not remove")
+		if removed, err := svc.Remove(t.Context(), "s1", "x"); err != nil || !removed {
+			t.Fatalf("remove right session = (%v,%v), want (true,nil)", removed, err)
 		}
 		if rec.count() != 1 {
 			t.Fatalf("remove notify count = %d, want 1", rec.count())
@@ -781,6 +706,10 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 		}
 		if rec.count() != 1 {
 			t.Fatalf("move notify count = %d, want 1", rec.count())
+		}
+		got, _ := svc.List(t.Context(), "opencode", "s1")
+		if len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
+			t.Fatalf("order after move = %v, want [b a]", got)
 		}
 	})
 

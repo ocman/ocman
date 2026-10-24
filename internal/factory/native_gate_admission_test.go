@@ -25,13 +25,7 @@ func TestFactoryGateCreationAdmitsAnotherEpicWithoutIdleEvent(t *testing.T) {
 			svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 			for _, goal := range []string{"Running", "Waiting"} {
 				ep := createPouredWorkEpic(t, svc, goal)
-				proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: ep.ID, Manifest: ProposalManifest{EpicID: ep.ID, MolID: pouredIssueID(t, svc, ep.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := svc.DecidePlanGate(t.Context(), ep.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-					t.Fatal(err)
-				}
+				approveProposal(t, svc, SubmitProposalRequest{EpicID: ep.ID, Manifest: ProposalManifest{EpicID: ep.ID, MolID: pouredIssueID(t, svc, ep.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 			}
 			if len(launcher.calls) != 1 {
 				t.Fatalf("initial launches = %d", len(launcher.calls))

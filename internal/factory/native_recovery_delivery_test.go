@@ -53,13 +53,7 @@ func recoveryDeliveryFixture(t *testing.T) (*NativeService, *recoveryCompletionS
 	launcher := &recoveryDeliveryLauncher{}
 	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := createPouredWorkEpic(t, svc, "Recovery delivery")
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"passes"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"passes"}}}}})
 	first := launcher.calls[0]
 	gate, err := svc.CreateRecoveryGate(t.Context(), first.AttemptID, first.AgentToken, "Continue?", "Blocked", nil)
 	if err != nil {

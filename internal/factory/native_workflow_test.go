@@ -29,13 +29,7 @@ func TestWorkflowChecksEveryChangedProjectBeforeDelivery(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "repo", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/repo"}, {Key: "other", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other"}, {Key: "optional", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}, Project: "/repo"}, {Key: "unused", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}, Project: "/unused"}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "repo", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/repo"}, {Key: "other", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other"}, {Key: "optional", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}, Project: "/repo"}, {Key: "unused", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}, Project: "/unused"}}}})
 	issues, err := svc.ListIssues(t.Context(), epic.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -142,13 +136,7 @@ func TestWorkflowScopeExpansionFromVerification(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
-		t.Fatal(err)
-	}
+	approveProposal(t, svc, SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err := svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}

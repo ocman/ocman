@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/mark3labs/mcp-go/mcptest"
 )
 
@@ -16,9 +17,9 @@ func TestFactoryCheckpointCompletionOmitsPR(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(srv.Close)
-	result := callTool(t, srv, "factory", map[string]any{"action": "complete_attempt", "attempt_id": "attempt-1", "attempt_token": "token", "summary": "Committed and pushed."})
+	result := testutil.CallTool(t, srv, "factory", map[string]any{"action": "complete_attempt", "attempt_id": "attempt-1", "attempt_token": "token", "summary": "Committed and pushed."})
 	if result.IsError {
-		t.Fatalf("checkpoint completion: %s", resultText(result))
+		t.Fatalf("checkpoint completion: %s", testutil.ResultText(result))
 	}
 	if svc.completedAttempt != "attempt-1" || svc.completionPRURL != "" {
 		t.Fatalf("unexpected handoff: %#v", svc)
@@ -49,12 +50,12 @@ func TestFactoryCheckpointRecoveryTool(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 	args := map[string]any{"action": "request_checkpoint_recovery", "attempt_id": "attempt", "attempt_token": "token"}
-	got := callTool(t, srv, "factory", args)
+	got := testutil.CallTool(t, srv, "factory", args)
 	if got.IsError || svc.attempt != "attempt" || svc.token != "token" {
-		t.Fatalf("recovery did not reach service: %s", resultText(got))
+		t.Fatalf("recovery did not reach service: %s", testutil.ResultText(got))
 	}
 	svc.err = errors.New("checkpoint is not pushed")
-	if got := callTool(t, srv, "factory", args); !got.IsError {
+	if got := testutil.CallTool(t, srv, "factory", args); !got.IsError {
 		t.Fatal("recovery failure was hidden")
 	}
 }

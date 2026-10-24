@@ -80,41 +80,42 @@ func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPe
 	return f.ruleErr
 }
 
-func TestCreateConfiguredDoesNotPublishOrLeakSessionWhenRulesFail(t *testing.T) {
-	platform := &fakePlatform{id: "opencode", available: true, ruleErr: errors.New("rules failed"), owned: map[string]bool{"new-session": true}}
-	registry := &fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}
-	published := 0
-	svc := New(registry, Hooks{SessionCreated: func(CreatedSession) { published++ }})
+// TestCreateConfiguredWhenRulesFail never publishes the session. It is
+// disposed when possible; otherwise the error carries the cleanup intent.
+func TestCreateConfiguredWhenRulesFail(t *testing.T) {
+	for _, disposeErr := range []error{nil, errors.New("dispose failed")} {
+		t.Run(fmt.Sprint(disposeErr), func(t *testing.T) {
+			platform := &fakePlatform{id: "opencode", available: true, ruleErr: errors.New("rules failed"), disposeErr: disposeErr, owned: map[string]bool{"new-session": true}}
+			published := 0
+			svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}, Hooks{SessionCreated: func(CreatedSession) { published++ }})
 
-	_, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}})
-	if err == nil || published != 0 || platform.owned["new-session"] {
-		t.Fatalf("CreateConfigured error = %v, published = %d, session remains discoverable = %v", err, published, platform.owned["new-session"])
+			_, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Action: "allow"}})
+			var cleanup *ConfiguredSessionCleanupError
+			hasCleanup := errors.As(err, &cleanup) && cleanup.SessionID == "new-session"
+			wantRemains := disposeErr != nil
+			if err == nil || published != 0 || hasCleanup != wantRemains || platform.owned["new-session"] != wantRemains {
+				t.Fatalf("CreateConfigured error = %v, published = %d, cleanup = %#v, session remains = %v", err, published, cleanup, platform.owned["new-session"])
+			}
+		})
 	}
 }
 
-func TestCreateConfiguredReturnsCleanupIntentWhenRulesAndDisposalFail(t *testing.T) {
-	platform := &fakePlatform{id: "opencode", available: true, ruleErr: errors.New("rules failed"), disposeErr: errors.New("dispose failed"), owned: map[string]bool{"new-session": true}}
-	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}, Hooks{})
-
-	_, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Action: "allow"}})
-	var cleanup *ConfiguredSessionCleanupError
-	if !errors.As(err, &cleanup) || cleanup.SessionID != "new-session" || !platform.owned["new-session"] {
-		t.Fatalf("CreateConfigured error = %v, cleanup = %#v, session remains = %v", err, cleanup, platform.owned["new-session"])
+func TestDisposePreservesCleanupOnLookupFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		byID map[platforms.ID]platforms.Platform
+		hint string
+	}{
+		{"provider cannot be resolved", map[platforms.ID]platforms.Platform{}, "missing"},
+		{"generic session lookup failure", map[platforms.ID]platforms.Platform{"opencode": &fakePlatform{id: "opencode", disposeErr: platforms.ErrNotFound}}, "opencode"},
 	}
-}
-
-func TestDisposePreservesCleanupWhenProviderCannotBeResolved(t *testing.T) {
-	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{}}, Hooks{})
-	if err := svc.Dispose(context.Background(), "missing", platforms.DisposeSessionRequest{SessionID: "gone"}); !errors.Is(err, platforms.ErrNotFound) {
-		t.Fatalf("Dispose missing provider = %v, want ErrNotFound", err)
-	}
-}
-
-func TestDisposePreservesCleanupOnGenericSessionLookupFailure(t *testing.T) {
-	platform := &fakePlatform{id: "opencode", disposeErr: platforms.ErrNotFound}
-	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}, Hooks{})
-	if err := svc.Dispose(context.Background(), "opencode", platforms.DisposeSessionRequest{SessionID: "unknown"}); !errors.Is(err, platforms.ErrNotFound) {
-		t.Fatalf("Dispose lookup failure = %v, want ErrNotFound", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := New(&fakeRegistry{byID: tc.byID}, Hooks{})
+			if err := svc.Dispose(context.Background(), tc.hint, platforms.DisposeSessionRequest{SessionID: "gone"}); !errors.Is(err, platforms.ErrNotFound) {
+				t.Fatalf("Dispose = %v, want ErrNotFound", err)
+			}
+		})
 	}
 }
 
@@ -225,25 +226,6 @@ func newService(p *fakePlatform, hooks Hooks) (*Service, *fakeRegistry) {
 func isValidation(err error) bool {
 	var ve *ValidationError
 	return errors.As(err, &ve)
-}
-
-func TestRevertAndUnrevert(t *testing.T) {
-	p := &fakePlatform{id: "opencode", available: true}
-	svc, _ := newService(p, Hooks{})
-	ctx := context.Background()
-
-	if err := svc.Revert(ctx, "opencode", platforms.RevertSessionRequest{SessionID: "s1", MessageID: "m1"}); err != nil {
-		t.Fatalf("Revert: %v", err)
-	}
-	if err := svc.Unrevert(ctx, "opencode", platforms.UnrevertSessionRequest{SessionID: "s1"}); err != nil {
-		t.Fatalf("Unrevert: %v", err)
-	}
-	if got := p.reverts; len(got) != 1 || got[0].MessageID != "m1" {
-		t.Fatalf("reverts = %#v", got)
-	}
-	if got := p.unreverts; len(got) != 1 || got[0].SessionID != "s1" {
-		t.Fatalf("unreverts = %#v", got)
-	}
 }
 
 func TestValidationErrors(t *testing.T) {
@@ -411,9 +393,18 @@ func TestMutationsDelegateToOwner(t *testing.T) {
 	if err := svc.RejectQuestion(ctx, "", platforms.RejectQuestionRequest{SessionID: "s1", RequestID: "q1"}); err != nil {
 		t.Fatalf("RejectQuestion: %v", err)
 	}
+	if err := svc.Revert(ctx, "", platforms.RevertSessionRequest{SessionID: "s1", MessageID: "m1"}); err != nil {
+		t.Fatalf("Revert: %v", err)
+	}
+	if err := svc.Unrevert(ctx, "", platforms.UnrevertSessionRequest{SessionID: "s1"}); err != nil {
+		t.Fatalf("Unrevert: %v", err)
+	}
 	if len(p.sent) != 1 || len(p.commands) != 1 || len(p.shells) != 1 || len(p.renames) != 1 ||
 		len(p.aborts) != 1 || len(p.compacts) != 1 || len(p.answers) != 1 || len(p.rejects) != 1 {
 		t.Fatal("expected each mutation to reach the adapter exactly once")
+	}
+	if len(p.reverts) != 1 || p.reverts[0].MessageID != "m1" || len(p.unreverts) != 1 || p.unreverts[0].SessionID != "s1" {
+		t.Fatalf("reverts = %#v, unreverts = %#v", p.reverts, p.unreverts)
 	}
 
 	// Explicit platform hint routes via Get.
