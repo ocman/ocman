@@ -56,7 +56,9 @@ module under `internal/module`, not a collection of `*Server` methods.
 
 `module.Bus` is typed and synchronous; subscribers run in order. Start slow
 work through `module.Workers`, bound in `Start` and joined in `Run`, not a bare
-goroutine on `context.Background()` that could outlive state.db.
+goroutine on `context.Background()` that could outlive state.db. Periodic work
+uses `module.Every`; other background bodies recover with
+`module.RunWithRecover`.
 
 Add an event type only when a module needs it. `FirstPromptAdded` starts
 owner-local naming after the first accepted input. `SessionIdle` is published

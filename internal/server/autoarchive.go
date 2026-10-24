@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
@@ -32,19 +33,7 @@ var autoArchiveTickFn = func(ctx context.Context, s *Server) {
 }
 
 func (s *Server) runAutoArchiveLoop(ctx context.Context) {
-	runWithRecover("auto-archive", func() { autoArchiveTickFn(ctx, s) })
-
-	ticker := time.NewTicker(autoArchiveInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runWithRecover("auto-archive", func() { autoArchiveTickFn(ctx, s) })
-		}
-	}
+	module.Every(ctx, "auto-archive", autoArchiveInterval, func(ctx context.Context) { autoArchiveTickFn(ctx, s) })
 }
 
 func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -155,7 +156,7 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 		// Events and inbound requests must be drained or the supervisor fails. The
 		// context is captured here, under mu, because Stop clears m.ctx.
 		m.workers.Go(func(eventCtx context.Context) {
-			runWithRecover("plugin-events", func() { m.consumePluginEvents(eventCtx, id, process) })
+			module.RunWithRecover("plugin-events", func() { m.consumePluginEvents(eventCtx, id, process) })
 		})
 	}
 	return nil

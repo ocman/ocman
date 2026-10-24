@@ -54,6 +54,9 @@ func TestApplyRulesToPending(t *testing.T) {
 		},
 	}
 	m := NewModule(ModuleDeps{})
+	if m.Name() != "autoapprove" {
+		t.Fatal(m.Name())
+	}
 	m.ApplyRulesToPending(t.Context(), local, "parent")
 	if rec.count() != 1 || rec.replies[0].SessionID != "child" || rec.replies[0].PermissionID != "perm" {
 		t.Fatalf("replies = %#v", rec.replies)
@@ -93,5 +96,15 @@ func TestResumePendingSkipsRemote(t *testing.T) {
 	NewModule(ModuleDeps{}).resumePending(t.Context(), failing, "ses")
 	if failing.lists != 1 {
 		t.Fatal("local resume did not list permissions")
+	}
+}
+
+func TestJudgeModelWithoutJudge(t *testing.T) {
+	var nilService *Service
+	if p, m := nilService.JudgeModel(); p != "" || m != "" {
+		t.Fatal(p, m)
+	}
+	if p, m := (&Service{}).JudgeModel(); p != "" || m != "" {
+		t.Fatal(p, m)
 	}
 }

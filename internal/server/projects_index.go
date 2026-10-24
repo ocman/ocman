@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
@@ -63,24 +64,12 @@ func (s *Server) runProjectsIndexLoop(ctx context.Context) {
 		return
 	}
 
-	runWithRecover("projects-index", func() { s.runProjectsIndexTick(ctx) })
-
-	ticker := time.NewTicker(projectsScanInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runWithRecover("projects-index", func() { s.runProjectsIndexTick(ctx) })
-		}
-	}
+	module.Every(ctx, "projects-index", projectsScanInterval, s.runProjectsIndexTick)
 }
 
 // errProjectsRefreshAborted is reported to waiters when the refresh
 // worker unwound through a panic. The panic itself still propagates to
-// the caller's runWithRecover; this only keeps waiters from blocking
+// the caller's module.RunWithRecover; this only keeps waiters from blocking
 // forever on a cycle that will never settle.
 var errProjectsRefreshAborted = errors.New("projects index refresh aborted")
 
@@ -127,7 +116,7 @@ func (s *Server) runProjectsRefresh(done chan struct{}) {
 	// Plugin cleanup must not erase the lifetime of queued shared work.
 	ctx, cancel := context.WithTimeout(s.lifetime(), time.Minute)
 	defer cancel()
-	runWithRecover("projects-index", func() {
+	module.RunWithRecover("projects-index", func() {
 		if err := s.driveProjectsRefresh(ctx, done); err != nil {
 			log.WithError(err).Warn("refreshing projects index")
 		}

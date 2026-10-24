@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/worker"
@@ -59,7 +60,7 @@ func (m *Module) buildSessions() {
 	m.sessionBroker.ResolveProject = m.deps.ProjectDirectory
 	m.sessionJobs = worker.NewKeyed(m.runSessionJob, func(j sessionJob) string { return j.pluginID })
 	m.sessionDeliveries = worker.NewKeyed(func(c PluginSessionCompletion) {
-		runWithRecover("plugin-session-delivery", func() { m.DeliverSessionCompletion(c) })
+		module.RunWithRecover("plugin-session-delivery", func() { m.DeliverSessionCompletion(c) })
 	}, PluginSessionCompletion.Group)
 }
 

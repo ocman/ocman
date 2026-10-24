@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -18,23 +19,11 @@ func (m *Module) runDatabaseSizeLoop(ctx context.Context) {
 		return
 	}
 
-	tick := func() {
+	module.Every(ctx, "database-size", databaseSizeSampleInterval, func(ctx context.Context) {
 		if err := m.collectDatabaseSizes(ctx, time.Now()); err != nil {
 			log.WithError(err).Warn("collecting database sizes")
 		}
-	}
-	runWithRecover("database-size", tick)
-
-	ticker := time.NewTicker(databaseSizeSampleInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runWithRecover("database-size", tick)
-		}
-	}
+	})
 }
 
 func (m *Module) collectDatabaseSizes(ctx context.Context, now time.Time) error {

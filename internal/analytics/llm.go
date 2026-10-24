@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
@@ -141,20 +142,9 @@ func (m *Module) runLLMMetricsLoop(ctx context.Context) {
 	// replay the entire history on startup.
 	var hwm int64
 	seeded := false
-	tick := func() { m.runStoredLLMMetricsTick(ctx, metrics, &hwm, &seeded) }
-	runWithRecover("llm-metrics", tick)
-
-	ticker := time.NewTicker(llmMetricsScanInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runWithRecover("llm-metrics", tick)
-		}
-	}
+	module.Every(ctx, "llm-metrics", llmMetricsScanInterval, func(ctx context.Context) {
+		m.runStoredLLMMetricsTick(ctx, metrics, &hwm, &seeded)
+	})
 }
 
 func (m *Module) runStoredLLMMetricsTick(ctx context.Context, metrics *llmMetrics, hwm *int64, seeded *bool) {

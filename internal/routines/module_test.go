@@ -48,3 +48,10 @@ func TestSummarizeRoutineRuns(t *testing.T) {
 		t.Fatalf("empty: %+v", empty)
 	}
 }
+
+func TestModuleIdentity(t *testing.T) {
+	m := NewModule(Deps{Store: newHarness(t).db})
+	if m.Name() != "routines" || m.Service() == nil || len(m.Tools()) == 0 {
+		t.Fatalf("module identity: %q %v %d", m.Name(), m.Service(), len(m.Tools()))
+	}
+}

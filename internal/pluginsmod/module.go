@@ -10,7 +10,6 @@ package pluginsmod
 import (
 	"context"
 	"maps"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -187,12 +186,16 @@ func (m *Module) Run(ctx context.Context) {
 	if m.store != nil {
 		wg.Go(func() { m.conversationOutbox.run(ctx) })
 	}
-	wg.Go(func() { runEvery(ctx, outboxReconcileInterval, m.reconcileConversationReplies) })
+	wg.Go(func() {
+		module.Every(ctx, "plugin-conversation-reconcile", outboxReconcileInterval, m.reconcileConversationReplies)
+	})
 	// Same guarantees for session.v1 completed turns.
 	if m.store != nil {
 		wg.Go(func() { m.sessionOutbox.run(ctx) })
 	}
-	wg.Go(func() { runEvery(ctx, outboxReconcileInterval, m.ReconcileSessionCompletions) })
+	wg.Go(func() {
+		module.Every(ctx, "plugin-session-reconcile", outboxReconcileInterval, m.ReconcileSessionCompletions)
+	})
 	wg.Wait()
 	m.mu.Lock()
 	m.stopping = true
@@ -226,12 +229,12 @@ func (m *Module) Stop() {
 func (m *Module) Subscribe(b *module.Bus) {
 	b.OnSessionIdle(func(_ context.Context, e module.SessionIdle) {
 		m.workers.Go(func(ctx context.Context) {
-			runWithRecover("plugin-conversation-reply", func() {
+			module.RunWithRecover("plugin-conversation-reply", func() {
 				m.ReplyToConversation(ctx, e.Platform, e.SessionID)
 			})
 		})
 		m.workers.Go(func(ctx context.Context) {
-			runWithRecover("plugin-session-completion", func() {
+			module.RunWithRecover("plugin-session-completion", func() {
 				m.ReplyToSession(ctx, e.Platform, e.SessionID)
 			})
 		})
@@ -250,15 +253,6 @@ func (m *Module) Running() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.processes)
-}
-
-func runWithRecover(name string, body func()) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.WithFields(log.Fields{"loop": name, "panic": r, "stack": string(debug.Stack())}).Error("background loop panicked")
-		}
-	}()
-	body()
 }
 
 // AdoptProcesses makes m call through from's running processes while keeping

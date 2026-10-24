@@ -10,6 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -178,23 +179,11 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 // then on every rescanInterval until ctx is cancelled. On cancel it
 // tears down every per-port subscription and returns.
 //
-// Wrapped in runWithRecover so a panic in a tick body never kills the
+// Wrapped in module.RunWithRecover so a panic in a tick body never kills the
 // whole loop. Per-port subscription goroutines have their own recover.
 func (w *autoApproveWatcher) run(ctx context.Context) {
-	runWithRecover("autoapprove-watcher", func() { w.tick(ctx) })
-
-	ticker := time.NewTicker(w.rescanInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			w.shutdown()
-			return
-		case <-ticker.C:
-			runWithRecover("autoapprove-watcher", func() { w.tick(ctx) })
-		}
-	}
+	defer w.shutdown()
+	module.Every(ctx, "autoapprove-watcher", w.rescanInterval, w.tick)
 }
 
 // tick reconciles the current set of subscriptions with the set of
@@ -274,14 +263,14 @@ func (w *autoApproveWatcher) subscribe(ctx context.Context, port string) {
 	logger.Debug("autoapprove-watcher: subscribing")
 	defer logger.Debug("autoapprove-watcher: subscription ended")
 
-	// Each iteration is wrapped in runWithRecover so a panic in
+	// Each iteration is wrapped in module.RunWithRecover so a panic in
 	// streamOnce (e.g. an unexpected SSE shape) doesn't kill the
 	// subscription — we just sleep and reconnect on the next tick.
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		runWithRecover("autoapprove-watcher-sub", func() {
+		module.RunWithRecover("autoapprove-watcher-sub", func() {
 			if err := w.streamOnce(ctx, port); err != nil && ctx.Err() == nil {
 				logger.WithError(err).Debug("autoapprove-watcher: stream ended, will reconnect")
 			}

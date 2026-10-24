@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -75,7 +76,7 @@ func (m *Module) buildConversations() {
 	// unread event flood fails the plugin process.
 	m.conversationJobs = worker.NewKeyed(m.runConversationJob, func(j conversationJob) string { return j.pluginID })
 	m.conversationDeliveries = worker.NewKeyed(func(d state.PluginConversationDelivery) {
-		runWithRecover("plugin-conversation-delivery", func() { m.deliverConversationReply(d) })
+		module.RunWithRecover("plugin-conversation-delivery", func() { m.deliverConversationReply(d) })
 	}, state.PluginConversationDelivery.Group)
 }
 

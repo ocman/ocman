@@ -52,18 +52,11 @@ func (m *Module) Routes(r module.Router) {
 }
 
 func (m *Module) Run(ctx context.Context) {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for {
+	module.Every(ctx, "idle-projects", time.Minute, func(ctx context.Context) {
 		if err := m.sweep(ctx, time.Now()); err != nil {
 			log.WithError(err).Warn("idle projects: sweep")
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
+	})
 }
 
 func (m *Module) timeout(ctx context.Context) (time.Duration, error) {

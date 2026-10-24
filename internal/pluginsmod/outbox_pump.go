@@ -91,7 +91,7 @@ func (o *outbox[T]) pump(ctx context.Context) {
 // kick pumps without waiting for the next tick.
 func (o *outbox[T]) kick() {
 	o.workers.Go(func(ctx context.Context) {
-		runWithRecover("plugin-"+o.name+"-pump", func() { o.pump(ctx) })
+		module.RunWithRecover("plugin-"+o.name+"-pump", func() { o.pump(ctx) })
 	})
 }
 
@@ -135,19 +135,4 @@ func (o *outbox[T]) end(id int64) {
 	o.mu.Lock()
 	delete(o.inFlight, id)
 	o.mu.Unlock()
-}
-
-// runEvery runs fn now and then every interval until ctx ends.
-func runEvery(ctx context.Context, interval time.Duration, fn func(context.Context)) {
-	fn(ctx)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			fn(ctx)
-		}
-	}
 }

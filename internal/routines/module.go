@@ -42,16 +42,7 @@ func (m *Module) Routes(r module.Router) {
 func (m *Module) Start(ctx context.Context) error { return m.svc.Recover(context.WithoutCancel(ctx)) }
 
 func (m *Module) Run(ctx context.Context) {
-	ticker := time.NewTicker(tickInterval)
-	defer ticker.Stop()
-	for {
-		m.tick(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
+	module.Every(ctx, "routines", tickInterval, m.tick)
 }
 
 // tick keeps one bad routine from killing the scheduler for the process.

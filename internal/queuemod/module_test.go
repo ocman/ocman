@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
@@ -132,7 +134,7 @@ func TestRunWithoutStoreAndRecovery(t *testing.T) {
 	cancel()
 	m.Run(ctx)
 	m.OnSessionIdle("opencode", "s")
-	runWithRecover("test", func() { panic("test panic") })
+	module.RunWithRecover("test", func() { panic("test panic") })
 }
 
 func TestSettingsAndProjectModelInvalidation(t *testing.T) {
@@ -207,4 +209,38 @@ func serveSetting[T any](route httpx.SettingRoute[T]) http.Handler {
 	mux := http.NewServeMux()
 	route.Mount(func(p string, h http.HandlerFunc) { mux.HandleFunc(p, h) }, "/")
 	return mux
+}
+
+func TestModelFallthroughSettingsRoundTrip(t *testing.T) {
+	store, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	h := serveSetting(NewModule(Deps{Store: store}).Settings())
+	serve := func(method, body string) (int, string) {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(method, "/", strings.NewReader(body)))
+		return rec.Code, strings.TrimSpace(rec.Body.String())
+	}
+	if code, body := serve("GET", ""); code != 200 || body != `{"patienceMinutes":5,"fallbackMinutes":15}` {
+		t.Fatalf("default: %d %s", code, body)
+	}
+	if code, body := serve("POST", `{"patienceMinutes":2,"fallbackMinutes":3}`); code != 200 || body != `{"patienceMinutes":2,"fallbackMinutes":3}` {
+		t.Fatalf("save: %d %s", code, body)
+	}
+	if patience, fallback := NewModule(Deps{Store: store}).CooldownTimes(t.Context()); patience != 2*time.Minute || fallback != 3*time.Minute {
+		t.Fatal(patience, fallback)
+	}
+	if err := store.SetSetting(t.Context(), modelFallthroughSettingKey, "{"); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := serve("GET", ""); code != 500 {
+		t.Fatalf("corrupt setting: %d", code)
+	}
+	rec := httptest.NewRecorder()
+	serveSetting(NewModule(Deps{}).Settings()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != 503 {
+		t.Fatalf("no store: %d", rec.Code)
+	}
 }

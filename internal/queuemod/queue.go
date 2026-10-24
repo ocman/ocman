@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
@@ -33,29 +34,17 @@ func (s *Module) runQueueSweep(ctx context.Context) {
 		<-ctx.Done()
 		return
 	}
-	tick := time.NewTicker(queueSweepInterval)
-	defer tick.Stop()
-	sweep := func() {
-		if ctx.Err() != nil {
-			return
+	module.Every(ctx, "queue-sweep", queueSweepInterval, func(ctx context.Context) {
+		if ctx.Err() == nil {
+			s.queue.Sweep(ctx)
 		}
-		runWithRecover("queue-sweep", func() { s.queue.Sweep(ctx) })
-	}
-	sweep()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			sweep()
-		}
-	}
+	})
 }
 
 func (s *Module) queueFlushWorker() *worker.Worker[queueFlush] {
 	s.workerOnce.Do(func() {
 		s.worker = worker.NewKeyed(func(item queueFlush) {
-			runWithRecover("queue-flush", func() {
+			module.RunWithRecover("queue-flush", func() {
 				ctx, cancel := context.WithTimeout(item.ctx, ownerReadTimeout)
 				defer cancel()
 				if s.continueSession(ctx, item.platformID, item.sessionID, item.cooled) {

@@ -4,7 +4,6 @@ package queuemod
 import (
 	"context"
 	"net/http"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/worker"
-	log "github.com/sirupsen/logrus"
 )
 
 type Sessions interface {
@@ -100,13 +98,4 @@ func (m *Module) Drain(ctx context.Context) error {
 		return nil
 	}
 	return w.Drain(ctx)
-}
-
-func runWithRecover(name string, f func()) {
-	defer func() {
-		if v := recover(); v != nil {
-			log.WithFields(log.Fields{"loop": name, "panic": v, "stack": string(debug.Stack())}).Error("background loop panicked, continuing on next tick")
-		}
-	}()
-	f()
 }

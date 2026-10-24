@@ -2,59 +2,13 @@ package server
 
 import (
 	"context"
-	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 )
-
-// TestRunWithRecover_LogsAndReturnsOnPanic asserts the helper logs a
-// structured ERROR line containing the panic value and the loop
-// name when its body panics, and returns without re-panicking.
-func TestRunWithRecover_LogsAndReturnsOnPanic(t *testing.T) {
-	hook := logtest.NewLocal(logrus.StandardLogger())
-	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
-
-	// Should not panic.
-	runWithRecover("test-loop", func() {
-		panic("boom")
-	})
-
-	entries := hook.AllEntries()
-	if len(entries) == 0 {
-		t.Fatalf("expected at least one log entry on panic")
-	}
-	var found bool
-	for _, e := range entries {
-		if e.Level == logrus.ErrorLevel &&
-			strings.Contains(e.Message, "background loop panicked") &&
-			e.Data["loop"] == "test-loop" {
-			found = true
-			if e.Data["panic"] != "boom" {
-				t.Errorf("panic value not captured: %v", e.Data["panic"])
-			}
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("no ERROR log with loop=test-loop and panic message found; got %d entries", len(entries))
-	}
-}
-
-// TestRunWithRecover_HappyPath_NoLogging is the negative control: a
-// body that returns normally must not produce any log line.
-func TestRunWithRecover_HappyPath_NoLogging(t *testing.T) {
-	hook := logtest.NewLocal(logrus.StandardLogger())
-	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
-
-	runWithRecover("test-loop", func() { /* no-op */ })
-
-	if len(hook.AllEntries()) != 0 {
-		t.Fatalf("expected no log entries on happy path; got %d", len(hook.AllEntries()))
-	}
-}
 
 // TestAutoArchiveLoop_SurvivesPanic injects a panicking tick body
 // into autoArchiveTickFn, runs runAutoArchiveLoop manually for two
@@ -83,9 +37,9 @@ func TestAutoArchiveLoop_SurvivesPanic(t *testing.T) {
 
 	// Simulate two iterations of the loop body. We don't run the
 	// real ticker — that would slow the test down — but we exercise
-	// the same runWithRecover wrapping the loop uses.
-	runWithRecover("auto-archive", func() { autoArchiveTickFn(t.Context(), nil) })
-	runWithRecover("auto-archive", func() { autoArchiveTickFn(t.Context(), nil) })
+	// the same module.RunWithRecover wrapping the loop uses.
+	module.RunWithRecover("auto-archive", func() { autoArchiveTickFn(t.Context(), nil) })
+	module.RunWithRecover("auto-archive", func() { autoArchiveTickFn(t.Context(), nil) })
 
 	if got := atomic.LoadInt32(&ticks); got != 2 {
 		t.Fatalf("ticks = %d, want 2 (loop must survive the panicking first tick)", got)
@@ -119,8 +73,8 @@ func TestProjectsIndexLoop_SurvivesPanic(t *testing.T) {
 	hook := logtest.NewLocal(logrus.StandardLogger())
 	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
 
-	runWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
-	runWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
+	module.RunWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
+	module.RunWithRecover("projects-index", func() { projectsIndexTickFn(t.Context(), nil) })
 
 	if got := atomic.LoadInt32(&ticks); got != 2 {
 		t.Fatalf("ticks = %d, want 2", got)

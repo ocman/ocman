@@ -13,7 +13,6 @@ package analytics
 import (
 	"context"
 	"net/http"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,17 +120,6 @@ func (m *Module) requireAnalytics(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
-}
-
-// runWithRecover keeps one panicking tick from stopping its loop.
-func runWithRecover(name string, body func()) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.WithFields(log.Fields{"loop": name, "panic": r, "stack": string(debug.Stack())}).
-				Error("background loop panicked, continuing on next tick")
-		}
-	}()
-	body()
 }
 
 // intParam reads an integer query parameter, or fallback when it is absent

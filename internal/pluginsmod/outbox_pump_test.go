@@ -52,15 +52,3 @@ func TestOutboxPumpAdmitsAllowedRowsOnce(t *testing.T) {
 		t.Fatalf("settled row not redelivered: %v", enqueued)
 	}
 }
-
-func TestRunEveryRunsImmediatelyAndStopsWithContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	calls := 0
-	runEvery(ctx, outboxReconcileInterval, func(context.Context) {
-		calls++
-		cancel()
-	})
-	if calls != 1 {
-		t.Fatalf("calls = %d, want one immediate pass", calls)
-	}
-}

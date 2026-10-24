@@ -16,11 +16,8 @@ import (
 	"context"
 	"errors"
 	"io"
-	"runtime/debug"
 	"sync"
 	"sync/atomic"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 
@@ -346,23 +343,6 @@ func (s *Service) broadcastGlobalEvent(event string, data []byte) {
 	if s.deps.BroadcastGlobalEvent != nil {
 		s.deps.BroadcastGlobalEvent(event, data)
 	}
-}
-
-// runWithRecover runs body while protecting the caller from a panic.
-// Duplicated from internal/server's recover.go so the watcher loops
-// keep the same never-die guarantee without a dependency on the server
-// package.
-func runWithRecover(name string, body func()) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.WithFields(log.Fields{
-				"loop":  name,
-				"panic": r,
-				"stack": string(debug.Stack()),
-			}).Error("background loop panicked, continuing on next tick")
-		}
-	}()
-	body()
 }
 
 // Sink wraps an SSE response writer with the synchronisation needed

@@ -80,19 +80,11 @@ func (m *Module) run(ctx context.Context, interval time.Duration) {
 	if m.d.Store == nil {
 		return
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		if ctx.Err() != nil {
-			return
+	module.Every(ctx, "snooze", interval, func(ctx context.Context) {
+		if ctx.Err() == nil {
+			m.wake(ctx)
 		}
-		m.wake(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
+	})
 }
 
 func (m *Module) wake(ctx context.Context) {

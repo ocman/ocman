@@ -114,6 +114,21 @@ func TestRoutesAndKeyPersistence(t *testing.T) {
 	if w.Code != 204 {
 		t.Fatal(w.Body.String())
 	}
+	for _, body := range []string{`{`, `{"endpoint":"https://example.com/push"}`} {
+		r := httptest.NewRequest(http.MethodPost, "https://ocman.test/api/notifications/unsubscribe", strings.NewReader(body))
+		r.Header.Set("Origin", "https://ocman.test")
+		w = httptest.NewRecorder()
+		m.unsubscribe(w, r)
+		if w.Code != 400 {
+			t.Fatalf("unsubscribe %s: %d", body, w.Code)
+		}
+	}
+	r = httptest.NewRequest(http.MethodPost, "https://ocman.test/api/notifications/unsubscribe", strings.NewReader(`{}`))
+	w = httptest.NewRecorder()
+	m.unsubscribe(w, r)
+	if w.Code != 403 {
+		t.Fatalf("cross-origin unsubscribe: %d", w.Code)
+	}
 	n, err := m.store.count(t.Context())
 	if err != nil || n != 0 {
 		t.Fatalf("count=%d err=%v", n, err)

@@ -9,6 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/safety"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -77,7 +78,7 @@ func (s *Service) Ensure(
 		// judge panic into a failed evaluation the user is told about; this
 		// is the backstop for the rest of the pipeline, failing closed: no
 		// reply is sent, so the prompt stays pending for the user.
-		runWithRecover("auto-approve judge", func() {
+		module.RunWithRecover("auto-approve judge", func() {
 			s.backgroundAutoApprove(
 				ctx,
 				platformID,

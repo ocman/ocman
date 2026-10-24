@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/module"
 )
 
 // statsRefreshInterval bounds database work independently of metric exports.
@@ -26,23 +27,7 @@ func (m *Module) runStatsRefreshLoop(ctx context.Context) {
 	if interval <= 0 {
 		interval = statsRefreshInterval
 	}
-	tick := func() { m.refreshStats(ctx) }
-	runWithRecover("stats-metrics", tick)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if ctx.Err() != nil {
-				return
-			}
-			runWithRecover("stats-metrics", tick)
-			ticker.Reset(interval) // no queued catch-up refresh after a slow query
-		}
-	}
+	module.Every(ctx, "stats-metrics", interval, m.refreshStats)
 }
 
 // refreshStats computes the stats once and keeps the last good values on
