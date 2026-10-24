@@ -1,18 +1,6 @@
 repos:
   - repo: local
     hooks:
-      # - id: test-backend
-      #   name: go tests
-      #   language: system
-      #   entry: sh -c 'unset $(git rev-parse --local-env-vars); make test-backend'
-      #   pass_filenames: false
-      #   files: '\.go$'
-      # - id: test-frontend
-      #   name: pnpm tests
-      #   language: system
-      #   entry: make test-frontend
-      #   pass_filenames: false
-      #   files: '^frontend/'
       # Coverage ratchet runs at push time (not on every commit /
       # `make test`) so the inner loop stays fast. Split per side so
       # the `files:` filter only runs the suite that actually changed
