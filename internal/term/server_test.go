@@ -54,15 +54,7 @@ func TestShellExitClosesViewer(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	done := make(chan error, 1)
 	go func() { done <- AttachLocalPTY(t.Context(), hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn) }()
-	deadline := time.After(3 * time.Second)
-	for len(conn.output()) == 0 {
-		select {
-		case <-deadline:
-			t.Fatal("viewer did not attach")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	conn.waitForOutput(t, 3*time.Second, "")
 	conn.frames <- hostsvc.TermFrame{Data: []byte("exit\r")}
 	select {
 	case err := <-done:
@@ -110,15 +102,7 @@ func TestViewerDetachKeepsShell(t *testing.T) {
 		t.Cleanup(func() { _ = conn.Close() })
 		done := make(chan error, 1)
 		go func() { done <- AttachLocalPTY(t.Context(), hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn) }()
-		deadline := time.After(3 * time.Second)
-		for len(conn.output()) == 0 {
-			select {
-			case <-deadline:
-				t.Fatal("viewer did not attach")
-			default:
-				time.Sleep(10 * time.Millisecond)
-			}
-		}
+		conn.waitForOutput(t, 3*time.Second, "")
 		_ = conn.Close()
 		select {
 		case err := <-done:

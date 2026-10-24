@@ -23,7 +23,7 @@ func TestLaunchOpencodeCmdEnvWith(t *testing.T) {
 		existing     []Session
 		listErr      error
 		idempotent   bool
-		newEnvErr    error
+		newSessErr   error
 		newWinErr    error
 		wantLaunched bool
 		wantSessions int
@@ -60,18 +60,20 @@ func TestLaunchOpencodeCmdEnvWith(t *testing.T) {
 			wantSessions: 1,
 		},
 		{
-			name:       "new-session failure is wrapped",
-			dir:        "src/repo",
-			idempotent: true,
-			newEnvErr:  launchErr,
-			wantErr:    "tmux new-session",
+			name:         "new-session failure is wrapped",
+			dir:          "src/repo",
+			idempotent:   true,
+			newSessErr:   launchErr,
+			wantSessions: 1,
+			wantErr:      "tmux new-session",
 		},
 		{
-			name:      "new-window failure is wrapped",
-			dir:       "src/repo",
-			existing:  []Session{{Name: "reused", ResolvedPath: "$DIR"}},
-			newWinErr: launchErr,
-			wantErr:   "tmux new-window",
+			name:        "new-window failure is wrapped",
+			dir:         "src/repo",
+			existing:    []Session{{Name: "reused", ResolvedPath: "$DIR"}},
+			newWinErr:   launchErr,
+			wantWindows: 1,
+			wantErr:     "tmux new-window",
 		},
 		{
 			// A colon would silently re-target another pane, so the
@@ -95,18 +97,32 @@ func TestLaunchOpencodeCmdEnvWith(t *testing.T) {
 				}
 			}
 
-			f := &fakeEnvRunner{
-				existing:  existing,
-				listErr:   tc.listErr,
-				newEnvErr: tc.newEnvErr,
-				newWinErr: tc.newWinErr,
+			f := &fakeTmuxRunner{
+				existing:      existing,
+				listErr:       tc.listErr,
+				newSessionErr: tc.newSessErr,
+				newWindowErr:  tc.newWinErr,
 			}
 
 			name, launched, err := LaunchOpencodeCmdEnvWith(t.Context(), f.toRunner(), dir, cmd, tc.idempotent, env)
 
+			// Attempted tmux calls are counted on success and failure
+			// alike; the invalid-name row must issue none.
+			if got := len(f.newSessionCalls); got != tc.wantSessions {
+				t.Errorf("NewSessionEnv calls = %d, want %d", got, tc.wantSessions)
+			}
+			if got := len(f.newWindowCalls); got != tc.wantWindows {
+				t.Errorf("NewWindowEnv calls = %d, want %d", got, tc.wantWindows)
+			}
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
+				}
+				if (tc.newSessErr != nil || tc.newWinErr != nil) && !errors.Is(err, launchErr) {
+					t.Errorf("error chain missing the tmux failure: %v", err)
+				}
+				if launched {
+					t.Error("launched = true on error; want false")
 				}
 				return
 			}
@@ -125,15 +141,9 @@ func TestLaunchOpencodeCmdEnvWith(t *testing.T) {
 			if name != wantName {
 				t.Errorf("name = %q, want %q", name, wantName)
 			}
-			if got := len(f.newSessionEnv); got != tc.wantSessions {
-				t.Errorf("NewSessionEnv calls = %d, want %d", got, tc.wantSessions)
-			}
-			if got := len(f.newWindowEnv); got != tc.wantWindows {
-				t.Errorf("NewWindowEnv calls = %d, want %d", got, tc.wantWindows)
-			}
 			// The caller-supplied command and env must reach the pane
 			// verbatim — that's the whole point of this launcher.
-			for _, gotCmd := range append(f.newSessionCmd, f.newWindowCmd...) {
+			for _, gotCmd := range append(f.newSessionCommands, f.newWindowCommands...) {
 				if gotCmd != cmd {
 					t.Errorf("pane command = %q, want %q", gotCmd, cmd)
 				}

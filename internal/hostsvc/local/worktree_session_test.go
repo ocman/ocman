@@ -226,9 +226,14 @@ func TestProviderWorktreeNaming(t *testing.T) {
 	}
 }
 
-// Every step of a worktree start is reported on the request's context, so
-// the new conversation can show the instance and checkout in parallel.
-func TestWorktreeSessionReportsProgress(t *testing.T) {
+// TestLocalHost_CreateWorktreeSession proves the #268 wiring: /wt creates
+// the worktree, ensures the project's single opencode instance (reusing
+// the already-running one — no launch, no per-worktree tmux window), and
+// creates an in-app session rooted at the worktree on that instance's
+// port. Every step is reported on the request's context, so the new
+// conversation can show the instance and checkout in parallel. The
+// worktree is then removed.
+func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	repo := initRepo(t)
 	var mu sync.Mutex
 	got := map[string][]string{}
@@ -237,20 +242,45 @@ func TestWorktreeSessionReportsProgress(t *testing.T) {
 		got[step] = append(got[step], state)
 		mu.Unlock()
 	})
+	var gotDirectory, gotPort string
 	h := New(Deps{
+		// The project instance launches on port 4242 and is healthy, so
+		// CreateSession is created against it.
 		Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:4242"},
-		CreateSession: func(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-			return &platforms.CreateSessionResponse{ID: "s"}, nil
+		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			gotDirectory, gotPort = req.Directory, req.Port
+			return &platforms.CreateSessionResponse{ID: "ses_worktree"}, nil
 		},
 	})
-	if _, err := h.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
+	res, err := h.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
 		ProjectDir: repo, Branch: "feature", NewBranch: true, BaseRef: "main",
-	}); err != nil {
-		t.Fatal(err)
+	})
+	if err != nil {
+		t.Fatalf("CreateWorktreeSession: %v", err)
+	}
+	if res.SessionID != "ses_worktree" {
+		t.Errorf("SessionID = %q; want ses_worktree", res.SessionID)
+	}
+	if res.Branch != "feature" || res.WorktreePath == "" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	// The in-app session must be created against the worktree path on the
+	// ensured instance's port.
+	if gotDirectory != res.WorktreePath {
+		t.Errorf("CreateSession directory = %q; want worktree path %q", gotDirectory, res.WorktreePath)
+	}
+	if gotPort != "4242" {
+		t.Errorf("CreateSession port = %q; want ensured port 4242", gotPort)
 	}
 	for _, step := range []string{hostsvc.StepOpencode, hostsvc.StepWorktree, hostsvc.StepSession} {
 		if strings.Join(got[step], ",") != "active,done" {
 			t.Errorf("%s = %v, want active,done", step, got[step])
 		}
+	}
+
+	if err := h.RemoveWorktree(context.Background(), hostsvc.RemoveWorktreeRequest{
+		Dir: repo, Path: res.WorktreePath,
+	}); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
 	}
 }

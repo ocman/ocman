@@ -397,6 +397,19 @@ func (c *fakeTermConn) output() []byte {
 	return b
 }
 
+// waitForOutput polls until the viewer has written output containing want
+// (any output when want is empty), failing the test after timeout.
+func (c *fakeTermConn) waitForOutput(t *testing.T, timeout time.Duration, want string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for out := c.output(); len(out) == 0 || !strings.Contains(string(out), want); out = c.output() {
+		if time.Now().After(deadline) {
+			t.Fatalf("viewer output %q never contained %q", out, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestAttachLocalPTY_Integration drives the PTY bridge against a real
 // tmux window: it creates a window, attaches, sends a resize + a command
 // that prints a marker, and asserts the marker comes back through the
@@ -423,16 +436,7 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 	}()
 
 	// Poll for the marker to appear in the PTY output, then close.
-	deadline := time.Now().Add(4 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(string(conn.output()), "OCMAN_MARKER") {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if !strings.Contains(string(conn.output()), "OCMAN_MARKER") {
-		t.Fatalf("marker not seen in PTY output: %q", conn.output())
-	}
+	conn.waitForOutput(t, 4*time.Second, "OCMAN_MARKER")
 	out, err := exec.Command("tmux", "-L", socketName, "display-message", "-p", "-t", SessionName+":"+win, "#{window_width}x#{window_height}").Output()
 	if err != nil || strings.TrimSpace(string(out)) != "100x40" {
 		t.Fatalf("terminal size = %q, %v; want 100x40", out, err)

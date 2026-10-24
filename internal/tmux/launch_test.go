@@ -4,11 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -22,10 +20,12 @@ type fakeTmuxRunner struct {
 
 	newSessionCalls    []string
 	newSessionCommands []string
+	newSessionEnv      []map[string]string
 	newSessionErr      error
 
 	newWindowCalls    []string
 	newWindowCommands []string
+	newWindowEnv      []map[string]string
 	newWindowErr      error
 }
 
@@ -37,14 +37,16 @@ func (f *fakeTmuxRunner) toRunner() Runner {
 			}
 			return f.existing, nil
 		},
-		NewSessionEnv: func(_ context.Context, name, _, command string, _ map[string]string) error {
+		NewSessionEnv: func(_ context.Context, name, _, command string, env map[string]string) error {
 			f.newSessionCalls = append(f.newSessionCalls, name)
 			f.newSessionCommands = append(f.newSessionCommands, command)
+			f.newSessionEnv = append(f.newSessionEnv, env)
 			return f.newSessionErr
 		},
-		NewWindowEnv: func(_ context.Context, name, _, command string, _ map[string]string) error {
+		NewWindowEnv: func(_ context.Context, name, _, command string, env map[string]string) error {
 			f.newWindowCalls = append(f.newWindowCalls, name)
 			f.newWindowCommands = append(f.newWindowCommands, command)
+			f.newWindowEnv = append(f.newWindowEnv, env)
 			return f.newWindowErr
 		},
 	}
@@ -53,104 +55,6 @@ func (f *fakeTmuxRunner) toRunner() Runner {
 // launchWith runs the launcher LaunchOpencode uses, with a fake runner.
 func launchWith(ctx context.Context, r Runner, directory string, idempotent bool) (string, bool, error) {
 	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeCommand, idempotent, nil)
-}
-
-// TestLaunchOpencodeInTmuxWith_Idempotent_ReusesExisting verifies the
-// AD-4 behaviour: when the target tmux session already exists, the
-// idempotent path must NOT create a window and must NOT send keys.
-func TestLaunchOpencodeInTmuxWith_Idempotent_ReusesExisting(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	dir := filepath.Join(home, "src/repo")
-	wantName := SessionNameForPath(dir)
-
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: wantName, ResolvedPath: dir}},
-	}
-
-	name, launched, err := launchWith(t.Context(), f.toRunner(), dir, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if name != wantName {
-		t.Errorf("name = %q, want %q", name, wantName)
-	}
-	if launched {
-		t.Errorf("launched = true; want false (session pre-existed)")
-	}
-	if len(f.newSessionCalls) != 0 {
-		t.Errorf("NewSession called %d times; want 0", len(f.newSessionCalls))
-	}
-	if len(f.newWindowCalls) != 0 {
-		t.Errorf("NewWindow called %d times; want 0 (idempotent path skips it)", len(f.newWindowCalls))
-	}
-}
-
-// TestLaunchOpencodeInTmuxWith_Idempotent_CreatesWhenAbsent verifies
-// the idempotent path still creates a session and runs opencode when
-// no matching session exists.
-func TestLaunchOpencodeInTmuxWith_Idempotent_CreatesWhenAbsent(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	dir := filepath.Join(home, "src/repo")
-	wantName := SessionNameForPath(dir)
-
-	f := &fakeTmuxRunner{} // no existing sessions
-
-	name, launched, err := launchWith(t.Context(), f.toRunner(), dir, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if name != wantName {
-		t.Errorf("name = %q, want %q", name, wantName)
-	}
-	if !launched {
-		t.Errorf("launched = false; want true")
-	}
-	if len(f.newSessionCalls) != 1 {
-		t.Errorf("NewSession calls = %d; want 1", len(f.newSessionCalls))
-	}
-	// The opencode command must be passed at session-creation time so
-	// the user's shell rc files (mise/starship) can't race with us
-	// over keystrokes — see comment on Runner.
-	if len(f.newSessionCommands) != 1 || f.newSessionCommands[0] != OpencodeCommand {
-		t.Errorf("newSessionCommands = %v; want [%q]", f.newSessionCommands, OpencodeCommand)
-	}
-}
-
-// TestLaunchOpencodeInTmuxWith_NonIdempotent_OpensNewWindow verifies
-// that when idempotent=false (the legacy launcher behaviour), an
-// existing session triggers a new window with opencode as its
-// foreground command, NOT short-circuit.
-func TestLaunchOpencodeInTmuxWith_NonIdempotent_OpensNewWindow(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	dir := filepath.Join(home, "src/repo")
-	wantName := SessionNameForPath(dir)
-
-	f := &fakeTmuxRunner{
-		existing: []Session{{Name: wantName, ResolvedPath: dir}},
-	}
-
-	name, launched, err := launchWith(t.Context(), f.toRunner(), dir, false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if name != wantName {
-		t.Errorf("name = %q, want %q", name, wantName)
-	}
-	if !launched {
-		t.Errorf("launched = false; want true (non-idempotent always launches)")
-	}
-	if len(f.newWindowCalls) != 1 {
-		t.Errorf("NewWindow calls = %d; want 1", len(f.newWindowCalls))
-	}
-	if len(f.newWindowCommands) != 1 || f.newWindowCommands[0] != OpencodeCommand {
-		t.Errorf("newWindowCommands = %v; want [%q]", f.newWindowCommands, OpencodeCommand)
-	}
 }
 
 // TestLaunchOpencodeInTmuxWith_MatchesDottedPathAgainstUnderscoreName
@@ -302,53 +206,6 @@ func TestLaunchOpencodeInTmuxWith_IsolatesCollidingDerivedNames(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-// TestLaunchOpencodeInTmuxWith_PropagatesNewSessionError ensures tmux
-// failures are surfaced rather than swallowed.
-func TestLaunchOpencodeInTmuxWith_PropagatesNewSessionError(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	dir := filepath.Join(home, "src/repo")
-
-	wantErr := errors.New("boom")
-	f := &fakeTmuxRunner{newSessionErr: wantErr}
-
-	_, launched, err := launchWith(t.Context(), f.toRunner(), dir, true)
-	if err == nil {
-		t.Fatalf("want error, got nil")
-	}
-	if !errors.Is(err, wantErr) {
-		t.Errorf("error chain missing wantErr: %v", err)
-	}
-	if launched {
-		t.Errorf("launched = true on error; want false")
-	}
-}
-
-// TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName verifies that a
-// directory whose derived session name would confuse tmux's target
-// parser (e.g. contains a `:`) is rejected before any tmux command is
-// issued. Otherwise tmux would interpret part of the name as a window,
-// either erroring or silently targeting the wrong place.
-func TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName(t *testing.T) {
-	// Outside-home path so SessionNameForPath returns it verbatim
-	// and the `:` ends up in the derived name.
-	dir := "/var/projects/has:colon"
-
-	f := &fakeTmuxRunner{}
-
-	_, _, err := launchWith(t.Context(), f.toRunner(), dir, true)
-	if err == nil {
-		t.Fatal("expected error for derived name with invalid characters")
-	}
-	if !strings.Contains(err.Error(), "invalid characters") {
-		t.Errorf("error = %v; want invalid-characters error", err)
-	}
-	if len(f.newSessionCalls) != 0 || len(f.newWindowCalls) != 0 {
-		t.Error("no tmux command should fire when the derived name fails validation")
 	}
 }
 

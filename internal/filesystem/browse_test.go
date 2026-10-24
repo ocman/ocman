@@ -631,54 +631,6 @@ func TestSearchDirectories_UnreadableRootErrors(t *testing.T) {
 	}
 }
 
-func TestHandleFilesystemDirectories_ReturnsDirectoriesOnly(t *testing.T) {
-	m := NewModule(Deps{})
-	root := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, "alpha"), 0o755); err != nil {
-		t.Fatalf("mkdir alpha: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(root, "beta"), 0o755); err != nil {
-		t.Fatalf("mkdir beta: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(root, ".hidden"), 0o755); err != nil {
-		t.Fatalf("mkdir hidden: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("not a directory"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directories?dir="+url.QueryEscape(root), nil)
-	rr := httptest.NewRecorder()
-	m.handleDirectories(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var resp directoryBrowseResponse
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("invalid JSON response: %v", err)
-	}
-	if resp.Directory != filepath.Clean(root) {
-		t.Fatalf("directory = %q, want %q", resp.Directory, filepath.Clean(root))
-	}
-	if resp.Parent != filepath.Dir(root) {
-		t.Fatalf("parent = %q, want %q", resp.Parent, filepath.Dir(root))
-	}
-	names := make([]string, 0, len(resp.Entries))
-	for _, entry := range resp.Entries {
-		names = append(names, entry.Name)
-		if !filepath.IsAbs(entry.Path) {
-			t.Fatalf("entry path %q is not absolute", entry.Path)
-		}
-	}
-	if strings.Join(names, ",") != "alpha,beta,.hidden" {
-		t.Fatalf("entries = %v, want alpha,beta,.hidden", names)
-	}
-	if len(resp.Entries) != 3 || !resp.Entries[2].Hidden {
-		t.Fatalf("hidden entry flag not set: %+v", resp.Entries)
-	}
-}
-
 func TestHandleFilesystemDirectorySearch_FindsNestedProjectDirectories(t *testing.T) {
 	m := NewModule(Deps{})
 	root := t.TempDir()
@@ -693,17 +645,8 @@ func TestHandleFilesystemDirectorySearch_FindsNestedProjectDirectories(t *testin
 		t.Fatalf("mkdir skipped dir: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q=work+oc&limit=10", nil)
-	rr := httptest.NewRecorder()
-	m.handleDirectorySearch(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var resp directorySearchResponse
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("invalid JSON response: %v", err)
-	}
+	resp := getJSON[directorySearchResponse](t, m.handleDirectorySearch,
+		"/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q=work+oc&limit=10")
 	if resp.Root != filepath.Clean(root) {
 		t.Fatalf("root = %q, want %q", resp.Root, filepath.Clean(root))
 	}
@@ -731,17 +674,8 @@ func TestHandleFilesystemDirectorySearch_DeduplicatesExactAbsoluteDirectory(t *t
 		t.Fatalf("write nested project marker: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q="+url.QueryEscape(projectDir)+"&limit=10", nil)
-	rr := httptest.NewRecorder()
-	m.handleDirectorySearch(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var resp directorySearchResponse
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("invalid JSON response: %v", err)
-	}
+	resp := getJSON[directorySearchResponse](t, m.handleDirectorySearch,
+		"/api/filesystem/directory-search?root="+url.QueryEscape(root)+"&q="+url.QueryEscape(projectDir)+"&limit=10")
 	if resp.Root != filepath.Clean(workspaceDir) {
 		t.Fatalf("root = %q, want %q", resp.Root, filepath.Clean(workspaceDir))
 	}

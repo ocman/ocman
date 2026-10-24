@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 func TestDiffCacheDropsExpiredEntries(t *testing.T) {
@@ -42,23 +40,8 @@ func gitInit(t *testing.T, dir string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(gitexec.CleanEnv(),
-			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
-			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
-			// Avoid user gitconfig leaking into the test (e.g.
-			// custom commit hooks, signing config) — those would
-			// break the deterministic test setup.
-			"GIT_CONFIG_GLOBAL=/dev/null",
-			"GIT_CONFIG_SYSTEM=/dev/null",
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	// gitRun isolates user gitconfig (hooks, signing) from the setup.
+	run := func(args ...string) { t.Helper(); gitRun(t, dir, args...) }
 	run("init", "--initial-branch=main")
 	run("config", "user.email", "test@test")
 	run("config", "user.name", "test")
@@ -106,131 +89,61 @@ func TestGetDiff_CleanRepo(t *testing.T) {
 	}
 }
 
-func TestGetDiff_ModifiedFile(t *testing.T) {
+// TestGetDiff_WorkingTreeChanges applies one change of each kind to a
+// single repo and checks every file's entry.
+func TestGetDiff_WorkingTreeChanges(t *testing.T) {
 	dir := t.TempDir()
 	gitInit(t, dir)
-	if err := os.WriteFile(filepath.Join(dir, "foo.txt"), []byte("hello\nworld\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
+	write := func(name string, body []byte) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), body, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
 	}
-	d, err := GetDiff(context.Background(), dir, DiffOptions{Force: true})
-	if err != nil {
-		t.Fatalf("GetDiff: %v", err)
-	}
-	if len(d.Files) != 1 {
-		t.Fatalf("Files = %d, want 1: %+v", len(d.Files), d.Files)
-	}
-	f := d.Files[0]
-	if f.Path != "foo.txt" {
-		t.Errorf("Path = %q, want foo.txt", f.Path)
-	}
-	if f.Status != "modified" {
-		t.Errorf("Status = %q, want modified", f.Status)
-	}
-	if f.Additions != 1 || f.Deletions != 0 {
-		t.Errorf("counts = %d/%d, want 1/0", f.Additions, f.Deletions)
-	}
-	if !strings.Contains(f.Diff, "+world") {
-		t.Errorf("Diff missing +world line:\n%s", f.Diff)
-	}
-}
+	write("gone.txt", []byte("bye\n"))
+	gitRun(t, dir, "add", "gone.txt")
+	gitRun(t, dir, "commit", "-m", "gone")
 
-func TestGetDiff_AddedFile_StagedAndUnstaged(t *testing.T) {
-	dir := t.TempDir()
-	gitInit(t, dir)
-	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("brand new\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	// Stage it so it shows up as `added`, not `untracked`.
-	cmd := exec.Command("git", "-C", dir, "add", "new.txt")
-	cmd.Env = append(gitexec.CleanEnv(),
-		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v\n%s", err, out)
-	}
-	d, err := GetDiff(context.Background(), dir, DiffOptions{Force: true})
-	if err != nil {
-		t.Fatalf("GetDiff: %v", err)
-	}
-	if len(d.Files) != 1 {
-		t.Fatalf("Files = %d, want 1", len(d.Files))
-	}
-	if d.Files[0].Status != "added" {
-		t.Errorf("Status = %q, want added", d.Files[0].Status)
-	}
-	if d.Files[0].Additions != 1 {
-		t.Errorf("Additions = %d, want 1", d.Files[0].Additions)
-	}
-}
-
-func TestGetDiff_DeletedFile(t *testing.T) {
-	dir := t.TempDir()
-	gitInit(t, dir)
-	if err := os.Remove(filepath.Join(dir, "foo.txt")); err != nil {
+	write("foo.txt", []byte("hello\nworld\n"))
+	// Staged so it shows up as `added`, not `untracked`.
+	write("new.txt", []byte("brand new\n"))
+	gitRun(t, dir, "add", "new.txt")
+	if err := os.Remove(filepath.Join(dir, "gone.txt")); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	d, err := GetDiff(context.Background(), dir, DiffOptions{Force: true})
-	if err != nil {
-		t.Fatalf("GetDiff: %v", err)
-	}
-	if len(d.Files) != 1 {
-		t.Fatalf("Files = %d, want 1", len(d.Files))
-	}
-	if d.Files[0].Status != "deleted" {
-		t.Errorf("Status = %q, want deleted", d.Files[0].Status)
-	}
-	if d.Files[0].Deletions == 0 {
-		t.Errorf("Deletions = 0, want >0")
-	}
-}
-
-func TestGetDiff_UntrackedFile(t *testing.T) {
-	dir := t.TempDir()
-	gitInit(t, dir)
-	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("a\nb\nc\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	d, err := GetDiff(context.Background(), dir, DiffOptions{Force: true})
-	if err != nil {
-		t.Fatalf("GetDiff: %v", err)
-	}
-	if len(d.Files) != 1 {
-		t.Fatalf("Files = %d, want 1", len(d.Files))
-	}
-	f := d.Files[0]
-	if f.Path != "new.txt" {
-		t.Errorf("Path = %q, want new.txt", f.Path)
-	}
-	if f.Status != "untracked" {
-		t.Errorf("Status = %q, want untracked", f.Status)
-	}
-	if f.Additions != 3 {
-		t.Errorf("Additions = %d, want 3", f.Additions)
-	}
-	if !strings.Contains(f.Diff, "new file mode") {
-		t.Errorf("synthetic diff should look like a real new-file diff:\n%s", f.Diff)
-	}
-}
-
-func TestGetDiff_BinaryUntrackedNotEmbedded(t *testing.T) {
-	dir := t.TempDir()
-	gitInit(t, dir)
+	write("untracked.txt", []byte("a\nb\nc\n"))
 	// 0x00 byte triggers the binary heuristic.
-	if err := os.WriteFile(filepath.Join(dir, "blob.bin"),
-		[]byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05}, 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	write("blob.bin", []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05})
+
 	d, err := GetDiff(context.Background(), dir, DiffOptions{Force: true})
 	if err != nil {
 		t.Fatalf("GetDiff: %v", err)
 	}
-	if len(d.Files) != 1 {
-		t.Fatalf("Files = %d, want 1", len(d.Files))
+	files := map[string]DiffFile{}
+	for _, f := range d.Files {
+		files[f.Path] = f
 	}
-	if !d.Files[0].IsBinary {
-		t.Errorf("expected IsBinary=true for NUL-containing file")
+	if len(d.Files) != 5 || len(files) != 5 {
+		t.Fatalf("Files = %+v, want 5 distinct paths", d.Files)
 	}
-	if d.Files[0].Diff != "" {
-		t.Errorf("binary file Diff should be empty, got %q", d.Files[0].Diff)
+
+	if f := files["foo.txt"]; f.Status != "modified" || f.Additions != 1 || f.Deletions != 0 ||
+		!strings.Contains(f.Diff, "+world") {
+		t.Errorf("foo.txt = %+v, want modified +1/-0 with a +world line", f)
+	}
+	if f := files["new.txt"]; f.Status != "added" || f.Additions != 1 {
+		t.Errorf("new.txt = %+v, want added with 1 addition", f)
+	}
+	if f := files["gone.txt"]; f.Status != "deleted" || f.Deletions == 0 {
+		t.Errorf("gone.txt = %+v, want deleted with deletions", f)
+	}
+	// The synthetic diff should look like a real new-file diff.
+	if f := files["untracked.txt"]; f.Status != "untracked" || f.Additions != 3 ||
+		!strings.Contains(f.Diff, "new file mode") {
+		t.Errorf("untracked.txt = %+v, want untracked +3 with a new-file diff", f)
+	}
+	if f := files["blob.bin"]; !f.IsBinary || f.Diff != "" {
+		t.Errorf("blob.bin = %+v, want IsBinary with no embedded diff", f)
 	}
 }
 

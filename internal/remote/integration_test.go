@@ -15,8 +15,6 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -256,21 +254,6 @@ func TestRemoteConn_ConnectAndHello(t *testing.T) {
 	}
 }
 
-func TestRemoteConn_AuthFailedHealth(t *testing.T) {
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode"})
-	addr := startRealRemote(t, "correct", "r", reg)
-
-	conn := NewRemoteConn(addr, "wrong")
-	err := conn.Connect(context.Background())
-	if err == nil {
-		t.Fatal("expected connect error with wrong token")
-	}
-	if conn.Health() != HealthAuthFailed {
-		t.Fatalf("health = %q, want auth-failed", conn.Health())
-	}
-}
-
 func TestManager_RegistersRemotePlatform(t *testing.T) {
 	// Remote side.
 	remoteReg := platforms.NewRegistry()
@@ -337,7 +320,7 @@ func TestRemotePlatform_MutationsAndCreateRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
-	if fp.sent == nil || fp.sent.Message != "drive remotely" {
+	if fp.sent == nil || fp.sent.Message != "drive remotely" || fp.sent.SessionID != "s1" {
 		t.Fatalf("remote did not receive message: %+v", fp.sent)
 	}
 

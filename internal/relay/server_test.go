@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -428,28 +429,60 @@ func TestRead_SetsPermissiveCORS(t *testing.T) {
 	}
 }
 
-func TestAppend_RejectsOversizedChunk(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.MaxChunkBytes = 16 })
-	created := h.create()
-	rec := h.do(http.MethodPut, "/s/"+created.ID+"/0", bytes.Repeat([]byte("x"), 64), created.DeleteToken)
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("status %d, want 413", rec.Code)
+func TestAppend_RejectsOverLimit(t *testing.T) {
+	tests := []struct {
+		name   string
+		config func(*Config)
+		seed   [][]byte // appended as chunks 0..n-1 first
+		seq    string
+		body   []byte
+		want   []int
+	}{
+		{
+			name:   "oversized chunk",
+			config: func(c *Config) { c.MaxChunkBytes = 16 },
+			seq:    "0",
+			body:   bytes.Repeat([]byte("x"), 64),
+			want:   []int{http.StatusRequestEntityTooLarge},
+		},
+		{
+			name:   "too many chunks",
+			config: func(c *Config) { c.MaxChunks = 2 },
+			seed:   [][]byte{[]byte("a"), []byte("b")},
+			seq:    "2",
+			body:   []byte("c"),
+			want:   []int{http.StatusBadRequest, http.StatusRequestEntityTooLarge},
+		},
+		{
+			name: "oversized share",
+			config: func(c *Config) {
+				c.MaxChunkBytes = 32
+				c.MaxShareBytes = 40
+			},
+			seed: [][]byte{bytes.Repeat([]byte("x"), 30)},
+			seq:  "1",
+			body: bytes.Repeat([]byte("y"), 30),
+			want: []int{http.StatusRequestEntityTooLarge},
+		},
 	}
-}
-
-func TestAppend_RejectsTooManyChunks(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.MaxChunks = 2 })
-	created := h.create()
-	h.appendChunk(created, 0, []byte("a"))
-	h.appendChunk(created, 1, []byte("b"))
-
-	rec := h.do(http.MethodPut, "/s/"+created.ID+"/2", []byte("c"), created.DeleteToken)
-	if rec.Code != http.StatusBadRequest && rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("status %d, want the third chunk refused", rec.Code)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, tc.config)
+			created := h.create()
+			for i, chunk := range tc.seed {
+				h.appendChunk(created, uint64(i), chunk)
+			}
+			rec := h.do(http.MethodPut, "/s/"+created.ID+"/"+tc.seq, tc.body, created.DeleteToken)
+			if !slices.Contains(tc.want, rec.Code) {
+				t.Fatalf("status %d, want one of %v", rec.Code, tc.want)
+			}
+			// Overwriting an existing chunk must still be allowed at the
+			// cap, or a writer could never retry its last append.
+			if n := len(tc.seed); n > 0 {
+				h.appendChunk(created, uint64(n-1), []byte("z"))
+			}
+		})
 	}
-	// Overwriting an existing chunk must still be allowed at the cap,
-	// or a writer could never retry its last append.
-	h.appendChunk(created, 1, []byte("b2"))
 }
 
 // TestAppend_RejectsScatteredSequence proves the chunk cap cannot be
@@ -462,20 +495,6 @@ func TestAppend_RejectsScatteredSequence(t *testing.T) {
 		if rec.Code != http.StatusBadRequest && rec.Code != http.StatusNotFound {
 			t.Fatalf("seq %q: status %d, want rejection", seq, rec.Code)
 		}
-	}
-}
-
-func TestAppend_RejectsOversizedShare(t *testing.T) {
-	h := newHarness(t, func(c *Config) {
-		c.MaxChunkBytes = 32
-		c.MaxShareBytes = 40
-	})
-	created := h.create()
-	h.appendChunk(created, 0, bytes.Repeat([]byte("x"), 30))
-
-	rec := h.do(http.MethodPut, "/s/"+created.ID+"/1", bytes.Repeat([]byte("y"), 30), created.DeleteToken)
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("status %d, want 413 once the share exceeds its byte cap", rec.Code)
 	}
 }
 

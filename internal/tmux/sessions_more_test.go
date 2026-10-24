@@ -237,109 +237,41 @@ func TestSwitchClient(t *testing.T) {
 	}
 }
 
-func TestLaunchOpencodeCmd(t *testing.T) {
-	// list-sessions succeeds with no output so the launcher takes the
-	// new-session path; new-session's exit code is per-case.
-	okBody := "exit 0"
-	failBody := "if [ \"$1\" = new-session ]; then exit 1; fi\nexit 0"
-
-	tests := []struct {
-		name     string
-		body     string
-		dirUnder string // joined onto a temp HOME
-		absDir   string // used verbatim when set
-		wantErr  string
-		wantArg  string
-	}{
-		{
-			name:     "creates session and runs opencode",
-			body:     okBody,
-			dirUnder: "src/repo",
-			wantArg:  "new-session -d -s ~/src/repo",
-		},
-		{
-			name:     "new-session failure propagates",
-			body:     failBody,
-			dirUnder: "src/repo",
-			wantErr:  "tmux new-session",
-		},
-		{
-			name:    "invalid derived name is rejected before tmux runs",
-			body:    okBody,
-			absDir:  "/var/projects/has:colon",
-			wantErr: "invalid characters",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			readLog := fakeTmux(t, tt.body)
-
-			dir := tt.absDir
-			if dir == "" {
-				dir = filepath.Join(home, tt.dirUnder)
-			}
-
-			name, err := LaunchOpencode(t.Context(), dir)
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("want error containing %q, got nil", tt.wantErr)
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("error = %v; want it to contain %q", err, tt.wantErr)
-				}
-				if tt.wantArg == "" && strings.Contains(tt.wantErr, "invalid characters") {
-					if log := readLog(); log != "" {
-						t.Errorf("tmux was invoked (%q) despite name validation failing", log)
-					}
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if want := SessionNameForPath(dir); name != want {
-				t.Errorf("name = %q, want %q", name, want)
-			}
-			log := readLog()
-			if !strings.Contains(log, tt.wantArg) {
-				t.Errorf("tmux argv log = %q; want it to contain %q", log, tt.wantArg)
-			}
-			if !strings.Contains(log, OpencodeCommand) {
-				t.Errorf("tmux argv log = %q; want the pane command %q", log, OpencodeCommand)
-			}
-		})
-	}
-}
-
-func TestLaunchOpencodeEnvCmd(t *testing.T) {
+// TestLaunchOpencodeDefaultRunner drives the launchers through the real
+// DefaultRunner against a fake tmux binary.
+func TestLaunchOpencodeDefaultRunner(t *testing.T) {
 	// The launcher matches an existing session by resolved path, so the
 	// fake reports a session name that resolves back under the temp HOME.
 	existingBody := "if [ \"$1\" = list-sessions ]; then\ncat <<'EOF'\n~/src/repo	1\nEOF\nfi\nexit 0"
 
 	tests := []struct {
-		name         string
-		body         string
-		dir          string
+		name string
+		body string
+		dir  string // used verbatim when set; defaults to $HOME/src/repo
+		// legacy calls LaunchOpencode instead of the env-aware launcher.
+		legacy       bool
 		wantLaunched bool
-		wantName     string
 		wantErr      string
-		wantEnvArg   bool
+		wantArgs     []string
+		wantNoTmux   bool
 	}{
+		{
+			name:         "LaunchOpencode creates session and runs opencode",
+			body:         "exit 0",
+			legacy:       true,
+			wantLaunched: true,
+			wantArgs:     []string{"new-session -d -s ~/src/repo", OpencodeCommand},
+		},
 		{
 			name:         "creates session with env seeded",
 			body:         "exit 0",
 			wantLaunched: true,
-			wantName:     "~/src/repo",
-			wantEnvArg:   true,
+			wantArgs:     []string{"-e OPENCODE_PERMISSION={}"},
 		},
 		{
 			name:         "existing session short circuits",
 			body:         existingBody,
 			wantLaunched: false,
-			wantName:     "~/src/repo",
 		},
 		{
 			name:    "new-session failure propagates",
@@ -347,10 +279,12 @@ func TestLaunchOpencodeEnvCmd(t *testing.T) {
 			wantErr: "tmux new-session",
 		},
 		{
-			name:    "invalid derived name is rejected",
-			body:    "exit 0",
-			dir:     "/var/projects/has:colon",
-			wantErr: "invalid characters",
+			name:       "invalid derived name is rejected before tmux runs",
+			body:       "exit 0",
+			legacy:     true,
+			dir:        "/var/projects/has:colon",
+			wantErr:    "invalid characters",
+			wantNoTmux: true,
 		},
 	}
 
@@ -365,7 +299,18 @@ func TestLaunchOpencodeEnvCmd(t *testing.T) {
 				dir = filepath.Join(home, "src/repo")
 			}
 
-			name, launched, err := LaunchOpencodeCmdEnvWith(t.Context(), DefaultRunner, dir, OpencodeCommand, true, map[string]string{"OPENCODE_PERMISSION": "{}"})
+			var (
+				name     string
+				launched bool
+				err      error
+			)
+			if tt.legacy {
+				name, err = LaunchOpencode(t.Context(), dir)
+				launched = err == nil
+			} else {
+				name, launched, err = LaunchOpencodeCmdEnvWith(t.Context(), DefaultRunner, dir, OpencodeCommand, true, map[string]string{"OPENCODE_PERMISSION": "{}"})
+			}
+			log := readLog()
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v; want it to contain %q", err, tt.wantErr)
@@ -373,20 +318,24 @@ func TestLaunchOpencodeEnvCmd(t *testing.T) {
 				if launched {
 					t.Error("launched = true on error; want false")
 				}
+				if tt.wantNoTmux && log != "" {
+					t.Errorf("tmux was invoked (%q) despite name validation failing", log)
+				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if name != tt.wantName {
-				t.Errorf("name = %q, want %q", name, tt.wantName)
+			if want := SessionNameForPath(dir); name != want {
+				t.Errorf("name = %q, want %q", name, want)
 			}
 			if launched != tt.wantLaunched {
 				t.Errorf("launched = %v, want %v", launched, tt.wantLaunched)
 			}
-			log := readLog()
-			if tt.wantEnvArg && !strings.Contains(log, "-e OPENCODE_PERMISSION={}") {
-				t.Errorf("tmux argv log = %q; want the seeded -e env pair", log)
+			for _, arg := range tt.wantArgs {
+				if !strings.Contains(log, arg) {
+					t.Errorf("tmux argv log = %q; want it to contain %q", log, arg)
+				}
 			}
 			if !tt.wantLaunched && strings.Contains(log, "new-session") {
 				t.Errorf("tmux argv log = %q; want no new-session on the idempotent path", log)

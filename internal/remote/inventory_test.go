@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // newStateDB opens a fresh state.db for Manager tests.
@@ -29,14 +30,10 @@ func newStateDB(t *testing.T) *state.DB {
 // waitForRegister polls until the compound platform id appears in reg.
 func waitForRegister(t *testing.T, reg *platforms.Registry, id string) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, ok := reg.Get(platforms.ID(id)); ok {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("platform %q never registered", id)
+	testutil.WaitFor(t, 3*time.Second, "platform "+id+" to register", func() bool {
+		_, ok := reg.Get(platforms.ID(id))
+		return ok
+	})
 }
 
 func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {

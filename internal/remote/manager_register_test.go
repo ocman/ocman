@@ -5,8 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )

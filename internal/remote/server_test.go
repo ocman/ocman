@@ -266,6 +266,13 @@ func (localStubHost) TermAttach(_ context.Context, _ hostsvc.TermAttachRequest, 
 
 func startTestServer(t *testing.T, token string, srv *Server) *grpc.ClientConn {
 	t.Helper()
+	return startTestServerAs(t, token, token, srv)
+}
+
+// startTestServerAs serves srv behind token and dials it presenting
+// clientToken.
+func startTestServerAs(t *testing.T, token, clientToken string, srv *Server) *grpc.ClientConn {
+	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	unary, stream := NewAuthInterceptors(token)
 	gs := grpc.NewServer(grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream))
@@ -277,7 +284,7 @@ func startTestServer(t *testing.T, token string, srv *Server) *grpc.ClientConn {
 		"passthrough:///bufnet",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithPerRPCCredentials(bearerCreds{token: token, requireTLS: false}),
+		grpc.WithPerRPCCredentials(bearerCreds{token: clientToken, requireTLS: false}),
 	)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -487,23 +494,6 @@ func TestRemotePlatformErrorRestoresUnreachableSentinel(t *testing.T) {
 	}
 }
 
-func TestServer_SendMessageRoundTrip(t *testing.T) {
-	reg := platforms.NewRegistry()
-	fp := &fakePlatform{id: "opencode"}
-	reg.Register(fp)
-	srv := NewServer(reg, localStubHost{}, "i", "v")
-	conn := startTestServer(t, "tok", srv)
-	client := pb.NewOcmanClient(conn)
-
-	payload, _ := marshalJSON(platforms.SendMessageRequest{SessionID: "s1", Message: "hello there"})
-	if _, err := client.Call(context.Background(), &pb.CallReq{Method: "SendMessage", Platform: "opencode", Payload: payload}); err != nil {
-		t.Fatalf("SendMessage: %v", err)
-	}
-	if fp.sent == nil || fp.sent.Message != "hello there" || fp.sent.SessionID != "s1" {
-		t.Fatalf("send not delivered: %+v", fp.sent)
-	}
-}
-
 func TestServer_StreamEventsRoundTrip(t *testing.T) {
 	reg := platforms.NewRegistry()
 	fp := &fakePlatform{id: "opencode", events: []string{"event: a\n\n", "event: b\n\n"}}
@@ -706,27 +696,9 @@ func TestServer_TerminalStreamRequiresOpenFirst(t *testing.T) {
 func TestServer_RejectsBadToken(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{id: "opencode"})
-	srv := NewServer(reg, localStubHost{}, "i", "v")
+	conn := startTestServerAs(t, "correct-token", "WRONG", NewServer(reg, localStubHost{}, "i", "v"))
 
-	lis := bufconn.Listen(1 << 20)
-	unary, stream := NewAuthInterceptors("correct-token")
-	gs := grpc.NewServer(grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream))
-	pb.RegisterOcmanServer(gs, srv)
-	go func() { _ = gs.Serve(lis) }()
-	t.Cleanup(gs.Stop)
-
-	conn, err := grpc.NewClient(
-		"passthrough:///bufnet",
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithPerRPCCredentials(bearerCreds{token: "WRONG", requireTLS: false}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close() })
-
-	_, err = pb.NewOcmanClient(conn).Hello(context.Background(), &pb.HelloReq{})
+	_, err := pb.NewOcmanClient(conn).Hello(context.Background(), &pb.HelloReq{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("expected Unauthenticated, got %v", err)
 	}

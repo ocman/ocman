@@ -18,6 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // startClaudeRemote serves a real Claude provider, driving the fake claude
@@ -104,15 +105,6 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-func waitUntil(t *testing.T, what string, ok func() bool) {
-	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-	}
-}
-
 // streamEvents proxies the remote session's events to the hub over gRPC.
 func streamEvents(t *testing.T, p platforms.Platform, id string) *syncBuffer {
 	t.Helper()
@@ -146,7 +138,7 @@ func TestHubDrivesRemoteClaudeSession(t *testing.T) {
 	if err := claude.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: created.ID, Message: "hi"}); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "turn reply on the hub", func() bool { return strings.Contains(events.String(), "session.idle") })
+	testutil.WaitFor(t, waitTimeout, "turn reply on the hub", func() bool { return strings.Contains(events.String(), "session.idle") })
 	if !strings.Contains(events.String(), "message.part.updated") {
 		t.Fatalf("no streamed reply:\n%s", events.String())
 	}
@@ -161,7 +153,7 @@ func TestHubContinuesRemoteTerminalSession(t *testing.T) {
 	claude, _ := startClaudeRemote(t, claudetest.Fixture("plain.jsonl"))
 	const terminal = "11111111-1111-4111-8111-111111111111"
 	var detail *platforms.SessionDetail
-	waitUntil(t, "terminal session indexed", func() bool {
+	testutil.WaitFor(t, waitTimeout, "terminal session indexed", func() bool {
 		d, err := claude.Session(t.Context(), terminal, 10, 0)
 		detail = d
 		return err == nil && d.Session != nil
@@ -177,7 +169,7 @@ func TestHubContinuesRemoteTerminalSession(t *testing.T) {
 	if err := claude.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: terminal, Message: "hi"}); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "external session reply", func() bool { return strings.Contains(events.String(), "session.idle") })
+	testutil.WaitFor(t, waitTimeout, "external session reply", func() bool { return strings.Contains(events.String(), "session.idle") })
 }
 
 // A permission the remote cannot decide is shown and answered on the hub.
@@ -192,7 +184,7 @@ func TestHubAnswersRemoteClaudePermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	var pending []platforms.LivePrompt
-	waitUntil(t, "pending prompt on the hub", func() bool {
+	testutil.WaitFor(t, waitTimeout, "pending prompt on the hub", func() bool {
 		pending, _ = claude.ListPermissions(t.Context(), created.ID)
 		return len(pending) == 1 && strings.Contains(events.String(), "permission.asked")
 	})
@@ -203,7 +195,7 @@ func TestHubAnswersRemoteClaudePermission(t *testing.T) {
 		PermissionID: pending[0]["id"].(string), Reply: "once"}); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "turn finished after the hub's reply", func() bool { return strings.Contains(events.String(), "session.idle") })
+	testutil.WaitFor(t, waitTimeout, "turn finished after the hub's reply", func() bool { return strings.Contains(events.String(), "session.idle") })
 	if log, _ := os.ReadFile(os.Getenv("FAKE_CLAUDE_STDIN")); !strings.Contains(string(log), `"behavior":"allow"`) {
 		t.Fatalf("remote claude was not answered: %s", log)
 	}

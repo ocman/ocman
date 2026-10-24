@@ -19,82 +19,54 @@ func (h *harness) seedShareOn(at time.Time) createResponse {
 	return created
 }
 
-func TestSweep_DeletesExpiredShares(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.TTL = 7 * 24 * time.Hour })
-	old := h.seedShareOn(h.now.AddDate(0, 0, -10))
-	fresh := h.seedShareOn(h.now.AddDate(0, 0, -2))
-
-	if err := h.srv.Sweep(context.Background()); err != nil {
-		t.Fatalf("Sweep: %v", err)
-	}
-
-	if rec := h.do(http.MethodGet, "/s/"+old.ID, nil, ""); rec.Code != http.StatusNotFound {
-		t.Fatalf("expired share: status %d, want 404", rec.Code)
-	}
-	if rec := h.do(http.MethodGet, "/s/"+fresh.ID, nil, ""); rec.Code != http.StatusOK {
-		t.Fatalf("live share: status %d, want 200", rec.Code)
-	}
-}
-
-// TestSweep_KeepsShareUntilTTLElapses pins the boundary: a share exactly
-// at the TTL is still live, so the sweeper never deletes early.
-func TestSweep_KeepsShareUntilTTLElapses(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.TTL = 7 * 24 * time.Hour })
-	atBoundary := h.seedShareOn(h.now.AddDate(0, 0, -7))
-
-	if err := h.srv.Sweep(context.Background()); err != nil {
-		t.Fatalf("Sweep: %v", err)
-	}
-	if rec := h.do(http.MethodGet, "/s/"+atBoundary.ID, nil, ""); rec.Code != http.StatusOK {
-		t.Fatalf("status %d, want 200: a share at exactly the TTL must survive", rec.Code)
-	}
-}
-
-func TestSweep_RemovesEveryObjectOfAnExpiredShare(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.TTL = 24 * time.Hour })
-	old := h.seedShareOn(h.now.AddDate(0, 0, -5))
-	h.appendChunk(old, 1, []byte("more"))
-
-	if err := h.srv.Sweep(context.Background()); err != nil {
-		t.Fatalf("Sweep: %v", err)
-	}
-	objs, err := h.store.List(context.Background(), "")
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(objs) != 0 {
-		t.Fatalf("sweep left %d objects: %v", len(objs), objs)
-	}
-}
-
-// TestSweep_IsIdempotent proves a repeated sweep over already-empty days
-// is harmless, which is what lets the sweeper delete computed prefixes
+// TestSweep_ExpiresSharesPastTheTTL seeds shares of several ages on one
+// relay and sweeps repeatedly: a repeated sweep over already-empty days is
+// harmless, which is what lets the sweeper delete computed prefixes
 // without listing the store first.
-func TestSweep_IsIdempotent(t *testing.T) {
-	h := newHarness(t, nil)
-	fresh := h.create()
+func TestSweep_ExpiresSharesPastTheTTL(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.TTL = 7 * 24 * time.Hour })
+	// Seeded oldest first so the create rate limiter's clock only moves
+	// forward.
+	ancient := h.seedShareOn(h.now.AddDate(0, 0, -(sweepWindowDays + 30)))
+	expired := h.seedShareOn(h.now.AddDate(0, 0, -10))
+	h.appendChunk(expired, 1, []byte("more"))
+	atTTL := h.seedShareOn(h.now.AddDate(0, 0, -7))
+	live := h.seedShareOn(h.now.AddDate(0, 0, -2))
+	shares := []struct {
+		name string
+		id   string
+		want int
+	}{
+		{"expired share", expired.ID, http.StatusNotFound},
+		{"live share", live.ID, http.StatusOK},
+		// The boundary: a share exactly at the TTL is still live, so the
+		// sweeper never deletes early.
+		{"share at exactly the TTL", atTTL.ID, http.StatusOK},
+		{"share created now", h.create().ID, http.StatusOK},
+		// Documents the known ceiling rather than pretending it is
+		// covered: a relay offline for longer than the window needs a
+		// wider window or a storage lifecycle rule.
+		{"share beyond the sweep window", ancient.ID, http.StatusOK},
+	}
+
 	for range 3 {
 		if err := h.srv.Sweep(context.Background()); err != nil {
 			t.Fatalf("Sweep: %v", err)
 		}
 	}
-	if rec := h.do(http.MethodGet, "/s/"+fresh.ID, nil, ""); rec.Code != http.StatusOK {
-		t.Fatalf("status %d, want 200", rec.Code)
-	}
-}
 
-func TestSweep_LeavesSharesOlderThanTheWindow(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.TTL = 24 * time.Hour })
-	ancient := h.seedShareOn(h.now.AddDate(0, 0, -(sweepWindowDays + 30)))
-
-	if err := h.srv.Sweep(context.Background()); err != nil {
-		t.Fatalf("Sweep: %v", err)
+	for _, s := range shares {
+		if rec := h.do(http.MethodGet, "/s/"+s.id, nil, ""); rec.Code != s.want {
+			t.Errorf("%s: status %d, want %d", s.name, rec.Code, s.want)
+		}
 	}
-	// Documents the known ceiling rather than pretending it is covered:
-	// a relay offline for longer than the window needs a wider window
-	// or a storage lifecycle rule.
-	if rec := h.do(http.MethodGet, "/s/"+ancient.ID, nil, ""); rec.Code != http.StatusOK {
-		t.Fatalf("status %d: shares beyond the sweep window are expected to survive", rec.Code)
+	prefix, _ := prefixFor(expired.ID)
+	objs, err := h.store.List(context.Background(), prefix)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(objs) != 0 {
+		t.Fatalf("sweep left %d objects of the expired share: %v", len(objs), objs)
 	}
 }
 
