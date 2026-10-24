@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,9 +37,23 @@ func startPreparationTestServer(t *testing.T, srv *Server) (string, context.Canc
 	return "http://" + ln.Addr().String(), cancel, done
 }
 
+// unpooledTransport is for test clients that retry with a short timeout and
+// then join a server on its graceful-shutdown bound. net/http keeps dialing
+// after a request times out and parks the late connection in the idle pool. It
+// never sends a request, so the server sees it in StateNew, which Shutdown only
+// treats as idle after 5s: as long as StartOnListener's graceful bound.
+func unpooledTransport() *http.Transport {
+	return &http.Transport{DisableKeepAlives: true}
+}
+
 func preparationHTTP(t *testing.T, url string, status int) {
 	t.Helper()
-	client := &http.Client{Timeout: 300 * time.Millisecond}
+	preparationHTTPVia(t, unpooledTransport(), url, status)
+}
+
+func preparationHTTPVia(t *testing.T, tr http.RoundTripper, url string, status int) {
+	t.Helper()
+	client := &http.Client{Transport: tr, Timeout: 300 * time.Millisecond}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		resp, err := client.Get(url)
@@ -66,6 +81,44 @@ func joinPreparationTestServer(t *testing.T, done <-chan error) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not join preparation and session workers")
 	}
+}
+
+// Under CPU contention a dial can complete after its request timed out and a
+// retry succeeded on a fresh connection. That late connection must not keep
+// the server's graceful shutdown waiting.
+func TestPreparationHTTPDoesNotStrandLateDials(t *testing.T) {
+	srv := testServer(t)
+	tr := unpooledTransport()
+	dial := (&net.Dialer{}).DialContext
+	var starved atomic.Bool
+	late := make(chan struct{})
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
+		if err != nil || starved.Swap(true) {
+			return conn, err
+		}
+		time.Sleep(400 * time.Millisecond) // a starved dial goroutine
+		return &closeSignalConn{Conn: conn, closed: late}, nil
+	}
+	url, cancel, done := startPreparationTestServer(t, srv)
+	defer func() { cancel(); joinPreparationTestServer(t, done) }()
+	preparationHTTPVia(t, tr, url+"/api/auth/me", http.StatusOK)
+	select {
+	case <-late:
+	case <-time.After(5 * time.Second):
+		t.Fatal("late connection stayed open without a request")
+	}
+}
+
+type closeSignalConn struct {
+	net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (c *closeSignalConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return c.Conn.Close()
 }
 
 func TestHistoricalPreparationDoesNotBlockHTTPOrTaskStatus(t *testing.T) {

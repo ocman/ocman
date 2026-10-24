@@ -53,7 +53,7 @@ func TestGatewayRetainsFailurePageAfterActualModuleStartFailure(t *testing.T) {
 	go func() {
 		done <- startup.Run(ctx, ln, fstest.MapFS{"index.html": {Data: []byte("shell")}}, func(ctx context.Context) error { return s.StartOnListener(ctx, ln) })
 	}()
-	client := &http.Client{Timeout: time.Second}
+	client := &http.Client{Transport: unpooledTransport(), Timeout: time.Second}
 	for deadline := time.Now().Add(5 * time.Second); ; {
 		select {
 		case err := <-done:
