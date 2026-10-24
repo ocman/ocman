@@ -32,10 +32,13 @@ body = """
 {% endfor %}\
 """
 
-# Footer is intentionally empty: the workflow appends the
-# "Full changelog" compare link after rendering so we don't have to
-# hard-code the Forgejo/GitHub host in the template.
-footer = ""
+# Compare link to the previous release. The host and repository come
+# from the CI environment so the template does not hard-code a forge.
+footer = """
+{% for release in releases %}{% if release.previous.version and release.version %}
+
+**Full changelog**: {{ get_env(name="SERVER_URL") }}/{{ get_env(name="REPOSITORY") }}/compare/{{ release.previous.version }}...{{ release.version }}\
+{% endif %}{% endfor %}"""
 
 trim = true
 
@@ -70,3 +73,9 @@ commit_parsers = [
     # Anything that did not match a known type is dropped.
     { message = ".*", skip = true },
 ]
+
+# CI computes the next tag with `git-cliff --bumped-version`. Pre-1.0,
+# a breaking change still moves to 1.0.0 and a feature bumps the minor.
+[bump]
+features_always_bump_minor = true
+breaking_always_bump_major = true

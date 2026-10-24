@@ -4,9 +4,9 @@
 
 `git-cliff` renders a Markdown changelog from the conventional commits
 in `<previous-tag>..HEAD`. The existing `tag` job in
-`.forgejo/workflows/ci.yml` keeps its semver-bump logic but, after
-deciding `next_tag`, also runs `git-cliff` and writes the rendered
-body into the **annotated tag's message**. That tag is then the
+`.forgejo/workflows/ci.yml` decides `next_tag` with
+`git-cliff --bumped-version` (see `[bump]` in `cliff.toml`), then
+renders the changelog and writes it into the **annotated tag's message**. That tag is then the
 single source of truth: when the tag push triggers the `release`
 workflow, the release job recovers the body via
 `git tag -l --format='%(contents)' "${TAG_NAME}"` and uses it as the
@@ -23,10 +23,9 @@ flowchart LR
     A[push to main] --> B[CI: tag job]
     B --> C{conventional commits<br/>since latest tag?}
     C -- no --> X[exit 0, no tag]
-    C -- yes --> D[compute next_tag<br/>existing bash logic]
-    D --> E[git-cliff render<br/>cliff.toml + range]
-    E --> F[append compare link]
-    F --> G[git tag -a -F changelog.md<br/>git push]
+    C -- yes --> D[compute next_tag<br/>git-cliff --bumped-version]
+    D --> E[git-cliff render<br/>--unreleased --tag next_tag]
+    E --> G[git tag -a -F changelog.md<br/>git push]
     G --> H[tag push triggers Release workflow]
     H --> I[git tag -l --format='%contents'<br/>recover body]
     I --> J[curl POST /releases<br/>body = changelog]
@@ -46,12 +45,12 @@ points:
   - prints `### <Group>` headings
   - per commit, renders `- **<scope>**: <subject> (<short_sha>)` when
     a scope is present, otherwise `- <subject> (<short_sha>)`
-- `[changelog].footer` is empty. The `**Full changelog**: <compare>`
-  line is appended by the workflow after rendering, because it is
-  the workflow that knows the Forgejo host (it already builds API
-  URLs from `FORGEJO_API_URL` + `REPOSITORY`). Keeping the template
-  host-agnostic means `cliff.toml` works unchanged if the project
-  ever moves between Forgejo / GitHub / GitLab.
+- `[changelog].footer` renders the `**Full changelog**: <compare>`
+  line when a previous release exists. It reads the host and
+  repository from the `SERVER_URL` and `REPOSITORY` environment
+  variables the workflow sets, so the template stays host-agnostic.
+- `[bump]` keeps the pre-1.0 rules: a breaking change moves to 1.0.0
+  and a feature bumps the minor version.
 - `[git].commit_parsers` map conventional-commit types → group:
   - `feat` → `Features`
   - `fix` → `Bug fixes`
