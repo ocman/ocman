@@ -151,6 +151,8 @@ func TestNewRegistryKeepsFirstLoginPerHostAndSkipsUnreadableConfig(t *testing.T)
 	}
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("FORGEJO_TOKEN", "")
+	t.Setenv("GITEA_TOKEN", "")
 	r := NewRegistry()
 	if c := r.ForHost("code.example.com"); c == nil || c.Token() != "one" || !r.Knows("code.example.com") {
 		t.Fatalf("client = %+v", c)
