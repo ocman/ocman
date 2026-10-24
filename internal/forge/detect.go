@@ -10,21 +10,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
-// ForgejoHostMap is the small subset of forgejo.Registry that
-// detection needs. Defined as an interface so this package stays
-// import-free of the per-forge clients.
-type ForgejoHostMap interface {
-	// Knows reports whether host is a configured Forgejo host. Used
-	// to classify a git remote as "forgejo" rather than "unsupported".
-	Knows(host string) bool
-}
-
-// Detect runs `git -C repoRoot remote -v`, classifies each remote
-// into a supported forge (or drops it), and returns the result sorted
-// by remote name. Returns an empty slice (not an error) when the
+// Detect runs `git -C repoRoot remote -v`, classifies each parseable
+// remote as GitHub (github.com) or Forgejo (any other host), and returns
+// the result sorted by remote name. The hub narrows Forgejo remotes to
+// its configured hosts. Returns an empty slice (not an error) when the
 // directory has no remotes; returns an error only when git itself
 // fails (e.g. repoRoot is not a git repo).
-func Detect(ctx context.Context, repoRoot string, hosts ForgejoHostMap) ([]Remote, error) {
+func Detect(ctx context.Context, repoRoot string) ([]Remote, error) {
 	if repoRoot == "" {
 		return nil, fmt.Errorf("forge: Detect requires repoRoot")
 	}
@@ -33,7 +25,7 @@ func Detect(ctx context.Context, repoRoot string, hosts ForgejoHostMap) ([]Remot
 		return nil, fmt.Errorf("git remote -v: %w", err)
 	}
 	raw := parseGitRemoteV(out)
-	return classifyRemotes(raw, hosts), nil
+	return classifyRemotes(raw), nil
 }
 
 // rawRemote is one row of `git remote -v` (a name + url pair, with
@@ -82,10 +74,10 @@ func parseGitRemoteV(out string) []rawRemote {
 }
 
 // classifyRemotes turns raw rows into typed Remote entries, dropping
-// any unsupported hosts. The result is sorted by remote name and
+// unparseable URLs. The result is sorted by remote name and
 // deduplicated (each remote appears once even though `git remote -v`
 // emits it twice).
-func classifyRemotes(raw []rawRemote, hosts ForgejoHostMap) []Remote {
+func classifyRemotes(raw []rawRemote) []Remote {
 	seen := map[string]bool{}
 	out := make([]Remote, 0, len(raw))
 	for _, r := range raw {
@@ -96,15 +88,9 @@ func classifyRemotes(raw []rawRemote, hosts ForgejoHostMap) []Remote {
 		if !ok {
 			continue
 		}
-		var t RemoteType
-		switch {
-		case host == "github.com":
+		t := RemoteTypeForgejo
+		if host == "github.com" {
 			t = RemoteTypeGitHub
-		case hosts != nil && hosts.Knows(host):
-			t = RemoteTypeForgejo
-		default:
-			// Unsupported host — drop.
-			continue
 		}
 		seen[r.Name] = true
 		out = append(out, Remote{
@@ -175,11 +161,17 @@ func parseRemoteURL(raw string) (host, repo string, ok bool) {
 func trimRepo(path string) string {
 	path = strings.TrimPrefix(path, "/")
 	path = strings.TrimSuffix(path, ".git")
-	parts := strings.Split(path, "/")
-	if len(parts) != 2 || !validRepoPart(parts[0]) || !validRepoPart(parts[1]) {
+	if !ValidRepo(path) {
 		return ""
 	}
 	return path
+}
+
+// ValidRepo reports whether repo is a plain "owner/name" whose parts are
+// safe to place in API paths and storage keys.
+func ValidRepo(repo string) bool {
+	parts := strings.Split(repo, "/")
+	return len(parts) == 2 && validRepoPart(parts[0]) && validRepoPart(parts[1])
 }
 
 func validRepoPart(part string) bool {

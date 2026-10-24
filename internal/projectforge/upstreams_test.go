@@ -2,12 +2,17 @@ package projectforge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
@@ -315,5 +320,43 @@ func TestDetectUpstreams_CallerCancellationDoesNotFailOtherWaiters(t *testing.T)
 	close(host.release)
 	if err := <-second; err != nil {
 		t.Fatalf("second error = %v, want success", err)
+	}
+}
+
+func TestHandleUpstreams_ServesClassifiedRemotes(t *testing.T) {
+	host := &fakeHost{upstreams: &hostsvc.ProjectUpstreams{RepoRoot: "/repo", Remotes: []forge.Remote{
+		{Name: "origin", Host: "github.com", Repo: "a/b", Type: forge.RemoteTypeGitHub},
+		{Name: "internal", Host: "code.example.com", Repo: "infra/x", Type: forge.RemoteTypeForgejo},
+		{Name: "gitlab", Host: "gitlab.com", Repo: "x/y", Type: forge.RemoteTypeForgejo},
+	}}}
+	m := newTestModule()
+	m.KnowsForgejo = func(h string) bool { return h == "code.example.com" }
+	m.Owner = func(http.ResponseWriter, string, string) (hostsvc.Host, bool) { return host, true }
+	serve := func() *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		m.handleUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/repo&remoteId=local", nil))
+		return rr
+	}
+	rr := serve()
+	var body struct{ Upstreams []forge.Remote }
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); rr.Code != http.StatusOK || err != nil {
+		t.Fatalf("status = %d, body = %s, err = %v", rr.Code, rr.Body, err)
+	}
+	if len(body.Upstreams) != 2 || body.Upstreams[0].Name != "origin" || body.Upstreams[1].Name != "internal" {
+		t.Fatalf("upstreams = %+v", body.Upstreams)
+	}
+	if r, ok := findRemote(body.Upstreams, "internal"); !ok || r.Type != forge.RemoteTypeForgejo {
+		t.Fatalf("findRemote(internal) = %+v, %v", r, ok)
+	}
+	if _, ok := findRemote(body.Upstreams, "gitlab"); ok {
+		t.Fatal("findRemote found an unserved remote")
+	}
+
+	m = newTestModule()
+	m.Owner = func(http.ResponseWriter, string, string) (hostsvc.Host, bool) {
+		return &fakeHost{upstreamErr: git.ErrNotARepo}, true
+	}
+	if rr := serve(); rr.Code != http.StatusNotFound {
+		t.Fatalf("not a repo: status = %d", rr.Code)
 	}
 }

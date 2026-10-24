@@ -177,25 +177,7 @@ func validRemote(rem forge.Remote) bool {
 	if strings.TrimSpace(rem.Name) == "" || strings.TrimSpace(rem.Host) == "" || strings.ContainsAny(rem.Host, "/\\?#@") {
 		return false
 	}
-	parts := strings.Split(rem.Repo, "/")
-	if len(parts) != 2 {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." {
-			return false
-		}
-		for _, r := range part {
-			if !validRepoRune(r) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func validRepoRune(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._-", r)
+	return forge.ValidRepo(rem.Repo)
 }
 
 // findRemote locates a remote by name in the detected list.

@@ -67,8 +67,7 @@ func (r *Registry) ForHost(host string) *Client {
 }
 
 // Knows reports whether the registry has a client for host. Used by
-// upstream detection to classify a git remote as "forgejo" vs.
-// "unsupported".
+// the hub to keep only remotes on configured Forgejo hosts.
 func (r *Registry) Knows(host string) bool {
 	if r == nil {
 		return false

@@ -117,7 +117,7 @@ func (s *Server) hostProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 	if err != nil {
 		return nil, err
 	}
-	remotes, err := forge.Detect(ctx, repoRoot, anyForgejoHost{})
+	remotes, err := forge.Detect(ctx, repoRoot)
 	out := &hostsvc.ProjectUpstreams{RepoRoot: repoRoot, Remotes: remotes}
 	stats := []db.ProjectStats{{Directory: dir}}
 	if err := remote.EnrichProjectStats(ctx, stats); err != nil {
@@ -127,10 +127,6 @@ func (s *Server) hostProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 	out.Identity = stats[0].UpstreamOrigin
 	return out, err
 }
-
-type anyForgejoHost struct{}
-
-func (anyForgejoHost) Knows(string) bool { return true }
 
 func (s *Server) hostFetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, projectforge.PRHeadFetchTimeout)
