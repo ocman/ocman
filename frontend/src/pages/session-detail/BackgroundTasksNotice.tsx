@@ -42,7 +42,9 @@ function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platf
       setPending(previous => { const next = new Set(previous); next.delete(task.id); return next; });
     }
   };
-  const label = `${count} background ${count === 1 ? 'task' : 'tasks'} running`;
+  const agentsOnly = tasks.length === count && tasks.every(task => task.kind === 'agent');
+  const noun = agentsOnly ? 'agent' : 'task';
+  const label = `${count} background ${noun}${count === 1 ? '' : 's'} running`;
   return (
     <span className={styles.root} role="status">
       <Button ref={trigger} variant="ghost" size="compact" className={styles.trigger} title={label} aria-label={label}
@@ -60,8 +62,8 @@ function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platf
           {tasks.length === 0 ? <p>Task details are unavailable from this backend.</p> : <ul className={styles.tasks}>
             {tasks.map(task => <li key={task.id} className={styles.task}>
               <span className={styles.description} title={task.description || task.id}>{task.description || task.id}</span>
-              <Button variant="danger" size="small" disabled={!canStop || pending.has(task.id)}
-                aria-label={`Stop ${task.description || task.id}`} onClick={() => void stop(task)}>{pending.has(task.id) ? 'Stopping…' : 'Stop'}</Button>
+              {task.kind !== 'agent' && <Button variant="danger" size="small" disabled={!canStop || pending.has(task.id)}
+                aria-label={`Stop ${task.description || task.id}`} onClick={() => void stop(task)}>{pending.has(task.id) ? 'Stopping…' : 'Stop'}</Button>}
             </li>)}
           </ul>}
           {tasks.length > 0 && !canStop && <p>Individual stopping is unavailable from this backend or connection.</p>}

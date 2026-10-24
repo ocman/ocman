@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 
@@ -65,6 +66,10 @@ func TestTransportV2TranslatesWithBasicAuth(t *testing.T) {
 			_, _ = w.Write([]byte(`[{"directory":"/repo"}]`))
 		case "/api/shell":
 			_, _ = w.Write([]byte(`{"data":[{"id":"sh_1","status":"running","metadata":{"sessionID":"ses_2"}}]}`))
+		case "/api/session/ses_1":
+			_, _ = w.Write([]byte(`{"data":{"id":"ses_1"}}`))
+		case "/api/session/ses_2":
+			_, _ = w.Write([]byte(`{"data":{"id":"ses_2","parentID":"ses_1"}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -90,8 +95,14 @@ func TestTransportV2TranslatesWithBasicAuth(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(paths) != 4 || paths[0] != "/api/info" || paths[1] != "/api/session/active" ||
+	if len(paths) != 6 || paths[0] != "/api/info" || paths[1] != "/api/session/active" ||
 		paths[2] != "/api/debug/location" || paths[3] != "/api/shell" {
 		t.Errorf("upstream paths = %v", paths)
+	}
+	if len(paths) == 6 {
+		slices.Sort(paths[4:]) // Active sessions are walked in map order.
+		if !slices.Equal(paths[4:], []string{"/api/session/ses_1", "/api/session/ses_2"}) {
+			t.Errorf("authenticated ownership reads = %v", paths[4:])
+		}
 	}
 }

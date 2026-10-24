@@ -100,7 +100,9 @@ stored-message guesses.
   within 24 hours or open `tool-calls`/`unknown` turns. One failed read leaves
   the port unseeded. `InferSessionStatus` only chooses a terminal state; it never
   means running. No live view with an unfinished turn means `interrupted`.
-- V2 waits for both foreground execution and session-owned shells. Rebuild shell
+- V2 waits for foreground execution, session-owned shells and active native child
+  agents. Child activity bubbles through native parent links, never application
+  worktree links; the main agent's foreground state stays separate. Rebuild shell
   ownership from loaded locations on reconnect; track shell creation, exit and
   deletion. Unrelated ownerless shells cannot hold sessions busy. Complete stream
   ownership bootstrap before headers, then replay buffered lifecycle events so

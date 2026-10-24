@@ -27,7 +27,7 @@ func stopBackgroundTask(c *compat, r *http.Request, m []string) (*http.Response,
 }
 
 func (a *activity) backgroundDetails() map[string][]map[string]string {
-	out := map[string][]map[string]string{}
+	out := a.agentDetails()
 	for id, owner := range a.shells {
 		out[owner] = append(out[owner], map[string]string{"id": id, "description": a.commands[id]})
 	}

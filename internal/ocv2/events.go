@@ -170,8 +170,11 @@ func (t *translator) handle(ev v2Event) error {
 	case "server.connected":
 		return emit("server.connected", map[string]any{"backgroundTasks": t.activity.backgroundCounts(), "backgroundTaskDetails": t.activity.backgroundDetails()})
 	case "session.execution.started":
+		if err := t.activity.loadParents(t.ctx, t.c, sessionID); err != nil {
+			return err
+		}
 		t.activity.foreground[sessionID] = true
-		return emit("session.status", map[string]any{"status": map[string]any{"type": "busy"}})
+		return t.emitActivityFamily(sessionID, dir)
 	case "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted":
 		for id, m := range t.msgs {
 			if m["sessionID"] == sessionID {
@@ -181,13 +184,16 @@ func (t *translator) handle(ev v2Event) error {
 		}
 		clear(t.unseeded)
 		delete(t.activity.foreground, sessionID)
-		return t.emitActivity(sessionID, dir)
+		return t.emitActivityFamily(sessionID, dir)
 	case "shell.created":
 		if owner := t.activity.addShell(obj(d, "info")); owner != "" {
+			if err := t.activity.loadParents(t.ctx, t.c, owner); err != nil {
+				return err
+			}
 			if err := t.emitBackgroundCount(owner, dir); err != nil {
 				return err
 			}
-			return t.emitActivity(owner, dir)
+			return t.emitActivityFamily(owner, dir)
 		}
 		return nil
 	case "shell.exited", "shell.deleted":
@@ -199,14 +205,17 @@ func (t *translator) handle(ev v2Event) error {
 			if err := t.emitBackgroundCount(owner, dir); err != nil {
 				return err
 			}
-			return t.emitActivity(owner, dir)
+			return t.emitActivityFamily(owner, dir)
 		}
 		return nil
 	case "session.retry.scheduled":
+		if err := t.activity.loadParents(t.ctx, t.c, sessionID); err != nil {
+			return err
+		}
 		t.activity.foreground[sessionID] = map[string]any{
 			"type": "retry", "attempt": d["attempt"], "message": str(obj(d, "error"), "message"), "next": d["at"],
 		}
-		return t.emitActivity(sessionID, dir)
+		return t.emitActivityFamily(sessionID, dir)
 	case "session.created", "session.renamed", "session.permissions", "session.moved", "session.forked",
 		"session.metadata.updated", "session.agent.selected", "session.model.selected",
 		"session.revert.staged", "session.revert.cleared", "session.revert.committed":
@@ -214,12 +223,25 @@ func (t *translator) handle(ev v2Event) error {
 		if err != nil {
 			return nil
 		}
+		t.activity.rememberSession(s)
 		typ := "session.updated"
 		if ev.Type == "session.created" {
 			typ = "session.created"
 		}
 		return t.emit(sessionID, firstNonEmpty(dir, str(obj(s, "location"), "directory")), typ, map[string]any{"info": V1Session(s)})
 	case "session.deleted":
+		delete(t.activity.foreground, sessionID)
+		for id, owner := range t.activity.shells {
+			if owner == sessionID {
+				delete(t.activity.shells, id)
+				delete(t.activity.commands, id)
+			}
+		}
+		if len(t.activity.ancestors(sessionID)) > 0 {
+			if err := t.emitActivityFamily(sessionID, dir); err != nil {
+				return err
+			}
+		}
 		return emit("session.deleted", map[string]any{"info": map[string]any{"id": sessionID}})
 	case "session.inbox.enqueued", "session.inbox.cancelled", "session.inbox.delivery.changed":
 		return emit(QueueChangedEvent, map[string]any{})

@@ -8,6 +8,13 @@ afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 const tasks = [{ id: 'one', description: 'pnpm test' }, { id: 'two', description: 'go test' }];
 
+it('identifies background agents without offering shell stop actions', () => {
+  render(<BackgroundTasksNotice count={1} tasks={[{ id: 'child', description: 'Review changes', kind: 'agent' }]} canStop />);
+  fireEvent.click(screen.getByRole('button', { name: '1 background agent running' }));
+  expect(screen.getByText('Review changes')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Stop Review changes' })).not.toBeInTheDocument();
+});
+
 it('shows an icon with the task count only while tasks are running', () => {
   const { rerender } = render(<BackgroundTasksNotice count={0} />);
   expect(screen.queryByRole('status')).not.toBeInTheDocument();

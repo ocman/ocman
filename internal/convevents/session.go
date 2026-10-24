@@ -21,6 +21,7 @@ type QueueChanged struct {
 type BackgroundTask struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
+	Kind        string `json:"kind,omitempty"` // "agent" distinguishes child sessions from stoppable tasks.
 }
 
 type BackgroundChanged struct {

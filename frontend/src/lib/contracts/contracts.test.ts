@@ -82,7 +82,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   }),
   OceRevertMarker: flags<Oce.OceRevertMarker>()({ messageId: false, partId: true }),
   OceErrorInfo: flags<Oce.OceErrorInfo>()({ name: true, message: false, statusCode: true }),
-  SessionBackgroundTask: flags<BackgroundTask>()({ id: false, description: false }),
+  SessionBackgroundTask: flags<BackgroundTask>()({ id: false, description: false, kind: true }),
   OceInflight: flags<Oce.OceInflight>()({ messages: false, parts: false }),
   LiveOverlay: flags<Oce.LiveOverlay>()({
     status: false, prompts: false, judge: false, background: false, queue: true, inflight: false, liveConnection: false,

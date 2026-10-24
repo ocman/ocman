@@ -296,12 +296,16 @@ func background(count int64, raw []json.RawMessage) convevents.BackgroundChanged
 		var t struct {
 			ID          *string `json:"id"`
 			Description *string `json:"description"`
+			Kind        string  `json:"kind"`
 		}
 		if json.Unmarshal(item, &t) != nil || t.ID == nil || *t.ID == "" || t.Description == nil || seen[*t.ID] {
 			continue
 		}
 		seen[*t.ID] = true
-		ev.Tasks = append(ev.Tasks, convevents.BackgroundTask{ID: *t.ID, Description: *t.Description})
+		if t.Kind != "agent" {
+			t.Kind = ""
+		}
+		ev.Tasks = append(ev.Tasks, convevents.BackgroundTask{ID: *t.ID, Description: *t.Description, Kind: t.Kind})
 	}
 	return ev
 }

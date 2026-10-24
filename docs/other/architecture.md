@@ -1619,7 +1619,7 @@ flowchart TD
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
     Hub -->|ocman.settings.changed: advance settings query generation| Stores
-    Hub -->|background task counts + task detail snapshots| Stores
+    Hub -->|aggregate activity + background shell/agent details| Stores
     Comp -->|capability-gated individual task stop| API
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
@@ -1644,10 +1644,11 @@ flowchart TD
   with no runtime discovery. Backend plugins remain separate and reach the UI
   only through plugin panes and palette actions. The command palette and the
   session right-panel tabs still keep their own lists.
-- **Background task notice.** OpenCode v2's session-owned running shells and
-  managed Claude Code's tracked background tasks publish absolute counts through
+- **Background task notice.** OpenCode v2's session-owned running shells and active
+  native child agents, plus managed Claude Code's tracked background tasks,
+  publish absolute counts through
   `ocman.session.background`, including live task IDs and descriptions. The
-  composer shows the count only above zero. Hover, focus or click opens the
+  composer shows the count only above zero. Click opens the
   shared popover with individual Stop buttons gated by `backgroundTaskStop`.
   OpenCode restores counts in `server.connected.backgroundTasks`; Claude includes
   the count in its leased session snapshot. REST refreshes preserve live counts,
@@ -1660,6 +1661,13 @@ flowchart TD
   the live task ledger before sending the SDK `stop_task` control request.
   Neither falls back to aborting the whole session, and completion events remain
   authoritative for removing rows.
+  OpenCode's disposable live activity tracker follows native parent links from
+  active sessions, restores them before stream headers on reconnect, and keeps
+  ancestors Working until their own execution, shells and child agents settle.
+  It never uses ocman's independent worktree links. Child completion updates
+  ancestor counts without manufacturing foreground execution; a running parent
+  stays Working while it processes the result. Agent rows carry `kind: "agent"`
+  and do not offer the shell-only Stop action.
 - **Shared controls.** `Control` provides buttons, button groups, text inputs,
   textareas, search inputs, and selects with native form semantics and shared
   focus, disabled, and invalid styles. `IconButton`, `RefreshButton`, and

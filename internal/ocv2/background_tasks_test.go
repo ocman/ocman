@@ -33,7 +33,8 @@ func TestBackgroundTaskCountWriteFailure(t *testing.T) {
 	for _, typ := range []string{"shell.created", "shell.exited"} {
 		t.Run(typ, func(t *testing.T) {
 			tr := &translator{ctx: context.Background(), out: activityErrorWriter{}, activity: &activity{
-				shells: map[string]string{"one": "s1"},
+				shells:  map[string]string{"one": "s1"},
+				parents: map[string]string{"s1": ""},
 			}}
 			data := map[string]any{"id": "one"}
 			if typ == "shell.created" {

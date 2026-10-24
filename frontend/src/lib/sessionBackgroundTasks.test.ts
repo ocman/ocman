@@ -3,6 +3,11 @@ import { initialSessionView, reduceSessionView } from './sessionReducer';
 import { reduceBackgroundTaskCount } from './sessionBackgroundTasks';
 
 describe('background task counts', () => {
+  it('preserves the agent kind through background event reduction', () => {
+    const tasks = [{ id: 'child', description: 'Review changes', kind: 'agent' }];
+    const view = reduceBackgroundTaskCount(initialSessionView('s1'), 1, tasks);
+    expect(view.backgroundTasks).toEqual(tasks);
+  });
   it('replaces live task details even when the count is unchanged, validates rows and clears old details', () => {
     const tasks = [{ id: 'one', description: 'pnpm test' }];
     let view = reduceBackgroundTaskCount(initialSessionView('s1'), 1, [...tasks, null, {}, tasks[0]]);
