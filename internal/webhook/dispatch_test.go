@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +27,7 @@ func TestMatchesHeaderAndJSONPointerPredicates(t *testing.T) {
 	if ok, err := matches(e, sub); err != nil || ok {
 		t.Fatalf("escaped pointer matches = %v, %v", ok, err)
 	}
-	if !predicateMatch([]string{"yes"}, true, predicate{Exists: &trueValue}, true) {
+	if !headerMatch([]string{"yes"}, predicate{Exists: &trueValue}) {
 		t.Fatal("exists predicate did not match")
 	}
 }
@@ -128,8 +129,8 @@ func TestPredicateValueEquality(t *testing.T) {
 				{Op: "equals", Value: json.RawMessage(test.want)},
 				{OneOf: []json.RawMessage{json.RawMessage(`"unrelated"`), json.RawMessage(test.want)}},
 			} {
-				if got := predicateMatchValue(value, true, p); got != test.ok {
-					t.Fatalf("predicateMatchValue(%s, %+v) = %v, want %v", test.body, p, got, test.ok)
+				if got := valueMatch(value, p); got != test.ok {
+					t.Fatalf("valueMatch(%s, %+v) = %v, want %v", test.body, p, got, test.ok)
 				}
 			}
 		})
@@ -225,8 +226,8 @@ func TestHeaderPredicateValueText(t *testing.T) {
 	}
 	for _, test := range tests {
 		for _, p := range []predicate{{Equals: json.RawMessage(test.want)}, {OneOf: []json.RawMessage{json.RawMessage(test.want)}}} {
-			if got := predicateMatch([]string{test.header}, true, p, true); got != test.ok {
-				t.Errorf("predicateMatch(%q, %s) = %v, want %v", test.header, test.want, got, test.ok)
+			if got := headerMatch([]string{test.header}, p); got != test.ok {
+				t.Errorf("headerMatch(%q, %s) = %v, want %v", test.header, test.want, got, test.ok)
 			}
 		}
 	}
@@ -453,5 +454,38 @@ func TestDispatchPropagatesCallerContext(t *testing.T) {
 	// An already-cancelled caller claims nothing.
 	if err := Dispatch(ctx, db, &sessionDispatcher{db: db}, "inbox", "d3", e, time.UnixMilli(7)); err == nil {
 		t.Fatal("dispatch with a cancelled context succeeded")
+	}
+}
+
+// headerMatch matches present header values the way matches does.
+func headerMatch(values []string, p predicate) bool {
+	p.Op = ""
+	return predicateMatch(p, true, func(want any) bool {
+		return slices.ContainsFunc(values, func(v string) bool { return headerEquals(v, want, true) })
+	})
+}
+
+// valueMatch matches a present JSON body value the way matches does.
+func valueMatch(value any, p predicate) bool {
+	return predicateMatch(p, true, func(want any) bool { return jsonEqual(value, want) })
+}
+
+func TestMatchesPresenceRules(t *testing.T) {
+	e := relay.InboxEnvelope{Body: []byte(`{"a":1}`), Request: relay.InboxRequest{Header: http.Header{"X-A": {"1"}}}}
+	for _, test := range []struct {
+		headers, pointers string
+		ok                bool
+	}{
+		{`{"x-missing":{"exists":false}}`, ``, true},
+		{`{"x-a":{"exists":false}}`, ``, false},
+		{`{"x-missing":{"equals":"1"}}`, ``, false},
+		{``, `{"/missing":{"exists":false}}`, true},
+		{``, `{"/missing":{"equals":1}}`, false},
+		{``, `{"/a":{"exists":true,"op":"equals","value":1}}`, true},
+	} {
+		sub := state.WebhookSubscription{HeaderPredicatesJSON: test.headers, JSONPredicatesJSON: test.pointers}
+		if ok, err := matches(e, sub); err != nil || ok != test.ok {
+			t.Errorf("matches(%s %s) = %v, %v, want %v", test.headers, test.pointers, ok, err, test.ok)
+		}
 	}
 }

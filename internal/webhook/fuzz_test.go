@@ -108,7 +108,7 @@ func FuzzEqualsPredicate(f *testing.F) {
 		if !boundedExponents(w) || !boundedExponents(h) {
 			return // the big.Rat reference would materialise the value
 		}
-		matched := predicateMatchValue(h, true, predicate{Equals: json.RawMessage(want)})
+		matched := valueMatch(h, predicate{Equals: json.RawMessage(want)})
 		if expected := refEqual(w, h) || scalarTextOf(w, h) || scalarTextOf(h, w); matched != expected {
 			t.Fatalf("equals %s against %s: matched %v, want %v", want, have, matched, expected)
 		}

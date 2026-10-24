@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -200,7 +201,10 @@ func matches(e relay.InboxEnvelope, sub state.WebhookSubscription) (bool, error)
 				values = append(values, candidate...)
 			}
 		}
-		if !predicateMatch(values, len(values) > 0, p, true) {
+		p.Op = "" // header predicates have no op form
+		if !predicateMatch(p, len(values) > 0, func(want any) bool {
+			return slices.ContainsFunc(values, func(v string) bool { return headerEquals(v, want, true) })
+		}) {
 			return false, nil
 		}
 	}
@@ -215,7 +219,7 @@ func matches(e relay.InboxEnvelope, sub state.WebhookSubscription) (bool, error)
 		}
 		for pointer, p := range pointers {
 			value, ok := pointerValue(body, pointer)
-			if !predicateMatchValue(value, ok, p) {
+			if !predicateMatch(p, ok, func(want any) bool { return jsonEqual(value, want) }) {
 				return false, nil
 			}
 		}
@@ -223,31 +227,35 @@ func matches(e relay.InboxEnvelope, sub state.WebhookSubscription) (bool, error)
 	return true, nil
 }
 
-func predicateMatch(values []string, exists bool, p predicate, fold bool) bool {
+// predicateMatch applies p's exists, equals and oneOf rules to a value that
+// exists or not; equal compares it with one decoded expected value. The op
+// form ("equals" with value) applies to JSON body predicates only.
+func predicateMatch(p predicate, exists bool, equal func(want any) bool) bool {
 	if p.Exists != nil {
 		if exists != *p.Exists {
 			return false
 		}
-		if p.Exists != nil && !*p.Exists {
+		if !*p.Exists {
 			return true
 		}
-		if len(p.Equals) == 0 && len(p.OneOf) == 0 {
+		if len(p.Equals) == 0 && len(p.OneOf) == 0 && p.Op == "" {
 			return true
 		}
 	}
 	if !exists {
 		return false
 	}
-	wants := p.OneOf
-	if len(p.Equals) > 0 {
-		wants = append([]json.RawMessage{p.Equals}, wants...)
+	want := p.Equals
+	if p.Op == "equals" {
+		want = p.Value
 	}
-	for _, v := range values {
-		for _, raw := range wants {
-			x, err := decodeJSON(raw)
-			if err == nil && headerEquals(v, x, fold) {
-				return true
-			}
+	wants := p.OneOf
+	if len(want) > 0 {
+		wants = append([]json.RawMessage{want}, wants...)
+	}
+	for _, raw := range wants {
+		if x, err := decodeJSON(raw); err == nil && equal(x) {
+			return true
 		}
 	}
 	return false
@@ -387,37 +395,6 @@ func canonicalNumber(s string) (string, bool) {
 	significant := strings.TrimRight(digits, "0")
 	exp.Add(exp, big.NewInt(int64(len(digits)-len(significant)-len(frac))))
 	return sign + significant + "e" + exp.String(), true
-}
-
-func predicateMatchValue(value any, exists bool, p predicate) bool {
-	if p.Exists != nil {
-		if exists != *p.Exists {
-			return false
-		}
-		if !*p.Exists {
-			return true
-		}
-		if len(p.Equals) == 0 && len(p.OneOf) == 0 && p.Op == "" {
-			return true
-		}
-	}
-	if !exists {
-		return false
-	}
-	want := p.Equals
-	if p.Op == "equals" {
-		want = p.Value
-	}
-	wants := p.OneOf
-	if len(want) > 0 {
-		wants = append([]json.RawMessage{want}, wants...)
-	}
-	for _, raw := range wants {
-		if x, err := decodeJSON(raw); err == nil && jsonEqual(value, x) {
-			return true
-		}
-	}
-	return false
 }
 
 func pointerValue(root any, pointer string) (any, bool) {
