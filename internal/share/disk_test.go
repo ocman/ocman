@@ -403,3 +403,14 @@ func TestOpenStore_RelativeDiskScheme(t *testing.T) {
 		t.Fatalf("root = %q, want %q", s.Root, want)
 	}
 }
+
+func TestOpenStore_DecodesSchemePath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "relay data")
+	s, err := share.OpenStore("disk://" + strings.ReplaceAll(root, " ", "%20"))
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	if s.Root != root {
+		t.Fatalf("root = %q, want %q", s.Root, root)
+	}
+}

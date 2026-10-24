@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,14 +39,18 @@ func OpenStore(spec string) (*DiskStore, error) {
 	if spec == "" {
 		return nil, fmt.Errorf("share: empty store specification")
 	}
-	path := spec
-	for _, scheme := range []string{"disk://", "file://"} {
-		path = strings.TrimPrefix(path, scheme)
+	if !strings.Contains(spec, "://") {
+		return NewDiskStore(spec)
 	}
-	if scheme, _, ok := strings.Cut(path, "://"); ok {
-		return nil, fmt.Errorf("share: unsupported store scheme %q", scheme)
+	u, err := url.Parse(spec)
+	if err != nil {
+		return nil, fmt.Errorf("share: parsing store specification: %w", err)
 	}
-	return NewDiskStore(path)
+	if u.Scheme != "disk" && u.Scheme != "file" {
+		return nil, fmt.Errorf("share: unsupported store scheme %q", u.Scheme)
+	}
+	// disk://relative/path puts the first segment in Host.
+	return NewDiskStore(u.Host + u.Path)
 }
 
 // NewDiskStore returns a DiskStore rooted at dir, creating it if needed.
