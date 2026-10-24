@@ -7,7 +7,6 @@ import { useGitInfo } from '../lib/useGitInfo';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { onSessionChanged } from '../lib/useGlobalEvents';
 import type { PaneSummary } from './SessionChangesSidebar';
-import { RefreshButton } from './RefreshButton';
 import { TodoList } from './TodoList';
 import { SessionSection, TokensSection, CommitsSection, LiveSection } from './SessionInfoSections';
 import type { Session, SessionInfoCommit } from '../lib/api';
@@ -15,7 +14,7 @@ import type { TodoItem } from '../lib/todos';
 
 // SessionInfoSidebar mirrors the structure of SessionChangesSidebar /
 // WorkingTreeChangesSidebar so RightPanel can hold all three panes
-// uniformly (same embedded/standalone modes, same summary/refresh
+// uniformly (same summary/refresh
 // callbacks). Sections, in render order:
 //
 //   - Session: cross-platform metadata sourced from the `session`
@@ -53,9 +52,6 @@ interface SessionInfoSidebarProps {
   // metadata for the Session section. Undefined while the parent
   // page is still loading.
   session?: Session;
-  // When true the sidebar's outer chrome is omitted; used by RightPanel's
-  // split mode where the parent supplies the pane header.
-  embedded?: boolean;
   // Accepted for API parity with the other two sidebars but never
   // emitted: the changes panes' "N files +A -D" header layout doesn't
   // map cleanly onto this pane's mixed metric / list / checklist
@@ -76,7 +72,6 @@ export function SessionInfoSidebar({
   platformId,
   dirtyTick,
   session,
-  embedded = false,
   onSummaryChange,
   onRefresh,
   onLoadingChange,
@@ -241,17 +236,5 @@ export function SessionInfoSidebar({
     </div>
   );
 
-  if (embedded) {
-    return <div className="oc-changes-sidebar-embedded">{Body}</div>;
-  }
-
-  return (
-    <aside className="oc-changes-sidebar" aria-label="Session info">
-      <div className="oc-changes-sidebar-header">
-        <span className="oc-changes-sidebar-title">Session info</span>
-        <RefreshButton onClick={refresh} loading={loading} disabled={!liveEnabled} />
-      </div>
-      {Body}
-    </aside>
-  );
+  return <div className="oc-changes-sidebar-embedded">{Body}</div>;
 }

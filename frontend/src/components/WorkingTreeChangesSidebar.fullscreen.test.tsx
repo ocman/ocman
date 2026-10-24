@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 
@@ -30,11 +29,11 @@ vi.mock('../lib/useWorkingTreeDiff', () => ({
   }),
 }));
 
-it('passes structured rename paths to the fullscreen browser', async () => {
-  const user = userEvent.setup();
-  render(<WorkingTreeChangesSidebar directory="/repo" />);
+it('passes structured rename paths to the fullscreen browser', () => {
+  let openFullscreen: () => void = () => {};
+  render(<WorkingTreeChangesSidebar directory="/repo" onFullscreen={(open) => { openFullscreen = open; }} />);
 
-  await user.click(screen.getByRole('button', { name: 'Fullscreen' }));
+  act(() => openFullscreen());
 
   const dialog = screen.getByRole('dialog', { name: 'Working tree' });
   const tree = within(within(dialog).getByTestId('changed-files-tree').shadowRoot as unknown as HTMLElement);

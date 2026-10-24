@@ -7,10 +7,9 @@ import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { FileChangeGroup } from './FileChangeGroup';
 import { ChangedFileRow } from './ChangedFileRow';
-import { FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
+import type { FullscreenDiffFile } from './DiffFullscreenModal';
 import { useFullscreenDiff } from './useFullscreenDiff';
 import { SkeletonLines } from './Skeleton';
-import { RefreshButton } from './RefreshButton';
 
 // Lazy-mount budget for the per-file rows themselves. Sessions with
 // hundreds of touched files need this; we only render the first
@@ -39,16 +38,12 @@ interface SessionChangesSidebarProps {
   // arriving via SSE, prompting a debounced re-fetch. Pass 0 (or
   // omit) for static views (e.g. archived sessions).
   dirtyTick?: number;
-  // When true the sidebar's outer chrome is omitted; used by the
-  // split mode in RightPanel where the parent supplies a header.
-  embedded?: boolean;
   // Called whenever the underlying data updates. Used by RightPanel
   // to render the "N files +A -D" summary in the pane header.
   onSummaryChange?: (summary: PaneSummary) => void;
-  // Called once with a stable refresh callback so embedded parents
-  // (RightPanel) can render their own refresh button in the pane
-  // header. The callback is also used internally by the standalone-
-  // mode header. Identity is stable across renders.
+  // Called once with a stable refresh callback so the parent
+  // (RightPanel) can render its own refresh button in the pane
+  // header. Identity is stable across renders.
   onRefresh?: (refresh: () => void) => void;
   // Called whenever the underlying request's loading flag flips.
   // Lets embedded parents drive a spinner on their refresh button
@@ -60,7 +55,7 @@ interface SessionChangesSidebarProps {
   onFullscreen?: (open: () => void) => void;
 }
 
-export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: SessionChangesSidebarProps) {
+export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: SessionChangesSidebarProps) {
   const caps = usePlatformCapabilities(platformId);
   const enabled = caps.fileChanges;
   const { data, loading, error, refresh } = useSessionChanges(sessionId, { enabled, dirtyTick });
@@ -109,7 +104,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
   // Fullscreen diff browser. The sidebar owns the modal; the parent
   // only gets a callback to open it.
   const fullscreenFiles = useMemo(() => toFullscreenFiles(files), [files]);
-  const { open: openFullscreen, openFile, modal: Fullscreen } = useFullscreenDiff(
+  const { openFile, modal: Fullscreen } = useFullscreenDiff(
     'Session changes',
     fullscreenFiles,
     onFullscreen,
@@ -168,33 +163,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
     </div>
   );
 
-  if (embedded) {
-    return <div className="oc-changes-sidebar-embedded">{Body}{Fullscreen}</div>;
-  }
-
-  return (
-    <aside className="oc-changes-sidebar" aria-label="Session changes">
-      <div className="oc-changes-sidebar-header">
-        <span className="oc-changes-sidebar-title">
-          {filesChanged > 0
-            ? `${filesChanged} ${filesChanged === 1 ? 'file' : 'files'} changed`
-            : 'Changes'}
-        </span>
-        <span className="oc-changes-sidebar-counts">
-          {filesChanged > 0 && (
-            <>
-              <span className="oc-changes-add">+{totalAdditions}</span>
-              <span className="oc-changes-del">-{totalDeletions}</span>
-            </>
-          )}
-        </span>
-        <FullscreenButton onClick={openFullscreen} disabled={files.length === 0} />
-        <RefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
-      </div>
-      {Body}
-      {Fullscreen}
-    </aside>
-  );
+  return <div className="oc-changes-sidebar-embedded">{Body}{Fullscreen}</div>;
 }
 
 // toFullscreenFiles adapts the session-changes payload to the

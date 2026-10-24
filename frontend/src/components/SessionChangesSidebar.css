@@ -91,37 +91,6 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
   background: var(--bg-active);
 }
 
-.oc-changes-sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.oc-changes-sidebar-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text);
-}
-
-.oc-changes-sidebar-counts {
-  display: inline-flex;
-  gap: 8px;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 12px;
-}
-
-.oc-changes-sidebar-counts .oc-changes-add {
-  color: var(--accent2);
-}
-
-.oc-changes-sidebar-counts .oc-changes-del {
-  color: var(--danger);
-}
-
 .oc-changes-sidebar-body {
   flex: 1;
   overflow-y: auto;
@@ -221,10 +190,6 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
 .oc-changes-sidebar-embedded .oc-changes-sidebar-body {
   flex: 1;
   overflow-y: auto;
-}
-
-.oc-changes-sidebar-header .oc-icon-button {
-  margin-left: 4px;
 }
 
 /* --- Compact list view: shared by working-tree and session sidebars ---

@@ -156,7 +156,6 @@ export function Pane({
               platformId={platformId}
               dirtyTick={dirtyTick}
               session={session}
-              embedded
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
@@ -169,7 +168,6 @@ export function Pane({
               sessionId={sessionId}
               platformId={platformId}
               dirtyTick={dirtyTick}
-              embedded
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
@@ -180,7 +178,6 @@ export function Pane({
             <WorkingTreeChangesSidebar
               directory={directory}
               dirtyTick={dirtyTick}
-              embedded
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}

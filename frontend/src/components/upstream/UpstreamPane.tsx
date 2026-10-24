@@ -45,7 +45,6 @@ interface UpstreamPaneProps {
   upstreamLoading?: boolean;
   /** Hide controls only after detection confirms there are no supported upstreams. */
   upstreamsReady?: boolean;
-  embedded?: boolean;
   // RightPanel API parity. PaneSummary isn't meaningful for the
   // upstream view (no +/- diff counts) so we emit zeros once on
   // mount; the parent renders no numbers next to the title.

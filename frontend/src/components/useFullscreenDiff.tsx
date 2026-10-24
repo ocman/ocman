@@ -5,8 +5,8 @@ import { DiffFullscreenModal, type FullscreenDiffFile } from './DiffFullscreenMo
 // useFullscreenDiff owns the open/closed state for a sidebar's
 // fullscreen diff browser and registers the open callback with an
 // embedded parent (RightPanel) via onFullscreen, mirroring the
-// onRefresh contract. Returns the open callback for the standalone
-// header's button, openFile for a file row, plus the modal element
+// onRefresh contract. Returns the open callback, openFile for a file
+// row, plus the modal element
 // (null while closed).
 //
 // Lives in its own file (not DiffFullscreenModal.tsx) so the modal

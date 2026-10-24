@@ -4,10 +4,9 @@ import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { RawDiffView } from './RawDiffView';
-import { FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
+import type { FullscreenDiffFile } from './DiffFullscreenModal';
 import { useFullscreenDiff } from './useFullscreenDiff';
 import type { PaneSummary } from './SessionChangesSidebar';
-import { RefreshButton } from './RefreshButton';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
 import { SkeletonLines } from './Skeleton';
 import { ChangedFileRow } from './ChangedFileRow';
@@ -40,9 +39,6 @@ interface WorkingTreeChangesSidebarProps {
   // the hook and renders an empty state.
   directory: string | undefined;
   dirtyTick?: number;
-  // When true the sidebar's outer chrome is omitted; used by the
-  // split mode in RightPanel where the parent supplies a header.
-  embedded?: boolean;
   // Called whenever the underlying data updates. Used by RightPanel
   // to render the "N files +A -D" summary in the pane header.
   onSummaryChange?: (summary: PaneSummary) => void;
@@ -66,7 +62,7 @@ const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
   untracked: '?',
 };
 
-export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: WorkingTreeChangesSidebarProps) {
+export function WorkingTreeChangesSidebar({ directory, dirtyTick, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: WorkingTreeChangesSidebarProps) {
   const enabled = !!directory;
   const { data, loading, error, notRepo, refresh } = useWorkingTreeDiff(directory, { enabled, dirtyTick });
 
@@ -125,7 +121,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
 
   // Fullscreen diff browser — same contract as SessionChangesSidebar.
   const fullscreenFiles = useMemo(() => toFullscreenFiles(files), [files]);
-  const { open: openFullscreen, openFile, modal: Fullscreen } = useFullscreenDiff(
+  const { openFile, modal: Fullscreen } = useFullscreenDiff(
     'Working tree',
     fullscreenFiles,
     onFullscreen,
@@ -188,48 +184,10 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
     </div>
   );
 
-  if (embedded) {
-    // The parent owns the chrome (header/title) in split mode;
-    // we only render the body and the branch summary inline at
-    // the top.
-    return (
-      <div className="oc-changes-sidebar-embedded">
-        {data && data.branch && (
-          <div className="oc-changes-sidebar-branch">
-            <i className="bi bi-git" aria-hidden="true" /> {data.branch}
-            {(data.ahead > 0 || data.behind > 0) && (
-              <span className="oc-changes-sidebar-branch-ab">
-                {data.ahead > 0 && <> ↑{data.ahead}</>}
-                {data.behind > 0 && <> ↓{data.behind}</>}
-              </span>
-            )}
-          </div>
-        )}
-        {Body}
-        {Fullscreen}
-      </div>
-    );
-  }
-
+  // The parent owns the pane header; we render the branch summary
+  // inline above the body.
   return (
-    <aside className="oc-changes-sidebar" aria-label="Working tree changes">
-      <div className="oc-changes-sidebar-header">
-        <span className="oc-changes-sidebar-title">
-          {totals.files > 0
-            ? `${totals.files} ${totals.files === 1 ? 'file' : 'files'} in working tree`
-            : 'Working tree'}
-        </span>
-        <span className="oc-changes-sidebar-counts">
-          {totals.files > 0 && (
-            <>
-              <span className="oc-changes-add">+{totals.add}</span>
-              <span className="oc-changes-del">-{totals.del}</span>
-            </>
-          )}
-        </span>
-        <FullscreenButton onClick={openFullscreen} disabled={files.length === 0} />
-        <RefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
-      </div>
+    <div className="oc-changes-sidebar-embedded">
       {data && data.branch && (
         <div className="oc-changes-sidebar-branch">
           <i className="bi bi-git" aria-hidden="true" /> {data.branch}
@@ -243,7 +201,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
       )}
       {Body}
       {Fullscreen}
-    </aside>
+    </div>
   );
 }
 
