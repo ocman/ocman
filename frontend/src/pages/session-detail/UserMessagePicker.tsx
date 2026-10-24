@@ -7,21 +7,29 @@ import {
 import './ForkPicker.css';
 
 const FULL_SESSION = '__full_session__';
+const FORK_SECTION = 'Fork session';
 
-interface ForkEntry extends PickerEntryBase {
+interface UserMessageEntry extends PickerEntryBase {
   label: string;
   time: string;
 }
 
-export interface ForkPickerProps {
+// Fork lists the newest prompts first under a "Full session" row; jump lists
+// every user message in conversation order.
+export type UserMessagePickerProps = {
   open: boolean;
   messages: Message[];
   parts: Part[];
-  /** Offer only the full session (the platform cannot fork at a message). */
-  fullSessionOnly?: boolean;
-  onSelect: (messageID?: string) => void;
   onClose: () => void;
-}
+} & (
+  | {
+    mode: 'fork';
+    /** Offer only the full session (the platform cannot fork at a message). */
+    fullSessionOnly?: boolean;
+    onSelect: (messageID?: string) => void;
+  }
+  | { mode: 'jump'; onSelect: (messageID: string) => void }
+);
 
 function partText(part: Part): string {
   try {
@@ -36,9 +44,12 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export function ForkPicker({ open, messages, parts, fullSessionOnly, onSelect, onClose }: ForkPickerProps) {
-  const entries = useMemo<ForkEntry[]>(() => {
-    const full: ForkEntry = { value: FULL_SESSION, label: 'Full session', time: '' };
+export function UserMessagePicker(props: UserMessagePickerProps) {
+  const { open, messages, parts, onClose } = props;
+  const fork = props.mode === 'fork';
+  const fullSessionOnly = props.mode === 'fork' && props.fullSessionOnly;
+  const entries = useMemo<UserMessageEntry[]>(() => {
+    const full: UserMessageEntry = { value: FULL_SESSION, label: 'Full session', time: '' };
     if (fullSessionOnly) return [full];
     const partsByMessage = new Map<string, string[]>();
     for (const part of parts) {
@@ -53,22 +64,21 @@ export function ForkPicker({ open, messages, parts, fullSessionOnly, onSelect, o
       .filter((message) => message.data.role === 'user')
       .map((message) => ({
         value: message.id,
-        label: (partsByMessage.get(message.id) ?? []).join(' ').replace(/\s+/g, ' ').trim(),
+        label: (partsByMessage.get(message.id) ?? []).join(' ').replace(/\s+/g, ' ').trim() || (fork ? '' : 'Message without text'),
         time: formatTime(message.timeCreated),
       }))
-      .filter((entry) => entry.label)
-      .reverse();
+      .filter((entry) => entry.label);
 
-    return [full, ...prompts];
-  }, [messages, parts, fullSessionOnly]);
+    return fork ? [full, ...prompts.reverse()] : prompts;
+  }, [messages, parts, fork, fullSessionOnly]);
 
   return (
-    <CommandListPicker<ForkEntry>
+    <CommandListPicker<UserMessageEntry>
       open={open}
       entries={entries}
       fuseKeys={[{ name: 'label', weight: 1 }]}
-      sectionOf={() => 'Fork session'}
-      sectionOrder={['Fork session']}
+      sectionOf={fork ? () => FORK_SECTION : undefined}
+      sectionOrder={fork ? [FORK_SECTION] : undefined}
       renderRow={(entry) => (
         <>
           <div className="oc-cmd-item-content oc-fork-picker-content">
@@ -77,10 +87,13 @@ export function ForkPicker({ open, messages, parts, fullSessionOnly, onSelect, o
           {entry.time && <span className="oc-fork-picker-time">{entry.time}</span>}
         </>
       )}
-      placeholder={() => 'Search user messages'}
-      emptyMessage="No matching user messages"
+      placeholder={(total) => fork ? 'Search user messages' : `Search ${total} user message${total === 1 ? '' : 's'}`}
+      emptyMessage={fork ? 'No matching user messages' : 'No user messages'}
       isCurrent={() => false}
-      onSelect={(value) => onSelect(value === FULL_SESSION ? undefined : value)}
+      onSelect={(value) => {
+        if (props.mode === 'jump') props.onSelect(value);
+        else props.onSelect(value === FULL_SESSION ? undefined : value);
+      }}
       onClose={onClose}
     />
   );

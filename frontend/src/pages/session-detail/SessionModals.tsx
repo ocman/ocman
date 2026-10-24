@@ -2,8 +2,7 @@ import { api } from '../../lib/api';
 import type { Message, Part, Project, Session } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
 import { RenameModal } from './RenameModal';
-import { ForkPicker } from './ForkPicker';
-import { MessageJumpPicker } from './MessageJumpPicker';
+import { UserMessagePicker } from './UserMessagePicker';
 import { MovePathDialog, MovePicker } from './MovePicker';
 import type { UsePendingSendResult } from './usePendingSend';
 import type { SessionModal } from './useSessionModal';
@@ -90,8 +89,9 @@ export function SessionModals({
         />
       )}
       {openModal === 'fork' && (
-        <ForkPicker
+        <UserMessagePicker
           open
+          mode="fork"
           messages={messages}
           parts={parts}
           fullSessionOnly={!forkAtMessage}
@@ -112,8 +112,9 @@ export function SessionModals({
         />
       )}
       {openModal === 'jump' && (
-        <MessageJumpPicker
+        <UserMessagePicker
           open
+          mode="jump"
           messages={jumpHistory ? jumpHistory.messages : messages}
           parts={jumpHistory ? jumpHistory.parts : parts}
           onClose={onClose}
