@@ -276,28 +276,6 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 	return series
 }
 
-// buildCostByModelSeries preserves the cumulative effective-cost API used by
-// existing clients.
-func buildCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint) MetricsCostByModel {
-	return buildModelCostSeries(buckets, mainSeries, func(b *bucketAcc) map[string]float64 {
-		return b.costByModel
-	}, false)
-}
-
-// buildDailyEstimatedCostByModelSeries groups token-price estimates by local
-// calendar day for the Stats chart.
-func buildDailyEstimatedCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint) MetricsCostByModel {
-	return buildModelCostSeries(buckets, mainSeries, func(b *bucketAcc) map[string]float64 {
-		return b.estimatedCostByModel
-	}, true)
-}
-
-func buildDailyEffectiveCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint) MetricsCostByModel {
-	return buildModelCostSeries(buckets, mainSeries, func(b *bucketAcc) map[string]float64 {
-		return b.costByModel
-	}, true)
-}
-
 func percentile(values []int64, percent int) float64 {
 	if len(values) == 0 {
 		return 0

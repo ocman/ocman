@@ -4,9 +4,12 @@ import (
 	"context"
 	"sort"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 )
 
-func (d *DB) historyDailyActivity(ctx context.Context, since int64, model, dir string) ([]DailyActivity, error) {
+// GetDailyActivity returns retained activity over the past year.
+func (d *DB) GetDailyActivity(ctx context.Context, since int64, model, dir string) ([]DailyActivity, error) {
 	now := time.Now()
 	cutoff := max(since, now.AddDate(0, 0, -365).UnixMilli())
 	days := map[string]DailyActivity{}
@@ -42,7 +45,7 @@ func (d *DB) historyDailyActivity(ctx context.Context, since int64, model, dir s
 			return nil, err
 		}
 		for _, b := range rows {
-			if role == "assistant" && model != "" && model != b.model && model != modelKey(b.provider, b.model) {
+			if role == "assistant" && model != "" && model != b.model && model != analyticsdata.ModelKey(b.provider, b.model) {
 				continue
 			}
 			a := days[b.label]
@@ -65,7 +68,8 @@ func (d *DB) historyDailyActivity(ctx context.Context, since int64, model, dir s
 	return result, nil
 }
 
-func (d *DB) historyModelUsage(ctx context.Context, since int64, dir string) ([]ModelUsage, error) {
+// GetModelUsage aggregates retained usage, scoped by time and directory.
+func (d *DB) GetModelUsage(ctx context.Context, since int64, dir string) ([]ModelUsage, error) {
 	rows, err := d.historyBuckets(ctx, since, "assistant", dir, "", true)
 	if err != nil {
 		return nil, err
@@ -75,7 +79,7 @@ func (d *DB) historyModelUsage(ctx context.Context, since int64, dir string) ([]
 		if b.model == "" {
 			continue
 		}
-		key := modelKey(b.provider, b.model)
+		key := analyticsdata.ModelKey(b.provider, b.model)
 		m := models[key]
 		if m == nil {
 			m = &ModelUsage{Provider: b.provider, Model: b.model}
@@ -100,7 +104,8 @@ func (d *DB) historyModelUsage(ctx context.Context, since int64, dir string) ([]
 	return result, nil
 }
 
-func (d *DB) historyHourlyTokens(ctx context.Context, window int, since int64, model, dir string) ([]HourlyTokensByModel, error) {
+// GetHourlyTokensByModel returns retained token counts by calendar hour.
+func (d *DB) GetHourlyTokensByModel(ctx context.Context, window int, since int64, model, dir string) ([]HourlyTokensByModel, error) {
 	if window <= 0 {
 		window = 7
 	}

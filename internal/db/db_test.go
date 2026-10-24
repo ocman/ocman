@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 	_ "modernc.org/sqlite"
 )
 
@@ -1361,7 +1362,7 @@ func TestGetNewAssistantMessages_Empty(t *testing.T) {
 	}
 }
 
-// --- extractModelProvider tests ---
+// --- analyticsdata.ModelProvider tests ---
 
 func TestExtractModelProvider(t *testing.T) {
 	tests := []struct {
@@ -1396,9 +1397,9 @@ func TestExtractModelProvider(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider, model := extractModelProvider(tt.data)
+			provider, model := analyticsdata.ModelProvider(tt.data)
 			if provider != tt.wantProvider || model != tt.wantModel {
-				t.Errorf("extractModelProvider() = (%q, %q), want (%q, %q)",
+				t.Errorf("ModelProvider() = (%q, %q), want (%q, %q)",
 					provider, model, tt.wantProvider, tt.wantModel)
 			}
 		})

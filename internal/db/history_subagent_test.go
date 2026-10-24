@@ -36,7 +36,7 @@ func TestHistoryHumanActivityExcludesClaudeSubagents(t *testing.T) {
 	}
 	defer reader.Close()
 	for _, cutoff := range []int64{0, at} {
-		days, err := reader.historyDailyActivity(t.Context(), cutoff, "", "")
+		days, err := reader.GetDailyActivity(t.Context(), cutoff, "", "")
 		if err != nil {
 			t.Fatal(err)
 		}

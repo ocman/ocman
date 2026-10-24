@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 )
 
 func (d *DB) scanHistoryRequests(ctx context.Context, opts MetricsDashboardOptions) ([]requestRow, map[string]struct{}, map[string]struct{}, error) {
@@ -38,7 +40,7 @@ func (d *DB) scanHistoryRequests(ctx context.Context, opts MetricsDashboardOptio
 			return nil, nil, nil, err
 		}
 		r.Agent = strings.TrimSpace(r.Agent)
-		r.Model = modelKey(provider, strings.TrimSpace(model))
+		r.Model = analyticsdata.ModelKey(provider, strings.TrimSpace(model))
 		if r.Agent != "" {
 			agents[r.Agent] = struct{}{}
 		}
@@ -75,7 +77,8 @@ func priceRequest(entry *requestRow, pricing CostCalculator) {
 	entry.EffectiveCost = effectiveCost(entry.Cost, entry.CalcCost)
 }
 
-func (d *DB) historyStats(ctx context.Context) (*Stats, error) {
+// GetStats returns aggregate statistics from retained history.
+func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	r := &Stats{}
 	err := d.reads().QueryRowContext(ctx, `SELECT count(*),COALESCE(sum(instr(title,'@')>0),0),count(DISTINCT directory),
 		COALESCE(sum(user_messages),0),COALESCE(sum(input_tokens),0),COALESCE(sum(output_tokens),0),COALESCE(sum(cost),0) FROM session`).

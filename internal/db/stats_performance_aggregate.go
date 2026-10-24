@@ -166,8 +166,12 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 	})
 
 	dashboard.Series = buildDashboardSeries(buckets, bucketOrder, bucketFmt, days, since)
-	dashboard.CostByModel = buildCostByModelSeries(buckets, dashboard.Series)
-	dashboard.DailyEstimatedCostByModel = buildDailyEstimatedCostByModelSeries(buckets, dashboard.Series)
-	dashboard.DailyEffectiveCostByModel = buildDailyEffectiveCostByModelSeries(buckets, dashboard.Series)
+	effective := func(b *bucketAcc) map[string]float64 { return b.costByModel }
+	estimated := func(b *bucketAcc) map[string]float64 { return b.estimatedCostByModel }
+	// CostByModel stays cumulative for existing clients; the daily series
+	// group by local calendar day for the Stats chart.
+	dashboard.CostByModel = buildModelCostSeries(buckets, dashboard.Series, effective, false)
+	dashboard.DailyEstimatedCostByModel = buildModelCostSeries(buckets, dashboard.Series, estimated, true)
+	dashboard.DailyEffectiveCostByModel = buildModelCostSeries(buckets, dashboard.Series, effective, true)
 	return stopCounts
 }

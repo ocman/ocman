@@ -17,7 +17,7 @@ type AgentRunHour struct {
 // tools, then subtracts the union of human waits. Subagents remain separate.
 func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir string, waits map[string][]RunInterval) ([]AgentRunHour, error) {
 	source := d.reads()
-	query := d.runIntervalsQuery()
+	query := runIntervalsQuery
 	args := []any{since, until}
 	if clause, values := directoryWhere(dir); clause != "" {
 		query += " AND " + clause
@@ -42,7 +42,7 @@ func (d *DB) GetAgentRunHours(ctx context.Context, since, until int64, dir strin
 	if err != nil {
 		return nil, err
 	}
-	questionQuery := d.questionIntervalsQuery()
+	questionQuery := questionIntervalsQuery
 	if clause, _ := directoryWhere(dir); clause != "" {
 		questionQuery += " AND " + clause
 	}

@@ -24,19 +24,6 @@ func directoryWhere(dir string) (string, []interface{}) {
 	return "(s.directory = ? OR s.directory LIKE ?)", []interface{}{dir, dir + "/%"}
 }
 
-func extractModelProvider(md MessageData) (provider, model string) {
-	return analyticsdata.ModelProvider(md)
-}
-
-func modelKey(provider, model string) string {
-	return analyticsdata.ModelKey(provider, model)
-}
-
-// GetStats returns aggregate statistics from retained history.
-func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
-	return d.historyStats(ctx)
-}
-
 // GetNewAssistantMessages returns assistant rows after the scanner's high-water
 // mark. Analytics facts and counters come from the same retained projection.
 func (d *DB) GetNewAssistantMessages(ctx context.Context, since int64) ([]LLMMessageRow, int64, error) {
@@ -57,7 +44,7 @@ func (d *DB) GetNewAssistantMessages(ctx context.Context, since int64) ([]LLMMes
 			&row.InputTokens, &row.OutputTokens, &row.CacheReadTokens, &row.CacheWriteTokens, &row.StopReason, &row.DurationMs); err != nil {
 			return nil, since, err
 		}
-		row.Model = modelKey(provider, model)
+		row.Model = analyticsdata.ModelKey(provider, model)
 		row.StopReason = strings.TrimSpace(row.StopReason)
 		if row.StopReason == "" {
 			row.StopReason = "none"

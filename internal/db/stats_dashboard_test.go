@@ -386,10 +386,10 @@ func TestBuildCostByModelSeries_RemainsCumulative(t *testing.T) {
 		"2026-08-23": {costByModel: map[string]float64{"openai/gpt-5": 1.25}},
 		"2026-08-24": {costByModel: map[string]float64{"openai/gpt-5": 0.50}},
 	}
-	series := buildCostByModelSeries(buckets, []MetricsPoint{
+	series := buildModelCostSeries(buckets, []MetricsPoint{
 		{Label: "2026-08-23"},
 		{Label: "2026-08-24"},
-	})
+	}, func(b *bucketAcc) map[string]float64 { return b.costByModel }, false)
 
 	if got := series.Series[0].Costs[0]; got != 1.25 {
 		t.Errorf("first bucket cost = %v, want 1.25", got)
@@ -467,10 +467,10 @@ func TestGetMetricsDashboard_DailyEstimatedCostByModel(t *testing.T) {
 		t.Errorf("second-day Claude estimate = %v, want 3", got)
 	}
 
-	empty := buildDailyEstimatedCostByModelSeries(map[string]*bucketAcc{}, []MetricsPoint{
+	empty := buildModelCostSeries(map[string]*bucketAcc{}, []MetricsPoint{
 		{Label: "2026-08-24 09"},
 		{Label: "2026-08-24 10"},
-	})
+	}, func(b *bucketAcc) map[string]float64 { return b.estimatedCostByModel }, true)
 	if len(empty.Series) != 1 {
 		t.Errorf("empty daily series length = %d, want 1", len(empty.Series))
 	}

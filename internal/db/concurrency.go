@@ -26,7 +26,7 @@ type concurrencyEvent struct {
 // Overlapping messages in the same session count once; subagents count separately.
 func (d *DB) GetSessionConcurrency(ctx context.Context, since, until int64, dir string) (SessionConcurrency, error) {
 	result := SessionConcurrency{Series: []ConcurrencyPoint{}}
-	query := d.runIntervalsQuery()
+	query := runIntervalsQuery
 	args := []any{since, until}
 	if clause, values := directoryWhere(dir); clause != "" {
 		query += " AND " + clause

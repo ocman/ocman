@@ -6,10 +6,18 @@ import (
 	"errors"
 )
 
+// GetRecentModels samples the latest sessions in retained history.
+//
 // Catalog preferences use compact scalar facts, not retained message JSON.
 // Both queries stay on the scope's validated transaction and join full source
 // identities so matching native IDs cannot borrow another source's defaults.
-func (d *DB) historyRecentModels(ctx context.Context, sessionLimit, maxResults int) ([]RecentModel, error) {
+func (d *DB) GetRecentModels(ctx context.Context, sessionLimit, maxResults int) ([]RecentModel, error) {
+	if sessionLimit <= 0 {
+		sessionLimit = 50
+	}
+	if maxResults <= 0 {
+		maxResults = 10
+	}
 	rows, err := d.reads().QueryContext(ctx, `WITH candidates AS (
 	 SELECT instance_id,id FROM session ORDER BY time_updated DESC,id LIMIT ?
 	) SELECT f.provider,f.model,max(f.time_created) FROM candidates c
