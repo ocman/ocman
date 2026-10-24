@@ -17,6 +17,10 @@ import (
 // HookTimeout bounds `ocman hook` end to end (AD-11).
 const HookTimeout = time.Second
 
+// hookPID finds the Claude process behind a hook. Tests replace it because
+// the real lookup walks the process tree of whoever runs them.
+var hookPID = hookClaudePID
+
 // HandleHook reads Claude's hook input once, appends history events to the
 // journal in every session, and posts status to addr only when managed. It
 // never fails or blocks Claude beyond timeout.
@@ -30,7 +34,7 @@ func HandleHook(addr, journal, event string, managed bool, stdin io.Reader, time
 		recordHook(journal, event, in)
 		if managed && addr != "" && in.SessionID != "" {
 			body, _ := json.Marshal(providerprotocol.HookEvent{Event: event, SessionID: in.SessionID,
-				PID: hookClaudePID(ctx), Managed: os.Getenv("OCMAN_MANAGED") == "1"})
+				PID: hookPID(ctx), Managed: os.Getenv("OCMAN_MANAGED") == "1"})
 			if req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/hook", bytes.NewReader(body)); err == nil {
 				req.Header.Set("Content-Type", "application/json")
 				if resp, err := http.DefaultClient.Do(req); err == nil {

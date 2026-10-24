@@ -1,6 +1,7 @@
 package claudeprovider
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -128,6 +129,11 @@ func TestWritePluginHooks(t *testing.T) {
 }
 
 func TestRunHookPostsSessionID(t *testing.T) {
+	// The real lookup finds whichever Claude runs the tests.
+	previous := hookPID
+	hookPID = func(context.Context) int { return 42 }
+	t.Cleanup(func() { hookPID = previous })
+	t.Setenv("OCMAN_MANAGED", "1")
 	got := make(chan providerprotocol.HookEvent, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var e providerprotocol.HookEvent
@@ -137,7 +143,7 @@ func TestRunHookPostsSessionID(t *testing.T) {
 	defer srv.Close()
 	input := `{"tool_input":{"content":"` + strings.Repeat("x", 1<<20) + `"},"session_id":"s1","cwd":"/w"}`
 	HandleHook(strings.TrimPrefix(srv.URL, "http://"), "", "PreToolUse", true, strings.NewReader(input), time.Second)
-	if e := <-got; e != (providerprotocol.HookEvent{Event: "PreToolUse", SessionID: "s1"}) {
+	if e := <-got; e != (providerprotocol.HookEvent{Event: "PreToolUse", SessionID: "s1", PID: 42, Managed: true}) {
 		t.Fatalf("event = %+v", e)
 	}
 }
