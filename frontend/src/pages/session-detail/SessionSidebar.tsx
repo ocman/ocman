@@ -221,7 +221,7 @@ export function SessionSidebar({
         .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory) || alwaysShowPrompts && group.sessions.some(hasPendingPrompt))
         .map((group) => group.sessions),
     ], [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet, alwaysShowPrompts]);
-  const visibleKeys = new Set(sections.flat().map(sessionAttentionKey));
+  const visibleKeys = new Set(sections.flatMap((rows) => nestSessions(rows).map(({ session }) => sessionAttentionKey(session))));
   const attention = attentionSessionEntries(notify?.entries ?? []).filter((entry) => !visibleKeys.has(sessionAttentionKey(entry)));
 
   // Publish what is on screen, in order, so archiving picks the next

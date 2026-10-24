@@ -108,6 +108,19 @@ it('does not repeat an attention item already visible in normal history', () => 
   expect(screen.getAllByText(entry.title!)).toHaveLength(1);
 });
 
+it('reveals the other owner when normal nesting drops one of two unpinned same-id rows', () => {
+  const remote = { ...entry, platform: 'r-box:opencode', title: 'Remote verification' };
+  snapshot([entry, remote]);
+  const row = { ...seedView(entry.id).session!, ...entry, status: 'interrupted' as const };
+  renderSidebar('recent', [row, { ...row, ...remote, status: 'interrupted' }]);
+  expect(screen.getAllByText(entry.title!)).toHaveLength(1);
+  expect(screen.getAllByText(remote.title)).toHaveLength(1);
+  const attentionRows = within(screen.getByRole('region', { name: 'Needs attention' })).getAllByRole('button');
+  expect(attentionRows).toHaveLength(1);
+  fireEvent.click(attentionRows[0]);
+  expect(screen.getByLabelText('Location')).toHaveTextContent('/session/old-factory?platform=r-box%3Aopencode');
+});
+
 it('keeps hidden Factory descendants hidden when their parent moves to attention', () => {
   const parent = { ...seedView(entry.id).session!, ...entry, status: 'interrupted' as const, factoryAttemptId: 'attempt' };
   const child = { ...seedView('child').session!, title: 'Hidden Factory child', parentId: entry.id };
