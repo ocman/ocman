@@ -31,7 +31,7 @@ func TestMigratedSessionRunReplaysOnlyItsLegacyWireResult(t *testing.T) {
 	if err := m.plugins.finishSessionRun(t.Context(), "plugin", "operation", canonical, nil); err != nil {
 		t.Fatal(err)
 	}
-	id, err := m.startSessionRun(t.Context(), "plugin", plugins.SessionConfig{Project: project}, params, filepath.Clean(project), "operation")
+	id, err := m.startSessionRun(t.Context(), "plugin", plugins.Config{Project: project}, params, filepath.Clean(project), "operation")
 	if err != nil || id != "native" {
 		t.Fatalf("replay changed the plugin's wire handle: %q %v", id, err)
 	}

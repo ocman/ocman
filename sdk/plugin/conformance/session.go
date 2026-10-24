@@ -29,10 +29,10 @@ func RunSessionGrants(t *testing.T, executable string, project string) {
 	var grants []string
 	started, calls := []string{}, []plugins.Call{}
 	broker := plugins.NewSessionBroker(
-		func(_ context.Context, _ string, admit func(plugins.Description, []string, plugins.SessionConfig) error) error {
-			return admit(d, grants, plugins.SessionConfig{Project: project})
+		func(_ context.Context, _ string, admit func(plugins.Description, []string, plugins.Config) error) error {
+			return admit(d, grants, plugins.Config{Project: project})
 		},
-		func(_ context.Context, _ string, config plugins.SessionConfig, params plugins.SessionRunParams, directory, operationID string) (string, error) {
+		func(_ context.Context, _ string, config plugins.Config, params plugins.SessionRunParams, directory, operationID string) (string, error) {
 			if operationID == "" {
 				t.Fatal("run reached the host without an operation id")
 			}

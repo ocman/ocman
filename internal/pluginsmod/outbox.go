@@ -76,7 +76,7 @@ func (m *Module) conversationDeliveryAllowed(ctx context.Context, pluginID strin
 		return false
 	}
 	return m.store.WithPluginConversation(ctx, pluginID,
-		func(d plugins.Description, grants []string, _ plugins.ConversationConfig) error {
+		func(d plugins.Description, grants []string, _ plugins.Config) error {
 			return plugins.ConversationAllowed(d, grants)
 		}) == nil
 }

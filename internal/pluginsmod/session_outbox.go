@@ -166,7 +166,7 @@ func (m *Module) sessionDeliveryAllowed(ctx context.Context, pluginID string) bo
 		return false
 	}
 	return m.store.WithPluginConversation(ctx, pluginID,
-		func(d plugins.Description, grants []string, _ plugins.ConversationConfig) error {
+		func(d plugins.Description, grants []string, _ plugins.Config) error {
 			return plugins.SessionAllowed(d, grants)
 		}) == nil
 }

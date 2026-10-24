@@ -47,7 +47,7 @@ func (m *Module) conversationWorker() *worker.Worker[conversationJob] {
 
 func (m *Module) buildConversations() {
 	m.conversationBroker = plugins.NewConversationBroker(
-		func(ctx context.Context, id string, use func(plugins.Description, []string, plugins.ConversationConfig) error) error {
+		func(ctx context.Context, id string, use func(plugins.Description, []string, plugins.Config) error) error {
 			// Lock order matches actions: module lifecycle (mu), then durable state.
 			m.mu.Lock()
 			defer m.mu.Unlock()
@@ -116,7 +116,7 @@ func (m *Module) consumePluginEvents(ctx context.Context, id string, p *plugins.
 // startConversation creates or resumes the thread's session in the plugin's one
 // approved project and delivers the normalized text as a prompt. dir comes from
 // the approved configuration; a plugin can never name another directory.
-func (m *Module) startConversation(ctx context.Context, pluginID string, config plugins.ConversationConfig, message plugins.ConversationMessage) error {
+func (m *Module) startConversation(ctx context.Context, pluginID string, config plugins.Config, message plugins.ConversationMessage) error {
 	dir := filepath.Clean(config.Project)
 	if !filepath.IsAbs(dir) {
 		return &plugins.WireError{Category: plugins.ErrorPermissionDenied}

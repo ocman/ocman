@@ -627,7 +627,7 @@ func TestWithPluginConversation(t *testing.T) {
 		map[string]json.RawMessage{plugins.ConversationProjectSetting: json.RawMessage(`"/srv/repo"`)}, nil))
 
 	// A disabled plugin never reaches the callback.
-	if err := d.WithPluginConversation(t.Context(), desc.ID, func(plugins.Description, []string, plugins.ConversationConfig) error {
+	if err := d.WithPluginConversation(t.Context(), desc.ID, func(plugins.Description, []string, plugins.Config) error {
 		t.Fatal("disabled plugin authorized")
 		return nil
 	}); !errors.Is(err, plugins.ErrUnavailable) {
@@ -637,7 +637,7 @@ func TestWithPluginConversation(t *testing.T) {
 
 	var seen string
 	var approved []string
-	requirePluginOK(t, d.WithPluginConversation(t.Context(), desc.ID, func(_ plugins.Description, g []string, config plugins.ConversationConfig) error {
+	requirePluginOK(t, d.WithPluginConversation(t.Context(), desc.ID, func(_ plugins.Description, g []string, config plugins.Config) error {
 		project := config.Project
 		approved, seen = g, project
 		return nil
@@ -649,7 +649,7 @@ func TestWithPluginConversation(t *testing.T) {
 	// A missing or non-string project value fails closed as an empty project.
 	requirePluginOK(t, d.SetPluginConfiguration(t.Context(), desc.ID,
 		map[string]json.RawMessage{plugins.ConversationProjectSetting: json.RawMessage(`42`)}, nil))
-	requirePluginOK(t, d.WithPluginConversation(t.Context(), desc.ID, func(_ plugins.Description, _ []string, config plugins.ConversationConfig) error {
+	requirePluginOK(t, d.WithPluginConversation(t.Context(), desc.ID, func(_ plugins.Description, _ []string, config plugins.Config) error {
 		project := config.Project
 		seen = project
 		return nil
@@ -657,7 +657,7 @@ func TestWithPluginConversation(t *testing.T) {
 	if seen != "" {
 		t.Fatalf("non-string project surfaced as %q", seen)
 	}
-	if err := d.WithPluginConversation(t.Context(), "io.ocman.absent", func(plugins.Description, []string, plugins.ConversationConfig) error {
+	if err := d.WithPluginConversation(t.Context(), "io.ocman.absent", func(plugins.Description, []string, plugins.Config) error {
 		return nil
 	}); !errors.Is(err, plugins.ErrUnavailable) {
 		t.Fatalf("absent: %v", err)

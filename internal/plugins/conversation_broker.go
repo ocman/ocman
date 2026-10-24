@@ -2,17 +2,9 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
 	"time"
 )
-
-// ConversationConfig is the host-owned, non-secret configuration admitted with
-// a conversation message. Providers cannot choose these values.
-type ConversationConfig struct {
-	Project string
-	Values  map[string]json.RawMessage
-}
 
 const (
 	// ConversationStartTimeout bounds inbound delivery, which may have to
@@ -27,13 +19,13 @@ const (
 // configured project in the same critical section as revocation, exactly like
 // ActionAuthorization. The third callback argument is that configured project
 // directory. Work already admitted cannot be recalled on revocation.
-type ConversationAuthorization func(ctx context.Context, pluginID string, use func(Description, []string, ConversationConfig) error) error
+type ConversationAuthorization func(ctx context.Context, pluginID string, use func(Description, []string, Config) error) error
 
 // ConversationStart hands a normalized message to the host's session
 // orchestration. dir is the authorized project; a plugin never chooses it. The
 // whole message crosses this seam because the host owns both the durable
 // account/thread mapping and event deduplication, and both need it.
-type ConversationStart func(ctx context.Context, pluginID string, config ConversationConfig, message ConversationMessage) error
+type ConversationStart func(ctx context.Context, pluginID string, config Config, message ConversationMessage) error
 
 // ConversationBroker is the only way a conversation plugin reaches a session,
 // and the only way a completed reply reaches a provider. It holds no state: a
@@ -76,8 +68,8 @@ func (b *ConversationBroker) Deliver(ctx context.Context, pluginID string, event
 	}
 	ctx, cancel := context.WithTimeout(ctx, ConversationStartTimeout)
 	defer cancel()
-	var config ConversationConfig
-	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, admitted ConversationConfig) error {
+	var config Config
+	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, admitted Config) error {
 		if err := ConversationAllowed(d, grants); err != nil {
 			return err
 		}
@@ -101,39 +93,11 @@ func (b *ConversationBroker) Reply(ctx context.Context, pluginID, operationID st
 	}
 	ctx, cancel := context.WithTimeout(ctx, ConversationReplyTimeout)
 	defer cancel()
-	var replies <-chan Reply
-	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, _ ConversationConfig) error {
-		if err := ConversationAllowed(d, grants); err != nil {
-			return err
-		}
-		params, err := json.Marshal(reply)
-		if err != nil {
-			return err
-		}
-		deadline, _ := ctx.Deadline()
-		replies, err = b.call(ctx, pluginID, Call{
+	_, err := unaryCall(ctx, b.authorize, b.call, pluginID, ConversationAllowed, reply, func(Description) Call {
+		return Call{
 			OperationID: operationID, Capability: ConversationCapability.Name, Version: ConversationCapability.Version,
-			Method: ConversationReplyMethod, DeadlineUnixMS: deadline.UnixMilli(), Params: params,
-		})
-		return err
-	}); err != nil {
-		return err
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case r, ok := <-replies:
-		switch {
-		case !ok:
-			return ErrUnavailable
-		case r.Err != nil:
-			return r.Err
-		// conversation.v1 replies are unary, even though the transport streams.
-		case r.Message.Type != TypeResult || r.Message.Result == nil:
-			return ErrInvalidMessage
-		case r.Message.Result.Error != nil:
-			return r.Message.Result.Error
+			Method: ConversationReplyMethod,
 		}
-		return nil
-	}
+	})
+	return err
 }

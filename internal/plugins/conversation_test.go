@@ -153,10 +153,10 @@ type conversationHarness struct {
 
 func (h *conversationHarness) broker() *ConversationBroker {
 	return NewConversationBroker(
-		func(_ context.Context, _ string, use func(Description, []string, ConversationConfig) error) error {
-			return use(h.description, h.grants, ConversationConfig{Project: h.project})
+		func(_ context.Context, _ string, use func(Description, []string, Config) error) error {
+			return use(h.description, h.grants, Config{Project: h.project})
 		},
-		func(_ context.Context, _ string, config ConversationConfig, m ConversationMessage) error {
+		func(_ context.Context, _ string, config Config, m ConversationMessage) error {
 			h.started = append(h.started, m.AccountID+"|"+m.ThreadID+"|"+m.EventID+"|"+config.Project+"|"+m.Text)
 			return nil
 		},

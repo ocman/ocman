@@ -79,7 +79,7 @@ func TestSessionRunReusesDurableResult(t *testing.T) {
 	prompts := 0
 	deps := Deps{Store: db, Local: func() hostsvc.Host { return stubHost{} }, Sessions: sessions,
 		Enqueue: func(context.Context, string, bool, platforms.SendMessageRequest) error { prompts++; return nil }}
-	cfg := plugins.SessionConfig{Project: t.TempDir()}
+	cfg := plugins.Config{Project: t.TempDir()}
 	p := plugins.SessionRunParams{Prompt: "once"}
 	for range 2 {
 		m := NewModule(deps) // retries survive a module reload
@@ -105,10 +105,10 @@ func TestRunJoinsSessionWorkers(t *testing.T) {
 			m.sessionOnce.Do(m.buildSessions)
 			entered, release := make(chan struct{}), make(chan struct{})
 			t.Cleanup(func() { close(release); m.sessionJobs.Close(); m.sessionDeliveries.Close() })
-			authorize := func(_ context.Context, _ string, use func(plugins.Description, []string, plugins.SessionConfig) error) error {
-				return use(plugins.Description{Capabilities: []plugins.Capability{plugins.SessionCapability}}, []string{plugins.SessionRunGrant}, plugins.SessionConfig{Project: "/repo"})
+			authorize := func(_ context.Context, _ string, use func(plugins.Description, []string, plugins.Config) error) error {
+				return use(plugins.Description{Capabilities: []plugins.Capability{plugins.SessionCapability}}, []string{plugins.SessionRunGrant}, plugins.Config{Project: "/repo"})
 			}
-			m.sessionBroker = plugins.NewSessionBroker(authorize, func(context.Context, string, plugins.SessionConfig, plugins.SessionRunParams, string, string) (string, error) {
+			m.sessionBroker = plugins.NewSessionBroker(authorize, func(context.Context, string, plugins.Config, plugins.SessionRunParams, string, string) (string, error) {
 				close(entered)
 				<-release
 				return "ses-1", nil

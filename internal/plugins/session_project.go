@@ -30,19 +30,19 @@ func projectSessionDeclared(d Description) bool {
 
 // ResolveProject resolves opaque IDs through the executing owner's project
 // database. Never resolve on the hub or accept a plugin-supplied directory.
-func (b *SessionBroker) project(ctx context.Context, d Description, grants []string, admitted SessionConfig, params SessionRunParams, version Version) (SessionConfig, error) {
+func (b *SessionBroker) project(ctx context.Context, d Description, grants []string, admitted Config, params SessionRunParams, version Version) (Config, error) {
 	if params.ProjectID == "" {
 		if params.NoTools && version.Minor < 1 {
-			return SessionConfig{}, &WireError{Category: ErrorInvalidArgument}
+			return Config{}, &WireError{Category: ErrorInvalidArgument}
 		}
 		return admitted, nil
 	}
 	if version.Minor < 1 || !projectSessionDeclared(d) || !slices.Contains(grants, SessionProjectGrant) || b.ResolveProject == nil {
-		return SessionConfig{}, &WireError{Category: ErrorPermissionDenied}
+		return Config{}, &WireError{Category: ErrorPermissionDenied}
 	}
 	directory, err := b.ResolveProject(ctx, params.ProjectID)
 	if err != nil || !filepath.IsAbs(directory) {
-		return SessionConfig{}, &WireError{Category: ErrorPermissionDenied}
+		return Config{}, &WireError{Category: ErrorPermissionDenied}
 	}
 	admitted.Project = directory
 	return admitted, nil

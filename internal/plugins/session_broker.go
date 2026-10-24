@@ -7,13 +7,6 @@ import (
 	"time"
 )
 
-// SessionConfig is the host-owned, non-secret configuration admitted with a
-// run. Providers cannot choose these values.
-type SessionConfig struct {
-	Project string
-	Values  map[string]json.RawMessage
-}
-
 const (
 	// SessionRunTimeout bounds a run, which may have to launch the project's
 	// opencode instance before the first prompt.
@@ -27,13 +20,13 @@ const (
 // configured project in the same critical section as revocation, exactly like
 // ConversationAuthorization. Work already admitted cannot be recalled on
 // revocation.
-type SessionAuthorization func(ctx context.Context, pluginID string, use func(Description, []string, SessionConfig) error) error
+type SessionAuthorization func(ctx context.Context, pluginID string, use func(Description, []string, Config) error) error
 
 // SessionStart starts a turn in the approved project: it creates the session
 // with the profile's pinned rules, queues the prompt, and returns the session
 // id immediately — completion arrives later through the outbox. dir is derived
 // from the approved project (and a contained subpath); a plugin never names it.
-type SessionStart func(ctx context.Context, pluginID string, config SessionConfig, params SessionRunParams, directory, operationID string) (string, error)
+type SessionStart func(ctx context.Context, pluginID string, config Config, params SessionRunParams, directory, operationID string) (string, error)
 
 // SessionBroker is the only way a session plugin reaches a session, and the
 // only way a completed turn reaches a plugin. It holds no state: a run either
@@ -88,9 +81,9 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	}
 	ctx, cancel := context.WithTimeout(ctx, SessionRunTimeout)
 	defer cancel()
-	var config SessionConfig
+	var config Config
 	var directory string
-	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, admitted SessionConfig) error {
+	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, admitted Config) error {
 		if err := SessionAllowed(d, grants); err != nil {
 			return err
 		}
@@ -131,47 +124,22 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 	}
 	ctx, cancel := context.WithTimeout(ctx, SessionCompletedTimeout)
 	defer cancel()
-	var replies <-chan Reply
-	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, _ SessionConfig) error {
-		if err := SessionAllowed(d, grants); err != nil {
-			return err
-		}
-		params, err := json.Marshal(completion)
-		if err != nil {
-			return err
-		}
-		deadline, _ := ctx.Deadline()
+	value, err := unaryCall(ctx, b.authorize, b.call, pluginID, SessionAllowed, completion, func(d Description) Call {
 		version := SessionCapability.Version
 		if projectSessionDeclared(d) {
 			version = ProjectSessionCapability.Version
 		}
-		replies, err = b.call(ctx, pluginID, Call{
+		return Call{
 			OperationID: operationID, Capability: SessionCapability.Name, Version: version,
-			Method: SessionCompletedMethod, DeadlineUnixMS: deadline.UnixMilli(), Params: params,
-		})
-		return err
-	}); err != nil {
+			Method: SessionCompletedMethod,
+		}
+	})
+	if err != nil {
 		return err
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case r, ok := <-replies:
-		switch {
-		case !ok:
-			return ErrUnavailable
-		case r.Err != nil:
-			return r.Err
-		// session.v1 completions are unary, even though the transport streams.
-		case r.Message.Type != TypeResult || r.Message.Result == nil:
-			return ErrInvalidMessage
-		case r.Message.Result.Error != nil:
-			return r.Message.Result.Error
-		}
-		var ack map[string]json.RawMessage
-		if json.Unmarshal(r.Message.Result.Value, &ack) != nil || ack == nil || len(ack) != 0 {
-			return ErrInvalidMessage
-		}
-		return nil
+	var ack map[string]json.RawMessage
+	if json.Unmarshal(value, &ack) != nil || ack == nil || len(ack) != 0 {
+		return ErrInvalidMessage
 	}
+	return nil
 }

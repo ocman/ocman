@@ -156,10 +156,10 @@ type sessionHarness struct {
 
 func (h *sessionHarness) broker() *SessionBroker {
 	return NewSessionBroker(
-		func(_ context.Context, _ string, use func(Description, []string, SessionConfig) error) error {
-			return use(h.description, h.grants, SessionConfig{Project: h.project})
+		func(_ context.Context, _ string, use func(Description, []string, Config) error) error {
+			return use(h.description, h.grants, Config{Project: h.project})
 		},
-		func(_ context.Context, _ string, config SessionConfig, params SessionRunParams, directory, operationID string) (string, error) {
+		func(_ context.Context, _ string, config Config, params SessionRunParams, directory, operationID string) (string, error) {
 			h.started = append(h.started, config.Project+"|"+directory+"|"+params.Prompt+"|"+operationID)
 			if h.startErr != nil {
 				return "", h.startErr

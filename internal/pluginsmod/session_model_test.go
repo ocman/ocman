@@ -48,11 +48,11 @@ func TestNoToolsSessionPinsDenyRulesBeforeQueueing(t *testing.T) {
 	}}
 	root := t.TempDir()
 	params := plugins.SessionRunParams{ProjectID: "project-a", NoTools: true, Prompt: "analyze only"}
-	id, err := m.startSessionRun(t.Context(), "plugin", plugins.SessionConfig{Project: root}, params, root, "request-1")
+	id, err := m.startSessionRun(t.Context(), "plugin", plugins.Config{Project: root}, params, root, "request-1")
 	if err != nil || id != "model-session" || !queued {
 		t.Fatalf("session: %s %v", id, err)
 	}
-	if _, err := m.startSessionRun(t.Context(), "plugin", plugins.SessionConfig{Project: root}, params, root, "request-1"); err != nil || creator.calls != 1 {
+	if _, err := m.startSessionRun(t.Context(), "plugin", plugins.Config{Project: root}, params, root, "request-1"); err != nil || creator.calls != 1 {
 		t.Fatal("duplicate created another paid session")
 	}
 }

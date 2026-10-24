@@ -37,7 +37,7 @@ func TestShutdownCancelsAndJoinsAdmittedRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	m.Bind(ctx)
-	config := plugins.SessionConfig{Project: t.TempDir()}
+	config := plugins.Config{Project: t.TempDir()}
 	result := make(chan error, 1)
 	go func() {
 		_, err := m.startSession(t.Context(), "p", config, plugins.SessionRunParams{Prompt: "once"}, config.Project, "op")
@@ -118,7 +118,7 @@ func TestSessionIdleReadEndsWithModuleLifetime(t *testing.T) {
 	if m.workers.Go(func(context.Context) { t.Error("late worker ran") }) {
 		t.Fatal("shutdown admitted a worker")
 	}
-	if _, err := m.startSession(t.Context(), "p", plugins.SessionConfig{}, plugins.SessionRunParams{}, "", "late"); err == nil {
+	if _, err := m.startSession(t.Context(), "p", plugins.Config{}, plugins.SessionRunParams{}, "", "late"); err == nil {
 		t.Fatal("late run admitted")
 	}
 }

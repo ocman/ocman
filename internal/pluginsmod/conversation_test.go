@@ -99,7 +99,7 @@ func TestConversationConfiguredModelAndAgentAreQueued(t *testing.T) {
 		},
 	})
 	project := t.TempDir()
-	config := plugins.ConversationConfig{Project: project, Values: map[string]json.RawMessage{
+	config := plugins.Config{Project: project, Values: map[string]json.RawMessage{
 		"agent": json.RawMessage(`"build"`), "model": json.RawMessage(`"openai/gpt-5.6"`),
 	}}
 	message := plugins.ConversationMessage{AccountID: "T1", ThreadID: "C1:1", EventID: "Ev1", Text: "use the configured model"}

@@ -25,10 +25,10 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 	var grants []string
 	calls, started := 0, []string{}
 	broker := plugins.NewConversationBroker(
-		func(_ context.Context, _ string, admit func(plugins.Description, []string, plugins.ConversationConfig) error) error {
-			return admit(d, grants, plugins.ConversationConfig{Project: project})
+		func(_ context.Context, _ string, admit func(plugins.Description, []string, plugins.Config) error) error {
+			return admit(d, grants, plugins.Config{Project: project})
 		},
-		func(_ context.Context, _ string, config plugins.ConversationConfig, m plugins.ConversationMessage) error {
+		func(_ context.Context, _ string, config plugins.Config, m plugins.ConversationMessage) error {
 			started = append(started, m.AccountID+"|"+m.ThreadID+"|"+config.Project+"|"+m.Text)
 			return nil
 		},

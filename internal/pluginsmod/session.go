@@ -40,15 +40,13 @@ func (m *Module) sessionDeliveryWorker() *worker.Worker[PluginSessionCompletion]
 
 func (m *Module) buildSessions() {
 	m.sessionBroker = plugins.NewSessionBroker(
-		func(ctx context.Context, id string, use func(plugins.Description, []string, plugins.SessionConfig) error) error {
+		func(ctx context.Context, id string, use func(plugins.Description, []string, plugins.Config) error) error {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if m.store == nil || m.stopping {
 				return plugins.ErrUnavailable
 			}
-			return m.store.WithPluginConversation(ctx, id, func(d plugins.Description, grants []string, cfg plugins.ConversationConfig) error {
-				return use(d, grants, plugins.SessionConfig{Project: cfg.Project, Values: cfg.Values}) //nolint:staticcheck // S1016 would hide field drift
-			})
+			return m.store.WithPluginConversation(ctx, id, use)
 		}, m.startSession,
 		func(ctx context.Context, id string, call plugins.Call) (<-chan plugins.Reply, error) {
 			p := m.processes[id]
@@ -94,7 +92,7 @@ func sessionDirectory(project, subpath string) (string, bool) {
 	return dir, err == nil && info.IsDir()
 }
 
-func (m *Module) startSession(ctx context.Context, pluginID string, config plugins.SessionConfig, params plugins.SessionRunParams, directory, operationID string) (string, error) {
+func (m *Module) startSession(ctx context.Context, pluginID string, config plugins.Config, params plugins.SessionRunParams, directory, operationID string) (string, error) {
 	type result struct {
 		id  string
 		err error
@@ -121,7 +119,7 @@ func (m *Module) startSession(ctx context.Context, pluginID string, config plugi
 	}
 }
 
-func (m *Module) startSessionRun(ctx context.Context, pluginID string, config plugins.SessionConfig, params plugins.SessionRunParams, directory, operationID string) (sessionID string, runErr error) {
+func (m *Module) startSessionRun(ctx context.Context, pluginID string, config plugins.Config, params plugins.SessionRunParams, directory, operationID string) (sessionID string, runErr error) {
 	dir, ok := sessionDirectory(config.Project, params.Subpath)
 	if !ok {
 		return "", &plugins.WireError{Category: plugins.ErrorPermissionDenied}
