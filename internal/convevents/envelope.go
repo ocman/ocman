@@ -43,9 +43,6 @@ type Event interface {
 	durability() Durability
 }
 
-// DurabilityOf returns the durability class of ev's type.
-func DurabilityOf(ev Event) Durability { return ev.durability() }
-
 // Cursor is the resume position "<epoch>:<seq>".
 func (e Envelope) Cursor() string { return FormatCursor(e.Epoch, e.Seq) }
 

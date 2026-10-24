@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -46,7 +47,7 @@ func TestAbortIndividualShell(t *testing.T) {
 
 func TestTaskStopUnsupportedOnV1(t *testing.T) {
 	defer ocv2.SetInstalledV2(false)()
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	if a.Capabilities().BackgroundTaskStop {
 		t.Fatal("v1 advertises task stopping")
 	}
@@ -57,7 +58,7 @@ func TestTaskStopUnsupportedOnV1(t *testing.T) {
 
 func TestTaskStopUnknownSession(t *testing.T) {
 	defer ocv2.SetInstalledV2(true)()
-	if err := New(nil, nil).Abort(t.Context(), platforms.AbortRequest{SessionID: "s1", TaskID: "one"}); !errors.Is(err, platforms.ErrNotFound) {
+	if err := New(nil, nil, nil, ocapi.Auth{}).Abort(t.Context(), platforms.AbortRequest{SessionID: "s1", TaskID: "one"}); !errors.Is(err, platforms.ErrNotFound) {
 		t.Fatal(err)
 	}
 }

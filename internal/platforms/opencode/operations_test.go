@@ -45,7 +45,7 @@ func TestRevertAndUnrevert_ProxyOpenCodeContract(t *testing.T) {
 	defer restore()
 	resetPortCacheForTests()
 	database := newTestDBWithSession(t, sid, dir)
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 
 	if err := a.Revert(context.Background(), platforms.RevertSessionRequest{SessionID: sid, MessageID: "msg-1"}); err != nil {
 		t.Fatalf("Revert: %v", err)
@@ -88,7 +88,7 @@ func TestResolvePortCtxFallsBackToSessionProbe(t *testing.T) {
 	})
 
 	database := newTestDBWithSession(t, sid, dir)
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 
 	port, _, err := a.resolvePortCtx(context.Background(), sid)
 	if err != nil {
@@ -124,7 +124,7 @@ func TestAdapterAuthenticatesHTTPAndSSE(t *testing.T) {
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
 	database := newTestDBWithSession(t, sid, dir)
-	a := NewWithPricingAndAuth(database, nil, nil, ocapi.New(password))
+	a := New(database, nil, nil, ocapi.New(password))
 	t.Cleanup(func() { configureHTTPAuth(ocapi.New("")) })
 
 	var events bytes.Buffer
@@ -138,7 +138,7 @@ func TestAdapterAuthenticatesHTTPAndSSE(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
-	bad := NewWithPricingAndAuth(database, nil, nil, ocapi.New("wrong"))
+	bad := New(database, nil, nil, ocapi.New("wrong"))
 	if err := bad.ProxyEvents(context.Background(), sid, io.Discard, nil); !errors.Is(err, ocapi.ErrAuthentication) {
 		t.Fatalf("invalid SSE credential = %v, want authentication error", err)
 	}
@@ -164,7 +164,7 @@ func TestSendMessageSerializesPromptsPerSession(t *testing.T) {
 
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	req := platforms.SendMessageRequest{SessionID: sid, Message: "steer", Model: "openai/gpt-5", Agent: "build"}
 	errs := make(chan error, 2)
 	go func() { errs <- a.SendMessage(context.Background(), req) }()
@@ -198,7 +198,7 @@ func TestAdapterProxiesUnauthenticatedSSEWhenAuthDisabled(t *testing.T) {
 
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	withTestPort(t, dir, port)
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 
 	var events bytes.Buffer
 	if err := a.ProxyEvents(context.Background(), sid, &events, nil); err != nil {
@@ -244,7 +244,7 @@ func TestProxyEvents_IdleTimeoutReturnsErrSSEIdleTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	var buf bytes.Buffer
 	err := a.ProxyEvents(ctx, sid, &buf, nil)
 	// Context deadline hit — upstream was silent. Must not return nil.
@@ -304,7 +304,7 @@ func TestProxyEventsPinsPortAffinityForSendMessage(t *testing.T) {
 	defer resetSessionPortAffinityForTests()
 
 	database := newTestDBWithSession(t, sid, dir)
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 
 	var buf bytes.Buffer
 	if err := a.ProxyEvents(context.Background(), sid, &buf, nil); err != nil {
@@ -357,7 +357,7 @@ func TestProxyEventsRejectsNonSSEWithoutPinningPort(t *testing.T) {
 	defer resetSessionPortAffinityForTests()
 
 	database := newTestDBWithSession(t, sid, dir)
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 
 	var buf bytes.Buffer
 	if err := a.ProxyEvents(context.Background(), sid, &buf, nil); err == nil {
@@ -403,7 +403,7 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 	defer resetSessionPortAffinityForTests()
 
 	database := newTestDBWithSession(t, sid, dir)
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	td.rememberSessionPort(sid, stalePort)
 
 	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
@@ -443,7 +443,7 @@ func TestCreateSessionPinsReturnedSessionPort(t *testing.T) {
 	resetSessionPortAffinityForTests()
 	defer resetSessionPortAffinityForTests()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -472,7 +472,7 @@ func TestDisposeSessionDeletesItFromOpenCode(t *testing.T) {
 	td.rememberSessionPort(sid, port)
 	defer resetSessionPortAffinityForTests()
 
-	if err := New(nil, nil).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: sid, Port: port}); err != nil {
+	if err := New(nil, nil, nil, ocapi.Auth{}).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: sid, Port: port}); err != nil {
 		t.Fatal(err)
 	}
 	if !deleted || td.preferredSessionPort(sid) != "" {
@@ -487,7 +487,7 @@ func TestDisposeSessionTreatsNotFoundAsSuccess(t *testing.T) {
 	td.rememberSessionPort("gone", port)
 	defer resetSessionPortAffinityForTests()
 
-	if err := New(nil, nil).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: "gone", Port: port}); err != nil {
+	if err := New(nil, nil, nil, ocapi.Auth{}).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: "gone", Port: port}); err != nil {
 		t.Fatalf("DisposeSession missing session: %v", err)
 	}
 	if td.preferredSessionPort("gone") != "" {
@@ -496,7 +496,7 @@ func TestDisposeSessionTreatsNotFoundAsSuccess(t *testing.T) {
 }
 
 func TestDisposeSessionPreservesCleanupWhenSessionDatabaseLookupFails(t *testing.T) {
-	err := New(nil, nil).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: "unknown"})
+	err := New(nil, nil, nil, ocapi.Auth{}).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: "unknown"})
 	if !errors.Is(err, platforms.ErrNotFound) {
 		t.Fatalf("DisposeSession database lookup = %v, want ErrNotFound", err)
 	}
@@ -536,7 +536,7 @@ func TestCreateSession_CachedPortSkipsFreshScan(t *testing.T) {
 		t.Fatalf("warm-up scans = %d, want 1", scans)
 	}
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	if _, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir}); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -574,7 +574,7 @@ func TestCreateSession_SendsDirectory(t *testing.T) {
 	resetSessionPortAffinityForTests()
 	defer resetSessionPortAffinityForTests()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -623,7 +623,7 @@ func TestCreateSession_RejectsUnusableResponse(t *testing.T) {
 			resetSessionPortAffinityForTests()
 			defer resetSessionPortAffinityForTests()
 
-			a := New(nil, nil)
+			a := New(nil, nil, nil, ocapi.Auth{})
 			resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
 			if err == nil {
 				t.Fatalf("CreateSession succeeded with unusable response %q: %+v", tt.body, resp)
@@ -661,7 +661,7 @@ func TestCreateSession_EncodesDirectoryHeader(t *testing.T) {
 	resetSessionPortAffinityForTests()
 	defer resetSessionPortAffinityForTests()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	if _, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
 		Directory: dir,
 		Port:      port,
@@ -708,7 +708,7 @@ func TestCreateSession_ProvidedPortSkipsScan(t *testing.T) {
 	resetSessionPortAffinityForTests()
 	defer resetSessionPortAffinityForTests()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
 		Directory: dir,
 		Port:      port,
@@ -745,7 +745,7 @@ func TestCreateSession_WaitsForCallerDeadline(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	resp, err := New(nil, nil).CreateSession(ctx, platforms.CreateSessionRequest{
+	resp, err := New(nil, nil, nil, ocapi.Auth{}).CreateSession(ctx, platforms.CreateSessionRequest{
 		Directory: "/tmp/slow-create",
 		Port:      strings.TrimPrefix(srv.URL, "http://127.0.0.1:"),
 	})
@@ -1113,7 +1113,7 @@ func TestRespondPrompt_UpstreamNotFoundDropsRegistryEntry(t *testing.T) {
 	}))
 	defer srv.Close()
 	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 
 	a.ObservePromptAskedFromPort("", 0, dir, "permission", platforms.LivePrompt{"id": "per_1", "sessionID": sid})
 	a.ObservePromptAskedFromPort("", 0, dir, "question", platforms.LivePrompt{"id": "que_1", "sessionID": sid})

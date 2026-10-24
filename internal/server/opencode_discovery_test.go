@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
@@ -17,7 +18,7 @@ func TestHostHooksPublishToRegisteredAdapter(t *testing.T) {
 	empty.setOpenCodeMachineServer("4600") // no-op, must not panic
 	empty.openCodeInventoryChanged()
 
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	registry := platforms.NewRegistry()
 	registry.Register(nativeOpenCode{Adapter: adapter})
 	srv := &Server{registry: registry}
@@ -27,7 +28,7 @@ func TestHostHooksPublishToRegisteredAdapter(t *testing.T) {
 		t.Fatalf("machine server = %q, want 4600", got)
 	}
 
-	reloaded := opencode.New(nil, nil)
+	reloaded := opencode.New(nil, nil, nil, ocapi.Auth{})
 	if got := reloaded.Discovery().MachineServerPort(); got != "" {
 		t.Fatalf("reloaded adapter inherited machine server %q", got)
 	}

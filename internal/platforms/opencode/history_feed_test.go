@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -91,7 +92,7 @@ INSERT INTO event_sequence VALUES ('ses_a', 4);`); err != nil {
 }
 
 func TestWatchHistoryStreamsMachineServerFirehose(t *testing.T) {
-	a := New(v2HistoryDB(t), nil)
+	a := New(v2HistoryDB(t), nil, nil, ocapi.Auth{})
 	if seqs, err := a.HistorySequences(t.Context()); err != nil || seqs["ses_a"] != 4 {
 		t.Fatalf("sequences = %v, %v", seqs, err)
 	}
@@ -136,7 +137,7 @@ func TestWatchHistoryStreamsMachineServerFirehose(t *testing.T) {
 func TestWatchHistoryRequiresV2MachineServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	v1 := New(newTestDBWithSession(t, "s", "/repo"), nil)
+	v1 := New(newTestDBWithSession(t, "s", "/repo"), nil, nil, ocapi.Auth{})
 	if err := v1.WatchHistory(ctx, func() {}, func(platforms.HistoryChange) {}); !errors.Is(err, platforms.ErrUnsupported) {
 		t.Fatalf("v1 watch = %v", err)
 	}
@@ -144,7 +145,7 @@ func TestWatchHistoryRequiresV2MachineServer(t *testing.T) {
 		t.Fatalf("v1 sequences = %v", err)
 	}
 	withMachineServer(t, "")
-	if err := New(v2HistoryDB(t), nil).WatchHistory(ctx, func() {}, func(platforms.HistoryChange) {}); !errors.Is(err, platforms.ErrPlatformUnreachable) {
+	if err := New(v2HistoryDB(t), nil, nil, ocapi.Auth{}).WatchHistory(ctx, func() {}, func(platforms.HistoryChange) {}); !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		t.Fatalf("no machine server = %v", err)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -82,7 +83,7 @@ func writeJSONBody(w http.ResponseWriter, body string) {
 func nativeQueueAdapter(t *testing.T, sid, dir string, f *v2Fake) *Adapter {
 	t.Helper()
 	withTestPort(t, dir, f.Port())
-	return New(newBoundTestDBWithSession(t, sid, dir), nil)
+	return New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 }
 
 const inboxBody = `{"data":[

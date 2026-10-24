@@ -165,18 +165,6 @@ func secureStatePaths(path string) error {
 	return nil
 }
 
-// OpenFromSQL wraps an existing *sql.DB in a state.DB and runs
-// migrations. Intended for tests that open an in-memory database
-// directly rather than via Open (which also handles directory creation
-// and OTel instrumentation).
-func OpenFromSQL(sqlDB *sql.DB, modules ...ModuleSchema) (*DB, error) {
-	d := &DB{db: sqlDB}
-	if err := d.init(modules); err != nil {
-		return nil, err
-	}
-	return d, nil
-}
-
 // init bootstraps the schema to latestSchemaVersion, then every module
 // schema to its latest version. See migrate.go and module_schema.go.
 func (d *DB) init(modules []ModuleSchema) error {
@@ -217,7 +205,7 @@ func (d *DB) init(modules []ModuleSchema) error {
 //
 // The pragma is per-connection, so it reports whether the database is
 // clean and Open reopens the handle with foreign_keys in the DSN. Handles
-// wrapped by OpenFromSQL keep only the executed pragma.
+// wrapped directly in tests keep only the executed pragma.
 func enableForeignKeysIfClean(db *sql.DB) bool {
 	violations, err := foreignKeyViolations(db)
 	if err != nil {

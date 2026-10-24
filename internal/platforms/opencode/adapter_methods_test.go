@@ -14,7 +14,7 @@ import (
 // and seed data stay in one place.
 
 func TestAdapter_NewWithPricing(t *testing.T) {
-	a := NewWithPricingAndAuth(nil, nil, nil, ocapi.New(""))
+	a := New(nil, nil, nil, ocapi.New(""))
 	if a == nil {
 		t.Fatalf("NewWithPricing returned nil")
 	}
@@ -24,7 +24,7 @@ func TestAdapter_NewWithPricing(t *testing.T) {
 }
 
 func TestAdapter_Sessions_NilDBReturnsEmpty(t *testing.T) {
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	got, err := a.Sessions(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Sessions: %v", err)
@@ -46,7 +46,7 @@ func TestAdapter_Sessions_ReturnsDBRows(t *testing.T) {
 	// Seeded DB: force the listing below to read it rather than an
 	// earlier test's snapshot.
 
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	sessions, err := a.Sessions(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Sessions: %v", err)
@@ -63,7 +63,7 @@ func TestAdapter_Sessions_ReturnsDBRows(t *testing.T) {
 }
 
 func TestAdapter_LiveStatus_AlwaysNil(t *testing.T) {
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	if got := a.LiveStatus("anything"); got != nil {
 		t.Errorf("LiveStatus = %v, want nil", got)
 	}

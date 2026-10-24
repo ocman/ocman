@@ -3,6 +3,8 @@ package opencode
 import (
 	"context"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 // A backend reload builds a new adapter; nothing it routes on may be
@@ -12,7 +14,7 @@ func TestAdaptersOwnTheirDiscovery(t *testing.T) {
 	newAdapterDiscovery = NewDiscovery
 	t.Cleanup(func() { newAdapterDiscovery = prev })
 
-	old, fresh := New(nil, nil), New(nil, nil)
+	old, fresh := New(nil, nil, nil, ocapi.Auth{}), New(nil, nil, nil, ocapi.Auth{})
 	old.Discovery().SetMachineServer("4100")
 	old.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "4200"} })
 	old.Discovery().rememberSessionPort("ses_1", "4200")

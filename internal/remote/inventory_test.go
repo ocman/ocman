@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"database/sql"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,22 +12,17 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
-// newStateDB opens an in-memory state.db for Manager tests.
+// newStateDB opens a fresh state.db for Manager tests.
 func newStateDB(t *testing.T) *state.DB {
 	t.Helper()
-	raw, err := sql.Open("sqlite", ":memory:")
+	d, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Each :memory: connection has its own schema; serialize Manager access.
-	raw.SetMaxOpenConns(1)
-	t.Cleanup(func() { raw.Close() })
-	d, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(func() { _ = d.Close() })
 	return d
 }
 

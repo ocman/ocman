@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -27,7 +28,7 @@ func TestSessionLifecycleReadsOneMetadataQuery(t *testing.T) {
 		otel.SetTracerProvider(previous)
 		_ = provider.Shutdown(context.Background())
 	})
-	a := New(newLifecycleFixtureDB(t, 10000, false), nil)
+	a := New(newLifecycleFixtureDB(t, 10000, false), nil, nil, ocapi.Auth{})
 	exporter.Reset() // Exclude schema detection and setup reads.
 	if _, err := a.SessionLifecycle(t.Context(), "s"); err != nil {
 		t.Fatal(err)
@@ -61,7 +62,7 @@ func TestSessionLifecycleSettlesLatestMessage(t *testing.T) {
 		{id: "gone", directory: "/elsewhere", messages: []string{`{"role":"assistant"}`}},
 		{id: "empty", directory: "/repo"},
 	})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.ObserveSessionStatus("7777", 0, "s", "idle")
 	a.ObserveSessionStatus("7777", 0, "open", "busy")
 
@@ -98,7 +99,7 @@ func TestSessionLifecycleBoundedByTranscript(t *testing.T) {
 	var allocs []float64
 	var payloads []int
 	for _, n := range []int{10, 1000, 10000} {
-		a := New(newLifecycleFixtureDB(t, n, false), nil)
+		a := New(newLifecycleFixtureDB(t, n, false), nil, nil, ocapi.Auth{})
 		a.ObserveSessionStatus("7777", 0, "s", "idle")
 		var got *platforms.SessionLifecycle
 		allocs = append(allocs, testing.AllocsPerRun(5, func() {

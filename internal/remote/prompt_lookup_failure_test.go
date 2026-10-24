@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
@@ -31,7 +32,7 @@ func TestPromptLookupFailureCrossesRealRemoteRPC(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	adapter := opencode.New(database, nil)
+	adapter := opencode.New(database, nil, nil, ocapi.Auth{})
 	adapter.ObservePromptAskedFromPort("", 0, "/isolated-prompt-test", "permission", platforms.LivePrompt{"id": "p1", "sessionID": "child"})
 	adapter.ObservePromptAskedFromPort("", 0, "/isolated-prompt-test", "question", platforms.LivePrompt{"id": "q1", "sessionID": "child"})
 	reg := platforms.NewRegistry()

@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 func TestNotificationPrompts(t *testing.T) {
-	a := New(newTestDBWithSession(t, "child", "/repo"), nil)
+	a := New(newTestDBWithSession(t, "child", "/repo"), nil, nil, ocapi.Auth{})
 	permissions, questions, err := a.NotificationPrompts(t.Context(), "child")
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +30,7 @@ func TestNotificationPrompts(t *testing.T) {
 
 func TestNotificationPromptsPreservesChildLookupFailure(t *testing.T) {
 	parent := "parent"
-	a := New(newTestDBWithSessions(t, []testSession{{id: "child", directory: "/repo", parentID: &parent}}), nil)
+	a := New(newTestDBWithSessions(t, []testSession{{id: "child", directory: "/repo", parentID: &parent}}), nil, nil, ocapi.Auth{})
 	a.ObservePromptAskedFromPort("", 0, "/repo", "permission", platforms.LivePrompt{"id": "p1", "sessionID": "child"})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

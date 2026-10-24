@@ -12,23 +12,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
-// PrepareCore inventories provenance, rekeys owner-local history, quarantines
-// unproven associations and returns canonical adapters. It must run before any
-// readers, workers or event sinks use session state. Each durable step is
-// replayable. The caller installs the returned adapters and enables canonical
-// registry enforcement only after all feature-specific migrations have finished.
-// It never connects to remotes or allocates identities on their behalf.
-func PrepareCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, native []platforms.Integration) ([]platforms.Platform, error) {
-	adapters, err := BuildCore(ctx, core, history, catalogue, owner, native)
-	if err != nil {
-		return nil, err
-	}
-	if err := PrepareBuiltCore(ctx, core, history, catalogue, owner, adapters); err != nil {
-		return nil, err
-	}
-	return adapters, nil
-}
-
 // BuildCore constructs canonical adapters without enumerating historical data.
 // Consumers must remain fenced until PrepareBuiltCore has completed.
 func BuildCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, native []platforms.Integration) ([]platforms.Platform, error) {
@@ -58,8 +41,10 @@ func BuildCore(ctx context.Context, core *state.DB, history *statev2.DB, catalog
 	return adapters, nil
 }
 
-// PrepareBuiltCore performs replayable identity cutover with consumers stopped.
-// The adapters are constructed before serving; this never replaces live ones.
+// PrepareBuiltCore performs replayable identity cutover with consumers stopped:
+// it inventories provenance, rekeys owner-local history and quarantines
+// unproven associations. The adapters are constructed before serving; this
+// never replaces live ones, connects to remotes or allocates their identities.
 func PrepareBuiltCore(ctx context.Context, core *state.DB, history *statev2.DB, catalogue *sessioncatalog.Store, owner string, adapters []platforms.Platform) error {
 	ready, err := history.SessionRekeyInventoryReady(ctx, owner)
 	if err != nil {

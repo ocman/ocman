@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -31,7 +32,7 @@ func TestStoredDirectoryCatalogReadsInstanceForDirectory(t *testing.T) {
 	}))
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
-	a := New(newTestDBWithSession(t, "ses-1", dir), nil)
+	a := New(newTestDBWithSession(t, "ses-1", dir), nil, nil, ocapi.Auth{})
 
 	catalog, err := a.DirectoryCatalogFromStored(context.Background(), platforms.DirectoryCatalogRequest{Directory: "/src/.worktrees/repo/feat"}, nil, db.SessionDefaults{}, true)
 	if err != nil {
@@ -63,7 +64,7 @@ func TestStoredDirectoryCatalogUsesPinnedPort(t *testing.T) {
 	}))
 	defer server.Close()
 	withTestPort(t, "/elsewhere", "1")
-	a := New(newTestDBWithSession(t, "ses-1", "/src/repo"), nil)
+	a := New(newTestDBWithSession(t, "ses-1", "/src/repo"), nil, nil, ocapi.Auth{})
 	catalog, err := a.DirectoryCatalogFromStored(context.Background(), platforms.DirectoryCatalogRequest{Directory: "/src/repo", Port: strings.TrimPrefix(server.URL, "http://127.0.0.1:")}, nil, db.SessionDefaults{}, true)
 	if err != nil {
 		t.Fatalf("DirectoryCatalogFromStored: %v", err)

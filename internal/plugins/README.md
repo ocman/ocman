@@ -186,8 +186,8 @@ before SQL commits their references. Old snapshots are retained for rollback and
 diagnostic redaction. `RedactPluginDiagnostics` covers current and historical
 values, including JSON/URL escaping, and suppresses diagnostics if history cannot
 be read safely. Arbitrary encodings from trusted native code cannot be sanitized
-reliably; API failures use fixed errors. In-memory `OpenFromSQL` handles have no
-file store and reject secret writes.
+reliably; API failures use fixed errors. In-memory test handles have no file store
+and reject secret writes.
 
 Disable and `RemovePlugin` retain configuration, grants, snapshots and private data.
 Removal marks a tombstone included in catalog reads. Rediscovery clears that marker

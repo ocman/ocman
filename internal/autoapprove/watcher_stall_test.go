@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/testutil"
@@ -61,7 +62,7 @@ func TestAutoApproveWatcherReconnectsSilentStreamOnListedPort(t *testing.T) {
 	defer server.Close()
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	statuses := make(chan db.SessionStatus, 4)
 	svc := NewService(Deps{
 		OpencodePlatform:       func() platforms.Platform { return openCodePlatform{Adapter: adapter} },

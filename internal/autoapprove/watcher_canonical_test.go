@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
@@ -37,7 +38,7 @@ func TestHeadlessWatcherProjectsCanonicalEventsBeforeApplicationCallbacks(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	native := &canonicalWatchNative{Adapter: opencode.New(nil, nil)}
+	native := &canonicalWatchNative{Adapter: opencode.New(nil, nil, nil, ocapi.Auth{})}
 	adapter, err := owned.New(t.Context(), native, catalogue, statev2test.Open(t), "owner")
 	if err != nil {
 		t.Fatal(err)

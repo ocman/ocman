@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
@@ -146,7 +147,7 @@ func TestResolvePort_UnknownDirectoryUsesMachineServer(t *testing.T) {
 	})
 	withTestPort(t, "/somewhere/else", "1")
 	withMachineServer(t, f.Port())
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	msgs, err := a.NativeQueued(context.Background(), sid)
 	if err != nil || len(msgs) != 1 || msgs[0].ID != "msg_1" {
 		t.Fatalf("NativeQueued via machine port = %+v, %v", msgs, err)

@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"database/sql"
 	"sync"
 	"testing"
 
@@ -10,19 +9,10 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func TestManager_DisablePreservesConfigAndRemovesAvailability(t *testing.T) {
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { raw.Close() })
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newStateDB(t)
 	ctx := t.Context()
 	id, err := store.AddRemote(ctx, "grpc://127.0.0.1:59999", "saved-token", "Box")
 	if err != nil {
@@ -91,15 +81,7 @@ func TestManager_DoesNotRegisterAdaptersForAnUnmanagedRemote(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "tok", "inst-gone", remoteReg)
 
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { raw.Close() })
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newStateDB(t)
 	localID, err := store.AddRemote(t.Context(), addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
@@ -318,15 +300,7 @@ func TestSupersededSupervisorPersistsTheConnectItMade(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "tok", "inst-super", remoteReg)
 
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { raw.Close() })
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newStateDB(t)
 	localID, err := store.AddRemote(t.Context(), addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)

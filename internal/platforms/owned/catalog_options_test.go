@@ -30,11 +30,6 @@ func TestCanonicalCompositionPreservesConfigurationCatalogues(t *testing.T) {
 	if got := composed.(platforms.ModelOptionsReader).ModelOptions(t.Context()); !reflect.DeepEqual(got, []string{"provider/model"}) {
 		t.Fatal(got)
 	}
-	if _, ok := composed.(interface {
-		StartSessionCache(context.Context, func(string) bool)
-	}); ok {
-		t.Fatal("canonical adapter still starts a native browsing cache")
-	}
 	a.native = p
 	if got := a.AgentOptions(t.Context(), nil); got != nil {
 		t.Fatal(got)

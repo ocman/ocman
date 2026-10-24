@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -138,7 +139,7 @@ func TestAdapterPermissionRules_EndToEnd(t *testing.T) {
 	fake := newOpencodeFake(t)
 	fake.SetSession(sid, []byte(`{"id":"`+sid+`","directory":"`+dir+`","permission":[{"permission":"edit","pattern":"*","action":"deny"}]}`))
 	withTestPort(t, dir, fake.Port())
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 
 	rules, err := a.PermissionRules(context.Background(), sid)
 	if err != nil {

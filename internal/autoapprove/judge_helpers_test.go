@@ -90,7 +90,7 @@ func TestServiceDiscoversThroughOpenCodeAdapter(t *testing.T) {
 	if none.openCodePort("/repo") != "" || len(none.discoverOpenCodePorts()) != 0 {
 		t.Fatal("no adapter must mean no ports")
 	}
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	adapter.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "4500"} })
 	svc := NewService(Deps{OpenCodeAuth: ocapi.New(""), OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	if got := svc.openCodePort("/repo"); got != "4500" {

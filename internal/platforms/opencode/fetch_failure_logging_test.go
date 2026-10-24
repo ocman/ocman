@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	log "github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 )
@@ -135,7 +136,7 @@ func TestCatalogFailureWarningInvalidation(t *testing.T) {
 	}{
 		{"catalog reload", func() { InvalidateCatalogsForPort("invalidation-test") }},
 		{"backend reset", ResetCaches},
-		{"port disappeared", func() { New(nil, nil).ClearPromptsForPort("invalidation-test") }},
+		{"port disappeared", func() { New(nil, nil, nil, ocapi.Auth{}).ClearPromptsForPort("invalidation-test") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fetchFailureLogs.reset()

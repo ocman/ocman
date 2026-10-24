@@ -2,11 +2,13 @@ package opencode
 
 import (
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 func TestHistoryAdapterNeverNeedsLiveDiscovery(t *testing.T) {
 	database := newTestDBWithSession(t, "session", "/repo")
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	identity, err := a.HistoryIdentity(t.Context())
 	if err != nil || identity.Platform != "opencode" || identity.SourceKey == "" {
 		t.Fatalf("history identity: %+v %v", identity, err)
@@ -19,7 +21,7 @@ func TestHistoryAdapterNeverNeedsLiveDiscovery(t *testing.T) {
 	if err != nil || snapshot.Session.ID != "session" {
 		t.Fatalf("snapshot: %+v %v", snapshot, err)
 	}
-	a = New(nil, nil)
+	a = New(nil, nil, nil, ocapi.Auth{})
 	if _, err := a.HistoryIdentity(t.Context()); err == nil {
 		t.Fatal("accepted missing source identity")
 	}

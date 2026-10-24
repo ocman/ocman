@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factorymod"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type usagePlatform struct {
@@ -24,11 +24,7 @@ type usagePlatform struct {
 }
 
 func TestRemovedVerificationKeepsUsagePhase(t *testing.T) {
-	raw, err := sql.Open("sqlite", t.TempDir()+"/state.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := state.OpenFromSQL(raw)
+	store, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +53,7 @@ func TestRemovedVerificationKeepsUsagePhase(t *testing.T) {
 	if _, err := store.ActivateFactoryAttempt(t.Context(), attempt.ID, model.PlanningSession{Platform: "p", ID: "verify"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := raw.Exec(`INSERT INTO factory_removed_issue(issue_id, plan_id, plan_revision, removed_at) VALUES (?, ?, 0, 1)`, workID, ep.ID); err != nil {
+	if _, err := store.SQL().Exec(`INSERT INTO factory_removed_issue(issue_id, plan_id, plan_revision, removed_at) VALUES (?, ?, 0, 1)`, workID, ep.ID); err != nil {
 		t.Fatal(err)
 	}
 	srv := New(nil, store, "", nil, nil)

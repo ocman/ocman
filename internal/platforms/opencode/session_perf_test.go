@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 func TestObserveSessionStatusCoalescesIdlePair(t *testing.T) {
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	for _, step := range []struct {
 		status  string
 		changed bool
@@ -33,7 +34,7 @@ func TestSessionStatusOnPortDoesNotReadHistoricalMessages(t *testing.T) {
 	}
 	messages = append(messages, `{"role":"assistant","finish":"stop"}`)
 	database := newTestDBWithSessions(t, []testSession{{id: "s", directory: "/repo", messages: messages}})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.ObserveSessionStatus("7777", 0, "s", "idle")
 	status, err := a.SessionStatusOnPort("s", "7777")
 	if err != nil || status != db.StatusWaiting {

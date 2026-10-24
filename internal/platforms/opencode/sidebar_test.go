@@ -3,11 +3,12 @@ package opencode
 import (
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 func TestSidebarSnapshotUsesObservedLifecycleCaches(t *testing.T) {
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	if got := a.CachedSessionObservations(); len(got) != 0 {
 		t.Fatal("unobserved source supplied live status")
 	}

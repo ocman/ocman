@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 func newTestAdapter() *Adapter {
@@ -206,7 +207,8 @@ func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T)
 		{id: "ses-root", directory: root},
 		{id: "ses-worktree", directory: worktree, busy: true},
 		{id: "ses-deleted", directory: deleted, busy: true},
-	}), nil)
+	}), nil, nil, ocapi.Auth{})
+
 	port := fake.Port()
 	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
 		t.Fatal("SeedSessionStatusFromInstance reported failure")
@@ -225,7 +227,8 @@ func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T)
 	fake.turnStatusDirCode = 500
 	b := New(newTestDBWithSessions(t, []testSession{
 		{id: "ses-worktree", directory: worktree, busy: true},
-	}), nil)
+	}), nil, nil, ocapi.Auth{})
+
 	ResetCaches()
 	if b.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
 		t.Fatal("SeedSessionStatusFromInstance reported success with a failed directory read")
@@ -261,7 +264,8 @@ func TestSeedSessionStatusFromInstance_ReadsRecentWorktreeWithSettledStoredStatu
 		{id: "ses-active", directory: active, messageData: userLast, updated: now},
 		{id: "ses-stale", directory: stale, messageData: userLast},
 		{id: "ses-deleted", directory: deleted, messageData: userLast, updated: now},
-	}), nil)
+	}), nil, nil, ocapi.Auth{})
+
 	port := fake.Port()
 	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
 		t.Fatal("SeedSessionStatusFromInstance reported failure")
@@ -297,7 +301,8 @@ func TestSeedSessionStatusFromInstance_ReadsOldWorktreeWithOpenToolCallTurn(t *t
 	fake.turnStatusByDir = map[string]map[string]string{worktree: {"ses-blocked": "busy"}}
 	a := New(newTestDBWithSessions(t, []testSession{
 		{id: "ses-blocked", directory: worktree, messageData: `{"role":"assistant","finish":"tool-calls"}`},
-	}), nil)
+	}), nil, nil, ocapi.Auth{})
+
 	port := fake.Port()
 	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
 		t.Fatal("SeedSessionStatusFromInstance reported failure")
@@ -314,7 +319,7 @@ func TestSeedSessionStatusFromInstance_SessionListFailureLeavesPortUnseeded(t *t
 	fake := newOpencodeFake(t)
 	fake.turnStatus = map[string]string{}
 	database := newTestDBWithSessions(t, nil)
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	_ = database.Close()
 	port := fake.Port()
 	if a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{"/repo/project"}) {
@@ -377,7 +382,7 @@ func TestRuntimeInventorySettlesChildTurnsFromLiveSignal(t *testing.T) {
 	fake := newOpencodeFake(t)
 	withTestPort(t, dir, fake.Port())
 
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	// The runtime inventory keeps every row for reload safety; without a
 	// live signal the child settles as not running.
 	a.SeedSessionStatus(fake.Port(), 0, 0, map[string]string{})
@@ -412,7 +417,7 @@ func TestSessions_SettledInstanceEndsStaleBusy(t *testing.T) {
 	fake := newOpencodeFake(t)
 	withTestPort(t, dir, fake.Port())
 
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.SeedSessionStatus(fake.Port(), 0, 0, map[string]string{})
 	sessions, err := a.Sessions(context.Background(), dir, 0)
 	if err != nil {
@@ -428,7 +433,7 @@ func TestSessions_SettledInstanceEndsStaleBusy(t *testing.T) {
 
 func TestSessionStatusOnPortSettlesIdleWithoutListCache(t *testing.T) {
 	database := newTestDBWithSessions(t, []testSession{{id: "ses-1", directory: "/repo/main", busy: true}})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.ObserveSessionStatus("7777", 0, "ses-1", "idle")
 
 	status, err := a.SessionStatusOnPort("ses-1", "7777")
@@ -453,7 +458,7 @@ func TestSessions_DeadInstanceReportsInterrupted(t *testing.T) {
 		resetPortCacheForTests()
 	})
 
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	sessions, err := a.Sessions(context.Background(), dir, 0)
 	if err != nil {
 		t.Fatalf("Sessions: %v", err)

@@ -5,19 +5,13 @@ import (
 	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
-// Session consumers start only after identity cutover. Kept together so caches,
-// prompt watchers, archive jobs and feature workers cannot accidentally bypass
+// Session consumers start only after identity cutover. Kept together so prompt
+// watchers, archive jobs and feature workers cannot accidentally bypass
 // the preparation fence even though the HTTP application is already serving.
 func (s *Server) startSessionServices(ctx context.Context, workers *sync.WaitGroup) error {
-	for _, adapter := range s.registry.Platforms() {
-		if starter, ok := adapter.(platforms.SessionCacheStarter); ok {
-			starter.StartSessionCache(ctx, s.HasDemand)
-		}
-	}
 	if err := s.startModules(ctx, workers); err != nil {
 		return err
 	}

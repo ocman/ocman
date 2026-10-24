@@ -22,17 +22,8 @@ type testInboxStore struct {
 
 func openInboxStore(t *testing.T) *testInboxStore {
 	t.Helper()
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw.SetMaxOpenConns(1)
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.Close() })
-	return &testInboxStore{DB: store, raw: raw}
+	store := newStateDB(t)
+	return &testInboxStore{DB: store, raw: store.SQL()}
 }
 
 func connectInboxRemote(t *testing.T, id string, store *state.DB) *RemoteConn {

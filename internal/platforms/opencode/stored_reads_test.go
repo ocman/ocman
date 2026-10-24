@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestStoredPanelsAndCataloguesDoNotNeedNativeDatabase(t *testing.T) {
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	a.rt = NewDiscovery()
 	a.turns.disc = a.rt
 	detail := &platforms.SessionDetail{Session: &db.Session{ID: "s", Directory: "/repo"}, DefaultModel: "p/model", Messages: []db.Message{{ID: "a", Data: json.RawMessage(`{"role":"assistant","providerID":"p","modelID":"model","cost":0.5,"tokens":{"input":7,"output":3,"cache":{"read":2,"write":1}}}`)}}, Parts: []db.Part{editPart(t, "edit", 20, "/repo/file", "before", "after", 2, 1), {ID: "todo", TimeCreated: 30, Data: json.RawMessage(`{"type":"tool","tool":"todowrite","state":{"input":{"todos":[{"content":"stored todo","status":"pending"}]}}}`)}}}
@@ -74,7 +75,7 @@ func TestStoredPanelsEnrichOnlyLiveConfiguration(t *testing.T) {
 	}))
 	defer server.Close()
 	_, port, _ := net.SplitHostPort(server.Listener.Addr().String())
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	a.rt = NewDiscovery()
 	a.turns.disc = a.rt
 	a.rt.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/stored-live-config": port} })
@@ -95,7 +96,7 @@ func TestStoredHaltsUseCanonicalReceiptsAndStoredNativeHierarchy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer core.Close()
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	a.rt = NewDiscovery()
 	a.turns.disc = a.rt
 	a.prompts.haltStore = core
@@ -127,7 +128,7 @@ func TestStoredHaltsUseCanonicalReceiptsAndStoredNativeHierarchy(t *testing.T) {
 
 func TestStoredSessionOverlayUsesOnlySSEObservationsAndIngestedParents(t *testing.T) {
 	defer ocv2.SetInstalledV2(false)()
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	a.rt = NewDiscovery()
 	a.turns.disc = a.rt
 	a.rt.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "7777"} })

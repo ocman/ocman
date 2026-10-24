@@ -52,7 +52,7 @@ func readFixture(t testing.TB, raw []byte) (string, []Frame) {
 }
 
 // mapFixture maps frames and frames the events as envelopes, the way the
-// hub will number them.
+// hub will number them. Encoding fills each event's registered durability.
 func mapFixture(session, platform string, frames []Frame) []convevents.Envelope {
 	m := New(Options{SessionID: session, Now: func() int64 { return goldenNow }})
 	var out []convevents.Envelope
@@ -60,7 +60,7 @@ func mapFixture(session, platform string, frames []Frame) []convevents.Envelope 
 		r := m.Map(f)
 		for _, ev := range r.Events {
 			out = append(out, convevents.Envelope{V: convevents.Version, Epoch: "golden", Seq: uint64(len(out) + 1),
-				SessionID: session, Platform: platform, At: goldenNow, Durability: convevents.DurabilityOf(ev),
+				SessionID: session, Platform: platform, At: goldenNow,
 				Replayed: r.Replayed, Event: ev})
 		}
 	}
@@ -122,7 +122,7 @@ func TestGolden(t *testing.T) {
 }
 
 // checkWellFormed decodes every envelope line back to a registered event
-// with matching durability, and checks delta offsets are contiguous.
+// with a durability, and checks delta offsets are contiguous.
 func checkWellFormed(t testing.TB, jsonl []byte) {
 	t.Helper()
 	fields := map[string]int{}
@@ -142,7 +142,7 @@ func checkWellFormed(t testing.TB, jsonl []byte) {
 		if _, unknown := env.Event.(convevents.Unknown); unknown {
 			t.Fatalf("mapper produced unregistered type %q", env.Event.EventType())
 		}
-		if env.V != convevents.Version || env.Durability != convevents.DurabilityOf(env.Event) || env.SessionID == "" {
+		if env.V != convevents.Version || env.Durability == "" || env.SessionID == "" {
 			t.Fatalf("bad envelope %s", line)
 		}
 		again, err := json.Marshal(env)

@@ -58,22 +58,10 @@ type Adapter struct {
 // New returns a new OpenCode adapter backed by the given read-only DB.
 // A nil DB is permitted so Available() can report absence cleanly.
 // A nil favorites reader is also permitted; SessionModels will then
-// skip the favorites merge step.
-//
-// Use NewWithPricingAndAuth in production to pass a pricing table and the
-// OpenCode API credential; New keeps the two-arg shape for tests.
-func New(database *db.DB, favorites FavoritesReader) *Adapter {
-	return newAdapter(database, favorites, nil, ocapi.New(""))
-}
-
-// NewWithPricingAndAuth wires in a pricing table, used to estimate cost
-// for assistant messages whose upstream `cost` field is zero (typical of
-// subscription-plan sessions), and the host-local OpenCode API credential.
-func NewWithPricingAndAuth(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
-	return newAdapter(database, favorites, pricing, auth)
-}
-
-func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
+// skip the favorites merge step. The pricing table estimates cost for
+// assistant messages whose upstream `cost` field is zero (typical of
+// subscription-plan sessions); auth is the host-local OpenCode API credential.
+func New(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
 	configureHTTPAuth(auth)
 	prompts := newLivePromptRegistry()
 	prompts.haltStore, _ = favorites.(*state.DB)

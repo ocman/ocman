@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"database/sql"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -21,7 +20,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
@@ -80,15 +78,7 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	stop1 := startRealRemoteAt(t, addr, "tok", "inst-1", remoteReg)
 
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { raw.Close() })
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newStateDB(t)
 	if _, err := store.AddRemote(t.Context(), "grpc://"+addr, "tok", "Box"); err != nil {
 		t.Fatal(err)
 	}
@@ -142,15 +132,7 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	reconnectBaseDelay = 50 * time.Millisecond
 	t.Cleanup(func() { reconnectBaseDelay = prev })
 
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { raw.Close() })
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newStateDB(t)
 	localID, err := store.AddRemote(t.Context(), "grpc://"+addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
@@ -191,15 +173,7 @@ func TestManager_AuthFailedDoesNotRetry(t *testing.T) {
 	remoteReg.Register(&fakePlatform{id: "opencode"})
 	addr := startRealRemote(t, "correct-token", "auth-remote", remoteReg)
 
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { raw.Close() })
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newStateDB(t)
 	// Wrong token.
 	localID, err := store.AddRemote(t.Context(), addr, "wrong-token", "Box")
 	if err != nil {
@@ -306,15 +280,7 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 	addr := startRealRemote(t, "tok", "abc123", remoteReg)
 
 	// Hub side: a real in-memory state.db with one saved remote.
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { raw.Close() })
-	store, err := state.OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newStateDB(t)
 	if _, err := store.AddRemote(t.Context(), addr, "tok", "Workstation"); err != nil {
 		t.Fatal(err)
 	}

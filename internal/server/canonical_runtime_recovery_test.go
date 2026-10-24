@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -20,7 +21,7 @@ func TestRuntimeReplacementPersistsOnlyCanonicalRecoveryCandidates(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	native := opencode.New(s.db, s.stateDB)
+	native := opencode.New(s.db, s.stateDB, nil, ocapi.Auth{})
 	canonical, err := owned.New(t.Context(), native, catalogue, statev2test.Open(t), "owner")
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +54,7 @@ func TestRuntimeRecoveryAdoptsUncataloguedHiddenOpenCodeHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	native := opencode.New(s.db, s.stateDB)
+	native := opencode.New(s.db, s.stateDB, nil, ocapi.Auth{})
 	canonical, err := owned.New(t.Context(), native, catalogue, statev2test.Open(t), "owner")
 	if err != nil {
 		t.Fatal(err)

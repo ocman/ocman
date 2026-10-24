@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
@@ -34,9 +35,12 @@ func canonicalOpenCodeRegistry(t *testing.T, database *db.DB, stateDB *state.DB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	native := opencodeplatform.New(database, stateDB)
-	adapters, err := owned.PrepareCore(t.Context(), stateDB, history, catalogue, "owner", []platforms.Integration{native})
+	native := opencodeplatform.New(database, stateDB, nil, ocapi.Auth{})
+	adapters, err := owned.BuildCore(t.Context(), stateDB, history, catalogue, "owner", []platforms.Integration{native})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owned.PrepareBuiltCore(t.Context(), stateDB, history, catalogue, "owner", adapters); err != nil {
 		t.Fatal(err)
 	}
 	registry := platforms.NewRegistry()

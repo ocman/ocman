@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
@@ -32,7 +33,7 @@ func TestAdapterConfigurationCataloguesUseOwnDiscovery(t *testing.T) {
 			defer server.Close()
 			u, _ := url.Parse(server.URL)
 			t.Cleanup(func() { catalogCache.invalidatePort(u.Port()) })
-			a := New(nil, nil)
+			a := New(nil, nil, nil, ocapi.Auth{})
 			a.rt = NewDiscovery()
 			a.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": u.Port()} })
 			models := a.ModelOptions(t.Context())

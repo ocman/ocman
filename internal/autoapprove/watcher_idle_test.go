@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
@@ -43,7 +44,7 @@ func TestWatcherIdlePairReadsStatusOnce(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer database.Close()
-			adapter := opencode.New(database, nil)
+			adapter := opencode.New(database, nil, nil, ocapi.Auth{})
 			reads, idle := 0, 0
 			svc := NewService(Deps{
 				OpencodePlatform:        func() platforms.Platform { return openCodePlatform{Adapter: adapter} },
@@ -93,7 +94,7 @@ func TestWatcherBroadcastsRetryNoticeChanges(t *testing.T) {
 		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"busy"}}}` + "\n\n",
 	})
 	defer server.close()
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	broadcasts := 0
 	svc := NewService(Deps{
 		OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} },

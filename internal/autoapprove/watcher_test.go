@@ -308,7 +308,7 @@ func TestAutoApproveWatcherUpdatesPromptRegistryFromWrappedEvents(t *testing.T) 
 	}))
 	defer server.Close()
 
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	var changed atomic.Int32
 	svc := NewService(Deps{
 		OpencodePlatform:        func() platforms.Platform { return openCodePlatform{Adapter: adapter} },
@@ -408,7 +408,7 @@ func TestAutoApproveWatcherConnectsBeforePromptReconciliation(t *testing.T) {
 	defer server.Close()
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	w := newAutoApproveWatcher(svc)
 	w.discoverPorts = func() map[string]string {
@@ -442,7 +442,7 @@ func TestAutoApproveWatcherReconcilesPendingPermissionIntoAutoApprove(t *testing
 	defer server.Close()
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	w := newAutoApproveWatcher(svc)
 	w.discoverPorts = func() map[string]string { return map[string]string{"/repo/a": port} }
@@ -487,7 +487,7 @@ func TestAutoApproveWatcherRetriesFailedReconciliationOnHealthyStream(t *testing
 	defer server.Close()
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
-	adapter := opencode.New(nil, nil)
+	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
 	svc := NewService(Deps{OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	w := newAutoApproveWatcher(svc)
 	w.discoverPorts = func() map[string]string { return map[string]string{"/repo/retry": port} }

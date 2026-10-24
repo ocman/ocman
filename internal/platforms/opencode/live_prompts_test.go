@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -34,7 +35,7 @@ func TestAdapterLivePromptsBackSessionFlagsAndListingWithoutFanout(t *testing.T)
 	// Seeded DB: force the listing below to read it rather than an
 	// earlier test's snapshot.
 
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{
 		"id": "perm-1", "sessionID": sid, "permission": "Bash",
 	})
@@ -83,7 +84,7 @@ func TestRefreshPermissionsRequiresSuccessfulLiveSnapshot(t *testing.T) {
 	}))
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	prompts, err := a.RefreshPermissions(t.Context(), sid)
 	if err != nil || len(prompts) != 1 || prompts[0]["id"] != "perm-live" {
 		t.Fatalf("live snapshot: %+v, %v", prompts, err)
@@ -116,7 +117,7 @@ func TestPermissionPromptBubblesFromGrandchildAcrossDirectories(t *testing.T) {
 		{id: childID, directory: "/repo/worktree", parentID: &parentID},
 		{id: grandchildID, directory: "/repo/nested", parentID: &childID},
 	})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", "/repo/nested", "permission", platforms.LivePrompt{
 		"id": "perm-grandchild", "sessionID": grandchildID, "permission": "Bash",
 	})
@@ -158,7 +159,7 @@ func TestPromptReconciliationHydratesAndReplacesDirectorySnapshot(t *testing.T) 
 	}))
 	defer server.Close()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	<-a.StartPromptReconciliation(context.Background(), port, []string{dir})
 	prompts, _ := a.ListPermissions(context.Background(), "ses-snapshot")
@@ -196,7 +197,7 @@ func TestPromptReconciliationDoesNotRestorePromptResolvedDuringSnapshot(t *testi
 	}))
 	defer server.Close()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{
 		"id": pid, "sessionID": sid, "permission": "Bash",
 	})
@@ -240,7 +241,7 @@ func TestPromptResponsesUseSessionDirectoryAndInvalidateRegistry(t *testing.T) {
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
 
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{"id": "perm-1", "sessionID": sid, "permission": "Bash"})
 	if err := a.RespondPermission(context.Background(), platforms.RespondPermissionRequest{SessionID: sid, PermissionID: "perm-1", Reply: "once"}); err != nil {
 		t.Fatalf("RespondPermission: %v", err)
@@ -295,7 +296,7 @@ func TestV2PermissionResponseUsesSessionScopedEndpoint(t *testing.T) {
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
 
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{
 		"id": "perm-v2", "sessionID": sid, "action": "bash", "resources": []string{"git status"},
 	})
@@ -327,7 +328,7 @@ func TestProxyEventsUsesActualSessionDirectory(t *testing.T) {
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
 
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	var events bytes.Buffer
 	if err := a.ProxyEvents(context.Background(), sid, &events, nil); err != nil {
 		t.Fatalf("ProxyEvents: %v", err)
@@ -358,7 +359,7 @@ func TestPromptReconciliationIncludesWorktreeSessionDirectories(t *testing.T) {
 		{id: "ses-worktree", directory: worktree, busy: true},
 		{id: "ses-old", directory: "/repo/.worktrees/project/old"},
 	})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	<-a.StartPromptReconciliation(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), []string{root})
 
 	mu.Lock()
@@ -393,7 +394,7 @@ func TestPromptReconciliationReportsLiveWorktreePermissionWithStaleStoredStatus(
 	defer server.Close()
 
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
-	a := New(newTestDBWithSessions(t, []testSession{{id: "ses-worktree", directory: worktree}}), nil)
+	a := New(newTestDBWithSessions(t, []testSession{{id: "ses-worktree", directory: worktree}}), nil, nil, ocapi.Auth{})
 	a.ObserveSessionStatus(port, a.StatusPortGeneration(port), "ses-worktree", "busy")
 	var permissions []platforms.LivePrompt
 	<-a.StartPromptReconciliation(context.Background(), port, []string{root}, func(prompt platforms.LivePrompt) {
@@ -431,7 +432,7 @@ func TestNewerPromptReconciliationWinsOlderSlowSnapshot(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	olderDone := a.StartPromptReconciliation(context.Background(), port, []string{dir})
 	<-firstStarted
@@ -457,7 +458,7 @@ func TestPromptReconciliationReportsPendingPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	var got []platforms.LivePrompt
 	<-a.StartPromptReconciliation(
 		context.Background(),
@@ -471,7 +472,7 @@ func TestPromptReconciliationReportsPendingPermissions(t *testing.T) {
 }
 
 func TestClearPromptsForPortRemovesOnlyOwnedDirectories(t *testing.T) {
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
@@ -500,7 +501,7 @@ func TestClearPromptsForPortReclaimsResolvedMarkersAndAffinity(t *testing.T) {
 		catalogCache = oldCatalogCache
 	}()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	const (
 		port = "4321"
 		dir  = "/repo/owned"
@@ -541,7 +542,7 @@ func TestPromptReconciliationMergesUnrelatedConcurrentAsk(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	done := a.StartPromptReconciliation(context.Background(), port, []string{dir})
 	<-started
@@ -573,7 +574,7 @@ func TestPromptReconciliationRetriesTransientSnapshotFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	<-a.StartPromptReconciliation(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), []string{"/repo/retry"})
 	prompts, _ := a.ListPermissions(context.Background(), "ses-retry")
 	if len(prompts) != 1 || hits.Load() != 2 {
@@ -591,7 +592,7 @@ func TestListQuestionsRefreshesAuthoritativeSnapshot(t *testing.T) {
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
 
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "question", platforms.LivePrompt{"id": "stale", "sessionID": sid})
 	prompts, err := a.ListQuestions(context.Background(), sid)
 	if err != nil {
@@ -618,7 +619,7 @@ func TestBubbledQuestionResponseUsesIssuingChildDirectory(t *testing.T) {
 		{id: parentID, directory: parentDir},
 		{id: childID, directory: childDir, parentID: &parentID},
 	})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", childDir, "question", platforms.LivePrompt{"id": "child-question", "sessionID": childID})
 	a.rt.rememberSessionPort(parentID, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
 	if err := a.RespondQuestion(context.Background(), platforms.RespondQuestionRequest{SessionID: parentID, RequestID: "child-question"}); err != nil {
@@ -635,7 +636,7 @@ func TestReconnectReconcilesPreviouslyObservedIdleDirectory(t *testing.T) {
 	defer server.Close()
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	<-a.StartPromptReconciliation(context.Background(), port, []string{root})
 	a.ObservePromptAsked(port, worktree, "permission", platforms.LivePrompt{"id": "stale-idle", "sessionID": "ses-idle"})
 	<-a.StartPromptReconciliation(context.Background(), port, []string{root})
@@ -662,7 +663,7 @@ func TestClearPromptsForPortBeatsInflightSnapshot(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
 	done := a.StartPromptReconciliation(context.Background(), port, []string{dir})
 	<-started
@@ -676,7 +677,7 @@ func TestClearPromptsForPortBeatsInflightSnapshot(t *testing.T) {
 }
 
 func TestClearPromptsForPortRejectsBufferedOldStreamEvent(t *testing.T) {
-	a := New(nil, nil)
+	a := New(nil, nil, nil, ocapi.Auth{})
 	const port = "12345"
 	generation := a.PromptPortGeneration(port)
 	a.ClearPromptsForPort(port)
@@ -694,7 +695,7 @@ func TestListQuestionsReturnsErrorWhenAuthoritativeRefreshFails(t *testing.T) {
 	}))
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
-	a := New(newBoundTestDBWithSession(t, sid, dir), nil)
+	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	if _, err := a.ListQuestions(context.Background(), sid); err == nil {
 		t.Fatal("ListQuestions returned nil error for failed authoritative refresh")
 	}
@@ -718,7 +719,7 @@ func TestListQuestionsDiscoversMissedChildDirectoryPrompt(t *testing.T) {
 		{id: parentID, directory: parentDir},
 		{id: childID, directory: childDir, parentID: &parentID},
 	})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.rt.rememberSessionPort(parentID, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
 	prompts, err := a.ListQuestions(context.Background(), parentID)
 	if err != nil {

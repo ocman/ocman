@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 func TestSessionRetryNoticeFromSnapshot(t *testing.T) {
@@ -14,7 +15,7 @@ func TestSessionRetryNoticeFromSnapshot(t *testing.T) {
 	fake := newOpencodeFake(t)
 	fake.turnStatusJSON = json.RawMessage(`{"retry-session":{"type":"retry","attempt":1,"message":"This request would exceed your account's rate limit. Please try again later.","next":1791456599677}}`)
 	withTestPort(t, dir, fake.Port())
-	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a := New(newTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	if !a.SeedSessionStatusFromInstance(t.Context(), fake.Port(), 0, nil) {
 		t.Fatal("status snapshot failed")
 	}

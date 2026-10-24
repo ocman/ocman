@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -50,7 +51,7 @@ func TestSessionIdentityOverridesDirectoryForStreamsAndMutations(t *testing.T) {
 	resetSessionPortAffinityForTests()
 	t.Cleanup(resetPortCacheForTests)
 	t.Cleanup(resetSessionPortAffinityForTests)
-	a := New(newTestDBWithSession(t, id, directory), nil)
+	a := New(newTestDBWithSession(t, id, directory), nil, nil, ocapi.Auth{})
 	var out bytes.Buffer
 	if err := a.ProxyEvents(context.Background(), id, &out, func() {}); err != nil {
 		t.Fatalf("stream followed the directory instead of the native ID: %v", err)
@@ -112,7 +113,7 @@ func TestSessionPortBindingDoesNotDependOnDirectoryAndHonorsCancellation(t *test
 func TestActiveSessionObservationBindsRuntimeWithoutProjectLookup(t *testing.T) {
 	for _, seed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("seed=%v", seed), func(t *testing.T) {
-			a := New(newTestDBWithSession(t, "native", "/different-project"), nil)
+			a := New(newTestDBWithSession(t, "native", "/different-project"), nil, nil, ocapi.Auth{})
 			a.rt = NewDiscovery()
 			if seed {
 				a.SeedSessionStatus("actual-port", 0, 0, map[string]string{"native": "busy"})

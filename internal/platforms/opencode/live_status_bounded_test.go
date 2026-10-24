@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
 
 func TestSessionStatusOnPortBoundedHistory(t *testing.T) {
@@ -14,7 +15,7 @@ func TestSessionStatusOnPortBoundedHistory(t *testing.T) {
 	}
 	messages[len(messages)-1] = `{"role":"assistant","error":{"name":"APIError"}}`
 	database := newTestDBWithSessions(t, []testSession{{id: "ses-1", directory: "/repo", messages: messages}})
-	a := New(database, nil)
+	a := New(database, nil, nil, ocapi.Auth{})
 	a.ObserveSessionStatus("7777", 0, "ses-1", "idle")
 	allocs := testing.AllocsPerRun(3, func() {
 		status, err := a.SessionStatusOnPort("ses-1", "7777")

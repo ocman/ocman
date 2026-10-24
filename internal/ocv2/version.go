@@ -85,7 +85,7 @@ func WatchInstalledVersion(ctx context.Context) {
 	}
 }
 
-// SetInstalledV2 pins InstalledV2 (tests and the -opencode-v2 override).
+// SetInstalledV2 pins InstalledV2 for tests.
 // It returns a restore func.
 func SetInstalledV2(v bool) func() {
 	prev := installedOverride.Swap(&v)

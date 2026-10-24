@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -88,7 +89,7 @@ func newOpsFixture(t *testing.T, favorites FavoritesReader, handler http.Handler
 	ResetCaches()
 
 	withTestPort(t, opsDir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
-	return New(newBoundTestDBWithSession(t, opsSID, opsDir), favorites), rec
+	return New(newBoundTestDBWithSession(t, opsSID, opsDir), favorites, nil, ocapi.Auth{}), rec
 }
 
 // newOpsAdapterNoInstance returns an Adapter whose session exists in
@@ -106,7 +107,7 @@ func newOpsAdapterNoInstance(t *testing.T) *Adapter {
 		resetPortCacheForTests()
 		resetSessionPortAffinityForTests()
 	})
-	return New(newBoundTestDBWithSession(t, opsSID, opsDir), nil)
+	return New(newBoundTestDBWithSession(t, opsSID, opsDir), nil, nil, ocapi.Auth{})
 }
 
 // opsInvocation names one Platform operation and how to call it for
@@ -147,9 +148,9 @@ func TestAdapterOperations_SessionLookupFailures(t *testing.T) {
 		name    string
 		adapter func(*testing.T) *Adapter
 	}{
-		{"nil db", func(*testing.T) *Adapter { return New(nil, nil) }},
+		{"nil db", func(*testing.T) *Adapter { return New(nil, nil, nil, ocapi.Auth{}) }},
 		{"unknown session", func(t *testing.T) *Adapter {
-			return New(newTestDBWithSession(t, "some-other-session", opsDir), nil)
+			return New(newTestDBWithSession(t, "some-other-session", opsDir), nil, nil, ocapi.Auth{})
 		}},
 	}
 	for _, tc := range cases {
