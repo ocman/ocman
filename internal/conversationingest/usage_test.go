@@ -2,6 +2,7 @@ package conversationingest
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -90,5 +91,24 @@ func TestVerificationMatchesStoredAccounting(t *testing.T) {
 	}
 	if got := tasks[0].Progress.Counters; got["usage-mismatch"] != 0 || got["matched"] != 1 {
 		t.Fatalf("verification counters: %+v", got)
+	}
+}
+
+func TestUsageMatchesReportsStoreErrors(t *testing.T) {
+	m, _ := testImporter(t, fakeSource("one"))
+	if err := m.deps.Store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := m.workers[0].usageMatches(t.Context(), "session", statev2.Usage{}); err == nil || ok {
+		t.Fatalf("closed store: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestUniqueSorted(t *testing.T) {
+	if got := uniqueSorted([]string{"b", "a", "b", "c", "a"}); !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatalf("uniqueSorted = %v", got)
+	}
+	if got := uniqueSorted(nil); got == nil || len(got) != 0 {
+		t.Fatalf("uniqueSorted(nil) = %#v, want empty non-nil", got)
 	}
 }

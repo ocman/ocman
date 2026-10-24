@@ -1,6 +1,9 @@
 package analyticsdata
 
-import "sort"
+import (
+	"slices"
+	"sort"
+)
 
 type ToolTiming struct {
 	Start int64 `json:"start"`
@@ -48,4 +51,15 @@ func SummarizeTiming(start, duration, output int64, stop string, tools []ToolTim
 		r.TokensPerSecond = float64(output) / (float64(model) / 1000)
 	}
 	return r
+}
+
+// Percentile returns the nearest-rank percentile of values without
+// reordering them, or 0 when values is empty.
+func Percentile(values []int64, percent int) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	ordered := slices.Clone(values)
+	slices.Sort(ordered)
+	return ordered[(len(ordered)*percent+99)/100-1]
 }

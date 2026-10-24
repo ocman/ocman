@@ -3,6 +3,8 @@ package db
 import (
 	"sort"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 )
 
 // requestRow attaches computed fields without changing the request-log API.
@@ -143,8 +145,8 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 	if tc := dashboard.Summary.CacheReadTokens + dashboard.Summary.CacheWriteTokens; tc > 0 {
 		dashboard.Summary.CacheHitRate = float64(dashboard.Summary.CacheReadTokens) / float64(tc)
 	}
-	dashboard.Summary.P50DurationMs = percentile(durations, 50)
-	dashboard.Summary.P95DurationMs = percentile(durations, 95)
+	dashboard.Summary.P50DurationMs = float64(analyticsdata.Percentile(durations, 50))
+	dashboard.Summary.P95DurationMs = float64(analyticsdata.Percentile(durations, 95))
 	if outcomes := dashboard.Summary.SuccessfulRequests + dashboard.Summary.ErrorRequests; outcomes > 0 {
 		dashboard.Summary.ErrorRate = float64(dashboard.Summary.ErrorRequests) / float64(outcomes)
 	}

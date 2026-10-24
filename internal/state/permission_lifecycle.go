@@ -3,8 +3,10 @@ package state
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 )
 
 type PermissionEvaluationMethod string
@@ -194,24 +196,16 @@ func (d *DB) PermissionApprovalStats(ctx context.Context, since int64, directory
 	stats.MedianJudgmentDurationMs = medianMilliseconds(judgmentDurations)
 	stats.MedianManualResponseDurationMs = medianMilliseconds(manualDurations)
 	stats.AffectedSessions = len(affectedSessions)
-	stats.P50UserWaitMs = percentileMilliseconds(userWaits, 50)
-	stats.P95UserWaitMs = percentileMilliseconds(userWaits, 95)
+	stats.P50UserWaitMs = analyticsdata.Percentile(userWaits, 50)
+	stats.P95UserWaitMs = analyticsdata.Percentile(userWaits, 95)
 	return stats, nil
-}
-
-func percentileMilliseconds(values []int64, percentile int) int64 {
-	if len(values) == 0 {
-		return 0
-	}
-	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
-	return values[(len(values)*percentile+99)/100-1]
 }
 
 func medianMilliseconds(values []int64) int64 {
 	if len(values) == 0 {
 		return 0
 	}
-	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+	slices.Sort(values)
 	middle := len(values) / 2
 	if len(values)%2 == 1 {
 		return values[middle]

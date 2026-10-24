@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sort"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 )
 
 // CostCalculator can compute the API-equivalent cost for a request given token counts.
@@ -249,8 +251,8 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 				CacheReadTokens:         b.cacheReadTokens,
 				OutputTokens:            b.outputTokens,
 				AvgDurationMs:           avgDur,
-				P50DurationMs:           percentile(b.durations, 50),
-				P95DurationMs:           percentile(b.durations, 95),
+				P50DurationMs:           float64(analyticsdata.Percentile(b.durations, 50)),
+				P95DurationMs:           float64(analyticsdata.Percentile(b.durations, 95)),
 				AvgCacheEfficiency:      b.totalCacheEff / float64(n),
 				Count:                   b.count,
 				CompletedRequests:       b.completedRequests,
@@ -266,16 +268,6 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 		series = append(series, pt)
 	}
 	return series
-}
-
-func percentile(values []int64, percent int) float64 {
-	if len(values) == 0 {
-		return 0
-	}
-	ordered := append([]int64(nil), values...)
-	slices.Sort(ordered)
-	index := (len(ordered)*percent+99)/100 - 1
-	return float64(ordered[index])
 }
 
 // buildModelCostSeries ranks models by whole-window cost and folds models below

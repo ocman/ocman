@@ -3,6 +3,7 @@ package conversationingest
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -393,14 +394,7 @@ func (w *sourceWorker) sessionVersion(ctx context.Context, id string) (string, e
 }
 
 func uniqueSorted(ids []string) []string {
-	seen := map[string]bool{}
-	out := []string{}
-	for _, id := range ids {
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
-	sort.Strings(out)
-	return out
+	out := append([]string{}, ids...)
+	slices.Sort(out)
+	return slices.Compact(out)
 }

@@ -44,3 +44,21 @@ func TestSharedModelIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestPercentile(t *testing.T) {
+	values := []int64{50, 10, 40, 20, 30}
+	for _, tc := range []struct {
+		percent int
+		want    int64
+	}{{50, 30}, {95, 50}, {1, 10}, {100, 50}} {
+		if got := Percentile(values, tc.percent); got != tc.want {
+			t.Errorf("Percentile(%d) = %d, want %d", tc.percent, got, tc.want)
+		}
+	}
+	if values[0] != 50 {
+		t.Errorf("Percentile reordered its input: %v", values)
+	}
+	if got := Percentile(nil, 50); got != 0 {
+		t.Errorf("Percentile(nil) = %d, want 0", got)
+	}
+}
