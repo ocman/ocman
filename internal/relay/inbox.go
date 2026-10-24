@@ -103,31 +103,11 @@ func (s *Server) handleRegisterInbox(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid X25519 recipient", http.StatusBadRequest)
 		return
 	}
-	id, err := randomString(16)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
-	ingestToken, err := randomString(32)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
-	managementToken, err := randomString(32)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
-	fetchToken, err := randomString(32)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
-	acknowledgmentToken, err := randomString(32)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
+	id := randomString(16)
+	ingestToken := randomString(32)
+	managementToken := randomString(32)
+	fetchToken := randomString(32)
+	acknowledgmentToken := randomString(32)
 	m := inboxMeta{
 		Version:            inboxFormatVersion,
 		Recipient:          recipient.String(),
@@ -211,11 +191,7 @@ func (s *Server) handleIngestInbox(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	deliveryID, err := randomString(16)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
+	deliveryID := randomString(16)
 	envelope := InboxEnvelope{
 		FormatVersion: inboxFormatVersion,
 		KeyVersion:    m.KeyVersion,
@@ -496,12 +472,10 @@ func encryptInboxEnvelope(recipient age.Recipient, envelope InboxEnvelope) ([]by
 	return ciphertext.Bytes(), nil
 }
 
-func randomString(bytes int) (string, error) {
+func randomString(bytes int) string {
 	b := make([]byte, bytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("relay: generating inbox credential: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func validRandomString(value string, bytes int) bool {

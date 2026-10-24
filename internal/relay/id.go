@@ -1,8 +1,6 @@
 package relay
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -27,12 +25,8 @@ const seqDigits = 9
 // newID returns a share id of the form "YYYYMMDD-<random>". The date is
 // part of the id so a reader's URL alone determines the storage prefix,
 // with no index to consult.
-func newID(now time.Time) (string, error) {
-	b := make([]byte, idRandomBytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("relay: generating share id: %w", err)
-	}
-	return now.UTC().Format(dateLayout) + "-" + base64.RawURLEncoding.EncodeToString(b), nil
+func newID(now time.Time) string {
+	return now.UTC().Format(dateLayout) + "-" + randomString(idRandomBytes)
 }
 
 // splitID separates a share id into its date and random components,

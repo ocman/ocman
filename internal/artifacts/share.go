@@ -131,10 +131,7 @@ func (m *Module) uploadShare(ctx context.Context, client share.RelayClient, allo
 	if err := checkArtifactShareLimits(p, alloc); err != nil {
 		return state.ArtifactShare{}, err
 	}
-	key, err := share.NewKey()
-	if err != nil {
-		return state.ArtifactShare{}, err
-	}
+	key := share.NewKey()
 	put := func(seq uint64, plain []byte) error {
 		sealed, err := share.Seal(key, alloc.ID, seq, plain)
 		if err != nil {

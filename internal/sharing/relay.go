@@ -30,11 +30,7 @@ func (m *Module) createRelayShare(ctx context.Context, link state.ShareLink, ada
 	if err != nil {
 		return link, err
 	}
-	key, err := share.NewKey()
-	if err != nil {
-		_ = client.Delete(ctx, allocation)
-		return link, err
-	}
+	key := share.NewKey()
 	detail, err := adapter.Session(ctx, link.SessionID, exportFetchLimit, 0)
 	if err != nil {
 		_ = client.Delete(ctx, allocation)

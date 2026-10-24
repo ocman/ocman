@@ -58,12 +58,10 @@ var ErrOpen = errors.New("share: chunk authentication failed")
 type Key [KeySize]byte
 
 // NewKey returns a cryptographically random share key.
-func NewKey() (Key, error) {
+func NewKey() Key {
 	var k Key
-	if _, err := rand.Read(k[:]); err != nil {
-		return Key{}, fmt.Errorf("share: generating key: %w", err)
-	}
-	return k, nil
+	_, _ = rand.Read(k[:])
+	return k
 }
 
 // String encodes the key as unpadded base64url, the form carried in a

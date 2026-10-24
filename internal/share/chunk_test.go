@@ -9,10 +9,7 @@ import (
 
 func mustKey(t *testing.T) Key {
 	t.Helper()
-	k, err := NewKey()
-	if err != nil {
-		t.Fatalf("NewKey: %v", err)
-	}
+	k := NewKey()
 	return k
 }
 

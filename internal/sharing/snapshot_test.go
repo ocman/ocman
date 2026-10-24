@@ -196,11 +196,8 @@ func TestShareChunkBudget(t *testing.T) {
 func TestUploadChunksRejectsTooManyChunksBeforeUpload(t *testing.T) {
 	m := &Module{}
 	client := share.RelayClient{BaseURL: "http://127.0.0.1:1"}
-	key, err := share.NewKey()
-	if err != nil {
-		t.Fatalf("NewKey: %v", err)
-	}
-	_, err = m.uploadChunks(context.Background(), client, share.RelayAllocation{
+	key := share.NewKey()
+	_, err := m.uploadChunks(context.Background(), client, share.RelayAllocation{
 		ID: "share", MaxChunks: 1,
 	}, key, 0, []relayChunk{{}, {}})
 	var relayErr *share.RelayError
@@ -223,10 +220,7 @@ func bigChunk() relayChunk {
 // relay URL is used deliberately, so a transport error would prove the
 // check ran too late.
 func TestUploadChunksEnforcesRelayLimitsBeforeUploading(t *testing.T) {
-	key, err := share.NewKey()
-	if err != nil {
-		t.Fatalf("NewKey: %v", err)
-	}
+	key := share.NewKey()
 	client := share.RelayClient{BaseURL: "http://127.0.0.1:1"}
 
 	tests := []struct {

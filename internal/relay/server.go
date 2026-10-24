@@ -233,16 +233,8 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.cfg.Now()
-	id, err := newID(now)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
-	token, hash, err := newDeleteToken()
-	if err != nil {
-		serverError(w, err)
-		return
-	}
+	id := newID(now)
+	token, hash := newDeleteToken()
 	m := meta{Version: metaVersion, DeleteHash: hash, CreatedAt: now.UnixMilli()}
 	if err := putMeta(r.Context(), s.cfg.Store, id, m); err != nil {
 		serverError(w, err)

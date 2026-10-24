@@ -10,10 +10,7 @@ import (
 
 func TestNewID_RoundTripsThroughSplit(t *testing.T) {
 	now := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
-	id, err := newID(now)
-	if err != nil {
-		t.Fatalf("newID: %v", err)
-	}
+	id := newID(now)
 	date, random, ok := splitID(id)
 	if !ok {
 		t.Fatalf("splitID(%q) failed", id)
@@ -31,10 +28,7 @@ func TestNewID_UsesUTC(t *testing.T) {
 	// partition must be UTC or a share would be filed under a day the
 	// sweeper computes differently.
 	zone := time.FixedZone("test", 2*60*60)
-	id, err := newID(time.Date(2026, 8, 14, 0, 30, 0, 0, zone))
-	if err != nil {
-		t.Fatalf("newID: %v", err)
-	}
+	id := newID(time.Date(2026, 8, 14, 0, 30, 0, 0, zone))
 	if !strings.HasPrefix(id, "20260813-") {
 		t.Fatalf("id = %q, want the UTC date 20260813", id)
 	}
@@ -44,10 +38,7 @@ func TestNewID_IsUnique(t *testing.T) {
 	now := time.Now()
 	seen := map[string]bool{}
 	for range 100 {
-		id, err := newID(now)
-		if err != nil {
-			t.Fatalf("newID: %v", err)
-		}
+		id := newID(now)
 		if seen[id] {
 			t.Fatalf("duplicate id %q", id)
 		}
@@ -56,10 +47,7 @@ func TestNewID_IsUnique(t *testing.T) {
 }
 
 func TestSplitID_Rejects(t *testing.T) {
-	valid, err := newID(time.Now())
-	if err != nil {
-		t.Fatalf("newID: %v", err)
-	}
+	valid := newID(time.Now())
 	_, random, _ := splitID(valid)
 
 	tests := []struct {
@@ -97,10 +85,7 @@ func TestSplitID_Rejects(t *testing.T) {
 // anything prefixFor/chunkKey/metaKey produce must be accepted by the
 // Store, and anything rejected as an id must never reach it.
 func TestKeysAreValidStoreKeys(t *testing.T) {
-	id, err := newID(time.Now())
-	if err != nil {
-		t.Fatalf("newID: %v", err)
-	}
+	id := newID(time.Now())
 	mk, ok := metaKey(id)
 	if !ok {
 		t.Fatal("metaKey failed for a fresh id")
@@ -125,10 +110,7 @@ func TestKeysAreValidStoreKeys(t *testing.T) {
 }
 
 func TestChunkKey_IsFixedWidthAndSortable(t *testing.T) {
-	id, err := newID(time.Now())
-	if err != nil {
-		t.Fatalf("newID: %v", err)
-	}
+	id := newID(time.Now())
 	low, _ := chunkKey(id, 9)
 	high, _ := chunkKey(id, 10)
 	if low >= high {
@@ -140,10 +122,7 @@ func TestChunkKey_IsFixedWidthAndSortable(t *testing.T) {
 }
 
 func TestSeqFromKey(t *testing.T) {
-	id, err := newID(time.Now())
-	if err != nil {
-		t.Fatalf("newID: %v", err)
-	}
+	id := newID(time.Now())
 	ck, _ := chunkKey(id, 123)
 	seq, ok := seqFromKey(ck)
 	if !ok || seq != 123 {

@@ -2,10 +2,8 @@ package relay
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -35,13 +33,9 @@ type meta struct {
 }
 
 // newDeleteToken returns a fresh delete token and its stored hash.
-func newDeleteToken() (token, hash string, err error) {
-	b := make([]byte, deleteTokenBytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", "", fmt.Errorf("relay: generating delete token: %w", err)
-	}
-	token = base64.RawURLEncoding.EncodeToString(b)
-	return token, hashToken(token), nil
+func newDeleteToken() (token, hash string) {
+	token = randomString(deleteTokenBytes)
+	return token, hashToken(token)
 }
 
 // hashToken returns the hex-encoded SHA-256 of a delete token.

@@ -81,9 +81,7 @@ func loadFileTokenSecret(ctx context.Context, sdb *state.DB) ([]byte, error) {
 		}
 	}
 	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("generating file token secret: %w", err)
-	}
+	_, _ = rand.Read(key)
 	if err := sdb.SetSetting(ctx, fileTokenSecretKey, base64.RawStdEncoding.EncodeToString(key)); err != nil {
 		return nil, err
 	}

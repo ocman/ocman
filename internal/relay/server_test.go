@@ -193,10 +193,7 @@ func TestRoundTrip_SealAppendReadOpen(t *testing.T) {
 	h := newHarness(t, nil)
 	created := h.create()
 
-	key, err := share.NewKey()
-	if err != nil {
-		t.Fatalf("NewKey: %v", err)
-	}
+	key := share.NewKey()
 	turns := [][]byte{
 		[]byte(`{"session":{"id":"ses_1"},"messages":[{"id":"m1"}]}`),
 		[]byte(`{"messages":[{"id":"m2"}]}`),
@@ -401,10 +398,7 @@ func TestDelete_RequiresDeleteToken(t *testing.T) {
 
 func TestRead_UnknownShareIs404(t *testing.T) {
 	h := newHarness(t, nil)
-	id, err := newID(h.now)
-	if err != nil {
-		t.Fatalf("newID: %v", err)
-	}
+	id := newID(h.now)
 	rec := h.do(http.MethodGet, "/s/"+id, nil, "")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status %d, want 404", rec.Code)
