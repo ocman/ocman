@@ -37,7 +37,9 @@ import { useApiStore } from './lib/apiStore';
 import { insertProvisionalSession, inboxEventRefresh } from './lib/queries';
 import { queryEventRefresh } from './lib/queryEventRefresh';
 import { remoteLog } from './lib/remoteLog';
-import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
+// Starts the global long-task observer at boot, so main-thread stalls are
+// counted whether or not BackendStats is rendered.
+import './lib/useLongTaskMonitor';
 import { installPerfMonitor } from './lib/perfMonitor';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { Inbox } from './pages/Inbox';
@@ -241,15 +243,6 @@ function ServiceWorkerNavListener() {
   return null;
 }
 
-// Mounts the global longtask observer at app boot so we capture
-// main-thread stalls regardless of whether BackendStats is rendered.
-// The hook is idempotent — BackendStats can also call useLongTaskMonitor
-// to read the same shared stats.
-function LongTaskMonitor() {
-  useLongTaskMonitor();
-  return null;
-}
-
 // Installs `window.__ocmanPerf` so operators can inspect recent API
 // call timings from the browser devtools console:
 //
@@ -328,7 +321,6 @@ function AuthenticatedShell() {
       <HookPluginPrompt />
       <SetupPrompt />
       <ServiceWorkerNavListener />
-      <LongTaskMonitor />
       <PerfDevHandle />
       <GlobalHotkeys />
       <div className="app-shell">

@@ -1,110 +1,61 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  _peekForTests,
-  _resetForTests,
-  _subscribeForTests,
-  recordEntry,
-  startLongTaskObserver,
-} from './useLongTaskMonitor';
+// @vitest-environment jsdom
 
-// We test the module-level controller; the React hook is a thin
-// adapter over it (same convention as usePwaInstall.test.ts).
+import { act, renderHook } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-describe('useLongTaskMonitor controller', () => {
-  beforeEach(() => {
-    _resetForTests();
-  });
+type Entries = { getEntries: () => { duration: number }[] };
 
-  it('starts with zero stats', () => {
-    const s = _peekForTests();
-    expect(s.count).toBe(0);
-    expect(s.maxMs).toBe(0);
-    expect(s.lastMs).toBe(0);
-  });
-
-  it('records duration and timestamp of an observed entry', () => {
-    recordEntry({ duration: 120, startTime: 1000 });
-    const s = _peekForTests();
-    expect(s.count).toBe(1);
-    expect(s.maxMs).toBe(120);
-    expect(s.lastMs).toBe(120);
-    expect(s.lastAt).toBe(1000);
-  });
-
-  it('keeps the maximum across multiple entries', () => {
-    recordEntry({ duration: 80, startTime: 100 });
-    recordEntry({ duration: 200, startTime: 200 });
-    recordEntry({ duration: 60, startTime: 300 });
-    const s = _peekForTests();
-    expect(s.count).toBe(3);
-    expect(s.maxMs).toBe(200);
-    // lastMs reflects the most recent task, not the worst.
-    expect(s.lastMs).toBe(60);
-    expect(s.lastAt).toBe(300);
-  });
-
-  it('ignores synthetic zero-duration entries', () => {
-    recordEntry({ duration: 0, startTime: 100 });
-    recordEntry({ duration: -5, startTime: 200 });
-    expect(_peekForTests().count).toBe(0);
-  });
-
-  it('notifies subscribers on each recorded entry', () => {
-    const updates: number[] = [];
-    _subscribeForTests((s) => updates.push(s.count));
-    recordEntry({ duration: 100, startTime: 1 });
-    recordEntry({ duration: 200, startTime: 2 });
-    expect(updates).toEqual([1, 2]);
-  });
-
-  it('returns a no-op disposer when PerformanceObserver is undefined', () => {
-    const orig = (globalThis as unknown as { PerformanceObserver?: unknown }).PerformanceObserver;
-    (globalThis as unknown as { PerformanceObserver?: unknown }).PerformanceObserver = undefined;
-    try {
-      const stop = startLongTaskObserver();
-      expect(typeof stop).toBe('function');
-      // Should not throw.
-      stop();
-    } finally {
-      (globalThis as unknown as { PerformanceObserver?: unknown }).PerformanceObserver = orig;
+// The observer starts when the module loads, so each test stubs
+// PerformanceObserver and imports a fresh copy of the module.
+async function load(supportedEntryTypes: string[], observe = vi.fn()) {
+  let emit: (durations: number[]) => void = () => {};
+  class FakePO {
+    static supportedEntryTypes = supportedEntryTypes;
+    constructor(cb: (list: Entries) => void) {
+      emit = (durations) => cb({ getEntries: () => durations.map((duration) => ({ duration })) });
     }
-  });
+    observe = observe;
+  }
+  vi.stubGlobal('PerformanceObserver', FakePO);
+  vi.resetModules();
+  const { useLongTaskMonitor } = await import('./useLongTaskMonitor');
+  return { useLongTaskMonitor, emit: (durations: number[]) => emit(durations) };
+}
 
-  it('returns a no-op disposer when longtask is not in supportedEntryTypes (e.g. Safari)', () => {
-    const orig = globalThis.PerformanceObserver;
-    // Stand up a fake PO with empty supportedEntryTypes.
-    class FakePO {
-      static supportedEntryTypes: string[] = [];
-      observe = vi.fn();
-      disconnect = vi.fn();
-    }
-    (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver = FakePO;
-    try {
-      const stop = startLongTaskObserver();
-      // observer should not have been created; disposer is a no-op.
-      stop();
-    } finally {
-      (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver = orig;
-    }
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-  it('starts an observer when longtask is supported', () => {
-    const orig = globalThis.PerformanceObserver;
+describe('useLongTaskMonitor', () => {
+  it('counts long tasks and keeps the worst duration', async () => {
     const observe = vi.fn();
-    const disconnect = vi.fn();
-    class FakePO {
-      static supportedEntryTypes: string[] = ['longtask'];
-      observe = observe;
-      disconnect = disconnect;
-    }
-    (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver = FakePO;
-    try {
-      const stop = startLongTaskObserver();
-      expect(observe).toHaveBeenCalledWith({ entryTypes: ['longtask'] });
-      stop();
-      expect(disconnect).toHaveBeenCalled();
-    } finally {
-      (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver = orig;
-    }
+    const { useLongTaskMonitor, emit } = await load(['longtask'], observe);
+    expect(observe).toHaveBeenCalledWith({ entryTypes: ['longtask'] });
+
+    const { result } = renderHook(() => useLongTaskMonitor());
+    expect(result.current).toEqual({ count: 0, maxMs: 0 });
+
+    act(() => emit([80, 200]));
+    act(() => emit([60]));
+    expect(result.current).toEqual({ count: 3, maxMs: 200 });
+  });
+
+  it('ignores synthetic zero-duration entries', async () => {
+    const { useLongTaskMonitor, emit } = await load(['longtask']);
+    const { result } = renderHook(() => useLongTaskMonitor());
+    act(() => emit([0, -5, Number.NaN]));
+    expect(result.current).toEqual({ count: 0, maxMs: 0 });
+  });
+
+  it('stays at zero when longtask is unsupported', async () => {
+    const observe = vi.fn();
+    const { useLongTaskMonitor } = await load([], observe);
+    expect(observe).not.toHaveBeenCalled();
+    expect(renderHook(() => useLongTaskMonitor()).result.current).toEqual({ count: 0, maxMs: 0 });
+  });
+
+  it('survives observe() throwing', async () => {
+    const { useLongTaskMonitor } = await load(['longtask'], vi.fn(() => { throw new Error('disabled'); }));
+    expect(renderHook(() => useLongTaskMonitor()).result.current).toEqual({ count: 0, maxMs: 0 });
   });
 });
