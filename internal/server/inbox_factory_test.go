@@ -18,7 +18,7 @@ func TestFactoryInboxLinkStaysOnItsOwner(t *testing.T) {
 	item := state.InboxItem{ID: "factory-action-ship:review", Title: "Ship", Body: body, Category: state.InboxFactory}
 	useInboxRemotes(s, []string{"local", "laptop"}, func(context.Context, string) ([]state.InboxItem, error) { return []state.InboxItem{item}, nil })
 	rec := httptest.NewRecorder()
-	s.inboxModule().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	s.serveInbox(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	var response struct{ Items []inbox.ItemView }
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)

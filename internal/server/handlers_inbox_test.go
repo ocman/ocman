@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/inbox"
+	"github.com/NoUseFreak/ocman/internal/module/moduletest"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -50,8 +51,12 @@ func TestInboxHTTPProjectsPermissionOwner(t *testing.T) {
 		}
 		return []state.InboxItem{{ID: "request", Title: "Permission", Category: state.InboxPermissionCategory, Permission: permission}}, nil
 	})
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	rec := httptest.NewRecorder()
-	srv.inboxModule().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	var response struct {
 		Items []inbox.ItemView `json:"items"`
 	}
@@ -305,4 +310,9 @@ func (f *fakeInboxRemotes) ArchiveInboxItems(ctx context.Context, _ string, ids 
 func useInboxRemotes(s *Server, sources []string, items func(context.Context, string) ([]state.InboxItem, error)) {
 	remotes := &fakeInboxRemotes{store: s.stateDB, sources: sources, items: items}
 	s.inboxMod.set(s.newInboxModule(func() inbox.Remotes { return remotes }))
+}
+
+// serveInbox serves the Inbox module's routes without the login guard.
+func (s *Server) serveInbox(w http.ResponseWriter, r *http.Request) {
+	moduletest.Mount(s.inboxModule()).ServeHTTP(w, r)
 }

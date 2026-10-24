@@ -41,7 +41,7 @@ func TestInboxSessionContextOwnerRouting(t *testing.T) {
 	}
 	useInboxRemotes(s, []string{"laptop"}, func(context.Context, string) ([]state.InboxItem, error) { return input, nil })
 	rec := httptest.NewRecorder()
-	s.inboxModule().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	s.serveInbox(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	var response struct{ Items []inbox.ItemView }
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)

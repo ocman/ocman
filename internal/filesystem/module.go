@@ -47,23 +47,9 @@ func (m *Module) Name() string { return "filesystem" }
 // Routes: the directory picker walks the hub's disk, so it is
 // localhost-only; signed files and repository reads need a login.
 func (m *Module) Routes(r module.Router) {
-	r.Local("/api/filesystem/directories", getOnly(m.handleDirectories))
-	r.Local("/api/filesystem/directory-search", getOnly(m.handleDirectorySearch))
-	// Public so getOnly's 405 stays ahead of the login guard.
-	auth := r.Guards().Auth
-	r.Public(filePathPrefix, getOnly(auth(m.handleFileProxy)))
-	r.Public("/api/git/files", getOnly(auth(m.handleRepoFiles)))
-	r.Public("/api/git/file", getOnly(auth(m.handleRepoFile)))
-}
-
-// getOnly answers 405 itself: a "GET " mux pattern would hand other
-// methods to the SPA fallback as 404.
-func getOnly(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h(w, r)
-	}
+	r.Local("GET /api/filesystem/directories", m.handleDirectories)
+	r.Local("GET /api/filesystem/directory-search", m.handleDirectorySearch)
+	r.Handle("GET "+filePathPrefix, m.handleFileProxy)
+	r.Handle("GET /api/git/files", m.handleRepoFiles)
+	r.Handle("GET /api/git/file", m.handleRepoFile)
 }

@@ -53,7 +53,6 @@ var (
 	_ module.Module       = (*Module)(nil)
 	_ module.Runner       = (*Module)(nil)
 	_ module.ToolProvider = (*Module)(nil)
-	_ http.Handler        = (*Module)(nil)
 )
 
 func NewModule(deps Deps) *Module { return &Module{deps} }
@@ -61,9 +60,13 @@ func NewModule(deps Deps) *Module { return &Module{deps} }
 func (m *Module) Name() string { return "inbox" }
 
 func (m *Module) Routes(r module.Router) {
-	h := m.ServeHTTP
-	r.Handle("/api/inbox", h)
-	r.Handle("/api/inbox/", h)
+	r.Handle("GET /api/inbox", m.handleInboxList)
+	r.Handle("POST /api/inbox/read", m.handleInboxRead)
+	r.Handle("POST /api/inbox/open", m.handleInboxRead)
+	r.Handle("POST /api/inbox/unread", m.handleInboxRead)
+	r.Handle("POST /api/inbox/pin", m.handleInboxPin)
+	r.Handle("POST /api/inbox/archive", func(w http.ResponseWriter, r *http.Request) { m.handleInboxArchive(w, r, false) })
+	r.Handle("POST /api/inbox/archive-all-read", func(w http.ResponseWriter, r *http.Request) { m.handleInboxArchive(w, r, true) })
 }
 
 // Run reconciles permission items with the live prompts until ctx ends.

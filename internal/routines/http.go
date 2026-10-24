@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
@@ -61,60 +60,30 @@ func (req routineRequest) input() (Input, error) {
 	}, nil
 }
 
-func (m *Module) handle(w http.ResponseWriter, r *http.Request) {
-	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/routines"), "/")
-	if rest == "" {
-		m.handleCollection(w, r)
+func (m *Module) handleRun(w http.ResponseWriter, r *http.Request) {
+	run, err := m.svc.RunNow(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeHTTPError(w, "running routine", err)
 		return
 	}
-	id, action, extra := cutRoutinePath(rest)
-	if id == "" || extra != "" {
-		http.NotFound(w, r)
-		return
-	}
+	httpx.WriteJSON(w, run)
+}
 
-	switch action {
-	case "stats":
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		m.handleStats(w, r, id)
-	case "":
-		m.handleItem(w, r, id)
-	case "run":
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		run, err := m.svc.RunNow(r.Context(), id)
-		if err != nil {
-			writeHTTPError(w, "running routine", err)
-			return
-		}
-		httpx.WriteJSON(w, run)
-	case "history":
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		limit, before, ok := routineHistoryPage(r)
-		if !ok {
-			http.Error(w, "invalid history page", http.StatusBadRequest)
-			return
-		}
-		runs, err := m.svc.HistoryPage(r.Context(), id, limit, before)
-		if err != nil {
-			writeHTTPError(w, "listing routine history", err)
-			return
-		}
-		if runs == nil {
-			runs = []state.RoutineRun{}
-		}
-		httpx.WriteJSON(w, runs)
-	default:
-		http.NotFound(w, r)
+func (m *Module) handleHistory(w http.ResponseWriter, r *http.Request) {
+	limit, before, ok := routineHistoryPage(r)
+	if !ok {
+		http.Error(w, "invalid history page", http.StatusBadRequest)
+		return
 	}
+	runs, err := m.svc.HistoryPage(r.Context(), r.PathValue("id"), limit, before)
+	if err != nil {
+		writeHTTPError(w, "listing routine history", err)
+		return
+	}
+	if runs == nil {
+		runs = []state.RoutineRun{}
+	}
+	httpx.WriteJSON(w, runs)
 }
 
 const (
@@ -145,75 +114,59 @@ func routineHistoryPage(r *http.Request) (int, state.RoutineRunCursor, bool) {
 	return limit, before, true
 }
 
-func cutRoutinePath(path string) (first, second, rest string) {
-	parts := strings.SplitN(path, "/", 3)
-	first = parts[0]
-	if len(parts) > 1 {
-		second = parts[1]
+func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
+	items, err := m.svc.ListWithLatestRun(r.Context())
+	if err != nil {
+		writeHTTPError(w, "listing routines", err)
+		return
 	}
-	if len(parts) > 2 {
-		rest = parts[2]
+	if items == nil {
+		items = []state.Routine{}
 	}
-	return
+	httpx.WriteJSON(w, items)
 }
 
-func (m *Module) handleCollection(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		items, err := m.svc.ListWithLatestRun(r.Context())
-		if err != nil {
-			writeHTTPError(w, "listing routines", err)
-			return
-		}
-		if items == nil {
-			items = []state.Routine{}
-		}
-		httpx.WriteJSON(w, items)
-	case http.MethodPost:
-		input, ok := readRoutineInput(w, r)
-		if !ok {
-			return
-		}
-		item, err := m.svc.Create(r.Context(), input)
-		if err != nil {
-			writeHTTPError(w, "creating routine", err)
-			return
-		}
-		httpx.WriteJSONStatus(w, http.StatusCreated, item)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
+	input, ok := readRoutineInput(w, r)
+	if !ok {
+		return
 	}
+	item, err := m.svc.Create(r.Context(), input)
+	if err != nil {
+		writeHTTPError(w, "creating routine", err)
+		return
+	}
+	httpx.WriteJSONStatus(w, http.StatusCreated, item)
 }
 
-func (m *Module) handleItem(w http.ResponseWriter, r *http.Request, id string) {
-	switch r.Method {
-	case http.MethodGet:
-		item, err := m.svc.Get(r.Context(), id)
-		if err != nil {
-			writeHTTPError(w, "getting routine", err)
-			return
-		}
-		httpx.WriteJSON(w, item)
-	case http.MethodPut:
-		input, ok := readRoutineInput(w, r)
-		if !ok {
-			return
-		}
-		item, err := m.svc.Update(r.Context(), id, input)
-		if err != nil {
-			writeHTTPError(w, "updating routine", err)
-			return
-		}
-		httpx.WriteJSON(w, item)
-	case http.MethodDelete:
-		if err := m.svc.Delete(r.Context(), id); err != nil {
-			writeHTTPError(w, "deleting routine", err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
+	item, err := m.svc.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeHTTPError(w, "getting routine", err)
+		return
 	}
+	httpx.WriteJSON(w, item)
+}
+
+func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	input, ok := readRoutineInput(w, r)
+	if !ok {
+		return
+	}
+	item, err := m.svc.Update(r.Context(), r.PathValue("id"), input)
+	if err != nil {
+		writeHTTPError(w, "updating routine", err)
+		return
+	}
+	httpx.WriteJSON(w, item)
+}
+
+func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if err := m.svc.Delete(r.Context(), r.PathValue("id")); err != nil {
+		writeHTTPError(w, "deleting routine", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func readRoutineInput(w http.ResponseWriter, r *http.Request) (Input, bool) {
@@ -256,7 +209,8 @@ type Stats struct {
 	MissingSessions int            `json:"missingSessions"`
 }
 
-func (m *Module) handleStats(w http.ResponseWriter, r *http.Request, id string) {
+func (m *Module) handleStats(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	if _, err := m.svc.Get(r.Context(), id); err != nil {
 		writeHTTPError(w, "getting routine", err)
 		return

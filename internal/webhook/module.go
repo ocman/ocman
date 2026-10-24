@@ -69,8 +69,7 @@ func NewModule(deps Deps) *Module {
 func (m *Module) Name() string { return "webhooks" }
 
 func (m *Module) Routes(r module.Router) {
-	r.Local("/api/webhook-inboxes", m.handleInboxes)
-	r.Local("/api/webhook-inboxes/", m.handleInboxes)
+	m.routes(r.Local)
 	r.LocalSetting("/api/settings/webhook-relay", m.handleRelaySetting)
 }
 
@@ -142,5 +141,7 @@ func (m *Module) cleanHistory(ctx context.Context) {
 }
 
 func (m *Module) Tools() []mcpserver.ServerTool {
-	return webhookServerTools(http.HandlerFunc(m.handleInboxes))
+	mux := http.NewServeMux()
+	m.routes(func(p string, h http.HandlerFunc) { mux.HandleFunc(p, h) })
+	return webhookServerTools(mux)
 }

@@ -69,29 +69,6 @@ func (m *Module) inboxItems(ctx context.Context, source string, archived bool) (
 	return m.Store.ListInboxItems(ctx)
 }
 
-func (m *Module) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		m.handleInboxList(w, r)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	switch r.URL.Path {
-	case "/api/inbox/read", "/api/inbox/open", "/api/inbox/unread":
-		m.handleInboxRead(w, r)
-	case "/api/inbox/pin":
-		m.handleInboxPin(w, r)
-	case "/api/inbox/archive":
-		m.handleInboxArchive(w, r, false)
-	case "/api/inbox/archive-all-read":
-		m.handleInboxArchive(w, r, true)
-	default:
-		http.NotFound(w, r)
-	}
-}
-
 func (m *Module) handleInboxList(w http.ResponseWriter, r *http.Request) {
 	sources := m.inboxSources()
 	type result struct {

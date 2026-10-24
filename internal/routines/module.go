@@ -2,6 +2,7 @@ package routines
 
 import (
 	"context"
+	"net/http"
 	"runtime/debug"
 	"time"
 
@@ -33,8 +34,19 @@ func (m *Module) Service() *Service { return m.svc }
 func (m *Module) Name() string { return "routines" }
 
 func (m *Module) Routes(r module.Router) {
-	r.Local("/api/routines", m.handle)
-	r.Local("/api/routines/", m.handle)
+	for pattern, h := range map[string]http.HandlerFunc{
+		"GET /api/routines":              m.handleList,
+		"POST /api/routines":             m.handleCreate,
+		"GET /api/routines/{id}":         m.handleGet,
+		"PUT /api/routines/{id}":         m.handleUpdate,
+		"DELETE /api/routines/{id}":      m.handleDelete,
+		"GET /api/routines/{id}/stats":   m.handleStats,
+		"POST /api/routines/{id}/run":    m.handleRun,
+		"GET /api/routines/{id}/history": m.handleHistory,
+	} {
+		r.Local(pattern, h)
+		r.Local(pattern+"/{$}", h) // a trailing slash is accepted too
+	}
 }
 
 // Start settles runs a previous process left running before any new tick.
