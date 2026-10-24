@@ -213,9 +213,7 @@ func (d *Discovery) readCachedPorts() (map[string]string, bool) {
 
 func copyMap(m map[string]string) map[string]string {
 	cp := make(map[string]string, len(m))
-	for k, v := range m {
-		cp[k] = v
-	}
+	maps.Copy(cp, m)
 	return cp
 }
 

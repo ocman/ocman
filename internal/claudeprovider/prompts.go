@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
@@ -76,9 +77,7 @@ func (l *live) ask(p *proc, raw []byte) {
 	} else {
 		permission, patterns := toolPermission(req.ToolName, req.Input)
 		metadata := map[string]any{}
-		for k, v := range req.Input {
-			metadata[k] = v
-		}
+		maps.Copy(metadata, req.Input)
 		metadata["tool"] = req.ToolName
 		for key, value := range map[string]string{"blocked_path": req.BlockedPath, "decision_reason": req.DecisionReason,
 			"title": req.Title, "display_name": req.DisplayName, "description": req.Description} {
@@ -332,9 +331,7 @@ func (l *live) replyQuestion(id string, answers [][]string) error {
 			}
 		}
 		input := map[string]any{}
-		for k, v := range pr.input {
-			input[k] = v
-		}
+		maps.Copy(input, pr.input)
 		input["answers"] = byText
 		return map[string]any{"behavior": "allow", "updatedInput": input}
 	}, "question.replied", func(pr *prompt) map[string]any {

@@ -1,6 +1,9 @@
 package ocv2
 
-import "strings"
+import (
+	"maps"
+	"strings"
+)
 
 // v2 renamed several built-in tools (and the permission actions that
 // gate them). ocman's renderers, commit capture, changes pane and
@@ -91,9 +94,7 @@ func convertTool(item map[string]any) map[string]any {
 // take `path` (glob/grep keep `path`: it is a search root there).
 func v1Input(tool string, in map[string]any) map[string]any {
 	out := make(map[string]any, len(in)+1)
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	if p, ok := in["path"].(string); ok && (tool == "read" || tool == "edit" || tool == "write") {
 		if _, has := in["filePath"]; !has {
 			out["filePath"] = p
@@ -117,9 +118,7 @@ func ToolTitle(input map[string]any) string {
 // the task child session.
 func v1Metadata(tool string, md map[string]any, output string) map[string]any {
 	out := map[string]any{}
-	for k, v := range md {
-		out[k] = v
-	}
+	maps.Copy(out, md)
 	files := fileDiffs(md)
 	switch tool {
 	case "bash":
@@ -200,9 +199,7 @@ func V2Rules(rules []any) []map[string]any {
 // V1Permission maps a v2 Permission.Request to the v1 permission prompt.
 func V1Permission(req map[string]any) map[string]any {
 	md := map[string]any{}
-	for k, v := range obj(req, "metadata") {
-		md[k] = v
-	}
+	maps.Copy(md, obj(req, "metadata"))
 	if files := fileDiffs(md); len(files) > 0 && md["diff"] == nil {
 		var diffs, paths []string
 		for _, f := range files {

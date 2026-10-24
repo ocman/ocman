@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"maps"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -16,9 +17,7 @@ func (a *Adapter) SetSessionHaltIdentity(toPublic, toNative func(context.Context
 func (a *Adapter) enrichStoredHalts(ctx context.Context, rows []db.Session, parents map[string]string) error {
 	a.prompts.mu.RLock()
 	halts := make(map[string]int64, len(a.prompts.lastHalts))
-	for id, at := range a.prompts.lastHalts {
-		halts[id] = at
-	}
+	maps.Copy(halts, a.prompts.lastHalts)
 	store, toNative := a.prompts.haltStore, a.prompts.haltToNative
 	a.prompts.mu.RUnlock()
 	if store != nil {

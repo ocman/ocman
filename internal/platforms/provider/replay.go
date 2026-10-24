@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"strconv"
 
@@ -37,10 +38,7 @@ func (a *Adapter) acknowledge(ctx context.Context, id string, sequence uint64) e
 
 func (a *Adapter) retryAcknowledgments(ctx context.Context) {
 	a.mu.RLock()
-	acks := make(map[string]uint64, len(a.acks))
-	for id, seq := range a.acks {
-		acks[id] = seq
-	}
+	acks := maps.Clone(a.acks)
 	a.mu.RUnlock()
 	for id, seq := range acks {
 		_ = a.acknowledge(ctx, id, seq)

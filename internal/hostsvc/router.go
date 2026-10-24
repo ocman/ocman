@@ -1,6 +1,9 @@
 package hostsvc
 
-import "sync"
+import (
+	"maps"
+	"sync"
+)
 
 // Router resolves the owning Host for a directory or an explicit remote
 // owner. It is the directory analogue of Registry.PlatformForSession.
@@ -82,11 +85,7 @@ func (r *Router) SetDirResolver(fn func(dir string) string) {
 func (r *Router) Remotes() map[string]Host {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make(map[string]Host, len(r.remotes))
-	for id, h := range r.remotes {
-		out[id] = h
-	}
-	return out
+	return maps.Clone(r.remotes)
 }
 
 // forRemote returns the Host for a remoteID, degrading an empty, "local"

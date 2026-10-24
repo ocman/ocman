@@ -1,6 +1,10 @@
 package provider
 
-import "github.com/NoUseFreak/ocman/internal/platforms"
+import (
+	"maps"
+
+	"github.com/NoUseFreak/ocman/internal/platforms"
+)
 
 func (a *Adapter) CachedSessionAvailable() bool {
 	a.mu.RLock()
@@ -15,9 +19,7 @@ func (a *Adapter) CachedSessionObservations() map[string]platforms.LiveState {
 	if !a.headlessConnected || a.draining || (a.ctx != nil && a.ctx.Err() != nil) {
 		return out
 	}
-	for id, live := range a.live {
-		out[id] = live
-	}
+	maps.Copy(out, a.live)
 	for _, p := range a.permissions {
 		if id, ok := p["sessionID"].(string); ok {
 			v := out[id]

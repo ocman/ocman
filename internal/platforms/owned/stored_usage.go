@@ -3,6 +3,7 @@ package owned
 import (
 	"context"
 	"errors"
+	"maps"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
@@ -67,9 +68,7 @@ func (a *Adapter) storedUnread(ctx context.Context, cutoffs map[string]int64) (m
 		if err != nil {
 			return nil, err
 		}
-		for id, count := range counts {
-			out[id] = count
-		}
+		maps.Copy(out, counts)
 	}
 	return out, nil
 }

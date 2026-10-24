@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,10 +28,7 @@ func (h *Host) RefreshManagedOpenCodePorts(ctx context.Context) map[string]strin
 		return nil
 	}
 	h.mu.Lock()
-	generations := make(map[string]uint64, len(h.generations))
-	for root, generation := range h.generations {
-		generations[root] = generation
-	}
+	generations := maps.Clone(h.generations)
 	candidates := make(map[string]inventoryCandidate, len(h.instances))
 	for root, inst := range h.instances {
 		candidates[root] = inventoryCandidate{instance: *inst, generation: generations[root], authorized: h.authorized[root] == inst.Endpoint}

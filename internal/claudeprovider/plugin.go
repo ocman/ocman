@@ -50,9 +50,7 @@ func WritePlugin(dir string, skills map[string][]byte, hook string) (string, err
 		filepath.Join(plugin, ".claude-plugin", "plugin.json"): []byte(`{"name":"ocman","version":"` + contentVersion(plugin, content) +
 			`","description":"ocman skills, session status and history hooks"}` + "\n"),
 	}
-	for path, body := range content {
-		files[path] = body
-	}
+	maps.Copy(files, content)
 	for path, content := range files {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return "", err
