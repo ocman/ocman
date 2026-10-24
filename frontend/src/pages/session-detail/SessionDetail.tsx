@@ -21,7 +21,6 @@ import { api } from '../../lib/api';
 import type { Message, Part, SessionInfoCommit } from '../../lib/api';
 import { parsePart } from '../../lib/convertMessages';
 import { cleanTitle } from '../../lib/format';
-import { canLaunchSession } from './launchGate';
 import type { MessageBookmark } from '../../lib/messageBookmarks';
 import { useMessageBookmarks } from './useMessageBookmarks';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
@@ -82,11 +81,10 @@ import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useMobilePanel } from './useMobilePanel';
 import { useIsPhone } from '../../lib/useIsPhone';
-import { SessionModals, type MessageJumpHistory } from './SessionModals';
+import { SessionModals, type MessageJumpHistory, type SessionModal } from './SessionModals';
 import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
 import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
 import { FactorySessionRecovery } from '../../components/FactorySessionRecovery';
-import { useSessionModal } from './useSessionModal';
 import { SessionSidebar } from './SessionSidebar';
 import { useDocumentVisible, usePanelOpen, usePanelVisible } from '../../lib/usePanelVisible';
 import { SessionEmptyDetail, SessionLoadError } from './SessionStatusViews';
@@ -502,7 +500,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
     checkingPermissionId === pendingPermission.permissionId;
 
   // Toast / modal state.
-  const modal = useSessionModal();
+  // At most one session dialog is open at a time.
+  const [openModal, setOpenModal] = useState<SessionModal | null>(null);
+  const closeModal = () => setOpenModal(null);
   const [messageJumpHistory, setMessageJumpHistory] = useState<MessageJumpHistory | null>(null);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
 
@@ -665,7 +665,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleCompact,
     handleNewSession,
     handleTmuxShortcut,
-    openModal: modal.open,
+    openModal: setOpenModal,
     ...toasts.setters,
     reloadCapabilities,
     refreshThread: reload,
@@ -744,7 +744,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     activeModelRef: useSyncRef(activeModel),
     tmux,
     setSelectedReasoning,
-    openModal: modal.open,
+    openModal: setOpenModal,
     openModelPicker,
     openAgentPicker,
   });
@@ -757,7 +757,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleNewSession,
     openModelPicker,
     openMessageJumpPicker: () => {
-      modal.open('jump');
+      setOpenModal('jump');
       if (!session) return;
       void api.session(session.id, ALL_MESSAGES_LIMIT, 0, undefined, session.platform)
         .then((detail) => {
@@ -832,14 +832,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // `ocman.session.changed` patch (see useSidebarSessions); the active
   // row layers those on for display only.
 
-  // Flag for the composer's "launch session" button.
-  const launchHintActive = canLaunchSession({
-    portAvailable,
-    hasPendingPrompt,
-    tmuxAvailable: tmux.available,
-    liveConnectionHint: !!caps.liveConnectionHint,
-    directory: session?.directory,
-  });
+  // Flag for the composer's "launch session" button. A directory is
+  // required: the launch endpoint rejects an empty path and
+  // handleLaunchOpencode returns without one, so the button would be dead.
+  const launchHintActive = !portAvailable && !hasPendingPrompt && tmux.available
+    && !!caps.liveConnectionHint && !!session?.directory;
 
   // Sidebar project groupings + project reorder/archive handlers.
   const {
@@ -847,7 +844,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     sidebarProjectGroups,
     handleReorderProjects,
     handleArchiveProjectFromSidebar,
-  } = useSidebarProjectGroups({ id, recentSessions, displayStatus, enabled: sidebarVisible || (modal.openModal === 'move' && documentVisible) });
+  } = useSidebarProjectGroups({ id, recentSessions, displayStatus, enabled: sidebarVisible || (openModal === 'move' && documentVisible) });
 
   return (
     <PerfProfiler id="SessionPage">
@@ -905,12 +902,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
               liveConnectionHint={caps.liveConnectionHint}
               launchingOpencode={launchingOpencode}
               onNewSession={() => { void handleNewSession(); }}
-              onShare={() => modal.open('share')}
+              onShare={() => setOpenModal('share')}
               onLaunchOpencode={() => { void handleLaunchOpencode(); }}
             />
           </HeaderPortal>}
-          {session && modal.openModal === 'share' && (
-            <ShareLinkModal sessionId={session.id} onClose={modal.close} />
+          {session && openModal === 'share' && (
+            <ShareLinkModal sessionId={session.id} onClose={closeModal} />
           )}
           {loading ? (
             <SkeletonLines rows={10} label="Loading conversation" testId="thread-skeleton" />
@@ -1128,9 +1125,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 messageJumpHistory={messageJumpHistory}
                 pending={pending}
                 forkAtMessage={!!caps.forkAtMessage}
-                openModal={modal.openModal}
-                onClose={modal.close}
-                onOpen={modal.open}
+                openModal={openModal}
+                onClose={closeModal}
+                onOpen={setOpenModal}
                 patchSession={patchSession}
                 navigateToSession={navigateToSession}
                 hydrateHistory={hydrateHistory}

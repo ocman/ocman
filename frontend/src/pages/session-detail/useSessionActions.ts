@@ -14,7 +14,7 @@ import { openVSCode } from '../../lib/shortcuts';
 import type { UsePendingSendResult } from './usePendingSend';
 import { remoteLog } from '../../lib/remoteLog';
 import { runSlashCommand } from './slashCommands';
-import type { SessionModal } from './useSessionModal';
+import type { SessionModal } from './SessionModals';
 import type { Message, Part, Session } from '../../lib/api';
 
 // Narrowed session shape — only the fields needed by these handlers.

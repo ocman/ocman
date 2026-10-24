@@ -5,8 +5,9 @@ import { RenameModal } from './RenameModal';
 import { UserMessagePicker } from './UserMessagePicker';
 import { MovePathDialog, MovePicker } from './MovePicker';
 import type { UsePendingSendResult } from './usePendingSend';
-import type { SessionModal } from './useSessionModal';
 import { patchSessionLists } from '../../lib/sessionsCache';
+
+export type SessionModal = 'share' | 'rename' | 'fork' | 'jump' | 'move' | 'movePath';
 
 export interface MessageJumpHistory {
   sessionId: string;
