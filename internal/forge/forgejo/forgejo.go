@@ -18,18 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 )
-
-// defaultPerPage matches the GitHub adapter — small enough to keep
-// the sidebar payload bounded.
-const defaultPerPage = 30
 
 // Client is a Forgejo REST API client bound to a single host.
 type Client struct {
@@ -93,61 +87,19 @@ func (c *Client) Token() string { return c.token }
 // ListPRs returns one page of pull requests for owner/name.
 // Implements forge.Forge.ListPRs.
 func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOptions) ([]forge.PR, forge.RateLimit, error) {
-	state := opts.State
-	if state == "" {
-		state = "open"
-	}
-	page := opts.Page
-	if page < 1 {
-		page = 1
-	}
-	per := opts.PerPage
-	if per <= 0 {
-		per = defaultPerPage
-	}
-	q := url.Values{}
-	q.Set("state", state)
-	q.Set("sort", "newest")
-	q.Set("limit", strconv.Itoa(per))
-	q.Set("page", strconv.Itoa(page))
-
-	path := fmt.Sprintf("/api/v1/repos/%s/pulls?%s", repo, q.Encode())
-	body, rl, status, err := c.fetch(ctx, path)
-	if err != nil {
-		return nil, rl, err
-	}
-	if status == http.StatusTooManyRequests {
-		return nil, rl, nil
-	}
-	if status != http.StatusOK {
-		return nil, rl, &forgehttp.ResponseError{Status: status, RateLimit: rl}
-	}
-
-	var raw []fjPR
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, rl, fmt.Errorf("decoding pulls: %w", err)
-	}
-	out := make([]forge.PR, 0, len(raw))
-	for _, r := range raw {
-		out = append(out, r.toForge(c.host, repo))
-	}
-	return out, rl, nil
+	path := fmt.Sprintf("/api/v1/repos/%s/pulls?%s", repo, listQuery(opts, "sort", "newest"))
+	return forgehttp.List(ctx, c.fetch, path, "pulls", func(r forgehttp.PR) (forge.PR, bool) {
+		return toPR(r, c.host, repo), true
+	})
 }
 
 func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.PR, error) {
 	path := fmt.Sprintf("/api/v1/repos/%s/pulls/%d", repo, number)
-	body, _, status, err := c.fetch(ctx, path)
+	raw, _, err := forgehttp.GetJSON[forgehttp.PR](ctx, c.fetch, path, "pull", statusErr(path))
 	if err != nil {
 		return forge.PR{}, err
 	}
-	if status != http.StatusOK {
-		return forge.PR{}, fmt.Errorf("forgejo %s: status %d", path, status)
-	}
-	var raw fjPR
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return forge.PR{}, fmt.Errorf("decoding pull: %w", err)
-	}
-	return raw.toForge(c.host, repo), nil
+	return toPR(raw, c.host, repo), nil
 }
 
 func (c *Client) PRApproval(ctx context.Context, repo string, number int) (bool, error) {
@@ -184,7 +136,7 @@ func (c *Client) ConvertPRToDraft(ctx context.Context, repo string, number int) 
 	if status != http.StatusOK && status != http.StatusCreated {
 		return fmt.Errorf("forgejo %s: status %d", path, status)
 	}
-	var pr fjPR
+	var pr forgehttp.PR
 	if err := json.Unmarshal(body, &pr); err != nil {
 		return fmt.Errorf("decoding edited pull: %w", err)
 	}
@@ -200,93 +152,29 @@ func (c *Client) ConvertPRToDraft(ctx context.Context, repo string, number int) 
 //
 // Implements forge.Forge.ListIssues.
 func (c *Client) ListIssues(ctx context.Context, repo string, opts forge.ListOptions) ([]forge.Issue, forge.RateLimit, error) {
-	state := opts.State
-	if state == "" {
-		state = "open"
-	}
-	page := opts.Page
-	if page < 1 {
-		page = 1
-	}
-	per := opts.PerPage
-	if per <= 0 {
-		per = defaultPerPage
-	}
-	q := url.Values{}
-	q.Set("state", state)
-	q.Set("type", "issues")
-	q.Set("limit", strconv.Itoa(per))
-	q.Set("page", strconv.Itoa(page))
-
-	path := fmt.Sprintf("/api/v1/repos/%s/issues?%s", repo, q.Encode())
-	body, rl, status, err := c.fetch(ctx, path)
-	if err != nil {
-		return nil, rl, err
-	}
-	if status == http.StatusTooManyRequests {
-		return nil, rl, nil
-	}
-	if status != http.StatusOK {
-		return nil, rl, &forgehttp.ResponseError{Status: status, RateLimit: rl}
-	}
-
-	var raw []fjIssue
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, rl, fmt.Errorf("decoding issues: %w", err)
-	}
-	out := make([]forge.Issue, 0, len(raw))
-	for _, r := range raw {
-		if r.PullRequest != nil {
-			continue
-		}
-		out = append(out, r.toForge(c.host, repo))
-	}
-	return out, rl, nil
+	path := fmt.Sprintf("/api/v1/repos/%s/issues?%s", repo, listQuery(opts, "type", "issues"))
+	return forgehttp.List(ctx, c.fetch, path, "issues", func(r forgehttp.Issue) (forge.Issue, bool) {
+		return r.ToForge(c.host, repo), r.PullRequest == nil
+	})
 }
 
 func (c *Client) LookupIssue(ctx context.Context, repo string, number int) (forge.Issue, error) {
 	path := fmt.Sprintf("/api/v1/repos/%s/issues/%d", repo, number)
-	body, _, status, err := c.fetch(ctx, path)
+	raw, _, err := forgehttp.GetJSON[forgehttp.Issue](ctx, c.fetch, path, "issue", statusErr(path))
 	if err != nil {
 		return forge.Issue{}, err
-	}
-	if status != http.StatusOK {
-		return forge.Issue{}, fmt.Errorf("forgejo %s: status %d", path, status)
-	}
-	var raw fjIssue
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return forge.Issue{}, fmt.Errorf("decoding issue: %w", err)
 	}
 	if raw.PullRequest != nil {
 		return forge.Issue{}, fmt.Errorf("forgejo issue %d is a pull request", number)
 	}
-	return raw.toForge(c.host, repo), nil
+	return raw.ToForge(c.host, repo), nil
 }
 
 // CurrentUser returns the authenticated user. Returns
 // forge.ErrUnauthenticated when the client has no token.
 // Implements forge.Forge.CurrentUser.
 func (c *Client) CurrentUser(ctx context.Context) (forge.CurrentUser, error) {
-	if c.token == "" {
-		return forge.CurrentUser{}, forge.ErrUnauthenticated
-	}
-	body, rl, status, err := c.fetch(ctx, "/api/v1/user")
-	if err != nil {
-		return forge.CurrentUser{}, err
-	}
-	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		return forge.CurrentUser{}, forge.ErrUnauthenticated
-	}
-	if status != http.StatusOK {
-		return forge.CurrentUser{}, &forgehttp.ResponseError{Status: status, RateLimit: rl}
-	}
-	var raw struct {
-		Login string `json:"login"`
-	}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return forge.CurrentUser{}, fmt.Errorf("decoding /user: %w", err)
-	}
-	return forge.CurrentUser{Host: c.host, Login: raw.Login}, nil
+	return forgehttp.CurrentUser(ctx, c.fetch, c.host, "/api/v1/user", c.token)
 }
 
 // fetch issues a GET against c.baseURL + path. Identical to the
@@ -337,18 +225,8 @@ func (c *Client) GetCommit(ctx context.Context, owner, repo, sha string) (map[st
 // getMap performs a GET and decodes the body into a generic map. Used by
 // the link-preview helpers, which pass the raw JSON through to the frontend.
 func (c *Client) getMap(ctx context.Context, path string) (map[string]interface{}, error) {
-	body, _, status, err := c.fetch(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("forgejo %s: status %d", path, status)
-	}
-	var out map[string]interface{}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("decoding %s: %w", path, err)
-	}
-	return out, nil
+	out, _, err := forgehttp.GetJSON[map[string]interface{}](ctx, c.fetch, path, path, statusErr(path))
+	return out, err
 }
 
 // Compile-time assertion: *Client satisfies forge.Forge.

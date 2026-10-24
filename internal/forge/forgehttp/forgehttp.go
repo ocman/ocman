@@ -3,7 +3,8 @@
 // read-body-and-classify step of a GET. The per-forge clients differ
 // only in base URL and auth scheme, which they apply when building the
 // request; everything downstream of "send the request" is identical
-// and lives here.
+// and lives here, along with the GitHub-compatible PR/issue JSON shapes
+// both forges return.
 package forgehttp
 
 import (

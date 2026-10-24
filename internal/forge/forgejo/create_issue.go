@@ -36,9 +36,9 @@ func (c *Client) CreateIssue(ctx context.Context, repo, title, body string) (for
 	if status != http.StatusCreated {
 		return forge.Issue{}, fmt.Errorf("forgejo %s: status %d", path, status)
 	}
-	var issue fjIssue
+	var issue forgehttp.Issue
 	if err := json.Unmarshal(resp, &issue); err != nil {
 		return forge.Issue{}, fmt.Errorf("decoding created issue: %w", err)
 	}
-	return issue.toForge(c.host, repo), nil
+	return issue.ToForge(c.host, repo), nil
 }

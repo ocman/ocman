@@ -3,16 +3,18 @@ package forgejo
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 )
 
 func TestPRMergeability(t *testing.T) {
 	for _, value := range []string{"true", "false", "null"} {
 		t.Run(value, func(t *testing.T) {
-			var raw fjPR
+			var raw forgehttp.PR
 			if err := json.Unmarshal([]byte(`{"mergeable":`+value+`}`), &raw); err != nil {
 				t.Fatal(err)
 			}
-			pr := raw.toForge("forge.example", "owner/repo")
+			pr := toPR(raw, "forge.example", "owner/repo")
 			if value == "null" {
 				if pr.Mergeable != nil {
 					t.Fatal("unknown mergeability must remain nil")

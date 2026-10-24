@@ -7,13 +7,11 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/NoUseFreak/ocman/internal/forge"
 )
 
 // ReviewApproval reads both forges' REST review shapes. Approval means at least
 // one current approval and no outstanding change requests, not permission to merge.
-func ReviewApproval(ctx context.Context, fetch func(context.Context, string) ([]byte, forge.RateLimit, int, error), path, pageSizeParam string) (bool, error) {
+func ReviewApproval(ctx context.Context, fetch Fetch, path, pageSizeParam string) (bool, error) {
 	type review struct {
 		ID          int64     `json:"id"`
 		State       string    `json:"state"`

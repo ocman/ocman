@@ -180,6 +180,24 @@ type ListOptions struct {
 	PerPage int
 }
 
+// DefaultPerPage is the page size adapters use when PerPage is zero.
+const DefaultPerPage = 30
+
+// WithDefaults fills in the adapter defaults: state "open", page 1 and
+// DefaultPerPage rows.
+func (o ListOptions) WithDefaults() ListOptions {
+	if o.State == "" {
+		o.State = "open"
+	}
+	if o.Page < 1 {
+		o.Page = 1
+	}
+	if o.PerPage <= 0 {
+		o.PerPage = DefaultPerPage
+	}
+	return o
+}
+
 // RateLimit captures rate-limit metadata returned by a forge so the
 // frontend can show a live countdown (FR-12). An adapter sets
 // Limited=true when the forge returned a 429 or a near-zero remaining

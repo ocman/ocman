@@ -82,17 +82,7 @@ func (c *Client) GetCommit(owner, repo, sha string) (map[string]interface{}, err
 }
 
 func (c *Client) get(path string) (map[string]interface{}, error) {
-	req, err := http.NewRequest(http.MethodGet, c.base()+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-
-	body, _, status, err := forgehttp.Get(context.Background(), c.http, req)
+	body, _, status, err := c.fetch(context.Background(), path)
 	if err != nil {
 		return nil, err
 	}
