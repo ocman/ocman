@@ -26,7 +26,7 @@ func TestReadsShareCachedResponses(t *testing.T) {
 	}))
 	defer srv.Close()
 	for range 2 {
-		client := NewForTest(srv.URL, "same-token", srv.Client())
+		client := NewWithCredentials(srv.URL, "same-token", srv.Client())
 		if _, err := client.LookupPR(WithCache(context.Background()), "o/r", 1); err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +46,7 @@ func TestReadsStopAtHalfReportedQuota(t *testing.T) {
 		fmt.Fprint(w, `{"number":1,"state":"open"}`)
 	}))
 	defer srv.Close()
-	client := NewForTest(srv.URL, "same-token", srv.Client())
+	client := NewWithCredentials(srv.URL, "same-token", srv.Client())
 	for number := 1; number <= 2; number++ {
 		if _, err := client.LookupPR(WithCache(context.Background()), "o/r", number); err != nil {
 			t.Fatal(err)
@@ -70,7 +70,7 @@ func TestRefreshCannotBypassHalfQuota(t *testing.T) {
 		fmt.Fprintf(w, `{"number":1,"title":"Version %d","state":"open"}`, n)
 	}))
 	defer srv.Close()
-	c := NewForTest(srv.URL, "token", srv.Client())
+	c := NewWithCredentials(srv.URL, "token", srv.Client())
 	for _, want := range []struct {
 		refresh, stale bool
 		title          string
@@ -103,7 +103,7 @@ func TestAnonymousBudgetAndCredentialIsolation(t *testing.T) {
 		fmt.Fprint(w, `{}`)
 	}))
 	defer srv.Close()
-	anon := NewForTest(srv.URL, "", srv.Client())
+	anon := NewWithCredentials(srv.URL, "", srv.Client())
 	for i := range 30 {
 		if _, _, status, err := anon.fetch(WithCache(context.Background()), fmt.Sprintf("/read/%d", i)); err != nil || status != 200 {
 			t.Fatalf("read %d: %d %v", i, status, err)
@@ -112,7 +112,7 @@ func TestAnonymousBudgetAndCredentialIsolation(t *testing.T) {
 	if _, rl, _, _ := anon.fetch(WithCache(context.Background()), "/extra"); !rl.Limited {
 		t.Fatal("anonymous quota exceeded 30")
 	}
-	other := NewForTest(srv.URL, "another-token", srv.Client())
+	other := NewWithCredentials(srv.URL, "another-token", srv.Client())
 	if _, _, status, err := other.fetch(WithCache(context.Background()), "/extra"); err != nil || status != 200 {
 		t.Fatalf("other credential shared anonymous quota: %d %v", status, err)
 	}
@@ -125,7 +125,7 @@ func TestConcurrentReadersAndCancelledWaiter(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); fmt.Fprint(w, `{}`) }))
 	defer srv.Close()
-	c := NewForTest(srv.URL, "token", srv.Client())
+	c := NewWithCredentials(srv.URL, "token", srv.Client())
 	var wg sync.WaitGroup
 	for range 16 {
 		wg.Go(func() {
@@ -348,7 +348,7 @@ func TestCredentialDenialPurgesSnapshots(t *testing.T) {
 				fmt.Fprint(w, `{}`)
 			}))
 			defer srv.Close()
-			c := NewForTest(srv.URL, "token", srv.Client())
+			c := NewWithCredentials(srv.URL, "token", srv.Client())
 			if _, _, _, err := c.fetch(WithCache(context.Background()), "/private"); err != nil {
 				t.Fatal(err)
 			}
@@ -521,7 +521,7 @@ func TestUncachedCallersAlwaysReadLive(t *testing.T) {
 		fmt.Fprintf(w, `{"number":1,"title":"v%d","state":"open"}`, calls.Add(1))
 	}))
 	defer srv.Close()
-	c := NewForTest(srv.URL, "factory-token", srv.Client())
+	c := NewWithCredentials(srv.URL, "factory-token", srv.Client())
 	for want := range []int{1, 2} {
 		pr, err := c.LookupPR(context.Background(), "o/r", 1)
 		if err != nil || pr.Title != fmt.Sprintf("v%d", want+1) {
@@ -542,7 +542,7 @@ func TestNotFoundEvictsSnapshot(t *testing.T) {
 		fmt.Fprint(w, `{"number":1}`)
 	}))
 	defer srv.Close()
-	c := NewForTest(srv.URL, t.Name(), srv.Client())
+	c := NewWithCredentials(srv.URL, t.Name(), srv.Client())
 	if _, _, status, _ := c.fetch(WithCache(context.Background()), "/issue"); status != http.StatusOK {
 		t.Fatal("populate failed")
 	}

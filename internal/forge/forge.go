@@ -219,11 +219,6 @@ type Forge interface {
 	// the Host field of the Remote(s) it serves.
 	Host() string
 
-	// Authenticated reports whether the forge has a credential.
-	// Adapters with no token may still serve public resources but
-	// callers typically gate "mine" / private-only flows on this.
-	Authenticated() bool
-
 	// ListPRs returns one page of pull/merge requests for the
 	// repo (owner/name).
 	ListPRs(ctx context.Context, repo string, opts ListOptions) ([]PR, RateLimit, error)

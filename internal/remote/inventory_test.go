@@ -266,6 +266,16 @@ func newInvManager(t *testing.T) *Manager {
 	return m
 }
 
+// resolveTargets resolves dir's project identity from origin, as the
+// resolve-targets handler does from a checkout's upstream.
+func resolveTargets(m *Manager, dir, origin string, local []ProjectIdentity) []TargetCandidate {
+	source := db.ProjectStats{Directory: dir}
+	if origin != "" {
+		source.UpstreamKeys = []string{NormalizeProjectIdentity(origin, dir)}
+	}
+	return m.ResolveProjectTargets(source, local)
+}
+
 func TestManager_ResolveTargets(t *testing.T) {
 	m := newInvManager(t)
 	// Seed remote inventory: remote "abc" has the github.com/org/repo project.
@@ -280,7 +290,7 @@ func TestManager_ResolveTargets(t *testing.T) {
 	}
 
 	// Same origin on both -> two candidates (local + remote).
-	cands := m.ResolveTargets("/local/repo", "git@github.com:org/repo.git", local)
+	cands := resolveTargets(m, "/local/repo", "git@github.com:org/repo.git", local)
 	if len(cands) != 2 {
 		t.Fatalf("expected 2 candidates, got %d: %+v", len(cands), cands)
 	}
@@ -301,14 +311,14 @@ func TestManager_ResolveTargets(t *testing.T) {
 	}
 
 	// A project only the local has -> one candidate.
-	one := m.ResolveTargets("/local/other", "git@github.com:org/other.git",
+	one := resolveTargets(m, "/local/other", "git@github.com:org/other.git",
 		[]ProjectIdentity{{Key: "github.com/org/other", Dir: "/local/other"}})
 	if len(one) != 1 || one[0].RemoteID != "local" {
 		t.Fatalf("expected 1 local candidate, got %+v", one)
 	}
 
 	// Unknown project -> zero candidates.
-	none := m.ResolveTargets("/nowhere", "", nil)
+	none := resolveTargets(m, "/nowhere", "", nil)
 	if len(none) != 0 {
 		t.Fatalf("expected 0 candidates, got %+v", none)
 	}

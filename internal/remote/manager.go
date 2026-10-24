@@ -41,7 +41,7 @@ type Manager struct {
 
 	// inventory caches each connected remote's project list, keyed by
 	// remote instance ID. Refreshed on connect and on a periodic timer
-	// (AD-8). Used by ResolveTargets and the router's dir resolver.
+	// (AD-8). Used by ResolveProjectTargets and the router's dir resolver.
 	invMu     sync.RWMutex
 	inventory map[string][]ProjectIdentity
 
@@ -701,26 +701,12 @@ func (m *Manager) disconnect(localID int64) {
 }
 
 // TargetCandidate is one machine that has a given project checked out,
-// returned by ResolveTargets for the new-session machine picker (AD-15).
+// returned by ResolveProjectTargets for the new-session machine picker (AD-15).
 type TargetCandidate struct {
 	RemoteID   string `json:"remoteId"`
 	RemoteName string `json:"remoteName"`
 	Platform   string `json:"platform"`
 	Dir        string `json:"dir"`
-}
-
-// ResolveTargets computes the project identity for dir (using the given
-// origin) and returns the machines whose inventory contains a matching
-// project (AD-15). The local machine is included via localProjects, which
-// the caller supplies from its own host inventory. The result drives the
-// frontend chooser: 1 candidate -> auto-select, >1 -> prompt, 0 -> pick a
-// remote.
-func (m *Manager) ResolveTargets(dir, origin string, localProjects []ProjectIdentity) []TargetCandidate {
-	source := db.ProjectStats{Directory: dir}
-	if origin != "" {
-		source.UpstreamKeys = []string{NormalizeProjectIdentity(origin, dir)}
-	}
-	return m.ResolveProjectTargets(source, localProjects)
 }
 
 // EnabledRemotes returns the connected remotes as picker candidates,

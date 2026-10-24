@@ -64,7 +64,7 @@ func TestDiscoverToken(t *testing.T) {
 	})
 	t.Run("anonymous without gh or config", func(t *testing.T) {
 		tokenMachine(t)
-		if c := New(); c.Authenticated() {
+		if c := New(); c.Token() != "" {
 			t.Fatalf("token = %q", c.Token())
 		}
 	})

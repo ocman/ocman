@@ -36,7 +36,7 @@ func TestProjectForgeReadsRefreshOnlyWithinBudget(t *testing.T) {
 				}
 			}))
 			defer upstream.Close()
-			s.integrations.GitHub = github.NewForTest(upstream.URL, "token", upstream.Client())
+			s.integrations.GitHub = github.NewWithCredentials(upstream.URL, "token", upstream.Client())
 			handler := map[string]http.HandlerFunc{"prs": projectForgeRoute(s), "issues": projectForgeRoute(s),
 				"pr-checks": projectForgeRoute(s), "pr-mergeability": projectForgeRoute(s), "forge-user": projectForgeRoute(s)}[endpoint]
 			request := func(refresh bool) {

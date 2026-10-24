@@ -776,8 +776,8 @@ flowchart LR
   Canonical HTTP/MCP request paths retain the Ocman ID, and pending feature
   references lose their executable links without losing the surrounding record.
   Catalogue v4 mirrors remote canonical metadata without a native binding on the
-  hub. Production negotiation requires protocol v11 (v9 plus the removal of
-  the unused webhook-inbox RPCs and the generic `Call` RPC). Raw compatibility servers
+  hub. Production negotiation requires protocol v12 (v9 plus the removal of
+  the unused webhook-inbox and `Owns` RPCs and the generic `Call` RPC). Raw compatibility servers
   advertise v8; canonical managers reject them before publishing either their
   platform adapters or host execution routes.
   Declared v9 mutation contracts reject native and pending session references

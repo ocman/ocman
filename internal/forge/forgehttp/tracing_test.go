@@ -55,8 +55,8 @@ func TestForgeClientsEmitSpans(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"login":"alice"}`)) }))
 	defer srv.Close()
 	clients := []forge.Forge{
-		github.NewForTest(srv.URL, "test", srv.Client()),
-		forgejo.NewForTest("forge.test", srv.URL, "test", srv.Client()),
+		github.NewWithCredentials(srv.URL, "test", forgehttp.InstrumentClient(srv.Client())),
+		forgejo.NewWithCredentials("forge.test", srv.URL, "test", forgehttp.InstrumentClient(srv.Client())),
 	}
 	for _, client := range clients {
 		exporter.Reset()

@@ -63,23 +63,8 @@ func envTokenForHost() string {
 	return os.Getenv("GITEA_TOKEN")
 }
 
-// NewForTest returns a Client wired against the given host, baseURL and
-// token, using the supplied http.Client. Intended for tests that point the
-// client at an httptest.Server; not used in production paths.
-func NewForTest(host, baseURL, token string, httpClient *http.Client) *Client {
-	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		host:    host,
-		token:   token,
-		http:    forgehttp.InstrumentClient(httpClient),
-	}
-}
-
 // Host returns the canonical hostname. Implements forge.Forge.Host.
 func (c *Client) Host() string { return c.host }
-
-// Authenticated reports whether a token is configured.
-func (c *Client) Authenticated() bool { return c.token != "" }
 
 // Token is the owner machine's env/tea token ("" when anonymous).
 func (c *Client) Token() string { return c.token }

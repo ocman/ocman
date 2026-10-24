@@ -20,7 +20,7 @@ import (
 // "web" URLs in the tests use that host; the client's baseURL is the
 // httptest server so requests stay in-process.
 func registerForgejoClient(srv *Server, host, apiBase string) {
-	client := forgejo.NewForTest(host, apiBase, "tok", http.DefaultClient)
+	client := forgejo.NewWithCredentials(host, apiBase, "tok", http.DefaultClient)
 	srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{
 		host: client,
 	})
@@ -42,7 +42,7 @@ func localRequest(method, target, body string) *http.Request {
 func TestHandleIntegrationsStatus_ReportsForgejoHosts(t *testing.T) {
 	srv := testServer(t)
 	registerForgejoClient(srv, "code.example.com", "http://unused")
-	srv.integrations.GitHub = github.NewForTest("https://api.github.com", "", nil)
+	srv.integrations.GitHub = github.NewWithCredentials("https://api.github.com", "", nil)
 	rr := serve(srv, localRequest(http.MethodGet, "/api/integrations/status", ""))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: %d", rr.Code)
@@ -62,10 +62,10 @@ func TestHandleIntegrationsStatus_ReportsForgejoHosts(t *testing.T) {
 // carries its token, and the GitHub CLI token is the owner fallback.
 func TestPreviewForgesAdapter(t *testing.T) {
 	s := testServer(t)
-	s.integrations.GitHub = github.NewForTest("https://api.github.com", "tok-cli", nil)
+	s.integrations.GitHub = github.NewWithCredentials("https://api.github.com", "tok-cli", nil)
 	s.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{
-		"tea.example.com":   forgejo.NewForTest("tea.example.com", "https://tea.example.com", "tok", nil),
-		"plain.example.com": forgejo.NewForTest("plain.example.com", "http://plain.example.com", "tok", nil),
+		"tea.example.com":   forgejo.NewWithCredentials("tea.example.com", "https://tea.example.com", "tok", nil),
+		"plain.example.com": forgejo.NewWithCredentials("plain.example.com", "http://plain.example.com", "tok", nil),
 	})
 	rr := serve(s, localRequest(http.MethodGet, "/api/previews/providers", ""))
 	var resp struct {

@@ -42,8 +42,8 @@ func TestRemoteConnRequiresExplicitPlaintextOptIn(t *testing.T) {
 }
 
 func TestProtocolCompatible(t *testing.T) {
-	if ProtocolVersion != 11 {
-		t.Fatalf("ProtocolVersion = %d, want 11 for the generic Call RPC", ProtocolVersion)
+	if ProtocolVersion != 12 {
+		t.Fatalf("ProtocolVersion = %d, want 12 without the Owns RPC", ProtocolVersion)
 	}
 	if !protocolCompatible(ProtocolVersion) {
 		t.Error("current protocol version should be compatible")

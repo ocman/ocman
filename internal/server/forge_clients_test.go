@@ -27,14 +27,14 @@ func TestNewForgeClientsReadsMachineCredentials(t *testing.T) {
 	machineForgeCredentials(t)
 	clients := newForgeClients()
 	if !clients.Forgejo.Knows("code.example.com") || clients.GitHub.Token() != "machine-token" {
-		t.Fatalf("production discovery ignored machine credentials: forgejo hosts %v, github authenticated %v", clients.Forgejo.Hosts(), clients.GitHub.Authenticated())
+		t.Fatalf("production discovery ignored machine credentials: forgejo hosts %v, github token %q", clients.Forgejo.Hosts(), clients.GitHub.Token())
 	}
 }
 
 func TestTestServersIgnoreMachineForgeCredentials(t *testing.T) {
 	machineForgeCredentials(t)
 	srv := New(nil, nil, "", nil, nil)
-	if srv.knowsForgejo("code.example.com") || srv.integrations.GitHub.Authenticated() {
+	if srv.knowsForgejo("code.example.com") || srv.integrations.GitHub.Token() != "" {
 		t.Fatal("a test server read the machine's forge credentials")
 	}
 }

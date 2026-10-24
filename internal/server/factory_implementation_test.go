@@ -119,7 +119,7 @@ func TestFactoryResolvesDeletedForgejoBranch(t *testing.T) {
 	srv := New(nil, nil, "", platforms.NewRegistry(), nil)
 	srv.hostRouter = hostsvc.NewRouter(&factoryImplementationHost{})
 	srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{
-		"forge.example": forgejo.NewForTest("forge.example", api.URL, "token", api.Client()),
+		"forge.example": forgejo.NewWithCredentials("forge.example", api.URL, "token", api.Client()),
 	})
 	policy := model.FactoryAttemptPolicy{DeliveryRemoteType: "forgejo", DeliveryRemoteHost: "forge.example", DeliveryRemoteRepo: "dries/ocman"}
 	branch, base, err := (srv.factoryModule().ImplementationLauncher()).ResolveImplementationBranch(t.Context(), "/repo", "factory/aamruifdam-crov", "https://forge.example/dries/ocman/pulls/604", policy)
@@ -163,8 +163,8 @@ func TestFactoryDeliveryValidatesFinalPR(t *testing.T) {
 			srv := New(nil, nil, "", platforms.NewRegistry(), nil)
 			host := &factoryImplementationHost{handoffHead: "abc123"}
 			srv.hostRouter = hostsvc.NewRouter(host)
-			srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{"forge.example": forgejo.NewForTest("forge.example", api.URL, "token", api.Client())})
-			srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
+			srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{"forge.example": forgejo.NewWithCredentials("forge.example", api.URL, "token", api.Client())})
+			srv.integrations.GitHub = github.NewWithCredentials(api.URL, "token", api.Client())
 			launcher := srv.factoryModule().ImplementationLauncher()
 			policy := model.FactoryAttemptPolicy{Delivery: true, TargetBranch: "main", DeliveryRemoteType: provider, DeliveryRemoteHost: "forge.example", DeliveryRemoteRepo: "acme/repo"}
 			validate := func() error {
@@ -310,7 +310,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		host := &factoryImplementationHost{handoffHead: "abc123", upstreams: hostsvc.ProjectUpstreams{Remotes: []forge.Remote{{Type: forge.RemoteTypeGitHub, Repo: "acme/repo"}}}}
 		srv := New(nil, nil, "", platforms.NewRegistry(), nil)
 		srv.hostRouter = hostsvc.NewRouter(host)
-		srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
+		srv.integrations.GitHub = github.NewWithCredentials(api.URL, "token", api.Client())
 		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
 		host.handoffErr = errors.New("invalid handoff")
 		if err := (srv.factoryModule().ImplementationLauncher()).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); !errors.Is(err, host.handoffErr) {
@@ -368,7 +368,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		host := &factoryImplementationHost{handoffHead: "new"}
 		srv := New(nil, nil, "", platforms.NewRegistry(), nil)
 		srv.hostRouter = hostsvc.NewRouter(host)
-		srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
+		srv.integrations.GitHub = github.NewWithCredentials(api.URL, "token", api.Client())
 		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
 		launcher := srv.factoryModule().ImplementationLauncher()
 		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-2" || baseRef != "" {

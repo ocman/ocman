@@ -27,7 +27,6 @@ service Ocman {
   rpc Sessions(SessionsReq) returns (JsonResp);           // []db.Session
   rpc Session(SessionReq) returns (JsonResp);             // *SessionDetail
   rpc SessionsInactiveBefore(CutoffReq) returns (JsonResp);
-  rpc Owns(SessionRef) returns (OwnsResp);
 
   // --- Streaming events (tunneled to hub SSE) ---
   rpc StreamEvents(SessionRef) returns (stream EventChunk);
@@ -96,10 +95,6 @@ message CallReq {
   string platform = 2;
   string session_id = 3;
   bytes payload = 4;
-}
-
-message OwnsResp {
-  bool owns = 1;
 }
 
 message EventChunk {

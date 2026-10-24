@@ -138,3 +138,34 @@ func TestNewRegistry(t *testing.T) {
 		}
 	})
 }
+
+func TestNewRegistryKeepsFirstLoginPerHostAndSkipsUnreadableConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "tea"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(dir, "tea", "config.yml")
+	dup := "logins:\n  - name: first\n    url: https://code.example.com\n    token: one\n  - name: second\n    url: https://code.example.com\n    token: two\n"
+	if err := os.WriteFile(config, []byte(dup), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", t.TempDir())
+	r := NewRegistry()
+	if c := r.ForHost("code.example.com"); c == nil || c.Token() != "one" || !r.Knows("code.example.com") {
+		t.Fatalf("client = %+v", c)
+	}
+	if err := os.WriteFile(config, []byte("logins: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if hosts := NewRegistry().Hosts(); len(hosts) != 0 {
+		t.Fatalf("hosts from malformed config = %v", hosts)
+	}
+}
+
+func TestNilRegistryHasNoHosts(t *testing.T) {
+	var r *Registry
+	if r.ForHost("h") != nil || r.Knows("h") || r.Hosts() != nil {
+		t.Fatal("nil registry reported a host")
+	}
+}

@@ -18,7 +18,7 @@ func TestPRApproval(t *testing.T) {
 		_, _ = w.Write([]byte(`[{"id":1,"state":"APPROVED","user":{"login":"bob"}}]`))
 	}))
 	defer srv.Close()
-	c := NewForTest(srv.URL, "test", srv.Client())
+	c := NewWithCredentials(srv.URL, "test", srv.Client())
 	approved, err := c.PRApproval(context.Background(), "alice/repo", 42)
 	if err != nil || !approved {
 		t.Fatalf("approved=%v err=%v", approved, err)

@@ -680,5 +680,5 @@ func TestHandleProjectHandle_CrossForkRequiresConfirmation(t *testing.T) {
 // newGitHubTestClient is a tiny helper for tests that already have an
 // httptest.Server in hand.
 func newGitHubTestClient(srv *httptest.Server) *github.Client {
-	return github.NewForTest(srv.URL, "test-token", srv.Client())
+	return github.NewWithCredentials(srv.URL, "test-token", srv.Client())
 }

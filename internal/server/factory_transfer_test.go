@@ -68,7 +68,7 @@ func TestFactoryIssueTransfer(t *testing.T) {
 	if rec := post(); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "no supported issue tracker") {
 		t.Fatalf("no tracker configured = %d %s", rec.Code, rec.Body)
 	}
-	srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
+	srv.integrations.GitHub = github.NewWithCredentials(api.URL, "token", api.Client())
 	rec := post()
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), "issues/9") {
 		t.Fatalf("transfer = %d %s", rec.Code, rec.Body)

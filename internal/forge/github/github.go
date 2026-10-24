@@ -41,13 +41,6 @@ func New() *Client {
 	return NewWithCredentials(DefaultAPIBase, discoverToken(), forgehttp.InstrumentClient(nil))
 }
 
-// NewForTest returns a Client wired against the given apiBase and
-// token. Intended for tests that need to point the client at a
-// httptest.Server; not used in production paths.
-func NewForTest(apiBase, token string, httpClient *http.Client) *Client {
-	return NewWithCredentials(apiBase, token, forgehttp.InstrumentClient(httpClient))
-}
-
 // base returns the effective API base URL, falling back to
 // DefaultAPIBase when apiBase is empty.
 func (c *Client) base() string {
@@ -56,9 +49,6 @@ func (c *Client) base() string {
 	}
 	return DefaultAPIBase
 }
-
-// Authenticated reports whether a token was found.
-func (c *Client) Authenticated() bool { return c.token != "" }
 
 // Token is the owner machine's discovered token ("" when anonymous).
 func (c *Client) Token() string { return c.token }

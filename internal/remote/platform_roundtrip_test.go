@@ -11,7 +11,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -157,28 +156,6 @@ func TestRemotePlatform_SessionInfoUsesOwnerCommitStore(t *testing.T) {
 				t.Fatalf("owner %s info = %#v", tc.owner, info)
 			}
 		})
-	}
-}
-
-// TestServer_OwnsRPC covers the server-side Owns shim (the client adapter
-// is cache-only and never calls it, so exercise the RPC directly).
-func TestServer_OwnsRPC(t *testing.T) {
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s1", Platform: "opencode"}}})
-	srv := NewServer(reg, localStubHost{}, "rid", "v")
-	conn := startTestServer(t, "tok", srv)
-	client := pb.NewOcmanClient(conn)
-
-	got, err := client.Owns(context.Background(), &pb.SessionRef{Platform: "opencode", SessionId: "s1"})
-	if err != nil {
-		t.Fatalf("Owns: %v", err)
-	}
-	if !got.Owns {
-		t.Error("expected Owns true for s1")
-	}
-	miss, _ := client.Owns(context.Background(), &pb.SessionRef{Platform: "opencode", SessionId: "nope"})
-	if miss.Owns {
-		t.Error("expected Owns false for unknown session")
 	}
 }
 

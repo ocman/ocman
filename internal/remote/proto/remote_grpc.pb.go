@@ -24,7 +24,6 @@ const (
 	Ocman_Sessions_FullMethodName               = "/ocman.remote.v1.Ocman/Sessions"
 	Ocman_Session_FullMethodName                = "/ocman.remote.v1.Ocman/Session"
 	Ocman_SessionsInactiveBefore_FullMethodName = "/ocman.remote.v1.Ocman/SessionsInactiveBefore"
-	Ocman_Owns_FullMethodName                   = "/ocman.remote.v1.Ocman/Owns"
 	Ocman_StreamEvents_FullMethodName           = "/ocman.remote.v1.Ocman/StreamEvents"
 	Ocman_SaveComposerAttachment_FullMethodName = "/ocman.remote.v1.Ocman/SaveComposerAttachment"
 	Ocman_TerminalStream_FullMethodName         = "/ocman.remote.v1.Ocman/TerminalStream"
@@ -55,7 +54,6 @@ type OcmanClient interface {
 	Sessions(ctx context.Context, in *SessionsReq, opts ...grpc.CallOption) (*JsonResp, error)
 	Session(ctx context.Context, in *SessionReq, opts ...grpc.CallOption) (*JsonResp, error)
 	SessionsInactiveBefore(ctx context.Context, in *CutoffReq, opts ...grpc.CallOption) (*JsonResp, error)
-	Owns(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*OwnsResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventChunk], error)
 	// First payload is attachment metadata JSON; subsequent payloads are bytes.
@@ -118,16 +116,6 @@ func (c *ocmanClient) SessionsInactiveBefore(ctx context.Context, in *CutoffReq,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
 	err := c.cc.Invoke(ctx, Ocman_SessionsInactiveBefore_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *ocmanClient) Owns(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*OwnsResp, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(OwnsResp)
-	err := c.cc.Invoke(ctx, Ocman_Owns_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +192,6 @@ type OcmanServer interface {
 	Sessions(context.Context, *SessionsReq) (*JsonResp, error)
 	Session(context.Context, *SessionReq) (*JsonResp, error)
 	SessionsInactiveBefore(context.Context, *CutoffReq) (*JsonResp, error)
-	Owns(context.Context, *SessionRef) (*OwnsResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(*SessionRef, grpc.ServerStreamingServer[EventChunk]) error
 	// First payload is attachment metadata JSON; subsequent payloads are bytes.
@@ -237,9 +224,6 @@ func (UnimplementedOcmanServer) Session(context.Context, *SessionReq) (*JsonResp
 }
 func (UnimplementedOcmanServer) SessionsInactiveBefore(context.Context, *CutoffReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method SessionsInactiveBefore not implemented")
-}
-func (UnimplementedOcmanServer) Owns(context.Context, *SessionRef) (*OwnsResp, error) {
-	return nil, status.Error(codes.Unimplemented, "method Owns not implemented")
 }
 func (UnimplementedOcmanServer) StreamEvents(*SessionRef, grpc.ServerStreamingServer[EventChunk]) error {
 	return status.Error(codes.Unimplemented, "method StreamEvents not implemented")
@@ -361,24 +345,6 @@ func _Ocman_SessionsInactiveBefore_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Ocman_Owns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SessionRef)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(OcmanServer).Owns(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Ocman_Owns_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(OcmanServer).Owns(ctx, req.(*SessionRef))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Ocman_StreamEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(SessionRef)
 	if err := stream.RecvMsg(m); err != nil {
@@ -430,10 +396,6 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SessionsInactiveBefore",
 			Handler:    _Ocman_SessionsInactiveBefore_Handler,
-		},
-		{
-			MethodName: "Owns",
-			Handler:    _Ocman_Owns_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

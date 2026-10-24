@@ -36,9 +36,6 @@ func TestCanonicalReadRPCsRejectNativeAndPendingBeforeAdapterCalls(t *testing.T)
 	if _, err := s.Session(t.Context(), &pb.SessionReq{Platform: "opencode", SessionId: "native"}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("native transcript request accepted: %v", err)
 	}
-	if _, err := s.Owns(t.Context(), &pb.SessionRef{Platform: "opencode", SessionId: identity.PendingReference()}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("pending ownership reference reached adapter: %v", err)
-	}
 	s.UsePermissionPolicy(func(context.Context, platforms.Platform, string, *[]platforms.PermissionRule) (*autoapprove.PermissionPolicy, error) {
 		t.Fatal("unproven reference reached policy mutation")
 		return nil, nil

@@ -322,7 +322,7 @@ func fakeGitHubServer(t *testing.T) (*httptest.Server, *github.Client) {
 			http.NotFound(w, r)
 		}
 	}))
-	client := github.NewForTest(srv.URL, "test-token", srv.Client())
+	client := github.NewWithCredentials(srv.URL, "test-token", srv.Client())
 	return srv, client
 }
 
@@ -458,7 +458,7 @@ func TestProjectForgeMetadataErrorsAreMapped(t *testing.T) {
 				http.Error(w, "upstream failed", http.StatusInternalServerError)
 			}))
 			defer gh.Close()
-			srv.integrations.GitHub = github.NewForTest(gh.URL, "test-token", gh.Client())
+			srv.integrations.GitHub = github.NewWithCredentials(gh.URL, "test-token", gh.Client())
 			rr := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			switch tt.name {
@@ -609,7 +609,7 @@ func TestHandleProjectPRChecks_502WhenForgeErrors(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer gh.Close()
-	srv.integrations.GitHub = github.NewForTest(gh.URL, "test-token", gh.Client())
+	srv.integrations.GitHub = github.NewWithCredentials(gh.URL, "test-token", gh.Client())
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin&sha=abc123", nil)
@@ -632,7 +632,7 @@ func TestHandleProjectPRChecks_NormalisesNilChecksToEmptyArray(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer gh.Close()
-	srv.integrations.GitHub = github.NewForTest(gh.URL, "test-token", gh.Client())
+	srv.integrations.GitHub = github.NewWithCredentials(gh.URL, "test-token", gh.Client())
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin&sha=abc123", nil)

@@ -47,7 +47,7 @@ func TestProjectForgeFailureMapping(t *testing.T) {
 					_, _ = w.Write([]byte("credential-secret"))
 				}))
 				defer upstream.Close()
-				srv.integrations.GitHub = github.NewForTest(upstream.URL, "credential-secret", upstream.Client())
+				srv.integrations.GitHub = github.NewWithCredentials(upstream.URL, "credential-secret", upstream.Client())
 				previousHooks := log.StandardLogger().ReplaceHooks(make(log.LevelHooks))
 				defer log.StandardLogger().ReplaceHooks(previousHooks)
 				hook := test.NewGlobal()

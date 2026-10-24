@@ -33,7 +33,7 @@ func TestProjectPRMergeability(t *testing.T) {
 				_, _ = w.Write([]byte(`{"mergeable":` + value + `}`))
 			}))
 			defer upstream.Close()
-			srv.integrations.GitHub = github.NewForTest(upstream.URL, "test-token", upstream.Client())
+			srv.integrations.GitHub = github.NewWithCredentials(upstream.URL, "test-token", upstream.Client())
 			req := httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil)
 			rr := httptest.NewRecorder()
 			serveProjectForge(srv, rr, req)
@@ -89,7 +89,7 @@ func TestProjectPRMergeabilityReviewFailure(t *testing.T) {
 				_, _ = w.Write([]byte(`{"mergeable":true}`))
 			}))
 			defer upstream.Close()
-			srv.integrations.GitHub = github.NewForTest(upstream.URL, "test-token", upstream.Client())
+			srv.integrations.GitHub = github.NewWithCredentials(upstream.URL, "test-token", upstream.Client())
 			rr := httptest.NewRecorder()
 			serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/pr-mergeability?dir="+url.QueryEscape(dir)+"&remoteId=local&remote=origin&number=42", nil))
 			wantStatus := http.StatusBadGateway

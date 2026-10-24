@@ -121,7 +121,7 @@ func TestLookupIssueRejectsPullRequest(t *testing.T) {
 		_, _ = w.Write([]byte(`{"number":7,"title":"PR","pull_request":{"url":"https://api.example/pr/7"}}`))
 	}))
 	defer srv.Close()
-	c := NewForTest(srv.URL, "token", srv.Client())
+	c := NewWithCredentials(srv.URL, "token", srv.Client())
 	if _, err := c.LookupIssue(context.Background(), "alice/repo", 7); err == nil {
 		t.Fatal("LookupIssue accepted a pull request")
 	}

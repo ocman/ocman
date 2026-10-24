@@ -380,10 +380,10 @@ func TestLookupPR_Non200ReturnsError(t *testing.T) {
 
 func TestNewWithCredentialsAccessors(t *testing.T) {
 	c := NewWithCredentials("code.example.com", "https://code.example.com/", "tok", http.DefaultClient)
-	if c.Host() != "code.example.com" || c.BaseURL() != "https://code.example.com" || c.Token() != "tok" || !c.Authenticated() {
-		t.Fatalf("client = host %q base %q token %q auth %v", c.Host(), c.BaseURL(), c.Token(), c.Authenticated())
+	if c.Host() != "code.example.com" || c.BaseURL() != "https://code.example.com" || c.Token() != "tok" {
+		t.Fatalf("client = host %q base %q token %q", c.Host(), c.BaseURL(), c.Token())
 	}
-	if NewWithCredentials("h", "https://h", "", http.DefaultClient).Authenticated() {
+	if NewWithCredentials("h", "https://h", "", http.DefaultClient).Token() != "" {
 		t.Fatal("anonymous client reports authenticated")
 	}
 }

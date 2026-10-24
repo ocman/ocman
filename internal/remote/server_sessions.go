@@ -162,13 +162,6 @@ func (s *Server) Capabilities(_ context.Context, req *pb.CallReq) (*pb.JsonResp,
 	}
 	return jsonResp(p.Capabilities(), nil)
 }
-func (s *Server) Owns(ctx context.Context, req *pb.SessionRef) (*pb.OwnsResp, error) {
-	p, err := s.sessionPlatformFor(req.Platform, req.SessionId)
-	if err != nil {
-		return nil, err
-	}
-	return &pb.OwnsResp{Owns: p.Owns(ctx, req.SessionId)}, nil
-}
 func (s *Server) SendMessage(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var mr platforms.SendMessageRequest
 	if err := s.decodeSessionRequest(req, &mr); err != nil {

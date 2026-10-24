@@ -46,7 +46,7 @@ func TestManagerAdvertisedPlatforms(t *testing.T) {
 		t.Fatalf("enabled targets = %v", got)
 	}
 	m.inventory["two-platforms"] = []ProjectIdentity{{Dir: "/remote", Key: "host/repo"}}
-	if got := m.ResolveTargets("/local", "https://host/repo", nil); len(got) != 1 || got[0].Platform != "r-two-platforms:opencode" {
+	if got := resolveTargets(m, "/local", "https://host/repo", nil); len(got) != 1 || got[0].Platform != "r-two-platforms:opencode" {
 		t.Fatalf("project targets = %v", got)
 	}
 	if got := m.ResolveProjectTargets(db.ProjectStats{Directory: "/local", Platform: "claudecode", UpstreamKeys: []string{"host/repo"}}, nil); len(got) != 1 || got[0].Platform != "r-two-platforms:claudecode" {
@@ -111,7 +111,7 @@ func TestClaudeOnlyRemoteTargets(t *testing.T) {
 	if got := m.EnabledRemotes(); len(got) != 1 || got[0].Platform != "r-claude-only:claudecode" {
 		t.Fatalf("enabled targets = %v", got)
 	}
-	if got := m.ResolveTargets("/local", "https://host/repo", nil); len(got) != 1 || got[0].Platform != "r-claude-only:claudecode" {
+	if got := resolveTargets(m, "/local", "https://host/repo", nil); len(got) != 1 || got[0].Platform != "r-claude-only:claudecode" {
 		t.Fatalf("project targets = %v", got)
 	}
 	if got := m.RemoteProjects(); len(got) != 1 || got[0].Platform != "r-claude-only:claudecode" {
