@@ -1,21 +1,13 @@
 import { useEffect, useState } from 'react';
+import { readStorage, writeStorage } from './storage';
 
 export function useSessionFilterPreference(name: string, defaultValue: boolean) {
   const key = `ocman:sidebar-filter:${name}`;
   const [value, setValue] = useState(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return stored === 'true' ? true : stored === 'false' ? false : defaultValue;
-    } catch {
-      return defaultValue;
-    }
+    const stored = readStorage(key);
+    return stored === 'true' ? true : stored === 'false' ? false : defaultValue;
   });
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, String(value));
-    } catch {
-      // Storage may be blocked or full; filters still work in memory.
-    }
-  }, [key, value]);
+  // Storage may be blocked or full; filters still work in memory.
+  useEffect(() => { writeStorage(key, String(value)); }, [key, value]);
   return [value, setValue] as const;
 }

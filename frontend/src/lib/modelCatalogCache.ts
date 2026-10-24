@@ -1,4 +1,5 @@
 import type { SessionModelEntry } from './api';
+import { readStored, writeStorage } from './storage';
 
 // Last live model catalog per platform (compound ids keep machines apart),
 // so the picker opens with data instead of an empty list and a failed
@@ -23,12 +24,10 @@ const isPinned = (e: SessionModelEntry) => !!e.isFavorite || !!e.isSessionDefaul
 export const availabilityUnknown = (entries: SessionModelEntry[]) => entries.map((e) => ({ ...e, isAvailable: true }));
 
 function load(): Stored {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(KEY) || '{}') as Stored;
+  return readStored<Stored>(KEY, {}, (raw) => {
+    const parsed = JSON.parse(raw) as Stored;
     return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
+  });
 }
 
 /** The platform's last live catalog, with scoped details only for its source directory. */
@@ -75,16 +74,13 @@ export function writeModelCatalog(platform: string | undefined, entries: Session
   stored[platform] = { directory, entries: entries.filter(isPinned) };
   const keys = Object.keys(stored);
   for (const k of keys.slice(0, Math.max(0, keys.length - MAX_PLATFORMS))) delete stored[k];
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(stored));
-  } catch {
-    // Storage full or unavailable: the memory copy still serves this tab.
-  }
+  // Storage full or unavailable: the memory copy still serves this tab.
+  writeStorage(KEY, JSON.stringify(stored));
 }
 
 /** Test hook; `keepStorage` simulates a page reload. */
 export function clearModelCatalogCache(keepStorage = false) {
   memory.clear();
   if (keepStorage) return;
-  try { window.localStorage.removeItem(KEY); } catch { /* ignore */ }
+  writeStorage(KEY, null);
 }

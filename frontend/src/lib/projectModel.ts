@@ -2,30 +2,21 @@
 // A brand-new session (no turns yet) seeds its composer from this so it
 // inherits the project's most-recent choice instead of the backend default.
 // Mirrors composerDraft.ts (single localStorage key, keyed map).
+import { readStored, writeStorage } from './storage';
+
 const PROJECT_MODELS_KEY = 'ocman.projectModels.v1';
 
 type ProjectModels = Record<string, string>;
 
 function load(): ProjectModels {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(PROJECT_MODELS_KEY);
-    if (!raw) return {};
+  return readStored<ProjectModels>(PROJECT_MODELS_KEY, {}, (raw) => {
     const parsed = JSON.parse(raw) as ProjectModels;
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed;
-  } catch {
-    return {};
-  }
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  });
 }
 
 function save(data: ProjectModels) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(PROJECT_MODELS_KEY, JSON.stringify(data));
-  } catch {
-    // Ignore storage errors (private mode, quotas, etc.)
-  }
+  writeStorage(PROJECT_MODELS_KEY, JSON.stringify(data));
 }
 
 export function getProjectModel(directory: string): string {

@@ -3,6 +3,7 @@ import * as Toast from '@radix-ui/react-toast';
 import { api } from '../lib/api';
 import type { McpConfigStatus } from '../lib/api.types';
 import { remoteLog } from '../lib/remoteLog';
+import { readStorage, writeStorage } from '../lib/storage';
 import { useLocalOpenCode } from '../lib/useCapabilities';
 import { SubmitButton } from './Control';
 import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
@@ -11,25 +12,6 @@ import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, P
 // re-prompts once (the stored config is then stale) while a user who
 // deliberately said "not now" isn't nagged on every page load.
 const DISMISS_STORAGE_KEY = 'ocman.mcp-config-dismissed';
-
-// localStorage access follows the repo convention (composerDraft.ts):
-// wrapped in try/catch so a blocked Storage degrades to session-only
-// dismissal instead of throwing.
-function loadDismissed(): string | null {
-  try {
-    return window.localStorage.getItem(DISMISS_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function saveDismissed(url: string) {
-  try {
-    window.localStorage.setItem(DISMISS_STORAGE_KEY, url);
-  } catch {
-    // best-effort
-  }
-}
 
 /**
  * McpConfigPrompt nags once when OpenCode's global config doesn't point
@@ -42,7 +24,7 @@ function saveDismissed(url: string) {
  */
 export function McpConfigPrompt() {
   const [status, setStatus] = useState<McpConfigStatus | null>(null);
-  const [dismissedUrl, setDismissedUrl] = useState<string | null>(loadDismissed);
+  const [dismissedUrl, setDismissedUrl] = useState<string | null>(() => readStorage(DISMISS_STORAGE_KEY));
   const [installing, setInstalling] = useState(false);
   const [installed, setInstalled] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +44,7 @@ export function McpConfigPrompt() {
   if (installed === null && dismissedUrl === status.wantUrl) return null;
 
   function dismiss() {
-    saveDismissed(status!.wantUrl);
+    writeStorage(DISMISS_STORAGE_KEY, status!.wantUrl);
     setDismissedUrl(status!.wantUrl);
   }
 

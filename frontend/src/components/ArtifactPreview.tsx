@@ -4,6 +4,7 @@ import { Button } from './Control';
 import { MarkdownContent } from './assistant/MarkdownText';
 import { InlineAlert } from './InlineAlert';
 import { LoadingState } from './LoadingState';
+import { readStorage, writeStorage } from '../lib/storage';
 import styles from './ArtifactPreview.module.css';
 
 /**
@@ -69,12 +70,11 @@ const SELF_NAVIGATION = 'Fetches and external resources are blocked, but the pag
 const SCRIPTS_KEY = 'ocman:artifact-scripts:';
 
 function scriptsAllowed(url: string): boolean {
-  try { return localStorage.getItem(SCRIPTS_KEY + url) === '1'; } catch { return false; }
+  return readStorage(SCRIPTS_KEY + url) === '1';
 }
 
 // ponytail: a deleted artifact leaves its key behind; ids are never reused, so it is only a few stray bytes.
+// Storage unavailable: the choice lasts for this visit.
 function allowScripts(url: string, on: boolean) {
-  try {
-    if (on) localStorage.setItem(SCRIPTS_KEY + url, '1'); else localStorage.removeItem(SCRIPTS_KEY + url);
-  } catch { /* storage unavailable: the choice lasts for this visit */ }
+  writeStorage(SCRIPTS_KEY + url, on ? '1' : null);
 }

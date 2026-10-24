@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as Toast from '@radix-ui/react-toast';
 import { useSessionInfo } from '../lib/useSessionInfo';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
+import { readStorage, writeStorage } from '../lib/storage';
 
 interface McpAuthBannerProps {
   sessionId: string;
@@ -16,25 +17,6 @@ interface McpAuthBannerProps {
 // sidebar regardless.
 const DISMISS_STORAGE_KEY = 'ocman.mcp-auth-dismissed';
 
-// localStorage access follows the repo convention (composerDraft.ts):
-// wrapped in try/catch so a missing/blocked Storage (private mode,
-// jsdom) degrades to session-only dismissal instead of throwing.
-function loadDismissed(): string | null {
-  try {
-    return window.localStorage.getItem(DISMISS_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function saveDismissed(key: string) {
-  try {
-    window.localStorage.setItem(DISMISS_STORAGE_KEY, key);
-  } catch {
-    // best-effort
-  }
-}
-
 // McpAuthBanner surfaces MCP servers that need authentication as an
 // auto-hiding toast in the shared toast viewport — the same signal
 // already shown passively in the Session Info sidebar. Renders
@@ -42,7 +24,7 @@ function saveDismissed(key: string) {
 export function McpAuthBanner({ sessionId, platformId }: McpAuthBannerProps) {
   const caps = usePlatformCapabilities(platformId);
   const { data } = useSessionInfo(sessionId, { enabled: caps.sessionInfo });
-  const [dismissedKey, setDismissedKey] = useState<string | null>(loadDismissed);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(() => readStorage(DISMISS_STORAGE_KEY));
 
   const needsAuth = (data?.mcpServers ?? []).filter((s) => s.status === 'needs_auth');
   if (needsAuth.length === 0) {
@@ -50,7 +32,7 @@ export function McpAuthBanner({ sessionId, platformId }: McpAuthBannerProps) {
   }
   const key = needsAuth.map((s) => s.name).sort().join(',');
   const dismiss = () => {
-    saveDismissed(key);
+    writeStorage(DISMISS_STORAGE_KEY, key);
     setDismissedKey(key);
   };
 

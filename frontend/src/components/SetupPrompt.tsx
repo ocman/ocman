@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import type { DoctorCheck } from '../lib/api.types';
+import { readStorage, writeStorage } from '../lib/storage';
 import { Button, ButtonGroup } from './Control';
 import { IconButton } from './IconButton';
 import { ErrorState } from './ErrorState';
@@ -15,22 +16,6 @@ const UNLOCKS: Record<string, string> = {
   tmux: 'launching managed OpenCode sessions, /wt worktree sessions and browser terminals',
   'mcp-listener': 'the dedicated MCP endpoint for OpenCode',
 };
-
-function loadDismissed(): string | null {
-  try {
-    return window.localStorage.getItem(DISMISS_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function saveDismissed(key: string) {
-  try {
-    window.localStorage.setItem(DISMISS_STORAGE_KEY, key);
-  } catch {
-    // best-effort
-  }
-}
 
 function CheckList({ checks }: { checks: DoctorCheck[] }) {
   return (
@@ -59,7 +44,7 @@ export function SetupPrompt() {
     refetchOnWindowFocus: true,
     retry: false,
   });
-  const [dismissed, setDismissed] = useState<string | null>(loadDismissed);
+  const [dismissed, setDismissed] = useState<string | null>(() => readStorage(DISMISS_STORAGE_KEY));
 
   const failing = (q.data?.checks ?? []).filter((c) => !c.ok);
   if (failing.length === 0) return null;
@@ -99,7 +84,7 @@ export function SetupPrompt() {
       </div>
       <ButtonGroup label="Setup actions">
         {recheck}
-        <IconButton label="Dismiss" icon="bi-x-lg" onClick={() => { saveDismissed(key); setDismissed(key); }} />
+        <IconButton label="Dismiss" icon="bi-x-lg" onClick={() => { writeStorage(DISMISS_STORAGE_KEY, key); setDismissed(key); }} />
       </ButtonGroup>
     </div>
   );

@@ -1,13 +1,10 @@
 import type { PrepareSessionResponse } from './api';
+import { readStored, writeStorage } from './storage';
 
 const STORAGE_KEY = 'ocman.newSessionCatalogs.v1';
 
 function load(): Map<string, PrepareSessionResponse> {
-  try {
-    return new Map(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]'));
-  } catch {
-    return new Map();
-  }
+  return readStored(STORAGE_KEY, new Map<string, PrepareSessionResponse>(), (raw) => new Map(JSON.parse(raw)));
 }
 
 export function getNewSessionCatalog(key: string): PrepareSessionResponse | undefined {
@@ -25,9 +22,6 @@ export function cacheNewSessionCatalog(key: string, catalog: PrepareSessionRespo
   entries.delete(key);
   entries.set(key, catalog);
   // ponytail: keep the last 20 targets, always refresh before submission.
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...entries].slice(-20)));
-  } catch {
-    // Disabled storage or quota exhaustion must not prevent preparation.
-  }
+  // Disabled storage or quota exhaustion must not prevent preparation.
+  writeStorage(STORAGE_KEY, JSON.stringify([...entries].slice(-20)));
 }

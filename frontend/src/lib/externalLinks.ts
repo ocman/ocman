@@ -3,6 +3,8 @@
 // rewriting an external link to that scheme opens it in Chrome instead.
 // A web app cannot detect whether the scheme is installed, so this is opt-in.
 
+import { readStorage } from './storage'
+
 const STORAGE_KEY = 'ocman:open-links-in-chrome'
 
 type Nav = Pick<Navigator, 'userAgent' | 'maxTouchPoints'>
@@ -14,11 +16,7 @@ export function isIOS(nav: Nav = navigator): boolean {
 }
 
 export function getOpenInChrome(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === '1'
-  } catch {
-    return false
-  }
+  return readStorage(STORAGE_KEY) === '1'
 }
 
 export function setOpenInChrome(on: boolean): void {

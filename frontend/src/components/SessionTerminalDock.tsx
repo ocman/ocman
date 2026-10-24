@@ -5,6 +5,7 @@ import type { TermWindow } from '../lib/api';
 import { api } from '../lib/api';
 import { remoteLog } from '../lib/remoteLog';
 import { withDeadline } from '../lib/coalescedRefresh';
+import { readStorage, writeStorage } from '../lib/storage';
 import './SessionTerminalDock.css';
 import { useIsPhone } from '../lib/useIsPhone';
 import { PhoneTerminalAccess } from './PhoneTerminalAccess';
@@ -50,15 +51,9 @@ function tabLabel(win: TermWindow): string {
 }
 
 function readStoredHeight(): number {
-  // localStorage can throw (private mode, disabled storage, test envs
-  // without a DOM storage shim); fall back to the default height.
-  try {
-    const raw = Number(localStorage.getItem(HEIGHT_STORAGE_KEY));
-    if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_HEIGHT;
-    return Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, raw));
-  } catch {
-    return DEFAULT_HEIGHT;
-  }
+  const raw = Number(readStorage(HEIGHT_STORAGE_KEY));
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_HEIGHT;
+  return Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, raw));
 }
 
 /**
@@ -250,11 +245,8 @@ function TerminalDock({ tmuxAvailable, directory, remoteId, fullscreen = false }
     if (!dragRef.current) return;
     dragRef.current = null;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    try {
-      localStorage.setItem(HEIGHT_STORAGE_KEY, String(height));
-    } catch {
-      /* storage unavailable — height just won't persist */
-    }
+    // If storage is unavailable the height just won't persist.
+    writeStorage(HEIGHT_STORAGE_KEY, String(height));
   }, [height]);
 
   if (!canOpen) return null;

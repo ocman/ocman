@@ -1,18 +1,11 @@
 import { useState } from 'react';
 import * as Toast from '@radix-ui/react-toast';
 import { useHookPlugin } from '../lib/useHookPlugin';
+import { readStorage, writeStorage } from '../lib/storage';
 import { Button } from './Control';
 import { PromptToast, PromptToastClose, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastViewport } from './PromptToast';
 
 const DISMISS_STORAGE_KEY = 'ocman.hook-plugin-dismissed';
-
-function loadDismissed(): boolean {
-  try {
-    return window.localStorage.getItem(DISMISS_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 /**
  * HookPluginPrompt offers, once, to install the hook plugin that gives
@@ -20,16 +13,12 @@ function loadDismissed(): boolean {
  */
 export function HookPluginPrompt() {
   const { status, error, set } = useHookPlugin();
-  const [dismissed, setDismissed] = useState(loadDismissed);
+  const [dismissed, setDismissed] = useState(() => readStorage(DISMISS_STORAGE_KEY) === '1');
   const [installing, setInstalling] = useState(false);
   if (!status?.available || status.installed || dismissed) return null;
 
   function dismiss() {
-    try {
-      window.localStorage.setItem(DISMISS_STORAGE_KEY, '1');
-    } catch {
-      // best-effort
-    }
+    writeStorage(DISMISS_STORAGE_KEY, '1');
     setDismissed(true);
   }
 

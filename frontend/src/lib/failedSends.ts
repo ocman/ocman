@@ -13,6 +13,8 @@
 // capped: when an entry exceeds the limit we drop the images but keep the
 // text retryable, with `imagesDropped` flagging the loss for the UI.
 
+import { readStorage, writeStorage } from './storage';
+
 const STORAGE_KEY = 'ocman.failedSends.v1';
 
 // Per-entry size cap. localStorage typically allows ~5 MB per origin; we
@@ -56,25 +58,13 @@ function notify(sessionId: string) {
 }
 
 function loadStore(): Store {
-  if (typeof window === 'undefined') return {};
-  try {
-    return parseStore(window.localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return {};
-  }
+  return parseStore(readStorage(STORAGE_KEY));
 }
 
 function saveStore(data: Store): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    return true;
-  } catch {
-    // Quota exceeded / private mode / disabled storage. Nothing we can do
-    // here; the shared in-memory state still reflects the failure
-    // for the current page lifetime.
-    return false;
-  }
+  // On quota exceeded / private mode / disabled storage the shared
+  // in-memory state still reflects the failure for the page lifetime.
+  return writeStorage(STORAGE_KEY, JSON.stringify(data));
 }
 
 function entrySize(entry: FailedSend): number {

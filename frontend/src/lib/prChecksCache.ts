@@ -1,4 +1,5 @@
 import type { CIState, PRChecks } from './upstreamApi';
+import { readStored, writeStorage } from './storage';
 
 // Settled CI results keyed by `host/repo@sha`, so a commit's status is fetched
 // once per repository; unsettled results are never stored (callers poll). A
@@ -31,20 +32,13 @@ let entries: Map<string, PRChecks> | null = null;
 
 function load(): Map<string, PRChecks> {
   if (entries) return entries;
-  try {
-    entries = new Map(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '[]'));
-  } catch {
-    entries = new Map();
-  }
+  entries = readStored(STORAGE_KEY, new Map<string, PRChecks>(), (raw) => new Map(JSON.parse(raw)));
   return entries;
 }
 
 function save(map: Map<string, PRChecks>) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...map]));
-  } catch {
-    // Quota or disabled storage: the in-memory copy still serves this load.
-  }
+  // Quota or disabled storage: the in-memory copy still serves this load.
+  writeStorage(STORAGE_KEY, JSON.stringify([...map]));
 }
 
 export function getCachedPRChecks(key: string): PRChecks | undefined {
@@ -75,11 +69,7 @@ export function clearPRChecksCache(repositories?: string[]) {
     return;
   }
   entries = new Map();
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
+  writeStorage(STORAGE_KEY, null);
   window.dispatchEvent(new Event(PR_CHECKS_REFRESH_EVENT));
 }
 
