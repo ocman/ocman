@@ -231,12 +231,3 @@ func (d *DB) Close() error {
 func (d *DB) Stats() sql.DBStats {
 	return d.db.Stats()
 }
-
-// SizeBytes returns SQLite's current logical database size.
-func (d *DB) SizeBytes(ctx context.Context) (int64, error) {
-	var size int64
-	if err := d.db.QueryRowContext(ctx, `SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()`).Scan(&size); err != nil {
-		return 0, fmt.Errorf("reading database size: %w", err)
-	}
-	return size, nil
-}

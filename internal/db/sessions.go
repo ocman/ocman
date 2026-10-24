@@ -199,43 +199,6 @@ func (d *DB) GetSessionParentIDs(ctx context.Context, childIDs []string) (map[st
 	return out, rows.Err()
 }
 
-// ErrAmbiguousRunningTool prevents guessing when multiple sessions match.
-var ErrAmbiguousRunningTool = errors.New("multiple sessions are invoking the tool")
-
-// FindRunningToolSessionID returns the only session currently invoking a
-// tool. OpenCode writes the running tool part before making the MCP request.
-func (d *DB) FindRunningToolSessionID(ctx context.Context, tool, directory string) (string, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT DISTINCT p.session_id
-		FROM part p
-		JOIN session s ON s.id = p.session_id
-		WHERE json_extract(p.data, '$.type') = 'tool'
-		  AND json_extract(p.data, '$.tool') IN (?, 'ocman_' || ?)
-		  AND json_extract(p.data, '$.state.status') = 'running'
-		  AND (? = '' OR s.directory = ?)
-		LIMIT 2
-	`, tool, tool, directory, directory)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-
-	var sessionID string
-	if !rows.Next() {
-		return "", rows.Err()
-	}
-	if err := rows.Scan(&sessionID); err != nil {
-		return "", err
-	}
-	if rows.Next() {
-		return "", ErrAmbiguousRunningTool
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	return sessionID, nil
-}
-
 // GetSessionDefaults returns the most recent agent/model pair to seed a new or
 // empty session's composer. It prefers another session in the same directory and
 // falls back to the most recent session overall. Only history readers carry the
