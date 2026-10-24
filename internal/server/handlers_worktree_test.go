@@ -197,6 +197,7 @@ func TestHandleWorktreeCreateAndLaunch_BadInputs(t *testing.T) {
 	// handler no longer requires tmux up-front (#268 runs sessions
 	// in-app; tmux is only needed to launch a fresh project instance).
 	srv := &Server{}
+	notRepo := t.TempDir()
 
 	tests := []struct {
 		name     string
@@ -223,6 +224,11 @@ func TestHandleWorktreeCreateAndLaunch_BadInputs(t *testing.T) {
 			body:     `{"projectDir":"/abs","branch":"foo","newBranch":true}`,
 			wantCode: http.StatusBadRequest,
 		},
+		{
+			name:     "non-repo-projectDir",
+			body:     `{"projectDir":"` + notRepo + `","branch":"foo","newBranch":true,"baseRef":"main"}`,
+			wantCode: http.StatusNotFound,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -238,27 +244,9 @@ func TestHandleWorktreeCreateAndLaunch_BadInputs(t *testing.T) {
 	}
 }
 
-func TestHandleWorktreeCreateAndLaunch_NonRepo(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	srv := &Server{}
-
-	notRepo := t.TempDir()
-	body := `{"projectDir":"` + notRepo + `","branch":"foo","newBranch":true,"baseRef":"main"}`
-	req := httptest.NewRequest(http.MethodPost,
-		"/api/worktree/create-and-launch",
-		strings.NewReader(body))
-	rr := httptest.NewRecorder()
-	srv.handleWorktreeCreateAndLaunch(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("status = %d; want 404 (body: %q)", rr.Code, rr.Body.String())
-	}
-}
-
 func TestHandleWorktreeRemove_BadInputs(t *testing.T) {
 	srv := &Server{}
+	notRepo := t.TempDir()
 	tests := []struct {
 		name     string
 		body     string
@@ -268,6 +256,7 @@ func TestHandleWorktreeRemove_BadInputs(t *testing.T) {
 		{"missing-path", `{"projectDir":"/abs"}`, http.StatusBadRequest},
 		{"relative-projectDir", `{"projectDir":"rel","path":"/abs/wt"}`, http.StatusBadRequest},
 		{"relative-path", `{"projectDir":"/abs","path":"rel"}`, http.StatusBadRequest},
+		{"non-repo-projectDir", `{"projectDir":"` + notRepo + `","path":"` + filepath.Join(notRepo, "wt") + `"}`, http.StatusNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -278,21 +267,6 @@ func TestHandleWorktreeRemove_BadInputs(t *testing.T) {
 				t.Errorf("status = %d; want %d (body: %q)", rr.Code, tt.wantCode, rr.Body.String())
 			}
 		})
-	}
-}
-
-func TestHandleWorktreeRemove_NonRepo(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	srv := &Server{}
-	notRepo := t.TempDir()
-	body := `{"projectDir":"` + notRepo + `","path":"` + filepath.Join(notRepo, "wt") + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(body))
-	rr := httptest.NewRecorder()
-	srv.handleWorktreeRemove(rr, req)
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("status = %d; want 404 (body: %q)", rr.Code, rr.Body.String())
 	}
 }
 
@@ -524,66 +498,55 @@ func worktreeInheritTestServer(t *testing.T, capture *[]platforms.SetPermissionR
 }
 
 func TestHandleWorktreeCreateAndLaunch_InheritsParentPermissions(t *testing.T) {
-	var captured []platforms.SetPermissionRulesRequest
-	srv, repo := worktreeInheritTestServer(t, &captured)
+	for _, tc := range []struct {
+		name       string
+		inheritOff bool
+		parent     string
+		want       int
+	}{
+		{name: "inherits approved rules", parent: "parent-wt", want: 1},
+		{name: "no parent", parent: ""},
+		{name: "setting off", inheritOff: true, parent: "parent-wt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var captured []platforms.SetPermissionRulesRequest
+			srv, repo := worktreeInheritTestServer(t, &captured)
+			if tc.inheritOff {
+				if err := srv.stateDB.SetWorktreeInheritPermissions(t.Context(), false); err != nil {
+					t.Fatalf("SetWorktreeInheritPermissions: %v", err)
+				}
+			}
+			if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "parent-wt", state.ApprovedPermission{
+				PermissionID: "perm-1", PermissionText: "bash", Patterns: []string{"git *"}, ApprovedAt: 1000,
+			}); err != nil {
+				t.Fatalf("RecordApprovedPermission: %v", err)
+			}
 
-	if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "parent-wt", state.ApprovedPermission{
-		PermissionID:   "perm-1",
-		PermissionText: "bash",
-		Patterns:       []string{"git *"},
-		ApprovedAt:     1000,
-	}); err != nil {
-		t.Fatalf("RecordApprovedPermission: %v", err)
-	}
-
-	body := `{"projectDir":"` + repo + `","branch":"feature/inh","newBranch":true,"baseRef":"main","parentSessionId":"parent-wt"}`
-	rr := httptest.NewRecorder()
-	srv.handleWorktreeCreateAndLaunch(rr, httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(body)))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d; body = %q", rr.Code, rr.Body.String())
-	}
-
-	var resp struct {
-		PermissionsInherited      bool   `json:"permissionsInherited"`
-		PermissionsInheritedCount int    `json:"permissionsInheritedCount"`
-		PermissionsInheritError   string `json:"permissionsInheritError"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !resp.PermissionsInherited || resp.PermissionsInheritedCount != 1 || resp.PermissionsInheritError != "" {
-		t.Fatalf("result = %+v, want inherited/1/no-error", resp)
-	}
-	if len(captured) != 1 {
-		t.Fatalf("SetPermissionRules calls = %d, want 1", len(captured))
-	}
-	if captured[0].SessionID != "ses_wt_inh" || len(captured[0].Rules) != 1 ||
-		captured[0].Rules[0].Permission != "bash" || captured[0].Rules[0].Pattern != "git *" {
-		t.Fatalf("unexpected applied rules: %+v", captured[0])
-	}
-}
-
-func TestHandleWorktreeCreateAndLaunch_NoParentNoInherit(t *testing.T) {
-	var captured []platforms.SetPermissionRulesRequest
-	srv, repo := worktreeInheritTestServer(t, &captured)
-
-	body := `{"projectDir":"` + repo + `","branch":"feature/noparent","newBranch":true,"baseRef":"main"}`
-	rr := httptest.NewRecorder()
-	srv.handleWorktreeCreateAndLaunch(rr, httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(body)))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d; body = %q", rr.Code, rr.Body.String())
-	}
-	var resp struct {
-		PermissionsInherited bool `json:"permissionsInherited"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if resp.PermissionsInherited {
-		t.Errorf("permissionsInherited = true with no parentSessionId, want false")
-	}
-	if len(captured) != 0 {
-		t.Errorf("SetPermissionRules calls = %d, want 0", len(captured))
+			body := `{"projectDir":"` + repo + `","branch":"feature/inh","newBranch":true,"baseRef":"main","parentSessionId":"` + tc.parent + `"}`
+			rr := httptest.NewRecorder()
+			srv.handleWorktreeCreateAndLaunch(rr, httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(body)))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d; body = %q", rr.Code, rr.Body.String())
+			}
+			var resp struct {
+				PermissionsInherited      bool   `json:"permissionsInherited"`
+				PermissionsInheritedCount int    `json:"permissionsInheritedCount"`
+				PermissionsInheritError   string `json:"permissionsInheritError"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if resp.PermissionsInherited != (tc.want == 1) || resp.PermissionsInheritedCount != tc.want || resp.PermissionsInheritError != "" {
+				t.Fatalf("result = %+v, want %d inherited and no error", resp, tc.want)
+			}
+			if len(captured) != tc.want {
+				t.Fatalf("SetPermissionRules calls = %d, want %d", len(captured), tc.want)
+			}
+			if tc.want == 1 && (captured[0].SessionID != "ses_wt_inh" || len(captured[0].Rules) != 1 ||
+				captured[0].Rules[0].Permission != "bash" || captured[0].Rules[0].Pattern != "git *") {
+				t.Fatalf("unexpected applied rules: %+v", captured[0])
+			}
+		})
 	}
 }
 
@@ -637,29 +600,5 @@ func TestHandleCreateSession_InheritsParentPermissions(t *testing.T) {
 				t.Fatalf("unexpected applied rules: %+v", captured[0])
 			}
 		})
-	}
-}
-
-func TestHandleWorktreeCreateAndLaunch_InheritDisabled(t *testing.T) {
-	var captured []platforms.SetPermissionRulesRequest
-	srv, repo := worktreeInheritTestServer(t, &captured)
-
-	if err := srv.stateDB.SetWorktreeInheritPermissions(t.Context(), false); err != nil {
-		t.Fatalf("SetWorktreeInheritPermissions: %v", err)
-	}
-	if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "parent-wt", state.ApprovedPermission{
-		PermissionID: "perm-1", PermissionText: "bash", Patterns: []string{"git *"}, ApprovedAt: 1000,
-	}); err != nil {
-		t.Fatalf("RecordApprovedPermission: %v", err)
-	}
-
-	body := `{"projectDir":"` + repo + `","branch":"feature/off","newBranch":true,"baseRef":"main","parentSessionId":"parent-wt"}`
-	rr := httptest.NewRecorder()
-	srv.handleWorktreeCreateAndLaunch(rr, httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(body)))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d; body = %q", rr.Code, rr.Body.String())
-	}
-	if len(captured) != 0 {
-		t.Errorf("SetPermissionRules calls = %d, want 0 when setting off", len(captured))
 	}
 }

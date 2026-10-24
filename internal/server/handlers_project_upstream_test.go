@@ -92,21 +92,11 @@ func TestHandleProjectUpstreams_DetectsGitHubRemote(t *testing.T) {
 func TestHandleProjectUpstreams_UsesExplicitRemoteOwnerForRemoteOnlyPath(t *testing.T) {
 	srv := testServer(t)
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/remote/only/repo")}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	rr := httptest.NewRecorder()
 	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=rem1", nil))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"repo":"alice/myproj"`) {
-		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleProjectUpstreams_RejectsUnknownExplicitOwner(t *testing.T) {
-	srv := testServer(t)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=gone", nil))
-	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }
@@ -118,8 +108,7 @@ func TestProjectUpstreams_ClassifiesForgejoWithHubConfiguration(t *testing.T) {
 		RepoRoot: "/remote/repo",
 		Remotes:  []forge.Remote{{Name: "origin", Host: "code.example.com", Repo: "owner/repo"}},
 	}}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	rr := httptest.NewRecorder()
 	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/repo&remoteId=rem1", nil))
@@ -158,8 +147,7 @@ func TestHostFetchPRHeadDoesNotDependOnOwnerForgeCredentials(t *testing.T) {
 func TestHandleProjectUpstreams_RemoteNotARepoReturns404(t *testing.T) {
 	srv := testServer(t)
 	host := &projectHandleRemoteHost{upstreamErr: git.ErrNotARepo}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 	rr := httptest.NewRecorder()
 	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/nope&remoteId=rem1", nil))
 	if rr.Code != http.StatusNotFound {
@@ -170,8 +158,7 @@ func TestHandleProjectUpstreams_RemoteNotARepoReturns404(t *testing.T) {
 func TestHandleProjectUpstreams_RejectsInvalidOwnerResult(t *testing.T) {
 	srv := testServer(t)
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("relative")}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 	rr := httptest.NewRecorder()
 	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/repo&remoteId=rem1", nil))
 	if rr.Code != http.StatusBadGateway {
@@ -179,20 +166,11 @@ func TestHandleProjectUpstreams_RejectsInvalidOwnerResult(t *testing.T) {
 	}
 }
 
-func TestHandleProjectUpstreams_RejectsNonAbsoluteDir(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=relative/path", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", rr.Code)
-	}
-}
-
 func TestProjectUpstreamEndpointsRequireExplicitOwnerAndAbsoluteDir(t *testing.T) {
 	srv := testServer(t)
 	tests := []string{
 		"/api/project/upstreams?dir=/repo",
+		"/api/project/upstreams?dir=relative/path",
 		"/api/project/prs?dir=/repo&remote=origin",
 		"/api/project/issues?dir=/repo&remote=origin",
 		"/api/project/forge-user?dir=/repo&remote=origin",
@@ -207,18 +185,7 @@ func TestProjectUpstreamEndpointsRequireExplicitOwnerAndAbsoluteDir(t *testing.T
 		t.Run(target, func(t *testing.T) {
 			rr := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, target, nil)
-			switch req.URL.Path {
-			case "/api/project/upstreams":
-				serveProjectForge(srv, rr, req)
-			case "/api/project/prs":
-				serveProjectForge(srv, rr, req)
-			case "/api/project/issues":
-				serveProjectForge(srv, rr, req)
-			case "/api/project/forge-user":
-				serveProjectForge(srv, rr, req)
-			case "/api/project/pr-checks":
-				serveProjectForge(srv, rr, req)
-			}
+			serveProjectForge(srv, rr, req)
 			if rr.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 			}
@@ -326,156 +293,6 @@ func fakeGitHubServer(t *testing.T) (*httptest.Server, *github.Client) {
 	return srv, client
 }
 
-func TestHandleProjectPRs_ReturnsList(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	gh, ghc := fakeGitHubServer(t)
-	defer gh.Close()
-	srv.integrations.GitHub = ghc
-
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&state=open", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
-	}
-	var resp struct {
-		PRs []forge.PR `json:"prs"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
-	}
-	if len(resp.PRs) != 1 || resp.PRs[0].Number != 42 {
-		t.Errorf("unexpected prs: %+v", resp.PRs)
-	}
-}
-
-func TestHandleProjectPRs_MineFiltersToAssigneeOrReviewer(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	gh, ghc := fakeGitHubServer(t)
-	defer gh.Close()
-	srv.integrations.GitHub = ghc
-
-	// "alice" is the author + assignee → matches.
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&mine=alice", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d", rr.Code)
-	}
-	var resp struct {
-		PRs []forge.PR `json:"prs"`
-	}
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	if len(resp.PRs) != 1 {
-		t.Errorf("alice should match (author/assignee), got %d", len(resp.PRs))
-	}
-
-	// "bob" is a requested reviewer → also matches.
-	req = httptest.NewRequest(http.MethodGet,
-		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&mine=bob", nil)
-	rr = httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	if len(resp.PRs) != 1 {
-		t.Errorf("bob should match (reviewer), got %d", len(resp.PRs))
-	}
-
-	// "stranger" matches nothing.
-	req = httptest.NewRequest(http.MethodGet,
-		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&mine=stranger", nil)
-	rr = httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	if len(resp.PRs) != 0 {
-		t.Errorf("stranger should match nothing, got %d", len(resp.PRs))
-	}
-}
-
-func TestHandleProjectIssues_ReturnsList(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	gh, ghc := fakeGitHubServer(t)
-	defer gh.Close()
-	srv.integrations.GitHub = ghc
-
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/issues?dir="+dir+"&remoteId=local&remote=origin", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
-	}
-	var resp struct {
-		Issues []forge.Issue `json:"issues"`
-	}
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	if len(resp.Issues) != 1 || resp.Issues[0].Number != 7 {
-		t.Errorf("unexpected issues: %+v", resp.Issues)
-	}
-}
-
-func TestHandleProjectIssues_MineFiltersAssignees(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	gh, ghc := fakeGitHubServer(t)
-	defer gh.Close()
-	srv.integrations.GitHub = ghc
-
-	for login, want := range map[string]int{"alice": 1, "stranger": 0} {
-		rr := httptest.NewRecorder()
-		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet,
-			"/api/project/issues?dir="+dir+"&remoteId=local&remote=origin&mine="+login, nil))
-		var resp struct {
-			Issues []forge.Issue `json:"issues"`
-		}
-		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil || len(resp.Issues) != want {
-			t.Fatalf("login %s: status = %d, issues = %d, err = %v", login, rr.Code, len(resp.Issues), err)
-		}
-	}
-}
-
-func TestProjectForgeMetadataErrorsAreMapped(t *testing.T) {
-	dir := initGitHubRepo(t)
-	tests := []struct {
-		name   string
-		path   string
-		status int
-	}{
-		{"prs", "/api/project/prs?dir=" + dir + "&remoteId=local&remote=origin", http.StatusBadGateway},
-		{"issues", "/api/project/issues?dir=" + dir + "&remoteId=local&remote=origin", http.StatusBadGateway},
-		{"forge user", "/api/project/forge-user?dir=" + dir + "&remoteId=local&remote=origin", http.StatusBadGateway},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := testServer(t)
-			gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				http.Error(w, "upstream failed", http.StatusInternalServerError)
-			}))
-			defer gh.Close()
-			srv.integrations.GitHub = github.NewWithCredentials(gh.URL, "test-token", gh.Client())
-			rr := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
-			switch tt.name {
-			case "prs":
-				serveProjectForge(srv, rr, req)
-			case "issues":
-				serveProjectForge(srv, rr, req)
-			default:
-				serveProjectForge(srv, rr, req)
-			}
-			if rr.Code != tt.status {
-				t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
-			}
-		})
-	}
-}
-
 func TestProjectForgeEndpointsRequireConfiguredClient(t *testing.T) {
 	srv := testServer(t)
 	srv.integrations.GitHub = nil
@@ -495,129 +312,6 @@ func TestProjectForgeEndpointsRequireConfiguredClient(t *testing.T) {
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("%s: status = %d, body = %s", tt.path, rr.Code, rr.Body.String())
 		}
-	}
-}
-
-func TestHandleProjectForgeUser_ReturnsLogin(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	gh, ghc := fakeGitHubServer(t)
-	defer gh.Close()
-	srv.integrations.GitHub = ghc
-
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/forge-user?dir="+dir+"&remoteId=local&remote=origin", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
-	}
-	var u forge.CurrentUser
-	_ = json.Unmarshal(rr.Body.Bytes(), &u)
-	if u.Login != "alice" || u.Host != "github.com" {
-		t.Errorf("got %+v", u)
-	}
-}
-
-func TestHandleProjectPRs_404ForUnknownRemote(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/prs?dir="+dir+"&remoteId=local&remote=nonexistent", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleProjectPRs_RejectsInvalidState(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/prs?dir="+dir+"&remoteId=local&remote=origin&state=invalid", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleProjectPRChecks_ReturnsRolledUpStatus(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	gh, ghc := fakeGitHubServer(t)
-	defer gh.Close()
-	srv.integrations.GitHub = ghc
-
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin&sha=abc123", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
-	}
-	var resp struct {
-		State  forge.CIState `json:"state"`
-		Checks []forge.Check `json:"checks"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v body=%s", err, rr.Body.String())
-	}
-	if resp.State != forge.CIStateSuccess {
-		t.Errorf("state: got %q want success", resp.State)
-	}
-	if len(resp.Checks) != 2 {
-		t.Errorf("expected 2 checks (status + check-run), got %d", len(resp.Checks))
-	}
-}
-
-func TestHandleProjectPRChecks_RequiresParams(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	// Missing sha.
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for missing sha, got %d", rr.Code)
-	}
-}
-
-func TestHandleProjectPRChecks_404ForUnknownRemote(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=nope&sha=abc123", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleProjectPRChecks_502WhenForgeErrors(t *testing.T) {
-	srv := testServer(t)
-	dir := initGitHubRepo(t)
-
-	// A forge whose checks endpoints return 500 so Checks() errors,
-	// which the handler must translate into a 502 upstream_status.
-	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer gh.Close()
-	srv.integrations.GitHub = github.NewWithCredentials(gh.URL, "test-token", gh.Client())
-
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/project/pr-checks?dir="+dir+"&remoteId=local&remote=origin&sha=abc123", nil)
-	rr := httptest.NewRecorder()
-	serveProjectForge(srv, rr, req)
-
-	if rr.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -660,4 +354,102 @@ func TestHandleProjectPRChecks_NormalisesNilChecksToEmptyArray(t *testing.T) {
 	if resp.Checks == nil {
 		t.Errorf("checks should be a non-nil empty slice")
 	}
+}
+
+// The read-only forge endpoints share one repo and fake GitHub server;
+// no subtest mutates server or forge state.
+func TestProjectForgeReadEndpoints(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	gh, ghc := fakeGitHubServer(t)
+	defer gh.Close()
+	srv.integrations.GitHub = ghc
+	base := "?dir=" + dir + "&remoteId=local&remote="
+	get := func(t *testing.T, target string, want int, out any) {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodGet, target, nil))
+		if rr.Code != want {
+			t.Fatalf("%s: status = %d, want %d, body = %s", target, rr.Code, want, rr.Body.String())
+		}
+		if out != nil {
+			if err := json.Unmarshal(rr.Body.Bytes(), out); err != nil {
+				t.Fatalf("decode: %v body=%s", err, rr.Body.String())
+			}
+		}
+	}
+
+	t.Run("prs", func(t *testing.T) {
+		var resp struct {
+			PRs []forge.PR `json:"prs"`
+		}
+		get(t, "/api/project/prs"+base+"origin&state=open", http.StatusOK, &resp)
+		if len(resp.PRs) != 1 || resp.PRs[0].Number != 42 {
+			t.Errorf("unexpected prs: %+v", resp.PRs)
+		}
+	})
+	t.Run("prs mine matches author, assignee or reviewer", func(t *testing.T) {
+		for login, want := range map[string]int{"alice": 1, "bob": 1, "stranger": 0} {
+			var resp struct {
+				PRs []forge.PR `json:"prs"`
+			}
+			get(t, "/api/project/prs"+base+"origin&mine="+login, http.StatusOK, &resp)
+			if len(resp.PRs) != want {
+				t.Errorf("login %s: got %d prs, want %d", login, len(resp.PRs), want)
+			}
+		}
+	})
+	t.Run("issues", func(t *testing.T) {
+		var resp struct {
+			Issues []forge.Issue `json:"issues"`
+		}
+		get(t, "/api/project/issues"+base+"origin", http.StatusOK, &resp)
+		if len(resp.Issues) != 1 || resp.Issues[0].Number != 7 {
+			t.Errorf("unexpected issues: %+v", resp.Issues)
+		}
+	})
+	t.Run("issues mine filters assignees", func(t *testing.T) {
+		for login, want := range map[string]int{"alice": 1, "stranger": 0} {
+			var resp struct {
+				Issues []forge.Issue `json:"issues"`
+			}
+			get(t, "/api/project/issues"+base+"origin&mine="+login, http.StatusOK, &resp)
+			if len(resp.Issues) != want {
+				t.Errorf("login %s: got %d issues, want %d", login, len(resp.Issues), want)
+			}
+		}
+	})
+	t.Run("forge user", func(t *testing.T) {
+		var u forge.CurrentUser
+		get(t, "/api/project/forge-user"+base+"origin", http.StatusOK, &u)
+		if u.Login != "alice" || u.Host != "github.com" {
+			t.Errorf("got %+v", u)
+		}
+	})
+	t.Run("pr checks roll up", func(t *testing.T) {
+		var resp struct {
+			State  forge.CIState `json:"state"`
+			Checks []forge.Check `json:"checks"`
+		}
+		get(t, "/api/project/pr-checks"+base+"origin&sha=abc123", http.StatusOK, &resp)
+		if resp.State != forge.CIStateSuccess {
+			t.Errorf("state: got %q want success", resp.State)
+		}
+		if len(resp.Checks) != 2 {
+			t.Errorf("expected 2 checks (status + check-run), got %d", len(resp.Checks))
+		}
+	})
+	t.Run("rejections", func(t *testing.T) {
+		for _, tc := range []struct {
+			target string
+			want   int
+		}{
+			{"/api/project/prs" + base + "nonexistent", http.StatusNotFound},
+			{"/api/project/prs" + base + "origin&state=invalid", http.StatusBadRequest},
+			{"/api/project/pr-checks" + base + "origin", http.StatusBadRequest},
+			{"/api/project/pr-checks" + base + "nope&sha=abc123", http.StatusNotFound},
+		} {
+			get(t, tc.target, tc.want, nil)
+		}
+	})
 }

@@ -24,10 +24,7 @@ func permissionProfileHTTPServer(t *testing.T, fake *fakePlatform) (*Server, htt
 	srv.registry = registry
 	srv.sessions = sessionsvc.New(registry, sessionsvc.Hooks{})
 	srv.hostRouter = hostsvc.NewRouter(&routineTestHost{})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	return srv, mux
 }
 
@@ -153,10 +150,7 @@ func TestResolvedProfileReachesCreateConfigured(t *testing.T) {
 func TestPermissionProfileHTTPNormalAuth(t *testing.T) {
 	srv, _ := permissionProfileHTTPServer(t, &fakePlatform{id: "opencode"})
 	srv.auth = newTestAuth(t, "hunter2")
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	cookies := httptest.NewRecorder()
 	srv.auth.issueCookie(cookies, httptest.NewRequest(http.MethodGet, "/", nil))
 	cookie := cookies.Result().Cookies()[0]

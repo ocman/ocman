@@ -58,20 +58,6 @@ func (h *projectHandleRemoteHost) ProjectUpstreams(context.Context, string) (*ho
 	return h.upstreams, h.upstreamErr
 }
 
-func TestHandleProjectHandleRequiresExplicitOwnerAndAbsoluteDir(t *testing.T) {
-	srv := testServer(t)
-	for _, body := range []string{
-		`{"dir":"/repo","remote":"origin","type":"issue","number":7,"mode":"session"}`,
-		`{"dir":"relative","remote":"origin","remoteId":"local","type":"issue","number":7,"mode":"session"}`,
-	} {
-		rr := httptest.NewRecorder()
-		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
-		if rr.Code != http.StatusBadRequest {
-			t.Fatalf("body = %s: status = %d, response = %s", body, rr.Code, rr.Body.String())
-		}
-	}
-}
-
 func TestProjectRoutes_ListAndLaunchThroughPublicMux(t *testing.T) {
 	srv := testServer(t)
 	dir := initGitHubRepo(t)
@@ -156,8 +142,7 @@ func TestHandleProjectHandle_WorktreePRFetchesMetadataOnce(t *testing.T) {
 	srv.integrations.GitHub = newGitHubTestClient(gh)
 	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode", sendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir), worktree: &hostsvc.WorktreeSessionResult{SessionID: "child", WorktreePath: "/remote/wt", Branch: "patch"}}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
@@ -269,8 +254,7 @@ func TestHandleProjectHandle_SessionModeUsesOwningRemotePlatform(t *testing.T) {
 		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir)}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"issue","number":7,"mode":"session"}`
 	rr := httptest.NewRecorder()
@@ -387,8 +371,7 @@ func TestHandleProjectHandle_ReportsLaunchErrors(t *testing.T) {
 				upstreams:   githubProjectUpstreams(dir),
 				worktreeErr: errors.New("worktree failed"),
 			}
-			srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-			srv.hostRouter.RegisterRemote("rem1", host)
+			withRemoteOwner(srv, host)
 			srv.registry.Register(&fakePlatform{
 				id: "r-rem1:opencode",
 				createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
@@ -416,8 +399,7 @@ func TestHandleProjectHandle_RejectsInvalidWorktreeResult(t *testing.T) {
 	defer gh.Close()
 	srv.integrations.GitHub = ghc
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir)}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode"})
 	body := `{"dir":"/remote/repo","remoteId":"rem1","remote":"origin","type":"issue","number":7,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
@@ -434,8 +416,7 @@ func TestHandleProjectHandle_RequiresRegisteredPlatform(t *testing.T) {
 	defer gh.Close()
 	srv.integrations.GitHub = ghc
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir)}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 	body := `{"dir":"/remote/repo","remoteId":"rem1","remote":"origin","type":"issue","number":7,"mode":"session"}`
 	rr := httptest.NewRecorder()
 	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
@@ -446,19 +427,10 @@ func TestHandleProjectHandle_RequiresRegisteredPlatform(t *testing.T) {
 
 func TestHandleProjectHandle_RejectsUnavailableDependencies(t *testing.T) {
 	body := `{"dir":"/remote/repo","remoteId":"rem1","remote":"origin","type":"issue","number":7,"mode":"session"}`
-	t.Run("owner", func(t *testing.T) {
-		srv := testServer(t)
-		rr := httptest.NewRecorder()
-		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
-		if rr.Code != http.StatusServiceUnavailable {
-			t.Fatalf("status = %d", rr.Code)
-		}
-	})
 	t.Run("upstreams", func(t *testing.T) {
 		srv := testServer(t)
 		host := &projectHandleRemoteHost{upstreamErr: errors.New("inspection failed")}
-		srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-		srv.hostRouter.RegisterRemote("rem1", host)
+		withRemoteOwner(srv, host)
 		rr := httptest.NewRecorder()
 		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 		if rr.Code != http.StatusBadGateway {
@@ -469,8 +441,7 @@ func TestHandleProjectHandle_RejectsUnavailableDependencies(t *testing.T) {
 		srv := testServer(t)
 		srv.integrations.GitHub = nil
 		host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/remote/repo")}
-		srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-		srv.hostRouter.RegisterRemote("rem1", host)
+		withRemoteOwner(srv, host)
 		rr := httptest.NewRecorder()
 		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 		if rr.Code != http.StatusUnauthorized {
@@ -483,8 +454,7 @@ func TestHandleProjectHandle_RejectsUnavailableDependencies(t *testing.T) {
 		defer gh.Close()
 		srv.integrations.GitHub = ghc
 		host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/remote/repo")}
-		srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-		srv.hostRouter.RegisterRemote("rem1", host)
+		withRemoteOwner(srv, host)
 		srv.registry = nil
 		rr := httptest.NewRecorder()
 		serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
@@ -507,8 +477,7 @@ func TestHandleProjectHandle_CrossForkFetchRunsOnOwner(t *testing.T) {
 		upstreams: githubProjectUpstreams(dir),
 		worktree:  &hostsvc.WorktreeSessionResult{SessionID: "child", WorktreePath: "/remote/wt", Branch: "ocman/pr-42"},
 	}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree","fetchHead":true}`
 	rr := httptest.NewRecorder()
@@ -534,8 +503,7 @@ func TestHandleProjectHandle_CrossForkFetchFailureIsSanitized(t *testing.T) {
 	srv.integrations.GitHub = newGitHubTestClient(gh)
 	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode"})
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir), fetchErr: errors.New("credential-secret")}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree","fetchHead":true}`
 	rr := httptest.NewRecorder()
@@ -543,6 +511,13 @@ func TestHandleProjectHandle_CrossForkFetchFailureIsSanitized(t *testing.T) {
 	if rr.Code != http.StatusBadGateway || strings.Contains(rr.Body.String(), "credential-secret") {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
+}
+
+// withRemoteOwner routes the "rem1" owner to host behind a hub that must
+// never be used.
+func withRemoteOwner(srv *Server, host hostsvc.Host) {
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
 }
 
 func githubProjectUpstreams(root string) *hostsvc.ProjectUpstreams {
@@ -564,8 +539,7 @@ func TestHandleProjectHandle_WorktreeModeUsesOwningRemotePlatform(t *testing.T) 
 	host := &projectHandleRemoteHost{worktree: &hostsvc.WorktreeSessionResult{
 		SessionID: "remote-worktree-session", WorktreePath: "/remote/worktree", Branch: "issue/7-bug-report",
 	}, upstreams: githubProjectUpstreams(dir)}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"issue","number":7,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
@@ -600,6 +574,8 @@ func TestHandleProjectHandle_RejectsInvalidBody(t *testing.T) {
 		"bad-mode":       `{"dir":"/x","remote":"o","type":"pr","number":1,"mode":"weird"}`,
 		"bad-action":     `{"dir":"/x","remote":"o","type":"pr","number":1,"mode":"session","action":"weird"}`,
 		"review-issue":   `{"dir":"/x","remote":"o","type":"issue","number":1,"mode":"session","action":"review"}`,
+		"missing-owner":  `{"dir":"/repo","remote":"origin","type":"issue","number":7,"mode":"session"}`,
+		"relative-dir":   `{"dir":"relative","remote":"origin","remoteId":"local","type":"issue","number":7,"mode":"session"}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

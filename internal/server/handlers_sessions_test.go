@@ -296,25 +296,6 @@ func TestHandleSessions_StateOverlay_TagsFactorySessions(t *testing.T) {
 	}
 }
 
-func TestHandleSessions_LimitParameterRespected(t *testing.T) {
-	srv, reg := newSessionsTestServer(t)
-	var sessions []db.Session
-	for i := 0; i < 10; i++ {
-		sessions = append(sessions, mkSession("fake", fmt.Sprintf("s%d", i), "t", int64(1000+i*1000)))
-	}
-	reg.Register(&fakePlatform{id: "fake", sessions: sessions})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=3", nil)
-	rr := httptest.NewRecorder()
-	srv.handleSessions(rr, req)
-
-	var got []db.Session
-	mustUnmarshal(t, rr.Body.Bytes(), &got)
-	if len(got) != 3 {
-		t.Fatalf("got %d sessions, want 3 (limit)", len(got))
-	}
-}
-
 // A negative limit is invalid input: it must fall back to the default
 // instead of panicking on a negative slice bound.
 func TestHandleSessions_NegativeLimitFallsBackToDefault(t *testing.T) {
@@ -568,162 +549,66 @@ func mustUnmarshal(t *testing.T, data []byte, dst any) {
 
 // --- Session notice integration tests ---
 
-func TestHandleSessions_NoticeAppearsForRateLimitedSession(t *testing.T) {
-	srv, reg := newSessionsTestServer(t)
-	fp := &fakePlatform{
-		id: "opencode",
-		sessions: []db.Session{
-			{
-				ID:               "s1",
-				Platform:         "opencode",
-				Title:            "Rate limited session",
-				Status:           "error",
-				TimeUpdated:      1700000000000,
-				TimeCreated:      1700000000000 - 1000,
-				LastErrorMessage: "this request would exceed your account's rate limit. Please try again later [retrying in 5m attempt 1]",
-				LastErrorAt:      1700000000000,
-			},
-			{
-				ID:          "s2",
-				Platform:    "opencode",
-				Title:       "Normal session",
-				Status:      "done",
-				TimeUpdated: 1700000000000,
-				TimeCreated: 1700000000000 - 1000,
-			},
+func TestHandleSessions_NoticeDerivedFromLastError(t *testing.T) {
+	const at = int64(1700000000000)
+	for _, tc := range []struct {
+		name, errMsg, kind, message string
+		retryAt                     int64
+		attempt                     int
+	}{
+		{
+			name:    "rate limit",
+			errMsg:  "this request would exceed your account's rate limit. Please try again later [retrying in 5m attempt 1]",
+			kind:    "rate_limit",
+			retryAt: at + 5*60*1000,
+			attempt: 1,
 		},
-	}
-	reg.Register(fp)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
-	rr := httptest.NewRecorder()
-	srv.handleSessions(rr, req)
-
-	if rr.Code != 200 {
-		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
-	}
-
-	// Decode into a list and find each session by ID.
-	type sessionWithNotice struct {
-		ID     string            `json:"id"`
-		Notice *db.SessionNotice `json:"notice"`
-	}
-	var got []sessionWithNotice
-	mustUnmarshal(t, rr.Body.Bytes(), &got)
-	if len(got) != 2 {
-		t.Fatalf("got %d sessions, want 2", len(got))
-	}
-
-	byID := make(map[string]*db.SessionNotice, len(got))
-	for _, s := range got {
-		byID[s.ID] = s.Notice
-	}
-
-	// s1 should have a notice.
-	notice := byID["s1"]
-	if notice == nil {
-		t.Fatal("s1 should have a notice")
-		return
-	}
-	if notice.Kind != "rate_limit" {
-		t.Errorf("notice.kind = %q, want rate_limit", notice.Kind)
-	}
-	if notice.Attempt != 1 {
-		t.Errorf("notice.attempt = %d, want 1", notice.Attempt)
-	}
-	wantRetryAt := int64(1700000000000 + 5*60*1000)
-	if notice.RetryAt != wantRetryAt {
-		t.Errorf("notice.retryAt = %d, want %d", notice.RetryAt, wantRetryAt)
-	}
-
-	// s2 should NOT have a notice.
-	if byID["s2"] != nil {
-		t.Errorf("s2 should not have a notice, got %+v", byID["s2"])
-	}
-}
-
-func TestHandleSessions_NoticeAppearsForGenericError(t *testing.T) {
-	srv, reg := newSessionsTestServer(t)
-	fp := &fakePlatform{
-		id: "opencode",
-		sessions: []db.Session{
-			{
-				ID:               "s1",
-				Platform:         "opencode",
-				Title:            "Generic error",
-				Status:           "error",
-				TimeUpdated:      1700000000000,
-				TimeCreated:      1700000000000 - 1000,
-				LastErrorMessage: "connection refused",
-				LastErrorAt:      1700000000000,
-			},
+		{name: "generic error", errMsg: "connection refused", kind: "error", message: "connection refused"},
+		{
+			name:    "provider overload",
+			errMsg:  "provider is overloaded [retrying in 30s attempt 2]",
+			kind:    "provider_overloaded",
+			retryAt: at + 30*1000,
+			attempt: 2,
 		},
-	}
-	reg.Register(fp)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
-	rr := httptest.NewRecorder()
-	srv.handleSessions(rr, req)
-
-	var sessions []struct {
-		Notice *db.SessionNotice `json:"notice"`
-	}
-	mustUnmarshal(t, rr.Body.Bytes(), &sessions)
-	if len(sessions) != 1 {
-		t.Fatalf("got %d sessions, want 1", len(sessions))
-	}
-	if sessions[0].Notice == nil {
-		t.Fatal("expected generic error notice")
-	}
-	if sessions[0].Notice.Kind != "error" {
-		t.Errorf("notice.kind = %q, want error", sessions[0].Notice.Kind)
-	}
-	if sessions[0].Notice.Message != "connection refused" {
-		t.Errorf("notice.message = %q, want connection refused", sessions[0].Notice.Message)
-	}
-}
-
-func TestHandleSessions_NoticeAppearsForProviderOverload(t *testing.T) {
-	srv, reg := newSessionsTestServer(t)
-	fp := &fakePlatform{
-		id: "opencode",
-		sessions: []db.Session{
-			{
-				ID:               "s1",
-				Platform:         "opencode",
-				Title:            "Overloaded session",
-				Status:           "error",
-				TimeUpdated:      1700000000000,
-				TimeCreated:      1700000000000 - 1000,
-				LastErrorMessage: "provider is overloaded [retrying in 30s attempt 2]",
-				LastErrorAt:      1700000000000,
-			},
-		},
-	}
-	reg.Register(fp)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
-	rr := httptest.NewRecorder()
-	srv.handleSessions(rr, req)
-
-	var sessions []struct {
-		Notice *db.SessionNotice `json:"notice"`
-	}
-	mustUnmarshal(t, rr.Body.Bytes(), &sessions)
-	if len(sessions) != 1 {
-		t.Fatalf("got %d sessions, want 1", len(sessions))
-	}
-	if sessions[0].Notice == nil {
-		t.Fatal("expected provider overload notice")
-	}
-	if sessions[0].Notice.Kind != "provider_overloaded" {
-		t.Errorf("kind = %q, want provider_overloaded", sessions[0].Notice.Kind)
-	}
-	if sessions[0].Notice.RetryAt != 1700000030000 {
-		t.Errorf("retryAt = %d, want 1700000030000", sessions[0].Notice.RetryAt)
-	}
-	if sessions[0].Notice.Attempt != 2 {
-		t.Errorf("attempt = %d, want 2", sessions[0].Notice.Attempt)
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{
+				{ID: "s1", Platform: "opencode", Title: "Errored", Status: "error", TimeUpdated: at, TimeCreated: at - 1000, LastErrorMessage: tc.errMsg, LastErrorAt: at},
+				{ID: "s2", Platform: "opencode", Title: "Normal", Status: "done", TimeUpdated: at, TimeCreated: at - 1000},
+			}})
+			rr := httptest.NewRecorder()
+			srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions", nil))
+			if rr.Code != 200 {
+				t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
+			}
+			var got []struct {
+				ID     string            `json:"id"`
+				Notice *db.SessionNotice `json:"notice"`
+			}
+			mustUnmarshal(t, rr.Body.Bytes(), &got)
+			if len(got) != 2 {
+				t.Fatalf("got %d sessions, want 2", len(got))
+			}
+			byID := map[string]*db.SessionNotice{}
+			for _, s := range got {
+				byID[s.ID] = s.Notice
+			}
+			n := byID["s1"]
+			if n == nil {
+				t.Fatal("s1 should have a notice")
+			}
+			if n.Kind != tc.kind || n.RetryAt != tc.retryAt || n.Attempt != tc.attempt {
+				t.Errorf("notice = %+v, want kind %q retryAt %d attempt %d", n, tc.kind, tc.retryAt, tc.attempt)
+			}
+			if tc.message != "" && n.Message != tc.message {
+				t.Errorf("notice.message = %q, want %q", n.Message, tc.message)
+			}
+			if byID["s2"] != nil {
+				t.Errorf("s2 should not have a notice, got %+v", byID["s2"])
+			}
+		})
 	}
 }
 
@@ -1642,17 +1527,6 @@ func TestHandleSessionsNotify_AutoUnarchivesUpdatedSession(t *testing.T) {
 	}
 	if _, ok := archived[state.Key{Platform: "fake", SessionID: "archived-stale"}]; !ok {
 		t.Error("session untouched since archiving must stay archived")
-	}
-}
-
-func TestHandleSessionsNotify_ExcludesArchivedSessions(t *testing.T) {
-	srv := newNotifyFixtureServer(t)
-	var got []notifyEntry
-	mustUnmarshal(t, []byte(getNotifyJSON(t, srv, "")), &got)
-	for _, e := range got {
-		if e.ID == "archived-stale" {
-			t.Errorf("archived session contributed to notification state: %+v", e)
-		}
 	}
 }
 

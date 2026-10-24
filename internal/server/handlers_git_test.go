@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,12 +44,35 @@ func TestHandleGitInfo_LiteralDirectory(t *testing.T) {
 	}
 }
 
-func TestHandleGitInfo_LiteralDirectoryRejectsRelative(t *testing.T) {
-	w := httptest.NewRecorder()
-	srv := &Server{}
-	srv.handleGitInfo(w, httptest.NewRequest(http.MethodGet, "/api/git/info?dir=relative,dir&remoteId=local", nil))
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status %d, want 400", w.Code)
+// Every git route rejects invalid input, and the diff of a non-repo is 404. Relative paths are rejected whether passed as the literal
+// `dir` or inside the comma-separated `dirs` list.
+func TestGitRoutesRejectInvalidInput(t *testing.T) {
+	srv := testServer(t)
+	notRepo := t.TempDir()
+	for _, tc := range []struct {
+		method, target, body string
+		want                 int
+	}{
+		{http.MethodGet, "/api/git/info", "", http.StatusBadRequest},
+		{http.MethodGet, "/api/git/info?dir=relative,dir&remoteId=local", "", http.StatusBadRequest},
+		{http.MethodGet, "/api/git/info?dirs=/abs/ok,relative/bad", "", http.StatusBadRequest},
+		{http.MethodGet, "/api/git/info?dirs=/remote/repo", "", http.StatusBadRequest},
+		{http.MethodGet, "/api/git/info?dirs=/remote/repo&remoteId=gone", "", http.StatusServiceUnavailable},
+		{http.MethodGet, "/api/git/diff", "", http.StatusBadRequest},
+		{http.MethodGet, "/api/git/diff?dir=relative/path", "", http.StatusBadRequest},
+		{http.MethodGet, "/api/git/diff?dir=" + notRepo, "", http.StatusNotFound},
+		{http.MethodGet, "/api/git/branches", "", http.StatusBadRequest},
+		{http.MethodGet, "/api/git/branches?dir=rel/path", "", http.StatusBadRequest},
+		{http.MethodPost, "/api/git/checkout", "{", http.StatusBadRequest},
+		{http.MethodPost, "/api/git/checkout", `{"dir":"/x"}`, http.StatusBadRequest},
+	} {
+		t.Run(tc.method+" "+tc.target+" "+tc.body, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			srv.serveGit(rr, httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body)))
+			if rr.Code != tc.want {
+				t.Fatalf("status = %d, want %d, body = %s", rr.Code, tc.want, rr.Body.String())
+			}
+		})
 	}
 }
 
@@ -87,37 +109,6 @@ func gitInitForServerTest(t *testing.T, dir string) {
 	run("commit", "-m", "init")
 }
 
-func TestHandleGitDiff_MissingDir(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/git/diff", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitDiff(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleGitDiff_RelativeDirRejected(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir=relative/path", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitDiff(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for relative dir, got %d", rr.Code)
-	}
-}
-
-func TestHandleGitDiff_NotARepo(t *testing.T) {
-	srv := testServer(t)
-	dir := t.TempDir()
-	req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir="+dir, nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitDiff(rr, req)
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for non-repo, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
 func TestHandleGitDiff_HappyPath(t *testing.T) {
 	srv := testServer(t)
 	dir := t.TempDir()
@@ -127,16 +118,7 @@ func TestHandleGitDiff_HappyPath(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir="+dir+"&fresh=1", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitDiff(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var got git.Diff
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatalf("invalid JSON: %v\nbody: %s", err, rr.Body.String())
-	}
+	got := getJSON[git.Diff](t, srv.handleGitDiff, "/api/git/diff?dir="+dir+"&fresh=1")
 	if got.Branch != "main" {
 		t.Errorf("Branch = %q, want main", got.Branch)
 	}
@@ -150,34 +132,6 @@ func TestHandleGitDiff_HappyPath(t *testing.T) {
 
 // --- /api/git/info ---
 
-// TestHandleGitInfo_MissingDirs is the well-formedness check: callers
-// must pass at least one `dirs` query parameter. Returning 400 here
-// lets the frontend surface a clear error rather than silently
-// receiving an empty map and pretending all is well.
-func TestHandleGitInfo_MissingDirs(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/git/info", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitInfo(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for missing dirs, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-// TestHandleGitInfo_RelativeDirsRejected mirrors handleGitDiff: every
-// path must be absolute so the server's CWD never enters into it.
-// Even one relative path in the comma-separated list rejects the
-// whole request — partial trust would be confusing.
-func TestHandleGitInfo_RelativeDirsRejected(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/abs/ok,relative/bad", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitInfo(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for relative dir, got %d", rr.Code)
-	}
-}
-
 // TestHandleGitInfo_HappyPath spins up two real git worktrees in
 // temp dirs and confirms the handler returns Info for each, keyed by
 // directory. We don't assert exact branch/dirty contents — those
@@ -190,16 +144,7 @@ func TestHandleGitInfo_HappyPath(t *testing.T) {
 	gitInitForServerTest(t, a)
 	gitInitForServerTest(t, b)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+a+","+b+"&remoteId=local", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitInfo(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var got map[string]git.Info
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatalf("invalid JSON: %v\nbody: %s", err, rr.Body.String())
-	}
+	got := getJSON[map[string]git.Info](t, srv.handleGitInfo, "/api/git/info?dirs="+a+","+b+"&remoteId=local")
 	if _, ok := got[a]; !ok {
 		t.Errorf("missing entry for %s in %v", a, got)
 	}
@@ -219,49 +164,21 @@ func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	srv := testServer(t)
 	dir := t.TempDir() // no git init
 
-	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+dir+"&remoteId=local", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitInfo(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var got map[string]git.Info
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	got := getJSON[map[string]git.Info](t, srv.handleGitInfo, "/api/git/info?dirs="+dir+"&remoteId=local")
 	if info, ok := got[dir]; ok && info.IsRepo() {
 		t.Errorf("non-repo dir reported as repo: %+v", info)
-	}
-}
-
-func TestHandleGitInfo_RequiresExplicitOwner(t *testing.T) {
-	srv := testServer(t)
-	rr := httptest.NewRecorder()
-	srv.handleGitInfo(rr, httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/remote/repo", nil))
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }
 
 func TestHandleGitInfo_UsesExplicitRemoteOwner(t *testing.T) {
 	srv := testServer(t)
 	host := &gitInfoOwner{}
-	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
-	srv.hostRouter.RegisterRemote("rem1", host)
+	withRemoteOwner(srv, host)
 
 	rr := httptest.NewRecorder()
 	srv.handleGitInfo(rr, httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/remote/repo&remoteId=rem1", nil))
 	if rr.Code != http.StatusOK || host.calls != 1 {
 		t.Fatalf("status = %d, owner calls = %d", rr.Code, host.calls)
-	}
-}
-
-func TestHandleGitInfo_RejectsUnknownExplicitOwner(t *testing.T) {
-	srv := testServer(t)
-	rr := httptest.NewRecorder()
-	srv.handleGitInfo(rr, httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/remote/repo&remoteId=gone", nil))
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -280,44 +197,15 @@ func gitRunForServerTest(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func TestHandleGitBranches_MissingDir(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/git/branches", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitBranches(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-func TestHandleGitBranches_RelativeRejected(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/git/branches?dir=rel/path", nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitBranches(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
 func TestHandleGitBranches_HappyPath(t *testing.T) {
 	srv := testServer(t)
 	dir := t.TempDir()
 	gitInitForServerTest(t, dir)
 	gitRunForServerTest(t, dir, "branch", "feature/x")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/git/branches?dir="+dir, nil)
-	rr := httptest.NewRecorder()
-	srv.handleGitBranches(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	var got struct {
+	got := getJSON[struct {
 		Branches []string `json:"branches"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	}](t, srv.handleGitBranches, "/api/git/branches?dir="+dir)
 	if len(got.Branches) != 2 {
 		t.Fatalf("branches = %v, want 2", got.Branches)
 	}
@@ -327,26 +215,6 @@ func TestHandleGitBranches_HappyPath(t *testing.T) {
 }
 
 // --- /api/git/checkout ---
-
-func TestHandleGitCheckout_BadBody(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/git/checkout", strings.NewReader("{"))
-	rr := httptest.NewRecorder()
-	srv.handleGitCheckout(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-func TestHandleGitCheckout_MissingFields(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/git/checkout", strings.NewReader(`{"dir":"/x"}`))
-	rr := httptest.NewRecorder()
-	srv.handleGitCheckout(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for missing branch, got %d", rr.Code)
-	}
-}
 
 func TestHandleGitCheckout_HappyPath(t *testing.T) {
 	srv := testServer(t)

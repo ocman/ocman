@@ -71,10 +71,7 @@ func TestMCPListenerDisabledWhenAddrEmpty(t *testing.T) {
 
 func TestMainMuxMCPListsInboxRoutineAndSessionTools(t *testing.T) {
 	srv := testServer(t)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 	req.RemoteAddr = "127.0.0.1:1"
 	req.Header.Set("Content-Type", "application/json")
@@ -88,10 +85,7 @@ func TestMainMuxMCPListsInboxRoutineAndSessionTools(t *testing.T) {
 
 func TestMainMuxMCPInboxSendAndRecall(t *testing.T) {
 	srv := testServer(t)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	call := func(arguments string) string {
 		t.Helper()
 		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"inbox","arguments":` + arguments + `}}`
@@ -236,10 +230,7 @@ func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"factory","arguments":{"action":"mutate_graph","mutation_json":"{\"epicId\":\"epic\",\"action\":\"edit\",\"issueId\":\"i\",\"title\":\"t\"}"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:1"
@@ -262,10 +253,7 @@ func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"factory","arguments":{"action":"create","goal":"Ship","initial_project":"/repo","acknowledge_local_execution":true}}}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:1"
@@ -285,10 +273,7 @@ func TestMainMuxMCPProposesExecutableIssueCreation(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"factory","arguments":{"action":"mutate_graph","mutation_json":"{\"epicId\":\"epic\",\"action\":\"create\",\"parentId\":\"epic.1\",\"kind\":\"task\",\"title\":\"Work\"}"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:1"

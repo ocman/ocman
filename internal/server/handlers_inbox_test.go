@@ -22,10 +22,7 @@ func TestInboxHTTPKeepsSuccessfulSourcesWhenRemoteListFails(t *testing.T) {
 		}
 		return []state.InboxItem{{ID: "local-item", Title: "local", Body: "body", CreatedAt: 1}}, nil
 	})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	if rec.Code != http.StatusOK {
@@ -51,10 +48,7 @@ func TestInboxHTTPProjectsPermissionOwner(t *testing.T) {
 		}
 		return []state.InboxItem{{ID: "request", Title: "Permission", Category: state.InboxPermissionCategory, Permission: permission}}, nil
 	})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
 	var response struct {
@@ -85,10 +79,7 @@ func TestInboxHTTPListAndMutations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 
 	list := httptest.NewRecorder()
 	mux.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
@@ -156,10 +147,7 @@ func TestInboxHTTPPinsItemsAboveNewerMessages(t *testing.T) {
 	useInboxRemotes(srv, []string{"local", "laptop"}, func(_ context.Context, source string) ([]state.InboxItem, error) {
 		return []state.InboxItem{{ID: "same-id", Title: source, Body: "body", CreatedAt: map[string]int64{"local": 2, "laptop": 1}[source]}}, nil
 	})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	pin := httptest.NewRecorder()
 	mux.ServeHTTP(pin, httptest.NewRequest(http.MethodPost, "/api/inbox/pin", bytes.NewBufferString(`{"remoteId":"laptop","id":"same-id","pinned":true}`)))
 	if pin.Code != http.StatusNoContent {
@@ -187,10 +175,7 @@ func TestInboxHTTPPinsItemsAboveNewerMessages(t *testing.T) {
 
 func TestInboxHTTPRejectsMalformedRequests(t *testing.T) {
 	srv := testServer(t)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	for _, tc := range []struct {
 		path string
 		body string
@@ -210,70 +195,48 @@ func TestInboxHTTPRejectsMalformedRequests(t *testing.T) {
 	}
 }
 
+// A mutation aimed at a disconnected owner fails closed and never touches
+// the hub's identically-keyed local items.
 func TestInboxHTTPUnavailableOwnerDoesNotFallbackLocally(t *testing.T) {
 	srv := testServer(t)
-	item, err := srv.stateDB.CreateSessionInboxItem(t.Context(), "keep", "body", state.InboxGeneral, nil)
+	unread, err := srv.stateDB.CreateSessionInboxItem(t.Context(), "keep", "body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux, err := srv.routes()
+	read, err := srv.stateDB.CreateSessionInboxItem(t.Context(), "keep read", "body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := httptest.NewRecorder()
-	body := bytes.NewBufferString(`{"remoteId":"gone","id":"` + item.ID + `"}`)
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/inbox/read", body))
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("unavailable owner status = %d, want 503", rec.Code)
+	if err := srv.stateDB.MarkInboxItemRead(t.Context(), read.ID); err != nil {
+		t.Fatal(err)
+	}
+	mux := mustRoutes(t, srv)
+	for path, body := range map[string]string{
+		"/api/inbox/read":   `{"remoteId":"gone","id":"` + unread.ID + `"}`,
+		"/api/inbox/unread": `{"remoteId":"gone","id":"` + read.ID + `"}`,
+		"/api/inbox/pin":    `{"remoteId":"gone","id":"item","pinned":true}`,
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body)))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s: unavailable owner status = %d, want 503", path, rec.Code)
+		}
 	}
 	items, err := srv.stateDB.ListInboxItems(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].ReadAt != 0 {
-		t.Fatalf("local item changed after unavailable owner: %+v", items)
+	if len(items) != 2 {
+		t.Fatalf("items = %+v, want both local items", items)
 	}
-}
-
-func TestInboxHTTPPinUnavailableOwnerDoesNotCreatePin(t *testing.T) {
-	srv := testServer(t)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/inbox/pin", bytes.NewBufferString(`{"remoteId":"gone","id":"item","pinned":true}`)))
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("unavailable owner status = %d, want 503", rec.Code)
+	for _, it := range items {
+		if (it.ID == unread.ID) != (it.ReadAt == 0) {
+			t.Fatalf("local item changed after unavailable owner: %+v", items)
+		}
 	}
 	pinned, err := srv.stateDB.PinnedInboxItems(t.Context())
 	if err != nil || len(pinned) != 0 {
 		t.Fatalf("pins = %+v, %v", pinned, err)
-	}
-}
-
-func TestInboxHTTPUnreadUnavailableOwnerDoesNotFallbackLocally(t *testing.T) {
-	srv := testServer(t)
-	item, err := srv.stateDB.CreateSessionInboxItem(t.Context(), "keep read", "body", state.InboxGeneral, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := srv.stateDB.MarkInboxItemRead(t.Context(), item.ID); err != nil {
-		t.Fatal(err)
-	}
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := httptest.NewRecorder()
-	body := bytes.NewBufferString(`{"remoteId":"gone","id":"` + item.ID + `"}`)
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/inbox/unread", body))
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("unavailable owner status = %d, want 503", rec.Code)
-	}
-	items, err := srv.stateDB.ListInboxItems(t.Context())
-	if err != nil || len(items) != 1 || items[0].ReadAt == 0 {
-		t.Fatalf("local item changed: %+v, %v", items, err)
 	}
 }
 

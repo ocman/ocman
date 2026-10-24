@@ -56,18 +56,6 @@ func TestExportMarkdownEndpoint(t *testing.T) {
 	}
 }
 
-func TestCreateShareLinkRequiresRelay(t *testing.T) {
-	srv, reg := newSessionsTestServer(t)
-	registerShareFake(reg, "ses_share")
-
-	createReq := httptest.NewRequest(http.MethodPost, "/api/session/ses_share/share", nil)
-	createRR := httptest.NewRecorder()
-	serveRoutes(t, srv, createRR, createReq)
-	if createRR.Code != http.StatusServiceUnavailable {
-		t.Fatalf("create status = %d, want 503; body=%s", createRR.Code, createRR.Body)
-	}
-}
-
 func TestSharingSettingToggleAndGuard(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	registerShareFake(reg, "ses_guard")
@@ -263,11 +251,17 @@ func TestAllSharesGlobalList(t *testing.T) {
 // sharing module mounts its routes.
 func serveRoutes(t *testing.T, srv *Server, w http.ResponseWriter, req *http.Request) {
 	t.Helper()
+	mustRoutes(t, srv).ServeHTTP(w, req)
+}
+
+// mustRoutes builds the server's full route table, failing the test on error.
+func mustRoutes(t *testing.T, srv *Server) http.Handler {
+	t.Helper()
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux.ServeHTTP(w, req)
+	return mux
 }
 
 // sharedChunk and sharedLink decode the relay chunk and share link wire

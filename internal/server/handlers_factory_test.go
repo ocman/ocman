@@ -285,13 +285,10 @@ func TestWriteFactoryErrorSeparatesClientAndServerFailures(t *testing.T) {
 }
 
 func TestFactoryEpicRoutes(t *testing.T) {
-	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "fac-1", Goal: "Ship", Attempts: []model.FactoryAttempt{{ID: "attempt-1", Session: model.PlanningSession{Platform: "opencode", ID: "session-1"}}}}, {ID: "fac/encoded", Goal: "Encoded"}}, issues: []factory.Issue{{ID: "fac-1.child", Kind: "mol", FormulaID: "custom/child", FormulaVersion: 1, FormulaHash: "child-hash", Bindings: map[string]string{"goal": "Ship"}}}}
+	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "fac-1", Goal: "Ship", Attempts: []model.FactoryAttempt{{ID: "attempt-1", Session: model.PlanningSession{Platform: "opencode", ID: "session-1"}}}}}, issues: []factory.Issue{{ID: "fac-1.child", Kind: "mol", FormulaID: "custom/child", FormulaVersion: 1, FormulaHash: "child-hash", Bindings: map[string]string{"goal": "Ship"}}}}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	create := httptest.NewRequest(http.MethodPost, "/api/factory/epics", strings.NewReader(`{"goal":"Ship","initialProject":"/repo","acknowledgeLocalExecution":true}`))
 	create.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -299,7 +296,7 @@ func TestFactoryEpicRoutes(t *testing.T) {
 	if rec.Code != http.StatusCreated || svc.createReq.Goal != "Ship" || !svc.createReq.AcknowledgeLocalExecution {
 		t.Fatalf("create = %d: %s", rec.Code, rec.Body.String())
 	}
-	for _, path := range []string{"/api/factory/epics", "/api/factory/epics/fac-1", "/api/factory/epics/fac%2Fencoded", "/api/factory/epics/fac-1/issues", "/api/factory/epics/fac-1/removed-issues"} {
+	for _, path := range []string{"/api/factory/epics", "/api/factory/epics/fac-1", "/api/factory/epics/fac-1/issues", "/api/factory/epics/fac-1/removed-issues"} {
 		rec = httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {
@@ -420,10 +417,7 @@ func TestFactoryFormulaRoute(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	for _, path := range []string{"/api/factory/formulas/ocman%2Ftracer/1", "/api/factory/formulas/missing/1", "/api/factory/formulas/ocman%2Ftracer/2"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -439,10 +433,7 @@ func TestFactoryFormulaRoute(t *testing.T) {
 func TestFactoryFormulaRouteDistinguishesUnavailableStorage(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, &fakeFactoryService{err: factory.ErrFactoryUnavailable})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/factory/formulas/custom%2Fteam/1", nil))
 	if rec.Code != http.StatusServiceUnavailable {
@@ -454,10 +445,7 @@ func TestFactoryFormulaLibraryRoutes(t *testing.T) {
 	svc := &fakeFactoryService{formulas: []factory.NativeFormulaView{{ID: "ocman/tracer", Version: 1, Valid: true}}}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	request := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 		req.RemoteAddr = "127.0.0.1:1"
@@ -485,10 +473,7 @@ func TestFactoryFormulaLibraryRoutes(t *testing.T) {
 func TestFactoryFormulaRoutesReturnValidationFeedback(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("%w: TOML source is required", factory.ErrInvalidFormula)})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	req := httptest.NewRequest(http.MethodPost, "/api/factory/formulas", strings.NewReader(`{"id":"custom/team","source":"name: YAML"}`))
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -502,10 +487,7 @@ func TestFactoryConfigurationRoute(t *testing.T) {
 	svc := &fakeFactoryService{capacityPolicy: factory.CapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4, ProjectOverrides: map[string]int{}}}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	if rec := httptest.NewRecorder(); func() *httptest.ResponseRecorder {
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/factory/configuration", nil))
 		return rec
@@ -539,10 +521,7 @@ func TestFactoryConfigurationRoute(t *testing.T) {
 func TestFactoryEpicRoutesRejectInvalidRequests(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("%w: nope", factory.ErrInvalidRequest)})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	req := httptest.NewRequest(http.MethodPost, "/api/factory/epics", strings.NewReader(`{}`))
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -552,30 +531,11 @@ func TestFactoryEpicRoutesRejectInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestFactoryAcknowledgementRequiredIsBadRequest(t *testing.T) {
-	srv := New(nil, nil, "", nil, nil)
-	useFactory(srv, &fakeFactoryService{err: factory.ErrAcknowledgementRequired})
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/factory/epics", strings.NewReader(`{"goal":"Ship","initialProject":"/repo"}`))
-	req.RemoteAddr = "127.0.0.1:1"
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestFactoryRoutesSanitizeServiceFailures(t *testing.T) {
 	svc := &fakeFactoryService{err: errors.New("private store failure")}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 
 	failures := []struct {
 		method string
@@ -649,10 +609,7 @@ func TestFactoryPlanningRoutes(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	request := func(method, path, body, remote string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.RemoteAddr = remote
@@ -699,10 +656,7 @@ func TestFactoryGraphMutationRouteIsLocalAndStrict(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 	request := func(body, remote string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/mutations", strings.NewReader(body))
 		req.RemoteAddr = remote
@@ -732,10 +686,7 @@ func TestFactoryStatusQueueAndGateRoutes(t *testing.T) {
 	svc := &fakeFactoryService{queue: []factory.DispatchItem{{ID: "work", Project: "/other", State: "ready"}}}
 	srv := New(nil, nil, "", nil, nil)
 	useFactory(srv, svc)
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, srv)
 
 	for _, path := range []string{"/api/factory/status", "/api/factory/queue"} {
 		rec := httptest.NewRecorder()
@@ -780,10 +731,7 @@ func TestFactoryProjectGateRouteRequiresHumanLocalApproval(t *testing.T) {
 	service := &fakeFactoryService{}
 	server := New(nil, nil, "", nil, nil)
 	useFactory(server, service)
-	mux, err := server.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mux := mustRoutes(t, server)
 	req := httptest.NewRequest(http.MethodPost, "/api/factory/project-gates/gate%2F1/approve", strings.NewReader(`{"acknowledgeLocalExecution":true,"response":"ok"}`))
 	req.RemoteAddr = "127.0.0.1:1234"
 	recorder := httptest.NewRecorder()

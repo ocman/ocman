@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -85,32 +84,23 @@ func TestHandleAutoArchiveSettings(t *testing.T) {
 	}
 }
 
-func TestHandleAutoArchiveSettingsRejectsInvalidTTL(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
-	for _, ttl := range []int{0, 3651} {
-		rec := httptest.NewRecorder()
-		serveSetting(srv.autoArchiveSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
-			"/api/settings/auto-archive", strings.NewReader(fmt.Sprintf(`{"enabled":true,"ttlDays":%d}`, ttl))))
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("ttlDays=%d status=%d, want 400", ttl, rec.Code)
-		}
-	}
-}
-
 func TestHandleAutoArchiveSettingsRejectsInvalidRequest(t *testing.T) {
 	srv := &Server{stateDB: openTestStateDB(t)}
-
-	rec := httptest.NewRecorder()
-	serveSetting(srv.autoArchiveSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
-		"/api/settings/auto-archive", strings.NewReader(`{bad`)))
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("invalid JSON status=%d, want 400", rec.Code)
-	}
-
-	rec = httptest.NewRecorder()
-	serveSetting(srv.autoArchiveSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/settings/auto-archive", nil))
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("DELETE status=%d, want 405", rec.Code)
+	for _, tc := range []struct {
+		method, body string
+		want         int
+	}{
+		{http.MethodPost, `{"enabled":true,"ttlDays":0}`, http.StatusBadRequest},
+		{http.MethodPost, `{"enabled":true,"ttlDays":3651}`, http.StatusBadRequest},
+		{http.MethodPost, `{bad`, http.StatusBadRequest},
+		{http.MethodDelete, "", http.StatusMethodNotAllowed},
+	} {
+		rec := httptest.NewRecorder()
+		serveSetting(srv.autoArchiveSetting()).ServeHTTP(rec, httptest.NewRequest(tc.method,
+			"/api/settings/auto-archive", strings.NewReader(tc.body)))
+		if rec.Code != tc.want {
+			t.Errorf("%s %s status=%d, want %d", tc.method, tc.body, rec.Code, tc.want)
+		}
 	}
 }
 
