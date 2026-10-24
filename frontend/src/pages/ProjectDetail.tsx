@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { SessionTable } from '../components/SessionTable';
 import { TimeRangeControl } from '../components/TimeRangeControl';
@@ -60,24 +60,19 @@ export function ProjectDetail() {
     ? sessions.filter((s) => fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`))
     : sessions;
 
-  const handleOpenVSCode = useCallback(() => {
-    if (!directory) return;
-    openVSCode(directory);
-  }, [directory]);
-
-  const handleOpenVSCodeRef = useRef(handleOpenVSCode);
-  useEffect(() => { handleOpenVSCodeRef.current = handleOpenVSCode; }, [handleOpenVSCode]);
   const directoryRef = useRef(directory);
   useEffect(() => { directoryRef.current = directory; }, [directory]);
 
-  const openVscodeShortcut = useMemo(() => ({
+  const openVscodeShortcut = {
     id: 'project.open-vscode',
     scope: 'project' as const,
     keys: { code: 'KeyV', alt: true },
     description: 'Open current project in VS Code',
     enabled: () => !!directoryRef.current,
-    handler: () => handleOpenVSCodeRef.current(),
-  }), []);
+    handler: () => {
+      if (directoryRef.current) openVSCode(directoryRef.current);
+    },
+  };
 
   useShortcut(openVscodeShortcut);
 

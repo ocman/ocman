@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { api } from '../../lib/api';
 import type { AgentInfo, SessionModelEntry } from '../../lib/api';
@@ -171,10 +171,10 @@ export function useSessionCapabilities({
     refreshModels(controller.signal);
   }, [id, platform, directory, live, sessionLoaded, refreshModels]);
 
-  const reloadCapabilities = useCallback(() => {
+  const reloadCapabilities = () => {
     setReloadNonce((n) => n + 1);
     refreshModels();
-  }, [refreshModels]);
+  };
 
   return {
     portAvailable,

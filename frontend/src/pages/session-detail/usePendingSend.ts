@@ -20,7 +20,7 @@
 // The hook does not call sendMessage itself; it just owns the slot.
 // The page wires it into useSessionActions / the Composer.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Message, Part } from '../../lib/api';
 
 export interface PendingSendImage {
@@ -115,7 +115,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     pendingIdRef.current = null;
   }, [sessionId]);
 
-  const begin = useCallback<UsePendingSendResult['begin']>((text, images, opts) => {
+  const begin: UsePendingSendResult['begin'] = (text, images, opts) => {
     // Snapshot the current user-message ids so the next time a
     // server-delivered message lands with a new id, observeMessages
     // can confidently clear pending. Reading `lastMessagesRef`
@@ -141,21 +141,21 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
       startedAt,
     });
     return id;
-  }, []);
+  };
 
-  const fail = useCallback((message: string, id?: string) => {
+  const fail = (message: string, id?: string) => {
     setPending((prev) => (prev && (id === undefined || prev.id === id) ? { ...prev, error: message } : prev));
-  }, []);
+  };
 
-  const clear = useCallback((id?: string) => {
+  const clear = (id?: string) => {
     if (id !== undefined && pendingIdRef.current !== id) return;
     pendingIdRef.current = null;
     setPending(null);
     baselineUserIdsRef.current = null;
     pendingStartedAtRef.current = null;
-  }, []);
+  };
 
-  const observeMessages = useCallback((messages: Message[], parts?: Part[]) => {
+  const observeMessages = (messages: Message[], parts?: Part[]) => {
     lastMessagesRef.current = messages;
     const baseline = baselineUserIdsRef.current;
     if (!baseline) return;
@@ -178,7 +178,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
       baselineUserIdsRef.current = null;
       pendingStartedAtRef.current = null;
     }
-  }, []);
+  };
 
   return { pending, begin, fail, clear, observeMessages };
 }

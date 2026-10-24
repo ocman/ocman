@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
 export type SessionModal = 'share' | 'rename' | 'fork' | 'jump' | 'move' | 'movePath';
 
@@ -11,7 +11,7 @@ export interface UseSessionModalResult {
 /** At most one session dialog is open at a time; this is that slot. */
 export function useSessionModal(): UseSessionModalResult {
   const [openModal, setOpenModal] = useState<SessionModal | null>(null);
-  const open = useCallback((modal: SessionModal) => setOpenModal(modal), []);
-  const close = useCallback(() => setOpenModal(null), []);
+  const open = (modal: SessionModal) => setOpenModal(modal);
+  const close = () => setOpenModal(null);
   return { openModal, open, close };
 }

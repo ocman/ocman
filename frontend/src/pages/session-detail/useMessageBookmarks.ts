@@ -3,7 +3,7 @@
 // handlers, and the cross-project grouping shown in the sidebar.
 // Scroll-to-bookmark state stays in SessionDetail because it must
 // exist before useSession runs (it feeds protectedMessageId).
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import type { Message, Part, Session } from '../../lib/api';
 import { onSessionBrowserStateAdopted } from '../../lib/sessionIdentityState';
 import {
@@ -35,13 +35,13 @@ export function useMessageBookmarks({
   parts: Part[];
   recentSessions: Session[];
 }) {
-  const currentMessageBookmarks = useMemo(() => buildMessageBookmarks(messages, parts, {
+  const currentMessageBookmarks = buildMessageBookmarks(messages, parts, {
     sessionId: session?.id ?? id,
     directory: session?.directory,
     sessionTitle: session?.title,
-  }), [messages, parts, session?.id, session?.directory, session?.title, id]);
+  });
 
-  const loadedMessageBookmarks = useMemo(() => loadMessageBookmarks(id), [id]);
+  const loadedMessageBookmarks = loadMessageBookmarks(id);
   const [messageBookmarkState, setMessageBookmarkState] = useState<MessageBookmarkState>(() => ({
     sessionId: id,
     bookmarks: loadedMessageBookmarks,
@@ -69,25 +69,22 @@ export function useMessageBookmarks({
   const messageBookmarks = activeMessageBookmarkState.bookmarks;
   const selectedMessageBookmarkKey = activeMessageBookmarkState.selectedKey;
 
-  const stateForActiveSession = useCallback((state: MessageBookmarkState): MessageBookmarkState => {
+  const stateForActiveSession = (state: MessageBookmarkState): MessageBookmarkState => {
     if (state.sessionId === id) return state;
     return {
       sessionId: id,
       bookmarks: loadedMessageBookmarks,
       selectedKey: loadedMessageBookmarks[0] ? messageBookmarkKey(loadedMessageBookmarks[0]) : null,
     };
-  }, [id, loadedMessageBookmarks]);
+  };
 
   useEffect(() => {
     saveMessageBookmarks(id, messageBookmarks);
   }, [id, messageBookmarks]);
 
-  const bookmarkedMessageIds = useMemo(
-    () => new Set(messageBookmarks.map((bookmark) => bookmark.id)),
-    [messageBookmarks],
-  );
+  const bookmarkedMessageIds = new Set(messageBookmarks.map((bookmark) => bookmark.id));
 
-  const handleToggleMessageBookmark = useCallback((messageId: string) => {
+  const handleToggleMessageBookmark = (messageId: string) => {
     setMessageBookmarkState((current) => {
       const state = stateForActiveSession(current);
       if (state.bookmarks.some((bookmark) => bookmark.id === messageId)) {
@@ -108,9 +105,9 @@ export function useMessageBookmarks({
         selectedKey: messageBookmarkKey(bookmark),
       };
     });
-  }, [currentMessageBookmarks, stateForActiveSession]);
+  };
 
-  const handleRemoveMessageBookmark = useCallback((bookmark: MessageBookmark) => {
+  const handleRemoveMessageBookmark = (bookmark: MessageBookmark) => {
     if (bookmark.sessionId !== id) {
       const key = messageBookmarkKey(bookmark);
       const bookmarks = loadMessageBookmarks(bookmark.sessionId)
@@ -132,19 +129,13 @@ export function useMessageBookmarks({
         selectedKey: state.selectedKey === key ? (bookmarks[0] ? messageBookmarkKey(bookmarks[0]) : null) : state.selectedKey,
       };
     });
-  }, [id, stateForActiveSession]);
+  };
 
-  const allMessageBookmarks = useMemo(
-    () => loadAllMessageBookmarks(id, messageBookmarks, messageBookmarkStorageTick),
-    [id, messageBookmarks, messageBookmarkStorageTick],
-  );
-  const messageBookmarkGroups = useMemo(
-    () => groupMessageBookmarks(
-      allMessageBookmarks,
-      session?.directory,
-      [session, ...recentSessions].filter((s): s is Session => !!s),
-    ),
-    [allMessageBookmarks, session, recentSessions],
+  const allMessageBookmarks = loadAllMessageBookmarks(id, messageBookmarks, messageBookmarkStorageTick);
+  const messageBookmarkGroups = groupMessageBookmarks(
+    allMessageBookmarks,
+    session?.directory,
+    [session, ...recentSessions].filter((s): s is Session => !!s),
   );
 
   return {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Session, SessionStatus } from '../../lib/api';
 import { api } from '../../lib/api';
 import { useUiStore } from '../../lib/uiStore';
@@ -46,7 +46,7 @@ export function useSidebarProjectGroups({
   // unarchived project, even ones with no session in the recent window.
   const projectsQuery = useProjects({ enabled });
   const allProjects = projectsQuery.data;
-  const identity = useMemo(() => projectIdentityIndex(allProjects ?? []), [allProjects]);
+  const identity = projectIdentityIndex(allProjects ?? []);
   const expanded = useRef('');
   useEffect(() => {
     const current = recentSessions.find(s => s.id === id);
@@ -145,36 +145,30 @@ export function useSidebarProjectGroups({
   // Persist a new drag-and-drop order of the (non-pinned) project
   // groups. The synthetic "__pinned__" group is excluded — it always
   // stays at the top regardless of the saved order.
-  const handleReorderProjects = useCallback(
-    (orderedDirectories: string[]) => {
-      setProjectOrder(orderedDirectories.filter((d) => d && d !== '__pinned__'));
-    },
-    [setProjectOrder],
-  );
+  const handleReorderProjects = (orderedDirectories: string[]) => {
+    setProjectOrder(orderedDirectories.filter((d) => d && d !== '__pinned__'));
+  };
 
   // Archive a project from the sidebar: hide its group immediately, then
   // persist + refetch /api/projects. Revert the optimistic hide on error.
-  const handleArchiveProjectFromSidebar = useCallback(
-    (directory: string, remoteId?: string) => {
-      const root = projectRootForDirectory(directory);
-      if (!root) return;
-      const key = identity(root, remoteId).key;
-      const members = (allProjects ?? []).filter((p) => identity(p.directory, p.remoteId).key === key);
-      setArchivedProjectRoots((prev) => new Set(prev).add(key));
-      Promise.all((members.length ? members : [{ directory: root, remoteId }]).map((p) =>
-        archiveProject(p.directory, true, p.remoteId || 'local')))
-        .then(() => projectsQuery.refetch())
-        .catch((err) => {
-          remoteLog.error('Failed to archive project', err);
-          setArchivedProjectRoots((prev) => {
-            const next = new Set(prev);
-            next.delete(key);
-            return next;
-          });
+  const handleArchiveProjectFromSidebar = (directory: string, remoteId?: string) => {
+    const root = projectRootForDirectory(directory);
+    if (!root) return;
+    const key = identity(root, remoteId).key;
+    const members = (allProjects ?? []).filter((p) => identity(p.directory, p.remoteId).key === key);
+    setArchivedProjectRoots((prev) => new Set(prev).add(key));
+    Promise.all((members.length ? members : [{ directory: root, remoteId }]).map((p) =>
+      archiveProject(p.directory, true, p.remoteId || 'local')))
+      .then(() => projectsQuery.refetch())
+      .catch((err) => {
+        remoteLog.error('Failed to archive project', err);
+        setArchivedProjectRoots((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
         });
-    },
-    [archiveProject, projectsQuery, identity, allProjects],
-  );
+      });
+  };
 
   return { allProjects, sidebarProjectGroups, handleReorderProjects, handleArchiveProjectFromSidebar };
 }

@@ -1,4 +1,3 @@
-import { useCallback } from 'react';
 import { api } from '../../lib/api';
 import type { PlatformCapabilities } from '../../lib/api.types';
 import { newSessionPath } from '../../lib/newSessionPath';
@@ -48,7 +47,7 @@ export function useSessionCreation({
 }: UseSessionCreationOptions) {
   // A new conversation is a route, not a session: nothing is created until
   // its first prompt, so the machine and target can still change freely.
-  const handleNewSessionInDirectory = useCallback((directory: string, remoteId?: string, platform?: string, title?: string) => {
+  const handleNewSessionInDirectory = (directory: string, remoteId?: string, platform?: string, title?: string) => {
     // Prefer the target project's own platform/host (e.g. a remote
     // project group) over the currently-open session's, so a "+" on a
     // remote project actually targets that remote instead of falling
@@ -62,16 +61,16 @@ export function useSessionCreation({
       && projectRootForDirectory(directory) === projectRootForDirectory(session.directory);
     const targetPlatform = platform ?? (sameProject ? session?.platform : undefined);
     navigate(newSessionPath({ directory, remoteId, platform: targetPlatform, title }));
-  }, [navigate, session]);
+  };
 
-  const handleNewSession = useCallback(async (title?: string) => {
+  const handleNewSession = async (title?: string) => {
     if (!session) return;
     // Start from the main checkout: a session already inside a linked worktree
     // would make the composer skip its "New worktree" target (the default).
     await handleNewSessionInDirectory(await mainCheckout(session), session.remoteId, session.platform, title);
-  }, [session, handleNewSessionInDirectory]);
+  };
 
-  const handleCompact = useCallback(async () => {
+  const handleCompact = async () => {
     if (!session || !portAvailable || !caps.compact) return;
     const model = selectedModel || activeModel || '';
     const slashIdx = model.indexOf('/');
@@ -85,7 +84,7 @@ export function useSessionCreation({
       remoteLog.error('Failed to compact session', e);
       throw e;
     }
-  }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
+  };
 
   return { handleNewSessionInDirectory, handleNewSession, handleCompact };
 }

@@ -136,8 +136,8 @@ export interface SessionDetailProps {
 export function SessionDetail({ id }: SessionDetailProps) {
   const navigate = useStickyNavigate();
   const composerRef = useRef<ComposerHandle>(null);
-  const openModelPicker = useCallback(() => composerRef.current?.openModelPicker(), []);
-  const openAgentPicker = useCallback(() => composerRef.current?.openAgentPicker(), []);
+  const openModelPicker = () => composerRef.current?.openModelPicker();
+  const openAgentPicker = () => composerRef.current?.openAgentPicker();
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
   const newConversation = id === NEW_SESSION_ID ? parseNewSessionParams(searchParams) : null;
@@ -155,12 +155,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // forces React Router's location update to commit immediately so
   // the SSE lifecycle (keyed off the route id) tears down before
   // any further work races the click.
-  const navigateToSession = useCallback((nextId: string, replace = false) => {
+  const navigateToSession = (nextId: string, replace = false) => {
     markSessionSwitchStart(nextId, !!useApiStore.getState().getCachedSession(nextId));
     flushSync(() => {
       navigate(`/session/${nextId}`, { replace });
     });
-  }, [navigate]);
+  };
 
   const { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel } = useMobilePanel(id);
   const phone = useIsPhone();
@@ -231,8 +231,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Auto-clear pending when SSE delivers the real user message.
   // Runs in an effect (not render) so the pending → null setState
   // is properly batched and React doesn't see a setState during
-  // another component's render phase. observeMessages is a stable
-  // useCallback inside usePendingSend, so the effect only re-runs
+  // another component's render phase. observeMessages reads only refs,
+  // so React Compiler keeps it stable and the effect only re-runs
   // when messages itself changes identity (i.e., a real SSE
   // update).
   const observeMessages = pending.observeMessages;
@@ -402,11 +402,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
     navigate,
   });
   const sessionTree = view.sessionTree;
-  const loadNavigationSessions = useCallback(async () => {
+  const loadNavigationSessions = async () => {
     if (!sidebarVisible || recentSessionsRef.current.length === 0) {
       await loadRecentSessions(abortControllerRef.current?.signal, true);
     }
-  }, [sidebarVisible, recentSessionsRef, loadRecentSessions]);
+  };
   const parentSession = session?.parentId
     ? sessionTree.find((candidate) => candidate.id === session.parentId)
       ?? recentSessions.find((candidate) => candidate.id === session.parentId)
@@ -569,19 +569,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   });
 
   // Aggregate token/cost stats.
-  const liveTokens = useMemo(() => computeLiveTokens(messages), [messages]);
-  const tokenStats = useMemo(
-    () => mergeTokenStats(session, liveTokens),
-    [session, liveTokens],
-  );
-  const sessionTreeStats = useMemo(
-    () => session ? aggregateSessionTreeStats(
-      session,
-      [...sessionTree, ...recentSessions],
-      tokenStats,
-    ) : undefined,
-    [session, sessionTree, recentSessions, tokenStats],
-  );
+  const liveTokens = computeLiveTokens(messages);
+  const tokenStats = mergeTokenStats(session, liveTokens);
+  const sessionTreeStats = session ? aggregateSessionTreeStats(
+    session,
+    [...sessionTree, ...recentSessions],
+    tokenStats,
+  ) : undefined;
 
   const {
     activeAgent,
@@ -725,7 +719,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Alt+J / Alt+K: navigate between recent sessions.
   const navigationSessionRef = useSyncRef(session);
   const reportNavigationError = toasts.setters.setRestartToastMessage;
-  const jumpToSession = useCallback(async (direction: 1 | -1) => {
+  const jumpToSession = async (direction: 1 | -1) => {
     const signal = abortControllerRef.current?.signal;
     try { await loadNavigationSessions(); }
     catch (error) {
@@ -738,7 +732,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if (currentIndex === -1) return;
     const target = sessions[currentIndex + direction];
     if (target) navigateToSession(target.id);
-  }, [id, navigateToSession, recentSessionsRef, loadNavigationSessions, navigationSessionRef, reportNavigationError]);
+  };
 
   // Refs for the palette dispatcher / shortcut handlers.
   usePaletteCommands({
@@ -789,10 +783,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const hasMore = platformMessageCount(messages) < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   const sessionId = session?.id;
-  const permissionControl = useMemo(
-    () => (caps.permissionRules && portAvailable && sessionId ? <PermissionModeLock sessionId={sessionId} /> : null),
-    [caps.permissionRules, portAvailable, sessionId],
-  );
+  const permissionControl = caps.permissionRules && portAvailable && sessionId ? <PermissionModeLock sessionId={sessionId} /> : null;
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
 

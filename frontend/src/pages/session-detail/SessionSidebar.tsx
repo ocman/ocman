@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -238,18 +238,15 @@ export function SessionSidebar({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const handleGroupDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
-      const dirs = draftGroups.filter((group) => !group.isPinned).map((group) => group.key ?? group.directory);
-      const from = dirs.indexOf(active.id as string);
-      const to = dirs.indexOf(over.id as string);
-      if (from === -1 || to === -1) return;
-      onReorderProjects(arrayMove(dirs, from, to));
-    },
-    [draftGroups, onReorderProjects],
-  );
+  const handleGroupDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const dirs = draftGroups.filter((group) => !group.isPinned).map((group) => group.key ?? group.directory);
+    const from = dirs.indexOf(active.id as string);
+    const to = dirs.indexOf(over.id as string);
+    if (from === -1 || to === -1) return;
+    onReorderProjects(arrayMove(dirs, from, to));
+  };
 
   const renderPinnedRows = (sessions: Session[]) =>
     nestSessions(sessions).map(({ session, depth }) => renderRow(session, false, depth, true));

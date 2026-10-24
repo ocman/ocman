@@ -1,4 +1,3 @@
-import { useCallback, useMemo } from 'react';
 import { Navigate, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import type { Project, Session } from '../lib/api';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -36,29 +35,29 @@ export function DashboardLayout() {
   const showArchived = searchParams.get('a') === '1';
   const dirScope = searchParams.get('dir') ?? '';
 
-  const setTimeRange = useCallback((v: number) => {
+  const setTimeRange = (v: number) => {
     setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
-  }, [setSearchParams]);
+  };
 
-  const setShowArchived = useCallback((v: boolean) => {
+  const setShowArchived = (v: boolean) => {
     setSearchParams((p) => {
       if (v) p.set('a', '1');
       else p.delete('a');
       return p;
     }, { replace: true });
-  }, [setSearchParams]);
+  };
 
   // setDirScope writes the chosen scope to the URL so it survives refresh
   // and is preserved when the user switches between Analytics and Projects
   // tabs. Empty value clears the param entirely so the URL stays clean
   // ('?t=24' rather than '?t=24&dir=').
-  const setDirScope = useCallback((v: string) => {
+  const setDirScope = (v: string) => {
     setSearchParams((p) => {
       if (v) p.set('dir', v);
       else p.delete('dir');
       return p;
     }, { replace: true });
-  }, [setSearchParams]);
+  };
 
   // TanStack Query handles dedup, cancellation, stale-while-revalidate,
   // and visibility pausing automatically (Wave 3 / P4+P5 fix).
@@ -85,10 +84,11 @@ export function DashboardLayout() {
     ? (projectsQ.error instanceof Error ? projectsQ.error.message : 'Could not load projects.')
     : null;
 
-  const loadSessions = useCallback(() => { void refetchSessions(); }, [refetchSessions]);
-  const refetchProjects = useCallback(() => { void refetchProjectsQ(); }, [refetchProjectsQ]);
+  const loadSessions = () => { void refetchSessions(); };
+  const refetchProjects = () => { void refetchProjectsQ(); };
 
-  const ctx: DashboardCtx = useMemo(() => ({
+  // eslint-disable-next-line react/jsx-no-constructed-context-values -- React Compiler memoizes ctx.
+  const ctx: DashboardCtx = {
     sessions,
     projects,
     sessionsLoading,
@@ -104,23 +104,7 @@ export function DashboardLayout() {
     setShowArchived,
     dirScope,
     setDirScope,
-  }), [
-    sessions,
-    projects,
-    sessionsLoading,
-    sessionsError,
-    projectsLoading,
-    projectsFetching,
-    projectsError,
-    loadSessions,
-    refetchProjects,
-    timeRange,
-    setTimeRange,
-    showArchived,
-    setShowArchived,
-    dirScope,
-    setDirScope,
-  ]);
+  };
 
   return (
     <DashboardContext.Provider value={ctx}>
