@@ -27,7 +27,7 @@ make test-frontend    # vitest run
 make test-race        # go test -race ./internal/...
 make test-fuzz        # every Fuzz* target for 10 seconds
 make test-e2e         # build frontend, then Playwright
-make test-all-fast    # backend, frontend and e2e in parallel, fail fast
+make test-all-fast    # backend, frontend and e2e in parallel; each stops at its first failure
 make coverage SUITE=go
 make coverage SUITE=frontend
 make coverage-check SUITE=go BASELINE_DIR=<baseline>

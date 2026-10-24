@@ -278,90 +278,24 @@ test: test-backend test-frontend test-dev-scripts
 test-dev-scripts: ## Test dev log streaming and shutdown without launching ocman
 	python3 scripts/dev_test.py
 
-# Run all major suites in parallel and fail fast on the first failing one.
-#
-# Includes:
-#   - backend unit/integration tests
-#   - frontend unit tests
-#   - Playwright e2e suite (preview mode)
-#
-# Why a custom orchestration block instead of `make -j`?
-# `make -j` returns non-zero when one child fails, but it does not reliably
-# terminate already-running siblings early enough to save time. This target
-# starts each suite in a background process, mirrors its output to a per-suite
-# log, then polls the child PIDs (portable to macOS's older Bash) to detect
-# the first failure and kill the rest.
-#
-# Each individual runner also gets its own fail-fast flag where available:
-#   - Go:         `-failfast`
-#   - Vitest:     `--bail=1`
-#   - Playwright: `--max-failures=1`
-#
-# So we stop as soon as either:
-#   1. a suite sees its first failing test internally, or
-#   2. the wrapper sees any suite exit non-zero.
+# Run the backend, frontend and e2e suites in parallel. Each runner stops at
+# its first failing test (Go -failfast, Vitest --bail=1, Playwright
+# --max-failures=1); make then waits for the other running suites and exits
+# non-zero.
 test-all-fast: ## Run backend, frontend, and e2e suites in parallel (fail fast)
-	@bash -lc 'set -euo pipefail; \
-		mkdir -p tmp; \
-		pids=(); names=(); logs=(); \
-		start_suite() { \
-			local name="$$1"; shift; \
-			local log="tmp/test-$${name}.log"; \
-			echo "==> $$name"; \
-			( set -o pipefail; "$$@" 2>&1 | tee "$$log" ) & \
-			pids+=("$$!"); names+=("$$name"); logs+=("$$log"); \
-		}; \
-		cleanup() { \
-			for pid in "$${pids[@]}"; do \
-				kill "$$pid" 2>/dev/null || true; \
-			done; \
-		}; \
-		trap cleanup INT TERM EXIT; \
-		start_suite backend go test -failfast ./...; \
-		start_suite frontend bash -lc "cd frontend && pnpm test -- --bail=1"; \
-		start_suite e2e bash -lc "cd frontend && pnpm build && pnpm test:e2e -- --max-failures=1"; \
-		remaining="$${#pids[@]}"; \
-		status=0; \
-		failed_name=""; failed_log=""; \
-		while [ "$$remaining" -gt 0 ]; do \
-			for i in "$${!pids[@]}"; do \
-				pid="$${pids[$$i]}"; \
-				if [ -z "$$pid" ]; then continue; fi; \
-				if kill -0 "$$pid" 2>/dev/null; then continue; fi; \
-				if wait "$$pid"; then \
-					pids[$$i]=""; \
-					remaining=$$((remaining - 1)); \
-				else \
-					status=$$?; \
-					failed_name="$${names[$$i]}"; \
-					failed_log="$${logs[$$i]}"; \
-					echo ""; \
-					echo "FAIL-FAST: suite '$$failed_name' failed (see $$failed_log)"; \
-					echo "FAIL-FAST: stopping remaining suites"; \
-					cleanup; \
-					wait || true; \
-					break 2; \
-				fi; \
-			done; \
-			sleep 0.2; \
-		done; \
-		if [ "$$status" -ne 0 ]; then \
-			exit "$$status"; \
-		fi; \
-		trap - INT TERM EXIT; \
-		echo ""; \
-		echo "All suites passed."'
+	@$(MAKE) -j3 --no-print-directory test-backend test-frontend test-e2e \
+		GO_TEST_FLAGS=-failfast VITEST_FLAGS=--bail=1 PLAYWRIGHT_FLAGS=--max-failures=1
 
 test-backend:
-	go test ./...
+	go test $(GO_TEST_FLAGS) ./...
 
 test-frontend:
-	cd frontend && pnpm test
+	cd frontend && pnpm test $(VITEST_FLAGS)
 
 # Run Playwright end-to-end tests. Build the frontend first so the
 # Playwright webServer can serve `vite preview` from a fresh dist/.
 test-e2e: ## Run Playwright end-to-end tests
-	cd frontend && pnpm build && pnpm test:e2e
+	cd frontend && pnpm build && pnpm test:e2e $(PLAYWRIGHT_FLAGS)
 
 # Run Playwright against the Vite dev server (StrictMode, HMRless test run).
 # Use this when a regression reproduces only in local dev mode.
