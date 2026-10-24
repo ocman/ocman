@@ -58,8 +58,8 @@ writes only that file and never runs the other suite.
 Compares the named suites (default: both) against the baseline dir.
 Suite-scoping lets a per-side hook check only what it collected.
 
-### `scripts/coverage-local-check.sh <go|frontend|all>`
-Wrapper for the pre-push hooks: collect the named suite -> fetch the
+### `make coverage-local SUITE=<go|frontend|all>`
+Target for the pre-push hooks: collect the named suite -> fetch the
 `gh-pages` baseline into a temp dir -> ratchet check (scoped to that
 suite). Missing baseline / offline -> pass.
 

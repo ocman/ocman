@@ -12,14 +12,14 @@ repos:
       - id: coverage-ratchet-backend
         name: coverage ratchet (go)
         language: system
-        entry: ./scripts/coverage-local-check.sh go
+        entry: make coverage-local SUITE=go
         pass_filenames: false
         files: '\.go$'
         stages: [pre-push]
       - id: coverage-ratchet-frontend
         name: coverage ratchet (frontend)
         language: system
-        entry: ./scripts/coverage-local-check.sh frontend
+        entry: make coverage-local SUITE=frontend
         pass_filenames: false
         files: '^frontend/'
         stages: [pre-push]

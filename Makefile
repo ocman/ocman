@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check coverage-local lint lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -340,6 +340,17 @@ coverage: ## Collect coverage into coverage/*.json (SUITE=go|frontend|all)
 # pass.
 coverage-check: ## Compare coverage/*.json against $(BASELINE_DIR)
 	./scripts/coverage-ratchet.sh "$(BASELINE_DIR)" $(SUITE)
+
+# Pre-push ratchet (make install-hooks): collect one suite, fetch the
+# gh-pages baseline into a temp dir and compare that suite. A missing
+# baseline (first run, offline) passes. Hook-exported Git paths are unset
+# so test fixtures cannot redirect into this repository.
+coverage-local: ## Collect coverage and check it against gh-pages (SUITE=go|frontend|all)
+	@unset $$(git rev-parse --local-env-vars); \
+	baseline=$$(mktemp -d); trap 'rm -rf "$$baseline"' EXIT; \
+	$(MAKE) --no-print-directory coverage SUITE=$(SUITE) && \
+	./scripts/coverage-fetch-baseline.sh "$$baseline" && \
+	$(MAKE) --no-print-directory coverage-check SUITE="$(filter-out all,$(SUITE))" BASELINE_DIR="$$baseline"
 
 # Run all linters and type checks
 lint: lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts
