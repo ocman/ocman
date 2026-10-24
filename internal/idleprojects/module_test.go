@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
@@ -232,14 +233,14 @@ func TestSettings(t *testing.T) {
 		{"POST", "invalid", 400}, {"DELETE", "", 405},
 	} {
 		rr := httptest.NewRecorder()
-		m.settings(rr, httptest.NewRequest(tc.method, "/", strings.NewReader(tc.body)))
+		serveSetting(m.settings()).ServeHTTP(rr, httptest.NewRequest(tc.method, "/", strings.NewReader(tc.body)))
 		if rr.Code != tc.code {
 			t.Fatalf("%s %s: %d %s", tc.method, tc.body, rr.Code, rr.Body.String())
 		}
 	}
 	must(t, m.deps.Store.SetSetting(t.Context(), setting, "invalid"))
 	rr := httptest.NewRecorder()
-	m.settings(rr, httptest.NewRequest(http.MethodGet, "/", nil))
+	serveSetting(m.settings()).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rr.Code != 500 {
 		t.Fatal(rr.Code)
 	}
@@ -250,4 +251,10 @@ func must(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func serveSetting[T any](route httpx.SettingRoute[T]) http.Handler {
+	mux := http.NewServeMux()
+	route.Mount(func(p string, h http.HandlerFunc) { mux.HandleFunc(p, h) }, "/")
+	return mux
 }

@@ -3,6 +3,7 @@ package queuemod
 
 import (
 	"context"
+	"net/http"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -66,7 +67,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("GET /api/session/{id}/queue", m.d.Guards.Auth(m.List))
 	r.Handle("DELETE /api/session/{id}/queue/{qmid}", m.d.Guards.Auth(m.Delete))
 	r.Handle("POST /api/session/{id}/queue/{qmid}/move", m.d.Guards.Auth(m.Move))
-	r.Setting("/api/settings/model-fallthrough", m.d.Guards.Auth(m.Settings))
+	m.Settings().Mount(func(pattern string, h http.HandlerFunc) { r.Setting(pattern, m.d.Guards.Auth(h)) }, "/api/settings/model-fallthrough")
 }
 
 func (m *Module) Start(ctx context.Context) error {

@@ -1,8 +1,10 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/queuemod"
 	"net/http"
+
+	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/NoUseFreak/ocman/internal/queuemod"
 )
 
 // These helpers keep the HTTP/SSE acceptance fixtures exercising the module.
@@ -25,5 +27,11 @@ func (s *Server) handleSessionQueueDelete(w http.ResponseWriter, r *http.Request
 	s.queueModule().Delete(w, r)
 }
 func (s *Server) handleModelFallthroughSettings(w http.ResponseWriter, r *http.Request) {
-	s.queueModule().Settings(w, r)
+	serveSetting(s.queueModule().Settings()).ServeHTTP(w, r)
+}
+
+func serveSetting[T any](route httpx.SettingRoute[T]) http.Handler {
+	mux := http.NewServeMux()
+	route.Mount(func(p string, h http.HandlerFunc) { mux.HandleFunc(p, h) }, "/")
+	return mux
 }

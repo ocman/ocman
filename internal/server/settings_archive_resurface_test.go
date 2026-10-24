@@ -26,13 +26,13 @@ func TestArchiveResurfaceSettings(t *testing.T) {
 		{http.MethodDelete, "", "", 405},
 	} {
 		rec := httptest.NewRecorder()
-		srv.handleArchiveResurface(rec, httptest.NewRequest(tc.method, "/api/settings/archive-resurface", strings.NewReader(tc.body)))
+		serveSetting(srv.archiveResurfaceSetting()).ServeHTTP(rec, httptest.NewRequest(tc.method, "/api/settings/archive-resurface", strings.NewReader(tc.body)))
 		if rec.Code != tc.status || !strings.Contains(rec.Body.String(), tc.want) {
 			t.Fatalf("%s %s: %d %s", tc.method, tc.body, rec.Code, rec.Body)
 		}
 	}
 	rec := httptest.NewRecorder()
-	(&Server{}).handleArchiveResurface(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	serveSetting((&Server{}).archiveResurfaceSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != 503 {
 		t.Fatalf("missing DB: %d", rec.Code)
 	}

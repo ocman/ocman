@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -45,43 +47,36 @@ func (s *Server) defaultAgent(ctx context.Context) (string, error) {
 	return value, err
 }
 
-func (s *Server) handleDefaultAgent(w http.ResponseWriter, r *http.Request) {
-	if s.stateDB == nil {
-		http.Error(w, "state database not available", http.StatusServiceUnavailable)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		agent, err := s.defaultAgent(r.Context())
-		if err != nil {
-			serverError(w, "reading default agent", err)
-			return
-		}
-		directories := s.storedDirectories(r.Context())
-		var adapters []platforms.Platform
-		if s.registry != nil {
-			adapters = s.registry.Platforms()
-		}
-		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context(), adapters, directories)})
-	case http.MethodPost:
-		var body struct {
-			DefaultAgent string `json:"defaultAgent"`
-		}
-		if !readAndUnmarshal(w, r, maxRequestBody, &body) {
-			return
-		}
-		body.DefaultAgent = strings.TrimSpace(body.DefaultAgent)
-		if body.DefaultAgent == "" || len(body.DefaultAgent) > 128 || strings.ContainsFunc(body.DefaultAgent, unicode.IsControl) {
-			http.Error(w, "defaultAgent must be a non-empty agent name of at most 128 bytes", http.StatusBadRequest)
-			return
-		}
-		if err := s.stateDB.SetSetting(r.Context(), defaultAgentKey, body.DefaultAgent); err != nil {
-			serverError(w, "saving default agent", err)
-			return
-		}
-		writeJSON(w, body)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+type defaultAgentBody struct {
+	DefaultAgent string `json:"defaultAgent"`
+}
+
+func (s *Server) defaultAgentSetting() httpx.SettingRoute[defaultAgentBody] {
+	return httpx.SettingRoute[defaultAgentBody]{
+		Name:      "default agent",
+		Available: s.hasStateDB,
+		Get: func(ctx context.Context) (any, error) {
+			agent, err := s.defaultAgent(ctx)
+			if err != nil {
+				return nil, err
+			}
+			directories := s.storedDirectories(ctx)
+			var adapters []platforms.Platform
+			if s.registry != nil {
+				adapters = s.registry.Platforms()
+			}
+			return map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(ctx, adapters, directories)}, nil
+		},
+		Validate: func(body *defaultAgentBody) error {
+			body.DefaultAgent = strings.TrimSpace(body.DefaultAgent)
+			if body.DefaultAgent == "" || len(body.DefaultAgent) > 128 || strings.ContainsFunc(body.DefaultAgent, unicode.IsControl) {
+				return errors.New("defaultAgent must be a non-empty agent name of at most 128 bytes")
+			}
+			return nil
+		},
+		Set: func(ctx context.Context, body defaultAgentBody) error {
+			return s.stateDB.SetSetting(ctx, defaultAgentKey, body.DefaultAgent)
+		},
 	}
 }
 

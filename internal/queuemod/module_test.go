@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/state/statetest"
@@ -146,7 +147,7 @@ func TestSettingsAndProjectModelInvalidation(t *testing.T) {
 	}
 	for _, body := range []string{`{`, `{"patienceMinutes":0,"fallbackMinutes":1}`, `{"patienceMinutes":1,"fallbackMinutes":1441}`} {
 		rec := httptest.NewRecorder()
-		m.Settings(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+		serveSetting(m.Settings()).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("invalid %s: %d", body, rec.Code)
 		}
@@ -200,4 +201,10 @@ func TestPreparationCancellationDoesNotSpendQueueRetries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func serveSetting[T any](route httpx.SettingRoute[T]) http.Handler {
+	mux := http.NewServeMux()
+	route.Mount(func(p string, h http.HandlerFunc) { mux.HandleFunc(p, h) }, "/")
+	return mux
 }

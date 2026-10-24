@@ -22,6 +22,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Routes that are localhost-only (tmux, debug log, hooks) use the
 	// localhost guard, which also validates browser origin.
 	auth := s.requireAuth
+	setting := func(pattern string, h http.HandlerFunc) { api.HandleFunc(pattern, s.settingsHandler(auth(h))) }
 	api.HandleFunc("GET /api/projects", auth(s.handleProjects))
 	api.HandleFunc("GET /api/system/stats", auth(s.handleSystemStats))
 	api.HandleFunc("GET /api/session-identity", auth(s.handleSessionIdentity))
@@ -68,12 +69,12 @@ func (s *Server) routes() (*http.ServeMux, error) {
 
 	// Settings endpoints — user preferences that must be shared with the
 	// backend. The judge settings belong to the auto-approve module.
-	api.HandleFunc("/api/settings/default-agent", s.settingsHandler(auth(s.handleDefaultAgent)))
+	s.defaultAgentSetting().Mount(setting, "/api/settings/default-agent")
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
-	api.HandleFunc("/api/settings/worktree-inherit-permissions", s.settingsHandler(auth(s.handleWorktreeInheritPermissions)))
-	api.HandleFunc("/api/settings/auto-archive", s.settingsHandler(auth(s.handleAutoArchiveSettings)))
-	api.HandleFunc("/api/settings/archive-resurface", s.settingsHandler(auth(s.handleArchiveResurface)))
+	s.worktreeInheritSetting().Mount(setting, "/api/settings/worktree-inherit-permissions")
+	s.autoArchiveSetting().Mount(setting, "/api/settings/auto-archive")
+	s.archiveResurfaceSetting().Mount(setting, "/api/settings/archive-resurface")
 	// New-session machine picker resolver (multi-remote support).
 	api.HandleFunc("POST /api/sessions/resolve-targets", auth(s.handleResolveTargets))
 

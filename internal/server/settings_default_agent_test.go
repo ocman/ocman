@@ -41,7 +41,7 @@ func TestDefaultAgentOptionsIncludeStoredDirectories(t *testing.T) {
 		return []string{"custom"}
 	}
 	rec := httptest.NewRecorder()
-	srv.handleDefaultAgent(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	serveSetting(srv.defaultAgentSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"agents":["custom"]`) {
 		t.Fatal(rec.Body)
 	}
@@ -55,7 +55,7 @@ func TestDefaultAgentOptionsIncludeStoredDirectories(t *testing.T) {
 		return []string{"build", "plan"}
 	}
 	rec = httptest.NewRecorder()
-	srv.handleDefaultAgent(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	serveSetting(srv.defaultAgentSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"agents":["build","plan"]`) {
 		t.Fatal(rec.Body)
 	}
@@ -82,7 +82,7 @@ func TestDefaultAgentSetting(t *testing.T) {
 		{"POST", `{`, "", 400}, {"DELETE", "", "", 405},
 	} {
 		rec := httptest.NewRecorder()
-		srv.handleDefaultAgent(rec, httptest.NewRequest(tc.method, "/", strings.NewReader(tc.body)))
+		serveSetting(srv.defaultAgentSetting()).ServeHTTP(rec, httptest.NewRequest(tc.method, "/", strings.NewReader(tc.body)))
 		if rec.Code != tc.status || !strings.Contains(rec.Body.String(), tc.want) {
 			t.Fatalf("%s %s: %d %s", tc.method, tc.body, rec.Code, rec.Body)
 		}
@@ -96,7 +96,7 @@ func TestDefaultAgentSetting(t *testing.T) {
 		t.Fatal(rec.Body)
 	}
 	rec = httptest.NewRecorder()
-	(&Server{}).handleDefaultAgent(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	serveSetting((&Server{}).defaultAgentSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != 503 {
 		t.Fatal(rec.Code)
 	}
@@ -111,7 +111,7 @@ func TestSettingsSaveInvalidation(t *testing.T) {
 		event        bool
 	}{{"GET", "", false}, {"POST", `{"defaultAgent":"plan"}`, true}, {"POST", `{"defaultAgent":""}`, false}} {
 		rec := httptest.NewRecorder()
-		srv.settingsHandler(srv.handleDefaultAgent)(rec, httptest.NewRequest(tc.method, "/", strings.NewReader(tc.body)))
+		srv.settingsHandler(serveSetting(srv.defaultAgentSetting()).ServeHTTP)(rec, httptest.NewRequest(tc.method, "/", strings.NewReader(tc.body)))
 		select {
 		case event := <-sub.ch:
 			if !tc.event || event.event != "ocman.settings.changed" {

@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 const (
@@ -19,70 +20,37 @@ type autoArchiveSettingsView struct {
 	TTLDays int  `json:"ttlDays"`
 }
 
-// handleWorktreeInheritPermissions handles GET and POST
-// /api/settings/worktree-inherit-permissions (issue #101).
-//
-// GET  → {"enabled": bool}. Defaults to enabled when unset.
-// POST → accepts {"enabled": bool}, persists, returns the new state.
-func (s *Server) handleWorktreeInheritPermissions(w http.ResponseWriter, r *http.Request) {
-	if s.stateDB == nil {
-		http.Error(w, "state database not available", http.StatusServiceUnavailable)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		on, err := s.stateDB.GetWorktreeInheritPermissions(r.Context())
-		if err != nil {
-			serverError(w, "reading worktree inherit-permissions setting", err)
-			return
-		}
-		writeJSON(w, map[string]bool{"enabled": on})
-	case http.MethodPost:
-		var body struct {
-			Enabled bool `json:"enabled"`
-		}
-		if !readAndUnmarshal(w, r, maxRequestBody, &body) {
-			return
-		}
-		if err := s.stateDB.SetWorktreeInheritPermissions(r.Context(), body.Enabled); err != nil {
-			serverError(w, "saving worktree inherit-permissions setting", err)
-			return
-		}
-		writeJSON(w, map[string]bool{"enabled": body.Enabled})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+type worktreeInheritBody struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (s *Server) hasStateDB() bool { return s.stateDB != nil }
+
+// worktreeInheritSetting serves /api/settings/worktree-inherit-permissions
+// (issue #101): {"enabled": bool}, enabled when unset.
+func (s *Server) worktreeInheritSetting() httpx.SettingRoute[worktreeInheritBody] {
+	return httpx.SettingRoute[worktreeInheritBody]{
+		Name:      "worktree inherit-permissions setting",
+		Available: s.hasStateDB,
+		Get: func(ctx context.Context) (any, error) {
+			on, err := s.stateDB.GetWorktreeInheritPermissions(ctx)
+			return worktreeInheritBody{on}, err
+		},
+		Set: func(ctx context.Context, body worktreeInheritBody) error {
+			return s.stateDB.SetWorktreeInheritPermissions(ctx, body.Enabled)
+		},
 	}
 }
 
-func (s *Server) handleAutoArchiveSettings(w http.ResponseWriter, r *http.Request) {
-	if s.stateDB == nil {
-		http.Error(w, "state database not available", http.StatusServiceUnavailable)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		settings, err := s.getAutoArchiveSettings(r.Context())
-		if err != nil {
-			serverError(w, "reading auto-archive settings", err)
-			return
-		}
-		writeJSON(w, settings)
-	case http.MethodPost:
-		var settings autoArchiveSettingsView
-		if !readAndUnmarshal(w, r, maxRequestBody, &settings) {
-			return
-		}
-		if err := validateAutoArchiveSettings(settings); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := s.setAutoArchiveSettings(r.Context(), settings); err != nil {
-			serverError(w, "saving auto-archive settings", err)
-			return
-		}
-		writeJSON(w, settings)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (s *Server) autoArchiveSetting() httpx.SettingRoute[autoArchiveSettingsView] {
+	return httpx.SettingRoute[autoArchiveSettingsView]{
+		Name:      "auto-archive settings",
+		Available: s.hasStateDB,
+		Get: func(ctx context.Context) (any, error) {
+			return s.getAutoArchiveSettings(ctx)
+		},
+		Validate: func(v *autoArchiveSettingsView) error { return validateAutoArchiveSettings(*v) },
+		Set:      s.setAutoArchiveSettings,
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -49,7 +48,7 @@ func New(deps Deps) *Module    { return &Module{deps: deps, idle: map[state.Key]
 func (m *Module) Name() string { return "idle-projects" }
 
 func (m *Module) Routes(r module.Router) {
-	r.LocalSetting("/api/settings/idle-project-timeout", m.settings)
+	m.settings().Mount(r.LocalSetting, "/api/settings/idle-project-timeout")
 }
 
 func (m *Module) Run(ctx context.Context) {
@@ -79,32 +78,29 @@ func (m *Module) timeout(ctx context.Context) (time.Duration, error) {
 	return time.Duration(minutes) * time.Minute, nil
 }
 
-func (m *Module) settings(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		var req struct {
-			Minutes int `json:"minutes"`
-		}
-		if !httpx.ReadJSON(w, r, 1024, &req) {
-			return
-		}
-		if req.Minutes < 0 || req.Minutes > 43200 {
-			http.Error(w, "minutes must be between 0 (Never) and 43200", http.StatusBadRequest)
-			return
-		}
-		if err := m.deps.Store.SetSetting(r.Context(), setting, strconv.Itoa(req.Minutes)); err != nil {
-			httpx.ServerError(w, "saving idle project timeout", err)
-			return
-		}
-	} else if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
+type timeoutBody struct {
+	Minutes int `json:"minutes"`
+}
+
+func (m *Module) settings() httpx.SettingRoute[timeoutBody] {
+	return httpx.SettingRoute[timeoutBody]{
+		Name: "idle project timeout",
+		Get: func(ctx context.Context) (any, error) {
+			timeout, err := m.timeout(ctx)
+			return map[string]int64{"minutes": int64(timeout / time.Minute)}, err
+		},
+		Validate: func(req *timeoutBody) error {
+			if req.Minutes < 0 || req.Minutes > 43200 {
+				return errors.New("minutes must be between 0 (Never) and 43200")
+			}
+			return nil
+		},
+		Set: func(ctx context.Context, req timeoutBody) error {
+			return m.deps.Store.SetSetting(ctx, setting, strconv.Itoa(req.Minutes))
+		},
+		MaxBody: 1024,
+		Reread:  true,
 	}
-	timeout, err := m.timeout(r.Context())
-	if err != nil {
-		httpx.ServerError(w, "reading idle project timeout", err)
-		return
-	}
-	httpx.WriteJSON(w, map[string]int64{"minutes": int64(timeout / time.Minute)})
 }
 
 func (m *Module) sweep(ctx context.Context, now time.Time) error {

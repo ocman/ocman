@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
@@ -51,36 +50,18 @@ func (s *Module) CooldownTimes(ctx context.Context) (time.Duration, time.Duratio
 	return time.Duration(m.PatienceMinutes) * time.Minute, time.Duration(m.FallbackMinutes) * time.Minute
 }
 
-func (s *Module) Settings(w http.ResponseWriter, r *http.Request) {
-	if s.d.Store == nil {
-		http.Error(w, "state database not available", http.StatusServiceUnavailable)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		m, err := s.getModelFallthroughSettings(r.Context())
-		if err != nil {
-			httpx.ServerError(w, "reading model fallthrough settings", err)
-			return
-		}
-		httpx.WriteJSON(w, m)
-	case http.MethodPost:
-		var m modelFallthroughSettings
-		if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &m) {
-			return
-		}
-		if err := m.validate(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		raw, _ := json.Marshal(m)
-		if err := s.d.Store.SetSetting(r.Context(), modelFallthroughSettingKey, string(raw)); err != nil {
-			httpx.ServerError(w, "saving model fallthrough settings", err)
-			return
-		}
-		httpx.WriteJSON(w, m)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+// Settings serves /api/settings/model-fallthrough.
+func (s *Module) Settings() httpx.SettingRoute[modelFallthroughSettings] {
+	return httpx.SettingRoute[modelFallthroughSettings]{
+		Name:      "model fallthrough settings",
+		Available: func() bool { return s.d.Store != nil },
+		Get: func(ctx context.Context) (any, error) {
+			return s.getModelFallthroughSettings(ctx)
+		},
+		Validate: func(m *modelFallthroughSettings) error { return m.validate() },
+		Set: func(ctx context.Context, m modelFallthroughSettings) error {
+			raw, _ := json.Marshal(m)
+			return s.d.Store.SetSetting(ctx, modelFallthroughSettingKey, string(raw))
+		},
 	}
 }
