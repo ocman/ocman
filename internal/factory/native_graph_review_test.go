@@ -98,7 +98,7 @@ func TestGraphProposalResponsePreservesHierarchyAndExternalReferences(t *testing
 		if err != nil {
 			t.Fatal(err)
 		}
-		epic, err := db.CreateFactoryEpic(t.Context(), "", name, "", "/repo", "", formula)
+		epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", name, "", "/repo", "", formula, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

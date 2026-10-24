@@ -13,7 +13,7 @@ func TestAgentGraphMutationRequiresFreshApproval(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestEveryAgentStructuralEditInvalidatesApproval(t *testing.T) {
 			db := openTestStateDB(t)
 			defer db.Close()
 			ctx := t.Context()
-			epic, err := db.CreateFactoryEpic(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t))
+			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

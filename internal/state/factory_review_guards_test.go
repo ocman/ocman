@@ -16,7 +16,7 @@ func TestPrematureAgentGraphEditsPreserveInitialPlanning(t *testing.T) {
 				db := openTestStateDB(t)
 				defer db.Close()
 				ctx := t.Context()
-				epic, err := db.CreateFactoryEpic(ctx, "", "Initial plan", "", "/repo", "", nativeTracerFormula(t))
+				epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Initial plan", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -70,7 +70,7 @@ func TestProposedRemovalCannotReleaseAnotherEpicsConsumer(t *testing.T) {
 			defer db.Close()
 			ctx := t.Context()
 			create := func(title, project string) (string, string, string) {
-				epic, err := db.CreateFactoryEpic(ctx, "", title, "", project, "", nativeTracerFormula(t))
+				epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", title, "", project, "", nativeTracerFormula(t), nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

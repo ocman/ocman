@@ -13,7 +13,7 @@ func TestRecoveryCheckpointSurvivesRetryAndCancel(t *testing.T) {
 			db := openTestStateDB(t)
 			t.Cleanup(func() { _ = db.Close() })
 			ctx, now := t.Context(), time.Now()
-			epic, err := db.CreateFactoryEpic(ctx, "", "Retain recovery", "", "/repo", "", nativeTracerFormula(t))
+			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Retain recovery", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

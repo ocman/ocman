@@ -27,7 +27,7 @@ func TestBadgeCountLocalItems(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	for _, category := range []string{state.InboxGeneral, state.InboxFactory, state.InboxRoutine} {
-		if _, err := db.CreateCategorizedInboxItem(t.Context(), category, "message", category); err != nil {
+		if _, err := db.CreateSessionInboxItem(t.Context(), category, "message", category, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

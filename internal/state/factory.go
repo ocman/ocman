@@ -843,26 +843,6 @@ func (d *DB) UpsertFactoryLocalExecutionAck(ctx context.Context, hostID, repoRoo
 	return nil
 }
 
-// AppendFactoryAudit records an immutable Factory decision or graph transition.
-func (d *DB) AppendFactoryAudit(ctx context.Context, record model.AuditRecord) error {
-	details, err := json.Marshal(record.Details)
-	if err != nil {
-		return fmt.Errorf("encoding Factory audit: %w", err)
-	}
-	var attemptID any
-	if record.AttemptID != "" {
-		attemptID = record.AttemptID
-	}
-	_, err = d.db.ExecContext(ctx, `
-		INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, record.EpicID, record.WorkID, attemptID, record.Actor, record.Action, string(details), record.At.UnixMilli())
-	if err != nil {
-		return fmt.Errorf("appending Factory audit: %w", err)
-	}
-	return nil
-}
-
 // linkFactoryGateToWork records that a gate was raised out of an attempt on a
 // work item, so the graph can draw the two together. The gate is a
 // reference-requirement child, which deriveFactoryIssueDispatch skips, so the

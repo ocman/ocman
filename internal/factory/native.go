@@ -151,7 +151,6 @@ type WorkEpic struct {
 }
 
 type PlanningSession = model.PlanningSession
-type FactoryAuditRecord = model.AuditRecord
 
 type PlanningSessionRequest struct {
 	Platform                                                 string
@@ -174,7 +173,6 @@ type PlanningLauncher interface {
 type GraphMutation = model.GraphMutation
 
 type nativeStore interface {
-	CreateFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula) (model.NativeEpic, error)
 	ListFactoryEpics(context.Context) ([]model.NativeEpic, error)
 	GetFactoryEpic(context.Context, string) (model.NativeEpic, error)
 	PourFactoryEpic(context.Context, string, model.NativeFormula) (model.NativeEpic, []model.NativeIssue, error)

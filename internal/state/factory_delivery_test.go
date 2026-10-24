@@ -12,7 +12,7 @@ func TestFactoryDeliveryTracksRequiredGraph(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := t.Context()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Delivery", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivery", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestFactoryMergeGateRequiresDelivery(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := t.Context()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Gate", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Gate", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestFactoryDoesNotClaimWorkAfterDelivery(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := t.Context()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Delivered", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivered", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

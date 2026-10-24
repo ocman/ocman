@@ -45,7 +45,4 @@ func TestApprovedPermissionLookups(t *testing.T) {
 	if _, ok, err := d.ApprovedPermission(t.Context(), "claudecode", "a", "p2"); err != nil || ok {
 		t.Fatalf("another session's approval found: %v %v", ok, err)
 	}
-	if rows, err := d.ListPlatformApprovals(t.Context(), "claudecode"); err != nil || len(rows) != 2 {
-		t.Fatalf("platform approvals = %+v %v", rows, err)
-	}
 }

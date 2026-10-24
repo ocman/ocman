@@ -54,8 +54,8 @@ func newControlFixture(t *testing.T) *controlFixture {
 	registry.Register(f.platform)
 	f.srv = New(nil, openTestStateDB(t), "", registry, nil)
 	tracer := factory.BuiltInTracerFormula()
-	if _, err := f.srv.stateDB.CreateFactoryEpic(t.Context(), "epic-1", "Ship", "", "/repo", "", model.NativeFormula{ID: tracer.ID, Version: tracer.Version, Source: tracer.Source, Hash: tracer.Hash,
-		Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}); err != nil {
+	if _, err := f.srv.stateDB.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "epic-1", "Ship", "", "/repo", "", model.NativeFormula{ID: tracer.ID, Version: tracer.Version, Source: tracer.Source, Hash: tracer.Hash,
+		Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	f.svc = &fakeFactoryService{

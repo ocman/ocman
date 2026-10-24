@@ -117,7 +117,7 @@ func (r testProjectResolver) ResolveLocalProject(_ context.Context, path string)
 	return r.root, r.err
 }
 
-func (s *nativeStoreFake) CreateFactoryEpic(_ context.Context, preferredID, goal, brief, project, _ string, formula model.NativeFormula) (model.NativeEpic, error) {
+func (s *nativeStoreFake) createEpic(_ context.Context, preferredID, goal, brief, project, _ string, formula model.NativeFormula) (model.NativeEpic, error) {
 	if s.takenEpicIDs[preferredID] {
 		return model.NativeEpic{}, model.ErrNativeEpicIDTaken
 	}
@@ -131,7 +131,7 @@ func (s *nativeStoreFake) CreateFactoryEpic(_ context.Context, preferredID, goal
 }
 
 func (s *nativeStoreFake) CreateFactoryEpicWithProjects(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string) (model.NativeEpic, error) {
-	epic, err := s.CreateFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula)
+	epic, err := s.createEpic(ctx, preferredID, goal, brief, project, instantiationID, formula)
 	if err == nil {
 		epic.Projects = []model.EpicProject{{Path: project}}
 		for _, path := range secondary {

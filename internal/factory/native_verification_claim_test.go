@@ -45,7 +45,7 @@ func TestAmendmentCannotDeliverBeforeFreshVerificationWithoutReconciliation(t *t
 			if optional == "" {
 				t.Fatal("optional work missing")
 			}
-			if err := db.DeferFactoryIssue(t.Context(), epic.ID, optional, "Deferred"); err != nil {
+			if err := deferFactoryIssue(t.Context(), db, epic.ID, optional, "Deferred"); err != nil {
 				t.Fatal(err)
 			}
 			if err := svc.Dispatch(t.Context()); err != nil {

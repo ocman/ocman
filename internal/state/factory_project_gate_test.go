@@ -13,7 +13,7 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	db := openTestStateDB(t)
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := t.Context()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestFactoryProjectRequestGateExcludesCapacityAndBlocksCompletion(t *testing
 	if err := db.SetFactoryCapacityPolicy(t.Context(), model.FactoryCapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1}); err != nil {
 		t.Fatal(err)
 	}
-	second, err := db.CreateFactoryEpic(t.Context(), "", "Second", "", "/two", "", nativeTracerFormula(t))
+	second, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Second", "", "/two", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestFactoryProjectRequestGateExcludesCapacityAndBlocksCompletion(t *testing
 
 func createActiveProjectRequestGate(t *testing.T, db *DB, project string) (model.ProjectRequestGate, model.FactoryAttempt, string, string) {
 	t.Helper()
-	epic, err := db.CreateFactoryEpic(t.Context(), "", "Epic", "", project, "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Epic", "", project, "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

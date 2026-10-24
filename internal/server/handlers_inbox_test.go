@@ -81,7 +81,7 @@ func TestInboxHTTPProjectsPermissionOwner(t *testing.T) {
 
 func TestInboxHTTPListAndMutations(t *testing.T) {
 	srv := testServer(t)
-	item, err := srv.stateDB.CreateCategorizedInboxItem(t.Context(), "title", "body", state.InboxGeneral)
+	item, err := srv.stateDB.CreateSessionInboxItem(t.Context(), "title", "body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestInboxHTTPRejectsMalformedRequests(t *testing.T) {
 
 func TestInboxHTTPUnavailableOwnerDoesNotFallbackLocally(t *testing.T) {
 	srv := testServer(t)
-	item, err := srv.stateDB.CreateCategorizedInboxItem(t.Context(), "keep", "body", state.InboxGeneral)
+	item, err := srv.stateDB.CreateSessionInboxItem(t.Context(), "keep", "body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestInboxHTTPPinUnavailableOwnerDoesNotCreatePin(t *testing.T) {
 
 func TestInboxHTTPUnreadUnavailableOwnerDoesNotFallbackLocally(t *testing.T) {
 	srv := testServer(t)
-	item, err := srv.stateDB.CreateCategorizedInboxItem(t.Context(), "keep read", "body", state.InboxGeneral)
+	item, err := srv.stateDB.CreateSessionInboxItem(t.Context(), "keep read", "body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,7 +12,7 @@ func TestRecoveryCheckpointYieldsWorkspaceWithoutCompletingIssue(t *testing.T) {
 	db := openTestStateDB(t)
 	t.Cleanup(func() { _ = db.Close() })
 	ctx, now := t.Context(), time.Now()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Recovery handoff", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Recovery handoff", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

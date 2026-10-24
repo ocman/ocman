@@ -3,7 +3,6 @@ package model
 import (
 	"errors"
 	"regexp"
-	"time"
 )
 
 var nativeFormulaKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
@@ -366,14 +365,4 @@ type NativeIssueComment struct {
 	Actor     string `json:"actor"`
 	Body      string `json:"body"`
 	CreatedAt int64  `json:"createdAt"`
-}
-
-type AuditRecord struct {
-	EpicID    string
-	WorkID    string
-	AttemptID string
-	Actor     string
-	Action    string
-	Details   any
-	At        time.Time
 }

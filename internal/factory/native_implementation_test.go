@@ -137,7 +137,7 @@ func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 					deferredID = issue.ID
 				}
 			}
-			if err := db.DeferFactoryIssue(t.Context(), epic.ID, deferredID, "Later"); err != nil {
+			if err := deferFactoryIssue(t.Context(), db, epic.ID, deferredID, "Later"); err != nil {
 				t.Fatal(err)
 			}
 			if err := svc.Dispatch(t.Context()); err != nil {
@@ -157,7 +157,7 @@ func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 			if len(items) != 1 || !strings.Contains(items[0].Title, "Delivery admission") || !strings.Contains(items[0].Body, "https://forge.example/pr/1") {
 				t.Fatalf("delivery did not notify inbox: %#v", items)
 			}
-			if err := db.ResumeFactoryIssue(t.Context(), epic.ID, deferredID); err != nil {
+			if err := resumeFactoryIssue(t.Context(), db, epic.ID, deferredID); err != nil {
 				t.Fatal(err)
 			}
 			if err := svc.Dispatch(t.Context()); err != nil {
@@ -844,18 +844,18 @@ func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity
 	if err != nil || len(queue) != 4 || queue[0].AttemptID == "" || queue[2].State != DispatchReady {
 		t.Fatalf("queue = %#v, %v", queue, err)
 	}
-	if err := db.DeferFactoryIssue(context.Background(), queue[2].EpicID, queue[2].ID, "waiting for review"); err != nil {
+	if err := deferFactoryIssue(context.Background(), db, queue[2].EpicID, queue[2].ID, "waiting for review"); err != nil {
 		t.Fatal(err)
 	}
 	queue, err = svc.Queue(context.Background())
 	if err != nil || queue[2].State != DispatchDeferred || queue[2].OutcomeReason != "waiting for review" {
 		t.Fatalf("deferred queue = %#v, %v", queue, err)
 	}
-	if err := db.ResumeFactoryIssue(context.Background(), queue[2].EpicID, queue[2].ID); err != nil {
+	if err := resumeFactoryIssue(context.Background(), db, queue[2].EpicID, queue[2].ID); err != nil {
 		t.Fatal(err)
 	}
 	wakeAt := time.Now().Add(time.Hour)
-	if err := db.RetryFactoryIssueAt(context.Background(), queue[2].EpicID, queue[2].ID, wakeAt); err != nil {
+	if err := retryFactoryIssueAt(context.Background(), db, queue[2].EpicID, queue[2].ID, wakeAt); err != nil {
 		t.Fatal(err)
 	}
 	queue, err = svc.Queue(context.Background())

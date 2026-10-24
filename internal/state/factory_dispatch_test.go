@@ -29,7 +29,7 @@ func TestFactoryDispatchEpicsExcludeHistory(t *testing.T) {
 func TestFactoryDispatchDeadlines(t *testing.T) {
 	d := openTestStateDB(t)
 	t.Cleanup(func() { _ = d.Close() })
-	ep, err := d.CreateFactoryEpic(t.Context(), "", "Deadlines", "", "/repo", "", nativeTracerFormula(t))
+	ep, err := d.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Deadlines", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestFactoryWorkflowSkipsExistingDependencies(t *testing.T) {
 	exporter := recordStateSQL(t)
 	d := openTestStateDB(t)
 	t.Cleanup(func() { _ = d.Close() })
-	ep, err := d.CreateFactoryEpic(t.Context(), "", "Dependencies", "", "/repo", "", nativeTracerFormula(t))
+	ep, err := d.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Dependencies", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,7 +28,7 @@ func TestFactoryEpicProjectsAreBatched(t *testing.T) {
 	t.Cleanup(func() { _ = d.Close() })
 	formula := nativeTracerFormula(t)
 	for _, goal := range []string{"First", "Second", "Third"} {
-		if _, err := d.CreateFactoryEpic(t.Context(), "", goal, "", "/repo", "", formula); err != nil {
+		if _, err := d.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", goal, "", "/repo", "", formula, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,7 +56,7 @@ func TestFactoryEpicProjectsAreBatched(t *testing.T) {
 func TestFactoryWorkflowDoesNotRewriteUnchangedPhase(t *testing.T) {
 	d := openTestStateDB(t)
 	t.Cleanup(func() { _ = d.Close() })
-	ep, err := d.CreateFactoryEpic(t.Context(), "", "Unchanged phase", "", "/repo", "", nativeTracerFormula(t))
+	ep, err := d.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Unchanged phase", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

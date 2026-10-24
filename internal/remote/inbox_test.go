@@ -55,11 +55,11 @@ func connectInboxRemote(t *testing.T, id string, store *state.DB) *RemoteConn {
 
 func TestRemoteConnInboxRoundTrip(t *testing.T) {
 	store := openInboxStore(t)
-	first, err := store.CreateCategorizedInboxItem(t.Context(), "first", "body one", state.InboxGeneral)
+	first, err := store.CreateSessionInboxItem(t.Context(), "first", "body one", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.CreateCategorizedInboxItem(t.Context(), "second", "body two", state.InboxGeneral)
+	second, err := store.CreateSessionInboxItem(t.Context(), "second", "body two", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +154,11 @@ func TestServerInboxRejectsMissingStoreAndMalformedJSON(t *testing.T) {
 func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	localStore := openInboxStore(t)
 	remoteStore := openInboxStore(t)
-	localItem, err := localStore.CreateCategorizedInboxItem(t.Context(), "local", "local body", state.InboxGeneral)
+	localItem, err := localStore.CreateSessionInboxItem(t.Context(), "local", "local body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	remoteItem, err := remoteStore.CreateCategorizedInboxItem(t.Context(), "remote", "remote body", state.InboxGeneral)
+	remoteItem, err := remoteStore.CreateSessionInboxItem(t.Context(), "remote", "remote body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	if archived, err := mgr.ArchivedInboxItems(t.Context(), "remote-1"); err != nil || len(archived) != 1 || archived[0].ID != remoteItem.ID {
 		t.Fatalf("remote archive = %+v, %v", archived, err)
 	}
-	read, err := localStore.CreateCategorizedInboxItem(t.Context(), "read", "body", state.InboxGeneral)
+	read, err := localStore.CreateSessionInboxItem(t.Context(), "read", "body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 
 func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 	store := openInboxStore(t)
-	item, err := store.CreateCategorizedInboxItem(t.Context(), "keep unread", "body", state.InboxGeneral)
+	item, err := store.CreateSessionInboxItem(t.Context(), "keep unread", "body", state.InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

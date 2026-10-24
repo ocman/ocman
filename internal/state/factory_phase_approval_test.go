@@ -13,11 +13,11 @@ func TestPendingChildRemovalCannotCompleteACrossEpicPhaseBlocker(t *testing.T) {
 	ctx := t.Context()
 	formula := nativeTracerFormula(t)
 	formula.Nodes = append(formula.Nodes, model.NativeFormulaNode{Key: "implement", Kind: "phase", Workflow: &model.WorkflowStep{Key: "implement", Kind: "implementation"}})
-	source, err := db.CreateFactoryEpic(ctx, "", "Source phase", "", "/source", "", formula)
+	source, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Source phase", "", "/source", "", formula, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	consumer, err := db.CreateFactoryEpic(ctx, "", "Phase consumer", "", "/consumer", "", nativeTracerFormula(t))
+	consumer, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Phase consumer", "", "/consumer", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

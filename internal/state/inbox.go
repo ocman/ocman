@@ -87,10 +87,6 @@ func scanInboxItem(scanner interface{ Scan(...any) error }) (InboxItem, error) {
 	return item, err
 }
 
-func (d *DB) CreateCategorizedInboxItem(ctx context.Context, title, body, category string) (InboxItem, error) {
-	return d.CreateSessionInboxItem(ctx, title, body, category, nil)
-}
-
 func (d *DB) CreateSessionInboxItem(ctx context.Context, title, body, category string, session *InboxSession) (InboxItem, error) {
 	// Permission items can only be created from the permission lifecycle.
 	if category != InboxGeneral && category != InboxFactory && category != InboxRoutine {

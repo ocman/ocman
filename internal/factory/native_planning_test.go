@@ -799,17 +799,17 @@ func TestNativeServiceIssueControlsAndQueueState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.DeferFactoryIssue(context.Background(), epic.ID, work.ImplementationID, "waiting"); err != nil {
+	if err := deferFactoryIssue(context.Background(), db, epic.ID, work.ImplementationID, "waiting"); err != nil {
 		t.Fatal(err)
 	}
 	if queue, err := svc.Queue(context.Background()); err != nil || len(queue) != 1 || queue[0].State != DispatchDeferred || queue[0].OutcomeReason != "waiting" {
 		t.Fatalf("deferred Queue = %#v, %v", queue, err)
 	}
-	if err := db.ResumeFactoryIssue(context.Background(), epic.ID, work.ImplementationID); err != nil {
+	if err := resumeFactoryIssue(context.Background(), db, epic.ID, work.ImplementationID); err != nil {
 		t.Fatal(err)
 	}
 	wakeAt := time.Now().Add(time.Hour)
-	if err := db.RetryFactoryIssueAt(context.Background(), epic.ID, work.ImplementationID, wakeAt); err != nil {
+	if err := retryFactoryIssueAt(context.Background(), db, epic.ID, work.ImplementationID, wakeAt); err != nil {
 		t.Fatal(err)
 	}
 	if queue, err := svc.Queue(context.Background()); err != nil || len(queue) != 1 || queue[0].State != DispatchRetryWait || queue[0].RetryAt != wakeAt.UnixMilli() {

@@ -223,42 +223,6 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader rowsQuerier, epicID 
 	return blockFactoryGraphApproval(ctx, reader, epicID, issues)
 }
 
-func (d *DB) DeferFactoryIssue(ctx context.Context, epicID, issueID, reason string) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'deferred', outcome = '', outcome_reason = ? WHERE id = ? AND epic_id = ? AND status = 'open'`, reason, issueID, epicID)
-	if err != nil {
-		return err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil || changed != 1 {
-		return errors.New("factory issue cannot be deferred")
-	}
-	return nil
-}
-
-func (d *DB) ResumeFactoryIssue(ctx context.Context, epicID, issueID string) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome_reason = '' WHERE id = ? AND epic_id = ? AND status = 'deferred' AND NOT (EXISTS (SELECT 1 FROM factory_workflow_step w JOIN factory_issue i ON i.id = w.issue_id WHERE i.epic_id = factory_issue.epic_id) AND EXISTS (SELECT 1 FROM factory_issue delivery WHERE delivery.epic_id = factory_issue.epic_id AND delivery.kind = 'delivery' AND delivery.status = 'closed' AND delivery.outcome = 'succeeded' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = delivery.id)))`, issueID, epicID)
-	if err != nil {
-		return err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil || changed != 1 {
-		return errors.New("factory issue cannot be resumed")
-	}
-	return nil
-}
-
-func (d *DB) RetryFactoryIssueAt(ctx context.Context, epicID, issueID string, wakeAt time.Time) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'retry_wait', outcome = '', retry_at = ?, retry_attempts = retry_attempts + 1 WHERE id = ? AND epic_id = ? AND status = 'open'`, wakeAt.UnixMilli(), issueID, epicID)
-	if err != nil {
-		return err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil || changed != 1 {
-		return errors.New("factory issue cannot wait for retry")
-	}
-	return nil
-}
-
 func (d *DB) WakeFactoryRetries(ctx context.Context, at time.Time) error {
 	_, err := d.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', retry_at = 0 WHERE status = 'retry_wait' AND retry_at <= ?`, at.UnixMilli())
 	return err

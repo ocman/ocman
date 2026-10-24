@@ -147,11 +147,6 @@ func (d *DB) ApprovedPermission(ctx context.Context, platform, sessionID, permis
 	return rows[0], true, nil
 }
 
-// ListPlatformApprovals returns the approvals of every session of platform.
-func (d *DB) ListPlatformApprovals(ctx context.Context, platform string) ([]ApprovedPermission, error) {
-	return d.listApprovedPermissions(ctx, `platform = ?`, platform)
-}
-
 func (d *DB) listApprovedPermissions(ctx context.Context, where string, args ...any) ([]ApprovedPermission, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT permission_id, permission_text, patterns_json, judge_session_id, reasoning,

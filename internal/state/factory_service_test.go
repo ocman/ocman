@@ -44,7 +44,7 @@ func TestFactoryServicePoursCreatedBuiltInEpic(t *testing.T) {
 	db := openFactoryTestDB(t)
 	defer db.Close()
 	formula := nativeTracerFormulaExternal()
-	epic, err := db.CreateFactoryEpic(context.Background(), "", "Ship search", "Keep it small", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(context.Background(), "", "Ship search", "Keep it small", "/repo", "", formula, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestFactoryPourNormalizesLegacyBuiltInSourceHash(t *testing.T) {
 		t.Fatal(err)
 	}
 	formula.Version, formula.Source, formula.Hash = legacy.Version, legacy.Source, legacy.Hash
-	epic, err := db.CreateFactoryEpic(ctx, "", "Ship search", "Keep it small", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship search", "Keep it small", "/repo", "", formula, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

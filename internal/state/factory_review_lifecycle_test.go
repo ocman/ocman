@@ -62,7 +62,7 @@ func TestPendingLastTaskRemovalPreservesWorkflowMergeGate(t *testing.T) {
 		model.NativeFormulaNode{Key: "deliver", Kind: "workflow_template", Workflow: &model.WorkflowStep{Key: "deliver", Kind: "delivery", Needs: []string{"verify"}}},
 	)
 	create := func(title, project string, formula model.NativeFormula, parentKind string) (string, string) {
-		epic, err := db.CreateFactoryEpic(ctx, "", title, "", project, "", formula)
+		epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", title, "", project, "", formula, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -139,7 +139,7 @@ func TestGraphAmendmentWithoutPlanGateFailsClosed(t *testing.T) {
 func TestHandBuiltScopeFindsRootFormulaApproval(t *testing.T) {
 	db := openTestStateDB(t)
 	t.Cleanup(func() { _ = db.Close() })
-	epic, err := db.CreateFactoryEpic(t.Context(), "", "Hand-built scope", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Hand-built scope", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestGraphSnapshotCannotBeReplacedByInitialProposal(t *testing.T) {
 			db := openTestStateDB(t)
 			t.Cleanup(func() { _ = db.Close() })
 			ctx := t.Context()
-			epic, err := db.CreateFactoryEpic(ctx, "", "Immutable graph approval", "", "/repo", "", nativeTracerFormula(t))
+			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Immutable graph approval", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

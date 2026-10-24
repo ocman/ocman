@@ -329,29 +329,6 @@ func TestFactoryGraphMigrationResetsOpaqueGraphIDs(t *testing.T) {
 	}
 }
 
-func TestFactoryAuditIsDurable(t *testing.T) {
-	raw, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := OpenFromSQL(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	ctx := context.Background()
-	if err := db.AppendFactoryAudit(ctx, model.AuditRecord{EpicID: "epic-1", WorkID: "work-1", Actor: "dries", Action: "plan.approved", Details: map[string]int{"revision": 2}, At: time.Unix(10, 0)}); err != nil {
-		t.Fatal(err)
-	}
-	var action, details string
-	if err := raw.QueryRow(`SELECT action, details_json FROM factory_audit_record WHERE epic_id = 'epic-1'`).Scan(&action, &details); err != nil {
-		t.Fatal(err)
-	}
-	if action != "plan.approved" || details != `{"revision":2}` {
-		t.Fatalf("audit = %q, %s", action, details)
-	}
-}
-
 func TestFactoryRecoveryGateAuditsEveryResolution(t *testing.T) {
 	for _, action := range []string{"resume", "retry", "cancel"} {
 		t.Run(action, func(t *testing.T) {

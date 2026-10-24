@@ -14,7 +14,7 @@ func TestPlatformMigrationPinsExistingOpenCodeWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	formula := nativeTracerFormula(t)
-	epic, err := db.CreateFactoryEpic(t.Context(), "", "Existing work", "", "/repo", "stable-key", formula)
+	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Existing work", "", "/repo", "stable-key", formula, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,13 +36,13 @@ func TestPlatformMigrationPinsExistingOpenCodeWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if _, err := db.CreateFactoryEpic(t.Context(), "", "Existing work", "", "/repo", "stable-key", formula); err != nil {
+	if _, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Existing work", "", "/repo", "stable-key", formula, nil, nil); err != nil {
 		t.Fatalf("idempotent pre-upgrade create failed: %v", err)
 	}
 	if err := db.SetSetting(t.Context(), DefaultPlatformSetting, "fake-provider"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateFactoryEpic(t.Context(), "", "Existing work", "", "/repo", "stable-key", formula); err != nil {
+	if _, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Existing work", "", "/repo", "stable-key", formula, nil, nil); err != nil {
 		t.Fatalf("default change broke replay: %v", err)
 	}
 	if _, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Existing work", "", "/repo", "stable-key", formula, nil, nil, "fake-provider"); err == nil {

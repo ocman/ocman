@@ -33,7 +33,7 @@ func TestRemovedVerificationKeepsUsagePhase(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	ep, err := store.CreateFactoryEpic(t.Context(), "e", "Usage", "", "/repo", "usage", model.NativeFormula{ID: "usage", Version: 1, Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "verify", Kind: "task", Workflow: &model.WorkflowStep{Kind: "verification"}}}})
+	ep, err := store.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "e", "Usage", "", "/repo", "usage", model.NativeFormula{ID: "usage", Version: 1, Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "verify", Kind: "task", Workflow: &model.WorkflowStep{Kind: "verification"}}}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestFactoryUsageUnavailable(t *testing.T) {
 
 func TestFactoryUsageRoute(t *testing.T) {
 	srv := New(nil, openTestStateDB(t), "", nil, nil)
-	if _, err := srv.stateDB.CreateFactoryEpic(t.Context(), "e", "Usage", "", "/repo", "usage", model.NativeFormula{ID: "usage", Version: 1, Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}); err != nil {
+	if _, err := srv.stateDB.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "e", "Usage", "", "/repo", "usage", model.NativeFormula{ID: "usage", Version: 1, Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	useFactory(srv, &fakeFactoryService{epics: []factory.WorkEpic{{ID: "e"}}})

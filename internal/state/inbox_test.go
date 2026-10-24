@@ -44,19 +44,19 @@ func TestCreateInboxItemValidatesAndTrims(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	for _, input := range []struct{ title, body string }{{"", "body"}, {"title", " \n\t"}} {
-		if _, err := db.CreateCategorizedInboxItem(t.Context(), input.title, input.body, InboxGeneral); err == nil {
+		if _, err := db.CreateSessionInboxItem(t.Context(), input.title, input.body, InboxGeneral, nil); err == nil {
 			t.Fatalf("CreateCategorizedInboxItem(%q, %q) accepted blank input", input.title, input.body)
 		}
 	}
 
-	item, err := db.CreateCategorizedInboxItem(t.Context(), "  title  ", "\n body \t", InboxGeneral)
+	item, err := db.CreateSessionInboxItem(t.Context(), "  title  ", "\n body \t", InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.ID == "" || item.Title != "title" || item.Body != "body" || item.CreatedAt <= 0 {
 		t.Fatalf("created item = %+v", item)
 	}
-	other, err := db.CreateCategorizedInboxItem(t.Context(), "other", "body", InboxGeneral)
+	other, err := db.CreateSessionInboxItem(t.Context(), "other", "body", InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,13 +166,13 @@ func TestInboxCategoriesAndPermissionLifecycle(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	for _, category := range []string{InboxGeneral, InboxFactory, InboxRoutine} {
-		item, err := db.CreateCategorizedInboxItem(t.Context(), category, "body", category)
+		item, err := db.CreateSessionInboxItem(t.Context(), category, "body", category, nil)
 		if err != nil || item.Category != category {
 			t.Fatalf("category %q: %+v, %v", category, item, err)
 		}
 	}
 	for _, category := range []string{"", "unknown", InboxPermissionCategory} {
-		if _, err := db.CreateCategorizedInboxItem(t.Context(), "title", "body", category); err == nil {
+		if _, err := db.CreateSessionInboxItem(t.Context(), "title", "body", category, nil); err == nil {
 			t.Fatalf("accepted category %q", category)
 		}
 	}
@@ -242,11 +242,11 @@ func TestInboxCategoriesAndPermissionLifecycle(t *testing.T) {
 func TestArchivedInboxListingPreservesReadState(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
-	active, err := db.CreateCategorizedInboxItem(t.Context(), "Active", "body", InboxGeneral)
+	active, err := db.CreateSessionInboxItem(t.Context(), "Active", "body", InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	archived, err := db.CreateCategorizedInboxItem(t.Context(), "Archived", "body", InboxGeneral)
+	archived, err := db.CreateSessionInboxItem(t.Context(), "Archived", "body", InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
