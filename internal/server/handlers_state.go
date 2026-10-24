@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -40,7 +41,7 @@ func (s *Server) resolvePlatformIDForState(w http.ResponseWriter, r *http.Reques
 // resolve the owning platform, writing the HTTP error itself on
 // failure. Returns the platform ID and whether to proceed.
 func (s *Server) validateStateRequest(w http.ResponseWriter, r *http.Request, sessionID, platform string) (string, bool) {
-	if !validateID(sessionID) {
+	if !httpx.ValidID(sessionID) {
 		http.Error(w, "invalid session ID", http.StatusBadRequest)
 		return "", false
 	}
@@ -54,7 +55,7 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 		SessionTimeUpdated int64  `json:"timeUpdated"`
 		Interrupted        bool   `json:"interrupted"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	if req.SessionTimeUpdated <= 0 {
@@ -67,11 +68,11 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.stateDB.MarkSessionSeen(r.Context(), platform, req.SessionID, req.SessionTimeUpdated, req.Interrupted); err != nil {
-		serverError(w, "updating seen session state", err)
+		httpx.ServerError(w, "updating seen session state", err)
 		return
 	}
 
-	writeJSON(w, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +82,7 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		SessionTimeUpdated int64  `json:"timeUpdated"`
 		Archived           bool   `json:"archived"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	if req.Archived && req.SessionTimeUpdated <= 0 {
@@ -122,7 +123,7 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		err = s.stateDB.UnarchiveSession(r.Context(), platform, req.SessionID)
 	}
 	if err != nil {
-		serverError(w, "updating archived session state", err)
+		httpx.ServerError(w, "updating archived session state", err)
 		return
 	}
 
@@ -131,7 +132,7 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		"patch": map[string]any{"archived": req.Archived, "snoozedUntil": 0},
 	})
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
-	writeJSON(w, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +141,7 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 		SessionID string `json:"sessionId"`
 		Pinned    bool   `json:"pinned"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	platform, ok := s.validateStateRequest(w, r, req.SessionID, req.Platform)
@@ -155,11 +156,11 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 		err = s.stateDB.UnpinSession(r.Context(), platform, req.SessionID)
 	}
 	if err != nil {
-		serverError(w, "updating pinned session state", err)
+		httpx.ServerError(w, "updating pinned session state", err)
 		return
 	}
 
-	writeJSON(w, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }
 
 // applySessionState overlays archive/seen/pin flags from state.db onto a

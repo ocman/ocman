@@ -14,6 +14,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 	log "github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
@@ -27,8 +28,8 @@ func TestErrorResponsesClassifyCancellation(t *testing.T) {
 		fn   func(http.ResponseWriter, string, error)
 		code int
 	}{
-		{"server", serverError, http.StatusInternalServerError},
-		{"platform", writePlatformError, http.StatusBadGateway},
+		{"server", httpx.ServerError, http.StatusInternalServerError},
+		{"platform", httpx.WritePlatformError, http.StatusBadGateway},
 		{"session service", writeSessionSvcError, http.StatusBadGateway},
 	} {
 		for _, failure := range []struct {

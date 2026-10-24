@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
@@ -54,5 +55,5 @@ func (s *Server) handleProviderAccounts(w http.ResponseWriter, r *http.Request) 
 		accounts = append(accounts, entry)
 	}
 	sort.Slice(accounts, func(i, j int) bool { return accounts[i].Platform < accounts[j].Platform })
-	writeJSON(w, map[string]any{"accounts": accounts})
+	httpx.WriteJSON(w, map[string]any{"accounts": accounts})
 }

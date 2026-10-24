@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -41,7 +42,7 @@ func (s *Server) handleListFavorites(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.stateDB.ModelFavorites(r.Context(), platform)
 	if err != nil {
-		serverError(w, "listing model favorites", err)
+		httpx.ServerError(w, "listing model favorites", err)
 		return
 	}
 
@@ -49,7 +50,7 @@ func (s *Server) handleListFavorites(w http.ResponseWriter, r *http.Request) {
 	for _, f := range rows {
 		out = append(out, favoriteEntry{Platform: f.Platform, Provider: f.Provider, Model: f.Model})
 	}
-	writeJSON(w, out)
+	httpx.WriteJSON(w, out)
 }
 
 // handleAddFavorite marks a (platform, provider, model) triple as a
@@ -60,7 +61,7 @@ func (s *Server) handleAddFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.stateDB.AddModelFavorite(r.Context(), req.Platform, req.Provider, req.Model); err != nil {
-		serverError(w, "adding model favorite", err)
+		httpx.ServerError(w, "adding model favorite", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -73,7 +74,7 @@ func (s *Server) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.stateDB.RemoveModelFavorite(r.Context(), req.Platform, req.Provider, req.Model); err != nil {
-		serverError(w, "removing model favorite", err)
+		httpx.ServerError(w, "removing model favorite", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -83,7 +84,7 @@ func (s *Server) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
 // between add and remove.
 func (s *Server) readFavoriteBody(w http.ResponseWriter, r *http.Request) (favoriteEntry, bool) {
 	var req favoriteEntry
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return favoriteEntry{}, false
 	}
 	req.Platform = strings.TrimSpace(req.Platform)

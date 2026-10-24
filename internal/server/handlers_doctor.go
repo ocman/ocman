@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // WithToolPathError records the toolpath.Ensure result so the doctor can
@@ -25,7 +26,7 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	}
 	checks = append(checks, s.router().Local().Doctor(r.Context())...)
 	checks = append(checks, s.mcpListenerCheck(), s.loginShellPathCheck())
-	writeJSON(w, map[string]any{"checks": checks, "logPath": s.logPath})
+	httpx.WriteJSON(w, map[string]any{"checks": checks, "logPath": s.logPath})
 }
 
 func (s *Server) openCodeDBCheck() hostsvc.DoctorCheck {

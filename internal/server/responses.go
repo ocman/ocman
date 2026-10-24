@@ -9,14 +9,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
-// The JSON and error helpers live in httpx so feature modules answer
-// exactly like the server.
-var (
-	writeJSON       = httpx.WriteJSON
-	writeJSONStatus = httpx.WriteJSONStatus
-	serverError     = httpx.ServerError
-)
-
 // writeSessionSvcError maps a sessionsvc error to an HTTP response.
 func writeSessionSvcError(w http.ResponseWriter, msg string, err error) {
 	var ve *sessionsvc.ValidationError
@@ -32,7 +24,5 @@ func writeSessionSvcError(w http.ResponseWriter, msg string, err error) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	writePlatformError(w, msg, err)
+	httpx.WritePlatformError(w, msg, err)
 }
-
-var writePlatformError = httpx.WritePlatformError

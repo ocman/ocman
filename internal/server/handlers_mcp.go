@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
@@ -24,7 +25,7 @@ import (
 // hand-commented config is a status to display, not an error.
 func (s *Server) handleMCPConfigStatus(w http.ResponseWriter, _ *http.Request) {
 	if reason := s.mcpUnavailableReason(); reason != "" {
-		writeJSON(w, map[string]interface{}{
+		httpx.WriteJSON(w, map[string]interface{}{
 			"configured":  false,
 			"editable":    false,
 			"unavailable": true,
@@ -36,7 +37,7 @@ func (s *Server) handleMCPConfigStatus(w http.ResponseWriter, _ *http.Request) {
 	st, err := opencodeconfig.Check(s.mcpServerURL())
 	if err != nil {
 		log.WithError(err).Debug("mcp: cannot resolve opencode config path")
-		writeJSON(w, map[string]interface{}{
+		httpx.WriteJSON(w, map[string]interface{}{
 			"configured": false,
 			"editable":   false,
 			"reason":     err.Error(),
@@ -44,7 +45,7 @@ func (s *Server) handleMCPConfigStatus(w http.ResponseWriter, _ *http.Request) {
 		})
 		return
 	}
-	writeJSON(w, st)
+	httpx.WriteJSON(w, st)
 }
 
 // handleMCPConfigInstall writes the ocman MCP entry into OpenCode's
@@ -74,7 +75,7 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 	}
 	log.WithFields(log.Fields{"path": st.Path, "backup": backup, "url": url}).
 		Info("mcp: registered ocman in the OpenCode config")
-	writeJSON(w, map[string]interface{}{
+	httpx.WriteJSON(w, map[string]interface{}{
 		"installed":  st.Configured,
 		"path":       st.Path,
 		"backupPath": backup,

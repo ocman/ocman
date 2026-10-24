@@ -9,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/remote"
@@ -64,7 +65,7 @@ func (s *Server) resolveOwner(w http.ResponseWriter, dir, remoteID string) (host
 	}
 	host, ok := s.router().LookupRemote(remoteID)
 	if !ok {
-		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{
+		httpx.WriteJSONStatus(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]string{
 				"code":     "remote_not_connected",
 				"remoteId": remoteID,

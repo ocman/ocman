@@ -15,6 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/whisper"
@@ -39,10 +40,10 @@ func (s *Server) LogPath() string { return s.logPath }
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.listProjects(r.Context())
 	if err != nil {
-		serverError(w, "fetching projects", err)
+		httpx.ServerError(w, "fetching projects", err)
 		return
 	}
-	writeJSON(w, projects)
+	httpx.WriteJSON(w, projects)
 }
 
 func (s *Server) listProjects(ctx context.Context) ([]db.ProjectStats, error) {
@@ -176,7 +177,7 @@ func projectArchiveKey(remoteID, directory string) state.ProjectKey {
 }
 
 func (s *Server) handleWhisperStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]interface{}{
+	httpx.WriteJSON(w, map[string]interface{}{
 		"available": whisper.Available(),
 	})
 }
@@ -188,7 +189,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUpload)
-	setBodyReadDeadline(w, uploadReadTimeout)
+	httpx.SetBodyReadDeadline(w, uploadReadTimeout)
 
 	file, header, err := r.FormFile("audio")
 	if err != nil {
@@ -198,7 +199,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 	// Body is in hand; transcription itself can take minutes.
-	clearBodyReadDeadline(w)
+	httpx.ClearBodyReadDeadline(w)
 
 	ext := filepath.Ext(header.Filename)
 	if ext == "" {
@@ -206,14 +207,14 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	tmp, err := os.CreateTemp("", "ocman-audio-*"+ext)
 	if err != nil {
-		serverError(w, "creating temp file", err)
+		httpx.ServerError(w, "creating temp file", err)
 		return
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 
 	if _, err := io.Copy(tmp, file); err != nil {
-		serverError(w, "writing audio to temp file", err)
+		httpx.ServerError(w, "writing audio to temp file", err)
 		return
 	}
 	tmp.Close()
@@ -225,7 +226,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]interface{}{"text": text})
+	httpx.WriteJSON(w, map[string]interface{}{"text": text})
 }
 
 func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +235,7 @@ func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 
@@ -303,5 +304,5 @@ func (s *Server) handleSystemStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, stats)
+	httpx.WriteJSON(w, stats)
 }

@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
@@ -26,7 +27,7 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		Dir      string `json:"dir"`
 		RemoteID string `json:"remoteId"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	req.Dir = strings.TrimSpace(req.Dir)
@@ -43,10 +44,10 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 	if s.remotes == nil {
 		platform, err := s.defaultPlatformFor(r.Context(), owner)
 		if err != nil {
-			serverError(w, "resolving the default platform", err)
+			httpx.ServerError(w, "resolving the default platform", err)
 			return
 		}
-		writeJSON(w, map[string]any{
+		httpx.WriteJSON(w, map[string]any{
 			"candidates": []remote.TargetCandidate{{
 				RemoteID:   "local",
 				RemoteName: "This machine",
@@ -86,7 +87,7 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		"origin":     origin,
 		"candidates": len(candidates),
 	}).Info("resolve-targets")
-	writeJSON(w, map[string]any{
+	httpx.WriteJSON(w, map[string]any{
 		"candidates": candidates,
 		"remotes":    s.remotes.EnabledRemotes(),
 	})

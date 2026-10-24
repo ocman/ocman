@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -41,7 +42,7 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 		Archived  bool   `json:"archived"`
 		RemoteID  string `json:"remoteId"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	root := projectRootForDirectory(strings.TrimSpace(req.Directory))
@@ -69,9 +70,9 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 		err = s.stateDB.UnarchiveProject(r.Context(), remoteID, root)
 	}
 	if err != nil {
-		serverError(w, "updating archived project state", err)
+		httpx.ServerError(w, "updating archived project state", err)
 		return
 	}
 
-	writeJSON(w, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }

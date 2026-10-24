@@ -16,6 +16,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // Auth protects clients behind a password lockscreen.
@@ -280,7 +282,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`
 	}
-	if !readAndUnmarshal(w, r, maxLoginBodyBytes, &req) {
+	if !httpx.ReadJSON(w, r, maxLoginBodyBytes, &req) {
 		return
 	}
 	if req.Password == "" {
@@ -298,7 +300,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// finally got their password right isn't stuck behind 429s.
 	s.auth.limiter.reset(ip)
 	s.auth.issueCookie(w, r)
-	writeJSON(w, map[string]interface{}{"ok": true})
+	httpx.WriteJSON(w, map[string]interface{}{"ok": true})
 }
 
 // handleAuthLogout clears the cookie. Always returns 204; idempotent.
@@ -318,16 +320,16 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"authenticated": true,
 	}
 	if s.auth == nil {
-		writeJSON(w, resp)
+		httpx.WriteJSON(w, resp)
 		return
 	}
 	// Loopback bypass: only when the operator has explicitly opted in.
 	if s.auth.trustLocalhost && isLoopback(r) {
-		writeJSON(w, resp)
+		httpx.WriteJSON(w, resp)
 		return
 	}
 	resp["authenticated"] = s.auth.hasValidCookie(r)
-	writeJSON(w, resp)
+	httpx.WriteJSON(w, resp)
 }
 
 // --- rate limiter ---

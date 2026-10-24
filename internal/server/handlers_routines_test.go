@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/routines"
@@ -149,7 +150,7 @@ func TestRoutineHTTPValidationConflictAndMissing(t *testing.T) {
 	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", overflow); rec.Code != http.StatusBadRequest {
 		t.Fatalf("overflow: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", strings.Repeat(" ", maxRequestBody+1)); rec.Code != http.StatusBadRequest {
+	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", strings.Repeat(" ", httpx.MaxRequestBody+1)); rec.Code != http.StatusBadRequest {
 		t.Fatalf("oversized body: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody); rec.Code != http.StatusCreated {

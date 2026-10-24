@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -41,8 +42,8 @@ type notifyPrompt struct {
 // Only pending prompts and unseen waiting/error/interrupted sessions can
 // contribute to notification state; keep the response small.
 func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
-	since := parseInt64Param(r, "since", 0)
-	limit := parseIntParam(r, "limit", 500)
+	since := httpx.QueryInt[int64](r, "since", 0)
+	limit := httpx.QueryInt(r, "limit", 500)
 	if limit < 0 {
 		limit = 500
 	}
@@ -51,7 +52,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("includeDone") == "1" {
 		all, readErr := s.notificationSessionRows(r.Context(), since, limit)
 		if readErr != nil {
-			serverError(w, "reading compact notification sessions", readErr)
+			httpx.ServerError(w, "reading compact notification sessions", readErr)
 			return
 		}
 		out, err = s.notificationEntriesForSessions(r.Context(), all, false, true)
@@ -59,10 +60,10 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 		out, err = s.notificationEntries(r.Context(), since, limit)
 	}
 	if err != nil {
-		serverError(w, "fetching session state for notify", err)
+		httpx.ServerError(w, "fetching session state for notify", err)
 		return
 	}
-	writeJSON(w, out)
+	httpx.WriteJSON(w, out)
 }
 
 func (s *Server) notificationEntries(ctx context.Context, since int64, limit int) ([]notifyEntry, error) {

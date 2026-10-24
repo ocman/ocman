@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -36,23 +37,23 @@ func (s *Server) getProjectSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	ps, err := s.stateDB.GetProjectSettings(r.Context(), dir)
 	if err != nil {
-		serverError(w, "reading project settings", err)
+		httpx.ServerError(w, "reading project settings", err)
 		return
 	}
 	agent, err := s.defaultAgent(r.Context())
 	if err != nil {
-		serverError(w, "reading default agent", err)
+		httpx.ServerError(w, "reading default agent", err)
 		return
 	}
 	defaults, err := s.getProjectDefaults(r.Context(), dir, r.URL.Query().Get("remoteId"))
 	if err != nil {
-		serverError(w, "reading project defaults", err)
+		httpx.ServerError(w, "reading project defaults", err)
 		return
 	}
 	if defaults != nil && defaults.Agent != "" {
 		agent = defaults.Agent
 	}
-	writeJSON(w, struct {
+	httpx.WriteJSON(w, struct {
 		state.ProjectSettings
 		DefaultAgent string           `json:"defaultAgent"`
 		Defaults     *projectDefaults `json:"defaults,omitempty"`
@@ -66,7 +67,7 @@ func (s *Server) postProjectSettings(w http.ResponseWriter, r *http.Request) {
 		Defaults  *projectDefaults `json:"defaults"`
 		state.ProjectSettings
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	dir := strings.TrimSpace(req.Directory)
@@ -81,10 +82,10 @@ func (s *Server) postProjectSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		raw, _ := json.Marshal(req.Defaults)
 		if err := s.stateDB.SetSetting(r.Context(), projectDefaultsKey(dir, req.RemoteID), string(raw)); err != nil {
-			serverError(w, "saving project defaults", err)
+			httpx.ServerError(w, "saving project defaults", err)
 			return
 		}
-		writeJSON(w, map[string]bool{"ok": true})
+		httpx.WriteJSON(w, map[string]bool{"ok": true})
 		return
 	}
 	if err := s.stateDB.SetProjectSettings(r.Context(), dir, req.ProjectSettings); err != nil {
@@ -92,11 +93,11 @@ func (s *Server) postProjectSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		serverError(w, "saving project settings", err)
+		httpx.ServerError(w, "saving project settings", err)
 		return
 	}
 	s.queueModule().ForgetProjectModels(dir)
-	writeJSON(w, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }
 
 // projectModelList returns dir's project model list (nil when none or

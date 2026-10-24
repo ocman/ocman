@@ -5,6 +5,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/gitmod"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // gitModule is stateless, so it is rebuilt on each call. Permission
@@ -27,7 +28,7 @@ func (s *Server) gitModule() *gitmod.Module {
 // session splits onto the parent's platform, not the default.
 func (s *Server) worktreePlatform(r *http.Request, host hostsvc.Host, requested, model, parentSessionID string) (string, string, error) {
 	if requested == "" {
-		requested = platformHint(r)
+		requested = httpx.PlatformHint(r)
 	}
 	if requested == "" && model == "" && parentSessionID != "" && s.registry != nil {
 		if parent, ok := s.registry.PlatformForSession(r.Context(), parentSessionID); ok {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -17,7 +18,7 @@ import (
 // handleSidebarSessions deliberately bypasses summary fanout and applySessionState.
 // Each owner returns filtered metadata, flags and observations in one SQL query.
 func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
-	q := platforms.SidebarQuery{Directory: r.URL.Query().Get("dir"), Since: parseInt64Param(r, "since", 0), Limit: parseIntParam(r, "limit", 500), Offset: parseIntParam(r, "offset", 0), Origin: r.URL.Query().Get("origin"), OriginID: r.URL.Query().Get("originId")}
+	q := platforms.SidebarQuery{Directory: r.URL.Query().Get("dir"), Since: httpx.QueryInt[int64](r, "since", 0), Limit: httpx.QueryInt(r, "limit", 500), Offset: httpx.QueryInt(r, "offset", 0), Origin: r.URL.Query().Get("origin"), OriginID: r.URL.Query().Get("originId")}
 	if q.Limit < 0 || q.Offset < 0 {
 		http.Error(w, "invalid sidebar page", http.StatusBadRequest)
 		return
@@ -32,7 +33,7 @@ func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	all, err := s.sidebarSessionRows(r.Context(), q, false)
 	if err != nil {
-		serverError(w, "reading compact sessions", err)
+		httpx.ServerError(w, "reading compact sessions", err)
 		return
 	}
 	if r.URL.Query().Get("view") == "running-count" {
@@ -42,12 +43,12 @@ func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
 				count++
 			}
 		}
-		writeJSON(w, struct {
+		httpx.WriteJSON(w, struct {
 			Count int `json:"count"`
 		}{count})
 		return
 	}
-	writeJSON(w, all)
+	httpx.WriteJSON(w, all)
 }
 
 func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuery, strict bool) ([]db.Session, error) {

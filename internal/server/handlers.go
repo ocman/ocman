@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,42 +17,20 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
-// maxRequestBody is the maximum allowed request body size (1 MB).
-const maxRequestBody = httpx.MaxRequestBody
-
-// maxSendMessageBody is the maximum allowed body for send-message
-// (20 MB to support inline images).
-const maxSendMessageBody = httpx.MaxSendMessageBody
-
 // maxAudioUpload is the maximum allowed audio upload size (25 MB).
 const maxAudioUpload = 25 << 20
-
-// validateID checks that an ID is safe for use in URLs and log messages.
-func validateID(id string) bool {
-	return httpx.ValidID(id)
-}
 
 // uploadReadTimeout bounds body reads for the upload handlers (audio,
 // composer attachments), which move tens of megabytes and can
 // legitimately take much longer on a slow link than httpx.BodyReadTimeout.
 var uploadReadTimeout = 5 * time.Minute
 
-var (
-	setBodyReadDeadline   = httpx.SetBodyReadDeadline
-	clearBodyReadDeadline = httpx.ClearBodyReadDeadline
-	readAndUnmarshal      = httpx.ReadJSON
-	// Shared with the project forge module so both validate identically.
-	parseAbsDir            = httpx.AbsDir
-	normaliseDirParam      = httpx.NormaliseDir
-	requireProjectRemoteID = httpx.RemoteID
-)
-
 // --- Platform dispatch helpers ---
 
 // resolvePlatformForSession returns the Platform adapter owning a
 // given session ID. Writes 404 and returns nil if no adapter claims it.
 func (s *Server) resolvePlatformForSession(w http.ResponseWriter, r *http.Request, sessionID string) platforms.Platform {
-	if !validateID(sessionID) {
+	if !httpx.ValidID(sessionID) {
 		http.Error(w, "invalid session ID", http.StatusBadRequest)
 		return nil
 	}
@@ -89,42 +66,6 @@ func (s *Server) withSessionAdapter(w http.ResponseWriter, r *http.Request, fn s
 	}
 }
 
-// platformHint returns the explicit ?platform= query value, if any
-// (AD-2b: remote sessions are addressed by their compound platform key).
-func platformHint(r *http.Request) string {
-	return httpx.PlatformHint(r)
-}
-
-// --- Query param helpers ---
-
-// parseIntParam reads an integer query parameter by name. Returns
-// fallback when the parameter is absent, empty, or not a valid integer.
-func parseIntParam(r *http.Request, name string, fallback int) int {
-	v := strings.TrimSpace(r.URL.Query().Get(name))
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
-// parseInt64Param is like parseIntParam but returns int64. Used for
-// millisecond timestamps that overflow int on 32-bit platforms.
-func parseInt64Param(r *http.Request, name string, fallback int64) int64 {
-	v := strings.TrimSpace(r.URL.Query().Get(name))
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
 // sortAndLimitSessions sorts a combined multi-platform session slice by
 // recency (bucketed into 5-minute windows) and truncates to at most limit
 // entries. A negative limit truncates nothing; callers validate user input.
@@ -154,7 +95,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		// permission posture, as /wt does for a new worktree.
 		ParentSessionID string `json:"parentSessionId"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	if !req.ResolvePlatform(r.Context(), s.sessionLifecycleModule(), w, "") {
@@ -186,7 +127,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	// Soft-fail like /wt: inheritance never turns a created session into an error.
 	s.applyInheritedPermissions(r, s.buildInheritedPermissions(r, req.Platform, req.ParentSessionID), resp.ID)
-	writeJSON(w, resp)
+	httpx.WriteJSON(w, resp)
 }
 
 // --- Capabilities endpoint ---
@@ -244,7 +185,7 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, map[string]interface{}{
+	httpx.WriteJSON(w, map[string]interface{}{
 		"platforms":        out,
 		"ownedSessionIds":  s.registry.CanonicalSessionIDs(),
 		"hosts":            hosts,

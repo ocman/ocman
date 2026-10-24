@@ -31,10 +31,7 @@ var BodyReadTimeout = 30 * time.Second
 
 // WriteJSON writes a JSON response with an implicit 200 status.
 func WriteJSON(w http.ResponseWriter, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.WithError(err).Error("failed to encode JSON response")
-	}
+	WriteJSONStatus(w, http.StatusOK, data)
 }
 
 // WriteJSONStatus writes a JSON response with an explicit status code.

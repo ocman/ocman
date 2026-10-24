@@ -8,6 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 )
 
@@ -56,7 +57,7 @@ func (s *Server) handleHook(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHookPlugin(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.router().Local().(hostsvc.HookPluginManager)
 	if !ok {
-		writeJSON(w, map[string]bool{"available": false, "installed": false})
+		httpx.WriteJSON(w, map[string]bool{"available": false, "installed": false})
 		return
 	}
 	var err error
@@ -72,5 +73,5 @@ func (s *Server) handleHookPlugin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	available, installed := p.HookPlugin()
-	writeJSON(w, map[string]bool{"available": available, "installed": installed})
+	httpx.WriteJSON(w, map[string]bool{"available": available, "installed": installed})
 }

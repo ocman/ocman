@@ -16,6 +16,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -49,7 +50,7 @@ func TestValidateID(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := validateID(tt.id)
+			got := httpx.ValidID(tt.id)
 			if got != tt.want {
 				t.Errorf("validateID(%q) = %v, want %v", tt.id, got, tt.want)
 			}
@@ -250,7 +251,7 @@ func TestReadAndUnmarshal_ValidJSON(t *testing.T) {
 		Name  string `json:"name"`
 		Value int    `json:"value"`
 	}
-	ok := readAndUnmarshal(rr, req, 1024, &dst)
+	ok := httpx.ReadJSON(rr, req, 1024, &dst)
 	if !ok {
 		t.Fatal("expected true for valid JSON")
 	}
@@ -265,7 +266,7 @@ func TestReadAndUnmarshal_InvalidJSON(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	var dst struct{}
-	ok := readAndUnmarshal(rr, req, 1024, &dst)
+	ok := httpx.ReadJSON(rr, req, 1024, &dst)
 	if ok {
 		t.Fatal("expected false for invalid JSON")
 	}
@@ -278,7 +279,7 @@ func TestReadAndUnmarshal_InvalidJSON(t *testing.T) {
 
 func TestWriteJSON(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writeJSON(rr, map[string]string{"key": "value"})
+	httpx.WriteJSON(rr, map[string]string{"key": "value"})
 
 	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
@@ -298,7 +299,7 @@ func TestWriteJSON(t *testing.T) {
 // for 502s.
 func TestWritePlatformError_MapsErrBusyTo409(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writePlatformError(rr, "sending message", platforms.ErrBusy)
+	httpx.WritePlatformError(rr, "sending message", platforms.ErrBusy)
 	if rr.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusConflict)
 	}
@@ -312,7 +313,7 @@ func TestWritePlatformError_MapsErrBusyTo409(t *testing.T) {
 // future edit can't silently break either route.
 func TestWritePlatformError_MapsErrUnsupportedTo501(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writePlatformError(rr, "sending message", platforms.ErrUnsupported)
+	httpx.WritePlatformError(rr, "sending message", platforms.ErrUnsupported)
 	if rr.Code != http.StatusNotImplemented {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusNotImplemented)
 	}
@@ -321,7 +322,7 @@ func TestWritePlatformError_MapsErrUnsupportedTo501(t *testing.T) {
 // TestWritePlatformError_MapsUnknownTo502 covers the default branch.
 func TestWritePlatformError_MapsUnknownTo502(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writePlatformError(rr, "sending message", errors.New("unexpected"))
+	httpx.WritePlatformError(rr, "sending message", errors.New("unexpected"))
 	if rr.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadGateway)
 	}
@@ -331,7 +332,7 @@ func TestWritePlatformError_MapsAuthenticationWithoutSecret(t *testing.T) {
 	const secret = "do-not-expose"
 	rr := httptest.NewRecorder()
 	err := fmt.Errorf("request failed: %w", ocapi.ErrAuthentication)
-	writePlatformError(rr, "sending message", err)
+	httpx.WritePlatformError(rr, "sending message", err)
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadGateway)
 	}
@@ -353,7 +354,7 @@ func TestWritePlatformError_MapsErrUpstreamRejectedTo422(t *testing.T) {
 	t.Run("with message", func(t *testing.T) {
 		rr := httptest.NewRecorder()
 		ue := &platforms.UpstreamError{Status: 400, Message: "Model anthropic/foo not found"}
-		writePlatformError(rr, "sending message", fmt.Errorf("opencode /x: %w", ue))
+		httpx.WritePlatformError(rr, "sending message", fmt.Errorf("opencode /x: %w", ue))
 		if rr.Code != http.StatusUnprocessableEntity {
 			t.Errorf("status = %d, want %d", rr.Code, http.StatusUnprocessableEntity)
 		}
@@ -364,7 +365,7 @@ func TestWritePlatformError_MapsErrUpstreamRejectedTo422(t *testing.T) {
 	t.Run("empty message falls back to generic body", func(t *testing.T) {
 		rr := httptest.NewRecorder()
 		ue := &platforms.UpstreamError{Status: 400}
-		writePlatformError(rr, "sending message", ue)
+		httpx.WritePlatformError(rr, "sending message", ue)
 		if rr.Code != http.StatusUnprocessableEntity {
 			t.Errorf("status = %d, want %d", rr.Code, http.StatusUnprocessableEntity)
 		}
@@ -382,7 +383,7 @@ func TestWritePlatformError_MapsErrUpstreamRejectedTo422(t *testing.T) {
 func TestWritePlatformError_MapsErrPlatformUnreachableTo503(t *testing.T) {
 	t.Run("sentinel", func(t *testing.T) {
 		rr := httptest.NewRecorder()
-		writePlatformError(rr, "creating session", platforms.ErrPlatformUnreachable)
+		httpx.WritePlatformError(rr, "creating session", platforms.ErrPlatformUnreachable)
 		if rr.Code != http.StatusServiceUnavailable {
 			t.Errorf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 		}
@@ -390,7 +391,7 @@ func TestWritePlatformError_MapsErrPlatformUnreachableTo503(t *testing.T) {
 	t.Run("wrapped", func(t *testing.T) {
 		rr := httptest.NewRecorder()
 		wrapped := fmt.Errorf("no running OpenCode instance for /tmp: %w", platforms.ErrPlatformUnreachable)
-		writePlatformError(rr, "creating session", wrapped)
+		httpx.WritePlatformError(rr, "creating session", wrapped)
 		if rr.Code != http.StatusServiceUnavailable {
 			t.Errorf("wrapped status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
 		}
@@ -522,7 +523,7 @@ func TestNormaliseDirParam(t *testing.T) {
 		{"/", "/"}, // leave bare root alone — defensive
 	}
 	for _, tc := range cases {
-		if got := normaliseDirParam(tc.in); got != tc.want {
+		if got := httpx.NormaliseDir(tc.in); got != tc.want {
 			t.Errorf("normaliseDirParam(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}

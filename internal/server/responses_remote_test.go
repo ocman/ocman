@@ -8,6 +8,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"google.golang.org/grpc/codes"
@@ -62,7 +63,7 @@ func TestCanceledRPCResponses(t *testing.T) {
 				t.Fatalf("RPC error = %v, want codes.Canceled", rpcErr)
 			}
 			w := httptest.NewRecorder()
-			writePlatformError(w, "remote read", rpcErr)
+			httpx.WritePlatformError(w, "remote read", rpcErr)
 			if w.Code != 499 {
 				t.Fatalf("status = %d, want 499; body=%s", w.Code, w.Body)
 			}

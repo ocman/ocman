@@ -66,7 +66,7 @@ func (m *Module) handleMetricLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func metricsOptions(r *http.Request) db.MetricsDashboardOptions {
-	dayCount := intParam(r, "days", 0)
+	dayCount := httpx.QueryInt(r, "days", 0)
 	var since int64
 	if dayCount > 0 {
 		since = time.Now().Add(-time.Duration(dayCount) * 24 * time.Hour).UnixMilli()
@@ -76,12 +76,12 @@ func metricsOptions(r *http.Request) db.MetricsDashboardOptions {
 		ModelFilter:   strings.TrimSpace(r.URL.Query().Get("model")),
 		Since:         since,
 		Days:          dayCount,
-		RequestLimit:  intParam(r, "limit", 20),
-		RequestOffset: intParam(r, "offset", 0),
-		SessionLimit:  intParam(r, "sessionLimit", 20),
-		SessionOffset: intParam(r, "sessionOffset", 0),
-		ProjectLimit:  intParam(r, "projectLimit", 20),
-		ProjectOffset: intParam(r, "projectOffset", 0),
+		RequestLimit:  httpx.QueryInt(r, "limit", 20),
+		RequestOffset: httpx.QueryInt(r, "offset", 0),
+		SessionLimit:  httpx.QueryInt(r, "sessionLimit", 20),
+		SessionOffset: httpx.QueryInt(r, "sessionOffset", 0),
+		ProjectLimit:  httpx.QueryInt(r, "projectLimit", 20),
+		ProjectOffset: httpx.QueryInt(r, "projectOffset", 0),
 		Pricing:       pricing.Load(),
 		Dir:           dirParam(r),
 	}
@@ -132,7 +132,7 @@ func (m *Module) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
-	data, err := m.analyticsReader(r.Context()).GetHourlyTokensByModel(r.Context(), intParam(r, "days", 0), sinceParam(r), model, dirParam(r))
+	data, err := m.analyticsReader(r.Context()).GetHourlyTokensByModel(r.Context(), httpx.QueryInt(r, "days", 0), sinceParam(r), model, dirParam(r))
 	if err != nil {
 		httpx.ServerError(w, "fetching hourly tokens by model", err)
 		return

@@ -34,7 +34,7 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		// point of a plain Enter send.
 		Queue bool `json:"queue"`
 	}
-	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxSendMessageBody, &req) {
 		return
 	}
 	sessionID, ok := httpx.SessionID(w, r)
@@ -59,9 +59,9 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 	// it to finish. Both paths validate message-or-images.
 	var err error
 	if req.Queue {
-		err = s.enqueueFollowUp(r.Context(), platformHint(r), send)
+		err = s.enqueueFollowUp(r.Context(), httpx.PlatformHint(r), send)
 	} else {
-		err = s.sendNow(r.Context(), platformHint(r), send)
+		err = s.sendNow(r.Context(), httpx.PlatformHint(r), send)
 	}
 	if err != nil {
 		writeSessionSvcError(w, "sending message", err)
@@ -75,7 +75,7 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Reply string `json:"reply"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	sessionID, ok := httpx.SessionID(w, r)
@@ -83,7 +83,7 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	permissionID := r.PathValue("pid")
-	if !validateID(permissionID) {
+	if !httpx.ValidID(permissionID) {
 		http.Error(w, "invalid permission ID", http.StatusBadRequest)
 		return
 	}
@@ -117,7 +117,7 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 								factorymod.WriteError(w, err)
 								return
 							}
-							writeJSON(w, gate)
+							httpx.WriteJSON(w, gate)
 							return
 						}
 					}
@@ -127,7 +127,7 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 	}
 	// The session service cancels any in-flight auto-approve judge
 	// (via the PermissionReplied hook) before forwarding the reply.
-	if err := s.sessions.RespondPermission(r.Context(), platformHint(r), platforms.RespondPermissionRequest{
+	if err := s.sessions.RespondPermission(r.Context(), httpx.PlatformHint(r), platforms.RespondPermissionRequest{
 		SessionID:    sessionID,
 		PermissionID: permissionID,
 		Reply:        req.Reply,
@@ -149,12 +149,12 @@ func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 	questionID := r.PathValue("qid")
 	reject := strings.HasSuffix(r.Pattern, "/reject")
-	if !validateID(questionID) {
+	if !httpx.ValidID(questionID) {
 		http.Error(w, "invalid question ID", http.StatusBadRequest)
 		return
 	}
 	if reject {
-		if err := s.sessions.RejectQuestion(r.Context(), platformHint(r), platforms.RejectQuestionRequest{
+		if err := s.sessions.RejectQuestion(r.Context(), httpx.PlatformHint(r), platforms.RejectQuestionRequest{
 			SessionID: sessionID,
 			RequestID: questionID,
 		}); err != nil {
@@ -167,10 +167,10 @@ func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Answers [][]string `json:"answers"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
-	if err := s.sessions.RespondQuestion(r.Context(), platformHint(r), platforms.RespondQuestionRequest{
+	if err := s.sessions.RespondQuestion(r.Context(), httpx.PlatformHint(r), platforms.RespondQuestionRequest{
 		SessionID: sessionID,
 		RequestID: questionID,
 		Answers:   req.Answers,

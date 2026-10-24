@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/filesystem"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
 // filesystemModule exists without a state DB too: browsing and repository
@@ -20,11 +21,11 @@ func (s *Server) filesystemModule() *filesystem.Module {
 // repoFilesOwner requires an explicit remoteId, so a disconnected remote
 // fails closed (503) instead of reading the hub's checkout.
 func (s *Server) repoFilesOwner(w http.ResponseWriter, r *http.Request) (string, filesystem.RepoFiles, bool) {
-	dir, ok := parseAbsDir(w, r)
+	dir, ok := httpx.AbsDir(w, r)
 	if !ok {
 		return "", nil, false
 	}
-	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	remoteID, ok := httpx.RemoteID(w, r.URL.Query().Get("remoteId"))
 	if !ok {
 		return "", nil, false
 	}

@@ -27,3 +27,14 @@ func TestDirAndOwnerParams(t *testing.T) {
 		t.Fatalf("RemoteID = %q, %v", id, ok)
 	}
 }
+
+func TestQueryInt(t *testing.T) {
+	for query, want := range map[string]int{"": 7, "n=": 7, "n=%205%20": 5, "n=-3": -3, "n=+4": 4, "n=x": 7, "n=1.5": 7, "n=99999999999999999999": 7} {
+		if got := QueryInt(httptest.NewRequest(http.MethodGet, "/?"+query, nil), "n", 7); got != want {
+			t.Errorf("QueryInt(%q) = %d, want %d", query, got, want)
+		}
+	}
+	if got := QueryInt[int64](httptest.NewRequest(http.MethodGet, "/?since=1700000000000", nil), "since", 0); got != 1700000000000 {
+		t.Errorf("QueryInt[int64] = %d", got)
+	}
+}

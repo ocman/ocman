@@ -23,7 +23,7 @@ func bodyDeadlineTestServer(t *testing.T) string {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bounded", func(w http.ResponseWriter, r *http.Request) {
 		var dst map[string]interface{}
-		if !readAndUnmarshal(w, r, maxRequestBody, &dst) {
+		if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &dst) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -31,7 +31,7 @@ func bodyDeadlineTestServer(t *testing.T) string {
 	// Mirrors the upload handlers: the generous deadline, then a full
 	// body read.
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
-		setBodyReadDeadline(w, uploadReadTimeout)
+		httpx.SetBodyReadDeadline(w, uploadReadTimeout)
 		if _, err := io.ReadAll(io.LimitReader(r.Body, maxAudioUpload)); err != nil {
 			http.Error(w, "failed to read body", http.StatusBadRequest)
 			return
@@ -42,7 +42,7 @@ func bodyDeadlineTestServer(t *testing.T) string {
 	// than the body deadline (git, tmux, an upstream agent call).
 	mux.HandleFunc("/slow-work", func(w http.ResponseWriter, r *http.Request) {
 		var dst map[string]interface{}
-		if !readAndUnmarshal(w, r, maxRequestBody, &dst) {
+		if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &dst) {
 			return
 		}
 		time.Sleep(4 * bodyTimeout)

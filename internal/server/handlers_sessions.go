@@ -10,6 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -25,8 +26,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dir := r.URL.Query().Get("dir")
-	since := parseInt64Param(r, "since", 0)
-	limit := parseIntParam(r, "limit", 500)
+	since := httpx.QueryInt[int64](r, "since", 0)
+	limit := httpx.QueryInt(r, "limit", 500)
 	if limit < 0 {
 		limit = 500
 	}
@@ -45,7 +46,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				count++
 			}
 		}
-		writeJSON(w, struct {
+		httpx.WriteJSON(w, struct {
 			Count int `json:"count"`
 		}{Count: count})
 		return
@@ -98,7 +99,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	err := s.applySessionState(ctx, all)
 	statePhase.EndWithDesc("applySessionState")
 	if err != nil {
-		serverError(w, "fetching session state", err)
+		httpx.ServerError(w, "fetching session state", err)
 		return
 	}
 
@@ -123,7 +124,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if all == nil {
 		all = []db.Session{} // [] not null: the frontend maps over it
 	}
-	writeJSON(w, all)
+	httpx.WriteJSON(w, all)
 }
 
 // --- Session detail ---
@@ -131,8 +132,8 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 
-	limit := parseIntParam(r, "limit", 30)
-	offset := parseIntParam(r, "offset", 0)
+	limit := httpx.QueryInt(r, "limit", 30)
+	offset := httpx.QueryInt(r, "offset", 0)
 
 	adapter := s.resolvePlatformForSession(w, r, sessionID)
 	if adapter == nil {
@@ -141,7 +142,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 
 	detail, err := adapter.Session(r.Context(), sessionID, limit, offset)
 	if err != nil {
-		writePlatformError(w, "fetching session", err)
+		httpx.WritePlatformError(w, "fetching session", err)
 		return
 	}
 	remote := isRemotePlatformID(string(adapter.ID()))
@@ -153,7 +154,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		if !peek || s.stateDB == nil {
 			detail.Session.FactoryAttemptID, err = s.factoryAttemptID(r.Context(), string(adapter.ID()), sessionID, detail.Session.ParentID)
 			if err != nil {
-				serverError(w, "fetching Factory session tag", err)
+				httpx.ServerError(w, "fetching Factory session tag", err)
 				return
 			}
 		}
@@ -171,7 +172,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if s.stateDB != nil && detail.Session != nil && peek {
 		row := []db.Session{*detail.Session}
 		if err := s.applySessionState(r.Context(), row); err != nil {
-			serverError(w, "applying session state on peek", err)
+			httpx.ServerError(w, "applying session state on peek", err)
 			return
 		}
 		detail.Session.Archived = row[0].Archived
@@ -191,7 +192,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, map[string]interface{}{
+	httpx.WriteJSON(w, map[string]interface{}{
 		"session":           detail.Session,
 		"sessionTree":       detail.SessionTree,
 		"messages":          detail.Messages,
@@ -250,7 +251,7 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 		ids = ids[:maxBatch]
 	}
 
-	limit := parseIntParam(r, "limit", 10)
+	limit := httpx.QueryInt(r, "limit", 10)
 	if limit < 1 {
 		limit = 1
 	}
@@ -297,7 +298,7 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 		detail, err := adapter.Session(r.Context(), sessionID, limit, 0)
 		if err != nil {
 			if errors.Is(err, platforms.ErrHistoryUnavailable) {
-				writePlatformError(w, "fetching stored task conversation", err)
+				httpx.WritePlatformError(w, "fetching stored task conversation", err)
 				return
 			}
 			continue
@@ -324,5 +325,5 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 		result[taskID] = taskData{Platform: string(adapter.ID()), Messages: msgsJSON, Parts: ptsJSON}
 	}
 
-	writeJSON(w, map[string]interface{}{"tasks": result})
+	httpx.WriteJSON(w, map[string]interface{}{"tasks": result})
 }

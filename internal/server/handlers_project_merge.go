@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -72,12 +73,12 @@ func (s *Server) handleProjectMerge(w http.ResponseWriter, r *http.Request) {
 		Source state.ProjectMergeTarget `json:"source"`
 		Target state.ProjectMergeTarget `json:"target"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
 	projects, err := s.listProjects(r.Context())
 	if err != nil {
-		serverError(w, "fetching projects", err)
+		httpx.ServerError(w, "fetching projects", err)
 		return
 	}
 	find := func(target state.ProjectMergeTarget) (state.ProjectMergeTarget, bool) {
@@ -114,9 +115,9 @@ func (s *Server) handleProjectMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		serverError(w, "merging projects", err)
+		httpx.ServerError(w, "merging projects", err)
 		return
 	}
 	s.broadcastGlobalEvent("ocman.projects.changed", []byte(`{}`))
-	writeJSON(w, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }

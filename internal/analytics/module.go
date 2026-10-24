@@ -120,16 +120,6 @@ func (m *Module) requireAnalytics(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// intParam reads an integer query parameter, or fallback when it is absent
-// or invalid.
-func intParam(r *http.Request, name string, fallback int) int {
-	n, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get(name)))
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
 // sinceParam turns ?days= into a Unix-millisecond cutoff; 0 means no filter.
 func sinceParam(r *http.Request) int64 {
 	if v := strings.TrimSpace(r.URL.Query().Get("days")); v != "" && v != "0" {

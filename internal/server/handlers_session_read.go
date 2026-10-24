@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -18,13 +19,13 @@ func listViaAdapter[T any](s *Server, w http.ResponseWriter, r *http.Request, er
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		entries, err := fetch(adapter, r.Context(), sessionID)
 		if err != nil {
-			writePlatformError(w, errContext, err)
+			httpx.WritePlatformError(w, errContext, err)
 			return
 		}
 		if entries == nil {
 			entries = []T{}
 		}
-		writeJSON(w, entries)
+		httpx.WriteJSON(w, entries)
 	})
 }
 
@@ -40,7 +41,7 @@ func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		resp, err := adapter.SessionModels(r.Context(), sessionID)
 		if err != nil {
-			writePlatformError(w, "fetching session models", err)
+			httpx.WritePlatformError(w, "fetching session models", err)
 			return
 		}
 		if resp == nil {
@@ -53,7 +54,7 @@ func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		writeJSON(w, resp)
+		httpx.WriteJSON(w, resp)
 	})
 }
 
@@ -74,7 +75,7 @@ func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request
 			entries, err = adapter.ListPermissions(r.Context(), sessionID)
 		}
 		if err != nil {
-			writePlatformError(w, "listing permissions", err)
+			httpx.WritePlatformError(w, "listing permissions", err)
 			return
 		}
 		if entries == nil {
@@ -90,7 +91,7 @@ func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request
 		if !isRemotePlatformID(string(adapter.ID())) {
 			s.autoapproveModule().EnsurePending(adapter, sessionID, entries)
 		}
-		writeJSON(w, entries)
+		httpx.WriteJSON(w, entries)
 	})
 }
 
@@ -121,17 +122,17 @@ func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
 func writeWithUnsupportedFallback[T any](w http.ResponseWriter, desc string, result *T, err error, zero *T) {
 	if err != nil {
 		if errors.Is(err, platforms.ErrUnsupported) {
-			writeJSON(w, zero)
+			httpx.WriteJSON(w, zero)
 			return
 		}
-		writePlatformError(w, desc, err)
+		httpx.WritePlatformError(w, desc, err)
 		return
 	}
 	if result == nil {
-		writeJSON(w, zero)
+		httpx.WriteJSON(w, zero)
 		return
 	}
-	writeJSON(w, result)
+	httpx.WriteJSON(w, result)
 }
 
 // handleSessionInfo returns the per-session info snapshot consumed by
@@ -150,7 +151,7 @@ func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
 			if s.stateDB != nil && !isRemotePlatformID(string(adapter.ID())) {
 				commits, listErr := s.stateDB.ListSessionCommits(r.Context(), string(adapter.ID()), sessionID)
 				if listErr != nil {
-					writePlatformError(w, "fetching session commits", listErr)
+					httpx.WritePlatformError(w, "fetching session commits", listErr)
 					return
 				}
 				for _, commit := range commits {
