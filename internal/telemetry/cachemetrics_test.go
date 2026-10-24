@@ -12,7 +12,7 @@ import (
 
 // withTestMeterProvider installs a fresh SDK MeterProvider with a
 // ManualReader as the global, resets the cache-instrument once-state
-// so the next Record* call binds to it, and returns the reader for
+// so the gauge binds to it, and returns the reader for
 // collecting. The previous global is restored on cleanup.
 func withTestMeterProvider(t *testing.T) *sdkmetric.ManualReader {
 	t.Helper()
@@ -98,7 +98,7 @@ func attrSetMatches(set attribute.Set, want map[string]string) bool {
 
 func TestCacheMetrics_RecordHitMiss(t *testing.T) {
 	reader := withTestMeterProvider(t)
-	m := CacheMetrics{Name: "test.cache"}
+	m := NewCacheMetrics("test.cache")
 	ctx := context.Background()
 
 	m.RecordHit(ctx)
@@ -124,7 +124,7 @@ func TestCacheMetrics_RecordHitMiss(t *testing.T) {
 
 func TestCacheMetrics_RecordEvictions(t *testing.T) {
 	reader := withTestMeterProvider(t)
-	m := CacheMetrics{Name: "test.cache"}
+	m := NewCacheMetrics("test.cache")
 	ctx := context.Background()
 
 	m.RecordEvictions(ctx, 5)
@@ -145,8 +145,8 @@ func TestCacheMetrics_RecordEvictions(t *testing.T) {
 
 func TestCacheMetrics_DistinctNamesAreSeparateSeries(t *testing.T) {
 	reader := withTestMeterProvider(t)
-	a := CacheMetrics{Name: "cache.a"}
-	b := CacheMetrics{Name: "cache.b"}
+	a := NewCacheMetrics("cache.a")
+	b := NewCacheMetrics("cache.b")
 	ctx := context.Background()
 
 	a.RecordHit(ctx)
@@ -166,7 +166,7 @@ func TestCacheMetrics_DistinctNamesAreSeparateSeries(t *testing.T) {
 
 func TestCacheMetrics_EmptyNameIsNoOp(t *testing.T) {
 	reader := withTestMeterProvider(t)
-	var m CacheMetrics // zero value, Name == ""
+	m := NewCacheMetrics("")
 	ctx := context.Background()
 
 	m.RecordHit(ctx)

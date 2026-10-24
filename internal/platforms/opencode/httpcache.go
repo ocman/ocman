@@ -42,8 +42,8 @@ type httpCache struct {
 
 	flight singleflight.Group
 
-	// metrics is the per-cache instrumentation handle. Zero value
-	// (empty Name) makes every Record* call a no-op so the cache
+	// metrics is the per-cache instrumentation handle. The zero value
+	// makes every Record* call a no-op so the cache
 	// works fine in tests that construct it via newHTTPCache without
 	// a name.
 	metrics telemetry.CacheMetrics
@@ -78,7 +78,7 @@ func newHTTPCache(ttl time.Duration) *httpCache {
 // unaffected by the global metric registry.
 func newHTTPCacheNamed(ttl time.Duration, name string) *httpCache {
 	c := newHTTPCache(ttl)
-	c.metrics = telemetry.CacheMetrics{Name: name}
+	c.metrics = telemetry.NewCacheMetrics(name)
 	telemetry.RegisterCacheSizeGauge(name, func() int64 {
 		c.mu.RLock()
 		defer c.mu.RUnlock()

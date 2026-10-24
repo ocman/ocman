@@ -10,9 +10,9 @@ import (
 )
 
 // Cache instrumentation lives here so internal packages can record
-// cache health without importing the server package. The instruments
-// are package-level and lazily created on first use; when telemetry is
-// disabled they're SDK no-ops.
+// cache health without importing the server package. Each cache's
+// counters are created by NewCacheMetrics; when telemetry is disabled
+// they're SDK no-ops.
 //
 // Three signals per cache, all tagged with a low-cardinality `cache`
 // attribute (the cache's logical name, e.g. "opencode.sessions"):
@@ -33,9 +33,7 @@ import (
 // Mimir/Prometheus and matches the OTel convention used by
 // `http.server.request.duration` with `http.response.status_code`.
 var (
-	cacheInstrumentsOnce sync.Once
-	cacheLookups         metric.Int64Counter
-	cacheEvictions       metric.Int64Counter
+	cacheGaugeOnce sync.Once
 
 	// cacheSizes is a map of cache name -> a callback that returns
 	// the current entry count. The observable gauge fires on every
@@ -44,41 +42,14 @@ var (
 	cacheSizes   = map[string]func() int64{}
 )
 
-// initCacheInstruments creates the cache instruments against the
-// current global Meter on first use. Subsequent calls are no-ops —
-// instruments are bound to the meter they were created with, so a
-// later swap of the global MeterProvider doesn't retroactively
-// re-bind them.
-//
-// Test code that wants to assert against a manual reader uses
-// resetCacheInstrumentsForTests (in the tests) to clear the once and force a
-// re-bind to whatever meter is currently global.
-func initCacheInstruments() {
-	cacheInstrumentsOnce.Do(func() {
-		meter := Meter()
-
-		var err error
-		if cacheLookups, err = meter.Int64Counter(
-			"ocman.cache.lookups",
-			metric.WithDescription("In-memory cache lookups, tagged with hit/miss outcome."),
-			metric.WithUnit("{lookup}"),
-		); err != nil {
-			log.WithError(err).Warn("creating cache.lookups counter")
-		}
-
-		if cacheEvictions, err = meter.Int64Counter(
-			"ocman.cache.evictions",
-			metric.WithDescription("In-memory cache entries evicted to make room or due to TTL sweeps."),
-			metric.WithUnit("{entry}"),
-		); err != nil {
-			log.WithError(err).Warn("creating cache.evictions counter")
-		}
-
-		// Single observable gauge that walks the cacheSizes registry
-		// on every collection cycle. We register the callback once
-		// rather than per-cache so the metric is created exactly once
-		// regardless of how many caches end up registered.
-		if _, err := meter.Int64ObservableGauge(
+// initCacheGauge creates the shared entries gauge against the current
+// global Meter on first use. Test code that swaps the global
+// MeterProvider calls resetCacheInstrumentsForTests to re-bind it.
+func initCacheGauge() {
+	cacheGaugeOnce.Do(func() {
+		// One observable gauge walks the cacheSizes registry on every
+		// collection cycle, however many caches end up registered.
+		if _, err := Meter().Int64ObservableGauge(
 			"ocman.cache.entries",
 			metric.WithDescription("In-memory cache entry count, sampled at metric collection time."),
 			metric.WithUnit("{entry}"),
@@ -101,74 +72,68 @@ func observeCacheSizes(_ context.Context, observer metric.Int64Observer) error {
 	return nil
 }
 
-// CacheMetrics is the per-cache facade call sites use to record
-// hit/miss/eviction events. Construct one per cache (with a stable
-// name) at cache-creation time and stash it in the cache struct.
-//
-// The zero value (empty Name) is a no-op so callers can test with an
-// unset CacheMetrics{} without nil checks.
+// CacheMetrics records one cache's hit/miss/eviction events. Create one
+// per cache with NewCacheMetrics and stash it in the cache struct. The
+// zero value is a no-op so tests can leave it unset.
 type CacheMetrics struct {
-	// Name is the value emitted as the `cache` attribute. Pick a
-	// dotted path that's unique within ocman, e.g. "opencode.sessions"
-	// or "forge.prs".
-	Name string
+	name      attribute.KeyValue
+	lookups   metric.Int64Counter
+	evictions metric.Int64Counter
 }
 
 // resultHit / resultMiss are pre-allocated to avoid building a new
-// attribute on every lookup. The cache name varies per call so we
-// still allocate per-call for that one, but the result attribute is
-// fixed and worth caching.
+// attribute on every lookup.
 var (
 	resultHit  = attribute.String("result", "hit")
 	resultMiss = attribute.String("result", "miss")
 )
 
-// RecordHit increments the lookups counter with result=hit. ctx may
-// be a background context — the metrics SDK doesn't require an active
-// span.
-func (m CacheMetrics) RecordHit(ctx context.Context) {
-	if m.Name == "" {
-		return
+// NewCacheMetrics creates the counters for the cache called name, the
+// value emitted as the `cache` attribute. Pick a dotted path that's
+// unique within ocman, e.g. "opencode.sessions". An empty name is a no-op.
+func NewCacheMetrics(name string) CacheMetrics {
+	if name == "" {
+		return CacheMetrics{}
 	}
-	initCacheInstruments()
-	if cacheLookups == nil {
-		return
+	m := CacheMetrics{name: attribute.String("cache", name)}
+	meter := Meter()
+	var err error
+	if m.lookups, err = meter.Int64Counter(
+		"ocman.cache.lookups",
+		metric.WithDescription("In-memory cache lookups, tagged with hit/miss outcome."),
+		metric.WithUnit("{lookup}"),
+	); err != nil {
+		log.WithError(err).Warn("creating cache.lookups counter")
 	}
-	cacheLookups.Add(ctx, 1, metric.WithAttributes(
-		attribute.String("cache", m.Name),
-		resultHit,
-	))
+	if m.evictions, err = meter.Int64Counter(
+		"ocman.cache.evictions",
+		metric.WithDescription("In-memory cache entries evicted to make room or due to TTL sweeps."),
+		metric.WithUnit("{entry}"),
+	); err != nil {
+		log.WithError(err).Warn("creating cache.evictions counter")
+	}
+	return m
 }
 
+// RecordHit increments the lookups counter with result=hit. ctx may be
+// a background context — the metrics SDK doesn't require an active span.
+func (m CacheMetrics) RecordHit(ctx context.Context) { m.record(ctx, m.lookups, 1, resultHit) }
+
 // RecordMiss increments the lookups counter with result=miss.
-func (m CacheMetrics) RecordMiss(ctx context.Context) {
-	if m.Name == "" {
-		return
-	}
-	initCacheInstruments()
-	if cacheLookups == nil {
-		return
-	}
-	cacheLookups.Add(ctx, 1, metric.WithAttributes(
-		attribute.String("cache", m.Name),
-		resultMiss,
-	))
-}
+func (m CacheMetrics) RecordMiss(ctx context.Context) { m.record(ctx, m.lookups, 1, resultMiss) }
 
 // RecordEvictions increments the evictions counter by n. Callers pass
 // n>1 when a single sweep drops multiple entries (e.g. invalidatePort
 // on the http cache). n<=0 is a no-op.
 func (m CacheMetrics) RecordEvictions(ctx context.Context, n int64) {
-	if m.Name == "" || n <= 0 {
+	m.record(ctx, m.evictions, n)
+}
+
+func (m CacheMetrics) record(ctx context.Context, counter metric.Int64Counter, n int64, attrs ...attribute.KeyValue) {
+	if counter == nil || n <= 0 {
 		return
 	}
-	initCacheInstruments()
-	if cacheEvictions == nil {
-		return
-	}
-	cacheEvictions.Add(ctx, n, metric.WithAttributes(
-		attribute.String("cache", m.Name),
-	))
+	counter.Add(ctx, n, metric.WithAttributes(append(attrs, m.name)...))
 }
 
 // RegisterCacheSizeGauge wires a per-cache size callback into the
@@ -180,13 +145,12 @@ func (m CacheMetrics) RecordEvictions(ctx context.Context, n int64) {
 // Re-registering a cache name overwrites the previous callback,
 // which makes test setup simpler (each test can replace the cache
 // without colliding with a leftover registration). Calling this also
-// triggers instrument creation, so a cache that only registers a
-// size gauge (no lookups) still appears in the metric stream.
+// creates the shared gauge.
 func RegisterCacheSizeGauge(name string, sizer func() int64) {
 	if name == "" || sizer == nil {
 		return
 	}
-	initCacheInstruments()
+	initCacheGauge()
 	cacheSizesMu.Lock()
 	cacheSizes[name] = sizer
 	cacheSizesMu.Unlock()

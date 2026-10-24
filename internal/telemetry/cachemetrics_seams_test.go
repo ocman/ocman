@@ -11,19 +11,15 @@ func UnregisterCacheSizeGauge(name string) {
 	cacheSizesMu.Unlock()
 }
 
-// resetCacheInstrumentsForTests forces re-binding of the cache
-// instruments to the current global Meter on the next call. Tests
-// that swap the global MeterProvider (e.g. to install a
-// ManualReader) must call this so subsequent Record* calls land on
-// the test meter rather than the original (no-op or production)
-// meter.
+// resetCacheInstrumentsForTests forces re-binding of the cache gauge
+// to the current global Meter on the next registration and clears the
+// size registry. Tests that swap the global MeterProvider (e.g. to
+// install a ManualReader) must call this.
 //
 // Not exported — telemetry is the only package allowed to look
 // inside its own once-state.
 func resetCacheInstrumentsForTests() {
-	cacheInstrumentsOnce = sync.Once{}
-	cacheLookups = nil
-	cacheEvictions = nil
+	cacheGaugeOnce = sync.Once{}
 	cacheSizesMu.Lock()
 	cacheSizes = map[string]func() int64{}
 	cacheSizesMu.Unlock()
