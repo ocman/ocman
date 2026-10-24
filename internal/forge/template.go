@@ -23,13 +23,16 @@ var SupportedPlaceholders = []string{
 // RenderPrompt expands `{key}` placeholders in tmpl using vars.
 //
 // Rules:
+//
 //   - Each entry in vars maps a placeholder key (without braces) to
 //     its replacement value. Empty-string values are valid and
 //     produce an empty replacement (used e.g. for `{branch}` on
 //     issues, which have no source branch).
+//
 //   - Placeholders for keys NOT present in vars are left as literal
 //     text (e.g. `{unknown}` stays `{unknown}`). This matches FR-10:
 //     unknown placeholders are not template errors.
+//
 //   - Only keys in SupportedPlaceholders are recognised; passing an
 //     unsupported key in vars has no effect.
 //

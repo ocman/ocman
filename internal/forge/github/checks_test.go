@@ -247,17 +247,17 @@ func TestGhStatusState(t *testing.T) {
 func TestGhCheckRunState(t *testing.T) {
 	type in struct{ status, conclusion string }
 	cases := map[in]forge.CIState{
-		{"queued", ""}:                  forge.CIStatePending,
-		{"in_progress", ""}:             forge.CIStatePending,
-		{"completed", "success"}:        forge.CIStateSuccess,
-		{"completed", "neutral"}:        forge.CIStateSuccess,
-		{"completed", "skipped"}:        forge.CIStateSuccess,
-		{"completed", "failure"}:        forge.CIStateFailure,
-		{"completed", "timed_out"}:      forge.CIStateFailure,
-		{"completed", "cancelled"}:      forge.CIStateFailure,
+		{"queued", ""}:                   forge.CIStatePending,
+		{"in_progress", ""}:              forge.CIStatePending,
+		{"completed", "success"}:         forge.CIStateSuccess,
+		{"completed", "neutral"}:         forge.CIStateSuccess,
+		{"completed", "skipped"}:         forge.CIStateSuccess,
+		{"completed", "failure"}:         forge.CIStateFailure,
+		{"completed", "timed_out"}:       forge.CIStateFailure,
+		{"completed", "cancelled"}:       forge.CIStateFailure,
 		{"completed", "action_required"}: forge.CIStateFailure,
-		{"completed", "stale"}:          forge.CIStateFailure,
-		{"completed", "mystery"}:        forge.CIStateUnknown,
+		{"completed", "stale"}:           forge.CIStateFailure,
+		{"completed", "mystery"}:         forge.CIStateUnknown,
 	}
 	for k, want := range cases {
 		if got := ghCheckRunState(k.status, k.conclusion); got != want {

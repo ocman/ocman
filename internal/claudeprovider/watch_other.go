@@ -6,5 +6,5 @@ package claudeprovider
 type dirWatcher struct{}
 
 func newDirWatcher(func()) (*dirWatcher, error) { return &dirWatcher{}, nil }
-func (*dirWatcher) Add(string)                   {}
-func (*dirWatcher) Close()                       {}
+func (*dirWatcher) Add(string)                  {}
+func (*dirWatcher) Close()                      {}

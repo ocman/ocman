@@ -38,7 +38,7 @@ func TestNewConversationMessage(t *testing.T) {
 func TestConversationHandler(t *testing.T) {
 	reply := plugin.Call{
 		OperationID: "conv-out:7", Capability: plugin.ConversationCapability.Name,
-		Version:     plugin.ConversationCapability.Version, Method: plugin.ConversationReplyMethod,
+		Version: plugin.ConversationCapability.Version, Method: plugin.ConversationReplyMethod,
 	}
 	for _, tc := range []struct {
 		name   string

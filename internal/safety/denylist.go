@@ -25,7 +25,7 @@ type Rule struct {
 // of readable reasons; every rule is checked until one matches.
 //
 // ponytail: a flat regex table, not a shell parser. It can be evaded by
-// a determined agent (base64, variable indirection, `r''m`). Upgrade
+// a determined agent (base64, variable indirection, `r”m`). Upgrade
 // path if that matters: parse the command with a real shell lexer and
 // match on argv, or drop privileges via a sandbox.
 var Rules = []Rule{

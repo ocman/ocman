@@ -102,7 +102,7 @@ func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
 		srv.broadcastGlobalEvent("filler", []byte(`{}`))
 	}
 	srv.broadcastSessionTitle("opencode", "s1", "New")    // parked
-	<-sub.ch                                  // the writer frees one slot...
+	<-sub.ch                                              // the writer frees one slot...
 	srv.broadcastSessionTitle("opencode", "s1", "Newest") // ...but s1 stays parked
 
 	var titles []string
