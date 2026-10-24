@@ -11,16 +11,13 @@
 package github
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -65,37 +62,6 @@ func (c *Client) Authenticated() bool { return c.token != "" }
 
 // Token is the owner machine's discovered token ("" when anonymous).
 func (c *Client) Token() string { return c.token }
-
-// GetPR fetches pull-request metadata.
-func (c *Client) GetPR(owner, repo string, number int) (map[string]interface{}, error) {
-	return c.get(fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), number))
-}
-
-// GetIssue fetches issue metadata (also works for PRs via the issues endpoint).
-func (c *Client) GetIssue(owner, repo string, number int) (map[string]interface{}, error) {
-	return c.get(fmt.Sprintf("/repos/%s/%s/issues/%d", url.PathEscape(owner), url.PathEscape(repo), number))
-}
-
-// GetCommit fetches commit metadata.
-func (c *Client) GetCommit(owner, repo, sha string) (map[string]interface{}, error) {
-	return c.get(fmt.Sprintf("/repos/%s/%s/commits/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(sha)))
-}
-
-func (c *Client) get(path string) (map[string]interface{}, error) {
-	body, _, status, err := c.fetch(context.Background(), path)
-	if err != nil {
-		return nil, err
-	}
-	if status != http.StatusOK {
-		return nil, fmt.Errorf("github api %s: status %d", path, status)
-	}
-
-	var out map[string]interface{}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
 
 // ---------------------------------------------------------------------------
 // Token discovery

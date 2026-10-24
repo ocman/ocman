@@ -197,37 +197,5 @@ func (c *Client) fetch(ctx context.Context, path string) ([]byte, forge.RateLimi
 // BaseURL returns the Forgejo root URL (without a trailing slash).
 func (c *Client) BaseURL() string { return c.baseURL }
 
-// ---------------------------------------------------------------------------
-// Link-preview helpers
-// ---------------------------------------------------------------------------
-//
-// These mirror the GitHub client's GetPR / GetIssue / GetCommit: they fetch
-// raw metadata as a generic map so the preview endpoint can pass it through
-// to the frontend without committing to a fixed shape. Forgejo's API is
-// Gitea-compatible and returns GitHub-like JSON, so the frontend mapper can
-// read the same fields (title, state, user.login, html_url, updated_at, ...).
-
-// GetPR fetches pull-request metadata.
-func (c *Client) GetPR(ctx context.Context, owner, repo string, number int) (map[string]interface{}, error) {
-	return c.getMap(ctx, fmt.Sprintf("/api/v1/repos/%s/%s/pulls/%d", owner, repo, number))
-}
-
-// GetIssue fetches issue metadata.
-func (c *Client) GetIssue(ctx context.Context, owner, repo string, number int) (map[string]interface{}, error) {
-	return c.getMap(ctx, fmt.Sprintf("/api/v1/repos/%s/%s/issues/%d", owner, repo, number))
-}
-
-// GetCommit fetches commit metadata.
-func (c *Client) GetCommit(ctx context.Context, owner, repo, sha string) (map[string]interface{}, error) {
-	return c.getMap(ctx, fmt.Sprintf("/api/v1/repos/%s/%s/git/commits/%s", owner, repo, sha))
-}
-
-// getMap performs a GET and decodes the body into a generic map. Used by
-// the link-preview helpers, which pass the raw JSON through to the frontend.
-func (c *Client) getMap(ctx context.Context, path string) (map[string]interface{}, error) {
-	out, _, err := forgehttp.GetJSON[map[string]interface{}](ctx, c.fetch, path, path, statusErr(path))
-	return out, err
-}
-
 // Compile-time assertion: *Client satisfies forge.Forge.
 var _ forge.Forge = (*Client)(nil)
