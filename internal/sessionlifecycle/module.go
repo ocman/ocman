@@ -41,8 +41,7 @@ type Deps struct {
 	Platforms           func() []platforms.Platform
 	SendNow             func(context.Context, string, platforms.SendMessageRequest) error
 	Broadcast           func(string, []byte)
-	WithSessionPath     func(http.ResponseWriter, *http.Request, func(http.ResponseWriter, *http.Request, string, string))
-	WithSessionAdapter  func(http.ResponseWriter, *http.Request, func(http.ResponseWriter, *http.Request, string, string, platforms.Platform))
+	WithSessionAdapter  func(http.ResponseWriter, *http.Request, func(http.ResponseWriter, *http.Request, string, platforms.Platform))
 	Privileged          func(*http.Request) bool
 	Router              func() *hostsvc.Router
 	UploadReadTimeout   func() time.Duration

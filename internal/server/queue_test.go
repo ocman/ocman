@@ -22,7 +22,7 @@ func postMessage(t *testing.T, srv *Server, sessionID, body string) *httptest.Re
 		"/api/session/"+sessionID+"/message?platform=fake",
 		strings.NewReader(body))
 	rr := httptest.NewRecorder()
-	srv.handleSessionMessage(rr, req)
+	serveSessionRoute(srv.handleSessionMessage, rr, req)
 	return rr
 }
 

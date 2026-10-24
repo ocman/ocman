@@ -23,7 +23,7 @@ func TestPeekReturnsInterruptionReadState(t *testing.T) {
 					t.Fatal(err)
 				}
 				w := httptest.NewRecorder()
-				srv.handleSession(w, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1&platform="+platform, nil))
+				serveSessionRoute(srv.handleSession, w, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1&platform="+platform, nil))
 				if w.Code != http.StatusOK {
 					t.Fatalf("peek: %d %s", w.Code, w.Body.String())
 				}

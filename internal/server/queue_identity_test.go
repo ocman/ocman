@@ -19,7 +19,7 @@ func postQueuedMessage(t *testing.T, srv *Server, platform, sessionID, text stri
 		"/api/session/"+sessionID+"/message?platform="+platform,
 		strings.NewReader(`{"message":"`+text+`","queue":true}`))
 	rr := httptest.NewRecorder()
-	srv.handleSessionMessage(rr, req)
+	serveSessionRoute(srv.handleSessionMessage, rr, req)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("post %s/%s: status = %d; body=%s", platform, sessionID, rr.Code, rr.Body)
 	}

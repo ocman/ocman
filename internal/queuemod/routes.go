@@ -2,7 +2,6 @@ package queuemod
 
 import (
 	"net/http"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -28,29 +27,31 @@ type queuedMessageView = MessageView
 // handleSessionQueueList serves GET /api/session/{id}/queue — the pending
 // follow-up messages waiting for the session's next idle edge (#58).
 func (s *Module) List(w http.ResponseWriter, r *http.Request) {
-	httpx.WithSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
-		// The platform parameter is optional on this read-only endpoint, so
-		// a client that only has the bare session id falls back to the
-		// explicit cross-platform list (the one documented exception —
-		// see queuesvc.Service.ListAnyPlatform).
-		var msgs []state.QueuedMessage
-		var err error
-		if platform := httpx.PlatformHint(r); platform != "" {
-			msgs, err = s.queue.List(r.Context(), platform, sessionID)
-		} else {
-			msgs, err = s.queue.ListAnyPlatform(r.Context(), sessionID)
-		}
-		if err != nil {
-			log.WithError(err).WithField("session", sessionID).Error("listing message queue")
-			http.Error(w, "failed to list queue", http.StatusInternalServerError)
-			return
-		}
-		out := make([]queuedMessageView, 0, len(msgs))
-		for _, m := range msgs {
-			out = append(out, toQueuedMessageView(m))
-		}
-		httpx.WriteJSON(w, mergeQueued(out, s.nativeQueuedViews(r.Context(), httpx.PlatformHint(r), sessionID)))
-	})
+	sessionID, ok := httpx.SessionID(w, r)
+	if !ok {
+		return
+	}
+	// The platform parameter is optional on this read-only endpoint, so
+	// a client that only has the bare session id falls back to the
+	// explicit cross-platform list (the one documented exception —
+	// see queuesvc.Service.ListAnyPlatform).
+	var msgs []state.QueuedMessage
+	var err error
+	if platform := httpx.PlatformHint(r); platform != "" {
+		msgs, err = s.queue.List(r.Context(), platform, sessionID)
+	} else {
+		msgs, err = s.queue.ListAnyPlatform(r.Context(), sessionID)
+	}
+	if err != nil {
+		log.WithError(err).WithField("session", sessionID).Error("listing message queue")
+		http.Error(w, "failed to list queue", http.StatusInternalServerError)
+		return
+	}
+	out := make([]queuedMessageView, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, toQueuedMessageView(m))
+	}
+	httpx.WriteJSON(w, mergeQueued(out, s.nativeQueuedViews(r.Context(), httpx.PlatformHint(r), sessionID)))
 }
 
 // handleSessionQueueDelete serves DELETE /api/session/{id}/queue/{qmid} —
@@ -59,28 +60,30 @@ func (s *Module) List(w http.ResponseWriter, r *http.Request) {
 // so a missing id still returns 204 rather than 404. This also removes the
 // click-delete-just-as-it-drains race.
 func (s *Module) Delete(w http.ResponseWriter, r *http.Request) {
-	httpx.WithSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
-		qmid := strings.TrimPrefix(rest, "queue/")
-		if !httpx.ValidID(qmid) {
-			http.Error(w, "invalid queued message ID", http.StatusBadRequest)
-			return
-		}
-		if handled, err := s.cancelNativeQueued(r.Context(), httpx.PlatformHint(r), sessionID, qmid); handled {
-			if err != nil {
-				log.WithError(err).WithField("queued", qmid).Error("cancelling native follow-up")
-				http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if _, err := s.queue.Remove(r.Context(), sessionID, qmid); err != nil {
-			log.WithError(err).WithField("queued", qmid).Error("removing queued message")
+	sessionID, ok := httpx.SessionID(w, r)
+	if !ok {
+		return
+	}
+	qmid := r.PathValue("qmid")
+	if !httpx.ValidID(qmid) {
+		http.Error(w, "invalid queued message ID", http.StatusBadRequest)
+		return
+	}
+	if handled, err := s.cancelNativeQueued(r.Context(), httpx.PlatformHint(r), sessionID, qmid); handled {
+		if err != nil {
+			log.WithError(err).WithField("queued", qmid).Error("cancelling native follow-up")
 			http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	})
+		return
+	}
+	if _, err := s.queue.Remove(r.Context(), sessionID, qmid); err != nil {
+		log.WithError(err).WithField("queued", qmid).Error("removing queued message")
+		http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSessionQueueMove serves POST /api/session/{id}/queue/{qmid}/move —
@@ -96,26 +99,27 @@ func (s *Module) Move(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "direction must be -1 or 1", http.StatusBadRequest)
 		return
 	}
-	httpx.WithSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
-		rest = strings.TrimPrefix(rest, "queue/")
-		qmid := strings.TrimSuffix(rest, "/move")
-		if !httpx.ValidID(qmid) {
-			http.Error(w, "invalid queued message ID", http.StatusBadRequest)
-			return
-		}
-		moved, err := s.queue.Move(r.Context(), sessionID, qmid, req.Direction)
-		if err != nil {
-			log.WithError(err).WithField("queued", qmid).Error("moving queued message")
-			http.Error(w, "failed to move queued message", http.StatusInternalServerError)
-			return
-		}
-		if !moved {
-			// Boundary (already first/last) or unknown id — nothing to do.
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+	sessionID, ok := httpx.SessionID(w, r)
+	if !ok {
+		return
+	}
+	qmid := r.PathValue("qmid")
+	if !httpx.ValidID(qmid) {
+		http.Error(w, "invalid queued message ID", http.StatusBadRequest)
+		return
+	}
+	moved, err := s.queue.Move(r.Context(), sessionID, qmid, req.Direction)
+	if err != nil {
+		log.WithError(err).WithField("queued", qmid).Error("moving queued message")
+		http.Error(w, "failed to move queued message", http.StatusInternalServerError)
+		return
+	}
+	if !moved {
+		// Boundary (already first/last) or unknown id — nothing to do.
 		w.WriteHeader(http.StatusNoContent)
-	})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func toQueuedMessageView(m state.QueuedMessage) queuedMessageView {

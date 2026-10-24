@@ -26,7 +26,7 @@ func TestSessionPeekPreservesRoutineFilter(t *testing.T) {
 				t.Fatal(err)
 			}
 			response := httptest.NewRecorder()
-			srv.handleSession(response, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
+			serveSessionRoute(srv.handleSession, response, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
 			if response.Code != http.StatusOK {
 				t.Fatalf("peek: %d %s", response.Code, response.Body.String())
 			}

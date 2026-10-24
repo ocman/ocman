@@ -12,7 +12,7 @@ import (
 )
 
 func (m *Module) HandleSessionAttachment(w http.ResponseWriter, r *http.Request) {
-	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
 		if err != nil {
 			httpx.WritePlatformError(w, "loading session for attachment", err)

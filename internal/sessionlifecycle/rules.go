@@ -9,7 +9,7 @@ import (
 
 // HandleSessionPermissionRulesGet returns an empty list for inherited defaults.
 func (m *Module) HandleSessionPermissionRulesGet(w http.ResponseWriter, r *http.Request) {
-	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		rules, err := adapter.PermissionRules(r.Context(), sessionID)
 		if err != nil {
 			httpx.WritePlatformError(w, "reading permission rules", err)
@@ -30,14 +30,16 @@ func (m *Module) HandleSessionPermissionRulesSet(w http.ResponseWriter, r *http.
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
-	m.d.WithSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
-		if err := m.d.Sessions().SetPermissionRules(r.Context(), platformHint(r), platforms.SetPermissionRulesRequest{
-			SessionID: sessionID,
-			Rules:     req.Rules,
-		}); err != nil {
-			writeSessionError(w, "setting permission rules", err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
+	sessionID, ok := httpx.SessionID(w, r)
+	if !ok {
+		return
+	}
+	if err := m.d.Sessions().SetPermissionRules(r.Context(), platformHint(r), platforms.SetPermissionRulesRequest{
+		SessionID: sessionID,
+		Rules:     req.Rules,
+	}); err != nil {
+		writeSessionError(w, "setting permission rules", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

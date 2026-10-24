@@ -6,6 +6,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/factorymod"
+	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -36,35 +37,37 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
 		return
 	}
-	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
-		images := make([]platforms.ImageAttachment, 0, len(req.Images))
-		for _, img := range req.Images {
-			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
-		}
-		send := platforms.SendMessageRequest{
-			SessionID: sessionID,
-			Message:   req.Message,
-			Images:    images,
-			Model:     req.Model,
-			Agent:     req.Agent,
-			Reasoning: req.Reasoning,
-		}
-		// Queue explicitly requested (#58): hold for the next idle edge.
-		// Otherwise deliver now — mid-turn included, so a plain Enter
-		// send is picked up by the running turn instead of waiting for
-		// it to finish. Both paths validate message-or-images.
-		var err error
-		if req.Queue {
-			err = s.enqueueFollowUp(r.Context(), platformHint(r), send)
-		} else {
-			err = s.sendNow(r.Context(), platformHint(r), send)
-		}
-		if err != nil {
-			writeSessionSvcError(w, "sending message", err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
+	sessionID, ok := httpx.SessionID(w, r)
+	if !ok {
+		return
+	}
+	images := make([]platforms.ImageAttachment, 0, len(req.Images))
+	for _, img := range req.Images {
+		images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
+	}
+	send := platforms.SendMessageRequest{
+		SessionID: sessionID,
+		Message:   req.Message,
+		Images:    images,
+		Model:     req.Model,
+		Agent:     req.Agent,
+		Reasoning: req.Reasoning,
+	}
+	// Queue explicitly requested (#58): hold for the next idle edge.
+	// Otherwise deliver now — mid-turn included, so a plain Enter
+	// send is picked up by the running turn instead of waiting for
+	// it to finish. Both paths validate message-or-images.
+	var err error
+	if req.Queue {
+		err = s.enqueueFollowUp(r.Context(), platformHint(r), send)
+	} else {
+		err = s.sendNow(r.Context(), platformHint(r), send)
+	}
+	if err != nil {
+		writeSessionSvcError(w, "sending message", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSessionPermission handles POST /api/session/{id}/permissions/{pid}
@@ -75,62 +78,64 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
-	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
-		permissionID := r.PathValue("pid")
-		if !validateID(permissionID) {
-			http.Error(w, "invalid permission ID", http.StatusBadRequest)
+	sessionID, ok := httpx.SessionID(w, r)
+	if !ok {
+		return
+	}
+	permissionID := r.PathValue("pid")
+	if !validateID(permissionID) {
+		http.Error(w, "invalid permission ID", http.StatusBadRequest)
+		return
+	}
+	if req.Reply != "once" && req.Reply != "always" && req.Reply != "reject" {
+		http.Error(w, "invalid reply value: expected once, always, or reject", http.StatusBadRequest)
+		return
+	}
+	factorySession := false
+	if req.Reply != "reject" {
+		var err error
+		factorySession, err = s.factoryModule().Service().IsImplementationSession(r.Context(), sessionID)
+		if err != nil {
+			factorymod.WriteError(w, err)
 			return
 		}
-		if req.Reply != "once" && req.Reply != "always" && req.Reply != "reject" {
-			http.Error(w, "invalid reply value: expected once, always, or reject", http.StatusBadRequest)
-			return
-		}
-		factorySession := false
-		if req.Reply != "reject" {
-			var err error
-			factorySession, err = s.factoryModule().Service().IsImplementationSession(r.Context(), sessionID)
-			if err != nil {
-				factorymod.WriteError(w, err)
-				return
-			}
-		}
-		if factorySession {
-			adapter, ok := s.registry.PlatformForSession(r.Context(), sessionID)
-			if ok {
-				if prompts, err := adapter.ListPermissions(r.Context(), sessionID); err == nil {
-					for _, prompt := range prompts {
-						if id, _ := prompt["id"].(string); id == permissionID {
-							gate, handled, err := s.factoryModule().Service().EscalatePermission(r.Context(), sessionID, permissionID, stringValue(prompt["permission"]), strings.Join(autoapprove.PromptPatterns(prompt), ","))
+	}
+	if factorySession {
+		adapter, ok := s.registry.PlatformForSession(r.Context(), sessionID)
+		if ok {
+			if prompts, err := adapter.ListPermissions(r.Context(), sessionID); err == nil {
+				for _, prompt := range prompts {
+					if id, _ := prompt["id"].(string); id == permissionID {
+						gate, handled, err := s.factoryModule().Service().EscalatePermission(r.Context(), sessionID, permissionID, stringValue(prompt["permission"]), strings.Join(autoapprove.PromptPatterns(prompt), ","))
+						if err != nil {
+							factorymod.WriteError(w, err)
+							return
+						}
+						if handled {
+							gate, err = s.factoryModule().Service().ResolveAuthorityEscalationGate(r.Context(), gate.IssueID, "approve")
 							if err != nil {
 								factorymod.WriteError(w, err)
 								return
 							}
-							if handled {
-								gate, err = s.factoryModule().Service().ResolveAuthorityEscalationGate(r.Context(), gate.IssueID, "approve")
-								if err != nil {
-									factorymod.WriteError(w, err)
-									return
-								}
-								writeJSON(w, gate)
-								return
-							}
+							writeJSON(w, gate)
+							return
 						}
 					}
 				}
 			}
 		}
-		// The session service cancels any in-flight auto-approve judge
-		// (via the PermissionReplied hook) before forwarding the reply.
-		if err := s.sessions.RespondPermission(r.Context(), platformHint(r), platforms.RespondPermissionRequest{
-			SessionID:    sessionID,
-			PermissionID: permissionID,
-			Reply:        req.Reply,
-		}); err != nil {
-			writeSessionSvcError(w, "responding to permission", err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
+	}
+	// The session service cancels any in-flight auto-approve judge
+	// (via the PermissionReplied hook) before forwarding the reply.
+	if err := s.sessions.RespondPermission(r.Context(), platformHint(r), platforms.RespondPermissionRequest{
+		SessionID:    sessionID,
+		PermissionID: permissionID,
+		Reply:        req.Reply,
+	}); err != nil {
+		writeSessionSvcError(w, "responding to permission", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func stringValue(value any) string { result, _ := value.(string); return result }
@@ -138,38 +143,40 @@ func stringValue(value any) string { result, _ := value.(string); return result 
 // handleSessionQuestion dispatches POST /api/session/{id}/questions/{qid}
 // and POST /api/session/{id}/questions/{qid}/reject.
 func (s *Server) handleSessionQuestion(w http.ResponseWriter, r *http.Request) {
-	s.withSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string) {
-		questionID := r.PathValue("qid")
-		reject := strings.HasSuffix(r.Pattern, "/reject")
-		if !validateID(questionID) {
-			http.Error(w, "invalid question ID", http.StatusBadRequest)
-			return
-		}
-		if reject {
-			if err := s.sessions.RejectQuestion(r.Context(), platformHint(r), platforms.RejectQuestionRequest{
-				SessionID: sessionID,
-				RequestID: questionID,
-			}); err != nil {
-				writeSessionSvcError(w, "rejecting question", err)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		var req struct {
-			Answers [][]string `json:"answers"`
-		}
-		if !readAndUnmarshal(w, r, maxRequestBody, &req) {
-			return
-		}
-		if err := s.sessions.RespondQuestion(r.Context(), platformHint(r), platforms.RespondQuestionRequest{
+	sessionID, ok := httpx.SessionID(w, r)
+	if !ok {
+		return
+	}
+	questionID := r.PathValue("qid")
+	reject := strings.HasSuffix(r.Pattern, "/reject")
+	if !validateID(questionID) {
+		http.Error(w, "invalid question ID", http.StatusBadRequest)
+		return
+	}
+	if reject {
+		if err := s.sessions.RejectQuestion(r.Context(), platformHint(r), platforms.RejectQuestionRequest{
 			SessionID: sessionID,
 			RequestID: questionID,
-			Answers:   req.Answers,
 		}); err != nil {
-			writeSessionSvcError(w, "responding to question", err)
+			writeSessionSvcError(w, "rejecting question", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	})
+		return
+	}
+	var req struct {
+		Answers [][]string `json:"answers"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	if err := s.sessions.RespondQuestion(r.Context(), platformHint(r), platforms.RespondQuestionRequest{
+		SessionID: sessionID,
+		RequestID: questionID,
+		Answers:   req.Answers,
+	}); err != nil {
+		writeSessionSvcError(w, "responding to question", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -22,7 +22,7 @@ const streamWriteTimeout = 5 * time.Second
 // Last-Event-ID. Headers are sent only once the source connected, so an
 // unreachable platform still answers 503 and EventSource stops retrying.
 func (m *Module) HandleStream(w http.ResponseWriter, r *http.Request) {
-	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		m.serve(w, r, Key{Platform: string(adapter.ID()), SessionID: sessionID}, adapter)
 	})
 }

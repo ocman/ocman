@@ -77,27 +77,16 @@ func (s *Server) resolvePlatformForSession(w http.ResponseWriter, r *http.Reques
 }
 
 // sessionHandlerFunc is a handler that already has the session ID and
-// adapter resolved. rest is the URL segment after the session ID (empty
-// for bare /{id} routes).
-type sessionHandlerFunc func(w http.ResponseWriter, r *http.Request, sessionID, rest string, adapter platforms.Platform)
+// adapter resolved.
+type sessionHandlerFunc func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform)
 
-// withSessionAdapter extracts the session ID and adapter from the request
-// and calls fn. It writes appropriate HTTP errors and returns early when
-// the session ID is missing or unknown, eliminating the repeated 5-line
-// preamble across all session-scoped handlers.
+// withSessionAdapter resolves the route's {id} and its adapter, then calls
+// fn. It writes the HTTP error itself when the ID is invalid or unknown.
 func (s *Server) withSessionAdapter(w http.ResponseWriter, r *http.Request, fn sessionHandlerFunc) {
-	httpx.WithSessionPath(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, rest string) {
-		if adapter := s.resolvePlatformForSession(w, r, sessionID); adapter != nil {
-			fn(w, r, sessionID, rest, adapter)
-		}
-	})
-}
-
-// withSessionPath extracts and validates the session ID from the URL
-// without resolving the adapter. Mutation handlers use it and delegate
-// adapter resolution to the session service.
-func (s *Server) withSessionPath(w http.ResponseWriter, r *http.Request, fn func(w http.ResponseWriter, r *http.Request, sessionID, rest string)) {
-	httpx.WithSessionPath(w, r, fn)
+	sessionID := r.PathValue("id")
+	if adapter := s.resolvePlatformForSession(w, r, sessionID); adapter != nil {
+		fn(w, r, sessionID, adapter)
+	}
 }
 
 // platformHint returns the explicit ?platform= query value, if any

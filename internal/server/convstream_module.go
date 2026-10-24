@@ -24,7 +24,7 @@ import (
 func (s *Server) convStreamModule() *convstream.Module {
 	return s.convStreamMod.get(func() *convstream.Module {
 		return convstream.NewModule(convstream.Deps{
-			WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string, platforms.Platform)) {
+			WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, platforms.Platform)) {
 				s.withSessionAdapter(w, r, fn)
 			},
 			Proxy:      s.proxyConversationSource,

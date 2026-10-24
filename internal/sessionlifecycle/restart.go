@@ -27,7 +27,7 @@ func (m *Module) HandleSessionRestartOpencode(w http.ResponseWriter, r *http.Req
 		http.Error(w, "invalid restart options", http.StatusBadRequest)
 		return
 	}
-	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	m.d.WithSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		detail, err := adapter.Session(r.Context(), sessionID, 0, 0)
 		if err != nil {
 			httpx.WritePlatformError(w, "loading session", err)

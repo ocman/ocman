@@ -753,7 +753,7 @@ func TestHandleSession_NoticeAppearsForProviderOverload(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/s1", nil)
 	rr := httptest.NewRecorder()
-	srv.handleSession(rr, req)
+	serveSessionRoute(srv.handleSession, rr, req)
 
 	var body struct {
 		Session *db.Session `json:"session"`
@@ -800,7 +800,7 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/s1", nil)
 	rr := httptest.NewRecorder()
-	srv.handleSession(rr, req)
+	serveSessionRoute(srv.handleSession, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
@@ -837,7 +837,7 @@ func TestHandleSession_PeekFollowsResurfacePolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			rr := httptest.NewRecorder()
-			srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
+			serveSessionRoute(srv.handleSession, rr, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
 			if rr.Code != http.StatusOK {
 				t.Fatalf("status = %d", rr.Code)
 			}
@@ -861,7 +861,7 @@ func TestHandleSession_PeekStateErrorFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	rr := httptest.NewRecorder()
-	srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
+	serveSessionRoute(srv.handleSession, rr, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rr.Code)
 	}
@@ -892,7 +892,7 @@ func TestHandleSession_SurfacesProjectDefaultModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	rr := httptest.NewRecorder()
-	srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1", nil))
+	serveSessionRoute(srv.handleSession, rr, httptest.NewRequest(http.MethodGet, "/api/session/s1", nil))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"projectDefaultModel":"prov/a"`) {
 		t.Fatalf("status = %d body = %s", rr.Code, rr.Body.String())
 	}
@@ -907,7 +907,7 @@ func TestHandleSession_TagsFactoryAttempt(t *testing.T) {
 	}})
 	get := func() string {
 		rr := httptest.NewRecorder()
-		srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1", nil))
+		serveSessionRoute(srv.handleSession, rr, httptest.NewRequest(http.MethodGet, "/api/session/s1", nil))
 		return rr.Body.String()
 	}
 	if body := get(); strings.Contains(body, "factoryAttemptId") {
@@ -943,7 +943,7 @@ func TestHandleSession_TagsFactoryChildDetailsAndPeeks(t *testing.T) {
 			}
 			for _, suffix := range []string{"", "&peek=1"} {
 				rr := httptest.NewRecorder()
-				srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/child?platform="+platform+suffix, nil))
+				serveSessionRoute(srv.handleSession, rr, httptest.NewRequest(http.MethodGet, "/api/session/child?platform="+platform+suffix, nil))
 				if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"factoryAttemptId":"`+attempt.ID+`"`) {
 					t.Fatalf("child detail%s = %d %s", suffix, rr.Code, rr.Body)
 				}
@@ -962,7 +962,7 @@ func TestHandleSession_FactoryTagLookupFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	rr := httptest.NewRecorder()
-	srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/session?platform=opencode", nil))
+	serveSessionRoute(srv.handleSession, rr, httptest.NewRequest(http.MethodGet, "/api/session/session?platform=opencode", nil))
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("tag lookup failure = %d %s", rr.Code, rr.Body)
 	}
@@ -1280,7 +1280,7 @@ func TestHandleSessionRestartOpencode_DefersUntilSessionsIdle(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
-	srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
+	serveSessionRoute(srv.sessionLifecycleModule().HandleSessionRestartOpencode, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1303,7 +1303,7 @@ func TestHandleSessionRestartOpencode_ForceNeedsConfirmationWhenBusy(t *testing.
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode?force=true", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
-	srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
+	serveSessionRoute(srv.sessionLifecycleModule().HandleSessionRestartOpencode, rr, req)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "confirmationRequired") {
 		t.Fatalf("status=%d body=%s, want confirmation", rr.Code, rr.Body.String())
 	}
@@ -1328,7 +1328,7 @@ func TestHandleSessionRestartOpencode_AllIncludesConnectedRemoteHosts(t *testing
 	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode?all=true", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	rr := httptest.NewRecorder()
-	srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
+	serveSessionRoute(srv.sessionLifecycleModule().HandleSessionRestartOpencode, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1731,7 +1731,7 @@ func TestHandleSessionRestartOpencode_MachineScopedServer(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, url, nil)
 			req.RemoteAddr = "127.0.0.1:1234"
 			rr := httptest.NewRecorder()
-			srv.sessionLifecycleModule().HandleSessionRestartOpencode(rr, req)
+			serveSessionRoute(srv.sessionLifecycleModule().HandleSessionRestartOpencode, rr, req)
 			// The busy session in another project blocks the shared restart.
 			if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "confirmationRequired") || len(host.restarted) != 0 {
 				t.Fatalf("status=%d body=%s restarted=%v, want confirmation for the busy sibling", rr.Code, rr.Body.String(), host.restarted)

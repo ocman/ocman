@@ -34,12 +34,14 @@ func TestCanonicalSessionPathsReachCoreWithoutNativeRewriting(t *testing.T) {
 	s, id := canonicalHTTPFixture(t)
 	for _, reference := range []string{id, "native"} {
 		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/session/"+reference+"/queue", nil)
+		r.SetPathValue("id", reference)
 		s.withOwnedSessionPath(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/session/"+id+"/queue" || r.URL.Query().Get("platform") != "test" {
-				t.Fatalf("core received native path: %s", r.URL)
+			if r.PathValue("id") != id || r.URL.Query().Get("platform") != "test" {
+				t.Fatalf("core received native reference: %s %s", r.PathValue("id"), r.URL)
 			}
 			w.WriteHeader(http.StatusNoContent)
-		})(w, httptest.NewRequest(http.MethodGet, "/api/session/"+reference+"/queue", nil))
+		})(w, r)
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("canonical path rejected: %d %s", w.Code, w.Body.String())
 		}
@@ -103,7 +105,9 @@ func TestPendingSessionPathIsUnavailableBeforeReachingAnyHandler(t *testing.T) {
 	s, _ := canonicalHTTPFixture(t)
 	called := false
 	w := httptest.NewRecorder()
-	s.withOwnedSessionPath(func(http.ResponseWriter, *http.Request) { called = true })(w, httptest.NewRequest(http.MethodPost, "/api/session/"+identity.PendingReference()+"/send?platform=test", nil))
+	r := httptest.NewRequest(http.MethodPost, "/api/session/"+identity.PendingReference()+"/send?platform=test", nil)
+	r.SetPathValue("id", identity.PendingReference())
+	s.withOwnedSessionPath(func(http.ResponseWriter, *http.Request) { called = true })(w, r)
 	if w.Code != http.StatusServiceUnavailable || called {
 		t.Fatalf("pending reference reached a session handler: %d %v", w.Code, called)
 	}

@@ -12,16 +12,12 @@ func ValidID(id string) bool { return id != "" && len(id) <= 256 && validIDPatte
 
 func PlatformHint(r *http.Request) string { return strings.TrimSpace(r.URL.Query().Get("platform")) }
 
-func WithSessionPath(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
-	path, found := strings.CutPrefix(r.URL.Path, "/api/session/")
-	if !found {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	id, rest, _ := strings.Cut(path, "/")
+// SessionID returns the route's validated {id}, answering 400 when invalid.
+func SessionID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := r.PathValue("id")
 	if !ValidID(id) {
 		http.Error(w, "invalid session ID", http.StatusBadRequest)
-		return
+		return "", false
 	}
-	fn(w, r, id, rest)
+	return id, true
 }

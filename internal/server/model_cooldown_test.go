@@ -144,7 +144,7 @@ func TestQueuedMessageSkipsProviderThatJustHitQuota(t *testing.T) {
 	r := newCooldownRig(t)
 	r.busy, r.last = true, runningAssistant
 	rr := httptest.NewRecorder()
-	r.srv.handleSessionMessage(rr, httptest.NewRequest(http.MethodPost, "/api/session/s1/message?platform=opencode",
+	serveSessionRoute(r.srv.handleSessionMessage, rr, httptest.NewRequest(http.MethodPost, "/api/session/s1/message?platform=opencode",
 		strings.NewReader(`{"message":"held","queue":true}`)))
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("queue post = %d; body=%s", rr.Code, rr.Body)
@@ -190,7 +190,7 @@ func TestSessionModelsCarryCooldown(t *testing.T) {
 	srv.sessions.RecordCooldown(t.Context(), "a", time.Hour)
 
 	rr := httptest.NewRecorder()
-	srv.handleSessionModels(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1/models", nil))
+	serveSessionRoute(srv.handleSessionModels, rr, httptest.NewRequest(http.MethodGet, "/api/session/s1/models", nil))
 	var body platforms.SessionModelsResponse
 	mustUnmarshal(t, rr.Body.Bytes(), &body)
 	if len(body.Models) != 2 {

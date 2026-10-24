@@ -31,8 +31,8 @@ func newStreamFixture(t *testing.T, fail error) *streamFixture {
 	fx := &streamFixture{frames: make(chan string, 16)}
 	fp := &fakePlatform{id: "opencode"}
 	m := NewModule(Deps{
-		WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string, platforms.Platform)) {
-			fn(w, r, r.PathValue("id"), "", fp)
+		WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, platforms.Platform)) {
+			fn(w, r, r.PathValue("id"), fp)
 		},
 		Proxy: func(ctx context.Context, _ string, _ platforms.Platform, raw, _ io.Writer, _ func()) error {
 			if fail != nil {
@@ -213,8 +213,8 @@ func TestStreamEndpointWritesResetThenNewHello(t *testing.T) {
 	src := newFakeSource()
 	src.seed = Seed{Status: &convevents.SessionStatusEvent{Status: db.StatusBusy}}
 	m := &Module{hub: h, d: Deps{Keepalive: func() time.Duration { return time.Hour }}}
-	m.d.WithSessionAdapter = func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string, platforms.Platform)) {
-		fn(w, r, testKey.SessionID, "", &fakePlatform{id: platforms.ID(testKey.Platform)})
+	m.d.WithSessionAdapter = func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, platforms.Platform)) {
+		fn(w, r, testKey.SessionID, &fakePlatform{id: platforms.ID(testKey.Platform)})
 	}
 	// The hub reuses the attached source; prime it with the fake.
 	primer := subscribe(t, h, src, "")

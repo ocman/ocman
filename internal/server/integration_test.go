@@ -502,7 +502,7 @@ func TestHandleSession_NotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/session/nonexistent", nil)
 	req.URL.Path = "/api/session/nonexistent"
 	rr := httptest.NewRecorder()
-	srv.handleSession(rr, req)
+	serveSessionRoute(srv.handleSession, rr, req)
 
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d: %s", rr.Code, rr.Body.String())
@@ -514,7 +514,7 @@ func TestHandleSession_InvalidID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/session/invalid!id", nil)
 	req.URL.Path = "/api/session/invalid!id"
 	rr := httptest.NewRecorder()
-	srv.handleSession(rr, req)
+	serveSessionRoute(srv.handleSession, rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)
@@ -1626,7 +1626,7 @@ func TestHandleSessionChanges_OpenCodeAggregates(t *testing.T) {
 	req.URL.Path = "/api/session/" + id + "/changes"
 	req.SetPathValue("id", id)
 	rr := httptest.NewRecorder()
-	srv.handleSessionChanges(rr, req)
+	serveSessionRoute(srv.handleSessionChanges, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
@@ -1676,7 +1676,7 @@ func TestHandleSessionChanges_UnsupportedReturns200(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/changes", nil)
 	req.URL.Path = "/api/session/fk-1/changes"
 	rr := httptest.NewRecorder()
-	srv.handleSessionChanges(rr, req)
+	serveSessionRoute(srv.handleSessionChanges, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200 for unsupported, got %d: %s", rr.Code, rr.Body.String())
@@ -1730,7 +1730,7 @@ func TestHandleSessionInfo_PlatformPayload(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/info", nil)
 	req.URL.Path = "/api/session/fk-1/info"
 	rr := httptest.NewRecorder()
-	srv.handleSessionInfo(rr, req)
+	serveSessionRoute(srv.handleSessionInfo, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
@@ -1776,7 +1776,7 @@ func TestHandleSessionInfo_EnrichesPersistedCommits(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-commit/info", nil)
 	req.URL.Path = "/api/session/fk-commit/info"
 	rr := httptest.NewRecorder()
-	srv.handleSessionInfo(rr, req)
+	serveSessionRoute(srv.handleSessionInfo, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1814,7 +1814,7 @@ func TestHandleSessionInfo_DoesNotEnrichRemoteFromHubState(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/"+sessionID+"/info?platform="+platformID, nil)
 	rr := httptest.NewRecorder()
-	srv.handleSessionInfo(rr, req)
+	serveSessionRoute(srv.handleSessionInfo, rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -1845,7 +1845,7 @@ func TestHandleSessionInfo_UnsupportedReturns200(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/info", nil)
 	req.URL.Path = "/api/session/fk-1/info"
 	rr := httptest.NewRecorder()
-	srv.handleSessionInfo(rr, req)
+	serveSessionRoute(srv.handleSessionInfo, rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200 for unsupported, got %d: %s", rr.Code, rr.Body.String())

@@ -42,6 +42,9 @@ func (r moduleRouter) sessionPath(pattern string, h http.HandlerFunc) http.Handl
 	// Module commands such as /api/session/snooze take their session ID in
 	// the body. Only a declared path parameter is an identity to resolve.
 	if strings.Contains(pattern, "/api/session/{") {
+		if !strings.Contains(pattern, "/api/session/{id}") {
+			panic("session route must name its identity {id}: " + pattern)
+		}
 		return r.s.withOwnedSessionPath(h)
 	}
 	return h

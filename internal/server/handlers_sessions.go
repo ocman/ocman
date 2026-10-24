@@ -129,7 +129,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // --- Session detail ---
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	sessionID := strings.TrimPrefix(r.URL.Path, "/api/session/")
+	sessionID := r.PathValue("id")
 
 	limit := parseIntParam(r, "limit", 30)
 	offset := parseIntParam(r, "offset", 0)

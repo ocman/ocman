@@ -14,7 +14,7 @@ import (
 type Deps struct {
 	// WithSessionAdapter resolves the session's owning adapter exactly as
 	// the other session routes do, writing the HTTP error itself.
-	WithSessionAdapter func(http.ResponseWriter, *http.Request, func(http.ResponseWriter, *http.Request, string, string, platforms.Platform))
+	WithSessionAdapter func(http.ResponseWriter, *http.Request, func(http.ResponseWriter, *http.Request, string, platforms.Platform))
 	// Proxy runs the owner's v1 stream for a session (see ProxyFunc).
 	Proxy      ProxyFunc
 	Descendant func(ctx context.Context, root Key, child string) bool

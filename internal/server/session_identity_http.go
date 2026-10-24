@@ -37,17 +37,16 @@ func (s *Server) handleSessionIdentity(w http.ResponseWriter, r *http.Request) {
 }
 
 // withOwnedSessionPath validates ownership before the core dispatcher and
-// more-specific module routes. Canonical adapters retain the Ocman path key.
+// more-specific module routes. Canonical adapters retain the Ocman path key;
+// handlers read the resolved ID from the route's {id} path value.
 func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const prefix = "/api/session/"
-		if !strings.HasPrefix(r.URL.Path, prefix) {
-			next(w, r)
-			return
-		}
-		id, suffix, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, prefix), "/")
-		switch strings.TrimPrefix(r.URL.Path, prefix) {
+		id := r.PathValue("id")
+		switch strings.TrimPrefix(r.URL.Path, "/api/session/") {
 		case "archive", "seen", "pin":
+			id = ""
+		}
+		if id == "" {
 			next(w, r)
 			return
 		}
@@ -70,24 +69,13 @@ func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 				http.Error(w, "invalid session binding", http.StatusConflict)
 				return
 			}
-			copy := r.Clone(r.Context())
-			u := *r.URL
-			copy.URL = &u
-			u.Path = prefix + coreID
-			if suffix != "" {
-				u.Path += "/" + suffix
-			}
-			u.RawPath = ""
-			q := u.Query()
+			resolved := r.Clone(r.Context())
+			q := resolved.URL.Query()
 			q.Set("platform", info.Platform)
-			u.RawQuery = q.Encode()
-			for _, name := range []string{"id", "sessionId", "sessionID"} {
-				if copy.PathValue(name) == id {
-					copy.SetPathValue(name, coreID)
-				}
-			}
+			resolved.URL.RawQuery = q.Encode()
+			resolved.SetPathValue("id", coreID)
 			w.Header().Set("X-Ocman-Session-ID", info.ID)
-			next(w, copy)
+			next(w, resolved)
 		})(w, r)
 	}
 }

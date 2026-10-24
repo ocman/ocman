@@ -26,9 +26,6 @@ func TestBackgroundTaskStopRoutesToOwner(t *testing.T) {
 					return nil
 				}}
 			},
-			WithSessionPath: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
-				fn(w, r, r.PathValue("id"), "")
-			},
 		})
 		mux := http.NewServeMux()
 		m.Routes(routeTestRouter{mux: mux})

@@ -62,11 +62,7 @@ func TestRoutesGuardsAndSessionResolution(t *testing.T) {
 	}
 	d := Deps{
 		Privileged: func(*http.Request) bool { return true },
-		WithSessionPath: func(w http.ResponseWriter, _ *http.Request, _ func(http.ResponseWriter, *http.Request, string, string)) {
-			resolved++
-			http.Error(w, "core path rejection", http.StatusBadRequest)
-		},
-		WithSessionAdapter: func(w http.ResponseWriter, _ *http.Request, _ func(http.ResponseWriter, *http.Request, string, string, platforms.Platform)) {
+		WithSessionAdapter: func(w http.ResponseWriter, _ *http.Request, _ func(http.ResponseWriter, *http.Request, string, platforms.Platform)) {
 			resolved++
 			http.Error(w, "core adapter rejection", http.StatusBadRequest)
 		},
@@ -86,12 +82,12 @@ func TestRoutesGuardsAndSessionResolution(t *testing.T) {
 			if rr.Code != http.StatusUnauthorized || resolved != 0 {
 				t.Fatalf("unguarded route: status=%d resolved=%d", rr.Code, resolved)
 			}
-			// Core owns session validation. Its rejection must stop dispatch.
+			// Session validation rejects an invalid ID before dispatch.
 			allow = true
 			rr = httptest.NewRecorder()
-			mux.ServeHTTP(rr, httptest.NewRequest(method, path, strings.NewReader(`{}`)))
-			if rr.Code != http.StatusBadRequest || resolved != 1 {
-				t.Fatalf("core resolver bypassed: status=%d resolved=%d", rr.Code, resolved)
+			mux.ServeHTTP(rr, httptest.NewRequest(method, strings.Replace(path, "/s1", "/bad.id", 1), strings.NewReader(`{}`)))
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("invalid session ID accepted: status=%d", rr.Code)
 			}
 			resolved = 0
 			rr = httptest.NewRecorder()
@@ -203,9 +199,6 @@ func TestActionDependencies(t *testing.T) {
 			}}
 			m := NewModule(Deps{
 				Sessions: func() Sessions { return current },
-				WithSessionPath: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
-					fn(w, r, r.PathValue("id"), tc.name)
-				},
 			})
 			mux := http.NewServeMux()
 			m.Routes(routeTestRouter{mux: mux})
@@ -251,9 +244,6 @@ func TestAbortOutlivesClientDisconnect(t *testing.T) {
 		Sessions: func() Sessions {
 			return actionTestSessions{call: func(c context.Context, _ string, _ any) error { got = c.Err(); return nil }}
 		},
-		WithSessionPath: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string)) {
-			fn(w, r, r.PathValue("id"), "")
-		},
 	})
 	mux := http.NewServeMux()
 	m.Routes(routeTestRouter{mux: mux})
@@ -289,8 +279,8 @@ func TestPermissionRulesRead(t *testing.T) {
 		{"unsupported", rulesTestPlatform{err: platforms.ErrUnsupported}, http.StatusNotImplemented},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := NewModule(Deps{WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string, platforms.Platform)) {
-				fn(w, r, "s1", "permission-rules", tc.platform)
+			m := NewModule(Deps{WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, platforms.Platform)) {
+				fn(w, r, "s1", tc.platform)
 			}})
 			rr := httptest.NewRecorder()
 			m.HandleSessionPermissionRulesGet(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1/permission-rules", nil))

@@ -30,10 +30,9 @@ func (s *Server) sessionLifecycleModule() *sessionlifecycle.Module {
 			}
 			return s.registry.Platforms()
 		},
-		SendNow:         s.sendNow,
-		Broadcast:       s.broadcastGlobalEvent,
-		WithSessionPath: s.withSessionPath,
-		WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, string, platforms.Platform)) {
+		SendNow:   s.sendNow,
+		Broadcast: s.broadcastGlobalEvent,
+		WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, platforms.Platform)) {
 			s.withSessionAdapter(w, r, fn)
 		},
 		Privileged:        s.isPrivilegedRequest,

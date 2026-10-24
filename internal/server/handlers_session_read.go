@@ -15,7 +15,7 @@ import (
 // one list method, nil-guard to an empty JSON array, write the result.
 // A free function because Go methods can't have type parameters.
 func listViaAdapter[T any](s *Server, w http.ResponseWriter, r *http.Request, errContext string, fetch func(platforms.Platform, context.Context, string) ([]T, error)) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		entries, err := fetch(adapter, r.Context(), sessionID)
 		if err != nil {
 			writePlatformError(w, errContext, err)
@@ -37,7 +37,7 @@ func (s *Server) handleSessionCommands(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		resp, err := adapter.SessionModels(r.Context(), sessionID)
 		if err != nil {
 			writePlatformError(w, "fetching session models", err)
@@ -58,7 +58,7 @@ func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		var entries []platforms.LivePrompt
 		var err error
 		if r.URL.Query().Get("refresh") == "1" {
@@ -103,7 +103,7 @@ func (s *Server) handleSessionQuestions(w http.ResponseWriter, r *http.Request) 
 // the operation are surfaced as a Supported=false payload
 // rather than an HTTP error so the frontend has a single shape to render.
 func (s *Server) handleSessionChanges(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		changes, err := adapter.SessionChanges(r.Context(), sessionID)
 		zero := &platforms.SessionChanges{SessionID: sessionID, Files: []platforms.FileChange{}}
 		if changes != nil && changes.Files == nil {
@@ -137,7 +137,7 @@ func writeWithUnsupportedFallback[T any](w http.ResponseWriter, desc string, res
 // handleSessionInfo returns the per-session info snapshot consumed by
 // the right-hand "Session info" panel.
 func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
-	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
+	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
 		info, err := adapter.SessionInfo(r.Context(), sessionID)
 		zero := &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}, Commits: []platforms.SessionCommit{}}
 		if info != nil {
