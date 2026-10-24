@@ -13,9 +13,7 @@ import { useApiStore } from '../../lib/apiStore';
 import { openVSCode } from '../../lib/shortcuts';
 import type { UsePendingSendResult } from './usePendingSend';
 import { remoteLog } from '../../lib/remoteLog';
-import { runSlashCommand } from './slashCommands';
-import type { SessionModal } from './SessionModals';
-import type { Message, Part, Session } from '../../lib/api';
+import { runSlashCommand, type CommandContext } from './slashCommands';
 
 // Narrowed session shape — only the fields needed by these handlers.
 interface ActionSession {
@@ -35,7 +33,15 @@ interface QueuedShell {
   sessionID: string;
 }
 
-export interface UseSessionActionsOptions {
+// Handlers and refs handed straight through to the slash commands.
+type CommandOptions = Pick<CommandContext,
+  | 'recentSessionsRef' | 'loadNavigationSessions' | 'messagesRef' | 'partsRef'
+  | 'navigate' | 'navigateToSession' | 'openWorktreeForm' | 'handleCompact'
+  | 'handleNewSession' | 'handleTmuxShortcut' | 'openModal' | 'setShowRenameToast'
+  | 'setShowDisconnectedToast' | 'setRestartToastMessage' | 'setCopyToastMessage'
+  | 'reloadCapabilities' | 'refreshThread'>;
+
+export interface UseSessionActionsOptions extends CommandOptions {
   session: ActionSession | null;
   /**
    * The session id from the route (#529). When the URL changes there is
@@ -53,13 +59,6 @@ export interface UseSessionActionsOptions {
   selectedAgent: string;
   selectedReasoning: string;
   activeAgent: string;
-  /** Mutable ref to the recent sessions list — read inside handleCommand. */
-  recentSessionsRef: MutableRefObject<Session[]>;
-  loadNavigationSessions?: () => Promise<void>;
-  /** Mutable refs to the current transcript — read by `/export`. Refs
-   *  (not values) so handleCommand doesn't re-bind on every message. */
-  messagesRef: MutableRefObject<Message[]>;
-  partsRef: MutableRefObject<Part[]>;
   /**
    * Mutable ref reflecting whether the session is currently streaming
    * an assistant response. Read inside `handleShell` so a `!`-prefixed
@@ -74,23 +73,6 @@ export interface UseSessionActionsOptions {
    *  bubble here instead of injecting temp-id messages into the
    *  page's messages array. */
   pending: UsePendingSendResult;
-  navigate: (to: string) => void;
-  navigateToSession: (id: string) => void;
-  openWorktreeForm: (opts: { projectDir: string; branch?: string; parentSessionId?: string; remoteId?: string }) => void;
-  handleCompact: () => Promise<void>;
-  handleNewSession: (title?: string) => Promise<void>;
-  handleTmuxShortcut: () => void;
-  openModal: (modal: SessionModal) => void;
-  setShowRenameToast: Dispatch<SetStateAction<boolean>>;
-  setShowDisconnectedToast: Dispatch<SetStateAction<boolean>>;
-  setRestartToastMessage: Dispatch<SetStateAction<string | null>>;
-  /** Re-fetch the agent catalog + model list. Called after a
-   *  successful OpenCode restart, since the fresh instance may have a
-   *  different config. */
-  reloadCapabilities?: () => void;
-  /** Transient feedback toast for the `/copy` command. */
-  setCopyToastMessage: Dispatch<SetStateAction<string | null>>;
-  refreshThread?: () => Promise<void>;
   refreshMessageQueue?: (sessionId: string, platform: string) => void;
 }
 
