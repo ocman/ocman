@@ -146,6 +146,9 @@ func (m *Mapper) dispatch(r *Result, typ string, p obj) bool {
 	case "question.replied", "question.rejected":
 		m.questionCleared(r, typ, p)
 	case "ocman.session.background":
+		if !m.own(p.str("sessionID")) {
+			return true
+		}
 		if n, ok := p.num("count"); ok && n >= 0 && n <= 1<<53 && n == float64(int64(n)) {
 			m.emit(r, background(int64(n), p.arr("tasks")))
 		}
