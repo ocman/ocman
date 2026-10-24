@@ -70,6 +70,12 @@ func TestCreateShareReportsRelayFailure(t *testing.T) {
 			if strings.Contains(rr.Body.String(), "internal server error") {
 				t.Fatalf("failure was hidden behind a generic error: %s", rr.Body)
 			}
+			// A local row without its relay copy would render as a share
+			// that resolves to nothing, so a failed publish must roll back.
+			links, err := srv.stateDB.ListActiveShareLinks(t.Context(), "fake", "ses_relay_err")
+			if err != nil || len(links) != 0 {
+				t.Fatalf("failed publish left active links behind: %v (err %v)", links, err)
+			}
 		})
 	}
 }
@@ -93,34 +99,6 @@ func TestCreateShareReportsUnreachableRelay(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "unreachable") || !strings.Contains(rr.Body.String(), url) {
 		t.Fatalf("body %q should name the unreachable relay", rr.Body.String())
-	}
-}
-
-// TestCreateShareRollsBackOnRelayFailure proves a failed publish leaves
-// no orphan link behind, since a local row without its relay copy would
-// render as a share that resolves to nothing.
-func TestCreateShareRollsBackOnRelayFailure(t *testing.T) {
-	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "nope", http.StatusInternalServerError)
-	}))
-	defer relay.Close()
-
-	srv, reg := newSessionsTestServer(t)
-	registerShareFake(reg, "ses_rollback")
-	srv.WithRelay(relay.URL, "flag")
-
-	rr := httptest.NewRecorder()
-	serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_rollback/share", nil))
-	if rr.Code != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502", rr.Code)
-	}
-
-	links, err := srv.stateDB.ListActiveShareLinks(t.Context(), "fake", "ses_rollback")
-	if err != nil {
-		t.Fatalf("ListActiveShareLinks: %v", err)
-	}
-	if len(links) != 0 {
-		t.Fatalf("failed publish left %d active link(s) behind", len(links))
 	}
 }
 

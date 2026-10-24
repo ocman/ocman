@@ -10,9 +10,6 @@ func (h *factoryPlanningHost) RemoteID() string { return "local" }
 func (h *ensureHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*hostsvc.EnsureRuntimeResult, error) {
 	return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 }
-func (h *ensureStubHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*hostsvc.EnsureRuntimeResult, error) {
-	return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
-}
 func (h *ownerHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*hostsvc.EnsureRuntimeResult, error) {
 	return h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 }

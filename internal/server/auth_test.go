@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -110,31 +111,23 @@ func TestNewAuth_ShortKeyRejected(t *testing.T) {
 	}
 }
 
-// TestNewAuth_DefaultTrustsLocalhostFalse pins the post-flip default:
-// an AuthConfig with no TrustLocalhost set produces an Auth that
-// requires every client — loopback included — to present a cookie.
-func TestNewAuth_DefaultTrustsLocalhostFalse(t *testing.T) {
-	a := newTestAuth(t, "hunter2")
-	if a.TrustsLocalhost() {
-		t.Error("default AuthConfig should not trust localhost")
-	}
-}
-
-// TestNewAuth_TrustLocalhostPropagates: the opt-in flag reaches the
-// constructed Auth verbatim.
-func TestNewAuth_TrustLocalhostPropagates(t *testing.T) {
-	a := newTestAuth(t, "hunter2", withTrustLocalhost())
-	if !a.TrustsLocalhost() {
-		t.Error("withTrustLocalhost() should produce an Auth that trusts loopback")
-	}
-}
-
-// TestTrustsLocalhost_NilSafe: the accessor survives a nil receiver,
-// which is the shape callers see when auth is disabled entirely.
-func TestTrustsLocalhost_NilSafe(t *testing.T) {
-	var a *Auth
-	if a.TrustsLocalhost() {
-		t.Error("nil *Auth should report TrustsLocalhost() = false")
+// TestTrustsLocalhost pins the post-flip default (strict: even loopback
+// must present a cookie), that the opt-in flag reaches the constructed
+// Auth verbatim, and that the accessor survives the nil receiver callers
+// see when auth is disabled entirely.
+func TestTrustsLocalhost(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		auth *Auth
+		want bool
+	}{
+		{"default", newTestAuth(t, "hunter2"), false},
+		{"opt-in", newTestAuth(t, "hunter2", withTrustLocalhost()), true},
+		{"nil", nil, false},
+	} {
+		if got := tc.auth.TrustsLocalhost(); got != tc.want {
+			t.Errorf("%s: TrustsLocalhost() = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -175,292 +168,167 @@ func TestCookie_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestCookie_RejectsTampering(t *testing.T) {
+func TestCookie_RejectsInvalidTokens(t *testing.T) {
 	a := newTestAuth(t, "hunter2")
-	w := httptest.NewRecorder()
-	a.issueCookie(w, httptest.NewRequest(http.MethodGet, "/", nil))
-	c := w.Result().Cookies()[0]
-
-	// Flip the final byte of the signature.
-	tampered := &http.Cookie{Name: c.Name, Value: c.Value[:len(c.Value)-1] + "X"}
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(tampered)
-	if a.hasValidCookie(r) {
-		t.Error("tampered cookie should not verify")
+	issued := issuedCookie(a).Value
+	other, err := NewAuth(AuthConfig{
+		PasswordHash: testPasswordHash(t, "hunter2"),
+		HMACKey:      []byte("key-two-thirty-two-bytes-long!!!"),
+		CookieTTL:    time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestCookie_RejectsExpired(t *testing.T) {
-	a := newTestAuth(t, "hunter2")
-	// Mint a token that expired an hour ago.
-	past := time.Now().Add(-time.Hour)
-	token := a.signToken(past)
-	if a.verifyToken(token) {
-		t.Error("expired token should not verify")
-	}
-}
-
-func TestCookie_RejectsMalformed(t *testing.T) {
-	a := newTestAuth(t, "hunter2")
-	for _, bad := range []string{"", ".sig", "9999", "abc.def", "notanumber.sig"} {
-		if a.verifyToken(bad) {
-			t.Errorf("malformed token %q should not verify", bad)
+	for name, token := range map[string]string{
+		"tampered":     issued[:len(issued)-1] + "X", // final signature byte flipped
+		"expired":      a.signToken(time.Now().Add(-time.Hour)),
+		"wrong key":    other.signToken(time.Now().Add(time.Hour)),
+		"empty":        "",
+		"no expiry":    ".sig",
+		"no signature": "9999",
+		"bad expiry":   "abc.def",
+		"non-numeric":  "notanumber.sig",
+	} {
+		if a.verifyToken(token) {
+			t.Errorf("%s token %q should not verify", name, token)
 		}
 	}
 }
 
-func TestCookie_RejectsWrongKey(t *testing.T) {
-	hash := testPasswordHash(t, "hunter2")
-	a1, _ := NewAuth(AuthConfig{
-		PasswordHash: hash,
-		HMACKey:      []byte("key-one-thirty-two-bytes-long!!!"),
-		CookieTTL:    time.Hour,
-	})
-	a2, _ := NewAuth(AuthConfig{
-		PasswordHash: hash,
-		HMACKey:      []byte("key-two-thirty-two-bytes-long!!!"),
-		CookieTTL:    time.Hour,
-	})
+// issuedCookie returns a freshly issued auth cookie.
+func issuedCookie(a *Auth) *http.Cookie {
+	w := httptest.NewRecorder()
+	a.issueCookie(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	return w.Result().Cookies()[0]
+}
 
-	token := a1.signToken(time.Now().Add(time.Hour))
-	if a2.verifyToken(token) {
-		t.Error("token signed with a1's key should not verify under a2")
+// authRequest builds a request from remoteAddr, with the auth cookie when
+// cookie is non-nil.
+func authRequest(method, target, remoteAddr, body string, cookie *http.Cookie) *http.Request {
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.RemoteAddr = remoteAddr
+	if cookie != nil {
+		req.AddCookie(cookie)
 	}
+	return req
+}
+
+const (
+	testRemoteAddr   = "10.0.0.5:1234"
+	testLoopbackAddr = "127.0.0.1:12345"
+)
+
+// testAuthMode builds the Auth for a mode: "off" (auth disabled),
+// "strict" (the default) or "trusted" (TrustLocalhost).
+func testAuthMode(t *testing.T, mode string) *Auth {
+	switch mode {
+	case "off":
+		return nil
+	case "trusted":
+		return newTestAuth(t, "hunter2", withTrustLocalhost())
+	}
+	return newTestAuth(t, "hunter2")
 }
 
 // --- requireAuth middleware ---
 
-func TestRequireAuth_PassthroughWhenDisabled(t *testing.T) {
-	srv := &Server{} // auth == nil
-	called := false
-	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	handler(rr, req)
-
-	if !called {
-		t.Error("handler should be called when auth disabled")
-	}
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200", rr.Code)
-	}
-}
-
-func TestRequireAuth_RejectsCrossSitePostWhenDisabled(t *testing.T) {
-	handler := (&Server{}).requireAuth(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	req := httptest.NewRequest(http.MethodPost, "http://localhost:8228/api/sessions", nil)
-	req.Header.Set("Origin", "https://evil.example")
-	rr := httptest.NewRecorder()
-
-	handler(rr, req)
-
-	if rr.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403", rr.Code)
-	}
-}
-
-// TestRequireAuth_LoopbackBypasses_WhenTrusted pins the opt-in
-// escape hatch: with TrustLocalhost set, loopback clients are not
-// gated and pass through without presenting a cookie.
-func TestRequireAuth_LoopbackBypasses_WhenTrusted(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2", withTrustLocalhost())}
-	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	for _, addr := range []string{"127.0.0.1:12345", "[::1]:12345"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-		req.RemoteAddr = addr
-		rr := httptest.NewRecorder()
-		handler(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Errorf("%s: status = %d, want 200", addr, rr.Code)
-		}
-	}
-}
-
-// TestRequireAuth_LoopbackRequiresAuth_ByDefault ensures the
-// post-flip behaviour: strict by default — even localhost clients
-// are sent to the lockscreen unless TrustLocalhost is opted into.
-func TestRequireAuth_LoopbackRequiresAuth_ByDefault(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler should not be called for anonymous loopback in strict mode")
-	})
-
-	for _, addr := range []string{"127.0.0.1:12345", "[::1]:12345"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-		req.RemoteAddr = addr
-		rr := httptest.NewRecorder()
-		handler(rr, req)
-		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("%s: status = %d, want 401", addr, rr.Code)
-		}
-	}
-}
-
-// TestRequireAuth_LoopbackWithCookie_ByDefault: a localhost client
-// with a valid cookie still passes — strict mode requires auth, it
-// doesn't *forbid* loopback.
-func TestRequireAuth_LoopbackWithCookie_ByDefault(t *testing.T) {
-	a := newTestAuth(t, "hunter2")
-	srv := &Server{auth: a}
-	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	w := httptest.NewRecorder()
-	a.issueCookie(w, httptest.NewRequest(http.MethodGet, "/", nil))
-	cookie := w.Result().Cookies()[0]
-
-	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	req.AddCookie(cookie)
-	rr := httptest.NewRecorder()
-	handler(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200", rr.Code)
-	}
-}
-
-func TestRequireAuth_RejectsUnauthenticatedRemote(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("handler should not be called")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	handler(rr, req)
-
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", rr.Code)
-	}
-}
-
-func TestRequireAuth_AcceptsValidCookieFromRemote(t *testing.T) {
-	a := newTestAuth(t, "hunter2")
-	srv := &Server{auth: a}
-	called := false
-	handler := srv.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	// Mint a valid cookie.
-	w := httptest.NewRecorder()
-	a.issueCookie(w, httptest.NewRequest(http.MethodGet, "/", nil))
-	cookie := w.Result().Cookies()[0]
-
-	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-	req.RemoteAddr = "10.0.0.5:1234"
-	req.AddCookie(cookie)
-	rr := httptest.NewRecorder()
-	handler(rr, req)
-
-	if !called {
-		t.Error("handler should be called for authenticated remote")
-	}
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200", rr.Code)
+// TestRequireAuth covers the middleware: disabled auth passes through but
+// still rejects cross-site writes; strict mode (the post-flip default)
+// sends every anonymous client, loopback included, to the lockscreen but
+// accepts a valid cookie; the opt-in TrustLocalhost lets loopback through.
+func TestRequireAuth(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, method, target, addr, origin string
+		cookie                                   bool
+		want                                     int
+	}{
+		{name: "disabled passes through", mode: "off", addr: testRemoteAddr, want: http.StatusOK},
+		{name: "disabled rejects cross-site post", mode: "off", method: http.MethodPost, target: "http://localhost:8228/api/sessions", origin: "https://evil.example", want: http.StatusForbidden},
+		{name: "trusted IPv4 loopback bypasses", mode: "trusted", addr: testLoopbackAddr, want: http.StatusOK},
+		{name: "trusted IPv6 loopback bypasses", mode: "trusted", addr: "[::1]:12345", want: http.StatusOK},
+		{name: "strict IPv4 loopback requires auth", mode: "strict", addr: testLoopbackAddr, want: http.StatusUnauthorized},
+		{name: "strict IPv6 loopback requires auth", mode: "strict", addr: "[::1]:12345", want: http.StatusUnauthorized},
+		{name: "strict loopback with cookie", mode: "strict", addr: testLoopbackAddr, cookie: true, want: http.StatusOK},
+		{name: "strict anonymous remote", mode: "strict", addr: testRemoteAddr, want: http.StatusUnauthorized},
+		{name: "strict remote with cookie", mode: "strict", addr: testRemoteAddr, cookie: true, want: http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := testAuthMode(t, tc.mode)
+			called := false
+			handler := (&Server{auth: a}).requireAuth(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			})
+			method, target := cmp.Or(tc.method, http.MethodGet), cmp.Or(tc.target, "/api/stats")
+			var cookie *http.Cookie
+			if tc.cookie {
+				cookie = issuedCookie(a)
+			}
+			req := authRequest(method, target, cmp.Or(tc.addr, httptest.DefaultRemoteAddr), "", cookie)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			rr := httptest.NewRecorder()
+			handler(rr, req)
+			if rr.Code != tc.want {
+				t.Errorf("status = %d, want %d", rr.Code, tc.want)
+			}
+			if called != (tc.want == http.StatusOK) {
+				t.Errorf("handler called = %v, want %v", called, !called)
+			}
+		})
 	}
 }
 
 // --- /api/auth/me ---
 
-func TestHandleAuthMe_Disabled(t *testing.T) {
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	srv.handleAuthMe(rr, req)
+// TestHandleAuthMe: a trusted loopback client sees itself as already
+// authenticated so the frontend skips the lockscreen; in strict mode an
+// anonymous loopback client is treated like any remote one.
+func TestHandleAuthMe(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, addr         string
+		wantRequired, wantAuthed bool
+	}{
+		{"disabled", "off", testRemoteAddr, false, true},
+		{"trusted loopback", "trusted", testLoopbackAddr, true, true},
+		{"untrusted loopback", "strict", testLoopbackAddr, true, false},
+		{"anonymous remote", "strict", testRemoteAddr, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			(&Server{auth: testAuthMode(t, tc.mode)}).handleAuthMe(rr, authRequest(http.MethodGet, "/api/auth/me", tc.addr, "", nil))
 
-	var got map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &got)
-	if got["authRequired"] != false {
-		t.Errorf("authRequired = %v, want false", got["authRequired"])
-	}
-	if got["authenticated"] != true {
-		t.Errorf("authenticated = %v, want true", got["authenticated"])
-	}
-}
-
-// TestHandleAuthMe_TrustedLoopback: with the opt-in escape hatch,
-// a localhost client sees itself as already authenticated so the
-// frontend skips the lockscreen.
-func TestHandleAuthMe_TrustedLoopback(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2", withTrustLocalhost())}
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	rr := httptest.NewRecorder()
-	srv.handleAuthMe(rr, req)
-
-	var got map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &got)
-	if got["authRequired"] != true {
-		t.Errorf("authRequired = %v, want true", got["authRequired"])
-	}
-	if got["authenticated"] != true {
-		t.Errorf("authenticated = %v, want true (trusted loopback)", got["authenticated"])
-	}
-}
-
-// TestHandleAuthMe_UntrustedLoopback: default mode. An anonymous
-// localhost client is NOT authenticated — the lockscreen will be
-// rendered just like for any remote client.
-func TestHandleAuthMe_UntrustedLoopback(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	rr := httptest.NewRecorder()
-	srv.handleAuthMe(rr, req)
-
-	var got map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &got)
-	if got["authRequired"] != true {
-		t.Errorf("authRequired = %v, want true", got["authRequired"])
-	}
-	if got["authenticated"] != false {
-		t.Errorf("authenticated = %v, want false (strict mode)", got["authenticated"])
-	}
-}
-
-func TestHandleAuthMe_EnabledRemoteAnonymous(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	srv.handleAuthMe(rr, req)
-
-	var got map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &got)
-	if got["authRequired"] != true {
-		t.Errorf("authRequired = %v, want true", got["authRequired"])
-	}
-	if got["authenticated"] != false {
-		t.Errorf("authenticated = %v, want false", got["authenticated"])
+			var got map[string]interface{}
+			_ = json.Unmarshal(rr.Body.Bytes(), &got)
+			if got["authRequired"] != tc.wantRequired || got["authenticated"] != tc.wantAuthed {
+				t.Errorf("authRequired = %v, authenticated = %v; want %v, %v", got["authRequired"], got["authenticated"], tc.wantRequired, tc.wantAuthed)
+			}
+		})
 	}
 }
 
 // --- /api/auth/login ---
 
-func TestHandleAuthLogin_Disabled204(t *testing.T) {
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-		strings.NewReader(`{"password":"whatever"}`))
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	srv.handleAuthLogin(rr, req)
-	if rr.Code != http.StatusNoContent {
-		t.Errorf("status = %d, want 204", rr.Code)
+func TestHandleAuthLogin_Rejections(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, password string
+		want                 int
+	}{
+		{"disabled", "off", "whatever", http.StatusNoContent},
+		{"wrong password", "strict", "wrong", http.StatusUnauthorized},
+		{"empty password", "strict", "", http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			(&Server{auth: testAuthMode(t, tc.mode)}).handleAuthLogin(rr, authRequest(http.MethodPost, "/api/auth/login", testRemoteAddr, `{"password":"`+tc.password+`"}`, nil))
+			if rr.Code != tc.want {
+				t.Errorf("status = %d, want %d", rr.Code, tc.want)
+			}
+			if len(rr.Result().Cookies()) != 0 {
+				t.Error("no cookie should be set on a rejected login")
+			}
+		})
 	}
 }
 
@@ -487,54 +355,30 @@ func TestHandleAuthLogin_Success_IssuesCookie(t *testing.T) {
 	}
 }
 
-func TestHandleAuthLogin_WrongPassword401(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-		strings.NewReader(`{"password":"wrong"}`))
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	srv.handleAuthLogin(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", rr.Code)
-	}
-	if len(rr.Result().Cookies()) != 0 {
-		t.Error("no cookie should be set on failed login")
-	}
-}
-
-func TestHandleAuthLogin_EmptyPassword400(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-		strings.NewReader(`{"password":""}`))
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	srv.handleAuthLogin(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rr.Code)
-	}
-}
-
+// TestHandleAuthLogin_RateLimited: after loginMaxAttempts failures the next
+// attempt is rate-limited regardless of password. Strict mode treats
+// localhost like every other IP, so a runaway local process can't
+// brute-force without backoff.
 func TestHandleAuthLogin_RateLimited(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	// Fire loginMaxAttempts failures from a non-localhost IP.
-	for i := 0; i < loginMaxAttempts; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-			strings.NewReader(`{"password":"wrong"}`))
-		req.RemoteAddr = "10.0.0.5:1234"
-		rr := httptest.NewRecorder()
-		srv.handleAuthLogin(rr, req)
-		if rr.Code != http.StatusUnauthorized {
-			t.Fatalf("attempt %d: got %d, want 401", i, rr.Code)
-		}
-	}
-	// Next attempt should be rate-limited regardless of password.
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-		strings.NewReader(`{"password":"hunter2"}`))
-	req.RemoteAddr = "10.0.0.5:1234"
-	rr := httptest.NewRecorder()
-	srv.handleAuthLogin(rr, req)
-	if rr.Code != http.StatusTooManyRequests {
-		t.Errorf("expected 429 after %d failures, got %d", loginMaxAttempts, rr.Code)
+	for _, tc := range []struct{ addr, password string }{
+		{testRemoteAddr, "hunter2"},
+		{testLoopbackAddr, "wrong"},
+	} {
+		t.Run(tc.addr, func(t *testing.T) {
+			srv := &Server{auth: newTestAuth(t, "hunter2")}
+			for i := 0; i < loginMaxAttempts; i++ {
+				rr := httptest.NewRecorder()
+				srv.handleAuthLogin(rr, authRequest(http.MethodPost, "/api/auth/login", tc.addr, `{"password":"wrong"}`, nil))
+				if rr.Code != http.StatusUnauthorized {
+					t.Fatalf("attempt %d: got %d, want 401", i, rr.Code)
+				}
+			}
+			rr := httptest.NewRecorder()
+			srv.handleAuthLogin(rr, authRequest(http.MethodPost, "/api/auth/login", tc.addr, `{"password":"`+tc.password+`"}`, nil))
+			if rr.Code != http.StatusTooManyRequests {
+				t.Errorf("expected 429 after %d failures, got %d", loginMaxAttempts, rr.Code)
+			}
+		})
 	}
 }
 
@@ -552,32 +396,6 @@ func TestHandleAuthLogin_LoopbackSkipsRateLimit_WhenTrusted(t *testing.T) {
 		if rr.Code == http.StatusTooManyRequests {
 			t.Fatalf("trusted loopback should never be rate-limited (attempt %d)", i)
 		}
-	}
-}
-
-// TestHandleAuthLogin_LoopbackRateLimited_ByDefault: strict mode
-// treats localhost like every other IP, so a runaway local process
-// can't brute-force without backoff.
-func TestHandleAuthLogin_LoopbackRateLimited_ByDefault(t *testing.T) {
-	srv := &Server{auth: newTestAuth(t, "hunter2")}
-	for i := 0; i < loginMaxAttempts; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-			strings.NewReader(`{"password":"wrong"}`))
-		req.RemoteAddr = "127.0.0.1:12345"
-		rr := httptest.NewRecorder()
-		srv.handleAuthLogin(rr, req)
-		if rr.Code != http.StatusUnauthorized {
-			t.Fatalf("attempt %d: got %d, want 401", i, rr.Code)
-		}
-	}
-	// Next attempt must be 429 even though we're on loopback.
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login",
-		strings.NewReader(`{"password":"wrong"}`))
-	req.RemoteAddr = "127.0.0.1:12345"
-	rr := httptest.NewRecorder()
-	srv.handleAuthLogin(rr, req)
-	if rr.Code != http.StatusTooManyRequests {
-		t.Errorf("expected 429 after %d failures from loopback in strict mode, got %d", loginMaxAttempts, rr.Code)
 	}
 }
 

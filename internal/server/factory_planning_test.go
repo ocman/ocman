@@ -141,8 +141,8 @@ func TestFactoryExternalDirectoryRulesDataPaths(t *testing.T) {
 func TestFactoryPlanningLauncherRejectsUnsafeProjectPatterns(t *testing.T) {
 	launcher := New(nil, nil, "", platforms.NewRegistry(), nil).factoryModule().PlanningLauncher()
 	for _, project := range []string{"relative", "/other/../repo", "/other*", "/other[repo"} {
-		if _, err := launcher.LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo", Projects: []string{"/repo", project}}); err == nil {
-			t.Fatalf("accepted project path %q", project)
+		if _, err := launcher.LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo", Projects: []string{"/repo", project}}); err == nil || !strings.Contains(err.Error(), "invalid admitted project path") {
+			t.Fatalf("project path %q: error = %v", project, err)
 		}
 	}
 }
@@ -225,14 +225,6 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	}
 	if !strings.Contains(sent.Message, "submit_scope_plan") || !strings.Contains(sent.Message, "Do not ask for another approval") || strings.Contains(sent.Message, "At approval") {
 		t.Fatalf("scope expansion prompt = %q", sent.Message)
-	}
-}
-
-func TestFactoryPlanningLauncherRejectsUnsafeProjectPattern(t *testing.T) {
-	launcher := New(nil, nil, "", platforms.NewRegistry(), nil).factoryModule().PlanningLauncher()
-	_, err := launcher.LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo", Projects: []string{"/repo", "/other*"}})
-	if err == nil || !strings.Contains(err.Error(), "invalid admitted project path") {
-		t.Fatalf("LaunchPlanningSession error = %v", err)
 	}
 }
 

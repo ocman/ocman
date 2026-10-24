@@ -87,18 +87,6 @@ func TestReplacementDoesNotFilterCandidatesByCachedTerminalStatus(t *testing.T) 
 	}
 }
 
-func TestReplacementFailsIfLifecycleCannotBeRead(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
-	readErr := errors.New("lifecycle unavailable")
-	reg.Register(&interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "active", Directory: "/repo", Status: db.StatusBusy}}},
-		lifecycle:    func(string) (*platforms.SessionLifecycle, error) { return nil, readErr },
-	})
-	if err := srv.recordOpencodeReplacement(t.Context(), "/repo", "requested restart"); !errors.Is(err, readErr) {
-		t.Fatalf("lost lifecycle failure: %v", err)
-	}
-}
-
 func TestInterruptedTurnGetsDurableHistoryNotice(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {

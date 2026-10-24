@@ -15,27 +15,27 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-func TestFactoryRecoveryWorkspaceConflictIsActionable(t *testing.T) {
-	srv := New(nil, nil, "", nil, nil)
-	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("%w by Issue claude-code-provider.1.3.105. Resume after that Issue releases the workspace", model.ErrRecoveryWorkspaceBusy)})
-	req := httptest.NewRequest(http.MethodPost, "/api/factory/recovery-gates/claude-code-provider.1.23/resume", strings.NewReader(`{"response":"Continue"}`))
-	req.RemoteAddr = "127.0.0.1:1"
-	rec := httptest.NewRecorder()
-	serveFactory(srv, rec, req)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "claude-code-provider.1.3.105") {
-		t.Fatalf("resume conflict = %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestFactoryRecoveryInvalidCheckpointIsActionable(t *testing.T) {
-	srv := New(nil, nil, "", nil, nil)
-	useFactory(srv, &fakeFactoryService{err: fmt.Errorf("validate resumed Factory workspace: %w: factory worktree has uncommitted changes", factory.ErrInvalidRequest)})
-	req := httptest.NewRequest(http.MethodPost, "/api/factory/recovery-gates/gate/resume", strings.NewReader(`{"response":"Continue"}`))
-	req.RemoteAddr = "127.0.0.1:1"
-	rec := httptest.NewRecorder()
-	serveFactory(srv, rec, req)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "uncommitted changes") {
-		t.Fatalf("resume invalid checkpoint = %d: %s", rec.Code, rec.Body.String())
+func TestFactoryRecoveryResumeErrorsAreActionable(t *testing.T) {
+	for _, tc := range []struct {
+		name, gate string
+		err        error
+		want       int
+		wantBody   string
+	}{
+		{"workspace conflict", "claude-code-provider.1.23", fmt.Errorf("%w by Issue claude-code-provider.1.3.105. Resume after that Issue releases the workspace", model.ErrRecoveryWorkspaceBusy), http.StatusConflict, "claude-code-provider.1.3.105"},
+		{"invalid checkpoint", "gate", fmt.Errorf("validate resumed Factory workspace: %w: factory worktree has uncommitted changes", factory.ErrInvalidRequest), http.StatusBadRequest, "uncommitted changes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := New(nil, nil, "", nil, nil)
+			useFactory(srv, &fakeFactoryService{err: tc.err})
+			req := httptest.NewRequest(http.MethodPost, "/api/factory/recovery-gates/"+tc.gate+"/resume", strings.NewReader(`{"response":"Continue"}`))
+			req.RemoteAddr = "127.0.0.1:1"
+			rec := httptest.NewRecorder()
+			serveFactory(srv, rec, req)
+			if rec.Code != tc.want || !strings.Contains(rec.Body.String(), tc.wantBody) {
+				t.Fatalf("resume = %d: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

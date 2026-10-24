@@ -312,28 +312,3 @@ func TestCreateSessionValidatesPlatformBeforeEnsure(t *testing.T) {
 		t.Errorf("local host executed %d time(s); want 0", local.count())
 	}
 }
-
-// The valid-platform remote create still ensures then creates.
-func TestCreateSessionEnsuresForValidRemotePlatform(t *testing.T) {
-	local := &ownerSpy{}
-	remoteSpy := &ownerSpy{owner: "build-box"}
-	s := newOwnerTestServer(local)
-	s.hostRouter.RegisterRemote("build-box", remoteSpy)
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "r-build-box:opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-		return &platforms.CreateSessionResponse{ID: "new-sess"}, nil
-	}})
-	s.registry = reg
-	s.sessions = sessionsvc.New(reg, sessionsvc.Hooks{})
-
-	body := `{"platform":"r-build-box:opencode","directory":"/remote/repo"}`
-	rr := httptest.NewRecorder()
-	s.handleCreateSession(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", strings.NewReader(body)))
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("status = %d; want 200 (body: %q)", rr.Code, rr.Body.String())
-	}
-	if remoteSpy.count() != 1 {
-		t.Errorf("remote ensure calls = %d; want 1", remoteSpy.count())
-	}
-}

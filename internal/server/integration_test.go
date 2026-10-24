@@ -29,76 +29,12 @@ import (
 var _ = sql.ErrNoRows
 var _ = json.Unmarshal
 
-// testServer creates a Server backed by file-backed SQLite databases.
-// The OpenCode DB is created with schema and then opened read-only via db.Open.
+// testServer creates a Server backed by file-backed SQLite databases and
+// owned by the test (see ownTestServer).
 func testServer(t *testing.T) *Server {
 	t.Helper()
-	tmpDir := t.TempDir()
-
-	// Create and seed the OpenCode database using a writable connection first.
-	tmpOC := tmpDir + "/opencode.db"
-	setupDB, err := sql.Open("sqlite", tmpOC)
-	if err != nil {
-		t.Fatalf("opening temp oc file: %v", err)
-	}
-	_, err = setupDB.Exec(`
-		CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL DEFAULT '');
-		CREATE TABLE session (
-			id TEXT PRIMARY KEY,
-			project_id TEXT NOT NULL DEFAULT '',
-			parent_id TEXT,
-			title TEXT NOT NULL DEFAULT '',
-			directory TEXT NOT NULL DEFAULT '',
-			time_created INTEGER NOT NULL DEFAULT 0,
-			time_updated INTEGER NOT NULL DEFAULT 0,
-			summary_additions INTEGER,
-			summary_deletions INTEGER,
-			summary_files INTEGER,
-			share_url TEXT
-		);
-		CREATE TABLE message (
-			id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL,
-			time_created INTEGER NOT NULL DEFAULT 0,
-			data TEXT NOT NULL DEFAULT '{}'
-		);
-		CREATE TABLE part (
-			id TEXT PRIMARY KEY,
-			message_id TEXT NOT NULL,
-			session_id TEXT NOT NULL,
-			time_created INTEGER NOT NULL DEFAULT 0,
-			data TEXT NOT NULL DEFAULT '{}'
-		);
-	`)
-	if err != nil {
-		setupDB.Close()
-		t.Fatalf("creating oc schema: %v", err)
-	}
+	srv, setupDB := newOpenCodeTestServer(t)
 	setupDB.Close()
-
-	// Open in read-write mode for tests (the production code uses read-only,
-	// but tests need to work with a freshly created empty database).
-	database, err := db.OpenReadWrite(tmpOC)
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	t.Cleanup(func() { database.Close() })
-
-	// State database
-	stateDB, err := state.Open(testStateAt(t, tmpDir+"/state.db"), ModuleSchemas()...)
-	if err != nil {
-		t.Fatalf("opening state db: %v", err)
-	}
-	t.Cleanup(func() { stateDB.Close() })
-
-	reg, history := canonicalOpenCodeRegistry(t, database, stateDB)
-	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
-	testHistories.Store(srv, history)
-	installProjectCacheFixture(t, srv, database)
-	// Never spawn real tmux/opencode from tests — that leaks a tmux
-	// session per run (the temp dir is cleaned up, the session isn't).
-	// Override before the host router is built lazily on first use.
-	srv.runtime = fakeRuntime{}
 	ownTestServer(t, srv)
 	return srv
 }
@@ -291,281 +227,139 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	}
 }
 
-// TestHandleCreateSession_RemoteEnsuresBeforeCreate pins the fix for the
-// "no running OpenCode instance for directory" failure: a remote session
-// must ensure the project's opencode instance (routed to the owning host
-// via the compound platform id) before Create, and pass the ensured port.
-func TestHandleCreateSession_RemoteEnsuresBeforeCreate(t *testing.T) {
-	srv := testServer(t)
-	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-		t.Fatal("local host must not be ensured for a remote session")
-		return nil, nil
-	}})
-	srv.hostRouter.RegisterRemote("rem1", &ensureHost{owner: "rem1", ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-		ensured = req.ProjectDir
-		return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
-	}})
+// TestHandleCreateSession_EnsuresBeforeCreate pins how session creation
+// ensures the project's opencode instance before Create:
+//   - remote: a remote session must ensure the instance on the owning host
+//     (via the compound platform id) and pass the ensured port, fixing "no
+//     running OpenCode instance for directory".
+//   - local: an externally-killed local instance used to be only
+//     *discovered* via lsof, failing forever; local Create must relaunch too.
+//   - pinned to hub: a platform without a compound id is the hub's adapter,
+//     so the ensure must never follow ForDir's directory inference to a
+//     remote that happens to have the same absolute path.
+//   - worktree: a worktree session folds the ensure back to the main
+//     checkout's single shared instance, while the session itself still
+//     lands in the worktree.
+//   - failure: a local ensure is a soft prerequisite; a non-git directory
+//     still creates against whatever instance discovery finds.
+func TestHandleCreateSession_EnsuresBeforeCreate(t *testing.T) {
+	for _, tc := range []struct {
+		name, platform, dir string
+		resolveToRemote     bool
+		localErr            error
+		wantLocal           string // directory ensured on the hub's host
+		wantRemote          string // directory ensured on rem1
+		wantPort            string
+	}{
+		{name: "remote", platform: "r-rem1:opencode", dir: "/home/dries", wantRemote: "/home/dries", wantPort: "7788"},
+		{name: "local", platform: "opencode", dir: "/repo/killed", wantLocal: "/repo/killed", wantPort: "6611"},
+		{name: "local pinned to hub", platform: "opencode", dir: "/repo/shared-path", resolveToRemote: true, wantLocal: "/repo/shared-path", wantPort: "6611"},
+		{name: "worktree folds to project root", platform: "opencode", dir: "/src/.worktrees/ocman/feat-x", wantLocal: "/src/ocman", wantPort: "6611"},
+		{name: "local failure falls back to discovery", platform: "opencode", dir: "/not/a/repo", localErr: errors.New("not a git repository"), wantLocal: "/not/a/repo"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := testServer(t)
+			var ensuredLocal, ensuredRemote string
+			srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+				ensuredLocal = req.ProjectDir
+				if tc.localErr != nil {
+					return nil, tc.localErr
+				}
+				return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:6611", RepoRoot: req.ProjectDir}, nil
+			}})
+			srv.hostRouter.RegisterRemote("rem1", &ensureHost{owner: "rem1", ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
+				ensuredRemote = req.ProjectDir
+				return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
+			}})
+			if tc.resolveToRemote {
+				srv.hostRouter.SetDirResolver(func(string) string { return "rem1" })
+			}
 
-	var created platforms.CreateSessionRequest
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "r-rem1:opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-		created = req
-		return &platforms.CreateSessionResponse{ID: "remote-session"}, nil
-	}})
-	srv.registry = reg
+			var created *platforms.CreateSessionRequest
+			reg := platforms.NewRegistry()
+			reg.Register(&fakePlatform{id: tc.platform, createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				created = &req
+				return &platforms.CreateSessionResponse{ID: "new-session"}, nil
+			}})
+			srv.registry = reg
 
-	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
-		strings.NewReader(`{"platform":"r-rem1:opencode","directory":"/home/dries"}`))
-	rr := httptest.NewRecorder()
-	srv.handleCreateSession(rr, req)
+			req := httptest.NewRequest(http.MethodPost, "/api/sessions",
+				strings.NewReader(`{"platform":"`+tc.platform+`","directory":"`+tc.dir+`"}`))
+			rr := httptest.NewRecorder()
+			srv.handleCreateSession(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	if ensured != "/home/dries" {
-		t.Fatalf("remote host was not ensured; ensured=%q", ensured)
-	}
-	if created.Port != "7788" {
-		t.Fatalf("create did not receive ensured port; got %q", created.Port)
-	}
-}
-
-// TestHandleCreateSession_LocalEnsuresBeforeCreate pins the recovery gap
-// for an externally-killed opencode: local Create only ever *discovered*
-// a port via lsof, so once the project's instance was killed the request
-// failed with "no running OpenCode instance for directory" forever. The
-// local path must ensure (relaunch) the project's instance too.
-func TestHandleCreateSession_LocalEnsuresBeforeCreate(t *testing.T) {
-	srv := testServer(t)
-	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-		ensured = req.ProjectDir
-		return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:6611", RepoRoot: req.ProjectDir}, nil
-	}})
-
-	var created platforms.CreateSessionRequest
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-		created = req
-		return &platforms.CreateSessionResponse{ID: "local-session"}, nil
-	}})
-	srv.registry = reg
-
-	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
-		strings.NewReader(`{"platform":"opencode","directory":"/repo/killed"}`))
-	rr := httptest.NewRecorder()
-	srv.handleCreateSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	if ensured != "/repo/killed" {
-		t.Fatalf("local host was not ensured; ensured=%q", ensured)
-	}
-	if created.Port != "6611" {
-		t.Fatalf("create did not receive ensured port; got %q", created.Port)
-	}
-}
-
-// TestHandleCreateSession_LocalEnsurePinnedToHub pins the local ensure to
-// the hub's own host: a platform without a compound id is the hub's
-// adapter, so the ensure must never follow ForDir's directory inference to
-// a remote — the same absolute path can exist on an attached machine, and
-// ensuring there would launch opencode on the wrong host and hand Create a
-// port that means nothing on the hub.
-func TestHandleCreateSession_LocalEnsurePinnedToHub(t *testing.T) {
-	srv := testServer(t)
-	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-		ensured = req.ProjectDir
-		return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:6613", RepoRoot: req.ProjectDir}, nil
-	}})
-	// A remote whose inventory claims the same absolute path. ForDir would
-	// resolve the directory to it; the handler must not.
-	srv.hostRouter.RegisterRemote("rem1", &ensureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-		t.Error("remote host must not be ensured for a local-platform session")
-		return nil, errors.New("wrong host")
-	}})
-	srv.hostRouter.SetDirResolver(func(string) string { return "rem1" })
-
-	var created platforms.CreateSessionRequest
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-		created = req
-		return &platforms.CreateSessionResponse{ID: "local-session"}, nil
-	}})
-	srv.registry = reg
-
-	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
-		strings.NewReader(`{"platform":"opencode","directory":"/repo/shared-path"}`))
-	rr := httptest.NewRecorder()
-	srv.handleCreateSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	if ensured != "/repo/shared-path" {
-		t.Fatalf("hub's local host was not ensured; ensured=%q", ensured)
-	}
-	if created.Port != "6613" {
-		t.Fatalf("create did not receive the hub's ensured port; got %q", created.Port)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+			}
+			if ensuredLocal != tc.wantLocal || ensuredRemote != tc.wantRemote {
+				t.Fatalf("ensured local=%q remote=%q, want local=%q remote=%q", ensuredLocal, ensuredRemote, tc.wantLocal, tc.wantRemote)
+			}
+			if created == nil {
+				t.Fatal("create was not attempted")
+			}
+			if created.Port != tc.wantPort || created.Directory != tc.dir {
+				t.Fatalf("create got port=%q dir=%q, want port=%q dir=%q", created.Port, created.Directory, tc.wantPort, tc.dir)
+			}
+		})
 	}
 }
 
-// TestHandleCreateSession_EnsuresProjectRootNotWorktree keeps the ensure
-// on the project's single shared instance: a session created in a worktree
-// directory must fold back to the main checkout instead of launching a
-// second opencode for the same project.
-func TestHandleCreateSession_EnsuresProjectRootNotWorktree(t *testing.T) {
+// TestSessionStateHandlers covers the seen, archive and pin handlers'
+// request validation and their state effects. Rows share one server, so
+// each uses its own session ID.
+func TestSessionStateHandlers(t *testing.T) {
 	srv := testServer(t)
-	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-		ensured = req.ProjectDir
-		return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:6612", RepoRoot: req.ProjectDir}, nil
-	}})
-
-	var created platforms.CreateSessionRequest
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-		created = req
-		return &platforms.CreateSessionResponse{ID: "wt-session"}, nil
-	}})
-	srv.registry = reg
-
-	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
-		strings.NewReader(`{"platform":"opencode","directory":"/src/.worktrees/ocman/feat-x"}`))
-	rr := httptest.NewRecorder()
-	srv.handleCreateSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	pinned := func(id string) bool {
+		got, _ := srv.stateDB.PinnedSessions(t.Context())
+		_, ok := got[state.Key{Platform: "opencode", SessionID: id}]
+		return ok
 	}
-	if ensured != "/src/ocman" {
-		t.Fatalf("ensure was not folded to the project root; ensured=%q", ensured)
-	}
-	// The session itself still lands in the worktree.
-	if created.Directory != "/src/.worktrees/ocman/feat-x" {
-		t.Fatalf("session directory = %q, want the worktree path", created.Directory)
-	}
-}
-
-// TestHandleCreateSession_LocalEnsureFailureFallsBackToDiscovery keeps the
-// local ensure a soft prerequisite: a directory that is not a git repo (or
-// a host that cannot launch) must still create a session against whatever
-// instance discovery finds, exactly as before.
-func TestHandleCreateSession_LocalEnsureFailureFallsBackToDiscovery(t *testing.T) {
-	srv := testServer(t)
-	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
-		return nil, errors.New("not a git repository")
-	}})
-
-	var called bool
-	var created platforms.CreateSessionRequest
-	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-		called = true
-		created = req
-		return &platforms.CreateSessionResponse{ID: "local-session"}, nil
-	}})
-	srv.registry = reg
-
-	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
-		strings.NewReader(`{"platform":"opencode","directory":"/not/a/repo"}`))
-	rr := httptest.NewRecorder()
-	srv.handleCreateSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	if !called {
-		t.Fatal("create was not attempted after a failed local ensure")
-	}
-	if created.Port != "" {
-		t.Fatalf("create should fall back to discovery; got port %q", created.Port)
-	}
-}
-
-func TestHandleSessions_Empty(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
-	rr := httptest.NewRecorder()
-	srv.handleSessions(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleSession_NotFound(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/session/nonexistent", nil)
-	req.URL.Path = "/api/session/nonexistent"
-	rr := httptest.NewRecorder()
-	serveSessionRoute(srv.handleSession, rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleSession_InvalidID(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/session/invalid!id", nil)
-	req.URL.Path = "/api/session/invalid!id"
-	rr := httptest.NewRecorder()
-	serveSessionRoute(srv.handleSession, rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-func TestHandleSeenSession_InvalidID(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"sessionId":"invalid!","timeUpdated":1000}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/seen", body)
-	rr := httptest.NewRecorder()
-	srv.handleSeenSession(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-func TestHandleSeenSession_Valid(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","timeUpdated":1000}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/seen", body)
-	rr := httptest.NewRecorder()
-	srv.handleSeenSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleArchiveSession_Valid(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","timeUpdated":1000,"archived":true}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
-	rr := httptest.NewRecorder()
-	srv.handleArchiveSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleArchiveSession_Unarchive(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","archived":false}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
-	rr := httptest.NewRecorder()
-	srv.handleArchiveSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	session := func(w http.ResponseWriter, r *http.Request) { serveSessionRoute(srv.handleSession, w, r) }
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+		path    string
+		body    string // empty means GET
+		seed    func() error
+		want    int
+		check   func() bool
+	}{
+		{name: "session not found", handler: session, path: "/api/session/nonexistent", want: http.StatusNotFound},
+		{name: "session invalid id", handler: session, path: "/api/session/invalid!id", want: http.StatusBadRequest},
+		{name: "seen invalid id", handler: srv.handleSeenSession, path: "/api/session/seen", body: `{"sessionId":"invalid!","timeUpdated":1000}`, want: http.StatusBadRequest},
+		{name: "seen", handler: srv.handleSeenSession, path: "/api/session/seen", body: `{"platform":"opencode","sessionId":"seen1","timeUpdated":1000}`, want: http.StatusOK},
+		{name: "archive", handler: srv.handleArchiveSession, path: "/api/session/archive", body: `{"platform":"opencode","sessionId":"arch1","timeUpdated":1000,"archived":true}`, want: http.StatusOK},
+		{name: "unarchive", handler: srv.handleArchiveSession, path: "/api/session/archive", body: `{"platform":"opencode","sessionId":"arch2","archived":false}`, want: http.StatusOK},
+		{name: "archive missing timeUpdated", handler: srv.handleArchiveSession, path: "/api/session/archive", body: `{"sessionId":"arch3","archived":true}`, want: http.StatusBadRequest},
+		{name: "archive invalid JSON", handler: srv.handleArchiveSession, path: "/api/session/archive", body: `{invalid}`, want: http.StatusBadRequest},
+		{name: "pin", handler: srv.handlePinSession, path: "/api/session/pin", body: `{"platform":"opencode","sessionId":"pin1","pinned":true}`, want: http.StatusOK, check: func() bool { return pinned("pin1") }},
+		{
+			name: "unpin", handler: srv.handlePinSession, path: "/api/session/pin", body: `{"platform":"opencode","sessionId":"pin2","pinned":false}`, want: http.StatusOK,
+			seed:  func() error { return srv.stateDB.PinSession(t.Context(), "opencode", "pin2") },
+			check: func() bool { return !pinned("pin2") },
+		},
+		{name: "pin invalid id", handler: srv.handlePinSession, path: "/api/session/pin", body: `{"platform":"opencode","sessionId":"invalid!","pinned":true}`, want: http.StatusBadRequest},
+		{name: "pin invalid JSON", handler: srv.handlePinSession, path: "/api/session/pin", body: `{invalid}`, want: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.seed != nil {
+				if err := tc.seed(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			if tc.body != "" {
+				req = httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			}
+			rr := httptest.NewRecorder()
+			tc.handler(rr, req)
+			if rr.Code != tc.want {
+				t.Fatalf("status = %d, want %d: %s", rr.Code, tc.want, rr.Body.String())
+			}
+			if tc.check != nil && !tc.check() {
+				t.Fatal("state was not updated")
+			}
+		})
 	}
 }
 
@@ -681,30 +475,6 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	}
 }
 
-func TestHandleArchiveSession_MissingTimeUpdated(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"sessionId":"abc123","archived":true}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
-	rr := httptest.NewRecorder()
-	srv.handleArchiveSession(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 (missing timeUpdated), got %d", rr.Code)
-	}
-}
-
-func TestHandleArchiveSession_InvalidJSON(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{invalid}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/archive", body)
-	rr := httptest.NewRecorder()
-	srv.handleArchiveSession(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
 // Note: the old /api/agents and /api/commands tests (and the
 // primePortCache helper) have moved with their implementations into the
 // internal/platforms/opencode package. The server layer now dispatches
@@ -714,142 +484,121 @@ func TestHandleArchiveSession_InvalidJSON(t *testing.T) {
 
 // --- applySessionState tests ---
 
-func TestApplySessionState_MarksSeen(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s1", 2000); err != nil {
-		t.Fatal(err)
+// TestApplySessionState_Overlays checks the seen, archive and pin overlays
+// applySessionState puts on each session.
+func TestApplySessionState_Overlays(t *testing.T) {
+	type overlay struct {
+		Seen, Archived, Pinned bool
+		SeenTimeUpdated        int64
 	}
-
-	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
-		{ID: "s2", Platform: "opencode", TimeUpdated: 3000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if !sessions[0].Seen {
-		t.Error("s1 should be marked as seen")
-	}
-	if sessions[1].Seen {
-		t.Error("s2 should not be marked as seen")
-	}
-}
-
-func TestApplySessionState_MarksArchived(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession(t.Context(), "opencode", "s1", 2000); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if !sessions[0].Archived {
-		t.Error("s1 should be archived")
-	}
-}
-
-func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if sessions[0].Archived {
-		t.Error("s1 should have been auto-unarchived (updated since archive)")
-	}
-
-	archived, _ := srv.stateDB.ArchivedSessions(t.Context())
-	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; ok {
-		t.Error("s1 should no longer be in archived_session table")
-	}
-}
-
-// TestApplySessionState_MarksArchivedByProject verifies that a session
-// living in an archived project is flagged Archived even when it has no
-// per-session archive record. Regression: an archived project used to
-// leave its sessions "active", so the root "/" redirect could jump into
-// a session that never appears in the sidebar (which hides archived
-// projects).
-func TestApplySessionState_MarksArchivedByProject(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.ArchiveProject(t.Context(), state.LocalRemoteID, "/src/foo"); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: 1000},
-		{ID: "s2", Platform: "opencode", Directory: "/src/bar", TimeUpdated: 1000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if !sessions[0].Archived {
-		t.Error("s1 should be archived (its project is archived)")
-	}
-	if sessions[1].Archived {
-		t.Error("s2 should not be archived (its project is not archived)")
-	}
-}
-
-// TestApplySessionState_ProjectArchiveRespectsNewerActivity verifies that
-// a session updated after its project was archived is NOT flagged
-// archived — matching the project auto-unarchive rule (handleProjects
-// will drop the project marker once it sees the newer activity).
-func TestApplySessionState_ProjectArchiveRespectsNewerActivity(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.ArchiveProject(t.Context(), state.LocalRemoteID, "/src/foo"); err != nil {
-		t.Fatal(err)
-	}
-	archivedProjects, _ := srv.stateDB.ArchivedProjects(t.Context())
-	archivedAt := archivedProjects[state.ProjectKey{RemoteID: state.LocalRemoteID, Root: "/src/foo"}]
-
-	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: archivedAt + 1000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if sessions[0].Archived {
-		t.Error("s1 should not be archived (updated after project archive)")
-	}
-}
-
-// TestApplySessionState_SeenTimeUpdated verifies that the user's
-// last-seen cutoff for a session is surfaced on the Session struct
-// even when the session has since received new updates (so .Seen is
-// false but the frontend still needs the cutoff to render a
-// "jump to first unread" marker).
-func TestApplySessionState_SeenTimeUpdated(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s1", 1500); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", TimeUpdated: 2500}, // updated since seen
-		{ID: "s2", Platform: "opencode", TimeUpdated: 3000}, // never seen
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if sessions[0].SeenTimeUpdated != 1500 {
-		t.Errorf("s1 SeenTimeUpdated: want 1500, got %d", sessions[0].SeenTimeUpdated)
-	}
-	if sessions[0].Seen {
-		t.Error("s1 should not be marked .Seen (updated since)")
-	}
-	if sessions[1].SeenTimeUpdated != 0 {
-		t.Errorf("s2 (never seen) SeenTimeUpdated: want 0, got %d", sessions[1].SeenTimeUpdated)
+	// Later than any archive timestamp, whatever its clock.
+	const afterArchive = int64(1) << 53
+	for _, tc := range []struct {
+		name     string
+		seed     func(context.Context, *state.DB) error
+		sessions []db.Session
+		want     []overlay
+		check    func(*testing.T, *Server)
+	}{
+		{
+			name:     "marks seen",
+			seed:     func(ctx context.Context, st *state.DB) error { return st.MarkSessionSeen(ctx, "opencode", "s1", 2000) },
+			sessions: []db.Session{{ID: "s1", Platform: "opencode", TimeUpdated: 2000}, {ID: "s2", Platform: "opencode", TimeUpdated: 3000}},
+			want:     []overlay{{Seen: true, SeenTimeUpdated: 2000}, {}},
+		},
+		{
+			// The last-seen cutoff is surfaced even after newer updates, so
+			// the frontend can render a "jump to first unread" marker.
+			name:     "seen cutoff survives newer updates",
+			seed:     func(ctx context.Context, st *state.DB) error { return st.MarkSessionSeen(ctx, "opencode", "s1", 1500) },
+			sessions: []db.Session{{ID: "s1", Platform: "opencode", TimeUpdated: 2500}, {ID: "s2", Platform: "opencode", TimeUpdated: 3000}},
+			want:     []overlay{{SeenTimeUpdated: 1500}, {}},
+		},
+		{
+			name:     "marks archived",
+			seed:     func(ctx context.Context, st *state.DB) error { return st.ArchiveSession(ctx, "opencode", "s1", 2000) },
+			sessions: []db.Session{{ID: "s1", Platform: "opencode", TimeUpdated: 2000}},
+			want:     []overlay{{Archived: true}},
+		},
+		{
+			name:     "auto-unarchives an updated session",
+			seed:     func(ctx context.Context, st *state.DB) error { return st.ArchiveSession(ctx, "opencode", "s1", 1000) },
+			sessions: []db.Session{{ID: "s1", Platform: "opencode", TimeUpdated: 2000}},
+			want:     []overlay{{}},
+			check: func(t *testing.T, srv *Server) {
+				archived, _ := srv.stateDB.ArchivedSessions(t.Context())
+				if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; ok {
+					t.Error("s1 should no longer be in archived_session table")
+				}
+			},
+		},
+		{
+			// Regression: an archived project used to leave its sessions
+			// "active", so the root "/" redirect could jump into a session
+			// the sidebar (which hides archived projects) never shows.
+			name: "marks archived by project",
+			seed: func(ctx context.Context, st *state.DB) error {
+				return st.ArchiveProject(ctx, state.LocalRemoteID, "/src/foo")
+			},
+			sessions: []db.Session{
+				{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: 1000},
+				{ID: "s2", Platform: "opencode", Directory: "/src/bar", TimeUpdated: 1000},
+			},
+			want: []overlay{{Archived: true}, {}},
+		},
+		{
+			// Matches the project auto-unarchive rule: handleProjects drops
+			// the project marker once it sees the newer activity.
+			name: "project archive respects newer activity",
+			seed: func(ctx context.Context, st *state.DB) error {
+				return st.ArchiveProject(ctx, state.LocalRemoteID, "/src/foo")
+			},
+			sessions: []db.Session{{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: afterArchive}},
+			want:     []overlay{{}},
+		},
+		{
+			// The multi-platform point of the state.db migration (AD-10).
+			name: "archive scopes by platform",
+			seed: func(ctx context.Context, st *state.DB) error {
+				return st.ArchiveSession(ctx, "opencode", "shared-id", 1000)
+			},
+			sessions: []db.Session{{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000}, {ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000}},
+			want:     []overlay{{Archived: true}, {}},
+		},
+		{
+			name:     "marks pinned",
+			seed:     func(ctx context.Context, st *state.DB) error { return st.PinSession(ctx, "opencode", "s1") },
+			sessions: []db.Session{{ID: "s1", Platform: "opencode", TimeUpdated: 2000}, {ID: "s2", Platform: "opencode", TimeUpdated: 3000}},
+			want:     []overlay{{Pinned: true}, {}},
+		},
+		{
+			name:     "pin scopes by platform",
+			seed:     func(ctx context.Context, st *state.DB) error { return st.PinSession(ctx, "opencode", "shared-id") },
+			sessions: []db.Session{{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000}, {ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000}},
+			want:     []overlay{{Pinned: true}, {}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := testServer(t)
+			if err := tc.seed(t.Context(), srv.stateDB); err != nil {
+				t.Fatal(err)
+			}
+			if err := srv.applySessionState(t.Context(), tc.sessions); err != nil {
+				t.Fatalf("applySessionState: %v", err)
+			}
+			for i, s := range tc.sessions {
+				got := overlay{Seen: s.Seen, Archived: s.Archived, Pinned: s.Pinned, SeenTimeUpdated: s.SeenTimeUpdated}
+				if got != tc.want[i] {
+					t.Errorf("%s/%s overlay = %+v, want %+v", s.Platform, s.ID, got, tc.want[i])
+				}
+				if s.Pinned != (s.PinnedAt > 0) {
+					t.Errorf("%s/%s Pinned = %v with PinnedAt %d", s.Platform, s.ID, s.Pinned, s.PinnedAt)
+				}
+			}
+			if tc.check != nil {
+				tc.check(t, srv)
+			}
+		})
 	}
 }
 
@@ -935,140 +684,6 @@ func TestApplySessionState_UnreadCount_NeverSeen(t *testing.T) {
 	}
 	if sessions[0].SeenTimeUpdated != 0 {
 		t.Errorf("never-seen SeenTimeUpdated: want 0, got %d", sessions[0].SeenTimeUpdated)
-	}
-}
-
-// TestApplySessionState_ScopesByPlatform verifies that marking a
-// session seen / archived under one platform has no effect on a
-// session with the same ID under a different platform — the
-// multi-platform point of the state.db migration (AD-10).
-func TestApplySessionState_ScopesByPlatform(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession(t.Context(), "opencode", "shared-id", 1000); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions := []db.Session{
-		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
-		{ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if !sessions[0].Archived {
-		t.Error("opencode/shared-id should be archived")
-	}
-	if sessions[1].Archived {
-		t.Error("other-platform/shared-id must NOT inherit opencode's archive state")
-	}
-}
-
-// --- Pin handler tests ---
-
-func TestHandlePinSession_Pin(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","pinned":true}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
-	rr := httptest.NewRecorder()
-	srv.handlePinSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	pinned, _ := srv.stateDB.PinnedSessions(t.Context())
-	if _, ok := pinned[state.Key{Platform: "opencode", SessionID: "abc123"}]; !ok {
-		t.Error("session should be pinned after POST")
-	}
-}
-
-func TestHandlePinSession_Unpin(t *testing.T) {
-	srv := testServer(t)
-	_ = srv.stateDB.PinSession(t.Context(), "opencode", "abc123")
-
-	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","pinned":false}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
-	rr := httptest.NewRecorder()
-	srv.handlePinSession(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	pinned, _ := srv.stateDB.PinnedSessions(t.Context())
-	if _, ok := pinned[state.Key{Platform: "opencode", SessionID: "abc123"}]; ok {
-		t.Error("session should be unpinned after POST")
-	}
-}
-
-func TestHandlePinSession_InvalidID(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{"platform":"opencode","sessionId":"invalid!","pinned":true}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
-	rr := httptest.NewRecorder()
-	srv.handlePinSession(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-func TestHandlePinSession_InvalidJSON(t *testing.T) {
-	srv := testServer(t)
-	body := strings.NewReader(`{invalid}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
-	rr := httptest.NewRecorder()
-	srv.handlePinSession(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-// --- applySessionState pinned overlay ---
-
-func TestApplySessionState_MarksPinned(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.PinSession(t.Context(), "opencode", "s1"); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions := []db.Session{
-		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
-		{ID: "s2", Platform: "opencode", TimeUpdated: 3000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if !sessions[0].Pinned {
-		t.Error("s1 should be marked as pinned")
-	}
-	if sessions[0].PinnedAt <= 0 {
-		t.Error("s1 should have a positive PinnedAt")
-	}
-	if sessions[1].Pinned {
-		t.Error("s2 should not be marked as pinned")
-	}
-}
-
-func TestApplySessionState_PinnedScopesByPlatform(t *testing.T) {
-	srv := testServer(t)
-	if err := srv.stateDB.PinSession(t.Context(), "opencode", "shared-id"); err != nil {
-		t.Fatal(err)
-	}
-
-	sessions := []db.Session{
-		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
-		{ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000},
-	}
-	if err := srv.applySessionState(t.Context(), sessions); err != nil {
-		t.Fatalf("applySessionState: %v", err)
-	}
-	if !sessions[0].Pinned {
-		t.Error("opencode/shared-id should be pinned")
-	}
-	if sessions[1].Pinned {
-		t.Error("other-platform/shared-id must NOT inherit opencode's pin state")
 	}
 }
 
@@ -1406,10 +1021,18 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 
 // testServerWithRawDB is like testServer but also returns a raw *sql.DB
 // handle to the same OpenCode database so tests can seed additional rows.
+// It resets the process-wide OpenCode caches and is not owned by the test.
 func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 	t.Helper()
 	// Process-wide OpenCode HTTP caches are keyed by port; start clean.
 	opencodeplatform.ResetCaches()
+	return newOpenCodeTestServer(t)
+}
+
+// newOpenCodeTestServer builds the shared OpenCode test server and returns
+// the writable connection used to create the schema; the caller owns it.
+func newOpenCodeTestServer(t *testing.T) (*Server, *sql.DB) {
+	t.Helper()
 	tmpDir := t.TempDir()
 
 	tmpOC := tmpDir + "/opencode.db"
@@ -1451,6 +1074,8 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 		t.Fatalf("creating oc schema: %v", err)
 	}
 
+	// Open in read-write mode for tests (the production code uses read-only,
+	// but tests need to work with a freshly created empty database).
 	database, err := db.OpenReadWrite(tmpOC)
 	if err != nil {
 		setupDB.Close()
@@ -1467,9 +1092,12 @@ func testServerWithRawDB(t *testing.T) (*Server, *sql.DB) {
 
 	reg, history := canonicalOpenCodeRegistry(t, database, stateDB)
 	srv := New(database, stateDB, "127.0.0.1:0", reg, nil)
-	installProjectCacheFixture(t, srv, database)
-	srv.runtime = fakeRuntime{}
 	testHistories.Store(srv, history)
+	installProjectCacheFixture(t, srv, database)
+	// Never spawn real tmux/opencode from tests — that leaks a tmux
+	// session per run (the temp dir is cleaned up, the session isn't).
+	// Override before the host router is built lazily on first use.
+	srv.runtime = fakeRuntime{}
 	return srv, setupDB
 }
 
