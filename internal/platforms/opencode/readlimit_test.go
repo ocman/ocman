@@ -3,7 +3,6 @@ package opencode
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -47,12 +46,10 @@ func TestReadLimited(t *testing.T) {
 // up inside the error string the UI shows).
 func TestSendJSONBoundsUpstreamErrorBody(t *testing.T) {
 	oversized := strings.Repeat("a", int(maxUpstreamErrorBytes)+1024)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(oversized))
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 
 	err := sendJSON(context.Background(), http.MethodPost, port, "/session/x/message", []byte(`{}`))
 	if err == nil {
@@ -70,7 +67,7 @@ func TestSendJSONBoundsUpstreamErrorBody(t *testing.T) {
 // TestGetJSONBoundsConfigBody does the same for a 200 config/catalog
 // response: past the limit it fails instead of buffering.
 func TestGetJSONBoundsConfigBody(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		chunk := strings.Repeat("a", 1<<20)
@@ -79,9 +76,7 @@ func TestGetJSONBoundsConfigBody(t *testing.T) {
 				return
 			}
 		}
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 
 	body, err := getJSON(context.Background(), port, "/config")
 	if err == nil {

@@ -203,6 +203,15 @@ func (f *opencodeFake) AddMessage(id string, raw json.RawMessage) {
 	f.messages[id] = append(f.messages[id], raw)
 }
 
+// fakePort serves handler on a loopback httptest server, closed at test
+// cleanup, and returns its port.
+func fakePort(t *testing.T, handler http.HandlerFunc) string {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+}
+
 // withTestPort installs a discoverPortsImpl override that maps
 // directory → fake.Port. The swap goes through
 // setDiscoverPortsImplForTests so it is safe under -race even when

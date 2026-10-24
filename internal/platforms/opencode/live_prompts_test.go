@@ -23,14 +23,13 @@ func TestAdapterLivePromptsBackSessionFlagsAndListingWithoutFanout(t *testing.T)
 		sid = "ses-main"
 	)
 	var promptHits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/permission" || r.URL.Path == "/question" {
 			promptHits.Add(1)
 		}
 		http.NotFound(w, r)
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 
 	// Seeded DB: force the listing below to read it rather than an
 	// earlier test's snapshot.
@@ -63,7 +62,7 @@ func TestRefreshPermissionsRequiresSuccessfulLiveSnapshot(t *testing.T) {
 	const dir, sid = "/repo/inbox", "ses-inbox"
 	var fail atomic.Bool
 	var empty atomic.Bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/permission" {
 			http.NotFound(w, r)
 			return
@@ -81,9 +80,8 @@ func TestRefreshPermissionsRequiresSuccessfulLiveSnapshot(t *testing.T) {
 			return
 		}
 		_, _ = io.WriteString(w, `[{"id":"perm-live","sessionID":"ses-inbox","permission":"bash"}]`)
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	prompts, err := a.RefreshPermissions(t.Context(), sid)
 	if err != nil || len(prompts) != 1 || prompts[0]["id"] != "perm-live" {
@@ -185,7 +183,7 @@ func TestPromptReconciliationDoesNotRestorePromptResolvedDuringSnapshot(t *testi
 	)
 	requestStarted := make(chan struct{})
 	releaseResponse := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/permission" {
 			close(requestStarted)
@@ -194,14 +192,13 @@ func TestPromptReconciliationDoesNotRestorePromptResolvedDuringSnapshot(t *testi
 			return
 		}
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
+	})
 
 	a := New(nil, nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{
 		"id": pid, "sessionID": sid, "permission": "Bash",
 	})
-	done := a.StartPromptReconciliation(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), []string{dir})
+	done := a.StartPromptReconciliation(context.Background(), port, []string{dir})
 	<-requestStarted
 	a.ObservePromptResolved(dir, "permission", sid, pid)
 	close(releaseResponse)
@@ -220,7 +217,7 @@ func TestPromptResponsesUseSessionDirectoryAndInvalidateRegistry(t *testing.T) {
 	)
 	var requests atomic.Int32
 	var permissionPath, permissionBody string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("directory"); got != dir {
 			t.Errorf("%s directory query = %q, want %q", r.URL.Path, got, dir)
 		}
@@ -237,9 +234,8 @@ func TestPromptResponsesUseSessionDirectoryAndInvalidateRegistry(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{"id": "perm-1", "sessionID": sid, "permission": "Bash"})
@@ -276,7 +272,7 @@ func TestV2PermissionResponseUsesSessionScopedEndpoint(t *testing.T) {
 	var path, body string
 	var pending atomic.Bool
 	pending.Store(true)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost {
 			path = r.URL.Path
@@ -292,9 +288,8 @@ func TestV2PermissionResponseUsesSessionScopedEndpoint(t *testing.T) {
 			return
 		}
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{
@@ -306,7 +301,7 @@ func TestV2PermissionResponseUsesSessionScopedEndpoint(t *testing.T) {
 	if path != "/api/session/ses-v2/permission/perm-v2/reply" || body != `{"reply":"always"}` {
 		t.Fatalf("permission response = %s %s", path, body)
 	}
-	<-a.StartPromptReconciliation(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), []string{dir})
+	<-a.StartPromptReconciliation(context.Background(), port, []string{dir})
 	prompts, _ := a.ListPermissions(context.Background(), sid)
 	if len(prompts) != 0 {
 		t.Fatalf("permissions after reply = %#v, prompt came back", prompts)
@@ -318,15 +313,14 @@ func TestProxyEventsUsesActualSessionDirectory(t *testing.T) {
 		dir = "/repo/events with space"
 		sid = "ses-events-dir"
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("directory"); got != dir {
 			t.Errorf("directory query = %q, want %q", got, dir)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {}\n\n"))
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	var events bytes.Buffer
@@ -345,14 +339,13 @@ func TestPromptReconciliationIncludesWorktreeSessionDirectories(t *testing.T) {
 	ResetCaches()
 	seen := make(map[string]bool)
 	var mu sync.Mutex
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		seen[r.URL.Query().Get("directory")] = true
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
+	})
 
 	database := newTestDBWithSessions(t, []testSession{
 		{id: "ses-root", directory: root},
@@ -360,7 +353,7 @@ func TestPromptReconciliationIncludesWorktreeSessionDirectories(t *testing.T) {
 		{id: "ses-old", directory: "/repo/.worktrees/project/old"},
 	})
 	a := New(database, nil, nil, ocapi.Auth{})
-	<-a.StartPromptReconciliation(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), []string{root})
+	<-a.StartPromptReconciliation(context.Background(), port, []string{root})
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -380,7 +373,7 @@ func TestPromptReconciliationReportsLiveWorktreePermissionWithStaleStoredStatus(
 	ResetCaches()
 	seen := make(map[string]bool)
 	var mu sync.Mutex
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		seen[r.URL.Query().Get("directory")] = true
 		mu.Unlock()
@@ -390,10 +383,7 @@ func TestPromptReconciliationReportsLiveWorktreePermissionWithStaleStoredStatus(
 			return
 		}
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	})
 	a := New(newTestDBWithSessions(t, []testSession{{id: "ses-worktree", directory: worktree}}), nil, nil, ocapi.Auth{})
 	a.ObserveSessionStatus(port, a.StatusPortGeneration(port), "ses-worktree", "busy")
 	var permissions []platforms.LivePrompt
@@ -448,21 +438,20 @@ func TestNewerPromptReconciliationWinsOlderSlowSnapshot(t *testing.T) {
 
 func TestPromptReconciliationReportsPendingPermissions(t *testing.T) {
 	const dir = "/repo/reconcile-callback"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/permission" {
 			_, _ = w.Write([]byte(`[{"id":"perm-reconcile","sessionID":"ses-reconcile","permission":"Bash","patterns":[],"metadata":{}}]`))
 			return
 		}
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
+	})
 
 	a := New(nil, nil, nil, ocapi.Auth{})
 	var got []platforms.LivePrompt
 	<-a.StartPromptReconciliation(
 		context.Background(),
-		strings.TrimPrefix(server.URL, "http://127.0.0.1:"),
+		port,
 		[]string{dir},
 		func(prompt platforms.LivePrompt) { got = append(got, prompt) },
 	)
@@ -473,12 +462,10 @@ func TestPromptReconciliationReportsPendingPermissions(t *testing.T) {
 
 func TestClearPromptsForPortRemovesOnlyOwnedDirectories(t *testing.T) {
 	a := New(nil, nil, nil, ocapi.Auth{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	})
 	<-a.StartPromptReconciliation(context.Background(), port, []string{"/repo/owned"})
 
 	a.ObservePromptAsked(port, "/repo/owned", "permission", platforms.LivePrompt{"id": "owned", "sessionID": "ses-owned"})
@@ -559,7 +546,7 @@ func TestPromptReconciliationMergesUnrelatedConcurrentAsk(t *testing.T) {
 
 func TestPromptReconciliationRetriesTransientSnapshotFailure(t *testing.T) {
 	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/permission" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[]`))
@@ -571,11 +558,10 @@ func TestPromptReconciliationRetriesTransientSnapshotFailure(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[{"id":"after-retry","sessionID":"ses-retry","permission":"Bash"}]`))
-	}))
-	defer server.Close()
+	})
 
 	a := New(nil, nil, nil, ocapi.Auth{})
-	<-a.StartPromptReconciliation(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), []string{"/repo/retry"})
+	<-a.StartPromptReconciliation(context.Background(), port, []string{"/repo/retry"})
 	prompts, _ := a.ListPermissions(context.Background(), "ses-retry")
 	if len(prompts) != 1 || hits.Load() != 2 {
 		t.Fatalf("prompts=%#v hits=%d, want recovered second attempt", prompts, hits.Load())
@@ -585,12 +571,11 @@ func TestPromptReconciliationRetriesTransientSnapshotFailure(t *testing.T) {
 func TestListQuestionsRefreshesAuthoritativeSnapshot(t *testing.T) {
 	const dir = "/repo/questions"
 	const sid = "ses-questions"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", dir, "question", platforms.LivePrompt{"id": "stale", "sessionID": sid})
@@ -606,14 +591,13 @@ func TestListQuestionsRefreshesAuthoritativeSnapshot(t *testing.T) {
 func TestBubbledQuestionResponseUsesIssuingChildDirectory(t *testing.T) {
 	parentID, childID := "ses-parent-question", "ses-child-question"
 	parentDir, childDir := "/repo/main", "/repo/worktree"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("directory"); got != childDir {
 			t.Errorf("response directory=%q, want child directory %q", got, childDir)
 		}
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-	withTestPort(t, parentDir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, parentDir, port)
 
 	database := newTestDBWithSessions(t, []testSession{
 		{id: parentID, directory: parentDir},
@@ -621,7 +605,7 @@ func TestBubbledQuestionResponseUsesIssuingChildDirectory(t *testing.T) {
 	})
 	a := New(database, nil, nil, ocapi.Auth{})
 	a.ObservePromptAsked("", childDir, "question", platforms.LivePrompt{"id": "child-question", "sessionID": childID})
-	a.rt.rememberSessionPort(parentID, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	a.rt.rememberSessionPort(parentID, port)
 	if err := a.RespondQuestion(context.Background(), platforms.RespondQuestionRequest{SessionID: parentID, RequestID: "child-question"}); err != nil {
 		t.Fatal(err)
 	}
@@ -629,12 +613,10 @@ func TestBubbledQuestionResponseUsesIssuingChildDirectory(t *testing.T) {
 
 func TestReconnectReconcilesPreviouslyObservedIdleDirectory(t *testing.T) {
 	const root, worktree = "/repo/main", "/repo/worktree-idle"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	})
 
 	a := New(nil, nil, nil, ocapi.Auth{})
 	<-a.StartPromptReconciliation(context.Background(), port, []string{root})
@@ -690,11 +672,10 @@ func TestClearPromptsForPortRejectsBufferedOldStreamEvent(t *testing.T) {
 
 func TestListQuestionsReturnsErrorWhenAuthoritativeRefreshFails(t *testing.T) {
 	const dir, sid = "/repo/question-failure", "ses-question-failure"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	if _, err := a.ListQuestions(context.Background(), sid); err == nil {
 		t.Fatal("ListQuestions returned nil error for failed authoritative refresh")
@@ -704,23 +685,22 @@ func TestListQuestionsReturnsErrorWhenAuthoritativeRefreshFails(t *testing.T) {
 func TestListQuestionsDiscoversMissedChildDirectoryPrompt(t *testing.T) {
 	parentID, childID := "ses-parent-missed", "ses-child-missed"
 	parentDir, childDir := "/repo/main", "/repo/worktree-missed"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/question" && r.URL.Query().Get("directory") == childDir {
 			_, _ = w.Write([]byte(`[{"id":"missed-child-question","sessionID":"ses-child-missed","questions":[]}]`))
 			return
 		}
 		_, _ = w.Write([]byte(`[]`))
-	}))
-	defer server.Close()
-	withTestPort(t, parentDir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, parentDir, port)
 
 	database := newTestDBWithSessions(t, []testSession{
 		{id: parentID, directory: parentDir},
 		{id: childID, directory: childDir, parentID: &parentID},
 	})
 	a := New(database, nil, nil, ocapi.Auth{})
-	a.rt.rememberSessionPort(parentID, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	a.rt.rememberSessionPort(parentID, port)
 	prompts, err := a.ListQuestions(context.Background(), parentID)
 	if err != nil {
 		t.Fatal(err)

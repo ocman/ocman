@@ -2,8 +2,6 @@ package opencode
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -21,12 +19,10 @@ func TestGetInto(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				_, _ = w.Write([]byte(tt.body))
-			}))
-			defer srv.Close()
-			port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+			})
 
 			var out struct {
 				SmallModel string `json:"small_model"`
@@ -63,11 +59,9 @@ func TestFetchOpenCodeSmallModel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte(tt.body))
-			}))
-			defer srv.Close()
-			port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+			})
 
 			provider, model, ok := fetchOpenCodeSmallModel(port)
 			if provider != tt.wantProvider || model != tt.wantModel || ok != tt.wantOK {
@@ -79,11 +73,9 @@ func TestFetchOpenCodeSmallModel(t *testing.T) {
 }
 
 func TestFetchOpenCodeMCPAndLSP_FailureReturnsEmpty(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 
 	if mcp := fetchOpenCodeMCP(port); mcp == nil || len(mcp) != 0 {
 		t.Errorf("fetchOpenCodeMCP on failure = %v, want empty non-nil map", mcp)
@@ -94,7 +86,7 @@ func TestFetchOpenCodeMCPAndLSP_FailureReturnsEmpty(t *testing.T) {
 }
 
 func TestFetchOpenCodeMCPAndLSP_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/mcp":
 			_, _ = w.Write([]byte(`{"srv1":{}}`))
@@ -103,9 +95,7 @@ func TestFetchOpenCodeMCPAndLSP_Success(t *testing.T) {
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 
 	if mcp := fetchOpenCodeMCP(port); len(mcp) != 1 {
 		t.Errorf("fetchOpenCodeMCP = %v, want 1 entry", mcp)

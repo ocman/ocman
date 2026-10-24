@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -18,11 +20,11 @@ import (
 )
 
 // Coverage for the Platform operations that only had indirect
-// (port-resolved helper) tests: RunShell,
-// ExecuteCommand, Abort, RenameSession and Compact. The happy paths
-// assert the OpenCode HTTP contract (method + path + body); the
-// failure paths cover the three ways port resolution can fail and the
-// 4xx/5xx upstream split.
+// (port-resolved helper) tests: RunShell, ExecuteCommand, Abort,
+// RenameSession, Compact, ForkSession, MoveSession and
+// SetPermissionRules. The happy paths assert the OpenCode HTTP contract
+// (method + path + body); the failure paths cover the three ways port
+// resolution can fail and the 4xx/5xx upstream split.
 
 const (
 	opsSID = "sess-ops-more"
@@ -73,7 +75,7 @@ func (r *opsRecorder) len() int {
 func newOpsFixture(t *testing.T, favorites FavoritesReader, handler http.HandlerFunc) (*Adapter, *opsRecorder) {
 	t.Helper()
 	rec := &opsRecorder{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		rec.add(opsCall{method: r.Method, path: r.URL.Path, body: string(body)})
 		if handler != nil {
@@ -82,13 +84,12 @@ func newOpsFixture(t *testing.T, favorites FavoritesReader, handler http.Handler
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
-	}))
-	t.Cleanup(srv.Close)
+	})
 
 	catalogCache = newHTTPCache(catalogCache.ttl)
 	ResetCaches()
 
-	withTestPort(t, opsDir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
+	withTestPort(t, opsDir, port)
 	return New(newBoundTestDBWithSession(t, opsSID, opsDir), favorites, nil, ocapi.Auth{}), rec
 }
 
@@ -135,6 +136,16 @@ func mutatingOps() []opsInvocation {
 		{"Compact", func(ctx context.Context, a *Adapter) error {
 			return a.Compact(ctx, platforms.CompactRequest{SessionID: opsSID, ProviderID: "anthropic", ModelID: "claude"})
 		}},
+		{"ForkSession", func(ctx context.Context, a *Adapter) error {
+			_, err := a.ForkSession(ctx, platforms.ForkSessionRequest{SessionID: opsSID})
+			return err
+		}},
+		{"MoveSession", func(ctx context.Context, a *Adapter) error {
+			return a.MoveSession(ctx, platforms.MoveSessionRequest{SessionID: opsSID, Directory: "/tmp/dest"})
+		}},
+		{"SetPermissionRules", func(ctx context.Context, a *Adapter) error {
+			return a.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: opsSID})
+		}},
 	}
 }
 
@@ -180,14 +191,15 @@ func TestAdapterOperations_NoRunningInstance(t *testing.T) {
 }
 
 // TestAdapterOperations_UpstreamContract pins the method, path and
-// JSON body each operation sends to OpenCode.
+// exact JSON body each operation sends to OpenCode.
 func TestAdapterOperations_UpstreamContract(t *testing.T) {
 	tests := []struct {
 		name       string
 		call       func(context.Context, *Adapter) error
+		reply      string // upstream response body; defaults to `{}`
 		wantMethod string
 		wantPath   string
-		wantBody   map[string]string
+		wantBody   string // JSON, compared structurally
 	}{
 		{
 			name: "RunShell defaults the agent",
@@ -196,7 +208,7 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			},
 			wantMethod: http.MethodPost,
 			wantPath:   "/session/" + opsSID + "/shell",
-			wantBody:   map[string]string{"command": "ls -l", "agent": "build"},
+			wantBody:   `{"command":"ls -l","agent":"build"}`,
 		},
 		{
 			name: "RunShell honours an explicit agent",
@@ -205,7 +217,7 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			},
 			wantMethod: http.MethodPost,
 			wantPath:   "/session/" + opsSID + "/shell",
-			wantBody:   map[string]string{"command": "ls", "agent": "plan"},
+			wantBody:   `{"command":"ls","agent":"plan"}`,
 		},
 		{
 			name: "ExecuteCommand without model or agent",
@@ -216,7 +228,7 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			},
 			wantMethod: http.MethodPost,
 			wantPath:   "/session/" + opsSID + "/command",
-			wantBody:   map[string]string{"command": "init", "arguments": "--force"},
+			wantBody:   `{"command":"init","arguments":"--force"}`,
 		},
 		{
 			name: "ExecuteCommand forwards model and agent",
@@ -227,9 +239,7 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			},
 			wantMethod: http.MethodPost,
 			wantPath:   "/session/" + opsSID + "/command",
-			wantBody: map[string]string{
-				"command": "review", "arguments": "", "model": "anthropic/claude", "agent": "plan",
-			},
+			wantBody:   `{"command":"review","arguments":"","model":"anthropic/claude","agent":"plan"}`,
 		},
 		{
 			name: "Abort posts an empty body",
@@ -238,7 +248,7 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			},
 			wantMethod: http.MethodPost,
 			wantPath:   "/session/" + opsSID + "/abort",
-			wantBody:   map[string]string{},
+			wantBody:   `{}`,
 		},
 		{
 			name: "RenameSession patches the title",
@@ -247,7 +257,7 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			},
 			wantMethod: http.MethodPatch,
 			wantPath:   "/session/" + opsSID,
-			wantBody:   map[string]string{"title": "renamed"},
+			wantBody:   `{"title":"renamed"}`,
 		},
 		{
 			// No small_model in /config, so the caller's choice stands.
@@ -259,13 +269,76 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			},
 			wantMethod: http.MethodPost,
 			wantPath:   "/session/" + opsSID + "/summarize",
-			wantBody:   map[string]string{"providerID": "anthropic", "modelID": "claude-opus"},
+			wantBody:   `{"providerID":"anthropic","modelID":"claude-opus"}`,
+		},
+		{
+			name: "ForkSession forwards the message and returns the new ID",
+			call: func(ctx context.Context, a *Adapter) error {
+				resp, err := a.ForkSession(ctx, platforms.ForkSessionRequest{SessionID: opsSID, MessageID: "msg_abc"})
+				if err == nil && resp.ID != "ses_fork_new" {
+					err = fmt.Errorf("resp.ID = %q, want ses_fork_new", resp.ID)
+				}
+				return err
+			},
+			reply:      `{"id":"ses_fork_new"}`,
+			wantMethod: http.MethodPost,
+			wantPath:   "/session/" + opsSID + "/fork",
+			wantBody:   `{"messageID":"msg_abc"}`,
+		},
+		{
+			name: "ForkSession from HEAD omits messageID",
+			call: func(ctx context.Context, a *Adapter) error {
+				_, err := a.ForkSession(ctx, platforms.ForkSessionRequest{SessionID: opsSID})
+				return err
+			},
+			reply:      `{"id":"ses_head_new"}`,
+			wantMethod: http.MethodPost,
+			wantPath:   "/session/" + opsSID + "/fork",
+			wantBody:   `{}`,
+		},
+		{
+			name: "MoveSession posts to the control plane",
+			call: func(ctx context.Context, a *Adapter) error {
+				return a.MoveSession(ctx, platforms.MoveSessionRequest{SessionID: opsSID, Directory: "/tmp/dest"})
+			},
+			wantMethod: http.MethodPost,
+			wantPath:   "/experimental/control-plane/move-session",
+			wantBody:   `{"sessionID":"` + opsSID + `","destination":{"directory":"/tmp/dest"}}`,
+		},
+		{
+			name: "SetPermissionRules patches the ruleset",
+			call: func(ctx context.Context, a *Adapter) error {
+				return a.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{
+					SessionID: opsSID,
+					Rules:     []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "ask"}},
+				})
+			},
+			wantMethod: http.MethodPatch,
+			wantPath:   "/session/" + opsSID,
+			wantBody:   `{"permission":[{"permission":"bash","pattern":"*","action":"ask"}]}`,
+		},
+		{
+			// OpenCode's schema wants an array: nil restores defaults as [].
+			name: "SetPermissionRules sends nil rules as an empty array",
+			call: func(ctx context.Context, a *Adapter) error {
+				return a.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: opsSID})
+			},
+			wantMethod: http.MethodPatch,
+			wantPath:   "/session/" + opsSID,
+			wantBody:   `{"permission":[]}`,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			a, rec := newOpsFixture(t, nil, nil)
+			reply := tc.reply
+			if reply == "" {
+				reply = `{}`
+			}
+			a, rec := newOpsFixture(t, nil, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(reply))
+			})
 			if err := tc.call(context.Background(), a); err != nil {
 				t.Fatalf("call: %v", err)
 			}
@@ -276,17 +349,15 @@ func TestAdapterOperations_UpstreamContract(t *testing.T) {
 			if got.method != tc.wantMethod {
 				t.Errorf("method = %q, want %q", got.method, tc.wantMethod)
 			}
-			var body map[string]string
+			var body, want any
 			if err := json.Unmarshal([]byte(got.body), &body); err != nil {
-				t.Fatalf("body %q is not a JSON object: %v", got.body, err)
+				t.Fatalf("body %q is not JSON: %v", got.body, err)
 			}
-			if len(body) != len(tc.wantBody) {
-				t.Errorf("body = %v, want %v", body, tc.wantBody)
+			if err := json.Unmarshal([]byte(tc.wantBody), &want); err != nil {
+				t.Fatalf("wantBody %q is not JSON: %v", tc.wantBody, err)
 			}
-			for k, want := range tc.wantBody {
-				if body[k] != want {
-					t.Errorf("body[%q] = %q, want %q", k, body[k], want)
-				}
+			if !reflect.DeepEqual(body, want) {
+				t.Errorf("body = %s, want %s", got.body, tc.wantBody)
 			}
 		})
 	}
@@ -355,6 +426,9 @@ func TestAdapterOperations_UpstreamStatusHandling(t *testing.T) {
 					t.Errorf("errors.Is(err, ErrUpstreamRejected) = %v, want %v (err=%v)", got, st.wantRejected, err)
 				}
 				if !st.wantRejected {
+					if !strings.Contains(err.Error(), strconv.Itoa(st.status)) {
+						t.Errorf("error missing upstream status %d: %v", st.status, err)
+					}
 					return
 				}
 				var upstream *platforms.UpstreamError

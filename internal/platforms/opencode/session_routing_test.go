@@ -80,15 +80,14 @@ func TestSessionPortProbeRequiresExactNativeIdentity(t *testing.T) {
 		{"not-found", `{"id":"native"}`, http.StatusNotFound, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/session/native" {
 					t.Errorf("probe path: %s", r.URL.Path)
 				}
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
-			}))
-			defer server.Close()
-			found, err := probeSessionPort(t.Context(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), "native")
+			})
+			found, err := probeSessionPort(t.Context(), port, "native")
 			if err != nil || found != tc.found {
 				t.Fatalf("identity probe: found=%v err=%v", found, err)
 			}

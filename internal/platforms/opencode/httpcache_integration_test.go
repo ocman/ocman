@@ -3,7 +3,6 @@ package opencode
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,15 +18,12 @@ import (
 // reuses.
 func TestGetJSONCached_HitsUpstreamOnceAcrossCalls(t *testing.T) {
 	var hits int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 	const path = "/test_getjsoncached_unique_1"
 
 	// First call: cold miss, should hit upstream.
@@ -51,13 +47,10 @@ func TestGetJSONCached_HitsUpstreamOnceAcrossCalls(t *testing.T) {
 // fail" window.
 func TestGetJSONCached_FailureNotCached(t *testing.T) {
 	var hits int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&hits, 1)
 		http.Error(w, "boom", http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 	const path = "/test_getjsoncached_unique_2"
 
 	if _, err := getJSONCached(context.Background(), port, path); err == nil {

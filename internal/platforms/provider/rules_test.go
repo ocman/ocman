@@ -15,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // approve grants rules to session id through the production "always"
@@ -249,7 +250,7 @@ func TestRuleReplyFailureRetriesWithoutLeaking(t *testing.T) {
 	defer cancel()
 	_ = a.streamURL(ctx, "", 0, io.Discard, nil, "/events?consumer=headless&after=0", true)
 
-	waitFor(t, func() bool { f.mu.Lock(); defer f.mu.Unlock(); return failures >= 3 })
+	testutil.WaitFor(t, 5*time.Second, "three reply attempts", func() bool { f.mu.Lock(); defer f.mu.Unlock(); return failures >= 3 })
 	refreshed, err := a.RefreshPermissions(t.Context(), "s")
 	requireNoError(t, err)
 	if len(refreshed) != 0 {
@@ -269,17 +270,6 @@ func TestRuleReplyFailureRetriesWithoutLeaking(t *testing.T) {
 	defer f.mu.Unlock()
 	if failures != 3 {
 		t.Fatalf("delivered reply was retried: %d attempts", failures)
-	}
-}
-
-func waitFor(t *testing.T, ok func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !ok() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition never held")
-		}
-		time.Sleep(5 * time.Millisecond)
 	}
 }
 

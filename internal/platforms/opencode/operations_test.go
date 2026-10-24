@@ -27,7 +27,7 @@ func TestRevertAndUnrevert_ProxyOpenCodeContract(t *testing.T) {
 		body string
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		if r.Method != http.MethodGet {
 			calls = append(calls, struct {
@@ -37,10 +37,7 @@ func TestRevertAndUnrevert_ProxyOpenCodeContract(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 	restore := setDiscoverPortsImplForTests(func() map[string]string { return map[string]string{dir: port} })
 	defer restore()
 	resetPortCacheForTests()
@@ -101,7 +98,7 @@ func TestResolvePortCtxFallsBackToSessionProbe(t *testing.T) {
 
 func TestAdapterAuthenticatesHTTPAndSSE(t *testing.T) {
 	const sid, dir, password = "sess-auth", "/tmp/proj-auth", "adapter-secret"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
 		if !ok || user != ocapi.DefaultUsername || pass != password {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -118,10 +115,7 @@ func TestAdapterAuthenticatesHTTPAndSSE(t *testing.T) {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer server.Close()
-
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	})
 	withTestPort(t, dir, port)
 	database := newTestDBWithSession(t, sid, dir)
 	a := New(database, nil, nil, ocapi.New(password))
@@ -149,7 +143,7 @@ func TestSendMessageSerializesPromptsPerSession(t *testing.T) {
 	firstPrompt := make(chan struct{})
 	release := make(chan struct{})
 	var prompts atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/session/"+sid+"/prompt_async" {
 			http.NotFound(w, r)
 			return
@@ -159,10 +153,7 @@ func TestSendMessageSerializesPromptsPerSession(t *testing.T) {
 			<-release
 		}
 		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer server.Close()
-
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	})
 	withTestPort(t, dir, port)
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 	req := platforms.SendMessageRequest{SessionID: sid, Message: "steer", Model: "openai/gpt-5", Agent: "build"}
@@ -187,16 +178,13 @@ func TestSendMessageSerializesPromptsPerSession(t *testing.T) {
 
 func TestAdapterProxiesUnauthenticatedSSEWhenAuthDisabled(t *testing.T) {
 	const sid, dir = "sess-no-auth", "/tmp/proj-no-auth"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "" {
 			t.Errorf("Authorization = %q, want empty", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(": unauthenticated\n\n"))
-	}))
-	defer server.Close()
-
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	})
 	withTestPort(t, dir, port)
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 
@@ -334,7 +322,7 @@ func TestProxyEventsRejectsNonSSEWithoutPinningPort(t *testing.T) {
 	const sid = "sess-events-non-sse"
 	const dir = "/tmp/proj-events-non-sse"
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/session/"+sid {
 			fmt.Fprintf(w, `{"id":%q}`, sid)
 			return
@@ -344,10 +332,7 @@ func TestProxyEventsRejectsNonSSEWithoutPinningPort(t *testing.T) {
 			return
 		}
 		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 	restore := setDiscoverPortsImplForTests(func() map[string]string {
 		return map[string]string{dir: port}
 	})
@@ -379,7 +364,7 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 	stale.Close()
 
 	var promptHits int32
-	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	livePort := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/session/"+sid {
 			fmt.Fprintf(w, `{"id":%q}`, sid)
 			return
@@ -390,9 +375,7 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 			return
 		}
 		http.NotFound(w, r)
-	}))
-	defer live.Close()
-	livePort := strings.TrimPrefix(live.URL, "http://127.0.0.1:")
+	})
 
 	restore := setDiscoverPortsImplForTests(func() map[string]string {
 		return map[string]string{dir: livePort}
@@ -420,55 +403,17 @@ func TestSendMessageRetriesAfterPinnedPortTransportFailure(t *testing.T) {
 	}
 }
 
-func TestCreateSessionPinsReturnedSessionPort(t *testing.T) {
-	const sid = "sess-created-port-affinity"
-	const dir = "/tmp/proj-created-port-affinity"
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	restore := setDiscoverPortsImplForTests(func() map[string]string {
-		return map[string]string{dir: port}
-	})
-	defer restore()
-	resetPortCacheForTests()
-	resetSessionPortAffinityForTests()
-	defer resetSessionPortAffinityForTests()
-
-	a := New(nil, nil, nil, ocapi.Auth{})
-	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if resp.ID != sid {
-		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
-	}
-	if got := td.preferredSessionPort(sid); got != port {
-		t.Fatalf("preferredSessionPort = %q, want %q", got, port)
-	}
-}
-
 func TestDisposeSessionDeletesItFromOpenCode(t *testing.T) {
 	const sid = "sess-dispose"
 	deleted := false
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete && r.URL.Path == "/session/"+sid {
 			deleted = true
 			_, _ = w.Write([]byte("true"))
 			return
 		}
 		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	})
 	td.rememberSessionPort(sid, port)
 	defer resetSessionPortAffinityForTests()
 
@@ -502,88 +447,87 @@ func TestDisposeSessionPreservesCleanupWhenSessionDatabaseLookupFails(t *testing
 	}
 }
 
-// TestCreateSession_CachedPortSkipsFreshScan proves the happy-path
-// optimization: when a running opencode is already in the port cache,
-// CreateSession must not trigger another (expensive) lsof scan.
-func TestCreateSession_CachedPortSkipsFreshScan(t *testing.T) {
-	const sid = "sess-cached"
-	const dir = "/tmp/proj-cached"
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	var scans int
-	restore := setDiscoverPortsImplForTests(func() map[string]string {
-		scans++
-		return map[string]string{dir: port}
-	})
-	defer restore()
-	resetPortCacheForTests()
-	resetSessionPortAffinityForTests()
-	defer resetSessionPortAffinityForTests()
-
-	// Warm the cache so the cached lookup hits.
-	td.discoverOpenCodePorts()
-	if scans != 1 {
-		t.Fatalf("warm-up scans = %d, want 1", scans)
+// TestCreateSession_PortAndDirectory covers how CreateSession picks its
+// instance and roots the session:
+//   - a discovered port is reused from the cache without another
+//     (expensive) scan once the cache is warm;
+//   - a caller-provided port skips discovery entirely;
+//   - req.Directory is forwarded via x-opencode-directory, URL-encoded
+//     with url.PathEscape (OpenCode decodes with decodeURIComponent) so
+//     paths with spaces round-trip;
+//   - the new session is pinned to the port it was created on.
+func TestCreateSession_PortAndDirectory(t *testing.T) {
+	tests := []struct {
+		name        string
+		sid         string
+		dir         string
+		providePort bool // pass req.Port instead of discovering it
+		warmCache   bool
+		wantScans   int // -1: not asserted
+	}{
+		{name: "discovered on a cold cache", sid: "sess-with-dir",
+			dir: "/private/tmp/external-worktree", wantScans: -1},
+		{name: "warm cache skips a fresh scan", sid: "sess-cached",
+			dir: "/tmp/proj-cached", warmCache: true, wantScans: 1},
+		{name: "provided port skips discovery and encodes spaces", sid: "sess-provided-port",
+			dir: "/private/tmp/work tree with space", providePort: true, wantScans: 0},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotDir string
+			port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost && r.URL.Path == "/session" {
+					gotDir = r.Header.Get("x-opencode-directory")
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"id":"` + tc.sid + `"}`))
+					return
+				}
+				http.NotFound(w, r)
+			})
+			var scans int
+			restore := setDiscoverPortsImplForTests(func() map[string]string {
+				scans++
+				if tc.providePort {
+					return map[string]string{}
+				}
+				return map[string]string{tc.dir: port}
+			})
+			defer restore()
+			resetPortCacheForTests()
+			resetSessionPortAffinityForTests()
+			defer resetSessionPortAffinityForTests()
 
-	a := New(nil, nil, nil, ocapi.Auth{})
-	if _, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir}); err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if scans != 1 {
-		t.Fatalf("scans after CreateSession = %d, want 1 (cache hit must skip fresh scan)", scans)
-	}
-}
+			if tc.warmCache {
+				td.discoverOpenCodePorts()
+				if scans != 1 {
+					t.Fatalf("warm-up scans = %d, want 1", scans)
+				}
+			}
 
-// TestCreateSession_SendsDirectory proves the directory-sending branch:
-// CreateSession must forward req.Directory to OpenCode on POST /session
-// (via the x-opencode-directory header) so a session can be rooted at a
-// directory other than the process launch cwd.
-func TestCreateSession_SendsDirectory(t *testing.T) {
-	const sid = "sess-with-dir"
-	const dir = "/private/tmp/external-worktree"
-
-	var gotDir string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			gotDir = r.Header.Get("x-opencode-directory")
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	restore := setDiscoverPortsImplForTests(func() map[string]string {
-		return map[string]string{dir: port}
-	})
-	defer restore()
-	resetPortCacheForTests()
-	resetSessionPortAffinityForTests()
-	defer resetSessionPortAffinityForTests()
-
-	a := New(nil, nil, nil, ocapi.Auth{})
-	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if resp.ID != sid {
-		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
-	}
-	if gotDir != url.PathEscape(dir) {
-		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, url.PathEscape(dir))
+			req := platforms.CreateSessionRequest{Directory: tc.dir}
+			if tc.providePort {
+				req.Port = port
+			}
+			resp, err := New(nil, nil, nil, ocapi.Auth{}).CreateSession(context.Background(), req)
+			if err != nil {
+				t.Fatalf("CreateSession: %v", err)
+			}
+			if resp.ID != tc.sid {
+				t.Fatalf("CreateSession ID = %q, want %q", resp.ID, tc.sid)
+			}
+			if tc.wantScans >= 0 && scans != tc.wantScans {
+				t.Fatalf("scans = %d, want %d", scans, tc.wantScans)
+			}
+			if want := url.PathEscape(tc.dir); gotDir != want {
+				t.Fatalf("x-opencode-directory = %q, want %q", gotDir, want)
+			}
+			if strings.Contains(gotDir, " ") {
+				t.Fatalf("x-opencode-directory contains a raw space: %q", gotDir)
+			}
+			if got := td.preferredSessionPort(tc.sid); got != port {
+				t.Fatalf("preferredSessionPort = %q, want %q", got, port)
+			}
+		})
 	}
 }
 
@@ -604,17 +548,14 @@ func TestCreateSession_RejectsUnusableResponse(t *testing.T) {
 		{"missing id", `{"title":"x"}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost && r.URL.Path == "/session" {
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write([]byte(tt.body))
 					return
 				}
 				http.NotFound(w, r)
-			}))
-			defer srv.Close()
-
-			port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+			})
 			restore := setDiscoverPortsImplForTests(func() map[string]string {
 				return map[string]string{dir: port}
 			})
@@ -635,101 +576,6 @@ func TestCreateSession_RejectsUnusableResponse(t *testing.T) {
 	}
 }
 
-// TestCreateSession_EncodesDirectoryHeader proves the x-opencode-directory
-// header value is URL-encoded so a worktree path containing a space (or
-// other characters unsafe in a raw header value) round-trips intact.
-// OpenCode decodes the header with decodeURIComponent, so we encode with
-// url.PathEscape to match.
-func TestCreateSession_EncodesDirectoryHeader(t *testing.T) {
-	const sid = "sess-spacey"
-	const dir = "/private/tmp/work tree with space"
-
-	var gotHeader string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			gotHeader = r.Header.Get("x-opencode-directory")
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	resetPortCacheForTests()
-	resetSessionPortAffinityForTests()
-	defer resetSessionPortAffinityForTests()
-
-	a := New(nil, nil, nil, ocapi.Auth{})
-	if _, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
-		Directory: dir,
-		Port:      port,
-	}); err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	want := url.PathEscape(dir)
-	if gotHeader != want {
-		t.Fatalf("x-opencode-directory = %q, want %q", gotHeader, want)
-	}
-	// Sanity: the encoded value must not contain a raw space.
-	if strings.Contains(gotHeader, " ") {
-		t.Fatalf("x-opencode-directory contains a raw space: %q", gotHeader)
-	}
-}
-
-// TestCreateSession_ProvidedPortSkipsScan proves the provided-port
-// branch: when req.Port is set, CreateSession creates the session on
-// that instance without triggering any lsof scan.
-func TestCreateSession_ProvidedPortSkipsScan(t *testing.T) {
-	const sid = "sess-provided-port"
-	const dir = "/private/tmp/provided-port-worktree"
-
-	var gotDir string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			gotDir = r.Header.Get("x-opencode-directory")
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	var scans int
-	restore := setDiscoverPortsImplForTests(func() map[string]string {
-		scans++
-		return map[string]string{}
-	})
-	defer restore()
-	resetPortCacheForTests()
-	resetSessionPortAffinityForTests()
-	defer resetSessionPortAffinityForTests()
-
-	a := New(nil, nil, nil, ocapi.Auth{})
-	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
-		Directory: dir,
-		Port:      port,
-	})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if resp.ID != sid {
-		t.Fatalf("CreateSession ID = %q, want %q", resp.ID, sid)
-	}
-	if scans != 0 {
-		t.Fatalf("scans = %d, want 0 (provided port must skip discovery)", scans)
-	}
-	if gotDir != url.PathEscape(dir) {
-		t.Fatalf("x-opencode-directory = %q, want %q", gotDir, url.PathEscape(dir))
-	}
-	if got := td.preferredSessionPort(sid); got != port {
-		t.Fatalf("preferredSessionPort = %q, want %q", got, port)
-	}
-}
-
 func TestCreateSession_WaitsForCallerDeadline(t *testing.T) {
 	const sid = "sess-slow-create"
 
@@ -737,17 +583,16 @@ func TestCreateSession_WaitsForCallerDeadline(t *testing.T) {
 	openCodeClient.Timeout = 10 * time.Millisecond
 	t.Cleanup(func() { openCodeClient.Timeout = previousTimeout })
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(25 * time.Millisecond)
 		_, _ = w.Write([]byte(`{"id":"` + sid + `"}`))
-	}))
-	defer srv.Close()
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	resp, err := New(nil, nil, nil, ocapi.Auth{}).CreateSession(ctx, platforms.CreateSessionRequest{
 		Directory: "/tmp/slow-create",
-		Port:      strings.TrimPrefix(srv.URL, "http://127.0.0.1:"),
+		Port:      port,
 	})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -871,189 +716,65 @@ func TestExtractOpenCodeErrorMessage(t *testing.T) {
 	}
 }
 
-// TestSendJSON_4xxReturnsUpstreamError ensures that a 4xx upstream
-// response is converted into a typed *platforms.UpstreamError so the
-// HTTP layer can map it to 422 and forward the parsed message to the
-// UI. Regression guard for the "ocman silently swallows
-// ProviderModelNotFoundError" bug.
-func TestSendJSON_4xxReturnsUpstreamError(t *testing.T) {
-	// httptest server stands in for an OpenCode instance: returns
-	// the canonical NamedError shape on POST.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"name":"ProviderModelNotFoundError","data":{"providerID":"anthropic","modelID":"foo"}}`))
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	err := sendJSON(context.Background(), http.MethodPost, port, "/session/x/prompt_async", []byte(`{}`))
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !errors.Is(err, platforms.ErrUpstreamRejected) {
-		t.Errorf("error does not wrap ErrUpstreamRejected: %v", err)
-	}
-	var ue *platforms.UpstreamError
-	if !errors.As(err, &ue) {
-		t.Fatalf("error is not *UpstreamError: %v", err)
-	}
-	if ue.Status != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", ue.Status)
-	}
-	if !strings.Contains(ue.Message, "ProviderModelNotFoundError") {
-		t.Errorf("message missing error name, got %q", ue.Message)
-	}
-}
-
-// TestSendJSON_5xxFallsThroughToGenericError ensures a 5xx response
-// is *not* tagged as ErrUpstreamRejected — those land in the
-// "platform unreachable / unknown" bucket because they typically
-// indicate a server-side bug rather than user input we can fix.
-func TestSendJSON_5xxFallsThroughToGenericError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("boom"))
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	err := sendJSON(context.Background(), http.MethodPost, port, "/x", []byte(`{}`))
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if errors.Is(err, platforms.ErrUpstreamRejected) {
-		t.Errorf("5xx must not wrap ErrUpstreamRejected, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "500") {
-		t.Errorf("error missing status, got %v", err)
-	}
-}
-
-// TestCreateSession_TitleIsSetAfterCreation verifies the title-setting
-// branch: when CreateSessionRequest.Title is non-empty, a PATCH request
-// to /session/{id} must be issued immediately after the session is
-// created. The title-setting failure must not fail the overall creation.
-func TestCreateSession_TitleIsSetAfterCreation(t *testing.T) {
+// TestCreateSession_Title covers the title branch: current OpenCode
+// takes the title in the POST /session body and echoes it back, so no
+// PATCH is spent; older builds ignore it, so CreateSession falls back to
+// a PATCH /session/{id}. A failing PATCH is soft (the session ID is
+// still returned) and no title means no PATCH.
+func TestCreateSession_Title(t *testing.T) {
 	const newID = "ses_newone"
-	const wantTitle = "My custom title"
-	const dir = "/tmp/test-create-session"
+	tests := []struct {
+		name        string
+		title       string
+		echoTitle   bool // server echoes the create-body title back
+		patchStatus int
+		wantPatches int32
+	}{
+		{"echoed title skips PATCH", "wt", true, http.StatusOK, 0},
+		{"ignored title falls back to PATCH", "My custom title", false, http.StatusOK, 1},
+		{"PATCH failure does not fail creation", "whatever", false, http.StatusInternalServerError, 1},
+		{"no title skips PATCH", "", false, http.StatusOK, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var patches int32
+			port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]string
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/session":
+					reply := map[string]string{"id": newID}
+					if tc.echoTitle {
+						reply["title"] = body["title"]
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(reply)
+				case r.Method == http.MethodPatch && r.URL.Path == "/session/"+newID:
+					atomic.AddInt32(&patches, 1)
+					if body["title"] != tc.title {
+						t.Errorf("PATCH title = %q, want %q", body["title"], tc.title)
+					}
+					w.WriteHeader(tc.patchStatus)
+				default:
+					http.NotFound(w, r)
+				}
+			})
+			dir := "/tmp/test-create-session-title"
+			withTestPort(t, dir, port)
 
-	var patchCalls int32
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/session":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + newID + `"}`))
-
-		case r.Method == http.MethodPatch && r.URL.Path == "/session/"+newID:
-			atomic.AddInt32(&patchCalls, 1)
-			body, _ := io.ReadAll(r.Body)
-			var got map[string]string
-			if err := json.Unmarshal(body, &got); err != nil {
-				t.Errorf("PATCH body not valid JSON: %v", err)
+			resp, err := (&Adapter{rt: td}).CreateSession(context.Background(), platforms.CreateSessionRequest{
+				Directory: dir, Title: tc.title,
+			})
+			if err != nil {
+				t.Fatalf("CreateSession: %v", err)
 			}
-			if got["title"] != wantTitle {
-				t.Errorf("PATCH title = %q, want %q", got["title"], wantTitle)
+			if resp.ID != newID {
+				t.Errorf("resp.ID = %q, want %q", resp.ID, newID)
 			}
-			w.WriteHeader(http.StatusOK)
-
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	withTestPort(t, dir, port)
-
-	a := &Adapter{rt: td}
-	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
-		Directory: dir,
-		Title:     wantTitle,
-	})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if resp.ID != newID {
-		t.Errorf("resp.ID = %q, want %q", resp.ID, newID)
-	}
-	if got := atomic.LoadInt32(&patchCalls); got != 1 {
-		t.Errorf("PATCH /session/%s called %d times, want 1", newID, got)
-	}
-}
-
-// TestCreateSession_TitlePatchFailureDoesNotFailCreation confirms that
-// a non-2xx PATCH response for title-setting is a soft failure — the
-// session ID is still returned.
-func TestCreateSession_TitlePatchFailure_SessionStillReturned(t *testing.T) {
-	const newID = "ses_titlebad"
-	const dir = "/tmp/test-create-session-patchfail"
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + newID + `"}`))
-			return
-		}
-		// PATCH fails with 500
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	withTestPort(t, dir, port)
-
-	a := &Adapter{rt: td}
-	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
-		Directory: dir,
-		Title:     "whatever",
-	})
-	if err != nil {
-		t.Fatalf("CreateSession must not fail when title-patch fails, got: %v", err)
-	}
-	if resp.ID != newID {
-		t.Errorf("resp.ID = %q, want %q", resp.ID, newID)
-	}
-}
-
-// TestCreateSession_NoTitleSkipsPatch asserts that when no title is
-// requested, no PATCH is issued.
-func TestCreateSession_NoTitleSkipsPatch(t *testing.T) {
-	const newID = "ses_notitle"
-	const dir = "/tmp/test-create-session-notitle"
-
-	var patchCalls int32
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			atomic.AddInt32(&patchCalls, 1)
-		}
-		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"` + newID + `"}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	withTestPort(t, dir, port)
-
-	a := &Adapter{rt: td}
-	resp, err := a.CreateSession(context.Background(), platforms.CreateSessionRequest{
-		Directory: dir,
-		// Title deliberately omitted
-	})
-	if err != nil {
-		t.Fatalf("CreateSession: %v", err)
-	}
-	if resp.ID != newID {
-		t.Errorf("resp.ID = %q, want %q", resp.ID, newID)
-	}
-	if atomic.LoadInt32(&patchCalls) != 0 {
-		t.Error("PATCH must not be called when no title is requested")
+			if got := atomic.LoadInt32(&patches); got != tc.wantPatches {
+				t.Errorf("PATCH called %d times, want %d", got, tc.wantPatches)
+			}
+		})
 	}
 }
 
@@ -1107,12 +828,11 @@ func TestSlashCommands_ParsesSource(t *testing.T) {
 // nobody can dismiss.
 func TestRespondPrompt_UpstreamNotFoundDropsRegistryEntry(t *testing.T) {
 	const sid, dir = "sess-stale-prompt", "/tmp/proj-stale-prompt"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"name":"PermissionNotFoundError","data":{"requestID":"x"}}`))
-	}))
-	defer srv.Close()
-	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 	a := New(newBoundTestDBWithSession(t, sid, dir), nil, nil, ocapi.Auth{})
 
 	a.ObservePromptAskedFromPort("", 0, dir, "permission", platforms.LivePrompt{"id": "per_1", "sessionID": sid})
@@ -1132,30 +852,5 @@ func TestRespondPrompt_UpstreamNotFoundDropsRegistryEntry(t *testing.T) {
 	}
 	if got, _ := a.ListQuestions(context.Background(), sid); len(got) != 0 {
 		t.Fatalf("question still listed after upstream 404: %v", got)
-	}
-}
-
-// Current OpenCode takes the title in the POST /session body; when it echoes
-// it back no follow-up PATCH is spent.
-func TestCreateSession_TitleInCreateBodySkipsPatch(t *testing.T) {
-	const dir = "/tmp/test-create-session-title-body"
-	var patches int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			atomic.AddInt32(&patches, 1)
-		}
-		var body map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"ses_body","title":"` + body["title"] + `"}`))
-	}))
-	defer srv.Close()
-	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
-
-	if _, err := (&Adapter{rt: td}).CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir, Title: "wt"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := atomic.LoadInt32(&patches); got != 0 {
-		t.Fatalf("PATCH called %d times, want 0", got)
 	}
 }

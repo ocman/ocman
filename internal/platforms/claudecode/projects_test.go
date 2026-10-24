@@ -21,8 +21,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // installFakeTmux puts the test-only tmux on bin and kills every provider it
@@ -136,39 +134,23 @@ func canonical(t *testing.T, path string) string {
 // checkout session shares that supervisor with its own cwd, and a dead
 // supervisor is relaunched on the next send.
 func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
-	data := testutil.ShortTempDir(t, "cr-") // short: unix socket path limit
-	bin := filepath.Join(data, "bin")
-	installFakeTmux(t, bin, filepath.Join(data, "pids"))
-	claudetest.InstallBinary(t, filepath.Join(bin, "claude"))
+	env := newRecoveryEnv(t)
+	data, repo, stateDB, exe := env.data, env.repo, env.state, env.exe
 	if err := os.MkdirAll(filepath.Join(data, "config", "projects"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	hold, cwds, args := filepath.Join(data, "release"), filepath.Join(data, "cwd.log"), filepath.Join(data, "args.json")
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("OCMAN_FAKE_PROVIDER_PID_DIR", filepath.Join(data, "pids"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(data, "config"))
 	t.Setenv("FAKE_CLAUDE_FIXTURE", claudetest.Fixture("permission.jsonl"))
 	t.Setenv("FAKE_CLAUDE_HOLD", hold)
 	t.Setenv("FAKE_CLAUDE_CWD_LOG", cwds)
 	t.Setenv("FAKE_CLAUDE_ARGS", args)
 
-	repo, worktree := filepath.Join(data, "repo"), filepath.Join(data, "wt")
-	for _, cmd := range [][]string{{"init", repo}, {"-C", repo, "-c", "user.name=T", "-c", "user.email=t@example.invalid", "commit", "--allow-empty", "-m", "x"},
-		{"-C", repo, "worktree", "add", "-b", "wt", worktree}} {
-		if out, err := gitexec.Command(t.Context(), cmd...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v %s", cmd, err, out)
-		}
+	worktree := filepath.Join(data, "wt")
+	if out, err := gitexec.Command(t.Context(), "-C", repo, "worktree", "add", "-b", "wt", worktree).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v %s", err, out)
 	}
-	repo, worktree = canonical(t, repo), canonical(t, worktree)
-	stateDB, err := state.Open(filepath.Join(data, "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = stateDB.Close() })
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	worktree = canonical(t, worktree)
 
 	// start is one ocman lifetime: platform, prompt pipeline and streams.
 	start := func() (*claudePlatform, *recorded, context.CancelFunc) {

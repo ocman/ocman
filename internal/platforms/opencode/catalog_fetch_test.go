@@ -3,8 +3,6 @@ package opencode
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -13,15 +11,14 @@ import (
 
 func catalogServer(t *testing.T, status int, body string) string {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
-	}))
-	t.Cleanup(srv.Close)
+	})
 	catalogCache = newHTTPCache(catalogCache.ttl)
 	fetchFailureLogs.reset()
-	return strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	return port
 }
 
 func captureLogs(t *testing.T) *logtest.Hook {

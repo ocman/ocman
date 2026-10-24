@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -17,7 +15,7 @@ import (
 // without a session; a worktree path folds to the project's instance.
 func TestStoredDirectoryCatalogReadsInstanceForDirectory(t *testing.T) {
 	const dir = "/src/repo"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/agent":
@@ -29,9 +27,8 @@ func TestStoredDirectoryCatalogReadsInstanceForDirectory(t *testing.T) {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer server.Close()
-	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	})
+	withTestPort(t, dir, port)
 	a := New(newTestDBWithSession(t, "ses-1", dir), nil, nil, ocapi.Auth{})
 
 	catalog, err := a.DirectoryCatalogFromStored(context.Background(), platforms.DirectoryCatalogRequest{Directory: "/src/.worktrees/repo/feat"}, nil, db.SessionDefaults{}, true)
@@ -54,18 +51,17 @@ func TestStoredDirectoryCatalogReadsInstanceForDirectory(t *testing.T) {
 
 // A port the caller just ensured wins over (possibly stale) discovery.
 func TestStoredDirectoryCatalogUsesPinnedPort(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	port := fakePort(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/agent" {
 			_, _ = io.WriteString(w, `[{"name":"build"}]`)
 			return
 		}
 		_, _ = io.WriteString(w, `[]`)
-	}))
-	defer server.Close()
+	})
 	withTestPort(t, "/elsewhere", "1")
 	a := New(newTestDBWithSession(t, "ses-1", "/src/repo"), nil, nil, ocapi.Auth{})
-	catalog, err := a.DirectoryCatalogFromStored(context.Background(), platforms.DirectoryCatalogRequest{Directory: "/src/repo", Port: strings.TrimPrefix(server.URL, "http://127.0.0.1:")}, nil, db.SessionDefaults{}, true)
+	catalog, err := a.DirectoryCatalogFromStored(context.Background(), platforms.DirectoryCatalogRequest{Directory: "/src/repo", Port: port}, nil, db.SessionDefaults{}, true)
 	if err != nil {
 		t.Fatalf("DirectoryCatalogFromStored: %v", err)
 	}

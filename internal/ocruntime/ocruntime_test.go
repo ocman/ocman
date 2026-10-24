@@ -171,11 +171,6 @@ func TestNativeProbe(t *testing.T) {
 	}))
 	defer ok.Close()
 
-	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer bad.Close()
-
 	// A refused endpoint: allocate a port then don't listen on it.
 	refusedPort, err := AllocateLoopbackPort()
 	if err != nil {
@@ -190,7 +185,7 @@ func TestNativeProbe(t *testing.T) {
 		want error
 	}{
 		{"200", &Instance{Endpoint: ok.URL}, nil},
-		{"500", &Instance{Endpoint: bad.URL}, ErrProbeUnreachable},
+		// 5xx classification: probe_transient_test.go.
 		{"refused", &Instance{Endpoint: refused}, ErrProbeUnreachable},
 		{"nil instance", nil, ErrProbeUnreachable},
 		{"empty endpoint", &Instance{}, ErrProbeUnreachable},
@@ -209,77 +204,39 @@ func TestNativeProbe(t *testing.T) {
 	}
 }
 
-// instanceServer serves the two endpoints Probe uses, reporting the
-// given worktree as its project root.
-func instanceServer(t *testing.T, worktree string) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/config":
-			w.WriteHeader(http.StatusOK)
-		case "/project/current":
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"worktree": worktree})
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// TestNativeProbe_VerifiesIdentity covers the ephemeral-port reuse
-// hazard: project A's persisted endpoint can be answered by a DIFFERENT
-// project's opencode after A died and the port was recycled. A 200 on
-// /config alone is not proof the right instance answered.
-func TestNativeProbe_VerifiesIdentity(t *testing.T) {
-	rt := NewNativeRuntime()
-	other := instanceServer(t, "/home/u/src/project-b")
-
-	// Someone else's instance on our old port must read as unreachable
-	// so the caller stops it and relaunches.
-	err := rt.Probe(context.Background(), &Instance{
-		Endpoint: other.URL,
-		RepoRoot: "/home/u/src/project-a",
-	})
-	if !errors.Is(err, ErrProbeUnreachable) {
-		t.Errorf("probe of a foreign instance = %v, want ErrProbeUnreachable", err)
+// TestNativeProbe_IdentityKeepsHealthy covers the identity checks that
+// leave an instance usable: our own instance, an adopted/legacy instance
+// with no expected root (config-only), and an older opencode that cannot
+// answer /project/current. A foreign worktree on a recycled port is
+// covered by TestProbeIdentityMismatchIsDistinguishable.
+func TestNativeProbe_IdentityKeepsHealthy(t *testing.T) {
+	tests := []struct {
+		name     string
+		worktree string // reported by /project/current; "" answers 404
+		repoRoot string
+	}{
+		{"matching instance", "/home/u/src/project-a", "/home/u/src/project-a"},
+		{"no expected root is config-only", "/home/u/src/project-b", ""},
+		{"identity unavailable", "", "/home/u/src/project-a"},
 	}
-
-	// Our own instance still probes healthy.
-	mine := instanceServer(t, "/home/u/src/project-a")
-	if err := rt.Probe(context.Background(), &Instance{
-		Endpoint: mine.URL,
-		RepoRoot: "/home/u/src/project-a",
-	}); err != nil {
-		t.Errorf("probe of the matching instance = %v, want nil", err)
-	}
-
-	// No expected root recorded (adopted/legacy instance) -> config-only.
-	if err := rt.Probe(context.Background(), &Instance{Endpoint: other.URL}); err != nil {
-		t.Errorf("probe without RepoRoot = %v, want nil", err)
-	}
-}
-
-// TestNativeProbe_IdentityUnavailable keeps an instance that cannot
-// answer /project/current usable: an older opencode must not be
-// declared dead just because it lacks the endpoint.
-func TestNativeProbe_IdentityUnavailable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/config" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer srv.Close()
-
-	err := NewNativeRuntime().Probe(context.Background(), &Instance{
-		Endpoint: srv.URL,
-		RepoRoot: "/home/u/src/project-a",
-	})
-	if err != nil {
-		t.Errorf("Probe = %v, want nil when identity is unavailable", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/config":
+					w.WriteHeader(http.StatusOK)
+				case r.URL.Path == "/project/current" && tt.worktree != "":
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]string{"worktree": tt.worktree})
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer srv.Close()
+			if err := NewNativeRuntime().Probe(context.Background(), &Instance{Endpoint: srv.URL, RepoRoot: tt.repoRoot}); err != nil {
+				t.Errorf("Probe = %v, want nil", err)
+			}
+		})
 	}
 }
 
