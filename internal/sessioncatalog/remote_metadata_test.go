@@ -24,9 +24,6 @@ func TestCanonicalRemoteMetadataNeverInstallsAnExecutionBinding(t *testing.T) {
 	if _, err := store.Get(t.Context(), row.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("remote identity acquired local binding: %v", err)
 	}
-	if _, err := store.Resolve(t.Context(), row.OwnerID, row.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("remote metadata granted execution: %v", err)
-	}
 	for _, mutate := range []func(*Session){func(r *Session) { r.OwnerID = "other" }, func(r *Session) { r.Platform = "claudecode" }, func(r *Session) { r.SourceKey = "changed" }} {
 		conflict := row
 		mutate(&conflict)

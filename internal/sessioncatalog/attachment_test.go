@@ -8,7 +8,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-func TestAttachedIdentityRetainsOriginButCannotResolveUntilReady(t *testing.T) {
+func TestAttachedIdentityCannotChangeUntilReady(t *testing.T) {
 	s, _ := openStore(t)
 	row, _, err := s.Reserve(t.Context(), reservation())
 	if err != nil {
@@ -20,13 +20,6 @@ func TestAttachedIdentityRetainsOriginButCannotResolveUntilReady(t *testing.T) {
 	}
 	if again, err := s.Attach(t.Context(), row.ID, binding()); err != nil || again != attached {
 		t.Fatalf("repeated attach: %+v %v", again, err)
-	}
-	if _, err := s.Resolve(t.Context(), row.OwnerID, row.ID); !errors.Is(err, ErrCreating) {
-		t.Fatalf("unfinished identity resolved: %v", err)
-	}
-	announced, created, err := s.Discover(t.Context(), Discovery{Binding: binding(), Directory: row.Directory})
-	if err != nil || created || announced.ID != row.ID || announced.OriginID != row.OriginID {
-		t.Fatalf("native announcement split identity: %+v %v %v", announced, created, err)
 	}
 	b := binding()
 	b.NativeID = "replacement"

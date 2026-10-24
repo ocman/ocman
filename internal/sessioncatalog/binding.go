@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Bind makes a previously reserved identity ready. Binding never changes its
@@ -95,51 +93,4 @@ func (s *Store) Fail(ctx context.Context, id, cause string) (Session, error) {
 		return Session{}, err
 	}
 	return row, tx.Commit()
-}
-
-type Discovery struct {
-	Binding
-	Directory string
-	Title     string
-	ParentID  string
-}
-
-// Discover gives external sessions the same identities as owner-created ones.
-// Unknown native rows in a scope with an unfinished create are deferred: the
-// platform may announce a session before returning the ID needed by Bind.
-func (s *Store) Discover(ctx context.Context, d Discovery) (Session, bool, error) {
-	if !d.valid() || !nonempty(d.Directory) {
-		return Session{}, false, ErrInvalid
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Session{}, false, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if row, err := findBinding(ctx, tx, d.Binding); err == nil {
-		return row, false, nil
-	} else if !errors.Is(err, ErrNotFound) {
-		return Session{}, false, err
-	}
-	var pending int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM session_catalog WHERE owner_id=? AND platform=? AND directory=? AND creation_state='creating'`, d.OwnerID, d.Platform, d.Directory).Scan(&pending); err != nil {
-		return Session{}, false, err
-	}
-	if pending > 0 {
-		return Session{}, false, ErrCreating
-	}
-	if err := validParent(ctx, tx, d.OwnerID, d.ParentID); err != nil {
-		return Session{}, false, err
-	}
-	now := time.Now().UnixMilli()
-	row := Session{ID: "ocm_" + uuid.NewString(), OwnerID: d.OwnerID, Platform: d.Platform, Directory: d.Directory,
-		Title: d.Title, ParentID: d.ParentID, Origin: External, CreationState: Ready,
-		SourceKey: d.SourceKey, NativeID: d.NativeID, CreatedAt: now, UpdatedAt: now}
-	if err := insert(ctx, tx, row, "", ""); err != nil {
-		return Session{}, false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Session{}, false, err
-	}
-	return row, true, nil
 }

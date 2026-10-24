@@ -56,31 +56,6 @@ func (s *Store) FindBinding(ctx context.Context, b Binding) (Session, error) {
 	return findBinding(ctx, s.db, b)
 }
 
-// Resolve translates an Ocman identity only within its explicit owner. It
-// never probes platforms or treats an unknown Ocman ID as a native session ID.
-func (s *Store) Resolve(ctx context.Context, ownerID, id string) (Binding, error) {
-	if !nonempty(ownerID) || !nonempty(id) {
-		return Binding{}, ErrInvalid
-	}
-	row, err := s.Get(ctx, id)
-	if err != nil {
-		return Binding{}, err
-	}
-	if row.OwnerID != ownerID {
-		return Binding{}, ErrNotFound
-	}
-	switch row.CreationState {
-	case Creating, Configuring:
-		return Binding{}, ErrCreating
-	case CreationFailed:
-		return Binding{}, ErrCreationFailed
-	case Ready:
-		return Binding{OwnerID: row.OwnerID, Platform: row.Platform, SourceKey: row.SourceKey, NativeID: row.NativeID}, nil
-	default:
-		return Binding{}, ErrTransition
-	}
-}
-
 func (s *Store) List(ctx context.Context, ownerID string, limit, offset int) ([]Session, error) {
 	if !nonempty(ownerID) || limit < 1 || limit > 500 || offset < 0 {
 		return nil, ErrInvalid

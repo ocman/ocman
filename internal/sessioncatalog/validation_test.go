@@ -54,29 +54,14 @@ func TestReservationsRejectIncompleteOriginsAndMissingParents(t *testing.T) {
 	}
 }
 
-func TestResolveFailsClosedAndNeverReturnsUnboundNativeIDs(t *testing.T) {
+func TestReadyIdentityCannotBeFailed(t *testing.T) {
 	s, _ := openStore(t)
 	row, _, err := s.Reserve(t.Context(), reservation())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Resolve(t.Context(), row.OwnerID, row.ID); !errors.Is(err, ErrCreating) {
-		t.Fatalf("unbound resolution: %v", err)
-	}
-	if _, err := s.Resolve(t.Context(), "other-owner", row.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("cross-owner resolution: %v", err)
-	}
-	if _, err := s.Resolve(t.Context(), row.OwnerID, "missing"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("missing identity: %v", err)
-	}
-	if _, err := s.Resolve(t.Context(), "", row.ID); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("empty owner: %v", err)
-	}
 	if _, err := s.Bind(t.Context(), row.ID, binding()); err != nil {
 		t.Fatal(err)
-	}
-	if b, err := s.Resolve(t.Context(), row.OwnerID, row.ID); err != nil || b != binding() {
-		t.Fatalf("bound resolution: %+v %v", b, err)
 	}
 	if _, err := s.Fail(t.Context(), row.ID, "late failure"); !errors.Is(err, ErrTransition) {
 		t.Fatalf("ready downgraded: %v", err)
@@ -89,9 +74,6 @@ func TestResolveFailsClosedAndNeverReturnsUnboundNativeIDs(t *testing.T) {
 	}
 	if _, err := s.Fail(t.Context(), failed.ID, "no launch"); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := s.Resolve(t.Context(), row.OwnerID, failed.ID); !errors.Is(err, ErrCreationFailed) {
-		t.Fatalf("failed resolution: %v", err)
 	}
 }
 
@@ -144,9 +126,6 @@ func TestInvalidQueriesAndUnavailableStore(t *testing.T) {
 	if _, err := s.Bind(t.Context(), "missing", Binding{}); !errors.Is(err, ErrInvalid) {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Discover(t.Context(), Discovery{}); !errors.Is(err, ErrInvalid) {
-		t.Fatal(err)
-	}
 	if _, err := s.Fail(t.Context(), "missing", " "); !errors.Is(err, ErrInvalid) {
 		t.Fatal(err)
 	}
@@ -169,9 +148,6 @@ func TestInvalidQueriesAndUnavailableStore(t *testing.T) {
 	}
 	if _, err := s.Fail(t.Context(), "missing", "failure"); err == nil {
 		t.Fatal("failure on closed database")
-	}
-	if _, _, err := s.Discover(t.Context(), Discovery{Binding: binding(), Directory: "/project"}); err == nil {
-		t.Fatal("discovery on closed database")
 	}
 	if _, err := s.List(t.Context(), "owner", 10, 0); err == nil {
 		t.Fatal("list on closed database")

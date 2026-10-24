@@ -119,38 +119,15 @@ func TestConcurrentReservationHasOneCreator(t *testing.T) {
 	}
 }
 
-func TestDiscoveryDefersWhileCreationIsUnbound(t *testing.T) {
+func TestBindingCannotMoveOrStealIdentity(t *testing.T) {
 	s, _ := openStore(t)
-	d := Discovery{Binding: binding(), Directory: "/project", Title: "platform title"}
-	row, _, err := s.Reserve(t.Context(), reservation())
+	r := reservation()
+	r.RequestKey = "first"
+	first, _, err := s.Reserve(t.Context(), r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Discover(t.Context(), d); !errors.Is(err, ErrCreating) {
-		t.Fatalf("early native announcement created second identity: %v", err)
-	}
-	if _, err := s.Bind(t.Context(), row.ID, binding()); err != nil {
-		t.Fatal(err)
-	}
-	discovered, created, err := s.Discover(t.Context(), d)
-	if err != nil || created || discovered.ID != row.ID || discovered.Origin != Routine {
-		t.Fatalf("origin changed on discovery: %+v %v %v", discovered, created, err)
-	}
-	d.NativeID = "external"
-	external, created, err := s.Discover(t.Context(), d)
-	if err != nil || !created || external.Origin != External || external.NativeID != "external" {
-		t.Fatalf("external: %+v %v %v", external, created, err)
-	}
-	again, created, err := s.Discover(t.Context(), d)
-	if err != nil || created || again != external {
-		t.Fatalf("external replay: %+v %v %v", again, created, err)
-	}
-}
-
-func TestBindingIsScopedAndCannotMoveOrStealIdentity(t *testing.T) {
-	s, _ := openStore(t)
-	first, _, err := s.Discover(t.Context(), Discovery{Binding: binding(), Directory: "/project"})
-	if err != nil {
+	if _, err := s.Bind(t.Context(), first.ID, binding()); err != nil {
 		t.Fatal(err)
 	}
 	row, _, err := s.Reserve(t.Context(), reservation())
@@ -159,23 +136,6 @@ func TestBindingIsScopedAndCannotMoveOrStealIdentity(t *testing.T) {
 	}
 	if _, err := s.Bind(t.Context(), row.ID, binding()); !errors.Is(err, ErrBindingConflict) {
 		t.Fatalf("stolen binding: %v", err)
-	}
-	for _, field := range []string{"owner", "platform", "source", "native"} {
-		b := binding()
-		switch field {
-		case "owner":
-			b.OwnerID = "other"
-		case "platform":
-			b.Platform = "claudecode"
-		case "source":
-			b.SourceKey = "other"
-		case "native":
-			b.NativeID = "other"
-		}
-		other, created, err := s.Discover(t.Context(), Discovery{Binding: b, Directory: "/elsewhere"})
-		if err != nil || !created || other.ID == first.ID {
-			t.Fatalf("%s merged unrelated identities: %+v %v", field, other, err)
-		}
 	}
 	b := binding()
 	b.NativeID = "different"
