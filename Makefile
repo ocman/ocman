@@ -180,10 +180,7 @@ install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|fi
 # in CLI mode and proxies the Wails WebView to it (see internal/gui/app.go).
 # All assets are therefore served from the Go `//go:embed static/*` FS in
 # internal/webui/static — NOT from Wails's own asset server. So the frontend
-# must be built into internal/webui/static (the default `pnpm build` output),
-# not frontend/dist. If you set WAILS_BUILD=1 here the embed picks up only
-# the gitignored robots.txt placeholder and the desktop app shows a blank
-# page with "robots.txt" as the only visible content.
+# must be built into internal/webui/static (the `pnpm build` output).
 build-desktop: ## Build the Wails desktop app (outputs to build/bin/)
 	cd frontend && pnpm install --frozen-lockfile && pnpm build
 	@mkdir -p build

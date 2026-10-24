@@ -70,15 +70,9 @@ const apiProxy: Record<string, ProxyOptions> = {
   },
 }
 
-// When building for the Wails desktop bundle, output into the standard
-// Wails dist dir so `wails build` picks it up.  The normal `make build`
-// still targets ../internal/webui/static (the go:embed source).
-const isWailsBuild = process.env.WAILS_BUILD === '1'
-
 // OCMAN_PROFILE=1 builds against React's profiling renderer so <Profiler>
 // reports commit timings in a production bundle (used by `pnpm perf`).
 const profileBuild = process.env.OCMAN_PROFILE === '1'
-const buildOutDir = isWailsBuild ? '../frontend/dist' : '../internal/webui/static'
 
 export default defineConfig({
   plugins: [
@@ -92,7 +86,8 @@ export default defineConfig({
   ],
   resolve: profileBuild ? { alias: { 'react-dom/client': 'react-dom/profiling' } } : undefined,
   build: {
-    outDir: buildOutDir,
+    // The go:embed source; the desktop app serves the same embedded assets.
+    outDir: '../internal/webui/static',
     emptyOutDir: true,
   },
   server: {
