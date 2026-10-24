@@ -15,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/sqliteutil"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
@@ -126,6 +127,11 @@ const (
 	connMaxIdleTime = 1 * time.Minute
 )
 
+var readPool = sqliteutil.Pool{
+	MaxOpen: maxOpenReadConns, MaxIdle: maxIdleReadConns,
+	MaxLifetime: connMaxLifetime, MaxIdleTime: connMaxIdleTime,
+}
+
 // DefaultDBPath returns the default path to the OpenCode database.
 // Falls back to a relative path if the home directory cannot be determined.
 func DefaultDBPath() string {
@@ -166,17 +172,9 @@ func Open(path string) (*DB, error) {
 	// database/sql operation produces a span and increments the
 	// latency histogram with query fingerprints. When telemetry is
 	// disabled the global TracerProvider/MeterProvider are no-ops.
-	db, err := telemetry.OpenSQL(dsn, "opencode")
+	db, err := sqliteutil.OpenPool(dsn, "opencode", readPool)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
-	}
-	db.SetMaxOpenConns(maxOpenReadConns)
-	db.SetMaxIdleConns(maxIdleReadConns)
-	db.SetConnMaxLifetime(connMaxLifetime)
-	db.SetConnMaxIdleTime(connMaxIdleTime)
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 	// Best-effort: register pool stats as OTel metrics. The error is
 	// only meaningful when telemetry is wired up; ignoring it here

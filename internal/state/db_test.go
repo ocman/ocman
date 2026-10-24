@@ -396,28 +396,6 @@ func TestOpen_RepairsPermissionsWithoutDataLoss(t *testing.T) {
 	assertFileMode(t, dbPath, 0o600)
 }
 
-func TestSecureStatePaths_RepairsSidecars(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "state", "state.db")
-	if err := secureStatePaths(dbPath); err != nil {
-		t.Fatalf("secureStatePaths: %v", err)
-	}
-	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
-		path := dbPath + suffix
-		if err := os.WriteFile(path, nil, 0o666); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chmod(path, 0o666); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := secureStatePaths(dbPath); err != nil {
-		t.Fatalf("repair sidecars: %v", err)
-	}
-	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
-		assertFileMode(t, dbPath+suffix, 0o600)
-	}
-}
-
 func TestOpen_RejectsSymlinkedDatabase(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.db")

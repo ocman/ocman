@@ -15,7 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/NoUseFreak/ocman/internal/sqliteutil"
 	"github.com/google/uuid"
 	"modernc.org/sqlite"
 )
@@ -58,15 +58,8 @@ func Open(history, core string) (*Reader, error) {
 	u.RawQuery = url.Values{"mode": {"ro"}, "sidebar_core": {core}, "sidebar_reader": {uuid.NewString()}, "_pragma": {"busy_timeout(1000)", "query_only(1)"}}.Encode()
 	dsn := u.String()
 	attached.Store(dsn, coreURL.String())
-	conn, err := telemetry.OpenSQL(dsn, "sidebar")
+	conn, err := sqliteutil.OpenPool(dsn, "sidebar", sqliteutil.Pool{MaxOpen: 4, MaxIdle: 4})
 	if err != nil {
-		attached.Delete(dsn)
-		return nil, err
-	}
-	conn.SetMaxOpenConns(4)
-	conn.SetMaxIdleConns(4)
-	if err := conn.Ping(); err != nil {
-		_ = conn.Close()
 		attached.Delete(dsn)
 		return nil, err
 	}

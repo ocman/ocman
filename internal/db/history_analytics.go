@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/NoUseFreak/ocman/internal/sqliteutil"
 	"modernc.org/sqlite"
 )
 
@@ -68,16 +68,8 @@ func OpenHistoryAnalytics(path string, instances []string) (*DB, error) {
 	u.RawQuery = q.Encode()
 	dsn := u.String()
 	historyDSNs.Store(dsn, "'"+strings.ReplaceAll(string(raw), "'", "''")+"'")
-	conn, err := telemetry.OpenSQL(dsn, "history-analytics")
+	conn, err := sqliteutil.OpenPool(dsn, "history-analytics", readPool)
 	if err != nil {
-		return nil, err
-	}
-	conn.SetMaxOpenConns(maxOpenReadConns)
-	conn.SetMaxIdleConns(maxIdleReadConns)
-	conn.SetConnMaxLifetime(connMaxLifetime)
-	conn.SetConnMaxIdleTime(connMaxIdleTime)
-	if err := conn.Ping(); err != nil {
-		conn.Close()
 		return nil, err
 	}
 	return &DB{db: conn, historyScope: &historyScopeValidation{}}, nil

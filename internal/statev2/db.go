@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 
+	"github.com/NoUseFreak/ocman/internal/sqliteutil"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite"
@@ -35,7 +35,7 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := securePaths(abs); err != nil {
+	if err := sqliteutil.SecurePaths(abs, "statev2"); err != nil {
 		return nil, err
 	}
 	u := url.URL{Scheme: "file", Path: abs}
@@ -51,20 +51,13 @@ func Open(path string) (*DB, error) {
 		conn.Close()
 		return nil, fmt.Errorf("opening statev2: %w", err)
 	}
-	if err := securePaths(abs); err != nil {
+	if err := sqliteutil.SecurePaths(abs, "statev2"); err != nil {
 		conn.Close()
 		return nil, err
 	}
 	u.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"busy_timeout(1000)", "foreign_keys(1)", "query_only(1)"}}.Encode()
-	read, err := telemetry.OpenSQL(u.String(), "statev2-read")
+	read, err := sqliteutil.OpenPool(u.String(), "statev2-read", sqliteutil.Pool{MaxOpen: 4, MaxIdle: 4})
 	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	read.SetMaxOpenConns(4)
-	read.SetMaxIdleConns(4)
-	if err := read.Ping(); err != nil {
-		_ = read.Close()
 		_ = conn.Close()
 		return nil, err
 	}
@@ -91,45 +84,6 @@ func (d *DB) reader() *sql.DB {
 
 // FilePath identifies this store for independently owned, read-only readers.
 func (d *DB) FilePath() string { return d.path }
-
-func securePaths(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	dir, err := os.Lstat(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	if !dir.IsDir() {
-		return fmt.Errorf("statev2: database directory must not be a symlink")
-	}
-	for i, candidate := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
-		info, err := os.Lstat(candidate)
-		if os.IsNotExist(err) {
-			if i != 0 {
-				continue
-			}
-			f, err := os.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
-			if err != nil {
-				return err
-			}
-			if err := f.Close(); err != nil {
-				return err
-			}
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("statev2: %s must be a regular file, not a symlink", candidate)
-		}
-		if err := os.Chmod(candidate, 0600); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func (d *DB) migrate() error {
 	tx, err := d.db.BeginTx(context.Background(), nil)

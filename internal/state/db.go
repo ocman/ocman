@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/NoUseFreak/ocman/internal/sqliteutil"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/XSAM/otelsql"
 	log "github.com/sirupsen/logrus"
@@ -58,7 +59,7 @@ func DefaultDataDir() string {
 // Runs any pending migrations exactly once, the core sequence first and
 // then each module schema in order; safe to call on every boot.
 func Open(path string, modules ...ModuleSchema) (*DB, error) {
-	if err := secureStatePaths(path); err != nil {
+	if err := sqliteutil.SecurePaths(path, "state"); err != nil {
 		return nil, err
 	}
 
@@ -85,7 +86,7 @@ func Open(path string, modules ...ModuleSchema) (*DB, error) {
 		db.Close()
 		db, stateDB.db = enforced, enforced
 	}
-	if err := secureStatePaths(path); err != nil {
+	if err := sqliteutil.SecurePaths(path, "state"); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -119,50 +120,6 @@ func openStateSQL(dsn string) (*sql.DB, error) {
 	// busy_timeout. One connection is plenty for a single-user dashboard.
 	db.SetMaxOpenConns(1)
 	return db, nil
-}
-
-func secureStatePaths(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating state directory: %w", err)
-	}
-	info, err := os.Lstat(dir)
-	if err != nil {
-		return fmt.Errorf("checking state directory: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return fmt.Errorf("state directory %q must be a real directory", dir)
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return fmt.Errorf("securing state directory: %w", err)
-	}
-
-	for i, candidate := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
-		info, err := os.Lstat(candidate)
-		if os.IsNotExist(err) {
-			if i != 0 {
-				continue
-			}
-			file, createErr := os.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
-			if createErr != nil {
-				return fmt.Errorf("creating state database: %w", createErr)
-			}
-			if closeErr := file.Close(); closeErr != nil {
-				return fmt.Errorf("closing new state database: %w", closeErr)
-			}
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("checking state file %q: %w", candidate, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return fmt.Errorf("state file %q must be a regular file", candidate)
-		}
-		if err := os.Chmod(candidate, 0o600); err != nil {
-			return fmt.Errorf("securing state file %q: %w", candidate, err)
-		}
-	}
-	return nil
 }
 
 // init bootstraps the schema to latestSchemaVersion, then every module
