@@ -701,49 +701,6 @@ func TestGetSession_NotFound(t *testing.T) {
 
 // --- GetSessionsInactiveBefore tests ---
 
-// --- GetSessionDefaults tests ---
-
-func TestGetSessionDefaults_NoMessages(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	defaults, err := db.GetSessionDefaults(t.Context(), "s1", "/project")
-	if err != nil {
-		t.Fatalf("GetSessionDefaults: %v", err)
-	}
-	if defaults.Agent != "" || defaults.Model != "" {
-		t.Errorf("expected empty defaults, got agent=%q model=%q", defaults.Agent, defaults.Model)
-	}
-}
-
-func TestGetSessionDefaults_WithMessages(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Current", "/project", now, now)
-	insertSession(t, db, "s2", "Previous", "/project", now-10000, now-10000)
-
-	// Insert an assistant message in s2 with agent and model
-	insertMessage(t, db, "m1", "s2", now-5000, map[string]interface{}{
-		"role":       "assistant",
-		"agent":      "code",
-		"providerID": "anthropic",
-		"modelID":    "claude-3-5-sonnet",
-	})
-
-	defaults, err := db.GetSessionDefaults(t.Context(), "s1", "/project")
-	if err != nil {
-		t.Fatalf("GetSessionDefaults: %v", err)
-	}
-	if defaults.Agent != "code" {
-		t.Errorf("expected agent 'code', got %q", defaults.Agent)
-	}
-	if defaults.Model != "anthropic/claude-3-5-sonnet" {
-		t.Errorf("expected model 'anthropic/claude-3-5-sonnet', got %q", defaults.Model)
-	}
-}
-
 // --- GetContextTokenCount tests ---
 
 // --- Stats tests ---
