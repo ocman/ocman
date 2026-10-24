@@ -41,7 +41,7 @@ const (
 
 func main() {
 	addr := flag.String("addr", ":8231", "address to listen on")
-	store := flag.String("store", "disk://./relay-data", "storage backend (disk:///path or a bare path; s3:// reserved)")
+	store := flag.String("store", "disk://./relay-data", "storage directory (a path, optionally prefixed with disk://)")
 	ttl := flag.Duration("ttl", relay.DefaultTTL, "how long a share is retained")
 	maxChunkBytes := flag.Int64("max-chunk-bytes", relay.DefaultMaxChunkBytes, "maximum size of one appended chunk")
 	maxChunks := flag.Int("max-chunks", relay.DefaultMaxChunks, "maximum number of chunks per share")

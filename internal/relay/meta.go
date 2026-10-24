@@ -60,7 +60,7 @@ func (m meta) authorises(token string) bool {
 }
 
 // putMeta writes a share's metadata object.
-func putMeta(ctx context.Context, store share.Store, id string, m meta) error {
+func putMeta(ctx context.Context, store Store, id string, m meta) error {
 	key, ok := metaKey(id)
 	if !ok {
 		return fmt.Errorf("relay: invalid share id")
@@ -75,7 +75,7 @@ func putMeta(ctx context.Context, store share.Store, id string, m meta) error {
 // getMeta reads a share's metadata object. It reports false when the
 // share does not exist; callers must not distinguish that from an
 // authorisation failure.
-func getMeta(ctx context.Context, store share.Store, id string) (meta, bool, error) {
+func getMeta(ctx context.Context, store Store, id string) (meta, bool, error) {
 	key, ok := metaKey(id)
 	if !ok {
 		return meta{}, false, nil

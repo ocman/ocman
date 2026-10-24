@@ -14,19 +14,18 @@ import (
 	"time"
 
 	"filippo.io/age"
-	"github.com/NoUseFreak/ocman/internal/share"
 )
 
 const testEnrollmentToken = "enroll-secret"
 
 type waitingStore struct {
-	share.Store
+	Store
 	started chan struct{}
 	release chan struct{}
 	once    sync.Once
 }
 
-type failingDeliveryStore struct{ share.Store }
+type failingDeliveryStore struct{ Store }
 
 type failingReader struct{}
 
@@ -580,7 +579,7 @@ func TestInboxSecretCanBeReplacedAndCleared(t *testing.T) {
 // interleavingStore runs hook once, right after the first read of an inbox's
 // metadata, so a second request lands between a handler's read and its write.
 type interleavingStore struct {
-	share.Store
+	Store
 	hook  func()
 	fired atomic.Bool
 }

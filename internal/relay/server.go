@@ -15,6 +15,7 @@
 package relay
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -50,10 +51,19 @@ const (
 	DefaultInboxTTL                  = 30 * 24 * time.Hour
 )
 
+// Store is the object storage a relay needs. *share.DiskStore is the
+// backend and documents the contract; tests wrap it to inject faults.
+type Store interface {
+	Put(ctx context.Context, key string, data []byte) error
+	Get(ctx context.Context, key string) ([]byte, error)
+	List(ctx context.Context, prefix string) ([]share.Object, error)
+	DeletePrefix(ctx context.Context, prefix string) error
+}
+
 // Config configures a relay server.
 type Config struct {
 	// Store is the object storage backend. Required.
-	Store share.Store
+	Store Store
 	// Assets is the embedded single-page app used to render a shared
 	// conversation. Optional: with no assets the relay serves the API
 	// only.

@@ -14,15 +14,14 @@ lives in the text below each diagram.
 ### Cross-machine conversation sharing
 
 Ocman can publish a shared conversation through the standalone `ocman-relay`
-binary. The relay stores only AES-256-GCM ciphertext through the `share.Store`
-abstraction (disk today; object storage can implement the same
-`Put`/`Get`/`List`/`DeletePrefix` contract). The per-share key stays in the URL
-fragment, so it never reaches the relay.
+binary. The relay stores only AES-256-GCM ciphertext in a directory tree
+through `share.DiskStore` (`Put`/`Get`/`List`/`DeletePrefix`). The per-share
+key stays in the URL fragment, so it never reaches the relay.
 
 ```mermaid
 flowchart LR
     Owner[Owner ocman] -->|sealed completed turns<br/>artifact snapshots| Relay[ocman-relay]
-    Relay --> Store[(share.Store)]
+    Relay --> Store[(share.DiskStore)]
     Viewer[Browser viewer] -->|ciphertext poll| Relay
     Viewer -->|WebCrypto decrypt| Thread[Shared conversation]
     Thread -->|explicit local fork| Local[Recipient ocman]

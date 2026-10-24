@@ -543,7 +543,7 @@ func tokenAuthorises(hash, token string) bool {
 	return token != "" && hash != "" && meta{DeleteHash: hash}.authorises(token)
 }
 
-func putInboxMeta(ctx context.Context, store share.Store, id string, m inboxMeta) error {
+func putInboxMeta(ctx context.Context, store Store, id string, m inboxMeta) error {
 	data, err := json.Marshal(m)
 	if err != nil {
 		return err
@@ -551,7 +551,7 @@ func putInboxMeta(ctx context.Context, store share.Store, id string, m inboxMeta
 	return store.Put(ctx, inboxMetaKey(id), data)
 }
 
-func getInboxMeta(ctx context.Context, store share.Store, id string) (inboxMeta, bool, error) {
+func getInboxMeta(ctx context.Context, store Store, id string) (inboxMeta, bool, error) {
 	if !validRandomString(id, 16) {
 		return inboxMeta{}, false, nil
 	}

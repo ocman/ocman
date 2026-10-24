@@ -28,7 +28,7 @@ import (
 // through on a timer: the barrier can only ever produce a false pass
 // (both appends serialised anyway), never a false failure.
 type concurrentListStore struct {
-	share.Store
+	Store
 	arrived atomic.Int32
 	release chan struct{}
 	once    sync.Once
@@ -78,7 +78,7 @@ func (b *blockingBody) Read(p []byte) (int, error) {
 type harness struct {
 	t     *testing.T
 	srv   *Server
-	store share.Store
+	store Store
 	now   time.Time
 }
 

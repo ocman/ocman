@@ -10,10 +10,42 @@ import (
 	"strings"
 )
 
-// DiskStore is a Store backed by a directory tree. Object keys map
-// directly to relative paths under Root.
+// DiskStore is the relay's object storage, backed by a directory tree.
+// Object keys map directly to relative paths under Root.
+//
+// The surface stays small: no directories, no rename, no append, no
+// compare-and-swap and no server-allocated identifiers. Sequence numbers
+// are allocated by the writer, so a relay never needs an atomic counter.
+//
+// Contract:
+//
+//   - Keys are segment-aligned: one or more segments of [A-Za-z0-9_-]
+//     joined by "/". Anything else is rejected rather than sanitised, so
+//     a traversal attempt fails loudly.
+//   - Prefixes passed to List and DeletePrefix must end on a segment
+//     boundary. Both accept a trailing "/" and treat it as equivalent.
+//   - List of a prefix with no objects returns an empty slice and no
+//     error. DeletePrefix of an absent prefix is a no-op.
+//   - Put overwrites an existing key. Writers rely on this: a retried
+//     append is a byte-identical overwrite.
 type DiskStore struct {
 	Root string
+}
+
+// OpenStore opens the disk store named by the relay's -store flag: a
+// path, optionally prefixed with disk:// or file://.
+func OpenStore(spec string) (*DiskStore, error) {
+	if spec == "" {
+		return nil, fmt.Errorf("share: empty store specification")
+	}
+	path := spec
+	for _, scheme := range []string{"disk://", "file://"} {
+		path = strings.TrimPrefix(path, scheme)
+	}
+	if scheme, _, ok := strings.Cut(path, "://"); ok {
+		return nil, fmt.Errorf("share: unsupported store scheme %q", scheme)
+	}
+	return NewDiskStore(path)
 }
 
 // NewDiskStore returns a DiskStore rooted at dir, creating it if needed.
