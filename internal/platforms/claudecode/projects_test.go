@@ -21,6 +21,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
 // installFakeTmux puts the test-only tmux on bin and kills every provider it
@@ -106,11 +107,7 @@ func (r *recorded) types(session string) []string {
 
 func eventually(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(20 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-	}
+	testutil.WaitFor(t, 20*time.Second, what, ok)
 }
 
 func readLines(path string) []string {

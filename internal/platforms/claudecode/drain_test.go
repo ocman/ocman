@@ -251,6 +251,62 @@ func TestOutOfRangeSupervisorDeliversPromptsWhileDraining(t *testing.T) {
 	}
 }
 
+// The dashboard may register its event handler and start watching only
+// after a project supervisor attached or recovery found one draining: both
+// still reach the pipeline, with no event stream started twice.
+func TestLateWatchReachesAttachedAndDrainingSupervisors(t *testing.T) {
+	late := func(t *testing.T, p *claudePlatform, ctx context.Context) func(string) bool {
+		var mu sync.Mutex
+		var seen []string
+		p.SetEventHandler(func(ev providerprotocol.Event) {
+			mu.Lock()
+			seen = append(seen, ev.Type+" "+string(ev.Properties))
+			mu.Unlock()
+		})
+		go func() { _ = p.WatchEvents(ctx) }()
+		return func(text string) bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return slices.ContainsFunc(seen, func(s string) bool { return strings.Contains(s, text) })
+		}
+	}
+	t.Run("attached", func(t *testing.T) {
+		e := newRecoveryEnv(t)
+		t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(e.data, "config"))
+		t.Setenv("FAKE_CLAUDE_FIXTURE", claudetest.Fixture("plain.jsonl"))
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		p := newClaudePlatformAt(ctx, nil, e.state, e.data, e.exe, nil, "")
+		if p == nil {
+			t.Fatal("Claude platform did not start")
+		}
+		p.SetMCPAddr("127.0.0.1:47303")
+		created, err := p.CreateSession(ctx, platforms.CreateSessionRequest{Directory: e.repo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := late(t, p, ctx)
+		if err := p.SendMessage(ctx, platforms.SendMessageRequest{SessionID: created.ID, Message: "hi"}); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, "the attached supervisor's events", func() bool { return seen(`session.idle {"sessionID":"` + created.ID) })
+	})
+	t.Run("draining", func(t *testing.T) {
+		d := newDrainEnv(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		p := newClaudePlatformAt(ctx, nil, d.state, d.data, d.exe, nil, "")
+		if p == nil {
+			t.Fatal("Claude platform did not start")
+		}
+		p.SetMCPAddr("127.0.0.1:47304")
+		eventually(t, "drain started", func() bool { return p.projects.drainingFor(ctx, drainSession) != nil })
+		seen := late(t, p, ctx)
+		d.old.publish(t, "permission.asked", drainPermission("per_late", "make"))
+		eventually(t, "the draining supervisor's prompt", func() bool { return seen(`"id":"per_late"`) })
+	})
+}
+
 func asString(v any) string {
 	if s, _ := v.(string); s != "" {
 		return s

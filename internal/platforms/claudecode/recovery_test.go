@@ -147,6 +147,8 @@ func TestProjectSupervisorFollowsDashboardConfiguration(t *testing.T) {
 	supervisor := e.endpoint(t)
 
 	// Hold the next turn open across a restart that rebinds the listener.
+	// Only after the first turn idles: the fake waits at a result row while
+	// hold is absent, and the child logs its environment before reaching it.
 	eventually(t, "first turn idle", func() bool { s := p.LiveStatus(id); return s != nil && s.Status == "done" })
 	if err := os.Remove(hold); err != nil {
 		t.Fatal(err)
