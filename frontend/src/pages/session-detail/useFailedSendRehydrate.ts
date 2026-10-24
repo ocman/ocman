@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Message, Part } from '../../lib/api';
+import { parsePart } from '../../lib/convertMessages';
 import { listFailedSends, subscribeFailedSends, type FailedSend } from '../../lib/failedSends';
 import type { UsePendingSendResult } from './usePendingSend';
 
@@ -64,12 +65,8 @@ export function useFailedSendRehydrate({
           parts
             .filter((p) => p.messageId === m.id)
             .map((p) => {
-              try {
-                const pd = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-                return pd?.type === 'text' ? (pd.text || '') : '';
-              } catch {
-                return '';
-              }
+              const pd = parsePart(p);
+              return pd?.type === 'text' ? (pd.text || '') : '';
             })
             .filter(Boolean),
         ),

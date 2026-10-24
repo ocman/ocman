@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import type { Message, Part, PartData } from '../../lib/api';
+import type { Message, Part } from '../../lib/api';
+import { parsePart } from '../../lib/convertMessages';
 import {
   CommandListPicker,
   type PickerEntryBase,
@@ -32,12 +33,8 @@ export type UserMessagePickerProps = {
 );
 
 function partText(part: Part): string {
-  try {
-    const data = (typeof part.data === 'string' ? JSON.parse(part.data) : part.data) as PartData;
-    return data.type === 'text' ? data.text?.trim() ?? '' : '';
-  } catch {
-    return '';
-  }
+  const data = parsePart(part);
+  return data?.type === 'text' ? data.text?.trim() ?? '' : '';
 }
 
 function formatTime(timestamp: number): string {

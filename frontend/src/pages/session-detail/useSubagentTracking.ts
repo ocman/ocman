@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Part, TaskSessionData } from '../../lib/api';
 import { api } from '../../lib/api';
+import { parsePart } from '../../lib/convertMessages';
 import { extractTaskId, isTaskTool } from '../../lib/taskId';
 
 /**
@@ -63,23 +64,23 @@ export function useSubagentTracking(
     reset();
   }, [sessionId]);
 
-  // Derive in-flight task ids — ones whose state.status === 'running'.
-  const runningTaskIds = useMemo(() => {
+  // Split task-tool parts into in-flight (state.status === 'running',
+  // polled below) and completed ones (fetched once).
+  const { runningTaskIds, completedTaskIds } = useMemo(() => {
     const running: RunningTaskEntry[] = [];
+    const completed: string[] = [];
     for (const p of parts) {
-      const d = typeof p.data === 'string'
-        ? (() => { try { return JSON.parse(p.data); } catch { return null; } })()
-        : p.data;
+      const d = parsePart(p);
       if (!d || typeof d !== 'object') continue;
-      const toolName = (d as Record<string, unknown>).tool as string | undefined;
-      if (!isTaskTool(toolName)) continue;
-      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
+      if (!isTaskTool(d.tool)) continue;
+      const st = d.state as Record<string, unknown> | undefined;
       const status = (st?.status as string) || 'running';
-      if (status !== 'running') continue;
       const taskId = extractTaskId(st);
-      if (taskId) running.push({ taskId, status });
+      if (!taskId) continue;
+      if (status === 'running') running.push({ taskId, status });
+      else completed.push(taskId);
     }
-    return running;
+    return { runningTaskIds: running, completedTaskIds: completed };
   }, [parts]);
 
   const runningTaskKey = runningTaskIds.map(({ taskId }) => taskId).join('\0');
@@ -122,23 +123,6 @@ export function useSubagentTracking(
   // away and comes back — the task is completed, the live poll
   // isn't running, but we still need the sub-session messages to
   // render the embedded thread preview.
-  const completedTaskIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const p of parts) {
-      const d = typeof p.data === 'string'
-        ? (() => { try { return JSON.parse(p.data); } catch { return null; } })()
-        : p.data;
-      if (!d || typeof d !== 'object') continue;
-      const toolName = (d as Record<string, unknown>).tool as string | undefined;
-      if (!isTaskTool(toolName)) continue;
-      const st = (d as Record<string, unknown>).state as Record<string, unknown> | undefined;
-      const status = (st?.status as string) || 'running';
-      if (status === 'running') continue; // handled by the poll above
-      const taskId = extractTaskId(st);
-      if (taskId) ids.push(taskId);
-    }
-    return ids;
-  }, [parts]);
   const completedTaskKey = completedTaskIds.join('\0');
 
   useEffect(() => {
