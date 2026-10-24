@@ -33,13 +33,6 @@ export const CLOSED_SESSION_STACK_MAX = 10;
  */
 export const SESSION_CACHE_MAX = 10;
 
-let whisperStatus: Promise<{ available: boolean }> | null = null;
-
-/** Test hook: forget the cached whisper status. */
-export function resetWhisperStatusCache() {
-  whisperStatus = null;
-}
-
 type ApiStore = {
   pendingInterruptionReads: Record<string, { timeUpdated: number; confirmed?: boolean }>;
   /**
@@ -63,7 +56,6 @@ type ApiStore = {
   getCachedSession: (id: string) => SessionDetail | null;
   setCachedSession: (id: string, data: SessionDetail) => void;
   updateCachedSession: (id: string, updater: (prev: SessionDetail) => SessionDetail) => void;
-  clearCachedSession: (id: string) => void;
   /**
    * Plant a minimal SessionDetail stub for a brand-new session so that
    * navigating to /session/<id> renders an empty thread immediately
@@ -76,7 +68,6 @@ type ApiStore = {
   peekSession: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionDetail>;
   markSessionSeen: (platform: string, sessionId: string, timeUpdated: number, interrupted?: boolean) => Promise<{ ok: boolean }>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string, platform?: string, queue?: boolean) => Promise<void>;
-  getWhisperStatus: (signal?: AbortSignal) => Promise<{ available: boolean }>;
 };
 
 export const useApiStore = create<ApiStore>((set, get) => ({
@@ -127,15 +118,6 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       const nextCache = new Map(state.sessionCache);
       nextCache.set(id, updater(existing));
       return { sessionCache: nextCache };
-    });
-  },
-  clearCachedSession: (id) => {
-    set((state) => {
-      if (!state.sessionCache.has(id)) return state;
-      const nextCache = new Map(state.sessionCache);
-      nextCache.delete(id);
-      const nextOrder = state.sessionCacheOrder.filter((entry) => entry !== id);
-      return { sessionCache: nextCache, sessionCacheOrder: nextOrder };
     });
   },
   seedNewSession: (id, directory, platform, title, remoteId) => {
@@ -221,12 +203,5 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       }
       throw error;
     });
-  },
-  getWhisperStatus: (signal) => {
-    // Whisper availability is machine state, so one successful read per
-    // app load serves every session switch. A failure is not cached.
-    whisperStatus ??= api.whisperStatus(signal)
-      .catch((err) => { whisperStatus = null; throw err; });
-    return whisperStatus;
   },
 }));

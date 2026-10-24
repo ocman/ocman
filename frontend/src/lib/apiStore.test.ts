@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { SESSION_CACHE_MAX, resetWhisperStatusCache, useApiStore } from './apiStore';
+import { SESSION_CACHE_MAX, useApiStore } from './apiStore';
 import { api, type SessionDetail, type Session } from './api';
 import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebarSessions } from './sessionsCache';
 import { queryClient } from './queryClient';
@@ -201,23 +201,6 @@ describe('session cache', () => {
     expect(called).toBe(false);
     expect(useApiStore.getState().getCachedSession('missing')).toBeNull();
   });
-
-  it('clearCachedSession removes an entry and its order slot', () => {
-    const store = useApiStore.getState();
-    store.setCachedSession('a', makeSessionDetail('a'));
-    store.setCachedSession('b', makeSessionDetail('b'));
-    store.clearCachedSession('a');
-    expect(useApiStore.getState().getCachedSession('a')).toBeNull();
-    expect(useApiStore.getState().getCachedSession('b')).not.toBeNull();
-    expect(useApiStore.getState().sessionCacheOrder).toEqual(['b']);
-  });
-
-  it('clearCachedSession is a no-op for a missing entry', () => {
-    const store = useApiStore.getState();
-    store.setCachedSession('a', makeSessionDetail('a'));
-    store.clearCachedSession('nope');
-    expect(useApiStore.getState().getCachedSession('a')).not.toBeNull();
-  });
 });
 
 describe('seedNewSession', () => {
@@ -246,27 +229,5 @@ describe('seedNewSession', () => {
     useApiStore.getState().seedNewSession('dup', '/repo', 'opencode');
     const recent = getSidebarSessions();
     expect(recent.filter((s) => s.id === 'dup')).toHaveLength(1);
-  });
-});
-
-describe('getWhisperStatus', () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it('fetches the machine whisper status once per app load', async () => {
-    resetWhisperStatusCache();
-    const request = vi.spyOn(api, 'whisperStatus').mockResolvedValue({ available: true });
-    await expect(useApiStore.getState().getWhisperStatus()).resolves.toEqual({ available: true });
-    await expect(useApiStore.getState().getWhisperStatus()).resolves.toEqual({ available: true });
-    expect(request).toHaveBeenCalledTimes(1);
-  });
-
-  it('retries after a failed status read', async () => {
-    resetWhisperStatusCache();
-    const request = vi.spyOn(api, 'whisperStatus')
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValue({ available: false });
-    await expect(useApiStore.getState().getWhisperStatus()).rejects.toThrow('offline');
-    await expect(useApiStore.getState().getWhisperStatus()).resolves.toEqual({ available: false });
-    expect(request).toHaveBeenCalledTimes(2);
   });
 });

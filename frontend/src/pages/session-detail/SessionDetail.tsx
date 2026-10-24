@@ -44,6 +44,7 @@ import { projectRootForDirectory } from '../../lib/worktrees';
 import { checkoutKey } from '../../lib/projectIdentity';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
+import { useWhisperStatus } from '../../lib/settingsQueries';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import {
@@ -327,7 +328,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Capability flags for the owning platform.
   const caps = usePlatformCapabilities(session?.platform);
 
-  const [whisperAvailable, setWhisperAvailable] = useState(false);
+  const whisperAvailable = useWhisperStatus().data?.available ?? false;
 
   // Per-session capability state — port availability, agent
   // catalog, model picker, selected model/agent/reasoning.
@@ -506,7 +507,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
 
   const archiveSession = api.archiveSession;
-  const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
 
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   // A string selector, so re-registrations elsewhere don't re-render the page.
@@ -518,8 +518,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
 
-  // Per-session-change side effects: rehydrate failed sends,
-  // refresh whisper, reset model/agent selection.
+  // Per-session-change side effects: rehydrate failed sends and reset
+  // model/agent selection.
   // The view reducer + cache seed are handled inside useSession.
   // The setState calls below are intentional resets keyed on
   // `id`; they're the canonical "reset state on key change" pattern
@@ -537,11 +537,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
       setSelectedReasoning('');
     }
 
-    getWhisperStatus().then((s) => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
-    // The model catalog is fetched by useSessionCapabilities.
+    // Whisper status and the model catalog are queries of their own.
 
     return () => controller.abort();
-  }, [id, getWhisperStatus, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
+  }, [id, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const { failedSends, setFailedSends } = useFailedSendRehydrate({
