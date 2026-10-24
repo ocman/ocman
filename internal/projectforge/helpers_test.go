@@ -2,6 +2,7 @@ package projectforge
 
 import (
 	"context"
+	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -38,4 +39,13 @@ func (h *fakeHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUp
 		h.onUpstream()
 	}
 	return h.upstreams, h.upstreamErr
+}
+
+func TestEffectivePerPageAndMissingForgeResolver(t *testing.T) {
+	if effectivePerPage(forge.ListOptions{}) != 30 || effectivePerPage(forge.ListOptions{PerPage: 5}) != 5 {
+		t.Fatal("per-page default")
+	}
+	if f, ok := newTestModule().resolveForge(forge.Remote{}); f != nil || ok {
+		t.Fatal("resolved a forge without a resolver")
+	}
 }

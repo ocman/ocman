@@ -335,3 +335,14 @@ func TestArtifactPreviewHeadersMatchE2E(t *testing.T) {
 		t.Fatalf("frontend/e2e/artifact-html/headers.json = %+v, want inert %q interactive %q", got, httpx.InertFileCSP, InteractivePreviewCSP)
 	}
 }
+
+func TestArtifactStatsAndDeleteStoreFailures(t *testing.T) {
+	srv, do := artifactServer(t)
+	_ = srv.Store.Close()
+	if rec := do(http.MethodGet, "/api/artifacts/stats"); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("stats = %d", rec.Code)
+	}
+	if rec := do(http.MethodDelete, "/api/artifacts/a"); rec.Code < http.StatusInternalServerError {
+		t.Fatalf("delete = %d", rec.Code)
+	}
+}

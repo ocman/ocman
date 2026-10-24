@@ -2,6 +2,9 @@ package sharing
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,5 +119,29 @@ func TestRunJoinsIdlePublisher(t *testing.T) {
 	case <-adapter.returned:
 	default:
 		t.Fatal("Run returned before the publisher")
+	}
+}
+
+func TestHandleSessionSharesListsActiveLinks(t *testing.T) {
+	store, err := state.Open(statetest.Path(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := store.CreateShareLink(t.Context(), "opencode", "s", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewModule(Deps{Store: store})
+	adapter := blockingSessionAdapter{}
+	rec := httptest.NewRecorder()
+	m.handleSessionShares(rec, httptest.NewRequest(http.MethodGet, "/", nil), "s", adapter)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"token":"`+link.Token+`"`) {
+		t.Fatalf("shares = %d %s", rec.Code, rec.Body)
+	}
+	_ = store.Close()
+	rec = httptest.NewRecorder()
+	m.handleSessionShares(rec, httptest.NewRequest(http.MethodGet, "/", nil), "s", adapter)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("closed store = %d", rec.Code)
 	}
 }

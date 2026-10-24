@@ -324,3 +324,14 @@ esac
 `, stderr))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
+
+func TestRoutesWithoutTmux(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	m := newTestModule(&fakeHost{}, tmux.SwitchRunner{})
+	if rec := serve(m, http.MethodGet, "/api/tmux/clients", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"available":false`) {
+		t.Fatalf("clients = %d %s", rec.Code, rec.Body)
+	}
+	if rec := serve(m, http.MethodPost, "/api/tmux/switch", "{}"); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("switch = %d", rec.Code)
+	}
+}

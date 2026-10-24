@@ -298,3 +298,17 @@ func TestCreateAndLaunchRequiresLocalGit(t *testing.T) {
 		t.Fatal("worktree sessions available without git, tmux or opencode")
 	}
 }
+
+func TestSessionsUnavailableWithoutTmux(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if SessionsAvailable(platforms.NewRegistry()) {
+		t.Fatal("sessions available without tmux")
+	}
+}
+
+func TestWorktreeRemoveRejectsInvalidJSON(t *testing.T) {
+	h := newHarness(module.Guards{Auth: pass, Localhost: pass})
+	if rr := h.serve(http.MethodPost, "/api/worktree/remove", "{"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid JSON = %d", rr.Code)
+	}
+}

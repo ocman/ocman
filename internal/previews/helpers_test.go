@@ -80,3 +80,9 @@ func TestRoutesWithoutStore(t *testing.T) {
 		t.Fatalf("status = %d", rr.Code)
 	}
 }
+
+func TestForgesWithoutSource(t *testing.T) {
+	if got := (&Module{}).forges(); len(got.Forgejo) != 0 {
+		t.Fatal(got)
+	}
+}

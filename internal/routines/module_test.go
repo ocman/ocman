@@ -2,7 +2,11 @@ package routines
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
+
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -53,5 +57,20 @@ func TestModuleIdentity(t *testing.T) {
 	m := NewModule(Deps{Store: newHarness(t).db})
 	if m.Name() != "routines" || m.Service() == nil || len(m.Tools()) == 0 {
 		t.Fatalf("module identity: %q %v %d", m.Name(), m.Service(), len(m.Tools()))
+	}
+}
+
+func TestRoutineToolErrorMessages(t *testing.T) {
+	for err, want := range map[error]string{
+		fmt.Errorf("bad: %w", ErrValidation): "bad: " + ErrValidation.Error(),
+		state.ErrRoutineNotFound:             "routine not found",
+		ErrNameConflict:                      "routine name already exists",
+		state.ErrRoutineRunActive:            "routine already has an active shared-session run",
+		errors.New("disk on fire"):           "routine request failed",
+	} {
+		res := routineToolError(err)
+		if !res.IsError || len(res.Content) != 1 || res.Content[0].(mcplib.TextContent).Text != want {
+			t.Errorf("%v → %+v, want %q", err, res, want)
+		}
 	}
 }
