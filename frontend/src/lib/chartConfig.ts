@@ -1,11 +1,14 @@
 import { formatCompactNumber, formatCurrency, formatSeconds } from './format';
 
+// responsive, maintainAspectRatio and animation are set once on
+// ChartJS.defaults in pages/dashboard/chartSetup.ts.
+
 /**
- * Standard tick configuration for time-series x-axes used by the
- * dashboard's bar / line charts. Limits the number of labels to ten
- * and rotates them 45° to avoid overlap on dense buckets.
+ * Time-series x-axis for the dashboard's bar / line charts. Limits the
+ * number of labels to ten and rotates them 45° to avoid overlap on
+ * dense buckets.
  */
-export const CHART_X_TICKS = { maxTicksLimit: 10, maxRotation: 45, minRotation: 45 };
+const TIME_X = { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45, minRotation: 45 } } as const;
 
 /**
  * Categorical palette used by the doughnut and stacked charts. Hand-
@@ -35,24 +38,18 @@ const tooltipCostTotal = (items: TooltipTotalItem[]) => `Total: ${formatCurrency
  * `Tok/s` so the unit is visible without a chart title.
  */
 export const BAR_OPTIONS_TOKS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   plugins: { legend: { display: false } },
   scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    x: TIME_X,
     y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}Tok/s` } },
   },
 } as const;
 
 /** Duration bar chart with seconds suffix on the y-axis. */
 export const BAR_OPTIONS_DURATION = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   plugins: { legend: { position: 'bottom' as const, labels: baseLegendLabels } },
   scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    x: TIME_X,
     y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}s` } },
   },
 } as const;
@@ -77,16 +74,13 @@ export const BAR_OPTIONS_WAIT_TIME = {
 
 /** Stacked bar chart using the compact-number formatter for values. */
 export const BAR_OPTIONS_STACKED = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   interaction: stackedInteraction,
   plugins: {
     legend: { position: 'bottom' as const, labels: baseLegendLabels },
     tooltip: { callbacks: { footer: tooltipTotal } },
   },
   scales: {
-    x: { stacked: true, grid: { display: false }, ticks: CHART_X_TICKS },
+    x: { ...TIME_X, stacked: true },
     y: {
       stacked: true,
       beginAtZero: true,
@@ -99,9 +93,6 @@ export const BAR_OPTIONS_STACKED = {
  * Stacked estimated cost-per-day chart split by model.
  */
 export const BAR_OPTIONS_COST_BY_MODEL = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   interaction: stackedInteraction,
   plugins: {
     legend: { position: 'bottom' as const, labels: { ...baseLegendLabels, padding: 8, font: { size: 11 } } },
@@ -115,7 +106,7 @@ export const BAR_OPTIONS_COST_BY_MODEL = {
     },
   },
   scales: {
-    x: { stacked: true, grid: { display: false }, ticks: CHART_X_TICKS },
+    x: { ...TIME_X, stacked: true },
     y: {
       stacked: true,
       beginAtZero: true,
@@ -127,12 +118,9 @@ export const BAR_OPTIONS_COST_BY_MODEL = {
 /** Cache-efficiency line chart capped at 100 % with `%` suffix. */
 export const LINE_OPTIONS_CACHE = {
   interaction: LINE_INTERACTION,
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   plugins: { legend: { display: false } },
   scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    x: TIME_X,
     y: {
       beginAtZero: true,
       max: 100,
@@ -143,21 +131,15 @@ export const LINE_OPTIONS_CACHE = {
 
 export const LINE_OPTIONS_DATABASE_SIZE = {
   interaction: LINE_INTERACTION,
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   plugins: { legend: { position: 'bottom' as const, labels: baseLegendLabels } },
   scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    x: TIME_X,
     y: { type: 'logarithmic' as const, ticks: { callback: (v: string | number) => `${formatCompactNumber(Number(v))} MiB` } },
   },
 } as const;
 
 /** Doughnut chart with a right-side legend (stop-reason breakdown). */
 export const DOUGHNUT_OPTIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   cutout: '62%',
   plugins: { legend: { position: 'right' as const, labels: baseLegendLabels } },
 } as const;
@@ -179,9 +161,6 @@ export const COST_DOUGHNUT_OPTIONS = {
  * the first / last / every-Nth label so a long range stays readable.
  */
 export const BAR_OPTIONS_SESSIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   plugins: {
     legend: {
       position: 'bottom' as const,
@@ -205,9 +184,6 @@ export const BAR_OPTIONS_SESSIONS = {
 
 /** Hour-of-day bar chart (no legend, default ticks). */
 export const BAR_OPTIONS_HOURLY = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   plugins: { legend: { display: false } },
   scales: {
     x: { grid: { display: false } },
@@ -217,9 +193,6 @@ export const BAR_OPTIONS_HOURLY = {
 
 /** Horizontal stacked bars for tokens-by-model breakdown. */
 export const BAR_OPTIONS_TOKENS_BY_MODEL = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   indexAxis: 'y' as const,
   interaction: stackedInteraction,
   plugins: {
@@ -241,9 +214,6 @@ export const BAR_OPTIONS_TOKENS_BY_MODEL = {
 
 /** Stacked hourly tokens chart (24 buckets, compact-number labels). */
 export const BAR_OPTIONS_HOURLY_TOKENS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false as const,
   interaction: stackedInteraction,
   plugins: {
     legend: {

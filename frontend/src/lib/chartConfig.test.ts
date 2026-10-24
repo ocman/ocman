@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CHART_X_TICKS,
   CHART_COLORS,
   STOP_REASON_COLORS,
   BAR_OPTIONS_TOKS,
@@ -30,10 +29,11 @@ describe('chartConfig', () => {
   });
 
   it('uses the shared x-tick configuration on time-series charts', () => {
-    expect(BAR_OPTIONS_TOKS.scales.x.ticks).toBe(CHART_X_TICKS);
-    expect(BAR_OPTIONS_DURATION.scales.x.ticks).toBe(CHART_X_TICKS);
-    expect(BAR_OPTIONS_COST_BY_MODEL.scales.x.ticks).toBe(CHART_X_TICKS);
-    expect(LINE_OPTIONS_CACHE.scales.x.ticks).toBe(CHART_X_TICKS);
+    const ticks = BAR_OPTIONS_TOKS.scales.x.ticks;
+    expect(ticks).toEqual({ maxTicksLimit: 10, maxRotation: 45, minRotation: 45 });
+    expect(BAR_OPTIONS_DURATION.scales.x.ticks).toBe(ticks);
+    expect(BAR_OPTIONS_COST_BY_MODEL.scales.x.ticks).toBe(ticks);
+    expect(LINE_OPTIONS_CACHE.scales.x.ticks).toBe(ticks);
   });
 
   it('formats Tok/s on the y-axis of BAR_OPTIONS_TOKS', () => {
@@ -98,19 +98,11 @@ describe('chartConfig', () => {
     expect(filter({ parsed: { y: 0.01 } })).toBe(true);
   });
 
-  it('disables animation on every chart preset (deterministic rendering)', () => {
-    for (const opts of [
-      BAR_OPTIONS_TOKS,
-      BAR_OPTIONS_DURATION,
-      BAR_OPTIONS_STACKED,
-      BAR_OPTIONS_COST_BY_MODEL,
-      BAR_OPTIONS_HOURLY_TOKENS,
-          LINE_OPTIONS_CACHE,
-      DOUGHNUT_OPTIONS,
-    ]) {
-      expect(opts.animation).toBe(false);
-      expect(opts.responsive).toBe(true);
-      expect(opts.maintainAspectRatio).toBe(false);
-    }
+  it('disables animation and fills the card for every chart', async () => {
+    const { Chart } = await import('chart.js');
+    await import('../pages/dashboard/chartSetup');
+    expect(Chart.defaults.animation).toBe(false);
+    expect(Chart.defaults.responsive).toBe(true);
+    expect(Chart.defaults.maintainAspectRatio).toBe(false);
   });
 });
