@@ -102,36 +102,6 @@ func Append(dir, segment string, rec Record) error {
 	return errors.Join(err, f.Sync())
 }
 
-// Read returns up to limit complete records after each segment's cursor, in
-// segment-name order. A missing journal directory is an empty journal.
-func Read(dir string, cursors map[string]int64, limit int) ([]Entry, error) {
-	segments, err := Segments(dir)
-	if err != nil {
-		return nil, err
-	}
-	var out []Entry
-	for _, segment := range segments {
-		if len(out) >= limit {
-			break
-		}
-		entries, err := ReadSegment(dir, segment, cursors[segment], limit-len(out))
-		if err != nil {
-			return out, err
-		}
-		out = append(out, entries...)
-	}
-	return out, nil
-}
-
-// ReadSegment returns up to limit complete records of one segment after offset.
-// A segment pruned since it was listed reads as empty.
-func ReadSegment(dir, segment string, offset int64, limit int) ([]Entry, error) {
-	if err := validSegment(segment); err != nil {
-		return nil, err
-	}
-	return readSegment(dir, segment, offset, limit)
-}
-
 // Segments lists journal segment names in consumption order.
 func Segments(dir string) ([]string, error) {
 	items, err := os.ReadDir(dir)
@@ -151,7 +121,12 @@ func Segments(dir string) ([]string, error) {
 	return names, nil
 }
 
-func readSegment(dir, segment string, offset int64, limit int) ([]Entry, error) {
+// ReadSegment returns up to limit complete records of one segment after offset.
+// A segment pruned since it was listed reads as empty.
+func ReadSegment(dir, segment string, offset int64, limit int) ([]Entry, error) {
+	if err := validSegment(segment); err != nil {
+		return nil, err
+	}
 	f, err := os.Open(filepath.Join(dir, segment))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil // pruned between listing and reading

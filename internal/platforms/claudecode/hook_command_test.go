@@ -22,7 +22,7 @@ func TestRunHookCommandJournalsEverySessionAndPostsOnlyWhenManaged(t *testing.T)
 			if !RunHookCommand([]string{"hook", "--addr", strings.TrimPrefix(srv.URL, "http://"), "--journal", journal, "Stop"}, strings.NewReader(input)) {
 				t.Fatal("hook not handled")
 			}
-			entries, err := historyjournal.Read(journal, nil, 10)
+			entries, err := readJournal(journal)
 			if err != nil || len(entries) != 1 || entries[0].Record.Session != "s1" || entries[0].Record.Type != "Stop" {
 				t.Fatalf("journal = %+v, %v", entries, err)
 			}
@@ -61,4 +61,19 @@ func TestRunHookCommandManagedOnly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// readJournal returns every complete record in the journal directory.
+func readJournal(dir string) ([]historyjournal.Entry, error) {
+	segments, err := historyjournal.Segments(dir)
+	var out []historyjournal.Entry
+	for _, segment := range segments {
+		if err != nil {
+			break
+		}
+		var entries []historyjournal.Entry
+		entries, err = historyjournal.ReadSegment(dir, segment, 0, 100)
+		out = append(out, entries...)
+	}
+	return out, err
 }

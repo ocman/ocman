@@ -579,45 +579,6 @@ func TestCreateRejectsInvalidAdapterResponse(t *testing.T) {
 	}
 }
 
-func TestClientBindsPlatform(t *testing.T) {
-	p := &fakePlatform{id: "opencode", available: true}
-	svc, _ := newService(p, Hooks{})
-	client := svc.Client("opencode")
-	ctx := context.Background()
-
-	resp, err := client.CreateSession(ctx, platforms.CreateSessionRequest{Directory: "/tmp"})
-	if err != nil || resp.ID != "new-session" {
-		t.Fatalf("CreateSession: resp=%v err=%v", resp, err)
-	}
-	if err := client.SendMessage(ctx, platforms.SendMessageRequest{SessionID: "new-session", Message: "go"}); err != nil {
-		t.Fatalf("SendMessage: %v", err)
-	}
-	if err := client.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{
-		SessionID: "new-session",
-		Rules:     []platforms.PermissionRule{{Permission: "edit", Pattern: "**", Action: "deny"}},
-	}); err != nil {
-		t.Fatalf("SetPermissionRules: %v", err)
-	}
-	if len(p.creates) != 1 || len(p.sent) != 1 || len(p.rules) != 1 {
-		t.Fatal("expected client calls to reach the bound adapter")
-	}
-	if p.rules[0].SessionID != "new-session" || len(p.rules[0].Rules) != 1 {
-		t.Fatalf("permission rules not forwarded through client: %+v", p.rules)
-	}
-
-	// Unknown bound platform surfaces as an error, not a panic.
-	ghost := svc.Client("ghost")
-	if _, err := ghost.CreateSession(ctx, platforms.CreateSessionRequest{Directory: "/tmp"}); err == nil {
-		t.Fatal("expected error for unknown bound platform")
-	}
-	if err := ghost.SendMessage(ctx, platforms.SendMessageRequest{SessionID: "x", Message: "hi"}); !errors.Is(err, platforms.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
-	}
-	if err := ghost.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: "x"}); !errors.Is(err, platforms.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound from SetPermissionRules, got %v", err)
-	}
-}
-
 // #533: transports call KnownPlatform to reject an unknown platform
 // before running side effects (e.g. launching a managed opencode) that
 // Create would only reject afterwards. It must answer from the same
@@ -643,5 +604,22 @@ func TestKnownPlatform(t *testing.T) {
 				t.Fatalf("KnownPlatform(%q) = %v; want %v", tt.platform, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIdentityLookupsRequireBoundedBatchAndHistory(t *testing.T) {
+	svc, _ := newService(&fakePlatform{id: "opencode", available: true}, Hooks{})
+	ctx := context.Background()
+	if _, err := svc.LookupSessionIdentities(ctx, "opencode", nil); !isValidation(err) {
+		t.Fatalf("empty batch: %v", err)
+	}
+	if _, err := svc.LookupSessionIdentities(ctx, "opencode", make([]string, 501)); !isValidation(err) {
+		t.Fatalf("oversized batch: %v", err)
+	}
+	if _, err := svc.LookupSessionIdentities(ctx, "opencode", []string{"ses"}); !errors.Is(err, platforms.ErrHistoryUnavailable) {
+		t.Fatalf("lookup without history: %v", err)
+	}
+	if _, err := svc.ResolveLegacyReferences(ctx, "scope", []string{"ses"}); !errors.Is(err, platforms.ErrHistoryUnavailable) {
+		t.Fatalf("resolve without history: %v", err)
 	}
 }

@@ -79,7 +79,7 @@ func (s *Server) newLocalHost() hostsvc.Host {
 			if rules != nil {
 				return s.sessions.CreateConfigured(ctx, id, req, rules)
 			}
-			return s.sessions.Client(id).CreateSession(ctx, req)
+			return s.sessions.Create(ctx, id, req)
 		},
 		TmuxSessions:     s.hostTmuxSessions,
 		Projects:         s.hostProjects,

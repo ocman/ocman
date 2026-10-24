@@ -197,3 +197,24 @@ func TestAppendRejectsUnsafeNamesAndRecords(t *testing.T) {
 		}
 	}
 }
+
+func TestDirUsesDataHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/data")
+	if dir, err := Dir("claudecode"); err != nil || dir != filepath.Join("/data", "ocman", "journal", "claudecode") {
+		t.Fatalf("Dir = %q, %v", dir, err)
+	}
+	home := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("HOME", home)
+	if dir, err := Dir("claudecode"); err != nil || dir != filepath.Join(home, ".local", "share", "ocman", "journal", "claudecode") {
+		t.Fatalf("Dir = %q, %v", dir, err)
+	}
+}
+
+func TestReadSegmentRejectsInvalidNames(t *testing.T) {
+	for _, segment := range []string{"", "../a.jsonl", ".hidden.jsonl", "a.txt"} {
+		if _, err := ReadSegment(t.TempDir(), segment, 0, 1); err == nil {
+			t.Errorf("ReadSegment(%q) accepted", segment)
+		}
+	}
+}

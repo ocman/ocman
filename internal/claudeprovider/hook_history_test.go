@@ -66,7 +66,7 @@ func TestHookJournalsSessionTranscript(t *testing.T) {
 	if id := in.SessionID; id != "s1" {
 		t.Fatalf("session = %q", id)
 	}
-	entries, err := historyjournal.Read(dir, nil, 10)
+	entries, err := readJournal(dir)
 	if err != nil || len(entries) != 1 || entries[0].Err != nil {
 		t.Fatalf("journal = %+v, %v", entries, err)
 	}
@@ -85,7 +85,7 @@ func TestHookJournalsSessionTranscript(t *testing.T) {
 	if invalid.SessionID != "" {
 		t.Fatal("invalid input produced a session")
 	}
-	if entries, _ := historyjournal.Read(dir, nil, 10); len(entries) != 1 {
+	if entries, _ := readJournal(dir); len(entries) != 1 {
 		t.Fatalf("journaled non-history input: %d entries", len(entries))
 	}
 }
@@ -172,4 +172,19 @@ func TestWritePluginVersionTracksContent(t *testing.T) {
 	if got := PluginVersion(dir); got != version() || !strings.HasPrefix(got, "1.0.0-") {
 		t.Fatalf("PluginVersion = %q", got)
 	}
+}
+
+// readJournal returns every complete record in the journal directory.
+func readJournal(dir string) ([]historyjournal.Entry, error) {
+	segments, err := historyjournal.Segments(dir)
+	var out []historyjournal.Entry
+	for _, segment := range segments {
+		if err != nil {
+			break
+		}
+		var entries []historyjournal.Entry
+		entries, err = historyjournal.ReadSegment(dir, segment, 0, 100)
+		out = append(out, entries...)
+	}
+	return out, err
 }
