@@ -32,9 +32,10 @@ type entry struct {
 // <project>/<session>.jsonl, or <project>/<session>/subagents/agent-<id>.jsonl.
 func identify(path string) (id, root string) {
 	id = strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	dir := filepath.Dir(path)
-	if filepath.Base(dir) == "subagents" {
-		return id, filepath.Base(filepath.Dir(dir))
+	for dir := filepath.Dir(path); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
+		if filepath.Base(dir) == "subagents" {
+			return id, filepath.Base(filepath.Dir(dir))
+		}
 	}
 	return id, id
 }

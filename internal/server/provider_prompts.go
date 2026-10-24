@@ -33,6 +33,18 @@ func (s *Server) watchProviderPrompts(ctx context.Context, workers *sync.WaitGro
 
 func (s *Server) providerPromptHandler(ctx context.Context, p platforms.Platform) func(providerprotocol.Event) {
 	return func(event providerprotocol.Event) {
+		// Child messages must reach stored inspection without a browser stream
+		// or a terminal hook. Message upserts coalesce per step; token deltas do not.
+		if event.Type == "message.updated" && s.historyIngest != nil {
+			var props struct {
+				Info struct {
+					SessionID string `json:"sessionID"`
+				} `json:"info"`
+			}
+			if json.Unmarshal(event.Properties, &props) == nil && props.Info.SessionID != "" {
+				s.historyIngest.Observe(string(p.ID()), props.Info.SessionID)
+			}
+		}
 		s.aaSvc().HandleProviderEvent(ctx, p, event)
 		if event.Type != "permission.replied" {
 			return

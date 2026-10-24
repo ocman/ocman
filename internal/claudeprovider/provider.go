@@ -257,6 +257,7 @@ func (h *handler) list(r *http.Request) ([]db.Session, error) {
 	for _, e := range entries {
 		indexed[e.ID] = true
 		s := e.session(now)
+		h.live.overlay(&s)
 		// Like OpenCode, finished subagents stay out of the list; they
 		// remain reachable through their parent's session tree.
 		if s.ParentID != "" && s.Status != db.StatusBusy {
@@ -312,7 +313,7 @@ func (h *handler) detail(r *http.Request) (*platforms.SessionDetail, error) {
 	id := strings.TrimPrefix(r.URL.Path, "/sessions/")
 	e, err := h.entry(ctx, id)
 	if s, ok := h.unindexed(id, err); ok {
-		return &platforms.SessionDetail{Session: &s, Messages: []db.Message{}, Parts: []db.Part{}, SessionTree: []db.Session{s}}, nil
+		return h.live.runtimeDetail(s, r), nil
 	}
 	if err != nil {
 		return nil, err

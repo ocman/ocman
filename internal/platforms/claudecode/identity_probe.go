@@ -18,6 +18,9 @@ func (p *claudePlatform) SessionIdentityMetadata(ctx context.Context, id string)
 	}
 	row, _, _, err := p.history.Head(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
+		if p.projects != nil {
+			return p.projects.runtimeSession(ctx, id)
+		}
 		return nil, platforms.ErrNotFound
 	}
 	return row, err

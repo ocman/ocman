@@ -332,7 +332,7 @@ func (a *Adapter) observe(seq uint64, event providerprotocol.Event) (string, err
 		// failed turn's error status.
 		switch a.live[id].Status {
 		case string(db.StatusLimited):
-		case string(db.StatusError):
+		case string(db.StatusError), string(db.StatusInterrupted):
 			idle = true
 		default:
 			status = db.StatusDone

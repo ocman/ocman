@@ -239,7 +239,7 @@ platform-owned.
 ```mermaid
 flowchart LR
     Import[conversationingest module<br/>source workers + paced backfill]
-    Adapters[Local platform adapters<br/>snapshots + resumable tails] --> Import
+    Adapters[Local platform adapters<br/>snapshots, runtime children + tails] --> Import
     Events[Session invalidations<br/>periodic repair] --> Import
     Import -->|health + task progress APIs| UI[Settings application health<br/>and Background tasks]
     Import -->|snapshots, deltas or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
@@ -273,6 +273,12 @@ flowchart LR
   import. Partial inventories never authorize deletion or complete verification.
   Claude supervisor discovery failures return available transcript/runtime rows
   with the same incomplete-inventory fence, so unrelated transcripts still sync.
+  Claude agent task starts register read-only runtime children before their first
+  events are exposed. Owner-local identity probes use that metadata before a
+  transcript exists; ingestion stores their forwarded messages under the same
+  canonical identity later used by the transcript. Child task completion,
+  failure and cancellation settle independently of the parent's run state.
+  Transcript discovery watches nested workflow directories beneath `subagents/`.
   Subagent completion hooks request inventory discovery for newly created child
   files before targeted reads. A transcript removed during refresh is unavailable,
   not an ingestion-worker panic.

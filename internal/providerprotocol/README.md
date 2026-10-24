@@ -30,7 +30,7 @@ prompts to the user.
 | GET /hello | `Hello` |
 | GET /sessions?directory=&since= | `[]Session`, since is Unix milliseconds |
 | GET /sessions?live=1 | `[]Session` with only id, status and resetsAt: the statuses this process settled |
-| GET /sessions?runtime=1&directory= | `[]Session` owned by this supervisor, including pre-transcript sessions; excludes status-only helper observations. Older supervisors ignore `runtime` and return their ordinary session list. |
+| GET /sessions?runtime=1&directory= | `[]Session` owned by this supervisor, including read-only native children and pre-transcript sessions; excludes status-only helper observations. Older supervisors ignore `runtime` and return their ordinary session list. |
 | GET /sessions/{id}?limit=&offset= | `SessionDetail`, message paging |
 | GET /sessions/{id}/lifecycle | `SessionLifecycle`, bounded read |
 | POST /sessions | `CreateSessionRequest` / `CreateSessionResponse` |
@@ -131,6 +131,12 @@ explicit refresh operations reconcile them with the backend. Session ownership
 is learned from listing, details, creation and events without network calls from
 `Owns`. Session-scoped catalogs resolve the cached directory, fetching detail
 only when it is unknown.
+
+Claude agent tasks publish `session.created` with their actual native parent,
+then child `session.status` busy before forwarded messages. Their runtime detail
+can seed history ingestion before a transcript exists. Completion publishes a
+child idle edge independently of the parent, with error or interrupted status
+first for failed or stopped tasks. Non-agent background tasks are not sessions.
 
 Backends advertising `capabilities.replay` implement explicit turn acknowledgment
 and snapshot leases. This is an additive extension supported on both internal

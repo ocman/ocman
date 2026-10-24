@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -62,19 +63,22 @@ func (p *claudePlatform) HistorySnapshot(ctx context.Context, id string) (*db.Hi
 	if p.projects == nil {
 		return nil, err
 	}
+	if _, err := p.projects.runtimeSession(ctx, id); err != nil {
+		return nil, err
+	}
 	adapter, _, routeErr := p.projects.route(ctx, id, false)
 	if routeErr != nil {
 		return nil, routeErr
 	}
 	if adapter != nil {
-		detail, err := adapter.RuntimeDetail(ctx, id, 1, 0)
+		detail, err := adapter.RuntimeDetail(ctx, id, math.MaxInt, 0)
 		if err != nil {
 			return nil, err
 		}
 		if detail == nil || detail.Session == nil || detail.Session.ID != id {
 			return nil, platforms.ErrHistoryUnavailable
 		}
-		return &db.HistorySnapshot{Session: *detail.Session, Partial: true, Version: "runtime:" + id, Messages: []db.Message{}, Parts: []db.Part{}}, nil
+		return &db.HistorySnapshot{Session: *detail.Session, Subagent: detail.Session.ParentID != "", Partial: true, Version: "runtime:" + id, Messages: detail.Messages, Parts: detail.Parts}, nil
 	}
 	return nil, err
 }

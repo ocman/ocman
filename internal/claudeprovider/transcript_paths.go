@@ -37,19 +37,38 @@ func (x *Index) transcripts() ([]string, error) {
 			}
 			x.watch(filepath.Join(dir, e.Name()))
 			sub := filepath.Join(dir, e.Name(), "subagents")
-			agents, err := os.ReadDir(sub)
+			agents, err := x.subagentTranscripts(sub)
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			if err != nil {
 				return nil, err
 			}
-			x.watch(sub)
-			for _, a := range agents {
-				if !a.IsDir() && strings.HasPrefix(a.Name(), "agent-") && strings.HasSuffix(a.Name(), ".jsonl") {
-					paths = append(paths, filepath.Join(sub, a.Name()))
-				}
+			paths = append(paths, agents...)
+		}
+	}
+	return paths, nil
+}
+
+// The SDK also stores workflow agents below subagents/workflows/<runId>/.
+// Do not follow symlink directories or hide an unreadable subtree as empty.
+func (x *Index) subagentTranscripts(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	x.watch(dir)
+	var paths []string
+	for _, e := range entries {
+		path := filepath.Join(dir, e.Name())
+		if e.IsDir() {
+			children, err := x.subagentTranscripts(path)
+			if err != nil {
+				return nil, err
 			}
+			paths = append(paths, children...)
+		} else if e.Type().IsRegular() && strings.HasPrefix(e.Name(), "agent-") && strings.HasSuffix(e.Name(), ".jsonl") {
+			paths = append(paths, path)
 		}
 	}
 	return paths, nil

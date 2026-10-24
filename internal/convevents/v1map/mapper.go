@@ -238,6 +238,11 @@ func (m *Mapper) sessionIdle(r *Result, p obj) {
 	sid := p.str("sessionID")
 	if !m.own(sid) {
 		if m.isChild(sid) {
+			var previous convevents.ChildStatus
+			_ = json.Unmarshal([]byte(m.childLevel[sid]), &previous)
+			if previous.Status == db.StatusError || previous.Status == db.StatusInterrupted {
+				return
+			}
 			m.childStatus(r, convevents.ChildStatus{ChildID: sid, Status: db.StatusDone})
 		}
 		return

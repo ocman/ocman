@@ -190,7 +190,21 @@ func (l *live) trySettle(id string, status db.SessionStatus, gen uint64, first b
 	l.mu.Unlock()
 	events := make([]providerprotocol.Event, 0, len(children)+2)
 	for _, child := range children {
-		props, _ := json.Marshal(map[string]any{"sessionID": child})
+		if !l.sup.Active(child) {
+			continue
+		}
+		l.mu.Lock()
+		childStatus := l.status[child].Status
+		l.mu.Unlock()
+		if childStatus == db.StatusBusy {
+			childStatus = status
+			if childStatus == db.StatusDone {
+				childStatus = db.StatusInterrupted // the parent ended without a child completion
+			}
+		}
+		props, _ := json.Marshal(map[string]any{"sessionID": child, "status": map[string]any{"type": childStatus}})
+		events = append(events, providerprotocol.Event{Type: "session.status", Properties: props})
+		props, _ = json.Marshal(map[string]any{"sessionID": child})
 		events = append(events, providerprotocol.Event{Type: "session.idle", Properties: props})
 	}
 	if status != db.StatusDone {

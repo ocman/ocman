@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/providerprotocol"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
 
@@ -94,6 +95,13 @@ func TestConversationHistoryModuleWiringAndInvalidation(t *testing.T) {
 	p.mu.Unlock()
 	s.broadcastGlobalEvent("ocman.session.changed", []byte(`{"platform":"test","sessionID":"session"}`))
 	waitText("updated")
+	// Forwarded child messages arrive on the headless provider stream even
+	// when no dashboard has opened that child's own event stream.
+	p.mu.Lock()
+	p.text = "forwarded"
+	p.mu.Unlock()
+	s.providerPromptHandler(ctx, p)(providerprotocol.Event{Type: "message.updated", Properties: json.RawMessage(`{"info":{"sessionID":"session","id":"message"}}`)})
+	waitText("forwarded")
 	s.observeHistoryChange("other", nil)
 	s.observeHistoryChange("ocman.session.changed", []byte(`{`))
 	(&Server{}).observeHistoryChange("ocman.session.changed", nil)

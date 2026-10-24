@@ -83,6 +83,7 @@ type live struct {
 	waits     map[string]map[*waitTicket]bool // turns not yet written to a child
 	tails     map[string]chan struct{}        // closed when the session's last turn was written
 	subs      map[string][]string             // subagent sessions streamed in a session's turn
+	subagents map[string]subagentSession      // verified runtime metadata, never independently drivable
 	accepted  map[string]uint64               // turns accepted per session (BeginTurn), see settle
 	deferred  map[string]db.SessionStatus     // a settle held back only by its own input's wait ticket
 	unsettled map[string]settlement           // a turn end the spool could not take, retried (settleLater)
@@ -108,7 +109,7 @@ type viewEntry struct {
 func newLive(idx *Index, opts Options, version string) *live {
 	l := &live{idx: idx, opts: opts, versionErr: checkCLI(version), account: newAccount(opts), owned: map[string]*owned{},
 		procs: map[string]*proc{}, status: map[string]db.Session{}, view: map[string][]viewEntry{}, prompts: map[string]*prompt{}, hooks: map[string]hookState{},
-		waits: map[string]map[*waitTicket]bool{}, tails: map[string]chan struct{}{}, subs: map[string][]string{}, accepted: map[string]uint64{},
+		waits: map[string]map[*waitTicket]bool{}, tails: map[string]chan struct{}{}, subs: map[string][]string{}, subagents: map[string]subagentSession{}, accepted: map[string]uint64{},
 		deferred: map[string]db.SessionStatus{}, unsettled: map[string]settlement{}, settling: map[string]bool{}, unrecorded: map[string]bool{}, done: make(chan struct{})}
 	l.cmds = newCommands(opts)
 	l.ctx, l.stop = context.WithCancel(context.Background())
@@ -188,7 +189,7 @@ func (l *live) apply(id, key string, event providerprotocol.Event) {
 		l.status[id] = db.Session{Status: db.SessionStatus(p.Status.Type), ResetsAt: p.Status.ResetsAt}
 	case "session.idle":
 		// The idle edge keeps a failed turn's terminal status.
-		if st := l.status[id].Status; st != db.StatusError {
+		if st := l.status[id].Status; st != db.StatusError && st != db.StatusInterrupted {
 			l.status[id] = db.Session{Status: db.StatusDone}
 		}
 	}
@@ -204,13 +205,11 @@ func (l *live) apply(id, key string, event providerprotocol.Event) {
 	l.view[id] = append(l.view[id], viewEntry{key: key, event: event})
 }
 
-// clearViewLocked drops a finished turn's upserts, its subagents' included:
-// they are in the transcripts now.
+// clearViewLocked drops this session's previous turn, not its children's views.
 func (l *live) clearViewLocked(id string) {
 	l.view[id] = nil
-	for _, child := range l.subs[id] {
-		delete(l.view, child)
-	}
+	// Child snapshots remain available until their own next busy edge. A new
+	// parent turn does not prove their transcripts have been ingested yet.
 	delete(l.subs, id)
 }
 
@@ -285,6 +284,13 @@ func (l *live) overlayAndPending(sessions []db.Session, indexed map[string]bool,
 		// Another configuration's sessions have their history there.
 		if !indexed[id] && !l.foreign(o) && (dir == "" || dir == o.Directory) {
 			s := db.Session{ID: id, Title: o.Title, Directory: o.Directory, TimeCreated: o.Created, TimeUpdated: o.Created, Status: db.StatusDone}
+			l.overlayLocked(&s)
+			sessions = append(sessions, s)
+		}
+	}
+	for id, child := range l.subagents {
+		if !indexed[id] && !l.foreign(l.owned[child.root]) && (dir == "" || dir == child.session.Directory) {
+			s := child.session
 			l.overlayLocked(&s)
 			sessions = append(sessions, s)
 		}

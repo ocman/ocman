@@ -136,7 +136,12 @@ func openInfo(info map[string]any) map[string]any {
 func (l *live) closeOpen(p *proc) {
 	convs := []*Converter{p.conv}
 	for _, c := range p.children {
-		convs = append(convs, c)
+		l.mu.Lock()
+		active := l.status[c.SessionID].Status == "busy"
+		l.mu.Unlock()
+		if active {
+			convs = append(convs, c)
+		}
 	}
 	for _, c := range convs {
 		if info, _ := c.Live(); info != nil && info["role"] == "assistant" {
@@ -149,12 +154,11 @@ func (l *live) closeOpen(p *proc) {
 // spawning call (its transcript is subagents/agent-<task_id>.jsonl, the
 // index's child id) and init reports the session's skills.
 func (l *live) system(p *proc, raw []byte) {
+	l.subagentEvent(p, raw)
 	l.sdkSystem(p, raw)
 	var s struct {
-		Subtype   string   `json:"subtype"`
-		TaskID    string   `json:"task_id"`
-		ToolUseID string   `json:"tool_use_id"`
-		Skills    []string `json:"skills"`
+		Subtype string   `json:"subtype"`
+		Skills  []string `json:"skills"`
 	}
 	if json.Unmarshal(raw, &s) != nil {
 		return
@@ -162,24 +166,6 @@ func (l *live) system(p *proc, raw []byte) {
 	switch s.Subtype {
 	case "init":
 		l.cmds.observeSkills(p.dir, s.Skills)
-	case "task_started":
-		if s.TaskID == "" || s.ToolUseID == "" || p.children[s.ToolUseID] != nil {
-			return
-		}
-		child := "agent-" + s.TaskID
-		convs := []*Converter{p.conv}
-		for _, c := range p.children {
-			convs = append(convs, c) // a nested subagent's call is in its parent child
-		}
-		p.children[s.ToolUseID] = &Converter{SessionID: child}
-		l.mu.Lock()
-		l.subs[p.id] = append(l.subs[p.id], child)
-		l.mu.Unlock()
-		for _, c := range convs {
-			if part := c.Link(s.ToolUseID, child); part != nil {
-				l.publish(c.SessionID, nil, []map[string]any{part})
-			}
-		}
 	}
 }
 
