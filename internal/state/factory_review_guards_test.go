@@ -14,7 +14,6 @@ func TestPrematureAgentGraphEditsPreserveInitialPlanning(t *testing.T) {
 		for _, action := range []string{"create", "edit"} {
 			t.Run(action+map[bool]string{false: "-unclaimed", true: "-active"}[active], func(t *testing.T) {
 				db := openTestStateDB(t)
-				defer db.Close()
 				ctx := t.Context()
 				epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Initial plan", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 				if err != nil {
@@ -67,7 +66,6 @@ func TestProposedRemovalCannotReleaseAnotherEpicsConsumer(t *testing.T) {
 	for _, dependency := range []string{"blocks", "on_failure", "merge_gated", "nested"} {
 		t.Run(dependency, func(t *testing.T) {
 			db := openTestStateDB(t)
-			defer db.Close()
 			ctx := t.Context()
 			create := func(title, project string) (string, string, string) {
 				epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", title, "", project, "", nativeTracerFormula(t), nil, nil)

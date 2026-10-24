@@ -11,16 +11,6 @@ import (
 	"testing"
 )
 
-func openArtifactDB(t *testing.T) *DB {
-	t.Helper()
-	d, err := Open(templateDBPath(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	return d
-}
-
 func putBlob(t *testing.T, d *DB, content string) ArtifactItem {
 	t.Helper()
 	sum, size, err := d.PutArtifactBlob(strings.NewReader(content))
@@ -40,7 +30,7 @@ func mustCreate(t *testing.T, d *DB, a Artifact) Artifact {
 }
 
 func TestMigrateV101CreatesArtifactTables(t *testing.T) {
-	d := openArtifactDB(t)
+	d := openTestStateDB(t)
 	for _, table := range []string{"artifact", "artifact_item", "artifact_share"} {
 		var n int
 		if err := d.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&n); err != nil || n != 1 {
@@ -57,7 +47,7 @@ func TestMigrateV101CreatesArtifactTables(t *testing.T) {
 }
 
 func TestCreateArtifactValidation(t *testing.T) {
-	d := openArtifactDB(t)
+	d := openTestStateDB(t)
 	file := putBlob(t, d, "x")
 	link := ArtifactItem{Kind: ArtifactItemLink, URL: "https://example.com", Label: "ex"}
 	cases := []struct {
@@ -100,7 +90,7 @@ func TestCreateArtifactValidation(t *testing.T) {
 }
 
 func TestArtifactBlobDedupAndSizeCap(t *testing.T) {
-	d := openArtifactDB(t)
+	d := openTestStateDB(t)
 	a, b := putBlob(t, d, "same"), putBlob(t, d, "same")
 	if a.SHA256 != b.SHA256 || a.Size != 4 {
 		t.Fatalf("dedup: %+v %+v", a, b)
@@ -147,7 +137,7 @@ type zeroReader struct{}
 func (zeroReader) Read(p []byte) (int, error) { clear(p); return len(p), nil }
 
 func TestDeleteArtifactKeepsSharedBlobs(t *testing.T) {
-	d := openArtifactDB(t)
+	d := openTestStateDB(t)
 	ctx := context.Background()
 	shared, own := putBlob(t, d, "shared"), putBlob(t, d, "own")
 	first := mustCreate(t, d, Artifact{Title: "1", Directory: "/p", Items: []ArtifactItem{shared, own}})
@@ -192,7 +182,7 @@ func TestDeleteArtifactKeepsSharedBlobs(t *testing.T) {
 }
 
 func TestListArtifactsPaginationStable(t *testing.T) {
-	d := openArtifactDB(t)
+	d := openTestStateDB(t)
 	ctx := context.Background()
 	link := []ArtifactItem{{Kind: ArtifactItemLink, URL: "https://x.test"}}
 	want := map[string]bool{}
@@ -235,7 +225,7 @@ func TestListArtifactsPaginationStable(t *testing.T) {
 }
 
 func TestListArtifactsFilters(t *testing.T) {
-	d := openArtifactDB(t)
+	d := openTestStateDB(t)
 	ctx := context.Background()
 	file := putBlob(t, d, "report")
 	link := ArtifactItem{Kind: ArtifactItemLink, URL: "https://x.test"}

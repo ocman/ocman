@@ -8,7 +8,6 @@ import (
 
 func TestFactoryControlSessionLifecycle(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -55,7 +54,6 @@ func TestFactoryControlSessionLifecycle(t *testing.T) {
 
 func TestFactoryControlActionRunsOnce(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	action := FactoryControlAction{ID: "fca_1", EpicID: "epic-1", Action: "reopen", Args: json.RawMessage(`{"issue_id":"epic-1.3"}`), Summary: "Run tests again"}
 	if err := db.CreateFactoryControlAction(ctx, action, time.Now()); err != nil {
@@ -84,7 +82,6 @@ func TestFactoryControlActionRunsOnce(t *testing.T) {
 
 func TestFactoryControlAlternativesAreEpicScoped(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	for _, action := range []FactoryControlAction{{ID: "chosen", EpicID: "one"}, {ID: "alternative", EpicID: "one"}, {ID: "other", EpicID: "two"}} {
 		if err := db.CreateFactoryControlAction(t.Context(), action, time.Now()); err != nil {
 			t.Fatal(err)

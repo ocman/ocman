@@ -57,7 +57,7 @@ func TestProjectSettingKeyFold(t *testing.T) {
 }
 
 func TestProjectSettingsRoundTrip(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	ctx := t.Context()
 
 	got, err := d.GetProjectSettings(ctx, "/src/foo")

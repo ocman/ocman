@@ -9,7 +9,6 @@ import (
 
 func TestCreateAndGetShareLink(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_123", 0)
 	if err != nil {
@@ -41,7 +40,7 @@ func TestCreateAndGetShareLink(t *testing.T) {
 }
 
 func TestSetShareRelay(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_relay", 0)
 	if err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
@@ -63,7 +62,6 @@ func TestSetShareRelay(t *testing.T) {
 
 func TestShareTokensAreUnique(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	seen := map[string]bool{}
 	for i := 0; i < 50; i++ {
@@ -80,7 +78,6 @@ func TestShareTokensAreUnique(t *testing.T) {
 
 func TestGetActiveShareLinkUnknownToken(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	_, ok, err := db.GetActiveShareLink(t.Context(), "does-not-exist")
 	if err != nil {
@@ -93,7 +90,6 @@ func TestGetActiveShareLinkUnknownToken(t *testing.T) {
 
 func TestRevokeShareLink(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_abc", 0)
 	if err != nil {
@@ -124,7 +120,6 @@ func TestRevokeShareLink(t *testing.T) {
 
 func TestRevokeShareLinkScopedToSession(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_owner", 0)
 	if err != nil {
@@ -146,7 +141,6 @@ func TestRevokeShareLinkScopedToSession(t *testing.T) {
 
 func TestListActiveShareLinks(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	l1, _ := db.CreateShareLink(t.Context(), "opencode", "ses_list", 0)
 	l2, _ := db.CreateShareLink(t.Context(), "opencode", "ses_list", 0)
@@ -175,7 +169,6 @@ func TestListActiveShareLinks(t *testing.T) {
 
 func TestExpiredShareLinkIsInactive(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	past := time.Now().Add(-time.Hour).UnixMilli()
 	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_exp", past)
@@ -193,7 +186,6 @@ func TestExpiredShareLinkIsInactive(t *testing.T) {
 
 func TestFutureExpiryShareLinkIsActive(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	future := time.Now().Add(time.Hour).UnixMilli()
 	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_future", future)

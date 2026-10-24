@@ -1,54 +1,9 @@
 package state
 
 import (
-	"database/sql"
 	"testing"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
-
-// TestMigrate_V35_CreatesManagedOpencodeTable proves v35 applies on a
-// fresh DB (creating the table) and that a repeat migrate() is a no-op.
-func TestMigrate_V35_CreatesManagedOpencodeTable(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sqlDB.Close()
-
-	if err := migrate(sqlDB); err != nil {
-		t.Fatalf("migrate fresh: %v", err)
-	}
-	var count int
-	if err := sqlDB.QueryRow(
-		`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='managed_opencode'`,
-	).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("managed_opencode table count = %d, want 1", count)
-	}
-
-	// repo_root is the primary key: inserting the same key twice must fail.
-	if _, err := sqlDB.Exec(`INSERT INTO managed_opencode (repo_root) VALUES ('/r')`); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if _, err := sqlDB.Exec(`INSERT INTO managed_opencode (repo_root) VALUES ('/r')`); err == nil {
-		t.Error("expected duplicate repo_root insert to fail")
-	}
-
-	// Idempotent: migrate() again is a no-op and preserves the row.
-	if err := migrate(sqlDB); err != nil {
-		t.Fatalf("second migrate: %v", err)
-	}
-	if err := sqlDB.QueryRow(`SELECT count(*) FROM managed_opencode`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("row count after second migrate = %d, want 1", count)
-	}
-}
 
 func TestManagedOpencode_RoundTrip(t *testing.T) {
 	dir := t.TempDir()

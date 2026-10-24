@@ -20,7 +20,6 @@ func TestRoutineCompletionCreatesOneCategorizedInboxItem(t *testing.T) {
 	for _, outcome := range []string{"success", "failure", "interrupted"} {
 		t.Run(outcome, func(t *testing.T) {
 			db := openTestStateDB(t)
-			defer db.Close()
 			routine := testRoutine("routine", "Daily checks", 1)
 			routine.NotifyOnSuccess = true
 			if err := db.CreateRoutine(t.Context(), routine); err != nil {
@@ -49,7 +48,6 @@ func TestRoutineCompletionCreatesOneCategorizedInboxItem(t *testing.T) {
 
 func TestRoutineCRUDUniquenessOrderingAndSoftDelete(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	second := testRoutine("r2", "Bravo", 2)
 	first := testRoutine("r1", "alpha", 1)
@@ -106,7 +104,6 @@ func TestRoutineCRUDUniquenessOrderingAndSoftDelete(t *testing.T) {
 
 func TestRoutinePermissionRulesJSON(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	routine := testRoutine("r-perm", "Permission test", 1)
 	routine.PermissionRulesJSON = `[{"permission":"bash","pattern":"*","action":"allow"}]`
@@ -135,7 +132,6 @@ func TestRoutinePermissionRulesJSON(t *testing.T) {
 
 func TestRoutineRunSnapshotsHistoryAndOrdering(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	routine := testRoutine("routine", "Original", 1)
 	if err := db.CreateRoutine(t.Context(), routine); err != nil {
 		t.Fatal(err)
@@ -191,7 +187,6 @@ func TestRoutineRunSnapshotsHistoryAndOrdering(t *testing.T) {
 
 func TestRoutineRunCompetingClaims(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	db.db.SetMaxOpenConns(1)
 	if err := db.CreateRoutine(t.Context(), testRoutine("routine", "Routine", 1)); err != nil {
 		t.Fatal(err)
@@ -235,7 +230,6 @@ func TestRoutineRunCompetingClaims(t *testing.T) {
 
 func TestRoutineMissingRows(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	if _, err := db.GetRoutine(t.Context(), "missing"); !errors.Is(err, ErrRoutineNotFound) {
 		t.Fatalf("GetRoutine error = %v", err)
@@ -259,7 +253,6 @@ func TestRoutineMissingRows(t *testing.T) {
 
 func TestRoutineDueRunningLinkAndIdempotentFinish(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	routine := testRoutine("routine", "Routine", 1)
 	if err := db.CreateRoutine(t.Context(), routine); err != nil {
@@ -347,7 +340,6 @@ func TestRoutineStoreErrorsAfterClose(t *testing.T) {
 
 func TestRoutineRunWriteFailuresRollback(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	routine := testRoutine("routine", "Routine", 1)
 	if err := db.CreateRoutine(t.Context(), routine); err != nil {
 		t.Fatal(err)
@@ -497,7 +489,6 @@ func TestRoutineAgentModelAndSessionMigration(t *testing.T) {
 
 func TestLinkRoutineRunBindsFirstReusableSessionWithoutEditingRoutine(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	routine := testRoutine("routine", "Routine", 1)
 	routine.SessionMode = "reuse"
 	if err := db.CreateRoutine(t.Context(), routine); err != nil {
@@ -527,7 +518,6 @@ func TestLinkRoutineRunBindsFirstReusableSessionWithoutEditingRoutine(t *testing
 
 func TestRoutineRunAllowsOnlyOneActiveSharedSession(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	routine := testRoutine("routine", "Routine", 1)
 	routine.SessionMode = "reuse"
 	if err := db.CreateRoutine(t.Context(), routine); err != nil {
@@ -558,7 +548,6 @@ func TestRoutineRunAllowsOnlyOneActiveSharedSession(t *testing.T) {
 
 func TestUnscheduledFinishLeavesTheScheduleVersion(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	keep, remove := testRoutine("keep", "Keep", 1), testRoutine("remove", "Remove", 1)
 	keep.DeleteAfterSuccess = false
 	for _, r := range []Routine{keep, remove} {

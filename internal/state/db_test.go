@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,7 +16,6 @@ import (
 
 func TestGetSettingCancelledContext(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 
 	database.db.SetMaxOpenConns(1)
 	conn, err := database.db.Conn(t.Context())
@@ -72,268 +72,50 @@ func templateDBPath(t testing.TB) string {
 // k is a tiny shorthand for constructing Key values in tests.
 func k(platform, id string) Key { return Key{Platform: platform, SessionID: id} }
 
-func TestSchemaCreation(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	// Verify tables exist by querying them
-	var count int
-	if err := db.db.QueryRow("SELECT count(*) FROM archived_session").Scan(&count); err != nil {
-		t.Fatalf("archived_session table not created: %v", err)
-	}
-	if err := db.db.QueryRow("SELECT count(*) FROM seen_session").Scan(&count); err != nil {
-		t.Fatalf("seen_session table not created: %v", err)
-	}
+// sessionOp archives (updated > 0) or unarchives (updated == 0) a session.
+type sessionOp struct {
+	platform, id string
+	updated      int64
 }
-
-func TestSchemaIdempotent(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	// Calling init again should not fail
-	if err := db.init(nil); err != nil {
-		t.Fatalf("second init() failed: %v", err)
-	}
-}
-
-// --- Archive tests ---
 
 func TestArchiveSession(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.ArchiveSession(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatalf("ArchiveSession: %v", err)
-	}
-
-	archived, err := db.ArchivedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("ArchivedSessions: %v", err)
-	}
-	if len(archived) != 1 {
-		t.Fatalf("expected 1 archived session, got %d", len(archived))
-	}
-	if archived[k("opencode", "s1")] != 1000 {
-		t.Errorf("expected timeUpdated=1000, got %d", archived[k("opencode", "s1")])
-	}
-}
-
-func TestArchiveSession_Upsert(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.ArchiveSession(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatalf("ArchiveSession: %v", err)
-	}
-	if err := db.ArchiveSession(t.Context(), "opencode", "s1", 2000); err != nil {
-		t.Fatalf("ArchiveSession (upsert): %v", err)
-	}
-
-	archived, err := db.ArchivedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("ArchivedSessions: %v", err)
-	}
-	if archived[k("opencode", "s1")] != 2000 {
-		t.Errorf("expected timeUpdated=2000 after upsert, got %d", archived[k("opencode", "s1")])
-	}
-}
-
-func TestArchiveProject(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.ArchiveProject(t.Context(), "local", "/src/foo"); err != nil {
-		t.Fatalf("ArchiveProject: %v", err)
-	}
-	archived, err := db.ArchivedProjects(t.Context())
-	if err != nil {
-		t.Fatalf("ArchivedProjects: %v", err)
-	}
-	if _, ok := archived[ProjectKey{RemoteID: "local", Root: "/src/foo"}]; !ok {
-		t.Fatalf("expected /src/foo archived, got %v", archived)
-	}
-	if archived[ProjectKey{RemoteID: "local", Root: "/src/foo"}] <= 0 {
-		t.Errorf("expected positive archived_at, got %d", archived[ProjectKey{RemoteID: "local", Root: "/src/foo"}])
-	}
-
-	// Re-archive refreshes archived_at (upsert, no duplicate row).
-	if err := db.ArchiveProject(t.Context(), "local", "/src/foo"); err != nil {
-		t.Fatalf("ArchiveProject (upsert): %v", err)
-	}
-	archived, _ = db.ArchivedProjects(t.Context())
-	if len(archived) != 1 {
-		t.Errorf("expected 1 archived project after upsert, got %d", len(archived))
-	}
-
-	if err := db.UnarchiveProject(t.Context(), "local", "/src/foo"); err != nil {
-		t.Fatalf("UnarchiveProject: %v", err)
-	}
-	archived, _ = db.ArchivedProjects(t.Context())
-	if len(archived) != 0 {
-		t.Errorf("expected 0 archived projects after unarchive, got %d", len(archived))
-	}
-}
-
-func TestUnarchiveSession(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.ArchiveSession(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatalf("ArchiveSession: %v", err)
-	}
-	if err := db.UnarchiveSession(t.Context(), "opencode", "s1"); err != nil {
-		t.Fatalf("UnarchiveSession: %v", err)
-	}
-
-	archived, err := db.ArchivedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("ArchivedSessions: %v", err)
-	}
-	if len(archived) != 0 {
-		t.Errorf("expected 0 archived sessions after unarchive, got %d", len(archived))
-	}
-}
-
-func TestUnarchiveSession_Nonexistent(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.UnarchiveSession(t.Context(), "opencode", "nonexistent"); err != nil {
-		t.Fatalf("UnarchiveSession on nonexistent: %v", err)
-	}
-}
-
-// TestArchive_PerPlatformIsolation verifies that the same session-ID
-// can be archived independently across platforms without either one
-// clobbering the other.
-func TestArchive_PerPlatformIsolation(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.ArchiveSession(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatalf("ArchiveSession opencode: %v", err)
-	}
-	if err := db.ArchiveSession(t.Context(), "other-platform", "s1", 2000); err != nil {
-		t.Fatalf("ArchiveSession other-platform: %v", err)
-	}
-	archived, err := db.ArchivedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("ArchivedSessions: %v", err)
-	}
-	if archived[k("opencode", "s1")] != 1000 {
-		t.Errorf("opencode/s1: expected 1000, got %d", archived[k("opencode", "s1")])
-	}
-	if archived[k("other-platform", "s1")] != 2000 {
-		t.Errorf("other-platform/s1: expected 2000, got %d", archived[k("other-platform", "s1")])
-	}
-
-	// Unarchiving one platform's entry must leave the other's alone.
-	if err := db.UnarchiveSession(t.Context(), "opencode", "s1"); err != nil {
-		t.Fatalf("UnarchiveSession opencode: %v", err)
-	}
-	archived, err = db.ArchivedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("ArchivedSessions: %v", err)
-	}
-	if _, ok := archived[k("opencode", "s1")]; ok {
-		t.Error("opencode/s1 should be gone")
-	}
-	if archived[k("other-platform", "s1")] != 2000 {
-		t.Error("other-platform/s1 should survive opencode unarchive")
-	}
-}
-
-// --- Seen tests ---
-
-func TestMarkSessionSeen(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.MarkSessionSeen(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatalf("MarkSessionSeen: %v", err)
-	}
-
-	seen, err := db.SeenSessionStates(t.Context())
-	if err != nil {
-		t.Fatalf("SeenSessionStates: %v", err)
-	}
-	if len(seen) != 1 {
-		t.Fatalf("expected 1 seen session, got %d", len(seen))
-	}
-	if seen[k("opencode", "s1")].TimeUpdated != 1000 {
-		t.Errorf("expected timeUpdated=1000, got %d", seen[k("opencode", "s1")].TimeUpdated)
-	}
-}
-
-func TestMarkSessionSeen_OnlyUpdatesIfNewer(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.MarkSessionSeen(t.Context(), "opencode", "s1", 2000); err != nil {
-		t.Fatalf("MarkSessionSeen: %v", err)
-	}
-	// Older timestamp should NOT downgrade.
-	if err := db.MarkSessionSeen(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatalf("MarkSessionSeen (older): %v", err)
-	}
-
-	seen, err := db.SeenSessionStates(t.Context())
-	if err != nil {
-		t.Fatalf("SeenSessionStates: %v", err)
-	}
-	if seen[k("opencode", "s1")].TimeUpdated != 2000 {
-		t.Errorf("expected timeUpdated=2000 (not downgraded), got %d", seen[k("opencode", "s1")].TimeUpdated)
-	}
-}
-
-func TestMarkSessionSeen_UpdatesIfNewer(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.MarkSessionSeen(t.Context(), "opencode", "s1", 1000); err != nil {
-		t.Fatalf("MarkSessionSeen: %v", err)
-	}
-	if err := db.MarkSessionSeen(t.Context(), "opencode", "s1", 3000); err != nil {
-		t.Fatalf("MarkSessionSeen (newer): %v", err)
-	}
-
-	seen, err := db.SeenSessionStates(t.Context())
-	if err != nil {
-		t.Fatalf("SeenSessionStates: %v", err)
-	}
-	if seen[k("opencode", "s1")].TimeUpdated != 3000 {
-		t.Errorf("expected timeUpdated=3000 (upgraded), got %d", seen[k("opencode", "s1")].TimeUpdated)
-	}
-}
-
-func TestMultipleSessions(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.ArchiveSession(t.Context(), "opencode", "s1", 100); err != nil {
-		t.Fatalf("ArchiveSession s1: %v", err)
-	}
-	if err := db.ArchiveSession(t.Context(), "opencode", "s2", 200); err != nil {
-		t.Fatalf("ArchiveSession s2: %v", err)
-	}
-	if err := db.MarkSessionSeen(t.Context(), "opencode", "s3", 300); err != nil {
-		t.Fatalf("MarkSessionSeen s3: %v", err)
-	}
-
-	archived, err := db.ArchivedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("ArchivedSessions: %v", err)
-	}
-	if len(archived) != 2 {
-		t.Errorf("expected 2 archived sessions, got %d", len(archived))
-	}
-
-	seen, err := db.SeenSessionStates(t.Context())
-	if err != nil {
-		t.Fatalf("SeenSessionStates: %v", err)
-	}
-	if len(seen) != 1 {
-		t.Errorf("expected 1 seen session, got %d", len(seen))
+	for _, tc := range []struct {
+		name string
+		ops  []sessionOp
+		want map[Key]int64
+	}{
+		{"archive", []sessionOp{{"opencode", "s1", 1000}}, map[Key]int64{k("opencode", "s1"): 1000}},
+		{"upsert", []sessionOp{{"opencode", "s1", 1000}, {"opencode", "s1", 2000}}, map[Key]int64{k("opencode", "s1"): 2000}},
+		{"unarchive", []sessionOp{{"opencode", "s1", 1000}, {"opencode", "s1", 0}}, map[Key]int64{}},
+		{"unarchive nonexistent", []sessionOp{{"opencode", "nonexistent", 0}}, map[Key]int64{}},
+		// The same session ID is archived independently per platform, and
+		// unarchiving one platform's entry leaves the other's alone.
+		{"per-platform", []sessionOp{{"opencode", "s1", 1000}, {"other-platform", "s1", 2000}},
+			map[Key]int64{k("opencode", "s1"): 1000, k("other-platform", "s1"): 2000}},
+		{"per-platform unarchive", []sessionOp{{"opencode", "s1", 1000}, {"other-platform", "s1", 2000}, {"opencode", "s1", 0}},
+			map[Key]int64{k("other-platform", "s1"): 2000}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestStateDB(t)
+			for _, op := range tc.ops {
+				var err error
+				if op.updated > 0 {
+					err = db.ArchiveSession(t.Context(), op.platform, op.id, op.updated)
+				} else {
+					err = db.UnarchiveSession(t.Context(), op.platform, op.id)
+				}
+				if err != nil {
+					t.Fatalf("%+v: %v", op, err)
+				}
+			}
+			archived, err := db.ArchivedSessions(t.Context())
+			if err != nil {
+				t.Fatalf("ArchivedSessions: %v", err)
+			}
+			if !maps.Equal(archived, tc.want) {
+				t.Errorf("archived = %v, want %v", archived, tc.want)
+			}
+		})
 	}
 }
 
@@ -432,104 +214,11 @@ func TestDefaultDBPath(t *testing.T) {
 	}
 }
 
-// --- Model favorite tests ---
-
-func TestAddModelFavorite_RoundTrip(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.AddModelFavorite(t.Context(), "opencode", "anthropic", "claude-opus-4"); err != nil {
-		t.Fatalf("AddModelFavorite: %v", err)
-	}
-
-	favs, err := db.ModelFavorites(t.Context(), "opencode")
-	if err != nil {
-		t.Fatalf("ModelFavorites: %v", err)
-	}
-	if len(favs) != 1 {
-		t.Fatalf("expected 1 favorite, got %d", len(favs))
-	}
-	if favs[0].Platform != "opencode" || favs[0].Provider != "anthropic" || favs[0].Model != "claude-opus-4" {
-		t.Errorf("unexpected favorite: %+v", favs[0])
-	}
-}
-
-func TestAddModelFavorite_Idempotent(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	for i := 0; i < 3; i++ {
-		if err := db.AddModelFavorite(t.Context(), "opencode", "anthropic", "claude-opus-4"); err != nil {
-			t.Fatalf("AddModelFavorite #%d: %v", i, err)
-		}
-	}
-
-	favs, _ := db.ModelFavorites(t.Context(), "opencode")
-	if len(favs) != 1 {
-		t.Errorf("expected 1 favorite after repeated adds, got %d", len(favs))
-	}
-}
-
-func TestRemoveModelFavorite(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	_ = db.AddModelFavorite(t.Context(), "opencode", "anthropic", "claude-opus-4")
-	if err := db.RemoveModelFavorite(t.Context(), "opencode", "anthropic", "claude-opus-4"); err != nil {
-		t.Fatalf("RemoveModelFavorite: %v", err)
-	}
-
-	favs, _ := db.ModelFavorites(t.Context(), "opencode")
-	if len(favs) != 0 {
-		t.Errorf("expected 0 favorites after remove, got %d", len(favs))
-	}
-}
-
-func TestRemoveModelFavorite_Nonexistent(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	// Removing a non-existent favorite is a no-op (no error).
-	if err := db.RemoveModelFavorite(t.Context(), "opencode", "anthropic", "claude-opus-4"); err != nil {
-		t.Fatalf("RemoveModelFavorite on nonexistent: %v", err)
-	}
-}
-
-// TestModelFavorites_PerPlatformIsolation verifies that the same
-// (provider, model) pair can be favorited independently across
-// platforms. Matches the archived_session / seen_session isolation
-// guarantee.
-func TestModelFavorites_PerPlatformIsolation(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	_ = db.AddModelFavorite(t.Context(), "opencode", "anthropic", "claude-opus-4")
-	_ = db.AddModelFavorite(t.Context(), "other-platform", "anthropic", "claude-opus-4")
-
-	oc, _ := db.ModelFavorites(t.Context(), "opencode")
-	cc, _ := db.ModelFavorites(t.Context(), "other-platform")
-	if len(oc) != 1 || len(cc) != 1 {
-		t.Fatalf("expected 1 favorite per platform, got opencode=%d, other-platform=%d", len(oc), len(cc))
-	}
-
-	// Unfavoriting one platform must leave the other alone.
-	_ = db.RemoveModelFavorite(t.Context(), "opencode", "anthropic", "claude-opus-4")
-	oc, _ = db.ModelFavorites(t.Context(), "opencode")
-	cc, _ = db.ModelFavorites(t.Context(), "other-platform")
-	if len(oc) != 0 {
-		t.Errorf("opencode favorites should be empty, got %d", len(oc))
-	}
-	if len(cc) != 1 {
-		t.Errorf("other-platform favorite should survive, got %d", len(cc))
-	}
-}
-
 // TestModelFavorites_OrderedByCreatedAt checks that favorites come
 // back in insertion order — the merger uses this to preserve the
 // order the user starred them in.
 func TestModelFavorites_OrderedByCreatedAt(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	// Use raw inserts with explicit timestamps so the order is
 	// unambiguous even if two AddModelFavorite calls happen in the
@@ -567,31 +256,108 @@ func TestModelFavorites_OrderedByCreatedAt(t *testing.T) {
 	}
 }
 
+// favoriteOp adds (or removes) anthropic/claude-opus-4 on a platform.
+type favoriteOp struct {
+	add      bool
+	platform string
+}
+
+func TestModelFavorites(t *testing.T) {
+	const provider, model = "anthropic", "claude-opus-4"
+	for _, tc := range []struct {
+		name string
+		ops  []favoriteOp
+		want map[string]int // favorite count per platform
+	}{
+		{"add", []favoriteOp{{true, "opencode"}}, map[string]int{"opencode": 1}},
+		{"add is idempotent", []favoriteOp{{true, "opencode"}, {true, "opencode"}, {true, "opencode"}}, map[string]int{"opencode": 1}},
+		{"remove", []favoriteOp{{true, "opencode"}, {false, "opencode"}}, map[string]int{"opencode": 0}},
+		{"remove nonexistent", []favoriteOp{{false, "opencode"}}, map[string]int{"opencode": 0}},
+		// The same (provider, model) is favorited independently per platform.
+		{"per-platform", []favoriteOp{{true, "opencode"}, {true, "other-platform"}},
+			map[string]int{"opencode": 1, "other-platform": 1}},
+		{"per-platform remove", []favoriteOp{{true, "opencode"}, {true, "other-platform"}, {false, "opencode"}},
+			map[string]int{"opencode": 0, "other-platform": 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestStateDB(t)
+			for _, op := range tc.ops {
+				var err error
+				if op.add {
+					err = db.AddModelFavorite(t.Context(), op.platform, provider, model)
+				} else {
+					err = db.RemoveModelFavorite(t.Context(), op.platform, provider, model)
+				}
+				if err != nil {
+					t.Fatalf("%+v: %v", op, err)
+				}
+			}
+			for platform, want := range tc.want {
+				favs, err := db.ModelFavorites(t.Context(), platform)
+				if err != nil {
+					t.Fatalf("ModelFavorites(%s): %v", platform, err)
+				}
+				if len(favs) != want {
+					t.Fatalf("%s favorites = %+v, want %d", platform, favs, want)
+				}
+				for _, f := range favs {
+					if f.Platform != platform || f.Provider != provider || f.Model != model {
+						t.Errorf("unexpected favorite: %+v", f)
+					}
+				}
+			}
+		})
+	}
+}
+
 // --- Pinned session tests ---
 
-func TestPinSession_RoundTrip(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.PinSession(t.Context(), "opencode", "s1"); err != nil {
-		t.Fatalf("PinSession: %v", err)
-	}
-
-	pinned, err := db.PinnedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("PinnedSessions: %v", err)
-	}
-	if len(pinned) != 1 {
-		t.Fatalf("expected 1 pinned session, got %d", len(pinned))
-	}
-	if pinnedAt, ok := pinned[k("opencode", "s1")]; !ok || pinnedAt <= 0 {
-		t.Errorf("expected positive pinnedAt for opencode/s1, got %d", pinnedAt)
+func TestPinSession(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ops  []sessionOp // updated > 0 pins, 0 unpins
+		want []Key
+	}{
+		{"empty", nil, nil},
+		{"pin", []sessionOp{{"opencode", "s1", 1}}, []Key{k("opencode", "s1")}},
+		{"unpin", []sessionOp{{"opencode", "s1", 1}, {"opencode", "s1", 0}}, nil},
+		{"unpin nonexistent", []sessionOp{{"opencode", "nonexistent", 0}}, nil},
+		{"per-platform", []sessionOp{{"opencode", "s1", 1}, {"other-platform", "s1", 1}},
+			[]Key{k("opencode", "s1"), k("other-platform", "s1")}},
+		{"per-platform unpin", []sessionOp{{"opencode", "s1", 1}, {"other-platform", "s1", 1}, {"opencode", "s1", 0}},
+			[]Key{k("other-platform", "s1")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestStateDB(t)
+			for _, op := range tc.ops {
+				var err error
+				if op.updated > 0 {
+					err = db.PinSession(t.Context(), op.platform, op.id)
+				} else {
+					err = db.UnpinSession(t.Context(), op.platform, op.id)
+				}
+				if err != nil {
+					t.Fatalf("%+v: %v", op, err)
+				}
+			}
+			pinned, err := db.PinnedSessions(t.Context())
+			if err != nil {
+				t.Fatalf("PinnedSessions: %v", err)
+			}
+			if len(pinned) != len(tc.want) {
+				t.Fatalf("pinned = %v, want %v", pinned, tc.want)
+			}
+			for _, key := range tc.want {
+				if pinned[key] <= 0 {
+					t.Errorf("%v pinnedAt = %d, want positive", key, pinned[key])
+				}
+			}
+		})
 	}
 }
 
 func TestPinSession_Idempotent(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	if err := db.PinSession(t.Context(), "opencode", "s1"); err != nil {
 		t.Fatalf("PinSession: %v", err)
@@ -612,190 +378,59 @@ func TestPinSession_Idempotent(t *testing.T) {
 	}
 }
 
-func TestUnpinSession(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	_ = db.PinSession(t.Context(), "opencode", "s1")
-	if err := db.UnpinSession(t.Context(), "opencode", "s1"); err != nil {
-		t.Fatalf("UnpinSession: %v", err)
-	}
-
-	pinned, _ := db.PinnedSessions(t.Context())
-	if len(pinned) != 0 {
-		t.Errorf("expected 0 pinned sessions after unpin, got %d", len(pinned))
-	}
-}
-
-func TestUnpinSession_Nonexistent(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.UnpinSession(t.Context(), "opencode", "nonexistent"); err != nil {
-		t.Fatalf("UnpinSession on nonexistent: %v", err)
-	}
-}
-
-func TestPinSession_PerPlatformIsolation(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	_ = db.PinSession(t.Context(), "opencode", "s1")
-	_ = db.PinSession(t.Context(), "other-platform", "s1")
-
-	pinned, _ := db.PinnedSessions(t.Context())
-	if len(pinned) != 2 {
-		t.Fatalf("expected 2 pinned sessions, got %d", len(pinned))
-	}
-	if _, ok := pinned[k("opencode", "s1")]; !ok {
-		t.Error("opencode/s1 should be pinned")
-	}
-	if _, ok := pinned[k("other-platform", "s1")]; !ok {
-		t.Error("other-platform/s1 should be pinned")
-	}
-
-	// Unpinning one platform must leave the other alone.
-	_ = db.UnpinSession(t.Context(), "opencode", "s1")
-	pinned, _ = db.PinnedSessions(t.Context())
-	if _, ok := pinned[k("opencode", "s1")]; ok {
-		t.Error("opencode/s1 should be gone")
-	}
-	if _, ok := pinned[k("other-platform", "s1")]; !ok {
-		t.Error("other-platform/s1 should survive opencode unpin")
-	}
-}
-
-func TestPinnedSessions_Empty(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	pinned, err := db.PinnedSessions(t.Context())
-	if err != nil {
-		t.Fatalf("PinnedSessions: %v", err)
-	}
-	if len(pinned) != 0 {
-		t.Errorf("expected 0 pinned sessions on fresh db, got %d", len(pinned))
-	}
-}
-
 // --- Setting tests (schema v12) ---
 
-func TestSetting_GetMissingReturnsOkFalse(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	val, ok, err := db.GetSetting(t.Context(), "pr_prompt_template")
-	if err != nil {
-		t.Fatalf("GetSetting: %v", err)
-	}
-	if ok {
-		t.Errorf("expected ok=false for missing key, got ok=true (val=%q)", val)
-	}
-	if val != "" {
-		t.Errorf("expected empty value for missing key, got %q", val)
-	}
-}
-
-func TestSetting_SetThenGet(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.SetSetting(t.Context(), "pr_prompt_template", "Handle PR #{number}"); err != nil {
-		t.Fatalf("SetSetting: %v", err)
-	}
-
-	val, ok, err := db.GetSetting(t.Context(), "pr_prompt_template")
-	if err != nil {
-		t.Fatalf("GetSetting: %v", err)
-	}
-	if !ok {
-		t.Fatal("expected ok=true after SetSetting")
-	}
-	if val != "Handle PR #{number}" {
-		t.Errorf("expected stored value, got %q", val)
+func TestSetting(t *testing.T) {
+	type kv struct{ key, val string }
+	for _, tc := range []struct {
+		name string
+		sets []kv
+		key  string
+		want string
+		ok   bool
+	}{
+		{"missing", nil, "pr_prompt_template", "", false},
+		{"set then get", []kv{{"pr_prompt_template", "Handle PR #{number}"}}, "pr_prompt_template", "Handle PR #{number}", true},
+		{"overwrite", []kv{{"issue_prompt_template", "first"}, {"issue_prompt_template", "second"}}, "issue_prompt_template", "second", true},
+		{"independent keys a", []kv{{"a", "alpha"}, {"b", "beta"}}, "a", "alpha", true},
+		{"independent keys b", []kv{{"a", "alpha"}, {"b", "beta"}}, "b", "beta", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestStateDB(t)
+			for _, s := range tc.sets {
+				if err := db.SetSetting(t.Context(), s.key, s.val); err != nil {
+					t.Fatalf("SetSetting %s: %v", s.key, err)
+				}
+			}
+			val, ok, err := db.GetSetting(t.Context(), tc.key)
+			if err != nil {
+				t.Fatalf("GetSetting: %v", err)
+			}
+			if val != tc.want || ok != tc.ok {
+				t.Errorf("GetSetting(%s) = (%q, %v), want (%q, %v)", tc.key, val, ok, tc.want, tc.ok)
+			}
+		})
 	}
 }
 
-func TestSetting_OverwritesExistingValue(t *testing.T) {
+func TestWorktreeInheritPermissions(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
-	if err := db.SetSetting(t.Context(), "issue_prompt_template", "first"); err != nil {
-		t.Fatalf("SetSetting first: %v", err)
-	}
-	if err := db.SetSetting(t.Context(), "issue_prompt_template", "second"); err != nil {
-		t.Fatalf("SetSetting second: %v", err)
-	}
-
-	val, ok, err := db.GetSetting(t.Context(), "issue_prompt_template")
-	if err != nil {
-		t.Fatalf("GetSetting: %v", err)
-	}
-	if !ok || val != "second" {
-		t.Errorf("expected (\"second\", true), got (%q, %v)", val, ok)
-	}
-}
-
-func TestSetting_KeysAreIndependent(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.SetSetting(t.Context(), "a", "alpha"); err != nil {
-		t.Fatalf("SetSetting a: %v", err)
-	}
-	if err := db.SetSetting(t.Context(), "b", "beta"); err != nil {
-		t.Fatalf("SetSetting b: %v", err)
-	}
-
-	a, _, err := db.GetSetting(t.Context(), "a")
-	if err != nil {
-		t.Fatalf("GetSetting a: %v", err)
-	}
-	b, _, err := db.GetSetting(t.Context(), "b")
-	if err != nil {
-		t.Fatalf("GetSetting b: %v", err)
-	}
-	if a != "alpha" || b != "beta" {
-		t.Errorf("expected (alpha, beta), got (%q, %q)", a, b)
-	}
-}
-
-func TestWorktreeInheritPermissions_DefaultsOn(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	on, err := db.GetWorktreeInheritPermissions(t.Context())
-	if err != nil {
-		t.Fatalf("GetWorktreeInheritPermissions: %v", err)
-	}
-	if !on {
-		t.Error("expected default true when setting is absent")
-	}
-}
-
-func TestWorktreeInheritPermissions_SetThenGet(t *testing.T) {
-	db := openTestStateDB(t)
-	defer db.Close()
-
-	if err := db.SetWorktreeInheritPermissions(t.Context(), false); err != nil {
-		t.Fatalf("SetWorktreeInheritPermissions(false): %v", err)
-	}
-	on, err := db.GetWorktreeInheritPermissions(t.Context())
-	if err != nil {
-		t.Fatalf("GetWorktreeInheritPermissions: %v", err)
-	}
-	if on {
-		t.Error("expected false after disabling")
-	}
-
-	if err := db.SetWorktreeInheritPermissions(t.Context(), true); err != nil {
-		t.Fatalf("SetWorktreeInheritPermissions(true): %v", err)
-	}
-	on, err = db.GetWorktreeInheritPermissions(t.Context())
-	if err != nil {
-		t.Fatalf("GetWorktreeInheritPermissions: %v", err)
-	}
-	if !on {
-		t.Error("expected true after re-enabling")
+	// An absent setting defaults to on; each write then round-trips.
+	for _, set := range []*bool{nil, new(false), new(true)} {
+		want := true
+		if set != nil {
+			want = *set
+			if err := db.SetWorktreeInheritPermissions(t.Context(), want); err != nil {
+				t.Fatalf("SetWorktreeInheritPermissions(%v): %v", want, err)
+			}
+		}
+		on, err := db.GetWorktreeInheritPermissions(t.Context())
+		if err != nil {
+			t.Fatalf("GetWorktreeInheritPermissions: %v", err)
+		}
+		if on != want {
+			t.Errorf("GetWorktreeInheritPermissions = %v, want %v", on, want)
+		}
 	}
 }

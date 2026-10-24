@@ -42,7 +42,6 @@ func TestInboxMigration(t *testing.T) {
 
 func TestCreateInboxItemValidatesAndTrims(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	for _, input := range []struct{ title, body string }{{"", "body"}, {"title", " \n\t"}} {
 		if _, err := db.CreateSessionInboxItem(t.Context(), input.title, input.body, InboxGeneral, nil); err == nil {
 			t.Fatalf("CreateCategorizedInboxItem(%q, %q) accepted blank input", input.title, input.body)
@@ -99,7 +98,6 @@ func TestInboxItemsPersistAndListNewestFirst(t *testing.T) {
 
 func TestMarkInboxItemReadIsIdempotentAndIsolated(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if _, err := db.db.Exec(`
 		INSERT INTO inbox_item (id, title, body, created_at, read_at) VALUES
 			('read', 'Read', 'body', 1, 123),
@@ -137,7 +135,6 @@ func TestMarkInboxItemReadIsIdempotentAndIsolated(t *testing.T) {
 
 func TestMarkInboxItemUnreadIsIdempotentAndIsolated(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if _, err := db.db.Exec(`INSERT INTO inbox_item (id, title, body, created_at, read_at, archived_at) VALUES
 		('read', 'Read', 'body', 1, 123, NULL),
 		('other', 'Other', 'body', 2, 456, NULL),
@@ -164,7 +161,6 @@ func TestMarkInboxItemUnreadIsIdempotentAndIsolated(t *testing.T) {
 
 func TestInboxCategoriesAndPermissionLifecycle(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	for _, category := range []string{InboxGeneral, InboxFactory, InboxRoutine} {
 		item, err := db.CreateSessionInboxItem(t.Context(), category, "body", category, nil)
 		if err != nil || item.Category != category {
@@ -241,7 +237,6 @@ func TestInboxCategoriesAndPermissionLifecycle(t *testing.T) {
 
 func TestArchivedInboxListingPreservesReadState(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	active, err := db.CreateSessionInboxItem(t.Context(), "Active", "body", InboxGeneral, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -268,7 +263,6 @@ func TestArchivedInboxListingPreservesReadState(t *testing.T) {
 
 func TestRecallInboxItemIsIdempotent(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if _, err := db.db.Exec(`INSERT INTO inbox_item (id, title, body, created_at) VALUES ('kept', 'Kept', 'body', 1), ('recalled', 'Recalled', 'body', 2)`); err != nil {
 		t.Fatal(err)
 	}
@@ -292,8 +286,6 @@ func TestRecallInboxItemIsIdempotent(t *testing.T) {
 
 func TestInboxItemIDsAreOwnerLocal(t *testing.T) {
 	first, second := openTestStateDB(t), openTestStateDB(t)
-	defer first.Close()
-	defer second.Close()
 	for _, db := range []*DB{first, second} {
 		if _, err := db.db.Exec(`INSERT INTO inbox_item (id, title, body, created_at) VALUES ('same-id', 'Title', 'body', 1)`); err != nil {
 			t.Fatal(err)
@@ -311,7 +303,6 @@ func TestInboxItemIDsAreOwnerLocal(t *testing.T) {
 
 func TestArchiveInboxItemsAndAllRead(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if _, err := db.db.Exec(`
 		INSERT INTO inbox_item (id, title, body, created_at, read_at) VALUES
 			('selected', 'Selected', 'body', 1, NULL),
@@ -340,7 +331,6 @@ func TestArchiveInboxItemsAndAllRead(t *testing.T) {
 
 func TestWebhookDeliveryAcceptanceIsIdempotent(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if err := db.SaveWebhookInbox(t.Context(), WebhookInbox{ID: "inbox", RoutineID: "routine", RelayURL: "https://relay", Identity: "identity"}); err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +399,6 @@ func TestWebhookDeliveryAcceptanceIsIdempotent(t *testing.T) {
 
 func TestWebhookDeliveryErrorBackoffIsBounded(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if err := db.SaveWebhookInbox(t.Context(), WebhookInbox{ID: "inbox", RoutineID: "routine", RelayURL: "https://relay", Identity: "identity"}); err != nil {
 		t.Fatal(err)
 	}

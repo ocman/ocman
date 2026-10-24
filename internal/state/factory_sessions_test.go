@@ -9,7 +9,6 @@ import (
 
 func TestFactorySessionsMapsAttemptSessions(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	at := time.UnixMilli(1_000)
 	policy := model.FactoryAttemptPolicy{Repository: "/repo", Profile: "factory-implement/v1"}

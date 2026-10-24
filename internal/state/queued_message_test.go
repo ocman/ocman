@@ -4,18 +4,8 @@ import (
 	"testing"
 )
 
-func openQueueTestDB(t *testing.T) *DB {
-	t.Helper()
-	db, err := Open(templateDBPath(t))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 func TestEnqueueAndHead_FIFOOrder(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	for _, txt := range []string{"first", "second", "third"} {
 		if err := db.EnqueueMessage(t.Context(), QueuedMessage{
 			ID: "id-" + txt, Platform: "opencode", SessionID: "s1",
@@ -48,7 +38,7 @@ func TestEnqueueAndHead_FIFOOrder(t *testing.T) {
 // used to match every platform, so an idle edge from the local instance
 // could pop a remote session's head just because the bare ids collided.
 func TestDeliveryQueriesDoNotWildcardPlatform(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	if err := db.EnqueueMessage(t.Context(), QueuedMessage{
 		ID: "id-1", Platform: "r-box:opencode", SessionID: "s1", Text: "hi", CreatedAt: 1,
 	}); err != nil {
@@ -83,7 +73,7 @@ func TestDeliveryQueriesDoNotWildcardPlatform(t *testing.T) {
 // clients that never learned to send ?platform=. It is the single
 // documented exception, and it is never used to drain.
 func TestListQueuedMessagesAnyPlatform(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "r-box:opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "c", Platform: "opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
@@ -98,7 +88,7 @@ func TestListQueuedMessagesAnyPlatform(t *testing.T) {
 }
 
 func TestHead_EmptyQueue(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	head, err := db.HeadQueuedMessage(t.Context(), "opencode", "nope")
 	if err != nil {
 		t.Fatalf("HeadQueuedMessage: %v", err)
@@ -109,7 +99,7 @@ func TestHead_EmptyQueue(t *testing.T) {
 }
 
 func TestListQueuedMessages_ScopedAndOrdered(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "c", Platform: "opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
@@ -124,7 +114,7 @@ func TestListQueuedMessages_ScopedAndOrdered(t *testing.T) {
 }
 
 func TestSessionsWithQueuedMessages_DistinctSessions(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	// Two messages for s1, one for s2 → two distinct sessions.
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
@@ -152,7 +142,7 @@ func TestSessionsWithQueuedMessages_DistinctSessions(t *testing.T) {
 // time_updated past archived_at, which auto-unarchives it — the session
 // resurrects itself and burns tokens on an abandoned turn.
 func TestSessionsWithQueuedMessages_SkipsArchived(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "live", Text: "a", CreatedAt: 1})
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "opencode", SessionID: "gone", Text: "b", CreatedAt: 1})
 	if err := db.ArchiveSession(t.Context(), "opencode", "gone", 100); err != nil {
@@ -181,7 +171,7 @@ func TestSessionsWithQueuedMessages_SkipsArchived(t *testing.T) {
 // queue. The drain is strictly head-first, so one permanently
 // unsendable message silently stalled every later message forever.
 func TestQueuedMessageBlocking(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	for _, id := range []string{"stuck", "next"} {
 		if err := db.EnqueueMessage(t.Context(), QueuedMessage{ID: id, Platform: "opencode", SessionID: "s1", Text: id, CreatedAt: 1}); err != nil {
 			t.Fatalf("EnqueueMessage %s: %v", id, err)
@@ -253,7 +243,7 @@ func TestQueuedMessageBlocking(t *testing.T) {
 }
 
 func TestSessionsWithQueuedMessages_EmptyWhenNoQueue(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	got, err := db.SessionsWithQueuedMessages(t.Context())
 	if err != nil {
 		t.Fatalf("SessionsWithQueuedMessages: %v", err)
@@ -264,7 +254,7 @@ func TestSessionsWithQueuedMessages_EmptyWhenNoQueue(t *testing.T) {
 }
 
 func TestMoveQueuedMessage_SwapsAndRespectsBoundary(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	for _, id := range []string{"a", "b", "c"} {
 		if err := db.EnqueueMessage(t.Context(), QueuedMessage{ID: id, Platform: "opencode", SessionID: "s1", Text: id, CreatedAt: 1}); err != nil {
 			t.Fatalf("EnqueueMessage %s: %v", id, err)
@@ -301,7 +291,7 @@ func TestMoveQueuedMessage_SwapsAndRespectsBoundary(t *testing.T) {
 }
 
 func TestGetQueuedMessageSession(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi", CreatedAt: 1})
 	plat, sess, ok, err := db.GetQueuedMessageSession(t.Context(), "x")
 	if err != nil || !ok || plat != "opencode" || sess != "s1" {
@@ -314,7 +304,7 @@ func TestGetQueuedMessageSession(t *testing.T) {
 }
 
 func TestDeleteQueuedMessage_ReportsMiss(t *testing.T) {
-	db := openQueueTestDB(t)
+	db := openTestStateDB(t)
 	ok, err := db.DeleteQueuedMessage(t.Context(), "ghost")
 	if err != nil {
 		t.Fatalf("DeleteQueuedMessage: %v", err)

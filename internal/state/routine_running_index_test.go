@@ -73,7 +73,7 @@ func TestRoutineRunningIndexMigration(t *testing.T) {
 }
 
 func TestListRunningRoutineRunsQueryPlan(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	assertRoutineRunningPlan(t, d.db)
 }
 

@@ -6,7 +6,7 @@ import (
 )
 
 func TestPluginConversationReplyReceipt(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	key := conversationKey("account", "thread")
 	if has, err := d.HasPluginConversationReply(t.Context(), key, "reply"); has || err != nil {
 		t.Fatalf("missing = %v, %v", has, err)

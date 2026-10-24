@@ -10,7 +10,7 @@ import (
 )
 
 func TestWebhookFilesAreWrittenAndPruned(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	path, err := d.WriteWebhookFile("inbox", "../../escape", WebhookBodyFile, []byte("hello"))
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestWebhookFilesAreWrittenAndPruned(t *testing.T) {
 
 // A sweep walks past one directory read batch.
 func TestWebhookFilesSweepCrossesBatches(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	old := time.Now().Add(-48 * time.Hour)
 	var paths []string
 	for i := range webhookFilesGCBatch + 44 {
@@ -80,7 +80,7 @@ func TestWebhookFilesSweepCrossesBatches(t *testing.T) {
 }
 
 func TestWebhookFilesNeedDataDir(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	d.dataDir = ""
 	if _, err := d.WriteWebhookFile("inbox", "d", WebhookBodyFile, nil); err == nil {
 		t.Fatal("wrote a body without a data directory")

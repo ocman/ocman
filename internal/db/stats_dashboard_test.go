@@ -159,6 +159,13 @@ func TestGetMetricsDashboard_EmptyDB_ZeroFilledBuckets(t *testing.T) {
 	if dash.Agents == nil {
 		t.Error("Agents = nil, want empty slice")
 	}
+	// CostByModel is always present: empty models, one point per bucket.
+	if dash.CostByModel.Models == nil || len(dash.CostByModel.Models) != 0 {
+		t.Errorf("CostByModel.Models = %v, want empty slice", dash.CostByModel.Models)
+	}
+	if len(dash.CostByModel.Series) != len(dash.Series) {
+		t.Errorf("CostByModel.Series len = %d, want %d", len(dash.CostByModel.Series), len(dash.Series))
+	}
 }
 
 // TestGetMetricsDashboard_CumulativeCostMonotonic asserts the
@@ -687,31 +694,6 @@ func TestGetMetricsDashboard_CostByModel_TopNAndOther(t *testing.T) {
 	if floatNotClose(last.Costs[len(last.Costs)-1], expectOtherCost) {
 		t.Errorf("Other cumulative sum = %v, want %v",
 			last.Costs[len(last.Costs)-1], expectOtherCost)
-	}
-}
-
-// TestGetMetricsDashboard_CostByModel_EmptyDB asserts the contract
-// that an empty DB still returns a well-shaped (empty-models)
-// payload: the frontend treats this field as always-present.
-func TestGetMetricsDashboard_CostByModel_EmptyDB(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
-		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
-	})
-
-	if err != nil {
-		t.Fatalf("GetMetricsDashboard: %v", err)
-	}
-	if dash.CostByModel.Models == nil {
-		t.Errorf("CostByModel.Models = nil, want empty slice")
-	}
-	if len(dash.CostByModel.Models) != 0 {
-		t.Errorf("CostByModel.Models len = %d, want 0", len(dash.CostByModel.Models))
-	}
-	if len(dash.CostByModel.Series) != len(dash.Series) {
-		t.Errorf("CostByModel.Series len = %d, want %d", len(dash.CostByModel.Series), len(dash.Series))
 	}
 }
 

@@ -75,7 +75,6 @@ func TestInboxOriginSurvivesArchival(t *testing.T) {
 
 func TestRoutineInboxIncludesRunSession(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	routine := testRoutine("routine", "Daily checks", 1)
 	if err := db.CreateRoutine(t.Context(), routine); err != nil {
 		t.Fatal(err)

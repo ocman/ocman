@@ -373,20 +373,6 @@ func TestMigrate_Idempotent(t *testing.T) {
 	}
 }
 
-func TestMigrate_RecordsSchemaVersion(t *testing.T) {
-	raw := openLegacyDB(t)
-	if err := migrate(raw); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	var version int
-	if err := raw.QueryRow(`SELECT max(version) FROM schema_version`).Scan(&version); err != nil {
-		t.Fatalf("read schema_version: %v", err)
-	}
-	if version < 1 {
-		t.Errorf("expected schema_version >= 1, got %d", version)
-	}
-}
-
 func TestWorkflowAttemptExecutorMigrationsPreserveRows(t *testing.T) {
 	raw, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -662,24 +648,6 @@ func TestMigrate_SingleFeatureV26ForwardMigrates(t *testing.T) {
 	}
 }
 
-func TestMigrate_FreshDB_CreatesSchemaAtLatestVersion(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer sqlDB.Close()
-
-	if err := migrate(sqlDB); err != nil {
-		t.Fatalf("migrate fresh: %v", err)
-	}
-	// Tables exist with the new composite-key shape.
-	_, err = sqlDB.Exec(`INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)
-	                     VALUES ('opencode', 's1', 100, 9999)`)
-	if err != nil {
-		t.Fatalf("insert into fresh schema: %v", err)
-	}
-}
-
 func TestMigrate_V34AddsChildResultDeliveryState(t *testing.T) {
 	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -768,125 +736,6 @@ func TestMigrate_RecoveryV30ComponentDBUpgrades(t *testing.T) {
 	}
 }
 
-func TestMigrate_V3_CreatesAuthSecretTable(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer sqlDB.Close()
-
-	if err := migrate(sqlDB); err != nil {
-		t.Fatalf("migrate fresh: %v", err)
-	}
-
-	// Insert with id=1 must succeed.
-	if _, err := sqlDB.Exec(
-		`INSERT INTO auth_secret (id, hmac_key, created_at) VALUES (1, ?, ?)`,
-		[]byte{0x01, 0x02, 0x03}, 9999,
-	); err != nil {
-		t.Fatalf("insert id=1: %v", err)
-	}
-
-	// Insert with id=2 must fail the CHECK constraint (single-row table).
-	if _, err := sqlDB.Exec(
-		`INSERT INTO auth_secret (id, hmac_key, created_at) VALUES (2, ?, ?)`,
-		[]byte{0x04}, 9999,
-	); err == nil {
-		t.Error("expected CHECK constraint to reject id != 1")
-	}
-}
-
-func TestMigrate_V11_AddsReasoningColumn(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer sqlDB.Close()
-
-	if err := migrate(sqlDB); err != nil {
-		t.Fatalf("migrate fresh: %v", err)
-	}
-
-	// The reasoning column exists and accepts the standard insert
-	// shape (NOT NULL, DEFAULT ''). Inserting without reasoning must
-	// succeed and read back the empty default.
-	if _, err := sqlDB.Exec(`
-		INSERT INTO auto_approved_permission
-			(platform, session_id, permission_id, permission_text,
-			 patterns_json, judge_session_id, approved_at)
-		VALUES ('opencode', 's1', 'p1', 'read file', '[]', 'judge-1', 100)
-	`); err != nil {
-		t.Fatalf("insert without reasoning: %v", err)
-	}
-	var reasoning string
-	if err := sqlDB.QueryRow(
-		`SELECT reasoning FROM auto_approved_permission WHERE permission_id = 'p1'`,
-	).Scan(&reasoning); err != nil {
-		t.Fatalf("read reasoning: %v", err)
-	}
-	if reasoning != "" {
-		t.Errorf("expected empty default reasoning, got %q", reasoning)
-	}
-
-	// Inserting with a reasoning value must round-trip.
-	if _, err := sqlDB.Exec(`
-		INSERT INTO auto_approved_permission
-			(platform, session_id, permission_id, permission_text,
-			 patterns_json, judge_session_id, reasoning, approved_at)
-		VALUES ('opencode', 's1', 'p2', 'write file', '[]', 'judge-2', 'Writes to docs only.', 200)
-	`); err != nil {
-		t.Fatalf("insert with reasoning: %v", err)
-	}
-	if err := sqlDB.QueryRow(
-		`SELECT reasoning FROM auto_approved_permission WHERE permission_id = 'p2'`,
-	).Scan(&reasoning); err != nil {
-		t.Fatalf("read reasoning p2: %v", err)
-	}
-	if reasoning != "Writes to docs only." {
-		t.Errorf("reasoning round-trip mismatch: got %q", reasoning)
-	}
-}
-
-// TestMigrate_V11_PreservesExistingRows ensures the v11 migration adds
-// the reasoning column to existing rows (which were inserted under v7)
-// without losing data.
-func TestMigrate_V11_PreservesExistingRows(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer sqlDB.Close()
-
-	if err := migrate(sqlDB); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	// Insert a row that pre-dates v11 (no reasoning provided).
-	if _, err := sqlDB.Exec(`
-		INSERT INTO auto_approved_permission
-			(platform, session_id, permission_id, permission_text,
-			 patterns_json, judge_session_id, approved_at)
-		VALUES ('opencode', 's1', 'legacy', 'mkdir foo', '["foo"]', 'judge-x', 999)
-	`); err != nil {
-		t.Fatalf("seed legacy row: %v", err)
-	}
-	// Running migrate again must be a no-op (idempotency check).
-	if err := migrate(sqlDB); err != nil {
-		t.Fatalf("re-migrate: %v", err)
-	}
-	var permText, reasoning string
-	if err := sqlDB.QueryRow(
-		`SELECT permission_text, reasoning FROM auto_approved_permission WHERE permission_id = 'legacy'`,
-	).Scan(&permText, &reasoning); err != nil {
-		t.Fatalf("read legacy row: %v", err)
-	}
-	if permText != "mkdir foo" {
-		t.Errorf("permission_text lost: got %q", permText)
-	}
-	if reasoning != "" {
-		t.Errorf("expected empty reasoning for legacy row, got %q", reasoning)
-	}
-}
-
 func TestMigrateV45BackfillsApprovalProvenance(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -947,24 +796,6 @@ func TestMigrateV45BackfillsApprovalProvenance(t *testing.T) {
 		if metadata != "{}" || askedAt != approvedAt || askedAt != 123 {
 			t.Errorf("%s legacy fields = metadata %q asked %d approved %d", id, metadata, askedAt, approvedAt)
 		}
-	}
-}
-
-func TestLatestSchemaOmitsRetiredChildSessions(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if _, err := OpenFromSQL(db); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='child_sessions'`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatal("latest schema still contains retired child_sessions table")
 	}
 }
 
@@ -1139,40 +970,86 @@ func TestAuthSecret_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestMigrate_V14_CreatesRemoteTables(t *testing.T) {
+// TestLatestSchemaConstraints checks the shape of a fresh database migrated
+// to the latest version. Subtests share one database and run in order.
+func TestLatestSchemaConstraints(t *testing.T) {
 	sqlDB, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
-		t.Fatalf("open: %v", err)
+		t.Fatal(err)
 	}
 	defer sqlDB.Close()
-
-	if err := migrate(sqlDB); err != nil {
+	sqlDB.SetMaxOpenConns(1) // every connection to :memory: is a new database
+	if _, err := OpenFromSQL(sqlDB); err != nil {
 		t.Fatalf("migrate fresh: %v", err)
 	}
+	exec := func(t *testing.T, query string, args ...any) {
+		t.Helper()
+		if _, err := sqlDB.Exec(query, args...); err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+	}
+	rejects := func(t *testing.T, query string, args ...any) {
+		t.Helper()
+		if _, err := sqlDB.Exec(query, args...); err == nil {
+			t.Errorf("%s: accepted, want constraint error", query)
+		}
+	}
+	count := func(t *testing.T, query string) int {
+		t.Helper()
+		var n int
+		if err := sqlDB.QueryRow(query).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+		return n
+	}
 
-	// instance_identity is single-row.
-	if _, err := sqlDB.Exec(
-		`INSERT INTO instance_identity (id, instance_id, remote_token, created_at) VALUES (1, 'x', 'y', 1)`,
-	); err != nil {
-		t.Fatalf("insert id=1: %v", err)
-	}
-	if _, err := sqlDB.Exec(
-		`INSERT INTO instance_identity (id, instance_id, remote_token, created_at) VALUES (2, 'x', 'y', 1)`,
-	); err == nil {
-		t.Error("expected CHECK to reject id != 1")
-	}
-
-	// remote auto-increments local_id and enforces UNIQUE remote_id.
-	if _, err := sqlDB.Exec(
-		`INSERT INTO remote (remote_id, address, token_encrypted, created_at) VALUES ('rid', 'a', x'00', 1)`,
-	); err != nil {
-		t.Fatalf("insert remote: %v", err)
-	}
-	if _, err := sqlDB.Exec(
-		`INSERT INTO remote (remote_id, address, token_encrypted, created_at) VALUES ('rid', 'b', x'00', 1)`,
-	); err == nil {
-		t.Error("expected UNIQUE remote_id to reject duplicate")
-	}
+	t.Run("archived_session has the composite-key shape", func(t *testing.T) {
+		exec(t, `INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at) VALUES ('opencode', 's1', 100, 9999)`)
+	})
+	t.Run("auth_secret is single-row", func(t *testing.T) {
+		exec(t, `INSERT INTO auth_secret (id, hmac_key, created_at) VALUES (1, ?, 9999)`, []byte{0x01, 0x02, 0x03})
+		rejects(t, `INSERT INTO auth_secret (id, hmac_key, created_at) VALUES (2, ?, 9999)`, []byte{0x04})
+	})
+	t.Run("auto_approved_permission reasoning defaults empty", func(t *testing.T) {
+		exec(t, `INSERT INTO auto_approved_permission
+			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, approved_at)
+			VALUES ('opencode', 's1', 'p1', 'read file', '[]', 'judge-1', 100)`)
+		exec(t, `INSERT INTO auto_approved_permission
+			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, reasoning, approved_at)
+			VALUES ('opencode', 's1', 'p2', 'write file', '[]', 'judge-2', 'Writes to docs only.', 200)`)
+		for id, want := range map[string]string{"p1": "", "p2": "Writes to docs only."} {
+			var reasoning string
+			if err := sqlDB.QueryRow(`SELECT reasoning FROM auto_approved_permission WHERE permission_id = ?`, id).Scan(&reasoning); err != nil {
+				t.Fatal(err)
+			}
+			if reasoning != want {
+				t.Errorf("%s reasoning = %q, want %q", id, reasoning, want)
+			}
+		}
+	})
+	t.Run("child_sessions is retired", func(t *testing.T) {
+		if n := count(t, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='child_sessions'`); n != 0 {
+			t.Fatal("latest schema still contains retired child_sessions table")
+		}
+	})
+	t.Run("instance_identity is single-row and remote_id is unique", func(t *testing.T) {
+		exec(t, `INSERT INTO instance_identity (id, instance_id, remote_token, created_at) VALUES (1, 'x', 'y', 1)`)
+		rejects(t, `INSERT INTO instance_identity (id, instance_id, remote_token, created_at) VALUES (2, 'x', 'y', 1)`)
+		exec(t, `INSERT INTO remote (remote_id, address, token_encrypted, created_at) VALUES ('rid', 'a', x'00', 1)`)
+		rejects(t, `INSERT INTO remote (remote_id, address, token_encrypted, created_at) VALUES ('rid', 'b', x'00', 1)`)
+	})
+	t.Run("managed_opencode is keyed by repo_root", func(t *testing.T) {
+		exec(t, `INSERT INTO managed_opencode (repo_root) VALUES ('/r')`)
+		rejects(t, `INSERT INTO managed_opencode (repo_root) VALUES ('/r')`)
+	})
+	t.Run("repeat migrate is a no-op", func(t *testing.T) {
+		if err := migrate(sqlDB); err != nil {
+			t.Fatalf("second migrate: %v", err)
+		}
+		if n := count(t, `SELECT count(*) FROM managed_opencode`); n != 1 {
+			t.Fatalf("managed_opencode rows after second migrate = %d, want 1", n)
+		}
+	})
 }
 
 func TestMigrateLogsErrorOnNewerSchema(t *testing.T) {

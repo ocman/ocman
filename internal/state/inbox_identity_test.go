@@ -8,7 +8,6 @@ import (
 
 func TestPermissionInboxOpaqueKeyKeepsResolvedPromptClosedAfterSessionRekey(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	key := permissionInboxID("test", "old-native", "prompt")
 	if err := db.ResolvePermissionInboxItemKey(t.Context(), key, "test", "ocm_canonical", "prompt"); err != nil {
 		t.Fatal(err)

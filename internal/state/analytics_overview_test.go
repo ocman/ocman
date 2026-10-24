@@ -7,7 +7,6 @@ import (
 
 func TestAnalyticsOverviewCounts(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	statements := []string{
 		`INSERT INTO routine (id, name, prompt, directory, remote_id, schedule_kind, schedule_config_json, enabled, deleted, created_at, updated_at, deleted_at) VALUES

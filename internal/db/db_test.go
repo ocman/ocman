@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"maps"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -474,46 +476,6 @@ func TestGetSessions_ExcludesParentlessNamedSubagent(t *testing.T) {
 	}
 }
 
-func TestGetSessions_StatusBusy(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Busy Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
-
-	sessions, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-	if sessions[0].Status != "busy" {
-		t.Errorf("expected status 'busy', got %q", sessions[0].Status)
-	}
-}
-
-func TestGetSessions_StatusError(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Error Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
-		"role":   "assistant",
-		"finish": "error",
-	})
-
-	sessions, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
-	}
-	if sessions[0].Status != "error" {
-		t.Errorf("expected status 'error', got %q", sessions[0].Status)
-	}
-}
-
 func TestGetSessions_CarriesTopLevelErrorMessage(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -538,123 +500,57 @@ func TestGetSessions_CarriesTopLevelErrorMessage(t *testing.T) {
 	}
 }
 
-func TestGetSessions_StatusDone(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Done Session", "/project", now, now)
-	// Last message is from user → done
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
-
-	sessions, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
+func TestGetSessions_Status(t *testing.T) {
+	assistant := map[string]interface{}{"role": "assistant"}
+	tool := func(status string) map[string]interface{} {
+		return map[string]interface{}{"type": "tool", "tool": "bash", "state": map[string]interface{}{"status": status}}
 	}
-	if sessions[0].Status != "done" {
-		t.Errorf("expected status 'done', got %q", sessions[0].Status)
-	}
-}
+	for _, tc := range []struct {
+		name      string
+		priorUser bool
+		message   map[string]interface{}
+		part      map[string]interface{} // nil: no parts
+		want      SessionStatus
+	}{
+		// An assistant envelope with zero parts (parts haven't streamed yet)
+		// stays busy: done needs concrete evidence of non-LLM origin.
+		{name: "assistant without parts", message: assistant, want: "busy"},
+		{name: "error finish", message: map[string]interface{}{"role": "assistant", "finish": "error"}, want: "error"},
+		{name: "last message from user", message: map[string]interface{}{"role": "user"}, want: "done"},
+		// `!cmd` in the composer persists as an assistant message holding a
+		// single completed bash tool part and no `finish`; without the
+		// parts-aware check it would read as busy indefinitely.
+		{name: "shell-only synthesized terminal", priorUser: true, message: assistant, part: tool("completed"), want: "done"},
+		// A step-start part means a real LLM turn is in flight.
+		{name: "LLM mid-flight", message: assistant, part: map[string]interface{}{"type": "step-start"}, want: "busy"},
+		// A running tool keeps the session busy even without step-start.
+		{name: "LLM running tool", message: assistant, part: tool("running"), want: "busy"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
 
-// TestGetSessions_StatusShellOnlySynthTerminal exercises the
-// "synthesized terminal" path: a user types `!cmd` in the composer,
-// which OpenCode persists as an assistant message containing a single
-// completed bash tool part and *no* `finish` field. Without the
-// parts-aware status check, this would be classified as "busy"
-// indefinitely (and the next user message would be tagged "Queued").
-func TestGetSessions_StatusShellOnlySynthTerminal(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
+			now := time.Now().UnixMilli()
+			insertSession(t, db, "s1", "Session", "/project", now, now)
+			if tc.priorUser {
+				insertMessage(t, db, "m_user", "s1", now-1000, map[string]interface{}{"role": "user"})
+			}
+			insertMessage(t, db, "m1", "s1", now, tc.message)
+			if tc.part != nil {
+				insertPart(t, db, "p1", "m1", "s1", now, tc.part)
+			}
 
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Shell Session", "/project", now, now)
-	insertMessage(t, db, "m_user", "s1", now-1000, map[string]interface{}{"role": "user"})
-	// Synthesised assistant envelope: no `finish`, no LLM step-start,
-	// just one completed bash tool.
-	insertMessage(t, db, "m_shell", "s1", now, map[string]interface{}{"role": "assistant"})
-	insertPart(t, db, "p1", "m_shell", "s1", now, map[string]interface{}{
-		"type":  "tool",
-		"tool":  "bash",
-		"state": map[string]interface{}{"status": "completed"},
-	})
-
-	sessions, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
-	}
-	if sessions[0].Status != "done" {
-		t.Errorf("expected status 'done' for shell-only synthesised message, got %q", sessions[0].Status)
-	}
-}
-
-// TestGetSessions_StatusLLMMidFlight ensures the synth-terminal heuristic
-// does NOT misclassify a real LLM turn that has started streaming. A
-// `step-start` part means an LLM turn is genuinely in flight and the
-// session is busy until `finish` lands.
-func TestGetSessions_StatusLLMMidFlight(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Live LLM Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
-	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{"type": "step-start"})
-
-	sessions, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
-	}
-	if sessions[0].Status != "busy" {
-		t.Errorf("expected status 'busy' for mid-flight LLM (step-start present), got %q", sessions[0].Status)
-	}
-}
-
-// TestGetSessions_StatusLLMRunningTool ensures a real LLM turn with an
-// in-flight tool call is not misclassified as done either. The `running`
-// state on any part keeps the session "busy".
-func TestGetSessions_StatusLLMRunningTool(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Running Tool Session", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
-	// A tool with state.status=running should keep the session busy
-	// even if no step-start is present (defensive: the SQL doesn't
-	// require both signals — either is enough to refuse the synth flag).
-	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{
-		"type":  "tool",
-		"tool":  "bash",
-		"state": map[string]interface{}{"status": "running"},
-	})
-
-	sessions, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
-	}
-	if sessions[0].Status != "busy" {
-		t.Errorf("expected status 'busy' for in-flight tool, got %q", sessions[0].Status)
-	}
-}
-
-// TestGetSessions_StatusEmptyPartsBusy ensures an assistant message with
-// zero parts (just-created envelope, parts haven't streamed yet) stays
-// "busy" — we only flip to done when there is concrete evidence of
-// non-LLM origin (≥1 part with no step-start, no running).
-func TestGetSessions_StatusEmptyPartsBusy(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "s1", "Empty Parts", "/project", now, now)
-	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
-
-	sessions, err := db.GetSessions(t.Context(), "", 0)
-	if err != nil {
-		t.Fatalf("GetSessions: %v", err)
-	}
-	if sessions[0].Status != "busy" {
-		t.Errorf("expected status 'busy' for assistant message with no parts, got %q", sessions[0].Status)
+			sessions, err := db.GetSessions(t.Context(), "", 0)
+			if err != nil {
+				t.Fatalf("GetSessions: %v", err)
+			}
+			if len(sessions) != 1 {
+				t.Fatalf("expected 1 session, got %d", len(sessions))
+			}
+			if sessions[0].Status != tc.want {
+				t.Errorf("status = %q, want %q", sessions[0].Status, tc.want)
+			}
+		})
 	}
 }
 
@@ -1455,137 +1351,73 @@ func TestGetHourlyTokensByModel_Empty(t *testing.T) {
 	}
 }
 
-// --- GetSubagentSessionIDs tests ---
+// --- GetSubagentSessionIDs / GetSessionParentIDs tests ---
 
-// TestGetSubagentSessionIDs_ReturnsChildren verifies that the DB returns
-// every session whose parent_id matches the given parent. This powers
-// the bubble-up of subagent permission/question prompts to the parent
-// session in the UI.
-func TestGetSubagentSessionIDs_ReturnsChildren(t *testing.T) {
+// seedSessionTree inserts top-level sessions plus subagents (including a
+// grandchild) for the parent-lookup tests.
+func seedSessionTree(t *testing.T, db *DB) {
+	t.Helper()
+	now := time.Now().UnixMilli()
+	for _, id := range []string{"parent", "other", "lonely", "unrelated", "top"} {
+		insertSession(t, db, id, id, "/project", now, now)
+	}
+	for _, s := range []struct{ id, parent string }{
+		{"child1", "parent"}, {"child2", "parent"}, {"child3", "other"},
+		{"mid", "top"}, {"leaf", "mid"},
+	} {
+		insertSubagent(t, db, s.id, s.parent, "Task (explore subagent)", "/project", now, now)
+	}
+}
+
+// TestGetSubagentSessionIDs returns every session whose parent_id matches,
+// which powers the bubble-up of subagent prompts to the parent session.
+func TestGetSubagentSessionIDs(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
+	seedSessionTree(t, db)
 
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "parent", "Parent", "/project", now, now)
-	insertSubagent(t, db, "child1", "parent", "Task (explore subagent)", "/project", now, now)
-	insertSubagent(t, db, "child2", "parent", "Task (build subagent)", "/project", now, now)
-	// A subagent of an unrelated parent — must NOT appear in the result.
-	insertSession(t, db, "other", "Other parent", "/project", now, now)
-	insertSubagent(t, db, "child3", "other", "Task (build subagent)", "/project", now, now)
-
-	got, err := db.GetSubagentSessionIDs(t.Context(), "parent")
-	if err != nil {
-		t.Fatalf("GetSubagentSessionIDs: %v", err)
-	}
-	want := map[string]bool{"child1": true, "child2": true}
-	if len(got) != len(want) {
-		t.Fatalf("expected %d ids, got %d (%v)", len(want), len(got), got)
-	}
-	for _, id := range got {
-		if !want[id] {
-			t.Errorf("unexpected id in result: %q", id)
+	for _, tc := range []struct {
+		parent string
+		want   []string
+	}{
+		{"parent", []string{"child1", "child2"}}, // child3 belongs to another parent
+		{"lonely", nil},
+		{"", nil}, // an empty argument never returns every subagent
+	} {
+		got, err := db.GetSubagentSessionIDs(t.Context(), tc.parent)
+		if err != nil {
+			t.Fatalf("GetSubagentSessionIDs(%q): %v", tc.parent, err)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("GetSubagentSessionIDs(%q) = %v, want %v", tc.parent, got, tc.want)
 		}
 	}
 }
 
-// TestGetSubagentSessionIDs_NoChildren returns an empty slice (and nil
-// error) when the session has no subagents — most sessions don't.
-func TestGetSubagentSessionIDs_NoChildren(t *testing.T) {
+// TestGetSessionParentIDs maps each requested id with a parent to its
+// top-level ancestor, so prompts on nested subagents bubble to the visible
+// row. Top-level, missing and unrequested ids are absent.
+func TestGetSessionParentIDs(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
+	seedSessionTree(t, db)
 
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "lonely", "Lonely", "/project", now, now)
-
-	got, err := db.GetSubagentSessionIDs(t.Context(), "lonely")
-	if err != nil {
-		t.Fatalf("GetSubagentSessionIDs: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("expected no children, got %v", got)
-	}
-}
-
-// TestGetSubagentSessionIDs_EmptyParentID short-circuits an empty
-// argument — never returns every subagent in the DB.
-func TestGetSubagentSessionIDs_EmptyParentID(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "parent", "Parent", "/project", now, now)
-	insertSubagent(t, db, "child1", "parent", "Task (explore subagent)", "/project", now, now)
-
-	got, err := db.GetSubagentSessionIDs(t.Context(), "")
-	if err != nil {
-		t.Fatalf("GetSubagentSessionIDs: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("expected no children for empty parent id, got %v", got)
-	}
-}
-
-// --- GetSessionParentIDs tests ---
-
-// TestGetSessionParentIDs_ReturnsMap returns child→parent for every
-// id that has a non-NULL parent_id. Top-level sessions are absent
-// from the map (their parent_id is NULL).
-func TestGetSessionParentIDs_ReturnsMap(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "parent", "Parent", "/project", now, now)
-	insertSubagent(t, db, "child1", "parent", "Task (explore subagent)", "/project", now, now)
-	insertSubagent(t, db, "child2", "parent", "Task (build subagent)", "/project", now, now)
-	insertSession(t, db, "lonely", "Lonely", "/project", now, now)
-	// Also seed an unrelated session that shouldn't appear in the result.
-	insertSession(t, db, "unrelated", "Unrelated", "/project", now, now)
-
-	got, err := db.GetSessionParentIDs(t.Context(), []string{"child1", "child2", "lonely", "missing"})
-	if err != nil {
-		t.Fatalf("GetSessionParentIDs: %v", err)
-	}
-	if got["child1"] != "parent" {
-		t.Errorf("child1 parent = %q, want parent", got["child1"])
-	}
-	if got["child2"] != "parent" {
-		t.Errorf("child2 parent = %q, want parent", got["child2"])
-	}
-	if _, ok := got["lonely"]; ok {
-		t.Errorf("lonely should not be in the map (no parent_id), got %q", got["lonely"])
-	}
-	if _, ok := got["missing"]; ok {
-		t.Errorf("missing id should not be in the map, got %q", got["missing"])
-	}
-	if _, ok := got["unrelated"]; ok {
-		t.Errorf("unrelated id was not requested but appeared in the map")
-	}
-}
-
-// TestGetSessionParentIDs_ResolvesTopLevelAncestor verifies that a
-// nested subagent (grandchild) maps all the way up to the top-level
-// session, not just its immediate parent — so a prompt on a deeply
-// nested, externally-launched subagent still bubbles to the visible
-// row in the listing.
-func TestGetSessionParentIDs_ResolvesTopLevelAncestor(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	now := time.Now().UnixMilli()
-	insertSession(t, db, "top", "Top", "/project", now, now)
-	insertSubagent(t, db, "mid", "top", "Task (build subagent)", "/project", now, now)
-	insertSubagent(t, db, "leaf", "mid", "Task (explore subagent)", "/project", now, now)
-
-	got, err := db.GetSessionParentIDs(t.Context(), []string{"leaf", "mid"})
-	if err != nil {
-		t.Fatalf("GetSessionParentIDs: %v", err)
-	}
-	if got["leaf"] != "top" {
-		t.Errorf("leaf ancestor = %q, want top", got["leaf"])
-	}
-	if got["mid"] != "top" {
-		t.Errorf("mid ancestor = %q, want top", got["mid"])
+	for _, tc := range []struct {
+		ids  []string
+		want map[string]string
+	}{
+		{[]string{"child1", "child2", "lonely", "missing"}, map[string]string{"child1": "parent", "child2": "parent"}},
+		{[]string{"leaf", "mid"}, map[string]string{"leaf": "top", "mid": "top"}},
+		{nil, map[string]string{}},
+	} {
+		got, err := db.GetSessionParentIDs(t.Context(), tc.ids)
+		if err != nil {
+			t.Fatalf("GetSessionParentIDs(%v): %v", tc.ids, err)
+		}
+		if !maps.Equal(got, tc.want) {
+			t.Errorf("GetSessionParentIDs(%v) = %v, want %v", tc.ids, got, tc.want)
+		}
 	}
 }
 
@@ -1757,20 +1589,6 @@ func TestGetMetricsDashboardEffectiveCost(t *testing.T) {
 	}
 	if sumSessionEffective != metrics.Summary.TotalEffectiveCost {
 		t.Errorf("sum of session EffectiveCost = %v, want %v (summary)", sumSessionEffective, metrics.Summary.TotalEffectiveCost)
-	}
-}
-
-// TestGetSessionParentIDs_Empty short-circuits when no IDs are requested.
-func TestGetSessionParentIDs_Empty(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-
-	got, err := db.GetSessionParentIDs(t.Context(), nil)
-	if err != nil {
-		t.Fatalf("GetSessionParentIDs(nil): %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("expected empty map for nil input, got %v", got)
 	}
 }
 

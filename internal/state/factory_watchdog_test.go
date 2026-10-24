@@ -6,7 +6,7 @@ import (
 )
 
 func TestFactoryAttemptLastResumedAt(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	ctx := t.Context()
 	if at, err := d.FactoryAttemptLastResumedAt(ctx, "att-1"); err != nil || !at.IsZero() {
 		t.Fatalf("no gates = %v, %v", at, err)

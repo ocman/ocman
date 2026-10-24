@@ -6,18 +6,8 @@ import (
 	"testing"
 )
 
-func openTestDB(t *testing.T) *DB {
-	t.Helper()
-	db, err := Open(templateDBPath(t))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
 func TestAutoApprove_DefaultAbsent(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 	enabled, exists, err := db.GetAutoApprove(t.Context(), "opencode", "sess-1")
 	if err != nil {
 		t.Fatalf("GetAutoApprove: %v", err)
@@ -31,7 +21,7 @@ func TestAutoApprove_DefaultAbsent(t *testing.T) {
 }
 
 func TestAutoApprove_SetAndGet(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 
 	if err := db.SetAutoApprove(t.Context(), "opencode", "sess-1", true); err != nil {
 		t.Fatalf("SetAutoApprove(true): %v", err)
@@ -49,7 +39,7 @@ func TestAutoApprove_SetAndGet(t *testing.T) {
 }
 
 func TestAutoApprove_Disable(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 
 	_ = db.SetAutoApprove(t.Context(), "opencode", "sess-1", true)
 	if err := db.SetAutoApprove(t.Context(), "opencode", "sess-1", false); err != nil {
@@ -68,7 +58,7 @@ func TestAutoApprove_Disable(t *testing.T) {
 }
 
 func TestAutoApprove_PlatformScoped(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 
 	_ = db.SetAutoApprove(t.Context(), "opencode", "sess-1", true)
 
@@ -86,7 +76,7 @@ func TestAutoApprove_PlatformScoped(t *testing.T) {
 }
 
 func TestApprovedPermissionRoundTrip(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 	want := ApprovedPermission{
 		PermissionID: "p1", PermissionText: "bash", Patterns: []string{"git *"},
 		ApprovedBy: "ai", Reply: "once", Metadata: map[string]any{"command": "git status", "timeout": float64(10)},
@@ -105,7 +95,7 @@ func TestApprovedPermissionRoundTrip(t *testing.T) {
 }
 
 func TestApprovedPermissionActorIsNotDerivedFromReasoning(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 	p := ApprovedPermission{PermissionID: "p1", PermissionText: "bash", Reasoning: "user clicked Allow always"}
 	if err := db.RecordApprovedPermission(t.Context(), "opencode", "s1", p); err != nil {
 		t.Fatal(err)
@@ -120,7 +110,7 @@ func TestApprovedPermissionActorIsNotDerivedFromReasoning(t *testing.T) {
 }
 
 func TestRecordApprovedPermissionRejectsInvalidProvenance(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 	for _, p := range []ApprovedPermission{
 		{ApprovedBy: "admin", Reply: "once"},
 		{ApprovedBy: "user", Reply: "sometimes"},

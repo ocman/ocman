@@ -69,7 +69,6 @@ func TestStopEvidenceSurvivesRecoveryAndFailedStopRefreshes(t *testing.T) {
 
 func TestStopEvidenceWriteFailureIsAtomic(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if err := database.BeginSessionReplacementStop(t.Context(), "opencode", "/missing", nil, 1); err == nil {
 		t.Fatal("unprepared attempt accepted")
 	}

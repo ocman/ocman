@@ -6,7 +6,7 @@ import (
 )
 
 func TestFactoryActionInboxLifecycle(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 	ctx := t.Context()
 	actions := map[string]string{"review:1": "Review plan\n\n[Review](/factory/epics/ship)"}
 	sync := func(actions map[string]string) []string {

@@ -14,7 +14,6 @@ import (
 
 func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	formula := nativeTracerFormula(t)
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(context.Background(), "", "Ship search", "Keep it small", "/repo", "", formula, nil, nil)
 	if err != nil {
@@ -48,7 +47,6 @@ func TestFactoryEpicPermissionRulesAreAtomicAndPropagate(t *testing.T) {
 
 	t.Run("creation rolls back with rule storage", func(t *testing.T) {
 		db := openTestStateDB(t)
-		defer db.Close()
 		if _, err := db.db.Exec(`CREATE TRIGGER reject_epic_rules BEFORE UPDATE OF permission_rules_json ON factory_epic BEGIN SELECT RAISE(ABORT, 'reject rules'); END`); err != nil {
 			t.Fatal(err)
 		}
@@ -65,7 +63,6 @@ func TestFactoryEpicPermissionRulesAreAtomicAndPropagate(t *testing.T) {
 		for _, kind := range []string{"plan", "implementation"} {
 			t.Run(kind, func(t *testing.T) {
 				db := openTestStateDB(t)
-				defer db.Close()
 				epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), nil, rules)
 				if err != nil {
 					t.Fatal(err)
@@ -97,7 +94,6 @@ func TestFactoryEpicPermissionRulesAreAtomicAndPropagate(t *testing.T) {
 
 func TestFactoryEpicProjectRemovalRules(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), []string{"/busy", "/clean", "/delivered", "/target"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +137,6 @@ func TestFactoryEpicProjectRemovalRules(t *testing.T) {
 
 func TestFactoryIssueCommentsAreAppendOnly(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +170,6 @@ func TestFactoryIssueCommentsAreAppendOnly(t *testing.T) {
 
 func TestFactoryGraphMutationsRejectCyclesAndSoftDelete(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	first, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "First", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -256,7 +250,6 @@ func TestFactoryGraphMutationsRejectCyclesAndSoftDelete(t *testing.T) {
 // node). Left in place it makes every issue listing spin forever.
 func TestFactoryGraphMutationsRejectSelfReference(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Self", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -295,7 +288,6 @@ func TestFactoryGraphMutationsRejectSelfReference(t *testing.T) {
 
 func TestFactoryGraphMutationRejectsStartedOrClosedIssues(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	first, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "First", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -373,7 +365,6 @@ func TestFactoryGraphMutationRejectsStartedOrClosedIssues(t *testing.T) {
 
 func TestFactoryGraphMutationRollsBackOnAuditFailure(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -409,7 +400,6 @@ func mustListFactoryIssues(t *testing.T, db *DB, epicID string) []model.NativeIs
 
 func TestFactoryGraphIDsAreReadableAndNeverReuseChildIndices(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship Factory IDs", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -496,7 +486,6 @@ func factoryChildIssueID(t *testing.T, db *DB, parentID string, index int) strin
 
 func TestNativeFormulaRevisionsAreImmutableAndDeduplicated(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	first, err := db.SaveNativeFactoryFormulaRevision(ctx, model.NativeFormulaRevision{FormulaID: "custom/team", Name: "Team", SourceTOML: "first", CompiledJSON: `{"name":"Team"}`, ContentHash: "hash-1"}, time.UnixMilli(1000))
 	if err != nil || first.Revision != 1 {
@@ -526,7 +515,6 @@ func TestNativeFormulaRevisionsAreImmutableAndDeduplicated(t *testing.T) {
 
 func TestNativeFormulaRevisionFailureRollsBackFormulaRecord(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if _, err := db.db.Exec(`CREATE TRIGGER fail_formula_revision BEFORE INSERT ON factory_native_formula_revision BEGIN SELECT RAISE(ABORT, 'injected revision failure'); END`); err != nil {
 		t.Fatal(err)
 	}
@@ -544,7 +532,6 @@ func TestNativeFormulaRevisionFailureRollsBackFormulaRecord(t *testing.T) {
 
 func TestFactoryPourPersistsNestedMolFormulaPins(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	child := model.NativeFormula{ID: "custom/child", Version: 1, Source: "child", Hash: "same-hash", Inputs: []string{"goal", "initial_project"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	parent := model.NativeFormula{ID: "custom/parent", Version: 1, Source: "parent", Hash: "same-hash", Inputs: []string{"goal", "initial_project"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}, Composition: []model.NativeFormulaComposition{{Key: "child", Requirement: "optional", Bindings: map[string]string{"goal": "goal", "initial_project": "initial_project"}, Formula: child}}}
@@ -580,7 +567,6 @@ func TestFactoryPourPersistsNestedMolFormulaPins(t *testing.T) {
 
 func TestFactoryPourRejectsChangedPinAndRollsBack(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	pinned := model.NativeFormula{ID: "custom/parent", Version: 1, Source: "pinned", Hash: "pinned-hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	invalid := pinned
@@ -607,7 +593,6 @@ func TestFactoryPourRejectsChangedPinAndRollsBack(t *testing.T) {
 
 func TestFactoryCreationRejectsInvalidFormulaKeyBeforeWrites(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	child := model.NativeFormula{ID: "custom/child", Version: 1, Source: "child", Hash: "child-hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	formula := model.NativeFormula{ID: "custom/parent", Version: 1, Source: "source", Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}, Composition: []model.NativeFormulaComposition{{Key: "not valid", Formula: child}}}
 	if _, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(context.Background(), "", "Ship", "Brief", "/repo", "", formula, nil, nil); err == nil {
@@ -623,7 +608,6 @@ func TestFactoryCreationRejectsInvalidFormulaKeyBeforeWrites(t *testing.T) {
 
 func TestFactoryPourRollsBackNestedStorageFailure(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	child := model.NativeFormula{ID: "custom/child", Version: 1, Source: "child", Hash: "child-hash", Inputs: []string{"goal"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	parent := model.NativeFormula{ID: "custom/parent", Version: 1, Source: "parent", Hash: "parent-hash", Inputs: []string{"goal"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}, Composition: []model.NativeFormulaComposition{{Key: "child", Bindings: map[string]string{"goal": "goal"}, Formula: child}}}
 	if _, err := db.db.Exec(`CREATE TRIGGER fail_nested_pin BEFORE INSERT ON factory_mol_formula WHEN NEW.mol_id LIKE '%.2' BEGIN SELECT RAISE(ABORT, 'nested pin failure'); END`); err != nil {
@@ -642,7 +626,6 @@ func TestFactoryPourRollsBackNestedStorageFailure(t *testing.T) {
 
 func TestFactoryEpicCreationIsIdempotentByInstantiationID(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	formula := nativeTracerFormula(t)
 	first, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(context.Background(), "", "Ship", "Brief", "/repo", "intake-1", formula, nil, nil)
 	if err != nil {
@@ -659,7 +642,6 @@ func TestFactoryEpicCreationIsIdempotentByInstantiationID(t *testing.T) {
 
 func TestFactoryEpicPermissionRulesParticipateInInstantiationIdempotency(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	formula := nativeTracerFormula(t)
 	rules := []model.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
@@ -703,7 +685,6 @@ func TestFactoryEpicSlugKeepsMeaningfulWords(t *testing.T) {
 
 func TestFactoryEpicUsesPreferredIDAndReportsCollision(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "pretty-epic-ids", "Ship", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil || epic.ID != "pretty-epic-ids" {
@@ -720,7 +701,6 @@ func TestFactoryEpicUsesPreferredIDAndReportsCollision(t *testing.T) {
 
 func TestFactoryMaterializationIsAtomicAndIdempotent(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	materialize := func(instantiation string) (model.NativeEpic, model.NativeMaterialization, error) {
 		epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship "+instantiation, "Brief", "/repo", instantiation, nativeTracerFormula(t), nil, nil)
@@ -782,7 +762,6 @@ func TestFactoryMaterializationIsAtomicAndIdempotent(t *testing.T) {
 
 func TestFactoryMaterializesMultipleImplementationIssuesWithDependencies(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "multi", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -910,7 +889,6 @@ func TestFactoryMaterializesMultipleImplementationIssuesWithDependencies(t *test
 
 func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t), []string{"/sdk"}, nil)
 	if err != nil {
@@ -957,7 +935,6 @@ func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
 // whose parent is removed would otherwise crash every issue listing.
 func TestFactoryRematerializationRemovesSupersededDescendants(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -1030,7 +1007,6 @@ func TestFactoryIssueDispatchExplainsOutcomesAndDelays(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			db := openTestStateDB(t)
-			defer db.Close()
 			formula := model.NativeFormula{ID: "test/" + strings.ReplaceAll(tt.name, " ", "-"), Version: 1, Source: tt.name, Hash: tt.name, Nodes: []model.NativeFormulaNode{{Key: "a", Kind: tt.blockerKind}, {Key: "b", Kind: "implementation"}}, Edges: []model.NativeFormulaEdge{{From: "b", To: "a", Type: tt.edgeType}}}
 			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "", "/repo", "", formula, nil, nil)
 			if err != nil {
@@ -1074,7 +1050,6 @@ func TestFactoryIssueDispatchExplainsOutcomesAndDelays(t *testing.T) {
 
 func TestFactoryIssueDeferralAndRetryWake(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	formula := model.NativeFormula{ID: "test/delay", Version: 1, Source: "delay", Hash: "delay", Nodes: []model.NativeFormulaNode{{Key: "work", Kind: "task"}}}
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "", "/repo", "", formula, nil, nil)
@@ -1117,7 +1092,6 @@ func TestFactoryIssueDeferralAndRetryWake(t *testing.T) {
 
 func TestFactoryReferenceDescendantsCannotBeClaimed(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	child := model.NativeFormula{ID: "test/reference-child", Version: 1, Source: "child", Hash: "child", Inputs: []string{"goal"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	parent := model.NativeFormula{ID: "test/reference-parent", Version: 1, Source: "parent", Hash: "parent", Inputs: []string{"goal"}, Composition: []model.NativeFormulaComposition{{Key: "reference", Requirement: "reference", Bindings: map[string]string{"goal": "goal"}, Formula: child}}}
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(context.Background(), "", "Ship", "", "/repo", "", parent, nil, nil)
@@ -1173,7 +1147,6 @@ func TestFactoryImportRollsBackAndRecordsProvenance(t *testing.T) {
 
 func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "claim-and-proposals", nativeTracerFormula(t), []string{"/other"}, nil)
 	if err != nil {
@@ -1266,7 +1239,6 @@ func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 
 func TestFactoryPlanRejectionClosesPendingWork(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Reject", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -1302,7 +1274,6 @@ func TestFactoryPlanRejectionClosesPendingWork(t *testing.T) {
 
 func TestFactoryMolClosureGuardsRequiredWorkAndCancelsOpenOptionalWork(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	formula := model.NativeFormula{ID: "test/closure", Version: 1, Source: "closure", Hash: "closure", Nodes: []model.NativeFormulaNode{{Key: "required", Kind: "task"}, {Key: "optional", Kind: "task"}, {Key: "gate", Kind: "gate"}}}
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "", "/repo", "", formula, nil, nil)
@@ -1359,7 +1330,6 @@ func TestFactoryMolClosureGuardsRequiredWorkAndCancelsOpenOptionalWork(t *testin
 
 func TestPausedFactoryEpicCannotBeClaimed(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Pause", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -1395,7 +1365,6 @@ func TestPausedFactoryEpicCannotBeClaimed(t *testing.T) {
 
 func TestFactoryMolClosureRollsBackOptionalCancellationOnFailure(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	formula := model.NativeFormula{ID: "test/closure-rollback", Version: 1, Source: "closure", Hash: "closure", Nodes: []model.NativeFormulaNode{{Key: "required", Kind: "task"}, {Key: "optional", Kind: "task"}}}
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "", "/repo", "", formula, nil, nil)

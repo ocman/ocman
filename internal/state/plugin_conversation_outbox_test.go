@@ -7,14 +7,6 @@ import (
 	"time"
 )
 
-func outboxDB(t *testing.T) *DB {
-	t.Helper()
-	d, err := Open(templateDBPath(t))
-	requirePluginOK(t, err)
-	t.Cleanup(func() { _ = d.Close() })
-	return d
-}
-
 func appendReply(t *testing.T, d *DB, key PluginConversationKey, operation, text string) int64 {
 	t.Helper()
 	id, err := d.AppendPluginConversationReply(t.Context(), key, operation, text)
@@ -41,7 +33,7 @@ func claim(t *testing.T, d *DB) []PluginConversationDelivery {
 // one completed turn produces one delivery, and the receipt outlives the
 // delivery so a later idle edge for the same turn cannot re-post it.
 func TestConversationOutboxAppendIsIdempotent(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	key := conversationKey("T1", "C1:1.0")
 	id := appendReply(t, d, key, "ses-1:m1", "done")
 	if id == 0 {
@@ -87,7 +79,7 @@ func TestConversationOutboxAppendIsIdempotent(t *testing.T) {
 // never overtakes an earlier one in the same conversation, and an unrelated
 // conversation is never held behind it.
 func TestConversationOutboxOrdersWithinGroupOnly(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	first := conversationKey("T1", "C1:1.0")
 	second := conversationKey("T1", "C2:2.0")
 	other := conversationKey("T2", "C1:1.0")
@@ -122,7 +114,7 @@ func TestConversationOutboxOrdersWithinGroupOnly(t *testing.T) {
 // terminal state: bounded retries, then a dead letter that blocks its own
 // conversation and nobody else's until a human decides.
 func TestConversationOutboxBackoffAndDeadLetter(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	key := conversationKey("T1", "C1:1.0")
 	unrelated := conversationKey("T1", "C2:2.0")
 	appendReply(t, d, key, "ses-1:m1", "poison")
@@ -198,7 +190,7 @@ func TestConversationOutboxBackoffAndDeadLetter(t *testing.T) {
 // TestConversationOutboxPressureSignalsPause covers the producer-side limits:
 // reaching a cap is reported as paused, never as a dropped reply.
 func TestConversationOutboxPressureSignalsPause(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	key := conversationKey("T1", "C1:1.0")
 	requirePluginOK(t, d.PluginConversationBacklogFull(t.Context(), key.PluginID))
 	for i := range PluginConversationOutboxMaxRows {
@@ -230,7 +222,7 @@ func TestConversationOutboxPressureSignalsPause(t *testing.T) {
 // TestConversationOutboxPrunesReceipts keeps the receipt table bounded without
 // touching work that is still owed.
 func TestConversationOutboxPrunesReceipts(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	key := conversationKey("T1", "C1:1.0")
 	appendReply(t, d, key, "ses-1:m1", "delivered")
 	appendReply(t, d, key, "ses-1:m2", "still owed")
@@ -258,7 +250,7 @@ func TestConversationOutboxPrunesReceipts(t *testing.T) {
 // tick, so pruning that turn's receipt re-appended and re-posted the same
 // answer once its retention lapsed. Only superseded turns may be pruned.
 func TestConversationOutboxKeepsLatestTurnReceipts(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	key := conversationKey("T1", "C1:1.0")
 	for _, op := range []string{"ses-1:m1", "ses-1:outcome:error:m2", "ses-1:m2"} {
 		appendReply(t, d, key, op, "text")
@@ -277,7 +269,7 @@ func TestConversationOutboxKeepsLatestTurnReceipts(t *testing.T) {
 }
 
 func TestConversationOutboxRejectsInvalidReads(t *testing.T) {
-	d := outboxDB(t)
+	d := openTestStateDB(t)
 	if _, err := d.PluginConversationBacklogStatus(t.Context(), ""); !errors.Is(err, ErrPluginInvalid) {
 		t.Fatalf("accepted an empty plugin id: %v", err)
 	}

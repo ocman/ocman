@@ -7,7 +7,6 @@ import (
 
 func TestConfirmationRetirementFailureIsAtomic(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	original := ManagedInstance{Endpoint: "http://127.0.0.1:1234", Kind: "native-tmux", RuntimeID: "original", PID: 1}
 	if err := database.UpsertManagedOpencode(t.Context(), "/root", original, time.Unix(1, 0)); err != nil {
 		t.Fatal(err)
@@ -79,7 +78,6 @@ func TestRetirementPreservesNewHandleOtherRootAndPlatform(t *testing.T) {
 	for _, platform := range []string{"opencode", "another-platform"} {
 		t.Run(platform, func(t *testing.T) {
 			database := openTestStateDB(t)
-			defer database.Close()
 			original := ManagedInstance{Endpoint: "http://127.0.0.1:1234", Kind: "native-tmux", RuntimeID: "original", PID: 1}
 			if err := database.PrepareSessionInterruptions(t.Context(), platform, "/root", nil); err != nil {
 				t.Fatal(err)

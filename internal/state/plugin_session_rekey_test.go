@@ -9,7 +9,6 @@ import (
 
 func TestCoreSessionRekeyPreservesPluginThreadAndOpaqueOutboxReceipts(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	key := PluginConversationKey{PluginID: "plugin", AccountID: "account", ThreadID: "thread"}
 	if _, _, err := db.LinkPluginConversation(t.Context(), key, PluginConversationSession{PlatformID: "test", SessionID: "native"}); err != nil {
 		t.Fatal(err)

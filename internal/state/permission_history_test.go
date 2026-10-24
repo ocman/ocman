@@ -3,7 +3,7 @@ package state
 import "testing"
 
 func TestPermissionHistoryArchivalDoesNotResolveRequest(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	ctx := t.Context()
 	if err := d.EnsurePermissionInboxItem(ctx, InboxPermission{Platform: "p", SessionID: "s", PermissionID: "pending", Permission: "bash"}); err != nil {
 		t.Fatal(err)
@@ -25,7 +25,7 @@ func TestPermissionHistoryArchivalDoesNotResolveRequest(t *testing.T) {
 }
 
 func TestPermissionHistoryOriginalRequestWinsOverLaterApproval(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	ctx := t.Context()
 	if err := d.EnsurePermissionInboxItem(ctx, InboxPermission{Platform: "p", SessionID: "s", PermissionID: "p", Permission: "bash", Patterns: []string{"tea do something"}, Always: []string{"tea do *"}}); err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func TestPermissionHistoryOriginalRequestWinsOverLaterApproval(t *testing.T) {
 }
 
 func TestPermissionHistoryPreservesPromptWhenReplyArrivesFirst(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	ctx := t.Context()
 	request := InboxPermission{Platform: "p", SessionID: "s", PermissionID: "fast", Permission: "bash", Patterns: []string{"tea do something"}, Always: []string{"tea do *"}, Metadata: map[string]any{"command": "tea do something"}}
 	if err := d.ResolvePermissionInboxItem(ctx, "p", "s", "fast"); err != nil {
@@ -69,7 +69,7 @@ func TestPermissionHistoryPreservesPromptWhenReplyArrivesFirst(t *testing.T) {
 }
 
 func TestSessionPermissionHistory(t *testing.T) {
-	d := openTestDB(t)
+	d := openTestStateDB(t)
 	ctx := t.Context()
 	if got, err := d.SessionPermissionHistory(ctx, "p", nil); err != nil || len(got) != 0 {
 		t.Fatalf("empty: %+v %v", got, err)

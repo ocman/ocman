@@ -12,7 +12,6 @@ import (
 
 func TestFactoryAttemptLifecycle(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	at := time.UnixMilli(1_000)
 	policy := model.FactoryAttemptPolicy{PlanRevision: 1, PlanHash: "hash", TargetID: "work", Repository: "/repo", Profile: "factory-implement/v1"}
@@ -65,7 +64,6 @@ func TestFactoryAttemptLifecycle(t *testing.T) {
 
 func TestFactoryAttemptRecoveryAndAuthorityGates(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	at := time.UnixMilli(1_000)
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
@@ -204,7 +202,6 @@ func TestFactoryAttemptRecoveryAndAuthorityGates(t *testing.T) {
 
 func TestClaimFactoryImplementation(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -367,7 +364,6 @@ func TestClaimFactoryImplementation(t *testing.T) {
 
 func TestFactoryAttemptTokenAndFailureTransitions(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	now := time.Now()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
@@ -473,7 +469,6 @@ func claimAndFail(t *testing.T, db *DB, epicID, workID string, at time.Time, fai
 
 func TestFactoryLaunchRetriesBackOffThenReopen(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	now := time.Now()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
@@ -525,7 +520,6 @@ func TestFactoryRepeatedLaunchFailureStopsRetrying(t *testing.T) {
 	} {
 		t.Run(tt.failure.Type, func(t *testing.T) {
 			db := openTestStateDB(t)
-			defer db.Close()
 			ctx := context.Background()
 			now := time.Now()
 			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
@@ -554,7 +548,6 @@ func TestFactoryRepeatedLaunchFailureStopsRetrying(t *testing.T) {
 
 func TestPlanApprovalClosesPlanAndHandBuiltMaterialization(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	now := time.Now()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
@@ -603,7 +596,6 @@ func TestPlanApprovalClosesPlanAndHandBuiltMaterialization(t *testing.T) {
 
 func TestMutateGraphCreateSatisfiesApprovedMaterialization(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -642,7 +634,6 @@ func TestMutateGraphCreateSatisfiesApprovedMaterialization(t *testing.T) {
 
 func TestMigrateToV68RepairsApprovedEpics(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	now := time.Now()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
@@ -686,7 +677,6 @@ func TestMigrateToV68RepairsApprovedEpics(t *testing.T) {
 
 func TestCloseFactoryEpicArchivesItsSessions(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	now := time.Now()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)

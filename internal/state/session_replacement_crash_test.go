@@ -54,7 +54,6 @@ func TestStoppingCrashReopenCannotOverwriteOriginalEvidence(t *testing.T) {
 
 func TestStoppingWithoutLegacyRuntimeHandleFailsClosed(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +70,6 @@ func TestStoppingWithoutLegacyRuntimeHandleFailsClosed(t *testing.T) {
 
 func TestStoppingHandleCancelAndInventoryIndependence(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if _, pending, err := database.SessionReplacementStopping(t.Context(), "opencode", "/root"); err != nil || pending {
 		t.Fatalf("missing pending handle: %t %v", pending, err)
 	}
@@ -104,7 +102,6 @@ func TestStoppingRuntimeCorruptionBlocksRecovery(t *testing.T) {
 	for _, data := range []string{"not JSON", `{}`} {
 		t.Run(data, func(t *testing.T) {
 			database := openTestStateDB(t)
-			defer database.Close()
 			if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
 				t.Fatal(err)
 			}

@@ -60,7 +60,6 @@ func TestMigrateV47CreatesPermissionLifecycleSchema(t *testing.T) {
 
 func TestPermissionApprovalStatsLifecycleUpdatesAndFilters(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	day1 := int64(1_700_006_400_000) // 2023-11-15T00:00:00Z
 	day2 := day1 + 86_400_000
@@ -141,7 +140,6 @@ func TestPermissionApprovalStatsLifecycleUpdatesAndFilters(t *testing.T) {
 
 func TestUpsertPermissionLifecycleBackfillsSnapshotAfterResolution(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 
 	if err := db.UpsertPermissionLifecycle(ctx, PermissionLifecycle{

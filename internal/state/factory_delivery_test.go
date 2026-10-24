@@ -10,7 +10,6 @@ import (
 
 func TestFactoryDeliveryTracksRequiredGraph(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivery", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -78,7 +77,6 @@ func TestFactoryDeliveryTracksRequiredGraph(t *testing.T) {
 
 func TestFactoryDeliveryRefreshesThenCreatesSuccessor(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivery lineage", "", "/repo", "", nativeTracerFormula(t), []string{"/app"}, nil)
 	if err != nil {
@@ -233,7 +231,6 @@ func TestFactoryMergeGateUsesForgeObservation(t *testing.T) {
 	} {
 		t.Run(tt.status, func(t *testing.T) {
 			db := openTestStateDB(t)
-			defer db.Close()
 			ctx := t.Context()
 			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Merge gate", "", "/app", "", nativeTracerFormula(t), []string{"/sdk"}, nil)
 			if err != nil {
@@ -331,7 +328,6 @@ func TestFactoryMergeGateUsesForgeObservation(t *testing.T) {
 
 func TestFactoryMergeGateRequiresDelivery(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Gate", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -352,7 +348,6 @@ func TestFactoryMergeGateRequiresDelivery(t *testing.T) {
 
 func TestFactoryDeliveryTracksProjectsProgressively(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivery", "", "/repo", "", nativeTracerFormula(t), []string{"/other", "/optional", "/reference", "/idle"}, nil)
 	if err != nil {
@@ -441,7 +436,6 @@ func TestFactoryDeliveryTracksProjectsProgressively(t *testing.T) {
 
 func TestFactoryWorkspaceRequiresPreparedAttempt(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	if err := db.SetFactoryAttemptWorkspace(t.Context(), "missing", model.FactoryAttemptPolicy{}); err == nil {
 		t.Fatal("accepted empty workspace")
 	}
@@ -452,7 +446,6 @@ func TestFactoryWorkspaceRequiresPreparedAttempt(t *testing.T) {
 
 func TestFactoryDoesNotClaimWorkAfterDelivery(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := t.Context()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Delivered", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {

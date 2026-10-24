@@ -7,7 +7,7 @@ import (
 )
 
 func TestSecretSetting_RoundTripSealed(t *testing.T) {
-	db := openTestDB(t)
+	db := openTestStateDB(t)
 	ctx := context.Background()
 	if _, ok, err := db.GetSecretSetting(ctx, "k"); ok || err != nil {
 		t.Fatalf("unset = %v %v", ok, err)

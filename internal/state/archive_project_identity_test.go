@@ -13,7 +13,6 @@ import (
 // auto-unarchived the other.
 func TestArchiveProject_IsHostQualified(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	const root = "/home/u/app"
 	if err := db.ArchiveProject(t.Context(), "local", root); err != nil {
@@ -24,11 +23,19 @@ func TestArchiveProject_IsHostQualified(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ArchivedProjects: %v", err)
 	}
-	if _, ok := archived[ProjectKey{RemoteID: "local", Root: root}]; !ok {
-		t.Fatalf("archived = %v, want the local project", archived)
+	if archived[ProjectKey{RemoteID: "local", Root: root}] <= 0 {
+		t.Fatalf("archived = %v, want the local project with a positive archived_at", archived)
 	}
 	if _, ok := archived[ProjectKey{RemoteID: "r-A", Root: root}]; ok {
 		t.Fatalf("archived = %v, want the same path on another host untouched", archived)
+	}
+
+	// Re-archiving the same host refreshes archived_at (upsert, no duplicate row).
+	if err := db.ArchiveProject(t.Context(), "local", root); err != nil {
+		t.Fatalf("ArchiveProject local (upsert): %v", err)
+	}
+	if archived, _ = db.ArchivedProjects(t.Context()); len(archived) != 1 {
+		t.Fatalf("archived = %v, want one row after re-archive", archived)
 	}
 
 	// Archiving the remote's copy is a separate row, not an upsert.

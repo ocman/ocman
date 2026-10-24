@@ -7,7 +7,6 @@ import (
 
 func TestSessionCommitsAreOrderedAndIdempotent(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	db.db.SetMaxOpenConns(1)
 	branch := "main"
 	base := SessionCommit{Platform: "opencode", SessionID: "s1", SourceMessageID: "m1", ToolPartID: "p1", ToolCallID: "c1", SourceCallID: "c1", Branch: &branch, Subject: "subject"}

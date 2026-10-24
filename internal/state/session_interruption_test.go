@@ -88,7 +88,6 @@ func TestMigrateV114PreservesInterruptionHistory(t *testing.T) {
 
 func TestInterruptionBatchRollsBackWhenSecondWriteFails(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if _, err := database.db.Exec(`CREATE TRIGGER reject_second_interruption BEFORE INSERT ON session_interruption
 		WHEN (SELECT COUNT(*) FROM session_interruption) > 0 BEGIN SELECT RAISE(ABORT, 'second write failed'); END`); err != nil {
 		t.Fatal(err)
@@ -110,7 +109,6 @@ func TestInterruptionBatchRollsBackWhenSecondWriteFails(t *testing.T) {
 
 func TestObservedInterruptionCanConfirmAnAbandonedPreparation(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	prepared := SessionInterruption{MessageID: "m", ObservedAt: 1, Message: "replacement"}
 	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", map[string]SessionInterruption{"s": prepared}); err != nil {
 		t.Fatal(err)
@@ -127,7 +125,6 @@ func TestObservedInterruptionCanConfirmAnAbandonedPreparation(t *testing.T) {
 
 func TestRecoveryPreparationPreservesPendingEvidence(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	first := SessionInterruption{MessageID: "m1", ObservedAt: 1, Message: "requested restart"}
 	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", map[string]SessionInterruption{"s": first}); err != nil {
 		t.Fatal(err)
@@ -149,7 +146,6 @@ func TestRecoveryPreparationPreservesPendingEvidence(t *testing.T) {
 
 func TestFailedReplacementPreparationRefreshesCompleteBaseline(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	first := map[string]SessionInterruption{"s": {MessageID: "old", BaselineStatus: "busy"}, "deleted": {MessageID: "gone"}}
 	second := map[string]SessionInterruption{"s": {MessageID: "followup", BaselineStatus: "waiting"}, "empty": {BaselineStatus: "done"}}
 	for _, baseline := range []map[string]SessionInterruption{first, second} {

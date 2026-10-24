@@ -11,7 +11,6 @@ import (
 
 func TestAgentGraphMutationRequiresFreshApproval(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 	ctx := context.Background()
 	epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 	if err != nil {
@@ -66,7 +65,6 @@ func TestEveryAgentStructuralEditInvalidatesApproval(t *testing.T) {
 	for _, action := range []string{"create", "edit", "reparent", "link", "unlink", "delete"} {
 		t.Run(action, func(t *testing.T) {
 			db := openTestStateDB(t)
-			defer db.Close()
 			ctx := t.Context()
 			epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t), nil, nil)
 			if err != nil {

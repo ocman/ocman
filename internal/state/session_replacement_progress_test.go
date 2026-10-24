@@ -83,7 +83,6 @@ func TestReplacementCheckpointPublishIsAtomicAcrossReopen(t *testing.T) {
 
 func TestReplacementProgressStorageCancellationAndUnknownRoot(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	progress, err := database.ReplacementReconciliationStatus(t.Context(), "opencode", "/missing")
 	if err != nil || progress.Initialized || progress.Seeded {
 		t.Fatalf("unknown root had progress: %+v %v", progress, err)
@@ -118,7 +117,6 @@ func TestReplacementProgressStorageCancellationAndUnknownRoot(t *testing.T) {
 
 func TestReplacementProgressInitializationFailurePreservesSnapshot(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +160,6 @@ func TestReplacementProgressInitializationFailurePreservesSnapshot(t *testing.T)
 
 func TestReplacementMembershipWriteFailurePreventsStopBoundary(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +177,6 @@ func TestReplacementMembershipWriteFailurePreventsStopBoundary(t *testing.T) {
 
 func TestReplacementCheckpointFailureRollsBackMembershipAndResult(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +210,6 @@ func TestReplacementCheckpointFailureRollsBackMembershipAndResult(t *testing.T) 
 
 func TestReplacementCheckpointBatchRollsBackOnSecondFailure(t *testing.T) {
 	database := openTestStateDB(t)
-	defer database.Close()
 	if err := database.PrepareSessionInterruptions(t.Context(), "opencode", "/root", nil); err != nil {
 		t.Fatal(err)
 	}

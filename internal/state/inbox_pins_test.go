@@ -4,7 +4,6 @@ import "testing"
 
 func TestPinInboxItemRoundTrip(t *testing.T) {
 	db := openTestStateDB(t)
-	defer db.Close()
 
 	if err := db.PinInboxItem(t.Context(), "local", "same-id"); err != nil {
 		t.Fatal(err)

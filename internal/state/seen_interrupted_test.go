@@ -4,7 +4,6 @@ import "testing"
 
 func TestMigrateSeenInterruption(t *testing.T) {
 	d := openTestStateDB(t)
-	defer d.Close()
 	if err := d.MarkSessionSeen(t.Context(), "local", "s", 100); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +26,6 @@ func TestMigrateSeenInterruption(t *testing.T) {
 
 func TestSeenInterruptionWatermark(t *testing.T) {
 	d := openTestStateDB(t)
-	defer d.Close()
 	for _, step := range []struct {
 		updated     int64
 		interrupted bool
