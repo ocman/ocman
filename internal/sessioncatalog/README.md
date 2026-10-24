@@ -48,9 +48,6 @@ consumers. Legacy keys and creation receipts remain available for recovery.
 - The catalogue bootstrap inventories retained metadata during fenced startup
   preparation. It has no background runner, change cursor or retry buffer.
   Canonical ingestion adopts later metadata through the owning adapter.
-- Explicit history purges scrub display metadata while retaining an identity
-  tombstone. Startup also reads purge tombstones, so offline purges are not
-  missed and stale inventories cannot restore a purged title.
 - `Resolve` requires an explicit owner and a ready binding. It never probes a
   different owner or falls back from an unknown Ocman ID to a native ID.
 

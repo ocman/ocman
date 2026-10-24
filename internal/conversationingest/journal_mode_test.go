@@ -78,7 +78,7 @@ func TestJournalModeRefreshesOnHookRecordsWithoutPolling(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "hook record was not applied", func() bool {
-		detail, err := store.Read(t.Context(), key, 10, 0)
+		detail, err := store.ReadConversation(t.Context(), key, 10, 0)
 		return err == nil && len(detail.Parts) == 1 && detail.Parts[0].Text == "from a terminal session"
 	})
 	eventually(t, "journal offset did not advance", func() bool {
@@ -102,7 +102,7 @@ func TestJournalModeCatchesUpChangesMadeWhileStopped(t *testing.T) {
 	defer stop()
 	key := sourceKey("claude")
 	eventually(t, "restart did not catch up", func() bool {
-		detail, err := store.Read(t.Context(), key, 10, 0)
+		detail, err := store.ReadConversation(t.Context(), key, 10, 0)
 		return err == nil && len(detail.Parts) == 1 && detail.Parts[0].Text == "changed while stopped"
 	})
 }

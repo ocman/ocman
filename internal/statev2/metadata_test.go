@@ -39,16 +39,6 @@ func TestMetadataPagesAreOwnerScopedAndContainNoConversationPayload(t *testing.T
 	if err != nil || len(page) != 0 {
 		t.Fatalf("foreign owner leaked: %+v %v", page, err)
 	}
-	head, err := d.ChangeHead(t.Context())
-	if err != nil || head != 3 {
-		t.Fatalf("change fence: %d %v", head, err)
-	}
-	if err := d.Purge(t.Context(), last); err != nil {
-		t.Fatal(err)
-	}
-	if m, err := d.Metadata(t.Context(), last); err != nil || !m.Purged || m.Session.Title != "" || m.Session.Directory != "" {
-		t.Fatalf("purged metadata visible: %+v %v", m, err)
-	}
 	for _, tc := range []struct {
 		owner string
 		limit int
@@ -65,8 +55,5 @@ func TestMetadataPagesAreOwnerScopedAndContainNoConversationPayload(t *testing.T
 	}
 	if _, err := d.Metadata(t.Context(), last); err == nil {
 		t.Fatal("closed store metadata succeeded")
-	}
-	if _, err := d.ChangeHead(t.Context()); err == nil {
-		t.Fatal("closed store fence succeeded")
 	}
 }

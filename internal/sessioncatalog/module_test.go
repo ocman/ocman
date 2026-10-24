@@ -66,47 +66,6 @@ func TestCatalogueModuleBackfillsPagesAndMaintainsLateParents(t *testing.T) {
 	if err != nil || row.ParentID != parent.ID {
 		t.Fatalf("change stream did not discover session: %+v %v", row, err)
 	}
-	if err := h.Purge(t.Context(), statev2.Key{InstanceID: "history", SessionID: "new"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if retained, err := s.Get(t.Context(), row.ID); err != nil || retained.NativeID != "new" || !retained.Purged || retained.Title != "" || retained.Directory != "" {
-		t.Fatalf("purge recycled identity: %+v %v", retained, err)
-	}
-}
-
-func TestCatalogueModuleSeesOfflinePurgesAtStartup(t *testing.T) {
-	s, _ := openStore(t)
-	h := metadataHistory(t)
-	writeMetadata(t, h, "private", "", "/private")
-	m := NewModule(Deps{Store: s, History: h, OwnerID: catalogSource().OwnerID})
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	before, err := s.FindBinding(t.Context(), nativeBinding("private"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := h.Purge(t.Context(), statev2.Key{InstanceID: "history", SessionID: "private"}); err != nil {
-		t.Fatal(err)
-	}
-	m = NewModule(m.deps)
-	if err := m.Start(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	after, err := s.Get(t.Context(), before.ID)
-	if err != nil || !after.Purged || after.Title != "" || after.Directory != "" {
-		t.Fatalf("offline purge left queryable metadata: %+v %v", after, err)
-	}
-	if _, err := s.Reconcile(t.Context(), catalogSource(), []NativeSession{{ID: "private", Title: "stale", Directory: "/private"}}); err != nil {
-		t.Fatal(err)
-	}
-	after, err = s.Get(t.Context(), before.ID)
-	if err != nil || after.Title != "" {
-		t.Fatalf("stale inventory restored purged title: %+v %v", after, err)
-	}
 }
 
 type failingMetadata struct {

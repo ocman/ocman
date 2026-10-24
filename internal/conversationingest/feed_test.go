@@ -203,9 +203,9 @@ func TestFeedResyncDeletionAndFailureRepair(t *testing.T) {
 	// Deletion retains history as source-deleted.
 	w.enqueue(platforms.HistoryChange{SessionID: "session", Seq: 8, Deleted: true})
 	w.drainFeed(t.Context())
-	state, purged, err := store.SessionState(t.Context(), feedKey(w))
-	if err != nil || purged || !state.SourceDeleted {
-		t.Fatalf("deleted session = %+v purged=%v %v", state, purged, err)
+	state, err := store.SessionState(t.Context(), feedKey(w))
+	if err != nil || !state.SourceDeleted {
+		t.Fatalf("deleted session = %+v %v", state, err)
 	}
 	if text, _ := importText(t, store, feedKey(w)); text != "rewritten by revert" {
 		t.Fatal("deletion discarded retained content")

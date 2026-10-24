@@ -6,8 +6,8 @@ import (
 )
 
 // ReadConversation reads the current displayable snapshot from the newest end.
-// Unlike audit Read, it excludes superseded and opaque native-only records.
-// Source-deleted sessions remain readable; explicit purges do not.
+// It excludes superseded and opaque native-only records. Source-deleted
+// sessions remain readable.
 func (d *DB) ReadConversation(ctx context.Context, key Key, limit, offset int) (*Detail, error) {
 	if limit < 0 || offset < 0 {
 		return nil, fmt.Errorf("statev2: conversation page requires nonnegative limit and offset")
@@ -17,7 +17,7 @@ func (d *DB) ReadConversation(ctx context.Context, key Key, limit, offset int) (
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	detail, err := readDetail(ctx, tx, key, limit, offset, true)
+	detail, err := readDetail(ctx, tx, key, limit, offset)
 	if err != nil {
 		return nil, err
 	}

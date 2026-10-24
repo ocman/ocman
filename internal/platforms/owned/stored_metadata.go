@@ -18,12 +18,9 @@ func (a *Adapter) storedMetadata(ctx context.Context, id string) (*db.Session, e
 	if err != nil {
 		return nil, err
 	}
-	s, purged, err := a.history.SessionState(ctx, key)
+	s, err := a.history.SessionState(ctx, key)
 	if err != nil {
 		return nil, err
-	}
-	if purged {
-		return nil, platforms.ErrNotFound
 	}
 	if s.Revision == 0 {
 		return nil, platforms.ErrHistoryUnavailable

@@ -44,12 +44,12 @@ func TestDeferredInventoryImportsReadableSessionsWithoutDeletingOrClaimingReadin
 			if _, ready := w.module.ReadyInstances(); ready {
 				t.Fatal("partial inventory enabled complete-history analytics")
 			}
-			old, _, err := store.SessionState(t.Context(), key)
+			old, err := store.SessionState(t.Context(), key)
 			if err != nil || old.SourceDeleted {
 				t.Fatalf("partial inventory deleted retained session: %+v %v", old, err)
 			}
 			key.SessionID = "fresh"
-			got, _, err := store.SessionState(t.Context(), key)
+			got, err := store.SessionState(t.Context(), key)
 			if err != nil || got.Revision == 0 || w.last.Counters["deferred"] != 1 {
 				t.Fatalf("readable session not imported: %+v %v progress=%+v", got, err, w.last)
 			}

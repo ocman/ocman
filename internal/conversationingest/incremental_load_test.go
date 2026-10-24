@@ -66,7 +66,7 @@ func TestTranscriptCursorCommitsWithContentAndResumesAfterRestart(t *testing.T) 
 	if len(f.requested) != 2 || f.requested[0] != "" || f.requested[1] != "offset-1" {
 		t.Fatalf("source did not resume from durable progress: %v", f.requested)
 	}
-	detail, err := store.Read(t.Context(), sourceKey("delta"), 100, 0)
+	detail, err := store.ReadConversation(t.Context(), sourceKey("delta"), 100, 0)
 	if err != nil || len(detail.Messages) != 2 || len(detail.Parts) != 2 || detail.Parts[0].Text != "retained" || detail.Parts[1].Text != "new message" {
 		t.Fatalf("incremental write damaged history: %+v %v", detail, err)
 	}
@@ -74,7 +74,7 @@ func TestTranscriptCursorCommitsWithContentAndResumesAfterRestart(t *testing.T) 
 	if _, err := restarted.importSession(t.Context(), f.entries[0]); err != nil {
 		t.Fatal(err)
 	}
-	detail, err = store.Read(t.Context(), sourceKey("delta"), 100, 0)
+	detail, err = store.ReadConversation(t.Context(), sourceKey("delta"), 100, 0)
 	if err != nil || detail.Session.Revision != revision {
 		t.Fatal("unchanged source cursor rewrote history")
 	}

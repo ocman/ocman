@@ -24,7 +24,7 @@ func TestAttentionProjectionTracksSnapshotCorrectionsAndStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert(120, 200)
-	session, _, err := d.SessionState(t.Context(), b.Session.Key)
+	session, err := d.SessionState(t.Context(), b.Session.Key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,13 +34,6 @@ func TestAttentionProjectionTracksSnapshotCorrectionsAndStream(t *testing.T) {
 	b.Messages = nil
 	commit(t, d, b)
 	assert(0, 0)
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	var n int
-	if err := d.db.QueryRow(`SELECT count(*) FROM sidebar_attention`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("purged attention retained: %d %v", n, err)
-	}
 }
 
 func TestAttentionMigrationBackfillsWithoutChangingCheckpoint(t *testing.T) {

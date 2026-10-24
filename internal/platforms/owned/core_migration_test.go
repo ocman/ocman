@@ -101,7 +101,7 @@ func TestPrepareCoreMigratesLocalStateWithoutGuessingRemoteOrAmbiguousOwners(t *
 			t.Fatalf("unknown owner assigned a session: %q %+v %v", scope, pending, err)
 		}
 	}
-	if _, err := history.Read(t.Context(), statev2.Key{InstanceID: "remote", SessionID: "remote-unique"}, 10, 0); err != nil {
+	if _, err := history.ReadConversation(t.Context(), statev2.Key{InstanceID: "remote", SessionID: "remote-unique"}, 10, 0); err != nil {
 		t.Fatalf("hub rekeyed a remote owner's history: %v", err)
 	}
 	before, err := catalogue.List(t.Context(), "owner", 500, 0)

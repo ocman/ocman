@@ -30,7 +30,7 @@ func TestJournalRetriesStartupFailureWithoutNewHooks(t *testing.T) {
 	src.inventoryErr = nil
 	src.mu.Unlock()
 	eventually(t, "startup failure was never retried without a hook", func() bool {
-		d, err := store.Read(t.Context(), sourceKey("claude"), 10, 0)
+		d, err := store.ReadConversation(t.Context(), sourceKey("claude"), 10, 0)
 		return err == nil && len(d.Parts) == 1
 	})
 }

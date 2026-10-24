@@ -31,7 +31,7 @@ func TestPartialRuntimeSnapshotCannotEraseRetainedMessagesOrAccounting(t *testin
 	if err != nil || before != after {
 		t.Fatalf("partial bootstrap erased accounting: before=%+v after=%+v %v", before, after, err)
 	}
-	page, err := store.Read(t.Context(), sourceKey("first"), 100, 0)
+	page, err := store.ReadConversation(t.Context(), sourceKey("first"), 100, 0)
 	if err != nil || len(page.Messages) == 0 {
 		t.Fatalf("partial bootstrap erased content: %+v %v", page, err)
 	}
@@ -40,12 +40,6 @@ func TestPartialRuntimeSnapshotCannotEraseRetainedMessagesOrAccounting(t *testin
 	}
 	if !m.AwaitStored(t.Context(), "first", "session") {
 		t.Fatal("validated stored snapshot not available")
-	}
-	if err := store.Purge(t.Context(), sourceKey("first")); err != nil {
-		t.Fatal(err)
-	}
-	if m.AwaitStored(t.Context(), "first", "session") {
-		t.Fatal("purged snapshot became readable")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

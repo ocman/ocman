@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
@@ -22,20 +21,14 @@ func (a *Adapter) recordStoredCreation(ctx context.Context, row sessioncatalog.S
 		return err
 	}
 	key := statev2.Key{InstanceID: instance.ID, SessionID: row.ID}
-	existing, purged, err := a.history.SessionState(ctx, key)
+	existing, err := a.history.SessionState(ctx, key)
 	if err != nil {
 		return err
-	}
-	if purged {
-		return platforms.ErrNotFound
 	}
 	if existing.Revision > 0 {
 		return nil
 	}
-	result, err := a.history.Commit(ctx, statev2.Batch{Session: statev2.Session{Key: key, Title: row.Title, Directory: row.Directory, ParentID: row.ParentID, CreatedAt: row.CreatedAt, UpdatedAt: row.CreatedAt, ReadFormat: statev2.ConversationReadFormat, Extensions: json.RawMessage(`{"RuntimeBootstrap":true,"SourceChild":false}`)}})
-	if result.Suppressed {
-		return platforms.ErrNotFound
-	}
+	_, err = a.history.Commit(ctx, statev2.Batch{Session: statev2.Session{Key: key, Title: row.Title, Directory: row.Directory, ParentID: row.ParentID, CreatedAt: row.CreatedAt, UpdatedAt: row.CreatedAt, ReadFormat: statev2.ConversationReadFormat, Extensions: json.RawMessage(`{"RuntimeBootstrap":true,"SourceChild":false}`)}})
 	if errors.Is(err, statev2.ErrConflict) {
 		return nil
 	} // ingestion won the race

@@ -28,14 +28,6 @@ func TestLegacyIndexerDoesNotReadoptCanonicalHistoryKeys(t *testing.T) {
 	if _, err := s.FindBinding(t.Context(), nativeBinding(bound.ID)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("canonical ID installed as a native execution key: %v", err)
 	}
-	metadata.Purged = true
-	if err := m.project(t.Context(), []statev2.SessionMetadata{metadata}); err != nil {
-		t.Fatal(err)
-	}
-	row, err := s.Get(t.Context(), bound.ID)
-	if err != nil || !row.Purged {
-		t.Fatalf("canonical purge not retained: %+v %v", row, err)
-	}
 	metadata.Instance.SourceKey = "wrong-source"
 	if err := m.project(t.Context(), []statev2.SessionMetadata{metadata}); !errors.Is(err, ErrBindingConflict) {
 		t.Fatalf("foreign canonical history was accepted: %v", err)

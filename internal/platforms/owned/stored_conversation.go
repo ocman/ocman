@@ -27,13 +27,6 @@ func (a *Adapter) readStoredConversation(ctx context.Context, id string, limit, 
 	}
 	page, err := a.history.ReadConversation(ctx, key, limit, offset)
 	if errors.Is(err, statev2.ErrNotFound) {
-		_, purged, stateErr := a.history.SessionState(ctx, key)
-		if stateErr != nil {
-			return nil, stateErr
-		}
-		if purged {
-			return nil, platforms.ErrNotFound
-		}
 		return nil, platforms.ErrHistoryUnavailable
 	}
 	if err != nil {

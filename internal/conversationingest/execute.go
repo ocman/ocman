@@ -68,7 +68,7 @@ func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.
 				if p.verify {
 					outcome = w.classify(result, hint, hinted, entry.ID)
 				}
-				if result.outcome != "purged" && result.outcome != "deferred" {
+				if result.outcome != "deferred" {
 					matched, checkErr := w.usageMatches(ctx, entry.ID, result.usage)
 					switch {
 					case checkErr != nil:

@@ -28,7 +28,7 @@ func TestSubagentStopDiscoversChildCreatedAfterBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail, err := store.Read(t.Context(), statev2.Key{InstanceID: w.instance.ID, SessionID: "new-child"}, 10, 0)
+	detail, err := store.ReadConversation(t.Context(), statev2.Key{InstanceID: w.instance.ID, SessionID: "new-child"}, 10, 0)
 	if err != nil || len(detail.Parts) == 0 || detail.Session.ParentID != "session" {
 		t.Fatalf("new child not ingested: %+v %v", detail, err)
 	}

@@ -56,7 +56,7 @@ func (d *DB) ApplyPlannedSessionRekeys(ctx context.Context, owner string, report
 			}
 			backedUp = true
 		}
-		if err := d.rekeySessions(ctx, instance, mapping, false); err != nil {
+		if err := d.rekeySessions(ctx, instance, mapping); err != nil {
 			return err
 		}
 		if err := d.forgetSessionRekeyPage(ctx, instance, mapping); err != nil {

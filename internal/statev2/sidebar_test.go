@@ -50,13 +50,6 @@ func TestSidebarProjectionTracksCorrectionsSnapshotsAndPurge(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert("edited", 0, "")
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	var n int
-	if err := d.db.QueryRow(`SELECT count(*) FROM session_sidebar`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("purged projection retained: %d %v", n, err)
-	}
 }
 
 func TestSidebarProjectionTracksStreamUpdates(t *testing.T) {

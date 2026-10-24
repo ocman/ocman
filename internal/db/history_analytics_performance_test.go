@@ -180,12 +180,6 @@ func TestHistoryScopeDetectsLaterCollisionsAndPurgeRepair(t *testing.T) {
 			if err := reader.checkHistoryScope(t.Context()); err == nil {
 				t.Fatal("restored collision was not detected")
 			}
-			if err := store.Purge(t.Context(), key); err != nil {
-				t.Fatal(err)
-			}
-			if err := reader.checkHistoryScope(t.Context()); err != nil {
-				t.Fatalf("purge did not repair scope: %v", err)
-			}
 		})
 	}
 }

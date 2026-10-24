@@ -33,7 +33,7 @@ func TestCreationMetadataIsStoredBeforePublicationAndNeverOverwritesIngestion(t 
 		t.Fatalf("source identity drift: %+v %v", instance, err)
 	}
 	key := statev2.Key{InstanceID: instance.ID, SessionID: created.ID}
-	s, _, err := history.SessionState(t.Context(), key)
+	s, err := history.SessionState(t.Context(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,12 +47,6 @@ func TestCreationMetadataIsStoredBeforePublicationAndNeverOverwritesIngestion(t 
 	}
 	if row, err := a.SessionMetadata(t.Context(), created.ID); err != nil || row.Title != "ingested" {
 		t.Fatalf("creation retry overwrote imported metadata: %+v %v", row, err)
-	}
-	if err := history.Purge(t.Context(), key); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.CommitCreation(t.Context(), created.ID); err == nil {
-		t.Fatal("purged bootstrap republished")
 	}
 }
 

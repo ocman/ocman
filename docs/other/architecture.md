@@ -114,8 +114,7 @@ flowchart LR
   by the user. Legacy `workflow_*` rows remain inert for manual recovery.
 - **state_conv.db.** `internal/statev2` owns a separate
   conversation schema with immutable platform-instance identities, historical
-  sessions/messages/parts, ingestion checkpoints, purge tombstones, and a change
-  outbox. Storage, ingestion and historical reads are always enabled;
+  sessions/messages/parts, ingestion checkpoints and a change outbox. Storage, ingestion and historical reads are always enabled;
   development targets in the Makefile use isolated paths. The file sits beside
   `state.db` unless `-conversations-db` or `OCMAN_CONVERSATIONS_DB` names another
   path. `-statev2-db` and `OCMAN_STATEV2_DB` remain compatibility aliases.
@@ -572,9 +571,7 @@ flowchart LR
   projection still preserves opaque payloads. Migration preserves pin/seen/archive
   associations, and attributes native-only provenance only to the selected
   physical source, never inactive sources with colliding native IDs.
-- Explicit purge tombstones clear catalogue display metadata without recycling
-  identities, including after downtime. Source deletion alone does not delete
-  an identity. Pending native announcements use bounded metadata retries and
+- Source deletion alone does not delete an identity. Pending native announcements use bounded metadata retries and
   overflow to a fenced inventory; healthy source content is never polled.
 - Canonical adapters project native events and preserve opaque payloads, stream
   cursors and message/part IDs. Core handlers and feature stores use canonical
@@ -721,7 +718,7 @@ flowchart LR
   without falling back to a missing native transcript. Rekeying tests verify
   retained analytics rows without a separate native analytics implementation.
 - History rekeying preserves revisions, change-outbox sequences, source-deletion
-  state, analytics rows, purge tombstones and session-scoped receipts. Core-state
+  state, analytics rows and session-scoped receipts. Core-state
   rekeying covers declared columns, Inbox/control-session JSON, packed unarchive
   keys, conversation-plugin mappings and replacement-baseline map keys. Conflicts roll back without merging or
   dropping durable records. Both stores take restorable backups before mutation.

@@ -320,8 +320,8 @@ func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChang
 	store := w.module.deps.Store
 	key := statev2.Key{InstanceID: w.instance.ID, SessionID: c.SessionID}
 	version := db.SequenceVersion(c.Seq, true)
-	stored, purged, err := store.SessionState(ctx, key)
-	if err != nil || purged {
+	stored, err := store.SessionState(ctx, key)
+	if err != nil {
 		return err
 	}
 	exists := stored.Revision > 0

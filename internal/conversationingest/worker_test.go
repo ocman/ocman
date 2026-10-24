@@ -2,6 +2,7 @@ package conversationingest
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -86,7 +87,7 @@ func sourceKey(source string) statev2.Key {
 
 func importText(t *testing.T, store *statev2.DB, key statev2.Key) (string, int64) {
 	t.Helper()
-	detail, err := store.Read(t.Context(), key, 500, 0)
+	detail, err := store.ReadConversation(t.Context(), key, 500, 0)
 	if err != nil || len(detail.Parts) != 1 {
 		t.Fatalf("read imported content: %+v %v", detail, err)
 	}
@@ -121,10 +122,6 @@ func TestInitialImportAndRestartDeduplicate(t *testing.T) {
 	repair(t, w, nil)
 	if _, revision := importText(t, store, sourceKey("first")); revision != 1 || f.reads != 2 {
 		t.Fatal("verification rewrote an unchanged snapshot")
-	}
-	changes, err := store.Changes(t.Context(), 0, 500)
-	if err != nil || len(changes) != 1 {
-		t.Fatalf("restart replay published twice: %+v %v", changes, err)
 	}
 	// A late import can change old content without advancing session timestamps.
 	// Normal passes trust the hint; only verification finds and repairs it.
@@ -176,13 +173,13 @@ func TestSourceDeletionAndReappearance(t *testing.T) {
 	repair(t, w, nil)
 	f.entries = nil
 	repair(t, w, nil)
-	detail, err := store.Read(t.Context(), sourceKey("first"), 500, 0)
+	detail, err := store.ReadConversation(t.Context(), sourceKey("first"), 500, 0)
 	if err != nil || !detail.Session.SourceDeleted || detail.Parts[0].Text != "first" {
 		t.Fatalf("source deletion removed history: %+v %v", detail, err)
 	}
 	f.entries = []db.HistoryEntry{{ID: "session", Version: "v1"}}
 	repair(t, w, nil)
-	detail, err = store.Read(t.Context(), sourceKey("first"), 500, 0)
+	detail, err = store.ReadConversation(t.Context(), sourceKey("first"), 500, 0)
 	if err != nil || detail.Session.SourceDeleted || detail.Session.Revision != 3 {
 		t.Fatalf("identical source did not reappear: %+v %v", detail, err)
 	}
@@ -213,11 +210,11 @@ func TestSourceDeletionRetainsParentAndProject(t *testing.T) {
 	repair(t, w, nil)
 	f.entries = nil
 	repair(t, w, nil)
-	detail, err := store.Read(t.Context(), sourceKey("first"), 500, 0)
+	detail, err := store.ReadConversation(t.Context(), sourceKey("first"), 500, 0)
 	if err != nil || !detail.Session.SourceDeleted || detail.Session.ParentID != "parent" || detail.Session.ProjectID != "project" {
 		t.Fatalf("source deletion cleared parent/project: %+v %v", detail.Session, err)
 	}
-	stored, _, err := store.SessionState(t.Context(), sourceKey("first"))
+	stored, err := store.SessionState(t.Context(), sourceKey("first"))
 	if err != nil || stored.ParentID != "parent" || stored.ProjectID != "project" {
 		t.Fatalf("session state lost parent/project: %+v %v", stored, err)
 	}
@@ -268,26 +265,18 @@ func TestCompleteRepairRetainsRemovedParts(t *testing.T) {
 	snapshot.Messages, snapshot.Parts = nil, nil
 	f.snapshots["session"] = snapshot
 	repair(t, w, map[string]bool{"session": true})
-	detail, err := store.Read(t.Context(), sourceKey("first"), 500, 0)
-	if err != nil || len(detail.Messages) != 1 || !detail.Messages[0].SourceDeleted || !detail.Parts[0].SourceDeleted || detail.Parts[0].Text != "first" {
-		t.Fatalf("removed content not retained: %+v %v", detail, err)
-	}
-}
-
-func TestPurgeIsNeverReadOrResurrectedByRepair(t *testing.T) {
-	f := fakeSource("first")
-	m, store := testImporter(t, f)
-	w := m.workers[0]
-	repair(t, w, nil)
-	if err := store.Purge(t.Context(), sourceKey("first")); err != nil {
+	conn, err := sql.Open("sqlite", store.FilePath())
+	if err != nil {
 		t.Fatal(err)
 	}
-	repair(t, w, map[string]bool{"": true})
-	if f.reads != 1 {
-		t.Fatal("read source content after explicit purge")
+	defer conn.Close()
+	var messages, deleted int
+	var text string
+	if err := conn.QueryRow(`SELECT count(*),sum(source_deleted) FROM message`).Scan(&messages, &deleted); err != nil || messages != 1 || deleted != 1 {
+		t.Fatalf("removed message not retained: %d %d %v", messages, deleted, err)
 	}
-	if _, err := store.Read(t.Context(), sourceKey("first"), 1, 0); !errors.Is(err, statev2.ErrNotFound) {
-		t.Fatal("purged history resurrected")
+	if err := conn.QueryRow(`SELECT text FROM part WHERE source_deleted=1`).Scan(&text); err != nil || text != "first" {
+		t.Fatalf("removed part not retained: %q %v", text, err)
 	}
 }
 
@@ -330,7 +319,7 @@ func TestIndependentSourcesAndJoinedShutdown(t *testing.T) {
 	defer cancel()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		_, err := store.Read(t.Context(), sourceKey("healthy"), 1, 0)
+		_, err := store.ReadConversation(t.Context(), sourceKey("healthy"), 1, 0)
 		if err == nil {
 			break
 		}
@@ -429,7 +418,7 @@ func TestLiveInvalidationDuringImportIsNotLost(t *testing.T) {
 	go func() { m.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
 	for deadline := time.Now().Add(3 * time.Second); ; {
-		detail, err := store.Read(t.Context(), sourceKey("first"), 500, 0)
+		detail, err := store.ReadConversation(t.Context(), sourceKey("first"), 500, 0)
 		if err == nil && len(detail.Parts) == 1 && detail.Parts[0].Text == "newer content with same version hint" {
 			break
 		}

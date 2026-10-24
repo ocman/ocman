@@ -49,10 +49,4 @@ func TestAnalyticsProjectionIsCompactAtomicAndRetainsUnknownTiming(t *testing.T)
 	if err := d.db.QueryRow(`SELECT count(*) FROM analytics_part`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("retained removed timing: %d %v", count, err)
 	}
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.db.QueryRow(`SELECT count(*) FROM analytics_message`).Scan(&count); err != nil || count != 0 {
-		t.Fatalf("purge left analytics payload: %d %v", count, err)
-	}
 }

@@ -30,7 +30,7 @@ func TestStoredHooksRouteInvalidationAndWaitsThroughIngestion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			s, _, err := a.history.SessionState(ctx, key)
+			s, err := a.history.SessionState(ctx, key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -49,7 +49,7 @@ func TestStoredHooksRouteInvalidationAndWaitsThroughIngestion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, _, err := a.history.SessionState(t.Context(), key)
+	s, err := a.history.SessionState(t.Context(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,15 +69,6 @@ func TestStoredHooksRouteInvalidationAndWaitsThroughIngestion(t *testing.T) {
 	}
 	if err := a.RefreshSession(t.Context(), "native"); err == nil {
 		t.Fatal("invalid refresh identity accepted")
-	}
-	if err := a.history.Purge(t.Context(), key); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.Session(t.Context(), id, 10, 0); !errors.Is(err, platforms.ErrNotFound) {
-		t.Fatal(err)
-	}
-	if _, err := a.SessionMetadata(t.Context(), id); !errors.Is(err, platforms.ErrNotFound) {
-		t.Fatal(err)
 	}
 }
 

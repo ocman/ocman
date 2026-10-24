@@ -94,25 +94,13 @@ func TestApplyStreamRemovalsPurgesAndUnknownSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, _ := d.ReadConversation(t.Context(), key, 30, 0)
-	audit, _ := d.Read(t.Context(), key, 30, 0)
+	audit := read(t, d, key)
 	if page.TotalMessages != 1 || len(page.Parts) != 0 || audit.TotalMessages != 2 || len(audit.Parts) != 1 {
 		t.Fatalf("removal was not retained as history: current=%+v audit=%+v", page, audit)
 	}
-	if err := d.Purge(t.Context(), key); err != nil {
-		t.Fatal(err)
-	}
-	result, err := d.ApplyStream(t.Context(), StreamUpdate{InstanceID: "first", Checkpoint: CheckpointUpdate{Stream: "s", ExpectedCursor: "2", Cursor: "3"}, Batches: []StreamBatch{
-		{Session: streamSession("one"), Messages: []Message{streamMessage("resurrected", 3)}},
-	}})
-	if err != nil || len(result.Suppressed) != 1 {
-		t.Fatalf("purge was not suppressed: %+v %v", result, err)
-	}
-	if _, err := d.ReadConversation(t.Context(), key, 30, 0); !errors.Is(err, ErrNotFound) {
-		t.Fatal("stream event resurrected purged history")
-	}
 	// Events for a session whose metadata was never captured cannot invent a
 	// placeholder; the consumer must supply it from the source first.
-	_, err = d.ApplyStream(t.Context(), StreamUpdate{InstanceID: "first", Checkpoint: CheckpointUpdate{Stream: "s", ExpectedCursor: "3", Cursor: "4"}, Batches: []StreamBatch{
+	_, err := d.ApplyStream(t.Context(), StreamUpdate{InstanceID: "first", Checkpoint: CheckpointUpdate{Stream: "s", ExpectedCursor: "2", Cursor: "3"}, Batches: []StreamBatch{
 		{Key: Key{InstanceID: "first", SessionID: "unknown"}, Messages: []Message{streamMessage("m", 1)}},
 	}})
 	if !errors.Is(err, ErrNotFound) {

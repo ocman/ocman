@@ -131,7 +131,7 @@ func TestRequestedConversationBypassesBackfillCooldown(t *testing.T) {
 		t.Fatal("an opened conversation waited behind the historical import cooldown")
 	}
 	key := statev2.Key{InstanceID: w.instance.ID, SessionID: "session-2"}
-	if _, err := store.Read(t.Context(), key, 10, 0); err != nil {
+	if _, err := store.ReadConversation(t.Context(), key, 10, 0); err != nil {
 		t.Fatal(err)
 	}
 	cancel()

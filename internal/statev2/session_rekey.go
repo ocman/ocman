@@ -25,17 +25,12 @@ var sessionKeyColumns = []struct{ table, column, prefix string }{
 	{"source_state", "key", "version/"}, {"source_state", "key", "read-ready/"},
 }
 
-// RekeySessions atomically adopts owner-allocated identities for one physical
+// rekeySessions atomically adopts owner-allocated identities for one physical
 // history instance. Call only while ingestion and other writers are stopped.
-// The caller owns identity allocation and must include references to missing
-// parents and purged sessions. No content is reimported or discarded. A SQLite
-// backup is created beside the store before the first affected row is changed.
-// Repeating a completed mapping is a no-op, without another backup.
-func (d *DB) RekeySessions(ctx context.Context, instance string, identities map[string]string) error {
-	return d.rekeySessions(ctx, instance, identities, true)
-}
-
-func (d *DB) rekeySessions(ctx context.Context, instance string, identities map[string]string, backup bool) error {
+// The caller owns identity allocation, must include references to missing
+// parents and must back up the store first. No content is reimported or
+// discarded. Repeating a completed mapping is a no-op.
+func (d *DB) rekeySessions(ctx context.Context, instance string, identities map[string]string) error {
 	if instance == "" {
 		return fmt.Errorf("statev2: empty rekey instance")
 	}
@@ -63,11 +58,6 @@ func (d *DB) rekeySessions(ctx context.Context, instance string, identities map[
 	if err != nil || !changed {
 		return err
 	}
-	if backup {
-		if err := d.backupSessionKeys(ctx); err != nil {
-			return err
-		}
-	}
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -81,10 +71,9 @@ func (d *DB) rekeySessions(ctx context.Context, instance string, identities map[
 	for _, old := range keys {
 		id := identities[old]
 		var collision bool
-		if err := tx.QueryRowContext(ctx, `SELECT
-			(EXISTS(SELECT 1 FROM session WHERE instance_id=? AND id=?) OR EXISTS(SELECT 1 FROM purged_session WHERE instance_id=? AND session_id=?))
-			AND (EXISTS(SELECT 1 FROM session WHERE instance_id=? AND id=?) OR EXISTS(SELECT 1 FROM purged_session WHERE instance_id=? AND session_id=?))`,
-			instance, old, instance, old, instance, id, instance, id).Scan(&collision); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM session WHERE instance_id=? AND id=?)
+			AND EXISTS(SELECT 1 FROM session WHERE instance_id=? AND id=?)`,
+			instance, old, instance, id).Scan(&collision); err != nil {
 			return err
 		}
 		if collision {

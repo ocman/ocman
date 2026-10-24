@@ -129,7 +129,7 @@ func TestInterruptedHistoryPlanDoesNotRediscoverCanonicalParentsAsNative(t *test
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("resume allocated a second parent identity: %+v %v", rows, err)
 	}
-	page, err := history.Read(t.Context(), statev2.Key{InstanceID: "old", SessionID: child.ID}, 10, 0)
+	page, err := history.ReadConversation(t.Context(), statev2.Key{InstanceID: "old", SessionID: child.ID}, 10, 0)
 	if err != nil || page.Session.ParentID != parent.ID {
 		t.Fatalf("resume lost canonical parent: %+v %v", page, err)
 	}

@@ -107,8 +107,5 @@ func migrateMetadata(ctx context.Context, catalogue *sessioncatalog.Store, metad
 		}
 		mapping[parent] = row.ParentID
 	}
-	if metadata.Purged {
-		return catalogue.Scrub(ctx, source, id)
-	}
 	return nil
 }

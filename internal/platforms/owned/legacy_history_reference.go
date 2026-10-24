@@ -33,11 +33,7 @@ func HistoryReference(ctx context.Context, catalogue *sessioncatalog.Store, hist
 	row, err := catalogue.FindBinding(ctx, binding)
 	if errors.Is(err, sessioncatalog.ErrNotFound) {
 		source := sessioncatalog.Source{OwnerID: binding.OwnerID, Platform: binding.Platform, SourceKey: binding.SourceKey}
-		if metadata.Purged {
-			err = catalogue.Scrub(ctx, source, reference)
-		} else {
-			_, err = catalogue.Reconcile(ctx, source, []sessioncatalog.NativeSession{{ID: reference, Title: metadata.Session.Title, Directory: metadata.Session.Directory, ParentID: metadata.Session.ParentID, CreatedAt: metadata.Session.CreatedAt}})
-		}
+		_, err = catalogue.Reconcile(ctx, source, []sessioncatalog.NativeSession{{ID: reference, Title: metadata.Session.Title, Directory: metadata.Session.Directory, ParentID: metadata.Session.ParentID, CreatedAt: metadata.Session.CreatedAt}})
 		if err == nil {
 			row, err = catalogue.FindBinding(ctx, binding)
 		}

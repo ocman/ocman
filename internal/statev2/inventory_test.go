@@ -5,14 +5,14 @@ import "testing"
 func TestIngestionInventoryAndCompleteSnapshots(t *testing.T) {
 	d := openTestDB(t)
 	b := fixture("first")
-	state, purged, err := d.SessionState(t.Context(), b.Session.Key)
-	if err != nil || purged || state.Revision != 0 {
-		t.Fatalf("missing state: %+v %v %v", state, purged, err)
+	state, err := d.SessionState(t.Context(), b.Session.Key)
+	if err != nil || state.Revision != 0 {
+		t.Fatalf("missing state: %+v %v", state, err)
 	}
 	commit(t, d, b)
-	state, purged, err = d.SessionState(t.Context(), b.Session.Key)
-	if err != nil || purged || state.Title != b.Session.Title || state.Revision != 1 {
-		t.Fatalf("stored state: %+v %v %v", state, purged, err)
+	state, err = d.SessionState(t.Context(), b.Session.Key)
+	if err != nil || state.Title != b.Session.Title || state.Revision != 1 {
+		t.Fatalf("stored state: %+v %v", state, err)
 	}
 	sessions, err := d.Sessions(t.Context(), "first")
 	if err != nil || len(sessions) != 1 || sessions[0].Revision != 1 {
@@ -32,17 +32,6 @@ func TestIngestionInventoryAndCompleteSnapshots(t *testing.T) {
 	if got.Messages[0].SourceDeleted || got.Parts[0].SourceDeleted {
 		t.Fatal("snapshot did not restore present content")
 	}
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	_, purged, err = d.SessionState(t.Context(), b.Session.Key)
-	if err != nil || !purged {
-		t.Fatalf("purge state: %v %v", purged, err)
-	}
-	sessions, err = d.Sessions(t.Context(), "first")
-	if err != nil || len(sessions) != 0 {
-		t.Fatalf("purge inventory: %+v %v", sessions, err)
-	}
 }
 
 func TestIncompleteStorageDoesNotAuthorizeSnapshotDeletion(t *testing.T) {
@@ -61,7 +50,7 @@ func TestIncompleteStorageDoesNotAuthorizeSnapshotDeletion(t *testing.T) {
 		t.Fatalf("failed snapshot changed message flags: %v %v", deleted, err)
 	}
 	d.Close()
-	if _, _, err := d.SessionState(t.Context(), b.Session.Key); err == nil {
+	if _, err := d.SessionState(t.Context(), b.Session.Key); err == nil {
 		t.Fatal("read closed purge state")
 	}
 	if _, err := d.Sessions(t.Context(), "first"); err == nil {

@@ -60,11 +60,4 @@ func TestAnalyticsSummariesFollowAtomicSnapshotsAndToolOnlyUpdates(t *testing.T)
 			t.Fatalf("complete snapshot left %s rows: %d %v", table, count, err)
 		}
 	}
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err := d.db.QueryRow(`SELECT count(*) FROM analytics_session`).Scan(&count); err != nil || count != 0 {
-		t.Fatal("purge retained session summary", count, err)
-	}
 }

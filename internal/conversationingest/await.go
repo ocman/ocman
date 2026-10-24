@@ -46,10 +46,7 @@ func (m *Module) AwaitStored(ctx context.Context, adapterID, id string) bool {
 	for ctx.Err() == nil {
 		changed := m.receiptChanges()
 		if instance := m.instanceFor(adapterID); instance != "" {
-			s, purged, err := m.deps.Store.SessionState(ctx, statev2.Key{InstanceID: instance, SessionID: id})
-			if purged {
-				return false
-			}
+			s, err := m.deps.Store.SessionState(ctx, statev2.Key{InstanceID: instance, SessionID: id})
 			if err == nil && s.Revision > 0 && statev2.ReadableConversationFormat(s.ReadFormat) {
 				return true
 			}

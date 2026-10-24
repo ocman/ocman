@@ -54,7 +54,7 @@ func TestFeedRetiresDirtyDeletedSession(t *testing.T) {
 	delete(f.sequences, "session")
 	f.snapshotErr = errors.New("not found")
 	w.drainFeed(t.Context())
-	s, _, err := store.SessionState(t.Context(), feedKey(w))
+	s, err := store.SessionState(t.Context(), feedKey(w))
 	_, ready := w.module.ReadyInstances()
 	if err != nil || !s.SourceDeleted || !ready || len(w.dirty) != 0 {
 		t.Fatalf("deleted repair did not retire: session=%+v ready=%v dirty=%v err=%v", s, ready, w.dirty, err)
@@ -100,6 +100,8 @@ func TestJournalTranslationFailureHasOneReceipt(t *testing.T) {
 		var translation *journalTranslationError
 		if !errors.As(err, &translation) {
 			_ = w.recordFailure(t.Context(), err, w.last)
+		} else if errors.Unwrap(translation) == nil {
+			t.Fatal("translation failure hid its cause")
 		}
 	}
 	if tasks := listTasks(t, manager, tasksvc.Failed, syncTaskKind); len(tasks) != 1 {

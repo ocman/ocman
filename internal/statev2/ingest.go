@@ -33,35 +33,29 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 			return result, ErrConflict
 		}
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM purged_session WHERE instance_id=? AND session_id=?)`,
-		s.InstanceID, s.SessionID).Scan(&result.Suppressed); err != nil {
-		return result, err
+	if err := applySession(ctx, tx, batch, &result); err != nil {
+		return CommitResult{}, err
 	}
-	if !result.Suppressed {
-		if err := applySession(ctx, tx, batch, &result); err != nil {
+	if batch.Complete {
+		if err := markSnapshotContent(ctx, tx, s.Key); err != nil {
 			return CommitResult{}, err
 		}
-		if batch.Complete {
-			if err := markSnapshotContent(ctx, tx, s.Key); err != nil {
-				return CommitResult{}, err
-			}
-		}
-		if err := applyContent(ctx, tx, batch); err != nil {
-			return CommitResult{}, err
-		}
-		if err := refreshSidebar(ctx, tx, s.Key); err != nil {
-			return CommitResult{}, err
-		}
-		if err := projectAnalytics(ctx, tx, batch); err != nil {
-			return CommitResult{}, err
-		}
-		if err := rebuildAnalyticsSummary(ctx, tx, s.Key); err != nil {
-			return CommitResult{}, err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO change_outbox(instance_id,session_id,revision,kind) VALUES(?,?,?,'updated')`,
-			s.InstanceID, s.SessionID, result.Revision); err != nil {
-			return CommitResult{}, err
-		}
+	}
+	if err := applyContent(ctx, tx, batch); err != nil {
+		return CommitResult{}, err
+	}
+	if err := refreshSidebar(ctx, tx, s.Key); err != nil {
+		return CommitResult{}, err
+	}
+	if err := projectAnalytics(ctx, tx, batch); err != nil {
+		return CommitResult{}, err
+	}
+	if err := rebuildAnalyticsSummary(ctx, tx, s.Key); err != nil {
+		return CommitResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO change_outbox(instance_id,session_id,revision,kind) VALUES(?,?,?,'updated')`,
+		s.InstanceID, s.SessionID, result.Revision); err != nil {
+		return CommitResult{}, err
 	}
 	if c := batch.Checkpoint; c != nil {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO checkpoint(instance_id,stream,cursor) VALUES(?,?,?)

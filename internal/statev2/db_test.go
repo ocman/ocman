@@ -81,9 +81,6 @@ func TestUnsupportedSchemaNeverDiscardsHistory(t *testing.T) {
 			register(t, d, "first")
 			b := fixture("first")
 			commit(t, d, b)
-			if err := d.Purge(t.Context(), Key{InstanceID: "first", SessionID: "purged"}); err != nil {
-				t.Fatal(err)
-			}
 			if err := d.SetSourceState(t.Context(), "first", "version/session", "retained-hint"); err != nil {
 				t.Fatal(err)
 			}
@@ -104,14 +101,11 @@ func TestUnsupportedSchemaNeverDiscardsHistory(t *testing.T) {
 			}
 			defer conn.Close()
 			retained := &DB{db: conn, path: path}
-			if page, err := retained.Read(t.Context(), b.Session.Key, 30, 0); err != nil || len(page.Parts) != 1 || page.Parts[0].Text != "retained content" {
-				t.Fatal("unsupported schema lost conversation content", page, err)
+			if page := read(t, retained, b.Session.Key); len(page.Parts) != 1 || page.Parts[0].Text != "retained content" {
+				t.Fatal("unsupported schema lost conversation content", page)
 			}
 			if cursor, err := retained.Checkpoint(t.Context(), "first", "runtime/generation"); err != nil || cursor != "1" {
 				t.Fatal("unsupported schema lost checkpoint", cursor, err)
-			}
-			if _, purged, err := retained.SessionState(t.Context(), Key{InstanceID: "first", SessionID: "purged"}); err != nil || !purged {
-				t.Fatal("unsupported schema lost purge marker", err)
 			}
 			if hints, err := retained.SourceState(t.Context(), "first"); err != nil || hints["version/session"] != "retained-hint" {
 				t.Fatal("unsupported schema lost source hints", hints, err)
@@ -211,11 +205,8 @@ func TestClosedDatabaseErrors(t *testing.T) {
 	if _, err := d.Commit(t.Context(), b); err == nil {
 		t.Fatal("committed to closed database")
 	}
-	if _, err := d.Read(t.Context(), b.Session.Key, 1, 0); err == nil {
+	if _, err := d.ReadConversation(t.Context(), b.Session.Key, 1, 0); err == nil {
 		t.Fatal("read closed database")
-	}
-	if _, err := d.Changes(t.Context(), 0, 1); err == nil {
-		t.Fatal("read closed outbox")
 	}
 	if _, err := d.Checkpoint(t.Context(), "first", "s"); err == nil {
 		t.Fatal("read closed checkpoint")
@@ -225,9 +216,6 @@ func TestClosedDatabaseErrors(t *testing.T) {
 	}
 	if _, err := d.Instance(t.Context(), "first"); err == nil {
 		t.Fatal("read closed instance")
-	}
-	if err := d.Purge(t.Context(), b.Session.Key); err == nil {
-		t.Fatal("purged closed database")
 	}
 	if err := d.migrate(); err == nil {
 		t.Fatal("migrated closed database")

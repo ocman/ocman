@@ -16,8 +16,5 @@ func (m *Module) validateCanonicalMetadata(ctx context.Context, source Source, m
 	if row.OwnerID != source.OwnerID || row.Platform != source.Platform || row.SourceKey != source.SourceKey {
 		return ErrBindingConflict
 	}
-	if metadata.Purged && !row.Purged {
-		return m.deps.Store.Scrub(ctx, source, row.NativeID)
-	}
 	return nil
 }

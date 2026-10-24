@@ -2,7 +2,6 @@ package statev2
 
 import (
 	"encoding/json"
-	"errors"
 	"testing"
 )
 
@@ -43,15 +42,8 @@ func TestConversationPageUsesLatestVisibleSnapshotAndNewestOffsets(t *testing.T)
 	if page.TotalMessages != 1 || page.Messages[0].ID != "a" || len(page.Parts) != 0 {
 		t.Fatalf("removed content resurfaced: %+v", page)
 	}
-	audit, err := d.Read(t.Context(), b.Session.Key, 30, 0)
-	if err != nil || audit.TotalMessages != 3 {
-		t.Fatal("audit retention changed", audit, err)
-	}
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := d.ReadConversation(t.Context(), b.Session.Key, 30, 0); !errors.Is(err, ErrNotFound) {
-		t.Fatal("purged conversation remained readable", err)
+	if audit := read(t, d, b.Session.Key); audit.TotalMessages != 3 {
+		t.Fatal("audit retention changed", audit)
 	}
 }
 

@@ -9,6 +9,10 @@ import (
 func TestReadinessRequiresEverySourceToFinishCleanly(t *testing.T) {
 	f, g := fakeSource("one"), fakeSource("two")
 	m, _ := testImporter(t, f, g)
+	if m.Name() != "conversation-ingestion" {
+		t.Fatal(m.Name())
+	}
+	m.Routes(nil) // ingestion serves no HTTP routes
 	assertReady := func(want bool) {
 		t.Helper()
 		ids, ready := m.ReadyInstances()
@@ -32,6 +36,9 @@ func TestReadinessRequiresEverySourceToFinishCleanly(t *testing.T) {
 	r.at = time.Now().Add(-3 * m.deps.PollInterval)
 	m.ready["one"] = r
 	m.readyMu.Unlock()
+	if !m.LastCheckedAt().Equal(r.at) {
+		t.Fatalf("oldest scan = %v, want %v", m.LastCheckedAt(), r.at)
+	}
 	assertReady(false)
 	m.workers[0].sweep(t.Context())
 	assertReady(true)

@@ -27,13 +27,16 @@ func TestRekeySessionsPreservesHistoryReceiptsAndOtherSources(t *testing.T) {
 	if err := d.SetSourceState(t.Context(), "first", "version/session", "version"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.db.Exec(`INSERT INTO checkpoint VALUES('first','seq/session','7'); INSERT INTO purged_session VALUES('first','purged')`); err != nil {
+	if _, err := d.db.Exec(`INSERT INTO checkpoint VALUES('first','seq/session','7')`); err != nil {
 		t.Fatal(err)
 	}
 	before := read(t, d, b.Session.Key)
 	beforeChanges := changes(t, d)
-	ids := map[string]string{"session": "ocm_session", "missing-parent": "ocm_parent", "purged": "ocm_purged"}
-	if err := d.RekeySessions(t.Context(), "first", ids); err != nil {
+	ids := map[string]string{"session": "ocm_session", "missing-parent": "ocm_parent"}
+	if err := d.backupSessionKeys(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.rekeySessions(t.Context(), "first", ids); err != nil {
 		t.Fatal(err)
 	}
 	after := read(t, d, Key{"first", "ocm_session"})
@@ -47,7 +50,7 @@ func TestRekeySessionsPreservesHistoryReceiptsAndOtherSources(t *testing.T) {
 	if ext["ParentID"] != "ocm_parent" || ext["opaque"].(map[string]any)["sessionID"] != "session" {
 		t.Fatalf("extensions: %s", after.Session.Extensions)
 	}
-	if _, err := d.Read(t.Context(), b.Session.Key, 10, 0); !errors.Is(err, ErrNotFound) {
+	if _, err := d.ReadConversation(t.Context(), b.Session.Key, 10, 0); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("legacy session still exists: %v", err)
 	}
 	if got := read(t, d, other.Session.Key); got.Session.SessionID != "session" {
@@ -61,10 +64,6 @@ func TestRekeySessionsPreservesHistoryReceiptsAndOtherSources(t *testing.T) {
 		if got, err := d.Checkpoint(t.Context(), "first", stream); err != nil || got != want {
 			t.Fatalf("checkpoint %s: %s %v", stream, got, err)
 		}
-	}
-	_, purged, err := d.SessionState(t.Context(), Key{"first", "ocm_purged"})
-	if err != nil || !purged {
-		t.Fatalf("purge tombstone lost: %v %v", purged, err)
 	}
 	afterChanges := changes(t, d)
 	if len(afterChanges) != len(beforeChanges) {
@@ -100,15 +99,11 @@ func TestRekeySessionsPreservesHistoryReceiptsAndOtherSources(t *testing.T) {
 	if got := read(t, backup, b.Session.Key); got.Session.ParentID != "missing-parent" {
 		t.Fatal("backup did not preserve original keys")
 	}
-	if err := d.RekeySessions(t.Context(), "first", ids); err != nil {
+	if err := d.rekeySessions(t.Context(), "first", ids); err != nil {
 		t.Fatal(err)
 	}
 	if replay := read(t, d, Key{"first", "ocm_session"}); !reflect.DeepEqual(after, replay) {
 		t.Fatal("repeated rekey changed history")
-	}
-	backups, _ = filepath.Glob(filepath.Join(filepath.Dir(d.path), ".statev2-before-session-ids-*.db"))
-	if len(backups) != 1 {
-		t.Fatal("repeated rekey created another backup")
 	}
 }
 
@@ -151,7 +146,7 @@ func TestSessionRekeyContractCoversNormalizedColumns(t *testing.T) {
 }
 
 func TestRekeySessionsRollsBackConflicts(t *testing.T) {
-	for _, conflict := range []string{"retained session", "purge tombstone", "checkpoint"} {
+	for _, conflict := range []string{"retained session", "checkpoint"} {
 		t.Run(conflict, func(t *testing.T) {
 			d := openTestDB(t)
 			b := fixture("first")
@@ -162,17 +157,13 @@ func TestRekeySessionsRollsBackConflicts(t *testing.T) {
 				other.Session.SessionID = "new"
 				other.Checkpoint = nil
 				commit(t, d, other)
-			case "purge tombstone":
-				if _, err := d.db.Exec(`INSERT INTO purged_session VALUES('first','new')`); err != nil {
-					t.Fatal(err)
-				}
 			case "checkpoint":
 				if _, err := d.db.Exec(`INSERT INTO checkpoint VALUES('first','seq/session','1'),('first','seq/new','2')`); err != nil {
 					t.Fatal(err)
 				}
 			}
 			before := read(t, d, b.Session.Key)
-			if err := d.RekeySessions(t.Context(), "first", map[string]string{"session": "new"}); err == nil {
+			if err := d.rekeySessions(t.Context(), "first", map[string]string{"session": "new"}); err == nil {
 				t.Fatal("conflicting keys were combined")
 			}
 			if got := read(t, d, b.Session.Key); !reflect.DeepEqual(got, before) {

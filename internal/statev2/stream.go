@@ -36,9 +36,8 @@ type StreamBatch struct {
 type PartRef struct{ MessageID, ID string }
 
 type StreamResult struct {
-	Duplicate  bool
-	Sessions   map[Key]int64 // committed revision per changed session
-	Suppressed []Key         // explicitly purged identities; the cursor still advances
+	Duplicate bool
+	Sessions  map[Key]int64 // committed revision per changed session
 }
 
 func (b StreamBatch) key() Key {
@@ -75,21 +74,11 @@ func (d *DB) ApplyStream(ctx context.Context, u StreamUpdate) (StreamResult, err
 		return result, ErrConflict
 	}
 	for _, b := range u.Batches {
-		key := b.key()
-		var purged bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM purged_session WHERE instance_id=? AND session_id=?)`,
-			key.InstanceID, key.SessionID).Scan(&purged); err != nil {
-			return result, err
-		}
-		if purged {
-			result.Suppressed = append(result.Suppressed, key)
-			continue
-		}
 		revision, err := applyStreamBatch(ctx, tx, b)
 		if err != nil {
 			return StreamResult{}, err
 		}
-		result.Sessions[key] = revision
+		result.Sessions[b.key()] = revision
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO checkpoint(instance_id,stream,cursor) VALUES(?,?,?)
 		ON CONFLICT(instance_id,stream) DO UPDATE SET cursor=excluded.cursor`, u.InstanceID, c.Stream, c.Cursor); err != nil {

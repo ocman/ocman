@@ -47,24 +47,6 @@ func commit(t *testing.T, d *DB, b Batch) CommitResult {
 	return r
 }
 
-func read(t *testing.T, d *DB, key Key) *Detail {
-	t.Helper()
-	r, err := d.Read(t.Context(), key, 500, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
-}
-
-func changes(t *testing.T, d *DB) []Change {
-	t.Helper()
-	r, err := d.Changes(t.Context(), 0, 500)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
-}
-
 func TestInstanceIdentity(t *testing.T) {
 	d := openTestDB(t)
 	register(t, d, "second") // same owner and platform, different source
@@ -132,9 +114,8 @@ func TestCommitReplayAndPartialUpdates(t *testing.T) {
 	if got.Session.Title != b.Session.Title || string(got.Session.Extensions) != `{"native":true}` || string(got.Messages[0].Extensions) != "{}" {
 		t.Fatal("metadata did not round-trip")
 	}
-	page, err := d.Changes(t.Context(), changes(t, d)[0].Sequence, 1)
-	if err != nil || len(page) != 1 || page[0].Revision != 2 || page[0].Kind != "updated" {
-		t.Fatalf("change page: %+v %v", page, err)
+	if page := changes(t, d); len(page) != 2 || page[1].Revision != 2 || page[1].Kind != "updated" {
+		t.Fatalf("change page: %+v", page)
 	}
 }
 
@@ -219,26 +200,6 @@ func TestCheckpointGenerationsAndRestartReplay(t *testing.T) {
 	}
 }
 
-func TestPurgeFailureRollsBackTombstone(t *testing.T) {
-	d := openTestDB(t)
-	b := fixture("first")
-	commit(t, d, b)
-	if _, err := d.db.Exec(`CREATE TRIGGER fail_purge BEFORE DELETE ON session
-		BEGIN SELECT RAISE(ABORT, 'test purge failure'); END`); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.Purge(t.Context(), b.Session.Key); err == nil {
-		t.Fatal("accepted failed purge")
-	}
-	b.ExpectedRevision, b.Checkpoint = 1, nil
-	if result := commit(t, d, b); result.Suppressed || result.Revision != 2 {
-		t.Fatalf("failed purge left a tombstone: %+v", result)
-	}
-	if got := read(t, d, b.Session.Key); len(got.Parts) != 1 {
-		t.Fatal("failed purge removed content")
-	}
-}
-
 func TestSourceDeletionRetainsHistory(t *testing.T) {
 	d := openTestDB(t)
 	b := fixture("first")
@@ -252,73 +213,18 @@ func TestSourceDeletionRetainsHistory(t *testing.T) {
 	}
 }
 
-func TestPurgeSurvivesRestartAndDoesNotStallIngestion(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "statev2.db")
-	d, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { d.Close() })
-	register(t, d, "first")
-	register(t, d, "second")
-	b := fixture("first")
-	commit(t, d, b)
-	commit(t, d, fixture("second"))
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.Purge(t.Context(), b.Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := d.Read(t.Context(), b.Session.Key, 10, 0); !errors.Is(err, ErrNotFound) {
-		t.Fatal(err)
-	}
-	for _, table := range []string{"message", "part"} {
-		var count int
-		if err := d.db.QueryRow("SELECT count(*) FROM " + table + " WHERE instance_id='first'").Scan(&count); err != nil || count != 0 {
-			t.Fatalf("purge left %s content: %d %v", table, count, err)
-		}
-	}
-	if err := d.Close(); err != nil {
-		t.Fatal(err)
-	}
-	d, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b.Checkpoint = &CheckpointUpdate{Stream: "runtime/generation", ExpectedCursor: "1", Cursor: "2"}
-	if result := commit(t, d, b); !result.Suppressed {
-		t.Fatal(result)
-	}
-	b.Checkpoint = nil // manual backfill is suppressed too
-	if result := commit(t, d, b); !result.Suppressed {
-		t.Fatal(result)
-	}
-	cursor, err := d.Checkpoint(t.Context(), "first", "runtime/generation")
-	if err != nil || cursor != "2" {
-		t.Fatalf("purged session stalled stream: %q %v", cursor, err)
-	}
-	got := changes(t, d)
-	if len(got) != 2 || got[1].Kind != "purged" {
-		t.Fatalf("purge notifications: %+v", got)
-	}
-	if detail := read(t, d, fixture("second").Session.Key); len(detail.Parts) != 1 {
-		t.Fatal("purge crossed instance identity")
-	}
-}
-
 func TestPaginationAndOrdering(t *testing.T) {
 	d := openTestDB(t)
 	b := fixture("first")
-	b.Messages = []Message{{ID: "b", Role: "user", Position: 0}, {ID: "a", Role: "assistant", Position: 0}, {ID: "c", Role: "system", Position: 1}}
+	b.Messages = []Message{{ID: "b", Role: "user", Position: 0, ConversationVisible: true}, {ID: "a", Role: "assistant", Position: 0, ConversationVisible: true}, {ID: "c", Role: "system", Position: 1, ConversationVisible: true}}
 	b.Parts = []Part{{ID: "z", MessageID: "b", Kind: "unknown", Position: 1},
 		{ID: "a", MessageID: "b", Kind: "text", Position: 0}, {ID: "z", MessageID: "a", Kind: "text"}}
 	commit(t, d, b)
-	got, err := d.Read(t.Context(), b.Session.Key, 1, 1)
+	got, err := d.ReadConversation(t.Context(), b.Session.Key, 1, 1)
 	if err != nil || got.TotalMessages != 3 || len(got.Messages) != 1 || got.Messages[0].ID != "b" || len(got.Parts) != 2 || got.Parts[0].ID != "a" {
 		t.Fatalf("page: %+v %v", got, err)
 	}
-	got, err = d.Read(t.Context(), b.Session.Key, 1, 10)
+	got, err = d.ReadConversation(t.Context(), b.Session.Key, 1, 10)
 	if err != nil || len(got.Messages) != 0 || len(got.Parts) != 0 || got.TotalMessages != 3 {
 		t.Fatalf("empty page: %+v %v", got, err)
 	}
@@ -369,21 +275,6 @@ func TestInputValidationAndCancellation(t *testing.T) {
 			t.Fatal("accepted invalid batch")
 		}
 	}
-	for _, page := range [][2]int{{0, 0}, {501, 0}, {1, -1}} {
-		if _, err := d.Read(t.Context(), Key{}, page[0], page[1]); err == nil {
-			t.Fatal("accepted invalid page")
-		}
-	}
-	for _, page := range [][2]int64{{-1, 1}, {0, 0}, {0, 501}} {
-		if _, err := d.Changes(t.Context(), page[0], int(page[1])); err == nil {
-			t.Fatal("accepted invalid changes cursor")
-		}
-	}
-	for _, key := range []Key{{}, {InstanceID: "first"}, {SessionID: "s"}, {InstanceID: "unknown", SessionID: "s"}} {
-		if err := d.Purge(t.Context(), key); err == nil {
-			t.Fatal("accepted invalid purge")
-		}
-	}
 	cursor, err := d.Checkpoint(t.Context(), "first", "missing")
 	if err != nil || cursor != "" {
 		t.Fatalf("missing checkpoint %q %v", cursor, err)
@@ -395,14 +286,5 @@ func TestInputValidationAndCancellation(t *testing.T) {
 	}
 	if err := d.RegisterInstance(ctx, Instance{ID: "x", OwnerID: "o", Platform: "p", SourceKey: "s"}); err == nil {
 		t.Fatal("registered with cancelled context")
-	}
-	if _, err := d.Read(ctx, Key{}, 1, 0); err == nil {
-		t.Fatal("read with cancelled context")
-	}
-	if err := d.Purge(ctx, Key{InstanceID: "first", SessionID: "s"}); err == nil {
-		t.Fatal("purged with cancelled context")
-	}
-	if _, err := d.Changes(ctx, 0, 1); err == nil {
-		t.Fatal("read changes with cancelled context")
 	}
 }

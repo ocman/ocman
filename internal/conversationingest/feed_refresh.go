@@ -24,7 +24,7 @@ func (w *sourceWorker) refreshFeedSession(ctx context.Context, id string, force 
 		return err
 	}
 	if !force && !w.explicitReadPending(id) && applied == version && receipt == version {
-		s, _, err := store.SessionState(ctx, statev2.Key{InstanceID: w.instance.ID, SessionID: id})
+		s, err := store.SessionState(ctx, statev2.Key{InstanceID: w.instance.ID, SessionID: id})
 		if err != nil {
 			return err
 		}

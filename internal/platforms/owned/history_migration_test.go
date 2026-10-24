@@ -24,7 +24,7 @@ func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t 
 		if err := history.RegisterInstance(t.Context(), source); err != nil {
 			t.Fatal(err)
 		}
-		batch := statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: source.ID, SessionID: "same-native"}, ParentID: "missing-parent", Title: source.ID, Directory: "/repo", Extensions: json.RawMessage(`{"ParentID":"missing-parent"}`)}, Messages: []statev2.Message{{ID: "native-message", Role: "assistant"}}, Parts: []statev2.Part{{ID: "native-part", MessageID: "native-message", Kind: "text", Text: "retained content"}}}
+		batch := statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: source.ID, SessionID: "same-native"}, ParentID: "missing-parent", Title: source.ID, Directory: "/repo", Extensions: json.RawMessage(`{"ParentID":"missing-parent"}`)}, Messages: []statev2.Message{{ID: "native-message", Role: "assistant", ConversationVisible: true}}, Parts: []statev2.Part{{ID: "native-part", MessageID: "native-message", Kind: "text", Text: "retained content"}}}
 		if _, err := history.Commit(t.Context(), batch); err != nil {
 			t.Fatal(err)
 		}
@@ -43,7 +43,7 @@ func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t 
 		if source == "old-source" {
 			instance = "inactive"
 		}
-		page, err := history.Read(t.Context(), statev2.Key{InstanceID: instance, SessionID: row.ID}, 20, 0)
+		page, err := history.ReadConversation(t.Context(), statev2.Key{InstanceID: instance, SessionID: row.ID}, 20, 0)
 		if err != nil || page.Session.ParentID != row.ParentID || page.Messages[0].ID != "native-message" || page.Parts[0].Text != "retained content" {
 			t.Fatalf("retained source %s: %+v %v", source, page, err)
 		}
@@ -51,7 +51,7 @@ func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t 
 	if identities["source"] == identities["old-source"] {
 		t.Fatal("inactive source stole active identity")
 	}
-	if _, err := history.Read(t.Context(), statev2.Key{InstanceID: "foreign", SessionID: "same-native"}, 20, 0); err != nil {
+	if _, err := history.ReadConversation(t.Context(), statev2.Key{InstanceID: "foreign", SessionID: "same-native"}, 20, 0); err != nil {
 		t.Fatalf("foreign owner changed: %v", err)
 	}
 	before, err := catalogue.List(t.Context(), "owner", 100, 0)

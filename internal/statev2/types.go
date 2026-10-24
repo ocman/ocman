@@ -114,9 +114,8 @@ type Batch struct {
 }
 
 type CommitResult struct {
-	Revision   int64
-	Duplicate  bool
-	Suppressed bool // explicitly purged history; checkpoint still advances
+	Revision  int64
+	Duplicate bool
 }
 
 // Detail is one consistent, paginated snapshot of retained history.
@@ -159,13 +158,4 @@ type ConversationMetadata struct {
 	LastTurnCompletedAt int64
 	LastUserPromptAt    int64
 	ActiveDurationMs    int64
-}
-
-// Change is a durable invalidation, not an executable lifecycle event. It
-// contains no conversation content, including after an explicit purge.
-type Change struct {
-	Sequence int64
-	Key
-	Revision int64
-	Kind     string
 }

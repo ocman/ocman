@@ -75,9 +75,9 @@ func TestConversationHistoryModuleWiringAndInvalidation(t *testing.T) {
 	waitText := func(want string) {
 		t.Helper()
 		for deadline := time.Now().Add(4 * time.Second); ; {
-			changes, err := store.Changes(t.Context(), 0, 500)
-			if err == nil && len(changes) > 0 {
-				detail, err := store.Read(t.Context(), changes[len(changes)-1].Key, 10, 0)
+			sessions, err := store.MetadataPage(t.Context(), "owner", statev2.Key{}, 500)
+			if err == nil && len(sessions) > 0 {
+				detail, err := store.ReadConversation(t.Context(), sessions[len(sessions)-1].Session.Key, 10, 0)
 				if err == nil && len(detail.Parts) == 1 && detail.Parts[0].Text == want {
 					return
 				}

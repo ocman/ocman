@@ -153,7 +153,7 @@ func ingest(t *testing.T, a *Adapter, snapshot *db.HistorySnapshot) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, _, err := a.history.SessionState(t.Context(), key)
+	current, err := a.history.SessionState(t.Context(), key)
 	if err != nil {
 		t.Fatal(err)
 	}

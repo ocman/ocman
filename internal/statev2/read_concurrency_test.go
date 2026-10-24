@@ -27,7 +27,7 @@ func TestConversationReadsDoNotQueueBehindIngestionWriter(t *testing.T) {
 			}
 			return err
 		},
-		"metadata": func(ctx context.Context) error { _, _, err := d.SessionState(ctx, b.Session.Key); return err },
+		"metadata": func(ctx context.Context) error { _, err := d.SessionState(ctx, b.Session.Key); return err },
 		"instance": func(ctx context.Context) error {
 			_, err := d.FindInstance(ctx, "owner", "opencode", "first")
 			return err

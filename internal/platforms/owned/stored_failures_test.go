@@ -83,7 +83,7 @@ func TestStoredDetailReadsFailClosedAtEachUnavailableBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, _, err := a.history.SessionState(t.Context(), key)
+	s, err := a.history.SessionState(t.Context(), key)
 	if err != nil {
 		t.Fatal(err)
 	}

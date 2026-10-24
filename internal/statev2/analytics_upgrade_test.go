@@ -18,13 +18,6 @@ func TestAnalyticsSummaryUpgradePreservesHistoryAndCheckpoints(t *testing.T) {
 	if err := d.SetSourceState(t.Context(), "first", "version/session", "v1"); err != nil {
 		t.Fatal(err)
 	}
-	purged := b
-	purged.Session.SessionID = "purged"
-	purged.Checkpoint = nil
-	commit(t, d, purged)
-	if err := d.Purge(t.Context(), purged.Session.Key); err != nil {
-		t.Fatal(err)
-	}
 	// Recreate the immediately preceding schema without altering its payloads.
 	for _, table := range []string{"analytics_question", "analytics_hour", "analytics_fact", "analytics_session", "analytics_conflict"} {
 		if _, err := d.db.Exec(`DROP TABLE ` + table); err != nil {
@@ -53,9 +46,6 @@ func TestAnalyticsSummaryUpgradePreservesHistoryAndCheckpoints(t *testing.T) {
 	var count int
 	if err := d.db.QueryRow(`SELECT count(*) FROM analytics_fact`).Scan(&count); err != nil || count != 1 {
 		t.Fatal("summary not backfilled", count, err)
-	}
-	if result := commit(t, d, purged); !result.Suppressed {
-		t.Fatal("upgrade lost purge suppression")
 	}
 }
 
@@ -130,12 +120,6 @@ func TestAnalyticsIdentityUpgradeBackfillsConflictsWithoutRebuildingSummaries(t 
 	}
 	if got := read(t, d, fixture("first").Session.Key); got.Session.Revision != 1 {
 		t.Fatal("identity upgrade rewrote history")
-	}
-	if err := d.Purge(t.Context(), fixture("second").Session.Key); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.db.QueryRow(`SELECT count(*) FROM analytics_conflict`).Scan(&count); err != nil || count != 0 {
-		t.Fatal("purge retained obsolete conflict markers", count, err)
 	}
 }
 

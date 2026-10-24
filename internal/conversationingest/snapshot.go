@@ -12,7 +12,7 @@ import (
 )
 
 type importResult struct {
-	outcome string // imported, unchanged, deferred or purged
+	outcome string // imported, unchanged or deferred
 	version string
 	usage   statev2.Usage
 }
@@ -30,12 +30,9 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		return importResult{}, err
 	}
 	key := statev2.Key{InstanceID: w.instance.ID, SessionID: entry.ID}
-	stored, purged, err := store.SessionState(ctx, key)
+	stored, err := store.SessionState(ctx, key)
 	if err != nil {
 		return importResult{}, err
-	}
-	if purged {
-		return w.remember(ctx, entry.ID, importResult{"purged", entry.Version, statev2.Usage{}})
 	}
 	cursor, err := store.Checkpoint(ctx, key.InstanceID, snapshotStream(entry.ID))
 	if err != nil {
@@ -83,10 +80,7 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		if err != nil {
 			return importResult{}, fmt.Errorf("committing conversation history: %w", err)
 		}
-		switch {
-		case committed.Suppressed:
-			result.outcome = "purged"
-		case !committed.Duplicate:
+		if !committed.Duplicate {
 			result.outcome = "imported"
 		}
 	}
