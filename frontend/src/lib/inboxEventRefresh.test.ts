@@ -3,10 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import { renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
-import { INBOX_EVENT_DELAY_MS, INBOX_TIMEOUT_MS, inboxEventRefresh, useInbox } from './queries';
+import { INBOX_TIMEOUT_MS, inboxEventRefresh, useInbox } from './queries';
 import { api } from './api';
 
 vi.mock('./api', () => ({ api: { inbox: vi.fn() } }));
+
+// eventRefresh's trailing window.
+const INBOX_EVENT_DELAY_MS = 150;
 
 describe('inboxEventRefresh', () => {
   let client: QueryClient;

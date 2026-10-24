@@ -14,7 +14,8 @@ import {
   makeSessionDetail,
   renderSessionPage,
 } from './harness';
-import { recordFailedSend, clearFailedSends } from '../../../lib/failedSends';
+import { recordFailedSend } from '../../../lib/failedSends';
+import { clearFailedSends } from '../../../test/failedSends';
 import { formatDate } from '../../../lib/format';
 import { useUiStore } from '../../../lib/uiStore';
 import { __handleSessionChangedForTests } from '../../../lib/useGlobalEvents';

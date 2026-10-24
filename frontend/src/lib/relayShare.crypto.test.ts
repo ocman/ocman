@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { decryptRelayChunk, parseRelayShareURL, readRelayShare } from './relayShare';
+import { decryptRelayBytes, parseRelayShareURL, readRelayShare } from './relayShare';
 import type { SharedConversation } from './api.types';
 
 // The viewer decrypts with WebCrypto, so these tests seal real chunks
@@ -48,7 +48,10 @@ const conversation: SharedConversation = {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('decryptRelayChunk', () => {
+const decryptRelayChunk = async (key: string, id: string, chunk: Parameters<typeof decryptRelayBytes>[2]): Promise<SharedConversation> =>
+  JSON.parse(new TextDecoder().decode(await decryptRelayBytes(key, id, chunk)));
+
+describe('decryptRelayBytes', () => {
   it('decrypts a chunk sealed for the same share and sequence', async () => {
     const data = await seal('share-1', 0, conversation);
     const got = await decryptRelayChunk(keyText, 'share-1', { seq: 0, data });

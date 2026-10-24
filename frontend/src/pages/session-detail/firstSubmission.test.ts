@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { discardFirstSubmission, getFirstSubmission, reconcileFirstSubmission, retainsFirstSubmission, startFirstSubmission, useFirstSubmission, useSessionFirstSubmission } from './firstSubmission';
+import { discardFirstSubmission, getFirstSubmission, reconcileFirstSubmission, startFirstSubmission, useFirstSubmission, useSessionFirstSubmission } from './firstSubmission';
 import { claimDraftStart, persistDraftStart, readDraftStart } from '../../lib/draftStartClaims';
 const stored = vi.hoisted(() => new Map<string, import('../../lib/draftStartClaims').DraftStart>());
 vi.mock('../../lib/draftStartClaims', () => ({
@@ -186,16 +186,14 @@ it('preserves an executing delivery when a receipt read fails', async () => {
   await waitFor(() => expect(getFirstSubmission('active-read-error')).toBeUndefined());
 });
 
-it('drops a retained execution once a peer completes or releases that attempt', async () => {
+it('drops an attempt once a peer completes or releases it', async () => {
   const execute = vi.fn(async () => { throw new Error('delivery failed'); });
   await startFirstSubmission('peer-release', 'payload', execute);
   await waitFor(() => expect(getFirstSubmission('peer-release')?.execute).toBe(execute));
   const failed = stored.get('first-delivery:peer-release')!;
-  expect(retainsFirstSubmission(failed.attemptId!)).toBe(true);
   stored.set('first-delivery:peer-release', { ...failed, deliveryState: 'done', text: '' });
   await reconcileFirstSubmission('peer-release');
   expect(getFirstSubmission('peer-release')).toBeUndefined();
-  expect(retainsFirstSubmission(failed.attemptId!)).toBe(false);
 });
 
 it('surfaces a reconciliation failure on Retry without executing the payload again', async () => {

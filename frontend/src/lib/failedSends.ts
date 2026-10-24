@@ -126,22 +126,12 @@ export function recordFailedSend(sessionId: string, entry: FailedSend) {
   notify(sessionId);
 }
 
-function forget(sessionId: string, ids: string[]) {
-  for (const id of ids) {
-    removed.add(key(sessionId, id));
-    synced.delete(key(sessionId, id));
-  }
-  live[sessionId] = (live[sessionId] ?? []).filter((e) => !ids.includes(e.id));
+export function removeFailedSend(sessionId: string, id: string) {
+  removed.add(key(sessionId, id));
+  synced.delete(key(sessionId, id));
+  live[sessionId] = (live[sessionId] ?? []).filter((e) => e.id !== id);
   writeSession(sessionId, listFailedSends(sessionId));
   notify(sessionId);
-}
-
-export function removeFailedSend(sessionId: string, id: string) {
-  forget(sessionId, [id]);
-}
-
-export function clearFailedSends(sessionId: string) {
-  forget(sessionId, listFailedSends(sessionId).map((e) => e.id));
 }
 
 function parseStore(raw: string | null): Store {

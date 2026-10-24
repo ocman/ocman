@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   cleanTitle,
-  escapeHtml,
   formatCompactNumber,
   formatDuration,
   formatNumber,
@@ -273,12 +272,6 @@ describe('shortPath', () => {
   });
 });
 
-describe('escapeHtml', () => {
-  it('escapes HTML-significant characters', () => {
-    expect(escapeHtml('<a href="x">&y</a>')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;y&lt;/a&gt;');
-    expect(escapeHtml('')).toBe('');
-  });
-});
 
 describe('relativeTime', () => {
   it('renders the recency tiers relative to now', () => {

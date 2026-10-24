@@ -25,8 +25,6 @@ const outcomeKey = (record?: DraftStart) => JSON.stringify([record?.attemptId, r
 // IndexedDB reserves a delivery before any upload/command or completion publication.
 export const useFirstSubmission = create<{ entries: Record<string, Submission>; ready: Record<string, boolean> }>(() => ({ entries: {}, ready: {} }));
 export const getFirstSubmission = (id: string) => useFirstSubmission.getState().entries[id];
-/** Whether this tab still holds an attempt's Files/command closure. */
-export const retainsFirstSubmission = (attemptId: string) => executions.has(attemptId);
 
 function adopt(id: string, record: DraftStart | undefined) {
   if (record) records.set(id, record);

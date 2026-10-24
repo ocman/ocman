@@ -58,14 +58,6 @@ export async function decryptRelayBytes(keyText: string, id: string, chunk: Rela
 
 const parseJSON = (plain: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(plain));
 
-export async function decryptRelayChunk(
-  keyText: string,
-  id: string,
-  chunk: RelayChunk,
-): Promise<SharedConversation> {
-  return parseJSON(await decryptRelayBytes(keyText, id, chunk)) as SharedConversation;
-}
-
 export function mergeRelayChunks(
   current: SharedConversation | null,
   chunks: SharedConversation[],

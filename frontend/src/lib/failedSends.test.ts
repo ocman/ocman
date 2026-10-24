@@ -3,11 +3,11 @@ import {
   listFailedSends,
   recordFailedSend,
   removeFailedSend,
-  clearFailedSends,
   handleFailedSendsStorageEvent,
   subscribeFailedSends,
   type FailedSend,
 } from './failedSends';
+import { clearFailedSends } from '../test/failedSends';
 
 const SESSION = 'ses_test';
 
@@ -57,12 +57,11 @@ describe('failedSends storage', () => {
     expect(listFailedSends('cold')).toEqual([makeEntry()]);
   });
 
-  it.each(['remove', 'clear'])('does not resurrect a dismissed failure when %s cannot persist', (action) => {
+  it('does not resurrect a dismissed failure when removal cannot persist', () => {
     recordFailedSend(SESSION, makeEntry());
     const write = vi.spyOn(storage, 'setItem').mockImplementation(() => { throw new Error('storage full'); });
     try {
-      if (action === 'remove') removeFailedSend(SESSION, 'fs-1');
-      else clearFailedSends(SESSION);
+      removeFailedSend(SESSION, 'fs-1');
       expect(listFailedSends(SESSION)).toEqual([]);
       expect(JSON.parse(storage.getItem('ocman.failedSends.v1')!)[SESSION]).toHaveLength(1);
     } finally {
@@ -136,13 +135,6 @@ describe('failedSends storage', () => {
     recordFailedSend(SESSION, makeEntry({ id: 'b' }));
     removeFailedSend(SESSION, 'a');
     expect(listFailedSends(SESSION).map((e) => e.id)).toEqual(['b']);
-  });
-
-  it('clears all entries for a session', () => {
-    recordFailedSend(SESSION, makeEntry({ id: 'a' }));
-    recordFailedSend(SESSION, makeEntry({ id: 'b' }));
-    clearFailedSends(SESSION);
-    expect(listFailedSends(SESSION)).toEqual([]);
   });
 
   it('keeps entries scoped per session', () => {

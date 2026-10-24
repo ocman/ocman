@@ -48,9 +48,6 @@ export function useInbox(archived = false, background = false) {
   });
 }
 
-/** Trailing window that folds an ocman.inbox.changed burst into one fetch. */
-export const INBOX_EVENT_DELAY_MS = 150;
-
 /**
  * Refreshes the inbox on server events without cancelling a request in
  * flight: permission ask/resolve pairs arrive milliseconds apart under

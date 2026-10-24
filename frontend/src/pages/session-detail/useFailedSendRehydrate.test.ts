@@ -3,7 +3,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message, Part } from '../../lib/api';
-import { clearFailedSends, recordFailedSend, removeFailedSend, type FailedSend } from '../../lib/failedSends';
+import { recordFailedSend, removeFailedSend, type FailedSend } from '../../lib/failedSends';
+import { clearFailedSends } from '../../test/failedSends';
 import type { UsePendingSendResult } from './usePendingSend';
 import { useFailedSendRehydrate, type UseFailedSendRehydrateOptions } from './useFailedSendRehydrate';
 

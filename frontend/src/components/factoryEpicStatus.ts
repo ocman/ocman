@@ -17,10 +17,6 @@ export function factoryActionFromHref(href?: string) {
   }
 }
 
-export function factoryEpicIDFromHref(href?: string) {
-  return href ? EPIC_PATH.exec(href)?.[1] : undefined;
-}
-
 // One line of live state for an epic: what needs a human beats what is merely progressing.
 export function factoryEpicStatus(epic: FactoryEpic): { text: string; tone: 'action' | 'done' | 'idle' } {
   switch (epic.planGate?.resolution) {

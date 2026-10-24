@@ -299,11 +299,6 @@ function partsEqual(a: Part[], b: Part[]): boolean {
 }
 
 /**
- * Type of the function returned by `createConvertMessages()`. The
- * exported `convertMessages` matches this shape via a default
- * instance.
- */
-/**
  * Permission approvals render on the tool call they unblocked. New
  * payloads match metadata against tool input; legacy payloads fall back
  * to the latest tool that started before the notice. Returns the
@@ -404,6 +399,7 @@ function convertNoticeMessage(m: Message, rawParts: Part[]): ThreadMessageLike {
   };
 }
 
+/** Type of the function returned by `createConvertMessages()`. */
 export type ConvertMessagesFn = (
   messages: Message[],
   parts: Part[],
@@ -764,15 +760,3 @@ export function createConvertMessages(): ConvertMessagesFn {
     return result;
   };
 }
-
-/**
- * Default-instance `convertMessages` for non-React callers and
- * legacy call sites. New code mounted inside a component should
- * use `createConvertMessages()` via `useMemo([sessionId])` so the
- * cache lifetime matches the component's lifetime.
- *
- * Two callers using this shared instance will compete for the
- * result-array cache slot — fine for tests, **not** safe to use
- * from two simultaneously-mounted components.
- */
-export const convertMessages: ConvertMessagesFn = createConvertMessages();

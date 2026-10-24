@@ -194,11 +194,6 @@ export function shortPath(path: string): string {
   return parts.slice(-2).join('/');
 }
 
-export function escapeHtml(str: string): string {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 // cleanTitle strips the common markdown decorations that LLMs tend to emit in
 // generated session titles: leading `#` headings, `**bold**` / `*italic*` /
 // `__bold__` / `_italic_` emphasis, `~~strike~~`, inline `` `code` ``, and

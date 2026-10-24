@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FactoryEpicCard } from './FactoryEpicCard';
-import { factoryEpicIDFromHref, factoryEpicStatus } from './factoryEpicStatus';
+import { factoryEpicStatus } from './factoryEpicStatus';
 import { api, type FactoryEpic, type FactoryIssue } from '../lib/api';
 
 vi.mock('../lib/api', () => ({ api: { factoryEpic: vi.fn(), factoryIssues: vi.fn(), factoryClaimPlan: vi.fn() } }));
@@ -19,18 +19,6 @@ const epic = (overrides: Partial<FactoryEpic> = {}): FactoryEpic => ({
   id: 'ship-a1b2', status: 'open', goal: 'Ship Factory', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 1,
   formulaRevision: 1, formulaHash: 'hash', formulaOrigin: 'built-in', instantiationId: 'one',
   progress: { requiredTotal: 0, requiredSucceeded: 0, optionalOpen: 0 }, ...overrides,
-});
-
-describe('factoryEpicIDFromHref', () => {
-  it.each([
-    ['/factory/epics/ship-a1b2', 'ship-a1b2'],
-    ['/factory/epics/ship-a1b2/issues', undefined],
-    ['/factory/epics/', undefined],
-    ['https://example.com/factory/epics/ship-a1b2', undefined],
-    [undefined, undefined],
-  ])('reads %s', (href, want) => {
-    expect(factoryEpicIDFromHref(href)).toBe(want);
-  });
 });
 
 describe('factoryEpicStatus', () => {

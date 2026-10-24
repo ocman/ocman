@@ -8,9 +8,10 @@ import {
   truncate,
   relativizePath,
   computeIsRunning,
-  convertMessages,
   createConvertMessages,
 } from './convertMessages';
+
+const convertMessages = createConvertMessages();
 
 function makeMessage(id: string, data: Partial<Message['data']> & { role: 'user' | 'assistant' }, timeCreated = 0): Message {
   return { id, sessionId: 's', timeCreated, data: { ...data } };
