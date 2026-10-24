@@ -6,7 +6,13 @@ import { useNotifyData } from './useNotifyData';
 import { useInbox } from './queries';
 import { useBadgeSettings } from './badgeSettings';
 
-vi.mock('./useNotifyData', () => ({ useNotifyData: vi.fn(), useNotifyStore: (select: (state: { lastFetched: number }) => number) => select({ lastFetched: 100 }) }));
+vi.mock('./useNotifyData', () => {
+  const useNotifyData = vi.fn();
+  return { useNotifyData, useNotifySnapshot: () => {
+    const entries = useNotifyData();
+    return entries ? { entries, fetchedAt: 100 } : undefined;
+  } };
+});
 vi.mock('./queries', () => ({ useInbox: vi.fn() }));
 vi.mock('./badgeSettings', () => ({ useBadgeSettings: vi.fn() }));
 beforeEach(() => {

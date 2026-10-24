@@ -1,6 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useNotifyStore, __resetForTests, NOTIFY_RECHECK_DELAY_MS, NOTIFY_TIMEOUT_MS } from './useNotifyData';
-import { api } from './api';
+// @vitest-environment jsdom
+import { act, renderHook } from '@testing-library/react';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  __resetForTests, NOTIFY_RECHECK_DELAY_MS, NOTIFY_TIMEOUT_MS, notifyQueryKey, recheckNotifyData,
+  useNotifyData, useNotifySnapshot, type NotifySnapshot,
+} from './useNotifyData';
+import { api, type Session } from './api';
+import { queryClient } from './queryClient';
+import { patchSessionLists, seedSessionLists } from './sessionsCache';
 import { __handleResolvedForTests } from './useGlobalEvents';
 
 // Mock the api module so we don't make real HTTP requests.
@@ -13,94 +20,124 @@ vi.mock('./api', () => ({
   },
 }));
 
-// Provide a minimal document stub for the visibility API used by the store.
-const originalDocument = globalThis.document;
-beforeEach(() => {
-  // @ts-expect-error -- minimal stub for tests
-  globalThis.document = {
-    hidden: false,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  };
-});
-afterEach(() => {
-  globalThis.document = originalDocument;
-});
+let hidden = false;
+function setHidden(value: boolean) {
+  hidden = value;
+  document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+}
 
-describe('useNotifyStore', () => {
+const snapshot = () => queryClient.getQueryData<NotifySnapshot>(notifyQueryKey);
+const data = () => snapshot()?.entries ?? null;
+const recheck = recheckNotifyData;
+const mounts: (() => void)[] = [];
+function subscribe() {
+  mounts.push(renderHook(() => useNotifySnapshot()).unmount);
+}
+function unsubscribe() {
+  act(() => mounts.pop()?.());
+}
+
+beforeAll(() => queryClient.mount());
+afterAll(() => queryClient.unmount());
+
+describe('useNotifySnapshot', () => {
   beforeEach(() => {
     __resetForTests();
+    hidden = false;
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => hidden ? 'hidden' : 'visible');
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
     vi.useFakeTimers();
   });
 
   afterEach(() => {
+    while (mounts.length) unsubscribe();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it('starts with refCount 0 and null data', () => {
-    const state = useNotifyStore.getState();
-    expect(state.refCount).toBe(0);
-    expect(state.data).toBeNull();
+  it('starts with null data', () => {
+    const { result, unmount } = renderHook(() => useNotifyData());
+    expect(result.current).toBeNull();
+    unmount();
   });
 
-  it('increments refCount on subscribe', () => {
-    useNotifyStore.getState().subscribe();
-    expect(useNotifyStore.getState().refCount).toBe(1);
-    useNotifyStore.getState().subscribe();
-    expect(useNotifyStore.getState().refCount).toBe(2);
-    // Cleanup
-    useNotifyStore.getState().unsubscribe();
-    useNotifyStore.getState().unsubscribe();
+  it('shares one request between consumers', async () => {
+    const notify = vi.mocked(api.sessionsNotify);
+    notify.mockClear();
+    subscribe();
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 
-  it('decrements refCount on unsubscribe, never below 0', () => {
-    useNotifyStore.getState().subscribe();
-    useNotifyStore.getState().subscribe();
-    useNotifyStore.getState().unsubscribe();
-    expect(useNotifyStore.getState().refCount).toBe(1);
-    useNotifyStore.getState().unsubscribe();
-    expect(useNotifyStore.getState().refCount).toBe(0);
-    // Extra unsubscribe should not go negative
-    useNotifyStore.getState().unsubscribe();
-    expect(useNotifyStore.getState().refCount).toBe(0);
+  it('polls only while visible and refetches when shown again', async () => {
+    const notify = vi.mocked(api.sessionsNotify);
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    notify.mockClear();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(notify).toHaveBeenCalledTimes(1);
+    act(() => setHidden(true));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(notify).toHaveBeenCalledTimes(1);
+    act(() => setHidden(false));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays out of the session list caches', async () => {
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    const before = snapshot();
+    seedSessionLists({ id: 'new', platform: 'opencode', directory: '/repo' } as Session);
+    patchSessionLists('s1', { seen: true });
+    expect(snapshot()).toBe(before);
+  });
+
+  it('stops polling once the last consumer leaves', async () => {
+    const notify = vi.mocked(api.sessionsNotify);
+    subscribe();
+    await vi.advanceTimersByTimeAsync(0);
+    unsubscribe();
+    notify.mockClear();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('fetches data after first subscribe', async () => {
-    useNotifyStore.getState().subscribe();
+    subscribe();
     // Let the async fetch resolve
     await vi.advanceTimersByTimeAsync(0);
-    const state = useNotifyStore.getState();
-    expect(state.data).not.toBeNull();
-    expect(state.data).toHaveLength(2);
-    expect(state.lastFetched).toBeGreaterThan(0);
+    expect(data()).toHaveLength(2);
+    expect(snapshot()?.fetchedAt).toBeGreaterThan(0);
     // Cleanup
-    useNotifyStore.getState().unsubscribe();
+    unsubscribe();
   });
 
   it('recheck triggers a fetch when consumers are active', async () => {
-    useNotifyStore.getState().subscribe();
+    subscribe();
     await vi.advanceTimersByTimeAsync(0);
-    const firstFetch = useNotifyStore.getState().lastFetched;
+    const firstFetch = snapshot()!.fetchedAt;
 
     // Advance a bit so lastFetched changes
     vi.advanceTimersByTime(100);
-    useNotifyStore.getState().recheck();
+    recheck();
     await vi.advanceTimersByTimeAsync(0);
-    expect(useNotifyStore.getState().lastFetched).toBeGreaterThanOrEqual(firstFetch);
+    expect(snapshot()!.fetchedAt).toBeGreaterThanOrEqual(firstFetch);
 
     // Cleanup
-    useNotifyStore.getState().unsubscribe();
+    unsubscribe();
   });
 
   it('recheck is a no-op when no consumers are active', async () => {
-    useNotifyStore.getState().recheck();
+    recheck();
     await vi.advanceTimersByTimeAsync(0);
-    expect(useNotifyStore.getState().data).toBeNull();
+    expect(data()).toBeNull();
   });
 
   it('folds a burst of rechecks into one request and never aborts one in flight', async () => {
     const notify = vi.mocked(api.sessionsNotify);
-    useNotifyStore.getState().subscribe();
+    subscribe();
     await vi.advanceTimersByTimeAsync(0);
     notify.mockClear();
     let release!: () => void;
@@ -110,12 +147,12 @@ describe('useNotifyStore', () => {
       return new Promise((resolve) => { release = () => resolve([]); });
     });
 
-    for (let i = 0; i < 5; i++) useNotifyStore.getState().recheck();
+    for (let i = 0; i < 5; i++) recheck();
     await vi.advanceTimersByTimeAsync(NOTIFY_RECHECK_DELAY_MS);
     expect(notify).toHaveBeenCalledTimes(1);
 
     // Events during the fetch queue one follow-up instead of cancelling it.
-    for (let i = 0; i < 5; i++) useNotifyStore.getState().recheck();
+    for (let i = 0; i < 5; i++) recheck();
     await vi.advanceTimersByTimeAsync(NOTIFY_RECHECK_DELAY_MS * 2);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(signals.some((signal) => signal?.aborted)).toBe(false);
@@ -126,7 +163,7 @@ describe('useNotifyStore', () => {
     await vi.advanceTimersByTimeAsync(NOTIFY_RECHECK_DELAY_MS);
     expect(notify).toHaveBeenCalledTimes(2);
 
-    useNotifyStore.getState().unsubscribe();
+    unsubscribe();
     notify.mockReset();
     notify.mockResolvedValue([]);
   });
@@ -136,13 +173,13 @@ describe('useNotifyStore', () => {
     notify.mockImplementationOnce((_params, signal) => new Promise((_resolve, reject) => {
       signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
     }));
-    useNotifyStore.getState().subscribe();
+    subscribe();
     await vi.advanceTimersByTimeAsync(0);
-    useNotifyStore.getState().recheck();
+    recheck();
     await vi.advanceTimersByTimeAsync(NOTIFY_TIMEOUT_MS + NOTIFY_RECHECK_DELAY_MS);
     expect(notify).toHaveBeenCalledTimes(2);
-    expect(useNotifyStore.getState().data).not.toBeNull();
-    useNotifyStore.getState().unsubscribe();
+    expect(data()).not.toBeNull();
+    unsubscribe();
   });
 
   it('drops a queued follow-up once the last consumer leaves', async () => {
@@ -150,10 +187,10 @@ describe('useNotifyStore', () => {
     notify.mockClear();
     let release!: () => void;
     notify.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve([]); }));
-    useNotifyStore.getState().subscribe();
+    subscribe();
     await vi.advanceTimersByTimeAsync(0);
-    useNotifyStore.getState().recheck();
-    useNotifyStore.getState().unsubscribe();
+    recheck();
+    unsubscribe();
     release();
     await vi.advanceTimersByTimeAsync(NOTIFY_RECHECK_DELAY_MS * 2);
     expect(notify).toHaveBeenCalledTimes(1);
@@ -169,16 +206,16 @@ describe('useNotifyStore', () => {
     let releaseStale!: () => void;
     notify.mockImplementationOnce(() => new Promise((resolve) => { releaseStale = () => resolve(stale as never); }));
     notify.mockResolvedValueOnce([]);
-    useNotifyStore.getState().subscribe();
+    subscribe();
     await vi.advanceTimersByTimeAsync(0);
-    useNotifyStore.getState().recheck({ ...prompt, kind: 'permission' });
+    recheck({ ...prompt, kind: 'permission' });
     releaseStale();
     await vi.advanceTimersByTimeAsync(0);
-    expect(useNotifyStore.getState().data).toEqual([
+    expect(data()).toEqual([
       { id: 's1', status: 'waiting', seen: false, pendingPermission: false, permissions: [] },
       stale[1],
     ]);
-    useNotifyStore.getState().unsubscribe();
+    unsubscribe();
   });
 
   it('keeps publishing while events arrive during every request', async () => {
@@ -189,28 +226,28 @@ describe('useNotifyStore', () => {
       const id = `s${++n}`;
       setTimeout(() => resolve([{ id, status: 'waiting', seen: false, pendingPermission: true }] as never), 100);
     }));
-    useNotifyStore.getState().subscribe();
+    subscribe();
     for (let i = 0; i < 20; i++) {
-      useNotifyStore.getState().recheck({ platform: 'opencode', sessionId: 'unrelated', requestId: `resolved-${i}`, kind: 'permission' });
+      recheck({ platform: 'opencode', sessionId: 'unrelated', requestId: `resolved-${i}`, kind: 'permission' });
       await vi.advanceTimersByTimeAsync(50);
     }
     expect(notify.mock.calls.length).toBeGreaterThan(2);
-    expect(useNotifyStore.getState().data?.[0].pendingPermission).toBe(true);
-    useNotifyStore.getState().unsubscribe();
+    expect(data()?.[0].pendingPermission).toBe(true);
+    unsubscribe();
     notify.mockReset();
     notify.mockResolvedValue([]);
   });
 
   it('still runs event rechecks while the tab is hidden', async () => {
     const notify = vi.mocked(api.sessionsNotify);
-    useNotifyStore.getState().subscribe();
+    subscribe();
     await vi.advanceTimersByTimeAsync(0);
     notify.mockClear();
-    (document as { hidden: boolean }).hidden = true;
-    useNotifyStore.getState().recheck();
+    hidden = true;
+    recheck();
     await vi.advanceTimersByTimeAsync(NOTIFY_RECHECK_DELAY_MS);
     expect(notify).toHaveBeenCalledTimes(1);
-    useNotifyStore.getState().unsubscribe();
+    unsubscribe();
   });
 
   it('reconciles a child resolution by owner and request without hiding other prompts', async () => {
@@ -225,17 +262,17 @@ describe('useNotifyStore', () => {
       { id: 'parent', status: 'waiting', seen: false, pendingPermission: true,
         permissions: [{ ...child, platform: 'opencode' }] },
     ]); }));
-    useNotifyStore.getState().subscribe();
-    useNotifyStore.getState().recheck({ ...child, kind: 'permission' });
+    subscribe();
+    recheck({ ...child, kind: 'permission' });
     release();
     await vi.advanceTimersByTimeAsync(0);
-    const [remote, local] = useNotifyStore.getState().data!;
+    const [remote, local] = data()!;
     expect(remote.permissions).toEqual([other]);
     expect(remote.pendingPermission).toBe(true);
     expect(remote.questions).toEqual([question]);
     expect(remote.pendingQuestion).toBe(true);
     expect(local.pendingPermission).toBe(true);
-    useNotifyStore.getState().unsubscribe();
+    unsubscribe();
   });
 
   it('clears the ancestor prompt flag when its last child request resolves', async () => {
@@ -244,12 +281,12 @@ describe('useNotifyStore', () => {
     vi.mocked(api.sessionsNotify).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve([
       { id: 'parent', status: 'waiting', seen: false, pendingQuestion: true, questions: [child] },
     ]); }));
-    useNotifyStore.getState().subscribe();
-    useNotifyStore.getState().recheck({ ...child, kind: 'question' });
+    subscribe();
+    recheck({ ...child, kind: 'question' });
     release();
     await vi.advanceTimersByTimeAsync(0);
-    expect(useNotifyStore.getState().data![0].pendingQuestion).toBe(false);
-    useNotifyStore.getState().unsubscribe();
+    expect(data()![0].pendingQuestion).toBe(false);
+    unsubscribe();
   });
 
   it('drops a busy or seen row after its final prompt resolves', async () => {
@@ -261,13 +298,13 @@ describe('useNotifyStore', () => {
       { id: 'error', status: 'error', seen: false, pendingPermission: true, permissions: [child] },
       { id: 'deferred', status: 'waiting', seen: false, pendingPermission: true, permissions: [child], suppressTerminal: true },
     ]); }));
-    useNotifyStore.getState().subscribe();
-    useNotifyStore.getState().recheck({ ...child, kind: 'permission' });
+    subscribe();
+    recheck({ ...child, kind: 'permission' });
     release();
     await vi.advanceTimersByTimeAsync(0);
     // Bell/favicon/completion consumers receive only genuinely eligible rows.
-    expect(useNotifyStore.getState().data?.map((entry) => entry.id)).toEqual(['error']);
-    useNotifyStore.getState().unsubscribe();
+    expect(data()?.map((entry) => entry.id)).toEqual(['error']);
+    unsubscribe();
   });
 
   it('treats an unidentified resolution as refresh-only across owners and prompt kinds', async () => {
@@ -278,11 +315,11 @@ describe('useNotifyStore', () => {
     }));
     let release!: () => void;
     vi.mocked(api.sessionsNotify).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(rows); }));
-    useNotifyStore.getState().subscribe();
+    subscribe();
     __handleResolvedForTests(JSON.stringify({ sessionID: 'same', platform: 'opencode' }));
     release();
     await vi.advanceTimersByTimeAsync(0);
-    expect(useNotifyStore.getState().data).toEqual(rows);
-    useNotifyStore.getState().unsubscribe();
+    expect(data()).toEqual(rows);
+    unsubscribe();
   });
 });

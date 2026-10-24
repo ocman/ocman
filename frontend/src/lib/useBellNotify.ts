@@ -40,9 +40,6 @@ function playBell() {
  * done/error or asks a question/permission prompt.
  *
  * Controlled by the `bellEnabled` setting in uiStore.
- *
- * Consumes the shared `useNotifyStore` (via useNotifyBaseline) instead
- * of polling `/api/sessions/notify` independently (P2 fix).
  */
 export function useBellNotify() {
   const bellEnabled = useUiStore((s) => s.bellEnabled);

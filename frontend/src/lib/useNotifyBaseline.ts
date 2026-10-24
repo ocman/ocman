@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { NotifyEntry } from './api';
-import { useNotifyStore } from './useNotifyData';
+import { useNotifySnapshot, type NotifySnapshot } from './useNotifyData';
 
 /**
  * Produce a stable string key from a session's notification-relevant
@@ -29,12 +29,32 @@ export type NotifyBaselineOptions = {
   onVisibleReset?: () => void;
 };
 
+type CheckFn = (sessions: NotifyEntry[], baseline: Map<string, string> | null) => boolean | void;
+
+type BaselineState = {
+  check: CheckFn;
+  opts?: NotifyBaselineOptions;
+  /** The snapshot already handled; starts as the data cached at mount. */
+  data?: NotifySnapshot;
+  baseline: Map<string, string> | null;
+};
+
+function snapshotOf(state: BaselineState, sessions: NotifyEntry[]) {
+  const key = state.opts?.key ?? notifyStateKey;
+  return new Map(sessions.map((s) => [s.id, key(s)]));
+}
+
+// Run check and honour its "re-snapshot" request.
+function runCheck(state: BaselineState, sessions: NotifyEntry[]) {
+  if (state.check(sessions, state.baseline)) state.baseline = snapshotOf(state, sessions);
+}
+
 /**
  * useNotifyBaseline owns the boilerplate shared by the favicon, bell,
  * OS-notification and in-app-toast hooks:
  *
- *   - subscribing to / unsubscribing from the shared useNotifyStore,
- *   - reacting to new store data by invoking `check(sessions)`,
+ *   - consuming the shared notify query,
+ *   - invoking `check(sessions)` for every new snapshot,
  *   - maintaining a baseline snapshot (id -> key) that resets when
  *     the tab becomes visible and is re-taken (then checked once) when
  *     it goes hidden,
@@ -46,66 +66,46 @@ export type NotifyBaselineOptions = {
  * re-snapshot the baseline from the just-checked sessions (the bell uses
  * this after ringing so it doesn't ring again for the same events).
  */
-export function useNotifyBaseline(
-  check: (sessions: NotifyEntry[], baseline: Map<string, string> | null) => boolean | void,
-  opts?: NotifyBaselineOptions,
-): void {
-  const baselineRef = useRef<Map<string, string> | null>(null);
-  // Keep the latest callbacks in refs so the store subscription closure
-  // (created once on mount) always sees current values.
-  const checkRef = useRef(check);
-  const optsRef = useRef(opts);
+export function useNotifyBaseline(check: CheckFn, opts?: NotifyBaselineOptions): void {
+  const data = useNotifySnapshot();
+  const stateRef = useRef<BaselineState>({ check, opts, data, baseline: null });
+  // Keep the latest callbacks current for the listeners created on mount.
   useEffect(() => {
-    checkRef.current = check;
-    optsRef.current = opts;
+    stateRef.current.check = check;
+    stateRef.current.opts = opts;
   });
 
   useEffect(() => {
-    useNotifyStore.getState().subscribe();
+    const state = stateRef.current;
+    if (!data || data === state.data) return;
+    state.data = data;
+    runCheck(state, data.entries);
+  });
 
-    const snapshot = (sessions: NotifyEntry[]) => {
-      const key = optsRef.current?.key ?? notifyStateKey;
-      return new Map(sessions.map((s) => [s.id, key(s)]));
-    };
-
-    // Run check and honour its "re-snapshot" request.
-    const runCheck = (sessions: NotifyEntry[]) => {
-      if (checkRef.current(sessions, baselineRef.current)) {
-        baselineRef.current = snapshot(sessions);
-      }
-    };
-
+  useEffect(() => {
+    const state = stateRef.current;
     function onVisibilityChange() {
-      if (optsRef.current?.ignoreVisibility) return;
-      const sessions = useNotifyStore.getState().data;
+      if (state.opts?.ignoreVisibility) return;
+      const sessions = state.data?.entries;
       if (!document.hidden) {
-        baselineRef.current = null;
-        optsRef.current?.onVisibleReset?.();
-        if (sessions && optsRef.current?.checkWhenShown) runCheck(sessions);
+        state.baseline = null;
+        state.opts?.onVisibleReset?.();
+        if (sessions && state.opts?.checkWhenShown) runCheck(state, sessions);
       } else if (sessions) {
-        baselineRef.current = snapshot(sessions);
-        runCheck(sessions);
+        state.baseline = snapshotOf(state, sessions);
+        runCheck(state, sessions);
       }
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    const initial = useNotifyStore.getState().data;
-    const initialBaseline = optsRef.current?.initialBaseline ?? 'hidden';
+    const initial = state.data?.entries;
+    const initialBaseline = state.opts?.initialBaseline ?? 'hidden';
     if (initial && (initialBaseline === 'always' || (initialBaseline === 'hidden' && document.hidden))) {
-      baselineRef.current = snapshot(initial);
+      state.baseline = snapshotOf(state, initial);
     }
+    if (initial && state.opts?.checkWhenShown) runCheck(state, initial);
 
-    const unsub = useNotifyStore.subscribe((state) => {
-      if (state.data) runCheck(state.data);
-    });
-
-    if (initial && optsRef.current?.checkWhenShown) runCheck(initial);
-
-    return () => {
-      unsub();
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      useNotifyStore.getState().unsubscribe();
-    };
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, []);
 }

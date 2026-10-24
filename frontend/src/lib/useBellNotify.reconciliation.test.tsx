@@ -2,7 +2,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useBellNotify } from './useBellNotify';
-import { __resetForTests, NOTIFY_RECHECK_DELAY_MS, useNotifyStore } from './useNotifyData';
+import { __resetForTests, NOTIFY_RECHECK_DELAY_MS, notifyQueryKey, recheckNotifyData, type NotifySnapshot } from './useNotifyData';
+import { queryClient } from './queryClient';
 import { useUiStore } from './uiStore';
 import { api } from './api';
 
@@ -21,7 +22,7 @@ it('does not ring in a hidden tab when a stale busy row loses its resolved child
   const audio = vi.fn(function () { throw new Error('unexpected bell'); });
   vi.stubGlobal('AudioContext', audio);
   useUiStore.setState({ bellEnabled: true });
-  useNotifyStore.setState({ data: [] });
+  queryClient.setQueryData<NotifySnapshot>(notifyQueryKey, { entries: [], fetchedAt: 0 });
   let release!: () => void;
   const prompt = { platform: 'opencode', sessionId: 'child', requestId: 'p1' };
   vi.mocked(api.sessionsNotify).mockImplementationOnce(() => new Promise((resolve) => {
@@ -29,11 +30,11 @@ it('does not ring in a hidden tab when a stale busy row loses its resolved child
       pendingPermission: true, permissions: [prompt] }]);
   }));
   const { unmount } = renderHook(() => useBellNotify());
-  act(() => useNotifyStore.getState().recheck());
+  act(() => recheckNotifyData());
   await act(() => vi.advanceTimersByTimeAsync(NOTIFY_RECHECK_DELAY_MS));
-  act(() => useNotifyStore.getState().recheck({ ...prompt, kind: 'permission' }));
+  act(() => recheckNotifyData({ ...prompt, kind: 'permission' }));
   await act(async () => { release(); await vi.advanceTimersByTimeAsync(0); });
-  expect(useNotifyStore.getState().data).toEqual([]);
+  expect(queryClient.getQueryData<NotifySnapshot>(notifyQueryKey)?.entries).toEqual([]);
   expect(audio).not.toHaveBeenCalled();
   unmount();
 });

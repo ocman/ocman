@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { NotifyEntry } from './api';
-import { useNotifyData, useNotifyStore } from './useNotifyData';
+import { useNotifySnapshot } from './useNotifyData';
 import { dismissIrrelevantSessionNotifications } from './pushNotifications';
 import { useInbox } from './queries';
 import { useBadgeSettings } from './badgeSettings';
@@ -21,8 +21,9 @@ export async function updateAppBadge(count: number): Promise<void> {
 }
 
 export function useAppBadge() {
-  const entries = useNotifyData();
-  const snapshotAt = useNotifyStore((s) => s.lastFetched);
+  const snapshot = useNotifySnapshot();
+  const entries = snapshot?.entries ?? null;
+  const snapshotAt = snapshot?.fetchedAt ?? 0;
   const inbox = useInbox();
   const { data: settings } = useBadgeSettings();
   useEffect(() => {
