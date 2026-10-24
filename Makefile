@@ -228,36 +228,21 @@ installer-mac: ## Build macOS DMG installer (requires create-dmg)
 	@if [ "$(BUILD)" = "1" ]; then $(MAKE) build-desktop; fi
 	@mkdir -p dist
 	@rm -f dist/ocman.dmg
-	@# Use the app icon if present (wails build produces build/appicon.png).
-	@# Omit --volicon / --background when the file doesn't exist yet.
-	@if [ -f build/appicon.png ]; then \
-		create-dmg \
-			$(CREATE_DMG_CI_FLAGS) \
-			--volname "ocman" \
-			--volicon "build/appicon.png" \
-			--window-pos 200 120 \
-			--window-size 540 380 \
-			--icon-size 128 \
-			--icon "ocman.app" 140 190 \
-			--hide-extension "ocman.app" \
-			--app-drop-link 400 190 \
-			--no-internet-enable \
-			"dist/ocman.dmg" \
-			"build/bin/"; \
-	else \
-		create-dmg \
-			$(CREATE_DMG_CI_FLAGS) \
-			--volname "ocman" \
-			--window-pos 200 120 \
-			--window-size 540 380 \
-			--icon-size 128 \
-			--icon "ocman.app" 140 190 \
-			--hide-extension "ocman.app" \
-			--app-drop-link 400 190 \
-			--no-internet-enable \
-			"dist/ocman.dmg" \
-			"build/bin/"; \
-	fi
+	@# Use the app icon if present (build-desktop produces build/appicon.png).
+	@# Checked at run time by the shell so BUILD=1 sees a freshly built icon.
+	@create-dmg \
+		$(CREATE_DMG_CI_FLAGS) \
+		--volname "ocman" \
+		$$([ -f build/appicon.png ] && echo --volicon build/appicon.png) \
+		--window-pos 200 120 \
+		--window-size 540 380 \
+		--icon-size 128 \
+		--icon "ocman.app" 140 190 \
+		--hide-extension "ocman.app" \
+		--app-drop-link 400 190 \
+		--no-internet-enable \
+		"dist/ocman.dmg" \
+		"build/bin/"
 	@echo ""
 	@echo "  Installer: dist/ocman.dmg"
 
