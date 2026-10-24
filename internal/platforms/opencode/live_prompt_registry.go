@@ -2,7 +2,6 @@ package opencode
 
 import (
 	"context"
-	"maps"
 	"sync"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -47,9 +46,3 @@ func promptKey(kind, sessionID, requestID string) string {
 }
 
 func promptScope(directory, kind string) string { return directory + "\x00" + kind }
-
-func clonePrompt(prompt platforms.LivePrompt) platforms.LivePrompt {
-	out := make(platforms.LivePrompt, len(prompt))
-	maps.Copy(out, prompt)
-	return out
-}

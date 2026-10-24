@@ -76,8 +76,7 @@ func (l *live) ask(p *proc, raw []byte) {
 		typ = "question.asked"
 	} else {
 		permission, patterns := toolPermission(req.ToolName, req.Input)
-		metadata := map[string]any{}
-		maps.Copy(metadata, req.Input)
+		metadata := maps.Clone(req.Input)
 		metadata["tool"] = req.ToolName
 		for key, value := range map[string]string{"blocked_path": req.BlockedPath, "decision_reason": req.DecisionReason,
 			"title": req.Title, "display_name": req.DisplayName, "description": req.Description} {
@@ -330,8 +329,7 @@ func (l *live) replyQuestion(id string, answers [][]string) error {
 				byText[text] = strings.Join(answers[i], ", ")
 			}
 		}
-		input := map[string]any{}
-		maps.Copy(input, pr.input)
+		input := maps.Clone(pr.input)
 		input["answers"] = byText
 		return map[string]any{"behavior": "allow", "updatedInput": input}
 	}, "question.replied", func(pr *prompt) map[string]any {

@@ -80,7 +80,7 @@ func TestEveryTypeRoundTrips(t *testing.T) {
 			t.Fatalf("%s: unmarshal %s: %v", ev.EventType(), b, err)
 		}
 		want := env
-		want.V, want.Durability = Version, DurabilityOf(ev)
+		want.V, want.Durability = Version, ev.durability()
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s round trip:\n got  %#v\n want %#v\n json %s", ev.EventType(), got, want, b)
 		}
@@ -103,10 +103,10 @@ func TestDurabilityClasses(t *testing.T) {
 		TypePartDelta: Ephemeral, TypeSessionStatus: Live, TypeQueueChanged: Live, TypeStreamHello: Live,
 	}
 	for _, ev := range samples() {
-		if d, ok := want[ev.EventType()]; ok && DurabilityOf(ev) != d {
-			t.Errorf("%s durability %s, want %s", ev.EventType(), DurabilityOf(ev), d)
+		if d, ok := want[ev.EventType()]; ok && ev.durability() != d {
+			t.Errorf("%s durability %s, want %s", ev.EventType(), ev.durability(), d)
 		}
-		if DurabilityOf(ev) == "" {
+		if ev.durability() == "" {
 			t.Errorf("%s has no durability", ev.EventType())
 		}
 	}
@@ -146,7 +146,7 @@ func TestDecodeUnknownAndMalformed(t *testing.T) {
 		t.Fatal(err)
 	}
 	u, ok := ev.(Unknown)
-	if !ok || u.EventType() != "future.thing" || DurabilityOf(u) != "" {
+	if !ok || u.EventType() != "future.thing" || u.durability() != "" {
 		t.Fatalf("unknown = %#v", ev)
 	}
 	if b, _ := json.Marshal(u); string(b) != raw {

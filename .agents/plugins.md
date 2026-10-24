@@ -11,8 +11,6 @@ remote operations, palette actions, panes, conversation delivery, the `session.v
 broker and completion outbox, launch-time catalogs and `/api/permission-profiles`.
 Registration and conversation tables remain in `internal/state`. Permission
 profiles and `session.v1` tables belong to `pluginsmod.Schema` in `store.go`.
-`state.rewindLegacyPluginVersions` adopts development databases that recorded
-those tables as core versions 122 through 124.
 
 - Executables live in `~/.local/share/ocman/plugins` or `OCMAN_PLUGIN_DIR`.
   Discovery itself runs code; do not treat unapproved binaries as data.

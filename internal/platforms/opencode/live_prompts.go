@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"sort"
@@ -39,7 +40,7 @@ func (a *Adapter) observePromptAsked(port string, generation uint64, directory, 
 	}
 	key := promptKey(kind, sessionID, requestID)
 	a.prompts.recordHalt(kind, prompt)
-	a.prompts.entries[key] = livePromptEntry{directory: directory, prompt: clonePrompt(prompt)}
+	a.prompts.entries[key] = livePromptEntry{directory: directory, prompt: maps.Clone(prompt)}
 	scope := promptScope(directory, kind)
 	a.prompts.version[scope]++
 	a.prompts.changed[key] = a.prompts.version[scope]
@@ -301,10 +302,10 @@ func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64,
 		key := promptKey(kind, sessionID, requestID)
 		if sessionID != "" && requestID != "" && r.changed[key] <= token {
 			r.recordHalt(kind, prompt)
-			cloned := clonePrompt(prompt)
+			cloned := maps.Clone(prompt)
 			r.entries[key] = livePromptEntry{directory: directory, prompt: cloned}
 			if onPrompt != nil {
-				callbacks = append(callbacks, clonePrompt(cloned))
+				callbacks = append(callbacks, maps.Clone(cloned))
 			}
 		}
 	}
@@ -327,7 +328,7 @@ func (r *livePromptRegistry) find(kind, requestID string) (livePromptEntry, bool
 	defer r.mu.RUnlock()
 	for key, entry := range r.entries {
 		if strings.HasPrefix(key, kind+"\x00") && entry.prompt.StringField("id") == requestID {
-			return livePromptEntry{directory: entry.directory, prompt: clonePrompt(entry.prompt)}, true
+			return livePromptEntry{directory: entry.directory, prompt: maps.Clone(entry.prompt)}, true
 		}
 	}
 	return livePromptEntry{}, false
@@ -355,7 +356,7 @@ func (r *livePromptRegistry) listEntries(kind string) []livePromptEntry {
 	var out []livePromptEntry
 	for key, entry := range r.entries {
 		if key[:len(kind)+1] == kind+"\x00" {
-			out = append(out, livePromptEntry{directory: entry.directory, prompt: clonePrompt(entry.prompt)})
+			out = append(out, livePromptEntry{directory: entry.directory, prompt: maps.Clone(entry.prompt)})
 		}
 	}
 	return out
