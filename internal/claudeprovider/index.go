@@ -158,7 +158,7 @@ func (x *Index) sync(ctx context.Context) error {
 }
 
 func (x *Index) index(ctx context.Context, path string) error {
-	e, err := scanFile(path)
+	e, err := scanFile(path, x.projects)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return x.remove(ctx, path)

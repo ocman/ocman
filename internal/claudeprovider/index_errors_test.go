@@ -48,7 +48,7 @@ func TestIndexSyncPreservesRowsWhenDirectoryCannotBeRead(t *testing.T) {
 }
 
 func TestScanFileReturnsReadErrors(t *testing.T) {
-	if e, err := scanFile(t.TempDir()); err == nil || e != nil {
+	if e, err := scanFile(t.TempDir(), t.TempDir()); err == nil || e != nil {
 		t.Fatalf("directory read: entry=%+v err=%v; want a read error", e, err)
 	}
 }

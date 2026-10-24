@@ -43,11 +43,16 @@ type Hello struct {
 
 type Capabilities struct {
 	platforms.Capabilities
-	NativeQueue bool `json:"nativeQueue"`
-	Rename      bool `json:"rename"`
-	Account     bool `json:"account"`
-	Replay      bool `json:"replay"` // explicit turn acknowledgments and leased snapshots
-	Hooks       bool `json:"hooks"`  // POST /hooks: status of sessions started outside ocman
+	NativeQueue    bool `json:"nativeQueue"`
+	Rename         bool `json:"rename"`
+	Account        bool `json:"account"`
+	Replay         bool `json:"replay"`                   // explicit turn acknowledgments and leased snapshots
+	Hooks          bool `json:"hooks"`                    // POST /hooks: status of sessions started outside ocman
+	HistoryConfirm bool `json:"historyConfirm,omitempty"` // optional durable-history receipts for transient views
+}
+
+type HistoryConfirmation struct {
+	Entries map[string]string `json:"entries"` // message presence and semantic part digests, keyed by native IDs
 }
 
 // HookEvent is one CLI hook (e.g. Stop) reported for a session the backend

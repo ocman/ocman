@@ -70,3 +70,10 @@ type HistoryReader interface {
 type HistoryDeltaReader interface {
 	HistoryDelta(context.Context, string, string) (*db.HistorySnapshot, error)
 }
+
+// HistoryCommitObserver may reclaim transient source views only after ingestion
+// has durably stored the supplied snapshot. Partial receipts cover only the
+// messages and parts they contain, not the entire source conversation.
+type HistoryCommitObserver interface {
+	HistoryCommitted(context.Context, string, *db.HistorySnapshot) error
+}

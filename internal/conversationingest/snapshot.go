@@ -52,6 +52,9 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		return importResult{}, fmt.Errorf("reading source history: %w", err)
 	}
 	if snapshot != nil && snapshot.SourceCursor != "" && snapshot.SourceCursor == saved.Source {
+		if err := w.confirmSnapshot(ctx, entry.ID, snapshot); err != nil {
+			return importResult{}, err
+		}
 		return w.rememberSnapshot(ctx, key, importResult{"unchanged", snapshot.Version, statev2.Usage{}}, true)
 	}
 	batch, digest, err := Normalize(key, snapshot)
@@ -84,7 +87,20 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 			result.outcome = "imported"
 		}
 	}
+	if err := w.confirmSnapshot(ctx, entry.ID, snapshot); err != nil {
+		return importResult{}, err
+	}
 	return w.rememberSnapshot(ctx, key, result, snapshot.Partial)
+}
+
+func (w *sourceWorker) confirmSnapshot(ctx context.Context, id string, snapshot *db.HistorySnapshot) error {
+	observer, ok := w.source.Reader.(platforms.HistoryCommitObserver)
+	if !ok {
+		return nil
+	}
+	confirm, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)
+	defer cancel()
+	return observer.HistoryCommitted(confirm, id, snapshot)
 }
 
 func (w *sourceWorker) sourceSnapshot(ctx context.Context, id, cursor string) (*db.HistorySnapshot, error) {

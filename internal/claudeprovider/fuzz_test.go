@@ -49,7 +49,7 @@ func FuzzConvertTranscript(f *testing.F) {
 		if err := os.WriteFile(path, data, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		e, err := scanFile(path)
+		e, err := scanFile(path, filepath.Dir(path))
 		if err != nil {
 			t.Fatalf("scanFile: %v", err)
 		}

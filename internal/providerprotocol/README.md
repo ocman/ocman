@@ -56,6 +56,7 @@ prompts to the user.
 | GET /events?after= | SSE, described below |
 | GET /sessions/{id}/snapshot | `Snapshot`, current v1 upserts plus cursor and single-use lease |
 | POST /sessions/{id}/ack | `TurnAck`, exact completed `session.idle` sequence; 204 |
+| POST /sessions/{id}/history-confirmed | Optional `historyConfirm` capability: `HistoryConfirmation` of durably committed message IDs and part-content digests; reclaims matching settled child views, never acknowledges turns; 204. |
 | POST /drain | `DrainState`, stops new turns before reporting whether all sessions are idle |
 | POST /drain-idle?token= | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
 | POST /resume?token= | `DrainState`, restores admission only for the matching cleanup pause |

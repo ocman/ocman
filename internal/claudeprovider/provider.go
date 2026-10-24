@@ -105,7 +105,7 @@ func newSupervisor(ctx context.Context, opts Options, spool string) (*providersu
 			ProtocolVersion: providerprotocol.CurrentVersion,
 			PlatformID:      PlatformID,
 			CLIVersion:      version,
-			Capabilities: providerprotocol.Capabilities{Rename: true, Account: true, Hooks: true, Capabilities: platforms.Capabilities{
+			Capabilities: providerprotocol.Capabilities{Rename: true, Account: true, Hooks: true, HistoryConfirm: true, Capabilities: platforms.Capabilities{
 				// AgentCatalog stays false: the running Claude process cannot switch its main agent.
 				Composer: true, Abort: true, BackgroundTaskStop: true, Compact: true, Fork: true, Events: true, SlashCommands: true, ModelCatalog: true,
 				RespondPermission: true, RespondQuestion: true, PermissionRules: true,

@@ -88,6 +88,8 @@ func (l *live) serve(w http.ResponseWriter, r *http.Request) {
 		err = l.turn(r.Context(), id, "/compact", nil, "", "")
 	case "abort":
 		err = l.abortRequest(r, id)
+	case "history-confirmed":
+		err = l.confirmHistoryRequest(r, id)
 	case "rename":
 		var req platforms.RenameSessionRequest
 		if err = decode(r, &req); err == nil {

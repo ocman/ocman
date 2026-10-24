@@ -246,6 +246,7 @@ flowchart LR
     Rules[internal/analyticsdata<br/>shared accounting and timing] --> Commit
     Rules --> Analytics
     Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox)]
+    Commit -->|post-commit content receipts| Adapters
     History --> Reader[conversationread<br/>read-only WAL snapshots]
     Adapters -->|bounded lifecycle and version only| Reader
     Reader -->|bounded wait for initial import or stale snapshot| Import
@@ -279,6 +280,10 @@ flowchart LR
   canonical identity later used by the transcript. Child task completion,
   failure and cancellation settle independently of the parent's run state.
   Transcript discovery watches nested workflow directories beneath `subagents/`.
+  Ingestion confirms committed message IDs and part-content digests to the owning
+  supervisor. Settled child views are reclaimed only when every retained content
+  entry has a matching receipt; partial or stale receipts cannot drop newer text.
+  Runtime metadata and terminal status survive this memory reclamation.
   Subagent completion hooks request inventory discovery for newly created child
   files before targeted reads. A transcript removed during refresh is unavailable,
   not an ingestion-worker panic.

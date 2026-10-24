@@ -30,19 +30,19 @@ type entry struct {
 
 // identify derives a transcript's session identity from its path:
 // <project>/<session>.jsonl, or <project>/<session>/subagents/agent-<id>.jsonl.
-func identify(path string) (id, root string) {
+func identify(path, projects string) (id, root string) {
 	id = strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	for dir := filepath.Dir(path); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
-		if filepath.Base(dir) == "subagents" {
-			return id, filepath.Base(filepath.Dir(dir))
-		}
+	rel, err := filepath.Rel(projects, path)
+	parts := strings.Split(rel, string(filepath.Separator))
+	if err == nil && len(parts) >= 4 && parts[0] != ".." && parts[2] == "subagents" {
+		return id, parts[1]
 	}
 	return id, id
 }
 
 // scanFile reads a whole transcript once. A trailing partial line (still
 // being written) is left for the next scan.
-func scanFile(path string) (*entry, error) {
+func scanFile(path, projects string) (*entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func scanFile(path string) (*entry, error) {
 		return nil, err
 	}
 	e := &entry{Path: path, Mtime: st.ModTime().UnixNano(), Size: st.Size()}
-	e.ID, e.RootID = identify(path)
+	e.ID, e.RootID = identify(path, projects)
 	if e.ID != e.RootID {
 		var meta struct {
 			ToolUseID string `json:"toolUseId"`

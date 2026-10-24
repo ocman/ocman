@@ -8,8 +8,9 @@ import (
 )
 
 type subagentSession struct {
-	session db.Session
-	root    string
+	session   db.Session
+	root      string
+	confirmed map[string]string
 }
 
 // Child lifecycle is separate from the parent's delegated-task ledger. Only
@@ -64,6 +65,8 @@ func (l *live) subagentEvent(p *proc, raw []byte) {
 			if info, _ := c.Live(); info != nil {
 				l.publish(child, info, nil)
 			}
+			c.Finish()
+			c.Messages, c.Parts = nil, nil
 			break
 		}
 	}

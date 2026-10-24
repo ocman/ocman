@@ -192,6 +192,7 @@ func (l *live) apply(id, key string, event providerprotocol.Event) {
 		if st := l.status[id].Status; st != db.StatusError && st != db.StatusInterrupted {
 			l.status[id] = db.Session{Status: db.StatusDone}
 		}
+		l.reclaimChildLocked(id)
 	}
 	if key == "" {
 		return
