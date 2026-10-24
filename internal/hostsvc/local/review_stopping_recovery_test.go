@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 )
 
 type stoppingRuntime struct {

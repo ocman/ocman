@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 )
 
 func TestNativeProbe_GlobalProjectDirectory(t *testing.T) {

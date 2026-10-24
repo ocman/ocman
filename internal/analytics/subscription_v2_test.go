@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestSubscriptionUsageV2Credentials(t *testing.T) {

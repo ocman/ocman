@@ -8,7 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/claudecli"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/launch"
 )
 
 // ClaudeJudge is the judge backend used when no OpenCode instance is

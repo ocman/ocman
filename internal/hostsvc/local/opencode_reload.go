@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
 func (h *Host) ReloadOpencode(ctx context.Context) error {

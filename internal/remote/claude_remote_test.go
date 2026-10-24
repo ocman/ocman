@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/claudeprovider"
-	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
 	"github.com/NoUseFreak/ocman/internal/platforms/provider"
 	"github.com/NoUseFreak/ocman/internal/testutil"
@@ -32,7 +32,7 @@ func startClaudeRemote(t *testing.T, fixture string) (platforms.Platform, string
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	// External transcripts can be continued on their owning machine.
-	if err := os.CopyFS(filepath.Join(dir, "config", "projects"), os.DirFS(filepath.Join("..", "claudeprovider", "testdata", "projects"))); err != nil {
+	if err := os.CopyFS(filepath.Join(dir, "config", "projects"), os.DirFS(filepath.Join("..", "platforms", "claude", "provider", "testdata", "projects"))); err != nil {
 		t.Fatal(err)
 	}
 	transcript := filepath.Join(dir, "config", "projects", "-work-repo", "11111111-1111-4111-8111-111111111111.jsonl")

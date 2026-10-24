@@ -14,8 +14,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/convevents"
 	"github.com/NoUseFreak/ocman/internal/convstream"
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 )
 
 // A source that fails before its first byte answers with a real status, never

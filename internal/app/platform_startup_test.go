@@ -17,8 +17,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 

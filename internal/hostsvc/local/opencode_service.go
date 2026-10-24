@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 	log "github.com/sirupsen/logrus"
 )
 

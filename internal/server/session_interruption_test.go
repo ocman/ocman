@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 )

@@ -17,8 +17,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 )
 
 // cleanGitEnvForTest returns os.Environ() with git context variables
@@ -58,7 +58,7 @@ func TestValidateID(t *testing.T) {
 	}
 }
 
-// parseOpenCodeModelRef tests moved to internal/platforms/opencode/
+// parseOpenCodeModelRef tests moved to internal/platforms/opencode/provider/
 // together with the function itself.
 
 // --- requireLocalhost tests ---

@@ -17,7 +17,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
 // CutoffAge is how old a session's last update must be before its diffs

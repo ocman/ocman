@@ -10,7 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 )
 
 type inventoryRuntime struct {

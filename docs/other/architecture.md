@@ -938,13 +938,13 @@ flowchart TD
     Modules -->|notifications: subscriptions + durable delivery receipts| State
     Modules -->|snooze: archive deadlines + atomic wake-up| State
     MCP --> Registry
-    Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
-    Registry --> ClaudePlatform[platforms/claudecode<br/>native-session runtime bindings]
+    Registry --> OC[platforms/opencode/provider + internal/db<br/>adapter and read-only queries]
+    Registry --> ClaudePlatform[platforms/claude/transport<br/>native-session runtime bindings]
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
     Provider -->|providerprotocol: HTTP + SSE over unix socket, leased snapshot + replay| Supervisor[providersupervisor<br/>sequenced spool, ack, drain]
     Local -.->|ocruntime.BackendRuntime in tmux, one per project| Supervisor
     Modules -->|idleprojects: idle timeout through hostsvc.IdleProjectRuntime| ClaudePlatform
-    Supervisor --> Claude[claudeprovider + claudecli<br/>index, converter, SDK-compatible claude children]
+    Supervisor --> Claude[platforms/claude/provider + launch<br/>index, converter, SDK-compatible claude children]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
     Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
@@ -970,7 +970,7 @@ flowchart TD
 - **internal/app.** Application startup owns flags, database selection,
   authentication, logging, platform registration and HTTP/desktop composition.
   The root entrypoint only supplies embedded skills and the build version.
-- **platforms/claudecode.** The Claude adapter composes the browsing and
+- **platforms/claude/transport.** The Claude adapter composes the browsing and
   per-project supervisors, routes session operations by native session ID, and
   recovers/drains project runtimes. Creation chooses a project runtime; after
   binding, SSE, sends and prompt replies use the same session-to-supervisor
@@ -984,7 +984,7 @@ flowchart TD
   corrected association. Correcting a binding ends that session's
   old stream so it reconnects. Its constructor receives skills and the MCP address
   explicitly. Provider and hook subcommands live in the same module.
-- **platforms/opencode.** Creation or a successful native-ID probe pins the
+- **platforms/opencode/provider.** Creation or a successful native-ID probe pins the
   session's runtime port. Reconstruction checks the native session identity before
   using a runtime; directory metadata alone cannot select an SSE or mutation
   target. Both platforms retain the owner/source-scoped Ocman-to-native mapping
@@ -1118,7 +1118,7 @@ flowchart TD
   confirmed-stop reconciliation. Runtime hooks and history reads call it through
   thin server adapters. Persistence stays in `internal/state`; callbacks resolve
   the current local host and platform. OpenCode v1/v2 replacement uses this
-  service; Claude supervisor recovery stays in `platforms/claudecode`.
+  service; Claude supervisor recovery stays in `platforms/claude/transport`.
 - **autoapprove.Judge.** The safe-command cache runs before backend selection.
   Each uncached permission selects a judge through `Deps.SelectJudge`, defaulting
   to the registered OpenCode adapter's port discovery. When no OpenCode instance is reachable and
@@ -1207,7 +1207,7 @@ flowchart TD
   session spool before publication. The headless watcher acknowledges completed
   turns; browser snapshots pin replay cursors until their stream attaches, so
   truncation cannot erase the REST-to-SSE gap.
-- **claudeprovider.** The `claudecode` platform's backend. The in-process
+- **platforms/claude/provider.** The `claudecode` platform's backend. The in-process
   browsing supervisor indexes `<CLAUDE_CONFIG_DIR or ~/.claude>/projects`
   into the disposable `claude-index.db` beside `state.db` (path, mtime and size
   keys; list projection, per-message byte offsets, subagent links), kept current
@@ -1220,7 +1220,7 @@ flowchart TD
   `permission.asked`/`question.asked`, decided first by the adapter's ocman-side
   `provider.Rules` store, then by the autoapprove pipeline and the user. Their
   children initialize before the first prompt and acknowledge model/interrupt
-  controls. `internal/claudecli` supplies the shared Agent SDK environment to
+  controls. `internal/platforms/claude/launch` supplies the shared Agent SDK environment to
   sessions and helpers. Their status follows Claude's session-state and delegated
   task events, so a result cannot end a run with background agent work outstanding;
   terminal sessions use the transcript tail settled by
@@ -1384,7 +1384,7 @@ flowchart TD
   The runtime uses an ocman-allocated loopback port and
   probes authenticated `GET {endpoint}/config` for health. It is where the container runtime (epic
   #375) plugs in as a second implementation.
-- **internal/ocv2.** OpenCode v2 compatibility. `ocapi.Auth.Transport` wraps
+- **platforms/opencode/apiv2.** OpenCode v2 compatibility. `ocapi.Auth.Transport` wraps
   every OpenCode HTTP client in `ocv2.Wrap`. On a machine whose `opencode` is v2,
   the wrapper answers v1 routes (sessions, messages, prompts, permissions,
   questions as v2 forms, catalogs, `/event` and `/global/event`) with v2
@@ -1576,6 +1576,35 @@ flowchart TD
   (`API.WithEncodedSlashes`). Public projects preview anonymously after a
   visibility check; every call dials through a resolve-once, address-checked
   dialer (no loopback/link-local; no private ranges for gitlab.com).
+
+### Platform package dependencies
+
+```mermaid
+flowchart LR
+    App[Application] --> Claude[claude/transport]
+    App --> OpenCode[opencode/provider]
+    Claude --> Socket[platforms/provider]
+    Socket -->|Unix socket| Supervisor[providersupervisor]
+    Supervisor --> Backend[claude/provider]
+    Backend --> Launch[claude/launch]
+    OpenCode --> API[opencode/api]
+    OpenCode --> V1[opencode/apiv1]
+    API --> V2[opencode/apiv2]
+```
+
+- Platform-specific packages live under `internal/platforms/claude` or
+  `internal/platforms/opencode`. The platform IDs remain `claudecode` and
+  `opencode`; persisted identities, commands and wire formats are unchanged.
+- Claude's transport selects the owning backend and retains session routing,
+  runtime recovery and history-ingestion orchestration. The provider owns native
+  child execution and transcript indexing. Shared socket serving and durable
+  event replay stay in the generic protocol packages.
+- OpenCode's provider uses `apiv1` for bounded HTTP operations and error decoding.
+  Shared authentication in `api` composes the v2 compatibility transport from
+  `apiv2`. The v2 translator is not a standalone replacement client.
+- Shared runtime operations still go through `ocruntime` and the owning Host.
+  Native data access supplies ingestion and live execution; application browsing
+  reads continue to use the canonical history store.
 
 ## 3. Session and event data flow
 

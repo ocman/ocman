@@ -61,7 +61,7 @@ export interface UseSessionStatusResult {
  *    message exists for the turn yet, so the badge would otherwise sit
  *    on the previous turn's terminal state for a beat.
  *  - `lastMsgErrored`: OpenCode's `session.status` vocabulary is
- *    busy|retry|idle only (internal/platforms/opencode/live_status.go),
+ *    busy|retry|idle only (internal/platforms/opencode/provider/live_status.go),
  *    so it never reports a failure. A failed turn arrives as an errored
  *    message followed by `session.idle` — which reduces to `done`.
  *    Without this arm the badge claims a failed turn succeeded until the

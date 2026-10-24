@@ -49,6 +49,6 @@ linters:
       - linters: [errcheck]
         source: '(w\.Write|fmt\.Fprint)'
       # Fire-and-forget background cache warm; retried on the next tick.
-      - path: internal/platforms/opencode/models_cache\.go
+      - path: internal/platforms/opencode/provider/models_cache\.go
         linters: [errcheck]
         source: refreshSessions

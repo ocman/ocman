@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms/claudecode"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/transport"
 )
 
 // TestHookCommandExitsZeroWhenOcmanIsDown runs `ocman hook` as a process
@@ -73,7 +73,7 @@ func TestClaudeHookPlugin(t *testing.T) {
 	}
 	dir := t.TempDir()
 	config := filepath.Join(dir, ".claude")
-	copyTree(t, filepath.Join("..", "claudeprovider", "testdata", "projects"), filepath.Join(config, "projects"))
+	copyTree(t, filepath.Join("..", "platforms", "claude", "provider", "testdata", "projects"), filepath.Join(config, "projects"))
 	settings := filepath.Join(config, "settings.json")
 	if err := os.WriteFile(settings, []byte(`{"theme":"dark"}`), 0o600); err != nil {
 		t.Fatal(err)

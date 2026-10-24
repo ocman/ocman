@@ -10,7 +10,7 @@ import (
 
 	sqlite "modernc.org/sqlite"
 
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
 // OpenCode v2 stopped writing the v1 `session`, `message` and `part`

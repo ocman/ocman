@@ -9,7 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 )
 
 type judgeVerdict string

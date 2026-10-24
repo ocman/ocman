@@ -9,7 +9,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	log "github.com/sirupsen/logrus"
 )
 

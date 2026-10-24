@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/module"
-	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
 

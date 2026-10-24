@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
 // TestMain pins the installed OpenCode to v1 so tests never run the real

@@ -43,7 +43,7 @@ process exit. The AD-6 command without `--verbose` exits with:
 Error: When using --print, --output-format=stream-json requires --verbose
 ```
 
-The committed [fixtures](../../internal/claudeprovider/testdata/2.1.220/) are anonymised
+The committed [fixtures](../../internal/platforms/claude/provider/testdata/2.1.220/) are anonymised
 message excerpts from real pipe captures. They preserve input/output direction,
 timings, usage and identifier relationships. Their README documents omissions
 and an offline validation command. Nothing in these checks runs Claude.

@@ -48,9 +48,9 @@ func FuzzMapper(f *testing.F) {
 	}
 	root := filepath.Join("..", "..")
 	for _, seed := range corpusSeeds(f,
-		filepath.Join(root, "ocv2", "testdata", "fuzz"),
+		filepath.Join(root, "platforms", "opencode", "apiv2", "testdata", "fuzz"),
 		filepath.Join(root, "autoapprove", "testdata", "fuzz"),
-		filepath.Join(root, "claudeprovider", "testdata", "fuzz"),
+		filepath.Join(root, "platforms", "claude", "provider", "testdata", "fuzz"),
 	) {
 		f.Add(seed)
 	}

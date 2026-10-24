@@ -13,7 +13,7 @@ below); **optional, not done**. "Implemented" means the
 behaviour exists with a test; it does not cover the logged omissions and
 unmeasured CLI behaviour in the *Departures* column and below, which are
 missing or partial and are not claimed. Evidence is a test name (run by `make test`) or a file. Paths:
-`cp/` is `internal/claudeprovider/`, `ps/` is `internal/providersupervisor/`,
+`cp/` is `internal/platforms/claude/provider/`, `ps/` is `internal/providersupervisor/`,
 `pa/` is `internal/platforms/provider/`; bare `.go` names are in
 `internal/server/` except the root-package files `main.go`,
 `claude_platform*.go`, `claude_projects*.go`, `provider_command*.go`,

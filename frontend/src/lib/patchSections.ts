@@ -7,7 +7,7 @@
 // the patch to describe *exactly one* file diff — it throws
 // "FileDiff: Provided patch must contain exactly 1 file diff"
 // otherwise. A session FileChange.Patch is the concatenation of every
-// edit's patch (see internal/platforms/opencode/changes.go), so a
+// edit's patch (see internal/platforms/opencode/provider/changes.go), so a
 // file touched by more than one edit yields multiple file-diff
 // sections that must be rendered separately.
 //

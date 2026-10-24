@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestV2SyntheticMessageDoesNotAdvanceUserPromptTimestamp(t *testing.T) {

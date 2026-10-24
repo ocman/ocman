@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestEnsureOpenCodeMCPLayout(t *testing.T) {

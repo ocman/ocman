@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 

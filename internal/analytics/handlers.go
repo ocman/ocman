@@ -6,7 +6,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 

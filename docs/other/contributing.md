@@ -48,7 +48,13 @@ main.go                                    entrypoint (-addr, -db, -platforms, -
 frontend/                                  React + TypeScript + Vite SPA
 e2e/                                       Playwright end-to-end suite
 internal/platforms/                        Platform interface, Registry, common types/errors
-internal/platforms/opencode/               OpenCode adapter (DB + HTTP proxy)
+internal/platforms/opencode/provider/      OpenCode adapter (DB + HTTP proxy)
+internal/platforms/opencode/api/           Shared OpenCode authentication
+internal/platforms/opencode/apiv1/         Bounded v1 HTTP operations
+internal/platforms/opencode/apiv2/         OpenCode v2 compatibility
+internal/platforms/claude/transport/       Claude routing and socket integration
+internal/platforms/claude/provider/        Claude execution and transcript indexing
+internal/platforms/claude/launch/          Shared Claude child environment
 internal/db/                               SQLite queries against OpenCode's DB
 internal/state/                            ocman's own writable state DB (archived/seen,
                                             auth secret, favorites, cached projects)

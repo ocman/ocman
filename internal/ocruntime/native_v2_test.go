@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 )
 

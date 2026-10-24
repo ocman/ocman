@@ -19,7 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
@@ -476,7 +476,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 
 // Note: the old /api/agents and /api/commands tests (and the
 // primePortCache helper) have moved with their implementations into the
-// internal/platforms/opencode package. The server layer now dispatches
+// internal/platforms/opencode/provider package. The server layer now dispatches
 // every session-scoped operation through the Platform adapter, so the
 // proxy behaviour is covered by the adapter's own tests rather than the
 // server's.

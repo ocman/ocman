@@ -13,7 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"

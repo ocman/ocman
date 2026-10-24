@@ -67,7 +67,7 @@ jobs:
     runs-on: [ubuntu-latest, amd64]
     # Test temp files go to a RAM-backed tmpfs. On the runner's overlay disk
     # each fsync took ~23 ms, and SQLite-heavy packages ran 7-20x slower
-    # (internal/platforms/opencode 370s vs 25s; internal/server hit the
+    # (internal/platforms/opencode/provider 370s vs 25s; internal/server hit the
     # 10-minute go test timeout). Docker mounts --tmpfs noexec by default;
     # tests execute fake CLIs from TMPDIR. A full coverage run peaked at
     # ~600 MB; the size caps a runaway test, and the mount is discarded with

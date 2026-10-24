@@ -14,9 +14,9 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 

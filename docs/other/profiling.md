@@ -357,7 +357,7 @@ These are configuration data; OpenCode itself rebuilds them rarely.
 A 30-second TTL cache eliminates the bulk of the per-session-page
 load cost.
 
-- File: `internal/platforms/opencode/client.go`, where a
+- File: `internal/platforms/opencode/provider/client.go`, where a
   `getJSONCached(port, path, ttl)` helper goes.
 - Wire into `AgentCatalog`, `SlashCommands`, and `fetchOpenCodeProviders`.
   The latter is shared by `SessionModels` and `SessionInfo`, so
@@ -376,7 +376,7 @@ When five endpoints fire on a SessionDetail mount, only the first
 should pay for lsof. Today they all serialize on a `sync.Mutex` and
 take turns observing the same answer.
 
-- File: `internal/platforms/opencode/client.go`
+- File: `internal/platforms/opencode/provider/client.go`
 - Add `golang.org/x/sync/singleflight.Group` around the uncached
   path. Keep the TTL cache as the fast path.
 - Acceptance: a synthetic test that fires N concurrent
@@ -390,7 +390,7 @@ take turns observing the same answer.
 `SessionInfo` currently runs three calls in parallel, then a fourth
 sequentially. Move all four into the same wait group.
 
-- File: `internal/platforms/opencode/info.go`
+- File: `internal/platforms/opencode/provider/info.go`
 - Acceptance: `/api/session/:id/info` p95 drops to roughly
   `max(individual upstream call)` instead of
   `sum(parallel block) + liveTokensAndCost`.
@@ -411,7 +411,7 @@ streamed delta, so it should be ≤ 1 s behind. Need to confirm by
 diffing the DB rollup against `liveTokensAndCost` while a session
 is generating.
 
-- Files: `internal/platforms/opencode/operations.go`, possibly a
+- Files: `internal/platforms/opencode/provider/operations.go`, possibly a
   query-flag plumbed through `platforms.Platform.Session`.
 - Acceptance: `/api/session/:id` p95 < 100 ms in normal use; explicit
   refresh button still hits the live path; tokens/cost in the
@@ -428,7 +428,7 @@ running OpenCode for `/permission` and `/question` on every call.
 A 3-second TTL (matching the lsof cache) eliminates ~60-80% of
 those calls.
 
-- File: `internal/platforms/opencode/client.go`
+- File: `internal/platforms/opencode/provider/client.go`
   (`fetchPendingPrompts`).
 - Acceptance: `/api/sessions` p95 drops below 200 ms; max latency
   no longer spikes at TTL boundaries the way it does today.
@@ -568,13 +568,13 @@ Findings that are easy to miss:
 - `internal/server/middleware.go`: request-timing logger.
 - `internal/server/handlers.go`: `/api/sessions`, `/api/sessions/notify`,
   `applyGitInfo`.
-- `internal/platforms/opencode/adapter.go`: Sessions(), port discovery.
-- `internal/platforms/opencode/client.go`: upstream HTTP helpers
+- `internal/platforms/opencode/provider/adapter.go`: Sessions(), port discovery.
+- `internal/platforms/opencode/provider/client.go`: upstream HTTP helpers
   (`getJSON`, lsof discovery, prompt fetch). Where B1/B3/B6 land.
-- `internal/platforms/opencode/operations.go`: per-session catalog
+- `internal/platforms/opencode/provider/operations.go`: per-session catalog
   methods (`AgentCatalog`, `SlashCommands`, `SessionModels`,
   `Session`). Where B4 lands.
-- `internal/platforms/opencode/info.go`: `SessionInfo` parallel
+- `internal/platforms/opencode/provider/info.go`: `SessionInfo` parallel
   fan-out. Where B2 lands.
 - `internal/git/info.go`: git status cache (30 s TTL).
 

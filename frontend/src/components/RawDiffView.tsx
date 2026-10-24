@@ -10,7 +10,7 @@ import { splitPatchSections } from '../lib/patchSections';
 // contain exactly 1 file diff" otherwise. A single working-tree
 // `git diff` section satisfies that, but a session FileChange.Patch
 // is the *concatenation* of every edit's patch (see
-// internal/platforms/opencode/changes.go), so a file touched by more
+// internal/platforms/opencode/provider/changes.go), so a file touched by more
 // than one edit produces a patch with multiple file-diff sections.
 //
 // To stay robust we split the incoming patch into its individual

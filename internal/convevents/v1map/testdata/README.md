@@ -27,7 +27,7 @@ No fixture was captured from a live system or a running agent.
 
 | Fixture | Scenario | Provenance |
 | --- | --- | --- |
-| `ocv2/streaming-text-reasoning-tool` | text and reasoning streaming with emoji offsets, tool start → completion, edit tool, step accounting | `ocv2` translator output for the v2 events of `TestEventsAssistantFlow` (`internal/ocv2/events_test.go`), extended with execution edges, a second delta and an edit tool |
+| `ocv2/streaming-text-reasoning-tool` | text and reasoning streaming with emoji offsets, tool start → completion, edit tool, step accounting | `ocv2` translator output for the v2 events of `TestEventsAssistantFlow` (`internal/platforms/opencode/apiv2/events_test.go`), extended with execution edges, a second delta and an edit tool |
 | `ocv2/retry-backoff` | retry backoff, heartbeat, server.connected background seed | translator output for `TestEventsLifecycle` inputs |
 | `ocv2/permission-question` | permission asked → replied, question form answered and cancelled | translator output for `TestEventsPermissionsAndQuestions` inputs |
 | `ocv2/native-queue` | native queue (v2 inbox) enqueue → deliver, re-sent recent messages | translator output for the inbox events of `TestEventsSessionEvents` |
@@ -36,7 +36,7 @@ No fixture was captured from a live system or a running agent.
 | `ocv2/subagent-child-prompt` | subagent created, child status, child permission prompt | translator output for `session.created` of a child plus child execution and permission events |
 | `ocv2/compaction` | compaction re-sends recent messages | translator output for `session.compaction.started/ended` |
 | `ocv2/snapshot-before-step` | v2 snapshot-before-step race (stored reply already projected) | translator output for `TestEventsStartedSnapshotDoesNotDuplicateReply` inputs |
-| `opencode/streaming-text-tool-output` | mid-turn attach (unanchored delta withheld), reasoning and text deltas, non-final snapshot, tool output deltas, edit completion, `session.diff`, idle twin, foreign session part | hand-built from OpenCode v1 shapes in `frontend/src/lib/sessionReducer.test.ts`, `sseHelpers.ts` and `internal/ocv2` (`ConvertMessage` part fields) |
+| `opencode/streaming-text-tool-output` | mid-turn attach (unanchored delta withheld), reasoning and text deltas, non-final snapshot, tool output deltas, edit completion, `session.diff`, idle twin, foreign session part | hand-built from OpenCode v1 shapes in `frontend/src/lib/sessionReducer.test.ts`, `sseHelpers.ts` and `internal/platforms/opencode/apiv2` (`ConvertMessage` part fields) |
 | `opencode/retry-backoff` | retry notices, `session.error` | hand-built from the v1 `session.status` retry shape in `sessionSseReducer.ts` |
 | `opencode/compaction` | `session.compacted` | hand-built v1 frames |
 | `opencode/revert` | revert marker, part and message removal, archive, share URL | hand-built v1 session info shapes |
@@ -45,7 +45,7 @@ No fixture was captured from a live system or a running agent.
 | `opencode/subagent-child` | child created/updated/deleted, child status twin, child prompt, unrelated session status dropped | hand-built v1 session frames |
 | `ocman/autoapprove-judge` | permission → judge scheduled → checking → auto-approved notice; judge flagged → user reply → user-approved notice | `ocman.permission.*` payloads as written by `internal/autoapprove` (`statemachine.go`, `background.go`, `background_judge.go`) through `WriteSSEEvent` |
 | `ocman/session-signals` | background tasks (dedupe, invalid entries), queue change, commit observation | `ocman.session.background` from `claudeprovider/background_tasks.go` and `ocv2/activity.go`; `ocman.queue.changed` from `ocv2/events.go` |
-| `claudecode/limited` | Claude streaming upserts, cancelled prompt, `limited` with `resetsAt`, withheld idle, error status | provider frames from `internal/platforms/provider/events_test.go` and part ids from `internal/claudeprovider/live_render_test.go` |
+| `claudecode/limited` | Claude streaming upserts, cancelled prompt, `limited` with `resetsAt`, withheld idle, error status | provider frames from `internal/platforms/provider/events_test.go` and part ids from `internal/platforms/claude/provider/live_render_test.go` |
 | `claudecode/acknowledged-replay` | acknowledged lifecycle replay (`replayed: true`) around a live prompt | `providerprotocol.Event.Acknowledged` as set by `providersupervisor` |
 | `claudecode/background-subagent` | Claude task tool with child session metadata, background tasks, write tool completion | Claude converter shapes (`claudeprovider/convert.go`, `live_render_test.go`) |
 

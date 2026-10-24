@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	"github.com/NoUseFreak/ocman/internal/platforms/owned"
 	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
 	"github.com/NoUseFreak/ocman/internal/sessioncatalog"

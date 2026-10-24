@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 )
 
 // TestAllocateLoopbackPort_BindsSuccessfully is the runnable self-check

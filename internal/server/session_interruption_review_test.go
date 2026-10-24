@@ -12,8 +12,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 

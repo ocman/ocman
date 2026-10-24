@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/claudeprovider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
 
@@ -34,7 +34,7 @@ func TestClaudeOnlyStartup(t *testing.T) {
 		return
 	}
 	dir := t.TempDir()
-	copyTree(t, filepath.Join("..", "claudeprovider", "testdata", "projects"), filepath.Join(dir, ".claude", "projects"))
+	copyTree(t, filepath.Join("..", "platforms", "claude", "provider", "testdata", "projects"), filepath.Join(dir, ".claude", "projects"))
 	bin := filepath.Join(dir, "bin")
 	marker := filepath.Join(dir, "opencode-called")
 	if err := os.MkdirAll(bin, 0o700); err != nil {

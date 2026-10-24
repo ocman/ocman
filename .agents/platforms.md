@@ -59,7 +59,7 @@ and capabilities, and OpenCode v1 event shapes plus `limited` with `resetsAt`.
 - Publish idle through `Supervisor.PublishIf`, atomically with `BeginTurn`.
   Never acknowledge failed rules, ownership or spool persistence.
 
-`internal/claudeprovider` owns transcript indexing in disposable `claude-index.db`
+`internal/platforms/claude/provider` owns transcript indexing in disposable `claude-index.db`
 and the single Claude-to-v1 converter. Managed children use
 `--permission-prompt-tool stdio`; tool controls become permission/question events,
 decided by `provider.Rules`, auto-approval and the user. Without OpenCode use
@@ -71,14 +71,14 @@ exits zero; the server forwards to provider `/hooks`. Ignore hooks for sessions
 ocman drives. Install through `hostsvc.HookPluginManager`, not application flags.
 Tests use `claudetest.Binary` and versioned fixtures, never real `claude`.
 
-`internal/claudecli` shares the Agent SDK-compatible child environment for
+`internal/platforms/claude/launch` shares the Agent SDK-compatible child environment for
 sessions and helpers. Its transport mirrors Python Agent SDK 0.2.166, initializes
 live children before prompting, acknowledges controls and settles from session
 state/delegated-task events. Preserve the CLI's native prompt/settings preset.
 
 ## OpenCode v1 and v2
 
-`internal/ocv2` reads `opencode --version` once. A later version change logs a
+`internal/platforms/opencode/apiv2` reads `opencode --version` once. A later version change logs a
 restart requirement. Each machine speaks only to its local OpenCode, allowing
 mixed hub/remote versions. Tests pin `ocv2.SetInstalledV2` in package `TestMain`
 and never run the real binary.
