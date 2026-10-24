@@ -1,49 +1,25 @@
 // Plan graph thumbnail for inline Factory cards. The thumbnail is plain SVG so it
 // stays phrasing content inside a markdown paragraph. Nodes open task details;
-// the expand button opens the full ReactFlow graph with pan and zoom.
+// the expand button opens the full epic graph with pan and zoom.
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { EpicGraph } from '../pages/EpicGraph';
 import { IssueDrawer } from '../pages/FactoryIssues';
-import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, factoryGraphModel, graphEdgeGroups } from '../pages/factoryGraph';
+import { factoryGraphModel } from '../pages/factoryGraph';
+import { FactoryGraphSvg } from '../pages/FactoryGraphSvg';
 import type { FactoryIssue } from '../lib/api';
 import { Modal } from './Modal';
 import { Button } from './Control';
 import './FactoryPlanGraph.css';
-
-const PAD = 20;
 
 export function FactoryPlanGraph({ issues }: { issues: FactoryIssue[] }) {
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<FactoryIssue>();
   const { nodes, edges } = factoryGraphModel(issues, true);
   if (!nodes.length) return null;
-  const at = new Map(nodes.map((node) => [node.id, node]));
-  const minX = Math.min(...nodes.map((node) => node.x)) - PAD;
-  const minY = Math.min(...nodes.map((node) => node.y)) - PAD;
-  const width = Math.max(...nodes.map((node) => node.x)) + GRAPH_NODE_WIDTH + PAD - minX;
-  const height = Math.max(...nodes.map((node) => node.y)) + GRAPH_NODE_HEIGHT + PAD - minY;
   return <>
     <span className="oc-factory-plan-graph">
-      <svg viewBox={`${minX} ${minY} ${width} ${height}`} role="group" aria-label={`Plan graph with ${nodes.length} steps`}>
-        {graphEdgeGroups(edges).map((group) => {
-          const edge = group[0];
-          const from = at.get(edge.source);
-          const to = at.get(edge.target);
-          if (!from || !to) return null;
-          return <line key={edge.id} className={`oc-factory-plan-graph-edge ${edge.kind}`} x1={from.x + GRAPH_NODE_WIDTH / 2} y1={from.y + GRAPH_NODE_HEIGHT} x2={to.x + GRAPH_NODE_WIDTH / 2} y2={to.y}><title>{group.map((item) => item.kind).join(', ')}</title></line>;
-        })}
-        {nodes.map((node) => <g key={node.id} className={`factory-node-box--${node.state}`} role="button" tabIndex={0} aria-label={`Inspect ${node.issue.title}`} onClick={() => setSelected(node.issue)} onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            setSelected(node.issue);
-          }
-        }}>
-          <title>{node.issue.title}</title>
-          <rect x={node.x} y={node.y} width={GRAPH_NODE_WIDTH} height={GRAPH_NODE_HEIGHT} rx={8} />
-          <text x={node.x + 12} y={node.y + GRAPH_NODE_HEIGHT / 2}>{node.issue.title.length > 22 ? `${node.issue.title.slice(0, 21)}…` : node.issue.title}</text>
-        </g>)}
-      </svg>
+      <FactoryGraphSvg nodes={nodes} edges={edges} onSelect={setSelected} />
       <Button variant="ghost" aria-label="Expand plan graph" onClick={() => setExpanded(true)}>Expand graph</Button>
     </span>
     {selected && createPortal(<IssueDrawer issue={selected} preview onClose={() => setSelected(undefined)} />, document.body)}

@@ -7,10 +7,6 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { api, type FactoryEpic, type FactoryProposal } from '../lib/api';
 import { FactoryEpicDetail } from './FactoryEpics';
 
-vi.mock('@xyflow/react', async (original) => ({
-  ...await original<typeof import('@xyflow/react')>(),
-  ReactFlow: ({ nodes, edges }: { nodes: { id: string; className: string; data: { label: React.ReactNode } }[]; edges: { id: string; label?: string }[] }) => <div>{nodes.map((node) => <div key={node.id} data-testid={`node-${node.id}`} className={node.className}>{node.data.label}</div>)}{edges.map((edge) => <span key={edge.id} data-testid={`edge-${edge.id}`}>{edge.label}</span>)}</div>,
-}));
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryEpics: vi.fn(), factoryIssues: vi.fn(), factoryRemovedIssues: vi.fn(),
   factoryProposals: vi.fn(), factoryPlanGate: vi.fn(), factoryQueue: vi.fn(), projects: vi.fn(), sessions: vi.fn(), sessionModels: vi.fn(),
@@ -63,10 +59,10 @@ it('marks additions without treating materialized identities as new work', async
   const intermediate = { ...pending, revision: 3, contentHash: 'intermediate', manifest: { ...pending.manifest, issues: pending.manifest.issues!.slice(0, 2) } };
   vi.mocked(api.factoryProposals).mockResolvedValue([original, intermediate, pending]);
   mount();
-  const first = await screen.findByTestId('node-ship.2');
+  const first = await screen.findByTestId('epic-graph-node-ship.2');
   expect(within(first).getByText('Added')).toBeInTheDocument();
-  expect(within(screen.getByTestId('node-ship.3')).getByText('Added')).toBeInTheDocument();
-  expect(within(screen.getByTestId('node-ship.1')).queryByText('Added')).not.toBeInTheDocument();
+  expect(within(screen.getByTestId('epic-graph-node-ship.3')).getByText('Added')).toBeInTheDocument();
+  expect(within(screen.getByTestId('epic-graph-node-ship.1')).queryByText('Added')).not.toBeInTheDocument();
 });
 
 it('makes the absence of a new pending proposal explicit', async () => {
@@ -83,7 +79,7 @@ it('keeps additions visible in the Graph tab', async () => {
   mount();
   await userEvent.setup().click(await screen.findByRole('tab', { name: 'Graph' }));
   const graph = within(screen.getByRole('tabpanel', { name: 'Graph' }));
-  await waitFor(() => expect(within(graph.getByTestId('node-ship.2')).getByText('Added')).toBeInTheDocument());
+  await waitFor(() => expect(within(graph.getByTestId('epic-graph-node-ship.2')).getByText('Added')).toBeInTheDocument());
 });
 
 it('renders the frozen external endpoint and reparenting in the Graph tab overlay', async () => {
@@ -98,8 +94,8 @@ it('renders the frozen external endpoint and reparenting in the Graph tab overla
   const graph = within(screen.getByRole('tabpanel', { name: 'Graph' }));
   expect(await graph.findByText('other: External blocker')).toBeInTheDocument();
   expect(graph.getByText('New parent')).toBeInTheDocument();
-  expect(graph.getByTestId('edge-blocks:other.1->ship.2')).toHaveTextContent('Added blocks');
-  expect(graph.getByTestId('edge-hierarchy:group->ship.2')).toHaveTextContent('Added contains');
+  expect(graph.getByTestId('epic-graph-edge-blocks:other.1->ship.2')).toHaveTextContent('Added blocks');
+  expect(graph.getByTestId('epic-graph-edge-hierarchy:group->ship.2')).toHaveTextContent('Added contains');
 });
 
 it('renders all dependency types on a shared pair in a readable approval label', async () => {
@@ -108,7 +104,7 @@ it('renders all dependency types on a shared pair in a readable approval label',
   vi.mocked(api.factoryProposals).mockResolvedValue([before, next]);
   mount();
   const preview = within(await screen.findByLabelText('Proposed plan'));
-  expect(await preview.findByTestId('edge-blocks:ship.2->ship.3')).toHaveTextContent('Added contains · blocks · Added on failure');
+  expect(await preview.findByTestId('epic-graph-edge-blocks:ship.2->ship.3')).toHaveTextContent('Added contains · blocks · Added on failure');
   expect(preview.getByLabelText('Proposal additions')).toHaveTextContent('0 added issues · 2 added connections');
 });
 

@@ -10,10 +10,6 @@ import { MarkdownContent } from './assistant/MarkdownText';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import type { ComponentProps } from 'react';
 
-vi.mock('@xyflow/react', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@xyflow/react')>(),
-  ReactFlow: () => <div data-testid="react-flow" />,
-}));
 
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryIssues: vi.fn(), reopenFactoryIssue: vi.fn(),
@@ -86,7 +82,7 @@ describe('Factory human action cards', () => {
     expect(screen.queryByText(/Old rationale|New rationale/)).not.toBeInTheDocument();
     fireEvent.click(thumbnail);
     expect(screen.getByRole('dialog', { name: 'Plan graph' })).toBeInTheDocument();
-    expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+    expect(screen.getByTestId('epic-graph')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close plan graph' }));
     expect(screen.queryByRole('dialog', { name: 'Plan graph' })).not.toBeInTheDocument();
   });

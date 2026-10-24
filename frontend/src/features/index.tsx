@@ -33,7 +33,7 @@ import { PluginPageNav } from '../components/PluginPageNav';
 import { BackgroundTasks } from '../pages/BackgroundTasks';
 import { ApplicationHealthSettings } from '../components/ApplicationHealthSettings';
 
-// Factory pages pull in the epic graph (@xyflow, dagre): load them with the route.
+// Factory pages pull in the epic graph (dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
 const FactoryOverview = lazyComponent(() => factoryPages().then((m) => m.FactoryOverview));
 const FactoryHowTo = lazyComponent(() => factoryPages().then((m) => m.FactoryHowTo));

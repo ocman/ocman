@@ -1277,7 +1277,7 @@ describe('Factory interactions', () => {
 		expect(await screen.findByLabelText('Tracer Formula source')).toHaveValue(workflowSource);
 		expect(screen.getByRole('status')).toHaveTextContent('Formula is valid');
 		expect(within(screen.getByTestId('epic-graph')).getByText('plan')).toBeInTheDocument();
-		expect(within(screen.getByTestId('epic-graph')).getByRole('button', { name: 'Fit View' })).toBeInTheDocument();
+		expect(within(screen.getByTestId('epic-graph')).getByRole('button', { name: 'Fit view' })).toBeInTheDocument();
 	});
 
 	it('shows Factory configuration query and validation errors', async () => {

@@ -11,7 +11,7 @@ import { useFactoryImplementationModel } from './useFactoryImplementationModel';
 import './FactoryEpicCard.css';
 import { MarkdownContent } from './assistant/MarkdownText';
 
-// The plan graph (@xyflow, dagre) loads only when a card shows one.
+// The plan graph (dagre) loads only when a card shows one.
 const FactoryPlanGraph = lazyComponent(() => import('./FactoryPlanGraph').then((m) => m.FactoryPlanGraph), 'Loading plan graph…');
 
 function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate }) {
