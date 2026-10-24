@@ -32,7 +32,6 @@
 // Hash fragments are preserved as-is — sticky params attach before
 // the hash.
 
-import { useCallback } from 'react';
 import { useLocation, useNavigate, type NavigateOptions } from 'react-router-dom';
 
 const DEFAULT_STICKY_PARAMS = ['debug'];
@@ -48,13 +47,13 @@ export function useStickyNavigate(stickyParams: string[] = DEFAULT_STICKY_PARAMS
 
   // Key on content so callers may pass an inline array.
   const stickyKey = stickyParams.join(',');
-  const sticky = useCallback((to: string | number, options?: NavigateOptions) => {
+  const sticky = (to: string | number, options?: NavigateOptions) => {
     if (typeof to !== 'string') {
       navigate(to);
       return;
     }
     navigate(applyStickyParams(to, location.search, stickyKey ? stickyKey.split(',') : []), options);
-  }, [navigate, location.search, stickyKey]);
+  };
   return sticky as StickyNavigate;
 }
 

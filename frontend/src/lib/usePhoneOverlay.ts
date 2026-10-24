@@ -1,4 +1,3 @@
-import { useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useIsPhone } from './useIsPhone';
 
@@ -15,7 +14,7 @@ export function usePhoneOverlay<T extends string>(name: string) {
   const state = location.state as { phoneOverlay?: Overlay } | null;
   const entry = state?.phoneOverlay;
   const value = phone && entry?.name === name && entry.scope === scope ? entry.value as T : null;
-  const setValue = useCallback((next: T | null) => {
+  const setValue = (next: T | null) => {
     if (!phone) return;
     if (next === null) {
       // Only our own entry can be popped. Direct links never navigate off-site.
@@ -27,6 +26,6 @@ export function usePhoneOverlay<T extends string>(name: string) {
         preventScrollReset: true,
       });
     }
-  }, [phone, value, navigate, location.pathname, location.search, location.hash, state, name, scope]);
+  };
   return [value, setValue] as const;
 }

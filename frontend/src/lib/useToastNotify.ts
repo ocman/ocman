@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { NotifyEntry } from './api';
 import { useNotifyStore } from './useNotifyData';
@@ -184,9 +184,9 @@ export function useToastNotify(): UseToastNotifyResult {
   const baselineRef = useRef<Map<string, string> | null>(null);
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
 
-  const dismiss = useCallback((toastId: string) => {
+  const dismiss = (toastId: string) => {
     setToasts((prev) => prev.filter((t) => t.toastId !== toastId));
-  }, []);
+  };
 
   // Hide any toast whose session matches the page the user is
   // currently on. Computed at render time rather than mutated via an
@@ -194,11 +194,8 @@ export function useToastNotify(): UseToastNotifyResult {
   // and because it correctly handles the case where the user
   // navigates *away* from the session before the prompt resolves
   // (the toast should reappear in the viewport once they leave).
-  const visibleToasts = useMemo(() => {
-    const active = activeSessionId(location.pathname);
-    if (!active) return toasts;
-    return toasts.filter((t) => t.sessionId !== active);
-  }, [toasts, location.pathname]);
+  const activeSession = activeSessionId(location.pathname);
+  const visibleToasts = activeSession ? toasts.filter((t) => t.sessionId !== activeSession) : toasts;
 
   // Subscribe to module-scoped "prompt resolved" events fired by
   // SessionDetail when a permission/question reply is sent. Lets us

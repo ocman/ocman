@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import {
   decideStickyAction,
@@ -77,13 +77,13 @@ export function useStickyBottom(
 
   // Imperative jump for the affordance. Re-engages follow: clicking
   // "scroll to bottom" is as explicit as intent gets.
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = () => {
     const el = viewportRef.current;
     if (!el) return;
     stickyRef.current = true;
     setShowScrollToBottom(false);
     el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
-  }, [viewportRef]);
+  };
 
   useEffect(() => {
     const el = viewportRef.current;

@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { onDraftChange, publishDraftChange, transact, type DraftTx } from './draftDb';
 import { remoteLog } from './remoteLog';
 
@@ -190,7 +190,7 @@ function getSnapshot() {
 /** Session ids that currently hold an unsent composer draft. */
 export function useDraftSessionIds(): Set<string> {
   const key = useSyncExternalStore(subscribeDraftTexts, getSnapshot, () => '');
-  return useMemo(() => new Set(key ? key.split('\n') : []), [key]);
+  return new Set(key ? key.split('\n') : []);
 }
 
 /** Tests only. */

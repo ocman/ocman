@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useDocumentVisible } from './usePanelVisible';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, PreviewSessionContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
@@ -31,10 +31,10 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
   const [pending, setPending] = useState(false);
   const [generation, setGeneration] = useState(0);
   const refreshPending = useRef(false);
-  const refresh = useCallback(() => {
+  const refresh = () => {
     refreshPending.current = true;
     setGeneration((g) => g + 1);
-  }, []);
+  };
   // Keep matching identity available to the event listener during refresh.
   const lastResolved = useRef<Resolved | null>(null);
 

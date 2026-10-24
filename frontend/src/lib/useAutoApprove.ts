@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from './api';
 import { useUiStore } from './uiStore';
 
@@ -57,7 +57,7 @@ export function useAutoApprove({
     return () => { cancelled = true; };
   }, [sessionId, capable, getAutoApprove, setAutoApproveApi, autoApproveDefault]);
 
-  const setEnabled = useCallback(async (on: boolean) => {
+  const setEnabled = async (on: boolean) => {
     setToggleError(null);
     try {
       await setAutoApproveApi(sessionId, on);
@@ -65,7 +65,7 @@ export function useAutoApprove({
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : 'Failed to update auto-approve setting');
     }
-  }, [sessionId, setAutoApproveApi]);
+  };
 
   return { enabled, toggleError, setEnabled };
 }
