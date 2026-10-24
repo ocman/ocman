@@ -52,69 +52,7 @@ type Manager struct {
 	// before Start.
 	beforeAdapterRegister func()
 	refreshInventories    func(context.Context)
-	webhooks              WebhookInboxes
 }
-
-func (m *Manager) webhookRemote(id string) (*RemoteConn, error) {
-	if id == "local" || id == "" {
-		return nil, nil
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	for _, remote := range m.remotes {
-		if remote.conn != nil && remote.conn.RemoteID() == id {
-			if remote.conn.Client() == nil {
-				return nil, platforms.ErrRemoteOffline
-			}
-			return remote.conn, nil
-		}
-	}
-	return nil, platforms.ErrRemoteOffline
-}
-
-func (m *Manager) RegisterWebhookInbox(ctx context.Context, owner, routineID, relayURL, enrollmentToken string) (state.WebhookInbox, error) {
-	return m.RegisterWebhookInboxWithSecret(ctx, owner, routineID, relayURL, enrollmentToken, "", "")
-}
-
-func (m *Manager) RegisterWebhookInboxWithSecret(ctx context.Context, owner, routineID, relayURL, enrollmentToken, secret, secretHeader string) (state.WebhookInbox, error) {
-	conn, err := m.webhookRemote(owner)
-	if err != nil {
-		return state.WebhookInbox{}, err
-	}
-	if conn != nil {
-		return conn.RegisterWebhookInboxWithSecret(ctx, routineID, relayURL, enrollmentToken, secret, secretHeader)
-	}
-	if m.webhooks == nil {
-		return state.WebhookInbox{}, platforms.ErrRemoteOffline
-	}
-	return m.webhooks.RegisterWithSecret(ctx, routineID, relayURL, enrollmentToken, secret, secretHeader)
-}
-
-func (m *Manager) PollWebhookInbox(ctx context.Context, owner, routineID string) error {
-	conn, err := m.webhookRemote(owner)
-	if err != nil {
-		return err
-	}
-	if conn != nil {
-		return conn.PollWebhookInbox(ctx, routineID)
-	}
-	if m.webhooks == nil {
-		return platforms.ErrRemoteOffline
-	}
-	return m.webhooks.Poll(ctx, routineID)
-}
-
-// WebhookInboxes registers and polls this machine's webhook inboxes. The
-// composition root injects internal/webhook's LocalInboxes, so this package
-// never imports the webhook module.
-type WebhookInboxes interface {
-	RegisterWithSecret(ctx context.Context, routineID, relayURL, enrollmentToken, secret, secretHeader string) (state.WebhookInbox, error)
-	Poll(ctx context.Context, routineID string) error
-}
-
-// SetWebhookInboxes sets the hub's local inbox implementation. Without one,
-// local registration and polling report ErrRemoteOffline.
-func (m *Manager) SetWebhookInboxes(w WebhookInboxes) { m.webhooks = w }
 
 // managedRemote bundles a RemoteConn with its registered adapters and the
 // hub-side config row it came from.

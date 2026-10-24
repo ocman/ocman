@@ -42,8 +42,8 @@ func TestRemoteConnRequiresExplicitPlaintextOptIn(t *testing.T) {
 }
 
 func TestProtocolCompatible(t *testing.T) {
-	if ProtocolVersion != 9 {
-		t.Fatalf("ProtocolVersion = %d, want 9 for canonical core session references", ProtocolVersion)
+	if ProtocolVersion != 10 {
+		t.Fatalf("ProtocolVersion = %d, want 10 after the webhook-inbox RPC removal", ProtocolVersion)
 	}
 	if !protocolCompatible(ProtocolVersion) {
 		t.Error("current protocol version should be compatible")
@@ -51,7 +51,7 @@ func TestProtocolCompatible(t *testing.T) {
 	if !protocolCompatible(legacySessionProtocol) {
 		t.Fatal("legacy integration transport was rejected")
 	}
-	for _, version := range []int32{legacySessionProtocol - 1, ProtocolVersion + 1} {
+	for _, version := range []int32{legacySessionProtocol - 1, ProtocolVersion - 1, ProtocolVersion + 1} {
 		if protocolCompatible(version) {
 			t.Errorf("protocol version %d must be incompatible (exact match)", version)
 		}

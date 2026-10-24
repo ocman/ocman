@@ -44,26 +44,9 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 }
 
-// RegisterWithSecret registers a legacy routine-owned inbox and subscribes
-// that routine to every delivery.
-func RegisterWithSecret(ctx context.Context, store *state.DB, routineID, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {
-	inbox, err := register(ctx, store, "", routineID, relayURL, enrollmentToken, secret, secretHeader, client)
-	if err != nil {
-		return state.WebhookInbox{}, err
-	}
-	if err := store.SaveWebhookSubscription(ctx, state.WebhookSubscription{ID: "subscription-" + inbox.ID, InboxID: inbox.ID, RoutineID: routineID}); err != nil {
-		return state.WebhookInbox{}, err
-	}
-	return inbox, nil
-}
-
 // RegisterStandalone registers a named inbox that no routine owns; routines
 // subscribe to it separately.
 func RegisterStandalone(ctx context.Context, store *state.DB, name, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {
-	return register(ctx, store, name, "", relayURL, enrollmentToken, secret, secretHeader, client)
-}
-
-func register(ctx context.Context, store *state.DB, name, routineID, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {
 	identity, err := age.GenerateX25519Identity()
 	if err != nil {
 		return state.WebhookInbox{}, fmt.Errorf("generating webhook identity: %w", err)
@@ -72,10 +55,7 @@ func register(ctx context.Context, store *state.DB, name, routineID, relayURL, e
 	if err != nil {
 		return state.WebhookInbox{}, err
 	}
-	if routineID == "" {
-		routineID = allocation.ID
-	}
-	inbox := state.WebhookInbox{ID: allocation.ID, Name: name, RoutineID: routineID, RelayURL: relayURL,
+	inbox := state.WebhookInbox{ID: allocation.ID, Name: name, RoutineID: allocation.ID, RelayURL: relayURL,
 		ManagementToken: allocation.ManagementToken, FetchToken: allocation.FetchToken,
 		AcknowledgmentToken: allocation.AcknowledgmentToken, Identity: identity.String(),
 		IngestionURL: allocation.IngestionURL, KeyVersion: allocation.KeyVersion}
@@ -149,26 +129,4 @@ func (p *Poller) Poll(ctx context.Context) error {
 		}
 		cursor = page.Cursor
 	}
-}
-
-// LocalInboxes registers and polls this machine's inboxes. It is the
-// implementation the composition root injects into internal/remote, which
-// declares only the narrow interface it calls.
-type LocalInboxes struct {
-	Store    *state.DB
-	Routines RoutineDispatcher
-}
-
-// RegisterWithSecret registers routineID's inbox with the relay.
-func (l LocalInboxes) RegisterWithSecret(ctx context.Context, routineID, relayURL, enrollmentToken, secret, secretHeader string) (state.WebhookInbox, error) {
-	return RegisterWithSecret(ctx, l.Store, routineID, relayURL, enrollmentToken, secret, secretHeader, nil)
-}
-
-// Poll drains routineID's inbox once.
-func (l LocalInboxes) Poll(ctx context.Context, routineID string) error {
-	inbox, err := l.Store.GetWebhookInbox(ctx, routineID)
-	if err != nil {
-		return err
-	}
-	return (&Poller{Store: l.Store, Inbox: inbox, Routines: l.Routines}).Poll(ctx)
 }

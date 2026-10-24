@@ -12,8 +12,9 @@ package remote
 // (AD-12). It is bumped on breaking wire or required semantic changes;
 // additive db-type changes ride the JSON envelopes (AD-11) and do not bump it.
 // v9 requires canonical session references throughout core state and RPCs.
+// v10 removes the cross-machine webhook-inbox RPCs.
 // Raw-adapter compatibility servers advertise v8; canonical managers never
 // publish their adapters or hosts.
-const ProtocolVersion int32 = 9
+const ProtocolVersion int32 = 10
 
 const legacySessionProtocol int32 = 8

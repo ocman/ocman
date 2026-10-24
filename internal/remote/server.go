@@ -30,16 +30,11 @@ type Server struct {
 	enrichSession                  func(context.Context, string, string, *platforms.SessionDetail)
 	proxyEvents                    func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
 	permissionNotificationDeferred func(string, string) bool
-	webhooks                       WebhookInboxes
 	plugins                        PluginHandler
 	permissionPolicy               PermissionPolicyHandler
 }
 
 func (s *Server) UseInboxStore(store *state.DB) *Server { s.inboxStore = store; return s }
-func (s *Server) UseWebhookInboxes(w WebhookInboxes) *Server {
-	s.webhooks = w
-	return s
-}
 func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, version string) *Server {
 	return &Server{registry: registry, sessions: sessionsvc.New(registry, sessionsvc.Hooks{}), host: host, instanceID: instanceID, version: version}
 }
@@ -146,38 +141,6 @@ func (w *eventStreamWriter) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return len(p), nil
-}
-
-// Hold partial upstream writes until a complete SSE frame is available.
-
-func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
-	if s.webhooks == nil {
-		return nil, status.Error(codes.FailedPrecondition, "webhook state is unavailable")
-	}
-	var input struct {
-		RoutineID       string `json:"routineId"`
-		RelayURL        string `json:"relayUrl"`
-		EnrollmentToken string `json:"enrollmentToken"`
-		Secret          string `json:"secret"`
-		SecretHeader    string `json:"secretHeader"`
-	}
-	if err := unmarshalJSON(req.Payload, &input); err != nil {
-		return nil, err
-	}
-	inbox, err := s.webhooks.RegisterWithSecret(ctx, input.RoutineID, input.RelayURL, input.EnrollmentToken, input.Secret, input.SecretHeader)
-	return jsonResp(inbox, err)
-}
-func (s *Server) PollWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
-	if s.webhooks == nil {
-		return nil, status.Error(codes.FailedPrecondition, "webhook state is unavailable")
-	}
-	var input struct {
-		RoutineID string `json:"routineId"`
-	}
-	if err := unmarshalJSON(req.Payload, &input); err != nil {
-		return nil, err
-	}
-	return &pb.Empty{}, s.webhooks.Poll(ctx, input.RoutineID)
 }
 
 func (s *Server) TermWindows(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

@@ -770,7 +770,8 @@ flowchart LR
   Canonical HTTP/MCP request paths retain the Ocman ID, and pending feature
   references lose their executable links without losing the surrounding record.
   Catalogue v4 mirrors remote canonical metadata without a native binding on the
-  hub. Production negotiation requires protocol v9. Raw compatibility servers
+  hub. Production negotiation requires protocol v10 (v9 plus the removal of
+  the unused webhook-inbox RPCs). Raw compatibility servers
   advertise v8; canonical managers reject them before publishing either their
   platform adapters or host execution routes.
   Declared v9 mutation contracts reject native and pending session references
@@ -1016,9 +1017,7 @@ flowchart TD
   their routes, background loops, MCP tools and event subscriptions. The
   server lists them once in `modules()` and hands each narrow `Deps` (store,
   guards, lookups); modules never import the server or each other. Webhooks
-  dispatch to routines through an interface, and `internal/remote` reaches
-  the owner's webhook inboxes through its own `WebhookInboxes` interface
-  (injected `webhook.LocalInboxes`). Modules are built once on first use via
+  dispatch to routines through an interface. Modules are built once on first use via
   the server's generic `lazy[T]` field. Sharing and Factory's dispatch
   wake-up react to the typed, synchronous `module.Bus` `SessionIdle` event.
   `sessionsvc` publishes `FirstPromptAdded` once after a new conversation's

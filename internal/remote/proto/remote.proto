@@ -88,8 +88,6 @@ service Ocman {
   rpc ManagedOpencodes(Empty) returns (JsonResp);
   rpc TmuxSessions(Empty) returns (JsonResp);
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
-  rpc RegisterWebhookInbox(JsonReq) returns (JsonResp);   // {routineId,relayUrl,enrollmentToken}
-  rpc PollWebhookInbox(JsonReq) returns (Empty);          // {routineId}
 
   // --- Owner-local Inbox ---
   rpc InboxItems(Empty) returns (JsonResp);               // []state.InboxItem

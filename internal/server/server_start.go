@@ -59,9 +59,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Plugins start (discovery, processes) with the other modules below; their
 	// processes stop here, after the listeners and launched modules close.
 	defer s.stopPluginProcesses()
-	if s.remotes != nil {
-		s.remotes.SetWebhookInboxes(s.localWebhookInboxes())
-	}
 	// The auto-approve module seeds the judge delay before the other
 	// modules start and runs the headless watcher among their workers.
 	startup.Report(ctx, "Starting application modules", 0, 0)

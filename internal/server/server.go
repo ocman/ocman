@@ -337,22 +337,6 @@ func (s *Server) triggerProjectsIndexRefresh() {
 // same hooks) the HTTP layer uses.
 func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 
-// RoutineService is the webhook dispatcher for main.go's remote gRPC
-// server, which is wired before Start. Untyped nil without a state DB: a
-// typed nil passes the poller's nil check and panics on the first delivery.
-func (s *Server) RoutineService() webhook.RoutineDispatcher {
-	if svc := s.routineService(); svc != nil {
-		return svc
-	}
-	return nil
-}
-
-// localWebhookInboxes is this machine's webhook inbox implementation, which
-// the composition root injects into the remote manager.
-func (s *Server) localWebhookInboxes() webhook.LocalInboxes {
-	return webhook.LocalInboxes{Store: s.stateDB, Routines: s.RoutineService()}
-}
-
 // WithAutoApproveDefault sets the server-wide default for auto-approve.
 // When true, sessions that have no per-session override start with
 // auto-approve enabled. Must be called before Start.
