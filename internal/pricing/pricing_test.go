@@ -13,12 +13,7 @@ import (
 // fixedTable returns a *Table populated with a small known fixture so
 // tests don't depend on the upstream LiteLLM JSON shape.
 func fixedTable(prices map[string]ModelPrice) *Table {
-	t := &Table{prices: make(map[string]ModelPrice, len(prices))}
-	for k, v := range prices {
-		t.prices[k] = v
-	}
-	t.rebuildKeys()
-	return t
+	return &Table{prices: prices, keys: sortedKeys(prices)}
 }
 
 func TestLookup_ExactMatch(t *testing.T) {
