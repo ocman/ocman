@@ -1,23 +1,11 @@
-import { useLayoutEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import type { WorkingTreeFile } from '../lib/api';
 import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
-import { useInfiniteRows } from '../lib/useInfiniteRows';
-import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { RawDiffView } from './RawDiffView';
 import type { FullscreenDiffFile } from './DiffFullscreenModal';
-import { useFullscreenDiff } from './useFullscreenDiff';
-import type { PaneSummary } from './SessionChangesSidebar';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
-import { SkeletonLines } from './Skeleton';
 import { ChangedFileRow } from './ChangedFileRow';
-
-// Lazy-mount budget for the per-file rows. Working trees with
-// hundreds of dirty files (post-rebase, after a generated-files
-// dump, etc.) only paint the first chunk; the rest stream in as
-// the sentinel enters the viewport. Same pattern as the session-
-// changes sidebar.
-const INITIAL_FILE_GROUPS = 20;
-const FILE_GROUPS_CHUNK = 20;
+import { ChangesListPane, type ChangesPaneCallbacks } from './ChangesListPane';
 
 // WorkingTreeChangesSidebar shows `git diff HEAD` (plus untracked
 // files) for the session's directory. Visually mirrors
@@ -34,24 +22,11 @@ const FILE_GROUPS_CHUNK = 20;
 // useSessionChanges, so an SSE edit event refreshes both views in
 // lockstep.
 
-interface WorkingTreeChangesSidebarProps {
+interface WorkingTreeChangesSidebarProps extends ChangesPaneCallbacks {
   // Absolute path to the session's directory. Empty string disables
   // the hook and renders an empty state.
   directory: string | undefined;
   dirtyTick?: number;
-  // Called whenever the underlying data updates. Used by RightPanel
-  // to render the "N files +A -D" summary in the pane header.
-  onSummaryChange?: (summary: PaneSummary) => void;
-  // Called once with a stable refresh callback so embedded parents
-  // (RightPanel) can render their own refresh button in the pane
-  // header. Mirrors SessionChangesSidebar.onRefresh.
-  onRefresh?: (refresh: () => void) => void;
-  // Called whenever the underlying request's loading flag flips.
-  // Mirrors SessionChangesSidebar.onLoadingChange.
-  onLoadingChange?: (loading: boolean) => void;
-  // Mirrors SessionChangesSidebar.onFullscreen: hands the parent a
-  // stable callback that opens the fullscreen diff browser.
-  onFullscreen?: (open: () => void) => void;
 }
 
 const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
@@ -62,7 +37,7 @@ const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
   untracked: '?',
 };
 
-export function WorkingTreeChangesSidebar({ directory, dirtyTick, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: WorkingTreeChangesSidebarProps) {
+export function WorkingTreeChangesSidebar({ directory, dirtyTick, ...callbacks }: WorkingTreeChangesSidebarProps) {
   const enabled = !!directory;
   const { data, loading, error, notRepo, refresh } = useWorkingTreeDiff(directory, { enabled, dirtyTick });
 
@@ -82,84 +57,50 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, onSummaryChang
     return { add, del, files: files.length };
   }, [files]);
 
-  // Surface counts to the parent for header rendering. Same contract
-  // as SessionChangesSidebar, so RightPanel can treat both panes
-  // uniformly.
-  useLayoutEffect(() => {
-    if (!onSummaryChange) return;
-    onSummaryChange({
-      files: totals.files,
-      additions: totals.add,
-      deletions: totals.del,
-    });
-  }, [totals.files, totals.add, totals.del, onSummaryChange]);
-
-  // Forward refresh upward + loading state so RightPanel can render
-  // its own button in the embedded pane header and spin it while a
-  // working-tree fetch is in flight. Mirrors SessionChangesSidebar.
-  useSidebarCallbacks({ refresh, loading, onRefresh, onLoadingChange });
-
-  // Lazy-mount budget over the flat file list. We then group the
-  // *visible* slice so the section headers and counts adjust as
-  // more rows stream in. Counts in the section header reflect what
-  // is currently mounted, which matches the user's mental model:
-  // "I see N rows under Changed".
-  const {
-    visibleCount: visibleFileCount,
-    sentinelRef: fileSentinelRef,
-    hasMore: hasMoreFiles,
-  } = useInfiniteRows({
-    total: files.length,
-    initial: INITIAL_FILE_GROUPS,
-    chunkSize: FILE_GROUPS_CHUNK,
-  });
-
-  const visibleGroups = useMemo(
-    () => groupWorkingTreeFiles(files.slice(0, visibleFileCount)),
-    [files, visibleFileCount],
-  );
-
-  // Fullscreen diff browser — same contract as SessionChangesSidebar.
   const fullscreenFiles = useMemo(() => toFullscreenFiles(files), [files]);
-  const { openFile, modal: Fullscreen } = useFullscreenDiff(
-    'Working tree',
-    fullscreenFiles,
-    onFullscreen,
-  );
 
-  const Body = (
-    <div className="oc-changes-sidebar-body oc-changes-list-body">
-      {!enabled && (
+  return (
+    <ChangesListPane
+      {...callbacks}
+      enabled={enabled}
+      hasData={!!data}
+      loading={loading}
+      error={error}
+      refresh={refresh}
+      files={files}
+      summary={{ files: totals.files, additions: totals.add, deletions: totals.del }}
+      fullscreenTitle="Working tree"
+      fullscreenFiles={fullscreenFiles}
+      loadErrorLabel="Failed to load diff"
+      emptyMessage={!notRepo && !error ? 'Working tree is clean.' : null}
+      header={data && data.branch && (
+        <div className="oc-changes-sidebar-branch">
+          <i className="bi bi-git" aria-hidden="true" /> {data.branch}
+          {(data.ahead > 0 || data.behind > 0) && (
+            <span className="oc-changes-sidebar-branch-ab">
+              {data.ahead > 0 && <> ↑{data.ahead}</>}
+              {data.behind > 0 && <> ↓{data.behind}</>}
+            </span>
+          )}
+        </div>
+      )}
+      notice={!enabled ? (
         <div className="oc-changes-sidebar-empty">No directory available.</div>
-      )}
-      {enabled && loading && !data && (
-        <SkeletonLines label="Loading file list" />
-      )}
-      {enabled && notRepo && (
+      ) : notRepo && (
         <div className="oc-changes-sidebar-empty">
           This project is not a git repository.
         </div>
       )}
-      {enabled && error && (
-        <div className="oc-changes-sidebar-error" role="alert">
-          {data
-            ? <>Refresh failed: {error}. Showing previous results; data may be out of date.</>
-            : <>Failed to load diff: {error}</>}
-        </div>
-      )}
-      {enabled && data && files.length === 0 && !loading && !notRepo && !error && (
-        <div className="oc-changes-sidebar-empty">
-          Working tree is clean.
-        </div>
-      )}
-      {enabled && data && files.length > 0 && (
+      // Group only the mounted slice, so section headers and counts
+      // reflect what is currently visible: "I see N rows under Changed".
+      renderRows={(visible, openFile) => (
         <>
-          {data.truncated && (
+          {data?.truncated && (
             <div className="oc-changes-sidebar-error">
               Diff is large — some files were omitted. Use your editor to view the full diff.
             </div>
           )}
-          {visibleGroups.map((g) => (
+          {groupWorkingTreeFiles(visible).map((g) => (
             <section key={g.id} className={`oc-changes-list-section oc-changes-list-section-${g.id}`}>
               <header className="oc-changes-list-section-header">
                 <span className="oc-changes-list-section-label">{g.label}</span>
@@ -172,36 +113,9 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, onSummaryChang
               </ul>
             </section>
           ))}
-          {hasMoreFiles && (
-            <div
-              ref={fileSentinelRef}
-              className="oc-diff-sentinel"
-              aria-hidden="true"
-            />
-          )}
         </>
       )}
-    </div>
-  );
-
-  // The parent owns the pane header; we render the branch summary
-  // inline above the body.
-  return (
-    <div className="oc-changes-sidebar-embedded">
-      {data && data.branch && (
-        <div className="oc-changes-sidebar-branch">
-          <i className="bi bi-git" aria-hidden="true" /> {data.branch}
-          {(data.ahead > 0 || data.behind > 0) && (
-            <span className="oc-changes-sidebar-branch-ab">
-              {data.ahead > 0 && <> ↑{data.ahead}</>}
-              {data.behind > 0 && <> ↓{data.behind}</>}
-            </span>
-          )}
-        </div>
-      )}
-      {Body}
-      {Fullscreen}
-    </div>
+    />
   );
 }
 

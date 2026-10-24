@@ -1,23 +1,11 @@
-import { useLayoutEffect, useMemo } from 'react';
-import './SessionChangesSidebar.css';
+import { useMemo } from 'react';
 import type { FileChange } from '../lib/api';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionChanges } from '../lib/useSessionChanges';
-import { useInfiniteRows } from '../lib/useInfiniteRows';
-import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { FileChangeGroup } from './FileChangeGroup';
 import { ChangedFileRow } from './ChangedFileRow';
 import type { FullscreenDiffFile } from './DiffFullscreenModal';
-import { useFullscreenDiff } from './useFullscreenDiff';
-import { SkeletonLines } from './Skeleton';
-
-// Lazy-mount budget for the per-file rows themselves. Sessions with
-// hundreds of touched files need this; we only render the first
-// chunk on first paint and stream the rest in as the user scrolls.
-// Same useInfiniteRows pattern as the diff renderer. Rows always
-// start collapsed — the user expands the ones they care about.
-const INITIAL_FILE_GROUPS = 20;
-const FILE_GROUPS_CHUNK = 20;
+import { ChangesListPane, type ChangesPaneCallbacks } from './ChangesListPane';
 
 // PaneSummary is the per-tab counts surfaced to the parent so it can
 // render "N files +A -D" next to the pane title. Both sidebars emit
@@ -28,7 +16,7 @@ export interface PaneSummary {
   deletions: number;
 }
 
-interface SessionChangesSidebarProps {
+interface SessionChangesSidebarProps extends ChangesPaneCallbacks {
   sessionId: string;
   // Platform ID for the current session — used to look up
   // capability flags. When undefined (loading), the sidebar
@@ -38,24 +26,9 @@ interface SessionChangesSidebarProps {
   // arriving via SSE, prompting a debounced re-fetch. Pass 0 (or
   // omit) for static views (e.g. archived sessions).
   dirtyTick?: number;
-  // Called whenever the underlying data updates. Used by RightPanel
-  // to render the "N files +A -D" summary in the pane header.
-  onSummaryChange?: (summary: PaneSummary) => void;
-  // Called once with a stable refresh callback so the parent
-  // (RightPanel) can render its own refresh button in the pane
-  // header. Identity is stable across renders.
-  onRefresh?: (refresh: () => void) => void;
-  // Called whenever the underlying request's loading flag flips.
-  // Lets embedded parents drive a spinner on their refresh button
-  // without owning the data hook themselves.
-  onLoadingChange?: (loading: boolean) => void;
-  // Called once with a stable callback that opens the fullscreen
-  // diff browser, so embedded parents can put the button in their
-  // own pane header. Mirrors onRefresh.
-  onFullscreen?: (open: () => void) => void;
 }
 
-export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: SessionChangesSidebarProps) {
+export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, ...callbacks }: SessionChangesSidebarProps) {
   const caps = usePlatformCapabilities(platformId);
   const enabled = caps.fileChanges;
   const { data, loading, error, refresh } = useSessionChanges(sessionId, { enabled, dirtyTick });
@@ -67,103 +40,48 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, onSumm
   // Memoised so the empty fallback keeps a stable identity (a fresh
   // `[]` each render would thrash the downstream useMemo).
   const files = useMemo(() => data?.files ?? [], [data]);
-  const totalAdditions = data?.totalAdditions ?? 0;
-  const totalDeletions = data?.totalDeletions ?? 0;
-  const filesChanged = data?.filesChanged ?? files.length;
-
-  // Stream additional file groups in as the user scrolls. The hook
-  // returns visibleCount=min(initial,total) initially; the sentinel
-  // we render below the last group bumps it as it enters view.
-  const {
-    visibleCount: visibleFileCount,
-    sentinelRef: fileSentinelRef,
-    hasMore: hasMoreFiles,
-  } = useInfiniteRows({
-    total: files.length,
-    initial: INITIAL_FILE_GROUPS,
-    chunkSize: FILE_GROUPS_CHUNK,
-  });
-
-  // Forward summary upward whenever the data changes. Only the three
-  // numbers we surface — RightPanel is intentionally agnostic about
-  // the data shape behind them.
-  useLayoutEffect(() => {
-    if (!onSummaryChange) return;
-    onSummaryChange({
-      files: filesChanged,
-      additions: totalAdditions,
-      deletions: totalDeletions,
-    });
-  }, [filesChanged, totalAdditions, totalDeletions, onSummaryChange]);
-
-  // Forward the refresh callback + loading state up to RightPanel so
-  // it can wire the embedded pane's "Refresh" button and spin it while
-  // a request is in flight.
-  useSidebarCallbacks({ refresh, loading, onRefresh, onLoadingChange });
-
-  // Fullscreen diff browser. The sidebar owns the modal; the parent
-  // only gets a callback to open it.
   const fullscreenFiles = useMemo(() => toFullscreenFiles(files), [files]);
-  const { openFile, modal: Fullscreen } = useFullscreenDiff(
-    'Session changes',
-    fullscreenFiles,
-    onFullscreen,
-  );
+  const supported = !!data?.supported;
 
-  const Body = (
-    <div className="oc-changes-sidebar-body oc-changes-list-body">
-      {!enabled && (
+  return (
+    <ChangesListPane
+      {...callbacks}
+      enabled={enabled}
+      hasData={!!data}
+      loading={loading}
+      error={error}
+      refresh={refresh}
+      files={supported ? files : []}
+      summary={{
+        files: data?.filesChanged ?? files.length,
+        additions: data?.totalAdditions ?? 0,
+        deletions: data?.totalDeletions ?? 0,
+      }}
+      fullscreenTitle="Session changes"
+      fullscreenFiles={fullscreenFiles}
+      loadErrorLabel="Failed to load changes"
+      emptyMessage={supported ? 'No file edits in this session yet.' : null}
+      notice={(!enabled || (data && !supported)) && (
         <div className="oc-changes-sidebar-unsupported">
           Changes view is not supported for this platform.
         </div>
       )}
-      {enabled && loading && !data && (
-        <SkeletonLines label="Loading file list" />
-      )}
-      {enabled && error && (
-        <div className="oc-changes-sidebar-error" role="alert">
-          {data
-            ? <>Refresh failed: {error}. Showing previous results; data may be out of date.</>
-            : <>Failed to load changes: {error}</>}
-        </div>
-      )}
-      {enabled && data && data.supported && files.length === 0 && !loading && (
-        <div className="oc-changes-sidebar-empty">
-          No file edits in this session yet.
-        </div>
-      )}
-      {enabled && data && data.supported && files.length > 0 && (
-        <>
-          <ul className="oc-changes-list">
-            {files.slice(0, visibleFileCount).map((change) => (
-              <ChangedFileRow
-                key={change.path}
-                path={change.path}
-                displayPath={change.displayPath}
-                additions={change.additions}
-                deletions={change.deletions}
-                onOpen={() => openFile(change.path)}
-              />
-            ))}
-          </ul>
-          {hasMoreFiles && (
-            <div
-              ref={fileSentinelRef}
-              className="oc-diff-sentinel"
-              aria-hidden="true"
+      renderRows={(visible, openFile) => (
+        <ul className="oc-changes-list">
+          {visible.map((change) => (
+            <ChangedFileRow
+              key={change.path}
+              path={change.path}
+              displayPath={change.displayPath}
+              additions={change.additions}
+              deletions={change.deletions}
+              onOpen={() => openFile(change.path)}
             />
-          )}
-        </>
+          ))}
+        </ul>
       )}
-      {enabled && data && !data.supported && (
-        <div className="oc-changes-sidebar-unsupported">
-          Changes view is not supported for this platform.
-        </div>
-      )}
-    </div>
+    />
   );
-
-  return <div className="oc-changes-sidebar-embedded">{Body}{Fullscreen}</div>;
 }
 
 // toFullscreenFiles adapts the session-changes payload to the
