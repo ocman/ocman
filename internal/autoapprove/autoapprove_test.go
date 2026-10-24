@@ -888,13 +888,8 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotKind, gotID, gotSessionID string
 			var gotMetadata map[string]any
-			fired := make(chan struct{}, 1)
 			record := func(kind, sessionID, permissionID string, metadata map[string]any) {
 				gotKind, gotSessionID, gotID, gotMetadata = kind, sessionID, permissionID, metadata
-				select {
-				case fired <- struct{}{}:
-				default:
-				}
 			}
 
 			tee := &Tee{
@@ -915,15 +910,10 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 				t.Fatalf("Write: %v", err)
 			}
 
+			if gotKind != tc.wantKind {
+				t.Fatalf("callback = %q, want %q", gotKind, tc.wantKind)
+			}
 			if tc.wantKind != "" {
-				select {
-				case <-fired:
-				case <-time.After(time.Second):
-					t.Fatalf("%s callback was not called within 1s", tc.wantKind)
-				}
-				if gotKind != tc.wantKind {
-					t.Errorf("fired %s callback, want %s", gotKind, tc.wantKind)
-				}
 				if gotID != tc.wantID {
 					t.Errorf("got permissionID=%q, want %q", gotID, tc.wantID)
 				}
@@ -934,12 +924,6 @@ func TestSsePermissionTeeDispatch(t *testing.T) {
 					if !reflect.DeepEqual(gotMetadata, tc.wantMetadata) {
 						t.Errorf("got metadata=%v, want %v", gotMetadata, tc.wantMetadata)
 					}
-				}
-			} else {
-				select {
-				case <-fired:
-					t.Errorf("%s callback fired unexpectedly with %q", gotKind, gotID)
-				case <-time.After(50 * time.Millisecond):
 				}
 			}
 		})
