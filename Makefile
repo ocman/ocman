@@ -64,15 +64,14 @@ dev-backend:
 	@air 2>&1 | tee tmp/air.log
 
 # Run backend only with the remote-access gRPC server enabled
-# (multi-remote support). Uses air with .air.remote.toml which adds
-# -remote-listen 0.0.0.0:8230 to the backend flags.
+# (multi-remote support). scripts/dev.sh overrides .air.toml's full_bin
+# to add -remote-listen 0.0.0.0:8230 to the backend flags.
 dev-remote: kill-dev
 	@mkdir -p tmp
 	@echo "Starting ocman dev environment WITH REMOTE ACCESS..."
 	@echo "  Backend (air):    http://localhost:8229"
 	@echo "  Remote  (gRPC):   localhost:8230"
 	@echo "  Backend log:      tmp/air.log"
-	@echo "  Remote config:    .air.remote.toml"
 	@echo ""
 	@exec ./scripts/dev.sh remote
 

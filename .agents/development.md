@@ -50,10 +50,10 @@ make otel-reset       # also wipes persisted telemetry data
 Conversation storage and ingestion are always enabled. Dev targets keep
 `state_conv.db` in this checkout's root. Tests use temporary stores; builds do
 not start ingestion.
-Air must keep `clean_on_exit = false` in both configs: deleting `tmp/` also
-deletes history from older dev runs still using that location. Preserve an
-existing `tmp/state_conv.db` with a SQLite-consistent backup before changing
-its path; never silently replace it with an empty store.
+Air must keep `clean_on_exit = false` in `.air.toml` (`make dev-remote` reuses
+it): deleting `tmp/` also deletes history from older dev runs still using that
+location. Preserve an existing `tmp/state_conv.db` with a SQLite-consistent
+backup before changing its path; never silently replace it with an empty store.
 
 Vite proxies `/api` to `localhost:8229`. Air rebuilds Go but does not rebuild
 embedded frontend assets. Use Vite on `:8228`, or run `pnpm build` in `frontend/`

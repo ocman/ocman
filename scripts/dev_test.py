@@ -22,14 +22,12 @@ class DevDataConfigTest(unittest.TestCase):
 
     def test_air_preserves_conversation_checkpoints_on_exit(self):
         root = Path(__file__).resolve().parent.parent
-        for filename in (".air.toml", ".air.remote.toml"):
-            with self.subTest(config=filename):
-                with (root / filename).open("rb") as handle:
-                    config = tomllib.load(handle)
-                self.assertFalse(
-                    config.get("misc", {}).get("clean_on_exit", False),
-                    "Air must not delete tmp/: it contains state_conv.db and ingestion checkpoints",
-                )
+        with (root / ".air.toml").open("rb") as handle:
+            config = tomllib.load(handle)
+        self.assertFalse(
+            config.get("misc", {}).get("clean_on_exit", False),
+            "Air must not delete tmp/: it contains state_conv.db and ingestion checkpoints",
+        )
 
 
 class FrontendWatchTest(unittest.TestCase):

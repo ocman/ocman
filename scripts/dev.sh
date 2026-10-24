@@ -78,7 +78,7 @@ esac
 : > tmp/air.log
 
 if [ "$MODE" = "remote" ]; then
-	new_session env OTEL_EXPORTER_OTLP_ENDPOINT= air -c .air.remote.toml < /dev/null >> tmp/air.log 2>&1 &
+	new_session env OTEL_EXPORTER_OTLP_ENDPOINT= air --build.full_bin "./tmp/ocman -addr 127.0.0.1:8229 -remote-listen 0.0.0.0:8230" < /dev/null >> tmp/air.log 2>&1 &
 else
 	new_session air < /dev/null >> tmp/air.log 2>&1 &
 fi
