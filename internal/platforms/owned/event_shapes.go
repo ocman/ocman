@@ -5,6 +5,15 @@ import "github.com/NoUseFreak/ocman/internal/sessionview"
 var eventProperties = &sessionview.Shape{Variants: map[string]*sessionview.Shape{}}
 
 func init() {
+	background := &sessionview.Shape{Children: map[string]*sessionview.Shape{
+		"backgroundTasks":       {ReferenceKeys: true},
+		"backgroundTaskDetails": {ReferenceKeys: true},
+	}}
+	eventProperties.Variants["server.connected"] = &sessionview.Shape{Children: map[string]*sessionview.Shape{
+		"properties":            background,
+		"backgroundTasks":       background.Children["backgroundTasks"],
+		"backgroundTaskDetails": background.Children["backgroundTaskDetails"],
+	}}
 	message := &sessionview.Shape{References: sessionview.ReferenceShape.References, Children: map[string]*sessionview.Shape{"info": sessionview.ReferenceShape, "part": sessionview.ReferenceShape, "message": sessionview.ReferenceShape}}
 	session := &sessionview.Shape{References: sessionview.ReferenceShape.References, Children: map[string]*sessionview.Shape{"info": sessionview.SessionShape}}
 	for _, kind := range []string{"session.created", "session.updated", "session.deleted"} {

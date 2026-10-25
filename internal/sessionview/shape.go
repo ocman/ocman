@@ -11,9 +11,12 @@ import (
 type Shape struct {
 	OwnerField string
 	References []string
-	Children   map[string]*Shape
-	Dictionary *Shape
-	Variants   map[string]*Shape
+	// ReferenceKeys marks a dictionary whose keys are session references.
+	// Its values remain opaque unless Dictionary supplies a value shape.
+	ReferenceKeys bool
+	Children      map[string]*Shape
+	Dictionary    *Shape
+	Variants      map[string]*Shape
 }
 
 var ReferenceShape = &Shape{References: []string{"sessionId", "sessionID", "session_id", "parentSessionId", "parentSessionID", "ownerSessionIds", "sessionIds", "busySessions"}}
@@ -58,6 +61,16 @@ func collectOwned(value any, platform, owner string, shape *Shape, refs *[]refer
 			collectOwned(child, platform, owner, shape, refs, all)
 		}
 	case map[string]any:
+		if shape.ReferenceKeys {
+			for name, value := range item {
+				if name != "" && (all || !strings.HasPrefix(name, "ocm_")) {
+					*refs = append(*refs, reference{key{platform, name}, func(id string) {
+						delete(item, name)
+						item[id] = value
+					}})
+				}
+			}
+		}
 		if shape.Dictionary != nil {
 			for _, child := range item {
 				collectOwned(child, platform, owner, shape.Dictionary, refs, all)
