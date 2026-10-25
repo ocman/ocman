@@ -145,7 +145,7 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
     <ButtonGroup label="Plugin actions">{actions.data?.filter((a) => a.pluginId === page.pluginId && a.action.id !== 'project-config').map((a) =>
       <Button key={a.action.id} disabled={busy || !!draft} onClick={() => run(a)}>{a.action.label}</Button>)}</ButtonGroup>
     {actions.isError && <p role="alert">Could not load plugin actions.</p>}</>}
-    {!workspaceHome && <><h2>Results</h2>
+    {(!workspaceHome || !!current.tree?.nodes?.length) && <><h2>Results</h2>
     <PluginTreePane status={document.data?.tree ?? current.tree} label="Results" loading={document.isFetching} error={document.error} refresh={() => document.refetch()} /></>}
     {action && <PluginActionDialog label={action.label} request={action.request} onClose={() => { setAction(null); void document.refetch(); }} />}
   </>;

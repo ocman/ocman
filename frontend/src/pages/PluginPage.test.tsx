@@ -91,6 +91,18 @@ it('shows a usable workspace landing page and creates a workspace without select
   expect(mocks.sessions).not.toHaveBeenCalled();
 });
 
+it('renders a plugin-local tree-only homepage without requiring a project', async () => {
+  mocks.pages = [{ pluginId: 'org.example.pentest', ownerId: 'machine', page: { id: 'pentest', label: 'Pentest', scope: 'plugin' } }];
+  mocks.call.mockResolvedValue({ revision: 'r1', fields: [], values: {}, tree: {
+    available: true, nodes: [{ id: 'finding', title: 'Homepage finding', status: 'open' }],
+  } });
+  mount();
+  expect(await screen.findByText('Homepage finding')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Results' })).toBeInTheDocument();
+  expect(mocks.sessions).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'New workspace' })).not.toBeInTheDocument();
+});
+
 it('does not offer a dead-end back button when workspace discovery fails', async () => {
   mocks.pages = [{ pluginId: 'org.example.pentest', ownerId: 'machine', page: { id: 'pentest', label: 'Pentest', scope: 'plugin' } }];
   mocks.call.mockRejectedValue(new Error('internal'));
