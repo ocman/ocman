@@ -302,7 +302,7 @@ func (w *sourceWorker) applyChanges(ctx context.Context, pending map[string]*pla
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		if err := w.applyChange(ctx, *pending[id]); err != nil {
+		if err := w.applyPendingChange(ctx, *pending[id], dirty[id]); err != nil {
 			return err
 		}
 	}

@@ -4,8 +4,18 @@ import (
 	"context"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
+
+func (w *sourceWorker) applyPendingChange(ctx context.Context, change platforms.HistoryChange, force bool) error {
+	// Named-message updates cannot validate a complete repair: the reply that
+	// caused the invalidation may not be named by the coalesced feed events.
+	if !change.Deleted && (force || w.explicitReadPending(change.SessionID)) {
+		return w.refreshFeedSession(ctx, change.SessionID, true)
+	}
+	return w.applyChange(ctx, change)
+}
 
 func (w *sourceWorker) refreshFeedSession(ctx context.Context, id string, force bool) error {
 	readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)

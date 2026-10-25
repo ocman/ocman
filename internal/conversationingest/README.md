@@ -75,6 +75,9 @@ identities or allowing unbounded growth.
 Live activity hints are separate from explicit repairs. Feed sources skip hints
 and replayed events whose durable sequence is already applied; explicit repair
 requests still validate the source even when its sequence has not advanced.
+When a repair or explicit refresh overlaps a live event, the worker reads the
+complete session before acknowledging it; named-message updates cannot satisfy
+that repair because they may omit the completed reply.
 
 Inventory versions are only hints. Verification catches old-message changes and
 late imports that do not advance a session's timestamp. Persistent
