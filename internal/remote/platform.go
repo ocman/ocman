@@ -261,6 +261,9 @@ func (p *remotePlatform) RenameSession(ctx context.Context, req platforms.Rename
 }
 
 func (p *remotePlatform) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
+	if req.NativeMode != nil {
+		return p.mutate(ctx, "SetNativePermissionMode", req)
+	}
 	return p.mutate(ctx, "SetPermissionRules", req)
 }
 

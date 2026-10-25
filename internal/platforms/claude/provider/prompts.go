@@ -21,11 +21,13 @@ import (
 // prompt is an unanswered can_use_tool request from a claude child. The
 // supervisor only relays it: ocman's rules, judge or user decide (AD-7a).
 type prompt struct {
-	proc     *proc
-	request  string // claude's request_id
-	input    map[string]any
-	question bool
-	props    map[string]any // the v1 permission.asked / question.asked properties
+	proc      *proc
+	request   string // claude's request_id
+	input     map[string]any
+	question  bool
+	preflight bool
+	resolved  chan struct{}
+	props     map[string]any // the v1 permission.asked / question.asked properties
 	// Under l.mu. answering: a control_response write or the recording of
 	// reply is in flight. reply resolves the prompt (the decision claude
 	// received, or its cancellation): once set it never changes and is
@@ -44,6 +46,7 @@ func (l *live) ask(p *proc, raw []byte) {
 		RequestID string `json:"request_id"`
 		Request   struct {
 			Subtype        string         `json:"subtype"`
+			Preflight      bool           `json:"ocman_preflight"`
 			ToolName       string         `json:"tool_name"`
 			Input          map[string]any `json:"input"`
 			ToolUseID      string         `json:"tool_use_id"`
@@ -68,7 +71,7 @@ func (l *live) ask(p *proc, raw []byte) {
 	if req.Input == nil {
 		req.Input = map[string]any{}
 	}
-	pr := &prompt{proc: p, request: m.RequestID, input: req.Input, question: req.ToolName == "AskUserQuestion"}
+	pr := &prompt{proc: p, request: m.RequestID, input: req.Input, question: req.ToolName == "AskUserQuestion", preflight: req.Preflight, resolved: make(chan struct{})}
 	tool := map[string]any{"callID": req.ToolUseID}
 	typ := "permission.asked"
 	if pr.question {
@@ -78,6 +81,7 @@ func (l *live) ask(p *proc, raw []byte) {
 		permission, patterns := toolPermission(req.ToolName, req.Input)
 		metadata := maps.Clone(req.Input)
 		metadata["tool"] = req.ToolName
+		metadata["ocmanPreflight"] = req.Preflight // reserved; tool input cannot select the permission flow
 		for key, value := range map[string]string{"blocked_path": req.BlockedPath, "decision_reason": req.DecisionReason,
 			"title": req.Title, "display_name": req.DisplayName, "description": req.Description} {
 			if value != "" {
@@ -104,45 +108,6 @@ func (l *live) ask(p *proc, raw []byte) {
 	}); err != nil {
 		l.publishFailed(p.id, err)
 	}
-}
-
-// toolPermission maps a Claude tool to OpenCode's permission key and
-// patterns, so rules, Allow-always inheritance and the judge read the same.
-func toolPermission(name string, input map[string]any) (string, []string) {
-	// An argument is an exact pattern: "Allow always" on `echo *` grants
-	// that command, not every echo (providerprotocol.ExactPattern). A tool
-	// without one is the whole tool.
-	arg := func(key string) []string {
-		if s, _ := input[key].(string); s != "" {
-			return []string{providerprotocol.ExactPattern(s)}
-		}
-		return []string{"*"}
-	}
-	switch name {
-	case "Bash":
-		return "bash", arg("command")
-	case "Edit", "Write", "MultiEdit":
-		return "edit", arg("file_path")
-	case "NotebookEdit":
-		return "edit", arg("notebook_path")
-	case "Read":
-		return "read", arg("file_path")
-	case "Glob":
-		return "glob", arg("pattern")
-	case "Grep":
-		return "grep", arg("pattern")
-	case "WebFetch":
-		return "webfetch", arg("url")
-	case "WebSearch":
-		return "websearch", arg("query")
-	case "Task", "Agent":
-		return "task", arg("subagent_type")
-	case "Skill":
-		return "skill", arg("skill")
-	case "TodoWrite":
-		return "todowrite", []string{"*"}
-	}
-	return strings.ToLower(name), []string{"*"}
 }
 
 // v1Questions converts AskUserQuestion input to OpenCode's question shape.
@@ -243,6 +208,9 @@ func (l *live) record(id string, pr *prompt) error {
 		l.mu.Lock()
 		if l.prompts[id] == pr {
 			delete(l.prompts, id)
+			if pr.resolved != nil {
+				close(pr.resolved)
+			}
 		}
 		l.mu.Unlock()
 	})
@@ -309,6 +277,9 @@ func (l *live) replyPermission(id string, req platforms.RespondPermissionRequest
 	}
 	// "always" is remembered by ocman, never written into Claude's settings.
 	return l.answer(id, false, func(pr *prompt) map[string]any {
+		if pr.preflight {
+			return preflightReply(req.Reply)
+		}
 		if req.Reply == "reject" {
 			return map[string]any{"behavior": "deny", "message": "The user rejected this tool call."}
 		}

@@ -18,13 +18,14 @@ import (
 
 // proc is one live claude child, driven over stream-json pipes (AD-6).
 type proc struct {
-	id     string
-	model  string
-	effort string
-	mcp    string // the --mcp-config it was launched with
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	busy   bool // a turn is open: never evicted or timed out
+	id         string
+	model      string
+	effort     string
+	mcp        string // the --mcp-config it was launched with
+	cmd        *exec.Cmd
+	stdin      io.WriteCloser
+	busy       bool   // a turn is open: never evicted or timed out
+	nativeMode string // under l.mu; actual mode reported by Claude
 	// pending holds inputs written while a turn was open that the CLI has not
 	// started (no replay echo yet). A result is the idle edge only once it is
 	// empty: a queued input produces its own result later (spike §3).
@@ -92,7 +93,7 @@ func (l *live) launchArgs(id string, o owned, model, effort, mcp string) []strin
 		"--include-partial-messages", "--replay-user-messages",
 		// Every tool call the CLI does not settle from the user's own Claude
 		// settings is asked of ocman over the control protocol (AD-7).
-		"--permission-mode", "default", "--permission-prompt-tool", "stdio"}
+		"--permission-mode", nativeMode(o.NativeMode), "--permission-prompt-tool", "stdio"}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -199,8 +200,8 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 	if o == nil {
 		return nil, errReadOnly
 	}
-	if l.foreign(o) {
-		return nil, l.foreignError(*o)
+	if err := l.checkSessionLaunch(o); err != nil {
+		return nil, err
 	}
 	mcp := l.opts.mcpConfig()
 	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, mcp)...)
@@ -209,6 +210,7 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 	cmd.Env = append(cmd.Env, "OCMAN_MANAGED=1")
 	p := &proc{id: id, model: model, effort: effort, mcp: mcp, cmd: cmd, busy: true, pending: map[string]bool{}, conv: &Converter{SessionID: id},
 		children: map[string]*Converter{}, tasks: map[string]bool{}, controls: map[string]chan controlResult{}, dir: o.Directory, stderr: &tail{}, done: make(chan struct{})}
+	p.nativeMode = nativeMode(o.NativeMode)
 	cmd.Stderr = p.stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -231,6 +233,7 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 // stopLocked closes stdin, which ends a claude child between turns; a child
 // that ignores it is killed.
 func (l *live) stopLocked(p *proc) {
+	l.stopPreflightsLocked(p)
 	if l.procs[p.id] == p {
 		delete(l.procs, p.id)
 	}
@@ -306,6 +309,9 @@ func (l *live) handle(p *proc, raw []byte) error {
 	case "control_response":
 		l.receiveControl(p, raw)
 	case "control_request":
+		if l.preflight(p, raw) {
+			return nil
+		}
 		l.ask(p, raw)
 	case "control_cancel_request":
 		var c struct {

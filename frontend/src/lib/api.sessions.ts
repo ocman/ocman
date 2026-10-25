@@ -137,9 +137,11 @@ export const sessionApi = {
     fetchJSON<PermissionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions${queryString({ refresh: 1, platform })}`),
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject', platform?: string) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}${queryString({ platform })}`, { reply }, { parseJSON: false }),
-  getPermissionRules: (sessionId: string) => fetchJSON<{ rules: PermissionRule[] }>(`/api/session/${encodeURIComponent(sessionId)}/permission-rules`),
+  getPermissionRules: (sessionId: string) => fetchJSON<{ rules: PermissionRule[]; nativeMode?: { mode: string; pending?: boolean } }>(`/api/session/${encodeURIComponent(sessionId)}/permission-rules`),
   setPermissionRules: (sessionId: string, rules: PermissionRule[]) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/permission-rules`, { rules }, { method: 'PUT', parseJSON: false }),
+  setNativePermissionMode: (sessionId: string, nativeMode: 'default' | 'auto') =>
+    postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/native-permission-mode`, { mode: nativeMode }, { method: 'PUT', parseJSON: false }),
   listQuestions: (sessionId: string, platform?: string) => fetchJSON<QuestionRequest[]>(`/api/session/${encodeURIComponent(sessionId)}/questions${queryString({ platform })}`),
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}`, { answers }, { parseJSON: false }),

@@ -125,7 +125,8 @@ type Capabilities struct {
 	// per-session permission ruleset (Platform.PermissionRules /
 	// SetPermissionRules). Frontend gates the session permission-mode
 	// lock on this flag.
-	PermissionRules bool `json:"permissionRules"`
+	PermissionRules      bool `json:"permissionRules"`
+	NativeAutoPermission bool `json:"nativeAutoPermission,omitempty"`
 	// ExactPatterns reports that the platform's permission patterns and
 	// rules use providerprotocol's escapes (a backslash makes *, ? or
 	// itself literal), so an exact "Allow always" grant never globs.

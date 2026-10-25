@@ -113,6 +113,7 @@ const rows: Array<[string, () => Promise<unknown>, string, string, unknown?]> = 
   ['listPermissions owner', () => api.listPermissions('s', 'r-box:opencode'), 'GET', '/api/session/s/permissions?platform=r-box%3Aopencode'],
   ['respondPermission', () => api.respondPermission('s', 'p', 'once', 'claudecode'), 'POST', '/api/session/s/permissions/p?platform=claudecode', { reply: 'once' }],
   ['setPermissionRules', () => api.setPermissionRules('s', []), 'PUT', '/api/session/s/permission-rules', { rules: [] }],
+  ['setNativePermissionMode', () => api.setNativePermissionMode('s', 'auto'), 'PUT', '/api/session/s/native-permission-mode', { mode: 'auto' }],
   ['listQuestions', () => api.listQuestions('s'), 'GET', '/api/session/s/questions'],
   ['listQuestions owner', () => api.listQuestions('s', 'r-box:opencode'), 'GET', '/api/session/s/questions?platform=r-box%3Aopencode'],
   ['respondQuestion', () => api.respondQuestion('s', 'q', [['a']]), 'POST', '/api/session/s/questions/q', { answers: [['a']] }],

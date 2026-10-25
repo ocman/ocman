@@ -46,6 +46,7 @@ var directRoutes = []string{
 	"PATCH /api/session/s1",
 	"GET /api/session/s1/permission-rules",
 	"PUT /api/session/s1/permission-rules",
+	"PUT /api/session/s1/native-permission-mode",
 }
 
 func TestRoutesGuardsAndSessionResolution(t *testing.T) {
@@ -168,6 +169,7 @@ func (s actionTestSessions) SetPermissionRules(c context.Context, p string, r pl
 
 func TestActionDependencies(t *testing.T) {
 	rules := []platforms.PermissionRule{{Permission: "bash", Pattern: "git *", Action: "allow"}}
+	auto := "auto"
 	for _, tc := range []struct {
 		name   string
 		method string
@@ -184,6 +186,7 @@ func TestActionDependencies(t *testing.T) {
 		{"fork", "POST", `{"messageID":"msg1"}`, platforms.ForkSessionRequest{SessionID: "s1", MessageID: "msg1"}},
 		{"move", "POST", `{"directory":"/repo"}`, platforms.MoveSessionRequest{SessionID: "s1", Directory: "/repo"}},
 		{"permission-rules", "PUT", `{"rules":[{"permission":"bash","pattern":"git *","action":"allow"}]}`, platforms.SetPermissionRulesRequest{SessionID: "s1", Rules: rules}},
+		{"native-permission-mode", "PUT", `{"mode":"auto"}`, platforms.SetPermissionRulesRequest{SessionID: "s1", NativeMode: &auto}},
 	} {
 		t.Run(tc.method+"/"+tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())

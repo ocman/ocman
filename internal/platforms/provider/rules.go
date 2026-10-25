@@ -168,17 +168,26 @@ func (r *Rules) Decide(prompt platforms.LivePrompt) string {
 	permission, _ := prompt["permission"].(string)
 	r.mu.Lock()
 	rules := append(append([]platforms.PermissionRule{}, r.data.Rules[id]...), r.data.Approved[id]...)
+	configured := len(r.data.Rules[id])
 	r.mu.Unlock()
 	patterns := prompt.StringsField("patterns")
 	if len(patterns) == 0 {
 		patterns = []string{"*"}
 	}
 	result := "allow"
+	metadata, _ := prompt["metadata"].(map[string]any)
+	preflight, _ := metadata["ocmanPreflight"].(bool)
 	for _, pattern := range patterns {
 		// A prompt's patterns are exact patterns: match the call itself.
 		value := providerprotocol.PatternValue(pattern)
 		action := "ask"
-		for _, rule := range rules {
+		if preflight {
+			action = "allow"
+		} // no ocman restriction: continue to native checks
+		for i, rule := range rules {
+			if i == configured && action == "deny" {
+				break // saved approvals may satisfy ask rules, never configured denials
+			}
 			if providerprotocol.MatchPattern(rule.Permission, permission) && providerprotocol.MatchPattern(rule.Pattern, value) {
 				action = rule.Action
 			}
@@ -218,11 +227,18 @@ func (a *Adapter) localRules() *Rules {
 // visible even if the rules changed since.
 func (a *Adapter) ruleDecision(event providerprotocol.Event) (platforms.LivePrompt, string) {
 	r := a.localRules()
-	if r == nil || event.Type != "permission.asked" {
+	if event.Type != "permission.asked" {
 		return nil, ""
 	}
 	var prompt platforms.LivePrompt
 	if json.Unmarshal(event.Properties, &prompt) != nil {
+		return nil, ""
+	}
+	if r == nil {
+		metadata, _ := prompt["metadata"].(map[string]any)
+		if metadata["ocmanPreflight"] == true {
+			return prompt, "reject"
+		}
 		return nil, ""
 	}
 	id, _ := prompt["id"].(string)

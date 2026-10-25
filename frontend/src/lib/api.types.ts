@@ -1142,6 +1142,7 @@ export interface PlatformCapabilities {
    * Gates the permission-mode lock in the session header.
    */
   permissionRules: boolean;
+  nativeAutoPermission?: boolean;
   /** Permission patterns use the provider protocol's escapes (server-side only). */
   exactPatterns?: boolean;
   revert?: boolean;

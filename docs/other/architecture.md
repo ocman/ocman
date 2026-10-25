@@ -42,6 +42,51 @@ flowchart LR
   uploading, and deletes a half-written share on failure. See
   [Artifacts](../features/artifacts.md).
 
+### Native permissions and ocman review
+
+Native platform approvals and ocman's auto-approval judge are separate controls.
+Claude Code 2.1.299 or newer exposes native Auto through the session permission
+menu. OpenCode keeps its existing permission rules and ocman reviewer; it does
+not advertise a native classifier mode.
+
+```mermaid
+flowchart LR
+    UI[Session permission menu] -->|owner-routed rules and native mode| Adapter[Platform adapter]
+    Claude[Claude tool call] --> Hook[PreToolUse callback]
+    Hook -->|durable permission event| Adapter
+    Adapter --> Rules[Ocman rules]
+    Rules -->|explicit ask| Review[Ocman judge or user]
+    Rules -->|deny| Block[Blocked]
+    Review -->|reject| Block
+    Rules -->|no restriction or allow| Native[Claude native permissions]
+    Review -->|preflight approval| Native
+    Native -->|allow| Execute[Execute tool]
+    Native -->|deny| Block
+    Native -->|unresolved request| Review
+    Review -->|native prompt approval| Execute
+```
+
+- Native mode is persisted with Claude session ownership, independently of the
+  ocman ruleset and the per-session judge toggle. Mode changes never replace
+  ocman rules. Idle children resume with the saved mode; running children use an
+  acknowledged `set_permission_mode` control request. Without a child the UI
+  marks Auto as pending for the next turn. Model/provider eligibility
+  remains authoritative in Claude, and rejected changes are shown to the user.
+- New Claude children register a pre-execution SDK callback before the first
+  prompt. Ocman evaluates restrictions before Claude's native classifier or
+  configured approvals. An unrestricted or approved callback returns an empty
+  hook result, not a native allow, so Claude's own denials remain effective.
+- Preflight callbacks use the existing durable push-only permission/reply flow.
+  Missing ocman rules fail closed. An unanswered callback kills its child after
+  30 minutes, before Claude's one-hour hook timeout could allow execution to
+  continue; shutdown kills children with unresolved preflight callbacks before
+  closing their control pipes.
+- Claude's reported permission mode is retained, including fallback to Default
+  after an unsupported model switch. The menu refreshes on session changes and
+  window focus. Capability checks hide native Auto on older owners and OpenCode.
+- Rules still apply to tool requests rather than sandboxing commands. An allowed
+  shell command has the host user's filesystem and network access.
+
 ## 1. System context
 
 Everything external that the ocman process touches.

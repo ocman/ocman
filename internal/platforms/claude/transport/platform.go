@@ -105,7 +105,7 @@ func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB
 	// Include SDK compatibility so pre-SDK supervisors drain before replacement.
 	// The MCP address is not part of this identity (WriteLaunchConfig).
 	runtime.Identity = func() string {
-		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00child-sessions/v2\x00sdk-py/" + claudecli.SDKVersion
+		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00child-sessions/v2\x00native-permissions/v1\x00sdk-py/" + claudecli.SDKVersion
 	}
 	projectsCtx, stop := context.WithCancel(ctx)
 	p.projects = &claudeProjects{ctx: projectsCtx, stop: stop, mgr: &local.ProviderManager{Runtime: runtime, State: stateDB}, rules: rules,

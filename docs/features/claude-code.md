@@ -164,8 +164,8 @@ the instance ocman starts, not the original terminal.
 
 ## Permissions
 
-Sessions ocman starts run `claude` in its `default` permission mode, and every
-tool call the CLI wants approved is asked of ocman. Ocman decides it the same way
+Sessions ocman starts use Claude's `default` permission mode unless you enable
+native Auto. Tool calls the CLI still wants approved are asked of ocman. Ocman decides them the same way
 as for OpenCode: the session's permission mode (Default, Plan only, Auto-accept
 edits, YOLO or custom rules), rules a worktree session inherited from its parent,
 "Allow always" replies, then the auto-approve judge or you. Rulesets are stored by
@@ -181,11 +181,33 @@ supervisor started by one, are upgraded to exact approvals automatically. The ju
 in the session. Prompts and their answers arrive on the session's event stream,
 so nothing polls for them.
 
-**Your own Claude allow rules apply first.** Rules in `~/.claude/settings.json`,
-a project's `.claude/settings.json` or `.claude/settings.local.json` are
-evaluated by the CLI before ocman is asked. A tool call they allow never reaches
-ocman, so ocman's rules, the judge and your permission mode do not see it.
-Remove those rules if ocman should decide.
+### Native Auto
+
+With Claude Code **2.1.299 or newer on the session's owning machine**, open the
+session's permission lock menu and choose **Enable native Auto**. Claude's own
+classifier reviews tool calls. The selected model, account and provider must
+support Auto; Claude reports unavailable combinations rather than ocman guessing
+from model names. For an idle session, the menu marks Auto as **next turn** until
+a child accepts it. Running sessions change mode after Claude acknowledges it.
+
+Native Auto is independent of ocman's rules and auto-approve toggle. Enabling or
+disabling it preserves both. On these CLI versions, ocman checks its restrictions
+through a pre-execution callback before Claude's own approvals, including allow
+rules in your Claude settings. An ocman approval continues native checks instead
+of bypassing them, and a native denial remains denied. Unresolved permission
+requests still reach ocman's judge or you. A callback left unanswered for 30
+minutes stops the child rather than timing out into an approval.
+
+Claude can return to Default after switching to an unsupported model. The menu
+refreshes on session changes and window focus. Disable native Auto before
+downgrading below 2.1.299; saved Auto sessions otherwise refuse to launch without
+the required enforcement support. OpenCode does not expose this native option;
+its existing permission rules and ocman reviewer are unchanged.
+
+On **older Claude CLIs**, allow rules in `~/.claude/settings.json`, a project's
+`.claude/settings.json` or `.claude/settings.local.json` resolve before ocman is
+asked. Calls they allow bypass ocman's rules and judge. Remove those allow rules
+if ocman should decide, or upgrade to use the pre-execution checks.
 
 When no OpenCode instance is reachable, the auto-approve judge runs
 `claude -p --model haiku --no-session-persistence --strict-mcp-config` with no

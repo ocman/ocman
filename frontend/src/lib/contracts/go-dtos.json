@@ -700,6 +700,10 @@
         "omitempty": false
       },
       {
+        "name": "nativeAutoPermission",
+        "omitempty": true
+      },
+      {
         "name": "permissionRules",
         "omitempty": false
       },

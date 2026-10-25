@@ -44,7 +44,8 @@ type owned struct {
 	TitlePending bool `json:"titlePending,omitempty"`
 	// Config is the Claude config directory (CLAUDE_CONFIG_DIR) it was
 	// launched under: its transcript lives in that configuration's history.
-	Config string `json:"config,omitempty"`
+	Config     string `json:"config,omitempty"`
+	NativeMode string `json:"nativeMode,omitempty"`
 }
 
 // foreign reports a session launched under another Claude configuration: its
@@ -65,12 +66,14 @@ var errReadOnly = errors.New("this Claude session cannot be continued as an inde
 // live is the interactive half of the provider: owned sessions, their
 // claude children and the per-session view served as snapshots.
 type live struct {
-	sup        *providersupervisor.Supervisor
-	idx        *Index
-	opts       Options
-	versionErr error
-	account    *account // subscription and observed rate-limit windows (FR-7)
-	cmds       *commands
+	sup          *providersupervisor.Supervisor
+	idx          *Index
+	opts         Options
+	versionErr   error
+	nativeAuto   bool
+	nativeModeMu sync.Mutex
+	account      *account // subscription and observed rate-limit windows (FR-7)
+	cmds         *commands
 
 	mu        sync.Mutex
 	slots     *sync.Cond // signalled when a child exits or a turn ends
@@ -112,6 +115,7 @@ func newLive(idx *Index, opts Options, version string) *live {
 		waits: map[string]map[*waitTicket]bool{}, tails: map[string]chan struct{}{}, subs: map[string][]string{}, subagents: map[string]subagentSession{}, accepted: map[string]uint64{},
 		deferred: map[string]db.SessionStatus{}, unsettled: map[string]settlement{}, settling: map[string]bool{}, unrecorded: map[string]bool{}, done: make(chan struct{})}
 	l.cmds = newCommands(opts)
+	l.nativeAuto = supportsNativeAuto(version)
 	l.ctx, l.stop = context.WithCancel(context.Background())
 	l.slots = sync.NewCond(&l.mu)
 	l.syncOwnedLocked()

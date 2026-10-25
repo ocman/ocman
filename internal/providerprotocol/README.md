@@ -52,6 +52,8 @@ prompts to the user.
 | POST /questions/{id}/reject | `RejectQuestionRequest` |
 | GET /sessions/{id}/rules | `[]PermissionRule` |
 | POST /sessions/{id}/rules | `SetPermissionRulesRequest` |
+| GET /sessions/{id}/native-permission | Optional `nativeAutoPermission`: `NativePermissionState` |
+| POST /sessions/{id}/native-permission | Optional `nativeAutoPermission`: `SetPermissionRulesRequest` with only `NativeMode`; rules are unchanged |
 | GET /catalog?directory= | `DirectoryCatalog` |
 | GET /events?after= | SSE, described below |
 | GET /sessions/{id}/snapshot | `Snapshot`, current v1 upserts plus cursor and single-use lease |
@@ -188,3 +190,17 @@ adapter given an ocman-owned `Rules` store (`SetRules`, used for Claude) serves
 rulesets locally and answers rule-decided prompts itself before they reach its
 pending map, its event handler or a browser stream; such a backend may answer
 the rules endpoints with 501.
+
+Claude supervisors advertising `nativeAutoPermission` also register SDK
+`PreToolUse` callbacks. They publish ordinary permission events with
+`metadata.ocmanPreflight=true`. On these events no matching ocman rule means
+continue to native permission evaluation, while explicit ask/deny rules still
+apply. An approval returns an empty hook result, never a native allow; a rejection
+returns a `PreToolUse` deny. Missing owner rules reject the callback. Unanswered
+callbacks stop their child before the CLI hook timeout. Native mode is persisted
+as launch state, not as an ocman permission ruleset.
+
+The browser writes `PUT /api/session/{id}/native-permission-mode`; remote owners
+receive the distinct `SetNativePermissionMode` Call method. Do not send native
+changes through legacy rules mutation routes: an older owner would ignore the
+new field and interpret it as a rules reset instead of rejecting it.

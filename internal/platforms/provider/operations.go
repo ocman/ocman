@@ -105,6 +105,9 @@ func (a *Adapter) PermissionRules(ctx context.Context, id string) ([]platforms.P
 	return rules, err
 }
 func (a *Adapter) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
+	if req.NativeMode != nil {
+		return a.call(ctx, a.Capabilities().NativeAutoPermission, "POST", sessionPath(req.SessionID, "/native-permission"), req, nil)
+	}
 	if r := a.localRules(); r != nil {
 		return r.set(req.SessionID, req.Rules)
 	}

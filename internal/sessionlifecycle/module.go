@@ -74,6 +74,7 @@ func (m *Module) Routes(r module.Router) {
 		{"PATCH /api/session/{id}", m.HandleSessionRename},
 		{"GET /api/session/{id}/permission-rules", m.HandleSessionPermissionRulesGet},
 		{"PUT /api/session/{id}/permission-rules", m.HandleSessionPermissionRulesSet},
+		{"PUT /api/session/{id}/native-permission-mode", m.HandleNativePermissionModeSet},
 	} {
 		r.Handle(route.pattern, route.handler)
 	}

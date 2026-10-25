@@ -127,12 +127,14 @@ func (l *live) initializationFailure(p *proc, raw []byte) bool {
 
 func (l *live) initializeProc(p *proc) error {
 	p.initializeOnce.Do(func() {
-		_, p.initializeErr = l.control(context.Background(), p, initRequestID, sdkInitializeRequest())
+		_, p.initializeErr = l.control(context.Background(), p, initRequestID, l.initializeRequest())
 	})
 	return p.initializeErr
 }
 
 func (l *live) changeModel(p *proc, model string) error {
+	l.nativeModeMu.Lock()
+	defer l.nativeModeMu.Unlock()
 	l.mu.Lock()
 	changed := model != "" && model != p.model
 	l.mu.Unlock()

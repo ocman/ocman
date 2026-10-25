@@ -1,6 +1,7 @@
 package sessionlifecycle
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/httpx"
@@ -18,7 +19,20 @@ func (m *Module) HandleSessionPermissionRulesGet(w http.ResponseWriter, r *http.
 		if rules == nil {
 			rules = []platforms.PermissionRule{}
 		}
-		httpx.WriteJSON(w, map[string]any{"rules": rules})
+		response := map[string]any{"rules": rules}
+		if adapter.Capabilities().NativeAutoPermission {
+			if native, ok := adapter.(platforms.NativePermissions); ok {
+				state, err := native.NativePermissionState(r.Context(), sessionID)
+				if err != nil && !errors.Is(err, platforms.ErrNotFound) && !errors.Is(err, platforms.ErrUnsupported) {
+					httpx.WritePlatformError(w, "reading native permission mode", err)
+					return
+				}
+				if err == nil {
+					response["nativeMode"] = state
+				}
+			}
+		}
+		httpx.WriteJSON(w, response)
 	})
 }
 

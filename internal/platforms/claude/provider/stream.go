@@ -154,6 +154,7 @@ func (l *live) closeOpen(p *proc) {
 // spawning call (its transcript is subagents/agent-<task_id>.jsonl, the
 // index's child id) and init reports the session's skills.
 func (l *live) system(p *proc, raw []byte) {
+	l.observeNativeMode(p, raw)
 	l.subagentEvent(p, raw)
 	l.sdkSystem(p, raw)
 	var s struct {

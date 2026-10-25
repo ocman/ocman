@@ -43,7 +43,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
     composer: false, respondPermission: false, respondQuestion: false, abort: false, backgroundTaskStop: true, compact: false, fork: false,
     forkAtMessage: true, move: false, events: false, agentCatalog: false, modelCatalog: false, slashCommands: false,
     shellExec: false, fileChanges: false, sessionInfo: false, liveConnectionHint: true, autoApprove: false,
-    permissionRules: false, exactPatterns: true, revert: true, runtimeRestart: true, pushPrompts: true, autoTitle: true,
+    permissionRules: false, nativeAutoPermission: true, exactPatterns: true, revert: true, runtimeRestart: true, pushPrompts: true, autoTitle: true,
   }),
   HostCapabilities: flags<HostCapabilities>()({
     gitDiff: false, worktrees: false, tmux: false, projects: false, whisper: false, opencodeLaunch: false, opencode: true,

@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type PermissionRule } from '../lib/api';
 import { classifyPermissionMode, PERMISSION_MODES, type PermissionMode } from '../lib/permissionModes';
 import { Button, SubmitButton } from './Control';
 import { CommandListPicker } from './assistant/CommandListPicker';
 import { Modal } from './Modal';
+import { onSessionChanged } from '../lib/useGlobalEvents';
 import './PermissionModeLock.css';
-
-const MENU_PERMISSION_MODES = PERMISSION_MODES;
 
 /**
  * Session permission-mode lock: shows the current permission posture
@@ -15,6 +14,10 @@ const MENU_PERMISSION_MODES = PERMISSION_MODES;
  */
 export function PermissionModeLock({ sessionId }: { sessionId: string }) {
   const [rules, setRules] = useState<PermissionRule[] | null>(null);
+  const [nativeMode, setNativeMode] = useState<string | null>(null);
+  const [nativePending, setNativePending] = useState(false);
+  const activeSession = useRef(sessionId);
+  useEffect(() => { activeSession.current = sessionId; }, [sessionId]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -24,23 +27,36 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
   if (prevSessionId !== sessionId) {
     setPrevSessionId(sessionId);
     setRules(null);
+    setNativeMode(null);
+    setNativePending(false);
     setError('');
   }
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .getPermissionRules(sessionId)
-      .then((resp) => {
-        if (!cancelled) setRules(resp.rules);
-      })
-      .catch(() => {
-        // No live instance / transient error: hide the control rather
-        // than surface an error for a passive read.
-        if (!cancelled) setRules(null);
-      });
+    let revision = 0;
+    const load = () => {
+      const current = ++revision;
+      void api.getPermissionRules(sessionId)
+        .then((resp) => {
+          if (!cancelled && current === revision) {
+            setRules(resp.rules);
+            setNativeMode(resp.nativeMode?.mode ?? null);
+            setNativePending(resp.nativeMode?.pending ?? false);
+          }
+        })
+        .catch(() => {
+          // No live instance / transient error: hide the passive control.
+          if (!cancelled && current === revision) setRules(null);
+        });
+    };
+    load();
+    const unsubscribe = onSessionChanged((id) => { if (id === sessionId) load(); });
+    window.addEventListener('focus', load);
     return () => {
       cancelled = true;
+      unsubscribe();
+      window.removeEventListener('focus', load);
     };
   }, [sessionId]);
 
@@ -52,9 +68,27 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
 
   const modeId = rules === null ? '' : classifyPermissionMode(rules);
   const mode = PERMISSION_MODES.find((m) => m.id === modeId);
-  const label = mode ? mode.label : 'Custom';
+  const rulesLabel = mode ? mode.label : 'Custom';
+  const label = nativeMode === 'auto' ? `${rulesLabel} + native Auto${nativePending ? ' (next turn)' : ''}` : rulesLabel;
 
   const apply = useCallback(async (id: string) => {
+    if (id === 'native-auto' || id === 'native-default') {
+      if (saving) return;
+      setSaving(true);
+      setError('');
+      try {
+        const next = id === 'native-auto' ? 'auto' : 'default';
+        await api.setNativePermissionMode(sessionId, next);
+        const response = await api.getPermissionRules(sessionId);
+        if (activeSession.current === sessionId) {
+          setNativeMode(response.nativeMode?.mode ?? null);
+          setNativePending(response.nativeMode?.pending ?? false);
+        }
+      } catch (e) {
+        if (activeSession.current === sessionId) setError(e instanceof Error ? e.message : 'failed to set native permission mode');
+      } finally { setSaving(false); }
+      return;
+    }
     const target = PERMISSION_MODES.find((m) => m.id === id);
     if (!target || saving) return;
     if (target.dangerous && confirmMode?.id !== target.id) {
@@ -75,8 +109,17 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
   }, [confirmMode, saving, sessionId]);
 
   const entries = useMemo(
-    () => MENU_PERMISSION_MODES.map((m) => ({ ...m, value: m.id, iconClass: permissionModeIconClass(m.id) })),
-    [],
+    () => {
+      const modes = [...PERMISSION_MODES];
+      if (nativeMode !== null) modes.push({
+        id: nativeMode === 'auto' ? 'native-default' : 'native-auto',
+        label: nativeMode === 'auto' ? 'Disable native Auto' : 'Enable native Auto',
+        description: 'Claude reviews tool calls. Ocman rules and auto-approval stay separate. Applies on next turn when idle; requires a supported model.',
+        rules: [],
+      });
+      return modes.map((m) => ({ ...m, value: m.id, iconClass: permissionModeIconClass(m.id) }));
+    },
+    [nativeMode],
   );
 
   if (rules === null) return null;
@@ -114,28 +157,34 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
         onClose={() => setPickerOpen(false)}
       />
       {error && <div className="oc-permission-lock-error">{error}</div>}
-      {confirmMode && (
-        <Modal
-          label="Confirm permission mode"
-          backdropClassName="oc-cmd-backdrop oc-permission-confirm-backdrop"
-          dialogClassName="oc-cmd-palette oc-permission-confirm"
-          onClose={() => setConfirmMode(null)}
-          canClose={!saving}
-        >
-          <div className="oc-permission-confirm-body">
-            <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>
-            <div>
-              <div className="oc-cmd-title">Switch to {confirmMode.label}?</div>
-              <div className="oc-cmd-meta">The agent will run edits and commands without asking.</div>
-            </div>
-          </div>
-          <div className="oc-permission-confirm-actions">
-            <Button size="small" disabled={saving} onClick={() => setConfirmMode(null)}>Cancel</Button>
-            <SubmitButton size="small" variant="danger" data-autofocus pendingLabel="Applying…" onClick={() => apply(confirmMode.id)}>Confirm</SubmitButton>
-          </div>
-        </Modal>
-      )}
+      {confirmMode && <PermissionModeConfirmation mode={confirmMode} saving={saving} onClose={() => setConfirmMode(null)} onConfirm={() => apply(confirmMode.id)} />}
     </>
+  );
+}
+
+function PermissionModeConfirmation({ mode, saving, onClose, onConfirm }: {
+  mode: PermissionMode; saving: boolean; onClose: () => void; onConfirm: () => Promise<void>;
+}) {
+  return (
+    <Modal
+      label="Confirm permission mode"
+      backdropClassName="oc-cmd-backdrop oc-permission-confirm-backdrop"
+      dialogClassName="oc-cmd-palette oc-permission-confirm"
+      onClose={onClose}
+      canClose={!saving}
+    >
+      <div className="oc-permission-confirm-body">
+        <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>
+        <div>
+          <div className="oc-cmd-title">Switch to {mode.label}?</div>
+          <div className="oc-cmd-meta">The agent will run edits and commands without asking.</div>
+        </div>
+      </div>
+      <div className="oc-permission-confirm-actions">
+        <Button size="small" disabled={saving} onClick={onClose}>Cancel</Button>
+        <SubmitButton size="small" variant="danger" data-autofocus pendingLabel="Applying…" onClick={onConfirm}>Confirm</SubmitButton>
+      </div>
+    </Modal>
   );
 }
 

@@ -196,6 +196,8 @@ type PermissionRule struct {
 type SetPermissionRulesRequest struct {
 	SessionID string
 	Rules     []PermissionRule
+	// NativeMode changes only the native engine, preserving the ocman ruleset.
+	NativeMode *string `json:",omitempty"`
 }
 
 // CreateSessionRequest creates a new session on the owning platform.
