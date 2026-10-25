@@ -110,6 +110,11 @@ and tool time counts as active. Idle gaps and unfinished messages are excluded.
 **Model picker.** Per-platform favourites and a refreshable catalog, so new
 models appear without a restart.
 
+Selecting or sending a model remembers it for that session in this browser,
+including when you reopen the session or reload the page. Selecting an agent
+with its own model also updates the remembered choice. Assistant responses do
+not replace it, even if they report a different model.
+
 Click the project name in the header to open **Project defaults**. Choose a
 default model, agent, permission mode, and whether new conversations use a new
 worktree or the current checkout, then Save. These preferences belong to that

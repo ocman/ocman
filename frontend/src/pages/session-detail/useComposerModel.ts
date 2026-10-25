@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { AgentInfo, Message, Part } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
+import { getSessionModel, saveSessionModel } from '../../lib/sessionModel';
 import { agentModelRef, deriveActiveModelAndAgent, formatModelRef } from '../../lib/sessionStatus';
 import { computeTurnStats, latestTurnModel, messageModelRef } from '../../lib/turnStats';
 import { startModels } from './startHandoffs';
@@ -53,11 +54,12 @@ export function useComposerModel({
     seededSessionRef.current = undefined;
   }, [id]);
 
-  // Prefer the requested model, including a prompt still awaiting a response.
+  // Prefer explicit session choices over models observed in message history.
   // A new session seeds the project's configured default, then the
   // last pick in this project, then the session's default model.
   const turnStatsMap = computeTurnStats(messages, parts);
   const { activeAgent } = deriveActiveModelAndAgent(messages, session);
+  const sessionModel = id ? getSessionModel(id) : '';
   const activeModel = useMemo(
     () => {
       const latestUser = messages.findLast((message) => message.data?.role === 'user');
@@ -66,6 +68,7 @@ export function useComposerModel({
       const own = (ref: string | undefined) => formatModelRef(undefined, modelRefForSession(ref || '', session?.platform));
       const projectModel = own(session?.projectDefaultModel) || own(getProjectModel(session?.directory || ''));
       return own(session?.id === id && id ? startModels.get(id) : '') ||
+        own(sessionModel) ||
         (latestUser ? messageModelRef(latestUser) : '') ||
         latestTurnModel(messages, turnStatsMap) ||
         (messages.length === 0 ? projectModel : '') ||
@@ -73,7 +76,7 @@ export function useComposerModel({
         projectModel ||
         '';
     },
-    [id, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel, session?.platform],
+    [id, sessionModel, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel, session?.platform],
   );
 
   useEffect(() => {
@@ -86,6 +89,7 @@ export function useComposerModel({
     if (session?.id !== id) return;
     if (!activeModel) return;
     setSelectedModel(activeModel);
+    if (startModels.has(id)) saveSessionModel(id, activeModel);
     startModels.delete(id);
     seededSessionRef.current = id;
   }, [activeModel, id, session?.id, setSelectedModel]);
@@ -95,7 +99,10 @@ export function useComposerModel({
   const directory = session?.directory;
   const handleModelChange = (model: string) => {
     seededSessionRef.current = id;
-    if (id) startModels.delete(id);
+    if (id) {
+      saveSessionModel(id, model);
+      startModels.delete(id);
+    }
     setSelectedModel(model);
     setSelectedReasoning('');
     if (directory) saveProjectModel(directory, model);
@@ -110,7 +117,10 @@ export function useComposerModel({
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) {
-      if (id) startModels.delete(id);
+      if (id) {
+        saveSessionModel(id, agentModel);
+        startModels.delete(id);
+      }
       setSelectedModel(agentModel);
       setSelectedReasoning('');
     }

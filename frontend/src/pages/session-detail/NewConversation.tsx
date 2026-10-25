@@ -15,6 +15,7 @@ import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
+import { saveSessionModel } from '../../lib/sessionModel';
 import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSettingsCache';
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
@@ -286,6 +287,7 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
       if (model) startModels.set(res.sessionId, model);
+      if (model) saveSessionModel(res.sessionId, model);
       // No title: OpenCode titles the session from its first message.
       if (send && !res.firstMessageSent) {
         recordFailedSend(res.sessionId, {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
+import { saveSessionModel } from './sessionModel';
 import { getSidebarSessions, patchSessionLists, seedSessionLists } from './sessionsCache';
 import type {
   Session,
@@ -191,6 +192,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     }
   },
   sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => {
+    if (model) saveSessionModel(sessionId, model);
     const owns = (s: Session) => s.id === sessionId && (!platform || s.platform === platform);
     const previous = getSidebarSessions().find(owns)?.timeUpdated;
     const now = Math.max(Date.now(), previous ?? 0);

@@ -405,6 +405,7 @@ describe('NewConversation', () => {
     });
     expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'Login', 'machine');
     expect(startModels.get('child')).toBe('prov/plan-model');
+    expect(JSON.parse(localStorage.getItem('ocman.sessionModels.v1') || '{}').child).toBe('prov/plan-model');
     expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
     // The shared new-conversation draft now belongs to the session.
     expect(getDraft('new')).toBe('');

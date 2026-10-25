@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, Message, Part } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
+import { getSessionModel } from '../../lib/sessionModel';
 import { useComposerModel, type UseComposerModelOptions } from './useComposerModel';
 import { startModels } from './startHandoffs';
 
@@ -130,6 +131,46 @@ describe('useComposerModel', () => {
     expect(o.setSelectedModel).toHaveBeenLastCalledWith('prov/other');
     expect(o.setSelectedReasoning).toHaveBeenCalledWith('');
     expect(getProjectModel('/repo')).toBe('prov/other');
+  });
+
+  it.each(['model', 'agent'])('restores an explicit %s pick after reopening despite different history', (picker) => {
+    const o = opts();
+    const view = renderHook(() => useComposerModel(o));
+    act(() => {
+      if (picker === 'model') view.result.current.handleModelChange('prov/chosen');
+      else view.result.current.handleAgentChange('coder');
+    });
+    view.unmount();
+
+    const reopened = opts({ messages: turnOn('prov/other') });
+    const { result } = renderHook(() => useComposerModel(reopened));
+    const expected = picker === 'model' ? 'prov/chosen' : 'prov/agent-model';
+    expect(reopened.setSelectedModel).toHaveBeenLastCalledWith(expected);
+    expect(result.current.composerModels).toContain(expected);
+  });
+
+  it('keeps explicit choices isolated when navigating between sessions in one project', () => {
+    const o = opts();
+    const { result, rerender } = renderHook(useComposerModel, { initialProps: o });
+    act(() => result.current.handleModelChange('prov/first'));
+    rerender({ ...o, id: 's2', session: { ...session, id: 's2' } });
+    act(() => result.current.handleModelChange('prov/second'));
+    rerender({ ...o, messages: turnOn('prov/other') });
+    expect(o.setSelectedModel).toHaveBeenLastCalledWith('prov/first');
+  });
+
+  it('remembers the first submission model after its handoff is consumed', () => {
+    startModels.set('s1', 'prov/chosen');
+    const first = renderHook(() => useComposerModel(opts()));
+    first.unmount();
+    const reopened = opts({ messages: turnOn('prov/other') });
+    renderHook(() => useComposerModel(reopened));
+    expect(reopened.setSelectedModel).toHaveBeenLastCalledWith('prov/chosen');
+  });
+
+  it('does not persist a model inferred from history', () => {
+    renderHook(() => useComposerModel(opts({ messages: turnOn('prov/other') })));
+    expect(getSessionModel('s1')).toBe('');
   });
 
   it('applies the agent model when the agent defines one', () => {
