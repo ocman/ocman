@@ -3,10 +3,15 @@ import { fetchJSON, postJSON } from './api';
 import { useHostCapabilities } from './settingsQueries';
 import type { PluginPaneTree } from './pluginPanes';
 
-export type PluginPage = { ownerId: string; pluginId: string; page: { id: string; label: string } };
-export type PageField = { key: string; label: string; type: 'text' | 'multiline' | 'secret' | 'boolean' | 'list' | 'projects' | 'select'; help?: string; fields?: PageField[]; optionsFrom?: string };
-export type PageValues = { [key: string]: string | boolean | PageValues[] };
-export type PageDocument = { revision: string; fields: PageField[] | null; values: PageValues; tree: PluginPaneTree; configured?: boolean };
+export type PluginPage = { ownerId: string; pluginId: string; page: { id: string; label: string; validate?: boolean } };
+export type PageField = { key: string; label: string; type: 'text' | 'multiline' | 'secret' | 'boolean' | 'list' | 'projects' | 'select' | 'number' | 'integer'; help?: string; fields?: PageField[]; optionsFrom?: string;
+  required?: boolean; minimum?: number; maximum?: number; minLength?: number; maxLength?: number; minItems?: number; maxItems?: number; options?: { value: string; label: string }[] };
+export type PageValues = { [key: string]: string | boolean | number | PageValues[] };
+export type PageIssue = { path: string; message: string };
+export type PageDisplay = 'text' | 'number' | 'boolean' | 'status';
+export type PageCollection = { title: string; columns: { key: string; label: string; display: PageDisplay }[]; rows: { id: string; values: Record<string, string | number | boolean> }[]; nextCursor?: string };
+export type PageDetail = { title: string; properties: { label: string; display: PageDisplay; value: string | number | boolean }[] };
+export type PageDocument = { revision: string; fields: PageField[] | null; values: PageValues; tree: PluginPaneTree; configured?: boolean; collection?: PageCollection; detail?: PageDetail; issues?: PageIssue[] };
 
 // Only a declared text field may name a row outside its editable controls.
 // Undeclared values and other field types may contain secrets or opaque JSON.
@@ -18,7 +23,7 @@ export function pageRowName(fields: PageField[] | undefined, row: unknown): stri
 }
 
 export function blankPageValues(fields: PageField[]): PageValues {
-  return Object.fromEntries(fields.map((f) => [f.key, f.type === 'list' ? [] : f.type === 'boolean' ? false : '']));
+  return Object.fromEntries(fields.filter((f) => f.type !== 'number' && f.type !== 'integer').map((f) => [f.key, f.type === 'list' ? [] : f.type === 'boolean' ? false : '']));
 }
 
 export function pageURL(page: PluginPage) {
@@ -36,9 +41,9 @@ export function usePluginPages() {
   return { pages: queries.flatMap((q) => q.isError ? [] : q.data ?? []), loading: hosts.isPending || queries.some((q) => q.isPending), error: hosts.isError || queries.some((q) => q.isError) };
 }
 
-export function callPluginPage(page: PluginPage, projectId: string, method: 'read' | 'save', document?: PageDocument, signal?: AbortSignal) {
+export function callPluginPage(page: PluginPage, projectId: string, method: 'read' | 'save', document?: PageDocument, signal?: AbortSignal, context: { itemId?: string; cursor?: string } = {}) {
   return postJSON<PageDocument>('/api/plugins/pages/call', {
     ownerId: page.ownerId, pluginId: page.pluginId, method,
-    request: { pageId: page.page.id, projectId, ...(method === 'save' && document ? { revision: document.revision, values: document.values } : {}) },
+    request: { pageId: page.page.id, projectId, ...context, ...(method === 'save' && document ? { revision: document.revision, values: document.values } : {}) },
   }, { signal });
 }

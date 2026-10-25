@@ -71,6 +71,18 @@ func (m *Module) handlePluginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) localPluginPage(ctx context.Context, id, method string, raw json.RawMessage) (plugins.PageDocument, error) {
+	if method != "read" && method != "save" {
+		return plugins.PageDocument{}, plugins.ErrInvalidMessage
+	}
+	if method == "save" {
+		if doc, handled, err := m.validatePluginPageSave(ctx, id, raw); handled || err != nil {
+			return doc, err
+		}
+	}
+	return m.dispatchPluginPage(ctx, id, method, raw)
+}
+
+func (m *Module) dispatchPluginPage(ctx context.Context, id, method string, raw json.RawMessage) (plugins.PageDocument, error) {
 	req, err := plugins.DecodePageRequest(raw)
 	if err != nil {
 		return plugins.PageDocument{}, err
@@ -78,6 +90,7 @@ func (m *Module) localPluginPage(ctx context.Context, id, method string, raw jso
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var replies <-chan plugins.Reply
+	var version plugins.Version
 	m.mu.Lock()
 	if m.store == nil {
 		err = plugins.ErrUnavailable
@@ -85,6 +98,10 @@ func (m *Module) localPluginPage(ctx context.Context, id, method string, raw jso
 		err = m.store.WithPluginAuthorization(ctx, id, func(d plugins.Description, grants []string) error {
 			if !d.PageAllowed(req.PageID, grants) {
 				return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
+			}
+			version = d.PageVersion()
+			if err := plugins.ValidatePageCall(method, req, version); err != nil {
+				return err
 			}
 			if m.deps.ProjectDirectory == nil {
 				return plugins.ErrUnavailable
@@ -96,7 +113,7 @@ func (m *Module) localPluginPage(ctx context.Context, id, method string, raw jso
 			if p == nil {
 				return plugins.ErrUnavailable
 			}
-			replies, err = p.Call(ctx, plugins.Call{OperationID: "page:" + rand.Text(), Capability: "page", Version: plugins.PageCapability.Version, Method: method, DeadlineUnixMS: time.Now().Add(30 * time.Second).UnixMilli(), Params: raw})
+			replies, err = p.Call(ctx, plugins.Call{OperationID: "page:" + rand.Text(), Capability: "page", Version: version, Method: method, DeadlineUnixMS: time.Now().Add(30 * time.Second).UnixMilli(), Params: raw})
 			return err
 		})
 	}
@@ -127,6 +144,10 @@ func (m *Module) localPluginPage(ctx context.Context, id, method string, raw jso
 		if err != nil {
 			return plugins.PageDocument{}, err
 		}
-		return plugins.DecodePageDocument(result.Value)
+		doc, err := plugins.DecodePageDocument(result.Value)
+		if err == nil {
+			err = plugins.ValidatePageVersion(doc, version)
+		}
+		return doc, err
 	}
 }

@@ -10,19 +10,38 @@ type PageDescriptor = plugins.PageDescriptor
 type PageRequest = plugins.PageRequest
 type PageDocument = plugins.PageDocument
 type PageField = plugins.PageField
+type PageOption = plugins.PageOption
+type PageIssue = plugins.PageIssue
+type PageColumn = plugins.PageColumn
+type PageRow = plugins.PageRow
+type PageCollection = plugins.PageCollection
+type PageProperty = plugins.PageProperty
+type PageDetail = plugins.PageDetail
 
 var PageCapability = plugins.PageCapability
+var PageContributionCapability = plugins.PageContributionCapability
+
+var ValidatePageInput = plugins.ValidatePageInput
 
 const PageProjectGrant = plugins.PageProjectGrant
 
 func PageHandler(d Description, handle func(context.Context, string, PageRequest) (PageDocument, error)) Handler {
 	return func(ctx context.Context, call Call, _ func(json.RawMessage) error) (json.RawMessage, error) {
-		if call.Capability != "page" || call.Version != PageCapability.Version || (call.Method != "read" && call.Method != "save") {
+		if call.Capability != "page" || call.Version.Major != 1 || call.Version.Minor > d.PageVersion().Minor || (call.Method != "read" && call.Method != "save" && call.Method != "validate") {
 			return nil, Failure(ErrorNotFound)
 		}
 		req, err := plugins.DecodePageRequest(call.Params)
-		if err != nil || !d.PageAllowed(req.PageID, d.RequestedGrants) {
+		if err != nil || !d.PageAllowed(req.PageID, d.RequestedGrants) || plugins.ValidatePageCall(call.Method, req, call.Version) != nil {
 			return nil, Failure(ErrorInvalidArgument)
+		}
+		if call.Method == "validate" {
+			allowed := false
+			for _, page := range d.Pages {
+				allowed = allowed || page.ID == req.PageID && page.Validate
+			}
+			if !allowed {
+				return nil, Failure(ErrorInvalidArgument)
+			}
 		}
 		result, err := handle(ctx, call.Method, req)
 		if err != nil {
@@ -30,7 +49,11 @@ func PageHandler(d Description, handle func(context.Context, string, PageRequest
 		}
 		raw, err := json.Marshal(result)
 		if err == nil {
-			_, err = plugins.DecodePageDocument(raw)
+			var decoded PageDocument
+			decoded, err = plugins.DecodePageDocument(raw)
+			if err == nil {
+				err = plugins.ValidatePageVersion(decoded, call.Version)
+			}
 		}
 		return raw, err
 	}

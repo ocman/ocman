@@ -20,6 +20,27 @@ function Form() {
 }
 
 describe('Plugin page fields', () => {
+  it('edits numeric fields and labeled choices and renders nested validation', () => {
+    function TypedForm() {
+      const [values, setValues] = useState<PageValues>({ replicas: 2, rows: [{ mode: 'fast' }] });
+      return <><PluginPageFields fields={[
+        { key: 'replicas', label: 'Replicas', type: 'integer', minimum: 1, maximum: 3, required: true },
+        { key: 'rows', label: 'Rows', type: 'list', maxItems: 1, fields: [{ key: 'mode', label: 'Mode', type: 'select', options: [{ value: 'fast', label: 'Fast mode' }] }] },
+      ]} values={values} onChange={setValues} issues={[{ path: '/rows/0/mode', message: 'This mode is unavailable.' }]} /><output>{JSON.stringify(values)}</output></>;
+    }
+    render(<TypedForm />);
+    const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
+    expect(replicas).toHaveAttribute('min', '1');
+    expect(replicas).toHaveAttribute('step', '1');
+    expect(replicas).toBeRequired();
+    fireEvent.change(replicas, { target: { value: '3' } });
+    expect(screen.getByRole('status')).toHaveTextContent('"replicas":3');
+    fireEvent.change(replicas, { target: { value: '' } });
+    expect(screen.getByRole('status')).not.toHaveTextContent('replicas');
+    expect(screen.getByRole('option', { name: 'Fast mode' })).toHaveValue('fast');
+    expect(screen.getByRole('alert')).toHaveTextContent('This mode is unavailable.');
+    expect(screen.getByRole('button', { name: 'Add Rows' })).toBeDisabled();
+  });
   it('never uses a secret first field as the list heading, including while collapsed', () => {
     function SecretForm() {
       const [values, setValues] = useState<PageValues>({ accounts: [{ password: '' }] });

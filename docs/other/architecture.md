@@ -2042,9 +2042,9 @@ flowchart LR
     Registry[Feature registry] --> Navigation[Desktop navigation and phone More]
     Navigation --> Catalog[Owner-qualified page declarations]
     Navigation --> Page[Host-rendered typed page]
-    Page --> API[Authenticated page API]
+    Page --> API[Authenticated read/save API<br/>project, item and cursor identities]
     API --> Owner[Executing owner authorization and project lookup]
-    Owner --> Process[Plugin page read/save]
+    Owner --> Process[Plugin read/validate/save<br/>host static rules before save]
     Process --> Files[Plugin-private target configuration]
     Page --> Actions[Existing action confirmation and results]
 ```
@@ -2052,6 +2052,11 @@ flowchart LR
 - `page.v1` contributes inert field schemas and trees. The frontend registry owns
   one generic route and dynamic navigation entry; it contains no pentest-specific
   storage or executable plugin content.
+- Page 1.1 adds bounded collections and detail properties rendered with shared
+  tables and controls. Item links preserve owner/project identity. The owner reads
+  the current schema, checks the revision and static rules, then runs an optional
+  validation hook before saving. Errors retain browser drafts; failed validation
+  never dispatches a save. See the [contribution guide](../features/plugin-contributions.md).
 - The owner checks approved declarations, enablement and the `page.project`
   grant under the lifecycle lock and resolves opaque project IDs locally.
   Disabled, revoked and offline owners cannot silently reuse another owner's data.

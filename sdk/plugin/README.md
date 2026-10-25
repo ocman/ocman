@@ -70,6 +70,11 @@ See
 
 ## Host-rendered workspaces
 
+For forms, lists, item details and submit-time validation, declare
+`PageContributionCapability` for page 1.1. The full supported contract and
+getting-started example are in the [contribution guide](../../docs/features/plugin-contributions.md)
+and [workspace example](../../examples/ocman-plugin-workspaces).
+
 Declare `PageCapability`, request `PageProjectGrant`, and add `PageDescriptor`
 entries to expose typed project workspaces in navigation. Dispatch page calls to
 `PageHandler`. The host checks the executing owner's project identity and grants;

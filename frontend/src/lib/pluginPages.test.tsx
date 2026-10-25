@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { callPluginPage, pageRowName, usePluginPages, type PageDocument, type PageField } from './pluginPages';
+import { blankPageValues, callPluginPage, pageRowName, usePluginPages, type PageDocument, type PageField } from './pluginPages';
 import { fetchJSON, postJSON } from './api';
 
 const hosts = vi.hoisted(() => ({ data: [] as { remoteId: string; pluginManagement: boolean }[], isPending: false, isError: false }));
@@ -71,5 +71,18 @@ it('sends explicit owner/project identity and revisions only when saving', async
   await callPluginPage(page, 'project-a', 'save', document);
   expect(postJSON).toHaveBeenLastCalledWith('/api/plugins/pages/call', {
     ownerId: 'remote', pluginId: 'plugin', method: 'save', request: { pageId: 'pentest', projectId: 'project-a', revision: 'r1', values: { name: 'staging' } },
+  }, { signal: undefined });
+});
+
+it('keeps new numeric values absent and forwards explicit item and cursor identities', async () => {
+  expect(blankPageValues([
+    { key: 'name', label: 'Name', type: 'text' }, { key: 'count', label: 'Count', type: 'integer' },
+    { key: 'price', label: 'Price', type: 'number' }, { key: 'enabled', label: 'Enabled', type: 'boolean' },
+    { key: 'rows', label: 'Rows', type: 'list', fields: [] },
+  ])).toEqual({ name: '', enabled: false, rows: [] });
+  const page = { ownerId: 'remote', pluginId: 'plugin', page: { id: 'jobs', label: 'Jobs' } };
+  await callPluginPage(page, 'project-a', 'read', undefined, undefined, { itemId: 'item-a', cursor: 'next' });
+  expect(postJSON).toHaveBeenLastCalledWith('/api/plugins/pages/call', {
+    ownerId: 'remote', pluginId: 'plugin', method: 'read', request: { pageId: 'jobs', projectId: 'project-a', itemId: 'item-a', cursor: 'next' },
   }, { signal: undefined });
 });

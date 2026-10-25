@@ -20,6 +20,9 @@ section for its grants, configuration, health and diagnostics.
 
 ## Plugin workspaces
 
+For supported fields, lists, detail pages, validation hooks and a runnable
+example, see the [plugin contribution guide](../plugin-contributions/).
+
 Enabled owner-scoped plugins can declare `page.v1` workspaces. After approval of
 `page.project`, each page appears in the main navigation and the phone's More
 menu. The route records the owner, plugin and page identity. The homepage lists

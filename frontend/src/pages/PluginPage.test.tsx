@@ -22,9 +22,9 @@ beforeEach(() => {
   mocks.call.mockResolvedValue({ revision: 'r1', fields: [{ key: 'name', label: 'Target name', type: 'text' }, { key: 'pass', label: 'Password', type: 'secret' }], values: { name: 'staging', pass: '' }, tree: { available: true } });
 });
 
-function mount() {
+function mount(path = '/plugins/org.example.pentest/pentest?ownerId=machine') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/plugins/org.example.pentest/pentest?ownerId=machine']}>
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>
     <Routes><Route path="/plugins/:pluginId/:pageId" element={<PluginPage />} /></Routes>
   </MemoryRouter></QueryClientProvider>);
   return client;
@@ -100,7 +100,8 @@ it('lists only saved configurations and uses the project picker only when creati
   fireEvent.click(screen.getByRole('button', { name: 'New configuration' }));
   fireEvent.click(screen.getByRole('combobox', { name: 'Configuration project' }));
   fireEvent.click(screen.getByRole('option', { name: 'srv/project' }));
-  await screen.findByRole('button', { name: 'Save configuration' });
+  await screen.findByRole('button', { name: 'Back to configurations' });
+  expect(screen.queryByRole('button', { name: 'Save configuration' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Back to configurations' }));
   await screen.findByText(/No saved configurations/);
 });
@@ -115,4 +116,45 @@ it('distinguishes identical plugin pages on different owners', () => {
   render(<MemoryRouter initialEntries={['/plugins/org.example.pentest/pentest?ownerId=machine']}><PluginPageNav /></MemoryRouter>);
   expect(screen.getByRole('link', { name: 'Pentest (machine)' })).toHaveClass('active');
   expect(screen.getByRole('link', { name: 'Pentest (local)' })).not.toHaveClass('active');
+});
+
+it('keeps the draft and shows validation issues without treating them as a save', async () => {
+  const client = mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Open configuration for srv/project' }));
+  fireEvent.change(await screen.findByLabelText('Target name'), { target: { value: 'taken' } });
+  mocks.call.mockResolvedValue({ revision: 'r1', fields: [], values: {}, tree: {}, issues: [{ path: '/name', message: 'Name is already used.' }] });
+  fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }));
+  await screen.findByText('Fix the validation errors before saving.');
+  expect(screen.getByLabelText('Target name')).toHaveValue('taken');
+  expect(screen.getByRole('alert')).toHaveTextContent('Name is already used.');
+  expect(screen.queryByText('Saved.')).not.toBeInTheDocument();
+  expect(client.getQueryData(['plugin-page-document', 'machine', 'org.example.pentest', 'pentest', 'project-a'])).toMatchObject({ revision: 'r1', values: { name: 'staging' } });
+  fireEvent.change(screen.getByLabelText('Target name'), { target: { value: 'available' } });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('opens owner-qualified list details and passes opaque pagination cursors', async () => {
+  const collection = { title: 'Jobs', columns: [{ key: 'name', label: 'Name', display: 'text' }], rows: [{ id: 'job-1', values: { name: '<script>inert</script>' } }], nextCursor: 'next-1' };
+  mocks.call.mockImplementation((_page, _project, _method, _doc, _signal, context) => Promise.resolve(context?.itemId
+    ? { revision: 'r1', fields: [], values: {}, tree: {}, detail: { title: 'Job details', properties: [{ label: 'Name', display: 'text', value: 'Example job' }] } }
+    : { revision: 'r1', fields: [], values: {}, tree: {}, collection }));
+  mount('/plugins/org.example.pentest/pentest?ownerId=machine&projectId=project-a');
+  expect(await screen.findByText('<script>inert</script>')).toBeInTheDocument();
+  expect(document.querySelector('script')).toBeNull();
+  expect(screen.getByRole('link', { name: 'View job-1' })).toHaveAttribute('href', '/plugins/org.example.pentest/pentest?ownerId=machine&projectId=project-a&itemId=job-1');
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await waitFor(() => expect(mocks.call).toHaveBeenLastCalledWith(mocks.pages[0], 'project-a', 'read', undefined, expect.any(AbortSignal), { cursor: 'next-1' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'First page' }));
+  fireEvent.click(await screen.findByRole('link', { name: 'View job-1' }));
+  expect(await screen.findByText('Example job')).toBeInTheDocument();
+  expect(mocks.call).toHaveBeenLastCalledWith(mocks.pages[0], 'project-a', 'read', undefined, expect.any(AbortSignal), { itemId: 'job-1' });
+  fireEvent.click(screen.getByRole('button', { name: 'Back to list' }));
+  expect(await screen.findByRole('link', { name: 'View job-1' })).toBeInTheDocument();
+});
+
+it('offers a way back when a deep-linked item cannot be read', async () => {
+  mocks.call.mockRejectedValue(new Error('not_found'));
+  mount('/plugins/org.example.pentest/pentest?ownerId=machine&projectId=project-a&itemId=missing');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not read this workspace or item.');
+  expect(screen.getByRole('button', { name: 'Back to list' })).toBeInTheDocument();
 });

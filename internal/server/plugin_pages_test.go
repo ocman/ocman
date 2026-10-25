@@ -63,3 +63,35 @@ func TestPluginPagesFollowOwnerAndGrants(t *testing.T) {
 		t.Fatal("offline owner fell back")
 	}
 }
+
+func TestPluginContributionDetailsStayOnExplicitOwner(t *testing.T) {
+	hub := newPluginManagementTest(t)
+	calls := 0
+	disconnect := connectPluginOwnerHandler(t, hub.s, func(_ context.Context, req remote.PluginRequest) remote.PluginResponse {
+		if req.Operation == "available" {
+			return remote.PluginResponse{Value: json.RawMessage(`true`)}
+		}
+		if req.Operation == "catalog" {
+			return remote.PluginResponse{Value: json.RawMessage(`[]`)}
+		}
+		if req.Operation != "page-read" || req.PluginID != "org.example.pages" {
+			t.Errorf("unexpected operation: %+v", req)
+		}
+		calls++
+		page, err := plugins.DecodePageRequest(req.Input.Values["page"])
+		if err != nil || page.ProjectID != "project-a" || page.ItemID != "item-a" || page.Cursor != "next" {
+			t.Errorf("request changed: %+v %v", page, err)
+		}
+		return remote.PluginResponse{Value: encodeJSON(t, plugins.PageDocument{Values: json.RawMessage(`{}`), Detail: &plugins.PageDetail{Title: "Item details", Properties: []plugins.PageProperty{{Label: "Name", Display: "text", Value: "Example"}}}})}
+	})
+	input := `{"ownerId":"machine","pluginId":"org.example.pages","method":"read","request":{"pageId":"items","projectId":"project-a","itemId":"item-a","cursor":"next"}}`
+	body := hub.call(t, http.MethodPost, "/pages/call", input, http.StatusOK)
+	if !strings.Contains(body, `"title":"Item details"`) || calls != 1 {
+		t.Fatalf("detail: %s", body)
+	}
+	disconnect()
+	hub.call(t, http.MethodPost, "/pages/call", input, http.StatusServiceUnavailable)
+	if calls != 1 {
+		t.Fatal("disconnected owner fell back locally")
+	}
+}

@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useProjects } from '../lib/queries';
-import { callPluginPage, usePluginPages, type PluginPage as Page, type PageDocument } from '../lib/pluginPages';
+import { callPluginPage, usePluginPages, type PluginPage as Page, type PageDocument, type PageIssue } from '../lib/pluginPages';
 import { pluginActions, type PluginAction, type PluginActionRequest } from '../lib/plugins';
 import { Button, ButtonGroup } from '../components/Control';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
@@ -12,6 +12,7 @@ import { shortPath } from '../lib/format';
 import { PluginPageFields } from '../components/PluginPageFields';
 import { PluginTreePane } from '../components/PluginTreePane';
 import { PluginActionDialog } from '../components/PluginActionDialog';
+import { PluginPageContent } from '../components/PluginPageContent';
 import './PluginPage.css';
 
 export function PluginPage() {
@@ -25,18 +26,28 @@ export function PluginPage() {
 }
 
 function Workspace({ page }: { page: Page }) {
+  const [search, setSearch] = useSearchParams();
   const projects = useProjects();
   const [directory, setDirectory] = useState('');
   const [creating, setCreating] = useState(false);
   const [configuration, setConfiguration] = useState<Configuration | null>(null);
   const choices = (projects.data ?? []).filter((p) => (p.remoteId || 'local') === page.ownerId);
   const back = () => { setDirectory(''); setConfiguration(null); setCreating(false); };
+  const projectId = search.get('projectId');
+  const itemId = search.get('itemId') || '';
+  if (projectId) return <section className="plugin-page"><h1>{page.page.label}</h1>
+    <PageEditor key={`${projectId}/${itemId}`} page={page} projectId={projectId} itemId={itemId} onBack={() => {
+      const next = new URLSearchParams(search);
+      if (itemId) next.delete('itemId'); else next.delete('projectId');
+      setSearch(next);
+    }} />
+  </section>;
   return <section className="plugin-page">
     <h1>{page.page.label}</h1>
     {!directory && !configuration ? <>
-      <div className="plugin-page-heading"><div><h2>Configurations</h2><p>Each configuration groups the targets, code projects and scan settings for one project.</p></div>
+      <div className="plugin-page-heading"><div><h2>Configurations</h2><p>Open a project workspace or create a configuration.</p></div>
         <Button variant="accent" onClick={() => setCreating(true)}>New configuration</Button></div>
-      {creating && <div className="plugin-page-create"><p>Choose the project that owns this configuration. You can attach more code projects to each target.</p>
+      {creating && <div className="plugin-page-create"><p>Choose the project that owns this workspace.</p>
         <ProjectScopePicker projects={choices} value="" onlyProjects label="Configuration project" placeholder="Choose a project…"
           onChange={(dir) => { if (choices.some((p) => p.directory === dir)) setDirectory(dir); }} />
         <Button onClick={() => setCreating(false)}>Cancel</Button></div>}
@@ -59,12 +70,21 @@ function ProjectPage({ page, directory, onBack }: { page: Page; directory: strin
   return <PageEditor key={project.data} page={page} projectId={project.data} onBack={onBack} />;
 }
 
-function PageEditor({ page, projectId, initialDocument, onBack }: { page: Page; projectId: string; initialDocument?: PageDocument; onBack: () => void }) {
+function pageContext(itemId: string, cursor = '') {
+  return { ...(itemId ? { itemId } : {}), ...(cursor ? { cursor } : {}) };
+}
+
+function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: { page: Page; projectId: string; initialDocument?: PageDocument; onBack: () => void; itemId?: string }) {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const queryKey = ['plugin-page-document', page.ownerId, page.pluginId, page.page.id, projectId];
-  const document = useQuery({ queryKey, initialData: initialDocument,
-    queryFn: ({ signal }) => callPluginPage(page, projectId, 'read', undefined, signal), retry: false, gcTime: 0,
+  const [cursor, setCursor] = useState('');
+  const [issues, setIssues] = useState<PageIssue[]>([]);
+  const saveController = useRef<AbortController | null>(null);
+  useEffect(() => () => saveController.current?.abort(), []);
+  const context = pageContext(itemId, cursor);
+  const queryKey = ['plugin-page-document', page.ownerId, page.pluginId, page.page.id, projectId, ...(itemId || cursor ? [itemId, cursor] : [])];
+  const document = useQuery({ queryKey, initialData: !cursor && !itemId ? initialDocument : undefined,
+    queryFn: ({ signal }) => itemId || cursor ? callPluginPage(page, projectId, 'read', undefined, signal, context) : callPluginPage(page, projectId, 'read', undefined, signal), retry: false, gcTime: 0,
     enabled: !busy, staleTime: 10_000, refetchInterval: busy ? false : 10_000 });
   const [draft, setDraft] = useState<PageDocument | null>(null);
   const [message, setMessage] = useState('');
@@ -74,37 +94,44 @@ function PageEditor({ page, projectId, initialDocument, onBack }: { page: Page; 
   const current = draft ?? document.data;
   async function save() {
     if (!current) return;
-    setBusy(true); setMessage('');
+    setBusy(true); setMessage(''); setIssues([]);
+    const controller = new AbortController();
+    saveController.current = controller;
     try {
-      const saved = await callPluginPage(page, projectId, 'save', current);
+      const saved = await callPluginPage(page, projectId, 'save', current, controller.signal, pageContext(itemId));
+      if (controller.signal.aborted) return;
+      if (saved.issues?.length) { setIssues(saved.issues); setMessage('Fix the validation errors before saving.'); return; }
       await client.cancelQueries({ queryKey, exact: true });
       client.setQueryData(queryKey, saved);
       setDraft(null);
       setMessage('Saved.');
-    } catch { setMessage('Save failed. Check field values. Reload before retrying if another editor changed this project.'); }
+    } catch { if (!controller.signal.aborted) setMessage('Save failed. Check field values. Reload before retrying if another editor changed this project.'); }
     finally { setBusy(false); }
   }
   function run(selected: PluginAction) {
     setAction({ label: selected.action.label, request: { pluginId: page.pluginId, ownerId: page.ownerId, actionId: selected.action.id,
       operationId: crypto.randomUUID(), placement: 'project', surface: 'command-palette', context: { ownerId: page.ownerId, projectId } } });
   }
-  if (!current) return <><p role={document.isError ? 'alert' : 'status'}>{document.isError ? 'Could not read target configuration. Check the plugin and file permissions.' : 'Loading target configuration…'}</p>
+  if (!current) return <><Button onClick={onBack}>{itemId ? 'Back to list' : 'Back to configurations'}</Button>
+    <p role={document.isError ? 'alert' : 'status'}>{document.isError ? 'Could not read this workspace or item. Check that it still exists and the owner is available.' : 'Loading workspace…'}</p>
     <Button onClick={() => void document.refetch()}>Retry</Button></>;
   return <>
-    <Button disabled={busy} onClick={() => { if (!draft || window.confirm('Discard unsaved edits?')) onBack(); }}>Back to configurations</Button>
-    <fieldset disabled={busy} className="plugin-page-editor">
-      <PluginPageFields fields={current.fields} values={current.values} ownerId={page.ownerId} onChange={(values) => { setMessage(''); setDraft({ ...current, values }); }} />
+    <Button disabled={busy} onClick={() => { if (!draft || window.confirm('Discard unsaved edits?')) onBack(); }}>{itemId ? 'Back to list' : 'Back to configurations'}</Button>
+    <PluginPageContent page={page} projectId={projectId} document={current} disabled={busy || !!draft} cursor={cursor} onCursor={setCursor} />
+    {!!current.fields?.length && <fieldset disabled={busy} className="plugin-page-editor">
+      <PluginPageFields fields={current.fields} values={current.values} ownerId={page.ownerId} issues={issues} onChange={(values) => { setMessage(''); setIssues([]); setDraft({ ...current, values }); }} />
       <ButtonGroup label="Configuration controls"><Button variant="accent" onClick={() => void save()}>Save configuration</Button>
-        <Button onClick={() => { if (draft && !window.confirm('Discard unsaved edits and reload?')) return; setDraft(null); setMessage(''); void document.refetch(); }}>Reload configuration</Button></ButtonGroup>
-    </fieldset>
+        <Button onClick={() => { if (draft && !window.confirm('Discard unsaved edits and reload?')) return; setDraft(null); setIssues([]); setMessage(''); void document.refetch(); }}>Reload configuration</Button></ButtonGroup>
+    </fieldset>}
     {message && <p role="status">{message}</p>}
-    <h2>Scan controls</h2>
-    <p>Save target changes before running a scan. Scope disclosure and engagement consent are still required.</p>
-    <ButtonGroup label="Scan controls">{actions.data?.filter((a) => a.pluginId === page.pluginId && a.action.id !== 'project-config').map((a) =>
+    {issues.length > 0 && <ul aria-label="Validation errors">{issues.map((issue, i) => <li key={i}>{issue.path || 'Form'}: {issue.message}</li>)}</ul>}
+    <h2>Actions</h2>
+    <p>Save changes before running an action. Required confirmations still apply.</p>
+    <ButtonGroup label="Plugin actions">{actions.data?.filter((a) => a.pluginId === page.pluginId && a.action.id !== 'project-config').map((a) =>
       <Button key={a.action.id} disabled={busy || !!draft} onClick={() => run(a)}>{a.action.label}</Button>)}</ButtonGroup>
-    {actions.isError && <p role="alert">Could not load scan controls.</p>}
-    <h2>Results for the saved selected target</h2>
-    <PluginTreePane status={document.data?.tree ?? current.tree} label="Findings" loading={document.isFetching} error={document.error} refresh={() => document.refetch()} />
+    {actions.isError && <p role="alert">Could not load plugin actions.</p>}
+    <h2>Results</h2>
+    <PluginTreePane status={document.data?.tree ?? current.tree} label="Results" loading={document.isFetching} error={document.error} refresh={() => document.refetch()} />
     {action && <PluginActionDialog label={action.label} request={action.request} onClose={() => { setAction(null); void document.refetch(); }} />}
   </>;
 }

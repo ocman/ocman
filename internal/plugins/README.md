@@ -631,6 +631,12 @@ not infer a zero charge from absent metadata.
 
 ## page.v1
 
+Page 1.1 adds static form constraints, fixed selects, numeric fields, collections,
+item details and opt-in submit validation. Declare `PageContributionCapability`.
+The host supports 1.0 unchanged and selects the lower minor. The exact supported
+options, request and response examples, limits and persistence requirements are
+in the [plugin contribution guide](../../docs/features/plugin-contributions.md).
+
 Owner-scoped plugins can declare up to eight `pages` with fixed `id` and `label`
 fields and request `page.project`. Approved enabled declarations appear in main
 navigation without invoking the executable. Page read/save calls carry only an
