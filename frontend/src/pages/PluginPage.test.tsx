@@ -158,3 +158,23 @@ it('offers a way back when a deep-linked item cannot be read', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not read this workspace or item.');
   expect(screen.getByRole('button', { name: 'Back to list' })).toBeInTheDocument();
 });
+
+it('resets to the first page after saving without overwriting a cursor-qualified cache', async () => {
+  let saved = false;
+  const collection = (name: string) => ({ title: 'Jobs', columns: [{ key: 'name', label: 'Name', display: 'text' }], rows: [{ id: 'job-1', values: { name } }], nextCursor: 'next-1' });
+  mocks.call.mockImplementation((_page, _project, method, _doc, _signal, context) => {
+    if (method === 'save') { expect(context).not.toHaveProperty('cursor'); saved = true; }
+    return Promise.resolve({ revision: saved ? 'r2' : 'r1', fields: [{ key: 'name', label: 'Job name', type: 'text' }], values: { name: saved ? 'edited' : 'original' }, tree: {},
+      collection: collection(context?.cursor ? 'Second page row' : saved ? 'First page updated' : 'First page row') });
+  });
+  const client = mount('/plugins/org.example.pentest/pentest?ownerId=machine&projectId=project-a');
+  await screen.findByText('First page row');
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await screen.findByText('Second page row');
+  fireEvent.change(screen.getByLabelText('Job name'), { target: { value: 'edited' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }));
+  await screen.findByText('Saved.');
+  expect(screen.queryByRole('button', { name: 'First page' })).not.toBeInTheDocument();
+  expect(screen.getByText('First page updated')).toBeInTheDocument();
+  expect(client.getQueryData(['plugin-page-document', 'machine', 'org.example.pentest', 'pentest', 'project-a'])).toMatchObject({ revision: 'r2', collection: collection('First page updated') });
+});

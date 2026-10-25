@@ -82,7 +82,8 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
   const saveController = useRef<AbortController | null>(null);
   useEffect(() => () => saveController.current?.abort(), []);
   const context = pageContext(itemId, cursor);
-  const queryKey = ['plugin-page-document', page.ownerId, page.pluginId, page.page.id, projectId, ...(itemId || cursor ? [itemId, cursor] : [])];
+  const rootQueryKey = ['plugin-page-document', page.ownerId, page.pluginId, page.page.id, projectId];
+  const queryKey = [...rootQueryKey, ...(itemId || cursor ? [itemId, cursor] : [])];
   const document = useQuery({ queryKey, initialData: !cursor && !itemId ? initialDocument : undefined,
     queryFn: ({ signal }) => itemId || cursor ? callPluginPage(page, projectId, 'read', undefined, signal, context) : callPluginPage(page, projectId, 'read', undefined, signal), retry: false, gcTime: 0,
     enabled: !busy, staleTime: 10_000, refetchInterval: busy ? false : 10_000 });
@@ -101,8 +102,9 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
       const saved = await callPluginPage(page, projectId, 'save', current, controller.signal, pageContext(itemId));
       if (controller.signal.aborted) return;
       if (saved.issues?.length) { setIssues(saved.issues); setMessage('Fix the validation errors before saving.'); return; }
-      await client.cancelQueries({ queryKey, exact: true });
-      client.setQueryData(queryKey, saved);
+      await client.cancelQueries({ queryKey: rootQueryKey });
+      client.setQueryData([...rootQueryKey, ...(itemId ? [itemId, ''] : [])], saved);
+      setCursor('');
       setDraft(null);
       setMessage('Saved.');
     } catch { if (!controller.signal.aborted) setMessage('Save failed. Check field values. Reload before retrying if another editor changed this project.'); }

@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/NoUseFreak/ocman/sdk/plugin"
 )
@@ -24,9 +27,9 @@ func description() plugin.Description {
 }
 
 func fields() []plugin.PageField {
-	minimum, maximum, maxRows := 1.0, 20.0, 20
+	minimum, maximum, maxRows, maxName := 1.0, 20.0, 20, 128
 	return []plugin.PageField{{Key: "services", Label: "Services", Type: "list", MaxItems: &maxRows, Fields: []plugin.PageField{
-		{Key: "name", Label: "Name", Type: "text", Required: true, Help: "Use a unique name. The name reserved demonstrates a validation error."},
+		{Key: "name", Label: "Name", Type: "text", Required: true, MaxLength: &maxName, Help: "Use a unique name, at most 128 UTF-8 bytes, without surrounding whitespace or control characters. The name reserved demonstrates a validation error."},
 		{Key: "replicas", Label: "Replicas", Type: "integer", Required: true, Minimum: &minimum, Maximum: &maximum},
 		{Key: "environment", Label: "Environment", Type: "select", Required: true, Options: []plugin.PageOption{{Value: "staging", Label: "Staging"}, {Value: "production", Label: "Production"}}},
 	}}}
@@ -62,6 +65,9 @@ func issues(values json.RawMessage) []plugin.PageIssue {
 	for i, value := range rows {
 		row := value.(map[string]any)
 		name := row["name"].(string)
+		if len(name) > 128 || !utf8.ValidString(name) || strings.TrimSpace(name) != name || strings.ContainsFunc(name, unicode.IsControl) {
+			result = append(result, plugin.PageIssue{Path: fmt.Sprintf("/services/%d/name", i), Message: "Use at most 128 UTF-8 bytes without surrounding whitespace or control characters."})
+		}
 		if name == "reserved" || seen[name] {
 			result = append(result, plugin.PageIssue{Path: fmt.Sprintf("/services/%d/name", i), Message: "Choose a unique, non-reserved name."})
 		}

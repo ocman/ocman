@@ -44,6 +44,8 @@ test('plugin contributions reuse host controls for validation, lists and linked 
     return route.fulfill({ json: doc });
   });
   await page.goto('/plugins/org.example.services/services?ownerId=local&projectId=project-a');
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await expect(page.getByRole('button', { name: 'First page' })).toBeVisible();
   await page.getByLabel('Service name', { exact: true }).fill('taken');
   await page.getByRole('spinbutton', { name: 'Replicas' }).fill('3');
   await page.getByLabel('Environment', { exact: true }).selectOption('production');
@@ -55,6 +57,7 @@ test('plugin contributions reuse host controls for validation, lists and linked 
   await page.getByLabel('Service name', { exact: true }).fill('API');
   await page.getByRole('button', { name: 'Save configuration' }).click();
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'First page' })).toHaveCount(0);
   expect(saved).toBe(1);
   await page.setViewportSize({ width: 1440, height: 1100 });
   const workspaceScreenshot = testInfo.outputPath('plugin-workspace.png');

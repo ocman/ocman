@@ -95,7 +95,7 @@ func validPageContent(p PageDocument) bool {
 		}
 	}
 	if c := p.Collection; c != nil {
-		if !validText(c.Title) || len(c.Columns) == 0 || len(c.Columns) > 16 || len(c.Rows) > 200 || !validPageCursor(c.NextCursor) {
+		if !validText(c.Title) || len(c.Columns) == 0 || len(c.Columns) > 16 || c.Rows == nil || len(c.Rows) > 200 || !validPageCursor(c.NextCursor) {
 			return false
 		}
 		keys, ids := map[string]bool{}, map[string]bool{}
@@ -118,7 +118,7 @@ func validPageContent(p PageDocument) bool {
 		}
 	}
 	if d := p.Detail; d != nil {
-		if !validText(d.Title) || len(d.Properties) > 64 {
+		if !validText(d.Title) || d.Properties == nil || len(d.Properties) > 64 {
 			return false
 		}
 		for _, prop := range d.Properties {

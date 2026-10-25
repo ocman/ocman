@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/sdk/plugin"
@@ -62,5 +63,54 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		if len(issues(json.RawMessage(raw))) == 0 {
 			t.Fatalf("invalid input: %s", raw)
 		}
+	}
+}
+
+func TestPageHandlerRejectsUndisplayableNamesBeforeSaving(t *testing.T) {
+	for label, name := range map[string]string{
+		"collection-text-limit": strings.Repeat("x", 4097),
+		"detail-title-limit":    strings.Repeat("x", 129),
+		"multibyte-title-limit": strings.Repeat("é", 65),
+		"leading-space":         " api", "trailing-space": "api ", "control": "api\nservice",
+	} {
+		t.Run(label, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			w := &workspace{}
+			handler := plugin.PageHandler(description(), w.handle)
+			call := func(method string, req plugin.PageRequest) (plugin.PageDocument, error) {
+				params, _ := json.Marshal(req)
+				raw, err := handler(t.Context(), plugin.Call{Capability: "page", Version: plugin.PageContributionCapability.Version, Method: method, Params: params}, nil)
+				var doc plugin.PageDocument
+				if err == nil {
+					err = json.Unmarshal(raw, &doc)
+				}
+				return doc, err
+			}
+			req := plugin.PageRequest{PageID: "services", ProjectID: "project-a"}
+			doc, err := call("read", req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Revision = doc.Revision
+			req.Values = json.RawMessage(`{"services":[{"name":"api","replicas":2,"environment":"staging"}]}`)
+			doc, err = call("save", req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			savedValues, revision := string(doc.Values), doc.Revision
+			req.Revision = revision
+			req.Values, _ = json.Marshal(map[string]any{"services": []map[string]any{{"name": name, "replicas": 2, "environment": "staging"}}})
+			invalid, err := call("save", req)
+			if err != nil || len(invalid.Issues) == 0 {
+				t.Errorf("invalid name did not produce a field issue: %v", err)
+			}
+			stored, _, err := load(req.ProjectID)
+			if err != nil || string(stored.Values) != savedValues || stored.Revision != revision {
+				t.Error("invalid name changed persisted configuration")
+			}
+			if _, err = call("read", plugin.PageRequest{PageID: req.PageID, ProjectID: req.ProjectID}); err != nil {
+				t.Errorf("workspace became unreadable: %v", err)
+			}
+		})
 	}
 }

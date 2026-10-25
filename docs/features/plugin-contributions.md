@@ -213,8 +213,10 @@ Return a collection in a read response:
 }
 ```
 
-Every row needs a unique stable ID and exactly one value per column. Ocman
-renders its shared table and adds a **View** link. The link preserves the owner,
+Every row needs a unique stable ID and exactly one value per column. The `rows`
+and detail `properties` members must be arrays; use `[]` for empty content,
+not missing or null members. Ocman renders its shared table and adds a **View**
+link. The link preserves the owner,
 plugin, page and project, and sends `itemId` on the next read. Return `not_found`
 when the item no longer exists. Detail links can be bookmarked:
 
@@ -248,6 +250,9 @@ read. **First page** clears it. Plugins implement stable pagination and decide
 page size within the host limit. Built-in server filtering, sorting and total
 counts are not part of this version. Item links and pagination are unavailable
 while the editor has unsaved changes.
+
+Saving a form resets its collection to the first page. Save responses describe
+the cursor-less document, never the previously selected later page.
 
 ## Limits and compatibility
 

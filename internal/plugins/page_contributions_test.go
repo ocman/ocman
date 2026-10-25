@@ -197,3 +197,35 @@ func TestPageInvalidRules(t *testing.T) {
 		}
 	}
 }
+
+func TestPageContentRequiresArrays(t *testing.T) {
+	for _, arrays := range []string{"omitted", "null", "empty"} {
+		t.Run(arrays, func(t *testing.T) {
+			rows, properties := "", ""
+			if arrays == "null" {
+				rows, properties = `,"rows":null`, `,"properties":null`
+			}
+			if arrays == "empty" {
+				rows, properties = `,"rows":[]`, `,"properties":[]`
+			}
+			raw := []byte(`{"revision":"r","values":{},"collection":{"title":"Jobs","columns":[{"key":"name","label":"Name","display":"text"}]` + rows + `},"detail":{"title":"Details"` + properties + `}}`)
+			doc, err := DecodePageDocument(raw)
+			if arrays != "empty" {
+				if err == nil {
+					t.Fatal("accepted missing renderer arrays")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.Collection.Rows == nil || doc.Detail.Properties == nil {
+				t.Fatal("accepted content still contains null renderer arrays")
+			}
+			encoded, err := json.Marshal(doc)
+			if err != nil || !strings.Contains(string(encoded), `"rows":[]`) || !strings.Contains(string(encoded), `"properties":[]`) {
+				t.Fatalf("arrays not serialized as empty: %s %v", encoded, err)
+			}
+		})
+	}
+}
