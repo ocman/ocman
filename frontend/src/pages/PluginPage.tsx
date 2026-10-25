@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useProjects } from '../lib/queries';
@@ -45,8 +45,8 @@ function Workspace({ page }: { page: Page }) {
   return <section className="plugin-page">
     <h1>{page.page.label}</h1>
     {!directory && !configuration ? <>
-      <div className="plugin-page-heading"><div><h2>Configurations</h2><p>Open a project workspace or create a configuration.</p></div>
-        <Button variant="accent" onClick={() => setCreating(true)}>New configuration</Button></div>
+      <div className="plugin-page-heading"><div><h2>{page.page.scope === 'plugin' ? 'Workspaces' : 'Configurations'}</h2><p>{page.page.scope === 'plugin' ? 'Open a workspace or create one to get started.' : 'Open a project workspace or create a configuration.'}</p></div>
+        {page.page.scope !== 'plugin' && <Button variant="accent" onClick={() => setCreating(true)}>New configuration</Button>}</div>
       {creating && <div className="plugin-page-create"><p>Choose the project that owns this workspace.</p>
         <ProjectScopePicker projects={choices} value="" onlyProjects label="Configuration project" placeholder="Choose a project…"
           onChange={(dir) => { if (choices.some((p) => p.directory === dir)) setDirectory(dir); }} />
@@ -81,6 +81,8 @@ function pageContext(itemId: string, cursor = '') {
 function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: { page: Page; projectId: string; initialDocument?: PageDocument; onBack: () => void; itemId?: string }) {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const workspaceHome = page.page.scope === 'plugin' && !projectId && !itemId;
   const [cursor, setCursor] = useState('');
   const [issues, setIssues] = useState<PageIssue[]>([]);
   const saveController = useRef<AbortController | null>(null);
@@ -94,8 +96,11 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
   const [draft, setDraft] = useState<PageDocument | null>(null);
   const [message, setMessage] = useState('');
   const [action, setAction] = useState<{ label: string; request: PluginActionRequest } | null>(null);
-  const actions = useQuery({ queryKey: ['plugin-page-actions', page.ownerId, page.pluginId, projectId], retry: false, enabled: !!projectId,
-    queryFn: ({ signal }) => pluginActions.list('project', { ownerId: page.ownerId, projectId }, signal) });
+  const workspaceId = page.page.scope === 'plugin' && !projectId ? itemId : '';
+  const placement = workspaceId ? 'plugin' : 'project';
+  const actionContext = { ownerId: page.ownerId, ...(workspaceId ? { workspaceId } : { projectId }) };
+  const actions = useQuery({ queryKey: ['plugin-page-actions', page.ownerId, page.pluginId, projectId, workspaceId], retry: false, enabled: !!projectId || !!workspaceId,
+    queryFn: ({ signal }) => pluginActions.list(placement, actionContext, signal) });
   const current = draft ?? document.data;
   async function save() {
     if (!current) return;
@@ -110,34 +115,38 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
       client.setQueryData([...rootQueryKey, ...(itemId ? [itemId, ''] : [])], saved);
       setCursor('');
       setDraft(null);
-      setMessage('Saved.');
+      setCreatingWorkspace(false);
+      setMessage(workspaceHome ? 'Workspace created.' : 'Saved.');
     } catch { if (!controller.signal.aborted) setMessage('Save failed. Check field values. Reload before retrying if another editor changed this project.'); }
     finally { setBusy(false); }
   }
   function run(selected: PluginAction) {
     setAction({ label: selected.action.label, request: { pluginId: page.pluginId, ownerId: page.ownerId, actionId: selected.action.id,
-      operationId: crypto.randomUUID(), placement: 'project', surface: 'command-palette', context: { ownerId: page.ownerId, projectId } } });
+      operationId: crypto.randomUUID(), placement, surface: 'command-palette', context: actionContext } });
   }
-  if (!current) return <><Button onClick={onBack}>{itemId ? 'Back to list' : 'Back to configurations'}</Button>
-    <p role={document.isError ? 'alert' : 'status'}>{document.isError ? 'Could not read this workspace or item. Check that it still exists and the owner is available.' : 'Loading workspace…'}</p>
-    <Button onClick={() => void document.refetch()}>Retry</Button></>;
+  if (!current) return <>{!workspaceHome && <Button onClick={onBack}>{itemId ? 'Back to list' : 'Back to configurations'}</Button>}
+    <p role={document.isError ? 'alert' : 'status'}>{document.isError ? workspaceHome ? 'Could not load workspaces. Check that the plugin is enabled and its grants are approved.' : 'Could not read this workspace or item. Check that it still exists and the owner is available.' : 'Loading workspace…'}</p>
+    <Button onClick={() => void document.refetch()}>Retry</Button>
+    {workspaceHome && document.isError && <Link to="/settings?tab=plugins">Open plugin settings</Link>}</>;
   return <>
     {(projectId || itemId) && <Button disabled={busy} onClick={() => { if (!draft || window.confirm('Discard unsaved edits?')) onBack(); }}>{itemId ? 'Back to list' : 'Back to configurations'}</Button>}
-    <PluginPageContent page={page} projectId={projectId} document={current} disabled={busy || !!draft} cursor={cursor} onCursor={setCursor} />
-    {!!current.fields?.length && <fieldset disabled={busy} className="plugin-page-editor">
+    {workspaceHome && !!current.fields?.length && !creatingWorkspace && <Button variant="accent" onClick={() => setCreatingWorkspace(true)}>New workspace</Button>}
+    <PluginPageContent page={page} projectId={projectId} document={current} disabled={busy || !!draft} cursor={cursor} onCursor={setCursor} emptyText={workspaceHome ? 'No workspaces yet. Choose New workspace to get started.' : undefined} />
+    {!!current.fields?.length && (!workspaceHome || creatingWorkspace) && <fieldset disabled={busy} className="plugin-page-editor">
       <PluginPageFields fields={current.fields} values={current.values} ownerId={page.ownerId} issues={issues} onChange={(values) => { setMessage(''); setIssues([]); setDraft({ ...current, values }); }} />
-      <ButtonGroup label="Configuration controls"><Button variant="accent" onClick={() => void save()}>Save configuration</Button>
-        <Button onClick={() => { if (draft && !window.confirm('Discard unsaved edits and reload?')) return; setDraft(null); setIssues([]); setMessage(''); void document.refetch(); }}>Reload configuration</Button></ButtonGroup>
+      <ButtonGroup label="Configuration controls"><Button variant="accent" onClick={() => void save()}>{workspaceHome ? 'Create workspace' : 'Save configuration'}</Button>
+        {workspaceHome ? <Button onClick={() => { setDraft(null); setIssues([]); setCreatingWorkspace(false); }}>Cancel</Button>
+          : <Button onClick={() => { if (draft && !window.confirm('Discard unsaved edits and reload?')) return; setDraft(null); setIssues([]); setMessage(''); void document.refetch(); }}>Reload configuration</Button>}</ButtonGroup>
     </fieldset>}
     {message && <p role="status">{message}</p>}
     {issues.length > 0 && <ul aria-label="Validation errors">{issues.map((issue, i) => <li key={i}>{issue.path || 'Form'}: {issue.message}</li>)}</ul>}
-    {projectId && <><h2>Actions</h2>
+    {(projectId || workspaceId) && <><h2>Actions</h2>
     <p>Save changes before running an action. Required confirmations still apply.</p>
     <ButtonGroup label="Plugin actions">{actions.data?.filter((a) => a.pluginId === page.pluginId && a.action.id !== 'project-config').map((a) =>
       <Button key={a.action.id} disabled={busy || !!draft} onClick={() => run(a)}>{a.action.label}</Button>)}</ButtonGroup>
     {actions.isError && <p role="alert">Could not load plugin actions.</p>}</>}
-    <h2>Results</h2>
-    <PluginTreePane status={document.data?.tree ?? current.tree} label="Results" loading={document.isFetching} error={document.error} refresh={() => document.refetch()} />
+    {!workspaceHome && <><h2>Results</h2>
+    <PluginTreePane status={document.data?.tree ?? current.tree} label="Results" loading={document.isFetching} error={document.error} refresh={() => document.refetch()} /></>}
     {action && <PluginActionDialog label={action.label} request={action.request} onClose={() => { setAction(null); void document.refetch(); }} />}
   </>;
 }

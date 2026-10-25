@@ -10,8 +10,8 @@ function displayValue(value: string | number | boolean, display: PageDisplay) {
   return String(value);
 }
 
-export function PluginPageContent({ page, projectId, document, disabled, cursor, onCursor }: {
-  page: PluginPage; projectId: string; document: PageDocument; disabled: boolean; cursor: string; onCursor: (cursor: string) => void;
+export function PluginPageContent({ page, projectId, document, disabled, cursor, onCursor, emptyText }: {
+  page: PluginPage; projectId: string; document: PageDocument; disabled: boolean; cursor: string; onCursor: (cursor: string) => void; emptyText?: string;
 }) {
   const { collection, detail } = document;
   function itemURL(id: string, configurationProject?: string) {
@@ -24,7 +24,7 @@ export function PluginPageContent({ page, projectId, document, disabled, cursor,
       </tr>)}</tbody></DataTable>
     </section>}
     {collection && <section aria-label={collection.title}><h2>{collection.title}</h2>
-      {collection.rows.length === 0 ? <EmptyState>No items.</EmptyState> : <DataTable framed>
+      {collection.rows.length === 0 ? <EmptyState>{emptyText ?? 'No items.'}</EmptyState> : <DataTable framed>
         <thead><tr>{collection.columns.map((col) => <th scope="col" key={col.key}>{col.label}</th>)}<th scope="col">Details</th></tr></thead>
         <tbody>{collection.rows.map((row) => <tr key={row.id}>
           {collection.columns.map((col) => <td key={col.key}>{displayValue(row.values[col.key], col.display)}</td>)}

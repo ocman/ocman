@@ -5,6 +5,10 @@ software changes.
 
 ## Language
 
+**Plugin workspace**:
+A plugin-owned group of configuration and results on one machine. It may relate to multiple projects, and a project may relate to multiple plugin workspaces, without owning them.
+_Avoid_: Project-owned plugin configuration
+
 **Work Epic**:
 A mutable goal-oriented group containing Issues and one or more Mols, which may come from different Formulas.
 _Avoid_: Formula instance, Molecule

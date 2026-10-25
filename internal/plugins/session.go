@@ -20,8 +20,10 @@ var SessionCapability = Capability{Name: "session", Version: Version{Major: 1}}
 
 // ProjectSessionCapability adds owner-local project selection and usage replies.
 var ProjectSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 1}}
+var PluginSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 2}}
 
 const SessionProjectGrant = "session.project"
+const SessionPluginGrant = "session.plugin"
 
 const (
 	// SessionRunMethod routes the plugin-initiated run request. It is the
@@ -51,6 +53,7 @@ const (
 // approved project is always the base, and a subpath can only reach inside it.
 type SessionRunParams struct {
 	ProjectID         string `json:"projectId,omitempty"`
+	WorkspaceID       string `json:"workspaceId,omitempty"`
 	NoTools           bool   `json:"noTools,omitempty"`
 	Prompt            string `json:"prompt"`
 	Agent             string `json:"agent,omitempty"`
@@ -77,6 +80,9 @@ type SessionCompleted struct {
 // allows newlines and tabs, unlike validText, because prompts are multi-line;
 // other control characters are rejected, as in conversation.v1.
 func (p SessionRunParams) Validate() error {
+	if p.WorkspaceID != "" && (!actionID.MatchString(p.WorkspaceID) || p.ProjectID != "" || !p.NoTools || p.Subpath != "") {
+		return ErrInvalidMessage
+	}
 	if p.ProjectID != "" && !actionID.MatchString(p.ProjectID) {
 		return ErrInvalidMessage
 	}
@@ -139,6 +145,12 @@ func (d Description) validateSession() error {
 		return ErrInvalidMessage
 	}
 	if !slices.Contains(d.RequestedGrants, SessionRunGrant) {
+		return ErrInvalidMessage
+	}
+	if slices.Contains(d.RequestedGrants, SessionPluginGrant) {
+		if slices.ContainsFunc(d.Capabilities, func(c Capability) bool { return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 2 }) {
+			return nil
+		}
 		return ErrInvalidMessage
 	}
 	if projectSessionDeclared(d) && slices.Contains(d.RequestedGrants, SessionProjectGrant) {

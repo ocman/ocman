@@ -82,6 +82,21 @@ editor instead of an item detail. This is an opaque project ID, never a path.
 The link preserves owner, plugin and page, and the destination is authorized
 on read. Project links and plugin-local scope require a page 1.2 host.
 
+For an independent workspace, omit project IDs entirely. Use a stable page-safe
+row ID to open its editor through `itemId`. The homepage can declare a small
+creation form; ocman shows a **New workspace** button and uses that form to
+create it. The workspace can link to any number of code projects without an
+owning project. The host renders `plugin` placement actions for the item's
+`workspaceId`, gated by `context.workspace`; remote workspaces execute on their
+explicit owner, never by falling back to the hub.
+
+For model-only work, declare `PluginSessionCapability` (session 1.2), request
+`session.run` and `session.plugin`, and submit `workspaceId` with `noTools: true`.
+The owner chooses a private directory below the plugin data directory. A project
+ID, subpath or enabled tools is rejected in this mode. The all-tools-denied
+profile is applied before creating the turn. Older hosts reject the request
+locally instead of downgrading it to a project-backed session.
+
 Go plugins import `github.com/NoUseFreak/ocman/sdk/plugin`. The canonical types
 are shared with the host. Declare owner scope, the `page.project` grant and
 `PageContributionCapability` for the 1.1 options:

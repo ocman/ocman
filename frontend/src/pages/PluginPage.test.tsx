@@ -50,6 +50,57 @@ it('reads a plugin-local homepage once without enumerating project configuration
   expect(mocks.sessions).not.toHaveBeenCalled();
 });
 
+it('creates and opens plugin workspaces without an owning project and scopes actions to the workspace', async () => {
+  mocks.pages = [{ pluginId: 'org.example.pentest', ownerId: 'machine', page: { id: 'pentest', label: 'Pentest', scope: 'plugin' } }];
+  mocks.call.mockImplementation((_page, _project, _method, _draft, _signal, context) => Promise.resolve(context?.itemId
+    ? { revision: 'r1', fields: [], values: {}, tree: {} }
+    : { revision: 'r1', fields: [{ key: 'name', label: 'New workspace name', type: 'text' }], values: { name: '' }, tree: {}, collection: {
+      title: 'Workspace list', columns: [{ key: 'name', label: 'Name', display: 'text' }], rows: [{ id: 'workspace-a', values: { name: 'Web app' } }],
+  } }));
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'New workspace' }));
+  await screen.findByLabelText('New workspace name');
+  expect(screen.queryByRole('button', { name: 'New configuration' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'Configuration project' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'View workspace-a' }));
+  await waitFor(() => expect(mocks.actions).toHaveBeenCalledWith('plugin', { ownerId: 'machine', workspaceId: 'workspace-a' }, expect.any(AbortSignal)));
+  expect(mocks.call).toHaveBeenLastCalledWith(mocks.pages[0], '', 'read', undefined, expect.any(AbortSignal), { itemId: 'workspace-a' });
+  expect(mocks.sessions).not.toHaveBeenCalled();
+});
+
+it('shows a usable workspace landing page and creates a workspace without selecting a project', async () => {
+  mocks.pages = [{ pluginId: 'org.example.pentest', ownerId: 'machine', page: { id: 'pentest', label: 'Pentest', scope: 'plugin' } }];
+  let created = false;
+  mocks.call.mockImplementation((_page, projectId, method, draft) => {
+    expect(projectId).toBe('');
+    if (method === 'save') { expect(draft.values).toEqual({ name: 'Customer portal' }); created = true; }
+    return Promise.resolve({ revision: created ? 'r2' : 'r1', fields: [{ key: 'name', label: 'New workspace name', type: 'text' }], values: { name: '' }, tree: {}, collection: {
+      title: 'Saved workspaces', columns: [{ key: 'name', label: 'Name', display: 'text' }], rows: created ? [{ id: 'workspace-a', values: { name: 'Customer portal' } }] : [],
+    } });
+  });
+  mount();
+  expect(await screen.findByText('No workspaces yet. Choose New workspace to get started.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Back to configurations' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Results' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'New workspace' }));
+  fireEvent.change(screen.getByLabelText('New workspace name'), { target: { value: 'Customer portal' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create workspace' }));
+  await screen.findByText('Workspace created.');
+  expect(screen.getByText('Customer portal')).toBeInTheDocument();
+  expect(screen.queryByLabelText('New workspace name')).not.toBeInTheDocument();
+  expect(mocks.sessions).not.toHaveBeenCalled();
+});
+
+it('does not offer a dead-end back button when workspace discovery fails', async () => {
+  mocks.pages = [{ pluginId: 'org.example.pentest', ownerId: 'machine', page: { id: 'pentest', label: 'Pentest', scope: 'plugin' } }];
+  mocks.call.mockRejectedValue(new Error('internal'));
+  mount();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load workspaces.');
+  expect(screen.queryByRole('button', { name: 'Back to configurations' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Open plugin settings' })).toHaveAttribute('href', '/settings?tab=plugins');
+});
+
 it('routes reads and saves to the selected owner and clears passwords after save', async () => {
   const client = mount();
   expect(screen.queryByLabelText('Project')).not.toBeInTheDocument();

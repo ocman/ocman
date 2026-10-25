@@ -70,6 +70,12 @@ See
 
 ## Host-rendered workspaces
 
+Independent plugin workspaces use collection item IDs, not project identities.
+Workspace actions declare placement `plugin` with the `context.workspace` grant.
+Model-only sessions use `PluginSessionCapability`, `SessionPluginGrant`, and
+`SessionRunParams{WorkspaceID: id, NoTools: true}`. The host chooses a private
+per-workspace directory; project IDs, subpaths and enabled tools are refused.
+
 For plugin-local storage and a single homepage read without project discovery,
 use `PluginPageCapability` for page 1.2, request `PagePluginGrant`, and declare
 `PageDescriptor{Scope: "plugin"}`. The homepage request has no project identity.

@@ -32,10 +32,11 @@ type SessionStart func(ctx context.Context, pluginID string, config Config, para
 // only way a completed turn reaches a plugin. It holds no state: a run either
 // authorizes into the configured project or is denied.
 type SessionBroker struct {
-	ResolveProject func(context.Context, string) (string, error)
-	authorize      SessionAuthorization
-	start          SessionStart
-	call           ActionCall
+	ResolveProject   func(context.Context, string) (string, error)
+	ResolveWorkspace func(context.Context, string, string) (string, error)
+	authorize        SessionAuthorization
+	start            SessionStart
+	call             ActionCall
 }
 
 func NewSessionBroker(authorize SessionAuthorization, start SessionStart, call ActionCall) *SessionBroker {
@@ -51,6 +52,9 @@ func SessionAllowed(d Description, grants []string) error {
 		return &WireError{Category: ErrorNotFound}
 	}
 	if !slices.Contains(grants, SessionRunGrant) {
+		return &WireError{Category: ErrorPermissionDenied}
+	}
+	if slices.Contains(d.RequestedGrants, SessionPluginGrant) && !slices.Contains(grants, SessionPluginGrant) {
 		return &WireError{Category: ErrorPermissionDenied}
 	}
 	if projectSessionDeclared(d) && slices.Contains(d.RequestedGrants, SessionProjectGrant) && !slices.Contains(grants, SessionProjectGrant) {
@@ -69,7 +73,7 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if err := ctx.Err(); err != nil {
 		return SessionRunResult{}, err
 	}
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > 1 || call.Method != SessionRunMethod {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > 2 || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
@@ -87,8 +91,15 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 		if err := SessionAllowed(d, grants); err != nil {
 			return err
 		}
+		if slices.Contains(d.RequestedGrants, SessionPluginGrant) && !slices.Contains(d.RequestedGrants, SessionProjectGrant) && params.WorkspaceID == "" {
+			return &WireError{Category: ErrorPermissionDenied}
+		}
 		var err error
-		admitted, err = b.project(ctx, d, grants, admitted, params, call.Version)
+		if params.WorkspaceID != "" {
+			admitted, err = b.workspace(ctx, pluginID, d, grants, admitted, params, call.Version)
+		} else {
+			admitted, err = b.project(ctx, d, grants, admitted, params, call.Version)
+		}
 		if err != nil {
 			return err
 		}
@@ -126,8 +137,10 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 	defer cancel()
 	value, err := unaryCall(ctx, b.authorize, b.call, pluginID, SessionAllowed, completion, func(d Description) Call {
 		version := SessionCapability.Version
-		if projectSessionDeclared(d) {
-			version = ProjectSessionCapability.Version
+		for _, c := range d.Capabilities {
+			if c.Name == "session" && c.Version.Major == 1 {
+				version.Minor = min(c.Version.Minor, 2)
+			}
 		}
 		return Call{
 			OperationID: operationID, Capability: SessionCapability.Name, Version: version,

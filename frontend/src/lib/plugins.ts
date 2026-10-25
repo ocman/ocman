@@ -98,7 +98,8 @@ export const plugins = {
 
 export interface PluginActionContext {
   ownerId: string;
-  projectId?: string;
+	projectId?: string;
+	workspaceId?: string;
   sessionId?: string;
   route?: string;
 }
@@ -110,7 +111,7 @@ export interface PluginAction {
   action: {
     id: string;
     label: string;
-    placement: 'global' | 'project' | 'session';
+    placement: 'global' | 'project' | 'session' | 'plugin';
     confirmation?: string;
   };
 }

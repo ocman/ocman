@@ -6,7 +6,7 @@ import "encoding/json"
 // a constructor's minimum version. Extension fields cannot be downgraded onto
 // session 1.0. Reject those locally without tearing down other valid requests.
 func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
-	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > 1 {
+	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > 2 {
 		return call, false
 	}
 	n, ready := stream.Negotiation()
@@ -22,6 +22,9 @@ func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 			return call, false
 		}
 		if capability.Version.Minor < 1 && (params.ProjectID != "" || params.NoTools) {
+			return call, true
+		}
+		if capability.Version.Minor < 2 && params.WorkspaceID != "" {
 			return call, true
 		}
 		call.Version = capability.Version

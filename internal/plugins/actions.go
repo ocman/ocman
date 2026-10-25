@@ -29,12 +29,13 @@ type ActionDescriptor struct {
 // ProjectID only after the context.project.path grant passes, so caller-supplied
 // requests must never carry it (ActionRequest.Validate rejects it).
 type ActionContext struct {
-	OwnerID   string            `json:"ownerId,omitempty"`
-	ProjectID string            `json:"projectId,omitempty"`
-	SessionID string            `json:"sessionId,omitempty"`
-	Route     string            `json:"route,omitempty"`
-	Selection []ActionSelection `json:"selection,omitempty"`
-	Directory string            `json:"directory,omitempty"`
+	OwnerID     string            `json:"ownerId,omitempty"`
+	ProjectID   string            `json:"projectId,omitempty"`
+	WorkspaceID string            `json:"workspaceId,omitempty"`
+	SessionID   string            `json:"sessionId,omitempty"`
+	Route       string            `json:"route,omitempty"`
+	Selection   []ActionSelection `json:"selection,omitempty"`
+	Directory   string            `json:"directory,omitempty"`
 }
 
 type ActionSelection struct {
@@ -87,7 +88,9 @@ type ActionResult struct {
 var actionID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
 
 func plainText(s string) bool { return validText(s) && !strings.ContainsAny(s, "<>") }
-func placement(s string) bool { return slices.Contains([]string{"global", "project", "session"}, s) }
+func placement(s string) bool {
+	return slices.Contains([]string{"global", "project", "session", "plugin"}, s)
+}
 func coreRoute(s string) bool {
 	return slices.Contains([]string{"sessions", "projects", "project", "session", "settings", "inbox", "routines", "factory", "analytics"}, s)
 }
@@ -106,9 +109,12 @@ func (d Description) validateActions() error {
 			return ErrInvalidMessage
 		}
 		seen[a.ID] = true
+		if a.Placement == "plugin" && d.Scope != ScopeOwner {
+			return ErrInvalidMessage
+		}
 		grants := map[string]bool{}
 		for _, g := range a.RequiredGrants {
-			if !slices.Contains([]string{"context.owner", "context.project", "context.project.path", "context.session", "context.route", "context.selection"}, g) ||
+			if !slices.Contains([]string{"context.owner", "context.project", "context.project.path", "context.session", "context.route", "context.selection", "context.workspace"}, g) ||
 				!slices.Contains(d.RequestedGrants, g) || grants[g] {
 				return ErrInvalidMessage
 			}
@@ -119,7 +125,7 @@ func (d Description) validateActions() error {
 }
 
 func (c ActionContext) Validate() error {
-	for _, id := range []string{c.OwnerID, c.ProjectID, c.SessionID} {
+	for _, id := range []string{c.OwnerID, c.ProjectID, c.SessionID, c.WorkspaceID} {
 		if id != "" && !actionID.MatchString(id) {
 			return ErrInvalidMessage
 		}
@@ -144,7 +150,7 @@ func (r ActionRequest) Validate() error {
 	}
 	if !pluginID.MatchString(r.PluginID) || len(r.PluginID) > 253 || !validName(r.ActionID) || !actionID.MatchString(r.OperationID) ||
 		!placement(r.Placement) || r.Surface != "command-palette" || len(r.ConfirmationToken) > 128 ||
-		(r.Placement == "project" && r.Context.ProjectID == "") || (r.Placement == "session" && r.Context.SessionID == "") {
+		(r.Placement == "project" && r.Context.ProjectID == "") || (r.Placement == "session" && r.Context.SessionID == "") || (r.Placement == "plugin" && r.Context.WorkspaceID == "") {
 		return ErrInvalidMessage
 	}
 	return r.Context.Validate()
@@ -169,6 +175,8 @@ func (a ActionDescriptor) Minimize(c ActionContext) ActionContext {
 			out.OwnerID = c.OwnerID
 		case "context.project":
 			out.ProjectID = c.ProjectID
+		case "context.workspace":
+			out.WorkspaceID = c.WorkspaceID
 		case "context.project.path":
 			if a.Placement == "project" {
 				out.Directory = c.Directory

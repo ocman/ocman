@@ -37,10 +37,11 @@ it('discards an item draft before displaying or saving the homepage', async () =
   mount('item-a');
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Discard this item draft' } });
   fireEvent.click(screen.getByRole('button', { name: 'Back to list' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'New workspace' }));
   await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Homepage value'));
   expect(window.confirm).toHaveBeenCalledWith('Discard unsaved edits?');
-  fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }));
-  await screen.findByText('Saved.');
+  fireEvent.click(screen.getByRole('button', { name: 'Create workspace' }));
+  await screen.findByText('Workspace created.');
   const save = mocks.call.mock.calls.find((call) => call[2] === 'save');
   expect(save?.[3].values).toEqual({ name: 'Homepage value' });
   expect(save?.[5]).toEqual({});

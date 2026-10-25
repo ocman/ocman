@@ -2107,6 +2107,10 @@ flowchart LR
   one plugin-owned registry without project enumeration. Collection links can
   enter an owner-validated project editor; project actions retain their existing
   authorization and model-session context. Project-scoped pages remain unchanged.
+- Independent workspace editors use opaque workspace IDs instead of project
+  ownership. Workspace actions run on the explicit plugin owner. Session 1.2
+  model-only turns use host-created private workspace directories with tools
+  denied, while linked repositories remain many-to-many scan sources.
 - The owner checks approved declarations, enablement and the page's `page.project`
   or `page.plugin` grant under the lifecycle lock and resolves explicit opaque project IDs locally.
   Disabled, revoked and offline owners cannot silently reuse another owner's data.

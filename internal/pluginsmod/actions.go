@@ -76,7 +76,7 @@ type listedPluginAction struct {
 
 func (m *Module) handlePluginActions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	context := plugins.ActionContext{OwnerID: q.Get("ownerId"), ProjectID: q.Get("projectId"), SessionID: q.Get("sessionId"), Route: q.Get("route")}
+	context := plugins.ActionContext{OwnerID: q.Get("ownerId"), ProjectID: q.Get("projectId"), WorkspaceID: q.Get("workspaceId"), SessionID: q.Get("sessionId"), Route: q.Get("route")}
 	if context.OwnerID == "" {
 		context.OwnerID = "local"
 	}
