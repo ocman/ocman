@@ -41,7 +41,9 @@ test('enabled plugin workspace appears in navigation and saves private target se
   });
   await page.goto('/sessions');
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Pentest' }).click();
-  await expect(page.getByRole('heading', { name: 'Pentest', exact: true })).toBeVisible();
+  const workspaceHeading = page.getByTestId('page-content').getByRole('heading', { name: 'Pentest', exact: true });
+  await expect(workspaceHeading).toBeVisible();
+  await expect(page.getByTestId('header-breadcrumb')).toHaveText('Pentest');
   await expect(page.getByText(/No saved configurations/)).toBeVisible();
   await page.getByRole('button', { name: 'New configuration', exact: true }).click();
   await page.getByRole('combobox', { name: 'Configuration project', exact: true }).click();
@@ -68,7 +70,7 @@ test('enabled plugin workspace appears in navigation and saves private target se
   await expect(page.getByText('Staging scan', { exact: true })).toBeVisible();
   expect(saved).toBe(1);
   await page.setViewportSize({ width: 1440, height: 1100 });
-  await page.getByRole('heading', { name: 'Pentest', exact: true }).scrollIntoViewIfNeeded();
+  await workspaceHeading.scrollIntoViewIfNeeded();
   const editorScreenshot = testInfo.outputPath('configuration-editor.png');
   await page.screenshot({ path: editorScreenshot, fullPage: true });
   await testInfo.attach('configuration-editor', { path: editorScreenshot, contentType: 'image/png' });
@@ -89,11 +91,11 @@ test('enabled plugin workspace appears in navigation and saves private target se
   await expect(page.getByRole('dialog', { name: 'More destinations' })).toHaveCount(0);
   await page.goForward();
   await expect(page).toHaveURL(/\/plugins\/be.nousefreak.pentest\/pentest\?ownerId=local$/);
-  await expect(page.getByRole('heading', { name: 'Pentest', exact: true })).toBeVisible();
+  await expect(workspaceHeading).toBeVisible();
   await page.getByRole('button', { name: 'More', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'More destinations' }).getByRole('link', { name: 'Pentest' })).toBeVisible();
   await page.getByRole('button', { name: 'Close more destinations' }).click();
-  await expect(page.getByRole('heading', { name: 'Pentest', exact: true })).toBeVisible();
+  await expect(workspaceHeading).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.route('/api/plugins/pages?*', (route) => route.fulfill({ json: [] }));
   await page.reload();
