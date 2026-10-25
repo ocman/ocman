@@ -52,7 +52,7 @@ function Workspace({ page }: { page: Page }) {
           onChange={(dir) => { if (choices.some((p) => p.directory === dir)) setDirectory(dir); }} />
         <Button onClick={() => setCreating(false)}>Cancel</Button></div>}
       {page.page.scope === 'plugin'
-        ? <PageEditor page={page} projectId="" itemId={itemId} onBack={() => {
+        ? <PageEditor key={itemId} page={page} projectId="" itemId={itemId} onBack={() => {
           const next = new URLSearchParams(search); next.delete('itemId'); setSearch(next);
         }} />
         : <PluginConfigurations page={page} directories={[...new Set(choices.map((p) => p.directory))]} onOpen={setConfiguration} />}
