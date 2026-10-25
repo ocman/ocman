@@ -58,12 +58,23 @@ func (l *live) read(p *proc, stdout io.Reader) {
 	p.freeSlotLocked()
 	l.children--
 	gen := l.accepted[p.id]
-	children := append([]string(nil), l.subs[p.id]...)
+	// Process-owned children survive foreground view resets and cannot be
+	// confused with children belonging to a replacement host.
+	children := make(map[string]settlement, len(p.children))
+	for _, conv := range p.children {
+		status := l.status[conv.SessionID].Status
+		if status == db.StatusBusy {
+			status = db.StatusInterrupted
+		}
+		children[conv.SessionID] = settlement{status, l.accepted[conv.SessionID]}
+	}
 	l.slots.Broadcast()
 	l.mu.Unlock()
 	if !wasBusy {
-		for _, child := range children {
-			l.finishSubagent(child, db.StatusInterrupted)
+		for child, end := range children {
+			if l.sup.Active(child) {
+				l.settleWithRetry(child, end.status, end.gen, true)
+			}
 		}
 	}
 	if wasBusy {

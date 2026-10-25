@@ -124,6 +124,10 @@ func (l *live) armProcessIdleLocked(p *proc) {
 // the spool works again (unless a later turn superseded it), so the
 // supervisor's active turn, the queue, routines and /drain all settle.
 func (l *live) settle(id string, status db.SessionStatus, gen uint64) {
+	l.settleWithRetry(id, status, gen, false)
+}
+
+func (l *live) settleWithRetry(id string, status db.SessionStatus, gen uint64, preserveOutcome bool) {
 	err := l.trySettle(id, status, gen, true)
 	l.mu.Lock()
 	pending, has := l.unsettled[id]
@@ -131,7 +135,11 @@ func (l *live) settle(id string, status db.SessionStatus, gen uint64) {
 	case err == nil && has && pending.gen <= gen:
 		delete(l.unsettled, id) // published, or superseded by this later turn
 	case err != nil && (!has || pending.gen <= gen):
-		l.unsettled[id] = settlement{db.StatusError, gen}
+		retryStatus := db.StatusError
+		if preserveOutcome {
+			retryStatus = status
+		}
+		l.unsettled[id] = settlement{retryStatus, gen}
 	}
 	// One worker per session retries whatever generation is unsettled.
 	start := err != nil && !l.settling[id]
@@ -141,7 +149,11 @@ func (l *live) settle(id string, status db.SessionStatus, gen uint64) {
 	l.mu.Unlock()
 	if err != nil {
 		testHook("failed", id)
-		l.turnFailed(id, err, gen)
+		if preserveOutcome {
+			log.WithError(err).WithField("sessionID", id).Warn("claude: retrying child settlement after host exit")
+		} else {
+			l.turnFailed(id, err, gen)
+		}
 		if start {
 			go l.settleLater(id)
 		}
