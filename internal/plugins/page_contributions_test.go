@@ -23,7 +23,7 @@ func TestPageContributionDeclarationAndVersion(t *testing.T) {
 		t.Fatal("1.1 page denied")
 	}
 	d.Capabilities[0].Version.Minor = 5
-	if d.PageVersion() != PageModelCapability.Version {
+	if d.PageVersion() != PageTableCapability.Version {
 		t.Fatal("unsupported minor selected")
 	}
 	d.Capabilities = nil

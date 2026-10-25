@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useProjects } from '../lib/queries';
-import { callPluginPage, usePluginPages, type PluginPage as Page, type PageDocument, type PageIssue } from '../lib/pluginPages';
+import { callPluginPage, pageURL, usePluginPages, type PluginPage as Page, type PageDocument, type PageIssue } from '../lib/pluginPages';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import { pluginActions, type PluginAction, type PluginActionRequest } from '../lib/plugins';
 import { Button, ButtonGroup } from '../components/Control';
 import { ProjectScopePicker } from '../components/ProjectScopePicker';
@@ -20,9 +21,20 @@ export function PluginPage() {
   const [search] = useSearchParams();
   const ownerId = search.get('ownerId') || 'local';
   const catalog = usePluginPages();
+  const navigate = useNavigate();
+  const roots = catalog.pages.filter((p) => p.ownerId === ownerId && p.pluginId === pluginId);
   const page = catalog.pages.find((p) => p.ownerId === ownerId && p.pluginId === pluginId && p.page.id === pageId);
   if (!page) return <p role="status">{catalog.loading ? 'Loading plugin…' : 'Plugin unavailable. Check its owner, enablement and page grant in Settings.'}</p>;
-  return <Workspace key={`${ownerId}/${pluginId}/${pageId}`} page={page} />;
+  if (roots.length === 1) return <Workspace key={`${ownerId}/${pluginId}/${pageId}`} page={page} />;
+  return <Tabs value={pageId} onValueChange={(id) => {
+    const root = roots.find((p) => p.page.id === id);
+    if (root) navigate(pageURL(root));
+  }}>
+    <TabsList aria-label="Plugin pages">{roots.map((root) => <TabsTrigger key={root.page.id} value={root.page.id}>{root.page.label}</TabsTrigger>)}</TabsList>
+    {roots.map((root) => <TabsContent key={root.page.id} value={root.page.id}>
+      <Workspace key={`${ownerId}/${pluginId}/${root.page.id}`} page={root} />
+    </TabsContent>)}
+  </Tabs>;
 }
 
 function Workspace({ page }: { page: Page }) {

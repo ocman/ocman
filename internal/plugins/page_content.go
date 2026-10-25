@@ -19,7 +19,14 @@ type PageOption struct {
 type PageColumn struct {
 	Key     string `json:"key"`
 	Label   string `json:"label"`
-	Display string `json:"display"` // text, number, boolean, status
+	Display string `json:"display"` // text, number, boolean, status, summary, severity
+}
+
+// PageSummary is a primary label with optional secondary text and an extra-item count.
+type PageSummary struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Count       int    `json:"count,omitempty"`
 }
 
 type PageRow struct {
@@ -29,10 +36,11 @@ type PageRow struct {
 }
 
 type PageCollection struct {
-	Title      string       `json:"title"`
-	Columns    []PageColumn `json:"columns"`
-	Rows       []PageRow    `json:"rows"`
-	NextCursor string       `json:"nextCursor,omitempty"`
+	DetailPresentation string       `json:"detailPresentation,omitempty"` // 1.4: empty for navigation, or drawer
+	Title              string       `json:"title"`
+	Columns            []PageColumn `json:"columns"`
+	Rows               []PageRow    `json:"rows"`
+	NextCursor         string       `json:"nextCursor,omitempty"`
 }
 
 type PageProperty struct {
@@ -54,7 +62,7 @@ type PageIssue struct {
 func (d Description) PageVersion() Version {
 	for _, c := range d.Capabilities {
 		if c.Name == "page" && c.Version.Major == 1 {
-			return Version{Major: 1, Minor: min(c.Version.Minor, 3)}
+			return Version{Major: 1, Minor: min(c.Version.Minor, 4)}
 		}
 	}
 	return Version{}
@@ -71,6 +79,21 @@ func validPageNumber(v any, integer bool) bool {
 
 func validPageDisplay(display string, value any) bool {
 	switch display {
+	case "summary":
+		object, ok := value.(map[string]any)
+		if !ok || !validPageDisplay("text", object["label"]) || object["label"] == "" {
+			return false
+		}
+		if description, present := object["description"]; present && !validPageDisplay("text", description) {
+			return false
+		}
+		if count, present := object["count"]; present && (!validPageNumber(count, true) || count.(float64) < 0 || count.(float64) > 1_000_000) {
+			return false
+		}
+		return true
+	case "severity":
+		s, ok := value.(string)
+		return ok && slices.Contains([]string{"critical", "high", "medium", "low", "info", "unknown"}, s)
 	case "text":
 		s, ok := value.(string)
 		return ok && len(s) <= 4096 && utf8.ValidString(s)
@@ -96,12 +119,15 @@ func validPageContent(p PageDocument) bool {
 		}
 	}
 	if c := p.Collection; c != nil {
+		if !slices.Contains([]string{"", "drawer"}, c.DetailPresentation) {
+			return false
+		}
 		if !validText(c.Title) || len(c.Columns) == 0 || len(c.Columns) > 16 || c.Rows == nil || len(c.Rows) > 200 || !validPageCursor(c.NextCursor) {
 			return false
 		}
 		keys, ids := map[string]bool{}, map[string]bool{}
 		for _, col := range c.Columns {
-			if !settingKey.MatchString(col.Key) || !validText(col.Label) || keys[col.Key] || !slices.Contains([]string{"text", "number", "boolean", "status"}, col.Display) {
+			if !settingKey.MatchString(col.Key) || !validText(col.Label) || keys[col.Key] || !slices.Contains([]string{"text", "number", "boolean", "status", "summary", "severity"}, col.Display) {
 				return false
 			}
 			keys[col.Key] = true
@@ -133,6 +159,9 @@ func validPageContent(p PageDocument) bool {
 
 // ValidatePageVersion prevents new features leaking onto a 1.0 connection.
 func ValidatePageVersion(p PageDocument, version Version) error {
+	if version.Minor < 4 && hasTableDisplay(p) {
+		return ErrInvalidMessage
+	}
 	if version.Minor < 3 && hasModelField(p.Fields) {
 		return ErrInvalidMessage
 	}
@@ -162,6 +191,17 @@ func ValidatePageVersion(p PageDocument, version Version) error {
 		return ErrInvalidMessage
 	}
 	return nil
+}
+
+func hasTableDisplay(p PageDocument) bool {
+	if p.Collection != nil && p.Collection.DetailPresentation != "" {
+		return true
+	}
+	modern := func(display string) bool { return display == "summary" || display == "severity" }
+	if p.Collection != nil && slices.ContainsFunc(p.Collection.Columns, func(c PageColumn) bool { return modern(c.Display) }) {
+		return true
+	}
+	return p.Detail != nil && slices.ContainsFunc(p.Detail.Properties, func(p PageProperty) bool { return modern(p.Display) })
 }
 
 func hasModelField(fields []PageField) bool {

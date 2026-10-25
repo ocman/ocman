@@ -1,0 +1,23 @@
+.plugin-summary-table { table-layout: fixed; min-width: 560px; }
+.plugin-summary-table th { text-transform: none; letter-spacing: normal; font-size: 14px; background: var(--bg); }
+.plugin-summary-table th, .plugin-summary-table td { border-right: 1px solid var(--border); padding: 20px 16px; }
+.plugin-summary-table th:last-child, .plugin-summary-table td:last-child { border-right: 0; }
+.plugin-summary-table th:first-child { width: 40%; }
+.plugin-summary-table td:first-child > a { display: block; color: var(--text); text-decoration: none; }
+.plugin-summary-table td:first-child > a:hover { color: var(--accent); }
+.plugin-summary-table .plugin-item-open { display: block; width: 100%; min-width: 0; padding: 0; color: var(--text); text-align: left; font: inherit; text-decoration: none; }
+.plugin-summary-table .plugin-item-open:hover { color: var(--accent); }
+.plugin-detail-value, .plugin-item-properties dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plugin-item-properties { display: grid; gap: 24px; margin: 0; }
+.plugin-item-properties dt { margin-bottom: 8px; color: var(--text-dim); font-size: 13px; font-weight: 600; }
+.plugin-item-properties dd { margin: 0; line-height: 1.6; }
+.plugin-cell-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; }
+.plugin-cell-label, .plugin-cell-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-cell-summary small { grid-column: 1; color: var(--text-dim); font-size: 12px; }
+.plugin-cell-count { grid-column: 2; grid-row: 1; padding: 4px 10px; border-radius: 999px; background: var(--bg-hover); color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+.plugin-severity { --severity-color: var(--text-dim); display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid color-mix(in srgb, var(--severity-color) 45%, transparent); border-radius: 999px; color: var(--severity-color); background: color-mix(in srgb, var(--severity-color) 8%, transparent); font-weight: 600; text-transform: capitalize; white-space: nowrap; }
+.plugin-severity > span { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.plugin-severity-critical { --severity-color: var(--danger); }
+.plugin-severity-high { --severity-color: var(--accent4); }
+.plugin-severity-medium { --severity-color: var(--blue); }
+.plugin-severity-low { --severity-color: var(--accent2); }

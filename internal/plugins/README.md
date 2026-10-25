@@ -1,5 +1,19 @@
 # Plugin protocol v1
 
+Page 1.4 adds `PageTableCapability`. Collection columns and detail properties
+can use `summary` values shaped as `{label, description?, count?}`, or `severity`
+values from `critical`, `high`, `medium`, `low`, `info`, `unknown`. Summary labels
+are nonempty strings; label and description are bounded to 4096 bytes. Counts
+are integers from zero to one million and represent additional items. Hosts
+reject these displays on older negotiated minors. The frontend renders these
+as inert text, secondary text, count badges and host-colored severity pills.
+Plugin catalogs include the plugin display name. Navigation groups declared
+root pages by plugin and owner, rendering their labels as host-managed tabs.
+Page 1.4 collections can set `detailPresentation: "drawer"` to request the host's
+right drawer. Empty retains route navigation; other values are rejected. The
+drawer uses the existing owner/project/item read contract, not a new permission
+or executable UI. Configuration rows with `projectId` still navigate to editors.
+
 Page forms also support `projects`, a newline-separated string rendered with
 the host's owner-local multi-project picker, and `select`. A `select` field must
 set `optionsFrom` to a sibling `list` field whose first field is `text`. The host

@@ -24,8 +24,9 @@ For supported fields, lists, detail pages, validation hooks and a runnable
 example, see the [plugin contribution guide](../plugin-contributions/).
 
 Enabled owner-scoped plugins can declare `page.v1` workspaces. After approval of
-`page.project`, each page appears in the main navigation and the phone's More
-menu. The route records the owner, plugin and page identity. The homepage lists
+`page.project`, each plugin appears once in the main navigation and the phone's More
+menu. Multiple declared root pages become tabs inside that plugin's page.
+The route records the owner, plugin and page identity. The homepage lists
 saved configurations for that owner's known projects. Open a configuration to
 edit it, or use **New configuration** and the app's searchable project picker.
 Disconnected owners fail visibly;

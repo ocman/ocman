@@ -3,14 +3,16 @@ import { fetchJSON, postJSON } from './api';
 import { useHostCapabilities } from './settingsQueries';
 import type { PluginPaneTree } from './pluginPanes';
 
-export type PluginPage = { ownerId: string; pluginId: string; page: { id: string; label: string; validate?: boolean; scope?: 'project' | 'plugin' } };
+export type PluginPage = { ownerId: string; pluginId: string; pluginLabel?: string; page: { id: string; label: string; validate?: boolean; scope?: 'project' | 'plugin' } };
 export type PageField = { key: string; label: string; type: 'text' | 'multiline' | 'secret' | 'boolean' | 'list' | 'projects' | 'model' | 'select' | 'number' | 'integer'; help?: string; fields?: PageField[]; optionsFrom?: string;
   required?: boolean; minimum?: number; maximum?: number; minLength?: number; maxLength?: number; minItems?: number; maxItems?: number; options?: { value: string; label: string }[] };
 export type PageValues = { [key: string]: string | boolean | number | PageValues[] };
 export type PageIssue = { path: string; message: string };
-export type PageDisplay = 'text' | 'number' | 'boolean' | 'status';
-export type PageCollection = { title: string; columns: { key: string; label: string; display: PageDisplay }[]; rows: { id: string; projectId?: string; values: Record<string, string | number | boolean> }[]; nextCursor?: string };
-export type PageDetail = { title: string; properties: { label: string; display: PageDisplay; value: string | number | boolean }[] };
+export type PageDisplay = 'text' | 'number' | 'boolean' | 'status' | 'summary' | 'severity';
+export type PageSummary = { label: string; description?: string; count?: number };
+export type PageValue = string | number | boolean | PageSummary;
+export type PageCollection = { title: string; detailPresentation?: 'drawer'; columns: { key: string; label: string; display: PageDisplay }[]; rows: { id: string; projectId?: string; values: Record<string, PageValue> }[]; nextCursor?: string };
+export type PageDetail = { title: string; properties: { label: string; display: PageDisplay; value: PageValue }[] };
 export type PageDocument = { revision: string; fields: PageField[] | null; values: PageValues; tree: PluginPaneTree; configured?: boolean; collection?: PageCollection; detail?: PageDetail; issues?: PageIssue[] };
 
 // Only a declared text field may name a row outside its editable controls.

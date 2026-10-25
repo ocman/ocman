@@ -70,6 +70,23 @@ See
 
 ## Host-rendered workspaces
 
+Plugins have one navigation entry per owner, named by `Description.Name`.
+Declared root pages become host-generated tabs named by `PageDescriptor.Label`.
+The plugin does not implement tab markup or navigation routing.
+
+Declare `PageTableCapability` for page 1.4 to use `summary` and `severity` displays.
+`PageSummary{Label: "Race condition", Description: "src/model.go:12"}` renders
+a two-line cell. Optional `Count` shows an additional-item badge. A summary in
+the first column links its name to details. Severity values are lowercase
+`critical`, `high`, `medium`, `low`, `info` or `unknown`. Earlier negotiated minors
+must receive text cells instead.
+
+Set `PageCollection{DetailPresentation: "drawer"}` to show item details in the
+host's right drawer while retaining the list and pagination. The host performs
+an owner-qualified read with the row's opaque item ID and renders the returned
+`PageDetail` properties. No plugin UI code is needed. Configuration rows carrying
+`ProjectID` retain navigation behavior. Omit this preference on older minors.
+
 Declare `PageModelCapability` for page 1.3 to use `PageField{Type: "model"}`.
 The host renders its native searchable model picker from the owner's platform
 catalogs without requiring a project. Values are platform-qualified model

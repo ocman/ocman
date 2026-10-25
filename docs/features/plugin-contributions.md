@@ -59,8 +59,34 @@ See [installation and trust](../plugins/#trust-and-installation).
 
 ## Declare a workspace
 
-The plugin's page `label` names both its main navigation entry and the app header.
+The plugin's display name names its single main navigation entry and app header.
+Each declared root page becomes a host-generated tab using its page `label`.
+Tabs are scoped to the plugin and owner. Switching tabs opens that root page,
+without carrying an unrelated item or project into it. Single-page plugins need no tab bar.
 The header uses `Plugin workspace` only when the matching declaration is unavailable.
+
+### Summary tables in page 1.4
+
+Declare `PageTableCapability` to use `summary` and `severity` displays in
+collections and detail properties. A summary value is a `PageSummary` with a
+required `Label`, optional `Description` and optional `Count` of additional items.
+The host renders secondary text below the label and a count badge beside it.
+If the first collection column is a summary, its name links to the row detail
+instead of adding a separate Details column. Text is truncated visually, with
+the full value available on hover and in the detail page.
+
+Severity values are `critical`, `high`, `medium`, `low`, `info` or `unknown`.
+The host owns badge colors and always includes a text label. These displays
+require page 1.4. Plugins supporting earlier hosts must return text cells there.
+
+Set `PageCollection.DetailPresentation` to `"drawer"` to open row details in the
+host's right-hand drawer instead of navigating away. The host reads the same
+page and opaque item ID on the same owner/project only when opened. Closing
+the drawer cancels pending reads and restores focus, while keeping pagination
+and list position unchanged. Detail properties render as labeled, wrapping
+sections with preserved line breaks. Configuration rows with `projectId` still
+navigate to their project editor. Omitting the preference retains inline routes.
+The drawer preference also requires page 1.4 and must be omitted for older hosts.
 
 ### Native model picker in page 1.3
 

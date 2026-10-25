@@ -16,6 +16,9 @@ var PluginPageCapability = Capability{Name: "page", Version: Version{Major: 1, M
 // PageModelCapability adds the host's owner/platform model picker.
 var PageModelCapability = Capability{Name: "page", Version: Version{Major: 1, Minor: 3}}
 
+// PageTableCapability adds summary cells, severity badges and item drawers.
+var PageTableCapability = Capability{Name: "page", Version: Version{Major: 1, Minor: 4}}
+
 // Pages contain bounded typed data only, never executable browser content.
 type PageDescriptor struct {
 	ID       string `json:"id"`

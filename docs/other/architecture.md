@@ -2087,7 +2087,7 @@ See [Plugins](../features/plugins.md) for the operator and authoring guide.
 flowchart LR
     Registry[Feature registry] --> Navigation[Desktop navigation and phone More]
     Navigation --> Catalog[Owner-qualified page declarations]
-    Navigation --> Page[Host-rendered typed page]
+    Navigation --> Page[Host-rendered root-page tabs<br/>one entry per plugin and owner]
     Page --> API[Authenticated read/save API<br/>project, item and cursor identities]
     Page --> Models[Owner/platform model catalogs<br/>no project or runtime launch]
     API --> Owner[Executing owner authorization<br/>project lookup only for explicit IDs]
@@ -2097,7 +2097,9 @@ flowchart LR
 ```
 
 - `page.v1` contributes inert field schemas and trees. The frontend registry owns
-  one generic route and dynamic navigation entry; it contains no pentest-specific
+  one generic route and a navigation entry per plugin/owner. Declared root pages
+  become host-generated tabs, with the plugin display name in navigation and
+  page labels on tabs. The registry contains no pentest-specific
   storage or executable plugin content.
 - Page 1.1 adds bounded collections and detail properties rendered with shared
   tables and controls. Item links preserve owner/project identity. The owner reads
@@ -2111,6 +2113,12 @@ flowchart LR
 - Page 1.3 model fields reuse the native searchable picker. Model catalog reads
   use owner-routed PluginOperation calls and each platform's directory-free
   catalog, preserving platform-qualified selections and failing closed offline.
+- Page 1.4 adds bounded summary cells with secondary text and additional-item
+  counts, plus enumerated severity badges. The host owns presentation and links
+  first-column summaries to existing item routes, or an opt-in right drawer.
+  Drawers fetch owner/project-qualified item details only while open, cancel
+  pending reads on close, and preserve the underlying list and pagination.
+  Older minors reject these displays and the drawer preference.
 - Independent workspace editors use opaque workspace IDs instead of project
   ownership. Workspace actions run on the explicit plugin owner. Session 1.2
   model-only turns use host-created private workspace directories with tools

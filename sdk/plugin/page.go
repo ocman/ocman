@@ -13,6 +13,7 @@ type PageField = plugins.PageField
 type PageOption = plugins.PageOption
 type PageIssue = plugins.PageIssue
 type PageColumn = plugins.PageColumn
+type PageSummary = plugins.PageSummary
 type PageRow = plugins.PageRow
 type PageCollection = plugins.PageCollection
 type PageProperty = plugins.PageProperty
@@ -22,6 +23,7 @@ var PageCapability = plugins.PageCapability
 var PageContributionCapability = plugins.PageContributionCapability
 var PluginPageCapability = plugins.PluginPageCapability
 var PageModelCapability = plugins.PageModelCapability
+var PageTableCapability = plugins.PageTableCapability
 
 var ValidatePageInput = plugins.ValidatePageInput
 
