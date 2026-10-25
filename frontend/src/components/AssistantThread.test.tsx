@@ -148,6 +148,27 @@ describe('tool-only message spacing', () => {
 });
 
 describe('turn actions', () => {
+  it.each([false, true])('keeps metadata visible on an empty summary anchor with live=%s', (isLive) => {
+    message.content = [];
+    turnStats.isLive = isLive;
+    const { container } = render(<AssistantThread />);
+    expect(container.querySelector('.oc-turn-stats')).toBeInTheDocument();
+    expect(screen.getByText('15 tok')).toBeInTheDocument();
+    expect(container.querySelector('[data-message-id="assistant-1"]')).toBeInTheDocument();
+  });
+
+  it('shows the live turn line under a prompt that has no reply yet', () => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: 'Do it' }];
+    turnStats.isLive = true;
+    const { container, rerender } = render(<AssistantThread />);
+    expect(container.querySelector('.oc-turn-stats')).toBeInTheDocument();
+    expect(screen.getByTitle('Turn in progress')).toBeInTheDocument();
+    turnStats.isLive = false;
+    rerender(<AssistantThread />);
+    expect(container.querySelector('.oc-turn-stats')).not.toBeInTheDocument();
+  });
+
   it('groups speaker and bookmark at the turn end and switches the speaker to stop', async () => {
     const toggle = vi.fn();
     const bookmark = vi.fn();

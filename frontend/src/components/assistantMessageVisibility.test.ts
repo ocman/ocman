@@ -146,7 +146,7 @@ describe('turn line lifecycle', () => {
     expect(shouldRenderAssistantMessage(false, isLiveAnchor)).toBe(true);
   });
 
-  it('stops rendering an empty assistant message after the turn finishes', () => {
+  it('keeps an empty summary anchor after the turn finishes so its metadata stays visible', () => {
     const messages = [
       makeMessage('u', { role: 'user' }, 1),
       makeMessage('a', { role: 'assistant', finish: 'stop' }, 2),
@@ -155,7 +155,20 @@ describe('turn line lifecycle', () => {
 
     expect(stats?.isLive).toBe(false);
     expect(stats?.isSummaryAnchor).toBe(true);
-    const isLiveAnchor = (stats?.isLive && stats?.isSummaryAnchor) ?? false;
-    expect(shouldRenderAssistantMessage(false, isLiveAnchor)).toBe(false);
+    expect(shouldRenderAssistantMessage(false, stats?.isSummaryAnchor ?? false)).toBe(true);
+  });
+
+  it('anchors a live turn on its prompt before any assistant message exists', () => {
+    const messages = [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant', finish: 'stop' }, 2),
+      makeMessage('u2', { role: 'user' }, 3),
+    ];
+
+    const running = computeTurnStats(messages, [], true);
+    expect(running.get('u2')).toMatchObject({ isLive: true, isSummaryAnchor: true, startedAt: 3, wallClockMs: null, tokensOut: 0 });
+    expect(running.get('a1')?.isLive).toBe(false);
+    expect(computeTurnStats(messages, [], false).get('u2')).toBeUndefined();
+    expect(computeTurnStats(messages, []).get('u2')).toBeUndefined();
   });
 });
