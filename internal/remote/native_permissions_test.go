@@ -2,18 +2,26 @@ package remote
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/sessionlifecycle"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type nativePermissionPlatform struct{ *fakePlatform }
+type nativePermissionPlatform struct {
+	*fakePlatform
+	nativeErr error
+}
 
 func (*nativePermissionPlatform) Capabilities() platforms.Capabilities {
 	return platforms.Capabilities{PermissionRules: true, NativeAutoPermission: true}
@@ -44,12 +52,12 @@ func TestNativeModeNeverFallsBackToLegacyRulesWrite(t *testing.T) {
 		t.Fatalf("ordinary rules write changed: writes=%d err=%v", client.rulesWrites, err)
 	}
 }
-func (*nativePermissionPlatform) NativePermissionState(context.Context, string) (*platforms.NativePermissionState, error) {
-	return &platforms.NativePermissionState{Mode: "auto"}, nil
+func (p *nativePermissionPlatform) NativePermissionState(context.Context, string) (*platforms.NativePermissionState, error) {
+	return &platforms.NativePermissionState{Mode: "auto"}, p.nativeErr
 }
 
 func TestNativePermissionsRoundTrip(t *testing.T) {
-	fp := &nativePermissionPlatform{&fakePlatform{id: "claudecode", sessions: []db.Session{{ID: "s1"}}}}
+	fp := &nativePermissionPlatform{fakePlatform: &fakePlatform{id: "claudecode", sessions: []db.Session{{ID: "s1"}}}}
 	reg := platforms.NewRegistry()
 	reg.Register(fp)
 	addr := startRealRemote(t, "tok", "rid", reg)
@@ -73,6 +81,48 @@ func TestNativePermissionsRoundTrip(t *testing.T) {
 	conn.Close()
 	if _, err := rp.NativePermissionState(t.Context(), "s1"); err == nil {
 		t.Fatal("disconnected owner fell back")
+	}
+}
+
+func TestNativePermissionErrorsKeepRemoteRulesReadable(t *testing.T) {
+	for _, want := range []error{platforms.ErrNotFound, platforms.ErrUnsupported} {
+		t.Run(want.Error(), func(t *testing.T) {
+			rules := []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "deny"}}
+			fp := &nativePermissionPlatform{fakePlatform: &fakePlatform{
+				id: "claudecode", sessions: []db.Session{{ID: "s1"}}, permRules: rules,
+			}, nativeErr: want}
+			reg := platforms.NewRegistry()
+			reg.Register(fp)
+			conn := NewRemoteConn(startRealRemote(t, "tok", "rid", reg), "tok")
+			if err := conn.Connect(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(conn.Close)
+			rp := newRemotePlatform(conn, "claudecode", func() string { return "Box" })
+			if _, err := rp.NativePermissionState(t.Context(), "s1"); !errors.Is(err, want) {
+				t.Errorf("native state lost typed error: got %v, want %v", err, want)
+			}
+			m := sessionlifecycle.NewModule(sessionlifecycle.Deps{
+				WithSessionAdapter: func(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request, string, platforms.Platform)) {
+					fn(w, r, "s1", rp)
+				},
+			})
+			rr := httptest.NewRecorder()
+			m.HandleSessionPermissionRulesGet(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1/permission-rules", nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("rules read failed: status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			var body struct {
+				Rules      []platforms.PermissionRule       `json:"rules"`
+				NativeMode *platforms.NativePermissionState `json:"nativeMode"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(body.Rules, rules) || body.NativeMode != nil {
+				t.Fatalf("rules-only response=%s", rr.Body.String())
+			}
+		})
 	}
 }
 

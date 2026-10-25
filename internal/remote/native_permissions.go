@@ -27,5 +27,6 @@ func (s *Server) NativePermissionState(ctx context.Context, req *pb.CallReq) (*p
 	if !ok || !p.Capabilities().NativeAutoPermission {
 		return nil, svcErr(platforms.ErrUnsupported)
 	}
-	return jsonResp(native.NativePermissionState(ctx, req.SessionId))
+	state, err := native.NativePermissionState(ctx, req.SessionId)
+	return jsonResp(state, svcErr(err))
 }
