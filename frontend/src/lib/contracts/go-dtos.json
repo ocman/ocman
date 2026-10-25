@@ -106,10 +106,6 @@
         "omitempty": false
       },
       {
-        "name": "whisper",
-        "omitempty": false
-      },
-      {
         "name": "worktrees",
         "omitempty": false
       }

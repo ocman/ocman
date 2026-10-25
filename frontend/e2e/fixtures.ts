@@ -136,7 +136,6 @@ export async function installDefaultRoutes(page: Page) {
               worktrees: true,
               tmux: true,
               projects: true,
-              whisper: false,
               opencodeLaunch: true,
               opencode: true,
             },
@@ -299,11 +298,6 @@ export async function installDefaultRoutes(page: Page) {
   // Sessions notify (favicon)
   await page.route('/api/sessions/notify*', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
-  );
-
-  // Whisper
-  await page.route('/api/whisper/status', (route: Route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false }) }),
   );
 
   // Tmux — not available in CI / test environment
@@ -569,7 +563,6 @@ export function makeCapabilitiesWithPort() {
           worktrees: true,
           tmux: true,
           projects: true,
-          whisper: false,
           opencodeLaunch: true,
           opencode: true,
         },

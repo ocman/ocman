@@ -184,7 +184,7 @@ When the UI next feels stuck:
 ### What's intentionally not measured
 
 - Inline `fetch()` calls in `api.ts` aren't instrumented
-  (createSession, sendMessage, archiveSession, transcribe, etc.).
+  (createSession, sendMessage, archiveSession, etc.).
   Those are user-initiated POSTs; `perfRing` focuses on the
   polling-driven GETs that we suspect drive the stuckness.
 - No persistence. Closing the tab loses the ring.
@@ -210,7 +210,6 @@ minutes of "sit on dashboard, click a session, look at it":
 | `/api/session/:id/questions`          | 1     | 758   | 758   | 758   | 758   | 0   |
 | `/api/tmux/sessions`                  | 4     | 30    | 45    | 47    | 47    | 0   |
 | `/api/system/stats`                   | 20    | 11    | 8     | 38    | 38    | 0   |
-| `/api/whisper/status`                 | 2     | 35    | 36    | 36    | 36    | 0   |
 | `/api/projects`                       | 2     | 11    | 12    | 12    | 12    | 0   |
 
 The frontend `lt:` counter did *not* turn red during this session.

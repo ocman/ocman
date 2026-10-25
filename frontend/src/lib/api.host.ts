@@ -75,19 +75,4 @@ export const hostApi = {
     createAndLaunch: (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> => postJSON<WorktreeCreateResponse>('/api/worktree/create-and-launch', req),
     remove: (req: WorktreeRemoveRequest): Promise<{ removed: boolean }> => postJSON<{ removed: boolean }>('/api/worktree/remove', req),
   },
-  whisperStatus: (signal?: AbortSignal) => fetchJSON<{ available: boolean }>('/api/whisper/status', signal),
-  transcribe: async (audio: Blob): Promise<string> => {
-    const extMap: Record<string, string> = {
-      'audio/webm': '.webm', 'audio/webm;codecs=opus': '.webm', 'audio/ogg': '.ogg',
-      'audio/ogg;codecs=opus': '.ogg', 'audio/mp4': '.m4a', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
-    };
-    const ext = extMap[audio.type] || '.webm';
-    const form = new FormData();
-    form.append('audio', audio, `recording${ext}`);
-    const resp = await apiFetch('/api/transcribe', { method: 'POST', body: form });
-    await raiseForUnauthorized(resp);
-    if (!resp.ok) throw new Error(await resp.text());
-    const data = await readJSON<{ text: string }>(resp);
-    return data.text;
-  },
 };

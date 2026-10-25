@@ -14,7 +14,6 @@ import { ComposerFooter, ComposerToolbar } from './ComposerChrome';
 import { ComposerDialogs } from './ComposerDialogs';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { QueuedMessages } from './QueuedMessages';
-import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
@@ -29,7 +28,7 @@ export type { ComposerHandle } from './composerTypes';
 export function Composer({
   onSend, onRetryChange, onCommand, onShell, shellExec, queuedShellCommand,
   onCancelQueuedShell, queuedMessages, onRemoveQueuedMessage, onMoveQueuedMessage,
-  onAbort, isRunning, disabled, whisperAvailable, models, modelEntries,
+  onAbort, isRunning, disabled, models, modelEntries,
   selectedModel, onModelChange, onToggleFavorite, onRefreshModels, activeAgent,
   selectedAgent, onAgentChange, agents, agentsLoaded, commands, contextTokens,
   activeDurationMs, timeCreated, durationMs, sessionId, platform, draftKey: draftKeyProp, tokensPerSecond, initialAttachments, onAttachmentsChange, onAttachmentProcessing,
@@ -138,11 +137,8 @@ export function Composer({
     slash.close();
   }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker, pickers, slash]);
 
-  // Switching machines captures the draft once, so no new dictation may start mid-switch.
-  const audioDisabled = disabled || switchingMachine;
-  const { isRecording, isBusy: audioBusy, micError, setMicError, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled: audioDisabled, inputRef });
   // Attachments are bound to the current target, so they block switching it.
-  const selectorDisabled = sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0;
+  const selectorDisabled = sending || switchingMachine || attachments.pending > 0 || images.length > 0 || files.length > 0;
   const clearAfterSubmit = (submittedText?: string, submittedRevision?: number) => {
     const key = draftKeyRef.current;
     if (key) clearDraftNow(key, submittedText, submittedRevision);
@@ -289,12 +285,6 @@ export function Composer({
   const effectiveModel = selectedModel || '';
   const { label: modelButtonLabel, unavailable: modelUnavailable, reasoningOptions } = describeModel(effectiveModel, modelEntries);
   const hasReasoning = reasoningOptions.length > 0;
-  const dictationShortcut = useMemo(() => ({
-    id: 'composer.dictation', scope: 'composer' as const, keys: { code: 'KeyD', alt: true },
-    description: 'Start dictation (voice input)',
-    enabled: () => !!(isDictationSupported && !audioBusy && !audioDisabled),
-    handler: () => { void handleMicClick(); },
-  }), [isDictationSupported, audioBusy, audioDisabled, handleMicClick]);
   const reasoningCycleShortcut = useMemo(() => ({
     id: 'composer.reasoning-cycle', scope: 'composer' as const, keys: { code: 'KeyR', alt: true },
     description: 'Cycle reasoning level',
@@ -306,7 +296,6 @@ export function Composer({
       onReasoningChange(cycle[(cur + 1) % cycle.length]);
     },
   }), [reasoningOptions, disabled, onReasoningChange, selectedReasoning]);
-  useShortcut(dictationShortcut);
   useShortcut(reasoningCycleShortcut);
 
   const uiDisabled = disabled || sending || switchingMachine || attachments.pending > 0;
@@ -330,11 +319,6 @@ export function Composer({
           selectedReasoning={selectedReasoning} onReasoningChange={onReasoningChange} />
         {slash.open && <SlashCommandMenu commands={slash.filtered} activeIndex={slash.index} menuRef={slash.menuRef}
           listboxId={slash.listboxId} optionId={slash.optionId} onSelect={selectSlashCommand} onHover={slash.setIndex} />}
-        {isRecording && <div className="oc-recording-banner">
-          <div className="oc-recording-pulse" /><span className="oc-recording-label">Listening</span>
-          <span className="oc-recording-hint">Esc to cancel</span>
-          <button type="button" className="oc-recording-stop" onClick={() => void handleMicClick()} aria-label="Stop recording">Stop</button>
-        </div>}
         {!disabled && <QueuedMessages messages={queueItems}
           onRemove={(id) => id === shellQueueID ? onCancelQueuedShell?.() : onRemoveQueuedMessage?.(id)} onMove={onMoveQueuedMessage} />}
         <div className="oc-composer" style={isBashMode ? { borderLeftColor: '#f38ba8' }
@@ -364,7 +348,7 @@ export function Composer({
             hasReasoning={hasReasoning} openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}
             selectedReasoning={selectedReasoning} permissionControl={permissionControl} onLaunchRequest={onLaunchRequest}
             launching={launching} fileInputRef={fileInputRef} addFiles={(selectedFiles) => { void attachments.addFiles(selectedFiles); }}
-            micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} hasContent={hasText || images.length > 0 || files.length > 0 || attachments.pending > 0} onAbort={onAbort} sending={sending} submit={submit} />
+            isRunning={isRunning} hasContent={hasText || images.length > 0 || files.length > 0 || attachments.pending > 0} onAbort={onAbort} sending={sending} submit={submit} />
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}
           status={footerStatus}

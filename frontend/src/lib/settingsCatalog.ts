@@ -52,13 +52,6 @@ export const SETTINGS = {
     example: 'Enable Claude Code in the desktop app without changing launch arguments. Keep at least one platform enabled.',
     keywords: 'opencode claude code desktop backend',
   },
-  'local-voice-input': {
-    group: 'sessions',
-    title: 'Local voice input',
-    description: 'Whisper transcribes microphone recordings on this machine when browser dictation is unavailable.',
-    example: 'Install whisper-cpp and a ggml model to enable local transcription. Browser dictation works independently.',
-    keywords: 'whisper microphone voice speech dictation',
-  },
   'idle-project-timeout': {
     group: 'system',
     title: 'Stop idle project instances after',

@@ -14,7 +14,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/projectforge"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/tmux"
-	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
 // host.go wires the server-package host operations (tmux, projects,
@@ -136,7 +135,7 @@ func (s *Server) hostFetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadReq
 }
 
 // hostCaps reports which host operations are available on this machine.
-// git/tmux/opencode-on-PATH gate worktrees + tmux; whisper gates voice.
+// git/tmux/opencode-on-PATH gate worktrees + tmux.
 func (s *Server) hostCaps() hostsvc.HostCaps {
 	tmuxOK := tmux.IsAvailable()
 	gitOK := lookPathOK("git")
@@ -153,7 +152,6 @@ func (s *Server) hostCaps() hostsvc.HostCaps {
 		Tmux:      tmuxOK,
 		// The projects index merges every local platform's directories.
 		Projects: s.hasStoredHistory(),
-		Whisper:  whisper.Available(),
 		// Launch availability is opencode-on-PATH plus the native runtime's
 		// prerequisite (tmux) today; a future container runtime drops the
 		// tmux dependency. Gated separately from Tmux (#390 / AD-8).

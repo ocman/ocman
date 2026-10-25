@@ -1,15 +1,15 @@
 // Package hostsvc defines the directory/host-scoped adapter seam — the
 // directory analogue of internal/platforms. Where Platform owns
 // session-scoped operations resolved by Registry.PlatformForSession,
-// Host owns directory-scoped operations (git, worktree, tmux, projects,
-// whisper) resolved by Router.ForDir / Router.LookupRemote.
+// Host owns directory-scoped operations (git, worktree, tmux, projects)
+// resolved by Router.ForDir / Router.LookupRemote.
 //
 // The rule that keeps remote support from becoming a tax on every
 // future feature: every operation that touches a machine's filesystem,
 // processes, git working tree, or agent runtime is expressed as a method
 // on an owner-resolved Host, never as a direct call to a package-level
 // local helper from an HTTP handler. The local Host (internal/hostsvc/
-// local) is the only place that imports the git package/tmux/whisper;
+// local) is the only place that imports the git package/tmux;
 // a gRPC-backed Host (internal/remote) proxies the same methods to the
 // owning remote, which executes its own local Host.
 //
@@ -37,7 +37,6 @@ type HostCaps struct {
 	Worktrees bool `json:"worktrees"`
 	Tmux      bool `json:"tmux"`
 	Projects  bool `json:"projects"`
-	Whisper   bool `json:"whisper"`
 	// OpencodeLaunch reports whether the host can launch a managed
 	// OpenCode instance (its ocruntime.Runtime is usable). Distinct from
 	// Tmux: a future container runtime can launch without tmux, and the

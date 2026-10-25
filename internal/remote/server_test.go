@@ -175,7 +175,7 @@ func (localStubHost) SaveComposerAttachment(context.Context, hostsvc.ComposerAtt
 func (localStubHost) RemoteID() string                             { return "local" }
 func (localStubHost) Doctor(context.Context) []hostsvc.DoctorCheck { return nil }
 func (localStubHost) Capabilities() hostsvc.HostCaps {
-	return hostsvc.HostCaps{GitDiff: true, Worktrees: true, Tmux: true, Projects: true, Whisper: true}
+	return hostsvc.HostCaps{GitDiff: true, Worktrees: true, Tmux: true, Projects: true}
 }
 func (localStubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
 	return map[string]git.Info{}, nil

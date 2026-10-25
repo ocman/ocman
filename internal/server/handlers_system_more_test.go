@@ -6,8 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
 func getJSON[T any](t *testing.T, h http.HandlerFunc, target string) T {
@@ -26,48 +24,6 @@ func getJSON[T any](t *testing.T, h http.HandlerFunc, target string) T {
 }
 
 // --- handlers_system.go ---
-
-func TestHandleWhisperStatus(t *testing.T) {
-	srv := testServer(t)
-	got := getJSON[map[string]any](t, srv.handleWhisperStatus, "/api/whisper-status")
-	available, ok := got["available"].(bool)
-	if !ok {
-		t.Fatalf("payload = %v, want an \"available\" bool", got)
-	}
-	if available != whisper.Available() {
-		t.Errorf("available = %v, want %v", available, whisper.Available())
-	}
-}
-
-// Without whisper installed the endpoint reports 503; with it installed
-// a bodyless POST fails multipart parsing with 400. Either way the
-// handler must never 200 on a request carrying no audio.
-func TestHandleTranscribe_NoAudio(t *testing.T) {
-	srv := testServer(t)
-	want := http.StatusServiceUnavailable
-	if whisper.Available() {
-		want = http.StatusBadRequest
-	}
-	for _, tt := range []struct {
-		name        string
-		contentType string
-	}{
-		{"no body", ""},
-		{"multipart without audio field", "multipart/form-data; boundary=zz"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/transcribe", strings.NewReader(""))
-			if tt.contentType != "" {
-				req.Header.Set("Content-Type", tt.contentType)
-			}
-			rr := httptest.NewRecorder()
-			srv.handleTranscribe(rr, req)
-			if rr.Code != want {
-				t.Fatalf("got %d, want %d: %s", rr.Code, want, rr.Body.String())
-			}
-		})
-	}
-}
 
 func TestHandleDebugLog(t *testing.T) {
 	srv := testServer(t)

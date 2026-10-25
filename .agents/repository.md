@@ -28,7 +28,6 @@ adapter boundaries or browser/backend data flows.
 | `internal/ocruntime`, `internal/tmux` | Runtime-neutral managed agents and tmux process control. |
 | `internal/gitexec`, `internal/git`, `internal/gitmod` | Hardened git commands, queries and owner-routed git/worktree HTTP. |
 | `internal/term`, `internal/termmod`, `internal/tmuxmod` | Owner-side terminal control and guarded HTTP/WebSocket routes. |
-| `internal/whisper` | Local whisper-cpp transcription with ffmpeg conversion. |
 
 Read [remotes-and-forges.md](remotes-and-forges.md) for ownership rules.
 

@@ -41,7 +41,6 @@ import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPa
 
 export interface NewConversationProps {
   params: NewSessionParams;
-  whisperAvailable: boolean;
   composerRef: React.Ref<ComposerHandle>;
   navigate: (path: string, options?: { replace?: boolean }) => void;
   navigateToSession: (id: string) => void;
@@ -60,14 +59,14 @@ function resolveTarget(target: SessionTarget, canWorktree: boolean, worktrees: {
   return !canWorktree || target.startsWith('dir:') && !worktrees.some((tree) => `dir:${tree.path}` === target) ? 'current' : target;
 }
 
-export function NewConversation({ params, whisperAvailable, composerRef, navigate, navigateToSession }: NewConversationProps) {
+export function NewConversation({ params, composerRef, navigate, navigateToSession }: NewConversationProps) {
   return <PreparedDraftLifecycle key={params.draftId || NEW_SESSION_ID} params={params} navigate={navigate} navigateToSession={navigateToSession}>
-    <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params} whisperAvailable={whisperAvailable}
+    <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params}
       composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />
   </PreparedDraftLifecycle>;
 }
 
-function PreparedConversation({ params, whisperAvailable, composerRef, navigate }: NewConversationProps) {
+function PreparedConversation({ params, composerRef, navigate }: NewConversationProps) {
   const { directory, title } = params;
   const draftId = params.draftId || NEW_SESSION_ID;
   const draftStart = useNewConversationDrafts((state) => state.starts[draftId]);
@@ -391,7 +390,6 @@ function PreparedConversation({ params, whisperAvailable, composerRef, navigate 
           shellExec={caps.shellExec}
           isRunning={false}
           disabled={!!draftStart && !draftStart.sessionId && !draftStart.error}
-          whisperAvailable={whisperAvailable}
           models={models}
           modelEntries={catalog?.models.models ?? []}
           selectedModel={selectedModel || activeModel}

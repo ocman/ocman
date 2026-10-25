@@ -158,8 +158,7 @@ panel. Closing these controls explicitly consumes that same history entry.
 There is no custom edge-swipe handler competing with the browser gesture.
 The send button stays round and is capped at 44px on phones. The composer uses
 8px side gutters without an extra background panel. Attachments use a paperclip
-on phones and desktop; the dictation toolbar button is removed. Keyboard
-dictation remains available with Alt+D.
+on phones and desktop.
 
 Desktop and tablet widths above 640px keep their tables and existing navigation. The Sessions
 page also offers **All**, **Running**, and **Waiting** phone filters. Waiting
@@ -259,7 +258,6 @@ Authorization and other permanent client errors wait for an explicit refresh.
   **Copy to clipboard** in the terminal. This requires tmux's `set-clipboard`
   option to be `on` or `external`, not `off`. Existing custom bindings that
   pipe to host tools such as `pbcopy` still run those tools.
-- **Voice input.** Local transcription through whisper-cpp, no cloud round-trip.
 - **Auth.** Optional password gate with rate-limited logins and signed cookies. Off by default on localhost.
 - **PWA and desktop.** Installable as a Progressive Web App, or run the native macOS build.
 - **OpenTelemetry.** Optional traces and metrics to any OTLP collector.

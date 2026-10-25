@@ -243,7 +243,7 @@ describe('matchShortcut', () => {
   describe('preventDefault policy', () => {
     // These tests capture the Mac-Option correctness contract: whenever an
     // Alt binding syntactically matches the event, the browser's default
-    // action must be suppressed so Option+D doesn't leak ∂ into the focused
+    // action must be suppressed so Option+R doesn't leak ® into the focused
     // input — even if the shortcut's enabled() predicate returns false.
 
     it('requests preventDefault when a shortcut handler will run', () => {
@@ -259,12 +259,12 @@ describe('matchShortcut', () => {
 
     it('requests preventDefault even when the only matching Alt shortcut is disabled', () => {
       const s = shortcut({
-        id: 'composer.dictation',
+        id: 'composer.reasoning-cycle',
         scope: 'composer',
-        keys: { code: 'KeyD', alt: true },
+        keys: { code: 'KeyR', alt: true },
         enabled: () => false,
       });
-      const outcome = matchShortcut([s], makeEvent({ code: 'KeyD', altKey: true }));
+      const outcome = matchShortcut([s], makeEvent({ code: 'KeyR', altKey: true }));
       // No handler runs, but the Option character must still be suppressed.
       expect(outcome.match).toBeNull();
       expect(outcome.preventDefault).toBe(true);

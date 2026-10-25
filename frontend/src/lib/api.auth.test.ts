@@ -232,7 +232,6 @@ describe('backend-down error classification', () => {
     ['queuedMessages', () => api.queuedMessages('s1')],
     ['uploadComposerAttachment', () => api.uploadComposerAttachment('s1', new File(['x'], 'x.png'))],
     ['term.createWindow', () => api.term.createWindow('/dir')],
-    ['transcribe', () => api.transcribe(new Blob(['x'], { type: 'audio/webm' }))],
   ])('explains invalid responses from %s', async (_name, call) => {
     stubFetch(() => new Response('<html>Proxy page</html>', { status: 200 }));
     await expect(call()).rejects.toThrow(/invalid response from ocman/i);
@@ -270,7 +269,6 @@ describe('raw-response endpoints raise AuthError on 401', () => {
     ['uploadComposerAttachment', () => api.uploadComposerAttachment('s1', new File(['x'], 'x.png'))],
     ['term.createWindow', () => api.term.createWindow('/dir')],
     ['term.killWindow', () => api.term.killWindow('/dir', 'w1')],
-    ['transcribe', () => api.transcribe(new Blob(['x'], { type: 'audio/webm' }))],
   ];
 
   for (const [name, call] of cases) {

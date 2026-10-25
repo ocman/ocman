@@ -43,7 +43,6 @@ import { projectRootForDirectory } from '../../lib/worktrees';
 import { checkoutKey } from '../../lib/projectIdentity';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
-import { useWhisperStatus } from '../../lib/settingsQueries';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import {
@@ -326,8 +325,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Capability flags for the owning platform.
   const caps = usePlatformCapabilities(session?.platform);
 
-  const whisperAvailable = useWhisperStatus().data?.available ?? false;
-
   // Per-session capability state — port availability, agent
   // catalog, model picker, selected model/agent/reasoning.
   const {
@@ -537,7 +534,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       setSelectedReasoning('');
     }
 
-    // Whisper status and the model catalog are queries of their own.
+    // The model catalog is a query of its own.
 
     return () => controller.abort();
   }, [id, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
@@ -917,7 +914,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <NewConversation
               key={`${newConversation.remoteId}:${newConversation.directory}:${newConversation.platform ?? ''}`}
               params={newConversation}
-              whisperAvailable={whisperAvailable}
               composerRef={composerRef}
               navigate={navigate}
               navigateToSession={navigateToSession}
@@ -1035,7 +1031,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         disabledHint: hasPendingPrompt
                           ? 'Respond to the pending prompt above before sending a new message.'
                           : caps.liveConnectionHint,
-                        whisperAvailable,
                         models: composerModels,
                         modelEntries,
                         selectedModel,

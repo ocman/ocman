@@ -37,7 +37,7 @@ module under `internal/module`, not a collection of `*Server` methods.
 - Session mutations go through `sessionsvc` for both REST and remote gRPC.
 - Session operations use `platforms.Platform` and the registry. Directory/host
   operations use `hostsvc.Host` and its router. Handlers must not call git, tmux
-  or whisper directly; owner-side integration lives in `hostsvc/local`.
+  directly; owner-side integration lives in `hostsvc/local`.
 - Every application git subprocess must use `internal/gitexec`. It strips
   `GIT_DIR`/`GIT_INDEX_FILE` and disables terminal prompts and optional locks.
 - Resolve explicit `remoteId` through `Server.resolveOwner`; disconnected named

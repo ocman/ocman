@@ -93,7 +93,7 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] -->|core APIs, batched previews, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>text composer, REST + SSE] -->|core APIs, batched previews, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only sessions + v2 OAuth credentials<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox, state + provider cost ledger| StateDB[(state.db)]
@@ -117,6 +117,9 @@ flowchart LR
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
+  The composer accepts text and attachments. Voice input belongs to external
+  tools; ocman does not capture microphones or provide transcription endpoints.
+  Answer read-aloud uses browser speech synthesis independently.
 - **Conversation PR previews.** Showing a card or switching sessions revalidates
   PR metadata, checks and review status. The browser bundles simultaneous lookups
   by owner, deduplicates identical requests, and cancels a shared request only
@@ -1035,7 +1038,7 @@ flowchart TD
   target. Both platforms retain the owner/source-scoped Ocman-to-native mapping
   in `platforms/owned`; a project change never allocates another identity.
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
-  handler files, plus tmux launcher and terminal host wiring, and whisper. Its session paths (SSE tee,
+  handler files, plus tmux launcher and terminal host wiring. Its session paths (SSE tee,
   notify, permission replies) still drive the auto-approve pipeline. It is the
   composition root for feature modules.
 - **Feature modules** (`internal/module`). Auto-approve (`internal/autoapprove`:

@@ -403,7 +403,7 @@ otel-reset:
 # --- Local HTTPS via Caddy + Tailscale -----------------------------------
 #
 # Exposes ocman at https://$(OCMAN_CADDY_HOST) so that browser APIs
-# requiring a secure context (microphone, Web Speech API) work on other
+# requiring a secure context (service workers, Web Push) work on other
 # devices connected to your tailnet.
 #
 # Set OCMAN_CADDY_HOST to your own Tailscale hostname (see .envrc.example):

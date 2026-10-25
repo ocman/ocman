@@ -12,7 +12,7 @@ const connections = vi.hoisted(() => new Set<() => void>());
 vi.mock('./useGlobalEvents', () => ({ onSseConnect: (cb: () => void) => { connections.add(cb); return () => connections.delete(cb); } }));
 vi.mock('./api', () => ({ api: { capabilities: () => capabilities() } }));
 
-const hostCaps = { gitDiff: true, worktrees: true, tmux: true, projects: true, whisper: true, opencodeLaunch: true };
+const hostCaps = { gitDiff: true, worktrees: true, tmux: true, projects: true, opencodeLaunch: true };
 const resp = (...remotes: string[]): CapabilitiesResponse => ({
   platforms: [],
   worktreeSessions: true,

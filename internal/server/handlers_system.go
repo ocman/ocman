@@ -3,10 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -18,7 +15,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
 // WithLogPath records the resolved log file path ("" = stderr only) so
@@ -174,59 +170,6 @@ func projectArchiveKey(remoteID, directory string) state.ProjectKey {
 		RemoteID: state.NormalizeRemoteID(remoteID),
 		Root:     projectRootForDirectory(directory),
 	}
-}
-
-func (s *Server) handleWhisperStatus(w http.ResponseWriter, r *http.Request) {
-	httpx.WriteJSON(w, map[string]interface{}{
-		"available": whisper.Available(),
-	})
-}
-
-func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
-	if !whisper.Available() {
-		http.Error(w, "whisper is not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, maxAudioUpload)
-	httpx.SetBodyReadDeadline(w, uploadReadTimeout)
-
-	file, header, err := r.FormFile("audio")
-	if err != nil {
-		log.WithError(err).Warn("failed to read audio upload")
-		http.Error(w, "failed to read audio file", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-	// Body is in hand; transcription itself can take minutes.
-	httpx.ClearBodyReadDeadline(w)
-
-	ext := filepath.Ext(header.Filename)
-	if ext == "" {
-		ext = ".wav"
-	}
-	tmp, err := os.CreateTemp("", "ocman-audio-*"+ext)
-	if err != nil {
-		httpx.ServerError(w, "creating temp file", err)
-		return
-	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
-
-	if _, err := io.Copy(tmp, file); err != nil {
-		httpx.ServerError(w, "writing audio to temp file", err)
-		return
-	}
-	tmp.Close()
-
-	text, err := whisper.TranscribeFile(tmp.Name())
-	if err != nil {
-		log.WithError(err).Error("transcription failed")
-		http.Error(w, "transcription failed", http.StatusInternalServerError)
-		return
-	}
-
-	httpx.WriteJSON(w, map[string]interface{}{"text": text})
 }
 
 func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {

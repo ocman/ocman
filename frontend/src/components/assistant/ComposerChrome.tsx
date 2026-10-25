@@ -195,8 +195,6 @@ interface ComposerToolbarProps {
   launching?: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   addFiles: (files: File[]) => void;
-  micError: string | null;
-  clearMicError: () => void;
   isRunning: boolean;
   onAbort?: () => void;
   sending: boolean;
@@ -209,7 +207,7 @@ export function ComposerToolbar({
   agents, openAgentPicker, hasModels, modelUnavailable, openModelPicker,
   modelButtonLabel, effectiveModel, hasReasoning, openReasoningPicker,
   selectedReasoning, permissionControl, onLaunchRequest, launching, fileInputRef,
-  addFiles, micError, clearMicError,
+  addFiles,
   isRunning, onAbort, sending, hasContent, submit, selectorsLoading, platform, agentSelection = true,
 }: ComposerToolbarProps) {
   return (
@@ -264,12 +262,6 @@ export function ComposerToolbar({
           addFiles(Array.from(event.target.files || []));
           event.target.value = '';
         }} />
-        {micError && (
-          <span className="oc-mic-error" role="alert">
-            {micError}
-            <button type="button" className="oc-mic-error-dismiss" onClick={clearMicError} aria-label="Dismiss">×</button>
-          </span>
-        )}
         {isRunning && !hasContent && !sending ? (
           <button type="button" className="oc-bar-send oc-bar-send-stop" onClick={onAbort} title="Stop generation (Esc)" aria-label="Stop generation">
             <svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>

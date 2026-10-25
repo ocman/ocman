@@ -17,7 +17,7 @@ const platformCaps = {
   fileChanges: true, sessionInfo: true, liveConnectionHint: 'launch the agent',
   autoApprove: true, permissionRules: true, revert: true, runtimeRestart: true,
 };
-const hostCaps = { gitDiff: true, worktrees: true, tmux: false, projects: true, whisper: true, opencodeLaunch: true, opencode: true };
+const hostCaps = { gitDiff: true, worktrees: true, tmux: false, projects: true, opencodeLaunch: true, opencode: true };
 function response(): CapabilitiesResponse {
   return {
     platforms: [{ id: 'opencode', displayName: 'OpenCode', available: true, capabilities: platformCaps }],

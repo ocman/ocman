@@ -17,9 +17,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
-// maxAudioUpload is the maximum allowed audio upload size (25 MB).
-const maxAudioUpload = 25 << 20
-
 // uploadReadTimeout bounds body reads for the upload handlers (audio,
 // composer attachments), which move tens of megabytes and can
 // legitimately take much longer on a slow link than httpx.BodyReadTimeout.

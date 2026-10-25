@@ -1178,7 +1178,6 @@ export interface HostCapabilities {
   worktrees: boolean;
   tmux: boolean;
   projects: boolean;
-  whisper: boolean;
   /**
    * Host can launch a managed OpenCode instance (its runtime is usable).
    * Distinct from `tmux`: a future container runtime launches without

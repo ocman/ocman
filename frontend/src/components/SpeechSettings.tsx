@@ -5,7 +5,6 @@ import { useSettingSave } from '../lib/useSaveStatus';
 import { SettingNumber, SettingRow, SettingToggle } from './SettingRow';
 import { SaveStatus } from './SaveStatus';
 import { Button, SelectField } from './Control';
-import { useWhisperStatus } from '../lib/settingsQueries';
 
 export function SpeechSettings() {
   const autoRead = useUiStore((s) => s.autoReadAnswers);
@@ -19,11 +18,6 @@ export function SpeechSettings() {
   const rateSave = useSettingSave();
   const { supported, play, stop, speakingId, error } = useSpeechPlayback();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const whisperQ = useWhisperStatus();
-  const whisper = whisperQ.isError ? 'Could not check Whisper availability.'
-    : !whisperQ.data ? 'Checking Whisper availability…'
-      : whisperQ.data.available ? 'Whisper is available.'
-        : 'Whisper is unavailable. Local voice input is disabled. Install whisper-cpp and a model to enable it.';
   useEffect(() => {
     if (!supported) return;
     const update = () => setVoices(window.speechSynthesis.getVoices());
@@ -33,7 +27,6 @@ export function SpeechSettings() {
   }, [supported]);
 
   return <>
-    <SettingRow setting="local-voice-input" desc={whisper}>{null}</SettingRow>
     <SettingRow setting="read-aloud" desc={supported ? undefined : 'Speech playback is unavailable in this browser.'}>
       <SettingToggle ariaLabel="Automatically read answers aloud" checked={autoRead} disabled={!supported}
         save={autoSave} onSave={setAutoRead} />

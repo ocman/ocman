@@ -77,7 +77,7 @@ function DraftWorkspace() {
     <output data-testid="draft-route">{location.pathname}{location.search}</output>
     <button onClick={() => navigate('/session/new?dir=%2Frepo&draftId=second&title=Second')}>Another draft</button>
     <SidebarConversationDrafts searchQuery="" />
-    {params && <NewConversation params={params} composerRef={null} whisperAvailable={false}
+    {params && <NewConversation params={params} composerRef={null}
       navigate={navigate} navigateToSession={(id) => navigate(`/session/${id}`)} />}
   </>;
 }
@@ -113,7 +113,7 @@ function Flow({ params = { directory: '/repo', platform: 'opencode' } }: { param
     <output data-testid="route">{route}</output>
     <button onClick={() => setRoute('other')}>Leave draft</button>
     {route === 'new' ? <NewConversation params={{ draftId: 'new', ...params }} composerRef={null}
-      whisperAvailable={false} navigate={(path) => setRoute(path.startsWith('/session/') && !path.startsWith('/session/new') ? path.slice('/session/'.length) : path)} navigateToSession={setRoute} /> : route === 'child' ? <Child />
+      navigate={(path) => setRoute(path.startsWith('/session/') && !path.startsWith('/session/new') ? path.slice('/session/'.length) : path)} navigateToSession={setRoute} /> : route === 'child' ? <Child />
       : <Composer draftKey="new" isRunning={false} />}
   </>;
 }
@@ -148,7 +148,7 @@ describe('new-conversation submission lifecycle', () => {
       : { '/repo': { branch: 'main' } }) as never);
     vi.mocked(api.prepareSession).mockResolvedValue({ ...prepared, defaultAgent: 'build', defaultModel: 'openai/gpt-4.1',
       agents: [{ name: 'build' }, { name: 'plan' }], models: { hasProviders: true, models: [{ provider: 'openai', model: 'gpt-4.1' }] } });
-    const props = { params: { directory: '/repo', platform: 'opencode', draftId: 'new' }, composerRef: null, whisperAvailable: false, navigate: vi.fn(), navigateToSession: vi.fn() };
+    const props = { params: { directory: '/repo', platform: 'opencode', draftId: 'new' }, composerRef: null, navigate: vi.fn(), navigateToSession: vi.fn() };
     const view = render(<NewConversation {...props} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /gpt-4.1/ })).toBeInTheDocument());
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'keep this prompt' } });
@@ -443,7 +443,7 @@ describe('new-conversation submission lifecycle', () => {
   });
   it('does not replace a local discard navigation while the router transition is pending', async () => {
     const navigate = vi.fn();
-    render(<NewConversation params={{ directory: '/repo', draftId: 'discarded' }} composerRef={null} whisperAvailable={false}
+    render(<NewConversation params={{ directory: '/repo', draftId: 'discarded' }} composerRef={null}
       navigate={navigate} navigateToSession={vi.fn()} />);
     await waitFor(() => expect(useNewConversationDrafts.getState().drafts.some((draft) => draft.draftId === 'discarded')).toBe(true));
     await act(async () => forgetConversationDraft('discarded', () => navigate('/session/new?draftId=keep')));
@@ -453,7 +453,7 @@ describe('new-conversation submission lifecycle', () => {
   });
 
   it('does not restore immediately discarded text during unmount or a delayed start failure', async () => {
-    const props = { params: { directory: '/repo', draftId: 'discarded' }, composerRef: null, whisperAvailable: false,
+    const props = { params: { directory: '/repo', draftId: 'discarded' }, composerRef: null,
       navigate: vi.fn(), navigateToSession: vi.fn() };
     const view = render(<NewConversation {...props} />);
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'discard this text' } });
@@ -481,7 +481,7 @@ describe('new-conversation submission lifecycle', () => {
       return <>
         <button onClick={() => navigate(second)}>Prepare another</button>
         <SidebarConversationDrafts searchQuery="" />
-        <NewConversation params={params} composerRef={null} whisperAvailable={false}
+        <NewConversation params={params} composerRef={null}
           navigate={navigate} navigateToSession={(id) => navigate(`/session/${id}`)} />
       </>;
     }
@@ -686,7 +686,7 @@ describe('new-conversation submission lifecycle', () => {
     vi.mocked(api.startSession).mockReturnValue(launch.promise);
     const navigate = vi.fn();
     const props = { params: { directory: '/repo', platform: 'opencode', title: 'old', draftId: 'new' }, composerRef: null,
-      whisperAvailable: false, navigate, navigateToSession: vi.fn() };
+      navigate, navigateToSession: vi.fn() };
     const view = render(<NewConversation {...props} />);
     const input = screen.getByRole('textbox');
     await waitFor(() => expect(input).not.toBeDisabled());
@@ -706,7 +706,7 @@ describe('new-conversation submission lifecycle', () => {
     vi.mocked(api.startSession).mockReturnValueOnce(oldStart.promise).mockReturnValueOnce(newStart.promise);
     const navigate = vi.fn();
     const props = { params: { directory: '/repo', platform: 'opencode', title: 'old', draftId: 'new' }, composerRef: null,
-      whisperAvailable: false, navigate, navigateToSession: vi.fn() };
+      navigate, navigateToSession: vi.fn() };
     const view = render(<NewConversation {...props} />);
     const oldInput = screen.getByRole('textbox');
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session target' })).toHaveTextContent('New worktree'));

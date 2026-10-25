@@ -17,7 +17,7 @@ vi.mock('../lib/plugins', () => ({
 
 const host = (remoteId: string, pluginManagement = true): HostCapabilityEntry => ({
   remoteId, remoteName: remoteId, pluginManagement,
-  capabilities: { gitDiff: false, worktrees: false, tmux: false, projects: false, whisper: false, opencodeLaunch: false },
+  capabilities: { gitDiff: false, worktrees: false, tmux: false, projects: false, opencodeLaunch: false },
 });
 let plugin: PluginRegistration;
 beforeEach(() => {

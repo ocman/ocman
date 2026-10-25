@@ -1,49 +1,3 @@
-/* Recording banner */
-.oc-recording-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  margin-bottom: 4px;
-  background: rgba(243, 139, 168, 0.08);
-  border: 1px solid rgba(243, 139, 168, 0.3);
-  border-radius: 6px;
-  font-size: 12px;
-}
-.oc-recording-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--red);
-  flex-shrink: 0;
-  animation: oc-recording-pulse 1.2s ease-in-out infinite;
-}
-@keyframes oc-recording-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(243, 139, 168, 0.5); }
-  50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(243, 139, 168, 0); }
-}
-.oc-recording-label {
-  font-weight: 600;
-  color: var(--red);
-}
-.oc-recording-hint {
-  color: var(--overlay0);
-  flex: 1;
-}
-.oc-recording-stop {
-  margin-left: auto;
-  padding: 2px 8px;
-  border: 1px solid rgba(243, 139, 168, 0.4);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--red);
-  font-size: 11px;
-  cursor: pointer;
-}
-.oc-recording-stop:hover {
-  background: rgba(243, 139, 168, 0.12);
-}
-
 /* Slash command autocomplete menu */
 .oc-slash-menu {
   position: absolute;
@@ -224,12 +178,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.oc-mic-icon { font-size: 12px; }
-@keyframes oc-mic-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 
 /* Attachment action: a small paperclip without an oversized outlined box. */
@@ -605,36 +553,6 @@
 }
 .oc-token-popover-cost .oc-token-popover-label { color: var(--subtext0); }
 .oc-token-popover-cost .oc-token-popover-value { color: var(--text); font-weight: 600; }
-
-/* Mic error inline message */
-.oc-mic-error {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--red);
-  background: color-mix(in srgb, var(--red) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
-  border-radius: 4px;
-  padding: 2px 6px;
-  max-width: 300px;
-}
-.oc-mic-error-dismiss {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: inherit;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1;
-  opacity: 0.7;
-}
-.oc-mic-error-dismiss:hover { opacity: 1; }
-
-/* Mic icon in bar action */
-.oc-bar-action .oc-mic-icon { font-size: 12px; }
-.oc-bar-action.oc-mic-recording { color: var(--red); border-color: var(--red); animation: oc-mic-pulse 1s ease-in-out infinite; }
-.oc-bar-action.oc-mic-transcribing { color: var(--accent); border-color: var(--accent); animation: oc-mic-pulse 0.6s ease-in-out infinite; }
 
 /* Responsive */
 @media (max-width: 768px) {

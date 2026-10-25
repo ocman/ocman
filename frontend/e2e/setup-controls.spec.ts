@@ -7,7 +7,7 @@ for (const width of [1280, 390]) {
     let healthy = false;
     await page.route('/api/doctor', route => route.fulfill({ json: { logPath: '/home/user/.local/share/ocman/ocman.log', checks: healthy ? [] : [required
       ? { id: 'opencode-db', label: 'OpenCode database', required: true, ok: false, detail: 'OpenCode database was not found.', hint: 'Run OpenCode once to create it, then re-check.' }
-      : { id: 'whisper', label: 'Voice transcription', required: false, ok: false, detail: 'whisper-cpp is not on PATH.', hint: 'Install whisper-cpp to enable voice input.' },
+      : { id: 'tmux', label: 'tmux', required: false, ok: false, detail: 'tmux is not on PATH.', hint: 'Install tmux to enable terminal sessions.' },
     ] } }));
     await page.goto('/sessions');
     await expect(page.getByTestId('setup-banner')).toBeVisible();

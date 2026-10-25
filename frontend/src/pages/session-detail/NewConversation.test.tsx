@@ -61,7 +61,7 @@ const navigate = vi.fn();
 const navigateToSession = vi.fn();
 function mount(params = { directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode' } as Record<string, string | undefined>) {
   return render(<NewConversation params={{ directory: params.directory!, remoteId: params.remoteId, platform: params.platform, title: params.title, draftId: params.draftId || 'new' }}
-    whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
 }
 const ready = () => waitFor(() => {
   expect(composer.agentsLoaded).toBe(true);
@@ -248,7 +248,7 @@ describe('NewConversation', () => {
     act(() => composer.onTargetChange!('dir:/repo/wt'));
     await act(() => composer.onMachineChange!({ dir: '/repo', remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode' }));
     view.rerender(<NewConversation params={{ directory: '/repo', draftId: 'first', remoteId: 'box', platform: 'r-box:opencode' }}
-      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+      composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await ready();
     expect(composer.target).toBe('current');
   });
@@ -300,7 +300,7 @@ describe('NewConversation', () => {
     const { unmount } = render(
       <HeaderContext.Provider value={{ info: {}, setInfo }}>
         <NewConversation params={{ directory: '/src/.worktrees/repo/feat', remoteId: 'machine', draftId: 'new' }}
-          whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />
+          composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />
       </HeaderContext.Provider>,
     );
     expect(setInfo).toHaveBeenCalledWith({
@@ -532,7 +532,7 @@ describe('NewConversation', () => {
     await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     // Open an independent draft on the same mounted page, then start again.
     view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'B', draftId: 'second' }}
-      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+      composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await ready();
     act(() => { void Promise.resolve(composer.onSend!('second')).catch(() => {}); });
     await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
@@ -671,7 +671,7 @@ describe('NewConversation', () => {
     saveDraft('new', 'Fix login');
     mocks.prepare.mockResolvedValueOnce({ ...claude, platform });
     view.rerender(<NewConversation params={{ directory: '/repo', remoteId, platform, draftId: 'new' }}
-      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+      composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await waitFor(() => expect(composer.platform).toBe(platform));
     expect(composer.selectedModel).toBe('claudecode:anthropic/opus');
     expect(composer.selectedAgent).toBe('');
@@ -694,7 +694,7 @@ describe('NewConversation', () => {
     act(() => { oldRequest = composer.onSend!('old prompt'); });
     await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     view.rerender(<NewConversation params={{ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'new', draftId: 'second' }}
-      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+      composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await ready();
     let newRequest!: void | Promise<void>;
     act(() => { newRequest = composer.onSend!('new prompt'); });

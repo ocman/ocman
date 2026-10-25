@@ -27,15 +27,6 @@ export function useWebhookRelaySettings() {
   });
 }
 
-export function useWhisperStatus() {
-  return useQuery({
-    queryKey: ['whisper-status'],
-    queryFn: ({ signal }) => api.whisperStatus(signal),
-    // Machine state: one read per app load.
-    staleTime: Infinity,
-  });
-}
-
 export function useSharingSettings() {
   return useQuery({
     queryKey: ['sharing-settings'],

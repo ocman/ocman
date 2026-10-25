@@ -46,7 +46,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
     permissionRules: false, nativeAutoPermission: true, exactPatterns: true, revert: true, runtimeRestart: true, pushPrompts: true, autoTitle: true,
   }),
   HostCapabilities: flags<HostCapabilities>()({
-    gitDiff: false, worktrees: false, tmux: false, projects: false, whisper: false, opencodeLaunch: false, opencode: true,
+    gitDiff: false, worktrees: false, tmux: false, projects: false, opencodeLaunch: false, opencode: true,
   }),
   QueuedMessage: flags<QueuedMessage>()({
     id: false, text: false, hasImages: false, model: true, agent: true, reasoning: true, createdAt: false,

@@ -32,7 +32,7 @@ func bodyDeadlineTestServer(t *testing.T) string {
 	// body read.
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		httpx.SetBodyReadDeadline(w, uploadReadTimeout)
-		if _, err := io.ReadAll(io.LimitReader(r.Body, maxAudioUpload)); err != nil {
+		if _, err := io.ReadAll(io.LimitReader(r.Body, httpx.MaxRequestBody)); err != nil {
 			http.Error(w, "failed to read body", http.StatusBadRequest)
 			return
 		}
