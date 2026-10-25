@@ -2089,6 +2089,7 @@ flowchart LR
     Navigation --> Catalog[Owner-qualified page declarations]
     Navigation --> Page[Host-rendered typed page]
     Page --> API[Authenticated read/save API<br/>project, item and cursor identities]
+    Page --> Models[Owner/platform model catalogs<br/>no project or runtime launch]
     API --> Owner[Executing owner authorization<br/>project lookup only for explicit IDs]
     Owner --> Process[Plugin read/validate/save<br/>host static rules before save]
     Process --> Files[Plugin-private target configuration]
@@ -2107,6 +2108,9 @@ flowchart LR
   one plugin-owned registry without project enumeration. Collection links can
   enter an owner-validated project editor; project actions retain their existing
   authorization and model-session context. Project-scoped pages remain unchanged.
+- Page 1.3 model fields reuse the native searchable picker. Model catalog reads
+  use owner-routed PluginOperation calls and each platform's directory-free
+  catalog, preserving platform-qualified selections and failing closed offline.
 - Independent workspace editors use opaque workspace IDs instead of project
   ownership. Workspace actions run on the explicit plugin owner. Session 1.2
   model-only turns use host-created private workspace directories with tools

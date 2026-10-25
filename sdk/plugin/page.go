@@ -21,6 +21,7 @@ type PageDetail = plugins.PageDetail
 var PageCapability = plugins.PageCapability
 var PageContributionCapability = plugins.PageContributionCapability
 var PluginPageCapability = plugins.PluginPageCapability
+var PageModelCapability = plugins.PageModelCapability
 
 var ValidatePageInput = plugins.ValidatePageInput
 

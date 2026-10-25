@@ -1,6 +1,7 @@
 import { Button, CheckboxField, SelectField, TextareaField, TextField } from './Control';
 import { blankPageValues, pageRowName, type PageField, type PageValues, type PageIssue } from '../lib/pluginPages';
 import { PluginProjectPicker } from './PluginProjectPicker';
+import { PluginModelPicker } from './PluginModelPicker';
 
 function numericValue(value: PageValues[string]) {
   return typeof value === 'number' ? value : '';
@@ -30,6 +31,9 @@ export function PluginPageFields({ fields, values, onChange, prefix = '', ownerI
       </fieldset>;
     }
     const text = typeof value === 'string' ? value : '';
+    if (field.type === 'model') return <div key={field.key} className="plugin-page-field"><span>{field.label}</span>
+      <PluginModelPicker ownerId={ownerId} label={label} value={text} onChange={update} />{feedback}
+    </div>;
     if (field.type === 'number' || field.type === 'integer') return <label key={field.key} className="plugin-page-field"><span>{field.label}</span>
       <TextField aria-label={label} aria-invalid={errors.length > 0} type="number" value={numericValue(value)} min={field.minimum} max={field.maximum} step={field.type === 'integer' ? 1 : 'any'} required={field.required}
         onChange={(e) => {

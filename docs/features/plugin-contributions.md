@@ -62,6 +62,19 @@ See [installation and trust](../plugins/#trust-and-installation).
 The plugin's page `label` names both its main navigation entry and the app header.
 The header uses `Plugin workspace` only when the matching declaration is unavailable.
 
+### Native model picker in page 1.3
+
+Use `PageModelCapability` instead of earlier page capability versions, and a field such as
+`PageField{Key: "model", Label: "Review model", Type: "model"}` to use ocman's
+searchable model picker. It lists models from the plugin owner's available
+platform catalogs, without selecting a project or starting a runtime.
+
+The saved value is a string using ocman's `[platform:]provider/model` format.
+OpenCode references remain unprefixed for compatibility; other platforms retain
+their prefix, for example `claudecode:anthropic/sonnet`. An empty string means
+use the default. Saved models remain visible when a catalog is unavailable.
+Model names grant no execution permissions; action and session grants still apply.
+
 ### Plugin-local homepages in page 1.2
 
 Declare `PluginPageCapability`, request `PagePluginGrant` (`page.plugin`), and
@@ -169,6 +182,7 @@ starting with a letter. They are literal object keys, not dotted paths.
 | `list` | Array of objects | Required nested `fields`; add/remove and collapsible rows |
 | `select` | String | `optionsFrom` sibling list, or fixed `options` in 1.1 |
 | `projects` | Newline-separated string | Ocman's multi-project picker, restricted to the owner |
+| `model` | Platform-qualified model string, or empty for default | Ocman's searchable owner/platform model picker, page 1.3 |
 
 Fixed options have `{ "value": "staging", "label": "Staging" }` shape. Do
 not combine `options` and `optionsFrom`. A dynamic source must be a sibling

@@ -1,6 +1,39 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 import type { PageDocument } from '../src/lib/pluginPages';
 
+test('plugin model fields use platform catalogs without a project and save qualified references', async ({ mockedPage: page }) => {
+  await page.context().route('**/api/**', (route) => route.abort());
+  await page.route('/api/capabilities', (route) => route.fulfill({ json: {
+    hosts: [{ remoteId: 'local', pluginManagement: true, capabilities: {} }],
+    platforms: ['opencode', 'claudecode'].map((id) => ({ id, displayName: id, available: true, capabilities: { modelCatalog: true } })),
+  } }));
+  await page.route('/api/projects*', (route) => route.fulfill({ json: [] }));
+  await page.route('/api/plugins/pages?*', (route) => route.fulfill({ json: [
+    { ownerId: 'local', pluginId: 'be.nousefreak.pentest', page: { id: 'pentest', label: 'Pentest', scope: 'plugin' } },
+  ] }));
+  await page.route('/api/plugins/actions?*', (route) => route.fulfill({ json: [] }));
+  await page.route('/api/plugins/model-catalog?*', (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get('ownerId')).toBe('local');
+    expect(query.has('directory')).toBe(false);
+    return route.fulfill({ json: { models: [{ provider: 'anthropic', model: query.get('platform') === 'claudecode' ? 'sonnet' : 'other', isAvailable: true }] } });
+  });
+  let selected = '';
+  await page.route('/api/plugins/pages/call', (route) => {
+    const input = route.request().postDataJSON();
+    expect(input.request.projectId).toBe('');
+    expect(input.request.itemId).toBe('scan-config');
+    if (input.method === 'save') selected = input.request.values.model;
+    return route.fulfill({ json: { revision: 'r1', fields: [{ key: 'model', label: 'Review model', type: 'model' }], values: { model: selected }, tree: {} } });
+  });
+  await page.goto('/plugins/be.nousefreak.pentest/pentest?ownerId=local&itemId=scan-config');
+  await page.getByRole('combobox', { name: 'Review model' }).click();
+  await page.getByRole('option', { name: /sonnet.*claudecode/ }).click();
+  await page.getByRole('button', { name: 'Save configuration' }).click();
+  await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
+  expect(selected).toBe('claudecode:anthropic/sonnet');
+});
+
 test('enabled plugin workspace appears in navigation and saves private target settings', async ({ mockedPage: page }, testInfo) => {
   // Never send an unmocked API request to a developer's running backend.
   await page.context().route('**/api/**', (route) => route.abort());

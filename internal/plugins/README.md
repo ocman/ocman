@@ -631,6 +631,12 @@ not infer a zero charge from absent metadata.
 
 ## page.v1
 
+Page 1.3 adds `model` fields through `PageModelCapability`. The host's model
+picker reads the owner's platform catalogs without resolving a project or
+starting a runtime. Values are strings in `[platform:]provider/model` format,
+or empty for the default. Model fields, including nested fields, are rejected
+on older negotiated versions. See the contribution guide for declarations.
+
 Page 1.1 adds static form constraints, fixed selects, numeric fields, collections,
 item details and opt-in submit validation. Declare `PageContributionCapability`.
 The host supports 1.0 unchanged and selects the lower minor. The exact supported

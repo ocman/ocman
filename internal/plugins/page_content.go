@@ -54,7 +54,7 @@ type PageIssue struct {
 func (d Description) PageVersion() Version {
 	for _, c := range d.Capabilities {
 		if c.Name == "page" && c.Version.Major == 1 {
-			return Version{Major: 1, Minor: min(c.Version.Minor, 2)}
+			return Version{Major: 1, Minor: min(c.Version.Minor, 3)}
 		}
 	}
 	return Version{}
@@ -133,6 +133,9 @@ func validPageContent(p PageDocument) bool {
 
 // ValidatePageVersion prevents new features leaking onto a 1.0 connection.
 func ValidatePageVersion(p PageDocument, version Version) error {
+	if version.Minor < 3 && hasModelField(p.Fields) {
+		return ErrInvalidMessage
+	}
 	if version.Minor < 2 && p.Collection != nil {
 		for _, row := range p.Collection.Rows {
 			if row.ProjectID != "" {
@@ -159,6 +162,10 @@ func ValidatePageVersion(p PageDocument, version Version) error {
 		return ErrInvalidMessage
 	}
 	return nil
+}
+
+func hasModelField(fields []PageField) bool {
+	return slices.ContainsFunc(fields, func(f PageField) bool { return f.Type == "model" || hasModelField(f.Fields) })
 }
 
 // PageValuesObject decodes the JSON data received on the wire.

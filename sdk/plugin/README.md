@@ -70,6 +70,12 @@ See
 
 ## Host-rendered workspaces
 
+Declare `PageModelCapability` for page 1.3 to use `PageField{Type: "model"}`.
+The host renders its native searchable model picker from the owner's platform
+catalogs without requiring a project. Values are platform-qualified model
+references, with an empty string selecting the default. Older hosts reject the
+new field rather than rendering it as free text.
+
 Independent plugin workspaces use collection item IDs, not project identities.
 Workspace actions declare placement `plugin` with the `context.workspace` grant.
 Model-only sessions use `PluginSessionCapability`, `SessionPluginGrant`, and

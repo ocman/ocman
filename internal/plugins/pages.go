@@ -13,6 +13,9 @@ const PagePluginGrant = "page.plugin"
 // PluginPageCapability allows a plugin-local homepage without a project lookup.
 var PluginPageCapability = Capability{Name: "page", Version: Version{Major: 1, Minor: 2}}
 
+// PageModelCapability adds the host's owner/platform model picker.
+var PageModelCapability = Capability{Name: "page", Version: Version{Major: 1, Minor: 3}}
+
 // Pages contain bounded typed data only, never executable browser content.
 type PageDescriptor struct {
 	ID       string `json:"id"`
@@ -33,7 +36,7 @@ type PageRequest struct {
 type PageField struct {
 	Key         string       `json:"key"`
 	Label       string       `json:"label"`
-	Type        string       `json:"type"` // text, multiline, secret, boolean, list, projects, select, number, integer
+	Type        string       `json:"type"` // text, multiline, secret, boolean, list, projects, model, select, number, integer
 	Help        string       `json:"help,omitempty"`
 	Fields      []PageField  `json:"fields,omitempty"`
 	OptionsFrom string       `json:"optionsFrom,omitempty"`
@@ -155,7 +158,7 @@ func validPageFields(fields []PageField, depth int, count *int) bool {
 	seen := map[string]bool{}
 	for _, f := range fields {
 		*count++
-		if *count > 128 || !settingKey.MatchString(f.Key) || !validText(f.Label) || len(f.Help) > 4096 || seen[f.Key] || !slices.Contains([]string{"text", "multiline", "secret", "boolean", "list", "projects", "select", "number", "integer"}, f.Type) || !validPageRules(f) {
+		if *count > 128 || !settingKey.MatchString(f.Key) || !validText(f.Label) || len(f.Help) > 4096 || seen[f.Key] || !slices.Contains([]string{"text", "multiline", "secret", "boolean", "list", "projects", "model", "select", "number", "integer"}, f.Type) || !validPageRules(f) {
 			return false
 		}
 		if f.Type == "select" {
