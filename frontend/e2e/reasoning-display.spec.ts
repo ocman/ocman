@@ -37,6 +37,8 @@ test('reasoning only expands additional content and always shows duration', asyn
   const duration = summary.locator('.oc-reasoning-duration');
   const textBox = (await preview.boundingBox())!;
   const timerBox = (await duration.boundingBox())!;
+  const summaryBox = (await summary.boundingBox())!;
+  expect(textBox.y - summaryBox.y).toBeLessThan(timerBox.height / 2);
   expect(timerBox.y).toBe(textBox.y);
   expect(timerBox.x - textBox.x - textBox.width).toBeGreaterThanOrEqual(8);
   expect(textBox.height).toBeGreaterThan(timerBox.height);
@@ -46,5 +48,11 @@ test('reasoning only expands additional content and always shows duration', asyn
   await summary.click();
   await expect(page.getByText('Additional reasoning appears here.')).toBeVisible();
   await expect(summary).toContainText('· 1m 5s');
+  expect((await preview.boundingBox())!.y - (await summary.boundingBox())!.y).toBeLessThan(timerBox.height / 2);
   await page.screenshot({ path: 'test-results/reasoning-expanded.png', animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect((await preview.boundingBox())!.y - (await summary.boundingBox())!.y).toBeLessThan(timerBox.height / 2);
+  await summary.click();
+  await expect(page.getByText('Additional reasoning appears here.')).not.toBeVisible();
+  expect((await preview.boundingBox())!.y - (await summary.boundingBox())!.y).toBeLessThan(timerBox.height / 2);
 });

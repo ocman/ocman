@@ -4,8 +4,12 @@
   padding: 0;
   color: var(--overlay0);
 }
-.oc-reasoning summary { cursor: pointer; }
-.oc-reasoning-preview { display: inline-grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; width: calc(100% - 1em); vertical-align: top; }
+.oc-reasoning summary { cursor: pointer; display: flex; align-items: start; gap: 4px; list-style: none; }
+.oc-reasoning summary::-webkit-details-marker { display: none; }
+.oc-reasoning summary::before { content: '▸'; flex: 0 0 1em; }
+.oc-reasoning details[open] > summary::before { content: '▾'; }
+.oc-reasoning-preview { display: inline-grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; width: 100%; vertical-align: top; }
+.oc-reasoning summary > .oc-reasoning-preview { flex: 1; min-width: 0; }
 .oc-reasoning > p > .oc-reasoning-preview { width: 100%; }
 .oc-reasoning-duration { white-space: nowrap; }
 .oc-reasoning-preview > span:first-child > strong:first-child { color: var(--yellow); font-weight: 400; }
