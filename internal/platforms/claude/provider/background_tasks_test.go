@@ -79,11 +79,15 @@ func TestBackgroundTaskCountSnapshot(t *testing.T) {
 	if got, _ := json.Marshal(counts); string(got) != `[1,2,1,0]` {
 		t.Fatalf("published counts = %s", got)
 	}
-	// An idle or replaced process cannot publish a stale nonzero count.
+	// Idle processes can still own tasks; replaced processes cannot publish.
 	p.tasks["stale"] = true
 	p.busy = false
 	l.publishBackgroundCount(p, 1)
-	count(0)
+	count(1)
+	data, err = os.ReadFile(filepath.Join(dir, files[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
 	delete(l.procs, p.id)
 	l.publishBackgroundCount(p, 1)
 	count(0)

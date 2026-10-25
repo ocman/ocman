@@ -36,20 +36,19 @@ func TestSDKIdleBeforeResultAndBackgroundContinuation(t *testing.T) {
 }
 
 func TestSDKTaskLifecycleVariants(t *testing.T) {
-	// Like Claude Code's own session runner, every background task but a
-	// teammate holds the turn: shells and monitors included.
+	// Task membership is independent of foreground execution.
 	for _, taskType := range []string{"local_agent", "local_workflow", "local_bash", "monitor_ws", "monitor_mcp", "remote_agent", "in_process_teammate"} {
 		for _, status := range []string{"completed", "failed", "killed", "stopped"} {
 			l, p := sdkLifecycle(t)
 			l.system(p, []byte(`{"subtype":"task_started","task_type":"`+taskType+`","task_id":"task"}`))
 			l.result(p, []byte(`{"subtype":"success"}`))
 			tracked := taskType != "in_process_teammate"
-			if p.busy != tracked {
+			if p.busy || p.tasks["task"] != tracked {
 				t.Fatalf("%s busy=%v", taskType, p.busy)
 			}
 			l.system(p, []byte(`{"subtype":"task_updated","task_id":"task","patch":{"status":"running"}}`))
-			if p.busy != tracked {
-				t.Fatal("nonterminal task update settled")
+			if p.busy || p.tasks["task"] != tracked {
+				t.Fatal("nonterminal task update changed foreground or task membership")
 			}
 			l.system(p, []byte(`{"subtype":"task_updated","task_id":"task","patch":{"status":"`+status+`"}}`))
 			if p.busy {
@@ -79,8 +78,8 @@ func TestSDKRunEndCeiling(t *testing.T) {
 		l.system(p, []byte(`{"subtype":"session_state_changed","state":"running"}`))
 		l.system(p, []byte(event))
 		l.result(p, []byte(`{"subtype":"success"}`))
-		if p.runCeiling != nil {
-			t.Fatal("live task or permission wait armed a ceiling")
+		if (p.runCeiling != nil) != (p.state == "running") {
+			t.Fatal("foreground ceiling must ignore task membership but preserve permission waits")
 		}
 	}
 	t.Setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "0")

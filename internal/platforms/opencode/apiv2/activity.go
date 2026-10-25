@@ -6,10 +6,9 @@ import (
 	"path/filepath"
 )
 
-// activity combines foreground execution, session-owned shells and native child
-// agents. V2's /session/active excludes background commands and does not roll up
-// child execution. Shell metadata and native parent links establish ownership;
-// unowned terminals and independent worktree sessions cannot hold a parent busy.
+// activity tracks foreground execution separately from background shells and
+// native child agents. Only foreground execution determines session status.
+// Shell metadata and native parent links establish background-task ownership.
 // Each stream owns its snapshot, so reconnects discard stale process state.
 type activity struct {
 	foreground map[string]any
@@ -38,22 +37,8 @@ func (t *translator) emitBackgroundCount(sessionID, dir string) error {
 }
 
 func (a *activity) busy(sessionID string) bool {
-	if _, ok := a.foreground[sessionID]; ok {
-		return true
-	}
-	for _, owner := range a.shells {
-		if owner == sessionID {
-			return true
-		}
-	}
-	for id := range a.activeSessions() {
-		for _, parent := range a.ancestors(id) {
-			if parent == sessionID {
-				return true
-			}
-		}
-	}
-	return false
+	_, ok := a.foreground[sessionID]
+	return ok
 }
 
 func (a *activity) addShell(info map[string]any) string {
@@ -111,25 +96,19 @@ func (c *compat) activity(ctx context.Context, directory string) (*activity, err
 }
 
 func getStatus(c *compat, r *http.Request, _ []string) (*http.Response, error) {
-	a, err := c.activity(r.Context(), requestDirectory(r))
-	if err != nil {
+	var foreground data[map[string]any]
+	if err := c.call(r.Context(), http.MethodGet, "/api/session/active", nil, nil, &foreground); err != nil {
 		return finish(r, 0, nil, err)
 	}
 	out := map[string]any{}
-	for id := range a.foreground {
-		out[id] = map[string]any{"type": "busy"}
-	}
-	for _, id := range a.shells {
-		out[id] = map[string]any{"type": "busy"}
-	}
-	for id := range a.agentDetails() {
+	for id := range foreground.Data {
 		out[id] = map[string]any{"type": "busy"}
 	}
 	return reply(r, http.StatusOK, out), nil
 }
 
-// emitActivity publishes idle only when all foreground and background work
-// has ended. Consumers use the same edge for attention and queue dispatch.
+// emitActivity follows foreground execution only. Background tasks have their
+// own lifecycle and may remain available after attention and queue dispatch.
 func (t *translator) emitActivity(sessionID, dir string) error {
 	status := map[string]any{"type": "idle"}
 	if t.activity.busy(sessionID) {

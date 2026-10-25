@@ -88,7 +88,7 @@ func (s *session) onStatusLocked(ev convevents.SessionStatusEvent, replayed bool
 	s.emitStatusLocked(replayed)
 }
 
-// idleLocked publishes a provisional done at once, clears background and
+// idleLocked publishes a provisional done at once, preserves background and
 // settles the terminal kind off the lock.
 func (s *session) idleLocked(replayed bool) {
 	s.st.gen++
@@ -97,9 +97,6 @@ func (s *session) idleLocked(replayed bool) {
 	}
 	s.st.base = provisionalDone()
 	s.ov.inflight.reset()
-	if s.ov.background.Count != 0 || len(s.ov.background.Tasks) != 0 {
-		s.handleLocked(convevents.BackgroundChanged{Tasks: []convevents.BackgroundTask{}}, replayed)
-	}
 	s.emitStatusLocked(replayed)
 	s.scheduleSettleLocked(s.st.gen, replayed)
 }
@@ -184,19 +181,6 @@ func (s *session) endTurnLocked(outcome, latest string, replayed bool) {
 	s.publishLocked(convevents.TurnEnded{Outcome: outcome, EndedAt: s.now(), LatestMessageID: latest}, replayed)
 }
 
-// inferBusyLocked marks the session busy on running content, for sources
-// that never report busy themselves.
-func (s *session) inferBusyLocked(replayed bool) {
-	if s.st.turn && s.st.base.Status == db.StatusBusy {
-		return
-	}
-	s.startTurnLocked(replayed)
-	if s.st.base.Status != db.StatusBusy {
-		s.st.base = convevents.SessionStatusEvent{Status: db.StatusBusy, Notice: convevents.Null[db.SessionNotice]()}
-		s.emitStatusLocked(replayed)
-	}
-}
-
 // handleLocked folds ev into the live state and publishes what follows.
 func (s *session) handleLocked(ev convevents.Event, replayed bool) {
 	if s.detached {
@@ -209,12 +193,8 @@ func (s *session) handleLocked(ev convevents.Event, replayed bool) {
 	case convevents.StreamHello, convevents.StreamReset, convevents.StreamError, convevents.Unknown:
 		return
 	case convevents.PartDelta:
-		s.inferBusyLocked(replayed)
 		s.ov.inflight.delta(e)
 	case convevents.PartUpserted:
-		if running(e.Part.Data) {
-			s.inferBusyLocked(replayed)
-		}
 		s.ov.inflight.upsert(e.Part, e.Final)
 	case convevents.MessageUpserted:
 		s.ov.inflight.message(e.Message)

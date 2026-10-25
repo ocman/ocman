@@ -81,7 +81,16 @@ func (t *translator) emitActivityFamily(id, dir string) error {
 		if err := t.emitBackgroundCount(parent, dir); err != nil {
 			return err
 		}
-		if err := t.emitActivity(parent, dir); err != nil {
+	}
+	return nil
+}
+
+func (t *translator) emitBackgroundFamily(id, dir string) error {
+	if err := t.emitBackgroundCount(id, dir); err != nil {
+		return err
+	}
+	for _, parent := range t.activity.ancestors(id) {
+		if err := t.emitBackgroundCount(parent, dir); err != nil {
 			return err
 		}
 	}

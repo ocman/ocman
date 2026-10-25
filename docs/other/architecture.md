@@ -1269,8 +1269,8 @@ flowchart TD
   `provider.Rules` store, then by the autoapprove pipeline and the user. Their
   children initialize before the first prompt and acknowledge model/interrupt
   controls. `internal/platforms/claude/launch` supplies the shared Agent SDK environment to
-  sessions and helpers. Their status follows Claude's session-state and delegated
-  task events, so a result cannot end a run with background agent work outstanding;
+  sessions and helpers. Their status follows Claude's foreground session-state
+  and result events, independently of delegated background tasks;
   terminal sessions use the transcript tail settled by
   `db.SettleSessionStatus`.
 - **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
@@ -1703,7 +1703,7 @@ flowchart TD
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
     Hub -->|ocman.settings.changed: advance settings query generation| Stores
-    Hub -->|aggregate activity + background shell/agent details| Stores
+    Hub -->|foreground status + independent background shell/agent details| Stores
     Comp -->|capability-gated individual task stop| API
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
@@ -1742,7 +1742,7 @@ flowchart TD
   shared popover with individual Stop buttons gated by `backgroundTaskStop`.
   OpenCode restores counts in `server.connected.backgroundTasks`; Claude includes
   the count in its leased session snapshot. REST refreshes preserve live counts,
-  and the idle edge clears them. OpenCode also restores descriptions through
+  and foreground idle preserves them. OpenCode also restores descriptions through
   `server.connected.backgroundTaskDetails`. Counts are not inferred from transcript tools.
   Task stops go through sessionlifecycle and sessionsvc as task-scoped Abort
   requests, preserving the compound platform owner over gRPC. Every adapter
@@ -1752,10 +1752,12 @@ flowchart TD
   Neither falls back to aborting the whole session, and completion events remain
   authoritative for removing rows.
   OpenCode's disposable live activity tracker follows native parent links from
-  active sessions, restores them before stream headers on reconnect, and keeps
-  ancestors Working until their own execution, shells and child agents settle.
+  active sessions, restores them before stream headers on reconnect, and reports
+  session status from foreground execution only. Shells and child agents do not
+  hold an idle session Working or prevent archive resurfacing. Managed Claude
+  likewise settles foreground results independently of its background-task ledger.
   It never uses ocman's independent worktree links. Child completion updates
-  ancestor counts without manufacturing foreground execution; a running parent
+  ancestor counts without changing ancestor status; a running parent
   stays Working while it processes the result. Agent rows carry `kind: "agent"`
   and do not offer the shell-only Stop action.
 - **Shared controls.** `Control` provides buttons, button groups, text inputs,

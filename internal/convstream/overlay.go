@@ -200,12 +200,6 @@ func streamedFields(data json.RawMessage) map[string]string {
 	return out
 }
 
-// running reports a tool part still pending or running.
-func running(data json.RawMessage) bool {
-	p := readPart(data)
-	return p.Type == "tool" && (p.State.Status == "running" || p.State.Status == "pending")
-}
-
 // withFields writes streamed values longer than the snapshot's back into
 // the part data.
 func withFields(data json.RawMessage, fields map[string]string) json.RawMessage {

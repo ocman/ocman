@@ -11,10 +11,8 @@ import (
 )
 
 // sdkSystem tracks the SDK's delegated-task ledger and authoritative run state.
-// Like Claude Code's own session runner, every live background task except a
-// teammate holds the turn, shells and monitors included: their completion
-// wakes Claude for a follow-up turn, so the session is not done until then.
-// An interrupt kills them, so one that never ends is ended by Stop.
+// Background tasks remain visible independently of foreground completion.
+// Their completion may wake Claude for another foreground turn.
 func (l *live) sdkSystem(p *proc, raw []byte) {
 	var event struct {
 		Subtype     string `json:"subtype"`
@@ -60,6 +58,10 @@ func (l *live) sdkSystem(p *proc, raw []byte) {
 	}
 	l.armRunCeilingLocked(p)
 	count := len(p.tasks)
+	if previousCount > 0 && count == 0 && !p.busy {
+		l.armProcessIdleLocked(p)
+		l.slots.Broadcast()
+	}
 	for id := range p.taskDetails {
 		if !p.tasks[id] {
 			delete(p.taskDetails, id)
@@ -80,7 +82,7 @@ func (l *live) finishDeferredResult(p *proc) {
 	var raw []byte
 	gen := p.deferredGen
 	if len(p.pending) == 0 && len(p.deferredResult) > 0 &&
-		len(p.tasks) == 0 && (p.state == "" || p.state == "idle") {
+		(p.state == "" || p.state == "idle") {
 		raw, p.deferredResult = p.deferredResult, nil
 	}
 	l.mu.Unlock()
@@ -141,11 +143,11 @@ func (l *live) stopRunCeilingLocked(p *proc) {
 	}
 }
 
-// Match the SDK's bounded wait between turns. A live task or permission wait
-// never spends this budget; zero explicitly disables the ceiling.
+// Bound the wait for a foreground run to end. Permission waits never spend
+// this budget; zero explicitly disables the ceiling.
 func (l *live) armRunCeilingLocked(p *proc) {
 	l.stopRunCeilingLocked(p)
-	if len(p.deferredResult) == 0 || len(p.pending) > 0 || len(p.tasks) > 0 || p.state != "running" {
+	if len(p.deferredResult) == 0 || len(p.pending) > 0 || p.state != "running" {
 		return
 	}
 	ceiling := runEndCeiling()

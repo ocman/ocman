@@ -53,10 +53,29 @@ describe('reduceConversation', () => {
     expect(headless._statusRevision).toBe(1);
   });
 
-  it('clears background work on a provisional idle edge only', () => {
+  it('preserves background work when foreground becomes idle', () => {
     const view = fold(seed(), { type: 'background.changed', count: 1, tasks: [{ id: 't', description: 'shell' }] });
     expect(fold(view, status('done')).backgroundTaskCount).toBe(1);
-    expect(fold(view, status('done', { provisional: true }))).toMatchObject({ backgroundTaskCount: 0, backgroundTasks: [] });
+    expect(fold(view, status('done', { provisional: true }))).toMatchObject({ backgroundTaskCount: 1, backgroundTasks: [{ id: 't', description: 'shell' }] });
+  });
+
+  it('keeps idle background controls while removing completed output', () => {
+    const tasks = [{ id: 'vite', description: 'pnpm dev' }];
+    let view = fold(seed(), { type: 'background.changed', count: 1, tasks }, status('done', { provisional: true }),
+      part('output', { type: 'text', text: 'ready' }, true), part('retained', { type: 'text', text: 'preview' }, true));
+    view = fold(view, { type: 'part.removed', partId: 'output', messageId: 'm' });
+    expect(view._live?._liveFinalParts).toEqual(new Set(['retained']));
+    expect(view).toMatchObject({ backgroundTaskCount: 1, backgroundTasks: tasks });
+    view = fold(view, { type: 'message.removed', messageId: 'm', reason: 'deleted' });
+    expect(view._live?._liveFinalParts).toEqual(new Set());
+    expect(view.backgroundTasks).toEqual(tasks);
+  });
+
+  it('attaches loaded session metadata to a headless background overlay', () => {
+    const view = fold({ ...seed(), session: null }, { type: 'background.changed', count: 1, tasks: [] });
+    const next = fold({ ...view, session: seed().session }, status('done', { provisional: true }));
+    expect(next._live?.session?.status).toBe('done');
+    expect(next.backgroundTaskCount).toBe(1);
   });
 
   it('patches session metadata', () => {

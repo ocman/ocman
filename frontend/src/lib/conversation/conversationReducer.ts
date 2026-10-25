@@ -23,12 +23,9 @@ function applyStatus(view: SessionView, e: SessionStatusEvent): SessionView {
     else if (TRANSIENT_NOTICES.has(notice?.kind ?? '')) notice = undefined;
     session = { ...session, status: e.status, resetsAt: e.status === 'limited' ? e.resetsAt ?? 0 : 0, notice };
   }
-  // An idle edge ends foreground work; live background reports restate any that remain.
-  const idle = e.provisional && e.status === 'done';
   return {
     ...view,
     session,
-    ...(idle ? { backgroundTaskCount: 0, backgroundTasks: [] } : {}),
     _statusFresh: true,
     _statusRevision: (view._statusRevision ?? 0) + 1,
   };

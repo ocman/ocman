@@ -50,11 +50,11 @@ func TestStopIndividualBackgroundTask(t *testing.T) {
 		}
 	}
 	p.busy = false
-	if err := request("s1", "one"); !errors.Is(err, platforms.ErrNotFound) {
+	if err := request("s1", "one"); err != nil {
 		t.Fatal(err)
 	}
-	if writes != 1 {
-		t.Fatal("wrote an invalid stop")
+	if writes != 2 || p.busy {
+		t.Fatal("idle session must retain task stop controls without becoming busy")
 	}
 }
 

@@ -147,7 +147,7 @@ func (l *live) acquire(ctx context.Context, id, model, effort, input string, w *
 		if p := l.procs[id]; p != nil {
 			// Model changes use set_model. Effort is launch-only, and a rebound
 			// MCP listener also restarts only an idle child.
-			if p.busy || (effort == p.effort && p.mcp == l.opts.mcpConfig()) {
+			if p.busy || len(p.tasks) > 0 || (effort == p.effort && p.mcp == l.opts.mcpConfig()) {
 				if p.busy {
 					p.pending[input] = true
 				}
@@ -174,7 +174,7 @@ func (l *live) acquire(ctx context.Context, id, model, effort, input string, w *
 		}
 		evicted := false
 		for _, p := range l.procs {
-			if !p.busy && !l.exitingLocked() {
+			if !p.busy && len(p.tasks) == 0 && !l.exitingLocked() {
 				l.stopLocked(p)
 				evicted = true
 				break

@@ -100,13 +100,13 @@ stored-message guesses.
   within 24 hours or open `tool-calls`/`unknown` turns. One failed read leaves
   the port unseeded. `InferSessionStatus` only chooses a terminal state; it never
   means running. No live view with an unfinished turn means `interrupted`.
-- V2 waits for foreground execution, session-owned shells and active native child
-  agents. Child activity bubbles through native parent links, never application
-  worktree links; the main agent's foreground state stays separate. Rebuild shell
-  ownership from loaded locations on reconnect; track shell creation, exit and
-  deletion. Unrelated ownerless shells cannot hold sessions busy. Complete stream
+- V2 session status follows only foreground execution. Background shells and
+  native child agents remain visible without holding a session busy. Background
+  counts bubble through native parent links, never application worktree links.
+  Rebuild shell ownership from loaded locations on reconnect; track shell
+  creation, exit and deletion. Ignore unrelated ownerless shells. Complete stream
   ownership bootstrap before headers, then replay buffered lifecycle events so
-  status seeding cannot lose a shell's final idle edge.
+  background snapshots cannot lose a shell's final completion event.
 - Do not reintroduce `STATUS_GRACE_MS` or sticky-busy sidebar merging.
 - Canonical adapters read persisted session data only from statev2;
   `owned.New` requires the store. Native transcript/database reads belong to

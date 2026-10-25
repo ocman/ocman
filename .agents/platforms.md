@@ -73,8 +73,9 @@ Tests use `claudetest.Binary` and versioned fixtures, never real `claude`.
 
 `internal/platforms/claude/launch` shares the Agent SDK-compatible child environment for
 sessions and helpers. Its transport mirrors Python Agent SDK 0.2.166, initializes
-live children before prompting, acknowledges controls and settles from session
-state/delegated-task events. Preserve the CLI's native prompt/settings preset.
+  live children before prompting, acknowledges controls and settles foreground
+  results from session state independently of background-task events. Preserve
+  the CLI's native prompt/settings preset.
 
 ## OpenCode v1 and v2
 

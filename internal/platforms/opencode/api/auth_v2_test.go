@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"slices"
 	"sync"
 	"testing"
 
@@ -90,19 +89,12 @@ func TestTransportV2TranslatesWithBasicAuth(t *testing.T) {
 	if got["ses_1"]["type"] != "busy" {
 		t.Errorf("translated status = %v, want ses_1 busy", got)
 	}
-	if got["ses_2"]["type"] != "busy" {
-		t.Errorf("translated status = %v, want background ses_2 busy", got)
+	if _, present := got["ses_2"]; present {
+		t.Errorf("translated status = %v, background ses_2 must not be busy", got)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(paths) != 6 || paths[0] != "/api/info" || paths[1] != "/api/session/active" ||
-		paths[2] != "/api/debug/location" || paths[3] != "/api/shell" {
+	if len(paths) != 2 || paths[0] != "/api/info" || paths[1] != "/api/session/active" {
 		t.Errorf("upstream paths = %v", paths)
-	}
-	if len(paths) == 6 {
-		slices.Sort(paths[4:]) // Active sessions are walked in map order.
-		if !slices.Equal(paths[4:], []string{"/api/session/ses_1", "/api/session/ses_2"}) {
-			t.Errorf("authenticated ownership reads = %v", paths[4:])
-		}
 	}
 }

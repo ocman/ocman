@@ -26,7 +26,7 @@ func (l *live) publishBackgroundCount(p *proc, count int) {
 	_, err := l.sup.PublishIf(func() bool {
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		return l.procs[p.id] == p && p.busy && len(p.tasks) == count
+		return l.procs[p.id] == p && len(p.tasks) == count
 	}, func(providerprotocol.Event) {}, backgroundCountEvent(p.id, count, tasks))
 	if err != nil {
 		l.publishFailed(p.id, err)
@@ -36,7 +36,7 @@ func (l *live) publishBackgroundCount(p *proc, count int) {
 // Caller holds l.mu. Only the authoritative task ledger determines membership.
 func backgroundDetails(p *proc) []map[string]string {
 	tasks := []map[string]string{}
-	if p != nil && p.busy {
+	if p != nil {
 		for id := range p.tasks {
 			tasks = append(tasks, map[string]string{"id": id, "description": p.taskDetails[id]})
 		}
@@ -58,7 +58,7 @@ func (l *live) abortRequest(r *http.Request, id string) error {
 	}
 	l.mu.Lock()
 	p := l.procs[id]
-	found := p != nil && p.busy && p.tasks[req.TaskID]
+	found := p != nil && p.tasks[req.TaskID]
 	l.mu.Unlock()
 	if !found {
 		return platforms.ErrNotFound

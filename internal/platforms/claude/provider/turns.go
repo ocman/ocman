@@ -53,7 +53,7 @@ func (l *live) resultFor(p *proc, raw []byte, expected *uint64) {
 	// A successful turn whose only output is the result text (a local
 	// command such as /cost) renders it, once (spike §4).
 	resultOnly := !failed && !aborted && r.Result != "" && !p.replied
-	if len(p.pending) == 0 && (len(p.tasks) > 0 || (p.state != "" && p.state != "idle")) {
+	if len(p.pending) == 0 && p.state != "" && p.state != "idle" {
 		p.deferredResult = slices.Clone(raw)
 		p.deferredGen = l.accepted[p.id]
 		l.armRunCeilingLocked(p)
@@ -77,13 +77,7 @@ func (l *live) resultFor(p *proc, raw []byte, expected *uint64) {
 	p.deferredResult = nil
 	l.stopRunCeilingLocked(p)
 	p.busy, p.aborted = false, false
-	p.idle = time.AfterFunc(l.opts.IdleTimeout, func() {
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		if l.procs[p.id] == p && !p.busy {
-			l.stopLocked(p)
-		}
-	})
+	l.armProcessIdleLocked(p)
 	gen := l.accepted[p.id]
 	l.slots.Broadcast()
 	l.mu.Unlock()
@@ -99,6 +93,23 @@ func (l *live) resultFor(p *proc, raw []byte, expected *uint64) {
 	default:
 		l.settle(p.id, db.StatusDone, gen)
 	}
+}
+
+// Background work keeps its hosting process alive, not its foreground turn.
+func (l *live) armProcessIdleLocked(p *proc) {
+	if p.idle != nil {
+		p.idle.Stop()
+	}
+	if p.busy || len(p.tasks) > 0 {
+		return
+	}
+	p.idle = time.AfterFunc(l.opts.IdleTimeout, func() {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		if l.procs[p.id] == p && !p.busy && len(p.tasks) == 0 {
+			l.stopLocked(p)
+		}
+	})
 }
 
 // settle ends the open turn: a non-done terminal status, then the idle edge.
@@ -183,8 +194,8 @@ func (l *live) settleLater(id string) {
 
 // trySettle publishes the turn's end; nil when published or superseded.
 func (l *live) trySettle(id string, status db.SessionStatus, gen uint64, first bool) error {
-	// The turn's subagent sessions end with it: their idle edges let the
-	// headless watcher acknowledge and the spool truncate their events too.
+	// Settle orphaned children, but preserve independently running tasks when
+	// only the parent's foreground turn has ended.
 	l.mu.Lock()
 	children := slices.Clone(l.subs[id])
 	l.mu.Unlock()
@@ -195,7 +206,12 @@ func (l *live) trySettle(id string, status db.SessionStatus, gen uint64, first b
 		}
 		l.mu.Lock()
 		childStatus := l.status[child].Status
+		p := l.procs[id]
+		running := p != nil && p.tasks[strings.TrimPrefix(child, "agent-")]
 		l.mu.Unlock()
+		if running {
+			continue
+		}
 		if childStatus == db.StatusBusy {
 			childStatus = status
 			if childStatus == db.StatusDone {

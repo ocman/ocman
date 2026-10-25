@@ -86,7 +86,7 @@ func TestSDKResultWaitsForSessionIdle(t *testing.T) {
 	}
 }
 
-func TestSDKBackgroundTasksKeepRunOpen(t *testing.T) {
+func TestSDKBackgroundTasksDoNotHoldForegroundOpen(t *testing.T) {
 	for _, terminal := range []string{
 		`{"subtype":"task_notification","task_id":"background"}`,
 		`{"subtype":"task_updated","task_id":"background","patch":{"status":"completed"}}`,
@@ -94,8 +94,8 @@ func TestSDKBackgroundTasksKeepRunOpen(t *testing.T) {
 		l, p := sdkLifecycle(t)
 		l.system(p, []byte(`{"subtype":"task_started","task_id":"background","task_type":"local_agent"}`))
 		l.result(p, []byte(`{"subtype":"success"}`))
-		if !p.busy {
-			t.Fatal("background agent was treated as idle")
+		if p.busy || len(p.tasks) != 1 {
+			t.Fatal("foreground result must settle without discarding background work")
 		}
 		l.system(p, []byte(terminal))
 		if p.busy {

@@ -190,10 +190,7 @@ func (t *translator) handle(ev v2Event) error {
 			if err := t.activity.loadParents(t.ctx, t.c, owner); err != nil {
 				return err
 			}
-			if err := t.emitBackgroundCount(owner, dir); err != nil {
-				return err
-			}
-			return t.emitActivityFamily(owner, dir)
+			return t.emitBackgroundFamily(owner, dir)
 		}
 		return nil
 	case "shell.exited", "shell.deleted":
@@ -202,10 +199,7 @@ func (t *translator) handle(ev v2Event) error {
 		delete(t.activity.shells, id)
 		delete(t.activity.commands, id)
 		if owner != "" {
-			if err := t.emitBackgroundCount(owner, dir); err != nil {
-				return err
-			}
-			return t.emitActivityFamily(owner, dir)
+			return t.emitBackgroundFamily(owner, dir)
 		}
 		return nil
 	case "session.retry.scheduled":
@@ -238,7 +232,7 @@ func (t *translator) handle(ev v2Event) error {
 			}
 		}
 		if len(t.activity.ancestors(sessionID)) > 0 {
-			if err := t.emitActivityFamily(sessionID, dir); err != nil {
+			if err := t.emitBackgroundFamily(sessionID, dir); err != nil {
 				return err
 			}
 		}

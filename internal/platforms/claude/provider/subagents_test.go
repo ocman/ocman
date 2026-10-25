@@ -87,12 +87,12 @@ func TestSubagentTerminalLifecycle(t *testing.T) {
 	}
 }
 
-func TestSubagentCompletionBeforeDeferredParentResult(t *testing.T) {
+func TestSubagentCompletionAfterForegroundParentResult(t *testing.T) {
 	l, p := sdkLifecycle(t)
 	l.system(p, []byte(startChild))
 	l.result(p, []byte(`{"subtype":"success"}`))
-	if !p.busy {
-		t.Fatal("parent settled before child")
+	if p.busy || l.status["agent-child"].Status != db.StatusBusy {
+		t.Fatal("foreground parent must settle without ending the child")
 	}
 	l.system(p, []byte(`{"subtype":"task_updated","task_id":"child","patch":{"status":"failed"}}`))
 	if p.busy || l.status["agent-child"].Status != db.StatusError {
@@ -105,6 +105,7 @@ func TestSubagentParentExitSettlesOnlyActiveChildren(t *testing.T) {
 		l, p := sdkLifecycle(t)
 		l.system(p, []byte(startChild))
 		p.busy = false // process exit without a task terminal event
+		clear(p.tasks)
 		l.settle(p.id, status, l.accepted[p.id])
 		want := status
 		if want == db.StatusDone {
@@ -122,6 +123,7 @@ func TestSubagentParentRetriesUnfinishedTerminalPublication(t *testing.T) {
 	// A terminal status was saved, but the following idle write failed.
 	l.emit("agent-child", "", "session.status", map[string]any{"sessionID": "agent-child", "status": map[string]string{"type": "error"}})
 	p.busy = false
+	clear(p.tasks)
 	l.settle(p.id, db.StatusError, l.accepted[p.id])
 	if l.sup.Active("agent-child") || l.status["agent-child"].Status != db.StatusError {
 		t.Fatal("parent recovery stranded a child between terminal status and idle")

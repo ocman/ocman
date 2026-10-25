@@ -75,8 +75,8 @@ func TestBackgroundExitBetweenReconnectSnapshots(t *testing.T) {
 	if stream.err != nil {
 		t.Fatal(stream.err)
 	}
-	cmpJSON(t, "watcher seed", cmpOK(t, http.MethodGet, f.URL+"/session/status", ""), `{"s1":{"type":"busy"}}`)
-	state, idle := "busy", false
+	cmpJSON(t, "watcher seed", cmpOK(t, http.MethodGet, f.URL+"/session/status", ""), `{}`)
+	state, idle := "idle", false
 	body, err := io.ReadAll(stream.response.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestBackgroundExitBetweenReconnectSnapshots(t *testing.T) {
 		}
 		idle = idle || str(ev, "type") == "session.idle"
 	}
-	if state != "idle" || !idle {
-		t.Fatalf("reconnect stranded watcher at %q, final idle edge = %v", state, idle)
+	if state != "idle" || idle {
+		t.Fatalf("shell exit changed foreground status to %q, idle edge = %v", state, idle)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/NoUseFreak/ocman/internal/db"
 )
 
 func (l *live) read(p *proc, stdout io.Reader) {
@@ -15,6 +17,13 @@ func (l *live) read(p *proc, stdout io.Reader) {
 	}
 	_ = p.cmd.Wait()
 	close(p.done)
+	l.mu.Lock()
+	hadTasks := len(p.tasks) > 0
+	clear(p.tasks)
+	l.mu.Unlock()
+	if hadTasks {
+		l.publishBackgroundCount(p, 0)
+	}
 	// A terminal result followed by process exit keeps its actual error text.
 	// Missing accepted inputs or corrupt output are still transport failures.
 	l.mu.Lock()
@@ -49,8 +58,14 @@ func (l *live) read(p *proc, stdout io.Reader) {
 	p.freeSlotLocked()
 	l.children--
 	gen := l.accepted[p.id]
+	children := append([]string(nil), l.subs[p.id]...)
 	l.slots.Broadcast()
 	l.mu.Unlock()
+	if !wasBusy {
+		for _, child := range children {
+			l.finishSubagent(child, db.StatusInterrupted)
+		}
+	}
 	if wasBusy {
 		reason := or(p.stderr.String(), p.cmd.ProcessState.String())
 		if streamErr != nil {

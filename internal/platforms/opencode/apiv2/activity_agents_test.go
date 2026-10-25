@@ -35,7 +35,7 @@ func parentActivity(events []map[string]any) ([]string, []any) {
 	return statuses, counts
 }
 
-func TestAsyncSubagentKeepsParentWorking(t *testing.T) {
+func TestAsyncSubagentDoesNotKeepParentWorking(t *testing.T) {
 	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/child", http.StatusOK, `{"data":{"id":"child","parentID":"parent","title":"Review changes","location":{"directory":"/repo"}}}`)
@@ -47,7 +47,7 @@ func TestAsyncSubagentKeepsParentWorking(t *testing.T) {
 		fakeEv("session.execution.succeeded", 4, "/repo", `{"sessionID":"child"}`),
 	}
 	statuses, counts := parentActivity(cmpStream(t, f.URL+"/event"))
-	cmpJSON(t, "parent statuses", statuses, `["busy","busy","busy","idle"]`)
+	cmpJSON(t, "parent statuses", statuses, `["busy","idle"]`)
 	cmpJSON(t, "background agents", counts, `[1,0]`)
 }
 
@@ -66,7 +66,7 @@ func TestAsyncSubagentTerminalTransitions(t *testing.T) {
 				fakeEv("session.execution.succeeded", 2, "/repo", `{"sessionID":"second"}`),
 			}
 			statuses, counts := parentActivity(cmpStream(t, f.URL+"/event"))
-			cmpJSON(t, "parent statuses", statuses, `["busy","idle"]`)
+			cmpJSON(t, "parent statuses", statuses, `[]`)
 			cmpJSON(t, "remaining agents", counts, `[1,0]`)
 		})
 	}
@@ -81,7 +81,7 @@ func TestAsyncSubagentNestedAndUnrelated(t *testing.T) {
 		fakeEv("session.execution.succeeded", 2, "/repo", `{"sessionID":"nested"}`),
 	}
 	statuses, counts := parentActivity(cmpStream(t, f.URL+"/event"))
-	cmpJSON(t, "parent statuses", statuses, `["busy","idle"]`)
+	cmpJSON(t, "parent statuses", statuses, `[]`)
 	cmpJSON(t, "nested agents count once", counts, `[1,0]`)
 }
 
@@ -95,7 +95,7 @@ func TestAsyncSubagentParentResumesBeforeChildExits(t *testing.T) {
 		fakeEv("session.execution.succeeded", 3, "/repo", `{"sessionID":"parent"}`),
 	}
 	statuses, _ := parentActivity(cmpStream(t, f.URL+"/event"))
-	cmpJSON(t, "parent statuses", statuses, `["busy","busy","idle"]`)
+	cmpJSON(t, "parent statuses", statuses, `["busy","idle"]`)
 }
 
 func TestAsyncSubagentShellOutlivesChildExecution(t *testing.T) {
@@ -108,7 +108,7 @@ func TestAsyncSubagentShellOutlivesChildExecution(t *testing.T) {
 		fakeEv("shell.exited", 3, "/repo", `{"id":"shell"}`),
 	}
 	statuses, counts := parentActivity(cmpStream(t, f.URL+"/event"))
-	cmpJSON(t, "parent statuses", statuses, `["busy","busy","idle"]`)
+	cmpJSON(t, "parent statuses", statuses, `[]`)
 	cmpJSON(t, "child counted once", counts, `[1,1,0]`)
 }
 
@@ -118,8 +118,8 @@ func TestAsyncSubagentOwnershipReadFailure(t *testing.T) {
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":true}}`)
 	f.json("GET /api/session/child", http.StatusServiceUnavailable, `{}`)
 	status, _ := cmpDo(t, http.MethodGet, f.URL+"/session/status", nil, "")
-	if status != http.StatusServiceUnavailable {
-		t.Fatalf("partial ownership snapshot returned %d", status)
+	if status != http.StatusOK {
+		t.Fatalf("background ownership read blocked foreground status: %d", status)
 	}
 	tr := &translator{c: &compat{base: f.URL, rt: http.DefaultTransport}, ctx: t.Context(), out: &bytes.Buffer{}, activity: &activity{}}
 	for _, typ := range []string{"session.execution.started", "session.retry.scheduled", "shell.created"} {
@@ -133,8 +133,8 @@ func TestAsyncSubagentOwnershipReadFailure(t *testing.T) {
 
 func TestAsyncSubagentCyclesAndWriteErrors(t *testing.T) {
 	a := &activity{parents: map[string]string{"child": "parent", "parent": "child"}, foreground: map[string]any{"child": true}, shells: map[string]string{"shell": "child"}}
-	if len(a.ancestors("child")) != 1 || !a.busy("parent") || a.busy("other") {
-		t.Fatal("cycle handling lost activity or borrowed unrelated activity")
+	if len(a.ancestors("child")) != 1 || a.busy("parent") || !a.busy("child") || a.busy("other") {
+		t.Fatal("cycle handling borrowed background activity for foreground status")
 	}
 	if _, foreground := a.foreground["parent"]; foreground {
 		t.Fatal("child activity manufactured parent foreground execution")
@@ -164,7 +164,7 @@ func (w *agentFailAfterWriter) Write(p []byte) (int, error) {
 }
 
 func TestAsyncSubagentAncestorWriteFailure(t *testing.T) {
-	for _, remaining := range []int{1, 2} {
+	for _, remaining := range []int{0, 1} {
 		tr := &translator{ctx: t.Context(), out: &agentFailAfterWriter{remaining: remaining}, activity: &activity{
 			foreground: map[string]any{"child": true}, parents: map[string]string{"child": "parent"},
 		}}
@@ -184,7 +184,7 @@ func TestAsyncSubagentCreationSuppliesOwnership(t *testing.T) {
 		fakeEv("session.execution.succeeded", 4, "/repo", `{"sessionID":"child"}`),
 	}
 	statuses, _ := parentActivity(cmpStream(t, f.URL+"/event"))
-	cmpJSON(t, "parent statuses", statuses, `["busy","busy","idle"]`)
+	cmpJSON(t, "parent statuses", statuses, `[]`)
 	f.one("GET /api/session/child") // No metadata fetch on every execution edge.
 }
 
@@ -194,7 +194,7 @@ func TestAsyncSubagentStatusSnapshot(t *testing.T) {
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":{"type":"running"}}}`)
 	f.json("GET /api/session/child", http.StatusOK, `{"data":{"id":"child","parentID":"parent","title":"Review changes","location":{"directory":"/repo"}}}`)
 	f.json("GET /api/session/parent", http.StatusOK, `{"data":{"id":"parent","location":{"directory":"/repo"}}}`)
-	cmpJSON(t, "status", cmpOK(t, http.MethodGet, f.URL+"/session/status", ""), `{"child":{"type":"busy"},"parent":{"type":"busy"}}`)
+	cmpJSON(t, "status", cmpOK(t, http.MethodGet, f.URL+"/session/status", ""), `{"child":{"type":"busy"}}`)
 	f.events = []string{fakeEv("server.connected", 1, "", `{}`)}
 	events := cmpStream(t, f.URL+"/event")
 	cmpJSON(t, "background snapshot", obj(events[0], "properties"), `{"backgroundTasks":{"parent":1},"backgroundTaskDetails":{"parent":[{"id":"child","description":"Review changes","kind":"agent"}]}}`)

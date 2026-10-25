@@ -95,7 +95,7 @@ func TestSourceWithoutLifecycleEndsTurnUnsettled(t *testing.T) {
 	}
 }
 
-func TestBusyInferredFromRunningContent(t *testing.T) {
+func TestRunningContentDoesNotOverrideForegroundStatus(t *testing.T) {
 	h := newTestHub(t, Options{})
 	src := newFakeSource()
 	src.seed = Seed{Status: &convevents.SessionStatusEvent{Status: db.StatusDone}}
@@ -104,13 +104,13 @@ func TestBusyInferredFromRunningContent(t *testing.T) {
 	sink.Emit(toolPart("t1", "completed"), Meta{})
 	sink.Emit(toolPart("t2", "running"), Meta{})
 	sink.Emit(delta("t2", 0, "out"), Meta{})
-	want := []string{"part.upserted", "turn.started", "session.status:busy", "part.upserted", "part.delta"}
+	want := []string{"part.upserted", "part.upserted", "part.delta"}
 	if got := types(decodeAll(t, drain(sub))); !slices.Equal(got, want) {
 		t.Fatalf("frames = %v, want %v", got, want)
 	}
 }
 
-func TestTerminalStatusFromSourceEndsTurnAndClearsBackground(t *testing.T) {
+func TestTerminalStatusFromSourceEndsTurnAndPreservesBackground(t *testing.T) {
 	h := newTestHub(t, Options{})
 	src := newFakeSource()
 	src.seed = Seed{Status: &convevents.SessionStatusEvent{Status: db.StatusBusy}}
@@ -129,7 +129,7 @@ func TestTerminalStatusFromSourceEndsTurnAndClearsBackground(t *testing.T) {
 		t.Fatalf("limited = %+v", st)
 	}
 	sink.Emit(idle(), Meta{})
-	if got := types(decodeAll(t, drain(sub))); !slices.Equal(got, []string{"background.changed", "session.status:done?"}) {
+	if got := types(decodeAll(t, drain(sub))); !slices.Equal(got, []string{"session.status:done?"}) {
 		t.Fatalf("idle = %v", got)
 	}
 }

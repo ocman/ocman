@@ -144,7 +144,7 @@ func (l *live) yieldSlots(ctx context.Context) {
 		l.mu.Lock()
 		idle := false
 		for _, p := range l.procs {
-			idle = idle || !p.busy
+			idle = idle || (!p.busy && len(p.tasks) == 0)
 		}
 		idle = idle && !l.exitingLocked()
 		l.mu.Unlock()
@@ -153,7 +153,7 @@ func (l *live) yieldSlots(ctx context.Context) {
 		}
 		l.mu.Lock()
 		for _, p := range l.procs {
-			if !p.busy {
+			if !p.busy && len(p.tasks) == 0 {
 				l.stopLocked(p)
 				break
 			}

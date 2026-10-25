@@ -235,7 +235,7 @@ func (l *live) snapshot(id string) []providerprotocol.Event {
 	// that read busy before it ended learns the turn is over from here.
 	p := l.procs[id]
 	count := 0
-	if p != nil && p.busy {
+	if p != nil {
 		count = len(p.tasks)
 	}
 	events = append(events, backgroundCountEvent(id, count, backgroundDetails(p)))
