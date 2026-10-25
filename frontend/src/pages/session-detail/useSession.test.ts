@@ -474,6 +474,25 @@ describe('useSession — bounded stream work (#722)', () => {
     unmount();
   });
 
+  it('keeps the final response when turn end overtakes reconnect recovery before history catches up', async () => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    let finishRecovery!: (detail: SessionDetail) => void;
+    fetchSession.mockImplementationOnce(() => new Promise<SessionDetail>((resolve) => { finishRecovery = resolve; }));
+    act(() => sse.emitOce(hello(false)));
+    act(() => {
+      sse.emitOce({ type: 'message.upserted', message: { id: 'final', sessionId: SID, timeCreated: 3, data: { role: 'assistant' } } });
+      sse.emitOce(partUpserted({ id: 'final-part', messageId: 'final', data: { type: 'text', text: 'Final response' } }, SID, true));
+      sse.emitOce(idleEdge);
+    });
+    expect(result.current.messages.map((m) => m.id)).toContain('final');
+    await act(async () => sse.emitOce(turnEnded()));
+    await act(async () => finishRecovery(makeDetail()));
+    expect(result.current.messages.map((m) => m.id)).toContain('final');
+    expect(result.current.parts.find((p) => p.id === 'final-part')?.data).toEqual({ type: 'text', text: 'Final response' });
+    expect(result.current.refreshError).toBeNull();
+    unmount();
+  });
+
   it.each(['rewrite', 'cold reconnect'])('%s removes missed deletions but keeps events received after the request fence', async (trigger) => {
     const { result, fetchSession, sse, unmount } = await setup();
     await act(async () => { sse.open(); sse.emitOce(hello(false)); sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'removed' } }, SID)); });

@@ -96,7 +96,10 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       // A routine refresh must not cancel an authoritative recovery and
       // replace it with union merging (e.g. a child arriving during recovery).
       const mode = recoveryEvents && requestedMode === 'reconcile' ? 'recover' : requestedMode;
-      const sinceFence: OceEnvelope[] = [];
+      // A reconcile that supersedes recovery must keep its original replay
+      // fence. The newer REST read can still lag the final streamed response,
+      // and idle/turn-end events have already cleared the live-turn ledger.
+      const sinceFence: OceEnvelope[] = recoveryEvents && requestedMode === 'reconcile' ? [...recoveryEvents] : [];
       recoveryEvents = mode === 'recover' || mode === 'restore' ? sinceFence : null;
       abortRef.current?.abort();
       const controller = new AbortController();
