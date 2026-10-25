@@ -85,11 +85,9 @@ func TestProviderUsageRouteWithNoOAuth(t *testing.T) {
 	m := spendModule(t)
 	ctx := t.Context()
 	input := int64(1_000_000)
-	for _, path := range []string{"/api/provider-usage", "/api/subscription-usage"} {
-		rec := serve(routes(m), http.MethodGet, path, "")
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"TypeSafe"`) || !strings.Contains(rec.Body.String(), `"estimatedUSD":null`) {
-			t.Fatalf("empty spend = %d %s", rec.Code, rec.Body.String())
-		}
+	rec := serve(routes(m), http.MethodGet, "/api/provider-usage", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"TypeSafe"`) || !strings.Contains(rec.Body.String(), `"estimatedUSD":null`) {
+		t.Fatalf("empty spend = %d %s", rec.Code, rec.Body.String())
 	}
 	if err := m.RecordTypeSafeUsage(ctx, "jev-1.14.0", &input, nil); err != nil {
 		t.Fatal(err)

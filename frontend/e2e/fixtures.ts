@@ -435,28 +435,12 @@ export async function installDefaultRoutes(page: Page) {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ windows: [] }) }),
   );
 
-  // Forge integrations (/api/integrations/*). Unmocked → proxied to
-  // the dead backend, feeding the same connection-starvation that breaks
-  // later navigations on CI. Catch-all first (lower priority), then the
-  // specific status stub — later page.route registrations win in
-  // Playwright, so status must be registered last. Status reports "no
-  // integrations" so no previews are ever attempted.
-  await page.route('/api/integrations/**', (route: Route) =>
-    route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) }),
-  );
   // Link previews resolve for any message with a link: stub as "nothing".
   await page.route('/api/previews/providers*', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ providers: [] }) }),
   );
   await page.route('/api/previews/resolve*', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ previews: [] }) }),
-  );
-  await page.route('/api/integrations/status', (route: Route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ github: { available: false }, forgejo: { available: false, hosts: [] } }),
-    }),
   );
 }
 

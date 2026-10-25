@@ -13,9 +13,10 @@ import (
 )
 
 type inboxMutation struct {
-	ID      string   `json:"id,omitempty"`
-	IDs     []string `json:"ids,omitempty"`
-	AllRead bool     `json:"allRead,omitempty"`
+	ID  string   `json:"id,omitempty"`
+	IDs []string `json:"ids,omitempty"`
+	// AllRead is only sent by older hubs; keep accepting it.
+	AllRead bool `json:"allRead,omitempty"`
 }
 
 func (s *Server) InboxItems(ctx context.Context, _ *pb.CallReq) (*pb.JsonResp, error) {
@@ -86,8 +87,8 @@ func (c *RemoteConn) MarkInboxItemUnread(ctx context.Context, id string) error {
 	return hostExec(ctx, c, "MarkInboxItemUnread", inboxMutation{ID: id})
 }
 
-func (c *RemoteConn) ArchiveInboxItems(ctx context.Context, ids []string, allRead bool) error {
-	return hostExec(ctx, c, "ArchiveInboxItems", inboxMutation{IDs: ids, AllRead: allRead})
+func (c *RemoteConn) ArchiveInboxItems(ctx context.Context, ids []string) error {
+	return hostExec(ctx, c, "ArchiveInboxItems", inboxMutation{IDs: ids})
 }
 
 func (m *Manager) inboxOwner(source string) (*state.DB, *RemoteConn, error) {
@@ -167,16 +168,13 @@ func (m *Manager) MarkInboxItemUnread(ctx context.Context, source, id string) er
 	return conn.MarkInboxItemUnread(ctx, id)
 }
 
-func (m *Manager) ArchiveInboxItems(ctx context.Context, source string, ids []string, allRead bool) error {
+func (m *Manager) ArchiveInboxItems(ctx context.Context, source string, ids []string) error {
 	store, conn, err := m.inboxOwner(source)
 	if err != nil {
 		return err
 	}
 	if store == nil {
-		return conn.ArchiveInboxItems(ctx, ids, allRead)
-	}
-	if allRead {
-		return store.ArchiveAllReadInboxItems(ctx)
+		return conn.ArchiveInboxItems(ctx, ids)
 	}
 	return store.ArchiveInboxItems(ctx, ids)
 }

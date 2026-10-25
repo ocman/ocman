@@ -118,14 +118,9 @@ func (r *statusRecorder) flushTiming() {
 
 // isLoopback returns true if the request originates from localhost.
 func isLoopback(r *http.Request) bool {
-	host := r.RemoteAddr
-	if idx := strings.LastIndex(host, ":"); idx >= 0 {
-		host = host[:idx]
-	}
-	// Strip brackets from IPv6 addresses (e.g. "[::1]" -> "::1")
-	host = strings.TrimPrefix(host, "[")
-	host = strings.TrimSuffix(host, "]")
-	return host == "127.0.0.1" || host == "::1"
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	ip := net.ParseIP(host)
+	return err == nil && ip != nil && ip.IsLoopback()
 }
 
 // requireLocalhost protects host-control routes from both network and browser

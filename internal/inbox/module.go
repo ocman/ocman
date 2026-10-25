@@ -5,7 +5,6 @@ package inbox
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -31,7 +30,7 @@ type Remotes interface {
 	ArchivedInboxItems(ctx context.Context, source string) ([]state.InboxItem, error)
 	MarkInboxItemRead(ctx context.Context, source, id string) error
 	MarkInboxItemUnread(ctx context.Context, source, id string) error
-	ArchiveInboxItems(ctx context.Context, source string, ids []string, allRead bool) error
+	ArchiveInboxItems(ctx context.Context, source string, ids []string) error
 }
 
 type Deps struct {
@@ -61,12 +60,10 @@ func (m *Module) Name() string { return "inbox" }
 
 func (m *Module) Routes(r module.Router) {
 	r.Handle("GET /api/inbox", m.handleInboxList)
-	r.Handle("POST /api/inbox/read", m.handleInboxRead)
 	r.Handle("POST /api/inbox/open", m.handleInboxRead)
 	r.Handle("POST /api/inbox/unread", m.handleInboxRead)
 	r.Handle("POST /api/inbox/pin", m.handleInboxPin)
-	r.Handle("POST /api/inbox/archive", func(w http.ResponseWriter, r *http.Request) { m.handleInboxArchive(w, r, false) })
-	r.Handle("POST /api/inbox/archive-all-read", func(w http.ResponseWriter, r *http.Request) { m.handleInboxArchive(w, r, true) })
+	r.Handle("POST /api/inbox/archive", m.handleInboxArchive)
 }
 
 // Run reconciles permission items with the live prompts until ctx ends.

@@ -229,6 +229,11 @@ func TestIsLoopback(t *testing.T) {
 		{"[::1]:8229", true},
 		{"192.168.1.1:8229", false},
 		{"10.0.0.1:443", false},
+		{"127.0.0.2:8229", true},
+		{"[::ffff:127.0.0.1]:8229", true},
+		{"127.0.0.1", false}, // no port: fail closed
+		{"[::1]", false},
+		{"127.0.0.1.evil.example:8229", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.remoteAddr, func(t *testing.T) {

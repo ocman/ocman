@@ -1,7 +1,6 @@
 package sessionrecovery
 
 import (
-	"context"
 	"encoding/json"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -10,16 +9,11 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-// SessionReader supplies owner-local persisted identities and abort metadata.
-// Live status still comes from the platform's lifecycle reader.
-type SessionReader interface {
-	GetSessionIdentities(context.Context) ([]db.Session, error)
-	GetSessionLifecycle(context.Context, string) (db.SessionLifecycle, error)
-}
-
 type Deps struct {
-	State                   *state.DB
-	Sessions                SessionReader
+	State *state.DB
+	// Sessions supplies owner-local persisted identities and abort metadata.
+	// Live status still comes from the platform's lifecycle reader.
+	Sessions                platforms.RuntimeSessionReader
 	Platform                func(platforms.ID) (platforms.Platform, bool)
 	ManagedRootReader       func() hostsvc.ManagedRootReader
 	MachineWide             func() bool

@@ -159,11 +159,10 @@ func isAppBundle() bool {
 }
 
 func isLoopbackAddr(addr string) bool {
-	host := addr
-	if idx := strings.LastIndex(host, ":"); idx >= 0 {
-		host = host[:idx]
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
 	}
-	host = strings.TrimPrefix(host, "[")
-	host = strings.TrimSuffix(host, "]")
-	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
 }

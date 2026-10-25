@@ -185,7 +185,6 @@ func TestInboxHTTPRejectsMalformedRequests(t *testing.T) {
 		{"/api/inbox/unread", `{}`},
 		{"/api/inbox/pin", `{}`},
 		{"/api/inbox/archive", `{"items":[{"id":"x"}]}`},
-		{"/api/inbox/archive-all-read", `{}`},
 	} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.path, bytes.NewBufferString(tc.body)))
@@ -212,7 +211,7 @@ func TestInboxHTTPUnavailableOwnerDoesNotFallbackLocally(t *testing.T) {
 	}
 	mux := mustRoutes(t, srv)
 	for path, body := range map[string]string{
-		"/api/inbox/read":   `{"remoteId":"gone","id":"` + unread.ID + `"}`,
+		"/api/inbox/open":   `{"remoteId":"gone","id":"` + unread.ID + `"}`,
 		"/api/inbox/unread": `{"remoteId":"gone","id":"` + read.ID + `"}`,
 		"/api/inbox/pin":    `{"remoteId":"gone","id":"item","pinned":true}`,
 	} {
@@ -261,10 +260,7 @@ func (f *fakeInboxRemotes) MarkInboxItemRead(ctx context.Context, _, id string) 
 func (f *fakeInboxRemotes) MarkInboxItemUnread(ctx context.Context, _, id string) error {
 	return f.store.MarkInboxItemUnread(ctx, id)
 }
-func (f *fakeInboxRemotes) ArchiveInboxItems(ctx context.Context, _ string, ids []string, allRead bool) error {
-	if allRead {
-		return f.store.ArchiveAllReadInboxItems(ctx)
-	}
+func (f *fakeInboxRemotes) ArchiveInboxItems(ctx context.Context, _ string, ids []string) error {
 	return f.store.ArchiveInboxItems(ctx, ids)
 }
 

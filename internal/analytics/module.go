@@ -81,7 +81,6 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("GET /api/analytics/ui-usage", m.handleUIUsageDays)
 	r.Handle("GET /api/analytics/agent-run-hours", data(m.handleAgentRunHours))
 	r.Handle("POST /api/ui-usage", m.handleUIUsage)
-	r.Local("GET /api/subscription-usage", m.handleSubscriptionUsage)
 	r.Local("GET /api/provider-usage", m.handleSubscriptionUsage)
 	r.Handle("GET /api/metrics", data(m.handleMetrics))
 	r.Handle("GET /api/metrics/performance", data(m.handleMetricsPerformance))

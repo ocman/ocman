@@ -164,8 +164,8 @@ flowchart LR
   input price, not account-wide billing. Unknown prices or missing counts stay
   unpriced, not zero. Other apps and pre-update requests cannot be backfilled.
   Old records expire on the next recorded request. Provider tokens and account
-  identifiers never reach the browser. The old subscription-usage routes remain
-  aliases for existing clients and bookmarks.
+  identifiers never reach the browser. The old `/subscription-usage` page path
+  remains an alias for bookmarks.
 - **Custom reviewer APIs.** `internal/autoapprove` can send permission judgments
   directly to a user-configured OpenAI-compatible chat-completions or
   TypeSafe-compatible System One endpoint instead of a temporary OpenCode
@@ -1014,7 +1014,7 @@ flowchart TD
   artifacts, the Inbox, conversation sharing and read-only file browsing
   (`internal/filesystem`: directory picker, signed `/api/file/` embeds,
   owner-routed repository file reads), link previews (`internal/previews`:
-  `/api/previews/*`, link rules, sign-in apps, `/api/integrations/status`; it
+  `/api/previews/*`, link rules and sign-in apps; it
   sees the hub forge clients only as credentials through `Deps.Forges`, and
   app access through `Deps.Access`), git and worktrees
   (`internal/gitmod`: status, branches, checkout, diffs and worktree

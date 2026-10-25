@@ -14,7 +14,7 @@ import (
 // Runtime hooks resolve these dependencies when called, including after tests
 // or startup replace the registry, database or local host.
 func (s *Server) sessionRecovery() *sessionrecovery.Service {
-	var sessions sessionrecovery.SessionReader
+	var sessions platforms.RuntimeSessionReader
 	if s.registry != nil {
 		if adapter, ok := s.registry.Get(opencode.PlatformID); ok {
 			sessions, _ = adapter.(platforms.RuntimeSessionReader)

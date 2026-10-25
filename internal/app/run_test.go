@@ -301,6 +301,9 @@ func TestIsLoopbackAddr(t *testing.T) {
 		{"0.0.0.0:8228", false},
 		{"192.168.1.10:8228", false},
 		{"[2001:db8::1]:8228", false},
+		{"127.0.0.2:8228", true},
+		{"localhost", false}, // no port: fail closed
+		{"localhost.evil.example:8228", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.addr, func(t *testing.T) {

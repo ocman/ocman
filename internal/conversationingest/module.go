@@ -20,7 +20,7 @@ type Source struct {
 
 type Deps struct {
 	Store        *statev2.DB
-	Tasks        tasksvc.Runner
+	Tasks        *tasksvc.Manager
 	OwnerID      string
 	Sources      []Source
 	PollInterval time.Duration

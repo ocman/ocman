@@ -58,11 +58,6 @@ type Task struct {
 
 type Work func(context.Context, *Reporter) error
 
-// Runner lets producers use the manager without importing its HTTP module.
-type Runner interface {
-	Do(context.Context, Spec, Work) error
-}
-
 func ValidStatus(status Status) bool {
 	switch status {
 	case Queued, Running, Succeeded, Failed, Cancelled, Interrupted:

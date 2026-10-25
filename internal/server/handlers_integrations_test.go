@@ -39,24 +39,6 @@ func localRequest(method, target, body string) *http.Request {
 	return req
 }
 
-func TestHandleIntegrationsStatus_ReportsForgejoHosts(t *testing.T) {
-	srv := testServer(t)
-	registerForgejoClient(srv, "code.example.com", "http://unused")
-	srv.integrations.GitHub = github.NewWithCredentials("https://api.github.com", "", nil)
-	rr := serve(srv, localRequest(http.MethodGet, "/api/integrations/status", ""))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d", rr.Code)
-	}
-	body := rr.Body.String()
-	if !strings.Contains(body, `"forgejo"`) || !strings.Contains(body, "code.example.com") || !strings.Contains(body, `"authenticated":false`) {
-		t.Errorf("expected forgejo hosts in status payload, got %s", body)
-	}
-	srv.integrations.GitHub = nil // used to panic
-	if rr := serve(srv, localRequest(http.MethodGet, "/api/integrations/status", "")); rr.Code != http.StatusOK {
-		t.Fatalf("without a GitHub client: %d", rr.Code)
-	}
-}
-
 // The hub's forge clients reach the previews module as credentials only:
 // https Forgejo logins become configured hosts, a plain-http one never
 // carries its token, and the GitHub CLI token is the owner fallback.

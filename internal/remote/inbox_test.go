@@ -71,7 +71,7 @@ func TestRemoteConnInboxRoundTrip(t *testing.T) {
 	if err := conn.MarkInboxItemRead(t.Context(), first.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := conn.ArchiveInboxItems(t.Context(), []string{second.ID}, false); err != nil {
+	if err := conn.ArchiveInboxItems(t.Context(), []string{second.ID}); err != nil {
 		t.Fatal(err)
 	}
 	items, err = conn.InboxItems(t.Context())
@@ -81,7 +81,8 @@ func TestRemoteConnInboxRoundTrip(t *testing.T) {
 	if len(items) != 1 || items[0].ID != first.ID || items[0].ReadAt == 0 {
 		t.Fatalf("after read/archive = %#v", items)
 	}
-	if err := conn.ArchiveInboxItems(t.Context(), nil, true); err != nil {
+	// Older hubs still send allRead.
+	if err := hostExec(t.Context(), conn, "ArchiveInboxItems", inboxMutation{AllRead: true}); err != nil {
 		t.Fatal(err)
 	}
 	if items, err = conn.InboxItems(t.Context()); err != nil || len(items) != 0 {
@@ -198,7 +199,7 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	if localItems[0].ReadAt != 0 {
 		t.Fatalf("local unread mutation failed: %+v", localItems)
 	}
-	if err := mgr.ArchiveInboxItems(t.Context(), "local", []string{localItem.ID}, false); err != nil {
+	if err := mgr.ArchiveInboxItems(t.Context(), "local", []string{localItem.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if localItems, _ = mgr.InboxItems(t.Context(), "local"); len(localItems) != 0 {
@@ -210,7 +211,7 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	if remoteItems, _ = mgr.InboxItems(t.Context(), "remote-1"); len(remoteItems) != 1 {
 		t.Fatalf("remote item archived through local owner: %#v", remoteItems)
 	}
-	if err := mgr.ArchiveInboxItems(t.Context(), "remote-1", []string{remoteItem.ID}, false); err != nil {
+	if err := mgr.ArchiveInboxItems(t.Context(), "remote-1", []string{remoteItem.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if remoteItems, _ = mgr.InboxItems(t.Context(), "remote-1"); len(remoteItems) != 0 {
@@ -218,19 +219,6 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	}
 	if archived, err := mgr.ArchivedInboxItems(t.Context(), "remote-1"); err != nil || len(archived) != 1 || archived[0].ID != remoteItem.ID {
 		t.Fatalf("remote archive = %+v, %v", archived, err)
-	}
-	read, err := localStore.CreateSessionInboxItem(t.Context(), "read", "body", state.InboxGeneral, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := localStore.MarkInboxItemRead(t.Context(), read.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := mgr.ArchiveInboxItems(t.Context(), "local", nil, true); err != nil {
-		t.Fatal(err)
-	}
-	if localItems, _ = mgr.InboxItems(t.Context(), "local"); len(localItems) != 0 {
-		t.Fatalf("local read items after archive = %#v", localItems)
 	}
 }
 
@@ -271,7 +259,7 @@ func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 		if _, err := mgr.ArchivedInboxItems(t.Context(), source); !errors.Is(err, platforms.ErrRemoteOffline) {
 			t.Errorf("ArchivedInboxItems source %q = %v", source, err)
 		}
-		if err := mgr.ArchiveInboxItems(t.Context(), source, []string{item.ID}, false); !errors.Is(err, platforms.ErrRemoteOffline) {
+		if err := mgr.ArchiveInboxItems(t.Context(), source, []string{item.ID}); !errors.Is(err, platforms.ErrRemoteOffline) {
 			t.Errorf("ArchiveInboxItems source %q = %v, want ErrRemoteOffline", source, err)
 		}
 	}

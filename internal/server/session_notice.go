@@ -72,8 +72,8 @@ func parseRateLimitNotice(msg string, at int64) (*parsedRateLimit, bool) {
 
 	// Try to extract retry delay and attempt from the bracket suffix.
 	if m := retrySuffixRe.FindStringSubmatch(msg); m != nil {
-		if delay, ok := parseDuration(m[1]); ok {
-			result.RetryAt = at + delay
+		if delay, err := time.ParseDuration(m[1]); err == nil {
+			result.RetryAt = at + delay.Milliseconds()
 		}
 		if len(m) > 2 && m[2] != "" {
 			if n, err := strconv.Atoi(m[2]); err == nil {
@@ -104,8 +104,8 @@ func parseProviderOverloadNotice(msg string, at int64) (*parsedProviderOverload,
 
 	result := &parsedProviderOverload{Message: msg}
 	if m := retrySuffixRe.FindStringSubmatch(msg); m != nil {
-		if delay, ok := parseDuration(m[1]); ok {
-			result.RetryAt = at + delay
+		if delay, err := time.ParseDuration(m[1]); err == nil {
+			result.RetryAt = at + delay.Milliseconds()
 		}
 		if len(m) > 2 && m[2] != "" {
 			if n, err := strconv.Atoi(m[2]); err == nil {
@@ -115,29 +115,6 @@ func parseProviderOverloadNotice(msg string, at int64) (*parsedProviderOverload,
 		result.Message = strings.TrimSpace(retrySuffixRe.ReplaceAllString(msg, ""))
 	}
 	return result, true
-}
-
-// parseDuration converts a compact duration string like "5m", "30s",
-// or "2h" into milliseconds. Returns (0, false) for unrecognized input.
-func parseDuration(s string) (int64, bool) {
-	if len(s) < 2 {
-		return 0, false
-	}
-	unit := s[len(s)-1]
-	n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
-	if err != nil || n < 0 {
-		return 0, false
-	}
-	switch unit {
-	case 's':
-		return n * 1000, true
-	case 'm':
-		return n * 60 * 1000, true
-	case 'h':
-		return n * 60 * 60 * 1000, true
-	default:
-		return 0, false
-	}
 }
 
 // deriveSessionNotice returns a SessionNotice for an error or an active

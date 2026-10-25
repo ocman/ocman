@@ -151,8 +151,8 @@ func TestRoutesUseServerGuards(t *testing.T) {
 			t.Errorf("POST %s = %d, want the auth guard's 401", path, rec.Code)
 		}
 	}
-	if rec := serve(mux, http.MethodGet, "/api/subscription-usage", ""); rec.Code != http.StatusUnauthorized || local.Load() != 1 {
-		t.Fatalf("subscription usage = %d (localhost guard calls %d)", rec.Code, local.Load())
+	if rec := serve(mux, http.MethodGet, "/api/provider-usage", ""); rec.Code != http.StatusUnauthorized || local.Load() != 1 {
+		t.Fatalf("provider usage = %d (localhost guard calls %d)", rec.Code, local.Load())
 	}
 	// A wrong method answers 405 before any guard runs.
 	before := auth.Load()

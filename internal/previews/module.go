@@ -1,7 +1,6 @@
 // Package previews is the link-preview feature module: the provider catalog,
 // sign-in apps, pasted tokens and OAuth grants, the custom link rules, the
-// resolve endpoint that turns transcript text into previews, and the forge
-// integration status.
+// resolve endpoint that turns transcript text into previews.
 //
 // Previews resolve on this machine (the hub) with this machine's
 // credentials; nothing is routed to remotes. Fetching, caching, rate-limit
@@ -14,7 +13,6 @@ package previews
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/linkpreview"
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/previewauth"
@@ -56,8 +54,7 @@ type Deps struct {
 	Resolvers []linkpreview.Resolver
 }
 
-// Module serves /api/previews/*, /api/settings/link-preview-rules and
-// /api/integrations/status.
+// Module serves /api/previews/* and /api/settings/link-preview-rules.
 type Module struct {
 	Deps
 	built builtState
@@ -71,7 +68,6 @@ func (m *Module) Name() string { return "previews" }
 // method-pattern routes do, so a wrong method is 405 for every caller.
 func (m *Module) Routes(r module.Router) {
 	guard := m.withStore
-	r.Handle("GET /api/integrations/status", m.handleIntegrationsStatus)
 	// Machine credentials for private previews (auth.go).
 	r.Handle("GET /api/previews/providers", guard(m.handlePreviewProviders))
 	r.Handle("POST /api/previews/connect", guard(m.handlePreviewConnect))
@@ -101,20 +97,4 @@ func (m *Module) forges() Forges {
 		return Forges{}
 	}
 	return m.Forges()
-}
-
-// handleIntegrationsStatus reports whether the hub's GitHub client is
-// authenticated and the configured Forgejo hosts, so the frontend knows
-// which hostnames to scan for previewable links (GitHub's host is fixed;
-// Forgejo's are dynamic).
-func (m *Module) handleIntegrationsStatus(w http.ResponseWriter, _ *http.Request) {
-	f := m.forges()
-	hosts := []string{}
-	for _, l := range f.Forgejo {
-		hosts = append(hosts, l.Host)
-	}
-	httpx.WriteJSON(w, map[string]any{
-		"github":  map[string]any{"available": true, "authenticated": f.GitHubToken != ""},
-		"forgejo": map[string]any{"available": len(hosts) > 0, "hosts": hosts},
-	})
 }

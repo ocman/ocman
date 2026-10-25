@@ -209,25 +209,9 @@ func (m *Module) handleInboxRead(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (m *Module) handleInboxArchive(w http.ResponseWriter, r *http.Request, allRead bool) {
+func (m *Module) handleInboxArchive(w http.ResponseWriter, r *http.Request) {
 	var req inboxMutationRequest
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
-		return
-	}
-	if allRead {
-		if req.RemoteID == "" {
-			http.Error(w, "remoteId is required", http.StatusBadRequest)
-			return
-		}
-		if !m.inboxOwnerAvailable(req.RemoteID) {
-			writeInboxOwnerError(w, req.RemoteID)
-			return
-		}
-		if err := m.inboxArchive(r.Context(), req.RemoteID, nil, true); err != nil {
-			httpx.ServerError(w, "archiving read Inbox items", err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	refs := append([]inboxRef{}, req.Items...)
@@ -263,7 +247,7 @@ func (m *Module) handleInboxArchive(w http.ResponseWriter, r *http.Request, allR
 		}
 	}
 	for source, ids := range groups {
-		if err := m.inboxArchive(r.Context(), source, ids, false); err != nil {
+		if err := m.inboxArchive(r.Context(), source, ids); err != nil {
 			httpx.ServerError(w, "archiving Inbox items", err)
 			return
 		}
@@ -291,12 +275,9 @@ func (m *Module) inboxMarkUnread(ctx context.Context, source, id string) error {
 	}
 	return m.Store.MarkInboxItemUnread(ctx, id)
 }
-func (m *Module) inboxArchive(ctx context.Context, source string, ids []string, allRead bool) error {
+func (m *Module) inboxArchive(ctx context.Context, source string, ids []string) error {
 	if r := m.remotes(); r != nil {
-		return r.ArchiveInboxItems(ctx, source, ids, allRead)
-	}
-	if allRead {
-		return m.Store.ArchiveAllReadInboxItems(ctx)
+		return r.ArchiveInboxItems(ctx, source, ids)
 	}
 	return m.Store.ArchiveInboxItems(ctx, ids)
 }

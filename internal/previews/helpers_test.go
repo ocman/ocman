@@ -54,7 +54,7 @@ func registerForgejoClient(h *harness, host, apiBase string) {
 }
 
 // Without a state DB every credential and rule route answers 503 instead of
-// panicking; the integration status needs none.
+// panicking.
 func TestRoutesWithoutStore(t *testing.T) {
 	mux := harnessOn(nil).mux()
 	for _, c := range []struct{ method, target string }{
@@ -69,11 +69,6 @@ func TestRoutesWithoutStore(t *testing.T) {
 		if rr.Code != http.StatusServiceUnavailable {
 			t.Errorf("%s %s = %d", c.method, c.target, rr.Code)
 		}
-	}
-	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/integrations/status", nil))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d", rr.Code)
 	}
 }
 

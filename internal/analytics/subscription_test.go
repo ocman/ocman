@@ -75,7 +75,7 @@ func TestSubscriptionUsageRoute(t *testing.T) {
 	}
 	mux := routesWith(srv, module.Guards{Localhost: loopbackOnly})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/subscription-usage", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/provider-usage", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -100,7 +100,7 @@ func TestSubscriptionUsageRoute(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, "/api/subscription-usage", nil)
+	req = httptest.NewRequest(http.MethodPost, "/api/provider-usage", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -108,7 +108,7 @@ func TestSubscriptionUsageRoute(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/subscription-usage", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/provider-usage", nil))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("non-loopback status = %d", rec.Code)
 	}
@@ -155,7 +155,7 @@ func TestSubscriptionUsageRejectsMalformedAuthFile(t *testing.T) {
 	srv.subscription.authPath = authPath
 	mux := routesWith(srv, module.Guards{Localhost: loopbackOnly})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/subscription-usage", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/provider-usage", nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), authPath) {
