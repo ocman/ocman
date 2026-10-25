@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { featureTitle } from '../features';
 import { shortPath } from './format';
 
@@ -12,7 +13,7 @@ const TITLES: Record<string, string> = {
   '/import-share': 'Fork shared conversation',
 };
 
-export function routeTitle(path: string, sessionTitle?: string): string {
+export function routeTitle(path: string, sessionTitle?: string): ReactNode {
   if (path === '/analytics' || path.startsWith('/analytics/')) return 'Analytics';
   const feature = featureTitle(path);
   if (feature) return feature;

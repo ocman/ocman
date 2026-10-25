@@ -23,8 +23,9 @@ type PageColumn struct {
 }
 
 type PageRow struct {
-	ID     string         `json:"id"`
-	Values map[string]any `json:"values"`
+	ID        string         `json:"id"`
+	Values    map[string]any `json:"values"`
+	ProjectID string         `json:"projectId,omitempty"` // 1.2: open a configuration in this project context
 }
 
 type PageCollection struct {
@@ -53,7 +54,7 @@ type PageIssue struct {
 func (d Description) PageVersion() Version {
 	for _, c := range d.Capabilities {
 		if c.Name == "page" && c.Version.Major == 1 {
-			return Version{Major: 1, Minor: min(c.Version.Minor, 1)}
+			return Version{Major: 1, Minor: min(c.Version.Minor, 2)}
 		}
 	}
 	return Version{}
@@ -106,7 +107,7 @@ func validPageContent(p PageDocument) bool {
 			keys[col.Key] = true
 		}
 		for _, row := range c.Rows {
-			if !validName(row.ID) || ids[row.ID] || len(row.Values) != len(c.Columns) {
+			if !validName(row.ID) || ids[row.ID] || len(row.Values) != len(c.Columns) || (ActionContext{ProjectID: row.ProjectID}).Validate() != nil {
 				return false
 			}
 			ids[row.ID] = true
@@ -132,6 +133,13 @@ func validPageContent(p PageDocument) bool {
 
 // ValidatePageVersion prevents new features leaking onto a 1.0 connection.
 func ValidatePageVersion(p PageDocument, version Version) error {
+	if version.Minor < 2 && p.Collection != nil {
+		for _, row := range p.Collection.Rows {
+			if row.ProjectID != "" {
+				return ErrInvalidMessage
+			}
+		}
+	}
 	if version.Minor >= 1 {
 		return nil
 	}

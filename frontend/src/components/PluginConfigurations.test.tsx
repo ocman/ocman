@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { PluginConfigurations } from './PluginConfigurations';
+import { CONFIGURATION_TIMEOUT_MS, PluginConfigurations } from './PluginConfigurations';
 
 const mocks = vi.hoisted(() => ({ sessions: vi.fn(), read: vi.fn() }));
 vi.mock('../lib/api', () => ({ api: { sessions: mocks.sessions } }));
@@ -35,6 +35,35 @@ it('reads configurations serially to respect plugins with one call slot', async 
   fireEvent.click(await screen.findByRole('button', { name: 'Open configuration for /two' }));
   expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'two', directory: '/two' }));
   expect(screen.getByText('Target to scan: staging')).toBeInTheDocument();
+});
+
+it('shows a loaded configuration while a later project is still loading', async () => {
+  mocks.sessions.mockImplementation(({ dir }: { dir: string }) => dir === '/slow'
+    ? new Promise(() => {})
+    : Promise.resolve([{ directory: dir, remoteId: 'machine', projectId: 'ready' }]));
+  mount(['/ready', '/slow']);
+  await vi.waitFor(() => expect(mocks.sessions).toHaveBeenCalledTimes(2));
+  expect(await screen.findByRole('button', { name: 'Open configuration for /ready' })).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('1/2 projects checked');
+});
+
+it.each(['identity', 'page'])('times out a stalled %s request and continues to the next project', async (stage) => {
+  vi.useFakeTimers();
+  try {
+    if (stage === 'identity') mocks.sessions.mockImplementationOnce(() => new Promise(() => {}));
+    else mocks.read.mockImplementationOnce(() => new Promise(() => {}));
+    const view = mount(['/stalled', '/ready']);
+    await act(async () => {});
+    const signal = stage === 'identity' ? mocks.sessions.mock.calls[0][1] : mocks.read.mock.calls[0][4];
+    await act(async () => { await vi.advanceTimersByTimeAsync(CONFIGURATION_TIMEOUT_MS + 1); });
+    expect(signal.aborted).toBe(true);
+    expect(screen.getByRole('button', { name: 'Open configuration for /ready' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Some configurations could not be loaded');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    view.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('keeps readable configurations visible when another project identity cannot be resolved', async () => {

@@ -96,18 +96,20 @@ func (m *Module) dispatchPluginPage(ctx context.Context, id, method string, raw 
 		err = plugins.ErrUnavailable
 	} else {
 		err = m.store.WithPluginAuthorization(ctx, id, func(d plugins.Description, grants []string) error {
-			if !d.PageAllowed(req.PageID, grants) {
+			if !d.PageAllowed(req.PageID, grants) || !d.PageRequestAllowed(req) {
 				return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 			}
 			version = d.PageVersion()
 			if err := plugins.ValidatePageCall(method, req, version); err != nil {
 				return err
 			}
-			if m.deps.ProjectDirectory == nil {
+			if req.ProjectID != "" && m.deps.ProjectDirectory == nil {
 				return plugins.ErrUnavailable
 			}
-			if directory, e := m.deps.ProjectDirectory(ctx, req.ProjectID); e != nil || directory == "" {
-				return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
+			if req.ProjectID != "" {
+				if directory, e := m.deps.ProjectDirectory(ctx, req.ProjectID); e != nil || directory == "" {
+					return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
+				}
 			}
 			p := m.processes[id]
 			if p == nil {
@@ -136,7 +138,7 @@ func (m *Module) dispatchPluginPage(ctx context.Context, id, method string, raw 
 			return plugins.PageDocument{}, result.Error
 		}
 		err = m.store.WithPluginAuthorization(ctx, id, func(d plugins.Description, g []string) error {
-			if !d.PageAllowed(req.PageID, g) {
+			if !d.PageAllowed(req.PageID, g) || !d.PageRequestAllowed(req) {
 				return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 			}
 			return nil

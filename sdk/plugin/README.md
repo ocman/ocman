@@ -70,6 +70,13 @@ See
 
 ## Host-rendered workspaces
 
+For plugin-local storage and a single homepage read without project discovery,
+use `PluginPageCapability` for page 1.2, request `PagePluginGrant`, and declare
+`PageDescriptor{Scope: "plugin"}`. The homepage request has no project identity.
+Explicit project IDs still receive owner-local authorization. Collection rows
+can carry `ProjectID` to link to a scoped editor. Session and action grants are
+unchanged. The contribution guide explains the compatibility and trust rules.
+
 For forms, lists, item details and submit-time validation, declare
 `PageContributionCapability` for page 1.1. The full supported contract and
 getting-started example are in the [contribution guide](../../docs/features/plugin-contributions.md)

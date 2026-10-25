@@ -1294,8 +1294,9 @@ flowchart TD
   raw stdio messages. Both transports use the same lifecycle and action broker.
   Catalog identities are `(ownerId, description.id)`; nested capabilities and
   instances inherit that owner. Management and artifact endpoints take `ownerId`.
-  Plugin workspace homepages read typed documents for the owner's known projects
-  and list saved configurations. Editors reuse the app project picker for
+  Project-scoped workspace homepages read typed documents for known projects.
+  Plugin-local homepages instead list configurations with one owner-routed read,
+  without enumerating projects. Editors reuse the app project picker for
   owner-local multi-project fields; plugin responses remain data, never UI code.
   Action requests distinguish the installation `ownerId` from `context.ownerId`.
   Project/session listings combine the owner's owner-scoped actions with the hub's
@@ -2088,7 +2089,7 @@ flowchart LR
     Navigation --> Catalog[Owner-qualified page declarations]
     Navigation --> Page[Host-rendered typed page]
     Page --> API[Authenticated read/save API<br/>project, item and cursor identities]
-    API --> Owner[Executing owner authorization and project lookup]
+    API --> Owner[Executing owner authorization<br/>project lookup only for explicit IDs]
     Owner --> Process[Plugin read/validate/save<br/>host static rules before save]
     Process --> Files[Plugin-private target configuration]
     Page --> Actions[Existing action confirmation and results]
@@ -2102,8 +2103,12 @@ flowchart LR
   the current schema, checks the revision and static rules, then runs an optional
   validation hook before saving. Errors retain browser drafts; failed validation
   never dispatches a save. See the [contribution guide](../features/plugin-contributions.md).
-- The owner checks approved declarations, enablement and the `page.project`
-  grant under the lifecycle lock and resolves opaque project IDs locally.
+- Page 1.2 adds plugin-local homepages with the `page.plugin` grant. These read
+  one plugin-owned registry without project enumeration. Collection links can
+  enter an owner-validated project editor; project actions retain their existing
+  authorization and model-session context. Project-scoped pages remain unchanged.
+- The owner checks approved declarations, enablement and the page's `page.project`
+  or `page.plugin` grant under the lifecycle lock and resolves explicit opaque project IDs locally.
   Disabled, revoked and offline owners cannot silently reuse another owner's data.
 - Plugins own private storage and secret redaction. Browser drafts remain local
   to the selected owner/project. Save is explicit and never automatically retried;

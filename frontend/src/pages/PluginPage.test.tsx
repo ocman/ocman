@@ -30,6 +30,26 @@ function mount(path = '/plugins/org.example.pentest/pentest?ownerId=machine') {
   return client;
 }
 
+it('reads a plugin-local homepage once without enumerating project configurations', async () => {
+  mocks.pages = [{ pluginId: 'org.example.pentest', ownerId: 'machine', page: { id: 'pentest', label: 'Pentest', scope: 'plugin' } }];
+  mocks.call.mockResolvedValue({ revision: 'r1', fields: [], values: {}, tree: {}, collection: {
+    title: 'Saved targets', columns: [{ key: 'name', label: 'Name', display: 'text' }],
+    rows: [{ id: 'config-a', projectId: 'project-a', values: { name: 'Staging targets' } }],
+  } });
+  mount();
+  expect(await screen.findByText('Staging targets')).toBeInTheDocument();
+  expect(mocks.sessions).not.toHaveBeenCalled();
+  expect(mocks.actions).not.toHaveBeenCalled();
+  expect(mocks.call).toHaveBeenCalledTimes(1);
+  expect(mocks.call).toHaveBeenCalledWith(mocks.pages[0], '', 'read', undefined, expect.any(AbortSignal));
+  expect(screen.getByRole('link', { name: 'View config-a' })).toHaveAttribute('href', '/plugins/org.example.pentest/pentest?ownerId=machine&projectId=project-a');
+  fireEvent.click(screen.getByRole('link', { name: 'View config-a' }));
+  await waitFor(() => expect(mocks.call).toHaveBeenLastCalledWith(mocks.pages[0], 'project-a', 'read', undefined, expect.any(AbortSignal)));
+  fireEvent.click(screen.getByRole('button', { name: 'Back to configurations' }));
+  expect(await screen.findByText('Staging targets')).toBeInTheDocument();
+  expect(mocks.sessions).not.toHaveBeenCalled();
+});
+
 it('routes reads and saves to the selected owner and clears passwords after save', async () => {
   const client = mount();
   expect(screen.queryByLabelText('Project')).not.toBeInTheDocument();

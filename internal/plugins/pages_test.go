@@ -64,7 +64,7 @@ func TestPageDataIsBoundedAndTyped(t *testing.T) {
 			}
 		})
 	}
-	for _, raw := range []string{`{"pageId":"workspace","projectId":"../bad"}`, `{"pageId":"workspace"}`, `{"pageId":"workspace","projectId":"project-a","directory":"/etc"}`} {
+	for _, raw := range []string{`{"pageId":"workspace","projectId":"../bad"}`, `{"pageId":"workspace","projectId":"project-a","directory":"/etc"}`} {
 		if _, err := DecodePageRequest([]byte(raw)); err == nil {
 			t.Fatal("invalid page context accepted")
 		}

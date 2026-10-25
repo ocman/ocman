@@ -145,6 +145,9 @@ func ValidatePageInput(fields []PageField, values map[string]any) []PageIssue {
 }
 
 func ValidatePageCall(method string, req PageRequest, version Version) error {
+	if version.Minor < 2 && req.ProjectID == "" {
+		return ErrInvalidMessage
+	}
 	if method != "read" && method != "save" && method != "validate" {
 		return ErrInvalidMessage
 	}

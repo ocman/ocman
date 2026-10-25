@@ -29,7 +29,7 @@ import { SpeechSettings } from '../components/SpeechSettings';
 import { HookPluginSettings } from '../components/HookPluginSettings';
 import { MaintenanceSettings } from '../components/MaintenanceSettings';
 import { PluginPage } from '../pages/PluginPage';
-import { PluginPageNav } from '../components/PluginPageNav';
+import { PluginPageNav, PluginPageTitle } from '../components/PluginPageNav';
 import { BackgroundTasks } from '../pages/BackgroundTasks';
 import { ApplicationHealthSettings } from '../components/ApplicationHealthSettings';
 
@@ -49,7 +49,7 @@ export interface FeatureRoute {
   /** `dashboard` pages share DashboardLayout; `page` pages only the padding. */
   layout: 'dashboard' | 'page';
   /** Header title for this exact path. */
-  title?: string;
+  title?: ReactNode;
 }
 
 export interface Feature {
@@ -57,7 +57,7 @@ export interface Feature {
   id: string;
   routes?: FeatureRoute[];
   /** Header title for every other path under this prefix. */
-  titlePrefix?: { prefix: string; title: string };
+  titlePrefix?: { prefix: string; title: ReactNode };
   /** activePrefix also marks the link active for sub-pages outside `to`. */
   nav?: { to: string; label: string; icon: string; activePrefix?: string };
   /**
@@ -77,7 +77,7 @@ export interface Feature {
 }
 
 export const FEATURES: Feature[] = [
-  { id: 'plugin-pages', routes: [{ path: '/plugins/:pluginId/:pageId', element: <PluginPage />, layout: 'page', title: 'Plugin workspace' }], Navigation: PluginPageNav, titlePrefix: { prefix: '/plugins/', title: 'Plugin workspace' } },
+  { id: 'plugin-pages', routes: [{ path: '/plugins/:pluginId/:pageId', element: <PluginPage />, layout: 'page', title: <PluginPageTitle /> }], Navigation: PluginPageNav, titlePrefix: { prefix: '/plugins/', title: <PluginPageTitle /> } },
   {
     id: 'background-tasks',
     routes: [{ path: '/background-tasks', element: <BackgroundTasks />, layout: 'dashboard', title: 'Background tasks' }],
@@ -143,7 +143,7 @@ export const featureNavigation = FEATURES.flatMap((f) => f.Navigation ? [f.Navig
 export const featureSettings = FEATURES.flatMap((f) => (f.settings ? [f.settings] : []));
 
 /** Header title a feature gives `path`, or undefined when no feature owns it. */
-export function featureTitle(path: string): string | undefined {
+export function featureTitle(path: string): ReactNode {
   for (const feature of FEATURES) {
     const route = feature.routes?.find((r) => r.path === path && r.title);
     if (route) return route.title;

@@ -21,7 +21,7 @@ export function PluginPage() {
   const ownerId = search.get('ownerId') || 'local';
   const catalog = usePluginPages();
   const page = catalog.pages.find((p) => p.ownerId === ownerId && p.pluginId === pluginId && p.page.id === pageId);
-  if (!page) return <p role="status">{catalog.loading ? 'Loading plugin…' : 'Plugin unavailable. Check its owner, enablement and page.project grant in Settings.'}</p>;
+  if (!page) return <p role="status">{catalog.loading ? 'Loading plugin…' : 'Plugin unavailable. Check its owner, enablement and page grant in Settings.'}</p>;
   return <Workspace key={`${ownerId}/${pluginId}/${pageId}`} page={page} />;
 }
 
@@ -51,7 +51,11 @@ function Workspace({ page }: { page: Page }) {
         <ProjectScopePicker projects={choices} value="" onlyProjects label="Configuration project" placeholder="Choose a project…"
           onChange={(dir) => { if (choices.some((p) => p.directory === dir)) setDirectory(dir); }} />
         <Button onClick={() => setCreating(false)}>Cancel</Button></div>}
-      <PluginConfigurations page={page} directories={[...new Set(choices.map((p) => p.directory))]} onOpen={setConfiguration} />
+      {page.page.scope === 'plugin'
+        ? <PageEditor page={page} projectId="" itemId={itemId} onBack={() => {
+          const next = new URLSearchParams(search); next.delete('itemId'); setSearch(next);
+        }} />
+        : <PluginConfigurations page={page} directories={[...new Set(choices.map((p) => p.directory))]} onOpen={setConfiguration} />}
     </> : <>
       <div><h2>{shortPath(configuration?.directory ?? directory)}</h2><p>{page.ownerId} · {configuration?.directory ?? directory}</p></div>
       {configuration ? <PageEditor page={page} projectId={configuration.projectId} initialDocument={configuration.document} onBack={back} />
@@ -90,7 +94,7 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
   const [draft, setDraft] = useState<PageDocument | null>(null);
   const [message, setMessage] = useState('');
   const [action, setAction] = useState<{ label: string; request: PluginActionRequest } | null>(null);
-  const actions = useQuery({ queryKey: ['plugin-page-actions', page.ownerId, page.pluginId, projectId], retry: false,
+  const actions = useQuery({ queryKey: ['plugin-page-actions', page.ownerId, page.pluginId, projectId], retry: false, enabled: !!projectId,
     queryFn: ({ signal }) => pluginActions.list('project', { ownerId: page.ownerId, projectId }, signal) });
   const current = draft ?? document.data;
   async function save() {
@@ -118,7 +122,7 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
     <p role={document.isError ? 'alert' : 'status'}>{document.isError ? 'Could not read this workspace or item. Check that it still exists and the owner is available.' : 'Loading workspace…'}</p>
     <Button onClick={() => void document.refetch()}>Retry</Button></>;
   return <>
-    <Button disabled={busy} onClick={() => { if (!draft || window.confirm('Discard unsaved edits?')) onBack(); }}>{itemId ? 'Back to list' : 'Back to configurations'}</Button>
+    {(projectId || itemId) && <Button disabled={busy} onClick={() => { if (!draft || window.confirm('Discard unsaved edits?')) onBack(); }}>{itemId ? 'Back to list' : 'Back to configurations'}</Button>}
     <PluginPageContent page={page} projectId={projectId} document={current} disabled={busy || !!draft} cursor={cursor} onCursor={setCursor} />
     {!!current.fields?.length && <fieldset disabled={busy} className="plugin-page-editor">
       <PluginPageFields fields={current.fields} values={current.values} ownerId={page.ownerId} issues={issues} onChange={(values) => { setMessage(''); setIssues([]); setDraft({ ...current, values }); }} />
@@ -127,11 +131,11 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
     </fieldset>}
     {message && <p role="status">{message}</p>}
     {issues.length > 0 && <ul aria-label="Validation errors">{issues.map((issue, i) => <li key={i}>{issue.path || 'Form'}: {issue.message}</li>)}</ul>}
-    <h2>Actions</h2>
+    {projectId && <><h2>Actions</h2>
     <p>Save changes before running an action. Required confirmations still apply.</p>
     <ButtonGroup label="Plugin actions">{actions.data?.filter((a) => a.pluginId === page.pluginId && a.action.id !== 'project-config').map((a) =>
       <Button key={a.action.id} disabled={busy || !!draft} onClick={() => run(a)}>{a.action.label}</Button>)}</ButtonGroup>
-    {actions.isError && <p role="alert">Could not load plugin actions.</p>}
+    {actions.isError && <p role="alert">Could not load plugin actions.</p>}</>}
     <h2>Results</h2>
     <PluginTreePane status={document.data?.tree ?? current.tree} label="Results" loading={document.isFetching} error={document.error} refresh={() => document.refetch()} />
     {action && <PluginActionDialog label={action.label} request={action.request} onClose={() => { setAction(null); void document.refetch(); }} />}

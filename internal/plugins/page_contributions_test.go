@@ -23,7 +23,7 @@ func TestPageContributionDeclarationAndVersion(t *testing.T) {
 		t.Fatal("1.1 page denied")
 	}
 	d.Capabilities[0].Version.Minor = 5
-	if d.PageVersion() != PageContributionCapability.Version {
+	if d.PageVersion() != PluginPageCapability.Version {
 		t.Fatal("unsupported minor selected")
 	}
 	d.Capabilities = nil
@@ -50,6 +50,7 @@ func TestPageContributionDeclarationAndVersion(t *testing.T) {
 		{"read", PageRequest{Cursor: "next"}, 1, true}, {"save", PageRequest{Cursor: "next"}, 1, false},
 		{"read", PageRequest{Values: json.RawMessage(`{}`)}, 1, false},
 	} {
+		tc.req.ProjectID = "project-a"
 		if (ValidatePageCall(tc.method, tc.req, Version{Major: 1, Minor: tc.minor}) == nil) != tc.valid {
 			t.Fatalf("call %+v", tc)
 		}

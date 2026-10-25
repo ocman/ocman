@@ -21,7 +21,7 @@ func (m *Module) validatePluginPageSave(ctx context.Context, id string, raw json
 		err = plugins.ErrUnavailable
 	} else {
 		err = m.store.WithPluginAuthorization(ctx, id, func(d plugins.Description, grants []string) error {
-			if !d.PageAllowed(req.PageID, grants) {
+			if !d.PageAllowed(req.PageID, grants) || !d.PageRequestAllowed(req) {
 				return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 			}
 			version = d.PageVersion()

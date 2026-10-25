@@ -8,12 +8,17 @@ import (
 var PageCapability = Capability{Name: "page", Version: Version{Major: 1}}
 
 const PageProjectGrant = "page.project"
+const PagePluginGrant = "page.plugin"
+
+// PluginPageCapability allows a plugin-local homepage without a project lookup.
+var PluginPageCapability = Capability{Name: "page", Version: Version{Major: 1, Minor: 2}}
 
 // Pages contain bounded typed data only, never executable browser content.
 type PageDescriptor struct {
 	ID       string `json:"id"`
 	Label    string `json:"label"`
 	Validate bool   `json:"validate,omitempty"`
+	Scope    string `json:"scope,omitempty"` // empty/project, or plugin
 }
 
 type PageRequest struct {
@@ -55,12 +60,12 @@ type PageDocument struct {
 
 func (d Description) validatePages() error {
 	has := d.PageVersion().Major == 1
-	if len(d.Pages) > 8 || !has && len(d.Pages) > 0 || has && (d.Scope != ScopeOwner || len(d.Pages) == 0 || !slices.Contains(d.RequestedGrants, PageProjectGrant)) {
+	if len(d.Pages) > 8 || !has && len(d.Pages) > 0 || has && (d.Scope != ScopeOwner || len(d.Pages) == 0) {
 		return ErrInvalidMessage
 	}
 	seen := map[string]bool{}
 	for _, p := range d.Pages {
-		if !validName(p.ID) || !validText(p.Label) || seen[p.ID] || p.Validate && d.PageVersion().Minor < 1 {
+		if !validName(p.ID) || !validText(p.Label) || seen[p.ID] || p.Validate && d.PageVersion().Minor < 1 || !slices.Contains([]string{"", "project", "plugin"}, p.Scope) || p.Scope == "plugin" && d.PageVersion().Minor < 2 || !slices.Contains(d.RequestedGrants, pageGrant(p)) {
 			return ErrInvalidMessage
 		}
 		seen[p.ID] = true
@@ -69,12 +74,26 @@ func (d Description) validatePages() error {
 }
 
 func (d Description) PageAllowed(id string, grants []string) bool {
-	return d.Scope == ScopeOwner && d.PageVersion().Major == 1 && slices.Contains(grants, PageProjectGrant) && slices.ContainsFunc(d.Pages, func(p PageDescriptor) bool { return p.ID == id })
+	return d.Scope == ScopeOwner && d.PageVersion().Major == 1 && slices.ContainsFunc(d.Pages, func(p PageDescriptor) bool { return p.ID == id && slices.Contains(grants, pageGrant(p)) })
+}
+
+func pageGrant(p PageDescriptor) string {
+	if p.Scope == "plugin" {
+		return PagePluginGrant
+	}
+	return PageProjectGrant
+}
+
+// Missing project identity is admitted only on an explicitly plugin-local page.
+func (d Description) PageRequestAllowed(req PageRequest) bool {
+	return slices.ContainsFunc(d.Pages, func(p PageDescriptor) bool {
+		return p.ID == req.PageID && (req.ProjectID != "" || p.Scope == "plugin")
+	})
 }
 
 func DecodePageRequest(raw []byte) (PageRequest, error) {
 	var p PageRequest
-	if decodePaneJSON(raw, &p) != nil || !validName(p.PageID) || p.ProjectID == "" || (ActionContext{ProjectID: p.ProjectID}).Validate() != nil || len(p.Revision) > 128 || p.ItemID != "" && !validName(p.ItemID) || !validPageCursor(p.Cursor) {
+	if decodePaneJSON(raw, &p) != nil || !validName(p.PageID) || (ActionContext{ProjectID: p.ProjectID}).Validate() != nil || len(p.Revision) > 128 || p.ItemID != "" && !validName(p.ItemID) || !validPageCursor(p.Cursor) {
 		return p, ErrInvalidMessage
 	}
 	if len(p.Values) > 0 && !json.Valid(p.Values) {

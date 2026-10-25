@@ -1,6 +1,14 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { pageURL, usePluginPages } from '../lib/pluginPages';
 
+export function PluginPageTitle() {
+  const { pages } = usePluginPages();
+  const location = useLocation();
+  const owner = new URLSearchParams(location.search).get('ownerId') || 'local';
+  const page = pages.find((p) => p.ownerId === owner && pageURL(p).split('?')[0] === location.pathname);
+  return <>{page?.page.label ?? 'Plugin workspace'}</>;
+}
+
 export function PluginPageNav({ onNavigate, replace }: { onNavigate?: () => void; replace?: boolean }) {
   const { pages } = usePluginPages();
   const location = useLocation();

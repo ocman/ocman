@@ -7,9 +7,31 @@ import { HeaderContext, type HeaderInfo } from '../lib/headerContext';
 import { AppHeader } from './AppHeader';
 
 const inventory = vi.hoisted(() => ({ projects: [] as { directory: string; remoteId?: string; remoteName?: string }[] }));
+const plugins = vi.hoisted(() => ({ pages: [] as { ownerId: string; pluginId: string; page: { id: string; label: string } }[] }));
+vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(), usePluginPages: () => ({ pages: plugins.pages }) }));
 vi.mock('../lib/queries', () => ({ useProjects: () => ({ data: inventory.projects }) }));
 vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: () => true, useMultiHost: () => false }));
-beforeEach(() => { inventory.projects = []; });
+beforeEach(() => { inventory.projects = []; plugins.pages = []; });
+
+it('uses the plugin-declared title for the matching owner and page', () => {
+  plugins.pages = [
+    { ownerId: 'local', pluginId: 'org.example.pentest', page: { id: 'targets', label: 'Local targets' } },
+    { ownerId: 'machine', pluginId: 'org.example.pentest', page: { id: 'targets', label: 'Pentest targets' } },
+  ];
+  render(<MemoryRouter initialEntries={['/plugins/org.example.pentest/targets?ownerId=machine&projectId=project-a']}><AppHeader onOpenNav={vi.fn()} /></MemoryRouter>);
+  expect(screen.getByTestId('header-breadcrumb')).toHaveTextContent('Pentest targets');
+});
+
+it.each([
+  ['/plugins/org.example.pentest/targets', 'Pentest'],
+  ['/plugins/org.example.pentest/other', 'Plugin workspace'],
+  ['/plugins/org.example.other/targets', 'Plugin workspace'],
+  ['/plugins/org.example.pentest/targets?ownerId=offline', 'Plugin workspace'],
+])('resolves the plugin header for %s without borrowing another page title', (path, title) => {
+  plugins.pages = [{ ownerId: 'local', pluginId: 'org.example.pentest', page: { id: 'targets', label: 'Pentest' } }];
+  render(<MemoryRouter initialEntries={[path]}><AppHeader onOpenNav={vi.fn()} /></MemoryRouter>);
+  expect(screen.getByTestId('header-breadcrumb')).toHaveTextContent(title);
+});
 
 it('uses the configured owner name rather than its ID or an identical-path local project', () => {
   inventory.projects = [

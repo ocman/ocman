@@ -59,6 +59,29 @@ See [installation and trust](../plugins/#trust-and-installation).
 
 ## Declare a workspace
 
+The plugin's page `label` names both its main navigation entry and the app header.
+The header uses `Plugin workspace` only when the matching declaration is unavailable.
+
+### Plugin-local homepages in page 1.2
+
+Declare `PluginPageCapability`, request `PagePluginGrant` (`page.plugin`), and
+set the page descriptor's `scope` to `plugin` to store and list configurations
+inside the plugin. Ocman calls that homepage once with an empty `projectId`,
+instead of probing every host project. No project directory is sent or resolved.
+The plugin decides its own private storage layout.
+
+The default scope remains `project`, requires `page.project`, and still rejects
+requests without a known owner-local project. Plugin-local pages may also accept
+an explicit `projectId`; the host resolves and authorizes it before dispatch.
+This supports project-scoped editors, actions and model sessions without making
+the homepage discover their configuration. Neither grant authorizes sessions by
+itself. Existing action and session grants still apply.
+
+A plugin-local collection can set `projectId` on a row to open its project-scoped
+editor instead of an item detail. This is an opaque project ID, never a path.
+The link preserves owner, plugin and page, and the destination is authorized
+on read. Project links and plugin-local scope require a page 1.2 host.
+
 Go plugins import `github.com/NoUseFreak/ocman/sdk/plugin`. The canonical types
 are shared with the host. Declare owner scope, the `page.project` grant and
 `PageContributionCapability` for the 1.1 options:

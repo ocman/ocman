@@ -20,10 +20,12 @@ type PageDetail = plugins.PageDetail
 
 var PageCapability = plugins.PageCapability
 var PageContributionCapability = plugins.PageContributionCapability
+var PluginPageCapability = plugins.PluginPageCapability
 
 var ValidatePageInput = plugins.ValidatePageInput
 
 const PageProjectGrant = plugins.PageProjectGrant
+const PagePluginGrant = plugins.PagePluginGrant
 
 func PageHandler(d Description, handle func(context.Context, string, PageRequest) (PageDocument, error)) Handler {
 	return func(ctx context.Context, call Call, _ func(json.RawMessage) error) (json.RawMessage, error) {
@@ -31,7 +33,7 @@ func PageHandler(d Description, handle func(context.Context, string, PageRequest
 			return nil, Failure(ErrorNotFound)
 		}
 		req, err := plugins.DecodePageRequest(call.Params)
-		if err != nil || !d.PageAllowed(req.PageID, d.RequestedGrants) || plugins.ValidatePageCall(call.Method, req, call.Version) != nil {
+		if err != nil || !d.PageAllowed(req.PageID, d.RequestedGrants) || !d.PageRequestAllowed(req) || plugins.ValidatePageCall(call.Method, req, call.Version) != nil {
 			return nil, Failure(ErrorInvalidArgument)
 		}
 		if call.Method == "validate" {
