@@ -1,4 +1,4 @@
-.plugin-page { display: grid; gap: 1rem; width: 100%; min-width: 0; }
+.plugin-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; width: 100%; min-width: 0; }
 .plugin-page-editor, .plugin-page-list { display: grid; gap: 1rem; min-width: 0; }
 .plugin-page fieldset { border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; }
 .plugin-page-field { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; }

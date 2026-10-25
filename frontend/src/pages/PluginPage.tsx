@@ -142,7 +142,7 @@ function PageEditor({ page, projectId, initialDocument, onBack, itemId = '' }: {
     {issues.length > 0 && <ul aria-label="Validation errors">{issues.map((issue, i) => <li key={i}>{issue.path || 'Form'}: {issue.message}</li>)}</ul>}
     {(projectId || workspaceId) && <><h2>Actions</h2>
     <p>Save changes before running an action. Required confirmations still apply.</p>
-    <ButtonGroup label="Plugin actions">{actions.data?.filter((a) => a.pluginId === page.pluginId && a.action.id !== 'project-config').map((a) =>
+    <ButtonGroup label="Plugin actions">{actions.data?.filter((a) => a.pluginId === page.pluginId).map((a) =>
       <Button key={a.action.id} disabled={busy || !!draft} onClick={() => run(a)}>{a.action.label}</Button>)}</ButtonGroup>
     {actions.isError && <p role="alert">Could not load plugin actions.</p>}</>}
     {(!workspaceHome || !!current.tree?.nodes?.length) && <><h2>Results</h2>
