@@ -72,3 +72,43 @@ func TestDatabaseSizeSamplesUpsertHourlyBucket(t *testing.T) {
 		t.Fatalf("second sample = %+v", samples[1])
 	}
 }
+
+func TestPlatformStorageMigrationPreservesSamples(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := migrateHistoryDatabaseSize(tx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO database_size_sample VALUES ('opencode', 1, 200), ('statev2', 1, 300)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migratePlatformStorage(tx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO database_size_sample VALUES ('claudecode:raw', 1, 400), ('claudecode:index', 1, 100)`); err != nil {
+		t.Fatal(err)
+	}
+	var count, total int
+	if err := tx.QueryRow(`SELECT count(*), sum(size_bytes) FROM database_size_sample`).Scan(&count, &total); err != nil {
+		t.Fatal(err)
+	}
+	if count != 4 || total != 1000 {
+		t.Fatalf("lost samples: count %d total %d", count, total)
+	}
+	for _, query := range []string{
+		`INSERT INTO database_size_sample VALUES ('', 1, 1)`,
+		`INSERT INTO database_size_sample VALUES ('invalid', 1, -1)`,
+	} {
+		if _, err := tx.Exec(query); err == nil {
+			t.Fatalf("invalid sample accepted: %s", query)
+		}
+	}
+}

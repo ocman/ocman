@@ -22,12 +22,15 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
 // Deps is what the server supplies.
 type Deps struct {
+	// Platforms resolves the current registry, including adapters added later.
+	Platforms func() []platforms.Platform
 	// HistoryAnalytics is resolved per request so startup wiring can finish
 	// before the module's lazy dependencies are used.
 	HistoryAnalytics        func() *HistoryAnalytics

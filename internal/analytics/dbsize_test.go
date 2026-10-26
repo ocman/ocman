@@ -5,8 +5,73 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/statev2"
 )
+
+type storagePlatform struct {
+	platforms.Platform
+	items []platforms.StorageSize
+	id    platforms.ID
+	err   error
+}
+
+func (p storagePlatform) ID() platforms.ID {
+	if p.id != "" {
+		return p.id
+	}
+	return "opencode"
+}
+func (p storagePlatform) StorageSizes(context.Context) ([]platforms.StorageSize, error) {
+	return p.items, p.err
+}
+
+func TestCollectPlatformStorageSizes(t *testing.T) {
+	srv := newFixture(t)
+	srv.deps.Platforms = func() []platforms.Platform {
+		return []platforms.Platform{storagePlatform{items: []platforms.StorageSize{
+			{Name: "opencode", SizeBytes: 1024},
+			{Name: "opencode:other", SizeBytes: 2048},
+		}}}
+	}
+	if err := srv.collectDatabaseSizes(t.Context(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	samples, err := srv.deps.Store.DatabaseSizeSamples(t.Context(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for _, sample := range samples {
+		got[sample.Database] = sample.SizeBytes
+	}
+	if got["opencode"] != 1024 || got["opencode:other"] != 2048 {
+		t.Fatalf("platform storage sizes missing: %v", got)
+	}
+}
+
+func TestPlatformSizeFailureKeepsOtherSamplesAndSkipsRemotes(t *testing.T) {
+	srv := newFixture(t)
+	srv.deps.Platforms = func() []platforms.Platform {
+		return []platforms.Platform{
+			storagePlatform{err: context.DeadlineExceeded, items: []platforms.StorageSize{{Name: "opencode", SizeBytes: 100}}},
+			storagePlatform{id: "claudecode", items: []platforms.StorageSize{{Name: "claudecode:raw", SizeBytes: 200}}},
+			storagePlatform{id: "r-box:opencode", items: []platforms.StorageSize{{Name: "remote", SizeBytes: 300}}},
+		}
+	}
+	if err := srv.collectDatabaseSizes(t.Context(), time.Now()); err == nil {
+		t.Fatal("platform error not reported")
+	}
+	samples, err := srv.deps.Store.DatabaseSizeSamples(t.Context(), 0)
+	if err != nil || len(samples) != 4 {
+		t.Fatalf("samples = %+v, %v", samples, err)
+	}
+	for _, sample := range samples {
+		if sample.Database == "remote" {
+			t.Fatal("remote storage included in local chart")
+		}
+	}
+}
 
 func TestCollectDatabaseSizes(t *testing.T) {
 	srv := newFixture(t)

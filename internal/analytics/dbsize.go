@@ -9,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -40,21 +41,37 @@ func (m *Module) collectDatabaseSizes(ctx context.Context, now time.Time) error 
 	} else {
 		samples = append(samples, state.DatabaseSizeSample{Database: "ocman", SampledAt: bucket, SizeBytes: size})
 	}
-	if len(samples) > 0 {
-		// Sampling is independent of ingestion readiness: the store already
-		// occupies space during its initial import and during source outages.
-		if m.deps.HistoryAnalytics != nil {
-			if h := m.deps.HistoryAnalytics(); h != nil && h.Store != nil {
-				if size, err := h.Store.SizeBytes(ctx); err != nil {
-					errs = append(errs, fmt.Errorf("statev2: %w", err))
-				} else {
-					samples = append(samples, state.DatabaseSizeSample{Database: "statev2", SampledAt: bucket, SizeBytes: size})
-				}
+	if m.deps.Platforms != nil {
+		for _, p := range m.deps.Platforms() {
+			if remote, _ := platforms.SplitPlatformID(string(p.ID())); remote != "" {
+				continue // this chart covers only the local instance
+			}
+			sizer, ok := p.(platforms.StorageSizer)
+			if !ok {
+				continue
+			}
+			items, err := sizer.StorageSizes(ctx)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s storage: %w", p.ID(), err))
+			}
+			for _, item := range items {
+				samples = append(samples, state.DatabaseSizeSample{Database: item.Name, SampledAt: bucket, SizeBytes: item.SizeBytes})
 			}
 		}
-		if err := m.deps.Store.RecordDatabaseSizeSamples(ctx, samples); err != nil {
-			errs = append(errs, err)
+	}
+	// Sampling is independent of ingestion readiness: the store already
+	// occupies space during its initial import and during source outages.
+	if m.deps.HistoryAnalytics != nil {
+		if h := m.deps.HistoryAnalytics(); h != nil && h.Store != nil {
+			if size, err := h.Store.SizeBytes(ctx); err != nil {
+				errs = append(errs, fmt.Errorf("statev2: %w", err))
+			} else {
+				samples = append(samples, state.DatabaseSizeSample{Database: "statev2", SampledAt: bucket, SizeBytes: size})
+			}
 		}
+	}
+	if err := m.deps.Store.RecordDatabaseSizeSamples(ctx, samples); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

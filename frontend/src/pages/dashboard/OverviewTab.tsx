@@ -4,7 +4,7 @@ import { Bar, Line } from 'react-chartjs-2';
 import { EmptyState } from '../../components/EmptyState';
 import { InlineAlert } from '../../components/InlineAlert';
 import type { DatabaseSizeSample } from '../../lib/api';
-import { BAR_OPTIONS_STACKED, LINE_OPTIONS_DATABASE_SIZE } from '../../lib/chartConfig';
+import { BAR_OPTIONS_STACKED, CHART_COLORS, LINE_OPTIONS_DATABASE_SIZE } from '../../lib/chartConfig';
 import { formatNumber } from '../../lib/format';
 import { useAnalyticsOverview, useDatabaseSizes, useMetrics } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
@@ -17,22 +17,26 @@ const formatDatabaseSizeTime = (timestamp: number) => new Date(timestamp).toLoca
 });
 
 function DatabaseSizeChart({ samples, isLoading }: { samples?: DatabaseSizeSample[]; isLoading: boolean }) {
-  const timestamps = [...new Set(samples?.map((sample) => sample.sampledAt) ?? [])];
+  const timestamps = [...new Set(samples?.map((sample) => sample.sampledAt) ?? [])].sort((a, b) => a - b);
   const sizeByKey = new Map(samples?.map((sample) => [`${sample.database}:${sample.sampledAt}`, sample.sizeBytes / 1024 / 1024]) ?? []);
-  const opencodeSizes = timestamps.map((timestamp) => sizeByKey.get(`opencode:${timestamp}`) ?? null);
-  const ocmanSizes = timestamps.map((timestamp) => sizeByKey.get(`ocman:${timestamp}`) ?? null);
-  const historySizes = timestamps.map((timestamp) => sizeByKey.get(`statev2:${timestamp}`) ?? null);
+  const labels: Record<string, string> = { opencode: 'OpenCode', ocman: 'ocman', statev2: 'Conversation history', 'claudecode:raw': 'Claude raw' };
+  const series = [...new Set(samples?.map((sample) => sample.database) ?? [])].sort((a, b) => {
+    const order = Object.keys(labels);
+    return (order.indexOf(a) < 0 ? order.length : order.indexOf(a)) - (order.indexOf(b) < 0 ? order.length : order.indexOf(b)) || a.localeCompare(b);
+  });
   return <>
     <div className="metrics-chart-grid">
       {isLoading && !samples ? <ChartSkeleton label="Loading database sizes" /> : (
         <ChartCard title="Database Size (log scale)">
           {timestamps.length ? <Line data={{
             labels: timestamps.map(formatDatabaseSizeTime),
-            datasets: [
-              { label: 'OpenCode (MiB)', data: opencodeSizes, borderColor: '#89b4fa', backgroundColor: 'rgba(137, 180, 250, 0.15)', tension: 0.25, pointRadius: 1 },
-              { label: 'ocman (MiB)', data: ocmanSizes, borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.15)', tension: 0.25, pointRadius: 1 },
-              { label: 'Conversation history (MiB)', data: historySizes, borderColor: '#cba6f7', backgroundColor: 'rgba(203, 166, 247, 0.15)', tension: 0.25, pointRadius: 1 },
-            ],
+            datasets: series.map((name, index) => ({
+              label: `${labels[name] ?? name} (MiB)`,
+              data: timestamps.map((timestamp) => sizeByKey.get(`${name}:${timestamp}`) ?? null),
+              borderColor: CHART_COLORS[index % CHART_COLORS.length],
+              backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}26`,
+              tension: 0.25, pointRadius: 1,
+            })),
           }} options={LINE_OPTIONS_DATABASE_SIZE} /> : <EmptyState>No database size samples yet.</EmptyState>}
         </ChartCard>
       )}

@@ -495,6 +495,27 @@ calculation logic. Permission decisions, UI usage, database-size history and
 provider/subscription quotas keep their original sources. Live streaming and
 execution remain platform-owned.
 
+Storage-size sampling also stays behind the platform boundary:
+
+```mermaid
+flowchart LR
+    Native["Local platform storage"] -->|"StorageSizer.StorageSizes"| Owned["Canonical adapter"]
+    Owned -->|"Multiple named sizes"| Analytics["Hourly analytics sampler"]
+    State["Ocman and history stores"] --> Analytics
+    Analytics --> Samples["state.db size samples"]
+    Samples -->|"database-sizes API"| Chart["Dashboard storage graph"]
+```
+
+- `platforms.StorageSizer` is optional and returns any number of stable named
+  series. Canonical adapters forward it without waiting for history ingestion.
+- OpenCode reports logical SQLite bytes, including pages committed in WAL.
+  Claude reports raw `.jsonl` transcript bytes under its configured `projects/`
+  directory, including nested subagents, without parsing files or using its index.
+- The sampler queries the current local platform registry hourly and at startup.
+  Remote adapters are excluded. Platform errors do not suppress successful series.
+  Existing series keys and samples survive the schema upgrade; the chart renders
+  additional series without needing another schema or frontend change.
+
 Summary queries retain exact millisecond cutoffs. Partial UTC hours and local
 calendar boundaries that split a UTC hour read only their normalized boundary
 facts. This also supports fractional-offset timezones without persisting a

@@ -120,6 +120,20 @@ describe('analytics sections', () => {
     expect(screen.queryByRole('combobox', { name: 'Model' })).not.toBeInTheDocument();
   });
 
+  it('plots Claude raw storage and additional platform items with chronological gaps', () => {
+    useDatabaseSizes.mockReturnValue(query([
+      { database: 'claudecode:raw', sampledAt: 2000, sizeBytes: 2 * 1024 * 1024 },
+      { database: 'claudecode:index', sampledAt: 1000, sizeBytes: 1024 * 1024 },
+      { database: 'claudecode:raw', sampledAt: 1000, sizeBytes: 1024 * 1024 },
+    ]));
+    renderTab(<OverviewTab />);
+    const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['Claude raw (MiB)', 'claudecode:index (MiB)']);
+    expect(chart.datasets[0].data).toEqual([1, 2]);
+    expect(chart.datasets[1].data).toEqual([1, null]);
+  });
+
   it('plots installation-wide daily hours and project-scoped chronological agent minutes', () => {
     renderTab(<ActivityTab />);
     expect(useUIUsage).toHaveBeenCalledWith(30);
@@ -329,7 +343,8 @@ describe('analytics sections', () => {
     renderTab(<OverviewTab />);
     const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
     const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
-    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1, 1]);
+    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1]);
+    expect(chart.datasets[0].label).toBe('ocman (MiB)');
     expect(chart.labels[0]).toContain('2025');
   });
 

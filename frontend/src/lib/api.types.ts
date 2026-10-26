@@ -940,7 +940,7 @@ export interface AnalyticsOverview {
 }
 
 export interface DatabaseSizeSample {
-  database: 'opencode' | 'ocman';
+  database: string;
   sampledAt: number;
   sizeBytes: number;
 }

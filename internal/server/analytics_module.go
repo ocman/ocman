@@ -5,6 +5,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/analytics"
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // analyticsModule exists without either database: its routes then answer
@@ -12,6 +13,12 @@ import (
 func (s *Server) analyticsModule() *analytics.Module {
 	return s.analyticsMod.get(func() *analytics.Module {
 		return analytics.NewModule(analytics.Deps{
+			Platforms: func() []platforms.Platform {
+				if s.registry == nil {
+					return nil
+				}
+				return s.registry.Platforms()
+			},
 			SubscriptionCredentials: s.subscriptionCredentials,
 			HistoryAnalytics:        func() *analytics.HistoryAnalytics { return s.historyAnalytics },
 			SessionIdentity:         s.historySessionPublicID,
