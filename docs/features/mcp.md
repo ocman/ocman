@@ -237,7 +237,9 @@ The `sessions` tool inspects sessions with `list`, `search`, and `get`, and
 starts new top-level sessions with `create`.
 
 `create` sends `prompt` to the new session. `model` (`provider/model`), `agent`,
-`worktree`, and `title` are optional. An omitted model uses the project's first
+`worktree`, and `title` are optional. An omitted model inherits the calling
+session's current model when `platform` and `session_id` are supplied, even with
+an explicit `directory`. Without a caller model, it uses the project's first
 configured model, then the platform's default selection. An omitted agent uses
 Settings' default agent. Explicit model and agent values override those defaults.
 Like the new-conversation composer, an omitted `worktree` creates a fresh worktree

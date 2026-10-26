@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/NoUseFreak/ocman/internal/analyticsdata"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
@@ -21,11 +23,13 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		return internalmcp.CreatedSession{}, fmt.Errorf("%w: %s", internalmcp.ErrInvalidSessionCreate, err.Error())
 	}
 	dir := in.Directory
+	var caller *platforms.SessionDetail
 	if dir == "" || (platformID == "" && in.SessionID != "") {
-		detail, err := s.GetSession(ctx, in.Platform, in.SessionID, 0)
+		detail, err := s.GetSession(ctx, in.Platform, in.SessionID, 1)
 		if err != nil {
 			return internalmcp.CreatedSession{}, err
 		}
+		caller = detail
 		if dir == "" {
 			dir = projectRootForDirectory(detail.Session.Directory)
 		}
@@ -48,6 +52,15 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 	host, ok := s.server.router().LookupRemote(owner)
 	if !ok {
 		return internalmcp.CreatedSession{}, fmt.Errorf("%w: remote %s is not connected", internalmcp.ErrInvalidSessionCreate, owner)
+	}
+	if in.Model == "" && in.SessionID != "" {
+		if caller == nil {
+			caller, err = s.GetSession(ctx, in.Platform, in.SessionID, 1)
+			if err != nil {
+				return internalmcp.CreatedSession{}, err
+			}
+		}
+		in.Model = mcpCallerModel(caller)
 	}
 	if in.Model == "" {
 		// The project default only applies when it runs on this platform.
@@ -104,6 +117,19 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		return created, err
 	}
 	return created, nil
+}
+
+func mcpCallerModel(detail *platforms.SessionDetail) string {
+	for _, message := range detail.Messages {
+		var data analyticsdata.MessageData
+		if json.Unmarshal(message.Data, &data) == nil {
+			provider, model := analyticsdata.ModelProvider(data)
+			if provider != "" && model != "" {
+				return analyticsdata.ModelKey(provider, model)
+			}
+		}
+	}
+	return detail.DefaultModel
 }
 
 // Match the composer's eligibility rules, including manually created worktrees.

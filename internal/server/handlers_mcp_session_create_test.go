@@ -48,6 +48,7 @@ func TestMCPCreateSession(t *testing.T) {
 	srv.hostRouter = hostsvc.NewRouter(host)
 	var created platforms.CreateSessionRequest
 	var sent platforms.SendMessageRequest
+	callerModel := ""
 	sendErr := error(nil)
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{id: "opencode",
@@ -55,7 +56,7 @@ func TestMCPCreateSession(t *testing.T) {
 			if id != "ses-caller" {
 				return nil, platforms.ErrNotFound
 			}
-			return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/src/.worktrees/ocman/feat-x"}}, nil
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/src/.worktrees/ocman/feat-x"}, Messages: []db.Message{{Data: []byte(`{"role":"assistant","providerID":"p","modelID":"` + callerModel + `"}`)}}}, nil
 		},
 		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			created = req
@@ -105,6 +106,19 @@ func TestMCPCreateSession(t *testing.T) {
 	if sent.SessionID != "ses-new" || sent.Message != "go" || sent.Model != "p/m" || sent.Agent != "plan" {
 		t.Fatalf("sent = %#v", sent)
 	}
+	callerModel = "current"
+	for _, directory := range []string{"", "/src/ocman"} {
+		for _, model := range []string{"", "p/explicit"} {
+			want := model
+			if want == "" {
+				want = "p/current"
+			}
+			_, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "inherit", Directory: directory, Platform: "opencode", SessionID: "ses-caller", Model: model})
+			if err != nil || sent.Model != want {
+				t.Fatalf("directory %q, model %q: sent %#v, err %v", directory, model, sent, err)
+			}
+		}
+	}
 
 	// Explicit directory, no caller: local opencode, directory kept as given.
 	if got, err := svc.CreateSession(context.Background(), internalmcp.CreateSessionRequest{Prompt: "go", Directory: "/src/.worktrees/ocman/feat-y"}); err != nil || got.Directory != "/src/.worktrees/ocman/feat-y" || ensured != "/src/ocman" {
@@ -133,7 +147,9 @@ func TestMCPCreateSessionRemote(t *testing.T) {
 	srv.hostRouter = hostsvc.NewRouter(nil)
 	srv.hostRouter.RegisterRemote("machine", owner)
 	var sent platforms.SendMessageRequest
-	reg.Register(&fakePlatform{id: "r-machine:opencode", sendMessageFn: func(req platforms.SendMessageRequest) error {
+	reg.Register(&fakePlatform{id: "r-machine:opencode", sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/remote/repo"}, DefaultModel: "p/remote-current"}, nil
+	}, sendMessageFn: func(req platforms.SendMessageRequest) error {
 		sent = req
 		return nil
 	}})
@@ -149,6 +165,29 @@ func TestMCPCreateSessionRemote(t *testing.T) {
 	}
 	if owner.request.ProjectDir != "/remote/repo" || owner.request.Title != "Fix" || sent.Model != "p/project" || sent.Agent != "build" || sent.SessionID != "child" {
 		t.Fatalf("remote request = %#v, sent %#v", owner.request, sent)
+	}
+	_, err = (sessionMCPService{srv}).CreateSession(t.Context(), internalmcp.CreateSessionRequest{
+		Prompt: "inherit", Directory: "/remote/repo", Platform: "r-machine:opencode", SessionID: "caller", Worktree: &useWorktree,
+	})
+	if err != nil || sent.Model != "p/remote-current" {
+		t.Fatalf("remote inheritance = %#v, %v", sent, err)
+	}
+}
+
+func TestMCPCallerModel(t *testing.T) {
+	for _, test := range []struct{ name, data, fallback, want string }{
+		{"assistant", `{"providerID":"p","modelID":"current"}`, "p/default", "p/current"},
+		{"user", `{"model":{"providerID":"p","modelID":"current"}}`, "p/default", "p/current"},
+		{"malformed", `{`, "p/default", "p/default"},
+		{"missing model", `{"providerID":"p"}`, "p/default", "p/default"},
+		{"no default", `{}`, "", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := mcpCallerModel(&platforms.SessionDetail{DefaultModel: test.fallback, Messages: []db.Message{{Data: []byte(test.data)}}})
+			if got != test.want {
+				t.Fatalf("model = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
