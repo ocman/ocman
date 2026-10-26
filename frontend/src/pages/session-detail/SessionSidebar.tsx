@@ -139,15 +139,16 @@ export function SessionSidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const draftGroups = useSidebarDraftGroups(allProjectGroups, searchQuery);
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
-    showRoutines, setShowRoutines, showSnoozed, setShowSnoozed } = useSessionListFilters();
+    showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed } = useSessionListFilters();
+  const listFilters = { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines, showPlugins };
   const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, draftGroups, alwaysShowPrompts);
   const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
   const draftSessionIds = useDraftSessionIds();
-  // Sessions hidden by the Factory/routine filters, including descendants.
+  // Sessions hidden by the Factory/routine/plugin filters, including descendants.
   const hiddenSessions = hiddenSessionOrigins(
-    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)], showFactory, showRoutines,
+    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)], listFilters,
   );
 
   // Reveal the selection on navigation or initial load. Live activity must
@@ -197,7 +198,7 @@ export function SessionSidebar({
   const filteredProjectGroups = sidebarProjectGroups.flatMap((group) => {
     const projectMatches = !!query && fuzzyMatch(query, group.directory);
     const sessions = group.sessions.filter((session) =>
-      matchesSessionListFilters(session, { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines },
+      matchesSessionListFilters(session, listFilters,
         hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
     );
     return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
@@ -209,7 +210,7 @@ export function SessionSidebar({
   const sortableGroups = filteredProjectGroups.filter((g) => !g.isPinned);
   const flatUnpinned = recentSessions.filter((session) =>
     !session.pinned &&
-    matchesSessionListFilters(session, { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines },
+    matchesSessionListFilters(session, listFilters,
       hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
   );
 
@@ -345,6 +346,8 @@ export function SessionSidebar({
         setShowFactory={setShowFactory}
         showRoutines={showRoutines}
         setShowRoutines={setShowRoutines}
+        showPlugins={showPlugins}
+        setShowPlugins={setShowPlugins}
         alwaysShowPrompts={alwaysShowPrompts}
         setAlwaysShowPrompts={setAlwaysShowPrompts}
         sidebarView={sidebarView}

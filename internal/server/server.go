@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -246,6 +247,13 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		SessionCreated: func(info sessionsvc.CreatedSession) {
 			s.broadcastSessionCreated(info)
 			s.refreshProjectsIndexAsync()
+		},
+		// MaxInt64 pins the archive so the session's own turns never resurface it.
+		ArchiveCreated: func(ctx context.Context, platform, sessionID string) error {
+			if s.stateDB == nil {
+				return errors.New("state database unavailable")
+			}
+			return s.stateDB.ArchiveSession(ctx, platform, sessionID, math.MaxInt64)
 		},
 		FirstPromptAdded: s.firstPromptAdded,
 		ProjectModels:    s.projectModelList,

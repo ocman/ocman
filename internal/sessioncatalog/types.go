@@ -35,6 +35,7 @@ const (
 	User     Origin = "user"
 	Routine  Origin = "routine"
 	Factory  Origin = "factory"
+	Plugin   Origin = "plugin"
 	External Origin = "external"
 )
 

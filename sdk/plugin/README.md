@@ -98,6 +98,9 @@ Workspace actions declare placement `plugin` with the `context.workspace` grant.
 Model-only sessions use `PluginSessionCapability`, `SessionPluginGrant`, and
 `SessionRunParams{WorkspaceID: id, NoTools: true}`. The host chooses a private
 per-workspace directory; project IDs, subpaths and enabled tools are refused.
+Background runs set `Archived: true` and declare `ArchivedSessionCapability`
+(session 1.3); the session is created archived. `NewSessionRun` marks 1.3 as
+the minimum, and an older negotiated version gets a local `invalid_argument`.
 
 For plugin-local storage and a single homepage read without project discovery,
 use `PluginPageCapability` for page 1.2, request `PagePluginGrant`, and declare

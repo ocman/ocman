@@ -22,6 +22,8 @@ export interface SidebarHeaderProps {
   setShowFactory: (show: boolean) => void;
   showRoutines: boolean;
   setShowRoutines: (show: boolean) => void;
+  showPlugins: boolean;
+  setShowPlugins: (show: boolean) => void;
   alwaysShowPrompts: boolean;
   setAlwaysShowPrompts: (show: boolean) => void;
   sidebarView: 'recent' | 'projects';
@@ -46,6 +48,8 @@ export function SidebarHeader({
   setShowFactory,
   showRoutines,
   setShowRoutines,
+  showPlugins,
+  setShowPlugins,
   alwaysShowPrompts,
   setAlwaysShowPrompts,
   sidebarView,
@@ -104,12 +108,12 @@ export function SidebarHeader({
         {filtersOpen && (
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
             <ProjectScopePicker projects={projects} value={projectFilter} onChange={setProjectFilter} label="Project" scopePrefix="scope:" />
-            <SessionFilterControls value={{ alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines }}
+            <SessionFilterControls value={{ alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines, showPlugins }}
               onChange={(key, checked) => ({
                 alwaysShowPrompts: setAlwaysShowPrompts,
                 showArchived: (value: boolean) => setShowArchivedRecent(() => value),
                 showSnoozed: setShowSnoozed, showChildren: setShowChildren,
-                showFactory: setShowFactory, showRoutines: setShowRoutines,
+                showFactory: setShowFactory, showRoutines: setShowRoutines, showPlugins: setShowPlugins,
               })[key](checked)} />
           </div>
         )}

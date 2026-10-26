@@ -443,6 +443,13 @@ fails the run. The session starts on the project's managed OpenCode instance
 and the prompt is queued like any follow-up, so an idle session answers now
 and a mid-turn message waits for the next idle edge.
 
+Plugin sessions are tagged with the `plugin` origin and the plugin ID. The
+session sidebar hides them and their children until you check **Show plugins**
+under **Filter sessions**. With session 1.3 (`ArchivedSessionCapability`), set
+`"archived": true` for background runs: the session is created already archived
+and its own turns do not bring it back. Older negotiated versions reject the
+field rather than create a visible session.
+
 Outbound, ocman calls `completed` on the plugin with one completed assistant
 turn of the session it started:
 

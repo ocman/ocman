@@ -590,7 +590,9 @@ inside the approved project. Absolute paths, any `..` component, and symlink
 escapes are denied before session creation; the resolved directory must exist. There is no directory
 parameter. `permissionProfile` resolves an ocman permission profile whose rules
 are pinned verbatim onto the session at creation; an unknown name fails the run
-with `not_found`. The prompt is queued like any follow-up.
+with `not_found`. The prompt is queued like any follow-up. `archived: true`
+creates the session archived; the host stamps every run with origin `plugin`
+and the plugin ID, independently of `archived`.
 
 Outbound, ocman calls `completed` with one completed assistant turn of the
 session the plugin started, keyed by the session's newest assistant message.

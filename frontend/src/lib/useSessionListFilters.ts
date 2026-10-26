@@ -7,7 +7,8 @@ export function useSessionListFilters() {
   const [showChildren, setShowChildren] = useSessionFilterPreference('children', SESSION_FILTER_DEFAULTS.showChildren);
   const [showFactory, setShowFactory] = useSessionFilterPreference('factory', SESSION_FILTER_DEFAULTS.showFactory);
   const [showRoutines, setShowRoutines] = useSessionFilterPreference('routines', SESSION_FILTER_DEFAULTS.showRoutines);
+  const [showPlugins, setShowPlugins] = useSessionFilterPreference('plugins', SESSION_FILTER_DEFAULTS.showPlugins);
   const [showSnoozed, setShowSnoozed] = useSessionFilterPreference('snoozed', SESSION_FILTER_DEFAULTS.showSnoozed);
   return { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
-    showRoutines, setShowRoutines, showSnoozed, setShowSnoozed };
+    showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed };
 }

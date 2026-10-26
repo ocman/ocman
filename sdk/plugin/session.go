@@ -31,6 +31,7 @@ var SessionCapability = plugins.SessionCapability
 
 var ProjectSessionCapability = plugins.ProjectSessionCapability
 var PluginSessionCapability = plugins.PluginSessionCapability
+var ArchivedSessionCapability = plugins.ArchivedSessionCapability
 
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps
@@ -52,6 +53,9 @@ func NewSessionRun(operationID string, params SessionRunParams) (Call, error) {
 	}
 	if params.WorkspaceID != "" {
 		call.Version = PluginSessionCapability.Version
+	}
+	if params.Archived {
+		call.Version = ArchivedSessionCapability.Version
 	}
 	if err := (Envelope{Type: TypeCall, Call: &call}).Validate(); err != nil {
 		return Call{}, err

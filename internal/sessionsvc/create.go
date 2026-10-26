@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
@@ -19,6 +21,7 @@ type CreatedSession struct {
 	Directory string
 	Title     string
 	RoutineID string
+	Archived  bool
 }
 
 // Create creates a session, auto-picking the only available platform when empty.
@@ -171,6 +174,7 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if err := commitCreation(ctx, adapter, resp.ID); err != nil {
 		return nil, err
 	}
+	archived := s.archiveCreated(ctx, adapter.ID(), resp.ID, req.Creation.Archived)
 	copy := *resp
 	resp = &copy
 	resp.ConfigurationApplied = resp.ConfigurationApplied || rules != nil
@@ -184,8 +188,22 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		}
 		s.hooks.SessionCreated(CreatedSession{
 			ID: resp.ID, Platform: string(adapter.ID()), Directory: req.Directory,
-			Title: req.Title, RoutineID: routineID,
+			Title: req.Title, RoutineID: routineID, Archived: archived,
 		})
 	}
 	return resp, nil
+}
+
+// archiveCreated honours a creation-time archive request. The session already
+// exists, so a failed archive is logged rather than failing the creation.
+func (s *Service) archiveCreated(ctx context.Context, platformID platforms.ID, sessionID string, requested bool) bool {
+	if !requested || s.hooks.ArchiveCreated == nil {
+		return false
+	}
+	if err := s.hooks.ArchiveCreated(context.WithoutCancel(ctx), string(platformID), sessionID); err != nil {
+		log.WithError(err).WithFields(log.Fields{"platform": platformID, "session_id": sessionID}).
+			Warn("archiving session at creation")
+		return false
+	}
+	return true
 }

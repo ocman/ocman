@@ -29,10 +29,10 @@ export function SessionsTab() {
   const [search, setSearch] = useState('');
   const phone = useIsPhone();
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
-    showRoutines, setShowRoutines, showSnoozed, setShowSnoozed } = useSessionListFilters();
+    showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed } = useSessionListFilters();
   const [archivedPreference, setArchivedPreference] = useSessionFilterPreference('archived', SESSION_FILTER_DEFAULTS.showArchived);
-  const filters = { alwaysShowPrompts, showArchived: showArchived || archivedPreference, showSnoozed, showChildren, showFactory, showRoutines };
-  const hidden = hiddenSessionOrigins(sessions, showFactory, showRoutines);
+  const filters = { alwaysShowPrompts, showArchived: showArchived || archivedPreference, showSnoozed, showChildren, showFactory, showRoutines, showPlugins };
+  const hidden = hiddenSessionOrigins(sessions, filters);
 
   const filterControls = <>
     <ButtonGroup label="Session filters" className={styles.filters}>
@@ -65,7 +65,7 @@ export function SessionsTab() {
           alwaysShowPrompts: setAlwaysShowPrompts,
           showArchived: (value: boolean) => { setArchivedPreference(value); setShowArchived(value); },
           showSnoozed: setShowSnoozed, showChildren: setShowChildren,
-          showFactory: setShowFactory, showRoutines: setShowRoutines,
+          showFactory: setShowFactory, showRoutines: setShowRoutines, showPlugins: setShowPlugins,
         })[key](checked)} />
       </PhoneSessionsToolbar> : <><DashboardToolbar
         projects={projects}

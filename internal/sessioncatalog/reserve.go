@@ -69,7 +69,7 @@ func validReservation(r Reservation) bool {
 	switch r.Origin {
 	case User:
 		return r.OriginID == ""
-	case Routine, Factory:
+	case Routine, Factory, Plugin:
 		return nonempty(r.OriginID)
 	default:
 		return false

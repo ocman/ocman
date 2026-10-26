@@ -8,8 +8,10 @@ export const SESSION_FILTER_DEFAULTS = {
   showChildren: true,
   showFactory: false,
   showRoutines: false,
+  showPlugins: false,
 };
 export type SessionListFilters = typeof SESSION_FILTER_DEFAULTS;
+export type SessionOriginFilters = Pick<SessionListFilters, 'showFactory' | 'showRoutines' | 'showPlugins'>;
 
 export const SESSION_FILTER_FIELDS = [
   ['alwaysShowPrompts', 'Always show prompts'],
@@ -18,14 +20,16 @@ export const SESSION_FILTER_FIELDS = [
   ['showChildren', 'Show children'],
   ['showFactory', 'Show factory'],
   ['showRoutines', 'Show routines'],
+  ['showPlugins', 'Show plugins'],
 ] as const;
 
-export function hiddenSessionOrigins(sessions: readonly Session[], showFactory: boolean, showRoutines: boolean): Set<string> {
+export function hiddenSessionOrigins(sessions: readonly Session[], { showFactory, showRoutines, showPlugins }: SessionOriginFilters): Set<string> {
   const hidden = new Set<string>();
   const children = new Map<string, string[]>();
   for (const session of sessions) {
     const key = `${session.platform}\0${session.id}`;
-    if ((!showFactory && session.factoryAttemptId) || (!showRoutines && session.routineId)) hidden.add(key);
+    if ((!showFactory && session.factoryAttemptId) || (!showRoutines && session.routineId)
+      || (!showPlugins && session.origin === 'plugin')) hidden.add(key);
     if (!session.parentId) continue;
     const parent = `${session.platform}\0${session.parentId}`;
     const siblings = children.get(parent) ?? [];

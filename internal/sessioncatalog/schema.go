@@ -9,7 +9,7 @@ import (
 var Schema = state.ModuleSchema{
 	Module:     "sessioncatalog",
 	Tables:     []string{"session_catalog", "session_remote_metadata", "session_source_cutover"},
-	Migrations: []func(*sql.Tx) error{migrateIdentity, migrateCatalogueMetadata, migrateLegacyKeys, migrateRemoteMetadata, migrateSourceCutover, migrateLegacyBindingIndex, migrateConfiguringState},
+	Migrations: []func(*sql.Tx) error{migrateIdentity, migrateCatalogueMetadata, migrateLegacyKeys, migrateRemoteMetadata, migrateSourceCutover, migrateLegacyBindingIndex, migrateConfiguringState, migratePluginOrigin},
 }
 
 func migrateLegacyKeys(tx *sql.Tx) error {

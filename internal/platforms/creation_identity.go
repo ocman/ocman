@@ -9,4 +9,7 @@ type CreationIdentity struct {
 	ParentID        string           `json:"parentId,omitempty"`
 	Configured      bool             `json:"configured,omitempty"`
 	PermissionRules []PermissionRule `json:"permissionRules,omitempty"`
+	// Archived hides the session from the sidebar from creation onwards. The
+	// caller decides; origin never implies it.
+	Archived bool `json:"archived,omitempty"`
 }

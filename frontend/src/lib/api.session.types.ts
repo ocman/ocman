@@ -13,7 +13,7 @@ export interface Session {
   timeUpdated: number;
   lastMessageAt?: number;
   branch?: string;
-  origin?: 'user' | 'external' | 'routine' | 'factory';
+  origin?: 'user' | 'external' | 'routine' | 'factory' | 'plugin';
   originId?: string;
   /** Last terminal assistant turn, including errors; absent on older remotes. */
   lastTurnCompletedAt?: number;

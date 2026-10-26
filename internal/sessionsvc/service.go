@@ -44,7 +44,10 @@ type Hooks struct {
 	// moved. Info carries what the service knows without extra I/O so
 	// the server can broadcast a provisional list row the frontend can
 	// show before the authoritative refetch lands.
-	SessionCreated   func(info CreatedSession)
+	SessionCreated func(info CreatedSession)
+	// ArchiveCreated archives a session whose creation request asked for it.
+	// It runs before SessionCreated so the row never surfaces unarchived.
+	ArchiveCreated   func(ctx context.Context, platform, sessionID string) error
 	FirstPromptAdded func(context.Context, module.FirstPromptAdded)
 	// ProjectModels returns the ordered model list configured for dir's
 	// project (nil when none) and whether its fallthrough is switched

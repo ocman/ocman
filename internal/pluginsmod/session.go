@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/module"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
@@ -168,6 +169,10 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	}
 	created, err := m.deps.Sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{
 		Directory: dir, Title: "plugin:" + pluginID + ":" + operationID, Port: ensured.Port(),
+		Creation: &platforms.CreationIdentity{
+			RequestKey: "plugin:" + pluginID + ":" + operationID,
+			Origin:     string(sessioncatalog.Plugin), OriginID: pluginID, Archived: params.Archived,
+		},
 	}, rules)
 	if err != nil {
 		return "", err

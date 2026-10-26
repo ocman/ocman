@@ -90,7 +90,7 @@ func validDiscoveryOrigin(origin Origin, id string) bool {
 	switch origin {
 	case "", External:
 		return id == ""
-	case Routine, Factory:
+	case Routine, Factory, Plugin:
 		return nonempty(id)
 	default:
 		return false

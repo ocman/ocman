@@ -22,6 +22,9 @@ var SessionCapability = Capability{Name: "session", Version: Version{Major: 1}}
 var ProjectSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 1}}
 var PluginSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 2}}
 
+// ArchivedSessionCapability adds the archived run parameter.
+var ArchivedSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 3}}
+
 const SessionProjectGrant = "session.project"
 const SessionPluginGrant = "session.plugin"
 
@@ -60,6 +63,9 @@ type SessionRunParams struct {
 	Model             string `json:"model,omitempty"`
 	PermissionProfile string `json:"permissionProfile,omitempty"`
 	Subpath           string `json:"subpath,omitempty"`
+	// Archived creates the session already archived, for background runs
+	// that should stay out of the sidebar.
+	Archived bool `json:"archived,omitempty"`
 }
 
 // SessionRunResult is returned as soon as the session exists and the prompt is

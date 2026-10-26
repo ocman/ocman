@@ -73,14 +73,14 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if err := ctx.Err(); err != nil {
 		return SessionRunResult{}, err
 	}
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > 2 || call.Method != SessionRunMethod {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > ArchivedSessionCapability.Version.Minor || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	params, err := DecodeSessionRunParams(call.Params)
-	if err != nil {
+	if err != nil || params.Archived && call.Version.Minor < ArchivedSessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	ctx, cancel := context.WithTimeout(ctx, SessionRunTimeout)
@@ -139,7 +139,7 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 		version := SessionCapability.Version
 		for _, c := range d.Capabilities {
 			if c.Name == "session" && c.Version.Major == 1 {
-				version.Minor = min(c.Version.Minor, 2)
+				version.Minor = min(c.Version.Minor, ArchivedSessionCapability.Version.Minor)
 			}
 		}
 		return Call{

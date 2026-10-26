@@ -12,6 +12,7 @@ it('keeps the filter button neutral with every filter changed and the menu open'
     showChildren={false} setShowChildren={vi.fn()}
     showFactory setShowFactory={vi.fn()}
     showRoutines setShowRoutines={vi.fn()}
+    showPlugins setShowPlugins={vi.fn()}
     alwaysShowPrompts setAlwaysShowPrompts={vi.fn()}
     sidebarView="recent" setSidebarView={vi.fn()} onNewSession={vi.fn()}
   />);
@@ -32,6 +33,7 @@ it('represents a removed project selection and lets the user clear it', () => {
     showChildren: true, setShowChildren: vi.fn(),
     showFactory: false, setShowFactory: vi.fn(),
     showRoutines: false, setShowRoutines: vi.fn(),
+    showPlugins: false, setShowPlugins: vi.fn(),
     alwaysShowPrompts: true, setAlwaysShowPrompts: vi.fn(),
     sidebarView: 'recent', setSidebarView: vi.fn(), onNewSession: vi.fn(),
   };
@@ -61,6 +63,7 @@ it('searches projects and selects an organization prefix', () => {
     showChildren setShowChildren={vi.fn()}
     showFactory={false} setShowFactory={vi.fn()}
     showRoutines={false} setShowRoutines={vi.fn()}
+    showPlugins={false} setShowPlugins={vi.fn()}
     alwaysShowPrompts setAlwaysShowPrompts={vi.fn()}
     sidebarView="recent" setSidebarView={vi.fn()} onNewSession={vi.fn()}
   />);
