@@ -17,9 +17,10 @@ import { KEEPALIVE_TIMEOUT_MS } from '../../lib/sseKeepalive';
 import { SIDEBAR_SESSIONS_KEY, getSidebarSessions } from '../../lib/sessionsCache';
 import { queryClient } from '../../lib/queryClient';
 import type { OceEvent } from '../../lib/conversation/events';
-import { SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from '../../lib/conversation/conversationStream';
+import { PROGRESS_RECONCILE_MS, SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from '../../lib/conversation/conversationStream';
 import { onQueueUpdated } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
+import { APIError, AuthError } from '../../lib/api.requests';
 import { hello, oceEnvelope, partUpserted, streamSessionId, textDelta } from '../../test/oce';
 
 // ---------- Fake EventSource ----------
@@ -197,6 +198,141 @@ describe('useSession — bounded stream work (#722)', () => {
     await act(async () => {});
     return { ...hook, fetchSession, sse: FakeEventSource.latest()!, frame: () => act(() => frame(0)) };
   }
+
+  it('recovers missing conversation output after a transient turn-end read failure without a page refresh', async () => {
+    const { result, sse, fetchSession, unmount } = await setup();
+    const completed = makeDetail({
+      messages: [{ id: 'reply', sessionId: SID, timeCreated: 3, data: { role: 'assistant' } }],
+      parts: [{ id: 'reply-part', messageId: 'reply', sessionId: SID, data: JSON.stringify({ type: 'text', text: 'Recovered response' }) }],
+    });
+    fetchSession.mockRejectedValueOnce(new Error('temporary read failure')).mockResolvedValue(completed);
+    await act(async () => sse.emitOce(turnEnded()));
+    expect(result.current.refreshError).toBe('temporary read failure');
+    expect(result.current.messages).toEqual([]);
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(result.current.messages.map((m) => m.id)).toContain('reply');
+    expect(result.current.refreshError).toBeNull();
+    unmount();
+  });
+
+  it('retries failed cold-stream recovery and preserves events from the failed read', async () => {
+    const { result, sse, fetchSession, unmount } = await setup();
+    let reject!: (reason: Error) => void;
+    fetchSession.mockReturnValueOnce(new Promise<SessionDetail>((_, fail) => { reject = fail; }))
+      .mockRejectedValueOnce(new Error('temporary read failure'));
+    act(() => {
+      sse.emitOce(hello(false));
+      sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'Final streamed response' } }, SID, true));
+      sse.emitOce(turnEnded());
+    });
+    // The turn-end read supersedes the cold read, but fails too.
+    await act(async () => {
+      reject(new Error('superseded'));
+    });
+    expect(result.current.refreshError).toBe('temporary read failure');
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(result.current.refreshError).toBeNull();
+    expect(textOf(result.current.parts)).toBe('Final streamed response');
+    unmount();
+  });
+
+  it('renders a sent prompt and response when content and terminal events are missed on an open stream', async () => {
+    const { result, sse, fetchSession, unmount } = await setup();
+    const messages = [
+      { id: 'user', sessionId: SID, timeCreated: 1, data: { role: 'user' as const } },
+      { id: 'assistant', sessionId: SID, timeCreated: 2, data: { role: 'assistant' as const } },
+    ];
+    const parts = messages.map((m) => ({ id: `${m.id}-part`, messageId: m.id, sessionId: SID,
+      data: JSON.stringify({ type: 'text', text: m.id === 'user' ? 'My prompt' : 'My response' }) }));
+    fetchSession.mockResolvedValue(makeDetail({ messages, parts }));
+    act(() => sse.emitOce(busy));
+    expect(result.current.messages).toEqual([]);
+    await act(async () => vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS));
+    expect(result.current.messages).toEqual(messages);
+    expect(result.current.parts).toEqual(parts);
+    expect(result.current.session?.status).toBe('done');
+    expect(sse.closed).toBe(false);
+    const reads = fetchSession.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS * 2));
+    expect(fetchSession).toHaveBeenCalledTimes(reads);
+    unmount();
+  });
+
+  it('backs off failed reads, cancels retries after success, and drops them on navigation', async () => {
+    const { result, fetchSession, rerender, unmount } = await setup();
+    fetchSession.mockRejectedValue(new Error('offline'));
+    await act(async () => result.current.refresh());
+    const initialReads = fetchSession.mock.calls.length;
+    for (const [index, delay] of [1_000, 2_000, 4_000, 8_000, 15_000, 15_000].entries()) {
+      await act(async () => vi.advanceTimersByTimeAsync(delay - 1));
+      expect(fetchSession).toHaveBeenCalledTimes(initialReads + index);
+      await act(async () => vi.advanceTimersByTimeAsync(1));
+      expect(fetchSession).toHaveBeenCalledTimes(initialReads + index + 1);
+    }
+    fetchSession.mockResolvedValue(makeDetail());
+    await act(async () => result.current.refresh());
+    const successfulReads = fetchSession.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(fetchSession).toHaveBeenCalledTimes(successfulReads);
+    fetchSession.mockRejectedValue(new Error('offline'));
+    await act(async () => result.current.refresh());
+    await act(async () => rerender({ id: 'new' }));
+    const readsAfterNavigation = fetchSession.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(fetchSession).toHaveBeenCalledTimes(readsAfterNavigation);
+    unmount();
+  });
+
+  it('returns to live after an initial read failure recovers automatically', async () => {
+    vi.useFakeTimers();
+    const fetchSession = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(makeDetail());
+    const { result, unmount } = renderHook(() => useSession(SID, { fetchSession }));
+    await act(async () => {});
+    expect(result.current.status).toBe('error');
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(result.current.status).toBe('live');
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.session?.id).toBe(SID);
+    unmount();
+  });
+
+  it('retains cached streamed text when retrying a failed page restoration', async () => {
+    vi.useFakeTimers();
+    const message = { id: 'm', sessionId: SID, timeCreated: 1, data: { role: 'assistant' as const } };
+    const part = { id: 'p', messageId: 'm', sessionId: SID, data: JSON.stringify({ type: 'text', text: 'Streamed ahead' }) };
+    const detail = makeDetail({ session: { ...makeDetail().session, status: 'busy' }, messages: [message], parts: [part] });
+    useApiStore.getState().setCachedSession(SID, detail);
+    const fetchSession = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({
+      ...detail, parts: [{ ...part, data: JSON.stringify({ type: 'text', text: 'Streamed' }) }],
+    });
+    const { result, unmount } = renderHook(() => useSession(SID, { fetchSession }));
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(result.current.refreshError).toBeNull();
+    expect(textOf(result.current.parts)).toBe('Streamed ahead');
+    unmount();
+  });
+
+  it.each([new APIError('not found', 404), new APIError('forbidden', 403), new AuthError()])('does not automatically retry permanent read failures: %s', async (error) => {
+    vi.useFakeTimers();
+    const fetchSession = vi.fn().mockRejectedValue(error);
+    const { unmount } = renderHook(() => useSession(SID, { fetchSession }));
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('keeps an explicit reload authoritative when its first read fails', async () => {
+    const { result, fetchSession, unmount } = await setup();
+    act(() => result.current.hydrateHistory(
+      [{ id: 'removed', sessionId: SID, timeCreated: 1, data: { role: 'user' } }], [],
+    ));
+    fetchSession.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => result.current.reload());
+    expect(result.current.messages.map((m) => m.id)).toContain('removed');
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(result.current.messages).toEqual([]);
+    unmount();
+  });
 
   it('keeps the sidebar running after navigating away from a live session', async () => {
     const row = makeDetail().session;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
 import { useApiStore } from '../../lib/apiStore';
+import { APIError, AuthError } from '../../lib/api.requests';
 import { initialSessionView, seedDeltaOwnedFields, type SessionView } from '../../lib/sessionReducer';
 import { onPageResume } from '../../lib/pageResume';
 import { watchKeepalive } from '../../lib/sseKeepalive';
@@ -86,21 +87,28 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     let evtSource: EventSource | null = null;
     let stopWatch = () => {};
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let fetchRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    let fetchRetryAttempt = 0;
     let attempt = 0;
     let recoveryEvents: OceEnvelope[] | null = null;
+    let recoveryMode: 'recover' | 'restore' = 'recover';
     let upstreamFailed = false;
+    let readBlocked = false;
     const hasContent = () => viewRef.current.sessionId === sessionId && viewRef.current.session !== null;
     // Reconcile by default: SSE leads the database, so replacement can lose text.
     const doFetch = async (requestedMode: 'replace' | 'reconcile' | 'recover' | 'restore' = 'reconcile') => {
+      clearTimeout(fetchRetryTimer);
+      fetchRetryTimer = undefined;
       events.flush();
       // A routine refresh must not cancel an authoritative recovery and
       // replace it with union merging (e.g. a child arriving during recovery).
-      const mode = recoveryEvents && requestedMode === 'reconcile' ? 'recover' : requestedMode;
+      const mode = recoveryEvents && requestedMode === 'reconcile' ? recoveryMode : requestedMode;
       // A reconcile that supersedes recovery must keep its original replay
       // fence. The newer REST read can still lag the final streamed response,
       // and idle/turn-end events have already cleared the live-turn ledger.
       const sinceFence: OceEnvelope[] = recoveryEvents && requestedMode === 'reconcile' ? [...recoveryEvents] : [];
       recoveryEvents = mode === 'recover' || mode === 'restore' ? sinceFence : null;
+      if (mode === 'recover' || mode === 'restore') recoveryMode = mode;
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -134,21 +142,29 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
           defaultModel: detail.defaultModel,
           warnings: detail.warnings,
         });
-        setStatus((prev) => prev === 'loading' ? 'live' : prev);
+        setStatus((prev) => prev === 'loading' || prev === 'error' ? 'live' : prev);
         setLoading(false);
+        fetchRetryAttempt = 0;
+        readBlocked = false;
+        if (recoveryEvents === sinceFence) recoveryEvents = null;
         return true;
       } catch (err) {
         if (cancelled || controller.signal.aborted) return false;
         if (err instanceof DOMException && err.name === 'AbortError') return false;
         const message = err instanceof Error ? err.message : 'Failed to load session';
+        // A live HTTP stream can stay healthy after a REST repair fails. Do
+        // not depend on another lifecycle edge to heal the missing content.
+        readBlocked = err instanceof AuthError || (err instanceof APIError && err.status < 500 && err.status !== 408 && err.status !== 429);
+        if (!readBlocked) {
+          const delay = Math.min(1_000 * 2 ** Math.min(fetchRetryAttempt++, 4), 15_000);
+          fetchRetryTimer = setTimeout(() => { void doFetch(mode === 'replace' ? 'replace' : 'reconcile'); }, delay);
+        }
         setRefreshing(false);
         setLoading(false);
         if (hasContent()) { setRefreshError(message); return false; }
         setLoadError(message);
         setStatus('error');
         return false;
-      } finally {
-        if (recoveryEvents === sinceFence) recoveryEvents = null;
       }
     };
     const events = createConversationStream({
@@ -168,6 +184,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       dirty: () => setChangesDirtyTick((t) => t + 1),
       queue: (messages) => notifyQueueUpdated(sessionId, messages),
       hasStale: () => viewRef.current.sessionId === sessionId && !!viewRef.current._stale?.size,
+      isBusy: () => !readBlocked && viewRef.current.sessionId === sessionId && viewRef.current.session?.status === 'busy',
       debug: debug ? (rows) => setSseDebugEvents((prev) => [...prev, ...rows].slice(-50)) : undefined,
     });
     reloadRef.current = async () => { if (hasContent()) setRefreshing(true); await doFetch('replace'); };
@@ -221,6 +238,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     const unsubscribeResume = onPageResume(() => retryNowRef.current());
     return () => {
       cancelled = true;
+      clearTimeout(fetchRetryTimer);
       unsubscribeResume();
       const pending = events.dispose();
       // Cache pending events without dispatching them into the next session.

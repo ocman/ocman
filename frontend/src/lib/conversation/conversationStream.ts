@@ -12,6 +12,8 @@ export interface StreamDebugEvent { at: number; event: string; data: string }
 export const STALE_RECONCILE_MS = 2_000;
 /** Fallback when an idle edge is not followed by a settled turn end. */
 export const SETTLE_RECONCILE_MS = 3_000;
+/** Keepalives prove transport health, not delivery of conversation content. */
+export const PROGRESS_RECONCILE_MS = 5_000;
 
 const BATCHED = new Set([
   'message.upserted', 'message.removed', 'part.upserted', 'part.removed', 'part.delta',
@@ -35,10 +37,46 @@ function parseEnvelope(raw: string): OceEnvelope | null {
   return env;
 }
 
-export function createConversationStream(options: {
+interface ProgressOptions {
+  reconcile: () => Promise<boolean>;
+  /** REST may settle a turn even when its live terminal event was missed. */
+  isBusy?: () => boolean;
+}
+
+function createProgressWatch(options: ProgressOptions) {
+  let disposed = false;
+  let busy = false;
+  let progressTimer: ReturnType<typeof setTimeout> | undefined;
+  let progressGeneration = 0;
+
+  const watchProgress = () => {
+    clearTimeout(progressTimer);
+    const generation = ++progressGeneration;
+    if (!busy || disposed) return;
+    progressTimer = setTimeout(async () => {
+      if (disposed || generation !== progressGeneration) return;
+      if (options.isBusy?.() === false) { busy = false; return; }
+      // Await the repair so a slow read is not repeatedly aborted by polling.
+      await options.reconcile();
+      if (!disposed && generation === progressGeneration) watchProgress();
+    }, PROGRESS_RECONCILE_MS);
+  };
+  const observe = (e: OceEnvelope['event']) => {
+    if (e.type === 'session.status' || (e.type === 'stream.hello' && !e.resumed && e.overlay)) {
+      const status = e.type === 'session.status' ? e.status : e.overlay!.status.status;
+      if (busy === (status === 'busy')) return;
+      busy = status === 'busy';
+    } else if (e.type === 'turn.started') busy = true;
+    else if (e.type === 'turn.ended') busy = false;
+    else if (!['message.upserted', 'part.upserted', 'part.delta', 'prompt.asked'].includes(e.type)) return;
+    watchProgress();
+  };
+  return { observe, dispose: () => { disposed = true; clearTimeout(progressTimer); } };
+}
+
+export function createConversationStream(options: ProgressOptions & {
   sessionId: string;
   dispatch: (action: { type: 'oceBatch'; envelopes: OceEnvelope[] }) => void;
-  reconcile: () => Promise<boolean>;
   recover: () => Promise<boolean>;
   upstream?: (error: string | null) => void;
   dirty: () => void;
@@ -55,6 +93,7 @@ export function createConversationStream(options: {
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   let cursor: string | undefined;
   let disposed = false;
+  const progress = createProgressWatch(options);
 
   const reconcile = () => {
     clearTimeout(settleTimer);
@@ -141,6 +180,7 @@ export function createConversationStream(options: {
     }
     const env = parseEnvelope(raw);
     if (!env || env.sessionId !== options.sessionId) return;
+    progress.observe(env.event);
     const priorEpoch = cursor ? parseCursor(cursor)?.epoch : undefined;
     cursor = typeof env.seq === 'number' ? formatCursor(env)
       // An empty log's hello has no seq; keep the epoch so a resume is possible.
@@ -164,6 +204,7 @@ export function createConversationStream(options: {
     flush,
     dispose() {
       disposed = true;
+      progress.dispose();
       clearTimeout(staleTimer);
       clearTimeout(settleTimer);
       return take();

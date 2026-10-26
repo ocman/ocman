@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hello, oceEnvelope, textDelta } from '../../test/oce';
-import { conversationStreamUrl, createConversationStream, SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from './conversationStream';
+import { conversationStreamUrl, createConversationStream, PROGRESS_RECONCILE_MS, SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from './conversationStream';
 import type { OceEnvelope, OceEvent } from './events';
 
-function setup(opts: { hasStale?: () => boolean; debug?: boolean; queue?: boolean } = {}) {
+function setup(opts: { hasStale?: () => boolean; isBusy?: () => boolean; reconcile?: () => Promise<boolean>; debug?: boolean; queue?: boolean } = {}) {
   const batches: OceEnvelope[][] = [];
   const calls = { reconcile: 0, dirty: 0 };
   const queued: unknown[] = [];
@@ -12,12 +12,13 @@ function setup(opts: { hasStale?: () => boolean; debug?: boolean; queue?: boolea
   const stream = createConversationStream({
     sessionId: 's',
     dispatch: (action) => batches.push(action.envelopes),
-    reconcile: async () => { calls.reconcile++; return true; },
+    reconcile: async () => { calls.reconcile++; return opts.reconcile ? opts.reconcile() : true; },
     recover: async () => { calls.reconcile++; return true; },
     dirty: () => { calls.dirty++; },
     upstream,
     queue: opts.queue === false ? undefined : (messages) => queued.push(messages),
     hasStale: opts.hasStale,
+    isBusy: opts.isBusy,
     debug: opts.debug ? (rows) => debug.push(...rows) : undefined,
   });
   let listener: (e: MessageEvent) => void = () => {};
@@ -46,6 +47,83 @@ describe('conversationStreamUrl', () => {
 });
 
 describe('createConversationStream', () => {
+  it('repairs a busy conversation whose stream stays open but delivers no content', async () => {
+    const { stream, source, send, calls } = setup();
+    stream.attach(source);
+    send({ type: 'session.status', status: 'busy' });
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS);
+    expect(calls.reconcile).toBe(1);
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS);
+    expect(calls.reconcile).toBe(2);
+    send({ type: 'session.status', status: 'done' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls.reconcile).toBe(2);
+    stream.dispose();
+  });
+
+  it('does not repair idle conversations or interrupt a stream delivering content', async () => {
+    const { stream, source, send, calls } = setup();
+    stream.attach(source);
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS * 2);
+    expect(calls.reconcile).toBe(0);
+    send({ type: 'turn.started', startedAt: 1 });
+    for (let i = 0; i < 3; i++) {
+      await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS - 1);
+      send(textDelta('p', i, 'a'));
+    }
+    expect(calls.reconcile).toBe(0);
+    send({ type: 'session.status', status: 'waiting' });
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS * 2);
+    expect(calls.reconcile).toBe(0);
+    stream.dispose();
+  });
+
+  it('stops repairing when REST settles a silent turn and watches the next turn', async () => {
+    let busy = true;
+    const { stream, source, send, calls } = setup({ isBusy: () => busy });
+    stream.attach(source);
+    send({ type: 'session.status', status: 'busy' });
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS);
+    expect(calls.reconcile).toBe(1);
+    busy = false;
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS * 2);
+    expect(calls.reconcile).toBe(1);
+    busy = true;
+    send({ type: 'session.status', status: 'busy' });
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS);
+    expect(calls.reconcile).toBe(2);
+    stream.dispose();
+  });
+
+  it('does not overlap slow repairs or rearm a disposed stream after a read', async () => {
+    let finish!: (ok: boolean) => void;
+    const { stream, source, send, calls } = setup({ reconcile: () => new Promise((resolve) => { finish = resolve; }) });
+    stream.attach(source);
+    send({ type: 'session.status', status: 'busy' });
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS * 3);
+    expect(calls.reconcile).toBe(1);
+    stream.dispose();
+    finish(true);
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS * 2);
+    expect(calls.reconcile).toBe(1);
+  });
+
+  it('watches a cold busy overlay without postponing repair for repeated busy levels', async () => {
+    const { stream, source, send, calls } = setup();
+    stream.attach(source);
+    send(hello(false, { status: { type: 'session.status', status: 'busy' }, prompts: [], judge: [],
+      background: { type: 'background.changed', count: 0, tasks: [] }, inflight: { messages: [], parts: [] }, liveConnection: true }));
+    expect(calls.reconcile).toBe(1);
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS - 1);
+    send({ type: 'session.status', status: 'busy' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls.reconcile).toBe(2);
+    send({ type: 'turn.ended', outcome: 'done', endedAt: 1 });
+    await vi.advanceTimersByTimeAsync(PROGRESS_RECONCILE_MS * 2);
+    expect(calls.reconcile).toBe(3);
+    stream.dispose();
+  });
+
   it('reports upstream failure even while the HTTP stream stays open, and clears it on hello', () => {
     const { stream, source, send, upstream } = setup();
     stream.attach(source);

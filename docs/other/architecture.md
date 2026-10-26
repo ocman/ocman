@@ -93,7 +93,7 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>text composer, REST + SSE] -->|core APIs, batched previews, usage heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>text composer, REST + SSE] -->|core APIs, silent-turn repairs,<br/>batched previews, heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only sessions + v2 OAuth credentials<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox, state + provider cost ledger| StateDB[(state.db)]
@@ -1181,7 +1181,12 @@ flowchart TD
   when browser keepalives continue. Every non-resumed hello, including the first,
   triggers fenced recovery. The browser replaces REST-owned history, preserves
   the separate stream-owned live content and prompt/task ledger, and replays
-  events received after the request fence.
+  events received after the request fence. Failed history reads retry with
+  exponential backoff capped at 15 seconds, retaining the recovery fence until
+  success. Authentication and permanent client errors require explicit retry.
+  A busy conversation with no content events for five seconds reconciles history
+  even if transport keepalives continue. Content resets this timer; waiting and
+  terminal states stop it. These repairs only read history, never resend input.
 - **Session recovery** (`internal/sessionrecovery`). A workerless service owns
   interruption history, replacement membership, admission and stop fences, and
   confirmed-stop reconciliation. Runtime hooks and history reads call it through
