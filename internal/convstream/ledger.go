@@ -123,7 +123,7 @@ func (l *ledger) snapshot() convevents.Inflight {
 func (l *ledger) expired(now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.content.parts) == 0 && len(l.content.msgs) == 0 || now.Sub(l.touched) > ledgerTTL
+	return len(l.content.parts) == 0 && len(l.content.msgs) == 0 && len(l.removed) == 0 || now.Sub(l.touched) > ledgerTTL
 }
 
 func (l *ledger) evictLocked() {
@@ -138,21 +138,22 @@ func (l *ledger) evictLocked() {
 }
 
 // compose releases what a stored read contains and lays the rest over it. It
-// only applies to the newest page, the one live content belongs to.
-func (l *ledger) compose(d *platforms.SessionDetail, limit, offset int, now time.Time) {
+// only applies to the newest page, the one live content belongs to, and
+// returns the messages it added, which are not stored history.
+func (l *ledger) compose(d *platforms.SessionDetail, limit, offset int, now time.Time) []string {
 	if d == nil || offset != 0 {
-		return
+		return nil
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.releaseLocked(d, now)
 	if len(l.content.msgs) == 0 && len(l.content.parts) == 0 && len(l.removed) == 0 {
-		return
+		return nil
 	}
 	// The read may be shared with a cache; compose into copies.
 	d.Messages = withoutRemoved(l.removed, d.Messages, func(m db.Message) []string { return []string{"m:" + m.ID} })
 	d.Parts = withoutRemoved(l.removed, d.Parts, func(p db.Part) []string { return []string{"p:" + p.ID, "m:" + p.MessageID} })
-	l.overlayLocked(d, limit)
+	return l.overlayLocked(d, limit)
 }
 
 func withoutRemoved[T any](removed map[string]time.Time, rows []T, keys func(T) []string) []T {
@@ -254,7 +255,7 @@ func (l *ledger) pendingPartsLocked(messageID string) bool {
 	return false
 }
 
-func (l *ledger) overlayLocked(d *platforms.SessionDetail, limit int) {
+func (l *ledger) overlayLocked(d *platforms.SessionDetail, limit int) []string {
 	index := map[string]int{}
 	oldest := int64(-1 << 62)
 	for i, m := range d.Messages {
@@ -263,21 +264,21 @@ func (l *ledger) overlayLocked(d *platforms.SessionDetail, limit int) {
 			oldest = m.TimeCreated
 		}
 	}
-	added := 0
+	var added []string
 	for _, id := range l.content.msgOrder {
 		m := l.content.msgs[id]
 		i, ok := index[id]
 		switch {
 		case !ok && m.TimeCreated >= oldest:
 			d.Messages = append(d.Messages, m)
-			added++
+			added = append(added, id)
 		case ok && completed(m.Data) && !completed(d.Messages[i].Data):
 			d.Messages[i] = m
 		}
 	}
-	if added > 0 {
+	if len(added) > 0 {
 		sort.SliceStable(d.Messages, func(a, b int) bool { return d.Messages[a].TimeCreated < d.Messages[b].TimeCreated })
-		d.TotalMessages += added
+		d.TotalMessages += len(added)
 	}
 	present := map[string]bool{}
 	for _, m := range d.Messages {
@@ -301,6 +302,7 @@ func (l *ledger) overlayLocked(d *platforms.SessionDetail, limit int) {
 			d.Parts[i].Data = withFields(d.Parts[i].Data, lp.fields)
 		}
 	}
+	return added
 }
 
 // covers reports whether a stored part holds every streamed field at least

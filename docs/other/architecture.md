@@ -1211,7 +1211,9 @@ flowchart TD
     settled lifecycle read or detach. Removals leave tombstones that filter
     older reads; rewrites discard ended turns.
   - `GET /api/session/{id}` (newest page) lays the ledger over the stored read and
-    returns `stream.cursor`, the hub position it covers. A read that stores a
+    returns `stream.cursor`, the hub position it covers, and
+    `stream.composedMessageIds`. Older-history paging offsets count only
+    messages a read returned as stored history. A read that stores a
     settled entry at least as completely, or stores its message as completed,
     confirms it; it leaves 30 seconds later, because a concurrent read may have
     queried history first. Settled entries missing from a read that stores

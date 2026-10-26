@@ -148,8 +148,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	remote := isRemotePlatformID(string(adapter.ID()))
 	// History trails the live stream: compose what this hub streamed but
-	// history has not stored yet. Clients replay only events after cursor.
-	cursor := s.convStreamModule().Hub().Compose(convstream.Key{Platform: string(adapter.ID()), SessionID: sessionID}, detail, limit, offset)
+	// history has not stored yet. Clients replay only events after its cursor
+	// and page older history without counting the composed messages.
+	composed := s.convStreamModule().Hub().Compose(convstream.Key{Platform: string(adapter.ID()), SessionID: sessionID}, detail, limit, offset)
 	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 	peek := r.URL.Query().Get("peek") == "1"
@@ -206,8 +207,8 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"defaultAgent":      detail.DefaultAgent,
 		"defaultModel":      detail.DefaultModel,
 	}
-	if cursor != "" {
-		body["stream"] = map[string]string{"cursor": cursor}
+	if composed.Cursor != "" || len(composed.MessageIDs) > 0 {
+		body["stream"] = map[string]any{"cursor": composed.Cursor, "composedMessageIds": composed.MessageIDs}
 	}
 	httpx.WriteJSON(w, body)
 }

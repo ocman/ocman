@@ -457,8 +457,13 @@ export interface SessionDetail {
   defaultAgent?: string;
   defaultModel?: string;
   warnings?: SessionWarning[];
-  /** The conversation stream position this read covers; replay only later events. */
-  stream?: { cursor: string };
+  /**
+   * Composition with streamed content history has not stored: `cursor` is the
+   * stream position the read covers (replay only later events; empty when no
+   * stream is attached) and `composedMessageIds` are messages that are not
+   * stored history yet, so paging offsets must not count them.
+   */
+  stream?: { cursor?: string; composedMessageIds?: string[] | null };
 }
 
 /**

@@ -68,7 +68,8 @@ func TestConversationReadComposesStreamedContentHistoryHasNotStored(t *testing.T
 		Messages []db.Message `json:"messages"`
 		Parts    []db.Part    `json:"parts"`
 		Stream   struct {
-			Cursor string `json:"cursor"`
+			Cursor             string   `json:"cursor"`
+			ComposedMessageIDs []string `json:"composedMessageIds"`
 		} `json:"stream"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || rec.Code != http.StatusOK {
@@ -76,6 +77,9 @@ func TestConversationReadComposesStreamedContentHistoryHasNotStored(t *testing.T
 	}
 	if len(body.Messages) != 2 || body.Messages[1].ID != "reply" || len(body.Parts) != 1 || !bytes.Contains(body.Parts[0].Data, []byte("Final answer")) {
 		t.Fatalf("read omits the streamed reply: %s", rec.Body)
+	}
+	if ids := body.Stream.ComposedMessageIDs; len(ids) != 1 || ids[0] != "reply" {
+		t.Fatalf("composed ids = %v", ids)
 	}
 	if _, seq, ok := convevents.ParseCursor(body.Stream.Cursor); !ok || seq == 0 {
 		t.Fatalf("cursor = %q", body.Stream.Cursor)

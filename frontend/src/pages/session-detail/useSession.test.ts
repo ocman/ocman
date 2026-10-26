@@ -1380,6 +1380,23 @@ describe('useSession — loadMore', () => {
     expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
   });
 
+  it('pages older history without counting composed or streamed messages history has not stored', async () => {
+    const head = makeDetail({ messages: [msg('stored', SID), { ...msg('composed', SID), timeCreated: 2_000 }],
+      totalMessages: 3, stream: { cursor: 'e:1', composedMessageIds: ['composed'] } });
+    const fetchSession = vi.fn().mockResolvedValueOnce(head)
+      .mockResolvedValueOnce(makeDetail({ messages: [msg('older', SID)], totalMessages: 3 }));
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+    act(() => FakeEventSource.latest()!.emitOce({ type: 'message.upserted',
+      message: { ...msg('streamed', SID), timeCreated: 3_000, data: { role: 'assistant' } } }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(3));
+
+    await act(async () => { await result.current.loadMore(); });
+
+    expect(fetchSession).toHaveBeenLastCalledWith(SID, 30, 1, expect.any(AbortSignal), undefined, true);
+    expect(result.current.messages.map((m) => m.id)).toEqual(['older', 'stored', 'composed', 'streamed']);
+  });
+
   it('keeps the conversation and stream usable after a failed history page', async () => {
     const failure = new Error('history temporarily unavailable');
     const log = vi.spyOn(remoteLog, 'error').mockImplementation(() => {});

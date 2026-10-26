@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject } from 'react';
 import { useApiStore } from '../../lib/apiStore';
 import { APIError, AuthError } from '../../lib/api.requests';
+import type { SessionDetail } from '../../lib/api.types';
 import { initialSessionView, seedDeltaOwnedFields, type SessionView } from '../../lib/sessionReducer';
 import { onPageResume } from '../../lib/pageResume';
 import { watchKeepalive } from '../../lib/sseKeepalive';
@@ -11,6 +12,16 @@ import type { LiveSessionAction } from '../../lib/conversation/liveSessionView';
 import { notifyQueueUpdated } from '../../lib/useGlobalEvents';
 import { isSessionPageRestore, latestPage, viewFromDetail } from './sessionView';
 import type { UseSessionOptions, UseSessionStatus } from './useSession';
+
+/**
+ * Records the messages a read returned as stored history and returns the
+ * stream cursor it covers, if any.
+ */
+function readCoverage(detail: SessionDetail, stored: Set<string>): string | undefined {
+  const composed = new Set(detail.stream?.composedMessageIds ?? []);
+  for (const m of detail.messages ?? []) if (!composed.has(m.id)) stored.add(m.id);
+  return detail.stream?.cursor || undefined;
+}
 
 /** Coalesces history commits that land together into one read. */
 export const COMMIT_READ_DELAY_MS = 250;
@@ -26,13 +37,14 @@ interface Options {
   viewRef: MutableRefObject<SessionView>;
   loadMoreAbortRef: MutableRefObject<AbortController | null>;
   loadMoreInFlightRef: MutableRefObject<boolean>;
+  storedIdsRef: MutableRefObject<Set<string>>;
   setLoadingMore: (loading: boolean) => void;
   setTotalMessages: Dispatch<import('react').SetStateAction<number>>;
 }
 
 /** Owns the initial load, reconciliation, and the session event connection. */
 export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, reconnectDelay, pageSize, debug,
-  dispatch, viewRef, loadMoreAbortRef, loadMoreInFlightRef, setLoadingMore, setTotalMessages }: Options) {
+  dispatch, viewRef, loadMoreAbortRef, loadMoreInFlightRef, storedIdsRef, setLoadingMore, setTotalMessages }: Options) {
   const candidate = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
   const cached = candidate && (!routedPlatform || candidate.session.platform === routedPlatform) ? candidate : null;
   const [status, setStatus] = useState<UseSessionStatus>(cached ? 'live' : 'loading');
@@ -58,6 +70,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
 
   useEffect(() => {
     if (entryRef.current.id !== sessionId || entryRef.current.platform !== routedPlatform) entryRef.current = { id: sessionId, platform: routedPlatform, opened: false };
+    storedIdsRef.current = new Set();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resets view state on session switch in the same effect that owns the SSE connection; deriving it in render would need a full lifecycle rewrite
     if (!sessionId) { setStatus('loading'); return; }
     if (sessionId === 'new') {
@@ -131,13 +144,13 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         if (cancelled || controller.signal.aborted) return false;
         // The owner composes streamed content history lacks up to the cursor;
         // only later events are newer than the read.
-        const cursor = detail.stream?.cursor;
+        const cursor = readCoverage(detail, storedIdsRef.current);
         if (mode === 'recover' || mode === 'restore') {
           loadMoreAbortRef.current?.abort();
           loadMoreInFlightRef.current = false;
           setLoadingMore(false);
           dispatch({ type: 'recover', view: viewFromDetail(sessionId, detail), sinceFence: eventsAfter(sinceFence, cursor),
-            restoreLiveFields: mode === 'restore', covered: !!cursor && !!parseCursor(cursor) });
+            restoreLiveFields: mode === 'restore', covered: parseCursor(cursor ?? '') !== null });
         } else dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode, statusRevision, sinceFence: eventsAfter(fence, cursor) });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);

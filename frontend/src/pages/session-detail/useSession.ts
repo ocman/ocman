@@ -99,6 +99,8 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   const [totalMessages, setTotalMessages] = useState(cached?.totalMessages || cached?.session.messageCount || 0);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const loadMoreInFlightRef = useRef(false);
+  // Messages known to be stored history; paging offsets count only these.
+  const storedIdsRef = useRef<Set<string>>(new Set());
   const viewRef = useRef(view);
   useLayoutEffect(() => { viewRef.current = view; markSseCommit(); }, [view]);
 
@@ -133,7 +135,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   useSessionCache(sessionId, view, totalMessages, pageSize);
   const lifecycle = useSessionLifecycle({
     sessionId, routedPlatform, fetchSession, reconnectDelay, pageSize, debug,
-    dispatch, viewRef, loadMoreAbortRef, loadMoreInFlightRef, setLoadingMore, setTotalMessages,
+    dispatch, viewRef, loadMoreAbortRef, loadMoreInFlightRef, storedIdsRef, setLoadingMore, setTotalMessages,
   });
 
   const { id: liveId, platform, status: liveStatus, notice, liveConnection } = view.session ?? {};
@@ -151,7 +153,9 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
     if (!sessionId || loadMoreInFlightRef.current) return;
     loadMoreInFlightRef.current = true;
     setLoadingMore(true);
-    const offset = platformMessageCount(viewRef.current.messages);
+    // Streamed and composed messages history has not stored yet would shift
+    // the offset past a stored message.
+    const offset = platformMessageCount(viewRef.current.messages.filter((m) => storedIdsRef.current.has(m.id)));
     const controller = new AbortController();
     loadMoreAbortRef.current = controller;
     try {
@@ -162,6 +166,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
       if (current.sessionId !== sessionId || detail.session.id !== sessionId) return;
       const newMsgs = detail.messages || [];
       const newParts = detail.parts || [];
+      for (const m of newMsgs) storedIdsRef.current.add(m.id);
       if (newMsgs.length === 0) return;
       const existingIds = new Set(current.messages.map((m) => m.id));
       const existingPartIds = new Set(current.parts.map((p) => p.id));
@@ -182,6 +187,7 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
   }, [sessionId, fetchSession, pageSize, routedPlatform, setTotalMessages]);
 
   const hydrateHistory = useCallback((messages: Message[], parts: Part[]) => {
+    for (const m of messages) storedIdsRef.current.add(m.id);
     const current = viewRef.current;
     const currentMessages = new Map(current.messages.map((message) => [message.id, message]));
     const currentParts = new Map(current.parts.map((part) => [part.id, part]));

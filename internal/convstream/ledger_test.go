@@ -59,10 +59,14 @@ func TestComposeKeepsAnEndedTurnUntilHistoryStoresIt(t *testing.T) {
 
 	// History has only the prompt: the read shows the reply anyway.
 	lagging := &platforms.SessionDetail{Messages: []db.Message{message("prompt", 10, `{"role":"user"}`)}, TotalMessages: 1}
-	cursor := h.Compose(testKey, lagging, 30, 0)
+	composed := h.Compose(testKey, lagging, 30, 0)
 	if got := texts(lagging)["p1"]; got != "Final answer" || len(lagging.Messages) != 2 || lagging.TotalMessages != 2 {
 		t.Fatalf("composed = %v %+v", got, lagging)
 	}
+	if len(composed.MessageIDs) != 1 || composed.MessageIDs[0] != "msg_1" {
+		t.Fatalf("composed message ids = %v", composed.MessageIDs)
+	}
+	cursor := composed.Cursor
 	epoch, seq, ok := convevents.ParseCursor(cursor)
 	if !ok || epoch != sub.Epoch || seq == 0 {
 		t.Fatalf("cursor = %q", cursor)
@@ -85,7 +89,7 @@ func TestComposeKeepsAnEndedTurnUntilHistoryStoresIt(t *testing.T) {
 	}
 	h.mu.Unlock()
 	revisit := &platforms.SessionDetail{}
-	if cursor := h.Compose(testKey, revisit, 30, 0); cursor != "" || texts(revisit)["p1"] != "Final answer" {
+	if cursor := h.Compose(testKey, revisit, 30, 0).Cursor; cursor != "" || texts(revisit)["p1"] != "Final answer" {
 		t.Fatalf("detached compose = %q %v", cursor, texts(revisit))
 	}
 
@@ -113,7 +117,7 @@ func TestComposeEventsAfterTheCursorAreNotInTheRead(t *testing.T) {
 	sub := subscribe(t, h, src, "")
 	sink := nextSink(t, src)
 	sink.Emit(textPart("p1", "a", false), Meta{})
-	cursor := h.Compose(testKey, &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}}, 30, 0)
+	cursor := h.Compose(testKey, &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}}, 30, 0).Cursor
 	sink.Emit(delta("p1", 1, "b"), Meta{})
 	frames := decodeAll(t, drain(sub))
 	last := frames[len(frames)-1]
@@ -224,8 +228,9 @@ func TestLedgerRewriteDropsEndedTurnsAndEvictionKeepsTheRunningTurn(t *testing.T
 	l.apply(convevents.PartRemoved{MessageID: "msg_2", PartID: "running"}, now)
 	l.apply(convevents.MessageRemoved{MessageID: "msg_2"}, now)
 	l.apply(convevents.TurnStarted{}, now)
-	if !l.expired(now) {
-		t.Fatal("empty ledger not expired")
+	// Its removal tombstones keep it until it expires.
+	if l.expired(now) || !l.expired(now.Add(ledgerTTL+time.Second)) {
+		t.Fatal("tombstone-only ledger expiry")
 	}
 	for i := range maxLedgerParts + 1 {
 		p := textPart("p"+time.Duration(i).String(), "x", false)
@@ -290,8 +295,16 @@ func TestLedgerSettlesWhenATurnEndsWithoutAnIdleEdge(t *testing.T) {
 	for name, end := range map[string]func(*session){
 		"terminal status": func(s *session) { s.onStatusLocked(status(db.StatusError), false) },
 		"idle reconnect":  func(s *session) { s.connectLocked(Seed{Status: &convevents.SessionStatusEvent{Status: db.StatusDone}}) },
-		"settled read":    func(s *session) { s.settledLocked(s.st.gen, &platforms.SessionLifecycle{Status: db.StatusDone}, nil, false) },
-		"detach":          func(s *session) { s.mu.Unlock(); s.hub.mu.Lock(); s.hub.detachLocked(s); s.hub.mu.Unlock(); s.mu.Lock() },
+		"settled read": func(s *session) {
+			s.settledLocked(s.st.gen, &platforms.SessionLifecycle{Status: db.StatusDone}, nil, false)
+		},
+		"detach": func(s *session) {
+			s.mu.Unlock()
+			s.hub.mu.Lock()
+			s.hub.detachLocked(s)
+			s.hub.mu.Unlock()
+			s.mu.Lock()
+		},
 	} {
 		s := newSession(newTestHub(t, Options{}), testKey)
 		s.mu.Lock()
@@ -305,5 +318,19 @@ func TestLedgerSettlesWhenATurnEndsWithoutAnIdleEdge(t *testing.T) {
 			t.Fatalf("%s: ended turn not settled", name)
 		}
 		s.mu.Unlock()
+	}
+}
+
+func TestHubKeepsTombstonesOfDetachedSessions(t *testing.T) {
+	now := time.Now()
+	h := newTestHub(t, Options{Now: func() time.Time { return now }})
+	h.mu.Lock()
+	l := h.ledgerLocked(testKey)
+	h.mu.Unlock()
+	l.apply(convevents.MessageRemoved{MessageID: "gone"}, now)
+	h.Compose(Key{Platform: "opencode", SessionID: "other"}, &platforms.SessionDetail{}, 30, 0)
+	lagging := &platforms.SessionDetail{Messages: []db.Message{message("gone", 1, `{}`)}}
+	if h.Compose(testKey, lagging, 30, 0); len(lagging.Messages) != 0 {
+		t.Fatalf("a sweep dropped the tombstone: %v", ids(lagging))
 	}
 }

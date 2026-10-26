@@ -248,28 +248,36 @@ func (h *Hub) sweepLocked() {
 	}
 }
 
+// Composed describes what Hub.Compose added to a stored read.
+type Composed struct {
+	// Cursor is the stream position the read covers, or "" when no stream is
+	// attached; a client replays only events after it.
+	Cursor string
+	// MessageIDs are added messages history has not stored; history paging
+	// offsets must not count them.
+	MessageIDs []string
+}
+
 // Compose lays the stream's unconfirmed content over a stored conversation
-// read of key and releases what the read already stores. It returns the
-// stream cursor the composed read covers, or "" when no stream is attached;
-// a client replays only events after it.
-func (h *Hub) Compose(key Key, d *platforms.SessionDetail, limit, offset int) string {
+// read of key and releases what the read already stores.
+func (h *Hub) Compose(key Key, d *platforms.SessionDetail, limit, offset int) Composed {
 	h.mu.Lock()
 	h.sweepLocked()
 	s, l := h.sessions[key], h.ledgers[key]
 	h.mu.Unlock()
 	if s == nil {
-		if l != nil {
-			l.compose(d, limit, offset, h.opts.Now())
+		if l == nil {
+			return Composed{}
 		}
-		return ""
+		return Composed{MessageIDs: l.compose(d, limit, offset, h.opts.Now())}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.ledger.compose(d, limit, offset, h.opts.Now())
-	if !s.everConnected || s.detached {
-		return ""
+	out := Composed{MessageIDs: s.ledger.compose(d, limit, offset, h.opts.Now())}
+	if s.everConnected && !s.detached {
+		out.Cursor = convevents.FormatCursor(s.log.epoch, s.log.last)
 	}
-	return convevents.FormatCursor(s.log.epoch, s.log.last)
+	return out
 }
 
 // Publish adds a synthetic event to an attached session's stream; it is
