@@ -113,13 +113,13 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       const modes = [...PERMISSION_MODES];
       if (nativeMode !== null) modes.push({
         id: nativeMode === 'auto' ? 'native-default' : 'native-auto',
-        label: nativeMode === 'auto' ? 'Disable native Auto' : 'Enable native Auto',
-        description: 'Claude reviews tool calls. Ocman rules and auto-approval stay separate. Applies on next turn when idle; requires a supported model.',
+        label: 'Native Auto',
+        description: `${nativePending ? 'Applies on the next turn. ' : ''}Claude reviews tool calls. Ocman rules and auto-approval stay separate. Applies on next turn when idle; requires a supported model.`,
         rules: [],
       });
       return modes.map((m) => ({ ...m, value: m.id, iconClass: permissionModeIconClass(m.id) }));
     },
-    [nativeMode],
+    [nativeMode, nativePending],
   );
 
   if (rules === null) return null;
@@ -140,6 +140,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       <CommandListPicker
         open={pickerOpen}
         entries={entries}
+        sectionOf={nativeMode !== null ? (m) => m.id.startsWith('native-') ? 'Platform modes' : 'Ocman modes' : undefined}
         fuseKeys={[{ name: 'label', weight: 1 }, { name: 'description', weight: 0.5 }]}
         renderRow={(m) => (
           <>
@@ -152,7 +153,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
         )}
         placeholder={() => 'Permission mode...'}
         emptyMessage="No permission modes"
-        isCurrent={(m) => m.id === modeId}
+        isCurrent={(m) => m.id === modeId || (m.id === 'native-default' && nativeMode === 'auto')}
         onSelect={(id) => { void apply(id); }}
         onClose={() => setPickerOpen(false)}
       />

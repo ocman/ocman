@@ -25,9 +25,14 @@ test('native Auto changes independently of ocman restrictions', async ({ mockedP
   });
   await page.goto(`/session/${MOCK_SESSION.id}`);
   await page.getByRole('button', { name: 'Permission mode: Custom', exact: true }).click();
-  await page.getByText('Enable native Auto', { exact: true }).click();
+  await expect(page.getByText('Ocman modes', { exact: true })).toBeVisible();
+  await expect(page.getByText('Platform modes', { exact: true })).toBeVisible();
+  const nativeAuto = page.getByRole('option', { name: /Native Auto/ });
+  await expect(nativeAuto.locator('[data-active]')).toHaveAttribute('data-active', 'false');
+  await nativeAuto.click();
   await expect(page.getByRole('button', { name: 'Permission mode: Custom + native Auto', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Permission mode: Custom + native Auto', exact: true }).click();
-  await page.getByText('Disable native Auto', { exact: true }).click();
+  await expect(nativeAuto.locator('[data-active]')).toHaveAttribute('data-active', 'true');
+  await nativeAuto.click();
   await expect(page.getByRole('button', { name: 'Permission mode: Custom', exact: true })).toBeVisible();
 });
