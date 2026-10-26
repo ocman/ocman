@@ -10,7 +10,7 @@ import { reduceConversation } from '../../lib/conversation/conversationReducer';
 import { eventsAfter, parseCursor, type OceEnvelope } from '../../lib/conversation/events';
 import type { LiveSessionAction } from '../../lib/conversation/liveSessionView';
 import { notifyQueueUpdated } from '../../lib/useGlobalEvents';
-import { isSessionPageRestore, latestPage, viewFromDetail } from './sessionView';
+import { isSessionPageRestore, latestPage, storedMessageIds, viewFromDetail } from './sessionView';
 import type { UseSessionOptions, UseSessionStatus } from './useSession';
 
 /**
@@ -18,8 +18,7 @@ import type { UseSessionOptions, UseSessionStatus } from './useSession';
  * stream cursor it covers, if any.
  */
 function readCoverage(detail: SessionDetail, stored: Set<string>): string | undefined {
-  const composed = new Set(detail.stream?.composedMessageIds ?? []);
-  for (const m of detail.messages ?? []) if (!composed.has(m.id)) stored.add(m.id);
+  for (const id of storedMessageIds(detail)) stored.add(id);
   return detail.stream?.cursor || undefined;
 }
 
@@ -212,11 +211,12 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       dirty: () => setChangesDirtyTick((t) => t + 1),
       // History stored what it trailed. A settled conversation rereads it to
       // fill anything the stream missed; a running turn reconciles at its end.
+      // Merging keeps older pages the user loaded; removals arrive as events.
       committed: () => {
         clearTimeout(commitTimer);
         commitTimer = setTimeout(() => {
           if (viewRef.current.sessionId === sessionId && viewRef.current.session?.status === 'busy') return;
-          void doFetch('recover');
+          void doFetch('reconcile');
         }, COMMIT_READ_DELAY_MS);
       },
       queue: (messages) => notifyQueueUpdated(sessionId, messages),

@@ -23,6 +23,7 @@ import { parsePart } from '../../lib/convertMessages';
 import { cleanTitle } from '../../lib/format';
 import type { MessageBookmark } from '../../lib/messageBookmarks';
 import { useMessageBookmarks } from './useMessageBookmarks';
+import { storedMessageIds } from './sessionView';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../../components/AssistantThread';
 import { ShareLinkModal } from '../../components/ShareExportMenu';
@@ -290,7 +291,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           return;
         }
         jump();
-        hydrateHistory(detail.messages, detail.parts);
+        hydrateHistory(detail.messages, detail.parts, storedMessageIds(detail));
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -764,6 +765,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             sessionId: session.id,
             messages: [...detail.messages, ...messages.filter((message) => !messageIds.has(message.id))],
             parts: [...detail.parts, ...parts.filter((part) => !partIds.has(part.id))],
+            storedIds: storedMessageIds(detail),
           });
         })
         .catch((error) => remoteLog.error('Failed to load message jump history', error));

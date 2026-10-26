@@ -106,10 +106,10 @@ describe('SessionModals', () => {
   it('hydrates history before jumping to a message not in the live window', () => {
     const p = renderModals({
       openModal: 'jump',
-      messageJumpHistory: { sessionId: 's1', messages: historyMessages, parts: historyParts },
+      messageJumpHistory: { sessionId: 's1', messages: historyMessages, parts: historyParts, storedIds: ['msg-old'] },
     });
     fireEvent.click(screen.getByText('Ancient prompt'));
-    expect(p.hydrateHistory).toHaveBeenCalledWith(historyMessages, historyParts);
+    expect(p.hydrateHistory).toHaveBeenCalledWith(historyMessages, historyParts, ['msg-old']);
     expect(p.onScrollToMessage).toHaveBeenCalledWith('msg-old');
   });
 

@@ -19,6 +19,7 @@ import { queryClient } from '../../lib/queryClient';
 import type { OceEvent } from '../../lib/conversation/events';
 import { PROGRESS_RECONCILE_MS, SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from '../../lib/conversation/conversationStream';
 import { COMMIT_READ_DELAY_MS } from './useSessionLifecycle';
+import { storedMessageIds } from './sessionView';
 import { onQueueUpdated } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
 import { APIError, AuthError } from '../../lib/api.requests';
@@ -325,7 +326,7 @@ describe('useSession — bounded stream work (#722)', () => {
   it('keeps an explicit reload authoritative when its first read fails', async () => {
     const { result, fetchSession, unmount } = await setup();
     act(() => result.current.hydrateHistory(
-      [{ id: 'removed', sessionId: SID, timeCreated: 1, data: { role: 'user' } }], [],
+      [{ id: 'removed', sessionId: SID, timeCreated: 1, data: { role: 'user' } }], [], ['removed'],
     ));
     fetchSession.mockRejectedValueOnce(new Error('offline'));
     await act(async () => result.current.reload());
@@ -953,6 +954,7 @@ describe('useSession — initial load', () => {
     act(() => result.current.hydrateHistory(
       [{ id: 'old', sessionId: SID, timeCreated: 1_000, data: { role: 'user' } }, ...detail.messages],
       [{ id: 'old-part', messageId: 'old', sessionId: SID, data: { type: 'text', text: 'Older prompt' } }],
+      ['old', ...detail.messages.map((m) => m.id)],
     ));
 
     expect(result.current.messages.map((message) => message.id)).toEqual(['old', 'new']);
@@ -970,6 +972,7 @@ describe('useSession — initial load', () => {
     act(() => result.current.hydrateHistory(
       [{ ...kept, data: { role: 'assistant', finish: 'stale' } }, { id: 'middle', sessionId: SID, timeCreated: 1_500, data: { role: 'user' } }, { ...live, data: { role: 'assistant', finish: 'stale' } }],
       [{ id: 'old-part', messageId: 'old', sessionId: SID, data: { type: 'text', text: 'old' } }, { ...livePart, data: { type: 'text', text: 'stale' } }],
+      [kept.id, 'middle', live.id],
     ));
 
     expect(result.current.messages.map((message) => message.id)).toEqual(['kept', 'middle', 'live']);
@@ -994,7 +997,7 @@ describe('useSession — initial load', () => {
       data: { role: 'assistant' as const },
     }));
 
-    act(() => result.current.hydrateHistory(history, []));
+    act(() => result.current.hydrateHistory(history, [], history.map((m) => m.id)));
 
     await waitFor(() => expect(result.current.messages).toHaveLength(150));
     expect(result.current.messages.some((message) => message.id === 'oldest')).toBe(true);
@@ -1395,6 +1398,33 @@ describe('useSession — loadMore', () => {
 
     expect(fetchSession).toHaveBeenLastCalledWith(SID, 30, 1, expect.any(AbortSignal), undefined, true);
     expect(result.current.messages.map((m) => m.id)).toEqual(['older', 'stored', 'composed', 'streamed']);
+  });
+
+  it('keeps loaded older history when stored history commits', async () => {
+    const head = makeDetail({ messages: [msg('m2', SID)], totalMessages: 2 });
+    const fetchSession = vi.fn().mockResolvedValueOnce(head)
+      .mockResolvedValueOnce(makeDetail({ messages: [msg('m1', SID)], totalMessages: 2 }))
+      .mockResolvedValue(head);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    await act(async () => { await result.current.loadMore(); });
+    act(() => FakeEventSource.latest()!.emitOce({ type: 'history.committed', revision: 2 }));
+    await waitFor(() => expect(fetchSession).toHaveBeenCalledTimes(3));
+    expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('pages after hydrated history without counting its composed messages', async () => {
+    const fetchSession = vi.fn().mockResolvedValueOnce(makeDetail({ messages: [msg('m3', SID)], totalMessages: 4 }))
+      .mockResolvedValueOnce(makeDetail({ messages: [msg('m0', SID)], totalMessages: 4 }));
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    const full = makeDetail({ messages: [msg('m1', SID), msg('m2', SID), msg('composed', SID)],
+      stream: { composedMessageIds: ['composed'] } });
+    act(() => result.current.hydrateHistory(full.messages, [], storedMessageIds(full)));
+
+    await act(async () => { await result.current.loadMore(); });
+
+    expect(fetchSession).toHaveBeenLastCalledWith(SID, 30, 3, expect.any(AbortSignal), undefined, true);
   });
 
   it('keeps the conversation and stream usable after a failed history page', async () => {

@@ -38,6 +38,12 @@ export function latestPage(messages: Message[], parts: Part[], keep: number): { 
   return { messages: kept, parts: parts.filter((p) => ids.has(p.messageId)) };
 }
 
+/** Messages a read returned as stored history, not composed live content. */
+export function storedMessageIds(detail: Pick<SessionDetail, 'messages' | 'stream'>): string[] {
+  const composed = new Set(detail.stream?.composedMessageIds ?? []);
+  return (detail.messages ?? []).map((m) => m.id).filter((id) => !composed.has(id));
+}
+
 export function platformMessageCount(messages: Message[]): number {
   return messages.reduce((count, message) => count + (message.data?.role === 'notice' ? 0 : 1), 0);
 }

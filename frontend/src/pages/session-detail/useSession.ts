@@ -44,7 +44,8 @@ export interface UseSessionResult extends SessionView {
   /** Reconcile a failed refresh while preserving streamed content. */
   refresh: () => Promise<void>;
   loadMore: () => Promise<void>;
-  hydrateHistory: (messages: Message[], parts: Part[]) => void;
+  /** `storedIds` names the messages that are stored history, for paging. */
+  hydrateHistory: (messages: Message[], parts: Part[], storedIds: readonly string[]) => void;
   loading: boolean;
   loadingMore: boolean;
   loadError: string | null;
@@ -186,8 +187,8 @@ export function useSession(sessionId: string | undefined, options: UseSessionOpt
     }
   }, [sessionId, fetchSession, pageSize, routedPlatform, setTotalMessages]);
 
-  const hydrateHistory = useCallback((messages: Message[], parts: Part[]) => {
-    for (const m of messages) storedIdsRef.current.add(m.id);
+  const hydrateHistory = useCallback((messages: Message[], parts: Part[], storedIds: readonly string[]) => {
+    for (const id of storedIds) storedIdsRef.current.add(id);
     const current = viewRef.current;
     const currentMessages = new Map(current.messages.map((message) => [message.id, message]));
     const currentParts = new Map(current.parts.map((part) => [part.id, part]));

@@ -13,6 +13,8 @@ export interface MessageJumpHistory {
   sessionId: string;
   messages: Message[];
   parts: Part[];
+  /** Messages the history read returned as stored, not composed or live. */
+  storedIds: string[];
 }
 
 export interface SessionModalsProps {
@@ -33,7 +35,7 @@ export interface SessionModalsProps {
 
   patchSession: (patch: Partial<Pick<Session, 'title' | 'directory'>>) => void;
   navigateToSession: (id: string) => void;
-  hydrateHistory: (messages: Message[], parts: Part[]) => void;
+  hydrateHistory: (messages: Message[], parts: Part[], storedIds: readonly string[]) => void;
   onRenamed: () => void;
   onScrollToMessage: (messageId: string) => void;
 }
@@ -121,7 +123,7 @@ export function SessionModals({
           onClose={onClose}
           onSelect={(messageId) => {
             if (jumpHistory && !messages.some((message) => message.id === messageId)) {
-              hydrateHistory(jumpHistory.messages, jumpHistory.parts);
+              hydrateHistory(jumpHistory.messages, jumpHistory.parts, jumpHistory.storedIds);
             }
             onScrollToMessage(messageId);
           }}
