@@ -45,8 +45,9 @@ type Hooks struct {
 	// the server can broadcast a provisional list row the frontend can
 	// show before the authoritative refetch lands.
 	SessionCreated func(info CreatedSession)
-	// ArchiveCreated archives a session whose creation request asked for it.
-	// It runs before SessionCreated so the row never surfaces unarchived.
+	// ArchiveCreated archives a session whose creation request asked for it,
+	// before the creation commits. A failure disposes the session; without the
+	// hook, archived creation is unsupported.
 	ArchiveCreated   func(ctx context.Context, platform, sessionID string) error
 	FirstPromptAdded func(context.Context, module.FirstPromptAdded)
 	// ProjectModels returns the ordered model list configured for dir's

@@ -28,3 +28,25 @@ func TestCreatedRoutineEventCarriesFilterMetadata(t *testing.T) {
 		t.Fatal("no creation event")
 	}
 }
+
+func TestCreatedPluginEventCarriesOriginAndArchive(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+	srv.broadcastSessionCreated(sessionsvc.CreatedSession{ID: "ses", Platform: "opencode", Directory: "/repo",
+		Origin: "plugin", OriginID: "org.example.background", Archived: true})
+	select {
+	case event := <-sub.ch:
+		var payload struct {
+			Session db.Session `json:"session"`
+		}
+		if err := json.Unmarshal(event.data, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Session.Origin != "plugin" || payload.Session.OriginID != "org.example.background" || !payload.Session.Archived {
+			t.Fatalf("session=%+v", payload.Session)
+		}
+	default:
+		t.Fatal("no creation event")
+	}
+}

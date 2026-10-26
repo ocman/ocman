@@ -5,6 +5,7 @@ const rows = [
   { ...MOCK_SESSION, id: 'routine', title: 'Routine work', routineId: 'routine-1' },
   { ...MOCK_SESSION, id: 'routine-child', title: 'Routine child', parentId: 'routine', status: 'busy' },
   { ...MOCK_SESSION, id: 'factory', title: 'Factory work', factoryAttemptId: 'attempt-1' },
+  { ...MOCK_SESSION, id: 'plugin', title: 'Plugin work', origin: 'plugin', originId: 'org.example.background' },
   { ...MOCK_SESSION, id: 'child', title: 'Normal child', parentId: MOCK_SESSION.id, status: 'busy' },
   { ...MOCK_SESSION, id: 'archived', title: 'Archived work', archived: true },
   { ...MOCK_SESSION, id: 'snoozed', title: 'Snoozed work', archived: true, snoozedUntil: Date.now() + 86400_000 },
@@ -15,7 +16,7 @@ test('phone filters use desktop options, defaults and saved preferences', async 
   await page.route('/api/sessions*', route => route.fulfill({ json: rows }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/sessions');
-  for (const name of ['Routine work', 'Routine child', 'Factory work', 'Archived work', 'Snoozed work']) {
+  for (const name of ['Routine work', 'Routine child', 'Factory work', 'Plugin work', 'Archived work', 'Snoozed work']) {
     await expect(page.getByRole('link', { name: new RegExp(name) })).toHaveCount(0);
   }
   await expect(page.getByRole('link', { name: /Normal child/ })).toBeVisible();
@@ -29,10 +30,13 @@ test('phone filters use desktop options, defaults and saved preferences', async 
     { label: 'Always show prompts', checked: true }, { label: 'Show archived', checked: false },
     { label: 'Show snoozed', checked: false }, { label: 'Show children', checked: true },
     { label: 'Show factory', checked: false }, { label: 'Show routines', checked: false },
+    { label: 'Show plugins', checked: false },
   ]);
   await mobileMenu.getByRole('checkbox', { name: 'Show routines' }).check();
   await mobileMenu.getByRole('checkbox', { name: 'Show factory' }).check();
+  await mobileMenu.getByRole('checkbox', { name: 'Show plugins' }).check();
   await mobileMenu.getByRole('checkbox', { name: 'Show snoozed' }).check();
+  await expect(page.getByRole('link', { name: /Plugin work/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /Routine work/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /Routine child/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /Factory work/ })).toBeVisible();

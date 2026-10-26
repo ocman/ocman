@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
@@ -22,6 +20,8 @@ type CreatedSession struct {
 	Title     string
 	RoutineID string
 	Archived  bool
+	Origin    string
+	OriginID  string
 }
 
 // Create creates a session, auto-picking the only available platform when empty.
@@ -136,8 +136,12 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		return nil, err
 	}
 	defer finish()
+	archive := req.Creation.Archived
+	if archive && s.hooks.ArchiveCreated == nil {
+		return nil, platforms.ErrUnsupported
+	}
 	var disposer platforms.SessionDisposer
-	if rules != nil {
+	if rules != nil || archive {
 		var ok bool
 		disposer, ok = adapter.(platforms.SessionDisposer)
 		if !ok {
@@ -162,6 +166,11 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if err == nil && routine.link != nil {
 		err = routine.link(resp.ID)
 	}
+	// An archived request is part of creation: a session that cannot be hidden
+	// is disposed rather than published and prompted visibly.
+	if err == nil && archive {
+		err = s.hooks.ArchiveCreated(context.WithoutCancel(ctx), string(adapter.ID()), resp.ID)
+	}
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
@@ -174,7 +183,6 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if err := commitCreation(ctx, adapter, resp.ID); err != nil {
 		return nil, err
 	}
-	archived := s.archiveCreated(ctx, adapter.ID(), resp.ID, req.Creation.Archived)
 	copy := *resp
 	resp = &copy
 	resp.ConfigurationApplied = resp.ConfigurationApplied || rules != nil
@@ -188,22 +196,9 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		}
 		s.hooks.SessionCreated(CreatedSession{
 			ID: resp.ID, Platform: string(adapter.ID()), Directory: req.Directory,
-			Title: req.Title, RoutineID: routineID, Archived: archived,
+			Title: req.Title, RoutineID: routineID, Archived: archive,
+			Origin: req.Creation.Origin, OriginID: req.Creation.OriginID,
 		})
 	}
 	return resp, nil
-}
-
-// archiveCreated honours a creation-time archive request. The session already
-// exists, so a failed archive is logged rather than failing the creation.
-func (s *Service) archiveCreated(ctx context.Context, platformID platforms.ID, sessionID string, requested bool) bool {
-	if !requested || s.hooks.ArchiveCreated == nil {
-		return false
-	}
-	if err := s.hooks.ArchiveCreated(context.WithoutCancel(ctx), string(platformID), sessionID); err != nil {
-		log.WithError(err).WithFields(log.Fields{"platform": platformID, "session_id": sessionID}).
-			Warn("archiving session at creation")
-		return false
-	}
-	return true
 }
