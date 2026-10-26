@@ -303,4 +303,26 @@ describe('reduceLiveSessionView', () => {
     const cleared = reduceLiveSessionView(view, { type: 'clearPrompt', kind: 'question', id: 'x' });
     expect(cleared).toBe(view);
   });
+
+  it('does not restore an answered prompt when a recover lands before prompt.resolved', () => {
+    const asked = reduceLiveSessionView(seed(), { type: 'oceBatch', envelopes: [
+      env({ type: 'prompt.asked', prompt: permission('p1') }),
+      env({ type: 'prompt.asked', prompt: question('q1') }),
+    ] });
+    let view = reduceLiveSessionView(asked, { type: 'clearPrompt', kind: 'question', id: 'q1' });
+    view = reduceLiveSessionView(view, { type: 'clearPrompt', kind: 'permission', id: 'p1' });
+    // The fence holds the events that arrived while the recovery read waited.
+    const sinceFence = [env({ type: 'prompt.asked', prompt: permission('p1') }), env({ type: 'prompt.asked', prompt: question('q1') })];
+    for (const fence of [[], sinceFence]) {
+      const recovered = reduceLiveSessionView(view, { type: 'recover', view: seed(), sinceFence: fence });
+      expect(recovered.pendingQuestion).toBeNull();
+      expect(recovered.pendingPermission).toBeNull();
+    }
+
+    const other = reduceLiveSessionView(asked, { type: 'clearPrompt', kind: 'question', id: 'q2' });
+    const kept = reduceLiveSessionView(other, { type: 'recover', view: seed(), sinceFence: [] });
+    expect(kept.pendingQuestion?.requestId).toBe('q1');
+    const replayed = reduceLiveSessionView(seed(), { type: 'recover', view: seed(), sinceFence });
+    expect(replayed.pendingQuestion?.requestId).toBe('q1');
+  });
 });

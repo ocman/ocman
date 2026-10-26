@@ -57,6 +57,14 @@ before fuzzing. This self-test uses a fake Go command and does not run in
 regular CI. On failure the workflow uploads `internal/**/testdata/fuzz/`, where
 Go writes crashing inputs.
 
+## E2e runs
+
+Specs mock `/api` through `frontend/e2e/fixtures.ts` and run fully parallel,
+so a spec must not depend on another's state. The Playwright server listens on
+a port derived from the checkout path and never reuses a running server; see
+`frontend/playwright.config.ts` for `E2E_WORKERS`, `E2E_PORT` and the other
+overrides. Wait for the state a user would see, not a fixed delay.
+
 ## E2e locators
 
 In `frontend/e2e/`, prefer these locators in order:

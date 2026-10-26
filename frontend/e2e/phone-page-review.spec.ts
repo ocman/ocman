@@ -1,6 +1,9 @@
 import { test, expect } from './fixtures';
 import { installPhoneReviewRoutes, phoneReviewPages } from './phone-review-fixtures';
 
+// Screenshots are for manual review; set E2E_REVIEW_SCREENSHOTS=1 to save them.
+const saveScreenshots = process.env.E2E_REVIEW_SCREENSHOTS === '1';
+
 for (const width of [320, 390]) {
   for (const [path, action] of [
     ['/routines', 'New routine'], ['/routines?tab=inboxes', 'New inbox'],
@@ -17,7 +20,7 @@ for (const width of [320, 390]) {
       const undersized = await dialog.evaluate(el => [...el.querySelectorAll<HTMLElement>('button, input:not([type="checkbox"], [type="radio"], [type="hidden"]), select')]
         .filter(e => e.checkVisibility() && e.getBoundingClientRect().height < 43).map(e => e.getAttribute('aria-label') || e.textContent));
       expect(undersized).toEqual([]);
-      await page.screenshot({ path: testInfo.outputPath(`drawer-${action.replaceAll(' ', '-')}-${width}.png`) });
+      if (saveScreenshots) await page.screenshot({ path: testInfo.outputPath(`drawer-${action.replaceAll(' ', '-')}-${width}.png`) });
     });
   }
 
@@ -58,7 +61,7 @@ for (const width of [320, 390]) {
       expect(layout.overflow, 'The page itself must not need horizontal scrolling').toBeLessThanOrEqual(1);
       expect(layout.clipped, 'Controls must fit or have a bounded horizontal scroller').toEqual([]);
       expect(layout.undersized, 'Control touch targets must be at least 44px high').toEqual([]);
-      await page.screenshot({ path: testInfo.outputPath(`${name}-${width}.png`) });
+      if (saveScreenshots) await page.screenshot({ path: testInfo.outputPath(`${name}-${width}.png`) });
     });
   }
 }

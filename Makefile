@@ -273,10 +273,10 @@ test-backend:
 test-frontend:
 	cd frontend && pnpm test $(VITEST_FLAGS)
 
-# Run Playwright end-to-end tests. Build the frontend first so the
-# Playwright webServer can serve `vite preview` from a fresh dist/.
+# Run Playwright end-to-end tests. Build the bundle first so the Playwright
+# webServer can serve `vite preview` from it; `make lint` owns typechecking.
 test-e2e: ## Run Playwright end-to-end tests
-	cd frontend && pnpm build && pnpm test:e2e $(PLAYWRIGHT_FLAGS)
+	cd frontend && pnpm exec vite build && pnpm test:e2e $(PLAYWRIGHT_FLAGS)
 
 # Run Playwright against the Vite dev server (StrictMode, HMRless test run).
 # Use this when a regression reproduces only in local dev mode.

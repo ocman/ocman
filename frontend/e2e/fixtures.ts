@@ -100,6 +100,11 @@ export async function installDefaultRoutes(page: Page) {
   await page.route('/api/plugins/panes*', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
+  // Requested by the app shell on every page.
+  await page.route('/api/inbox', (route: Route) => route.fulfill({ json: { items: [], unreadTotal: 0 } }));
+  await page.route('/api/doctor', (route: Route) => route.fulfill({ json: { checks: [] } }));
+  await page.route('/api/hook-plugin', (route: Route) => route.fulfill({ json: { available: false, installed: false } }));
+  await page.route('/api/ui-usage', (route: Route) => route.fulfill({ json: { now: Date.now() } }));
 
   // Sessions list
   await page.route('/api/sessions*', (route: Route) =>

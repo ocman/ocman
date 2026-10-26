@@ -126,9 +126,12 @@ test.describe('native phone shell', () => {
     await page.goto('/sessions');
     const nav = page.getByRole('navigation', { name: 'Phone navigation' });
     const content = page.getByTestId('page-content');
-    const contentBox = await content.boundingBox();
-    const navBox = await nav.boundingBox();
-    expect(contentBox!.y + contentBox!.height).toBeLessThanOrEqual(navBox!.y + 1);
+    await expect(page.getByRole('link', { name: /Fix the login bug/ })).toBeVisible();
+    // Layout settles after the first paint; measure the final geometry.
+    await expect.poll(async () => {
+      const [contentBox, navBox] = await Promise.all([content.boundingBox(), nav.boundingBox()]);
+      return contentBox!.y + contentBox!.height - navBox!.y;
+    }).toBeLessThanOrEqual(1);
     // Phone rows use swipes. The action remains available to keyboard users.
     const archive = page.getByRole('button', { name: 'Archive session', exact: true }).first();
     await archive.focus();

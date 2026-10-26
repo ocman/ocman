@@ -107,6 +107,16 @@ function reconcileLoad(state: SessionView, incoming: SessionView, statusRevision
   };
 }
 
+function clearPrompt(state: SessionView, action: Extract<SessionAction, { type: 'clearPrompt' }>): SessionView {
+  const pendingId = action.kind === 'permission' ? state.pendingPermission?.permissionId : state.pendingQuestion?.requestId;
+  if (pendingId === undefined || pendingId !== action.id) return state;
+  const cleared = action.kind === 'permission' ? { pendingPermission: null } : { pendingQuestion: null };
+  // The stream's live ledger is cleared too: a recover restores prompts
+  // from it, and would otherwise resurrect an answered prompt that the
+  // server has not yet confirmed with prompt.resolved.
+  return { ...state, ...cleared, ...(state._live ? { _live: clearPrompt(state._live, action) } : {}) };
+}
+
 /**
  * Pure reducer. Returns the same `state` reference when the action
  * is a no-op so React skips re-renders.
@@ -143,19 +153,8 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
         _statusRevision: state._statusRevision,
       };
     }
-    case 'clearPrompt': {
-      if (action.kind === 'permission') {
-        if (!state.pendingPermission) return state;
-        if (state.pendingPermission.permissionId !== action.id) return state;
-        return { ...state, pendingPermission: null };
-      }
-      if (action.kind === 'question') {
-        if (!state.pendingQuestion) return state;
-        if (state.pendingQuestion.requestId !== action.id) return state;
-        return { ...state, pendingQuestion: null };
-      }
-      return state;
-    }
+    case 'clearPrompt':
+      return clearPrompt(state, action);
     case 'setPendingPermission': {
       // Session guard. The reverse-sync
       // fetch that dispatches this outlives a navigation, so without it

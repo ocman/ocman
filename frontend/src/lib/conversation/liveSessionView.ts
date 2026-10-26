@@ -19,6 +19,12 @@ function restoreStreamedFields(view: SessionView, live: OcePart): SessionView {
   return { ...view, parts: replaceAt(view.parts, idx, encode(view.parts[idx], next)) };
 }
 
+// The live ledger already folded the fenced prompts; replaying an ask would
+// resurrect a prompt answered while the recovery read was in flight.
+function fencedReplay(sinceFence: OceEnvelope[], hasLive: boolean): OceEnvelope[] {
+  return hasLive ? sinceFence.filter((e) => e.event.type !== 'prompt.asked') : sinceFence;
+}
+
 export type LiveSessionAction = SessionAction | { type: 'oceBatch'; envelopes: OceEnvelope[] }
   | { type: 'recover'; view: SessionView; sinceFence: OceEnvelope[]; restoreLiveFields?: boolean };
 
@@ -54,7 +60,7 @@ export function reduceLiveSessionView(view: SessionView, action: LiveSessionActi
       }
     }
     return reduceConversation({ ...incoming, _statusRevision: view._statusRevision,
-      _refetchRequested: false, _stale: undefined }, action.sinceFence);
+      _refetchRequested: false, _stale: undefined }, fencedReplay(action.sinceFence, !!live));
   }
   if (action.type === 'oceBatch') {
     return timeSseBatch(action.envelopes.length, () => reduceConversation(view, action.envelopes),

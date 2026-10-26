@@ -168,15 +168,15 @@ test.describe('narrow Factory navigation', () => {
     } : [] }));
 
     await page.goto('/factory/queue');
-    await expect(page.getByRole('link', { name: 'Queue' })).toHaveAttribute('aria-current', 'page');
-    await page.getByRole('link', { name: 'Epics' }).press('Enter');
-    await expect(page).toHaveURL(/\/factory\/epics$/);
-    await page.getByRole('link', { name: 'Issues' }).press('Enter');
-    await expect(page).toHaveURL(/\/factory\/issues$/);
-    await page.getByRole('link', { name: 'Queue' }).press('Enter');
-    await expect(page).toHaveURL(/\/factory\/queue$/);
-    await page.getByRole('link', { name: 'Configuration' }).press('Enter');
-    await expect(page).toHaveURL(/\/factory\/configuration$/);
+    const nav = page.getByRole('navigation', { name: 'Factory' });
+    await expect(nav.getByRole('link', { name: 'Queue' })).toHaveAttribute('aria-current', 'page');
+    // Each page is lazy and renders its own nav. The URL changes before the
+    // new page commits, so wait for its nav before pressing the next link.
+    for (const [name, path] of [['Epics', 'epics'], ['Issues', 'issues'], ['Queue', 'queue'], ['Configuration', 'configuration']]) {
+      await nav.getByRole('link', { name }).press('Enter');
+      await expect(page).toHaveURL(new RegExp(`/factory/${path}$`));
+      await expect(nav.getByRole('link', { name })).toHaveAttribute('aria-current', 'page');
+    }
     await expect(page.getByRole('heading', { name: 'Tracer · ocman/tracer@3' })).toBeVisible();
     await expect(page.getByRole('status')).toContainText('Formula is valid');
     const editor = page.getByRole('textbox', { name: 'Formula YAML', includeHidden: true });
