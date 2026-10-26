@@ -108,6 +108,11 @@ stored-message guesses.
   ownership bootstrap before headers, then replay buffered lifecycle events so
   background snapshots cannot lose a shell's final completion event.
 - Do not reintroduce `STATUS_GRACE_MS` or sticky-busy sidebar merging.
+- Conversation reads are composed: `convstream.Hub.Compose` lays streamed
+  content stored history lacks over `GET /api/session/{id}` and returns
+  `stream.cursor`. The browser replays only events after it and rereads on
+  `history.committed`. Do not add browser-side guesses (union merges, length
+  heuristics, polling) to hide history lag; fix the composition instead.
 - Canonical adapters read persisted session data only from statev2;
   `owned.New` requires the store. Native transcript/database reads belong to
   ingestion, identity probes or explicit runtime-safety probes, never a browsing

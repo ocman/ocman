@@ -56,6 +56,7 @@ type Server struct {
 	historyIngest           *conversationingest.Module
 	historyAnalytics        *analytics.HistoryAnalytics
 	historyOwner            string
+	historyCommits          *historyCommits
 	db                      *db.DB
 	subscriptionCredentials func(context.Context) (map[string]db.SubscriptionOAuth, error)
 	stateDB                 *state.DB

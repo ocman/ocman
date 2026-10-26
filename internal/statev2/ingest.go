@@ -66,6 +66,7 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 	if err := tx.Commit(); err != nil {
 		return CommitResult{}, err
 	}
+	d.notifyCommitted(s.Key, result.Revision)
 	return result, nil
 }
 

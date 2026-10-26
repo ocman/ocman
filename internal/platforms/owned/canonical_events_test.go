@@ -38,3 +38,17 @@ func TestCanonicalEventValidatorRejectsNativeAndPendingWithoutClearingOrAllocati
 		t.Fatal("partial peer frame accepted")
 	}
 }
+
+func TestCanonicalEventValidatorChecksHistoryCommitSessions(t *testing.T) {
+	frame := func(id string) string {
+		return fmt.Sprintf("event: ocman.history.committed\ndata: {\"type\":\"ocman.history.committed\",\"properties\":{\"sessionID\":%q,\"revision\":3}}\n\n", id)
+	}
+	var out bytes.Buffer
+	if _, err := io.WriteString(CanonicalEventValidator(t.Context(), &out), frame("native")); err == nil || out.Len() != 0 {
+		t.Fatalf("native commit session forwarded: %q %v", out.String(), err)
+	}
+	id := "ocm_" + uuid.NewString()
+	if _, err := io.WriteString(CanonicalEventValidator(t.Context(), &out), frame(id)); err != nil || !strings.Contains(out.String(), id) {
+		t.Fatalf("canonical commit frame dropped: %q %v", out.String(), err)
+	}
+}

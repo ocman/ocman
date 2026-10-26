@@ -87,6 +87,9 @@ func (d *DB) ApplyStream(ctx context.Context, u StreamUpdate) (StreamResult, err
 	if err := tx.Commit(); err != nil {
 		return StreamResult{}, err
 	}
+	for key, revision := range result.Sessions {
+		d.notifyCommitted(key, revision)
+	}
 	return result, nil
 }
 

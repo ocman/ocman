@@ -6,11 +6,14 @@ import { onPageResume } from '../../lib/pageResume';
 import { watchKeepalive } from '../../lib/sseKeepalive';
 import { conversationStreamUrl, createConversationStream, type StreamDebugEvent } from '../../lib/conversation/conversationStream';
 import { reduceConversation } from '../../lib/conversation/conversationReducer';
-import type { OceEnvelope } from '../../lib/conversation/events';
+import { eventsAfter, parseCursor, type OceEnvelope } from '../../lib/conversation/events';
 import type { LiveSessionAction } from '../../lib/conversation/liveSessionView';
 import { notifyQueueUpdated } from '../../lib/useGlobalEvents';
 import { isSessionPageRestore, latestPage, viewFromDetail } from './sessionView';
 import type { UseSessionOptions, UseSessionStatus } from './useSession';
+
+/** Coalesces history commits that land together into one read. */
+export const COMMIT_READ_DELAY_MS = 250;
 
 interface Options {
   sessionId?: string;
@@ -91,6 +94,9 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     let fetchRetryAttempt = 0;
     let attempt = 0;
     let recoveryEvents: OceEnvelope[] | null = null;
+    // Events received while the latest read is in flight.
+    let readEvents: OceEnvelope[] | null = null;
+    let commitTimer: ReturnType<typeof setTimeout> | undefined;
     let recoveryMode: 'recover' | 'restore' = 'recover';
     let upstreamFailed = false;
     let readBlocked = false;
@@ -112,6 +118,8 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      const fence: OceEnvelope[] = [];
+      readEvents = fence;
       // Live status seen after this point outranks the response's.
       const statusRevision = viewRef.current._statusRevision ?? 0;
       try {
@@ -121,12 +129,16 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         entryRef.current.opened = true;
         events.flush();
         if (cancelled || controller.signal.aborted) return false;
+        // The owner composes streamed content history lacks up to the cursor;
+        // only later events are newer than the read.
+        const cursor = detail.stream?.cursor;
         if (mode === 'recover' || mode === 'restore') {
           loadMoreAbortRef.current?.abort();
           loadMoreInFlightRef.current = false;
           setLoadingMore(false);
-          dispatch({ type: 'recover', view: viewFromDetail(sessionId, detail), sinceFence, restoreLiveFields: mode === 'restore' });
-        } else dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode, statusRevision });
+          dispatch({ type: 'recover', view: viewFromDetail(sessionId, detail), sinceFence: eventsAfter(sinceFence, cursor),
+            restoreLiveFields: mode === 'restore', covered: !!cursor && !!parseCursor(cursor) });
+        } else dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode, statusRevision, sinceFence: eventsAfter(fence, cursor) });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);
         setRefreshing(false);
@@ -165,11 +177,14 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         setLoadError(message);
         setStatus('error');
         return false;
+      } finally {
+        if (readEvents === fence) readEvents = null;
       }
     };
     const events = createConversationStream({
       sessionId, dispatch: (action) => {
         recoveryEvents?.push(...action.envelopes);
+        readEvents?.push(...action.envelopes);
         dispatch(action);
       },
       reconcile: () => doFetch('reconcile'),
@@ -182,6 +197,15 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         setRefreshError(error);
       },
       dirty: () => setChangesDirtyTick((t) => t + 1),
+      // History stored what it trailed. A settled conversation rereads it to
+      // fill anything the stream missed; a running turn reconciles at its end.
+      committed: () => {
+        clearTimeout(commitTimer);
+        commitTimer = setTimeout(() => {
+          if (viewRef.current.sessionId === sessionId && viewRef.current.session?.status === 'busy') return;
+          void doFetch('recover');
+        }, COMMIT_READ_DELAY_MS);
+      },
       queue: (messages) => notifyQueueUpdated(sessionId, messages),
       hasStale: () => viewRef.current.sessionId === sessionId && !!viewRef.current._stale?.size,
       isBusy: () => !readBlocked && viewRef.current.sessionId === sessionId && viewRef.current.session?.status === 'busy',
@@ -239,6 +263,7 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
     return () => {
       cancelled = true;
       clearTimeout(fetchRetryTimer);
+      clearTimeout(commitTimer);
       unsubscribeResume();
       const pending = events.dispose();
       // Cache pending events without dispatching them into the next session.

@@ -260,3 +260,17 @@ func TestDefaultClock(t *testing.T) {
 		t.Fatal("zero notice is set")
 	}
 }
+
+func TestHistoryCommittedNamesOnlyThePageSession(t *testing.T) {
+	m := newTestMapper(Options{})
+	got := mapAll(m,
+		`{"type":"ocman.history.committed","properties":{"sessionID":"s","revision":7}}`,
+		`{"type":"ocman.history.committed","properties":{"sessionID":"child","revision":8}}`,
+		`{"type":"ocman.history.committed","properties":{"revision":9}}`,
+		`{"type":"ocman.history.committed","properties":{"sessionID":"s","revision":0}}`,
+		`{"type":"ocman.history.committed","properties":{"sessionID":"s","revision":1.5}}`,
+	)
+	if want := []convevents.Event{convevents.HistoryCommitted{Revision: 7}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}

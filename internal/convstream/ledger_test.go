@@ -1,0 +1,309 @@
+package convstream
+
+import (
+	"encoding/json"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/NoUseFreak/ocman/internal/convevents"
+	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+)
+
+func message(id string, created int64, data string) db.Message {
+	return db.Message{ID: id, SessionID: testKey.SessionID, TimeCreated: created, Data: json.RawMessage(data)}
+}
+
+func storedPart(id, messageID, text string) db.Part {
+	data, _ := json.Marshal(map[string]any{"type": "text", "text": text})
+	return db.Part{ID: id, MessageID: messageID, SessionID: testKey.SessionID, Data: data}
+}
+
+func texts(d *platforms.SessionDetail) map[string]string {
+	out := map[string]string{}
+	for _, p := range d.Parts {
+		out[p.ID] = readPart(p.Data).Text
+	}
+	return out
+}
+
+func ids(d *platforms.SessionDetail) []string {
+	out := []string{}
+	for _, m := range d.Messages {
+		out = append(out, m.ID)
+	}
+	return out
+}
+
+// streamReply streams one assistant reply and ends its turn.
+func streamReply(t *testing.T, sink Sink, sub *Subscription) {
+	t.Helper()
+	sink.Emit(status(db.StatusBusy), Meta{})
+	sink.Emit(convevents.MessageUpserted{Message: message("msg_1", 20, `{"role":"assistant"}`)}, Meta{})
+	sink.Emit(textPart("p1", "Final", false), Meta{})
+	sink.Emit(delta("p1", 5, " answer"), Meta{})
+	sink.Emit(idle(), Meta{})
+	await(t, sub, convevents.TypeTurnEnded)
+}
+
+func TestComposeKeepsAnEndedTurnUntilHistoryStoresIt(t *testing.T) {
+	var clock atomic.Int64
+	clock.Store(time.Now().UnixNano())
+	h := newTestHub(t, Options{Linger: time.Millisecond, Now: func() time.Time { return time.Unix(0, clock.Load()) }})
+	src := newFakeSource()
+	src.lc = &platforms.SessionLifecycle{Status: db.StatusDone}
+	sub := subscribe(t, h, src, "")
+	sink := nextSink(t, src)
+	streamReply(t, sink, sub)
+
+	// History has only the prompt: the read shows the reply anyway.
+	lagging := &platforms.SessionDetail{Messages: []db.Message{message("prompt", 10, `{"role":"user"}`)}, TotalMessages: 1}
+	cursor := h.Compose(testKey, lagging, 30, 0)
+	if got := texts(lagging)["p1"]; got != "Final answer" || len(lagging.Messages) != 2 || lagging.TotalMessages != 2 {
+		t.Fatalf("composed = %v %+v", got, lagging)
+	}
+	epoch, seq, ok := convevents.ParseCursor(cursor)
+	if !ok || epoch != sub.Epoch || seq == 0 {
+		t.Fatalf("cursor = %q", cursor)
+	}
+
+	// The source restarts: a new connection's hello still restates the reply.
+	src.end <- errBoom
+	sink = nextSink(t, src)
+	hello := decode(t, subscribe(t, h, src, "").Hello.frame).Event.(convevents.StreamHello)
+	if parts := hello.Overlay.Inflight.Parts; len(parts) != 1 || readPart(parts[0].Data).Text != "Final answer" {
+		t.Fatalf("restarted hello = %+v", hello.Overlay.Inflight)
+	}
+
+	// Detached sessions keep it for a revisit's read.
+	_ = sink
+	sub.Close()
+	h.mu.Lock()
+	for _, s := range h.sessions {
+		h.detachLocked(s)
+	}
+	h.mu.Unlock()
+	revisit := &platforms.SessionDetail{}
+	if cursor := h.Compose(testKey, revisit, 30, 0); cursor != "" || texts(revisit)["p1"] != "Final answer" {
+		t.Fatalf("detached compose = %q %v", cursor, texts(revisit))
+	}
+
+	// A read that stores it confirms it. A slower read that queried history
+	// before it still gets the reply during the grace period, not after.
+	stored := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant"}`)},
+		Parts: []db.Part{storedPart("p1", "msg_1", "Final answer")}}
+	h.Compose(testKey, stored, 30, 0)
+	older := &platforms.SessionDetail{}
+	if h.Compose(testKey, older, 30, 0); texts(older)["p1"] != "Final answer" {
+		t.Fatalf("concurrent older read lost the reply: %+v", older)
+	}
+	clock.Add(int64(releaseGrace))
+	h.Compose(testKey, &platforms.SessionDetail{}, 30, 0)
+	empty := &platforms.SessionDetail{}
+	h.Compose(testKey, empty, 30, 0)
+	if len(empty.Messages) != 0 || len(empty.Parts) != 0 {
+		t.Fatalf("released content returned: %+v", empty)
+	}
+}
+
+func TestComposeEventsAfterTheCursorAreNotInTheRead(t *testing.T) {
+	h := newTestHub(t, Options{})
+	src := newFakeSource()
+	sub := subscribe(t, h, src, "")
+	sink := nextSink(t, src)
+	sink.Emit(textPart("p1", "a", false), Meta{})
+	cursor := h.Compose(testKey, &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}}, 30, 0)
+	sink.Emit(delta("p1", 1, "b"), Meta{})
+	frames := decodeAll(t, drain(sub))
+	last := frames[len(frames)-1]
+	_, at, _ := convevents.ParseCursor(cursor)
+	if last.Event.EventType() != convevents.TypePartDelta || last.Seq <= at {
+		t.Fatalf("delta seq %d not after cursor %s", last.Seq, cursor)
+	}
+	for _, f := range frames[:len(frames)-1] {
+		if f.Seq > at {
+			t.Fatalf("event %s at %d is after the cursor %s but in the read", f.Event.EventType(), f.Seq, cursor)
+		}
+	}
+}
+
+func TestComposeReleasesOnlyWhatHistoryStores(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	for _, ev := range []convevents.Event{
+		convevents.MessageUpserted{Message: message("msg_1", 20, `{"role":"assistant","time":{"created":20,"completed":30}}`)},
+		textPart("p1", "long streamed thinking", false),
+		convevents.PartUpserted{Final: true, Part: convevents.Part{Part: db.Part{ID: "tool", MessageID: "msg_1",
+			Data: json.RawMessage(`{"type":"tool","state":{"status":"completed","output":"ok"}}`)}}},
+	} {
+		l.apply(ev, now)
+	}
+	l.settle()
+	running := textPart("running", "still streaming", false)
+	running.Part.MessageID = "msg_2"
+	l.apply(convevents.MessageUpserted{Message: message("msg_2", 40, `{"role":"assistant"}`)}, now)
+	l.apply(running, now)
+
+	// A partial read: incomplete message, shorter text, running tool.
+	partial := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant"}`), message("msg_2", 40, `{"role":"assistant"}`)},
+		Parts: []db.Part{storedPart("p1", "msg_1", "long"),
+			{ID: "tool", MessageID: "msg_1", Data: json.RawMessage(`{"type":"tool","state":{"status":"running","output":"ok"}}`)},
+			storedPart("running", "msg_2", "still streaming")}}
+	l.compose(partial, 30, 0, now)
+	if got := texts(partial); got["p1"] != "long streamed thinking" || readPart(partial.Parts[1].Data).State.Status != "completed" {
+		t.Fatalf("partial read not overlaid: %v %s", got, partial.Parts[1].Data)
+	}
+	if !completed(partial.Messages[0].Data) {
+		t.Fatal("stored incomplete message hid the completed live copy")
+	}
+	if len(l.content.parts) != 3 {
+		t.Fatalf("released unconfirmed content: %v", l.content.partOrder)
+	}
+
+	// The completed stored message owns its parts, even with less text. The
+	// running turn's part stays until its turn ends.
+	done := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop"}`)},
+		Parts: []db.Part{storedPart("p1", "msg_1", "")}}
+	l.compose(done, 30, 0, now)
+	if len(l.content.parts) != 3 || len(l.confirmed) != 3 {
+		t.Fatalf("confirmed = %v", l.content.partOrder)
+	}
+	if texts(done)["p1"] != "long streamed thinking" {
+		t.Fatal("grace overlay lost the streamed text")
+	}
+	done = &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop"}`)},
+		Parts: []db.Part{storedPart("p1", "msg_1", "")}}
+	l.compose(done, 30, 0, now.Add(releaseGrace))
+	if len(l.content.parts) != 1 || l.content.parts["running"] == nil || len(l.content.msgs) != 1 || l.content.msgs["msg_2"].ID == "" {
+		t.Fatalf("after completed read: parts=%v msgs=%v", l.content.partOrder, l.content.msgOrder)
+	}
+	if texts(done)["p1"] != "" {
+		t.Fatal("completed stored part was overwritten")
+	}
+}
+
+func TestComposeDropsEndedContentHistoryMovedPast(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	l.apply(convevents.MessageUpserted{Message: message("msg_1", 20, `{}`)}, now)
+	l.apply(textPart("p1", "reverted", false), now)
+	l.settle()
+	later := &platforms.SessionDetail{Messages: []db.Message{message("later", 30, `{"role":"user"}`)}}
+	l.compose(later, 30, 0, now)
+	if len(later.Messages) != 1 || len(l.content.parts) != 0 || len(l.content.msgs) != 0 {
+		t.Fatalf("removed content survived: %+v parts=%v", later, l.content.partOrder)
+	}
+}
+
+func TestComposeOverlaysOnlyTheNewestPage(t *testing.T) {
+	l := &ledger{}
+	l.apply(convevents.MessageUpserted{Message: message("old", 5, `{}`)}, time.Now())
+	older := &platforms.SessionDetail{}
+	l.compose(older, 30, 30, time.Now())
+	full := &platforms.SessionDetail{Messages: []db.Message{message("a", 10, `{}`), message("b", 11, `{}`)}}
+	l.compose(full, 2, 0, time.Now())
+	if len(older.Messages) != 0 || len(full.Messages) != 2 {
+		t.Fatalf("overlay outside its page: older=%v full=%v", ids(older), ids(full))
+	}
+	l.compose(nil, 30, 0, time.Now())
+}
+
+func TestLedgerRewriteDropsEndedTurnsAndEvictionKeepsTheRunningTurn(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	l.apply(textPart("ended", "x", false), now)
+	l.settle()
+	running := textPart("running", "y", false)
+	running.Part.MessageID = "msg_2"
+	l.apply(running, now)
+	l.apply(convevents.HistoryRewritten{Reason: convevents.RewriteRevert}, now)
+	if len(l.content.parts) != 1 || l.content.parts["running"] == nil {
+		t.Fatalf("rewrite kept %v", l.content.partOrder)
+	}
+	l.apply(convevents.PartRemoved{MessageID: "msg_2", PartID: "running"}, now)
+	l.apply(convevents.MessageRemoved{MessageID: "msg_2"}, now)
+	l.apply(convevents.TurnStarted{}, now)
+	if !l.expired(now) {
+		t.Fatal("empty ledger not expired")
+	}
+	for i := range maxLedgerParts + 1 {
+		p := textPart("p"+time.Duration(i).String(), "x", false)
+		if i == 0 {
+			p.Part.MessageID = "ended"
+			l.apply(p, now)
+			l.settle()
+			continue
+		}
+		l.apply(p, now)
+	}
+	if len(l.content.parts) != maxLedgerParts || l.content.parts["p0s"] != nil {
+		t.Fatalf("ledger holds %d parts", len(l.content.parts))
+	}
+}
+
+func TestHubSweepsExpiredDetachedLedgers(t *testing.T) {
+	now := time.Now()
+	h := newTestHub(t, Options{Now: func() time.Time { return now }})
+	h.mu.Lock()
+	l := h.ledgerLocked(testKey)
+	h.mu.Unlock()
+	l.apply(textPart("p1", "x", false), now)
+	now = now.Add(ledgerTTL + time.Second)
+	if h.Compose(Key{Platform: "opencode", SessionID: "other"}, &platforms.SessionDetail{}, 30, 0); len(h.ledgers) != 0 {
+		t.Fatalf("expired ledger kept: %v", h.ledgers)
+	}
+}
+
+func TestComposeKeepsStreamRemovalsOutOfOlderReads(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	l.apply(convevents.MessageRemoved{MessageID: "gone"}, now)
+	l.apply(convevents.PartRemoved{MessageID: "kept", PartID: "gone-part"}, now)
+	read := &platforms.SessionDetail{
+		Messages: []db.Message{message("gone", 1, `{}`), message("kept", 2, `{}`)},
+		Parts:    []db.Part{storedPart("a", "gone", "x"), storedPart("gone-part", "kept", "y"), storedPart("b", "kept", "z")},
+	}
+	l.compose(read, 30, 0, now)
+	if got := ids(read); len(got) != 1 || got[0] != "kept" || len(read.Parts) != 1 || read.Parts[0].ID != "b" {
+		t.Fatalf("removed rows returned: %v %+v", got, read.Parts)
+	}
+	// The stream adding it back wins over the tombstone.
+	l.apply(convevents.MessageUpserted{Message: message("gone", 1, `{}`)}, now)
+	again := &platforms.SessionDetail{Messages: []db.Message{message("gone", 1, `{}`)}}
+	if l.compose(again, 30, 0, now); len(again.Messages) != 1 {
+		t.Fatalf("re-added message filtered: %v", ids(again))
+	}
+	l.compose(&platforms.SessionDetail{}, 30, 0, now.Add(ledgerTTL+time.Second))
+	if len(l.removed) != 0 {
+		t.Fatalf("tombstones = %v", l.removed)
+	}
+}
+
+func TestLedgerSettlesWhenATurnEndsWithoutAnIdleEdge(t *testing.T) {
+	settled := func(s *session) bool {
+		s.ledger.mu.Lock()
+		defer s.ledger.mu.Unlock()
+		return s.ledger.settled["msg_1"]
+	}
+	busy := &convevents.SessionStatusEvent{Status: db.StatusBusy}
+	for name, end := range map[string]func(*session){
+		"terminal status": func(s *session) { s.onStatusLocked(status(db.StatusError), false) },
+		"idle reconnect":  func(s *session) { s.connectLocked(Seed{Status: &convevents.SessionStatusEvent{Status: db.StatusDone}}) },
+		"settled read":    func(s *session) { s.settledLocked(s.st.gen, &platforms.SessionLifecycle{Status: db.StatusDone}, nil, false) },
+		"detach":          func(s *session) { s.mu.Unlock(); s.hub.mu.Lock(); s.hub.detachLocked(s); s.hub.mu.Unlock(); s.mu.Lock() },
+	} {
+		s := newSession(newTestHub(t, Options{}), testKey)
+		s.mu.Lock()
+		s.connectLocked(Seed{Status: busy})
+		s.handleLocked(textPart("p1", "x", false), false)
+		if settled(s) {
+			t.Fatalf("%s: running turn settled early", name)
+		}
+		end(s)
+		if !settled(s) {
+			t.Fatalf("%s: ended turn not settled", name)
+		}
+		s.mu.Unlock()
+	}
+}

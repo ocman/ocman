@@ -1053,6 +1053,16 @@ over TCP is ordered and lossless. Across connections the server decides.
   journal lands. The browser does not depend on that: its final content is
   the live source's final upserts.
 
+**As built (composed reads).** Reads later moved to statev2 for busy sessions
+too, so a read could miss streamed content and hide it on replacement. The
+hub now keeps a per-session ledger of streamed content history has not stored
+(surviving idle edges, source restarts and detaching), composes it into
+`GET /api/session/{id}`, and returns `stream.cursor` for the composed read.
+The browser replays only events after that cursor. `statev2.DB.OnCommitted`
+feeds owner streams a coalesced `ocman.history.committed` synthetic frame;
+settled browsers reread on it to backfill stream gaps. Per-row revisions and
+`ChangedSince` (§11) remain unbuilt: a composed reread replaces them.
+
 ---
 
 ## 8. Remote owners

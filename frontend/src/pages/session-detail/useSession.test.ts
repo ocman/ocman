@@ -18,6 +18,7 @@ import { SIDEBAR_SESSIONS_KEY, getSidebarSessions } from '../../lib/sessionsCach
 import { queryClient } from '../../lib/queryClient';
 import type { OceEvent } from '../../lib/conversation/events';
 import { PROGRESS_RECONCILE_MS, SETTLE_RECONCILE_MS, STALE_RECONCILE_MS } from '../../lib/conversation/conversationStream';
+import { COMMIT_READ_DELAY_MS } from './useSessionLifecycle';
 import { onQueueUpdated } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
 import { APIError, AuthError } from '../../lib/api.requests';
@@ -627,6 +628,74 @@ describe('useSession — bounded stream work (#722)', () => {
     expect(result.current.parts.find((p) => p.id === 'final-part')?.data).toEqual({ type: 'text', text: 'Final response' });
     expect(result.current.refreshError).toBeNull();
     unmount();
+  });
+
+  describe('composed reads and their stream cursor', () => {
+    const msg = (data: Record<string, unknown>) => ({ id: 'm', sessionId: SID, timeCreated: 2, data: { role: 'assistant', ...data } }) as SessionDetail['messages'][number];
+    const composed = (cursor: string) => makeDetail({
+      messages: [msg({ cost: 5 })],
+      parts: [{ id: 'p', messageId: 'm', sessionId: SID, data: JSON.stringify({ type: 'text', text: 'Hello' }) }],
+      stream: { cursor },
+    });
+
+    it('recovers from a read and replays only the events after its cursor', async () => {
+      const { result, sse, fetchSession, unmount } = await setup();
+      let finish!: (d: SessionDetail) => void;
+      fetchSession.mockImplementationOnce(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+      act(() => sse.emitOce(hello(false), { epoch: 'e1', seq: 1 }));
+      act(() => {
+        // Covered by the read, which also holds history's metadata.
+        sse.emitOce({ type: 'message.upserted', message: msg({}) }, { epoch: 'e1', seq: 2 });
+        sse.emitOce(partUpserted({ id: 'p', messageId: 'm', data: { type: 'text', text: 'Hello' } }, SID), { epoch: 'e1', seq: 3 });
+        // Newer than the read.
+        sse.emitOce(delta(5, ' world'), { epoch: 'e1', seq: 4 });
+      });
+      await act(async () => finish(composed('e1:3')));
+      expect(result.current.messages[0].data.cost).toBe(5);
+      expect(textOf(result.current.parts)).toBe('Hello world');
+      unmount();
+    });
+
+    it('keeps metadata events the read does not compose, even before its cursor', async () => {
+      const { result, sse, fetchSession, unmount } = await setup();
+      let finish!: (d: SessionDetail) => void;
+      fetchSession.mockImplementationOnce(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+      act(() => sse.emitOce(hello(false), { epoch: 'e1', seq: 1 }));
+      act(() => sse.emitOce({ type: 'session.updated', patch: { title: 'Renamed' } }, { epoch: 'e1', seq: 2 }));
+      await act(async () => finish(composed('e1:2')));
+      expect(result.current.session?.title).toBe('Renamed');
+      unmount();
+    });
+
+    it('lets events after a reconcile read win over it', async () => {
+      const { result, sse, fetchSession, unmount } = await setup();
+      let finish!: (d: SessionDetail) => void;
+      fetchSession.mockImplementationOnce(() => new Promise<SessionDetail>((resolve) => { finish = resolve; }));
+      await act(async () => sse.emitOce(turnEnded(), { epoch: 'e1', seq: 1 }));
+      act(() => {
+        sse.emitOce({ type: 'message.upserted', message: msg({ cost: 5 }) }, { epoch: 'e1', seq: 2 });
+        sse.emitOce({ type: 'message.upserted', message: msg({ cost: 5, time: { created: 2, completed: 9 } }) }, { epoch: 'e1', seq: 3 });
+      });
+      await act(async () => finish(composed('e1:2')));
+      expect(result.current.messages[0].data.time?.completed).toBe(9);
+      expect(textOf(result.current.parts)).toBe('Hello');
+      unmount();
+    });
+
+    it('rereads stored history when it commits while settled, not during a turn', async () => {
+      const { result, sse, fetchSession, unmount } = await setup();
+      const committed: OceEvent = { type: 'history.committed', revision: 3 };
+      act(() => { sse.emitOce(busy); sse.emitOce(committed); });
+      await act(async () => vi.advanceTimersByTimeAsync(COMMIT_READ_DELAY_MS));
+      expect(fetchSession).toHaveBeenCalledTimes(1);
+      fetchSession.mockResolvedValue(composed('e9:1'));
+      act(() => { sse.emitOce({ type: 'session.status', status: 'done' }); sse.emitOce(committed); sse.emitOce(committed); });
+      await act(async () => vi.advanceTimersByTimeAsync(COMMIT_READ_DELAY_MS));
+      expect(fetchSession).toHaveBeenCalledTimes(2);
+      // Content the stream never delivered arrives from history.
+      expect(textOf(result.current.parts)).toBe('Hello');
+      unmount();
+    });
   });
 
   it.each(['rewrite', 'cold reconnect'])('%s removes missed deletions but keeps events received after the request fence', async (trigger) => {

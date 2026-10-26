@@ -14,6 +14,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/convevents"
 	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // Key names a session stream: owner-qualified platform id plus session id.
@@ -56,6 +57,8 @@ type Hub struct {
 	mu       sync.Mutex
 	closed   bool
 	sessions map[Key]*session
+	// ledgers outlive their sessions so a revisit composes unconfirmed content.
+	ledgers map[Key]*ledger
 
 	// totalBytes counts retained log bytes across sessions.
 	totalBytes atomic.Int64
@@ -75,7 +78,7 @@ func NewHub(opts Options) *Hub {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Hub{opts: opts, sessions: map[Key]*session{}, maxTotal: maxTotalBytes}
+	return &Hub{opts: opts, sessions: map[Key]*session{}, ledgers: map[Key]*ledger{}, maxTotal: maxTotalBytes}
 }
 
 // Subscribe attaches to key's stream, starting its source with open when
@@ -155,6 +158,7 @@ func (h *Hub) acquire(key Key, open func() Source) (*session, error) {
 	s := h.sessions[key]
 	if s == nil {
 		s = newSession(h, key)
+		s.ledger = h.ledgerLocked(key)
 		h.sessions[key] = s
 	}
 	s.interest++
@@ -214,11 +218,58 @@ func (h *Hub) detachLocked(s *session) {
 	h.totalBytes.Add(-int64(s.log.bytes))
 	s.log = newLog()
 	s.detached = true
+	// No stream will report this turn's end; its content waits for history.
+	s.ledger.settle()
+	s.ledger.touch(h.opts.Now())
 	cancel := s.cancel
 	s.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
+}
+
+// ledgerLocked returns key's ledger, creating it, and forgets expired ones.
+func (h *Hub) ledgerLocked(key Key) *ledger {
+	h.sweepLocked()
+	l := h.ledgers[key]
+	if l == nil {
+		l = &ledger{touched: h.opts.Now()}
+		h.ledgers[key] = l
+	}
+	return l
+}
+
+func (h *Hub) sweepLocked() {
+	now := h.opts.Now()
+	for key, l := range h.ledgers {
+		if h.sessions[key] == nil && l.expired(now) {
+			delete(h.ledgers, key)
+		}
+	}
+}
+
+// Compose lays the stream's unconfirmed content over a stored conversation
+// read of key and releases what the read already stores. It returns the
+// stream cursor the composed read covers, or "" when no stream is attached;
+// a client replays only events after it.
+func (h *Hub) Compose(key Key, d *platforms.SessionDetail, limit, offset int) string {
+	h.mu.Lock()
+	h.sweepLocked()
+	s, l := h.sessions[key], h.ledgers[key]
+	h.mu.Unlock()
+	if s == nil {
+		if l != nil {
+			l.compose(d, limit, offset, h.opts.Now())
+		}
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ledger.compose(d, limit, offset, h.opts.Now())
+	if !s.everConnected || s.detached {
+		return ""
+	}
+	return convevents.FormatCursor(s.log.epoch, s.log.last)
 }
 
 // Publish adds a synthetic event to an attached session's stream; it is

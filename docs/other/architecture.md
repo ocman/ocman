@@ -1188,6 +1188,42 @@ flowchart TD
   A busy conversation with no content events for five seconds reconciles history
   even if transport keepalives continue. Content resets this timer; waiting and
   terminal states stop it. These repairs only read history, never resend input.
+  Stored history is ingested after the live stream, so the browser-facing hub
+  composes conversation reads; the browser never merges the two by guesswork:
+
+  ```mermaid
+  flowchart LR
+      Source[Live source] --> Hub[convstream hub]
+      Hub --> Ledger[Unconfirmed ledger]
+      Ingest[History ingestion] --> History[(state_conv.db)]
+      History -->|commit observer| Owner[Owner stream:<br/>ocman.history.committed]
+      Owner --> Hub
+      History --> Read[GET /api/session/id]
+      Ledger --> Read
+      Read -->|snapshot + stream.cursor| Browser
+      Hub -->|events after cursor, history.committed| Browser
+  ```
+
+  - The hub's per-session ledger holds streamed messages and parts that history
+    has not stored. It survives idle edges, source restarts and detaching
+    (ten minutes after the last change or detach, bounded part count). A turn's
+    entries settle at its idle edge, terminal status, an idle reconnect seed, a
+    settled lifecycle read or detach. Removals leave tombstones that filter
+    older reads; rewrites discard ended turns.
+  - `GET /api/session/{id}` (newest page) lays the ledger over the stored read and
+    returns `stream.cursor`, the hub position it covers. A read that stores a
+    settled entry at least as completely, or stores its message as completed,
+    confirms it; it leaves 30 seconds later, because a concurrent read may have
+    queried history first. Settled entries missing from a read that stores
+    later messages were removed while the stream missed it. Remote reads
+    compose on the hub that streams them.
+  - `statev2.DB.OnCommitted` notifies the owner after each commit. Owner session
+    streams forward a coalesced `ocman.history.committed` synthetic frame,
+    mapped to `history.committed`, including through remote tunnels.
+  - Every browser read replays only the content events after its cursor, so
+    older stream copies never overwrite newer stored metadata. Metadata, child
+    and status events always replay; the read does not compose them. A settled conversation rereads
+    on `history.committed`, which backfills content the stream missed.
 - **Session recovery** (`internal/sessionrecovery`). A workerless service owns
   interruption history, replacement membership, admission and stop fences, and
   confirmed-stop reconciliation. Runtime hooks and history reads call it through

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/NoUseFreak/ocman/internal/sqliteutil"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
@@ -17,9 +18,10 @@ import (
 // DB owns a separate state_conv.db. Callers supply the path explicitly so tests
 // and development never silently fall back to a live or another checkout's DB.
 type DB struct {
-	db   *sql.DB
-	read *sql.DB
-	path string
+	db        *sql.DB
+	read      *sql.DB
+	path      string
+	committed atomic.Pointer[CommitObserver]
 }
 
 // Path places state_conv.db beside an explicitly resolved application database.

@@ -31,6 +31,8 @@ func (s *Server) proxyOwnerSessionEvents(ctx context.Context, sessionID string, 
 		}
 	}
 	registerSink(sessionID)
+	// Stored history trails this stream; tell its viewers when it catches up.
+	defer s.historyCommits.forward(ctx, sessionID, syntheticWriter, flush)()
 	defer func() {
 		sinkMu.Lock()
 		defer sinkMu.Unlock()

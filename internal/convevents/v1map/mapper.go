@@ -160,6 +160,11 @@ func (m *Mapper) dispatch(r *Result, typ string, p obj) bool {
 		m.approved(r, p)
 	case "ocman.session.changed":
 		m.emit(r, convevents.ChangesDirty{Reason: convevents.DirtyCommit})
+	case "ocman.history.committed":
+		// Stored history caught up; the client may read what the stream missed.
+		if n, ok := p.num("revision"); ok && n > 0 && n <= 1<<53 && n == float64(int64(n)) && p.str("sessionID") == m.opts.SessionID {
+			m.emit(r, convevents.HistoryCommitted{Revision: int64(n)})
+		}
 	default:
 		// Recover message and part payloads from unknown channels once, here.
 		switch {

@@ -16,7 +16,6 @@ type overlay struct {
 	resolved    map[string]bool
 	background  convevents.BackgroundChanged
 	queue       *convevents.QueueChanged
-	inflight    inflight
 	liveConnect bool
 }
 
@@ -57,10 +56,10 @@ func (o *overlay) resolve(id string) bool {
 	return true
 }
 
-func (o *overlay) live(st convevents.SessionStatusEvent) convevents.LiveOverlay {
+func (o *overlay) live(st convevents.SessionStatusEvent, content convevents.Inflight) convevents.LiveOverlay {
 	ov := convevents.LiveOverlay{Status: st, Prompts: append([]convevents.Prompt{}, o.prompts...),
 		Judge: []convevents.PromptJudge{}, Background: o.background, Queue: o.queue,
-		Inflight: o.inflight.snapshot(), LiveConnection: o.liveConnect}
+		Inflight: content, LiveConnection: o.liveConnect}
 	for _, p := range o.prompts {
 		if j, ok := o.judge[p.ID]; ok {
 			ov.Judge = append(ov.Judge, j)
@@ -69,8 +68,8 @@ func (o *overlay) live(st convevents.SessionStatusEvent) convevents.LiveOverlay 
 	return ov
 }
 
-// inflight is the current turn's content with the streamed field values
-// the deltas built, so a hello's parts line up with later delta offsets.
+// inflight is streamed content with the field values the deltas built, so a
+// hello's parts line up with later delta offsets.
 type inflight struct {
 	msgOrder  []string
 	msgs      map[string]db.Message
@@ -81,9 +80,9 @@ type inflight struct {
 type livePart struct {
 	part   convevents.Part
 	fields map[string]string
+	// final is set when the last upsert could no longer grow.
+	final bool
 }
-
-func (f *inflight) reset() { *f = inflight{} }
 
 func (f *inflight) message(m db.Message) {
 	if f.msgs == nil {
@@ -105,7 +104,7 @@ func (f *inflight) upsert(p convevents.Part, final bool) {
 		f.parts[p.ID] = lp
 		f.partOrder = append(f.partOrder, p.ID)
 	}
-	lp.part = p
+	lp.part, lp.final = p, final
 	if final {
 		lp.fields = streamedFields(p.Data)
 		return

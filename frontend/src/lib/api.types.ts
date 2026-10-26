@@ -457,6 +457,8 @@ export interface SessionDetail {
   defaultAgent?: string;
   defaultModel?: string;
   warnings?: SessionWarning[];
+  /** The conversation stream position this read covers; replay only later events. */
+  stream?: { cursor: string };
 }
 
 /**

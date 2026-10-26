@@ -32,8 +32,10 @@ type session struct {
 	waiters       []*waiter // subscribers waiting for the first connection
 	log           *sessionLog
 	ov            overlay
-	st            statusState
-	queueGen      uint64
+	// ledger is shared with later sessions for the same key (Hub.ledgers).
+	ledger   *ledger
+	st       statusState
+	queueGen uint64
 
 	descMu sync.Mutex
 	desc   map[string]descendant
@@ -46,7 +48,7 @@ type descendant struct {
 
 func newSession(h *Hub, key Key) *session {
 	return &session{hub: h, key: key, changed: make(chan struct{}), subs: map[*Subscription]struct{}{},
-		log: newLog(), ov: newOverlay(), st: newStatusState(), desc: map[string]descendant{}}
+		log: newLog(), ov: newOverlay(), ledger: &ledger{}, st: newStatusState(), desc: map[string]descendant{}}
 }
 
 func (s *session) broadcastLocked() {
@@ -85,6 +87,10 @@ func (s *session) connectLocked(seed Seed) {
 	}
 	if seed.Status != nil {
 		s.st.seed(*seed.Status)
+		if !s.st.turn {
+			// A turn that ended while the source was away never sends its idle edge.
+			s.ledger.settle()
+		}
 	} else {
 		s.st.gen++
 		s.scheduleSettleLocked(s.st.gen, false)
@@ -105,7 +111,7 @@ func (s *session) attachLocked(after string) *Subscription {
 		hello.Resumed, seq = true, at
 		sub.Replay = s.log.after(at)
 	} else {
-		ov := s.ov.live(s.effective())
+		ov := s.ov.live(s.effective(), s.ledger.snapshot())
 		hello.Overlay = &ov
 	}
 	sub.Hello = frameMsg{seq: seq, frame: s.encode(hello, seq, false, true)}
@@ -210,6 +216,8 @@ func compaction(ev convevents.Event) (supersedes []string, key string) {
 		return []string{"background"}, "background"
 	case convevents.QueueChanged:
 		return []string{"queue"}, "queue"
+	case convevents.HistoryCommitted:
+		return []string{"history"}, "history"
 	case convevents.PromptAsked:
 		return nil, "prompt:" + e.Prompt.ID
 	case convevents.PromptJudge:

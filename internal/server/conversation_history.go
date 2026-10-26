@@ -21,6 +21,8 @@ func (s *Server) WithConversationHistory(store *statev2.DB, ownerID string) *Ser
 		return s
 	}
 	s.historyOwner = ownerID
+	s.historyCommits = newHistoryCommits()
+	store.OnCommitted(s.historyCommits.observe)
 	deps := conversationingest.Deps{Store: store, OwnerID: ownerID,
 		OnError: func(instanceID, sessionID string, err error) {
 			log.WithError(err).WithFields(log.Fields{"instance_id": instanceID, "session_id": sessionID}).Warn("conversation history repair failed; will retry")

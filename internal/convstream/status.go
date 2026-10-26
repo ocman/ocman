@@ -83,6 +83,7 @@ func (s *session) onStatusLocked(ev convevents.SessionStatusEvent, replayed bool
 		s.startTurnLocked(replayed)
 	case ev.Status == db.StatusDone || ev.Status == db.StatusError || ev.Status == db.StatusInterrupted:
 		s.endTurnLocked(string(ev.Status), "", replayed)
+		s.ledger.settle()
 	}
 	s.st.base = absolute(ev)
 	s.emitStatusLocked(replayed)
@@ -96,7 +97,7 @@ func (s *session) idleLocked(replayed bool) {
 		s.st.turn, s.st.pendingEnd = false, true
 	}
 	s.st.base = provisionalDone()
-	s.ov.inflight.reset()
+	s.ledger.settle()
 	s.emitStatusLocked(replayed)
 	s.scheduleSettleLocked(s.st.gen, replayed)
 }
@@ -134,6 +135,9 @@ func (s *session) settledLocked(gen uint64, lc *platforms.SessionLifecycle, err 
 			latest = lc.LatestMessageID
 		}
 		s.publishLocked(convevents.TurnEnded{Outcome: outcome, EndedAt: s.now(), LatestMessageID: latest}, replayed)
+	}
+	if ok && status != db.StatusWaiting {
+		s.ledger.settle()
 	}
 	if ok && s.st.base.Provisional {
 		s.st.base = convevents.SessionStatusEvent{Status: status, Notice: convevents.Null[db.SessionNotice]()}
@@ -192,16 +196,9 @@ func (s *session) handleLocked(ev convevents.Event, replayed bool) {
 		return
 	case convevents.StreamHello, convevents.StreamReset, convevents.StreamError, convevents.Unknown:
 		return
-	case convevents.PartDelta:
-		s.ov.inflight.delta(e)
-	case convevents.PartUpserted:
-		s.ov.inflight.upsert(e.Part, e.Final)
-	case convevents.MessageUpserted:
-		s.ov.inflight.message(e.Message)
-	case convevents.MessageRemoved:
-		s.ov.inflight.removeMessage(e.MessageID)
-	case convevents.PartRemoved:
-		s.ov.inflight.removePart(e.PartID)
+	case convevents.PartDelta, convevents.PartUpserted, convevents.MessageUpserted,
+		convevents.MessageRemoved, convevents.PartRemoved, convevents.HistoryRewritten:
+		s.ledger.apply(ev, s.hub.opts.Now())
 	case convevents.PromptAsked:
 		if !s.ov.ask(e.Prompt) {
 			return

@@ -9,6 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/convstream"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -146,6 +147,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	remote := isRemotePlatformID(string(adapter.ID()))
+	// History trails the live stream: compose what this hub streamed but
+	// history has not stored yet. Clients replay only events after cursor.
+	cursor := s.convStreamModule().Hub().Compose(convstream.Key{Platform: string(adapter.ID()), SessionID: sessionID}, detail, limit, offset)
 	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 	peek := r.URL.Query().Get("peek") == "1"
@@ -192,7 +196,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	httpx.WriteJSON(w, map[string]interface{}{
+	body := map[string]interface{}{
 		"session":           detail.Session,
 		"sessionTree":       detail.SessionTree,
 		"messages":          detail.Messages,
@@ -201,7 +205,11 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"contextTokenCount": detail.ContextTokenCount,
 		"defaultAgent":      detail.DefaultAgent,
 		"defaultModel":      detail.DefaultModel,
-	})
+	}
+	if cursor != "" {
+		body["stream"] = map[string]string{"cursor": cursor}
+	}
+	httpx.WriteJSON(w, body)
 }
 
 func (s *Server) enrichSessionDetail(ctx context.Context, platform, sessionID string, detail *platforms.SessionDetail, approvals bool) {

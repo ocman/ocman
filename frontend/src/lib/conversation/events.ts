@@ -196,6 +196,23 @@ export function formatCursor(env: Pick<OceEnvelope, 'epoch' | 'seq'>): string {
   return `${env.epoch}:${env.seq}`;
 }
 
+/** Conversation content a composed read contains up to its cursor. */
+const COMPOSED = new Set<OceEventType>(['message.upserted', 'message.removed', 'part.upserted', 'part.removed', 'part.delta']);
+
+/**
+ * Events a read covering `cursor` does not contain: every non-content event
+ * (metadata, children, status come from history), and content after the
+ * cursor in its epoch or from an epoch that started after it. Without a
+ * usable cursor every event is replayed; replays are idempotent.
+ */
+export function eventsAfter(envelopes: readonly OceEnvelope[], cursor: string | undefined): OceEnvelope[] {
+  const at = cursor ? parseCursor(cursor) : null;
+  const first = at ? envelopes.findIndex((env) => env.epoch === at.epoch) : -1;
+  if (!at || first < 0) return [...envelopes];
+  return envelopes.filter((env, i) => !COMPOSED.has(env.event.type)
+    || (env.epoch === at.epoch ? env.seq > at.seq : i > first));
+}
+
 /** Split a cursor; the epoch may itself contain colons. */
 export function parseCursor(cursor: string): { epoch: string; seq: number } | null {
   const i = cursor.lastIndexOf(':');

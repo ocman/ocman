@@ -17,7 +17,7 @@ export const PROGRESS_RECONCILE_MS = 5_000;
 
 const BATCHED = new Set([
   'message.upserted', 'message.removed', 'part.upserted', 'part.removed', 'part.delta',
-  'history.committed', 'changes.dirty', 'child.upserted',
+  'changes.dirty', 'child.upserted',
 ]);
 
 export function conversationStreamUrl(sessionId: string, platform?: string, after?: string): string {
@@ -80,6 +80,8 @@ export function createConversationStream(options: ProgressOptions & {
   recover: () => Promise<boolean>;
   upstream?: (error: string | null) => void;
   dirty: () => void;
+  /** Stored history caught up; it may hold content the stream missed. */
+  committed?: () => void;
   queue?: (messages: QueuedMessage[]) => void;
   /** Whether the rendered view still holds parts the stream could not anchor. */
   hasStale?: () => boolean;
@@ -152,6 +154,9 @@ export function createConversationStream(options: ProgressOptions & {
         break;
       case 'history.rewritten':
         void options.recover();
+        break;
+      case 'history.committed':
+        options.committed?.();
         break;
       case 'stream.error':
         options.upstream?.(e.message);
