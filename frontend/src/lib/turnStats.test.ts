@@ -78,6 +78,28 @@ describe('computeTurnStats — model', () => {
 });
 
 describe('computeTurnStats — completion', () => {
+  it('ignores malformed serialized parts without losing the reply summary', () => {
+    const messages = [
+      makeMessage('u', { role: 'user' }, 1000),
+      makeMessage('a', { role: 'assistant', finish: 'stop' }, 2000),
+    ];
+    const stats = computeTurnStats(messages, [
+      { id: 'p', sessionId: 's', messageId: 'a', data: '{invalid' },
+    ]);
+    expect(stats.has('u')).toBe(false);
+    expect(stats.get('a')).toMatchObject({ isSummaryAnchor: true, toolCalls: 0 });
+  });
+
+  it('waits for an assistant reply before assigning a summary anchor', () => {
+    const messages = [makeMessage('u', { role: 'user' }, 1000)];
+    expect(computeTurnStats(messages, [], true).size).toBe(0);
+
+    messages.push(makeMessage('a', { role: 'assistant' }, 2000));
+    const stats = computeTurnStats(messages, [], true);
+    expect(stats.has('u')).toBe(false);
+    expect(stats.get('a')).toMatchObject({ isLive: true, isSummaryAnchor: true, startedAt: 1000 });
+  });
+
   it.each([true, false])('follows running=%s after an intermediate message completes', (isRunning) => {
     const messages = [
       makeMessage('u', { role: 'user' }, 1),

@@ -158,7 +158,7 @@ describe('turn line lifecycle', () => {
     expect(shouldRenderAssistantMessage(false, stats?.isSummaryAnchor ?? false)).toBe(true);
   });
 
-  it('anchors a live turn on its prompt before any assistant message exists', () => {
+  it('keeps the previous reply summary without anchoring the new prompt', () => {
     const messages = [
       makeMessage('u1', { role: 'user' }, 1),
       makeMessage('a1', { role: 'assistant', finish: 'stop' }, 2),
@@ -166,8 +166,8 @@ describe('turn line lifecycle', () => {
     ];
 
     const running = computeTurnStats(messages, [], true);
-    expect(running.get('u2')).toMatchObject({ isLive: true, isSummaryAnchor: true, startedAt: 3, wallClockMs: null, tokensOut: 0 });
-    expect(running.get('a1')?.isLive).toBe(false);
+    expect(running.get('u2')).toBeUndefined();
+    expect(running.get('a1')).toMatchObject({ isLive: false, isSummaryAnchor: true });
     expect(computeTurnStats(messages, [], false).get('u2')).toBeUndefined();
     expect(computeTurnStats(messages, []).get('u2')).toBeUndefined();
   });

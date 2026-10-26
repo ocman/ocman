@@ -173,8 +173,6 @@ const UserMessage: FC = () => {
     ? (custom.failed as { error?: string; imagesDropped?: boolean })
     : undefined;
   const failedSendsCtx = useFailedSends();
-  const turnStats = useTurnStats(id);
-  const liveTurnAnchor = !!(turnStats?.isLive && turnStats.isSummaryAnchor);
   // Failed sends get a danger-tinted border so the banner reads as
   // attached to the right bubble; otherwise use the agent color.
   const agentBorder = useAgentColor(agent);
@@ -207,7 +205,6 @@ const UserMessage: FC = () => {
       <div className="oc-msg-body">
         <MessagePrimitive.Content components={USER_PART_COMPONENTS} />
       </div>
-      {liveTurnAnchor && <TurnSummaryBar messageId={id} />}
       {failed && id && (
         <div className="oc-msg-failed-banner" role="alert">
           <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />

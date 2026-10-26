@@ -146,18 +146,7 @@ export function computeTurnStats(
 
   for (const turn of turns) {
     const { userMsg, assistantMsgs } = turn;
-    if (assistantMsgs.length === 0) {
-      // Some agents create the reply message only once output streams in.
-      // Anchor the live turn line on the prompt until then.
-      if (turn === lastTurn && isRunning) {
-        map.set(userMsg.id, {
-          wallClockMs: null, tokensOut: 0, tokensIn: 0, cost: 0, toolCalls: 0, tps: null,
-          isLive: true, promptCacheRebuilt: false, startedAt: userMsg.timeCreated, model: '',
-          isSummaryAnchor: true,
-        });
-      }
-      continue;
-    }
+    if (assistantMsgs.length === 0) continue;
 
     const isLastTurn = turn === lastTurn;
     const lastAsst = assistantMsgs[assistantMsgs.length - 1];

@@ -157,15 +157,12 @@ describe('turn actions', () => {
     expect(container.querySelector('[data-message-id="assistant-1"]')).toBeInTheDocument();
   });
 
-  it('shows the live turn line under a prompt that has no reply yet', () => {
+  it.each([false, true])('keeps turn metadata out of the prompt bubble with live=%s', (isLive) => {
     threadState.renderUser = true;
     message.content = [{ type: 'text', text: 'Do it' }];
-    turnStats.isLive = true;
-    const { container, rerender } = render(<AssistantThread />);
-    expect(container.querySelector('.oc-turn-stats')).toBeInTheDocument();
-    expect(screen.getByTitle('Turn in progress')).toBeInTheDocument();
-    turnStats.isLive = false;
-    rerender(<AssistantThread />);
+    turnStats.isLive = isLive;
+    const { container } = render(<AssistantThread />);
+    expect(screen.getByText('Do it')).toBeInTheDocument();
     expect(container.querySelector('.oc-turn-stats')).not.toBeInTheDocument();
   });
 
