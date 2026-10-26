@@ -6,8 +6,8 @@
 }
 .oc-reasoning summary { cursor: pointer; display: flex; align-items: start; gap: 4px; list-style: none; }
 .oc-reasoning summary::-webkit-details-marker { display: none; }
-.oc-reasoning summary::before { content: '▸'; flex: 0 0 1em; }
-.oc-reasoning details[open] > summary::before { content: '▾'; }
+.oc-reasoning summary .oc-reasoning-preview > span:first-child::after { content: '▸'; margin-left: 4px; }
+.oc-reasoning details[open] > summary .oc-reasoning-preview > span:first-child::after { content: '▾'; }
 .oc-reasoning-preview { display: inline-grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; width: 100%; vertical-align: top; }
 .oc-reasoning summary > .oc-reasoning-preview { flex: 1; min-width: 0; }
 .oc-reasoning > p > .oc-reasoning-preview { width: 100%; }
