@@ -29,7 +29,7 @@ const selectSessions = `WITH RECURSIVE runtime AS (
   SELECT s.id,i.platform,s.project_id,s.parent_id,s.title,s.directory,s.created_at,s.updated_at,s.last_message_at,
   COALESCE(att.last_turn_completed_at,0),COALESCE(att.last_user_prompt_at,0),COALESCE(hlt.at,0),
  COALESCE(b.branch,''),c.origin,c.origin_id,
- CASE WHEN c.origin='routine' THEN c.origin_id ELSE '' END,
+ CASE WHEN c.origin='routine' THEN c.origin_id WHEN pc.origin='routine' THEN pc.origin_id ELSE '' END,
  CASE WHEN c.origin='factory' THEN c.origin_id WHEN pc.origin='factory' THEN pc.origin_id ELSE '' END,
  s.inferred_status,s.last_role,s.last_finish,s.last_error,COALESCE(o.status,''),COALESCE(o.resets_at,0),x.source_key IS NOT NULL,
  COALESCE(f.permission,0),COALESCE(f.question,0),COALESCE(pin.pinned_at,0),a.session_id IS NOT NULL,

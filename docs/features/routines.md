@@ -18,7 +18,8 @@ A session a routine starts is titled with the routine's name and launch time (fo
 `Daily check 2026-09-30 15:04`) and tagged as a
 routine session. A webhook run whose body has a top-level `number`, as forge pull
 request and issue events do, also names it and its `action`, for example
-`Review PRs 2026-09-30 15:04 #12 opened`. The session sidebar hides routine sessions and their children
+`Review PRs 2026-09-30 15:04 #12 opened`. Subagents of a routine session carry the
+same routine tag. The session sidebar hides routine sessions and their children
 until you check **Show routines** under **Filter sessions**. Opened and pinned
 sessions stay visible through these filters and search, but must match the selected project.
 With the default **Always show prompts** toggle enabled, sessions awaiting

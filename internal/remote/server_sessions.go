@@ -44,6 +44,9 @@ func (s *Server) Sessions(ctx context.Context, req *pb.SessionsReq) (*pb.JsonRes
 	rows = append([]db.Session(nil), rows...)
 	for i := range rows {
 		rows[i].RoutineID = routines[state.Key{Platform: req.Platform, SessionID: rows[i].ID}]
+		if rows[i].RoutineID == "" && rows[i].ParentID != "" {
+			rows[i].RoutineID = routines[state.Key{Platform: req.Platform, SessionID: rows[i].ParentID}]
+		}
 	}
 	return jsonResp(rows, nil)
 }

@@ -84,6 +84,27 @@ func TestSidebarLargeInventoryFiltersBeforePaging(t *testing.T) {
 	}
 }
 
+// A subagent of a routine run carries the routine like its parent, so the
+// routine filter hides it alongside the run.
+func TestSidebarRoutineChildInheritsRoutine(t *testing.T) {
+	r, core, _ := largeInventory(t)
+	// Session 1 is external; session 10 is a routine run of "r".
+	if _, err := core.SQL().Exec(`UPDATE session_catalog SET parent_id='ocm_00000010-0000-0000-0000-000000000010' WHERE id='ocm_00000001-0000-0000-0000-000000000001'`); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := r.Sessions(t.Context(), Scope{Owner: "owner", Platform: "test", Source: "source", Generation: "g"}, platforms.SidebarQuery{Directory: "/two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, row := range rows {
+		got[row.ID] = row.RoutineID
+	}
+	if child, plain := got["ocm_00000001-0000-0000-0000-000000000001"], got["ocm_00000003-0000-0000-0000-000000000003"]; child != "r" || plain != "" {
+		t.Fatalf("child/plain routine = %q/%q, want r/empty", child, plain)
+	}
+}
+
 func TestSidebarConnectionsCannotModifyEitherDatabase(t *testing.T) {
 	r, _, _ := largeInventory(t)
 	for _, query := range []string{`DELETE FROM main.session_sidebar`, `DELETE FROM core.session_catalog`} {

@@ -252,6 +252,11 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 		if !isRemotePlatformID(sessions[i].Platform) || routineSessions[key] != "" {
 			sessions[i].RoutineID = routineSessions[key]
 		}
+		if sessions[i].RoutineID == "" && sessions[i].ParentID != "" {
+			// A subagent of a routine run belongs to the routine too, like
+			// factory attempts below.
+			sessions[i].RoutineID = routineSessions[state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ParentID}]
+		}
 		sessions[i].SnoozedUntil = snoozed[key]
 		sessions[i].FactoryAttemptID = factorySessions[key]
 		if sessions[i].FactoryAttemptID == "" && sessions[i].ParentID != "" {

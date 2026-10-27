@@ -218,6 +218,8 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 			mkSession("fake", "seen", "b", 1000),
 			mkSession("fake", "pin", "c", 1000),
 			mkSession("fake", "routine", "d", 1000),
+			{ID: "routine-child", Platform: "fake", ParentID: "routine", TimeUpdated: 1000},
+			{ID: "orphan", Platform: "fake", ParentID: "gone", TimeUpdated: 1000},
 		},
 	})
 	applyStateSetup(t, srv.stateDB, stateSetup{
@@ -258,6 +260,11 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 	}
 	if byID["routine"].RoutineID != "rt" || byID["pin"].RoutineID != "" {
 		t.Errorf("routine tags = %q/%q, want rt/empty", byID["routine"].RoutineID, byID["pin"].RoutineID)
+	}
+	// A subagent of a routine run belongs to the routine too, so the routine
+	// filter hides it alongside its parent.
+	if byID["routine-child"].RoutineID != "rt" || byID["orphan"].RoutineID != "" {
+		t.Errorf("child tags = %q/%q, want rt/empty", byID["routine-child"].RoutineID, byID["orphan"].RoutineID)
 	}
 }
 
