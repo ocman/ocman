@@ -319,8 +319,9 @@ type Read struct {
 
 func (h *Hub) BeginRead(key Key) *Read {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	// The open ticket keeps a sweep from replacing the ledger mid-read.
 	l := h.ledgerLocked(key)
-	h.mu.Unlock()
 	return &Read{h: h, key: key, l: l, ticket: l.begin()}
 }
 

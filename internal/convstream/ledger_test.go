@@ -607,3 +607,44 @@ func TestHubBudgetHasAHardCeilingForRunningTurns(t *testing.T) {
 		t.Fatalf("running content held %d bytes, want just under the 3000 ceiling", n)
 	}
 }
+
+func TestTombstoneClearingIgnoresANewerRemoval(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	l.apply(convevents.PartRemoved{MessageID: "msg_1", PartID: "p1"}, now)
+	ticket := l.begin()
+	view := l.capture(ticket)
+	// The part is re-added and removed again before the old read commits.
+	l.apply(textPart("p1", "x", false), now)
+	l.apply(convevents.PartRemoved{MessageID: "msg_1", PartID: "p1"}, now)
+	plan, _ := view.compose(&platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}}, 30, 0)
+	l.commit(plan)
+	l.end(ticket, now)
+	lagging := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}, Parts: []db.Part{storedPart("p1", "msg_1", "x")}}
+	if composeOnce(l, lagging, 30, 0, now); len(lagging.Parts) != 0 {
+		t.Fatal("an older read cleared the newer removal's tombstone")
+	}
+}
+
+func TestBeginReadKeepsItsLedgerAcrossSweepsAndSubscriptions(t *testing.T) {
+	h := newTestHub(t, Options{})
+	for range 200 {
+		r := h.BeginRead(testKey)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			h.mu.Lock()
+			h.sweepLocked()
+			h.ledgerLocked(testKey)
+			h.mu.Unlock()
+		}()
+		<-done
+		h.mu.Lock()
+		same := h.ledgers[testKey] == r.l
+		h.mu.Unlock()
+		if !same {
+			t.Fatal("a sweep replaced the ledger of an open read")
+		}
+		r.Compose(&platforms.SessionDetail{}, 30, 0)
+	}
+}

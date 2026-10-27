@@ -33,7 +33,7 @@ type composePlan struct {
 	// dropped are ended messages history moved past without them.
 	dropped map[string]uint64
 	// cleared are tombstones whose rows this read no longer holds.
-	cleared map[string]bool
+	cleared map[string]uint64
 	orphans map[string]uint64
 }
 
@@ -41,7 +41,7 @@ type composePlan struct {
 // and decides what the read confirms. It returns the plan and the messages it
 // added, which are not stored history.
 func (v *ledgerView) compose(d *platforms.SessionDetail, limit, offset int) (composePlan, []string) {
-	p := composePlan{confirmed: map[string]uint64{}, dropped: map[string]uint64{}, cleared: map[string]bool{}, orphans: map[string]uint64{}}
+	p := composePlan{confirmed: map[string]uint64{}, dropped: map[string]uint64{}, cleared: map[string]uint64{}, orphans: map[string]uint64{}}
 	if d == nil || offset != 0 {
 		return p, nil
 	}
@@ -92,7 +92,7 @@ func (v *ledgerView) decide(d *platforms.SessionDetail, p *composePlan) {
 		_, msg := stored[key[2:]]
 		_, part := storedParts[key[2:]]
 		if key[:2] == "m:" && !msg || key[:2] == "p:" && !part {
-			p.cleared[key] = true
+			p.cleared[key] = v.rev[key]
 		}
 	}
 	// An ended message missing from a read that stores later messages was

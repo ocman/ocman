@@ -354,8 +354,8 @@ func (l *ledger) commit(p composePlan) {
 			l.confirmed[key] = l.issued
 		}
 	}
-	for key := range p.cleared {
-		if t, ok := l.removed[key]; ok && t.cleared == 0 {
+	for key, rev := range p.cleared {
+		if t, ok := l.removed[key]; ok && t.cleared == 0 && same(key, rev) {
 			t.cleared = l.issued
 			l.removed[key] = t
 		}
