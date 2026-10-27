@@ -24,7 +24,7 @@ func applyRemoteSidebarFlags(rows []db.Session, flags state.SidebarFlags) {
 		row.Pinned = row.PinnedAt > 0
 		row.SnoozedUntil = flags.Snoozed[key]
 		at, archived := flags.Archived[key]
-		row.Archived = archived && !shouldResurfaceSession(*row, at, flags.Mode)
+		row.Archived = archived && !db.ShouldResurfaceSession(*row, at, flags.Mode)
 		if at := flags.Projects[projectArchiveKey(row.RemoteID, row.Directory)]; at > 0 && row.TimeUpdated <= at {
 			row.Archived = true
 		}

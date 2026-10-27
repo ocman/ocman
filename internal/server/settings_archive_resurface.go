@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/httpx"
 )
 
@@ -16,10 +15,6 @@ func (s *Server) archiveResurfaceMode(ctx context.Context) (string, error) {
 		value = "halt"
 	}
 	return value, err
-}
-
-func shouldResurfaceSession(session db.Session, archivedAt int64, mode string) bool {
-	return db.ShouldResurfaceSession(session, archivedAt, mode)
 }
 
 type archiveResurfaceBody struct {

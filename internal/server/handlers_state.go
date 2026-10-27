@@ -279,7 +279,7 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 
 		archivedAtUpdate, ok := archived[key]
 		if ok {
-			if shouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
+			if db.ShouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
 				if write {
 					if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
 						return err
@@ -349,7 +349,7 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 		// Use the same resurfacing policy as the full list: notify polls
 		// must not unarchive busy sessions behind the sidebar's back.
 		if archivedAtUpdate, ok := archived[key]; ok {
-			if shouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
+			if db.ShouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
 				if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
 					return err
 				}
