@@ -24,6 +24,7 @@ func TestContextProjectionUpgradesStoredHistory(t *testing.T) {
 			b.Messages[0].Extensions = json.RawMessage(payload)
 			commit(t, d, b)
 			// Emulate the shipped projection that omitted current context.
+			removeBackgroundSchema(t, d)
 			if _, err := d.db.Exec(`UPDATE analytics_message SET data=json_remove(data,'$.contextTokens'); PRAGMA user_version=15`); err != nil {
 				t.Fatal(err)
 			}
