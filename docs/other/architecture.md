@@ -1205,27 +1205,32 @@ flowchart TD
   ```
 
   - The hub's per-session ledger holds streamed messages and parts that history
-    has not stored. It survives idle edges, source restarts and detaching
-    (ten minutes after the last change or detach, bounded part count). A turn's
-    entries settle at its idle edge, terminal status, an idle reconnect seed, a
-    settled lifecycle read or detach. Removals leave tombstones that filter
-    older reads; rewrites discard ended turns.
+    has not stored. It survives idle edges, source restarts and detaching. A
+    turn's entries settle at its idle edge, terminal status, an idle reconnect
+    seed, a settled lifecycle read or detach. Stream removals leave tombstones;
+    rewrites discard ended turns.
   - Streamed values are kept once and appended in place, with their UTF-16
-    length tracked, so a chunk costs constant work. All ledgers share a 64 MB
-    budget, counting messages and parts: ended message groups of sessions
-    nobody streams go first, oldest first;
-    running turns are never evicted. A read captures the ledger and cursor
-    under the session lock, merges outside it, and releases only entries
-    unchanged since the capture.
-  - `GET /api/session/{id}` (newest page) lays the ledger over the stored read and
-    returns `stream.cursor`, the hub position it covers, and
-    `stream.composedMessageIds`. Older-history paging offsets count only
-    messages a read returned as stored history. A read that stores a
-    settled entry at least as completely, or stores its message as completed,
-    confirms it; it leaves 30 seconds later, because a concurrent read may have
-    queried history first. Settled entries missing from a read that stores
-    later messages were removed while the stream missed it. Remote reads
-    compose on the hub that streams them.
+    length tracked, so a chunk costs constant work. Each ledger caps settled
+    parts and messages by count. All ledgers share a 64 MB budget counting
+    messages and parts: ended message groups go first (confirmed ones, then
+    sessions nobody streams, oldest first). Running turns are evicted only past
+    a hard ceiling of twice the budget. Ten minutes without change is a
+    backstop expiry for content no read confirms.
+  - `GET /api/session/{id}` (newest page) begins a read before querying history,
+    lays the ledger over the stored read and returns `stream.cursor`, the hub
+    position it covers, and `stream.composedMessageIds`. Older-history paging
+    offsets count only messages a read returned as stored history. Only the
+    cursor is read under the session lock; merging runs on a ledger capture,
+    and only entries unchanged since the capture are confirmed.
+  - A read that stores a settled entry at least as completely, or stores its
+    message as completed, confirms it. History only moves forward, so reads
+    that begin later skip confirmed entries, reads that began earlier still
+    overlay them, and they leave once no earlier read is open. Tombstones clear
+    the same way once a read no longer holds the row, so history can re-add it.
+    No timer is involved. A settled message missing from a read that stores
+    later messages is forgotten, not tombstoned, since ingestion order is not
+    guaranteed. Remote owners return history uncomposed; the hub that streams
+    the session composes it once.
   - `statev2.DB.OnCommitted` notifies the owner after each commit. Owner session
     streams forward a coalesced `ocman.history.committed` synthetic frame,
     mapped to `history.committed`, including through remote tunnels.

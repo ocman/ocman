@@ -253,7 +253,7 @@ func (h *Hub) sweepLocked() {
 }
 
 // budgetLocked keeps every ledger together within maxLedger: it evicts ended
-// turns, first of sessions nobody streams, oldest first. Running turns stay.
+// turns, confirmed ones first, of sessions nobody streams first, oldest first.
 func (h *Hub) budgetLocked() {
 	type entry struct {
 		l        *ledger
@@ -280,15 +280,23 @@ func (h *Hub) budgetLocked() {
 		}
 		return a.touched.Compare(b.touched)
 	})
-	for _, e := range entries {
-		if total <= h.maxLedger {
-			return
+	evict := func(limit int, force bool) {
+		for i := range entries {
+			if total <= limit {
+				return
+			}
+			freed := entries[i].l.evict(max(entries[i].bytes-(total-limit), 0), force)
+			entries[i].bytes -= freed
+			total -= freed
 		}
-		total -= e.l.evict(max(e.bytes-(total-h.maxLedger), 0))
 	}
+	evict(h.maxLedger, false)
+	// Running turns are kept for the viewers watching them, up to a hard
+	// ceiling of twice the budget.
+	evict(2*h.maxLedger, true)
 }
 
-// Composed describes what Hub.Compose added to a stored read.
+// Composed describes what a read composition added to a stored read.
 type Composed struct {
 	// Cursor is the stream position the read covers, or "" when no stream is
 	// attached; a client replays only events after it.
@@ -298,37 +306,59 @@ type Composed struct {
 	MessageIDs []string
 }
 
-// Compose lays the stream's unconfirmed content over a stored conversation
-// read of key and releases what the read already stores. The ledger is
-// captured with the cursor under the session lock; the JSON work runs after
-// it, and only entries unchanged since the capture are released.
-func (h *Hub) Compose(key Key, d *platforms.SessionDetail, limit, offset int) Composed {
-	if d == nil || offset != 0 {
-		return Composed{}
-	}
+// Read is one conversation read of a session. Begin it before querying
+// history, so content confirmed by a read that started later is not taken
+// from it; Compose or End it exactly once.
+type Read struct {
+	h      *Hub
+	key    Key
+	l      *ledger
+	ticket uint64
+	once   sync.Once
+}
+
+func (h *Hub) BeginRead(key Key) *Read {
 	h.mu.Lock()
-	h.sweepLocked()
-	s, l := h.sessions[key], h.ledgers[key]
+	l := h.ledgerLocked(key)
 	h.mu.Unlock()
+	return &Read{h: h, key: key, l: l, ticket: l.begin()}
+}
+
+// End abandons a read that will not compose, for example a failed query.
+func (r *Read) End() {
+	r.once.Do(func() { r.l.end(r.ticket, r.h.opts.Now()) })
+}
+
+// Compose lays the stream's unconfirmed content over the stored read and
+// records what the read stores. Only the cursor is read under the session
+// lock; events after it are the client's to replay, and composing is
+// idempotent, so the JSON work never stalls the stream.
+func (r *Read) Compose(d *platforms.SessionDetail, limit, offset int) Composed {
+	defer r.End()
 	var out Composed
-	if s != nil {
-		s.mu.Lock()
-		l = s.ledger
-		if s.everConnected && !s.detached {
-			out.Cursor = convevents.FormatCursor(s.log.epoch, s.log.last)
-		}
-		now := h.opts.Now()
-		view := l.capture(now)
-		s.mu.Unlock()
-		plan, added := view.compose(d, limit, offset)
-		l.commit(plan, now)
-		out.MessageIDs = added
+	if d == nil || offset != 0 {
 		return out
 	}
-	if l != nil {
-		out.MessageIDs = l.compose(d, limit, offset, h.opts.Now())
+	r.h.mu.Lock()
+	s := r.h.sessions[r.key]
+	r.h.mu.Unlock()
+	if s != nil {
+		s.mu.Lock()
+		if s.ledger == r.l && s.everConnected && !s.detached {
+			out.Cursor = convevents.FormatCursor(s.log.epoch, s.log.last)
+		}
+		s.mu.Unlock()
 	}
+	plan, added := r.l.capture(r.ticket).compose(d, limit, offset)
+	r.l.commit(plan)
+	out.MessageIDs = added
 	return out
+}
+
+// Compose begins and composes one read; for callers that query history
+// before they can begin, such as tests.
+func (h *Hub) Compose(key Key, d *platforms.SessionDetail, limit, offset int) Composed {
+	return h.BeginRead(key).Compose(d, limit, offset)
 }
 
 // Publish adds a synthetic event to an attached session's stream; it is

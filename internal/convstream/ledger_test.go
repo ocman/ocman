@@ -2,8 +2,8 @@ package convstream
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +19,15 @@ func message(id string, created int64, data string) db.Message {
 func storedPart(id, messageID, text string) db.Part {
 	data, _ := json.Marshal(map[string]any{"type": "text", "text": text})
 	return db.Part{ID: id, MessageID: messageID, SessionID: testKey.SessionID, Data: data}
+}
+
+// composeOnce runs one whole read of l.
+func composeOnce(l *ledger, d *platforms.SessionDetail, limit, offset int, now time.Time) []string {
+	ticket := l.begin()
+	plan, added := l.capture(ticket).compose(d, limit, offset)
+	l.commit(plan)
+	l.end(ticket, now)
+	return added
 }
 
 func texts(d *platforms.SessionDetail) map[string]string {
@@ -49,9 +58,7 @@ func streamReply(t *testing.T, sink Sink, sub *Subscription) {
 }
 
 func TestComposeKeepsAnEndedTurnUntilHistoryStoresIt(t *testing.T) {
-	var clock atomic.Int64
-	clock.Store(time.Now().UnixNano())
-	h := newTestHub(t, Options{Linger: time.Millisecond, Now: func() time.Time { return time.Unix(0, clock.Load()) }})
+	h := newTestHub(t, Options{Linger: time.Millisecond})
 	src := newFakeSource()
 	src.lc = &platforms.SessionLifecycle{Status: db.StatusDone}
 	sub := subscribe(t, h, src, "")
@@ -94,17 +101,16 @@ func TestComposeKeepsAnEndedTurnUntilHistoryStoresIt(t *testing.T) {
 		t.Fatalf("detached compose = %q %v", cursor, texts(revisit))
 	}
 
-	// A read that stores it confirms it. A slower read that queried history
-	// before it still gets the reply during the grace period, not after.
+	// A read that stores it confirms it. A slower read that began before it
+	// still gets the reply; once it ends, the reply is history's alone.
+	slow := h.BeginRead(testKey)
 	stored := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant"}`)},
 		Parts: []db.Part{storedPart("p1", "msg_1", "Final answer")}}
 	h.Compose(testKey, stored, 30, 0)
 	older := &platforms.SessionDetail{}
-	if h.Compose(testKey, older, 30, 0); texts(older)["p1"] != "Final answer" {
+	if slow.Compose(older, 30, 0); texts(older)["p1"] != "Final answer" {
 		t.Fatalf("concurrent older read lost the reply: %+v", older)
 	}
-	clock.Add(int64(releaseGrace))
-	h.Compose(testKey, &platforms.SessionDetail{}, 30, 0)
 	empty := &platforms.SessionDetail{}
 	h.Compose(testKey, empty, 30, 0)
 	if len(empty.Messages) != 0 || len(empty.Parts) != 0 {
@@ -155,7 +161,7 @@ func TestComposeReleasesOnlyWhatHistoryStores(t *testing.T) {
 		Parts: []db.Part{storedPart("p1", "msg_1", "long"),
 			{ID: "tool", MessageID: "msg_1", Data: json.RawMessage(`{"type":"tool","state":{"status":"running","output":"ok"}}`)},
 			storedPart("running", "msg_2", "still streaming")}}
-	l.compose(partial, 30, 0, now)
+	composeOnce(l, partial, 30, 0, now)
 	if got := texts(partial); got["p1"] != "long streamed thinking" || readPart(partial.Parts[1].Data).State.Status != "completed" {
 		t.Fatalf("partial read not overlaid: %v %s", got, partial.Parts[1].Data)
 	}
@@ -170,16 +176,22 @@ func TestComposeReleasesOnlyWhatHistoryStores(t *testing.T) {
 	// running turn's part stays until its turn ends.
 	done := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop"}`)},
 		Parts: []db.Part{storedPart("p1", "msg_1", "")}}
-	l.compose(done, 30, 0, now)
+	slow := l.begin()
+	composeOnce(l, done, 30, 0, now)
 	if len(l.content.parts) != 3 || len(l.confirmed) != 3 {
 		t.Fatalf("confirmed = %v", l.content.partOrder)
 	}
-	if texts(done)["p1"] != "long streamed thinking" {
-		t.Fatal("grace overlay lost the streamed text")
+	// A read that began before the confirmation still overlays it.
+	older := &platforms.SessionDetail{Messages: done.Messages, Parts: []db.Part{storedPart("p1", "msg_1", "")}}
+	if plan, _ := l.capture(slow).compose(older, 30, 0); texts(older)["p1"] != "long streamed thinking" {
+		t.Fatal("older read lost the streamed text")
+	} else {
+		l.commit(plan)
 	}
+	l.end(slow, now)
 	done = &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop"}`)},
 		Parts: []db.Part{storedPart("p1", "msg_1", "")}}
-	l.compose(done, 30, 0, now.Add(releaseGrace))
+	composeOnce(l, done, 30, 0, now)
 	if len(l.content.parts) != 1 || l.content.parts["running"] == nil || len(l.content.msgs) != 1 || l.content.msgs["msg_2"].ID == "" {
 		t.Fatalf("after completed read: parts=%v msgs=%v", l.content.partOrder, l.content.msgOrder)
 	}
@@ -195,7 +207,7 @@ func TestComposeDropsEndedContentHistoryMovedPast(t *testing.T) {
 	l.apply(textPart("p1", "reverted", false), now)
 	l.settle()
 	later := &platforms.SessionDetail{Messages: []db.Message{message("later", 30, `{"role":"user"}`)}}
-	l.compose(later, 30, 0, now)
+	composeOnce(l, later, 30, 0, now)
 	if len(later.Messages) != 1 || len(l.content.parts) != 0 || len(l.content.msgs) != 0 {
 		t.Fatalf("removed content survived: %+v parts=%v", later, l.content.partOrder)
 	}
@@ -205,13 +217,13 @@ func TestComposeOverlaysOnlyTheNewestPage(t *testing.T) {
 	l := &ledger{}
 	l.apply(convevents.MessageUpserted{Message: message("old", 5, `{}`)}, time.Now())
 	older := &platforms.SessionDetail{}
-	l.compose(older, 30, 30, time.Now())
+	composeOnce(l, older, 30, 30, time.Now())
 	full := &platforms.SessionDetail{Messages: []db.Message{message("a", 10, `{}`), message("b", 11, `{}`)}}
-	l.compose(full, 2, 0, time.Now())
+	composeOnce(l, full, 2, 0, time.Now())
 	if len(older.Messages) != 0 || len(full.Messages) != 2 {
 		t.Fatalf("overlay outside its page: older=%v full=%v", ids(older), ids(full))
 	}
-	l.compose(nil, 30, 0, time.Now())
+	composeOnce(l, nil, 30, 0, time.Now())
 }
 
 func TestLedgerRewriteDropsEndedTurnsAndEvictionKeepsTheRunningTurn(t *testing.T) {
@@ -256,8 +268,15 @@ func TestHubSweepsExpiredDetachedLedgers(t *testing.T) {
 	h.mu.Unlock()
 	l.apply(textPart("p1", "x", false), now)
 	now = now.Add(ledgerTTL + time.Second)
-	if h.Compose(Key{Platform: "opencode", SessionID: "other"}, &platforms.SessionDetail{}, 30, 0); len(h.ledgers) != 0 {
+	if h.Compose(Key{Platform: "opencode", SessionID: "other"}, &platforms.SessionDetail{}, 30, 0); h.ledgers[testKey] != nil {
 		t.Fatalf("expired ledger kept: %v", h.ledgers)
+	}
+	// The read's own empty ledger goes at the next sweep.
+	h.mu.Lock()
+	h.sweepLocked()
+	h.mu.Unlock()
+	if len(h.ledgers) != 0 {
+		t.Fatalf("empty ledger kept: %v", h.ledgers)
 	}
 }
 
@@ -270,17 +289,17 @@ func TestComposeKeepsStreamRemovalsOutOfOlderReads(t *testing.T) {
 		Messages: []db.Message{message("gone", 1, `{}`), message("kept", 2, `{}`)},
 		Parts:    []db.Part{storedPart("a", "gone", "x"), storedPart("gone-part", "kept", "y"), storedPart("b", "kept", "z")},
 	}
-	l.compose(read, 30, 0, now)
+	composeOnce(l, read, 30, 0, now)
 	if got := ids(read); len(got) != 1 || got[0] != "kept" || len(read.Parts) != 1 || read.Parts[0].ID != "b" {
 		t.Fatalf("removed rows returned: %v %+v", got, read.Parts)
 	}
 	// The stream adding it back wins over the tombstone.
 	l.apply(convevents.MessageUpserted{Message: message("gone", 1, `{}`)}, now)
 	again := &platforms.SessionDetail{Messages: []db.Message{message("gone", 1, `{}`)}}
-	if l.compose(again, 30, 0, now); len(again.Messages) != 1 {
+	if composeOnce(l, again, 30, 0, now); len(again.Messages) != 1 {
 		t.Fatalf("re-added message filtered: %v", ids(again))
 	}
-	l.compose(&platforms.SessionDetail{}, 30, 0, now.Add(ledgerTTL+time.Second))
+	composeOnce(l, &platforms.SessionDetail{}, 30, 0, now.Add(ledgerTTL+time.Second))
 	if len(l.removed) != 0 {
 		t.Fatalf("tombstones = %v", l.removed)
 	}
@@ -377,19 +396,27 @@ func TestComposeNeverReleasesContentChangedAfterItsCapture(t *testing.T) {
 	l.apply(convevents.MessageUpserted{Message: message("msg_1", 20, `{}`)}, now)
 	l.apply(textPart("p1", "ab", false), now)
 	l.settle()
-	view := l.capture(now)
+	ticket := l.begin()
+	view := l.capture(ticket)
 	l.apply(delta("p1", 2, "c"), now)
 	stored := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{}`)}, Parts: []db.Part{storedPart("p1", "msg_1", "ab")}}
 	plan, _ := view.compose(stored, 30, 0)
-	l.commit(plan, now)
+	l.commit(plan)
 	if _, ok := l.confirmed["p:p1"]; ok {
 		t.Fatal("a read captured before newer text confirmed it")
 	}
-	l.compose(&platforms.SessionDetail{Messages: stored.Messages, Parts: []db.Part{storedPart("p1", "msg_1", "abc")}}, 30, 0, now)
+	current := l.begin()
+	plan, _ = l.capture(current).compose(&platforms.SessionDetail{Messages: stored.Messages, Parts: []db.Part{storedPart("p1", "msg_1", "abc")}}, 30, 0)
+	l.commit(plan)
 	if _, ok := l.confirmed["p:p1"]; !ok {
 		t.Fatal("a current read did not confirm")
 	}
-	l.compose(&platforms.SessionDetail{}, 30, 0, now.Add(releaseGrace))
+	// The stale read is still open, so the entry stays until it ends.
+	l.end(current, now)
+	if l.content.parts["p1"] == nil {
+		t.Fatal("released while an earlier read was open")
+	}
+	l.end(ticket, now)
 	if len(l.rev) != 0 || len(l.content.parts) != 0 {
 		t.Fatalf("released entries kept bookkeeping: rev=%v parts=%v", l.rev, l.content.partOrder)
 	}
@@ -476,14 +503,14 @@ func TestLedgerEvictionCountsMessagesAndKeepsRunningContent(t *testing.T) {
 	l.settle()
 	l.apply(convevents.MessageUpserted{Message: message("running", 3, big)}, now)
 	total, _ := l.size()
-	freed := l.evict(total - 500)
+	freed := l.evict(total-500, false)
 	if _, ok := l.content.msgs["only"]; ok || freed < 1000 {
 		t.Fatalf("message-only turn kept (freed %d)", freed)
 	}
 	if _, ok := l.content.msgs["mixed"]; !ok {
 		t.Fatal("evicted more than needed")
 	}
-	l.evict(0)
+	l.evict(0, false)
 	if _, ok := l.content.msgs["mixed"]; ok || l.content.parts["mixed-part"] != nil {
 		t.Fatal("mixed turn not evicted as a group")
 	}
@@ -492,5 +519,91 @@ func TestLedgerEvictionCountsMessagesAndKeepsRunningContent(t *testing.T) {
 	}
 	if after, _ := l.size(); after != len(big) {
 		t.Fatalf("size after eviction = %d", after)
+	}
+}
+
+func TestComposeInfersRemovalsWithoutHidingHistory(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	l.apply(convevents.MessageUpserted{Message: message("msg_1", 20, `{}`)}, now)
+	l.apply(textPart("p1", "reply", false), now)
+	l.settle()
+	// History stored a later message first: the ledger copy is forgotten...
+	composeOnce(l, &platforms.SessionDetail{Messages: []db.Message{message("later", 30, `{}`)}}, 30, 0, now)
+	if len(l.content.msgs) != 0 || len(l.content.parts) != 0 || len(l.removed) != 0 {
+		t.Fatalf("inferred removal kept content or a tombstone: %v %v", l.content.msgOrder, l.removed)
+	}
+	// ...but history storing it afterwards is shown.
+	read := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{}`), message("later", 30, `{}`)},
+		Parts: []db.Part{storedPart("p1", "msg_1", "reply")}}
+	composeOnce(l, read, 30, 0, now)
+	if len(read.Messages) != 2 || len(read.Parts) != 1 {
+		t.Fatalf("history row hidden: %v", ids(read))
+	}
+}
+
+func TestStreamRemovalTombstoneClearsOnceHistoryCatchesUp(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	l.apply(convevents.PartRemoved{MessageID: "msg_1", PartID: "p1"}, now)
+	holding := func() *platforms.SessionDetail {
+		return &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}, Parts: []db.Part{storedPart("p1", "msg_1", "x")}}
+	}
+	slow := l.begin()
+	stale := holding()
+	if composeOnce(l, stale, 30, 0, now); len(stale.Parts) != 0 {
+		t.Fatal("history that still holds a removed part restored it")
+	}
+	// History catches up with the removal; a later re-add is shown.
+	composeOnce(l, &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}}, 30, 0, now)
+	readded := holding()
+	if composeOnce(l, readded, 30, 0, now); len(readded.Parts) != 1 {
+		t.Fatal("a part history re-added stayed hidden")
+	}
+	// A read that began before history caught up still filters it.
+	older := holding()
+	plan, _ := l.capture(slow).compose(older, 30, 0)
+	l.commit(plan)
+	if len(older.Parts) != 0 {
+		t.Fatal("an earlier read lost the tombstone")
+	}
+	l.end(slow, now)
+	if len(l.removed) != 0 {
+		t.Fatalf("cleared tombstone kept: %v", l.removed)
+	}
+}
+
+func TestLedgerBoundsSettledMessageCount(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	for i := range maxLedgerMessages + 10 {
+		l.apply(convevents.MessageUpserted{Message: message(fmt.Sprintf("m%d", i), int64(i), `{}`)}, now)
+		l.settle()
+	}
+	if len(l.content.msgOrder) > maxLedgerMessages {
+		t.Fatalf("ledger holds %d messages", len(l.content.msgOrder))
+	}
+}
+
+func TestHubBudgetHasAHardCeilingForRunningTurns(t *testing.T) {
+	now := time.Now()
+	h := newTestHub(t, Options{Now: func() time.Time { return now }})
+	h.mu.Lock()
+	l := h.ledgerLocked(testKey)
+	h.mu.Unlock()
+	for i := range 5 {
+		p := textPart(fmt.Sprintf("p%d", i), strings.Repeat("x", 1000), false)
+		p.Part.MessageID = fmt.Sprintf("m%d", i)
+		l.apply(p, now)
+	}
+	h.mu.Lock()
+	h.sessions[testKey] = newSession(h, testKey)
+	h.sessions[testKey].ledger = l
+	h.maxLedger = 1500
+	h.budgetLocked()
+	delete(h.sessions, testKey)
+	h.mu.Unlock()
+	if n, _ := l.size(); n > 3000 || n < 2000 {
+		t.Fatalf("running content held %d bytes, want just under the 3000 ceiling", n)
 	}
 }

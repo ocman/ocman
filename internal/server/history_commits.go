@@ -27,11 +27,16 @@ func newHistoryCommits() *historyCommits {
 }
 
 // observe is the statev2 commit observer; it never blocks the committer.
+// Listeners are keyed by session ID alone: statev2 keys carry ocman's
+// canonical session ID, unique across source instances, not the native ID
+// that several instances may share.
 func (h *historyCommits) observe(key statev2.Key, revision int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for ch := range h.listeners[key.SessionID] {
-		// Keep only the newest revision for a slow forwarder.
+		// Keep only the newest revision for a slow forwarder. The send cannot
+		// block: h.mu serialises senders and the forwarder is the only
+		// receiver, so after the drain the one-slot buffer is empty.
 		select {
 		case <-ch:
 		default:

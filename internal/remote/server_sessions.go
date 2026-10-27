@@ -52,6 +52,8 @@ func (s *Server) Session(ctx context.Context, req *pb.SessionReq) (*pb.JsonResp,
 	if err != nil {
 		return nil, err
 	}
+	// Owners return stored history uncomposed. The hub serving the browser
+	// composes it once with the stream it relays (convstream.Hub.BeginRead).
 	detail, err := p.Session(ctx, req.SessionId, int(req.Limit), int(req.Offset))
 	if err == nil && detail != nil && s.enrichSession != nil {
 		s.enrichSession(ctx, req.Platform, req.SessionId, detail)

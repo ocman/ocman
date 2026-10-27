@@ -141,16 +141,20 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// History trails the live stream: compose what this hub streamed but
+	// history has not stored yet. The read begins before history is queried,
+	// so a read that started later cannot release content from this one.
+	// Clients replay only events after the cursor and page older history
+	// without counting the composed messages.
+	read := s.convStreamModule().Hub().BeginRead(convstream.Key{Platform: string(adapter.ID()), SessionID: sessionID})
+	defer read.End()
 	detail, err := adapter.Session(r.Context(), sessionID, limit, offset)
 	if err != nil {
 		httpx.WritePlatformError(w, "fetching session", err)
 		return
 	}
 	remote := isRemotePlatformID(string(adapter.ID()))
-	// History trails the live stream: compose what this hub streamed but
-	// history has not stored yet. Clients replay only events after its cursor
-	// and page older history without counting the composed messages.
-	composed := s.convStreamModule().Hub().Compose(convstream.Key{Platform: string(adapter.ID()), SessionID: sessionID}, detail, limit, offset)
+	composed := read.Compose(detail, limit, offset)
 	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 	peek := r.URL.Query().Get("peek") == "1"

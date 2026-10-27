@@ -2,7 +2,6 @@ package convstream
 
 import (
 	"sort"
-	"time"
 
 	"github.com/NoUseFreak/ocman/internal/convevents"
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -15,9 +14,10 @@ type ledgerView struct {
 	msgs      map[string]db.Message
 	parts     []capturedPart
 	settled   map[string]bool
-	confirmed map[string]time.Time
-	removed   map[string]time.Time
-	rev       map[string]uint64
+	confirmed map[string]bool
+	// removed names tombstones; true filters this read's history rows.
+	removed map[string]bool
+	rev     map[string]uint64
 }
 
 type capturedPart struct {
@@ -29,16 +29,19 @@ type capturedPart struct {
 // composePlan is what a read decided about the captured entries, keyed with
 // the revision it saw.
 type composePlan struct {
-	confirmed       map[string]uint64
-	removedMessages map[string]uint64
-	orphans         map[string]uint64
+	confirmed map[string]uint64
+	// dropped are ended messages history moved past without them.
+	dropped map[string]uint64
+	// cleared are tombstones whose rows this read no longer holds.
+	cleared map[string]bool
+	orphans map[string]uint64
 }
 
 // compose lays the captured content over a stored read of the newest page
 // and decides what the read confirms. It returns the plan and the messages it
 // added, which are not stored history.
 func (v *ledgerView) compose(d *platforms.SessionDetail, limit, offset int) (composePlan, []string) {
-	p := composePlan{confirmed: map[string]uint64{}, removedMessages: map[string]uint64{}, orphans: map[string]uint64{}}
+	p := composePlan{confirmed: map[string]uint64{}, dropped: map[string]uint64{}, cleared: map[string]bool{}, orphans: map[string]uint64{}}
 	if d == nil || offset != 0 {
 		return p, nil
 	}
@@ -49,16 +52,15 @@ func (v *ledgerView) compose(d *platforms.SessionDetail, limit, offset int) (com
 	// The read may be shared with a cache; compose into copies.
 	d.Messages = withoutRemoved(v.removed, d.Messages, func(m db.Message) []string { return []string{"m:" + m.ID} })
 	d.Parts = withoutRemoved(v.removed, d.Parts, func(p db.Part) []string { return []string{"p:" + p.ID, "m:" + p.MessageID} })
-	return p, v.overlay(d, limit, p.removedMessages)
+	return p, v.overlay(d, limit, p.dropped)
 }
 
-func withoutRemoved[T any](removed map[string]time.Time, rows []T, keys func(T) []string) []T {
+func withoutRemoved[T any](removed map[string]bool, rows []T, keys func(T) []string) []T {
 	out := make([]T, 0, len(rows))
 	for _, row := range rows {
 		gone := false
 		for _, k := range keys(row) {
-			_, gone = removed[k]
-			if gone {
+			if gone = removed[k]; gone {
 				break
 			}
 		}
@@ -84,17 +86,27 @@ func (v *ledgerView) decide(d *platforms.SessionDetail, p *composePlan) {
 	for _, sp := range d.Parts {
 		storedParts[sp.ID] = sp
 	}
+	// History that no longer holds a removed row has caught up with the
+	// removal; later reads trust it again, including a re-added row.
+	for key := range v.removed {
+		_, msg := stored[key[2:]]
+		_, part := storedParts[key[2:]]
+		if key[:2] == "m:" && !msg || key[:2] == "p:" && !part {
+			p.cleared[key] = true
+		}
+	}
 	// An ended message missing from a read that stores later messages was
-	// removed while the stream missed its event.
+	// probably removed while the stream missed it. Ingestion order is not
+	// guaranteed, so this only forgets the ledger copy; history still decides.
 	for _, id := range v.msgOrder {
 		if _, ok := stored[id]; !ok && v.settled[id] && v.msgs[id].TimeCreated < newest {
-			p.removedMessages[id] = v.rev["m:"+id]
+			p.dropped[id] = v.rev["m:"+id]
 		}
 	}
 	pending := map[string]bool{}
 	for _, cp := range v.parts {
 		mid := cp.part.MessageID
-		_, gone := p.removedMessages[mid]
+		_, gone := p.dropped[mid]
 		_, held := v.msgs[mid]
 		_, inRead := stored[mid]
 		switch {
@@ -108,7 +120,7 @@ func (v *ledgerView) decide(d *platforms.SessionDetail, p *composePlan) {
 			// A completed stored message owns its parts even when it keeps less
 			// text (for example signature-only thinking) or omits some.
 			have, ok := storedParts[cp.part.ID]
-			if _, already := v.confirmed["p:"+cp.part.ID]; already || done[mid] || ok && cp.covers(have.Data) {
+			if v.confirmed["p:"+cp.part.ID] || done[mid] || ok && cp.covers(have.Data) {
 				p.confirmed["p:"+cp.part.ID] = v.rev["p:"+cp.part.ID]
 			} else {
 				pending[mid] = true
