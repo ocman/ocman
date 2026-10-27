@@ -76,7 +76,7 @@ func analyticsMetadata(m Message) ([]byte, error) {
 		}
 	}
 	fields := map[string]json.RawMessage{}
-	for _, key := range []string{"role", "agent", "mode", "providerID", "modelID", "model", "cost", "usageAvailable", "tokens", "time", "finish", "error"} {
+	for _, key := range []string{"role", "agent", "mode", "providerID", "modelID", "model", "cost", "usageAvailable", "tokens", "contextTokens", "time", "finish", "error"} {
 		if value, ok := raw[key]; ok {
 			fields[key] = value
 		}

@@ -38,16 +38,24 @@ func conversationMetadata(ctx context.Context, tx *sql.Tx, key Key, d *Detail) e
 	}
 	var raw []byte
 	err = tx.QueryRowContext(ctx, `SELECT data FROM analytics_message WHERE instance_id=? AND session_id=?
-		AND json_extract(data,'$.role')='assistant' AND json_extract(data,'$.tokens.output')>0 ORDER BY time_created DESC,id DESC LIMIT 1`, key.InstanceID, key.SessionID).Scan(&raw)
+		AND json_extract(data,'$.role')='assistant' AND (json_extract(data,'$.contextTokens')>=0 OR json_extract(data,'$.tokens.output')>0)
+		ORDER BY time_created DESC,id DESC LIMIT 1`, key.InstanceID, key.SessionID).Scan(&raw)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	if err == nil {
-		var m analyticsdata.MessageData
+		var m struct {
+			analyticsdata.MessageData
+			ContextTokens *int64 `json:"contextTokens"`
+		}
 		if err := json.Unmarshal(raw, &m); err != nil {
 			return err
 		}
-		if m.Tokens != nil {
+		// Some platforms report turn-wide accounting separately from the
+		// latest request's context. Prefer that explicit context, including zero.
+		if m.ContextTokens != nil && *m.ContextTokens >= 0 {
+			d.Conversation.ContextTokens = *m.ContextTokens
+		} else if m.Tokens != nil {
 			t := m.Tokens
 			d.Conversation.ContextTokens = t.Input + t.Output + t.Reasoning
 			if t.Cache != nil {
