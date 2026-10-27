@@ -77,7 +77,7 @@ usage.
 Factory implements a Work Epic sequentially across one or more local Git
 repositories. It keeps an independent shared branch and workspace for each
 project, then runs a separate Project Delivery session for every changed
-project. This model is defined by [ADR 0008](../adr/0008-coordinate-factory-work-across-projects.md).
+project. This model is defined by [ADR 0008](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/docs/adr/0008-coordinate-factory-work-across-projects.md).
 
 Dispatch wakes on completion, implementation-session idle events, and changes
 that make work ready, such as approval, resume, graph edits, or capacity changes.

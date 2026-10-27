@@ -5,7 +5,7 @@ weight: 3
 
 ## Settings categories
 
-Settings uses six categories. Each page has named sections rather than another
+Settings uses seven categories. Each page has named sections rather than another
 layer of tabs or collapsible panels.
 
 | Category | Sections |
@@ -14,8 +14,9 @@ layer of tabs or collapsible panels.
 | Sessions | New sessions, Conversation, Voice, History & archiving |
 | Agents & models | Platforms, Provider accounts, Hooks, Model fallback |
 | Permissions | Auto-approve, AI reviewer, Worktrees |
-| Connections & sharing | Remotes, Plugins, Link previews, Public sharing, Webhooks |
-| System | Resource management, Database maintenance |
+| Connections & sharing | Remotes, Link previews, Public sharing, Webhooks |
+| Plugins | Plugin management and per-plugin settings |
+| System | Resource management, Application health, Database maintenance |
 
 Device, account, hooks and database sections appear only when applicable. Search
 opens the matching category and scrolls to the setting. Existing links to the old
@@ -78,12 +79,12 @@ API calls use that provider's billing, independently of any ChatGPT subscription
 ./ocman                                      # default: listens on 127.0.0.1:8228
 ./ocman -addr localhost:9090                 # custom listen address
 ./ocman -db /path/to/opencode.db             # custom OpenCode database path
-./ocman -platforms opencode                 # OpenCode only; default enables both platforms
+./ocman -platforms opencode                 # OpenCode only; default: OpenCode and Claude Code
 ./ocman -platforms claudecode               # Claude Code only
 ./ocman -platforms opencode,codex           # OpenCode and Codex
 ```
 
-Ocman's own state (archived/seen flags, auth secret, favorites, cached projects) lives in
+Ocman's own state (archived/seen flags, auth secret, favorites and settings) lives in
 `~/.local/share/ocman/state.db`, created on first run and migrated automatically. Startup
 enforces owner-only permissions, `0700` for the directory and `0600` for the database and
 SQLite sidecars, and fails rather than continuing if existing paths cannot be secured.
@@ -97,6 +98,32 @@ Fresh databases, in-memory databases, and databases already at the current versi
 do not need a backup. Backups are retained, including after a failed migration;
 remove unneeded copies manually. They cover the state database only, not external
 artifact files or OpenCode's database. Ocman never restores a backup automatically.
+
+### Conversation history and health
+
+Retained conversations, project-list caches, text search and analytics live in a
+separate `state_conv.db` beside `state.db`. Storage and ingestion are always
+enabled. `-conversations-db` overrides `OCMAN_CONVERSATIONS_DB`, which overrides
+the default path. The deprecated `-statev2-db` and `OCMAN_STATEV2_DB` aliases
+remain accepted; the legacy environment variable is used only when the new one
+is unset. If both flag names are supplied, the last one wins.
+
+On first use of the default filename, startup can adopt an adjacent `statev2.db`
+using a consistent SQLite snapshot, leaving the original intact. An existing
+destination wins. A recorded adoption prevents a later reset from importing the
+retired file again. This is durable history: deleting native sessions does not
+delete retained conversations. Do not delete this database as a cache repair.
+For a full backup, preserve both ocman databases and artifact files, using
+SQLite-consistent backups or stopping ocman and its writers before copying.
+
+Settings → System → **Application health** reports the backend connection and
+conversation-history sync. **Syncing in background** means analytics can show
+already-imported data while ingestion continues. **Background tasks** opens
+`/background-tasks` to inspect import progress and individual failures. Sync
+retries automatically; application reads do not fall back to native history
+when stored history is unavailable. Each remote imports its own history.
+
+### HTTP serving
 
 The HTTP server limits request-header read time and idle keep-alive connections, and bounds how
 long a request *body* may take to arrive (30 s for normal API calls, 5 min for uploads). There is
@@ -153,11 +180,17 @@ locality must not be used to justify `-auth-trust-localhost`.
 |------|---------|-------------|
 | `-addr` | `127.0.0.1:8228` | Listen address. |
 | `-db` | `~/.local/share/opencode/opencode.db` | Path to OpenCode's SQLite DB. Opened read-only. |
+| `-conversations-db` | `state_conv.db` beside `state.db` | Retained conversation store. Also `OCMAN_CONVERSATIONS_DB`; deprecated alias `-statev2-db`. |
+| `-gui` | Auto-enabled in an app bundle, otherwise `false` | Open a native Wails desktop window. |
+| `-gui-addr` | `127.0.0.1:0` | Backend listen address in desktop mode; the default picks an ephemeral port. |
 | `-log-file` | _(platform default)_ | Also write the log to this file (plain text, dir `0700`, file `0600`). Default `~/Library/Logs/ocman/ocman.log` on macOS, otherwise `$XDG_STATE_HOME/ocman/ocman.log` (`~/.local/state/ocman/ocman.log`). A file over 10 MB at startup moves to `ocman.log.1`. `-` or `off` logs to stderr only. Check this file when the desktop app fails to start. |
 | `-gui-boot-timeout` | `10s` | With `-gui`, how long to wait for the backend to answer before showing an error dialog instead of opening the window. In `-gui` mode every startup failure shows a native alert (macOS `osascript`, Linux `zenity` when installed) naming the log file. |
 | `-mcp-addr` | `127.0.0.1:8227` | Loopback listen address for the MCP endpoint. Local clients reach it without auth, so non-loopback addresses are refused. Empty disables it. |
 | `-platforms` | Saved selection, otherwise `opencode,claudecode` | Override Settings → Platforms for this launch with a comma-separated list (`opencode`, `claudecode`, `codex`). Without `opencode`, the OpenCode binary and database are not needed. See [Claude Code](../features/claude-code.md) and [Codex](../features/codex.md). |
 | `-public-base-url` | _(unset)_ | Externally reachable base URL, e.g. `https://ocman.example.ts.net`. Used for the links ocman hands to readers elsewhere (share links, plugin attention notices) and for cookie/origin decisions. Falls back to the listen address, which only works locally. Also `OCMAN_PUBLIC_BASE_URL`. |
+| `-relay-url` | Built-in relay URL | Share relay base URL; overrides `OCMAN_RELAY_URL`. |
+| `-otel` | _(unset)_ | OTLP/HTTP endpoint; falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
+| `-auto-approve` | `false` | Default new sessions to ocman's permission reviewer. |
 | `-auth-password` | _(unset)_ | Password to require. Prefer `OCMAN_AUTH_PASSWORD` or `-auth-password-file`. |
 | `-auth-password-file` | _(unset)_ | Read auth password from file (trailing whitespace trimmed). |
 | `-auth-session-ttl` | `720h` (30 days) | Auth cookie lifetime. |
@@ -175,6 +208,8 @@ locality must not be used to justify `-auth-trust-localhost`.
 | Variable | Description |
 |----------|-------------|
 | `OCMAN_AUTH_PASSWORD` | Auth password. Empty string is treated as unset. |
+| `OCMAN_CONVERSATIONS_DB` | Retained conversation database path, unless `-conversations-db` is supplied. `OCMAN_STATEV2_DB` is a deprecated fallback alias. |
+| `OCMAN_RELAY_URL` | Share relay base URL, unless `-relay-url` is supplied. |
 | `OCMAN_PUBLIC_BASE_URL` | Externally reachable base URL (same as `-public-base-url`, which takes precedence). Set it whenever something other than your own browser follows ocman's links — a shared session, or a [conversation plugin](../features/plugins/) posting attention notices into a chat thread. |
 | `OCMAN_AUTH_TRUST_LOCALHOST` | Truthy value enables the loopback auth bypass. |
 | `OCMAN_INSECURE_NO_AUTH` | Truthy value allows a non-loopback listen address with no password configured. |
@@ -301,25 +336,25 @@ before launching the server. On v1, `-db` alone selects the reader's database as
 
 ### OpenCode server authentication
 
-OpenCode authentication is off by default, so instances started natively without it keep
-working. To protect ocman-managed instances, configure one source in this precedence order:
+For OpenCode v1, managed-server authentication is off by default. To protect
+managed instances, configure one source in this precedence order:
 
 1. `OPENCODE_SERVER_PASSWORD` environment variable
 2. `-opencode-server-password-file /path/to/file`
 3. `-opencode-server-generate-password`
 
 Ocman injects the selected password as `OPENCODE_SERVER_PASSWORD` when it launches OpenCode and
-uses OpenCode's default `opencode` HTTP Basic Auth username for every API and SSE request. The
+uses OpenCode's default `opencode` HTTP Basic Auth username for every API and SSE request. On v1, the
 password stays in backend memory and the managed process environment; it is not stored in
 `state.db`, returned to the browser, or included in runtime diagnostics.
 
 To rotate a supplied password, update the environment variable or file and restart ocman, then
 restart each managed OpenCode instance from its session action. You can also let the next
 managed launch replace an instance whose credential no longer matches. Generated passwords are
-deliberately short-lived: every ocman restart creates a new value, and recovered managed
-instances are stopped and relaunched on first use. Unmanaged authenticated instances must use
-the same configured password. If they don't, ocman reports an authentication failure rather
-than an unreachable instance.
+deliberately short-lived on v1: every ocman restart creates a new value, and recovered managed
+instances are stopped and relaunched on first use. V2 always authenticates and
+persists its automatically generated password, as described above. Authentication
+configuration does not enable adoption of unmanaged instances.
 
 ## Claude Code
 
@@ -331,7 +366,7 @@ New turns are paused during that drain; prompt replies and abort remain availabl
 The browser's event streams reconnect to the same address after reload.
 Keep at least one platform enabled. Remote instances use their own settings.
 An explicit `-platforms` flag overrides the saved selection for that launch.
-Both platforms are enabled when no selection has been saved.
+OpenCode and Claude Code are enabled when no selection has been saved; Codex is opt-in.
 
 `-platforms claudecode` enables only Claude Code sessions. Setup, permissions, the opt-in
 terminal-session hooks, subscription usage and limits are described in
@@ -414,8 +449,8 @@ service name. Logs begin arriving after restarting ocman with this build and
 telemetry enabled; earlier console logs are not imported.
 
 The dashboard's Database section shows query rate and p95 latency by SQL fingerprint.
-All SQLite handles are instrumented: OpenCode, ocman state, the analytics cache, and
-maintenance. Direct and prepared executions are counted, including queries inside
+SQLite handles for OpenCode, ocman state, retained conversation history and
+maintenance are instrumented. Direct and prepared executions are counted, including queries inside
 transactions. Preparation, row iteration, and commit/rollback are excluded from query rates.
 The rate uses the count of `db_client_operation_duration_seconds`; no separate counter is needed.
 Latency measures the driver's execution call, not the subsequent row scan.

@@ -23,6 +23,7 @@ adapter boundaries or browser/backend data flows.
 | `internal/platforms` | Platform interface, registry, capabilities and compound owner IDs. |
 | `internal/platforms/opencode/{provider,api,apiv1,apiv2}` | OpenCode DB/API adapter, host-local auth, v1 HTTP operations and v2 compatibility. |
 | `internal/platforms/claude/{transport,provider,launch}` | Claude routing/socket integration, indexing/backend and shared child environment. |
+| `internal/platforms/codex/{transport,provider,appserver}` | Opt-in Codex integration, machine-wide supervisor, history ingestion and app-server JSON-RPC. |
 | `internal/platforms/provider`, `internal/providerprotocol`, `internal/providersupervisor` | Generic socket adapter, internal DTOs and sequenced replay. Read [platforms.md](platforms.md). |
 | `internal/hostsvc`, `internal/hostsvc/local`, `internal/remote` | Host router, local execution and remote gRPC. Regenerate proto stubs with `make proto`. |
 | `internal/ocruntime`, `internal/tmux` | Runtime-neutral managed agents and tmux process control. |

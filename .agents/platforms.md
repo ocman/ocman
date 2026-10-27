@@ -25,8 +25,8 @@ pending prompts do not block draining.
 ## Internal backend protocol and Claude
 
 Read `internal/providerprotocol/README.md` and `spec/multi-agent-support/` before
-changing the protocol. It is internal, with no stability promise until a second
-provider exists. HTTP and SSE use an owner-local Unix socket, `/hello` versions
+changing the protocol. It is internal and shared by the Claude and Codex
+backends. HTTP and SSE use an owner-local Unix socket, `/hello` versions
 and capabilities, and OpenCode v1 event shapes plus `limited` with `resetsAt`.
 
 - `internal/platforms/provider` owns per-adapter known-session, status and prompt

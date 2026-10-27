@@ -3,92 +3,69 @@ title: Releases
 weight: 9
 ---
 
-Release tags are created automatically from Conventional Commit messages on `main`.
+Release tags are created automatically from Conventional Commits on `main`,
+after the frontend, backend and end-to-end CI jobs pass.
 
 ## Files
 
-- `.forgejo/workflows/ci.yml` inspects commits on `main`, computes the next semver version, and creates a `v*` tag through the Forgejo API after CI passes.
-- `.forgejo/workflows/release.yml` runs when a `v*` tag is pushed, builds platform archives, creates the Forgejo release entry, and uploads the assets.
+- `.forgejo/workflows/ci.yml`: the **Semantic Tag** job uses git-cliff to calculate the next version, render the changelog, and push an annotated `v*` tag at the tested commit.
+- `cliff.toml`: commit grouping, filtering, changelog formatting and version-bump policy.
+- `.forgejo/workflows/release.yml`: a pushed `v*` tag builds platform archives and the macOS desktop DMG, creates the Forgejo release, and uploads assets. Release notes come from the annotated tag message; an empty message falls back to a minimal release note.
 
 ## One-time setup
 
-1. Create a Forgejo access token for a user or bot that can create tags in this repository.
-2. Add that token to repository secrets as `RELEASE_TOKEN`.
-3. Make sure the token can trigger follow-up workflows when it creates a tag.
-4. Push the workflow files to `main`.
-5. Trigger the `Semantic Tag` workflow with `workflow_dispatch` if you want to verify the setup immediately.
+1. Create a Forgejo personal access token that can push tags and trigger follow-up workflows for this repository.
+2. Save it as the repository secret **`RELEASE_PAT`**.
+3. Push a releasable Conventional Commit to `main` and inspect the **CI → Semantic Tag** job after the test jobs pass.
+
+The workflow uses `RELEASE_PAT` for checkout/push credentials and tag lookups,
+falling back to the default automation token when it is absent. The shell
+variable `RELEASE_TOKEN` is populated from that selection; it is not the name
+of a repository secret. If the default token cannot trigger another workflow,
+a tag can be pushed without starting release packaging.
+
+There is no separate Semantic Tag workflow or `workflow_dispatch` trigger.
+The tag steps run only on pushes to `main`, not on pull-request events.
 
 ## Commit format
 
-Use Conventional Commits for changes that should drive versioning.
+Use Conventional Commits for changes that should drive versioning:
 
-- `fix: correct tmux session lookup` -> patch release
-- `feat: add project detail page` -> minor release
-- `feat!: change session API shape` -> major release
+| Commit | Version change |
+| --- | --- |
+| `fix: correct tmux session lookup` | Patch |
+| `perf: reduce session query work` | Patch |
+| `refactor: simplify runtime lookup` | Patch |
+| `feat: add project detail page` | Minor |
+| `feat!: change session API shape` | Major |
 
-Breaking changes can also be written with a footer:
-
-```text
-feat: change session payload
-
-BREAKING CHANGE: session responses now omit archived messages by default
-```
-
-The semantic tag workflow currently treats these commit types as releasable:
-
-- `feat` -> minor
-- `fix`, `perf`, `refactor` -> patch
-- breaking change marker or `!` -> major
-
-If no releasable Conventional Commits are present since the latest `v*` tag, no new tag is created.
+A `BREAKING CHANGE:` footer also marks a breaking change. The configured bump
+policy keeps feature bumps minor and breaking bumps major even before 1.0.
+Routine `docs`, `test`, `ci`, `build`, `style`, `lint` and `chore` commits are
+hidden from release notes; breaking commits are protected by the git-cliff
+configuration. Non-conventional messages are filtered out.
 
 ## Normal release flow
 
-1. Merge or push Conventional Commit changes onto `main`.
-2. The `Semantic Tag` workflow runs.
-3. It finds the latest `v*` tag and evaluates commits since that tag.
-4. It calculates the next semantic version.
-5. It creates the new `v*` tag through the Forgejo API.
-6. The existing `Release` workflow sees the new tag, builds the platform archives, creates the release entry, and uploads the assets.
+1. Integrate changes onto `main` with linear history: squash, rebase or fast-forward; no merge commits.
+2. CI runs the frontend, backend and Playwright jobs.
+3. The **Semantic Tag** job compares the git-cliff version with the latest tag and skips an unchanged or already-existing version.
+4. It renders the unreleased changelog and pushes an annotated tag at the tested commit.
+5. The **Release** workflow packages that tag and publishes its assets and notes.
 
-## Direct pushes to main
-
-Direct pushes to `main` are the normal case for this setup.
-
-1. You push commits directly to `main`.
-2. The `Semantic Tag` workflow runs on that push.
-3. If the new commits include releasable Conventional Commits, it creates the next tag immediately.
-4. That tag triggers the packaging and release workflow.
-
-There is no release PR in this flow.
-
-## First release
-
-If the repository has no `v*` tags yet, the semantic tag workflow starts from `0.0.0`.
-
-Examples:
-
-- first releasable `fix:` commit -> `v0.0.1`
-- first releasable `feat:` commit -> `v0.1.0`
-- first breaking change -> `v1.0.0`
-
-## Why a dedicated token is required
-
-The semantic tag workflow uses `RELEASE_TOKEN` instead of the default automation token so the tag it creates can trigger the separate tag-based release workflow.
-
-If your Forgejo instance suppresses follow-up workflow triggers from automation-created refs, the default automation token will create the tag without starting `.forgejo/workflows/release.yml`.
+Direct pushes to `main` use the same checks and tag job. There is no release PR.
 
 ## Troubleshooting
 
 If no tag is created:
 
-1. Confirm the workflow ran on `main`.
-2. Confirm `RELEASE_TOKEN` exists and has repository write access.
-3. Confirm at least one commit since the latest `v*` tag follows the releasable Conventional Commit patterns.
-4. Check the workflow log for `No releasable conventional commits found`.
+1. Confirm CI ran for a push to `main` and all three prerequisite jobs passed.
+2. Inspect **Semantic Tag** for a skipped unchanged/existing version or a tag lookup/push error.
+3. Check that commits since the latest `v*` tag match the patterns in `cliff.toml`.
+4. Confirm `RELEASE_PAT` has repository write access if the default token is insufficient.
 
-If the tag is created but no release assets appear:
+If the tag exists but assets do not:
 
-1. Confirm the new `v*` tag exists in Forgejo.
-2. Confirm `.forgejo/workflows/release.yml` ran for that tag.
-3. Confirm the token used to create the tag is allowed to trigger follow-up workflows on your Forgejo instance.
+1. Confirm the tag triggered `.forgejo/workflows/release.yml`.
+2. Check whether the selected token is allowed to trigger follow-up workflows.
+3. Inspect the frontend, platform binary, desktop packaging and publish jobs for failures.

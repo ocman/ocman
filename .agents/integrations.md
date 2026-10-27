@@ -6,21 +6,23 @@ SQLite uses pure-Go `modernc.org/sqlite`, without CGo. Read
 [development.md](development.md) before running code that opens writable stores.
 
 - OpenCode's database defaults to `~/.local/share/opencode/opencode.db`, opened
-  read-only with `?mode=ro&_journal_mode=WAL`. The only writer is user-started
+  read-only with `mode=ro`; do not change the foreign database's journal mode.
+  The only ocman writer is user-started
   `internal/ocmaint` maintenance. It stops managed instances, blocks launches and
   refuses while another process holds the file. It moves `summary.diffs` older
   than thirty days into `<db>.ocman-diffs` for restoration. Jobs must finish before state.db closes
   and must never leave launches blocked. Maintenance mutation routes are local.
 - Ocman's writable state defaults to `~/.local/share/ocman/state.db` and migrates
   on startup. Session state is keyed by `(platform, session_id)`.
-- Disposable `analytics-cache.db` beside state.db holds slim session/message rows
-  and minimal tool timings. It uses OpenCode table names, falls back to the
-  source DB until built, and rebuilds on schema or `-db` changes, not migrations.
-  After `AddAnalyticsSource` adds other platforms, never fall back to OpenCode.
-  Without OpenCode, `db.OpenAnalyticsStore` is the analytics DB itself.
+- Durable `state_conv.db` beside state.db owns retained conversations, project
+  caches, search and ingestion-maintained analytics summaries. Storage and
+  ingestion are always enabled. Analytics uses validated stored snapshots,
+  including committed partial imports, never native-source fallback. The retired
+  `analytics-cache.db` is unused; do not recreate or sync it. Conversation-store
+  path overrides and adoption are documented in `docs/configuration/_index.md`.
 - Analytics routes, subscription usage and joined workers belong to
-  `internal/analytics`; DB maintenance belongs to `ocmaint`. Core keeps mirror
-  sync, session snapshots, client demand leases, system stats and HTTP/SSE/index
+  `internal/analytics`; DB maintenance belongs to `ocmaint`. Core keeps
+  session snapshots, client demand leases, system stats and HTTP/SSE/index
   instruments. Subscription usage reads local OAuth tokens with a one-minute
   cache; never return tokens to the browser.
 

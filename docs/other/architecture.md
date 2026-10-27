@@ -93,25 +93,18 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>text composer, REST + SSE] -->|core APIs, silent-turn repairs,<br/>batched previews, heartbeats + plugins| Ocman[ocman<br/>Go binary :8228]
-    Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
-    Ocman -->|read-only sessions + v2 OAuth credentials<br/>maintenance writes| OCDB[(opencode.db)]
-    Ocman -->|read/write SQLite<br/>Inbox, state + provider cost ledger| StateDB[(state.db)]
-    Ocman -->|ingested history, projects,<br/>search and analytics| History[(state_conv.db)]
-    Ocman -->|background health inventory + authenticated HTTP/SSE| OCInst[Managed OpenCode instances<br/>or registered v2 service]
-    Ocman -->|stream-json pipes, user's own login| ClaudeCLI[claude CLI<br/>children]
-    Ocman -->|read + index| ClaudeDir[(~/.claude/projects<br/>transcripts + claude-index.db)]
-    ClaudeHooks[claude hook plugin<br/>status: ocman-launched; history: all sessions] -->|ocman hook → /hook, journal| Ocman
-    Ocman -->|exec| Shell[git / tmux<br/>host tools]
-    Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
-    PluginExec -->|Beads plugin only| Beads[bd<br/>owner-local CLI]
-    Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage + reviewer APIs]
-    Ocman -->|credential-free HTTP, public addresses only| WebPages[Open Graph pages<br/>and raster preview images]
-    Ocman -->|encrypted Web Push + VAPID| Push[Browser push services]
-    Push -->|wake service worker + OS notification| Browser
-    Ocman <-->|gRPC + token: sessions, upstream identities, hosts, plugins| Remotes[Remote ocman<br/>instances]
-    Ocman -->|encrypted webhook poll| Relay[ocman-relay<br/>ciphertext persistence]
-    Ocman -.->|OTLP traces, metrics, logs, optional| Otel[Telemetry collector]
+    Browser[Browser SPA<br/>REST + SSE] --> Ocman[ocman<br/>Go binary :8228]
+    Agent[Local MCP clients] -->|/mcp| Ocman
+    Ocman -->|HTTP/SSE or CLI protocols| Platforms[Local OpenCode, Claude Code<br/>and opt-in Codex]
+    Platforms --> Native[(Native databases,<br/>transcripts and rollouts)]
+    Native -->|owner-local ingestion| Ocman
+    Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
+    Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
+    Ocman -->|supervised NDJSON| Plugins[Trusted native plugins]
+    Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
+    Ocman <-->|authenticated gRPC| Remotes[Remote ocman instances]
+    Ocman -->|encrypted shares + webhook poll| Relay[ocman-relay]
+    Ocman -.->|optional OTLP| Otel[Telemetry collector]
 ```
 
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
@@ -183,7 +176,8 @@ flowchart LR
 - Application analytics and background token/cost metrics use validated
   statev2 snapshots. Startup no longer creates or syncs `analytics-cache.db`;
   existing cache files are unused and left untouched. Database-size sampling
-  measures Ocman's state and conversation stores, not foreign platform files.
+  measures Ocman's state and conversation stores plus the local platforms that
+  advertise `StorageSizer`, as described below.
 - **Claude Code** (`-platforms claudecode`). Ocman reads the transcripts under
   `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR`) into the disposable
   `claude-index.db` beside state.db and drives sessions it starts or adopts by
@@ -198,6 +192,12 @@ flowchart LR
   observations are shared as advisory files under `claude-external` beside
   state.db; they produce non-blocking session warnings, not admission locks.
   See [Claude Code](../features/claude-code.md).
+- **Codex** (`-platforms codex`, opt-in). A separate read-only app-server supplies
+  native history and catalogs for ingestion. A machine-wide tmux supervisor
+  hosts another app-server for live thread operations; it starts on first use.
+  Only rollout token accounting reads native files. Execution uses the user's
+  own Codex login. Browsing uses retained history after ingestion, just like
+  other platforms. See [Codex](../features/codex.md).
 - **Provider usage.** `/provider-usage` reads OpenCode's local OAuth credentials
   server-side for normalized quota windows. V2 reads the configured OpenCode
   database through `internal/db`, selecting the active credential or, for
@@ -1441,7 +1441,7 @@ flowchart TD
    modify files, but its configurable permission rules may allow shell commands
    for research; approval of an exact revision automatically materializes the
    proposed Implementation Issues and dependencies atomically. As defined by
-   [ADR 0008](../adr/0008-coordinate-factory-work-across-projects.md), an Epic
+   [ADR 0008](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/docs/adr/0008-coordinate-factory-work-across-projects.md), an Epic
    owns an admitted local project set, each executable Issue targets one project,
    and each project has an independent shared branch, checkpoint, and Delivery
    lineage. Ready Issues launch configured worktree sessions in their target
@@ -1843,11 +1843,11 @@ flowchart TD
   header titles, plus their main-nav link. Plugins, auto-approve, sharing and
   webhooks contribute Settings sections alongside the core sections. Each declares
   its category and stays mounted either always or only while its category is active.
-  Settings has six categories with visible section headings; legacy tab links map
+  Settings has seven categories with visible section headings; legacy tab links map
   to their new category, and search opens the category before revealing the row.
   `App`'s routes, `MainNav`, `routeTitle` and `SettingsTab` iterate the registry at
-  fixed slots between their core entries. Everything is still imported eagerly,
-  with no runtime discovery. Backend plugins remain separate and reach the UI
+  fixed slots between their core entries. The registry is static, while heavy
+  Factory pages use `lazyComponent` to defer their imports. Backend plugins remain separate and reach the UI
   only through plugin panes and palette actions. The command palette and the
   session right-panel tabs still keep their own lists.
 - **Background task notice.** OpenCode v2's session-owned running shells and active

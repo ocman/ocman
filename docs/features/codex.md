@@ -36,7 +36,8 @@ reads, stores or refreshes your Codex credentials.
 ## How it works
 
 Ocman talks to Codex only through `codex app-server`, Codex's own JSON-RPC
-interface, never through its terminal UI or by parsing its files.
+interface, rather than its terminal UI. Rollout files supply token accounting
+as described below.
 
 - **History.** A read-only `codex app-server` lists and reads the threads in
   `$CODEX_HOME` (default `~/.codex`), archived and subagent threads included.

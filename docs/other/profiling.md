@@ -3,17 +3,21 @@ title: Profiling
 weight: 8
 ---
 
-Where ocman's performance work stands. This records the suspects we found
-during recon, the instrumentation we added to measure them, and the fixes that
-*should* follow once we have data, in priority order.
+This is a historical performance investigation, including measurements and a
+backlog from an earlier OpenCode-only implementation. Polling cadences, source
+locations and lsof-based discovery below describe that snapshot, not the current
+runtime. Current ownership and data flows are documented in
+[Architecture](architecture.md), including compact stored sidebar queries,
+retained history and managed-inventory runtime lookup.
 
 The starting symptom: the frontend occasionally feels stuck, and it wasn't
 clear whether slow API calls or the UI itself caused it.
 
 ## Phase 1: reconnaissance findings (OpenCode-only)
 
-ocman's default deployment runs only the OpenCode adapter
-(`-platforms opencode`). Findings below assume that configuration.
+The investigated deployment ran only the OpenCode adapter
+(`-platforms opencode`). Findings below assume that configuration. Current
+defaults enable OpenCode and Claude Code; Codex is opt-in.
 
 ### Polling map (steady state, idle session)
 

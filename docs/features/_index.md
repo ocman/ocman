@@ -242,7 +242,9 @@ Authorization and other permanent client errors wait for an explicit refresh.
   loading your tmux configuration.
   Launch and restart do not control your default tmux server. Inspect managed
   sessions with `tmux -L ocman-agents list-sessions` on the owning machine.
-  Existing OpenCode processes are reused while healthy. Instances on the
+  Existing managed OpenCode processes are reused while healthy. V2 can also
+  reuse OpenCode's registered background service. Other external instances are
+  not adopted. Instances on the
   earlier `ocman-opencode` and `ocman-provider` servers keep running and ocman
   still stops them there; sessions launched on your default tmux server by
   older versions must be stopped manually before ocman relaunches them.

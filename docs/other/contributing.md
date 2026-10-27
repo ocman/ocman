@@ -5,143 +5,119 @@ weight: 7
 
 ## Architecture
 
+Ocman serves an embedded React SPA from one Go binary. Platform adapters own
+agent execution and history ingestion; application browsing reads retained
+conversation history. Host operations route to the machine that owns the
+project. See [Architecture](architecture.md) for the full diagrams and
+[Session and event architecture](architecture-events.md) for event contracts.
+
 ```mermaid
-graph TD
-    subgraph Browser
-        SPA[React SPA]
-    end
-
-    subgraph ocman Server
-        HTTP[HTTP Server]
-        Static[Embedded Static Assets]
-        Registry[Platform Registry]
-        Archive[Auto-Archive Goroutine]
-    end
-
-    subgraph Adapters
-        OCAd[OpenCode adapter]
-    end
-
-    subgraph Storage
-        OC_DB[(OpenCode DB<br/>read-only)]
-        State_DB[(ocman state.db<br/>read-write)]
-    end
-
-    subgraph External
-        OC[Running OpenCode instances]
-    end
-
-    SPA -->|/api/*| HTTP
-    SPA -->|static files| Static
-    HTTP --> Registry
-    Registry --> OCAd
-    OCAd --> OC_DB
-    OCAd -->|managed inventory + HTTP| OC
-    HTTP -->|archived/seen| State_DB
-    Archive --> State_DB
+flowchart LR
+    Browser[React SPA] --> Server[HTTP, SSE and feature modules]
+    Server --> Platforms[Canonical platform adapters]
+    Platforms --> History[(state_conv.db)]
+    Native[OpenCode, Claude Code and Codex] -->|ingestion| History
+    Platforms -->|live actions| Native
+    Server --> State[(state.db)]
+    Server --> Host[hostsvc.Host]
+    Host --> Local[Local git, tmux and filesystem]
+    Host --> Remote[Remote owner over gRPC]
 ```
 
 ## Project structure
 
-```
-main.go                                    entrypoint (-addr, -db, -platforms, -auth-* flags)
-frontend/                                  React + TypeScript + Vite SPA
-e2e/                                       Playwright end-to-end suite
-internal/platforms/                        Platform interface, Registry, common types/errors
-internal/platforms/opencode/provider/      OpenCode adapter (DB + HTTP proxy)
-internal/platforms/opencode/api/           Shared OpenCode authentication
-internal/platforms/opencode/apiv1/         Bounded v1 HTTP operations
-internal/platforms/opencode/apiv2/         OpenCode v2 compatibility
-internal/platforms/claude/transport/       Claude routing and socket integration
-internal/platforms/claude/provider/        Claude execution and transcript indexing
-internal/platforms/claude/launch/          Shared Claude child environment
-internal/db/                               SQLite queries against OpenCode's DB
-internal/state/                            ocman's own writable state DB (archived/seen,
-                                            auth secret, favorites, cached projects)
-internal/server/                           HTTP server, API handlers, static file serving,
-                                            OpenCode port discovery, auth
-internal/webui/static/                     Vite build output (embedded into Go binary)
-internal/tmux/                             tmux process control + opencode launchers
-internal/term/                             in-app browser terminals (tmux windows + PTY bridge)
-internal/termmod/                          /api/term routes + WebSocket bridge (feature module)
-internal/autoapprove/                      LLM-judged permission auto-approve pipeline
-spec/                                      Requirements + architecture notes per feature
-```
+| Path | Responsibility |
+| --- | --- |
+| `main.go`, `internal/app/` | Entrypoint, flags, startup, database selection and application composition |
+| `frontend/`, `frontend/e2e/` | React/TypeScript/Vite SPA and mocked Playwright suite |
+| `internal/server/`, `internal/module/` | HTTP/static serving, feature composition, module lifetimes and event bus |
+| `internal/platforms/` | Shared contracts, canonical adapters and OpenCode, Claude Code and Codex integrations |
+| `internal/hostsvc/`, `internal/remote/` | Owner-routed host operations and remote gRPC transport |
+| `internal/sessionsvc/`, `internal/sessionlifecycle/` | Shared session mutations and prepare/start lifecycle |
+| `internal/db/` | Read-only OpenCode queries and shared analytics query adapters |
+| `internal/state/` | Writable application state, settings and module schemas |
+| `internal/statev2/`, `internal/conversationingest/` | Durable conversations, ingestion checkpoints, search and analytics projections |
+| `internal/sidebar/` | Compact stored session-list reads |
+| `internal/ocruntime/`, `internal/tmux/` | Managed runtime lifecycle and tmux process control |
+| `internal/tasksvc/`, `internal/taskmod/` | Background work and task progress APIs |
+| `internal/plugins/`, `internal/pluginsmod/`, `sdk/plugin/` | Native plugin protocol, management and SDK |
+| `internal/webui/static/` | Embedded Vite output; build frontend before Go |
+| `docs/`, `site/`, `spec/` | Published documentation, Hugo configuration and feature designs |
+
+Repository contributors and coding agents should also read `AGENTS.md` and
+its task-specific `.agents/` guides before changing an area.
 
 ## Development
 
 ### Requirements
 
-- Go 1.24+
-- Node.js 22+ (provided by `mise`)
-- [pnpm](https://pnpm.io/) (provided by `mise`; pinned via `packageManager` in `frontend/package.json`)
-- [mise](https://mise.jdx.dev/), which provides `air`, `node`, and `pnpm` (`mise install`)
-- `tmux` on `PATH` for the in-UI launcher
+- The Go version required by `go.mod` (currently Go 1.26.9).
+- Node.js and pnpm versions pinned in `mise.toml` and `frontend/package.json`.
+- [mise](https://mise.jdx.dev/) for the pinned tools (`mise install`).
+- tmux on the owning machine for managed agents and in-app terminals.
+- Hugo for documentation builds, also pinned in `mise.toml`.
 
-> All Node-side commands use `pnpm`. `npm` is no longer supported: running
-> `npm install` will not produce the expected `pnpm-lock.yaml`, and CI
-> rejects it.
+Use pnpm for Node commands and keep `pnpm-lock.yaml` current.
 
-### Quick command reference
+### Database isolation before startup
 
-| Command                | Port | Live Reload | Use Case |
-|------------------------|------|-------------|----------|
-| `make dev`             | 8228 | Yes (HMR)   | Regular development |
-| `make dev-prod-watch`  | 8228 | Manual refresh | Memory profiling, production testing |
-| `make dev-prod`        | 8228 | No          | One-time production test |
+Development must use disposable databases isolated to this checkout and branch.
+A different port does not isolate data. Tests already use temporary stores.
 
-### All commands
+**Current limitation:** `make dev*` selects a checkout-local `state_conv.db`,
+but application startup still resolves `state.db` to the user's normal
+`~/.local/share/ocman/state.db`. There is currently no application-state path
+flag or environment override. Do not start these targets against your normal
+account until an explicit state-path override is implemented and configured.
+The OpenCode source and any managed agent's writable databases must also be
+isolated. See `.agents/development.md` for the repository's isolation rules.
 
-| Command                | Description |
-|------------------------|-------------|
-| `make dev`             | Backend (air) + frontend (vite dev) with HMR on :8228 |
-| `make dev-prod`        | Backend (air) + frontend (vite preview of production build) on :8228 |
-| `make dev-prod-watch`  | Backend (air) + frontend (vite preview, auto-rebuilds on changes) on :8228 |
-| `make dev-backend`     | Go backend only (air, port 8229) |
-| `make dev-frontend`    | Vite dev server only (port 8228) |
-| `make test`            | `go test ./...`, `vitest run`, and the Playwright e2e suite |
-| `make lint`            | `go vet`, `tsc -b`, `eslint`, and the platform-branching check |
-| `make build`           | Production build (frontend then Go binary) |
-| `make clean`           | Remove binary, tmp/, and static/assets/ |
+### Commands
 
-### Build pipeline
+The Makefile and `make help` are authoritative. Development startup targets
+below require the isolation prerequisite above.
 
-1. `cd frontend && pnpm install --frozen-lockfile && pnpm build` builds the frontend into `internal/webui/static/`.
-2. `go build -o ocman .` embeds `internal/webui/static/` via `//go:embed`.
+| Command | Description |
+| --- | --- |
+| `make dev` | Air backend on :8229 and Vite HMR on :8228 |
+| `make dev-prod` | Air backend and Vite preview of a one-time production build |
+| `make dev-prod-watch` | Air backend and Vite preview with automatic rebuilds; manually refresh the browser |
+| `make dev-backend` | Air backend only, :8229 |
+| `make dev-frontend` | Vite only, :8228; API calls proxy to :8229 |
+| `make test` | Go, Vitest and development-script tests |
+| `make test-e2e` | Build frontend and run the separate Playwright suite |
+| `make test-all-fast` | Go, frontend and Playwright in parallel, each stopping at its first failure |
+| `make lint` | Go vet, golangci-lint, TypeScript, ESLint, Stylelint and repository guards |
+| `make build` | Frontend build followed by Go binary build |
+| `make docs-build` | Build the published documentation into `site/public/` |
+| `make clean` | Remove the binary, `tmp/` and embedded frontend assets; older dev history may still be under `tmp/` |
 
-Order matters: build the frontend before `go build`.
+Vite preview has no HMR. Air rebuilds Go but does not rebuild embedded frontend
+assets. Use Vite for frontend iteration or rebuild the frontend before rebuilding
+Go. Keep the tracked `internal/webui/static/robots.txt` placeholder so clean
+checkouts can compile the embed declaration.
 
-### Development workflows
+## Tests and coverage
 
-Regular frontend development:
+Go tests live beside their code; frontend unit tests use Vitest. Playwright
+specs in `frontend/e2e/` mock the API and run in parallel against a frontend-only
+server, without starting the backend or real agents. CI runs all three suites.
 
-```bash
-make dev
-# → Instant HMR updates; best for UI iteration
-```
-
-Memory profiling or production testing:
-
-```bash
-make dev-prod-watch
-# → Edit code → auto-rebuild → manually refresh browser
-```
-
-> Vite's preview mode has no HMR. The watcher rebuilds automatically but you refresh the
-> browser yourself. That's deliberate: production builds are for testing, not rapid
-> iteration.
-
-## Tests
-
-Three suites: Go tests (unit and integration), frontend tests in vitest, and a Playwright
-end-to-end suite covering auth, the dashboard, composer, SSE streaming, and prompts. CI runs
-all three on every PR, and `make test` runs them locally. Coverage is ratcheted, so new code
-ships with tests.
+New behavior needs tests, and bug fixes need a regression observed failing
+before the fix. For code changes, run relevant tests and `make lint`; before
+committing, collect coverage and compare it with the baseline as described in
+`.agents/testing.md`. Coverage must not drop. Documentation-only changes need
+link checks and `make docs-build` when published content changes.
 
 ## Platform-agnostic frontend
 
-The frontend must not branch on `session.platform === 'opencode'` (or similar string comparisons).
-UI capability gating goes through `/api/capabilities` and `useCapabilities()` instead.
-ESLint's `no-restricted-syntax` rule enforces this, and `make lint` runs it. If you hit a false
-positive, use a justified `// eslint-disable-next-line no-restricted-syntax` comment. Use
-it sparingly, for generic helpers that genuinely need the platform identity.
+Gate UI behavior through `/api/capabilities` and `useCapabilities()`, rather
+than platform-name comparisons. Reuse the shared controls and design tokens.
+Feature pages, navigation and settings register in `frontend/src/features/`.
+
+## Forge workflow
+
+This repository is hosted on Forgejo. Use `tea`, with `--repo dries/ocman` when
+repository detection is unavailable. Keep history linear: fetch and rebase;
+integrate pull requests by squash, rebase or fast-forward. Never create merge
+commits or force-push without explicit permission.

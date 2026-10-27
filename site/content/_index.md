@@ -1,7 +1,7 @@
 ---
 title: ocman
 layout: hextra-home
-description: "One dashboard for every coding-agent session: browse, drive and split OpenCode sessions across projects, worktrees and machines."
+description: "One dashboard for every coding-agent session: browse and drive OpenCode, Claude Code and Codex sessions across projects, worktrees and machines."
 ---
 
 {{< hextra/hero-badge link="https://forgejo.nousefreak.be/dries/ocman/releases" >}}
@@ -16,7 +16,7 @@ description: "One dashboard for every coding-agent session: browse, drive and sp
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  Browse, drive and split your OpenCode sessions from the browser —&nbsp;<br class="hx:sm:block hx:hidden" />across projects, worktrees and machines.
+  Browse and drive OpenCode, Claude Code and Codex sessions from the browser —&nbsp;<br class="hx:sm:block hx:hidden" />across projects, worktrees and machines.
 {{< /hextra/hero-subtitle >}}
 </div>
 
@@ -38,7 +38,7 @@ description: "One dashboard for every coding-agent session: browse, drive and sp
   >}}
   {{< hextra/feature-card
     title="Worktree sessions"
-    subtitle="Spin up isolated git worktrees with /wt. One managed OpenCode instance per project serves them all."
+    subtitle="Spin up isolated git worktrees with /wt and run sessions on the owning machine."
   >}}
   {{< hextra/feature-card
     title="Multi-remote"
@@ -47,12 +47,12 @@ description: "One dashboard for every coding-agent session: browse, drive and sp
   >}}
   {{< hextra/feature-card
     title="MCP server"
-    subtitle="Factory tools and embedded file display for agents."
+    subtitle="Factory, Inbox, routines, session inspection and messaging, and embedded files for agents."
     link="docs/features/mcp"
   >}}
   {{< hextra/feature-card
     title="Routines"
-    subtitle="Save a project prompt, run it now or schedule it in a fresh OpenCode session."
+    subtitle="Save a project prompt, run it now or schedule it in a fresh agent session."
     link="docs/features/routines"
   >}}
   {{< hextra/feature-card

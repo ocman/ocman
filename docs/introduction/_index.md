@@ -4,10 +4,12 @@ weight: 1
 ---
 
 Ocman is a web dashboard for browsing and driving your coding-agent
-sessions. It opens [OpenCode](https://github.com/anomalyco/opencode)'s session
-database read-only and talks to running OpenCode instances over their HTTP
-API. OpenCode keeps ownership of the data, and you can keep using the CLI on
-the same sessions at the same time.
+sessions across [OpenCode](https://github.com/anomalyco/opencode),
+[Claude Code](../features/claude-code.md) and opt-in
+[Codex](../features/codex.md). Platform adapters import saved conversations
+into ocman’s own history database and route live actions to the owning CLI or
+server. OpenCode’s source database is opened read-only; ocman keeps its own
+state and retained history separately.
 
 One binary (pure-Go SQLite), listening on `127.0.0.1:8228` by default.
 
@@ -48,7 +50,8 @@ ocman.
 
 Prebuilt binaries, including a macOS `.dmg` desktop build, are on the
 [releases page](https://forgejo.nousefreak.be/dries/ocman/releases). To build
-from source you need Go 1.24+ and Node.js 22+:
+from source, use the Go version in `go.mod` and Node.js and pnpm versions in
+`mise.toml` (see [Contributing](../other/contributing.md#requirements)):
 
 ```sh
 make build && ./ocman

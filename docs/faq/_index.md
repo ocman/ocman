@@ -14,14 +14,21 @@ same time.
 Ocman opens OpenCode's database read-only
 (`~/.local/share/opencode/opencode.db` by default). Its own state, meaning
 archived flags, favourites, settings and queued messages, lives in a separate
-writable database at `~/.local/share/ocman/state.db`.
+writable database at `~/.local/share/ocman/state.db`. Retained conversations,
+search and analytics live in `state_conv.db` beside it. The explicit
+[OpenCode maintenance tool](../features/maintenance.md) is the exception to
+read-only source access: it modifies the source database only when you start it.
 
 ## Why is the composer disabled on some sessions?
 
-Interactive features need a reachable OpenCode HTTP API. Sessions from an
-OpenCode started without `--port` are readable but not drivable. Launch
-sessions from ocman (or start OpenCode with `opencode --port 0`) to get the
-composer, permission replies and abort.
+For OpenCode, interactive features need a reachable managed HTTP API. Launch
+sessions from ocman to get the composer, permission replies and abort. Ocman
+does not discover or adopt instances you start yourself, regardless of their
+port. OpenCode v2’s registered background service is a supported exception;
+see [Configuration](../configuration/#opencode-v2).
+
+Claude Code and Codex use their own managed supervisors. Availability also
+depends on the owning machine being connected and the platform’s capabilities.
 
 ## Why did several sessions stop together?
 
@@ -44,8 +51,8 @@ an interrupted prompt automatically.
 
 ## Do I need tmux?
 
-Only for the in-app terminals and for ocman-managed OpenCode instances on the
-host. Reading and driving sessions works without it.
+Saved history can be read without tmux. In-app terminals and managed OpenCode,
+Claude Code and Codex launches require it on the owning machine.
 
 ## Is it safe to expose on my network?
 
@@ -73,8 +80,10 @@ and archive or unarchive anything by hand.
 ## Does the agent integration send my code anywhere?
 
 The [MCP server](../features/mcp/) is localhost-only and exposes Factory,
-routine, session inspection and creation, and file-embedding tools. Model traffic stays between OpenCode and whatever provider
-you configured there.
+routine, session inspection, creation and messaging, and file-embedding tools.
+Model traffic uses the account and provider configured for the selected platform.
+A custom hosted permission reviewer receives tool input and review context;
+see [Reviewer configuration](../configuration/#custom-permission-reviewer).
 
 ## Can I run it on several machines?
 

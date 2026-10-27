@@ -47,8 +47,9 @@ without a backup. Never remove SQLite files while Ocman is running. The
 application never performs this reset automatically.
 
 The database uses WAL, full synchronous commits, enforced foreign keys, private
-database/sidecar permissions, and a serialized connection. This connection is
-independent of `state.db`, so ingestion does not share its connection queue.
+database/sidecar permissions, and a serialized writer connection. Interactive
+reads use a separate read-only pool with up to four connections, so they do not
+queue behind the writer. These connections are independent of `state.db`.
 The file has an application ID and an append-only migration sequence. Opening a
 foreign database, negative schema version, or newer schema fails closed. It
 never wipes and rebuilds history. Future upgrades of an existing schema must
@@ -68,9 +69,11 @@ deterministic pagination without using ingestion arrival times for ordering.
 Extensions preserve structured platform details and unknown part kinds.
 
 The normalized model deliberately does not import `internal/db` or persist
-OpenCode's entire wire response as the canonical session record. Typed usage,
-relationships, blobs, and runtime observations will be added with their owning
-ingestion behavior rather than unused tables in this initial schema.
+OpenCode's entire wire response as the canonical session record. Messages carry
+typed accounting fields, model/provider metadata, completion and error state.
+Session parent and subagent metadata support relationship queries. Native
+extensions retain platform details alongside indexed conversation, sidebar,
+project and analytics projections.
 
 ## Commit contract
 
@@ -110,15 +113,15 @@ platform instances must not be removed by cascading database deletion.
 statev2 has no purge operation; the `purged_session` table is retained for
 schema compatibility only.
 
-## Next increments
+## Application integration
 
-1. Direct durable event capture, including acknowledgment gating and ephemeral
-   streamed content. Current invalidations schedule committed-source snapshot
-   repairs; they do not persist every transient event or change supervisor acks.
-2. Typed usage, relationships, blob storage and ingestion health reporting.
-3. Shadow comparison against existing readers, including usage and relationships.
-4. Datastore-only session reads and snapshot-to-SSE cursor attachment.
-5. Analytics and downstream consumer cutover, then removal of redundant caches.
+Canonical adapters serve persisted browsing from this store. Live observation
+and ingestion add stream deltas and source snapshots; conversation reads compose
+stored history with active runtime output. Analytics uses validated stored
+snapshots without native-source fallback. History readiness and import progress
+are exposed through Application health and Background tasks.
 
-Detailed multi-instance discovery, configuration, and UI behavior remain open.
-Hub replication and cross-platform session resumption are outside this increment.
+See [Architecture](../../docs/other/architecture.md) for acknowledgment ordering,
+snapshot-to-stream attachment and consumer boundaries. Each remote ingests its
+own sources; the hub does not replicate their history. Cross-platform session
+resumption and a general multi-source configuration UI remain outside this store.

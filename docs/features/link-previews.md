@@ -195,7 +195,7 @@ GitLab). Revoke personal tokens at the provider yourself.
 
 `internal/linkpreview/lifecycle_test.go` runs every provider through sign-in,
 callback, preview, token refresh, restart, expiry, provider-side revocation
-and removal against mock provider APIs. `internal/server/preview_catalog_test.go`
+and removal against mock provider APIs. `internal/previews/catalog_test.go`
 covers the provider catalog and token saving, including adding a Forgejo host.
 `frontend/e2e/link-previews.spec.ts` covers the browser flow: a private link,
 adding a token in Settings, the rich card, reload and removal.

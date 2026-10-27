@@ -17,7 +17,11 @@ snapshots. UI-filtered lists and paginated detail responses are not valid inputs
   finished subagents. Full transcript snapshots use the existing converter and
   verify file size, mtime and identity before and after reading. A changed or
   malformed transcript fails the snapshot rather than publishing partial history.
-- Neither source launches a runtime or calls live mutation/lifecycle handlers.
+- Codex inventories stored threads through a separate app-server and reads turns
+  and items through its JSON-RPC history APIs. Its shared converter preserves
+  the same IDs as live events; rollout files supply per-turn token accounting.
+  The canonical Codex home identifies the physical source.
+- History sources do not launch managed execution supervisors or call live mutation/lifecycle handlers.
   Remote adapters are not history sources. Each owner imports its own data;
   a hub does not replicate its remotes' history in this increment.
 
@@ -62,7 +66,7 @@ Each worker picks one mode for its source:
   Transcript progress and content commit atomically. Invalid cursors or
   detected replacements/truncations fall back to a full snapshot. The shared
   Claude index may still reindex the changed file to refresh its metadata.
-- **Polling** (OpenCode v1, `worker.go`) compares inventory version hints every
+- **Polling** (OpenCode v1 and Codex, `worker.go`) compares inventory version hints every
   30 seconds and reads only invalidated, new or re-hinted sessions. A full
   verification rereads every session every six hours (`VerifyInterval`).
 

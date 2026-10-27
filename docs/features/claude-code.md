@@ -252,7 +252,10 @@ Claude sessions appear in the analytics views with their transcript token
 counts. Claude reports no price, so their cost is the token count priced at
 public API rates and is labelled **API-equivalent**; a subscription does not
 bill it. A Claude-only ocman (`-platforms claudecode`) keeps the analytics
-views in `analytics-cache.db` beside `state.db`, without an OpenCode database.
+views in the retained `state_conv.db` conversation store beside `state.db`,
+without an OpenCode database. Analytics uses imported data while history sync
+is incomplete; there is no native-database fallback. The retired
+`analytics-cache.db` is unused and can no longer supply these views.
 Analytics → Models & Cost also shows the subscription limits described below.
 
 Settings → Provider accounts shows the Claude account's subscription type and

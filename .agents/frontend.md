@@ -42,7 +42,8 @@ manually to `App.tsx`, `MainNav`, `routeTitle` or `SettingsTab`.
 
 Choose `dashboard` or `page` layout and provide a route `title`. Settings groups
 use `mount: 'always'` to retain unsaved edits across switches or `'active'` to
-mount on demand. The registry is static and eagerly imported. Core pages stay
+mount on demand. The registry is static; heavy pages can use `lazyComponent`
+as the existing Factory entries do. Core pages stay
 in the existing core files, with titles in `lib/routeTitle.ts`. Backend plugin
    panes and palette actions are separate from this registry. The generic plugin
    workspace route and dynamic navigation component register as one feature;

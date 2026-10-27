@@ -20,10 +20,9 @@ issue before implementing them.
 ## Local development
 
 Install Go at the version required by [go.mod](go.mod),
-[mise](https://mise.jdx.dev/), and OpenCode. Run `mise install` to install
+[mise](https://mise.jdx.dev/), and the coding platform you want to use. Run `mise install` to install
 the tools pinned in [mise.toml](mise.toml), including Node.js, pnpm, air,
-and golangci-lint. Install `tmux` for managed OpenCode launches and terminals.
-Run OpenCode once to create its local database before starting ocman.
+and golangci-lint. Install `tmux` for managed agent launches and terminals.
 
 Fork the repository, clone your fork, and create a branch from the latest
 `main`. From the repository root:
@@ -31,11 +30,16 @@ Fork the repository, clone your fork, and create a branch from the latest
 ```sh
 mise install
 pnpm --dir frontend install --frozen-lockfile
-make dev
 ```
 
-Open http://localhost:8228. The backend runs on port 8229.
-Use pnpm for all frontend commands.
+Before starting `make dev`, configure disposable databases isolated to this
+checkout and branch. The current dev targets isolate conversation history but
+still use the user's normal application `state.db`; an application-state path
+override must be implemented and configured before backend development startup.
+See the [database isolation prerequisite](docs/other/contributing.md#database-isolation-before-startup).
+Once isolated, the frontend runs on http://localhost:8228 and the backend on
+port 8229. Use pnpm for all frontend commands. Tests use temporary databases
+and can run without starting the backend.
 
 See the [development guide](docs/other/contributing.md) for the project
 layout and workflows, and [AGENTS.md](AGENTS.md) for repository conventions.

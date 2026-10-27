@@ -5,8 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A web dashboard for browsing and driving your coding-agent sessions.
-Supports [OpenCode](https://github.com/anomalyco/opencode) and
-[Claude Code](docs/features/claude-code.md) (your own `claude` CLI and login).
+Supports [OpenCode](https://github.com/anomalyco/opencode),
+[Claude Code](docs/features/claude-code.md), and opt-in
+[Codex](docs/features/codex.md), using your own CLI installations and accounts.
 
 ![ocman dashboard](docs/sessions.png)
 
@@ -18,7 +19,7 @@ Supports [OpenCode](https://github.com/anomalyco/opencode) and
 - **Command palette.** One ⌘K palette for jumping between sessions, settings, and actions, with in-app notifications.
 - **Slash commands.** `/new [title]` creates a session, `/clear` archives the current one and starts fresh. Renaming a session is keyboard-driven too.
 - **Tmux integration.** Launch or auto-launch an OpenCode instance inside tmux from the UI.
-- **Routines.** Save a project prompt, run it now, or schedule it in a fresh OpenCode session. History records errors and links to created sessions. See [Routines](docs/features/routines.md).
+- **Routines.** Save a project prompt, run it now, or schedule it in a fresh agent session. History records errors and links to created sessions. See [Routines](docs/features/routines.md).
 - **Multi-remote.** Attach other ocman instances over the network and manage every machine's sessions from one dashboard. Every session carries a host badge, and new-session creation knows which machine has the project. See [Multi-remote](docs/features/multi-remote.md).
 - **Diff and changes view.** Syntax-highlighted diffs inline in the thread, plus a *Changes* sidebar that combines session edits with the working-tree `git` diff.
 - **Stats dashboard.** Per-project metrics, wall-clock totals, token and pricing graphs, system stats.
@@ -48,7 +49,8 @@ Override with `OCMAN_ADDR`, `OCMAN_PREFIX`, `OCMAN_BRANCH`, `OCMAN_SRC`.
 
 Alternatively, download the latest binary from the
 [releases page](https://forgejo.nousefreak.be/dries/ocman/releases), or build
-from source with `make build` (requires Go 1.24+ and Node.js 22+).
+from source with `make build`. Use the Go version required by [go.mod](go.mod)
+and the Node.js and pnpm versions pinned in [mise.toml](mise.toml).
 
 ### macOS desktop app
 
@@ -72,15 +74,11 @@ xattr -dr com.apple.quarantine /Applications/ocman.app
 
 The easiest way to get interactive sessions (composer, permission replies, abort) is to launch
 them from ocman itself, using the command palette (`/wt` for worktrees) or the per-project
-Worktrees view. Ocman manages one OpenCode instance per project and connects automatically.
-
-If you prefer running OpenCode yourself, start it with an explicit port so ocman can discover it:
-
-```sh
-opencode --port 0   # let OpenCode pick a free port
-```
-
-Without `--port`, externally launched sessions are still readable but the composer stays disabled.
+Worktrees view. OpenCode v1 uses one managed instance per project; v2 uses one
+server per machine and can reuse OpenCode’s registered background service.
+Ocman does not discover or adopt other OpenCode instances, even with an explicit
+port. Their saved sessions remain readable through ocman’s retained history.
+See [Configuration](docs/configuration/_index.md#opencode-v2).
 
 ## Configuration
 
@@ -90,6 +88,7 @@ Without `--port`, externally launched sessions are still readable but the compos
 ./ocman -db /path/to/opencode.db     # custom OpenCode database path
 ./ocman -platforms opencode,claudecode   # enable OpenCode and Claude Code
 ./ocman -platforms claudecode            # Claude Code only, no OpenCode needed
+./ocman -platforms codex                 # opt-in Codex only
 ```
 
 See [Configuration](docs/configuration/_index.md) for the full flag and environment variable reference, including authentication setup.
@@ -97,11 +96,11 @@ See [Configuration](docs/configuration/_index.md) for the full flag and environm
 ## Optional agent integration
 
 You don't need any of this to use ocman as a dashboard. It also embeds an
-optional, localhost-only MCP server exposing Factory, routine, read-only
-session, and file-embedding tools.
+optional, localhost-only MCP server exposing Factory, Inbox, routine, session
+inspection, creation and messaging, and file-embedding tools.
 
-Point your OpenCode config at `http://localhost:8229/mcp` (or
-`http://localhost:8228/mcp` via the `make dev` proxy). See the
+Point your OpenCode config at the dedicated listener,
+`http://127.0.0.1:8227/mcp`, in development and production. See the
 [MCP integration guide](docs/features/mcp.md) for setup and the full tool list.
 
 ## Managing sessions across machines
