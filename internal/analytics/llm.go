@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -140,7 +141,12 @@ func (m *Module) runStoredLLMMetricsTick(ctx context.Context, metrics *llmMetric
 	err := m.withStoredAnalytics(ctx, func(reader *db.DB) error { var err error; next, err = reader.GetMaxMessageTime(ctx); return err })
 	if err != nil {
 		if ctx.Err() == nil {
-			log.WithError(err).Warn("LLM metrics: initial history snapshot unavailable; will retry")
+			entry := log.WithError(err)
+			if errors.Is(err, errHistoryImportIncomplete) {
+				entry.Debug("LLM metrics: waiting for history initialization; will retry")
+			} else {
+				entry.Warn("LLM metrics: initial history snapshot unavailable; will retry")
+			}
 		}
 		return
 	}
