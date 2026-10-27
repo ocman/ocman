@@ -72,6 +72,12 @@ func (c *Converter) AddHistory(t *codexappserver.Thread, turns []codexappserver.
 	}
 	for _, turn := range turns {
 		turn.Items = byTurn[turn.ID]
+		// A separate app-server marks unloaded in-progress turns interrupted.
+		// Without a terminal timestamp or error this is not proof of an abort.
+		// Leave the reply open; only live observation can say it is running.
+		if turn.Status == codexappserver.TurnInterrupted && turn.CompletedAt == 0 && turn.Error == nil {
+			turn.Status = codexappserver.TurnInProgress
+		}
 		c.AddTurn(&turn)
 	}
 	for _, id := range unlisted {
@@ -99,6 +105,9 @@ func (c *Converter) AddTurn(turn *codexappserver.Turn) {
 		c.AddItem(it, start)
 	}
 	c.Settle(turn)
+	if turn.Status == codexappserver.TurnInProgress && c.cur != nil {
+		c.cur.info = openInfo(c.cur.info)
+	}
 	c.Finish()
 }
 
