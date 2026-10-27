@@ -12,12 +12,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensured *hostsvc.EnsureRuntimeResult, platformID string, run state.RoutineRun, rulesJSON string, link func(string) error) (string, error) {
+func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensured *hostsvc.EnsureRuntimeResult, platformID string, run state.RoutineRun, label, rulesJSON string, link func(string) error) (string, error) {
 	var rules []platforms.PermissionRule
 	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil || rules == nil {
 		rules = []platforms.PermissionRule{}
 	}
 	title := run.RoutineName + " " + s.now().Format("2006-01-02 15:04")
+	if label != "" {
+		title += " " + label
+	}
 	creation := &platforms.CreationIdentity{RequestKey: "routine/" + run.ID, Origin: "routine", OriginID: run.RoutineID}
 	if !run.Worktree {
 		result, err := s.sessions.CreateRoutine(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: title, Port: ensured.Port(), Creation: creation}, rules, run.RoutineID, link)

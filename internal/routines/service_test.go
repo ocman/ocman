@@ -249,12 +249,19 @@ func TestRunWebhookAppendsPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := h.svc.RunWebhook(t.Context(), routine.ID, "payload", 123)
+	run, err := h.svc.RunWebhook(t.Context(), routine.ID, "payload", "", 123)
 	if err != nil || run.Trigger != "webhook" || run.OccurrenceAt != 123 {
 		t.Fatalf("run = %+v, %v", run, err)
 	}
 	if got := h.platform.sent[0].Message; got != " inspect this\n\n\npayload" {
 		t.Fatalf("message = %q", got)
+	}
+	if _, err := h.svc.RunWebhook(t.Context(), routine.ID, "payload", "#1181 opened", 126); err != nil {
+		t.Fatal(err)
+	}
+	// The delivery label tells runs of one routine apart in the session list.
+	if want := routine.Name + " " + time.UnixMilli(h.now.Load()).Format("2006-01-02 15:04") + " #1181 opened"; len(h.platform.titles) != 2 || h.platform.titles[1] != want {
+		t.Fatalf("session titles = %q, want %q", h.platform.titles, want)
 	}
 
 	disabled := validInput()
@@ -263,10 +270,10 @@ func TestRunWebhookAppendsPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.svc.RunWebhook(t.Context(), disabledRoutine.ID, "payload", 124); err == nil {
+	if _, err := h.svc.RunWebhook(t.Context(), disabledRoutine.ID, "payload", "", 124); err == nil {
 		t.Fatal("disabled routine ran")
 	}
-	if _, err := h.svc.RunWebhook(t.Context(), "missing", "payload", 125); !errors.Is(err, state.ErrRoutineNotFound) {
+	if _, err := h.svc.RunWebhook(t.Context(), "missing", "payload", "", 125); !errors.Is(err, state.ErrRoutineNotFound) {
 		t.Fatalf("missing routine error = %v", err)
 	}
 }
@@ -475,7 +482,7 @@ func TestRunWebhookRefusesRemoteRoutine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := h.svc.RunWebhook(t.Context(), routine.ID, "payload", 7)
+	run, err := h.svc.RunWebhook(t.Context(), routine.ID, "payload", "", 7)
 	if err != nil || run.State != RunFailure || run.Error != "routine runs on another machine" {
 		t.Fatalf("RunWebhook = %+v, %v", run, err)
 	}
@@ -1055,7 +1062,7 @@ func TestManualAndWebhookRunsKeepRoutineEnabled(t *testing.T) {
 	if _, err := h.svc.RunNow(t.Context(), onceRoutine.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.svc.RunWebhook(t.Context(), webhookRoutine.ID, "payload", 7); err != nil {
+	if _, err := h.svc.RunWebhook(t.Context(), webhookRoutine.ID, "payload", "", 7); err != nil {
 		t.Fatal(err)
 	}
 	h.platform.setStatus(db.StatusDone)

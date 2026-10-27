@@ -263,7 +263,7 @@ func (s *Service) RunNow(ctx context.Context, routineID string) (state.RoutineRu
 }
 
 // RunWebhook uses the normal routine lifecycle for an already-matched delivery.
-func (s *Service) RunWebhook(ctx context.Context, routineID, payload string, occurrence int64) (state.RoutineRun, error) {
+func (s *Service) RunWebhook(ctx context.Context, routineID, payload, label string, occurrence int64) (state.RoutineRun, error) {
 	routine, err := s.store.GetRoutine(ctx, routineID)
 	if err != nil {
 		return state.RoutineRun{}, err
@@ -271,7 +271,7 @@ func (s *Service) RunWebhook(ctx context.Context, routineID, payload string, occ
 	if routine.Deleted || !routine.Enabled {
 		return state.RoutineRun{}, fmt.Errorf("routine is disabled")
 	}
-	return s.claimAndDispatchPrompt(ctx, routine, occurrence, "webhook", routine.Prompt+"\n\n"+payload)
+	return s.claimAndDispatchPrompt(ctx, routine, occurrence, "webhook", routine.Prompt+"\n\n"+payload, label)
 }
 
 func (s *Service) Tick(ctx context.Context) error {
@@ -295,10 +295,10 @@ func (s *Service) Recover(ctx context.Context) error {
 }
 
 func (s *Service) claimAndDispatch(ctx context.Context, routine state.Routine, occurrence int64, trigger string) (state.RoutineRun, error) {
-	return s.claimAndDispatchPrompt(ctx, routine, occurrence, trigger, routine.Prompt)
+	return s.claimAndDispatchPrompt(ctx, routine, occurrence, trigger, routine.Prompt, "")
 }
 
-func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Routine, occurrence int64, trigger, prompt string) (state.RoutineRun, error) {
+func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Routine, occurrence int64, trigger, prompt, label string) (state.RoutineRun, error) {
 	now := s.now().UnixMilli()
 	run, claimed, err := s.store.ClaimRoutineRun(ctx, state.RoutineRun{
 		ID: s.newID("run-"), RoutineID: routine.ID, Trigger: trigger, State: RunRunning,
@@ -343,7 +343,7 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 		return s.store.LinkRoutineRun(ctx, run.ID, platformID, id, s.now().UnixMilli(), run.SessionMode == SessionReuse)
 	}
 	if sessionID == "" {
-		id, err := s.createRunSession(ctx, host, ensured, platformID, run, routine.PermissionRulesJSON, link)
+		id, err := s.createRunSession(ctx, host, ensured, platformID, run, label, routine.PermissionRulesJSON, link)
 		if err != nil {
 			return s.failDispatch(ctx, run, err)
 		}

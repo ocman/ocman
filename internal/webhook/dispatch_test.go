@@ -315,6 +315,9 @@ func TestDispatchReferencesBodyFile(t *testing.T) {
 	if err := Dispatch(t.Context(), db, svc, "inbox", "../d1", relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "../d1", Body: []byte(body), Request: relay.InboxRequest{Header: http.Header{"x-forgejo-event": {"pull_request"}}}}, time.UnixMilli(5)); err != nil {
 		t.Fatal(err)
 	}
+	if len(svc.labels) != 1 || svc.labels[0] != "#7 opened" {
+		t.Fatalf("labels = %q", svc.labels)
+	}
 	if len(svc.payloads) != 1 || strings.Contains(svc.payloads[0], "bodyBase64") || strings.Contains(svc.payloads[0], "pull_request") {
 		t.Fatalf("payloads = %q", svc.payloads)
 	}
@@ -396,10 +399,12 @@ func assertDispatches(t *testing.T, delivery state.WebhookDelivery) {
 type sessionDispatcher struct {
 	db       *state.DB
 	payloads []string
+	labels   []string
 }
 
-func (d *sessionDispatcher) RunWebhook(ctx context.Context, routineID, payload string, occurrence int64) (state.RoutineRun, error) {
+func (d *sessionDispatcher) RunWebhook(ctx context.Context, routineID, payload, label string, occurrence int64) (state.RoutineRun, error) {
 	d.payloads = append(d.payloads, payload)
+	d.labels = append(d.labels, label)
 	run, _, err := d.db.ClaimRoutineRun(ctx, state.RoutineRun{ID: fmt.Sprintf("run-%s-%d", routineID, occurrence), RoutineID: routineID, RoutineUpdatedAt: 1, RoutineName: routineID, Prompt: "p", Directory: "/repo", RemoteID: "local", SessionMode: "new", Trigger: "webhook", State: "running", OccurrenceAt: occurrence, CreatedAt: 1})
 	if err != nil {
 		return run, err
@@ -414,7 +419,7 @@ type cancellingDispatcher struct {
 	got    context.Context
 }
 
-func (d *cancellingDispatcher) RunWebhook(ctx context.Context, _, _ string, _ int64) (state.RoutineRun, error) {
+func (d *cancellingDispatcher) RunWebhook(ctx context.Context, _, _, _ string, _ int64) (state.RoutineRun, error) {
 	d.got = ctx
 	d.cancel()
 	return state.RoutineRun{}, ctx.Err()
@@ -486,6 +491,27 @@ func TestMatchesPresenceRules(t *testing.T) {
 		sub := state.WebhookSubscription{HeaderPredicatesJSON: test.headers, JSONPredicatesJSON: test.pointers}
 		if ok, err := matches(e, sub); err != nil || ok != test.ok {
 			t.Errorf("matches(%s %s) = %v, %v, want %v", test.headers, test.pointers, ok, err, test.ok)
+		}
+	}
+}
+
+// The label names the delivery's item in the run title. The body is untrusted,
+// so only a positive number and a short lowercase action are used.
+func TestDeliveryLabel(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"action":"synchronized","number":1181}`: "#1181 synchronized",
+		`{"number":12}`:                                           "#12",
+		`{"action":"opened"}`:                                     "",
+		`{"action":"opened","number":0}`:                          "",
+		`{"action":"opened","number":1.5}`:                        "",
+		`{"action":"opened","number":"7"}`:                        "",
+		`{"action":"Opened; rm -rf","number":3}`:                  "#3",
+		`{"action":"` + strings.Repeat("a", 40) + `","number":3}`: "#3",
+		`[1,2]`:    "",
+		`not json`: "",
+	} {
+		if got := deliveryLabel([]byte(body)); got != want {
+			t.Errorf("deliveryLabel(%s) = %q, want %q", body, got, want)
 		}
 	}
 }

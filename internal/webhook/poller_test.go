@@ -25,7 +25,7 @@ type pollerDispatcher struct {
 	payload []string
 }
 
-func (d *pollerDispatcher) RunWebhook(_ context.Context, _ string, payload string, _ int64) (state.RoutineRun, error) {
+func (d *pollerDispatcher) RunWebhook(_ context.Context, _ string, payload, _ string, _ int64) (state.RoutineRun, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.count++

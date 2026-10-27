@@ -21,7 +21,7 @@ import (
 )
 
 type RoutineDispatcher interface {
-	RunWebhook(context.Context, string, string, int64) (state.RoutineRun, error)
+	RunWebhook(context.Context, string, string, string, int64) (state.RoutineRun, error)
 }
 
 // DispatchPayload is the documented, fixed data suffix sent to a routine.
@@ -67,6 +67,7 @@ func Dispatch(ctx context.Context, store *state.DB, svc RoutineDispatcher, inbox
 	if err != nil {
 		return err
 	}
+	label := deliveryLabel(e.Body)
 	for _, sub := range subs {
 		match, err := matches(e, sub)
 		if err != nil || !match {
@@ -114,7 +115,7 @@ func Dispatch(ctx context.Context, store *state.DB, svc RoutineDispatcher, inbox
 			continue
 		}
 		occurrence := state.WebhookOccurrence(inboxID, deliveryID)
-		run, err := svc.RunWebhook(ctx, sub.RoutineID, data, occurrence)
+		run, err := svc.RunWebhook(ctx, sub.RoutineID, data, label, occurrence)
 		receipt := context.WithoutCancel(ctx)
 		if err == nil && run.State == "failure" {
 			// A launch failure comes back as a failed run, not an error.
@@ -507,4 +508,26 @@ func Redeliver(ctx context.Context, store *state.DB, svc RoutineDispatcher, inbo
 		Method: strings.TrimSuffix(title, " webhook"), Header: header, Query: query, ReceivedAt: now.UnixMilli(),
 	}}
 	return newID, Dispatch(ctx, store, svc, inboxID, newID, envelope, now)
+}
+
+// deliveryLabel names the delivery's item for the run title, e.g. "#12 opened"
+// for a forge pull request or issue event. The body is untrusted: only a
+// positive integer number and a short lowercase action are used.
+func deliveryLabel(body []byte) string {
+	var item struct {
+		Number json.RawMessage `json:"number"`
+		Action string          `json:"action"`
+	}
+	if json.Unmarshal(body, &item) != nil {
+		return ""
+	}
+	number, err := strconv.ParseUint(string(item.Number), 10, 32)
+	if err != nil || number == 0 {
+		return ""
+	}
+	label := "#" + strconv.FormatUint(number, 10)
+	if len(item.Action) <= 32 && item.Action != "" && strings.Trim(item.Action, "abcdefghijklmnopqrstuvwxyz_") == "" {
+		label += " " + item.Action
+	}
+	return label
 }

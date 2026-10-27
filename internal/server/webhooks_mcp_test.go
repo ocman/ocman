@@ -123,7 +123,7 @@ func TestWebhookMCPLifecycle(t *testing.T) {
 
 type webhookMCPDispatcher struct{ calls int }
 
-func (d *webhookMCPDispatcher) RunWebhook(context.Context, string, string, int64) (state.RoutineRun, error) {
+func (d *webhookMCPDispatcher) RunWebhook(context.Context, string, string, string, int64) (state.RoutineRun, error) {
 	d.calls++
 	return state.RoutineRun{State: "running"}, nil
 }

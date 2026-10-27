@@ -21,7 +21,7 @@ import (
 
 type fakeRoutines struct{ runs atomic.Int32 }
 
-func (f *fakeRoutines) RunWebhook(context.Context, string, string, int64) (state.RoutineRun, error) {
+func (f *fakeRoutines) RunWebhook(context.Context, string, string, string, int64) (state.RoutineRun, error) {
 	f.runs.Add(1)
 	return state.RoutineRun{}, nil
 }
