@@ -63,6 +63,8 @@ type Hub struct {
 	// totalBytes counts retained log bytes across sessions.
 	totalBytes atomic.Int64
 	maxTotal   int64
+	// maxLedger bounds the bytes all ledgers retain (budgetLocked).
+	maxLedger int
 }
 
 func NewHub(opts Options) *Hub {
@@ -78,7 +80,7 @@ func NewHub(opts Options) *Hub {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Hub{opts: opts, sessions: map[Key]*session{}, ledgers: map[Key]*ledger{}, maxTotal: maxTotalBytes}
+	return &Hub{opts: opts, sessions: map[Key]*session{}, ledgers: map[Key]*ledger{}, maxTotal: maxTotalBytes, maxLedger: maxLedgerBytes}
 }
 
 // Subscribe attaches to key's stream, starting its source with open when
@@ -203,6 +205,7 @@ func (h *Hub) expire(s *session) {
 	defer h.mu.Unlock()
 	if s.interest == 0 && h.sessions[s.key] == s {
 		h.detachLocked(s)
+		h.budgetLocked()
 	}
 }
 
@@ -246,6 +249,43 @@ func (h *Hub) sweepLocked() {
 			delete(h.ledgers, key)
 		}
 	}
+	h.budgetLocked()
+}
+
+// budgetLocked keeps every ledger together within maxLedger: it evicts ended
+// turns, first of sessions nobody streams, oldest first. Running turns stay.
+func (h *Hub) budgetLocked() {
+	type entry struct {
+		l        *ledger
+		bytes    int
+		detached bool
+		touched  time.Time
+	}
+	total := 0
+	entries := make([]entry, 0, len(h.ledgers))
+	for key, l := range h.ledgers {
+		n, touched := l.size()
+		total += n
+		entries = append(entries, entry{l, n, h.sessions[key] == nil, touched})
+	}
+	if total <= h.maxLedger {
+		return
+	}
+	slices.SortFunc(entries, func(a, b entry) int {
+		if a.detached != b.detached {
+			if a.detached {
+				return -1
+			}
+			return 1
+		}
+		return a.touched.Compare(b.touched)
+	})
+	for _, e := range entries {
+		if total <= h.maxLedger {
+			return
+		}
+		total -= e.l.evict(max(e.bytes-(total-h.maxLedger), 0))
+	}
 }
 
 // Composed describes what Hub.Compose added to a stored read.
@@ -259,23 +299,34 @@ type Composed struct {
 }
 
 // Compose lays the stream's unconfirmed content over a stored conversation
-// read of key and releases what the read already stores.
+// read of key and releases what the read already stores. The ledger is
+// captured with the cursor under the session lock; the JSON work runs after
+// it, and only entries unchanged since the capture are released.
 func (h *Hub) Compose(key Key, d *platforms.SessionDetail, limit, offset int) Composed {
+	if d == nil || offset != 0 {
+		return Composed{}
+	}
 	h.mu.Lock()
 	h.sweepLocked()
 	s, l := h.sessions[key], h.ledgers[key]
 	h.mu.Unlock()
-	if s == nil {
-		if l == nil {
-			return Composed{}
+	var out Composed
+	if s != nil {
+		s.mu.Lock()
+		l = s.ledger
+		if s.everConnected && !s.detached {
+			out.Cursor = convevents.FormatCursor(s.log.epoch, s.log.last)
 		}
-		return Composed{MessageIDs: l.compose(d, limit, offset, h.opts.Now())}
+		now := h.opts.Now()
+		view := l.capture(now)
+		s.mu.Unlock()
+		plan, added := view.compose(d, limit, offset)
+		l.commit(plan, now)
+		out.MessageIDs = added
+		return out
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := Composed{MessageIDs: s.ledger.compose(d, limit, offset, h.opts.Now())}
-	if s.everConnected && !s.detached {
-		out.Cursor = convevents.FormatCursor(s.log.epoch, s.log.last)
+	if l != nil {
+		out.MessageIDs = l.compose(d, limit, offset, h.opts.Now())
 	}
 	return out
 }

@@ -1210,6 +1210,12 @@ flowchart TD
     entries settle at its idle edge, terminal status, an idle reconnect seed, a
     settled lifecycle read or detach. Removals leave tombstones that filter
     older reads; rewrites discard ended turns.
+  - Streamed values are kept once and appended in place, with their UTF-16
+    length tracked, so a chunk costs constant work. All ledgers share a 64 MB
+    budget: ended turns of sessions nobody streams go first, oldest first;
+    running turns are never evicted. A read captures the ledger and cursor
+    under the session lock, merges outside it, and releases only entries
+    unchanged since the capture.
   - `GET /api/session/{id}` (newest page) lays the ledger over the stored read and
     returns `stream.cursor`, the hub position it covers, and
     `stream.composedMessageIds`. Older-history paging offsets count only

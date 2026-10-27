@@ -2,6 +2,7 @@ package convstream
 
 import (
 	"encoding/json"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -332,5 +333,132 @@ func TestHubKeepsTombstonesOfDetachedSessions(t *testing.T) {
 	lagging := &platforms.SessionDetail{Messages: []db.Message{message("gone", 1, `{}`)}}
 	if h.Compose(testKey, lagging, 30, 0); len(lagging.Messages) != 0 {
 		t.Fatalf("a sweep dropped the tombstone: %v", ids(lagging))
+	}
+}
+
+func TestLedgerStoresStreamedTextOnceAndAppendsInPlace(t *testing.T) {
+	var f inflight
+	f.upsert(textPart("p1", "abc", false).Part, false)
+	lp := f.parts["p1"]
+	if readPart(lp.part.Data).Text != "" || readPart(lp.data()).Text != "abc" {
+		t.Fatalf("stored %s, rendered %s", lp.part.Data, lp.data())
+	}
+	for _, text := range []string{"d", "😀", "e"} {
+		f.delta(convevents.PartDelta{PartID: "p1", Field: convevents.FieldText, Offset: lp.fields[convevents.FieldText].units, Text: text})
+	}
+	// An overlapping replay appends only its unseen tail; a gap is refused.
+	f.delta(convevents.PartDelta{PartID: "p1", Field: convevents.FieldText, Offset: 6, Text: "ef"})
+	f.delta(convevents.PartDelta{PartID: "p1", Field: convevents.FieldText, Offset: 99, Text: "gap"})
+	if got := readPart(f.snapshot().Parts[0].Data).Text; got != "abcd😀ef" || lp.fields[convevents.FieldText].units != 8 {
+		t.Fatalf("text = %q (%d units)", got, lp.fields[convevents.FieldText].units)
+	}
+	// A shorter non-final upsert keeps the longer value; a final one replaces it.
+	f.upsert(textPart("p1", "ab", false).Part, false)
+	if got := readPart(lp.data()).Text; got != "abcd😀ef" {
+		t.Fatalf("non-final shortened: %q", got)
+	}
+	f.upsert(textPart("p1", "trimmed", true).Part, true)
+	if got := readPart(f.parts["p1"].data()).Text; got != "trimmed" {
+		t.Fatalf("final = %q", got)
+	}
+	tool := convevents.Part{Part: db.Part{ID: "t", MessageID: "msg_1", Data: json.RawMessage(`{"type":"tool","state":{"status":"running","output":"out","raw":"in"}}`)}}
+	f.upsert(tool, false)
+	if st := readPart(f.parts["t"].part.Data).State; st.Output != "" || st.Raw != "" || st.Status != "running" {
+		t.Fatalf("tool fields kept twice: %s", f.parts["t"].part.Data)
+	}
+	if st := readPart(f.parts["t"].data()).State; st.Output != "out" || st.Raw != "in" {
+		t.Fatalf("tool rendered %s", f.parts["t"].data())
+	}
+}
+
+func TestComposeNeverReleasesContentChangedAfterItsCapture(t *testing.T) {
+	l := &ledger{}
+	now := time.Now()
+	l.apply(convevents.MessageUpserted{Message: message("msg_1", 20, `{}`)}, now)
+	l.apply(textPart("p1", "ab", false), now)
+	l.settle()
+	view := l.capture(now)
+	l.apply(delta("p1", 2, "c"), now)
+	stored := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{}`)}, Parts: []db.Part{storedPart("p1", "msg_1", "ab")}}
+	plan, _ := view.compose(stored, 30, 0)
+	l.commit(plan, now)
+	if _, ok := l.confirmed["p:p1"]; ok {
+		t.Fatal("a read captured before newer text confirmed it")
+	}
+	l.compose(&platforms.SessionDetail{Messages: stored.Messages, Parts: []db.Part{storedPart("p1", "msg_1", "abc")}}, 30, 0, now)
+	if _, ok := l.confirmed["p:p1"]; !ok {
+		t.Fatal("a current read did not confirm")
+	}
+	l.compose(&platforms.SessionDetail{}, 30, 0, now.Add(releaseGrace))
+	if len(l.rev) != 0 || len(l.content.parts) != 0 {
+		t.Fatalf("released entries kept bookkeeping: rev=%v parts=%v", l.rev, l.content.partOrder)
+	}
+}
+
+func TestHubBudgetEvictsEndedTurnsOfUnwatchedSessionsFirst(t *testing.T) {
+	now := time.Now()
+	h := newTestHub(t, Options{Now: func() time.Time { return now }})
+	big := strings.Repeat("x", 1000)
+	fill := func(key Key, id string, settle bool, at time.Time) *ledger {
+		h.mu.Lock()
+		l := h.ledgerLocked(key)
+		h.mu.Unlock()
+		p := textPart(id, big, false)
+		p.Part.MessageID = id
+		l.apply(p, at)
+		if settle {
+			l.settle()
+		}
+		return l
+	}
+	watched := Key{Platform: "opencode", SessionID: "watched"}
+	ended := fill(watched, "ended", true, now.Add(-time.Minute))
+	running := fill(watched, "running", false, now)
+	old := fill(Key{Platform: "opencode", SessionID: "old"}, "old", true, now.Add(-2*time.Minute))
+	recent := fill(Key{Platform: "opencode", SessionID: "recent"}, "recent", true, now)
+	h.mu.Lock()
+	h.sessions[watched] = newSession(h, watched)
+	h.sessions[watched].ledger = running
+	h.maxLedger = 3500
+	h.budgetLocked()
+	h.mu.Unlock()
+	held := func(l *ledger, id string) bool { return l.content.parts[id] != nil }
+	if held(old, "old") || !held(recent, "recent") || !held(ended, "ended") || !held(running, "running") {
+		t.Fatalf("first eviction: old=%v recent=%v ended=%v running=%v", held(old, "old"), held(recent, "recent"), held(ended, "ended"), held(running, "running"))
+	}
+	h.mu.Lock()
+	h.maxLedger = 1100
+	h.budgetLocked()
+	h.mu.Unlock()
+	if held(recent, "recent") || held(ended, "ended") || !held(running, "running") {
+		t.Fatal("budget evicted a running turn or kept ended ones")
+	}
+	h.mu.Lock()
+	delete(h.sessions, watched)
+	h.mu.Unlock()
+}
+
+func TestComposeRacesWithStreaming(t *testing.T) {
+	h := newTestHub(t, Options{})
+	src := newFakeSource()
+	subscribe(t, h, src, "")
+	sink := nextSink(t, src)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sink.Emit(textPart("p1", "", false), Meta{})
+		for i := range 500 {
+			sink.Emit(delta("p1", i, "x"), Meta{})
+		}
+		sink.Emit(idle(), Meta{})
+	}()
+	for range 50 {
+		h.Compose(testKey, &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}}, 30, 0)
+	}
+	<-done
+	read := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 1, `{}`)}}
+	h.Compose(testKey, read, 30, 0)
+	if got := texts(read)["p1"]; len(got) != 500 {
+		t.Fatalf("composed %d chars", len(got))
 	}
 }

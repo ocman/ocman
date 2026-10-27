@@ -2,6 +2,7 @@ package convstream
 
 import (
 	"encoding/json"
+	"strings"
 	"unicode/utf16"
 
 	"github.com/NoUseFreak/ocman/internal/convevents"
@@ -69,7 +70,8 @@ func (o *overlay) live(st convevents.SessionStatusEvent, content convevents.Infl
 }
 
 // inflight is streamed content with the field values the deltas built, so a
-// hello's parts line up with later delta offsets.
+// hello's parts line up with later delta offsets. Each streamed value is kept
+// once, in its field, and stripped from the part data until it is rendered.
 type inflight struct {
 	msgOrder  []string
 	msgs      map[string]db.Message
@@ -78,10 +80,43 @@ type inflight struct {
 }
 
 type livePart struct {
+	// part.Data holds no streamed field values; fields does (withFields).
 	part   convevents.Part
-	fields map[string]string
+	fields map[string]*streamField
 	// final is set when the last upsert could no longer grow.
 	final bool
+}
+
+// streamField appends deltas without copying the value built so far and
+// keeps its UTF-16 length, the unit delta offsets use.
+type streamField struct {
+	b     strings.Builder
+	units int
+}
+
+func (f *streamField) set(v string) {
+	f.b.Reset()
+	f.b.WriteString(v)
+	f.units = convevents.UTF16Len(v)
+}
+
+func (lp *livePart) values() map[string]string {
+	out := make(map[string]string, len(lp.fields))
+	for k, f := range lp.fields {
+		out[k] = f.b.String()
+	}
+	return out
+}
+
+// data renders the part with its streamed values.
+func (lp *livePart) data() json.RawMessage { return withFields(lp.part.Data, lp.values()) }
+
+func (lp *livePart) bytes() int {
+	n := len(lp.part.Data)
+	for _, f := range lp.fields {
+		n += f.b.Len()
+	}
+	return n
 }
 
 func (f *inflight) message(m db.Message) {
@@ -100,19 +135,25 @@ func (f *inflight) upsert(p convevents.Part, final bool) {
 	}
 	lp := f.parts[p.ID]
 	if lp == nil {
-		lp = &livePart{fields: map[string]string{}}
+		lp = &livePart{fields: map[string]*streamField{}}
 		f.parts[p.ID] = lp
 		f.partOrder = append(f.partOrder, p.ID)
 	}
+	values := streamedFields(p.Data)
+	p.Data = stripFields(p.Data, values)
 	lp.part, lp.final = p, final
 	if final {
-		lp.fields = streamedFields(p.Data)
-		return
+		lp.fields = map[string]*streamField{}
 	}
-	for field, value := range streamedFields(p.Data) {
-		if convevents.UTF16Len(value) >= convevents.UTF16Len(lp.fields[field]) {
-			lp.fields[field] = value
+	for field, value := range values {
+		cur := lp.fields[field]
+		if cur == nil {
+			cur = &streamField{}
+			lp.fields[field] = cur
+		} else if convevents.UTF16Len(value) < cur.units {
+			continue
 		}
+		cur.set(value)
 	}
 }
 
@@ -124,14 +165,19 @@ func (f *inflight) delta(d convevents.PartDelta) {
 		return
 	}
 	cur := lp.fields[d.Field]
-	n := convevents.UTF16Len(cur)
+	if cur == nil {
+		cur = &streamField{}
+		lp.fields[d.Field] = cur
+	}
 	switch {
-	case d.Offset == n:
-		lp.fields[d.Field] = cur + d.Text
-	case d.Offset < n:
+	case d.Offset == cur.units:
+		cur.b.WriteString(d.Text)
+		cur.units += convevents.UTF16Len(d.Text)
+	case d.Offset < cur.units:
 		units := utf16.Encode([]rune(d.Text))
-		if overlap := n - d.Offset; overlap < len(units) {
-			lp.fields[d.Field] = cur + string(utf16.Decode(units[overlap:]))
+		if overlap := cur.units - d.Offset; overlap < len(units) {
+			cur.b.WriteString(string(utf16.Decode(units[overlap:])))
+			cur.units += len(units) - overlap
 		}
 	}
 }
@@ -168,7 +214,7 @@ func (f *inflight) snapshot() convevents.Inflight {
 	for _, id := range f.partOrder {
 		lp := f.parts[id]
 		p := lp.part
-		p.Data = withFields(p.Data, lp.fields)
+		p.Data = lp.data()
 		out.Parts = append(out.Parts, p)
 	}
 	return out
@@ -195,6 +241,45 @@ func streamedFields(data json.RawMessage) map[string]string {
 	out := map[string]string{convevents.FieldText: p.Text, convevents.FieldToolInput: p.State.Raw}
 	if s, ok := p.State.Output.(string); ok {
 		out[convevents.FieldToolOutput] = s
+	}
+	return out
+}
+
+// stripFields blanks the part data's streamed string values; the inflight
+// fields hold them, so the text is not kept twice.
+func stripFields(data json.RawMessage, values map[string]string) json.RawMessage {
+	blank := map[string]bool{}
+	for field, v := range values {
+		if v != "" {
+			blank[field] = true
+		}
+	}
+	if len(blank) == 0 {
+		return data
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(data, &obj) != nil {
+		return data
+	}
+	empty := json.RawMessage(`""`)
+	if blank[convevents.FieldText] {
+		obj["text"] = empty
+	}
+	if blank[convevents.FieldToolOutput] || blank[convevents.FieldToolInput] {
+		var state map[string]json.RawMessage
+		if json.Unmarshal(obj["state"], &state) == nil && state != nil {
+			if blank[convevents.FieldToolOutput] {
+				state["output"] = empty
+			}
+			if blank[convevents.FieldToolInput] {
+				state["raw"] = empty
+			}
+			obj["state"], _ = json.Marshal(state)
+		}
+	}
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return data
 	}
 	return out
 }

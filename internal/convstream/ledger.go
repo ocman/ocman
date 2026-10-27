@@ -2,7 +2,8 @@ package convstream
 
 import (
 	"encoding/json"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -17,6 +18,9 @@ const (
 	ledgerTTL = 10 * time.Minute
 	// maxLedgerParts evicts the oldest settled parts beyond this count.
 	maxLedgerParts = 2048
+	// maxLedgerBytes bounds every ledger together; ended turns of sessions
+	// nobody watches are evicted first. A running turn is never evicted.
+	maxLedgerBytes = 64 << 20
 	// releaseGrace keeps confirmed entries in reads that queried history
 	// before the confirming read, since reads and composition are not atomic.
 	releaseGrace = 30 * time.Second
@@ -37,6 +41,9 @@ type ledger struct {
 	// removed tombstones entries the stream removed, so a read taken before
 	// the removal cannot restore them.
 	removed map[string]time.Time
+	// rev counts changes per entry, so a read composed from an older capture
+	// cannot release newer content.
+	rev     map[string]uint64
 	touched time.Time
 }
 
@@ -49,11 +56,16 @@ func (l *ledger) mark(set *map[string]time.Time, key string, now time.Time) {
 	}
 }
 
-// changed forgets a confirmation or tombstone the stream superseded.
+// changed records new content: earlier confirmations and tombstones no
+// longer describe it.
 func (l *ledger) changed(keys ...string) {
+	if l.rev == nil {
+		l.rev = map[string]uint64{}
+	}
 	for _, k := range keys {
 		delete(l.confirmed, k)
 		delete(l.removed, k)
+		l.rev[k]++
 	}
 }
 
@@ -68,7 +80,7 @@ func (l *ledger) apply(ev convevents.Event, now time.Time) {
 		l.content.upsert(e.Part, e.Final)
 		delete(l.settled, e.Part.MessageID)
 		l.changed("p:"+e.Part.ID, "m:"+e.Part.MessageID)
-		l.evictLocked()
+		l.evictLocked(maxLedgerParts, -1)
 	case convevents.MessageUpserted:
 		l.content.message(e.Message)
 		delete(l.settled, e.Message.ID)
@@ -76,9 +88,11 @@ func (l *ledger) apply(ev convevents.Event, now time.Time) {
 	case convevents.MessageRemoved:
 		l.content.removeMessage(e.MessageID)
 		delete(l.settled, e.MessageID)
+		l.changed("m:" + e.MessageID)
 		l.mark(&l.removed, "m:"+e.MessageID, now)
 	case convevents.PartRemoved:
 		l.content.removePart(e.PartID)
+		l.changed("p:" + e.PartID)
 		l.mark(&l.removed, "p:"+e.PartID, now)
 	case convevents.HistoryRewritten:
 		// A rewrite is authoritative for ended turns; a running turn continues.
@@ -126,94 +140,105 @@ func (l *ledger) expired(now time.Time) bool {
 	return len(l.content.parts) == 0 && len(l.content.msgs) == 0 && len(l.removed) == 0 || now.Sub(l.touched) > ledgerTTL
 }
 
-func (l *ledger) evictLocked() {
-	for _, id := range l.content.partOrder {
-		if len(l.content.parts) <= maxLedgerParts {
-			return
+// size approximates the retained bytes without walking content.
+func (l *ledger) size() (bytes int, touched time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, lp := range l.content.parts {
+		bytes += lp.bytes()
+	}
+	for _, m := range l.content.msgs {
+		bytes += len(m.Data)
+	}
+	return bytes, l.touched
+}
+
+// evict drops the oldest settled parts until at most keep bytes of parts
+// remain and returns the bytes it freed.
+func (l *ledger) evict(keep int) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.evictLocked(maxLedgerParts, keep)
+}
+
+// evictLocked drops the oldest settled parts beyond maxParts or maxBytes
+// (negative: no byte bound).
+func (l *ledger) evictLocked(maxParts, maxBytes int) int {
+	held := 0
+	if maxBytes >= 0 {
+		for _, lp := range l.content.parts {
+			held += lp.bytes()
 		}
-		if l.settled[l.content.parts[id].part.MessageID] {
+	}
+	freed := 0
+	for _, id := range slices.Clone(l.content.partOrder) {
+		if len(l.content.parts) <= maxParts && (maxBytes < 0 || held-freed <= maxBytes) {
+			break
+		}
+		if lp := l.content.parts[id]; l.settled[lp.part.MessageID] {
+			freed += lp.bytes()
 			l.content.removePart(id)
 		}
 	}
+	return freed
 }
 
-// compose releases what a stored read contains and lays the rest over it. It
-// only applies to the newest page, the one live content belongs to, and
-// returns the messages it added, which are not stored history.
-func (l *ledger) compose(d *platforms.SessionDetail, limit, offset int, now time.Time) []string {
-	if d == nil || offset != 0 {
-		return nil
-	}
+// capture copies what composing a read needs, so the JSON work runs without
+// holding the session lock that serialises its stream. Entries confirmed
+// longer than the grace period ago are already released.
+func (l *ledger) capture(now time.Time) *ledgerView {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.releaseLocked(d, now)
-	if len(l.content.msgs) == 0 && len(l.content.parts) == 0 && len(l.removed) == 0 {
-		return nil
+	released := func(key string) bool {
+		at, ok := l.confirmed[key]
+		return ok && now.Sub(at) >= releaseGrace
 	}
-	// The read may be shared with a cache; compose into copies.
-	d.Messages = withoutRemoved(l.removed, d.Messages, func(m db.Message) []string { return []string{"m:" + m.ID} })
-	d.Parts = withoutRemoved(l.removed, d.Parts, func(p db.Part) []string { return []string{"p:" + p.ID, "m:" + p.MessageID} })
-	return l.overlayLocked(d, limit)
+	v := &ledgerView{msgs: map[string]db.Message{}, settled: maps.Clone(l.settled), confirmed: maps.Clone(l.confirmed),
+		removed: maps.Clone(l.removed), rev: maps.Clone(l.rev), parts: make([]capturedPart, 0, len(l.content.partOrder))}
+	for _, id := range l.content.msgOrder {
+		if !released("m:" + id) {
+			v.msgOrder = append(v.msgOrder, id)
+			v.msgs[id] = l.content.msgs[id]
+		}
+	}
+	for _, id := range l.content.partOrder {
+		if lp := l.content.parts[id]; !released("p:" + id) {
+			v.parts = append(v.parts, capturedPart{part: lp.part.Part, values: lp.values(), final: lp.final})
+		}
+	}
+	return v
 }
 
-func withoutRemoved[T any](removed map[string]time.Time, rows []T, keys func(T) []string) []T {
-	out := make([]T, 0, len(rows))
-	for _, row := range rows {
-		gone := false
-		for _, k := range keys(row) {
-			_, gone = removed[k]
-			if gone {
-				break
-			}
-		}
-		if !gone {
-			out = append(out, row)
-		}
-	}
-	return out
+// compose composes one read of a ledger no session lock guards.
+func (l *ledger) compose(d *platforms.SessionDetail, limit, offset int, now time.Time) []string {
+	plan, added := l.capture(now).compose(d, limit, offset)
+	l.commit(plan, now)
+	return added
 }
 
-func (l *ledger) releaseLocked(d *platforms.SessionDetail, now time.Time) {
-	stored := map[string]db.Message{}
-	newest := int64(-1 << 62)
-	for _, m := range d.Messages {
-		stored[m.ID] = m
-		if _, held := l.content.msgs[m.ID]; !held && m.TimeCreated > newest {
-			newest = m.TimeCreated
-		}
-	}
-	storedParts := map[string]db.Part{}
-	for _, p := range d.Parts {
-		storedParts[p.ID] = p
-	}
-	// An ended message missing from a read that stores later messages was
-	// removed while the stream missed its event.
-	for _, id := range append([]string(nil), l.content.msgOrder...) {
-		if _, ok := stored[id]; !ok && l.settled[id] && l.content.msgs[id].TimeCreated < newest {
+// commit applies a composed read's decisions to entries it saw unchanged,
+// then releases confirmations older than the grace period.
+func (l *ledger) commit(p composePlan, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	same := func(key string, rev uint64) bool { return l.rev[key] == rev }
+	for id, rev := range p.removedMessages {
+		if same("m:"+id, rev) && l.settled[id] {
 			l.content.removeMessage(id)
 			delete(l.settled, id)
 			l.mark(&l.removed, "m:"+id, now)
 		}
 	}
-	for _, id := range l.content.partOrder {
-		lp := l.content.parts[id]
-		if !l.settled[lp.part.MessageID] {
-			continue
-		}
-		// A completed stored message owns its parts even when it keeps less
-		// text (for example signature-only thinking) or omits some.
-		have, ok := storedParts[id]
-		if completed(stored[lp.part.MessageID].Data) || ok && covers(have.Data, lp) {
-			l.mark(&l.confirmed, "p:"+id, now)
+	for key, rev := range p.confirmed {
+		if same(key, rev) {
+			l.mark(&l.confirmed, key, now)
 		}
 	}
-	for _, id := range l.content.msgOrder {
-		have, ok := stored[id]
-		if ok && l.settled[id] && !l.pendingPartsLocked(id) && (!completed(l.content.msgs[id].Data) || completed(have.Data)) {
-			l.mark(&l.confirmed, "m:"+id, now)
+	for id, rev := range p.orphans {
+		if same("p:"+id, rev) {
+			l.content.removePart(id)
 		}
 	}
-	// Confirmed entries leave once every concurrent read has caught up.
 	for key, at := range l.confirmed {
 		if now.Sub(at) < releaseGrace {
 			continue
@@ -233,88 +258,20 @@ func (l *ledger) releaseLocked(d *platforms.SessionDetail, now time.Time) {
 			delete(l.removed, key)
 		}
 	}
-	// Parts whose message is gone from both sides have nothing to attach to.
-	for _, id := range append([]string(nil), l.content.partOrder...) {
-		mid := l.content.parts[id].part.MessageID
-		if _, ok := l.content.msgs[mid]; !ok && l.settled[mid] {
-			if _, ok := stored[mid]; ok {
-				continue
-			}
-			l.content.removePart(id)
+	withParts := map[string]bool{}
+	for _, lp := range l.content.parts {
+		withParts[lp.part.MessageID] = true
+	}
+	for key := range l.rev {
+		if _, ok := l.removed[key]; ok {
+			continue
+		}
+		id := key[2:]
+		_, msg := l.content.msgs[id]
+		if key[:2] == "p:" && l.content.parts[id] == nil || key[:2] == "m:" && !msg && !withParts[id] {
+			delete(l.rev, key)
 		}
 	}
-}
-
-// pendingPartsLocked reports parts of messageID no read has stored yet.
-func (l *ledger) pendingPartsLocked(messageID string) bool {
-	for id, lp := range l.content.parts {
-		if _, ok := l.confirmed["p:"+id]; lp.part.MessageID == messageID && !ok {
-			return true
-		}
-	}
-	return false
-}
-
-func (l *ledger) overlayLocked(d *platforms.SessionDetail, limit int) []string {
-	index := map[string]int{}
-	oldest := int64(-1 << 62)
-	for i, m := range d.Messages {
-		index[m.ID] = i
-		if limit > 0 && len(d.Messages) >= limit && (i == 0 || m.TimeCreated < oldest) {
-			oldest = m.TimeCreated
-		}
-	}
-	var added []string
-	for _, id := range l.content.msgOrder {
-		m := l.content.msgs[id]
-		i, ok := index[id]
-		switch {
-		case !ok && m.TimeCreated >= oldest:
-			d.Messages = append(d.Messages, m)
-			added = append(added, id)
-		case ok && completed(m.Data) && !completed(d.Messages[i].Data):
-			d.Messages[i] = m
-		}
-	}
-	if len(added) > 0 {
-		sort.SliceStable(d.Messages, func(a, b int) bool { return d.Messages[a].TimeCreated < d.Messages[b].TimeCreated })
-		d.TotalMessages += len(added)
-	}
-	present := map[string]bool{}
-	for _, m := range d.Messages {
-		present[m.ID] = true
-	}
-	parts := map[string]int{}
-	for i, p := range d.Parts {
-		parts[p.ID] = i
-	}
-	for _, id := range l.content.partOrder {
-		lp := l.content.parts[id]
-		live := lp.part.Part
-		live.Data = withFields(live.Data, lp.fields)
-		i, ok := parts[id]
-		switch {
-		case !ok && present[live.MessageID]:
-			d.Parts = append(d.Parts, live)
-		case ok && lp.final && !covers(d.Parts[i].Data, lp):
-			d.Parts[i] = live
-		case ok:
-			d.Parts[i].Data = withFields(d.Parts[i].Data, lp.fields)
-		}
-	}
-	return added
-}
-
-// covers reports whether a stored part holds every streamed field at least
-// as long as the ledger's and, for a final part, the same tool status.
-func covers(stored json.RawMessage, lp *livePart) bool {
-	have := streamedFields(stored)
-	for field, value := range lp.fields {
-		if convevents.UTF16Len(have[field]) < convevents.UTF16Len(value) {
-			return false
-		}
-	}
-	return !lp.final || readPart(stored).State.Status == readPart(lp.part.Data).State.Status
 }
 
 func completed(data json.RawMessage) bool {
