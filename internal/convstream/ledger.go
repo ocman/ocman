@@ -80,7 +80,7 @@ func (l *ledger) apply(ev convevents.Event, now time.Time) {
 		l.content.upsert(e.Part, e.Final)
 		delete(l.settled, e.Part.MessageID)
 		l.changed("p:"+e.Part.ID, "m:"+e.Part.MessageID)
-		l.evictLocked(maxLedgerParts, -1)
+		l.evictPartsLocked(maxLedgerParts)
 	case convevents.MessageUpserted:
 		l.content.message(e.Message)
 		delete(l.settled, e.Message.ID)
@@ -153,34 +153,53 @@ func (l *ledger) size() (bytes int, touched time.Time) {
 	return bytes, l.touched
 }
 
-// evict drops the oldest settled parts until at most keep bytes of parts
-// remain and returns the bytes it freed.
+// evict drops the oldest settled message groups (a message with its parts)
+// until at most keep bytes remain, and returns the bytes it freed. Running
+// content is never evicted.
 func (l *ledger) evict(keep int) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.evictLocked(maxLedgerParts, keep)
-}
-
-// evictLocked drops the oldest settled parts beyond maxParts or maxBytes
-// (negative: no byte bound).
-func (l *ledger) evictLocked(maxParts, maxBytes int) int {
 	held := 0
-	if maxBytes >= 0 {
-		for _, lp := range l.content.parts {
-			held += lp.bytes()
+	groups := map[string]int{}
+	var order []string
+	add := func(id string, n int) {
+		if _, ok := groups[id]; !ok {
+			order = append(order, id)
 		}
+		groups[id] += n
+		held += n
+	}
+	for _, id := range l.content.msgOrder {
+		add(id, len(l.content.msgs[id].Data))
+	}
+	for _, id := range l.content.partOrder {
+		lp := l.content.parts[id]
+		add(lp.part.MessageID, lp.bytes())
 	}
 	freed := 0
-	for _, id := range slices.Clone(l.content.partOrder) {
-		if len(l.content.parts) <= maxParts && (maxBytes < 0 || held-freed <= maxBytes) {
+	for _, id := range order {
+		if held-freed <= keep {
 			break
 		}
-		if lp := l.content.parts[id]; l.settled[lp.part.MessageID] {
-			freed += lp.bytes()
-			l.content.removePart(id)
+		if l.settled[id] {
+			freed += groups[id]
+			l.content.removeMessage(id)
+			delete(l.settled, id)
 		}
 	}
 	return freed
+}
+
+// evictPartsLocked drops the oldest settled parts beyond maxParts.
+func (l *ledger) evictPartsLocked(maxParts int) {
+	for _, id := range slices.Clone(l.content.partOrder) {
+		if len(l.content.parts) <= maxParts {
+			return
+		}
+		if lp := l.content.parts[id]; l.settled[lp.part.MessageID] {
+			l.content.removePart(id)
+		}
+	}
 }
 
 // capture copies what composing a read needs, so the JSON work runs without

@@ -462,3 +462,35 @@ func TestComposeRacesWithStreaming(t *testing.T) {
 		t.Fatalf("composed %d chars", len(got))
 	}
 }
+
+func TestLedgerEvictionCountsMessagesAndKeepsRunningContent(t *testing.T) {
+	now := time.Now()
+	big := `{"role":"assistant","note":"` + strings.Repeat("m", 1000) + `"}`
+	l := &ledger{}
+	// A message-only ended turn, a mixed ended turn, then a running turn.
+	l.apply(convevents.MessageUpserted{Message: message("only", 1, big)}, now)
+	l.apply(convevents.MessageUpserted{Message: message("mixed", 2, big)}, now)
+	p := textPart("mixed-part", strings.Repeat("x", 1000), false)
+	p.Part.MessageID = "mixed"
+	l.apply(p, now)
+	l.settle()
+	l.apply(convevents.MessageUpserted{Message: message("running", 3, big)}, now)
+	total, _ := l.size()
+	freed := l.evict(total - 500)
+	if _, ok := l.content.msgs["only"]; ok || freed < 1000 {
+		t.Fatalf("message-only turn kept (freed %d)", freed)
+	}
+	if _, ok := l.content.msgs["mixed"]; !ok {
+		t.Fatal("evicted more than needed")
+	}
+	l.evict(0)
+	if _, ok := l.content.msgs["mixed"]; ok || l.content.parts["mixed-part"] != nil {
+		t.Fatal("mixed turn not evicted as a group")
+	}
+	if _, ok := l.content.msgs["running"]; !ok {
+		t.Fatal("running content evicted")
+	}
+	if after, _ := l.size(); after != len(big) {
+		t.Fatalf("size after eviction = %d", after)
+	}
+}

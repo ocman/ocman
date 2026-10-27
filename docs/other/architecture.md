@@ -1212,7 +1212,8 @@ flowchart TD
     older reads; rewrites discard ended turns.
   - Streamed values are kept once and appended in place, with their UTF-16
     length tracked, so a chunk costs constant work. All ledgers share a 64 MB
-    budget: ended turns of sessions nobody streams go first, oldest first;
+    budget, counting messages and parts: ended message groups of sessions
+    nobody streams go first, oldest first;
     running turns are never evicted. A read captures the ledger and cursor
     under the session lock, merges outside it, and releases only entries
     unchanged since the capture.
