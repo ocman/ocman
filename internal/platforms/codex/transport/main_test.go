@@ -57,6 +57,11 @@ func fakeCodex(s *codextest.Server) {
 	}
 	s.Handle(codexappserver.MethodThreadStart, threadResp)
 	s.Handle(codexappserver.MethodThreadResume, threadResp)
+	if os.Getenv("FAKE_CODEX_OWNERSHIP_CONFLICT") != "" {
+		s.Handle(codexappserver.MethodThreadResume, func(json.RawMessage) (any, error) {
+			return nil, &codexappserver.RPCError{Code: -32600, Message: "thread thr already has an active writer"}
+		})
+	}
 	s.Handle(codexappserver.MethodTurnStart, func(json.RawMessage) (any, error) {
 		go func() {
 			time.Sleep(20 * time.Millisecond)

@@ -49,7 +49,17 @@ type Capabilities struct {
 	Replay         bool `json:"replay"`                   // explicit turn acknowledgments and leased snapshots
 	Hooks          bool `json:"hooks"`                    // POST /hooks: status of sessions started outside ocman
 	HistoryConfirm bool `json:"historyConfirm,omitempty"` // optional durable-history receipts for transient views
+	Ownership      bool `json:"ownership,omitempty"`      // loaded-thread ownership probes, without launching a runtime
 }
+
+// SessionOwnership proves a thread is loaded in a supervisor's native runtime.
+type SessionOwnership struct {
+	SourceKey string `json:"sourceKey"`
+	Loaded    bool   `json:"loaded"`
+	Idle      bool   `json:"idle"`
+}
+
+const CodeSessionOwnedElsewhere = "session_owned_elsewhere"
 
 type HistoryConfirmation struct {
 	Entries map[string]string `json:"entries"` // message presence and semantic part digests, keyed by native IDs

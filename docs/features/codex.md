@@ -79,6 +79,19 @@ as described below.
 - **Ocman's tools.** When ocman's MCP listener is enabled, Codex sessions ocman
   starts get it as an MCP server named `ocman`.
 
+## Thread ownership conflicts
+
+Codex allows only one process to write a thread at a time, even when it is idle.
+Ocman automatically reuses an idle thread already loaded in its current
+app-server. If an older ocman supervisor in the same managed runtime inventory
+owns it, ocman verifies the thread and Codex home, drains the supervisor only
+when it has no active turns or pending prompts, and stops it before retrying.
+Retries are bounded and happen only before Codex accepts a turn.
+
+An external, active or unverifiable owner is never stopped. The failed message
+shows recovery instructions. Close the thread in the owning Codex terminal or
+app, then retry. Ocman never deletes Codex's writer-lock files.
+
 ## Permissions
 
 Codex's own approval policy and sandbox, from your `config.toml` and project

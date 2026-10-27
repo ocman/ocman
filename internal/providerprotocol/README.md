@@ -62,6 +62,8 @@ prompts to the user.
 | POST /drain | `DrainState`, stops new turns before reporting whether all sessions are idle |
 | POST /drain-idle?token= | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
 | POST /resume?token= | `DrainState`, restores admission only for the matching cleanup pause |
+| POST /seal-idle?token= | `DrainState`, commits the matching idle pause to replacement; only `idle:true` authorizes stopping the supervisor, and `/resume` cannot undo it |
+| GET /sessions/{id}/ownership | Optional `ownership` capability: `SessionOwnership`, native loaded-thread proof with source key and idle state; never launches a runtime |
 | GET /account | `Account` |
 | POST /hooks | `HookEvent`, external-session status and advisory ownership; optional `pid` and `managed` identify the originating process; 204 |
 
@@ -80,6 +82,15 @@ response leaves allocation uncertain. Older supervisors omit the code and remain
 conservative; clients must never infer safe replay from a status alone.
 Composer gates creation and sending; rename, native queue and account have
 additional protocol capability flags. Browsing and lifecycle reads are required.
+
+Busy responses preserve the backend's user-facing message. A 409 with code
+`session_owned_elsewhere` is a definite rejection before turn admission. It
+permits bounded recovery only after verifying an idle managed owner for the
+same native thread and source key. Other busy or transport errors never permit
+automatic replay. A backend without ownership probes or idle sealing cannot be
+stopped for ownership recovery. Sealing atomically rechecks the cleanup token
+and idle state, then clears the resumable token so reconnect cannot undo the
+replacement fence. An uncertain stop after sealing leaves the fence intact.
 
 Idle culling uses the optional `/drain-idle` route rather than `/drain`. A random
 token scopes each cleanup pause and its rollback; replacement `/drain` clears

@@ -1022,7 +1022,7 @@ flowchart TD
     Modules -->|idleprojects: idle timeout through hostsvc.IdleProjectRuntime| ClaudePlatform
     Supervisor --> Claude[platforms/claude/provider + launch<br/>index, converter, SDK-compatible claude children]
     Registry --> CodexPlatform[platforms/codex/transport<br/>machine-wide supervisor + history app-server]
-    CodexPlatform -->|execute or drain prompts| Provider
+    CodexPlatform -->|execute, probe ownership, drain and seal idle owners| Provider
     Supervisor --> Codex[platforms/codex/provider + appserver<br/>converter, one codex app-server]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
@@ -1088,6 +1088,13 @@ flowchart TD
   bound MCP listener drains and replaces the supervisor before new execution.
   During replacement, pending prompts, replies and abort remain routed to the
   old supervisor, using only version-independent routes on protocol mismatch.
+  Ownership recovery uses `thread/loaded/list`, never history, to reuse an idle
+  thread in the current app-server. For an older supervisor in the same managed
+  runtime directory and root, the transport verifies the exact thread and Codex
+  home twice, drains only if idle, then seals the drain before stopping it.
+  Sealing prevents a racing reconnect from resuming admission before shutdown.
+  Only explicit pre-turn ownership rejections permit bounded retries. Unknown,
+  active, incompatible or unprobeable owners remain untouched.
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux launcher and terminal host wiring. Its session paths (SSE tee,
   notify, permission replies) still drive the auto-approve pipeline. It is the

@@ -16,6 +16,12 @@ func providerResponseError(code int, wire providerprotocol.Error) error {
 		err = platforms.ErrNotFound
 	case code == http.StatusConflict:
 		err = platforms.ErrBusy
+		if wire.Message != "" {
+			err = &platforms.BusyError{Message: wire.Message}
+		}
+		if wire.Code == providerprotocol.CodeSessionOwnedElsewhere {
+			err = &platforms.BusyError{Message: wire.Message, Cause: platforms.ErrSessionOwnedElsewhere}
+		}
 	case code == http.StatusNotImplemented:
 		err = platforms.ErrUnsupported
 	case code == http.StatusServiceUnavailable && wire.Code == providerprotocol.CodeReplyUnrecorded:

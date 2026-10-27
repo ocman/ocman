@@ -44,6 +44,8 @@ func (s *Supervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(hello)
 	case r.Method == http.MethodGet && r.URL.Path == "/events":
 		s.events(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/seal-idle":
+		s.sealIdle(w, r)
 	case r.Method == http.MethodPost && (r.URL.Path == "/drain" || r.URL.Path == "/drain-idle"):
 		token := r.URL.Query().Get("token")
 		if r.URL.Path == "/drain-idle" && (token == "" || len(token) > 128) {

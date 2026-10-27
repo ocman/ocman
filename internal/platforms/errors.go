@@ -26,6 +26,27 @@ var ErrHistoryUnavailable = errors.New("platforms: conversation history unavaila
 // translate this into HTTP 409 Conflict.
 var ErrBusy = errors.New("platforms: session is currently processing a prompt")
 
+// ErrSessionOwnedElsewhere marks a definite pre-turn ownership rejection.
+// Unlike a generic busy error, it permits verified owner recovery and retry.
+var ErrSessionOwnedElsewhere = errors.New("platforms: session is owned by another process")
+
+// BusyError carries user-facing recovery instructions for a conflict while
+// retaining ErrBusy classification and an optional underlying cause.
+type BusyError struct {
+	Message string
+	Cause   error
+}
+
+func (e *BusyError) Error() string {
+	if e.Message == "" {
+		return ErrBusy.Error()
+	}
+	return e.Message
+}
+
+func (e *BusyError) Is(target error) bool { return target == ErrBusy }
+func (e *BusyError) Unwrap() error        { return e.Cause }
+
 // ErrPlatformUnreachable is returned when an operation needs a live
 // platform process (e.g. an OpenCode instance bound to a directory)
 // but none can be discovered. This is distinct from ErrNotFound —

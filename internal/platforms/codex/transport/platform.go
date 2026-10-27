@@ -27,7 +27,7 @@ import (
 
 // supervisorIdentity is part of the launch identity: a supervisor launched
 // with another CLI or an older backend is drained and replaced.
-const supervisorIdentity = "codex-supervisor/v1"
+const supervisorIdentity = "codex-supervisor/v2"
 
 // Config is what New needs from the application.
 type Config struct {

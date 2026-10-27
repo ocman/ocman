@@ -51,6 +51,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func reply(w http.ResponseWriter, v any, err error) {
 	switch {
+	case errors.Is(err, platforms.ErrSessionOwnedElsewhere):
+		writeJSON(w, errStatus(err), providerprotocol.Error{Code: providerprotocol.CodeSessionOwnedElsewhere, Message: err.Error()})
 	case errors.Is(err, platforms.ErrCreationRejected):
 		writeJSON(w, errStatus(err), providerprotocol.Error{Code: providerprotocol.CodeCreationRejected, Message: err.Error()})
 	case errors.Is(err, platforms.ErrReplyUnrecorded):
@@ -168,29 +170,6 @@ func (b *backend) servePrompt(r *http.Request, kind, rest string) error {
 		return b.rejectQuestion(id)
 	}
 	return platforms.ErrUnsupported
-}
-
-// load makes a stored thread live on connection gen, resuming it once.
-func (b *backend) load(ctx context.Context, c *codexappserver.Client, gen uint64, id string) error {
-	b.mu.Lock()
-	loaded := b.gen == gen && b.client == c && b.loaded[id]
-	b.mu.Unlock()
-	if loaded {
-		return nil
-	}
-	resp, err := c.ResumeThread(ctx, codexappserver.ThreadResumeParams{ThreadID: id, ExcludeTurns: true})
-	if err != nil {
-		return notFound(err)
-	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.gen != gen || b.client != c || b.loaded == nil {
-		return errors.New("codex app-server exited while resuming thread")
-	}
-	b.loaded[id] = true
-	s := b.sessionLocked(id)
-	s.dir, s.provider, s.model = resp.Cwd, resp.ModelProvider, resp.Model
-	return nil
 }
 
 func (b *backend) create(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {

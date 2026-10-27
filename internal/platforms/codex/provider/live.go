@@ -34,7 +34,7 @@ type Options struct {
 // with 501. Revert is not offered: thread/revert drops history without
 // restoring files and has no redo. Codex has no switchable main agents.
 func Capabilities() providerprotocol.Capabilities {
-	return providerprotocol.Capabilities{Rename: true, Capabilities: platforms.Capabilities{
+	return providerprotocol.Capabilities{Rename: true, Ownership: true, Capabilities: platforms.Capabilities{
 		Composer: true, Abort: true, Events: true, RespondPermission: true, RespondQuestion: true,
 		AutoApprove: true, PushPrompts: true, ExactPatterns: true, PermissionRules: true, ModelCatalog: true,
 		Compact: true, Fork: true, ForkAtMessage: true, ShellExec: true, SlashCommands: true, FileChanges: true, SessionInfo: true}}
@@ -92,6 +92,7 @@ type backend struct {
 // session is one thread this supervisor has driven or observed.
 type session struct {
 	sendMu          sync.Mutex
+	loadMu          sync.Mutex // all callers share one resume per connection
 	provider, model string
 	dir             string
 	title           string

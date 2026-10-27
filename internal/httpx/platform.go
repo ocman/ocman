@@ -28,7 +28,12 @@ func WritePlatformError(w http.ResponseWriter, msg string, err error) {
 		return
 	}
 	if errors.Is(err, platforms.ErrBusy) {
-		http.Error(w, "session is currently processing a prompt; try again in a moment", http.StatusConflict)
+		body := "session is currently processing a prompt; try again in a moment"
+		var busy *platforms.BusyError
+		if errors.As(err, &busy) && busy.Message != "" {
+			body = busy.Message
+		}
+		http.Error(w, body, http.StatusConflict)
 		return
 	}
 	if errors.Is(err, platforms.ErrPlatformUnreachable) {
