@@ -63,7 +63,7 @@ func TestSessionToolReadActions(t *testing.T) {
 	srv := sessionServer(t, svc)
 
 	help := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "help"})
-	for _, text := range []string{"list", "search", "get", "create", "provider/model", "message_limit", "output_schema"} {
+	for _, text := range []string{"list", "search", "get", "create", "send", "recipient", "provider/model", "message_limit", "output_schema"} {
 		if !strings.Contains(testutil.ResultText(help), text) {
 			t.Fatalf("help result missing %q: %s", text, testutil.ResultText(help))
 		}

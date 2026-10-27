@@ -1,6 +1,6 @@
 ---
 name: ocman-sessions
-description: Use when the user asks to inspect, search, or start ocman sessions, or to delegate work to an OpenCode subagent with an explicit model.
+description: Use when the user asks to inspect, search, start, or message ocman sessions, or to delegate work to an OpenCode subagent with an explicit model.
 ---
 
 # Ocman Sessions
@@ -18,9 +18,20 @@ schemas, limits, examples, and errors. Its actions:
   platforms, and host names.
 - `get` — one session by `platform` and `session_id`, with its latest messages.
 - `create` — start a new top-level session and send it `prompt`.
+- `send` — send `prompt` to an existing recipient's `session_id`, with optional
+  `platform` to disambiguate or target a remote machine.
 
-`list`, `search`, and `get` are read-only. Nothing in the tool cancels or
-messages an existing session.
+`list`, `search`, and `get` are read-only. The tool cannot cancel sessions.
+
+Use `send` only when the user requests messaging another session. Unlike
+`create`, its `session_id` identifies the recipient, not you. It sends plain text
+immediately, including mid-turn, using normal project/session model selection
+and the recipient's permissions, without changing its held queue.
+A successful result acknowledges delivery, not
+completion. Follow up with `get` to inspect replies. Do not blindly retry an
+uncertain delivery failure.
+
+`{"action":"send","intent":"Send the test results to the review session","session_id":"ses_recipient","platform":"opencode","prompt":"The tests passed. Continue with the review."}`
 
 Use `create` only when the user asks for a separate session. Pass optional
 `model` (`provider/model`), `agent` (e.g. `build`, `plan`), and `title`. Pass

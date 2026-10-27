@@ -4,7 +4,7 @@ weight: 3
 ---
 
 Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory,
-Inbox, routine, session inspection and creation, and file-embedding tools.
+Inbox, routine, session inspection, creation and messaging, and file-embedding tools.
 
 Ocman works fine as a plain dashboard without this. Install it only if you
 want conversational Factory handoff, Inbox delivery, routine management,
@@ -87,7 +87,7 @@ in `tools.ocman` calls; variables and computed values are not evaluated for disp
 | `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. Agents should send only asynchronous completions needing attention, blocked decisions, or important failures, not routine progress. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
 | `webhooks` | Create and inspect owner-local webhook inboxes, subscribe or unsubscribe routines, inspect recent deliveries, and redeliver a stored delivery by ID to the current subscribers. Actions `help`, `list`, `get`, `create`, `subscribe`, `unsubscribe`, `deliveries`, `redeliver`. Uses the saved relay settings. Ingestion URLs are credentials; shared secrets and relay management credentials are omitted. |
-| `sessions` | Session listing, search, detail inspection, and creation. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With `content: true` it also scans user and assistant message text (not tool output) from the last `since_days` (default 7). Each hit returns up to five `{partId, messageId, role, snippet}` matches. Content search reads this machine's OpenCode database, so it is slow on large databases (tens of seconds for a week) and never covers remote sessions. `get` needs only `session_id`; it asks for `platform` only when that ID exists on more than one platform. `create` starts a new session. The tool cannot cancel or message existing sessions. |
+| `sessions` | Session listing, search, detail inspection, creation, and messaging. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With `content: true` it also scans user and assistant message text (not tool output) from the last `since_days` (default 7). Each hit returns up to five `{partId, messageId, role, snippet}` matches. Content search reads this machine's OpenCode database, so it is slow on large databases (tens of seconds for a week) and never covers remote sessions. `get` and `send` need the recipient's `session_id`; pass `platform` when that ID is ambiguous. `create` starts a new session. `send` delivers `prompt` to an existing session. The tool cannot cancel sessions. |
 | `models` | Read the model catalog for an absolute `directory`, with optional `platform`. Pass the target's compound platform ID for a remote machine; omit it only when one platform is available. Returns `platform`, `models`, defaults, `hasProviders`, and `liveConnection`. Each model includes `provider`, `model`, `isAvailable`, and any reasoning variants. Use `provider/model` with `sessions` creation. Reads an existing instance without launching one; historical entries remain visible when live provider data is unavailable. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
 
@@ -234,7 +234,21 @@ Inbox items is a user-only dashboard operation and is not exposed to agents.
 ## Sessions
 
 The `sessions` tool inspects sessions with `list`, `search`, and `get`, and
-starts new top-level sessions with `create`.
+starts new top-level sessions with `create`. Use `send` to message an existing
+session when the user requests it:
+
+```json
+{"action":"send","session_id":"ses_recipient","platform":"opencode","prompt":"The tests passed. Continue with the review.","intent":"Send the test results to the review session"}
+```
+
+For `send`, `session_id` identifies the recipient, not the calling session.
+`platform` is optional for an unambiguous ID; use the compound platform ID for a
+remote recipient. Delivery uses normal project/session model selection and the
+recipient's permissions, and sends immediately, including mid-turn, without
+changing its held queue. The response
+`{platform, session_id, sent: true}` acknowledges delivery, not completion. Use
+`get` to inspect replies. Do not blindly retry a failed request whose delivery is
+uncertain, since that can send the same prompt twice.
 
 `create` sends `prompt` to the new session. `model` (`provider/model`), `agent`,
 `worktree`, and `title` are optional. An omitted model inherits the calling
@@ -254,7 +268,7 @@ With neither, a `model` with a platform prefix (`claudecode:anthropic/sonnet`)
 picks the platform, else the default platform applies. New sessions use the platform's
 default permissions and do not inherit the caller's rules.
 
-OpenCode permissions apply to whole tools, so requiring approval for `create`
+OpenCode permissions apply to whole tools, so requiring approval for `create` or `send`
 also requires it for the read-only actions.
 
 Use `create` for independent work that should show up as its own session. For

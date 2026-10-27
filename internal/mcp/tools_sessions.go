@@ -50,6 +50,7 @@ var sessionActions = []sessionAction{
 	{name: "list", description: "Lists recent sessions, optionally scoped to one directory.", example: `{"action":"list","directory":"/repo","limit":50}`, optional: []string{"directory", "limit"}, output: "Session[]"},
 	{name: "search", description: "Searches recent session IDs, titles, directories, platforms, and host names. With content true, also searches user and assistant message text (not tool output) of sessions updated in the last since_days; this is slow (tens of seconds).", example: `{"action":"search","query":"weave-cli","content":true,"since_days":7}`, required: []string{"query"}, optional: []string{"directory", "limit", "content", "since_days"}, output: "(Session & {matches?: {partId, messageId, role, snippet}[]})[]"},
 	{name: "get", description: "Gets one session with its latest messages and parts. Without platform, every platform is searched.", example: `{"action":"get","session_id":"ses_1","message_limit":20}`, required: []string{"session_id"}, optional: []string{"platform", "message_limit"}, output: "SessionDetail"},
+	{name: "send", description: "Sends prompt to an existing session immediately, including mid-turn, without waiting for its reply. session_id identifies the recipient, not the caller. Omit platform only when the recipient is unambiguous. Uses normal project/session model selection and the recipient's permissions; does not create a session or modify its held queue.", example: `{"action":"send","session_id":"ses_recipient","platform":"opencode","prompt":"The tests passed; continue with the review."}`, required: []string{"session_id", "prompt"}, optional: []string{"platform"}, output: "{platform, session_id, sent: true}"},
 	{name: "create", description: "Starts a new top-level session and sends it prompt. Omitted model inherits the calling session's current model, then falls back to project and platform defaults. Omitted agent uses the configured default. Omitted worktree creates a fresh worktree when the directory is eligible, otherwise uses the current checkout; set worktree false to use the given directory. Pass your own platform and session_id to inherit your model, default directory to your project root and run on your machine, or pass an absolute directory.", example: `{"action":"create","prompt":"Review the open PR","platform":"opencode","session_id":"ses_caller"}`, required: []string{"prompt"}, optional: []string{"model", "agent", "worktree", "title", "directory", "platform", "session_id"}, output: "{platform, session_id, directory}"},
 }
 
@@ -58,7 +59,7 @@ func sessionServerTools(tools *sessionTools) []server.ServerTool {
 		return nil
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("sessions",
-		mcplib.WithDescription("Inspect, search, and create sessions (actions: help, list, search, get, create). Use action help for schemas and examples."),
+		mcplib.WithDescription("Inspect, search, create, and message sessions (actions: help, list, search, get, create, send). Use action help for schemas and examples."),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("session_id"), mcplib.WithString("platform"),
 		mcplib.WithString("directory"), mcplib.WithString("query"), mcplib.WithNumber("limit"), mcplib.WithNumber("message_limit"),
 		mcplib.WithString("prompt"), mcplib.WithString("model", mcplib.Description("provider/model")), mcplib.WithString("agent"), mcplib.WithString("title"),
@@ -144,6 +145,8 @@ func (t *sessionTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		return toolResultJSON(detail), nil
 	case "create":
 		return t.create(ctx, req), nil
+	case "send":
+		return t.send(ctx, req), nil
 	}
 	return mcplib.NewToolResultError("unknown action"), nil
 }
@@ -165,8 +168,8 @@ func sessionHelp() map[string]any {
 		help[action.name] = map[string]any{"required": append([]string{}, action.required...), "optional": append([]string{}, action.optional...), "action": action.description, "example": action.example, "output_schema": action.output}
 	}
 	help["actions"] = actions
-	help["rules"] = []string{"only create changes state; start a session only when the user asks for one", "list and search return at most 500 recent sessions", "message_limit is between 0 and 100; 0 returns metadata without messages", "get: platform is optional; pass it only when the session_id exists on multiple platforms", "create: model is provider/model; directory is absolute; platform selects the target platform and machine; session_id is optional and requires platform to identify the calling session", "create: the new session uses the platform's default permissions", "search content: opt-in and slow; since_days is between 1 and 365 (default 7); only this machine's sessions are content-searched; at most 5 matches per session"}
-	help["errors"] = []string{"action is required", "unknown action", "session not found", "session_id exists on multiple platforms (<platforms>); pass platform", "session request failed", "prompt is required", "model must be provider/model", "directory must be absolute", "session_id requires platform", "invalid session request: <reason>", "session <id> was created on <platform> but the prompt failed", "since_days must be between 1 and 365"}
+	help["rules"] = []string{"create and send change state; use them only when the user requests session creation or messaging", "list and search return at most 500 recent sessions", "message_limit is between 0 and 100; 0 returns metadata without messages", "get and send: platform is optional; pass it when the session_id exists on multiple platforms", "send: session_id is the recipient; prompt is plain text; sends immediately without waiting for a reply or modifying the held queue; do not blindly retry uncertain delivery failures", "create: model is provider/model; directory is absolute; platform selects the target platform and machine; session_id is optional and requires platform to identify the calling session", "create: the new session uses the platform's default permissions", "search content: opt-in and slow; since_days is between 1 and 365 (default 7); only this machine's sessions are content-searched; at most 5 matches per session"}
+	help["errors"] = []string{"action is required", "unknown action", "session not found", "session_id exists on multiple platforms (<platforms>); pass platform", "session request failed", "prompt is required", "model must be provider/model", "directory must be absolute", "session_id requires platform", "invalid session request: <reason>", "session <id> was created on <platform> but the prompt failed", "since_days must be between 1 and 365", "session_id is required", "platform must be a string", "session messaging is unavailable"}
 	return help
 }
 

@@ -1007,6 +1007,7 @@ flowchart TD
     Modules -->|notifications: subscriptions + durable delivery receipts| State
     Modules -->|snooze: archive deadlines + atomic wake-up| State
     MCP --> Registry
+    MCP -->|existing-session direct send| Sessions
     Registry --> OC[platforms/opencode/provider + internal/db<br/>adapter and read-only queries]
     Registry --> ClaudePlatform[platforms/claude/transport<br/>native-session runtime bindings]
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
@@ -1504,11 +1505,14 @@ flowchart TD
   cannot be converted losslessly to one routine prompt, so recovery is a
   manual read-only SQLite export.
 - **internal/mcp.** The MCP server exposes read-only session inspection,
-  session creation and `embed_file`, plus the tools modules contribute:
+  session creation, existing-session messaging and `embed_file`, plus the tools
+  modules contribute:
   action-based `factory` and proposal-only `factory_control` (Factory),
   `inbox`, `webhooks`, `routines` and `artifacts`. File embedding uses signed tokens
   whose key is persisted in `state.db`; `internal/filesystem` mints and serves
-  them.
+  them. Session messaging resolves the recipient's canonical identity or
+  unambiguous platform, then uses the shared `sendNow` and `sessionsvc` path.
+  It never creates a session or touches the held queue.
 - **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and
   `recall`. Sends write the owning host's `state.db`; remote sends and recalls
   cross the owner-routed gRPC seam. The browser alone lists, reads, and

@@ -17,8 +17,8 @@ type Deps struct {
 	ToolMiddleware mcpserver.ToolHandlerMiddleware
 	// Tools are contributed by feature modules (module.ToolProvider).
 	Tools []mcpserver.ServerTool
-	// Optional: nil disables session tools. The create action also needs
-	// the service to implement CreateSession.
+	// Optional: nil disables session tools. The create and send actions also
+	// need the service to implement CreateSession and SendSessionMessage.
 	SessionService sessionService
 	// Optional: reads an existing instance's directory catalog, without launching it.
 	ModelCatalog func(context.Context, string, platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, string, error)
