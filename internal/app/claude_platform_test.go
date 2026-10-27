@@ -240,7 +240,11 @@ func runOcmanChild() bool {
 		return false
 	}
 	flag.CommandLine = flag.NewFlagSet("ocman", flag.ExitOnError)
-	os.Args = []string{"ocman", "-platforms=claudecode", "-addr=" + addr, "-mcp-addr=" + os.Getenv("OCMAN_TEST_MCP_ADDR"), "-log-file=off"}
+	selected := os.Getenv("OCMAN_TEST_PLATFORMS")
+	if selected == "" {
+		selected = "claudecode"
+	}
+	os.Args = []string{"ocman", "-platforms=" + selected, "-addr=" + addr, "-mcp-addr=" + os.Getenv("OCMAN_TEST_MCP_ADDR"), "-log-file=off"}
 	Run("dev", skillCatalog)
 	return true
 }

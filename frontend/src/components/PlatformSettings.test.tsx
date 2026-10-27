@@ -14,9 +14,11 @@ it('loads saved platforms and applies a desktop selection', async () => {
   render(<PlatformSettings />);
   const openCode = screen.getByRole('checkbox', { name: 'OpenCode' });
   const claude = screen.getByRole('checkbox', { name: 'Claude Code' });
+  const codex = screen.getByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(openCode).toBeEnabled());
   expect(openCode).toBeChecked();
   expect(claude).toBeChecked();
+  expect(codex).not.toBeChecked();
   fireEvent.click(openCode);
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(await screen.findByRole('status')).toHaveTextContent('Platform changes applied');

@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "id": "01a17a15-1f5a-7d60-ad91-929793d3c5e9",
+      "rootTurnId": "01a17a15-1f5a-7d60-ad91-929793d3c5e9",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1793049567,
+      "completedAt": 1793049577,
+      "durationMs": 10341
+    },
+    {
+      "id": "01a17a15-47cd-7450-8b51-df0ffaa763b4",
+      "rootTurnId": "01a17a15-47cd-7450-8b51-df0ffaa763b4",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "interrupted",
+      "error": null,
+      "startedAt": 1793049577,
+      "completedAt": 1793049580,
+      "durationMs": 2946
+    }
+  ],
+  "nextCursor": null,
+  "backwardsCursor": "{\"requestedThreadId\":\"01a17a15-1eea-7a31-bcff-c31d601a3eeb\",\"rolloutOrdinal\":1,\"includeAnchor\":true,\"scope\":{\"kind\":\"turns\"}}"
+}

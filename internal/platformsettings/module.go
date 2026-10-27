@@ -105,7 +105,7 @@ func validate(enabled []string) error {
 		return fmt.Errorf("enable at least one platform")
 	}
 	for i, id := range enabled {
-		if id != "opencode" && id != "claudecode" {
+		if id != "opencode" && id != "claudecode" && id != "codex" {
 			return fmt.Errorf("unknown platform %q", id)
 		}
 		if slices.Contains(enabled[:i], id) {

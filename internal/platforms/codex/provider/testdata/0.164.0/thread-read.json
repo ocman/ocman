@@ -1,0 +1,53 @@
+{
+  "thread": {
+    "id": "01a17a15-1eea-7a31-bcff-c31d601a3eeb",
+    "environments": [
+      {
+        "environmentId": "local",
+        "cwd": "/fixture/repo",
+        "runtimeWorkspaceRoots": [
+          "/fixture/repo"
+        ]
+      }
+    ],
+    "extra": null,
+    "sessionId": "01a17a15-1eea-7a31-bcff-c31d601a3eeb",
+    "forkedFromId": null,
+    "parentThreadId": null,
+    "preview": "Run `ls` in the current directory. Then use your apply_patch tool, not the shell, to create a file named hello.txt containing the single line `hi`. Then reply with the word done.",
+    "ephemeral": false,
+    "section": null,
+    "sectionEnteredAt": null,
+    "projectId": null,
+    "historyMode": "paginated",
+    "modelProvider": "openai",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": null,
+    "createdAt": 1793049566,
+    "updatedAt": 1793049580,
+    "recencyAt": 1793049577,
+    "status": {
+      "type": "idle"
+    },
+    "path": "/fixture/home/sessions/2026/10/26/rollout-2026-10-26T22-19-27-01a17a15-1eea-7a31-bcff-c31d601a3eeb.jsonl",
+    "cwd": "/fixture/repo",
+    "cliVersion": "0.164.0",
+    "originator": "ocman",
+    "source": "vscode",
+    "canAcceptDirectInput": true,
+    "threadSource": null,
+    "agentNickname": null,
+    "agentRole": null,
+    "gitInfo": null,
+    "name": "Recorded fixture",
+    "daybreakEnabled": null,
+    "turns": []
+  },
+  "readState": {
+    "firstUnread": {
+      "type": "turn",
+      "turnId": "01a17a15-1f5a-7d60-ad91-929793d3c5e9"
+    },
+    "revision": "9415228f-2cd6-4ebe-ba63-aeadbdd2835a"
+  }
+}

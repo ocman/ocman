@@ -1,9 +1,12 @@
 # Codex Adapter — Paper Design
 
 > **Superseded (2026-10-05):** written against the removed `claudecode`
-> adapter. A future Codex integration is a provider behind the protocol in
-> `architecture.md` (AD-2), not a native adapter. Kept for the Codex CLI
-> surface notes only.
+> adapter. Codex is now implemented as a backend behind the protocol in
+> `architecture.md` (AD-2) in `internal/platforms/codex`; see
+> `internal/platforms/README.md`. The surface notes below predate
+> `codex app-server` and are kept for history only: rollouts live under
+> `~/.codex/sessions`, and history is read through the app-server rather than
+> parsed.
 
 **Status**: paper design only (SC-6). Not merged. Serves as a sanity
 check that the `Platform` interface holds up for a third coding-agent

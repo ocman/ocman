@@ -1021,6 +1021,9 @@ flowchart TD
     Local -.->|ocruntime.BackendRuntime in tmux, one per project| Supervisor
     Modules -->|idleprojects: idle timeout through hostsvc.IdleProjectRuntime| ClaudePlatform
     Supervisor --> Claude[platforms/claude/provider + launch<br/>index, converter, SDK-compatible claude children]
+    Registry --> CodexPlatform[platforms/codex/transport<br/>machine-wide supervisor + history app-server]
+    CodexPlatform -->|execute or drain prompts| Provider
+    Supervisor --> Codex[platforms/codex/provider + appserver<br/>converter, one codex app-server]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
     Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
@@ -1065,6 +1068,26 @@ flowchart TD
   using a runtime; directory metadata alone cannot select an SSE or mutation
   target. Both platforms retain the owner/source-scoped Ocman-to-native mapping
   in `platforms/owned`; a project change never allocates another identity.
+- **platforms/codex.** `platforms/codex/appserver` is a JSON-RPC client for
+  `codex app-server` over stdio, with an in-process fake in
+  `appserver/codextest`. `platforms/codex/provider` converts Codex thread items
+  into v1 messages and parts through one converter shared by stored and live
+  items, reads paged thread history, and implements the supervisor backend: one
+  app-server hosts every thread it drives, resumed on first use; failed
+  connections are retired before replacement. Approvals and user input become
+  ocman prompts, and a send during a turn steers it. Item updates and terminal
+  events reach the spool before idle; failed upserts and turn ends retry
+  without releasing admission, and oversized output carries an explicit
+  truncation marker. `platforms/codex/transport` registers the opt-in
+  `codex` platform. It runs one machine-wide supervisor (`ocman provider codex`)
+  through `ocruntime.BackendRuntime`, launched on first use, reattached after a
+  restart and replaced when it dies, and forwards to whichever adapter is
+  current. A separate read-only app-server serves history ingestion and the
+  model catalog, so browsing never launches the supervisor. Both processes use
+  the captured canonical Codex home. A changed home, CLI, backend identity or
+  bound MCP listener drains and replaces the supervisor before new execution.
+  During replacement, pending prompts, replies and abort remain routed to the
+  old supervisor, using only version-independent routes on protocol mismatch.
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux launcher and terminal host wiring. Its session paths (SSE tee,
   notify, permission replies) still drive the auto-approve pipeline. It is the
@@ -1718,7 +1741,11 @@ flowchart TD
 flowchart LR
     App[Application] --> Claude[claude/transport]
     App --> OpenCode[opencode/provider]
+    App --> CodexT[codex/transport]
     Claude --> Socket[platforms/provider]
+    CodexT --> Socket
+    Supervisor --> CodexB[codex/provider]
+    CodexB --> AppServer[codex/appserver]
     Socket -->|Unix socket| Supervisor[providersupervisor]
     Supervisor --> Backend[claude/provider]
     Backend --> Launch[claude/launch]
@@ -1727,9 +1754,12 @@ flowchart LR
     API --> V2[opencode/apiv2]
 ```
 
-- Platform-specific packages live under `internal/platforms/claude` or
-  `internal/platforms/opencode`. The platform IDs remain `claudecode` and
-  `opencode`; persisted identities, commands and wire formats are unchanged.
+- Platform-specific packages live under `internal/platforms/claude`,
+  `internal/platforms/codex` or `internal/platforms/opencode`. The platform IDs
+  are `claudecode`, `codex` and `opencode`; persisted identities, commands and
+  wire formats are unchanged.
+- Codex's transport has no per-project routing: one supervisor serves every
+  directory, and its history reads go to Codex directly, not through the socket.
 - Claude's transport selects the owning backend and retains session routing,
   runtime recovery and history-ingestion orchestration. The provider owns native
   child execution and transcript indexing. Shared socket serving and durable
@@ -2165,7 +2195,7 @@ sequenceDiagram
 - Shipped capabilities are `action.v1`, `pane.v1`, `conversation.v1`, and
   `session.v1`. Platform-provider, iframe UI,
   relay inbox capability, registry/updates, signatures, sandboxing, and
-  Codex remain future work. Existing core Inbox and webhook services do not imply
+  plugin-provided platforms remain future work. Existing core Inbox and webhook services do not imply
   a plugin capability for either.
 
 See [Plugins](../features/plugins.md) for the operator and authoring guide.

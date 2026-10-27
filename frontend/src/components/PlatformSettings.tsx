@@ -6,7 +6,7 @@ import { SettingRow } from './SettingRow';
 import { InlineAlert } from './InlineAlert';
 
 const endpoint = '/api/settings/platforms';
-const options = [['opencode', 'OpenCode'], ['claudecode', 'Claude Code']] as const;
+const options = [['opencode', 'OpenCode'], ['claudecode', 'Claude Code'], ['codex', 'Codex']] as const;
 type Configuration = { enabled: string[]; reloadPending?: boolean; overridden?: boolean };
 
 export function PlatformSettings() {

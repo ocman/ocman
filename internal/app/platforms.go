@@ -8,6 +8,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
 	"github.com/NoUseFreak/ocman/internal/platforms/claude/transport"
+	codexprovider "github.com/NoUseFreak/ocman/internal/platforms/codex/provider"
+	codextransport "github.com/NoUseFreak/ocman/internal/platforms/codex/transport"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	"github.com/NoUseFreak/ocman/internal/pricing"
@@ -25,5 +27,8 @@ var knownPlatforms = map[string]func(context.Context, *db.DB, *state.DB, ocapi.A
 			addr = f.Value.String()
 		}
 		return claudecode.New(ctx, database, stateDB, skillCatalog, addr)
+	},
+	codexprovider.PlatformID: func(ctx context.Context, _ *db.DB, stateDB *state.DB, _ ocapi.Auth) platforms.Integration {
+		return codextransport.New(ctx, codextransport.Config{State: stateDB, DataDir: state.DefaultDataDir(), Version: version})
 	},
 }

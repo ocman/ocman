@@ -1,0 +1,54 @@
+{
+  "id": "thr_1",
+  "sessionId": "thr_1",
+  "preview": "list the files",
+  "ephemeral": false,
+  "historyMode": "paginated",
+  "modelProvider": "openai",
+  "model": "gpt-5.5",
+  "createdAt": 1790000000,
+  "updatedAt": 1790000100,
+  "status": {"type": "notLoaded"},
+  "cwd": "/repo",
+  "cliVersion": "0.129.0",
+  "source": "appServer",
+  "name": "Files",
+  "turns": [
+    {
+      "id": "turn_1",
+      "status": "completed",
+      "startedAt": 1790000000,
+      "completedAt": 1790000010,
+      "items": [
+        {"type": "userMessage", "id": "u1", "startedAtMs": 1790000000000, "completedAtMs": 1790000000000,
+         "content": [{"type": "text", "text": "list the files", "text_elements": []}, {"type": "localImage", "path": "/tmp/shot.jpg"}]},
+        {"type": "reasoning", "id": "r1", "startedAtMs": 1790000001000, "completedAtMs": 1790000002000, "summary": ["**Listing**"], "content": []},
+        {"type": "commandExecution", "id": "c1", "startedAtMs": 1790000003000, "completedAtMs": 1790000004000, "command": "ls", "cwd": "/repo",
+         "source": "agent", "status": "completed", "commandActions": [], "aggregatedOutput": "a.go\n", "exitCode": 0, "durationMs": 10},
+        {"type": "fileChange", "id": "f1", "startedAtMs": 1790000005000, "completedAtMs": 1790000006000, "status": "completed",
+         "changes": [{"path": "/repo/a.go", "kind": {"type": "update", "move_path": null}, "diff": "--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-old\n+new\n"}]},
+        {"type": "contextCompaction", "id": "x1"},
+        {"type": "agentMessage", "id": "a1", "startedAtMs": 1790000007000, "completedAtMs": 1790000008000, "text": "Done.", "phase": "final_answer"}
+      ]
+    },
+    {
+      "id": "turn_2",
+      "status": "interrupted",
+      "startedAt": 1790000050,
+      "completedAt": 1790000060,
+      "items": [
+        {"type": "userMessage", "id": "u2", "content": [{"type": "text", "text": "again", "text_elements": []}]},
+        {"type": "commandExecution", "id": "c2", "command": "sleep 100", "cwd": "/repo", "status": "inProgress", "commandActions": []}
+      ]
+    },
+    {
+      "id": "turn_3",
+      "status": "failed",
+      "error": {"message": "usage limit reached", "codexErrorInfo": "usageLimitExceeded"},
+      "startedAt": 1790000070,
+      "items": [
+        {"type": "userMessage", "id": "u3", "content": [{"type": "text", "text": "retry", "text_elements": []}]}
+      ]
+    }
+  ]
+}

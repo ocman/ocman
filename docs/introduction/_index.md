@@ -19,17 +19,18 @@ hides only the feature it unlocks.
 
 Required:
 
-- **OpenCode or Claude Code**. For OpenCode, install https://opencode.ai and
+- **OpenCode, Claude Code or Codex**. For OpenCode, install https://opencode.ai and
   run it once to create its database. For Claude Code, install the `claude`
-  CLI and log in. Both platforms are enabled by default; a missing OpenCode
-  database does not prevent using Claude.
+  CLI and log in. OpenCode and Claude Code are enabled by default; a missing
+  OpenCode database does not prevent using Claude. For Codex, install the
+  `codex` CLI, sign in, and enable it in Settings → Platforms.
 - **git**: `brew install git`.
 
 Optional:
 
 | Tool | Unlocks | Hint |
 |------|---------|------|
-| tmux | launching managed OpenCode or Claude sessions, /wt worktree sessions and browser terminals | `brew install tmux` |
+| tmux | launching managed OpenCode, Claude or Codex sessions, /wt worktree sessions and browser terminals | `brew install tmux` |
 
 Apps launched from Finder get a minimal PATH. Ocman merges in your login
 shell's PATH at startup; when that fails (the shell exits with an error or

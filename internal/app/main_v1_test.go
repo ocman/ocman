@@ -7,6 +7,8 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
 	"github.com/NoUseFreak/ocman/internal/platforms/claude/transport"
+	"github.com/NoUseFreak/ocman/internal/platforms/codex/appserver/codextest"
+	codextransport "github.com/NoUseFreak/ocman/internal/platforms/codex/transport"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
 )
 
@@ -15,7 +17,14 @@ import (
 // It also serves `ocman provider <id>` when a test's provider runtime
 // launches the test binary as the supervisor executable.
 func TestMain(m *testing.M) {
-	if claudecode.RunProviderCommand(os.Args[1:]) {
+	if codextransport.RunProviderCommand(os.Args[1:]) || claudecode.RunProviderCommand(os.Args[1:]) {
+		os.Exit(0)
+	}
+	// The fake `codex app-server` that codex-only tests put on PATH.
+	if os.Getenv("OCMAN_TEST_FAKE_CODEX") != "" {
+		s := codextest.Serve(os.Stdin, os.Stdout)
+		codextest.World(s)
+		<-s.Done()
 		os.Exit(0)
 	}
 	skillCatalog = map[string][]byte{}

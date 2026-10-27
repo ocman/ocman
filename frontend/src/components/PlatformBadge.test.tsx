@@ -47,6 +47,9 @@ it('renders known, remote, and unknown platform labels', () => {
 	rerender(<PlatformBadge platform="claudecode" />);
 	expect(screen.getByLabelText('Claude Code')).toHaveTextContent('Claude Code');
 
+	rerender(<PlatformBadge platform="codex" variant="compact" />);
+	expect(screen.getByLabelText('Codex')).toHaveTextContent('CX');
+
 	rerender(<PlatformBadge platform="custom" variant="plain" />);
 	expect(screen.getByLabelText('custom')).toHaveTextContent('CU');
 	expect(screen.getByLabelText('custom')).toHaveClass('platform-custom', 'plain');
@@ -58,6 +61,7 @@ it('shows accessible icon-only indicators with a platform explanation', async ()
 	for (const [platform, label, tip, remote] of [
 		['r-owner:opencode', 'OpenCode (remote machine)', 'This session runs on OpenCode on a remote machine.', true],
 		['claudecode', 'Claude Code', 'This session runs on Claude Code.', false],
+		['r-owner:codex', 'Codex (remote machine)', 'This session runs on Codex on a remote machine.', true],
 	] as const) {
 		rerender(<PlatformBadge platform={platform} variant="icon" />);
 		const icon = screen.getByLabelText(label).querySelector('img');

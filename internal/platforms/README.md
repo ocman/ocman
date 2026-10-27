@@ -1,8 +1,8 @@
 # Platform implementations
 
 Platform-specific code lives under its platform directory. The public platform
-IDs remain `claudecode` and `opencode`; directory names do not change persisted
-identities, commands or wire formats.
+IDs are `claudecode`, `codex` and `opencode`; directory names do not change
+persisted identities, commands or wire formats.
 
 ## Claude
 
@@ -17,6 +17,23 @@ identities, commands or wire formats.
 The transport still owns existing routing and recovery orchestration. It is not
 just a forwarding client. The generic socket client, protocol and event replay
 remain in `platforms/provider`, `providerprotocol` and `providersupervisor`.
+
+## Codex
+
+- `codex/appserver` is the JSON-RPC client for `codex app-server` over stdio,
+  with an in-process fake (`codextest`) and a manual fixture recorder behind the
+  `codexrecord` build tag.
+- `codex/provider` implements the Codex backend: the single Codex-to-v1
+  converter shared by stored history and live items, the history reader, and
+  the supervisor that drives threads on one app-server.
+- `codex/transport` composes the platform: one machine-wide supervisor under
+  tmux (`ocman provider codex`), launched on first use and replaced when it
+  dies, plus a separate read-only app-server for history and the model catalog.
+
+Codex history is read through `thread/list`, `thread/turns/list` and
+`thread/items/list`. Only per-turn token usage, which the app-server does not
+serve, is read from the thread's rollout file (`token_usage_record` lines,
+plain or zstd-compressed).
 
 ## OpenCode
 

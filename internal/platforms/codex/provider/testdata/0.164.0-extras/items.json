@@ -1,0 +1,122 @@
+{
+  "data": [
+    {
+      "turnId": "01a17c69-2fb4-78c3-a3c7-8046d82bbff8",
+      "item": {
+        "type": "userMessage",
+        "id": "01a17c69-35f4-7163-9f84-eaa0dd666dcb",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "Reply with the word ready.",
+            "text_elements": []
+          }
+        ]
+      },
+      "startedAtMs": 1793088632310,
+      "completedAtMs": 1793088632310
+    },
+    {
+      "turnId": "01a17c69-2fb4-78c3-a3c7-8046d82bbff8",
+      "item": {
+        "type": "agentMessage",
+        "id": "msg_02cbd4bc8f33d2b9016ae05c7b14208191811ae025dbcc9a80",
+        "text": "ready",
+        "phase": "final_answer",
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+      },
+      "startedAtMs": 1793088635071,
+      "completedAtMs": 1793088635134
+    },
+    {
+      "turnId": "01a17c69-411a-7b02-a95d-7687330b48a8",
+      "item": {
+        "type": "commandExecution",
+        "id": "3ac41bbc-25da-4571-ae9c-604bfa24104b",
+        "pluginId": null,
+        "scriptPath": null,
+        "command": "/bin/zsh -lc 'echo shell-ok'",
+        "cwd": "/fixture/repo",
+        "processId": null,
+        "source": "userShell",
+        "status": "completed",
+        "commandActions": [
+          {
+            "type": "unknown",
+            "command": "echo shell-ok"
+          }
+        ],
+        "aggregatedOutput": "shell-ok\n",
+        "exitCode": 0,
+        "durationMs": 16
+      },
+      "startedAtMs": 1793088635171,
+      "completedAtMs": 1793088635187
+    },
+    {
+      "turnId": "01a17c69-4136-7e80-a79c-df7baf48c4fc",
+      "item": {
+        "type": "contextCompaction",
+        "id": "01a17c69-414c-7c33-aa52-9d0f4f73ed83"
+      },
+      "startedAtMs": 1793088635212,
+      "completedAtMs": 1793088643660
+    },
+    {
+      "turnId": "01a17c69-624f-7491-ada3-295878eaa7f5",
+      "item": {
+        "type": "enteredReviewMode",
+        "id": "01a17c69-6251-76a0-b436-3c2891fd6d6b",
+        "review": "Reply with the word LGTM. Do not run any tools."
+      },
+      "startedAtMs": 1793088643665,
+      "completedAtMs": 1793088643665
+    },
+    {
+      "turnId": "01a17c69-629a-7063-8c99-7827a30dbac8",
+      "item": {
+        "type": "userMessage",
+        "id": "01a17c69-672d-7331-b095-d285fe3ff0e6",
+        "clientId": null,
+        "content": [
+          {
+            "type": "text",
+            "text": "Reply with the word LGTM. Do not run any tools.",
+            "text_elements": []
+          }
+        ]
+      },
+      "startedAtMs": 1793088644910,
+      "completedAtMs": 1793088644910
+    },
+    {
+      "turnId": "01a17c69-624f-7491-ada3-295878eaa7f5",
+      "item": {
+        "type": "exitedReviewMode",
+        "id": "01a17c69-6fcd-7c51-ba44-e3cd0b094266",
+        "review": "LGTM"
+      },
+      "startedAtMs": 1793088647117,
+      "completedAtMs": 1793088647117
+    },
+    {
+      "turnId": "01a17c69-624f-7491-ada3-295878eaa7f5",
+      "item": {
+        "type": "agentMessage",
+        "id": "msg_01a17c69-6fce-75a0-a25b-9e7215aff77a",
+        "text": "LGTM",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+      },
+      "startedAtMs": 1793088647118,
+      "completedAtMs": 1793088647118
+    }
+  ],
+  "nextCursor": null,
+  "backwardsCursor": "{\"requestedThreadId\":\"01a17c69-2e6a-72e1-a64f-16f6e5cf1998\",\"rolloutOrdinal\":12,\"includeAnchor\":true,\"scope\":{\"kind\":\"itemsByCreatedAtOrdinal\"}}"
+}

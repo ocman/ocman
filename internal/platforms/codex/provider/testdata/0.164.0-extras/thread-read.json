@@ -1,0 +1,53 @@
+{
+  "thread": {
+    "id": "01a17c69-2e6a-72e1-a64f-16f6e5cf1998",
+    "environments": [
+      {
+        "environmentId": "local",
+        "cwd": "/fixture/repo",
+        "runtimeWorkspaceRoots": [
+          "/fixture/repo"
+        ]
+      }
+    ],
+    "extra": null,
+    "sessionId": "01a17c69-2e6a-72e1-a64f-16f6e5cf1998",
+    "forkedFromId": null,
+    "parentThreadId": null,
+    "preview": "Reply with the word ready.",
+    "ephemeral": false,
+    "section": null,
+    "sectionEnteredAt": null,
+    "projectId": null,
+    "historyMode": "paginated",
+    "modelProvider": "openai",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": null,
+    "createdAt": 1793088630,
+    "updatedAt": 1793088647,
+    "recencyAt": 1793088643,
+    "status": {
+      "type": "idle"
+    },
+    "path": "/fixture/home/sessions/2026/10/27/rollout-2026-10-27T09-10-30-01a17c69-2e6a-72e1-a64f-16f6e5cf1998.jsonl",
+    "cwd": "/fixture/repo",
+    "cliVersion": "0.164.0",
+    "originator": "ocman",
+    "source": "vscode",
+    "canAcceptDirectInput": true,
+    "threadSource": null,
+    "agentNickname": null,
+    "agentRole": null,
+    "gitInfo": null,
+    "name": null,
+    "daybreakEnabled": null,
+    "turns": []
+  },
+  "readState": {
+    "firstUnread": {
+      "type": "turn",
+      "turnId": "01a17c69-2fb4-78c3-a3c7-8046d82bbff8"
+    },
+    "revision": "dfad371c-2058-401e-9ab6-793103f9640c"
+  }
+}

@@ -11,6 +11,7 @@ import { Tooltip } from './Tooltip';
 const META: Record<string, { label: string; short: string; icon: string }> = {
   opencode: { label: 'OpenCode', short: 'OC', icon: '/platform-opencode.svg' },
   claudecode: { label: 'Claude Code', short: 'CC', icon: '/platform-claudecode.svg' },
+  codex: { label: 'Codex', short: 'CX', icon: '/platform-codex.svg' },
 };
 
 /**

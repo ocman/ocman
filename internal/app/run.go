@@ -20,6 +20,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/opencodeskills"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/claude/transport"
+	codextransport "github.com/NoUseFreak/ocman/internal/platforms/codex/transport"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
 	"github.com/NoUseFreak/ocman/internal/platformsettings"
@@ -47,7 +48,7 @@ func Run(buildVersion string, skills map[string][]byte) {
 }
 
 func run() {
-	if claudecode.RunProviderCommand(os.Args[1:]) || claudecode.RunHookCommand(os.Args[1:], os.Stdin) {
+	if codextransport.RunProviderCommand(os.Args[1:]) || claudecode.RunProviderCommand(os.Args[1:]) || claudecode.RunHookCommand(os.Args[1:], os.Stdin) {
 		return
 	}
 	// Wails's binding generator runs the binary with WAILS_BINDINGS set to

@@ -46,6 +46,7 @@ func TestSettings(t *testing.T) {
 		request("POST", body, 400, "")
 	}
 	request("PUT", "", 405, "")
+	request("POST", `{"enabled":["opencode","codex"]}`, 200, `"enabled":["codex","opencode"]`)
 	request("POST", `{"enabled":["claudecode"]}`, 200, `"enabled":["claudecode"]`)
 	if err := store.Close(); err != nil {
 		t.Fatal(err)

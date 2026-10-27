@@ -237,8 +237,8 @@ Authorization and other permanent client errors wait for an explicit refresh.
 
 ## Also included
 
-- **Managed agents.** Ocman launches `opencode serve` and its Claude Code
-  supervisors headlessly on one tmux server of its own, `ocman-agents`, without
+- **Managed agents.** Ocman launches `opencode serve` and its Claude Code and
+  Codex supervisors headlessly on one tmux server of its own, `ocman-agents`, without
   loading your tmux configuration.
   Launch and restart do not control your default tmux server. Inspect managed
   sessions with `tmux -L ocman-agents list-sessions` on the owning machine.

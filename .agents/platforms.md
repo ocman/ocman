@@ -2,7 +2,7 @@
 
 ## Terminology and adapters
 
-- A platform is the tool producing a session, currently OpenCode or Claude Code.
+- A platform is the tool producing a session: OpenCode, Claude Code or Codex.
 - A backend serves a platform through the internal socket protocol.
 - A model provider is an LLM service, such as Anthropic or OpenAI.
 - An agent is a composer-level role, such as `build`, `plan` or a user subagent.
@@ -76,6 +76,18 @@ sessions and helpers. Its transport mirrors Python Agent SDK 0.2.166, initialize
   live children before prompting, acknowledges controls and settles foreground
   results from session state independently of background-task events. Preserve
   the CLI's native prompt/settings preset.
+
+## Codex
+
+`internal/platforms/codex` follows the same backend protocol as Claude, with
+one machine-wide supervisor (keyed by `<data>/codex-supervisor`) hosting one
+`codex app-server` for every thread. History, the model and command catalog
+and the account use a separate read-only app-server, so browsing never
+launches the supervisor. Token usage is the one value read from rollout files.
+`codexprovider.Converter` is the only Codex-to-v1 converter. Tests use
+`codextest` fakes and the recorded fixtures under
+`codex/provider/testdata/<version>`, never the real `codex`; re-record with the
+`codexrecord`-tagged recorder. Codex is opt-in: `-platforms` defaults exclude it.
 
 ## OpenCode v1 and v2
 
