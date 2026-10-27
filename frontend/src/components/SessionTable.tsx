@@ -18,9 +18,11 @@ interface Props {
   includeArchived?: boolean;
   /** The caller already applied the shared archive/snooze/pending-prompt rules. */
   prefiltered?: boolean;
+  /** Owner-qualified `${platform}:${id}` keys whose accounting is not ready. */
+  activityPendingKeys?: ReadonlySet<string>;
 }
 
-export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered }: Props) {
+export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered, activityPendingKeys }: Props) {
   const phone = useIsPhone();
   const { archivingSessionIds, locallyArchivedSessionIds, archiveError, handleArchiveSession } = useSessionTableArchive();
 
@@ -63,6 +65,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived, 
       <tbody>
         {nestSessions(visibleSessions).map(({ session, depth }) => <SessionTableRow
           key={session.id} session={session} depth={depth} showProject={showProject}
+          activityPending={activityPendingKeys?.has(`${session.platform}:${session.id}`)}
           archiving={archivingSessionIds.has(session.id)} onArchive={(event, row) => { void handleArchiveSession(event, row); }} />)}
       </tbody>
     </DataTable>

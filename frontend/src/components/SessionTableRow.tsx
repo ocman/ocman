@@ -17,11 +17,12 @@ interface Props {
   depth: number;
   showProject?: boolean;
   archiving: boolean;
+  activityPending?: boolean;
   onArchive: (event: MouseEvent, session: Session) => void;
 }
 
 /** Shared by flat and grouped tables; desktop keeps its existing action cell. */
-export function SessionTableRow({ session, depth, showProject, archiving, onArchive }: Props) {
+export function SessionTableRow({ session, depth, showProject, archiving, onArchive, activityPending }: Props) {
   const navigate = useNavigate();
   const phone = useIsPhone();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
@@ -46,7 +47,7 @@ export function SessionTableRow({ session, depth, showProject, archiving, onArch
       </Link>
     </td>
     {showProject && <td className="mono"><ShortPath path={session.directory} /></td>}
-    <td className="mono">{session.messageCount} msgs &middot; {formatDuration(session.durationMs)}</td>
+    <td className="mono">{activityPending ? 'Loading activity…' : <>{session.messageCount} msgs &middot; {formatDuration(session.durationMs)}</>}</td>
     <td><span title={new Date(session.timeCreated).toLocaleString()}>{relativeTime(session.timeCreated)}</span></td>
     <td className="session-action-cell session-swipe-actions">
       {phone && <SnoozeButton session={session} disabled={archiving} open={snoozeOpen} onOpenChange={setSnoozeOpen} onBusyChange={setSnoozing} />}

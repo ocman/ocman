@@ -48,11 +48,29 @@ export function ProjectDetail() {
   const projectsQ = useProjects();
   const identity = projectIdentityIndex(projectsQ.data ?? []);
   const sessionsQ = useSessions(
+    { sinceHours, limit: 0 },
+    { poll: true, enabled: !!directory },
+  );
+  // Accounting can involve slow platform enrichment. Never gate browsing on it.
+  const accountingQ = useSessions(
     { sinceHours, limit: 0, accounting: true },
     { poll: true, enabled: !!directory },
   );
   const projectKey = identity(directory ?? '', ownerId ?? undefined).key;
-  const sessions = (sessionsQ.data ?? []).filter(s => identity(s.directory || '', s.remoteId).key === projectKey);
+  const accounting = new Map((accountingQ.data ?? []).map(s => [`${s.platform}:${s.id}`, s]));
+  const activityPendingKeys = new Set<string>();
+  const sessions = (sessionsQ.data ?? [])
+    .filter(s => identity(s.directory || '', s.remoteId).key === projectKey)
+    .map(s => {
+      const key = `${s.platform}:${s.id}`;
+      const totals = accounting.get(key);
+      if (!totals || totals.timeUpdated < s.timeUpdated) {
+        activityPendingKeys.add(key);
+        return s;
+      }
+      // Compact rows remain authoritative for status, archive flags and titles.
+      return { ...s, messageCount: totals.messageCount, durationMs: totals.durationMs };
+    });
   const sessionsLoaded = !sessionsQ.isLoading && !projectsQ.isLoading;
   const search = searchParams.get('q') || '';
   const q = search.trim();
@@ -96,7 +114,7 @@ export function ProjectDetail() {
           onClick={() => setExcludeArchived(!excludeArchived)}
         >Exclude archived</Button>
       </ButtonGroup>
-      <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
+      <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} activityPendingKeys={activityPendingKeys} />
     </ProjectShell>
   );
 }
