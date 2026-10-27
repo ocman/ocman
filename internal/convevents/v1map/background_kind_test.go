@@ -22,6 +22,20 @@ func TestBackgroundAgentKind(t *testing.T) {
 	}
 }
 
+func TestBackgroundLifecycleDeclaration(t *testing.T) {
+	for _, lifecycle := range []string{"service", "task", "", "unknown"} {
+		raw := json.RawMessage(`{"id":"shell","description":"watch","lifecycle":"` + lifecycle + `"}`)
+		ev := background(1, []json.RawMessage{raw})
+		want := lifecycle
+		if lifecycle == "unknown" {
+			want = ""
+		}
+		if len(ev.Tasks) != 1 || ev.Tasks[0].Lifecycle != want {
+			t.Fatalf("lifecycle %q: %+v", lifecycle, ev)
+		}
+	}
+}
+
 func TestBackgroundEventsStayInTheirSession(t *testing.T) {
 	// Directory-wide streams feed all three subscriptions. Even a known child
 	// must not overwrite its parent's aggregate background-work snapshot.

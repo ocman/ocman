@@ -59,6 +59,8 @@ const rows: Array<[string, () => Promise<unknown>, string, string, unknown?]> = 
   ['searchDirectories', () => api.searchDirectories('/r', 'oc', 5), 'GET', '/api/filesystem/directory-search?q=oc&root=%2Fr&limit=5'],
   ['searchDirectories bare', () => api.searchDirectories(undefined, 'oc'), 'GET', '/api/filesystem/directory-search?q=oc'],
   ['sessionsNotify', () => api.sessionsNotify({ limit: 3 }), 'GET', '/api/sessions/notify?limit=3'],
+  ['sessionBackgroundTasks', () => api.sessionBackgroundTasks('s/1', 'r-owner:opencode'), 'GET', '/api/session/s%2F1/background?platform=r-owner%3Aopencode'],
+  ['setBackgroundLifecycle', () => api.setBackgroundLifecycle('s/1', 'shell/1', 'r-owner:opencode', 'service'), 'PUT', '/api/session/s%2F1/background/shell%2F1/lifecycle?platform=r-owner%3Aopencode', { lifecycle: 'service' }],
   ['session peek', () => api.session('s', 10, 20, undefined, 'claudecode', true), 'GET', '/api/session/s?limit=10&offset=20&platform=claudecode&peek=1'],
   ['listShareLinks', () => api.listShareLinks('s'), 'GET', '/api/session/s/shares'],
   ['createShareLink', () => api.createShareLink('s'), 'POST', '/api/session/s/share'],

@@ -14,6 +14,7 @@ type activity struct {
 	foreground map[string]any
 	shells     map[string]string // shell ID -> session ID
 	commands   map[string]string
+	lifecycles map[string]string
 	parents    map[string]string
 	titles     map[string]string
 }
@@ -51,6 +52,10 @@ func (a *activity) addShell(info map[string]any) string {
 		a.commands = map[string]string{}
 	}
 	a.commands[id] = str(info, "command")
+	if a.lifecycles == nil {
+		a.lifecycles = map[string]string{}
+	}
+	a.lifecycles[id] = str(obj(info, "metadata"), "lifecycle")
 	return owner
 }
 

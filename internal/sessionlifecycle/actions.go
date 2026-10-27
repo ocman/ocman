@@ -22,7 +22,7 @@ func writeSessionError(w http.ResponseWriter, msg string, err error) {
 		http.Error(w, ve.Error(), http.StatusBadRequest)
 		return
 	}
-	if errors.Is(err, sessionsvc.ErrNoPlatformAvailable) {
+	if errors.Is(err, sessionsvc.ErrNoPlatformAvailable) || errors.Is(err, platforms.ErrRemoteOffline) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}

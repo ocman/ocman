@@ -2,6 +2,8 @@ package sidebar
 
 // Only pending observations enter the recursive parent walk. Normal browsing
 // never constructs the entire platform's parent map. All edges are source scoped.
+// Background completion gates survive a foreground lease expiring, but never
+// cross an adapter generation or borrow another source's task ownership.
 const selectSessions = `WITH RECURSIVE runtime AS (
  SELECT json_extract(value,'$.Owner') AS owner,json_extract(value,'$.Platform') AS platform,json_extract(value,'$.Source') AS source,json_extract(value,'$.Generation') AS generation FROM json_each(?)
 ), requested AS (SELECT value AS id FROM json_each(?)), viewer AS (SELECT ? AS external), cutoffs AS (SELECT key AS id,value AS at FROM json_each(?)), connections AS (
@@ -32,7 +34,7 @@ const selectSessions = `WITH RECURSIVE runtime AS (
  CASE WHEN c.origin='routine' THEN c.origin_id WHEN pc.origin='routine' THEN pc.origin_id ELSE '' END,
  CASE WHEN c.origin='factory' THEN c.origin_id WHEN pc.origin='factory' THEN pc.origin_id ELSE '' END,
  s.inferred_status,s.last_role,s.last_finish,s.last_error,COALESCE(o.status,''),COALESCE(o.resets_at,0),x.source_key IS NOT NULL,
- COALESCE(f.permission,0),COALESCE(f.question,0),COALESCE(pin.pinned_at,0),a.session_id IS NOT NULL,
+ COALESCE(f.permission,0),COALESCE(f.question,0),COALESCE(bg.background_tasks,0),COALESCE(bg.background_services,0),COALESCE(pin.pinned_at,0),a.session_id IS NOT NULL,
  COALESCE(a.session_time_updated,0),COALESCE(a.snoozed_until,0),COALESCE(ap.archived_at,0),
  CASE WHEN viewer.external THEN COALESCE(h.at,0) ELSE COALESCE(v.session_time_updated,0) END,v.session_id IS NOT NULL,COALESCE(v.interrupted,0),COALESCE((SELECT value FROM core.setting WHERE key='session.archive_resurface'),'halt'),
  CASE WHEN (CASE WHEN viewer.external THEN COALESCE(h.at,0) ELSE COALESCE(v.session_time_updated,0) END)>=s.updated_at THEN 0 ELSE
@@ -43,6 +45,7 @@ const selectSessions = `WITH RECURSIVE runtime AS (
  LEFT JOIN live o ON o.native_id=c.native_id AND o.source_key=c.source_key AND o.platform=c.platform
  LEFT JOIN connections x ON x.owner_id=i.owner_id AND x.platform=i.platform AND x.source_key=i.source_key
   LEFT JOIN flags f ON f.id=s.id
+  LEFT JOIN main.sidebar_observation bg ON bg.native_id=c.native_id AND bg.owner_id=c.owner_id AND bg.platform=c.platform AND bg.source_key=c.source_key AND bg.generation=(SELECT generation FROM runtime WHERE owner=c.owner_id AND platform=c.platform AND source=c.source_key)
   LEFT JOIN halt_flags hlt ON hlt.id=s.id
   LEFT JOIN main.sidebar_attention att ON att.instance_id=s.instance_id AND att.session_id=s.id
  LEFT JOIN main.sidebar_branch b ON b.owner_id=i.owner_id AND b.directory=s.directory

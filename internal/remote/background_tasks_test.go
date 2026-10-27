@@ -16,3 +16,14 @@ func TestTaskStopNeverReachesOlderRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBackgroundLifecycleNeverReachesOlderRemote(t *testing.T) {
+	p := &remotePlatform{capsSet: true}
+	if _, err := p.BackgroundTasks(t.Context(), "s1"); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatal(err)
+	}
+	err := p.SetBackgroundLifecycle(t.Context(), platforms.SetBackgroundLifecycleRequest{SessionID: "s1", TaskID: "shell", Lifecycle: "service"})
+	if !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatal(err)
+	}
+}

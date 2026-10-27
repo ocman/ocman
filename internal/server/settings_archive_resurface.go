@@ -19,10 +19,7 @@ func (s *Server) archiveResurfaceMode(ctx context.Context) (string, error) {
 }
 
 func shouldResurfaceSession(session db.Session, archivedAt int64, mode string) bool {
-	if session.TimeUpdated <= archivedAt {
-		return false
-	}
-	return mode == "activity" || session.Status != db.StatusBusy
+	return db.ShouldResurfaceSession(session, archivedAt, mode)
 }
 
 type archiveResurfaceBody struct {

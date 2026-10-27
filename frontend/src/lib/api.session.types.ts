@@ -39,6 +39,8 @@ export interface Session {
   liveConnection: boolean;
   pendingPermission: boolean;
   pendingQuestion: boolean;
+  backgroundTaskCount?: number;
+  backgroundServiceCount?: number;
   archived: boolean;
   snoozedUntil?: number;
   seen: boolean;

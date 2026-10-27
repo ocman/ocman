@@ -22,6 +22,7 @@ type Sessions interface {
 	RunShell(context.Context, string, platforms.RunShellRequest) error
 	Rename(context.Context, string, platforms.RenameSessionRequest) error
 	Abort(context.Context, string, platforms.AbortRequest) error
+	SetBackgroundLifecycle(context.Context, string, platforms.SetBackgroundLifecycleRequest) error
 	Revert(context.Context, string, platforms.RevertSessionRequest) error
 	Unrevert(context.Context, string, platforms.UnrevertSessionRequest) error
 	Compact(context.Context, string, platforms.CompactRequest) error
@@ -66,6 +67,8 @@ func (m *Module) Routes(r module.Router) {
 		{"POST /api/session/{id}/shell", m.HandleSessionShell},
 		{"POST /api/session/{id}/abort", m.HandleSessionAbort},
 		{"POST /api/session/{id}/background/{taskID}/stop", m.HandleBackgroundTaskStop},
+		{"GET /api/session/{id}/background", m.HandleBackgroundTasks},
+		{"PUT /api/session/{id}/background/{taskID}/lifecycle", m.HandleBackgroundLifecycle},
 		{"POST /api/session/{id}/revert", m.HandleSessionRevert},
 		{"POST /api/session/{id}/unrevert", m.HandleSessionUnrevert},
 		{"POST /api/session/{id}/compact", m.HandleSessionCompact},

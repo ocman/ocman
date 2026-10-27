@@ -38,6 +38,8 @@ var callHandlers = map[string]callHandler{
 	"RespondQuestion":         (*Server).RespondQuestion,
 	"RejectQuestion":          (*Server).RejectQuestion,
 	"Abort":                   (*Server).Abort,
+	"BackgroundTasks":         (*Server).BackgroundTasks,
+	"SetBackgroundLifecycle":  (*Server).SetBackgroundLifecycle,
 	"RenameSession":           (*Server).RenameSession,
 	"SetPermissionRules":      (*Server).SetPermissionRules,
 	"SetNativePermissionMode": (*Server).SetPermissionRules,

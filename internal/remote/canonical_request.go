@@ -39,6 +39,8 @@ func (s *Server) decodeSessionRequest(req *pb.CallReq, dst any) error {
 		id, required = in.SessionID, true
 	case *platforms.AbortRequest:
 		id, required = in.SessionID, true
+	case *platforms.SetBackgroundLifecycleRequest:
+		id, required = in.SessionID, true
 	case *platforms.RenameSessionRequest:
 		id, required = in.SessionID, true
 	case *platforms.SetPermissionRulesRequest:

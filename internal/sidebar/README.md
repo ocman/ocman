@@ -22,6 +22,13 @@ every 500 ms. It never lists transcripts, contacts supervisors or discovers
 directories. Observations carry an adapter generation and a three-second lease;
 a restart, a disconnected stream or an expired lease cannot establish busy.
 Only pending prompts enter the bounded, source-scoped native ancestor walk.
+Background task/service counts are checkpointed in the same transaction. Known
+unfinished work continues to gate completion-based archive resurfacing when the
+foreground lease expires; disconnection is not task completion. Generation
+checks still prevent borrowing background observations from another runtime.
+Only headless streams update these counts. Lifecycle overrides are stored in
+the owner-local catalogue and applied before checkpointing. Count changes notify
+the browser only after the checkpoint, without emitting a foreground idle edge.
 
 Branch observations are persisted when the owner's existing Git-info endpoint
 samples a directory. Older branch responses cannot overwrite newer samples.

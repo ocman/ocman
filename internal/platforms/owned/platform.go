@@ -26,6 +26,7 @@ func (a *Adapter) Available(ctx context.Context) bool {
 // history; there is no native fallback to serve them.
 func (a *Adapter) Capabilities() platforms.Capabilities {
 	caps := a.native.Capabilities()
+	caps.BackgroundTaskLifecycle = caps.BackgroundTaskStop
 	if _, ok := a.native.(platforms.StoredDetailProjector); !ok {
 		caps.FileChanges, caps.SessionInfo = false, false
 	}

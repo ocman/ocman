@@ -107,6 +107,11 @@ stored-message guesses.
   creation, exit and deletion. Ignore unrelated ownerless shells. Complete stream
   ownership bootstrap before headers, then replay buffered lifecycle events so
   background snapshots cannot lose a shell's final completion event.
+- Completion-based archive resurfacing uses `db.ShouldResurfaceSession`: finite
+  background tasks delay it, explicitly declared services do not, and pending
+  prompts can resurface early. Unknown lifecycle declarations default to task.
+  Owner-local lifecycle overrides live in sessioncatalog; never infer services
+  from command names or duration, or use browser replay as archive activity.
 - Do not reintroduce `STATUS_GRACE_MS` or sticky-busy sidebar merging.
 - Conversation reads are composed: `convstream.Hub.Compose` lays streamed
   content stored history lacks over `GET /api/session/{id}` and returns

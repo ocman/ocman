@@ -117,8 +117,12 @@ by a replied event with a cancelled reason.
 Backends may also publish `ocman.session.background` with
 `{sessionID, count}`. This is an absolute nonnegative count of tracked background
 tasks, not a delta. A leased browser snapshot includes the current count, zero
-included; `session.idle` clears it. Older clients can ignore this informational
-event without changing turn lifecycle or queue ordering.
+included; foreground `session.idle` does not clear it. Optional `tasks` entries
+carry `id`, `description`, `kind` and `lifecycle`. `lifecycle: "service"` explicitly
+declares persistent work; missing or unknown values mean a finite task. Service
+classification affects completion-based archive resurfacing, never foreground
+status or queue ordering. User overrides are persisted by the owning ocman
+instance, separately from the native declaration.
 
 A permission prompt's `patterns` and `always` use OpenCode's wildcard syntax
 plus one escape (`ExactPattern`, `PatternValue` in `pattern.go`): a backslash

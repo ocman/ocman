@@ -31,7 +31,9 @@ func (a *Adapter) ProxyEvents(ctx context.Context, id string, out io.Writer, flu
 }
 
 func (a *Adapter) SessionEventWriter(ctx context.Context, out io.Writer) io.Writer {
-	return a.eventWriter(ctx, out)
+	w := a.eventWriter(ctx, out)
+	w.observe = a.observeBackground
+	return w
 }
 
 func (a *Adapter) eventWriter(ctx context.Context, out io.Writer) *eventWriter {
@@ -50,6 +52,7 @@ func (a *Adapter) eventWriter(ctx context.Context, out io.Writer) *eventWriter {
 }
 
 type eventWriter struct {
+	observe   func([]byte, string)
 	ctx       context.Context
 	out       io.Writer
 	projector sessionview.Projector
@@ -122,6 +125,9 @@ func (w *eventWriter) frame(frame []byte) ([]byte, error) {
 		return nil, err
 	}
 	var result [][]byte
+	if w.observe != nil {
+		w.observe(raw, eventKind)
+	}
 	written := false
 	for _, line := range lines {
 		line = bytes.TrimSuffix(line, []byte("\r"))

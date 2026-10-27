@@ -80,6 +80,14 @@ func (a *Adapter) storedInstanceSessions(ctx context.Context, instance statev2.I
 	if instance.SourceKey != a.source.SourceKey {
 		return rows, nil
 	}
+	background, err := a.backgroundSnapshots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i, row := range native {
+		bg := background[row.ID]
+		rows[i].BackgroundTaskCount, rows[i].BackgroundServiceCount = bg.Count, serviceCount(bg)
+	}
 	if err := a.checkSource(ctx); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

@@ -3,8 +3,13 @@ import type { AgentInfo, NewSessionTarget, PrepareSessionResponse, StartSessionR
   ResolveTargetsResponse, Session, NotifyEntry, SessionDetail, SessionChanges, SessionInfo, TaskSessionData,
   SessionModelsResponse, QueuedMessage, PermissionRule, SlashCommand, ShareLink, GlobalShareLink,
   SharedConversation, PermissionRequest, QuestionRequest } from './api.types';
+import type { BackgroundTask } from './sessionBackgroundTasks';
 
 export const sessionApi = {
+  sessionBackgroundTasks: (sessionId: string, platform: string, signal?: AbortSignal) =>
+    fetchJSON<{ count: number; tasks: BackgroundTask[] }>(`/api/session/${encodeURIComponent(sessionId)}/background${queryString({ platform })}`, signal),
+  setBackgroundLifecycle: (sessionId: string, taskId: string, platform: string, lifecycle: 'task' | 'service') =>
+    postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/background/${encodeURIComponent(taskId)}/lifecycle${queryString({ platform })}`, { lifecycle }, { method: 'PUT', parseJSON: false }),
   stopBackgroundTask: (sessionId: string, taskId: string, platform: string) =>
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/background/${encodeURIComponent(taskId)}/stop${queryString({ platform })}`, undefined, { parseJSON: false }),
   runningSessionCount: (signal?: AbortSignal) =>

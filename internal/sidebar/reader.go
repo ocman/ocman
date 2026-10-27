@@ -115,7 +115,7 @@ func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		var hasArchive, hasSeen, seenInterrupted bool
 		if err := rows.Scan(&row.ID, &row.Platform, &row.ProjectID, &row.ParentID, &row.Title, &row.Directory, &row.TimeCreated, &row.TimeUpdated, &row.LastMessageAt, &row.LastTurnCompletedAt, &row.LastUserPromptAt, &row.LastHaltAt, &row.Branch, &row.Origin, &row.OriginID,
 			&row.RoutineID, &row.FactoryAttemptID, &inferred, &role, &finish, &lastError, &liveStatus, &row.ResetsAt, &row.LiveConnection, &row.PendingPermission, &row.PendingQuestion,
-			&row.PinnedAt, &hasArchive, &archiveAt, &row.SnoozedUntil, &projectArchiveAt, &row.SeenTimeUpdated, &hasSeen, &seenInterrupted, &mode, &row.UnreadCount); err != nil {
+			&row.BackgroundTaskCount, &row.BackgroundServiceCount, &row.PinnedAt, &hasArchive, &archiveAt, &row.SnoozedUntil, &projectArchiveAt, &row.SeenTimeUpdated, &hasSeen, &seenInterrupted, &mode, &row.UnreadCount); err != nil {
 			return nil, err
 		}
 		status := db.SessionStatus(inferred)
@@ -125,13 +125,13 @@ func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 			status = db.InferStoredSessionStatus(role, finish, lastError)
 		}
 		row.Status = status
-		platforms.OverlaySessionObservation(&row, &platforms.LiveState{Status: liveStatus, PendingPermission: row.PendingPermission, PendingQuestion: row.PendingQuestion}, row.LiveConnection)
+		platforms.OverlaySessionObservation(&row, &platforms.LiveState{Status: liveStatus, PendingPermission: row.PendingPermission, PendingQuestion: row.PendingQuestion, BackgroundTaskCount: row.BackgroundTaskCount, BackgroundServiceCount: row.BackgroundServiceCount}, row.LiveConnection)
 		row.Pinned = row.PinnedAt > 0
 		row.Seen = hasSeen && row.SeenTimeUpdated >= row.TimeUpdated && (row.Status != db.StatusInterrupted || seenInterrupted)
 		if row.Seen {
 			row.UnreadCount = 0
 		}
-		row.Archived = hasArchive && (row.TimeUpdated <= archiveAt || (mode != "activity" && row.Status == db.StatusBusy))
+		row.Archived = hasArchive && !db.ShouldResurfaceSession(row, archiveAt, mode)
 		row.Archived = row.Archived || (projectArchiveAt > 0 && row.TimeUpdated <= projectArchiveAt)
 		row.RemoteID, row.RemoteName = "local", "This machine"
 		out = append(out, row)

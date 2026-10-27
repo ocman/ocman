@@ -1827,7 +1827,7 @@ flowchart TD
     SSE -->|events| Hub
     Hub -->|ocman.settings.changed: advance settings query generation| Stores
     Hub -->|foreground status + independent background shell/agent details| Stores
-    Comp -->|capability-gated individual task stop| API
+    Comp -->|owner-routed task stop + task/service override| API
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
     Comp <-->|image preview query, Back/Forward| Shell
@@ -1877,12 +1877,25 @@ flowchart TD
   OpenCode's disposable live activity tracker follows native parent links from
   active sessions, restores them before stream headers on reconnect, and reports
   session status from foreground execution only. Shells and child agents do not
-  hold an idle session Working or prevent archive resurfacing. Managed Claude
+  hold an idle session Working. Finite background tasks do prevent completion-based
+  archive resurfacing; explicitly declared persistent services do not. Managed Claude
   likewise settles foreground results independently of its background-task ledger.
   It never uses ocman's independent worktree links. Child completion updates
   ancestor counts without changing ancestor status; a running parent
   stays Working while it processes the result. Agent rows carry `kind: "agent"`
   and do not offer the shell-only Stop action.
+  Unknown lifecycle declarations default to `task`, without command-name or
+  duration heuristics. OpenCode shell `metadata.lifecycle: "service"` declares a
+  persistent service. The popover's Task/Service control, gated by
+  `backgroundTaskLifecycle`, saves an owner-local per-session/task override through
+  sessionlifecycle, sessionsvc and the owning Platform, including over gRPC.
+  Only headless event consumers update archive activity; browser replay cannot
+  resurrect completed tasks. The sidebar worker checkpoints task/service counts
+  before broadcasting their changes, including the final task finishing without
+  a foreground status change. Lists, conversation reads, remote overlays and
+  notification polling share `db.ShouldResurfaceSession`; pending permissions
+  and questions bypass background completion gating. Activity-based resurfacing
+  is unchanged.
 - **Shared controls.** `Control` provides buttons, button groups, text inputs,
   textareas, search inputs, and selects with native form semantics and shared
   focus, disabled, and invalid styles. `IconButton`, `RefreshButton`, and

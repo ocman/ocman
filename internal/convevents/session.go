@@ -18,11 +18,7 @@ type QueueChanged struct {
 }
 
 // BackgroundTask is one session-owned background task.
-type BackgroundTask struct {
-	ID          string `json:"id"`
-	Description string `json:"description"`
-	Kind        string `json:"kind,omitempty"` // "agent" distinguishes child sessions from stoppable tasks.
-}
+type BackgroundTask = db.BackgroundTask
 
 type BackgroundChanged struct {
 	Count int              `json:"count"`

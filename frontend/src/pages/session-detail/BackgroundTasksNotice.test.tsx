@@ -93,3 +93,34 @@ it('does not offer individual stopping without the capability', () => {
   expect(screen.getByRole('button', { name: 'Stop pnpm test' })).toBeDisabled();
   expect(screen.getByText('Individual stopping is unavailable from this backend or connection.')).toBeInTheDocument();
 });
+
+it('loads persisted task types and lets the owner switch between task and service', async () => {
+  vi.spyOn(api, 'sessionBackgroundTasks').mockResolvedValue({ count: 1, tasks: [{ ...tasks[0], lifecycle: 'service' }] });
+  const classify = vi.spyOn(api, 'setBackgroundLifecycle').mockResolvedValue(undefined);
+  render(<BackgroundTasksNotice count={1} tasks={[tasks[0]]} sessionId="s1" platform="r-owner:platform" canClassify />);
+  fireEvent.click(screen.getByRole('button', { name: '1 background task running' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Mark pnpm test as task' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Mark pnpm test as task' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Mark pnpm test as service' })).toBeEnabled());
+  expect(classify).toHaveBeenCalledWith('s1', 'one', 'r-owner:platform', 'task');
+  fireEvent.click(screen.getByRole('button', { name: 'Mark pnpm test as service' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Mark pnpm test as task' })).toBeEnabled());
+  expect(classify).toHaveBeenLastCalledWith('s1', 'one', 'r-owner:platform', 'service');
+});
+
+it('reports lifecycle read and mutation failures without changing the task type', async () => {
+  const read = vi.spyOn(api, 'sessionBackgroundTasks').mockRejectedValue(new Error('Offline'));
+  const { unmount } = render(<BackgroundTasksNotice count={1} tasks={[tasks[0]]} sessionId="s1" platform="p" canClassify />);
+  fireEvent.click(screen.getByRole('button', { name: '1 background task running' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not read task types: Offline'));
+  expect(screen.getByRole('button', { name: 'Mark pnpm test as service' })).toBeDisabled();
+  unmount();
+  read.mockResolvedValue({ count: 1, tasks: [tasks[0]] });
+  vi.spyOn(api, 'setBackgroundLifecycle').mockRejectedValue(new Error('Disconnected'));
+  render(<BackgroundTasksNotice count={1} tasks={[tasks[0]]} sessionId="s1" platform="p" canClassify />);
+  fireEvent.click(screen.getByRole('button', { name: '1 background task running' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Mark pnpm test as service' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Mark pnpm test as service' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not classify pnpm test: Disconnected'));
+  expect(screen.getByRole('button', { name: 'Mark pnpm test as service' })).toBeEnabled();
+});

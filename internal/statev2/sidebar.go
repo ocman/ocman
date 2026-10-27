@@ -22,9 +22,10 @@ func refreshSidebar(ctx context.Context, tx *sql.Tx, key Key) error {
 }
 
 type SidebarObservation struct {
-	Status                             string
-	ResetsAt                           int64
-	PendingPermission, PendingQuestion bool
+	BackgroundTasks, BackgroundServices int
+	Status                              string
+	ResetsAt                            int64
+	PendingPermission, PendingQuestion  bool
 }
 
 // BeginSidebarGeneration invalidates all observations from an earlier runtime.
@@ -69,10 +70,10 @@ func (d *DB) ReplaceSidebarObservations(ctx context.Context, scope Instance, gen
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO sidebar_observation
-	 SELECT ?,?,?,key,?,json_extract(value,'$.Status'),COALESCE(json_extract(value,'$.ResetsAt'),0),json_extract(value,'$.PendingPermission'),json_extract(value,'$.PendingQuestion') FROM json_each(?) WHERE true
+	 SELECT ?,?,?,key,?,json_extract(value,'$.Status'),COALESCE(json_extract(value,'$.ResetsAt'),0),json_extract(value,'$.PendingPermission'),json_extract(value,'$.PendingQuestion'),COALESCE(json_extract(value,'$.BackgroundTasks'),0),COALESCE(json_extract(value,'$.BackgroundServices'),0) FROM json_each(?) WHERE true
 	 ON CONFLICT(owner_id,platform,source_key,native_id) DO UPDATE SET generation=excluded.generation,status=excluded.status,
-	 resets_at=excluded.resets_at,pending_permission=excluded.pending_permission,pending_question=excluded.pending_question
-	 WHERE generation!=excluded.generation OR status!=excluded.status OR resets_at!=excluded.resets_at OR pending_permission!=excluded.pending_permission OR pending_question!=excluded.pending_question`, scope.OwnerID, scope.Platform, scope.SourceKey, generation, string(raw))
+	 resets_at=excluded.resets_at,pending_permission=excluded.pending_permission,pending_question=excluded.pending_question,background_tasks=excluded.background_tasks,background_services=excluded.background_services
+	 WHERE generation!=excluded.generation OR status!=excluded.status OR resets_at!=excluded.resets_at OR pending_permission!=excluded.pending_permission OR pending_question!=excluded.pending_question OR background_tasks!=excluded.background_tasks OR background_services!=excluded.background_services`, scope.OwnerID, scope.Platform, scope.SourceKey, generation, string(raw))
 	if err != nil {
 		return err
 	}

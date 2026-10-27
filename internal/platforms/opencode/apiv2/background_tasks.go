@@ -29,7 +29,11 @@ func stopBackgroundTask(c *compat, r *http.Request, m []string) (*http.Response,
 func (a *activity) backgroundDetails() map[string][]map[string]string {
 	out := a.agentDetails()
 	for id, owner := range a.shells {
-		out[owner] = append(out[owner], map[string]string{"id": id, "description": a.commands[id]})
+		task := map[string]string{"id": id, "description": a.commands[id]}
+		if a.lifecycles[id] == "service" {
+			task["lifecycle"] = "service"
+		}
+		out[owner] = append(out[owner], task)
 	}
 	for _, tasks := range out {
 		sort.Slice(tasks, func(i, j int) bool { return tasks[i]["id"] < tasks[j]["id"] })

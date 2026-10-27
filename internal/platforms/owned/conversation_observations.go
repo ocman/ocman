@@ -13,6 +13,12 @@ func (a *Adapter) conversationObservations(ctx context.Context) (func(string) *p
 		return a.native.LiveStatus, nil
 	}
 	observations := maps.Clone(observer.CachedSessionObservations())
+	if observations == nil {
+		observations = map[string]platforms.LiveState{}
+	}
+	if err := a.backgroundObservations(ctx, observations); err != nil {
+		return nil, err
+	}
 	permissions, questions := map[string]bool{}, map[string]bool{}
 	for id, live := range observations {
 		if live.PendingPermission {

@@ -2,6 +2,7 @@ package owned
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -81,7 +82,10 @@ func (a *Adapter) observationScope() statev2.Instance {
 // Its worker copies event caches, never transcript listings or supervisor RPCs.
 func (a *Adapter) SidebarModule() module.Module { return &sidebarWorker{adapter: a} }
 
-type sidebarWorker struct{ adapter *Adapter }
+type sidebarWorker struct {
+	adapter    *Adapter
+	background map[string][2]int
+}
 
 func (w *sidebarWorker) Name() string       { return "sidebar-" + string(w.adapter.ID()) }
 func (*sidebarWorker) Routes(module.Router) {}
@@ -135,13 +139,23 @@ func (w *sidebarWorker) snapshot(ctx context.Context) error {
 		return nil
 	}
 	observations := map[string]statev2.SidebarObservation{}
-	for id, live := range observer.CachedSessionObservations() {
-		observations[id] = statev2.SidebarObservation{Status: live.Status, ResetsAt: live.ResetsAt, PendingPermission: live.PendingPermission, PendingQuestion: live.PendingQuestion}
+	liveRows := maps.Clone(observer.CachedSessionObservations())
+	if liveRows == nil {
+		liveRows = map[string]platforms.LiveState{}
+	}
+	if err := a.backgroundObservations(ctx, liveRows); err != nil {
+		return err
+	}
+	for id, live := range liveRows {
+		observations[id] = statev2.SidebarObservation{Status: live.Status, ResetsAt: live.ResetsAt, PendingPermission: live.PendingPermission, PendingQuestion: live.PendingQuestion, BackgroundTasks: live.BackgroundTaskCount, BackgroundServices: live.BackgroundServiceCount}
 	}
 	expiresAt := time.Now().Add(3 * time.Second).UnixMilli()
 	if source, ok := a.native.(platforms.CachedSessionAvailability); ok && !source.CachedSessionAvailable() {
 		expiresAt = 0
-		observations = nil
 	}
-	return a.history.ReplaceSidebarObservations(ctx, a.observationScope(), a.sidebarGeneration, expiresAt, observations)
+	if err := a.history.ReplaceSidebarObservations(ctx, a.observationScope(), a.sidebarGeneration, expiresAt, observations); err != nil {
+		return err
+	}
+	w.publishBackgroundChanges(ctx, observations)
+	return nil
 }

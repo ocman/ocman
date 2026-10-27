@@ -652,6 +652,10 @@
         "omitempty": false
       },
       {
+        "name": "backgroundTaskLifecycle",
+        "omitempty": false
+      },
+      {
         "name": "backgroundTaskStop",
         "omitempty": false
       },
@@ -872,6 +876,14 @@
         "omitempty": false
       },
       {
+        "name": "backgroundServiceCount",
+        "omitempty": true
+      },
+      {
+        "name": "backgroundTaskCount",
+        "omitempty": true
+      },
+      {
         "name": "branch",
         "omitempty": true
       },
@@ -1059,6 +1071,10 @@
       },
       {
         "name": "kind",
+        "omitempty": true
+      },
+      {
+        "name": "lifecycle",
         "omitempty": true
       }
     ],

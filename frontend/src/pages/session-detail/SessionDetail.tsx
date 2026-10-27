@@ -1027,7 +1027,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         isRunning,
                         footerStatus: (
                           <BackgroundTasksNotice key={`${session.platform}:${session.id}`} count={view.backgroundTaskCount ?? 0} tasks={view.backgroundTasks}
-                            sessionId={session.id} platform={session.platform} canStop={!!caps.backgroundTaskStop && portAvailable} />
+                            sessionId={session.id} platform={session.platform} canStop={!!caps.backgroundTaskStop && portAvailable} canClassify={!!caps.backgroundTaskLifecycle && portAvailable} />
                         ),
                         disabled: !portAvailable || hasPendingPrompt,
                         disabledHint: hasPendingPrompt

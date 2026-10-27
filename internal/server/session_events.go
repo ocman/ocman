@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) sessionEventSink() platforms.SessionEventSink {
-	return platforms.SessionEventSink{OnSessionStatus: s.onSessionStatus, OnSessionIdle: func(platform, session string) {
+	return platforms.SessionEventSink{OnSessionBackgroundChanged: s.broadcastSessionChanged, OnSessionStatus: s.onSessionStatus, OnSessionIdle: func(platform, session string) {
 		s.onAgentWaitIdle(platform, session)
 		s.onSessionIdle(platform, session)
 	}}

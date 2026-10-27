@@ -1099,6 +1099,7 @@ export interface PlatformCapabilities {
   respondQuestion: boolean;
   abort: boolean;
   backgroundTaskStop?: boolean;
+  backgroundTaskLifecycle?: boolean;
   compact: boolean;
   /** Whether the platform can fork a session into a new child session. */
   fork: boolean;

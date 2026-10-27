@@ -32,7 +32,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
     summaryAdditions: false, summaryDeletions: false, summaryFiles: false, shareUrl: false, messageCount: false,
     durationMs: false, activeDurationMs: false, totalInputTokens: false, totalOutputTokens: false, totalCost: false,
     totalEstCost: true, totalEffectiveCost: true, status: false, resetsAt: true, liveConnection: false,
-    pendingPermission: false, pendingQuestion: false, archived: false, snoozedUntil: true, seen: false, pinned: false,
+    pendingPermission: false, pendingQuestion: false, backgroundTaskCount: true, backgroundServiceCount: true, archived: false, snoozedUntil: true, seen: false, pinned: false,
     pinnedAt: false, routineId: true, factoryAttemptId: true, seenTimeUpdated: false, unreadCount: false, notice: true,
     projectDefaultModel: true, remoteId: true, remoteName: true, stale: true,
   }),
@@ -40,7 +40,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   Message: flags<Message>()({ id: false, sessionId: false, timeCreated: false, data: false }),
   Part: flags<Part>()({ id: false, messageId: false, sessionId: false, timeCreated: true, data: false }),
   PlatformCapabilities: flags<PlatformCapabilities>()({
-    composer: false, respondPermission: false, respondQuestion: false, abort: false, backgroundTaskStop: true, compact: false, fork: false,
+    composer: false, respondPermission: false, respondQuestion: false, abort: false, backgroundTaskStop: true, backgroundTaskLifecycle: true, compact: false, fork: false,
     forkAtMessage: true, move: false, events: false, agentCatalog: false, modelCatalog: false, slashCommands: false,
     shellExec: false, fileChanges: false, sessionInfo: false, liveConnectionHint: true, autoApprove: false,
     permissionRules: false, nativeAutoPermission: true, exactPatterns: true, revert: true, runtimeRestart: true, pushPrompts: true, autoTitle: true,
@@ -82,7 +82,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   }),
   OceRevertMarker: flags<Oce.OceRevertMarker>()({ messageId: false, partId: true }),
   OceErrorInfo: flags<Oce.OceErrorInfo>()({ name: true, message: false, statusCode: true }),
-  SessionBackgroundTask: flags<BackgroundTask>()({ id: false, description: false, kind: true }),
+  SessionBackgroundTask: flags<BackgroundTask>()({ id: false, description: false, kind: true, lifecycle: true }),
   OceInflight: flags<Oce.OceInflight>()({ messages: false, parts: false }),
   LiveOverlay: flags<Oce.LiveOverlay>()({
     status: false, prompts: false, judge: false, background: false, queue: true, inflight: false, liveConnection: false,

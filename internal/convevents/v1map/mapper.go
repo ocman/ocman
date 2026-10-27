@@ -310,6 +310,7 @@ func background(count int64, raw []json.RawMessage) convevents.BackgroundChanged
 			ID          *string `json:"id"`
 			Description *string `json:"description"`
 			Kind        string  `json:"kind"`
+			Lifecycle   string  `json:"lifecycle"`
 		}
 		if json.Unmarshal(item, &t) != nil || t.ID == nil || *t.ID == "" || t.Description == nil || seen[*t.ID] {
 			continue
@@ -318,7 +319,10 @@ func background(count int64, raw []json.RawMessage) convevents.BackgroundChanged
 		if t.Kind != "agent" {
 			t.Kind = ""
 		}
-		ev.Tasks = append(ev.Tasks, convevents.BackgroundTask{ID: *t.ID, Description: *t.Description, Kind: t.Kind})
+		if t.Lifecycle != "service" && t.Lifecycle != "task" {
+			t.Lifecycle = ""
+		}
+		ev.Tasks = append(ev.Tasks, convevents.BackgroundTask{ID: *t.ID, Description: *t.Description, Kind: t.Kind, Lifecycle: t.Lifecycle})
 	}
 	return ev
 }

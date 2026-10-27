@@ -70,12 +70,13 @@ type SessionWarning struct {
 // OpenCode's /agent endpoint with its "build"/"plan"/subagent roles.
 // Platforms with no such concept report false.
 type Capabilities struct {
-	Composer           bool `json:"composer"`
-	RespondPermission  bool `json:"respondPermission"`
-	RespondQuestion    bool `json:"respondQuestion"`
-	Abort              bool `json:"abort"`
-	BackgroundTaskStop bool `json:"backgroundTaskStop"`
-	Compact            bool `json:"compact"`
+	Composer                bool `json:"composer"`
+	RespondPermission       bool `json:"respondPermission"`
+	RespondQuestion         bool `json:"respondQuestion"`
+	Abort                   bool `json:"abort"`
+	BackgroundTaskStop      bool `json:"backgroundTaskStop"`
+	BackgroundTaskLifecycle bool `json:"backgroundTaskLifecycle"`
+	Compact                 bool `json:"compact"`
 	// Fork reports whether the adapter can branch a session into a new
 	// child session (Platform.ForkSession). Surfaced as caps.fork.
 	Fork bool `json:"fork"`
@@ -154,11 +155,13 @@ type Capabilities struct {
 // out-of-band events (e.g. platform hooks). Adapters that don't track
 // live state return nil from LiveStatus.
 type LiveState struct {
-	Status            string    `json:"status"` // "busy", "waiting", "done", "error"
-	ResetsAt          int64     `json:"resetsAt,omitempty"`
-	PendingPermission bool      `json:"pendingPermission"`
-	PendingQuestion   bool      `json:"pendingQuestion"`
-	LastEventAt       time.Time `json:"lastEventAt"`
+	BackgroundTaskCount    int       `json:"backgroundTaskCount,omitempty"`
+	BackgroundServiceCount int       `json:"backgroundServiceCount,omitempty"`
+	Status                 string    `json:"status"` // "busy", "waiting", "done", "error"
+	ResetsAt               int64     `json:"resetsAt,omitempty"`
+	PendingPermission      bool      `json:"pendingPermission"`
+	PendingQuestion        bool      `json:"pendingQuestion"`
+	LastEventAt            time.Time `json:"lastEventAt"`
 	// CurrentTools lists tool calls that are currently running on
 	// behalf of this session's subagents (Task tool_use blocks).
 	// Populated from PreToolUse / PostToolUse / SubagentStop

@@ -26,6 +26,7 @@ func (a *Adapter) SetEventHandler(handler func(providerprotocol.Event)) {
 				return
 			}
 			writer := a.eventWriter(ctx, nil)
+			writer.observe = a.observeBackground
 			frame, err := writer.frame(append([]byte("data: "), raw...))
 			if err != nil {
 				return

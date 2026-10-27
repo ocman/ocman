@@ -112,18 +112,20 @@ type Session struct {
 	TotalEstCost       float64 `json:"totalEstCost"`
 	TotalEffectiveCost float64 `json:"totalEffectiveCost"`
 	// Always produced by SettleSessionStatus, never raw inference alone.
-	Status            SessionStatus `json:"status"`
-	ResetsAt          int64         `json:"resetsAt,omitempty"`
-	LiveConnection    bool          `json:"liveConnection"`
-	PendingPermission bool          `json:"pendingPermission"`
-	PendingQuestion   bool          `json:"pendingQuestion"`
-	Archived          bool          `json:"archived"`
-	SnoozedUntil      int64         `json:"snoozedUntil"`
-	Seen              bool          `json:"seen"`
-	Pinned            bool          `json:"pinned"`
-	PinnedAt          int64         `json:"pinnedAt"`
-	RoutineID         string        `json:"routineId,omitempty"`
-	FactoryAttemptID  string        `json:"factoryAttemptId,omitempty"`
+	Status                 SessionStatus `json:"status"`
+	ResetsAt               int64         `json:"resetsAt,omitempty"`
+	LiveConnection         bool          `json:"liveConnection"`
+	PendingPermission      bool          `json:"pendingPermission"`
+	PendingQuestion        bool          `json:"pendingQuestion"`
+	BackgroundTaskCount    int           `json:"backgroundTaskCount,omitempty"`
+	BackgroundServiceCount int           `json:"backgroundServiceCount,omitempty"`
+	Archived               bool          `json:"archived"`
+	SnoozedUntil           int64         `json:"snoozedUntil"`
+	Seen                   bool          `json:"seen"`
+	Pinned                 bool          `json:"pinned"`
+	PinnedAt               int64         `json:"pinnedAt"`
+	RoutineID              string        `json:"routineId,omitempty"`
+	FactoryAttemptID       string        `json:"factoryAttemptId,omitempty"`
 	// Session time_updated when viewed. The server stamps this read watermark.
 	SeenTimeUpdated int64 `json:"seenTimeUpdated"`
 	// Messages newer than the read watermark; zero when suppressed or unsupported.

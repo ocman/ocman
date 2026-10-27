@@ -3,6 +3,18 @@ import { initialSessionView, reduceSessionView } from './sessionReducer';
 import { reduceBackgroundTaskCount } from './sessionBackgroundTasks';
 
 describe('background task counts', () => {
+  it('preserves explicit lifecycle declarations and discards unknown declarations', () => {
+    const view = reduceBackgroundTaskCount(initialSessionView('s1'), 3, [
+      { id: 'server', description: 'watch', lifecycle: 'service' },
+      { id: 'tests', description: 'test', lifecycle: 'task' },
+      { id: 'unknown', description: 'work', lifecycle: 'guess' },
+    ]);
+    expect(view.backgroundTasks).toEqual([
+      { id: 'server', description: 'watch', lifecycle: 'service' },
+      { id: 'tests', description: 'test', lifecycle: 'task' },
+      { id: 'unknown', description: 'work' },
+    ]);
+  });
   it('preserves the agent kind through background event reduction', () => {
     const tasks = [{ id: 'child', description: 'Review changes', kind: 'agent' }];
     const view = reduceBackgroundTaskCount(initialSessionView('s1'), 1, tasks);

@@ -40,6 +40,7 @@ type Adapter struct {
 	sidebarMu         sync.Mutex
 	sidebarReader     *sidebar.Reader
 	sidebarGeneration string
+	background        backgroundState
 }
 
 // New binds one owner-local integration to its catalogue and persisted read

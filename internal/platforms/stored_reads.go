@@ -65,6 +65,9 @@ func OverlaySessionObservation(row *db.Session, live *LiveState, connected bool)
 	row.LiveConnection = connected
 	row.PendingPermission, row.PendingQuestion = false, false
 	row.Status = db.SettleSessionStatus(db.TurnUnobserved, false, row.Status)
+	if live != nil {
+		row.BackgroundTaskCount, row.BackgroundServiceCount = live.BackgroundTaskCount, live.BackgroundServiceCount
+	}
 	if live == nil || !connected {
 		return
 	}

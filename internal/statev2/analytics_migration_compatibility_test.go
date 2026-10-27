@@ -15,6 +15,7 @@ func removeIncrementalAnalyticsSchema(t *testing.T, d *DB) {
 
 func removePreparationSchema(t *testing.T, d *DB) {
 	t.Helper()
+	removeBackgroundSchema(t, d)
 	if _, err := d.db.Exec(`DROP TRIGGER IF EXISTS session_preparation_legacy_insert;
 		DROP TABLE IF EXISTS session_identity_plan; DROP TABLE IF EXISTS session_identity_inventory;
 		DROP TABLE IF EXISTS session_preparation`); err != nil {

@@ -1,6 +1,6 @@
 import type { SessionView } from './sessionViewTypes';
 
-export interface BackgroundTask { id: string; description: string; kind?: 'agent' }
+export interface BackgroundTask { id: string; description: string; kind?: 'agent'; lifecycle?: 'task' | 'service' }
 
 export function reduceBackgroundTaskCount(state: SessionView, count: unknown, rawTasks?: unknown): SessionView {
   if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) return state;
@@ -9,7 +9,8 @@ export function reduceBackgroundTaskCount(state: SessionView, count: unknown, ra
   if (count > 0 && Array.isArray(rawTasks)) {
     for (const task of rawTasks) {
       if (!task || typeof task.id !== 'string' || !task.id || typeof task.description !== 'string' || seen.has(task.id)) continue;
-      tasks.push({ id: task.id, description: task.description, ...(task.kind === 'agent' ? { kind: 'agent' as const } : {}) });
+      tasks.push({ id: task.id, description: task.description, ...(task.kind === 'agent' ? { kind: 'agent' as const } : {}),
+        ...(task.lifecycle === 'service' || task.lifecycle === 'task' ? { lifecycle: task.lifecycle } : {}) });
       seen.add(task.id);
     }
   }

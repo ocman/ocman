@@ -12,6 +12,7 @@ import (
 // Advancing the ledger through v6 must not hide that persisted constraint.
 func legacyConfiguringSchema() state.ModuleSchema {
 	legacy := Schema
+	legacy.Tables = []string{"session_catalog", "session_remote_metadata", "session_source_cutover"}
 	legacy.Migrations = []func(*sql.Tx) error{
 		originalCatalogue,
 		func(tx *sql.Tx) error {
