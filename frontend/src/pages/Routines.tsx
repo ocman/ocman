@@ -39,7 +39,10 @@ export function Routines() {
   const error = actionError || loadError;
   const activeList = tab === 'inboxes' ? inboxList : routineList;
   const unavailable = activeList.isError && activeList.data === undefined;
-  const retry = () => { setError(''); void refreshAfterSave(); };
+  const retry = () => {
+    setError('');
+    void load().catch(() => { /* Query state exposes refresh failures and polling recovery. */ });
+  };
   const [inboxDrawer, setInboxDrawer] = useState<string>();
 
   const openCreate = () => {

@@ -12,6 +12,7 @@ import { StrictMode } from 'react';
 import { formatDateTimeShort } from '../lib/format';
 import type { PlatformCapabilityEntry, RoutineRun, WebhookInbox } from '../lib/api.types';
 import { useMachinePlatforms } from '../lib/useCapabilities';
+import { ROUTINES_POLL_MS } from '../lib/routineQueries';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: vi.fn(() => []) }));
@@ -77,6 +78,23 @@ describe('Routines', () => {
     expect(screen.queryByRole('heading', { name: 'Routines are unavailable' })).not.toBeInTheDocument();
     if (empty) expect(screen.getByRole('heading', { name: 'No routines yet' })).toBeVisible();
     else expect(screen.getByRole('row', { name: 'View Morning check history' })).toBeVisible();
+  });
+
+  it('clears a failed Retry alert when polling recovers', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const { client } = renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    await screen.findByRole('row', { name: 'View Morning check history' });
+    vi.mocked(api.routines.list).mockRejectedValue(new Error('Routine list offline'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Routine list offline');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.routines.list).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled());
+    vi.mocked(api.routines.list).mockResolvedValue([routine]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(ROUTINES_POLL_MS); });
+    await waitFor(() => expect(client.getQueryState(['routines'])?.status).toBe('success'));
+    expect(screen.getByRole('row', { name: 'View Morning check history' })).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it.each(['routine-1', 'routine-2'])('keeps the new %s drawer and draft when an earlier save finishes after navigation', async (nextID) => {
