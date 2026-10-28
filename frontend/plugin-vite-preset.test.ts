@@ -1,16 +1,16 @@
 // @vitest-environment node
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { build } from 'vite';
+import { build, createServer } from 'vite';
 import { expect, it } from 'vitest';
 // The preset is plain JavaScript published from sdk/plugin-vite.
 import { ocmanPlugin, SHARED_MODULES } from '../sdk/plugin-vite/index.js';
 
 const sharedEntries = readdirSync(resolve(process.cwd(), 'plugin-shared')).map((f) => `/plugin-shared/${f}`).sort();
 
-function project(source: string) {
-  const root = mkdtempSync(join(tmpdir(), 'ocman-plugin-vite-'));
+function project(source: string, parent = tmpdir()) {
+  const root = mkdtempSync(join(parent, 'ocman-plugin-vite-'));
   writeFileSync(join(root, 'index.tsx'), source);
   writeFileSync(join(root, 'style.css'), '.catalog { color: red; }\n');
   return root;
@@ -55,13 +55,28 @@ it('inlines dynamic imports into the single bundle', async () => {
   expect(await buildProject(root)).toEqual(['index.js']);
 });
 
-it('leaves NODE_ENV and the JSX runtime alone outside vite build, so tests keep React act()', () => {
+it('keeps React development NODE_ENV outside vite build, so tests keep act()', () => {
   const plugin = ocmanPlugin();
   const config = plugin.config as (config: object, env: { command: 'build' | 'serve'; mode: string }) => Record<string, unknown>;
   const serve = config({}, { command: 'serve', mode: 'test' });
   expect(serve.define).toBeUndefined();
-  expect(serve.oxc).toEqual({ jsx: { runtime: 'automatic' } });
   const production = config({}, { command: 'build', mode: 'production' });
   expect(production.define).toEqual({ 'process.env.NODE_ENV': '"production"' });
-  expect(production.oxc).toEqual({ jsx: { runtime: 'automatic', development: false } });
+  // JSX always targets the shared runtime, in every mode.
+  for (const env of [serve, production]) expect(env.oxc).toEqual({ jsx: { runtime: 'automatic', development: false } });
+});
+
+it('transforms JSX outside vite build without importing a non-shared runtime', async () => {
+  // Inside this package so React resolves like in a real plugin project.
+  mkdirSync(resolve(process.cwd(), 'node_modules/.tmp'), { recursive: true });
+  const root = project('export default function Index() { return <p>Serve mode</p>; }\n', resolve(process.cwd(), 'node_modules/.tmp'));
+  const server = await createServer({ root, logLevel: 'silent', configFile: false, server: { middlewareMode: true, hmr: false }, plugins: [ocmanPlugin({ entry: join(root, 'index.tsx') })] });
+  try {
+    const result = await server.transformRequest('/index.tsx');
+    expect(result?.code).toContain('react/jsx-runtime');
+    expect(result?.code).not.toContain('jsx-dev-runtime');
+  } finally {
+    await server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

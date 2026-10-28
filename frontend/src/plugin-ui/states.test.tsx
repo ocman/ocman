@@ -62,7 +62,7 @@ it('shows relative time with the shared exact date and stacked list rows', () =>
     </>);
     const time = screen.getByText('2h ago').closest('time')!;
     expect(time).toHaveAttribute('tabindex', '0');
-    expect(time).toHaveAttribute('aria-label', '2h ago, Oct 28, 10:00');
+    expect(time).toHaveTextContent('2h ago, Oct 28, 10:00');
     expect(screen.getByText('Jan 2, 2025, 07:00')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Active items' })).toHaveTextContent('Furniture');
     expect(screen.getAllByRole('listitem')[0]).toHaveClass('oc-data-table-row');

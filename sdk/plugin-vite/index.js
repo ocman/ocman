@@ -34,13 +34,13 @@ export function ocmanPlugin({ entry = 'src/index.tsx', outDir = 'dist' } = {}) {
     name: 'ocman-plugin-ui',
     enforce: 'pre',
     config(_config, { command }) {
-      // Only `vite build` produces the shipped bundle. Leaving dev and test
-      // runs alone keeps React's development build, which React Testing
-      // Library needs (production React has no act()).
-      const production = command === 'build';
+      // Only `vite build` forces production React. Dev and test runs keep
+      // React's development build, which React Testing Library needs
+      // (production React has no act()). JSX always targets the shared
+      // react/jsx-runtime; the dev runtime is not a host singleton.
       return {
-        ...(production ? { define: { 'process.env.NODE_ENV': JSON.stringify('production') } } : {}),
-        oxc: { jsx: { runtime: 'automatic', ...(production ? { development: false } : {}) } },
+        ...(command === 'build' ? { define: { 'process.env.NODE_ENV': JSON.stringify('production') } } : {}),
+        oxc: { jsx: { runtime: 'automatic', development: false } },
         build: {
           lib: { entry, formats: ['es'], fileName: () => 'index.js', cssFileName: 'index' },
           outDir,

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
-import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { expect, it } from 'vitest';
+import { Link, MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
+import { expect, it, vi } from 'vitest';
 import { ConfirmProvider } from '../components/ConfirmDialog';
 import { useUnsavedChangesGuard } from './useUnsavedChangesGuard';
 
@@ -20,11 +20,15 @@ function Editor() {
 }
 
 function Where() { return <output>{useLocation().pathname + useLocation().search}</output>; }
+function NavigationType() { return <p data-testid="navigation-type">{useNavigationType()}</p>; }
+const onNavigate = vi.fn();
 
 function mount() {
   discarded = undefined;
+  onNavigate.mockClear();
   render(<MemoryRouter initialEntries={['/editor']}><ConfirmProvider>
-    <nav><Link to="/sessions">Sessions</Link></nav>
+    <nav><Link to="/sessions">Sessions</Link><Link to="/inbox" replace onClick={onNavigate}>Inbox</Link></nav>
+    <NavigationType />
     <Routes><Route path="/editor" element={<Editor />} /><Route path="*" element={<p>Other page</p>} /></Routes>
     <Where />
   </ConfirmProvider></MemoryRouter>);
@@ -73,4 +77,16 @@ it('warns on unload only while dirty and confirms its own discard', async () => 
   fireEvent.click(screen.getByRole('button', { name: 'Cancel editing' }));
   fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
   await waitFor(() => expect(discarded).toBe(true));
+});
+
+it('resumes the original link after confirmation, keeping replace and its onClick', async () => {
+  mount();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Inbox' }));
+  expect(onNavigate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('/inbox'));
+  expect(screen.getByTestId('navigation-type')).toHaveTextContent('REPLACE');
+  expect(onNavigate).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

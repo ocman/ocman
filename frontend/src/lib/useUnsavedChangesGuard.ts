@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useConfirm } from './useConfirm';
 
@@ -10,12 +10,12 @@ const discard = {
   destructive: true,
 };
 
-function sameOriginTarget(event: MouseEvent): URL | null {
+function sameOriginTarget(event: MouseEvent): { anchor: HTMLAnchorElement; url: URL } | null {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
   const anchor = (event.target as Element | null)?.closest?.('a[href]');
   if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return null;
   const url = new URL(anchor.href, window.location.href);
-  return url.origin === window.location.origin ? url : null;
+  return url.origin === window.location.origin ? { anchor, url } : null;
 }
 
 /**
@@ -29,16 +29,27 @@ export function useUnsavedChangesGuard(dirty: boolean) {
   const navigate = useNavigate();
   const location = useLocation();
   const current = location.pathname + location.search + location.hash;
+  // Set while replaying an approved click, and once leaving is approved.
+  const approved = useRef(false);
 
   useEffect(() => {
     if (!dirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    approved.current = false;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { if (!approved.current) event.preventDefault(); };
     const onClick = (event: MouseEvent) => {
-      const url = sameOriginTarget(event);
-      if (!url || url.pathname + url.search + url.hash === current) return;
+      if (approved.current) return;
+      const target = sameOriginTarget(event);
+      if (!target || target.url.pathname + target.url.search + target.url.hash === current) return;
       event.preventDefault();
       event.stopPropagation();
-      void confirm(discard).then((ok) => { if (ok) navigate(url.pathname + url.search + url.hash); });
+      void confirm(discard).then((ok) => {
+        if (!ok) return;
+        approved.current = true;
+        // Replay the original click so the link keeps its own behavior,
+        // such as replace navigation and onClick callbacks.
+        if (target.anchor.isConnected) target.anchor.click();
+        else navigate(target.url.pathname + target.url.search + target.url.hash);
+      });
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     // Capture runs before the router's own link handler.

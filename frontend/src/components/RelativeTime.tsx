@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatExactDate, relativeTimeISO } from '../lib/format';
 import { Tooltip } from './Tooltip';
+import './RelativeTime.css';
 
 const SECOND_MS = 1_000;
 const MINUTE_MS = 60_000;
@@ -48,6 +49,7 @@ export function RelativeTimestamp({ value }: { value: string | number | Date }) 
   const iso = date.toISOString();
   const exact = formatExactDate(date);
   return <Tooltip content={exact}>
-    <time dateTime={iso} tabIndex={0} aria-label={`${relativeTimeISO(iso)}, ${exact}`}><RelativeTime iso={iso} /></time>
+    {/* The accessible name comes from the content, so it ticks with the text. */}
+    <time dateTime={iso} tabIndex={0}><RelativeTime iso={iso} /><span className="oc-time-exact">, {exact}</span></time>
   </Tooltip>;
 }

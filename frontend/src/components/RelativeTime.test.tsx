@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { RelativeTime } from './RelativeTime';
+import { RelativeTime, RelativeTimestamp } from './RelativeTime';
 
 describe('RelativeTime', () => {
   beforeEach(() => {
@@ -43,5 +43,24 @@ describe('RelativeTime', () => {
     expect(vi.getTimerCount()).toBe(1);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('RelativeTimestamp', () => {
+  it('keeps the accessible text in step with the visible time and adds the exact date', () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 12) });
+    try {
+      render(<RelativeTimestamp value={new Date(2026, 9, 28, 10)} />);
+      const time = screen.getByText('2h ago').closest('time')!;
+      expect(time).toHaveTextContent('2h ago, Oct 28, 10:00');
+      expect(time).not.toHaveAttribute('aria-label');
+      act(() => { vi.advanceTimersByTime(60 * 60_000); });
+      expect(time).toHaveTextContent('3h ago, Oct 28, 10:00');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('renders nothing for an invalid value', () => {
+    const { container } = render(<RelativeTimestamp value="not a date" />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
