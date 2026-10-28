@@ -115,9 +115,10 @@ func (l *live) armProcessIdleLocked(p *proc) {
 // settle ends the open turn: a non-done terminal status, then the idle edge.
 // gen is l.accepted when the caller decided the turn was over. Both events
 // are published only if, under the publish lock that BeginTurn takes, no
-// send was accepted since, none waits to be written and no child is busy:
-// otherwise that work owns the idle edge and a stale one would let the
-// queue drain or a routine complete with work outstanding.
+// send was accepted since, none waits to be written, no prompt record is in
+// flight and no child is busy: otherwise that work owns the idle edge and a
+// stale one would let the queue drain or a routine complete with work
+// outstanding.
 //
 // An edge the spool cannot take is not lost: the session reads as failed
 // and one retry per session publishes the error status and idle edge once
@@ -252,12 +253,22 @@ func (l *live) trySettle(id string, status db.SessionStatus, gen uint64, first b
 		if !first && l.unsettled[id] != (settlement{status, gen}) {
 			return false // settled meanwhile, or another generation's
 		}
-		if current && idle && len(l.waits[id]) > 0 {
-			// The result beat its sender's ticket cleanup (or a write still
-			// in flight): that cleanup publishes this outcome (turn).
+		// A prompt answer in flight (the write to claude, or the record that
+		// follows it) must be spooled before the idle edge: an acknowledged
+		// edge ahead of the record keeps the ask as a late resolution forever
+		// (pruneCut), so the spool never truncates.
+		resolving, waiting := l.resolvingLocked(id), len(l.waits[id]) > 0
+		switch {
+		case !current || !idle:
+		case resolving || waiting:
+			// The result beat its sender's ticket cleanup, a write still in
+			// flight, or a decision reaching claude ahead of its record:
+			// that cleanup (or record) publishes this outcome (turn).
 			l.deferred[id] = status
+		default:
+			delete(l.deferred, id) // this attempt publishes the turn's end
 		}
-		return current && idle && len(l.waits[id]) == 0
+		return current && idle && !resolving && !waiting
 	}, func(e providerprotocol.Event) {
 		var p struct {
 			SessionID string `json:"sessionID"`
@@ -293,7 +304,8 @@ func (l *live) fail(id string, err error, gen uint64) {
 }
 
 // testHook lets tests act inside the windows settle closes (a send landing
-// between deciding a turn is over and publishing its idle edge).
+// between deciding a turn is over and publishing its idle edge, or a prompt
+// decision reaching claude before its record is spooled).
 // Atomic: a background retry may outlive the test that installed it.
 var testHooks atomic.Pointer[func(point, id string)]
 

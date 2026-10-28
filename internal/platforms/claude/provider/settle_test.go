@@ -148,6 +148,56 @@ const askedTurn = `{"direction":"stdin","message":{"type":"user"}}
 {"direction":"stdout","message":{"type":"result","subtype":"success","is_error":false,"result":"done"}}
 `
 
+// A decision claude received during its turn must be spooled before the
+// turn's idle edge. On a starved runner the record can lose to the result
+// written right after the decision: the acknowledged idle edge then makes
+// the spool keep the ask as a late resolution forever (pruneCut), and the
+// spool never fully truncates. Holding the record through the settle closes
+// that race window on demand; the spool must still truncate.
+func TestRecordedPromptReplyCannotLoseToIdleEdge(t *testing.T) {
+	h, got := promptHarness(t, writeFixture(t, askedTurn), func(h *liveHarness, e providerprotocol.Event) {
+		if e.Type == "permission.asked" {
+			var p platforms.LivePrompt
+			_ = json.Unmarshal(e.Properties, &p)
+			go func() {
+				_ = h.adapter.RespondPermission(context.Background(), platforms.RespondPermissionRequest{SessionID: p["sessionID"].(string), PermissionID: p["id"].(string), Reply: "once"})
+			}()
+		}
+	})
+	var once atomic.Bool
+	setHook(t, func(point, sid string) {
+		if point != "recording" || !once.CompareAndSwap(false, true) {
+			return
+		}
+		// Hold the record while the turn settles without it: an idle edge
+		// published in this window is the record losing. The hold ends with
+		// the first edge, or once the settle has clearly been held back.
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if _, _, n := h.events.get(sid); n > 0 {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		time.Sleep(150 * time.Millisecond) // an acknowledgment of that edge lands
+	})
+	id := h.create(t)
+	h.turn(t, id, 1)
+	waitFor(t, "spool truncated after acknowledgment", func() bool {
+		info, err := os.Stat(h.spoolPath(id))
+		return err == nil && info.Size() == 0
+	})
+	if n := len(got.props("permission.replied")); n != 1 {
+		t.Fatalf("replied = %d, want 1", n)
+	}
+	if pending, _ := h.adapter.ListPermissions(t.Context(), id); len(pending) != 0 {
+		t.Fatalf("prompt still pending: %+v", pending)
+	}
+	if s, _, n := h.events.get(id); n != 1 || s != db.StatusDone {
+		t.Fatalf("status=%s idles=%d, want exactly one idle edge", s, n)
+	}
+}
+
 // lateResolution runs turn A to the state TestLateResolutionAfterIdleAndReconnect
 // describes: A's idle edge published and acknowledged, the watcher
 // reconnected, then A's reply recorded and the supervisor released. A

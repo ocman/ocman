@@ -199,8 +199,10 @@ func cancellation(id string, pr *prompt) *providerprotocol.Event {
 }
 
 // record spools a prompt's resolution, which removes the prompt; the caller
-// holds pr.answering, which record releases.
+// holds pr.answering, which record releases. A spooled resolution publishes
+// the turn end a settle held back for it (trySettle).
 func (l *live) record(id string, pr *prompt) error {
+	testHook("recording", pr.proc.id)
 	l.mu.Lock()
 	event := *pr.reply
 	l.mu.Unlock()
@@ -217,7 +219,51 @@ func (l *live) record(id string, pr *prompt) error {
 	l.mu.Lock()
 	pr.answering = false
 	l.mu.Unlock()
+	if err == nil {
+		l.settleIfDeferred(pr.proc.id)
+	}
 	return err
+}
+
+// resolvingLocked reports whether session id has a prompt answer in flight:
+// the control_response to claude is being written, or claude received the
+// decision (or the prompt was cancelled) and its record is spooling rather
+// than waiting in retry backoff. The turn's idle edge must not overtake it:
+// an idle edge acked ahead of the record makes the spool keep the ask as a
+// late resolution forever, so the spool never truncates (pruneCut). A failed
+// write unblocks the turn (claude never received a decision; the prompt
+// stays pending and answerable), and a resolution waiting in backoff does
+// not hold the turn: an unspoolable decision must not strand the session
+// busy (settleLater and the reconnecting watcher deliver it).
+func (l *live) resolvingLocked(id string) bool {
+	for _, pr := range l.prompts {
+		if pr.proc.id == id && !pr.cancelled && !pr.retrying && (pr.reply != nil || pr.answering) {
+			return true
+		}
+	}
+	return false
+}
+
+// settleIfDeferred publishes the turn end trySettle held back for the
+// session's in-flight prompt record, now that the record is spooled. The end
+// stays deferred while anything else still holds it (another record, an
+// unwritten input); the publisher of that window settles it.
+func (l *live) settleIfDeferred(id string) {
+	l.mu.Lock()
+	status, held := l.deferred[id]
+	if held {
+		p := l.procs[id]
+		if len(l.waits[id]) > 0 || l.resolvingLocked(id) || p != nil && p.busy {
+			held = false
+		} else {
+			delete(l.deferred, id)
+		}
+	}
+	gen := l.accepted[id]
+	l.mu.Unlock()
+	if held {
+		l.settle(id, status, gen)
+	}
 }
 
 // recordLater retries an unrecorded resolution until it is spooled, so the
