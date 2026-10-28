@@ -109,6 +109,12 @@
   padding: 16px;
   overflow-y: auto;
 }
+.oc-cmd-action-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+}
 .oc-cmd-empty {
   padding: 24px 16px;
   text-align: center;

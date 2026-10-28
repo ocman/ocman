@@ -161,6 +161,8 @@ describe('plugin command contributions', () => {
     expect(await screen.findByRole('option', { name: /Create report/ })).toBeTruthy();
     const dialog = await selectAction();
     const confirm = await within(dialog).findByRole('button', { name: 'Confirm' });
+    expect(confirm).toHaveClass('oc-button', 'oc-button--accent');
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveClass('oc-button', 'oc-button--ghost');
     expect(requests).toHaveLength(1);
     expect(within(dialog).getByText('Create this report?')).toBeTruthy();
     expect(document.activeElement?.closest('[role="dialog"]')).toBe(dialog);
@@ -174,8 +176,22 @@ describe('plugin command contributions', () => {
     expect(link.getAttribute('href')).toBe('https://example.org/report');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     expect(within(dialog).getByRole('link', { name: 'report.txt' }).getAttribute('href')).toBe('/api/plugins/actions/artifact?ownerId=local&handle=handle%26one');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    const close = within(dialog).getByRole('button', { name: 'Close' });
+    expect(close).toHaveClass('oc-button', 'oc-button--ghost');
+    fireEvent.click(close);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('refreshes plugin panes once an action responds without repeating the invoke', async () => {
+    invoke = () => json({ results: [{ kind: 'notice', text: 'Pentest scan started' }] });
+    const { client, invalidate } = renderPalette('/sessions', true);
+    client.setQueryData(['plugin-pane-tree', 'local', 'org.example.report', 'results', '/repo'], { available: false });
+    await selectAction();
+    await screen.findByText('Pentest scan started');
+    for (const key of ['plugin-pane-tree', 'plugin-panes']) expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] });
+    expect(client.getQueryState(['plugin-pane-tree', 'local', 'org.example.report', 'results', '/repo'])?.isInvalidated).toBe(true);
+    await act(async () => { await client.invalidateQueries(); });
+    expect(requests).toHaveLength(1);
   });
 
   it('cancels confirmation without invoking the plugin', async () => {

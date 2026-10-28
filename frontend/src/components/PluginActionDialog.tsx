@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { APIError } from '../lib/api';
 import { pluginActions, type PluginActionRequest, type PluginActionResponse } from '../lib/plugins';
+import { Button } from './Control';
 import { Modal } from './Modal';
 
 const ERRORS: Record<string, string> = {
@@ -36,6 +37,11 @@ export function PluginActionDialog({ label, request: initialRequest, onClose }: 
       if (ignore || operation.handled) return;
       operation.handled = true;
       setResponse(result);
+      // A completed invoke may have produced pane content (possibly only after
+      // a background run). Refetch the read-only pane queries so results land
+      // promptly; the effectful invoke itself stays manual-only.
+      void queryClient.invalidateQueries({ queryKey: ['plugin-pane-tree'] });
+      void queryClient.invalidateQueries({ queryKey: ['plugin-panes'] });
       if (result.error) setError(ERRORS[result.error.category] ?? 'The action failed. It was not retried.');
       for (const item of result.results ?? []) {
         if (item.kind === 'navigation') navigate(`/${item.target}`);
@@ -70,12 +76,14 @@ export function PluginActionDialog({ label, request: initialRequest, onClose }: 
             }
           })}
         </>}
-        {!running && <button type="button" onClick={onClose}>{confirmation ? 'Cancel' : 'Close'}</button>}
-        {confirmation && <button type="button" onClick={() => {
-          headingRef.current?.focus();
-          setResponse(null);
-          setRequest({ ...request, confirmationToken: confirmation.token });
-        }}>Confirm</button>}
+        {!running && <div className="oc-cmd-action-footer">
+          <Button variant="ghost" onClick={onClose}>{confirmation ? 'Cancel' : 'Close'}</Button>
+          {confirmation && <Button variant="accent" onClick={() => {
+            headingRef.current?.focus();
+            setResponse(null);
+            setRequest({ ...request, confirmationToken: confirmation.token });
+          }}>Confirm</Button>}
+        </div>}
       </div>
     </Modal>
   );

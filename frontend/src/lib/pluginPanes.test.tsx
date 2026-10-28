@@ -55,6 +55,25 @@ it('polls only while mounted and does not overlap requests', async () => {
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
+it('keeps polling while the pane has not published a first result', async () => {
+  vi.useFakeTimers();
+  let published = false;
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(published
+    ? '{"available":true,"nodes":[{"id":"scan","title":"Scan finished"}]}'
+    : '{"available":false}'));
+  const { result } = renderHook(() => usePluginPaneTree(pane, '/repo'), { wrapper: wrapper() });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(result.current.data?.available).toBe(false);
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  published = true;
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(fetch).toHaveBeenCalledTimes(3);
+  await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+  expect(result.current.data?.nodes?.[0].id).toBe('scan');
+});
+
 it('cancels an old project read when the directory or owner changes', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>(() => {}));
   const { rerender } = renderHook(({ dir, owner }) => usePluginPaneTree({ ...pane, ownerId: owner }, dir), {

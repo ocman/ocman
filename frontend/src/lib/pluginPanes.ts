@@ -39,7 +39,11 @@ export function usePluginPaneTree(pane: PluginPane, directory: string | undefine
     queryKey,
     enabled: !!directory && visible,
     retry: false,
-    refetchInterval: (query) => query.state.data?.available ? 30_000 : false,
+    // Keep polling even while the pane reports available:false: plugins may
+    // publish their first result after an action started a background run, and
+    // stopping the poll before then would hide it until a manual refresh.
+    // `enabled` and refetchIntervalInBackground keep the poll off when hidden.
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
     queryFn: async ({ signal }) => {
       const params = new URLSearchParams({ ownerId: pane.ownerId, pluginId: pane.pluginId, paneId: pane.pane.id, directory: directory! });
