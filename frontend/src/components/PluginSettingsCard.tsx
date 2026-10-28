@@ -7,6 +7,8 @@ import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
 import { Button, ButtonGroup } from './Control';
 import styles from './PluginSettingsCard.module.css';
 
+const UI_GRANT = 'ui.app';
+
 function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
   const d = p.description;
   return <>
@@ -15,6 +17,7 @@ function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
     <SettingRow label="Checksum" block><code className={styles.checksum}>{p.checksum}</code></SettingRow>
     <SettingRow label="Capabilities">{d.capabilities?.map((c) => `${c.name} v${c.version.major}.${c.version.minor}`).join(', ') || 'None'}</SettingRow>
     <SettingRow label="Execution scope">{d.scope}</SettingRow>
+    {d.ui && <SettingRow label="Interface">In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
     <SettingRow label="Requested grants">{d.requestedGrants?.join(', ') || 'None'}</SettingRow>
     <SettingRow label="Current grants">{p.grants?.join(', ') || 'None'}</SettingRow>
     <SettingRow label="Status">{p.enabled ? 'Enabled' : 'Disabled'} · {p.health.status}{p.removed ? ' · Executable removed' : ''}</SettingRow>
@@ -24,6 +27,17 @@ function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
       {p.configuration.secrets?.[s.key] ? 'Configured' : 'Not configured'}
     </SettingRow>)}
   </>;
+}
+
+/** In-app plugin UI is code running inside ocman, not data ocman renders. */
+function PluginUIDisclosure({ plugin: p, owner }: { plugin: PluginRegistration; owner: string }) {
+  if (!p.description.ui) return null;
+  const index = p.description.ui.exposes.index;
+  return <div role="note" aria-label="Plugin interface disclosure">
+    <p><strong>This plugin runs UI code with your ocman session.</strong> Approving <code>{UI_GRANT}</code> loads its interface into ocman, where it can do anything you can do in ocman.</p>
+    {index && <p>Approved interface bundle SHA-256: <code className={styles.checksum}>{index.sha256}</code></p>}
+    {owner !== 'local' && <p>Plugins on remote owners keep their declarative views. Their interface is not loaded in this version.</p>}
+  </div>;
 }
 
 export function PluginSettingsCard({ plugin: p, owner, refresh }: {
@@ -86,6 +100,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
         <p>This native executable runs on {owner} with {d.scope} scope. Approve checksum <code>{p.checksum}</code> and these requested grants:</p>
         <ul>{(d.requestedGrants ?? []).map((grant) => <li key={grant}>{grant}</li>)}</ul>
         {!d.requestedGrants?.length && <p>No grants requested.</p>}
+        <PluginUIDisclosure plugin={p} owner={owner} />
         <ButtonGroup label="Plugin approval actions">
           <Button type="button" variant="accent" onClick={() => { void mutate(review, { ...(review === 'enable' ? { approval: p.approval } : {}), grants: d.requestedGrants ?? [] }); }}>{review === 'enable' ? 'Approve grants and enable' : 'Approve grants'}</Button>
           <Button type="button" onClick={() => setReview(null)}>Cancel approval</Button>

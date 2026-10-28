@@ -16,8 +16,10 @@ import { PluginActionDialog } from '../components/PluginActionDialog';
 import { PluginPageContent } from '../components/PluginPageContent';
 import './PluginPage.css';
 
-export function PluginPage() {
-  const { pluginId, pageId } = useParams();
+export function PluginPage({ pageId: routedPageId }: { pageId?: string } = {}) {
+  const params = useParams();
+  const pluginId = params.pluginId;
+  const pageId = routedPageId ?? params.pageId;
   const [search] = useSearchParams();
   const ownerId = search.get('ownerId') || 'local';
   const catalog = usePluginPages();

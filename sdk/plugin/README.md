@@ -107,6 +107,19 @@ must durably deduplicate operation IDs across retries and process restarts.
 See
 [the Slack plugin](../../examples/ocman-plugin-slack/main.go) for both directions.
 
+## In-app UI
+
+`ui.v1` lets a plugin ship a routed React index built with
+[`@ocman/plugin-vite`](../plugin-vite/README.md) and
+[`@ocman/plugin-ui`](../plugin-ui/README.md). Declare `UICapability`, owner scope
+and `UIAppGrant`. Set `Description.UI` with `NewUIDescriptor(sdkRange, bundles...)`
+and serve calls with `UIHandler(description, call, bundles...)`. Pass the same
+bundles to both: the descriptor binds their checksums into approval, and the
+handler streams them in bounded chunks. `call` receives the plugin-defined method
+name and raw JSON params. Return `Failure(ErrorNotFound)` for unknown methods.
+`conformance.RunUI` checks the whole contract. See the
+[catalog example](../../examples/ocman-plugin-catalog/main.go).
+
 ## Host-rendered workspaces
 
 Plugins have one navigation entry per owner, named by `Description.Name`.

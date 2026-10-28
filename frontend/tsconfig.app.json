@@ -14,6 +14,12 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    /* Map the published plugin UI contract and the packages it references. */
+    "paths": {
+      "@ocman/plugin-ui": ["../sdk/plugin-ui/index.d.ts"],
+      "react": ["./node_modules/@types/react"],
+      "@tanstack/react-query": ["./node_modules/@tanstack/react-query"]
+    },
 
     /* Linting */
     "strict": true,

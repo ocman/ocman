@@ -15,13 +15,19 @@ profiles and `session.v1` tables belong to `pluginsmod.Schema` in `store.go`.
 
 - Executables live in `~/.local/share/ocman/plugins` or `OCMAN_PLUGIN_DIR`.
   Discovery itself runs code; do not treat unapproved binaries as data.
-- Build examples with `make install-plugin PLUGIN=slack|beads|fixture` and
+- Build examples with `make install-plugin PLUGIN=slack|beads|fixture|catalog` and
   `-trimpath` for reproducible approved checksums. Owners retain binaries,
   secrets, grants, config, diagnostics and action receipts. Remote projection
   uses authenticated `PluginOperation` RPCs.
-- Browser results are typed data, never plugin JavaScript, HTML or CSS. Platform
-  providers, iframe UI, relay inbox capability, registry/updates, signatures,
-  sandboxing and Codex remain future work.
+- Declarative results (`action`, `pane`, `page`) are typed data, never plugin
+  JavaScript, HTML or CSS. `ui.v1` is the separate in-app tier (ADR 0009):
+  hub-local only, `ui.app` grant, checksum-bound bundles, shared singletons at
+  `/plugin-shared/` and the curated `@ocman/plugin-ui` surface in
+  `frontend/src/plugin-ui` typed by `sdk/plugin-ui/index.d.ts`. Never forward
+  `ui-*` operations to remote owners. Add public exports only to both files and
+  bump `UISDKVersion` and the package version together. Platform providers,
+  remote-owner (iframe) UI, relay inbox capability, registry/updates,
+  signatures, sandboxing and Codex remain future work.
 - SDK DTOs alias canonical `sdk/protocol` types. Reusable conformance tests
   live in `sdk/plugin/conformance`; the deterministic example is
   `sdk/examples/ocman-plugin-fixture`.

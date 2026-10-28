@@ -763,3 +763,59 @@ The SDK aliases the canonical types and exposes `PaneHandler`, which validates
 read input and tree output. `examples/ocman-plugin-beads` implements this contract
 with an explicitly configured absolute `bd` executable. See
 [Beads setup](../../docs/features/beads.md).
+
+## ui.v1
+
+The `ui` capability, major 1 minor 0, lets a plugin ship in-app React UI. It is
+the higher-trust tier beside the declarative `page.v1`/`pane.v1`; see
+[ADR 0009](../../docs/adr/0009-let-plugins-ship-in-app-react-ui.md). A
+declaration requires `scope: "owner"`, the requested `ui.app` grant and a `ui`
+object:
+
+```json
+{"ui":{"sdk":"^1.0.0","exposes":{"index":{"sha256":"<64 lowercase hex>","size":5321}}}}
+```
+
+`sdk` is the `@ocman/plugin-ui` range the bundle was built against: `X.Y.Z`,
+`^X.Y.Z`, `~X.Y.Z` or `>=X.Y.Z`. `exposes` has one to eight entries keyed by
+capability identifiers. This host mounts only `index`. Other names are accepted
+and reserved for later entry points, so adding one needs no protocol change. Each
+bundle is 1 byte to 4 MiB. Because the checksum and size are part of the
+description, the approval fingerprint binds them, and a changed bundle revokes
+approval. `UIAllowed` additionally requires the `ui` major 1 capability, the
+current `ui.app` grant and a range satisfied by `UISDKVersion`, which a test keeps
+equal to `sdk/plugin-ui/package.json`.
+
+| Method | Params | Reply |
+| --- | --- | --- |
+| `call` | `{"method":"items.list","params":{...}}` | One result with any JSON value; chunks are a protocol error |
+| `bundle` | `{"expose":"index"}` | Chunks `{"data":"<base64>"}` of at most 512 KiB each, then `{}` |
+
+Method names match `[A-Za-z][A-Za-z0-9_.:-]{0,127}` and are defined by the
+plugin; `params` is optional JSON. Unknown methods should return `not_found`.
+Bundle chunks stay below the 1 MiB frame limit and a whole bundle below the
+8 MiB per-call output limit. The host rejects chunks beyond the declared size and
+bytes whose SHA-256 differs from the approved declaration, then caches the
+verified bundle per plugin in memory.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/plugins/ui` | Hub-local enabled plugins holding `ui.app`, with label, SDK ranges, compatibility, actions and the index URL |
+| GET | `/api/plugins/ui/bundle?pluginId=&expose=index&sha256=` | The verified bundle as `text/javascript; charset=utf-8`, `nosniff`, `private, no-cache` and an ETag of the checksum |
+| POST | `/api/plugins/ui/call` | `{"pluginId","method","params"}`; the plugin's JSON result |
+
+All three use normal authentication and always target the hub's own installation.
+They route through `RouteOperation` as the closed `PluginOperation` operations
+`ui-bundle` and `ui-call`. An owner refuses both when they arrive over the remote
+transport, so a hub never loads UI code from another machine in this version.
+Calls are admitted under the lifecycle lock with the current grants, get a fresh
+operation ID and a 30-second deadline, and are rechecked before results return.
+Cached bundles are rechecked on every request. Like page reads, calls have no
+durable receipt and are never retried.
+
+The browser imports the bundle with `import(url)` from ocman's origin. Its
+shared imports point at `/plugin-shared/<name>.js` entries emitted by the host
+build (see `frontend/vite.config.ts` and `sdk/plugin-vite`), which re-export the
+app's own React, router, query-client and `@ocman/plugin-ui` instances. The SDK
+exposes `NewUIDescriptor`, `UIHandler` and `conformance.RunUI`; the
+[catalog example](../../examples/ocman-plugin-catalog) uses all three.

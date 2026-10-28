@@ -15,6 +15,8 @@ import react from '@vitejs/plugin-react';
 // matchers; they are inert under the node env.
 export default defineConfig({
   plugins: [react()],
+  // The plugin UI contract tests read the published packages in ../sdk.
+  server: { fs: { allow: ['.', '../sdk'] } },
   test: {
     environment: 'node',
     // Worker threads instead of forked processes: same isolation per

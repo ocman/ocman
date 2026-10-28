@@ -1,0 +1,28 @@
+{
+  "name": "ocman-plugin-catalog-ui",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.1",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@ocman/plugin-ui": "file:../../../sdk/plugin-ui",
+    "@ocman/plugin-vite": "file:../../../sdk/plugin-vite",
+    "@tanstack/react-query": "^5.104.2",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4"
+  },
+  "dependenciesMeta": {
+    "@ocman/plugin-ui": {
+      "injected": true
+    },
+    "@ocman/plugin-vite": {
+      "injected": true
+    }
+  }
+}

@@ -49,6 +49,9 @@ as the existing Factory entries do. Core pages stay
 in the existing core files, with titles in `lib/routeTitle.ts`. Backend plugin
    panes and palette actions are separate from this registry. The generic plugin
    workspace route and dynamic navigation component register as one feature;
-   individual plugin pages come from owner-approved declarations.
+   individual plugin pages come from owner-approved declarations. In-app plugin
+   UI mounts under the same `/plugins/:pluginId/*` route through
+   `pages/PluginRoute.tsx`; plugins import host components only through the
+   `@ocman/plugin-ui` wrappers in `src/plugin-ui`, never `src/components`.
 
 Read [testing.md](testing.md) for stable e2e locators and frontend coverage checks.

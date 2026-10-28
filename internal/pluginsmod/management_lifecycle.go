@@ -28,6 +28,7 @@ func (m *Module) stopOnePluginLocked(id string) {
 		m.stderr[id] = process.RedactedStderr(func(text string) string { return m.store.RedactPluginDiagnostics(id, text) })
 		delete(m.processes, id)
 	}
+	delete(m.uiBundles, id)
 }
 
 func (m *Module) restartPluginLocked(ctx context.Context, id string) error {

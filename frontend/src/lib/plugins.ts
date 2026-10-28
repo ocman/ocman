@@ -23,6 +23,8 @@ export interface PluginRegistration {
     capabilities?: { name: string; version: { major: number; minor: number } }[];
     requestedGrants?: string[];
     settings?: PluginSetting[];
+    /** In-app UI bundles (ui.v1), bound into the approval by checksum. */
+    ui?: { sdk: string; exposes: Record<string, { sha256: string; size: number }> };
   };
   checksum: string;
   enabled: boolean;

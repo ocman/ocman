@@ -3,10 +3,13 @@ title: Plugin contribution guide
 weight: 19
 ---
 
-Plugins extend Ocman's features using host-rendered declarations and typed data.
-They cannot supply React components, HTML, CSS, browser JavaScript, arbitrary
-routes or shell commands for the browser to execute. Ocman owns the controls,
-layout, loading states and action confirmations.
+Plugins extend Ocman's features in two tiers. The declarative tier described
+first uses host-rendered declarations and typed data. Those contributions cannot
+supply React components, HTML, CSS, browser JavaScript, arbitrary routes or shell
+commands for the browser to execute. Ocman owns the controls, layout, loading
+states and action confirmations, and they work on every owner. When a workflow
+does not fit these declarations, a plugin on the hub machine can ship
+[in-app UI with `ui.v1`](#in-app-ui-with-uiv1) built from ocman's own components.
 
 Page forms use Ocman's bounded `PageField` format, not arbitrary JSON Schema or
 JSON Forms declarations. No frontend library is required in a plugin.
@@ -22,6 +25,7 @@ JSON Forms declarations. No frontend library is required in a plugin.
 | Form validation | `page` 1.1 | Static constraints and an optional submit-time plugin validation hook |
 | Project result tree | `page` or `pane` 1.0 | Read-only bounded trees, with pane contributions in the session sidebar |
 | Command | `action` 1.0 | Global, project or session command-palette action with optional confirmation |
+| In-app UI | `ui` 1.0 | A routed React index built from `@ocman/plugin-ui`, with plugin-defined calls (hub-local only) |
 
 Workspace pages also show the same plugin's approved project actions. There is
 no arbitrary context-menu placement or item-specific action parameter contract.
@@ -363,3 +367,100 @@ For SDK lifecycle and action grant checks, see the
 [SDK conformance guide](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md#conformance-tests-for-external-plugins).
 For exact framing and capability rules, see the
 [wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/protocol/README.md).
+
+## In-app UI with ui.v1
+
+Use in-app UI when the declarative tier cannot express a workflow. Every new
+visual would otherwise need a host change and a protocol minor. The trade-offs,
+security model and loading mechanism are recorded in
+[ADR 0009](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/docs/adr/0009-let-plugins-ship-in-app-react-ui.md).
+The bundled [catalog example](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-catalog)
+is a complete plugin.
+
+### Declare it
+
+Declare `plugin.UICapability`, owner scope and the `plugin.UIAppGrant`
+(`ui.app`) grant. Build the description's `UI` from the same bytes you serve:
+
+```go
+bundle := plugin.UIBundle{Expose: plugin.UIIndexExpose, Data: indexJS} // e.g. //go:embed ui/dist/index.js
+d.UI = plugin.NewUIDescriptor("^1.0.0", bundle)                          // @ocman/plugin-ui range
+ui := plugin.UIHandler(d, func(ctx context.Context, method string, params json.RawMessage) (any, error) {
+	switch method {
+	case "items.list":
+		return listItems(ctx, params)
+	}
+	return nil, plugin.Failure(plugin.ErrorNotFound)
+}, bundle)
+```
+
+Route calls whose capability is `plugin.UICapability.Name` to `ui`. Pass the
+bundle to `UIHandler` too, or ocman cannot fetch it. The bundle checksum is part
+of the approved description, so rebuilding the UI requires approval again.
+Method names match `[A-Za-z][A-Za-z0-9_.:-]{0,127}`. Params and results are JSON
+up to the 1 MiB message limit. Calls are unary, never retried and have no
+durable receipt. Keep side effects that need confirmation or replay protection
+in `action.v1` actions. Bundles may be at most 4 MiB.
+
+### Build it
+
+Create a Vite project, for example under `ui/`, with `@ocman/plugin-vite`,
+`@ocman/plugin-ui` (types only), React, `react-router-dom` and
+`@tanstack/react-query` (for types) as development dependencies:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import { ocmanPlugin } from '@ocman/plugin-vite';
+export default defineConfig({ plugins: [ocmanPlugin({ entry: 'src/index.tsx' })] });
+```
+
+The preset writes `dist/index.js`, one ESM file whose imports of `react`,
+`react/jsx-runtime`, `react-dom`, `react-router-dom`, `@tanstack/react-query`
+and `@ocman/plugin-ui` resolve to ocman's own instances at `/plugin-shared/`.
+It refuses to bundle other subpaths of those packages, such as
+`react-dom/client`. Imported CSS is injected as one `<style>` element at load
+time, and there is no separate stylesheet. When consuming the packages from an
+ocman checkout, use pnpm `file:` dependencies with `dependenciesMeta.injected`
+so their declarations resolve this project's React types.
+
+### Write the index
+
+```tsx
+import { Route, Routes } from 'react-router-dom';
+import { DataTable, Page, usePluginCall } from '@ocman/plugin-ui';
+
+export default function Index() {
+  return <Routes>
+    <Route index element={<Items />} />
+    <Route path="items/:id" element={<Item />} />
+  </Routes>;
+}
+```
+
+Never create a router: the index is mounted inside ocman's router at
+`/plugins/<plugin-id>/*`, and relative links such as `items/7` and `..` work
+from there. The `@ocman/plugin-ui` 1.0 surface is:
+
+| Group | Exports |
+| --- | --- |
+| Controls | `Button`, `SubmitButton`, `RouteButton`, `ButtonGroup`, `TextField`, `SearchField`, `SelectField`, `CheckboxField`, `TextareaField`, `ProjectPicker`, `ModelPicker` |
+| Tables and states | `DataTable` (`framed`), `EmptyState`, `LoadingState`, `ErrorState` |
+| Overlays and navigation | `Drawer`, `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` |
+| Display | `StatusBadge`, `SeverityPill`, `Pill` (`neutral`, `accent`, `success`, `warning`, `danger`) |
+| Layout | `Page`, `Section`, `Properties`, `CodeBlock` |
+| Hooks | `usePluginContext`, `usePluginCall`, `usePluginMutation`, `usePluginAction` |
+
+`usePluginCall(method, params, { enabled, refetchInterval })` is a cached query
+scoped to your plugin. `usePluginMutation(method)` refreshes those queries on
+success. `usePluginAction(actionId).run(context)` opens ocman's action dialog for
+one of your declared actions. `ProjectPicker` and `ModelPicker` are limited to
+the plugin's owner and use the same value formats as page `projects` and `model`
+fields.
+
+### Test it
+
+Run `conformance.RunUI(t, executable, plugin.UICall{Method: "...", Params: ...})`
+with a side-effect-free method. It checks the declaration, every bundle stream
+against its checksum, the call, and the `not_found` and `invalid_argument`
+errors.

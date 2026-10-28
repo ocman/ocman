@@ -9,8 +9,10 @@ palette and returns results rendered by ocman, `conversation.v1`, which lets
 a chat provider start an ocman session and receive its completed reply,
 `session.v1`, which lets a plugin run a turn in a session it starts in its one
 approved project and receive that session's completed turns, and
-`pane.v1`, which adds a read-only project tree to the session sidebar, and
-`page.v1`, which adds typed project workspaces to navigation. Manage
+`pane.v1`, which adds a read-only project tree to the session sidebar,
+`page.v1`, which adds typed project workspaces to navigation, and `ui.v1`,
+which lets a plugin on the hub machine ship its own React interface built from
+ocman components. Manage
 installations in **Settings → Plugins**, selecting the plugin owner before making
 changes.
 
@@ -58,6 +60,40 @@ a cancelled or late read cannot replace the saved document. In the phone's More
 sheet a page link replaces the overlay's history entry, so the back gesture
 returns to the page you came from instead of unwinding a second entry.
 
+## In-app plugin UI
+
+`page.v1` and `pane.v1` are the declarative tier: the plugin returns typed data
+and ocman renders it, on every owner, without plugin JavaScript. When a plugin
+needs its own workflow, it can instead ship in-app UI with `ui.v1`. See
+[ADR 0009](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/docs/adr/0009-let-plugins-ship-in-app-react-ui.md)
+for the decision and its trade-offs.
+
+A UI plugin declares the `ui` capability, requests the `ui.app` grant and
+declares an `index` bundle with its SHA-256 checksum and the `@ocman/plugin-ui`
+version range it was built for. After approval, the plugin appears in the main
+navigation and its `Index` component owns `/plugins/<plugin-id>/*`. It routes
+with nested relative `<Routes>` and uses ocman's own buttons, tables, drawers,
+tabs, pickers and pills from `@ocman/plugin-ui`, so it matches the rest of the
+app. Data comes from plugin-defined `ui.v1` calls. Actions still run through
+ocman's action dialog with its confirmations, notices and downloads. A path whose
+first segment names one of the plugin's declared pages still opens that page.
+
+**Approving `ui.app` lets the plugin run UI code with your ocman session.** Its
+interface can do anything you can do in ocman. Approval shows this disclosure
+and the bundle checksum. A rebuilt bundle changes the declaration and needs
+approval again. In this release the interface loads only for plugins running on
+the hub machine. A plugin on a remote owner keeps its declarative pages and panes,
+and its interface is not loaded. If a plugin was built for an incompatible
+`@ocman/plugin-ui` version, ocman shows the required and provided versions
+instead of loading it. A failing interface is contained in that plugin's page and
+offers **Try again**.
+
+The bundled `catalog` example is a working in-app UI with a native table,
+nested detail routes, a status mutation and a confirmed action. Its data is
+synthetic. Build and install it with `make install-plugin PLUGIN=catalog`, which
+also builds its UI (requires pnpm). See the
+[contribution guide](../plugin-contributions/#in-app-ui-with-uiv1) for authoring.
+
 ## Trust and installation
 
 **Plugins are trusted native code, including during discovery.** Rescanning runs
@@ -78,7 +114,7 @@ the directory, builds reproducibly and prints the checksum you are about to
 approve:
 
 ```sh
-make install-plugin PLUGIN=slack      # or PLUGIN=beads / PLUGIN=fixture
+make install-plugin PLUGIN=slack      # or PLUGIN=beads / fixture / catalog
 make install-plugin PLUGIN=slack PLUGIN_DIR=/custom/plugins
 ```
 
@@ -504,7 +540,9 @@ including when a hub action targets its project. Older remotes without plugin
 management show an unavailable state.
 
 The browser talks only to the hub. Remote calls use the closed `PluginOperation`
-RPC, not a raw plugin protocol tunnel. Each owner applies its own grants,
+RPC, not a raw plugin protocol tunnel. In-app UI (`ui.v1`) is hub-local: owners
+refuse remote UI bundle and call operations, so a remote owner's plugin is
+reached only through its declarative views. Each owner applies its own grants,
 confirmation, operation receipts, process supervision, and artifact checks.
 
 Conversation plugins are owner-scoped by declaration, so a connector belongs to
@@ -541,6 +579,7 @@ authentication and origin protection.
 | Enabled but unhealthy | Recent stderr, configuration initialization, stdout framing, cancellation; repair and explicitly retry |
 | Action missing | Placement, selected owner, negotiated capability, enablement, and required grants |
 | Owner unavailable | Remote connection and that owner's plugin-management support |
+| Plugin interface not loaded | Hub-local installation, `ui.app` grant, the reported `@ocman/plugin-ui` range, and the browser console for bundle errors |
 
 **Revoke grants** clears approvals and stops in-flight work before restarting the
 process. It denies affected actions and cached results, but cannot recall context
@@ -587,18 +626,25 @@ External plugins can use `sdk/plugin/conformance.Run` for executable lifecycle
 checks, `RunActionGrants` for broker grant, minimization, deduplication, and
 revocation checks, `RunConversationGrants` for the conversation declaration
 contract plus grant and project denials, and `RunSessionGrants` for the session
-declaration contract plus grant, subpath and completion checks. Supply deterministic, side-effect-free
+declaration contract plus grant, subpath and completion checks, and `RunUI` for
+the in-app UI declaration, checksum-verified bundle stream, a plugin-defined
+call and normalized errors. Supply deterministic, side-effect-free
 test calls. Rebuild, rescan, review the new checksum, and enable again for a
 manual palette check.
 
 ## Future work
 
 The current release supports native processes, `action.v1`,
-`conversation.v1`, `pane.v1`, `page.v1`, and `session.v1`. The following are future work, not available plugin
-capabilities or integrations:
+`conversation.v1`, `pane.v1`, `page.v1`, `session.v1` and hub-local `ui.v1`.
+The following are future work, not available plugin capabilities or integrations:
 
 - Platform-provider capability.
-- Iframe UI contributions.
+- In-app UI for plugins on remote owners, through a sandboxed iframe or an
+  explicit cross-machine grant.
+- Additional in-app UI entry points such as panes, settings and item drawers
+  (the manifest already reserves expose names).
+- A UI development loop that reloads a rebuilt bundle on rescan without full
+  re-approval in an explicit development mode.
 - Relay inbox capability, separate from existing core Inbox and webhook features.
 - A plugin registry and automatic updates.
 - Publisher signatures and process sandboxing.

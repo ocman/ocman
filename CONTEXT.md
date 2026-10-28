@@ -9,6 +9,14 @@ software changes.
 A plugin-owned group of configuration and results on one machine. It may relate to multiple projects, and a project may relate to multiple plugin workspaces, without owning them.
 _Avoid_: Project-owned plugin configuration
 
+**Declarative plugin view**:
+Plugin UI described as typed data (`page.v1`, `pane.v1`) and rendered by ocman; it runs no plugin code in the browser and works on every owner.
+_Avoid_: Plugin page component
+
+**In-app plugin UI**:
+A plugin's own React bundle (`ui.v1`) mounted by ocman at the plugin's route, built from the public `@ocman/plugin-ui` components and run with the user's ocman session; loaded only for plugins on the hub machine.
+_Avoid_: Plugin iframe, federated module
+
 **Work Epic**:
 A mutable goal-oriented group containing Issues and one or more Mols, which may come from different Formulas.
 _Avoid_: Formula instance, Molecule

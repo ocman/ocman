@@ -94,6 +94,9 @@ type Module struct {
 	stderr      map[string]string
 	actionsOnce sync.Once
 	actions     *plugins.ActionBroker
+	// uiBundles holds the last verified UI bundle per plugin, keyed by its
+	// approved checksum.
+	uiBundles map[string]cachedUIBundle
 
 	// conversation.v1: the broker, its inbound worker and the outbound
 	// delivery worker. Durable state lives in state.db (plugin_conversation
@@ -149,6 +152,9 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("GET /api/plugins/model-catalog", m.handlePluginModelCatalog)
 	r.Handle("POST /api/plugins/pages/call", m.handlePluginPage)
 	r.Handle("GET /api/plugins/panes/read", m.handlePluginPaneRead)
+	r.Handle("GET /api/plugins/ui", m.handlePluginUIs)
+	r.Handle("GET /api/plugins/ui/bundle", m.handlePluginUIBundle)
+	r.Handle("POST /api/plugins/ui/call", m.handlePluginUICall)
 	// Profiles are Settings data (normal auth, like the other settings rows):
 	// they only take effect when an approved session.v1 plugin names one.
 	r.Handle("/api/permission-profiles", m.handlePermissionProfiles)

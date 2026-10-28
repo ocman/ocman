@@ -169,8 +169,12 @@ PLUGIN_DIR ?= $(HOME)/.local/share/ocman/plugins
 # The fixture lives in the nested SDK module, so it is built by import path.
 PLUGIN_PKG = $(if $(filter fixture,$(PLUGIN)),github.com/ocman/ocman/sdk/examples,./examples)/ocman-plugin-$(PLUGIN)
 
-install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|fixture)
+install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|fixture|catalog)
 	@mkdir -p "$(PLUGIN_DIR)"
+	@if [ -f examples/ocman-plugin-$(PLUGIN)/ui/package.json ]; then \
+		pnpm --dir examples/ocman-plugin-$(PLUGIN)/ui install --frozen-lockfile && \
+		pnpm --dir examples/ocman-plugin-$(PLUGIN)/ui build; \
+	fi
 	go build -trimpath -o "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" $(PLUGIN_PKG)
 	@shasum -a 256 "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" 2>/dev/null || sha256sum "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)"
 	@echo "Rescan in Settings -> Plugins on this machine, then configure and enable it."

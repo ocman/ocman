@@ -1,0 +1,8 @@
+.oc-plugin-section { display: grid; gap: 0.75rem; min-width: 0; }
+.oc-plugin-section .plugin-page-heading p, .plugin-page > .plugin-page-heading p { margin: 0.25rem 0 0; color: var(--text-dim); }
+.oc-plugin-pill { --pill-color: var(--text-dim); display: inline-flex; align-items: center; padding: 2px 10px; border: 1px solid color-mix(in srgb, var(--pill-color) 45%, transparent); border-radius: 999px; color: var(--pill-color); background: color-mix(in srgb, var(--pill-color) 8%, transparent); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.oc-plugin-pill--accent { --pill-color: var(--accent); }
+.oc-plugin-pill--success { --pill-color: var(--green); }
+.oc-plugin-pill--warning { --pill-color: var(--warning); }
+.oc-plugin-pill--danger { --pill-color: var(--danger); }
+.oc-plugin-code { margin: 0; padding: 12px 16px; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text); font-family: var(--font-conversation-mono); font-size: 13px; white-space: pre; }

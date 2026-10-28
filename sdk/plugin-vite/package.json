@@ -1,0 +1,19 @@
+{
+  "name": "@ocman/plugin-vite",
+  "version": "1.0.0",
+  "description": "Vite preset that builds an ocman plugin UI as one ESM file using the host's shared modules.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": ["index.js", "index.d.ts", "README.md"],
+  "peerDependencies": {
+    "vite": "^8.0.0"
+  }
+}

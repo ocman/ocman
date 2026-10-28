@@ -100,7 +100,7 @@ flowchart LR
     Native -->|owner-local ingestion| Ocman
     Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
-    Ocman -->|supervised NDJSON| Plugins[Trusted native plugins]
+    Ocman -->|supervised NDJSON,<br/>incl. UI bundles| Plugins[Trusted native plugins]
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
     Ocman <-->|authenticated gRPC| Remotes[Remote ocman instances]
     Ocman -->|encrypted shares + webhook poll| Relay[ocman-relay]
@@ -113,6 +113,10 @@ flowchart LR
   The composer accepts text and attachments. Voice input belongs to external
   tools; ocman does not capture microphones or provide transcription endpoints.
   Answer read-aloud uses browser speech synthesis independently.
+  Hub-local plugins may add in-app UI: the SPA imports their checksum-verified
+  bundle from `/api/plugins/ui/bundle`, and the bundle shares the SPA's React,
+  router, query client and `@ocman/plugin-ui` through `/plugin-shared/` entries
+  (ADR 0009).
 - **Conversation PR previews.** Showing a card or switching sessions revalidates
   PR metadata, checks and review status. The browser bundles simultaneous lookups
   by owner, deduplicates identical requests, and cancels a shared request only
@@ -227,6 +231,8 @@ flowchart LR
   minimal environment, bounded output, and a fifteen-second deadline. Duplicate
   identities conflict; changed binaries lose approval. Discovery itself executes
   trusted code. Grants minimize brokered context, not operating-system access.
+  `ui.v1` plugins stream an approved browser bundle over the same NDJSON
+  connection; the hub serves it only for its own installations.
   See [Plugins](../features/plugins.md) for installation and operations.
 - **Remote ocman instances.** The hub dials remotes over gRPC and re-exposes
   their sessions and hosts transparently. Unary JSON operations share one

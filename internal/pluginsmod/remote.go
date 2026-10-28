@@ -81,6 +81,8 @@ func (m *Module) localPluginOperation(ctx context.Context, req remote.PluginRequ
 			method = "save"
 		}
 		return pluginResponse(m.localPluginPage(ctx, req.PluginID, method, req.Input.Values["page"]))
+	case "ui-call", "ui-bundle":
+		return m.localPluginUI(ctx, req, fromRemote)
 	case "pane-read":
 		return pluginResponse(m.readLocalPluginPane(ctx, req.Pane))
 	case "project-catalog":

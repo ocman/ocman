@@ -28,7 +28,7 @@ import { ModelFallbackSettings, WorktreePermissionSettings } from '../pages/dash
 import { SpeechSettings } from '../components/SpeechSettings';
 import { HookPluginSettings } from '../components/HookPluginSettings';
 import { MaintenanceSettings } from '../components/MaintenanceSettings';
-import { PluginPage } from '../pages/PluginPage';
+import { PluginRoute } from '../pages/PluginRoute';
 import { PluginPageNav, PluginPageTitle } from '../components/PluginPageNav';
 import { BackgroundTasks } from '../pages/BackgroundTasks';
 import { ApplicationHealthSettings } from '../components/ApplicationHealthSettings';
@@ -77,7 +77,7 @@ export interface Feature {
 }
 
 export const FEATURES: Feature[] = [
-  { id: 'plugin-pages', routes: [{ path: '/plugins/:pluginId/:pageId', element: <PluginPage />, layout: 'page', title: <PluginPageTitle /> }], Navigation: PluginPageNav, titlePrefix: { prefix: '/plugins/', title: <PluginPageTitle /> } },
+  { id: 'plugin-pages', routes: [{ path: '/plugins/:pluginId/*', element: <PluginRoute />, layout: 'page', title: <PluginPageTitle /> }], Navigation: PluginPageNav, titlePrefix: { prefix: '/plugins/', title: <PluginPageTitle /> } },
   {
     id: 'background-tasks',
     routes: [{ path: '/background-tasks', element: <BackgroundTasks />, layout: 'dashboard', title: 'Background tasks' }],

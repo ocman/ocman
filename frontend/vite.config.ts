@@ -1,4 +1,7 @@
-import { defineConfig, type ProxyOptions } from 'vite'
+import { createRequire } from 'node:module'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 
@@ -70,12 +73,42 @@ const apiProxy: Record<string, ProxyOptions> = {
   },
 }
 
+// Host singletons served to plugin UI bundles at stable, unhashed URLs
+// (/plugin-shared/<name>.js), in production and in the dev server alike.
+// sdk/plugin-vite maps the same bare specifiers to these URLs.
+const pluginSharedEntries = Object.fromEntries(
+  ['react', 'react-jsx-runtime', 'react-dom', 'react-router-dom', 'tanstack-react-query', 'ocman-plugin-ui']
+    .map((name) => [`plugin-shared/${name}`, `plugin-shared/${name}.js`]),
+)
+
+// CommonJS packages lose their named exports through `export *`, so these
+// entries are generated with the package's actual export names.
+const commonJSShared: Record<string, string> = { react: 'react', 'react-jsx-runtime': 'react/jsx-runtime', 'react-dom': 'react-dom' }
+
+function pluginSharedCommonJS(): Plugin {
+  const dir = fileURLToPath(new URL('./plugin-shared/', import.meta.url))
+  const require = createRequire(import.meta.url)
+  return {
+    name: 'ocman-plugin-shared-commonjs',
+    enforce: 'pre',
+    load(id) {
+      const file = id.split('?')[0]
+      if (path.dirname(file) + path.sep !== dir) return
+      const specifier = commonJSShared[path.basename(file, '.js')]
+      if (!specifier) return
+      const names = Object.keys(require(specifier) as object).filter((n) => n !== 'default' && /^[A-Za-z_$][\w$]*$/.test(n))
+      return `import m from '${specifier}';\nexport const { ${names.join(', ')} } = m;\nexport default m;\n`
+    },
+  }
+}
+
 // OCMAN_PROFILE=1 builds against React's profiling renderer so <Profiler>
 // reports commit timings in a production bundle (used by `pnpm perf`).
 const profileBuild = process.env.OCMAN_PROFILE === '1'
 
 export default defineConfig({
   plugins: [
+    pluginSharedCommonJS(),
     react(),
     // React Compiler — auto-memoizes components and hooks at build
     // time so we don't have to remember useMemo/useCallback for every
@@ -89,6 +122,15 @@ export default defineConfig({
     // The go:embed source; the desktop app serves the same embedded assets.
     outDir: '../internal/webui/static',
     emptyOutDir: true,
+    rollupOptions: {
+      input: { index: 'index.html', ...pluginSharedEntries },
+      // Plugin bundles import these entries by URL, so their exports must
+      // survive tree-shaking and share the app's single module instances.
+      preserveEntrySignatures: 'exports-only',
+      output: {
+        entryFileNames: (chunk) => chunk.name.startsWith('plugin-shared/') ? '[name].js' : 'assets/[name]-[hash].js',
+      },
+    },
   },
   server: {
     // Tailscale Serve owns :8228 on the tailnet address; bind its upstream to loopback.
