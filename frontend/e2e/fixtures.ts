@@ -100,6 +100,8 @@ export async function installDefaultRoutes(page: Page) {
   await page.route('/api/plugins/panes*', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
+  // No hub-local plugin ships in-app UI unless a spec says so.
+  await page.route('/api/plugins/ui', (route: Route) => route.fulfill({ json: [] }));
   // Requested by the app shell on every page.
   await page.route('/api/inbox', (route: Route) => route.fulfill({ json: { items: [], unreadTotal: 0 } }));
   await page.route('/api/doctor', (route: Route) => route.fulfill({ json: { checks: [] } }));
