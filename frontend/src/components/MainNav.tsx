@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useInbox } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
+import { useNotifySnapshot } from '../lib/useNotifyData';
+import { attentionSessionEntries } from '../lib/sessionAttention';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
 import { featureNav, featureNavigation } from '../features';
@@ -28,6 +30,9 @@ export function MainNav({
   const collapsed = useUiStore((state) => state.mainNavCollapsed);
   const toggleCollapsed = useUiStore((state) => state.toggleMainNav);
   const inbox = useInbox();
+  const notify = useNotifySnapshot();
+  const unreadSessions = attentionSessionEntries(notify?.entries ?? []).length;
+  const homeLabel = unreadSessions ? `Home, ${unreadSessions} unread sessions` : 'Home';
   const usageTrigger = useRef<HTMLButtonElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const toggleLabel = mobileOpen
@@ -38,8 +43,8 @@ export function MainNav({
     <NavLink
       key={item.to}
       to={item.to}
-      aria-label={item.label}
-      title={collapsed ? item.label : undefined}
+      aria-label={item.to === '/' ? homeLabel : item.label}
+      title={collapsed ? (item.to === '/' ? homeLabel : item.label) : undefined}
       className={({ isActive }) => [
         isActive || (item.activePrefix && location.pathname.startsWith(item.activePrefix)) ? 'active' : '',
         className ?? '',
@@ -48,6 +53,7 @@ export function MainNav({
     >
       <i className={`bi ${item.icon}`} aria-hidden="true" />
       <span>{item.label}</span>
+      {item.to === '/' && unreadSessions > 0 && <b className="nav-unread-badge" aria-hidden="true">{unreadSessions > 99 ? '99+' : unreadSessions}</b>}
     </NavLink>
   );
 
@@ -113,7 +119,7 @@ export function MainNav({
         aria-label="Close navigation"
         onClick={onMobileClose}
       />
-      <PhoneNavigation unreadTotal={inbox.data?.unreadTotal ?? 0} />
+      <PhoneNavigation unreadTotal={inbox.data?.unreadTotal ?? 0} unreadSessions={unreadSessions} />
     </>
   );
 }

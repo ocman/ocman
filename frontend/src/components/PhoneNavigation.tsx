@@ -23,16 +23,16 @@ const moreItems = [
 ];
 
 /** Conversations stay full-height, but their session list exposes global navigation. */
-export function PhoneNavigation({ unreadTotal }: { unreadTotal: number }) {
+export function PhoneNavigation({ unreadTotal, unreadSessions = 0 }: { unreadTotal: number; unreadSessions?: number }) {
   const phone = useIsPhone();
   const location = useLocation();
   const [panel] = usePhoneOverlay<'sidebar' | 'details'>('conversation-panel');
   const [navigation] = usePhoneOverlay<'more'>('navigation');
   if (!phone || (location.pathname.startsWith('/session/') && panel !== 'sidebar' && navigation !== 'more')) return null;
-  return <PhoneTabs key={location.pathname + location.search} unreadTotal={unreadTotal} />;
+  return <PhoneTabs key={location.pathname + location.search} unreadTotal={unreadTotal} unreadSessions={unreadSessions} />;
 }
 
-function PhoneTabs({ unreadTotal }: { unreadTotal: number }) {
+function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unreadSessions: number }) {
   const { pathname } = useLocation();
   const [overlay, setOverlay] = usePhoneOverlay<'more'>('navigation');
   const moreOpen = overlay === 'more';
@@ -61,8 +61,10 @@ function PhoneTabs({ unreadTotal }: { unreadTotal: number }) {
       <Modal label="More destinations" onClose={() => setOverlay(null)}>
         <ModalHeader title="More" onClose={() => setOverlay(null)} closeLabel="Close more destinations" />
         <nav aria-label="More destinations">
-          {moreItems.map(({ to, label, icon }) => <NavLink key={to} to={to} replace end={to === '/'}>
-            <i className={`bi ${icon}`} aria-hidden="true" /><span>{label}</span>
+          {moreItems.map(({ to, label, icon }) => <NavLink key={to} to={to} replace end={to === '/'}
+            aria-label={to === '/' && unreadSessions ? `Home, ${unreadSessions} unread sessions` : label}>
+             <i className={`bi ${icon}`} aria-hidden="true" /><span>{label}</span>
+             {to === '/' && unreadSessions > 0 && <b className="nav-unread-badge" aria-hidden="true">{unreadSessions > 99 ? '99+' : unreadSessions}</b>}
             <i className="bi bi-chevron-right" aria-hidden="true" />
           </NavLink>)}
           {featureNavigation.map((Navigation, index) => <Navigation key={index} replace />)}
