@@ -20,7 +20,7 @@ it('exposes exactly the published contract at runtime', () => {
   expect(PluginUI.PLUGIN_UI_VERSION).toBe(packageJSON.version);
 });
 
-const host: PluginHostValue = { pluginId: 'org.example.catalog', ownerId: 'local', basePath: '/plugins/org.example.catalog', actions: [], runAction: () => Promise.resolve() };
+const host: PluginHostValue = { pluginId: 'org.example.catalog', ownerId: 'local', basePath: '/plugins/org.example.catalog', runAction: () => Promise.resolve() };
 
 function mount(children: ReactNode) {
   return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>

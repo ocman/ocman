@@ -158,7 +158,7 @@ func ValidUISDKRange(r string) bool {
 func UISDKCompatible(r, version string) bool {
 	op, low, ok := parseUIRange(r)
 	v, valid := parseSemver(version)
-	if !ok || !valid || compareSemver(v, low) < 0 {
+	if !ok || !valid || slices.Compare(v[:], low[:]) < 0 {
 		return false
 	}
 	switch op {
@@ -209,15 +209,6 @@ func parseSemver(s string) ([3]int, bool) {
 		v[i] = n
 	}
 	return v, true
-}
-
-func compareSemver(a, b [3]int) int {
-	for i := range a {
-		if a[i] != b[i] {
-			return a[i] - b[i]
-		}
-	}
-	return 0
 }
 
 // EncodeUIBundleChunks splits bundle bytes into the plugin's chunk payloads.

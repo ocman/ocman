@@ -40,7 +40,11 @@ export function usePluginPages() {
     retry: false,
     refetchInterval: 15_000,
   })) });
-  return { pages: queries.flatMap((q) => q.isError ? [] : q.data ?? []), loading: hosts.isPending || queries.some((q) => q.isPending), error: hosts.isError || queries.some((q) => q.isError) };
+  const owners = (hosts.data ?? []).filter((host) => host.pluginManagement).map((host) => host.remoteId);
+  return { pages: queries.flatMap((q) => q.isError ? [] : q.data ?? []), loading: hosts.isPending || queries.some((q) => q.isPending), error: hosts.isError || queries.some((q) => q.isError),
+    /** Owners whose page catalog failed, so their declarations are unknown rather than empty. */
+    failedOwners: owners.filter((_, i) => queries[i]?.isError),
+    refetch: () => Promise.all([hosts.refetch(), ...queries.map((q) => q.refetch())]) };
 }
 
 export function callPluginPage(page: PluginPage, projectId: string, method: 'read' | 'save', document?: PageDocument, signal?: AbortSignal, context: { itemId?: string; cursor?: string } = {}) {

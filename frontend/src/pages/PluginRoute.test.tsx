@@ -8,14 +8,14 @@ import type { PluginUI } from '../lib/pluginUI';
 import { usePluginAction, usePluginCall, usePluginContext, usePluginMutation } from '../plugin-ui';
 
 const mocks = vi.hoisted(() => ({
-  uis: [] as unknown[], pages: [] as unknown[], pagesLoading: false,
+  uis: [] as unknown[], pages: [] as unknown[], pagesLoading: false, failedOwners: [] as string[], uisError: false, refetchPages: vi.fn(),
   importModule: vi.fn(), postJSON: vi.fn(), invoke: vi.fn(),
 }));
 vi.mock('../lib/pluginUIModule', () => ({ importPluginModule: mocks.importModule }));
 vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(),
-  usePluginPages: () => ({ pages: mocks.pages, loading: mocks.pagesLoading, error: false }) }));
+  usePluginPages: () => ({ pages: mocks.pages, loading: mocks.pagesLoading, error: mocks.failedOwners.length > 0, failedOwners: mocks.failedOwners, refetch: mocks.refetchPages }) }));
 vi.mock('../lib/api', async (original) => ({ ...await original<typeof import('../lib/api')>(),
-  fetchJSON: () => Promise.resolve(mocks.uis), postJSON: mocks.postJSON }));
+  fetchJSON: () => mocks.uisError ? Promise.reject(new Error('offline')) : Promise.resolve(mocks.uis), postJSON: mocks.postJSON }));
 vi.mock('../lib/plugins', async (original) => ({ ...await original<typeof import('../lib/plugins')>(),
   pluginActions: { invoke: mocks.invoke, list: () => Promise.resolve([]), artifactURL: () => '' } }));
 vi.mock('./PluginPage', () => ({ PluginPage: ({ pageId }: { pageId?: string }) => <p>Declarative page {pageId || '(none)'}</p> }));
@@ -57,6 +57,8 @@ beforeEach(() => {
   mocks.uis = [ui];
   mocks.pages = [];
   mocks.pagesLoading = false;
+  mocks.failedOwners = [];
+  mocks.uisError = false;
   mocks.importModule.mockResolvedValue(Index);
   mocks.postJSON.mockImplementation((_url: string, body: { method: string }) => Promise.resolve(body.method === 'items.list' ? [{ name: 'Alpha' }] : { ok: true }));
   mocks.invoke.mockResolvedValue({ results: [{ kind: 'notice', text: 'Catalog reset' }] });
@@ -196,4 +198,28 @@ it('waits for declared pages before mounting UI on a sub-route', async () => {
   mount('/plugins/org.example.catalog/items/7');
   expect(await screen.findByText('Loading plugin…')).toBeInTheDocument();
   expect(mocks.importModule).not.toHaveBeenCalled();
+});
+
+it('refuses to guess the tier when the local page catalog failed', async () => {
+  mocks.failedOwners = ['local'];
+  mount('/plugins/org.example.catalog/settings');
+  expect(await screen.findByText('Could not load plugin pages')).toBeInTheDocument();
+  expect(mocks.importModule).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(mocks.refetchPages).toHaveBeenCalledOnce();
+});
+
+it('still mounts local UI when only a remote page catalog failed', async () => {
+  mocks.failedOwners = ['machine'];
+  mount('/plugins/org.example.catalog/items/7');
+  expect(await screen.findByText('Context org.example.catalog local /plugins/org.example.catalog')).toBeInTheDocument();
+});
+
+it('reports a failed interface catalog instead of an unavailable plugin', async () => {
+  mocks.uisError = true;
+  mount('/plugins/org.example.catalog');
+  expect(await screen.findByText('Could not load plugin interfaces')).toBeInTheDocument();
+  mocks.uisError = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('Alpha')).toBeInTheDocument();
 });

@@ -6,7 +6,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { blankPageValues, callPluginPage, pageRowName, usePluginPages, type PageDocument, type PageField } from './pluginPages';
 import { fetchJSON, postJSON } from './api';
 
-const hosts = vi.hoisted(() => ({ data: [] as { remoteId: string; pluginManagement: boolean }[], isPending: false, isError: false }));
+const hosts = vi.hoisted(() => ({ data: [] as { remoteId: string; pluginManagement: boolean }[], isPending: false, isError: false, refetch: vi.fn() }));
 vi.mock('./settingsQueries', () => ({ useHostCapabilities: () => hosts }));
 vi.mock('./api', () => ({ fetchJSON: vi.fn(), postJSON: vi.fn() }));
 
@@ -85,4 +85,14 @@ it('keeps new numeric values absent and forwards explicit item and cursor identi
   expect(postJSON).toHaveBeenLastCalledWith('/api/plugins/pages/call', {
     ownerId: 'remote', pluginId: 'plugin', method: 'read', request: { pageId: 'jobs', projectId: 'project-a', itemId: 'item-a', cursor: 'next' },
   }, { signal: undefined });
+});
+
+it('reports which owners failed and refetches every catalog', async () => {
+  vi.mocked(fetchJSON).mockImplementation((url: string) => url.includes('remote') ? Promise.reject(new Error('offline')) : Promise.resolve([]));
+  const { result } = renderHook(() => usePluginPages(), { wrapper });
+  await waitFor(() => expect(result.current.failedOwners).toEqual(['remote']));
+  const calls = vi.mocked(fetchJSON).mock.calls.length;
+  await result.current.refetch();
+  expect(hosts.refetch).toHaveBeenCalled();
+  expect(vi.mocked(fetchJSON).mock.calls.length).toBe(calls + 2);
 });

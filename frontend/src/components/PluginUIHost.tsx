@@ -61,7 +61,6 @@ export function PluginUIHost({ ui }: { ui: PluginUI & { index: NonNullable<Plugi
     pluginId: ui.pluginId,
     ownerId: ui.ownerId,
     basePath: `/plugins/${ui.pluginId}`,
-    actions: ui.actions,
     runAction: (actionId, context = {}) => new Promise<void>((resolve, reject) => {
       const declared = ui.actions.find((a) => a.id === actionId);
       if (!declared) { reject(new Error(`Unknown plugin action: ${actionId}`)); return; }

@@ -22,7 +22,7 @@ export function usePluginUIs() {
     retry: false,
     refetchInterval: 15_000,
   });
-  return { uis: query.data ?? [], loading: query.isPending, error: query.isError };
+  return { uis: query.data ?? [], loading: query.isPending, error: query.isError, refetch: () => query.refetch() };
 }
 
 export function callPluginUI<T>(pluginId: string, method: string, params: unknown, signal?: AbortSignal) {

@@ -1,9 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { PluginContextValue } from '@ocman/plugin-ui';
-import type { PluginUI } from '../lib/pluginUI';
 
 export interface PluginHostValue extends PluginContextValue {
-  actions: PluginUI['actions'];
   /** Opens the host action dialog and resolves when it closes. */
   runAction(actionId: string, context?: Record<string, string>): Promise<void>;
 }
