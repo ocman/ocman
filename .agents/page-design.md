@@ -8,6 +8,14 @@ Component and token rules live in
 
 ## Page structure and actions
 
+- Give each page one primary purpose and each active view one main list or
+  workspace. Do not stack independent lists, workflows or full sections below
+  one another to make a catch-all page.
+- Use tabs for related alternate views, such as Routines and Webhook inboxes;
+  use separate routes when the purposes differ. Each active tab should remain
+  focused on its own task, filters, primary action and content.
+- Keep supporting information with the main task. Toolbars, status messages,
+  explanations and related form groups do not each need a tab.
 - Keep the compact, data-first visual language. Group content with borders and
   background contrast; do not put every section in a decorative card.
 - The app header owns the page title. Place section navigation below it when
@@ -84,8 +92,10 @@ Component and token rules live in
 
 ## Review checklist
 
-Check initial loading, successful empty results, filtered empty results, initial
-failure, refresh/pending operations and failures after data has loaded. Verify
+First check that the page has one clear purpose and does not stack independent
+lists or workflows. Check initial loading, successful empty results, filtered
+empty results, initial failure, refresh/pending operations and failures after
+data has loaded. Verify
 desktop and phone layouts, keyboard operation, URL reload/Back behavior and
 explicit remote ownership. Bug fixes need regression tests observed failing
 before the implementation, as described in [testing.md](testing.md).

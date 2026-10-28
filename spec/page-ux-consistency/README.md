@@ -16,6 +16,8 @@ tracks adoption without treating every existing page as already compliant.
 
 ## Remaining work
 
+- [ ] Review pages for stacked independent sections; split related views into
+  tabs and unrelated tasks into separate routes.
 - [ ] Projects, Sessions and Background tasks: align page states and URL filters.
 - [ ] Browse-and-open lists: explicit title controls and safe whole-row clicks.
 - [ ] Collection pages: stacked phone rows and visible primary actions.
