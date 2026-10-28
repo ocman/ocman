@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArtifactContent } from '../components/ArtifactContent';
 import { ArtifactSessionLink } from '../components/ArtifactList';
 import { ArtifactShareModal } from '../components/ArtifactShareModal';
@@ -15,6 +16,8 @@ import styles from './ArtifactDetail.module.css';
 export function ArtifactDetail() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const listURL = `/artifacts${useLocation().search}`;
   const known = useKnownSessionIds();
   const [artifact, setArtifact] = useState<Artifact>();
   const [error, setError] = useState('');
@@ -35,14 +38,16 @@ export function ArtifactDetail() {
     setBusy(true);
     try {
       await artifactsApi.remove(artifact.id);
-      navigate('/artifacts');
+      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      void queryClient.invalidateQueries({ queryKey: ['artifact-stats'] });
+      navigate(listURL);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete artifact.');
       setBusy(false);
     }
   };
 
-  const back = <Button type="button" size="small" variant="ghost" onClick={() => navigate('/artifacts')}><i className="bi bi-arrow-left" aria-hidden="true" />Back to artifacts</Button>;
+  const back = <Button type="button" size="small" variant="ghost" onClick={() => navigate(listURL)}><i className="bi bi-arrow-left" aria-hidden="true" />Back to artifacts</Button>;
 
   if (!artifact) {
     return <main className={styles.page}>{back}{error ? <InlineAlert>{error}</InlineAlert> : <LoadingState>Loading artifact...</LoadingState>}</main>;

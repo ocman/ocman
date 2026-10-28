@@ -37,6 +37,48 @@ function LocationProbe() {
 }
 
 describe('Routines', () => {
+  it('shows a dedicated failure with retry instead of a false empty routine list', async () => {
+    vi.mocked(api.routines.list).mockRejectedValueOnce(new Error('Routines offline')).mockResolvedValue([routine]);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Routines are unavailable' })).toBeVisible();
+    expect(screen.queryByText('No routines yet.')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('row', { name: 'View Morning check history' })).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows a dedicated failure rather than empty webhook inboxes', async () => {
+    vi.mocked(api.webhookInboxes.list).mockRejectedValue(new Error('Inboxes offline'));
+    renderWithQuery(<MemoryRouter initialEntries={['/routines?tab=inboxes']}><Routines /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Webhook inboxes are unavailable' })).toBeVisible();
+    expect(screen.queryByText('No webhook inboxes yet.')).not.toBeInTheDocument();
+  });
+
+  it('uses skeletons for initial routine loading', () => {
+    vi.mocked(api.routines.list).mockReturnValue(new Promise(() => {}));
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    expect(screen.getByRole('table', { name: 'Loading routines' })).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('shows routines without waiting for an independent inbox request', async () => {
+    vi.mocked(api.webhookInboxes.list).mockReturnValue(new Promise(() => {}));
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    expect(await screen.findByRole('row', { name: 'View Morning check history' })).toBeVisible();
+  });
+
+  it.each([true, false])('keeps the successful routine view on refresh failure, empty=%s', async (empty) => {
+    vi.mocked(api.routines.list).mockResolvedValue(empty ? [] : [routine]);
+    const { client } = renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    if (empty) await screen.findByRole('heading', { name: 'No routines yet' });
+    else await screen.findByRole('row', { name: 'View Morning check history' });
+    vi.mocked(api.routines.list).mockRejectedValue(new Error('Refresh offline'));
+    await act(async () => { await client.invalidateQueries({ queryKey: ['routines'] }); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Refresh offline');
+    expect(screen.queryByRole('heading', { name: 'Routines are unavailable' })).not.toBeInTheDocument();
+    if (empty) expect(screen.getByRole('heading', { name: 'No routines yet' })).toBeVisible();
+    else expect(screen.getByRole('row', { name: 'View Morning check history' })).toBeVisible();
+  });
+
   it.each(['routine-1', 'routine-2'])('keeps the new %s drawer and draft when an earlier save finishes after navigation', async (nextID) => {
     // Only the save refresh is under test; slow runners must not add polling reads.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -403,7 +445,7 @@ describe('Routines', () => {
 
     const create = await screen.findByRole('button', { name: 'New routine' });
     expect(create).toHaveClass('oc-button', 'oc-button--accent');
-    expect(screen.getByText('No routines yet.')).toHaveClass('oc-empty');
+    expect(await screen.findByRole('heading', { name: 'No routines yet' })).toBeVisible();
 
     await user.click(create);
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveClass('oc-button');
@@ -522,7 +564,7 @@ describe('Routines', () => {
   it('opens the webhook inboxes tab from the URL', async () => {
     renderWithQuery(<MemoryRouter initialEntries={['/routines?tab=inboxes']}><Routines /></MemoryRouter>);
 
-    expect(await screen.findByText('No webhook inboxes yet.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'No webhook inboxes yet' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Webhook inboxes' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('button', { name: 'New routine' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New inbox' })).toBeInTheDocument();

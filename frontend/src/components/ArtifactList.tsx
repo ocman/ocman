@@ -13,7 +13,7 @@ export function ArtifactSessionLink({ artifact, known }: { artifact: Artifact; k
 }
 
 /** Artifact rows; reused by the /artifacts page and the session sidebar. */
-export function ArtifactList({ artifacts, compact = false }: { artifacts: Artifact[]; compact?: boolean }) {
+export function ArtifactList({ artifacts, compact = false, listSearch = '' }: { artifacts: Artifact[]; compact?: boolean; listSearch?: string }) {
   const known = useKnownSessionIds();
   return (
     <DataTable framed data-testid="artifact-list">
@@ -21,7 +21,7 @@ export function ArtifactList({ artifacts, compact = false }: { artifacts: Artifa
         <tbody>
           {artifacts.map((a) => (
             <tr key={a.id} data-testid="artifact-row">
-              <td className={styles.titleCell}><Link className={styles.title} to={`/artifacts/${encodeURIComponent(a.id)}`}>{a.title}</Link></td>
+              <td className={styles.titleCell}><Link className={styles.title} to={`/artifacts/${encodeURIComponent(a.id)}${listSearch ? `?${listSearch}` : ''}`}>{a.title}</Link></td>
               {!compact && <td><ProjectLabel path={a.directory} /></td>}
               {!compact && <td><ArtifactSessionLink artifact={a} known={known} /></td>}
               <td>{a.items.length}</td>

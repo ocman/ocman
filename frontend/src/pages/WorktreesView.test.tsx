@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { WorktreesView } from './WorktreesView';
 import { api } from '../lib/api';
@@ -93,17 +93,26 @@ describe('WorktreesView', () => {
     fireEvent.click(button);
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByText('feature')).toBeVisible();
     fireEvent.click(button);
     expect(api.worktree.list).toHaveBeenCalledOnce();
 
     rejectRefresh(new Error('Refresh failed'));
     expect(await screen.findByText('Refresh failed')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Refresh failed');
+    expect(screen.getByText('feature')).toBeVisible();
     expect(button).toBeEnabled();
     expect(button).toHaveAttribute('aria-busy', 'false');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('feature')).toBeInTheDocument();
     expect(api.worktree.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps collection actions in the page toolbar rather than the app header', async () => {
+    renderView();
+    await screen.findByText('feature');
+    expect(within(screen.getByRole('tabpanel', { name: 'Worktrees' })).getByRole('button', { name: 'New worktree session' })).toBeVisible();
+    expect(document.getElementById('header-actions-slot')).toBeEmptyDOMElement();
   });
 
   // AD-8 / #393: launch affordance shows when opencodeLaunch is on and

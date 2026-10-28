@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, ButtonGroup } from '../components/Control';
-import { EmptyState } from '../components/EmptyState';
+import { PageState } from '../components/PageState';
+import { InlineAlert } from '../components/InlineAlert';
+import { SkeletonTable } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { RoutineStateBadge } from '../components/RoutineStateBadge';
@@ -21,7 +23,7 @@ export function Routines() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === 'inboxes' ? 'inboxes' : 'routines';
   // Both lists poll while the page is visible (react-query pauses hidden tabs).
-  const { routines, inboxes, loading, ready, loadError, refreshKey, reload: load } = useRoutineLists();
+  const { routines, inboxes, routineList, inboxList, loading, ready, loadError, refreshKey, reload: load } = useRoutineLists();
   const historyId = searchParams.get('routine') ?? undefined;
   const view = searchParams.get('view');
   const detailTab = view === 'settings' || view === 'stats' ? view : 'history';
@@ -35,6 +37,9 @@ export function Routines() {
   const [busy, setBusy] = useState(false);
   const [actionError, setError] = useState('');
   const error = actionError || loadError;
+  const activeList = tab === 'inboxes' ? inboxList : routineList;
+  const unavailable = activeList.isError && activeList.data === undefined;
+  const retry = () => { setError(''); void refreshAfterSave(); };
   const [inboxDrawer, setInboxDrawer] = useState<string>();
 
   const openCreate = () => {
@@ -61,7 +66,7 @@ export function Routines() {
   return <main className={styles.page}>
     <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'inboxes' ? { tab: value } : {}, { replace: true })} className={styles.tabs}>
       <TabsList aria-label="Routine views"><TabsTrigger value="routines">Routines</TabsTrigger><TabsTrigger value="inboxes">Webhook inboxes</TabsTrigger></TabsList>
-      {error && !showForm && <p role="alert" className={styles.error}>{error}</p>}
+      {error && !showForm && !unavailable && <InlineAlert onRetry={retry} retrying={routineList.isFetching || inboxList.isFetching}>{error}</InlineAlert>}
       {showForm && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
       {historyRoutine && ready && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} inboxes={inboxes} activeTab={detailTab} onTabChange={(view) => selectRoutine(historyRoutine.id, view)} refreshKey={refreshKey} onRefresh={refreshAfterSave} onSaved={saved} onClose={() => selectRoutine()} />}
       {historyId && !historyRoutine && !loading && !error && <p role="alert">This routine is unavailable.</p>}
@@ -69,7 +74,9 @@ export function Routines() {
 
       <TabsContent value="routines" className={styles.panel}>
         <header className={styles.header}><p>Save a prompt, run it now, or schedule it for later.</p><Button type="button" variant="accent" onClick={openCreate}><i className="bi bi-plus-lg" aria-hidden="true" />New routine</Button></header>
-        {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading routines...</div> : routines.length === 0 ? <EmptyState>No routines yet.</EmptyState> : (
+        {routineList.isError && routineList.data === undefined ? <PageState error icon="bi-exclamation-circle" title="Routines are unavailable" description={routineList.error.message}><Button type="button" onClick={retry} disabled={routineList.isFetching} aria-busy={routineList.isFetching}>Retry</Button></PageState>
+          : routineList.isPending ? <SkeletonTable columns={['Name', 'Project', 'Session', 'Trigger', 'Last run', 'Status', 'Actions']} rows={3} label="Loading routines" />
+          : routines.length === 0 ? <PageState icon="bi-clock-history" title="No routines yet" description="Save a prompt to run manually, on a schedule, or when a webhook arrives."><Button type="button" variant="accent" onClick={openCreate}>Create a routine</Button></PageState> : (
           <section className={styles.list} aria-label="Saved routines"><DataTable framed><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
             const latest = routine.latestRun;
             const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
@@ -87,7 +94,9 @@ export function Routines() {
       <TabsContent value="inboxes" className={styles.panel}>
         <section aria-label="Webhook inboxes" className={styles.panel}>
           <header className={styles.header}><p>Inboxes capture encrypted webhook deliveries. Routines subscribe to an inbox and filter which deliveries run them.</p><Button type="button" variant="accent" onClick={() => setInboxDrawer('')}><i className="bi bi-plus-lg" aria-hidden="true" />New inbox</Button></header>
-          {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading inboxes...</div> : inboxes.length === 0 ? <EmptyState>No webhook inboxes yet.</EmptyState> : (
+          {inboxList.isError && inboxList.data === undefined ? <PageState error icon="bi-exclamation-circle" title="Webhook inboxes are unavailable" description={inboxList.error.message}><Button type="button" onClick={retry} disabled={inboxList.isFetching} aria-busy={inboxList.isFetching}>Retry</Button></PageState>
+            : inboxList.isPending ? <SkeletonTable columns={['Name', 'Linked routines', 'Deliveries']} rows={3} label="Loading webhook inboxes" />
+            : inboxes.length === 0 ? <PageState icon="bi-inbox" title="No webhook inboxes yet" description="Create an inbox to capture webhook deliveries and trigger routines."><Button type="button" variant="accent" onClick={() => setInboxDrawer('')}>Create an inbox</Button></PageState> : (
             <section className={styles.list} aria-label="Saved inboxes"><DataTable framed><thead><tr><th>Name</th><th>Linked routines</th><th>Deliveries</th></tr></thead><tbody>{inboxes.map((inbox) => (
               <tr key={inbox.id} tabIndex={0} aria-label={`Manage ${inbox.name || inbox.id} inbox`} onClick={() => setInboxDrawer(inbox.id)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setInboxDrawer(inbox.id); } }}>
                 <td><strong>{inbox.name || inbox.id}</strong><small>Key v{inbox.keyVersion}</small></td>

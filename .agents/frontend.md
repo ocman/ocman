@@ -1,7 +1,8 @@
 # Frontend implementation rules
 
 The frontend is React, TypeScript and Vite. State uses Zustand; routing uses
-react-router-dom. Read [sessions.md](sessions.md) before changing composer,
+react-router-dom. Read [page-design.md](page-design.md) for page layout and UX
+defaults. Read [sessions.md](sessions.md) before changing composer,
 draft, first-delivery, queue or status behavior.
 
 ## Platform and owner independence
@@ -21,7 +22,8 @@ Look for shared components before writing markup or CSS:
 - Dialogs: `Modal`, `ModalHeader`, `ModalFooter`. Leave class props unset for
   default theming.
 - Layout/state: `DataTable` with `framed` for a bordered scrollable card,
-  `DataTableGroup`, `DataTableRow`, `EmptyState`, `LoadingState`, `Tabs`,
+  `DataTableGroup`, `DataTableRow`, `PageState` for dedicated empty/unavailable
+  views, `EmptyState` for compact lists, `LoadingState`, `Tabs`,
   `SegmentedControl`, `SettingRow` and `HeaderPortal` for header actions.
 - Markdown: wrap `MarkdownContent` in `.oc-md`.
 

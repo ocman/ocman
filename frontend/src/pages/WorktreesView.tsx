@@ -12,9 +12,8 @@ import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { RefreshButton } from '../components/RefreshButton';
 import { InlineAlert } from '../components/InlineAlert';
-import { EmptyState } from '../components/EmptyState';
+import { PageState } from '../components/PageState';
 import { Button, ButtonGroup } from '../components/Control';
-import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import styles from './WorktreesView.module.css';
 import { ProjectShell } from './ProjectShell';
 
@@ -41,6 +40,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
 
   const [worktrees, setWorktrees] = useState<WorktreeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Per-row removal UI state keyed by worktree path. `confirm` arms the
   // two-step delete; `dirty` means the backend refused (409) because the
@@ -63,6 +63,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
         refetchSessions(),
       ]);
       setWorktrees(wtResp.worktrees);
+      setLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -124,8 +125,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
   }
 
   return (
-    <div>
-      <HeaderPortal>
+    <div className={styles.content}>
         <ButtonGroup label="Worktree actions">
           <RefreshButton size="small" variant="default" onClick={() => void load()} loading={loading} />
           <Button size="small" variant="accent"
@@ -135,14 +135,14 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
             New worktree session
           </Button>
         </ButtonGroup>
-      </HeaderPortal>
 
-      {loading ? (
+      {error && loaded && <InlineAlert onRetry={() => { void load(); }} retrying={loading}>{error}</InlineAlert>}
+      {loading && !loaded ? (
         <SkeletonTable columns={['Branch', 'Path', 'Sessions', 'Last activity', 'Actions']} rows={3} label="Loading worktrees" />
-      ) : error ? (
-        <InlineAlert onRetry={() => { void load(); }} retrying={loading}>{error}</InlineAlert>
+      ) : error && !loaded ? (
+        <PageState error icon="bi-exclamation-circle" title="Worktrees are unavailable" description={error}><Button type="button" onClick={() => void load()} disabled={loading} aria-busy={loading}>Retry</Button></PageState>
       ) : rows.length === 0 ? (
-        <EmptyState>No worktrees found</EmptyState>
+        <PageState icon="bi-diagram-3" title="No worktrees found" description="Create a worktree session to work in a separate branch and checkout." />
       ) : (
         <DataTable framed className={styles.table}>
           <thead>

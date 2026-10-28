@@ -41,6 +41,8 @@ export function useRoutineLists() {
   const routinesQ = useRoutines();
   const inboxesQ = useWebhookInboxes();
   return {
+    routineList: routinesQ,
+    inboxList: inboxesQ,
     routines: routinesQ.data ?? EMPTY_ROUTINES,
     inboxes: inboxesQ.data ?? EMPTY_INBOXES,
     loading: routinesQ.isPending || inboxesQ.isPending,

@@ -52,6 +52,27 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
 });
 
 for (const width of [1440, 768, 390]) {
+  test(`routine unavailable and empty states fit at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    let failed = true;
+    await page.route('/api/routines', route => failed
+      ? route.fulfill({ status: 400, contentType: 'text/plain', body: 'Routine list unavailable.' })
+      : route.fulfill({ json: [] }));
+    await page.route('/api/webhook-inboxes', route => route.fulfill({ json: [] }));
+    await page.goto('/routines');
+    await expect(page.getByRole('heading', { name: 'Routines are unavailable' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No routines yet' })).toHaveCount(0);
+    expect(await page.getByRole('main').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('routines-unavailable.png') });
+    failed = false;
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'No routines yet' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create a routine', exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('routines-empty.png') });
+    await page.getByRole('button', { name: 'Create a routine', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'New routine' })).toBeVisible();
+  });
+
   test(`drawer uses the requested screen width at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.route('/api/routines', (route) => route.fulfill({ json: [] }));

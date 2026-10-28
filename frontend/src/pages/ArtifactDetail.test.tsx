@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { api } from '../lib/api';
 import { artifactsApi, previewKind, type Artifact } from '../lib/artifactsApi';
 import { ArtifactDetail } from './ArtifactDetail';
@@ -29,12 +29,16 @@ const artifact: Artifact = {
   ],
 };
 
-function renderPage() {
+function ListPage() {
+  return <><p>list page</p><output data-testid="list-search">{useLocation().search}</output></>;
+}
+
+function renderPage(entry = '/artifacts/a1') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/artifacts/a1']}><Routes>
+  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><Routes>
     <Route path="/artifacts/:id" element={<ArtifactDetail />} />
-    <Route path="/artifacts" element={<p>list page</p>} />
-  </Routes></MemoryRouter></QueryClientProvider>);
+    <Route path="/artifacts" element={<ListPage />} />
+  </Routes></MemoryRouter></QueryClientProvider>) };
 }
 
 describe('ArtifactDetail', () => {
@@ -114,6 +118,30 @@ describe('ArtifactDetail', () => {
     await screen.findByRole('heading', { name: 'Release notes' });
     await userEvent.click(screen.getByRole('button', { name: 'Back to artifacts' }));
     expect(await screen.findByText('list page')).toBeInTheDocument();
+  });
+
+  it.each(['back', 'delete'])('preserves list filters after %s', async (action) => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(artifactsApi.remove).mockResolvedValue(undefined);
+    renderPage('/artifacts/a1?q=coverage&directory=%2Frepo');
+    await screen.findByRole('heading', { name: 'Release notes' });
+    await userEvent.click(screen.getByRole('button', { name: action === 'back' ? 'Back to artifacts' : 'Delete' }));
+    expect(await screen.findByTestId('list-search')).toHaveTextContent('?q=coverage&directory=%2Frepo');
+    confirm.mockRestore();
+  });
+
+  it('invalidates cached lists and storage totals after deletion', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(artifactsApi.remove).mockResolvedValue(undefined);
+    const { client } = renderPage();
+    const key = ['artifacts', '/repo', 'coverage'];
+    client.setQueryData(key, { pages: [{ artifacts: [artifact], nextCursor: '' }], pageParams: [''] });
+    client.setQueryData(['artifact-stats'], { count: 1, totalBytes: 10 });
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    await screen.findByText('list page');
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['artifact-stats'])?.isInvalidated).toBe(true);
+    confirm.mockRestore();
   });
 
   it('shows load errors', async () => {

@@ -9,6 +9,5 @@
 .list td:last-child { width: 1%; white-space: nowrap; }
 .list td strong, .list td small { display: block; }
 .list td small { max-width: 320px; overflow: hidden; color: var(--text-dim); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.error { color: var(--danger); }
 .tabs, .panel { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; }
 @media (max-width: 640px) { .header { align-items: stretch; flex-direction: column; } }

@@ -29,7 +29,7 @@ test('browses, previews and deletes an artifact', async ({ mockedPage: page }) =
   page.once('dialog', (dialog) => void dialog.accept());
   await page.getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(/\/artifacts$/);
-  await expect(page.getByText('No artifacts yet.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No artifacts saved yet' })).toBeVisible();
 });
 
 for (const width of [1280, 390]) {
@@ -82,7 +82,8 @@ for (const width of [1280, 390]) {
     });
     await page.goto('/artifacts');
     await expect(page.getByRole('alert')).toContainText('Could not load artifact list');
-    await expect(page.getByText('No artifacts yet.')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Artifacts are unavailable' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No artifacts saved yet' })).toHaveCount(0);
     failed = false;
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Build report', exact: true })).toBeVisible();
@@ -101,6 +102,32 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('link', { name: 'Build report', exact: true })).toHaveCount(0);
     await expect(page.getByRole('link', { name: release.title, exact: true })).toBeVisible();
     expect(queries.at(-1)!.get('directory')).toBe(artifact.directory);
+  });
+
+  test(`artifact URL filters and dedicated empty states work at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.route('/api/artifacts/stats', route => route.fulfill({ json: { count: 1, totalBytes: 11 } }));
+    await page.route(/\/api\/artifacts(\?.*)?$/, route => {
+      const query = new URL(route.request().url()).searchParams;
+      return route.fulfill({ json: { artifacts: query.get('q') ? [] : [artifact], nextCursor: '' } });
+    });
+    await page.route('/api/artifacts/art-1', route => route.fulfill({ json: artifact }));
+    await page.route('/api/artifacts/art-1/files/0', route => route.fulfill({ contentType: 'text/plain', body: 'build ok' }));
+    await page.goto('/artifacts?q=missing&source=review');
+    await expect(page.getByRole('heading', { name: 'No matching artifacts' })).toBeVisible();
+    await expect(page.getByRole('searchbox', { name: 'Search artifacts' })).toHaveValue('missing');
+    expect(await page.getByRole('main').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('artifacts-filtered-empty.png') });
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(page).toHaveURL(/\/artifacts\?source=review$/);
+    await expect(page.getByRole('searchbox', { name: 'Search artifacts' })).toHaveValue('');
+    await page.getByRole('combobox', { name: 'Project', exact: true }).selectOption(artifact.directory);
+    await page.getByRole('link', { name: 'Build report', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Build report' })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to artifacts' }).click();
+    await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toHaveValue(artifact.directory);
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'Project', exact: true })).toHaveValue(artifact.directory);
   });
 
   test(`artifact content owns responsive previews and file actions at ${width}px`, async ({ mockedPage: page }) => {
