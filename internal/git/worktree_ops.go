@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // worktreeCommandTimeout bounds each git invocation. Worktree operations

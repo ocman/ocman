@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/platforms"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 func TestRemoteListWorktreesPreservesRepositoryErrors(t *testing.T) {

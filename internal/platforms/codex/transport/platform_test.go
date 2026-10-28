@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type rig struct {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // FuzzDerivedTmuxNames checks the tmux names ocman derives from a

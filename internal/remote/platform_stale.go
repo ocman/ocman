@@ -1,6 +1,6 @@
 package remote
 
-import "github.com/NoUseFreak/ocman/internal/db"
+import "github.com/ocman/ocman/internal/db"
 
 // CachedSession supplies identity for best-effort refresh hints without an RPC
 // or transcript read. A session absent from the last listing yields no hint.

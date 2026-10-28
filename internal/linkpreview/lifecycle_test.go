@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/state"
 )
 
 const lifecycleCallback = "https://ocman.test/api/previews/oauth/callback"

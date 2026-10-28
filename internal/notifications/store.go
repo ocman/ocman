@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
 	webpush "github.com/SherClockHolmes/webpush-go"
+	"github.com/ocman/ocman/internal/state"
 )
 
 var Schema = state.ModuleSchema{

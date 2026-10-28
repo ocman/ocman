@@ -2,8 +2,8 @@ package queuemod
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 	"net/http"
 	"testing"
 	"time"

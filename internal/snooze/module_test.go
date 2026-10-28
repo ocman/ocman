@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestWorkerWakesAndStops(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func nativeProposal(proposal model.NativeProposalRevision) (ProposalRevision, error) {

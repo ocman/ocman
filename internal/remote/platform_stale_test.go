@@ -9,8 +9,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/db"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 // filteringSessionsClient answers Sessions like a remote ocman would

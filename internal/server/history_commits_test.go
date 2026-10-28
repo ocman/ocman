@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // The final reply streams, the source restarts and history has not stored it

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // connectedConn builds a RemoteConn that reports itself as connected

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func historySnapshot(text string) *db.HistorySnapshot {

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/factorymod"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factorymod"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type usagePlatform struct {

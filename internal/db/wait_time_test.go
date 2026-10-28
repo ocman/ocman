@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 type toolTiming = analyticsdata.ToolTiming

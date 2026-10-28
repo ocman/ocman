@@ -1,6 +1,6 @@
 package platforms
 
-import "github.com/NoUseFreak/ocman/internal/db"
+import "github.com/ocman/ocman/internal/db"
 
 // SessionEventSink receives live lifecycle events from any adapter. The
 // adapter updates its own live status before invoking these callbacks, so

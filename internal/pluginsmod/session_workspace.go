@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func (m *Module) pluginModelWorkspace(ctx context.Context, pluginID, workspaceID string) (string, error) {

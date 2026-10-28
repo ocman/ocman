@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // rawMCPEntry mirrors a single value in OpenCode's `GET /mcp`

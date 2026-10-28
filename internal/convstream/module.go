@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // Deps are read at call time where they are functions.

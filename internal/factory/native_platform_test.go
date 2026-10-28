@@ -3,7 +3,7 @@ package factory
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func TestEpicPlatformIsPersistedAndFrozen(t *testing.T) {

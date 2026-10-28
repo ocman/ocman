@@ -12,8 +12,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // maxInheritedPatterns caps the total number of "allow" rules emitted

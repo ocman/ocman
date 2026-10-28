@@ -3,7 +3,7 @@ package platforms
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // SessionIdentityProbe proves that a native session belongs to the

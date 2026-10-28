@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // Owner observations are advisory, not locks. Separate files per process let

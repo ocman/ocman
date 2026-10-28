@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/platforms"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // Named permission profiles (Settings area): user-managed reusable rule sets

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/sqliteutil"
+	"github.com/ocman/ocman/internal/sqliteutil"
 	"modernc.org/sqlite"
 )
 

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type sessionService interface {

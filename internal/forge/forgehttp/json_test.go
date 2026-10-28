@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 func fakeFetch(body string, status int, err error) Fetch {

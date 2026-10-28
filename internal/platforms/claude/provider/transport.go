@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 func (l *live) read(p *proc, stdout io.Reader) {

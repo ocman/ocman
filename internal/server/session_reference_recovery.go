@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
-	"github.com/NoUseFreak/ocman/internal/sessionrefrecovery"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/sessionrefrecovery"
 	log "github.com/sirupsen/logrus"
 )
 

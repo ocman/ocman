@@ -4,8 +4,8 @@ import (
 	"context"
 	"net"
 
-	"github.com/NoUseFreak/ocman/internal/startup"
-	"github.com/NoUseFreak/ocman/internal/webui"
+	"github.com/ocman/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/webui"
 )
 
 func startBackend(ctx context.Context, ln net.Listener, serve func(context.Context, net.Listener, func()) error) error {

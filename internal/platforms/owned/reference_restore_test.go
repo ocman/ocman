@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type restoringRemote struct {

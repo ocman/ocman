@@ -13,15 +13,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
-	"github.com/NoUseFreak/ocman/internal/routines"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/routines"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // claudeTestPlatform mirrors main's claudePlatform: the generic adapter plus

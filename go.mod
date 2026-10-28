@@ -1,4 +1,4 @@
-module github.com/NoUseFreak/ocman
+module github.com/ocman/ocman
 
 go 1.26.9
 
@@ -11,6 +11,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/compress v1.20.3
 	github.com/mark3labs/mcp-go v1.2.1
+	github.com/ocman/ocman/sdk v0.0.0-00010101000000-000000000000
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sirupsen/logrus v1.10.2
 	github.com/wailsapp/wails/v2 v2.16.0
@@ -85,3 +86,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+replace github.com/ocman/ocman/sdk => ./sdk

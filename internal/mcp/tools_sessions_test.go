@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/mark3labs/mcp-go/mcptest"
+	"github.com/ocman/ocman/internal/db"
+	internalmcp "github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 type fakeSessionService struct {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // Path returns the path of a fresh, fully migrated state.db in its own

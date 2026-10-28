@@ -18,10 +18,10 @@ import (
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/term"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/term"
 )
 
 // Deps is what the server supplies.

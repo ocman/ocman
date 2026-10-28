@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 type hostNative struct {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
 )
 
 func generatedHooks(t *testing.T, hook string) map[string]string {

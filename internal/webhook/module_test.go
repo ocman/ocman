@@ -14,9 +14,9 @@ import (
 
 	"filippo.io/age"
 
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type fakeRoutines struct{ runs atomic.Int32 }

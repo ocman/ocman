@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/platformtest"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/platformtest"
+	"github.com/ocman/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // spoolDown blocks appends even as root, retaining the recorded spool for restore.

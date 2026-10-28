@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
+	plugin "github.com/ocman/ocman/sdk/plugin"
 )
 
 const (

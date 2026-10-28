@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessionsvc"
 )
 
 type PlanningLauncher struct{ m *Module }

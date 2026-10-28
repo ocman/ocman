@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	gitpkg "github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	gitpkg "github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/ocruntime"
 )
 
 // ProviderRootForCleanup shares launch identity but never guesses after a

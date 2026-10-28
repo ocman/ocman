@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 func TestExternalOwnerWarning(t *testing.T) {

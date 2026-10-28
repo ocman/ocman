@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/ocman/ocman/internal/git"
 )
 
 // ManagedOpencodeRoot resolves project membership without probing or launching.

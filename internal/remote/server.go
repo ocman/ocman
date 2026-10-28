@@ -7,12 +7,12 @@ import (
 	"os"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/platforms"
+	pb "github.com/ocman/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

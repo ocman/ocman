@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // On reconnect, ingestion discovers sessions from the supervisor's status

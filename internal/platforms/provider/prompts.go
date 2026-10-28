@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"sort"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // ErrReconciliationConflict means the response was superseded by a local prompt

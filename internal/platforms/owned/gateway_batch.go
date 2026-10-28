@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (g *IdentityGateway) LookupBatch(ctx context.Context, platformID string, nativeIDs []string) ([]platforms.SessionIdentity, error) {

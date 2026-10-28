@@ -3,7 +3,7 @@ package owned
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // SessionLifecycle is a runtime-safety probe of the live integration. It is

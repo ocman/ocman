@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 	_ "modernc.org/sqlite"
 )
 

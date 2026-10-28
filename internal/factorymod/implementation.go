@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type ImplementationLauncher struct{ m *Module }

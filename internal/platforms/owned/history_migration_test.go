@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t *testing.T) {

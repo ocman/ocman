@@ -5,15 +5,15 @@ import (
 	"net/http"
 	"os/exec"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/projectforge"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/projectforge"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // host.go wires the server-package host operations (tmux, projects,

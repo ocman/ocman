@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // TestDefaultTmuxRunner_NewWindowRunsCommandLiterally is a regression

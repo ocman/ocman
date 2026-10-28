@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/forge/github"
 )
 
 func TestPreviewStatusRejectsStaleReviewsAfterFreshMetadata(t *testing.T) {

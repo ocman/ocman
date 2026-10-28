@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/convevents/v1map"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/convevents/v1map"
 )
 
 func TestBackgroundSnapshotReachesCanonicalConversation(t *testing.T) {

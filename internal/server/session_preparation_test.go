@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 type preparationLifetimeModule struct {

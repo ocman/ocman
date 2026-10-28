@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestAgentWaitsObserveQuestionsAndManualPermissions(t *testing.T) {

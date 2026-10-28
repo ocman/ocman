@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // liveParts returns the last upsert of every streamed part, by part id.

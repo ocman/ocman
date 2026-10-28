@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/pluginsmod"
-	"github.com/NoUseFreak/ocman/internal/server"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/server"
+	"github.com/ocman/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 type restartCutoverNative struct {

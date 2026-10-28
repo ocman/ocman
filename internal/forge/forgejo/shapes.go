@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
 )
 
 // listQuery builds a list page query; key/value add the endpoint's scoping.

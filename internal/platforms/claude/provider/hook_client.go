@@ -10,8 +10,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // HookTimeout bounds `ocman hook` end to end (AD-11).

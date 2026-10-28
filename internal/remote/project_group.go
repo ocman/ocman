@@ -2,10 +2,10 @@ package remote
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // AssignProjectKeys labels connected components of shared upstreams. Checkout

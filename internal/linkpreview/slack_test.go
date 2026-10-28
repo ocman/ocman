@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 // slackAPI fakes the Slack Web API per token.

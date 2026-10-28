@@ -8,8 +8,8 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
 
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestInboxToolDiscoveryAndActions(t *testing.T) {

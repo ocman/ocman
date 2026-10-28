@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/sessionsvc"
 )
 
 // provisionalPrefix names an automatic worktree until the small model has

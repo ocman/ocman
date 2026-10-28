@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 var (

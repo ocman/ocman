@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/conversationingest"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/conversationingest"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestDeletedCanonicalConversationStaysReadableFromRetainedHistory(t *testing.T) {

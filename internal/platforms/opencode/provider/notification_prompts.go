@@ -3,7 +3,7 @@ package opencode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // NotificationPrompts reads observed prompts, including descendants, without

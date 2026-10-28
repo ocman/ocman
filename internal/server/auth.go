@@ -17,7 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // Auth protects clients behind a password lockscreen.

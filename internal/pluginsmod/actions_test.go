@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestPluginActionUnavailableAndErrors(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestTeeV2SyntheticMessageDoesNotAdvanceUserPromptTimestamp(t *testing.T) {

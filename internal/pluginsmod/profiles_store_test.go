@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 const readOnlyRulesJSON = `[{"permission":"bash","pattern":"*","action":"deny"},{"permission":"edit","pattern":"*","action":"deny"},{"permission":"write","pattern":"*","action":"deny"}]`

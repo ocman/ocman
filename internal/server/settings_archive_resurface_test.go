@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func TestArchiveResurfaceSettings(t *testing.T) {

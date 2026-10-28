@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 const KindProviderTmux = "provider-tmux"

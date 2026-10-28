@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 const tracerFormulaSource = `version = 1

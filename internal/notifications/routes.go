@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
 	webpush "github.com/SherClockHolmes/webpush-go"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // Browser-provided URLs still cross a trust boundary. Only known push services

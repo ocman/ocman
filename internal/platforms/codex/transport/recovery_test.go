@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestRestartChangesCodexHome(t *testing.T) {

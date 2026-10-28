@@ -3,8 +3,8 @@ package opencode
 import (
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // V2 accepts a client-chosen session primary key at creation. Derive it from

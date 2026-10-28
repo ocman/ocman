@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // portRecorder captures Deps.SetMachineServer publications.

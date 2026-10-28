@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 func mkMessage(id, role string, t int64, data string) db.Message {

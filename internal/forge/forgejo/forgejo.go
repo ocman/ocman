@@ -21,8 +21,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
 )
 
 // Client is a Forgejo REST API client bound to a single host.

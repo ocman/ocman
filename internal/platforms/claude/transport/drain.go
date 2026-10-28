@@ -11,11 +11,11 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // drained is an out-of-range supervisor being drained (AD-5): an adapter

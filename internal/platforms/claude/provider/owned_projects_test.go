@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestOwnershipRetainsProjectIdentityThroughCreateForkAndLegacyBackfill(t *testing.T) {

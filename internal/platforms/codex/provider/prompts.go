@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // prompt is an unanswered app-server request. The supervisor only relays it:

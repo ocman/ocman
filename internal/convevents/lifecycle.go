@@ -3,7 +3,7 @@ package convevents
 import (
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // Nullable is a tri-state field: absent (leave unchanged), null (clear) or a

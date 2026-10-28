@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/platforms/provider"
 )
 
 func firstStdin(t *testing.T, fixture string) []byte {

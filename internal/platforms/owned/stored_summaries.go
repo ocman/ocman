@@ -5,11 +5,11 @@ import (
 	"context"
 	"slices"
 
-	"github.com/NoUseFreak/ocman/internal/conversationread"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/conversationread"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func (a *Adapter) storedSessions(ctx context.Context, directory, id string) ([]db.Session, error) {

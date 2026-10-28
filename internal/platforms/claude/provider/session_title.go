@@ -10,7 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/launch"
+	"github.com/ocman/ocman/internal/platforms/claude/launch"
 )
 
 // SessionTitle runs a tool-free Haiku helper without saving a transcript or

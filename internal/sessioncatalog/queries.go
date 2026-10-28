@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func New(db *state.DB) (*Store, error) {

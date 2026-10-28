@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest) (WorkEpic, error) {

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 func TestHistoryDeltaResumesAtLastMessage(t *testing.T) {

@@ -1,6 +1,6 @@
 package local
 
-import "github.com/NoUseFreak/ocman/internal/ocruntime"
+import "github.com/ocman/ocman/internal/ocruntime"
 
 // Authorization is process-local proof, never inferred from a durable handle.
 func (h *Host) authorizeInstance(root string, inst *ocruntime.Instance) {

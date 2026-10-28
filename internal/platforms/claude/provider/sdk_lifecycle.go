@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // sdkSystem tracks the SDK's delegated-task ledger and authoritative run state.

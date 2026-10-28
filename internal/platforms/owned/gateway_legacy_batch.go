@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (g *IdentityGateway) ResolveLegacyReferences(ctx context.Context, scope string, refs []string) (map[string]platforms.SessionIdentity, error) {

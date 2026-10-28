@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 // checksServer routes the two endpoints Checks() hits to the supplied

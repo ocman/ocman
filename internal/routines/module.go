@@ -9,7 +9,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 const tickInterval = 5 * time.Second

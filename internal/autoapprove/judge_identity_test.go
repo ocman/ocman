@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type canonicalJudgePlatform struct {

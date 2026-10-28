@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // Keep the original checkpoint in the frozen policy and recovery history.

@@ -3,9 +3,9 @@ package remote
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 func TestCanonicalHelloAdvertisesV9AndStrictConnectionsRejectLegacyOwners(t *testing.T) {

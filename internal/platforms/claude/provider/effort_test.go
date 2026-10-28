@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
 )
 
 func TestDirectoryCatalogReasoningEffort(t *testing.T) {

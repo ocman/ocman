@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 // Notion previews pages shared with the viewer's own public connection

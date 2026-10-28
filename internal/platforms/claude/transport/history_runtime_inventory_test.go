@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // A supervisor retains terminal status observations for helpers whose files

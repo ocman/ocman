@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/telemetry"
 	_ "modernc.org/sqlite"
 )
 

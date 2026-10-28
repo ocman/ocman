@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // termWindow is a dedicated terminal window with a display title derived

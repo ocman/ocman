@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 // effectiveCost prefers reported spend, falling back to API-equivalent cost.

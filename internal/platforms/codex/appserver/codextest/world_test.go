@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 type turns chan string

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 // GitLab previews merge requests, issues and commits on one exact GitLab

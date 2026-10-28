@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 var customFormulaID = regexp.MustCompile(`^custom/[a-z][a-z0-9_-]*$`)

@@ -2,8 +2,8 @@ package remote
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/platforms"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 func (p *remotePlatform) NativePermissionState(ctx context.Context, id string) (*platforms.NativePermissionState, error) {

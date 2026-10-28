@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 const (

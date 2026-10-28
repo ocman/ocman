@@ -3,7 +3,7 @@ package autoapprove
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 )
 
 func (j *PermissionJudge) createSession(ctx context.Context, port, directory, title string) (string, error) {

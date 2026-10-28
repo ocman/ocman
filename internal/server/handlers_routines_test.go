@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/routines"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/routines"
+	"github.com/ocman/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/state"
 )
 
 type routineTestHost struct{ hostsvc.Host }

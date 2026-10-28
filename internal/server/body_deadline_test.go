@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // bodyDeadlineTestServer serves the three request shapes we care about

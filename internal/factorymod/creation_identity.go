@@ -1,8 +1,8 @@
 package factorymod
 
 import (
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func factoryCreationIdentity(attemptID, epicID, workID string) *platforms.CreationIdentity {

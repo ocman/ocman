@@ -4,7 +4,7 @@ import (
 	"context"
 	"maps"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) conversationObservations(ctx context.Context) (func(string) *platforms.LiveState, error) {

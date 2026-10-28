@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action string, req PlanGateDecisionRequest) (PlanGate, error) {

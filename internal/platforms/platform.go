@@ -27,7 +27,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // ID identifies a platform adapter, e.g. "opencode", "claudecode".

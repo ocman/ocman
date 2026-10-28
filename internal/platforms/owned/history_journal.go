@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) HistoryJournalDir() string {

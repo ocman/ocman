@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // createPreparedFactoryAttempt inserts a prepared attempt without the claim's

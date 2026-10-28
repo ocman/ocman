@@ -11,11 +11,11 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/convevents/v1map"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/convevents/v1map"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // ProxyFunc runs a session's v1 byte stream: platform frames to raw and

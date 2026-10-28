@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // headerGuard rejects a request lacking header with code.

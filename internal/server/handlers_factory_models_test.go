@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 type fakeModelsFactory struct {

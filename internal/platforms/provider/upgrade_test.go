@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // A version-1 supervisor that survived the upgrade (draining until idle)

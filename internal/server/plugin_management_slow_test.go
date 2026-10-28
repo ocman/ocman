@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // The marker delays only valid serve handshakes, not discovery or bad config.

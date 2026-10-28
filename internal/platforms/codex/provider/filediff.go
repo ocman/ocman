@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // fileEntries describes a file-change item in the shape OpenCode's

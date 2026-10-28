@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestStoredContextUsesRequestUsageInsteadOfTurnTotals(t *testing.T) {

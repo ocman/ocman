@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/factorymod"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/factorymod"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // useFactory mounts Factory over svc. Build the mux after calling it: one

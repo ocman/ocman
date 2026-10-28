@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/provider"
 )
 
 func sessionRouteFixture(t *testing.T, initial db.SessionStatus) (*claudeProjects, *provider.Adapter, *provider.Adapter, *atomic.Value) {

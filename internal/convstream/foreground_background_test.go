@@ -3,8 +3,8 @@ package convstream
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/db"
 )
 
 func TestForegroundIdlePreservesBackgroundTasks(t *testing.T) {

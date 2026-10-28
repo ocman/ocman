@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestAgentCannotReplaceUnmaterializedInitialProposal(t *testing.T) {

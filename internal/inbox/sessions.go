@@ -3,8 +3,8 @@ package inbox
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func (m *Module) inboxSessionContext(ctx context.Context, source string, items []state.InboxItem) []state.InboxItem {

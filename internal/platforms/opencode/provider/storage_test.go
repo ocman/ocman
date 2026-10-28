@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	ocapi "github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
 func TestStorageSizes(t *testing.T) {

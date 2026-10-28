@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 // The only shapes an accepted share or delivery id may have: the base64

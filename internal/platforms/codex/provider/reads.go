@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 func (b *backend) serveRead(ctx context.Context, w http.ResponseWriter, r *http.Request) {

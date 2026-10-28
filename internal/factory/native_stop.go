@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // StopEpic is the confirmed user's unconditional exit. It does not validate,

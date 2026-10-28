@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/testutil"
 	"github.com/mark3labs/mcp-go/mcptest"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestFactoryCheckpointCompletionOmitsPR(t *testing.T) {

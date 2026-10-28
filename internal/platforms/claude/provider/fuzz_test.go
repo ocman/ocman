@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // FuzzConvertTranscript checks the transcript converter's paging promise: a

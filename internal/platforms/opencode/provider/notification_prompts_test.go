@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
 func TestNotificationPrompts(t *testing.T) {

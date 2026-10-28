@@ -1,6 +1,6 @@
 package remote
 
-import "github.com/NoUseFreak/ocman/internal/platforms"
+import "github.com/ocman/ocman/internal/platforms"
 
 func (s *Server) sessionPlatformFor(platform, id string) (platforms.Platform, error) {
 	p, err := s.platformFor(platform)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // Handler tests do not call Start, but handlers still admit queue jobs,

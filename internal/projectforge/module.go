@@ -15,10 +15,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // Store persists the prompt templates.

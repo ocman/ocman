@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/protocol"
+	"github.com/ocman/ocman/sdk/plugin"
 )
 
 // RunConversationGrants exercises conversation.v1 through the canonical host
@@ -24,17 +24,17 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 	}
 	var grants []string
 	calls, started := 0, []string{}
-	broker := plugins.NewConversationBroker(
-		func(_ context.Context, _ string, admit func(plugins.Description, []string, plugins.Config) error) error {
-			return admit(d, grants, plugins.Config{Project: project})
+	broker := protocol.NewConversationBroker(
+		func(_ context.Context, _ string, admit func(protocol.Description, []string, protocol.Config) error) error {
+			return admit(d, grants, protocol.Config{Project: project})
 		},
-		func(_ context.Context, _ string, config plugins.Config, m plugins.ConversationMessage) error {
+		func(_ context.Context, _ string, config protocol.Config, m protocol.ConversationMessage) error {
 			started = append(started, m.AccountID+"|"+m.ThreadID+"|"+config.Project+"|"+m.Text)
 			return nil
 		},
-		func(_ context.Context, _ string, call plugins.Call) (<-chan plugins.Reply, error) {
+		func(_ context.Context, _ string, call protocol.Call) (<-chan protocol.Reply, error) {
 			calls++
-			if call.Capability != plugins.ConversationCapability.Name || call.Method != plugins.ConversationReplyMethod {
+			if call.Capability != protocol.ConversationCapability.Name || call.Method != protocol.ConversationReplyMethod {
 				t.Fatalf("unexpected call: %s/%s", call.Capability, call.Method)
 			}
 			id := c.call(call, time.Now().Add(time.Second))
@@ -42,29 +42,29 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 			if chunks != 0 {
 				t.Fatal("reply emitted chunks")
 			}
-			replies := make(chan plugins.Reply, 1)
-			replies <- plugins.Reply{Message: plugin.Envelope{Type: plugin.TypeResult, Result: &result}}
+			replies := make(chan protocol.Reply, 1)
+			replies <- protocol.Reply{Message: plugin.Envelope{Type: plugin.TypeResult, Result: &result}}
 			close(replies)
 			return replies, nil
 		})
 
-	reply := plugins.ConversationReply{AccountID: "conformance", ThreadID: "conformance:1.0", Text: "conformance reply"}
+	reply := protocol.ConversationReply{AccountID: "conformance", ThreadID: "conformance:1.0", Text: "conformance reply"}
 	if err := broker.Reply(t.Context(), d.ID, "conformance-reply", reply); err == nil || calls != 0 {
 		t.Fatalf("ungranted reply dispatched: %v", err)
 	}
-	grants = []string{plugins.ConversationSessionGrant}
+	grants = []string{protocol.ConversationSessionGrant}
 	if err := broker.Reply(t.Context(), d.ID, "conformance-reply", reply); err != nil || calls != 1 {
 		t.Fatalf("granted reply failed: %v", err)
 	}
 
-	message := plugins.ConversationMessage{
+	message := protocol.ConversationMessage{
 		AccountID: "conformance", ThreadID: "conformance:1.0", EventID: "ev-1", Text: "conformance prompt",
 	}
 	data, err := json.Marshal(message)
 	if err != nil {
 		t.Fatal(err)
 	}
-	event := plugins.Event{Capability: plugins.ConversationCapability.Name, Name: plugins.ConversationMessageEvent, Data: data}
+	event := protocol.Event{Capability: protocol.ConversationCapability.Name, Name: protocol.ConversationMessageEvent, Data: data}
 	if err := broker.Deliver(t.Context(), d.ID, event); err != nil {
 		t.Fatalf("granted message denied: %v", err)
 	}
@@ -80,7 +80,7 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 		t.Fatalf("unapproved project accepted: %v", err)
 	}
 	grants = nil
-	if err := broker.Deliver(t.Context(), d.ID, plugins.Event{Capability: event.Capability, Name: event.Name, Data: json.RawMessage(`{"accountId":"conformance","threadId":"conformance:1.0","eventId":"ev-2","text":"revoked"}`)}); err == nil || len(started) != 1 {
+	if err := broker.Deliver(t.Context(), d.ID, protocol.Event{Capability: event.Capability, Name: event.Name, Data: json.RawMessage(`{"accountId":"conformance","threadId":"conformance:1.0","eventId":"ev-2","text":"revoked"}`)}); err == nil || len(started) != 1 {
 		t.Fatalf("revoked grant still started a session: %v", err)
 	}
 	c.send(plugin.Envelope{Type: plugin.TypeShutdown, Shutdown: &plugin.Shutdown{}}, false)

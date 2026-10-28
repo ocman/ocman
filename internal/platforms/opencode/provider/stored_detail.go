@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) ChangesFromStored(ctx context.Context, detail *platforms.SessionDetail) (*platforms.SessionChanges, error) {

@@ -8,8 +8,8 @@ import (
 	"math"
 	"os"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (p *claudePlatform) HistoryIdentity(context.Context) (platforms.HistoryIdentity, error) {

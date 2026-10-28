@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type firstPromptKey struct {

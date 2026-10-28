@@ -3,8 +3,8 @@ package platforms
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 // PermissionNotificationKey keeps legacy deduplication inside the integration.

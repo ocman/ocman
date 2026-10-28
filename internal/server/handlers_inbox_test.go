@@ -9,9 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/inbox"
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/inbox"
+	"github.com/ocman/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func TestInboxHTTPKeepsSuccessfulSourcesWhenRemoteListFails(t *testing.T) {

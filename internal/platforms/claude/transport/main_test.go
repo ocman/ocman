@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
 )
 
 // The fake tmux launches this test binary as the project supervisor.

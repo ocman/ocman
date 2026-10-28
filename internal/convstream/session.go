@@ -8,7 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/convevents"
 )
 
 type session struct {

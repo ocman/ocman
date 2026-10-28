@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 type MetadataHistory interface {

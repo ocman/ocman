@@ -4,9 +4,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/NoUseFreak/ocman/internal/permissions"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/permissions"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // FuzzExactGrantMatchesOnlyItself checks the exact-pattern invariant: an

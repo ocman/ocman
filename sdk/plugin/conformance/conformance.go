@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/plugin"
 )
 
 // Cases supplies plugin-specific payloads. Success must return an action.v1

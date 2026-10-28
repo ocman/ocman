@@ -1,12 +1,13 @@
 # Native plugins and conversation delivery
 
-Read `internal/plugins/README.md`, `docs/features/plugins.md` and the SDK
+Read `sdk/protocol/README.md`, `docs/features/plugins.md` and the SDK
 conformance tests before changing plugin behavior.
 
 ## Protocol and ownership
 
-`internal/plugins` owns executable discovery, versioned NDJSON, supervision and
-the capability brokers. `pluginsmod` owns HTTP, Settings, discovery lifetime,
+`sdk/protocol` (in the nested public `github.com/ocman/ocman/sdk` module) owns
+executable discovery, versioned NDJSON, supervision and the capability brokers.
+Host packages import it as `plugins "github.com/ocman/ocman/sdk/protocol"`. `pluginsmod` owns HTTP, Settings, discovery lifetime,
 remote operations, palette actions, panes, conversation delivery, the `session.v1`
 broker and completion outbox, launch-time catalogs and `/api/permission-profiles`.
 Registration and conversation tables remain in `internal/state`. Permission
@@ -21,9 +22,14 @@ profiles and `session.v1` tables belong to `pluginsmod.Schema` in `store.go`.
 - Browser results are typed data, never plugin JavaScript, HTML or CSS. Platform
   providers, iframe UI, relay inbox capability, registry/updates, signatures,
   sandboxing and Codex remain future work.
-- SDK DTOs alias canonical `internal/plugins` types. Reusable conformance tests
+- SDK DTOs alias canonical `sdk/protocol` types. Reusable conformance tests
   live in `sdk/plugin/conformance`; the deterministic example is
-  `examples/ocman-plugin-fixture`.
+  `sdk/examples/ocman-plugin-fixture`.
+- `sdk/` must depend only on the standard library and never on the root module;
+  `cd sdk && go mod tidy` checks this in CI. Root `./...` skips the nested
+  module, so run `cd sdk && go test ./...` too. Root `go.mod` replaces it with
+  `./sdk`. Changes under `sdk/` (other than Markdown) are tagged `sdk/vX.Y.Z` on
+  `main` by `scripts/sdk-next-tag.sh`; see `sdk/plugin/README.md`.
 - `pane.v1` declarations are owner-local and require `pane.project`. Listing
   declarations invokes no plugin. Reads authorize before sending the directory
   through the owner's RPC. Validate bounded acyclic trees. Mount the frontend

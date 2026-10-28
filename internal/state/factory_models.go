@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // GetFactoryEpicModels returns the Epic's per-phase model choices.

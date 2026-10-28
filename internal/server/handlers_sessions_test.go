@@ -16,16 +16,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
-	"github.com/NoUseFreak/ocman/internal/sessionlifecycle"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/remote"
+	pb "github.com/ocman/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/sessionlifecycle"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // stateSetup describes the state.db rows a test wants pre-populated

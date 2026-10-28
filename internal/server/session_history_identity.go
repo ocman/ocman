@@ -3,10 +3,10 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (s *Server) historySessionPublicID(ctx context.Context, instance, reference string) (string, error) {

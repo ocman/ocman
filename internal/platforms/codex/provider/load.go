@@ -5,8 +5,8 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // load serializes resumes across sends, renames and skills. A rejected resume

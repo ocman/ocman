@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
 )
 
 func (p *claudePlatform) HistoryCommitted(ctx context.Context, id string, snapshot *db.HistorySnapshot) error {

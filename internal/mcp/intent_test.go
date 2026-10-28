@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/NoUseFreak/ocman/internal/testutil"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestToolsAcceptOptionalIntent(t *testing.T) {

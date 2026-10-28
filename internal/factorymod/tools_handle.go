@@ -8,9 +8,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/server"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/server"
+	"github.com/ocman/ocman/internal/state"
 	log "github.com/sirupsen/logrus"
 )
 

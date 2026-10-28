@@ -8,7 +8,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 const extras = "testdata/0.164.0-extras/"

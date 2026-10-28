@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Schema owns the plugin tables added after plugin registrations moved to

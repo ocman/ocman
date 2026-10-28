@@ -19,7 +19,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 // concurrentListStore parks inside List until a second caller arrives,

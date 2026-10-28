@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type nativeStoreFake struct {

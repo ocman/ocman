@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 type Source struct {

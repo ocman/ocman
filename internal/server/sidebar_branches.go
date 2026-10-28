@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/ocman/ocman/internal/git"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -3,7 +3,7 @@ package server
 import (
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/composerattachments"
+	"github.com/ocman/ocman/internal/composerattachments"
 )
 
 func composerAttachmentRoot() string { return composerattachments.Root() }

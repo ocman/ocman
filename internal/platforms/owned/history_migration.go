@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/startup"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // MigrateHistory adopts retained history from every physical source owned by

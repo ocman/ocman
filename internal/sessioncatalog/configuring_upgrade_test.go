@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Earlier development builds recorded v2 without permitting configuring.

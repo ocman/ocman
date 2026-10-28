@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Project defaults are hub preferences, scoped to an owner and repository.

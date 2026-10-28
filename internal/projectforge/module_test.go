@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/module"
 )
 
 type recordingRouter struct {

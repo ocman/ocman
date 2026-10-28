@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/testutil"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // installFakeTmux prepends a fake tmux binary to PATH whose list-*

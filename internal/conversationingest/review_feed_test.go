@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 func TestFeedRetainsFailedAndDeferredExplicitRepairs(t *testing.T) {

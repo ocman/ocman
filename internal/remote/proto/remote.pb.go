@@ -874,7 +874,7 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\x16SessionsInactiveBefore\x12\x1a.ocman.remote.v1.CutoffReq\x1a\x19.ocman.remote.v1.JsonResp\x12J\n" +
 	"\fStreamEvents\x12\x1b.ocman.remote.v1.SessionRef\x1a\x1b.ocman.remote.v1.EventChunk0\x01\x12O\n" +
 	"\x16SaveComposerAttachment\x12\x18.ocman.remote.v1.JsonReq\x1a\x19.ocman.remote.v1.JsonResp(\x01\x12T\n" +
-	"\x0eTerminalStream\x12\x1e.ocman.remote.v1.TermClientMsg\x1a\x1e.ocman.remote.v1.TermServerMsg(\x010\x01B<Z:github.com/NoUseFreak/ocman/internal/remote/proto;remotepbb\x06proto3"
+	"\x0eTerminalStream\x12\x1e.ocman.remote.v1.TermClientMsg\x1a\x1e.ocman.remote.v1.TermServerMsg(\x010\x01B7Z5github.com/ocman/ocman/internal/remote/proto;remotepbb\x06proto3"
 
 var (
 	file_internal_remote_proto_remote_proto_rawDescOnce sync.Once

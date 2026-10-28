@@ -3,7 +3,7 @@ package sessionsvc
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (s *Service) admit(ctx context.Context, p platforms.Platform) (func(), error) {

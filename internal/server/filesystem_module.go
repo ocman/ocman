@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/filesystem"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/filesystem"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // filesystemModule exists without a state DB too: browsing and repository

@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 // metaVersion is the schema version of the stored metadata object.

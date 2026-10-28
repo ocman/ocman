@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // Errors surfaced by CreateWorktree. Handlers translate these into specific

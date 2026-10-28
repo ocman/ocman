@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (d *DB) ListFactoryIssues(ctx context.Context, epicID string) ([]model.NativeIssue, error) {

@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/providersupervisor/providertest"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/db"
+	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor/providertest"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func reloadTestAdapter(t *testing.T, sessions func(http.ResponseWriter, *http.Request), caps ...platforms.Capabilities) (*provider.Adapter, string) {

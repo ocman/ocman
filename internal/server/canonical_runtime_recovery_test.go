@@ -3,13 +3,13 @@ package server
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/statev2/statev2test"
 )
 
 func TestRuntimeReplacementPersistsOnlyCanonicalRecoveryCandidates(t *testing.T) {

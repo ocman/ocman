@@ -3,10 +3,10 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/ocmaint"
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/ocmaint"
+	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // WithOpenCodeDBPath enables OpenCode database maintenance for the

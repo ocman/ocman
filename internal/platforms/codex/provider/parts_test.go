@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 func state(p map[string]any) map[string]any { return p["state"].(map[string]any) }

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/factory"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/factory"
+	internalmcp "github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // The dedicated MCP listener is the credential-free path for local MCP

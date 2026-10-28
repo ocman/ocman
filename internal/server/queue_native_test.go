@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // nativeQueuePlatform is a fakePlatform that also holds follow-ups itself

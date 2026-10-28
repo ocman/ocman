@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/forge/github"
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/hostsvc"
 )
 
 // initGitHubRepo creates a local git repo whose origin remote points

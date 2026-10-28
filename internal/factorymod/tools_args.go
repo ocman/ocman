@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/ocman/ocman/internal/factory"
 	"github.com/sirupsen/logrus"
 )
 

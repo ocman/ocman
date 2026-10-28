@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func migrateToV92(tx *sql.Tx) error {

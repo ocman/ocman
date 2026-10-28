@@ -13,7 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/NoUseFreak/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/plugin"
 )
 
 func description() plugin.Description {

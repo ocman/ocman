@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 func supervisor(t *testing.T) *Supervisor {

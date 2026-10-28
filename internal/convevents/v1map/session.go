@@ -1,6 +1,6 @@
 package v1map
 
-import "github.com/NoUseFreak/ocman/internal/convevents"
+import "github.com/ocman/ocman/internal/convevents"
 
 // session maps session lifecycle frames: the page session's metadata becomes
 // session.updated, descendants become child.upserted.

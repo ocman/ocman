@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // fakePlatform records mutation calls. The embedded interface panics on

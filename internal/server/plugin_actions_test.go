@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/statev2"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/testutil"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestPluginActionEndpoints(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func modelServerTools(deps Deps) []server.ServerTool {

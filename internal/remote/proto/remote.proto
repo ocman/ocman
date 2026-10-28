@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package ocman.remote.v1;
 
-option go_package = "github.com/NoUseFreak/ocman/internal/remote/proto;remotepb";
+option go_package = "github.com/ocman/ocman/internal/remote/proto;remotepb";
 
 // Ocman is the hub<->remote gRPC contract for multi-remote support.
 //

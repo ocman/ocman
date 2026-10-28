@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // Two project supervisors share the machine-wide cap: with every slot held

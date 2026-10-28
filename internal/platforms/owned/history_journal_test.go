@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 type journalPlatform struct {

@@ -3,7 +3,7 @@ package factorymod
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 // Routes mounts Factory's own mux under /api/factory/. Keeping the routes

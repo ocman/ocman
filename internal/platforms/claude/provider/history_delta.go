@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // Replay the last message group, not merely bytes after EOF: an appended tool

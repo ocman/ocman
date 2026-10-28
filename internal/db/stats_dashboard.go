@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 // CostCalculator can compute the API-equivalent cost for a request given token counts.

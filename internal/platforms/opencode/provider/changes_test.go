@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // makePart constructs a db.Part with a JSON-encoded data payload.

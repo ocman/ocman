@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	"github.com/NoUseFreak/ocman/internal/platforms/codex/appserver/codextest"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 type wire struct {

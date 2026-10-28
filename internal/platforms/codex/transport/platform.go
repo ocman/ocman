@@ -14,15 +14,15 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexprovider "github.com/NoUseFreak/ocman/internal/platforms/codex/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platforms"
+	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
+	"github.com/ocman/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // supervisorIdentity is part of the launch identity: a supervisor launched

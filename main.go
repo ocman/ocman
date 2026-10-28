@@ -3,7 +3,7 @@ package main
 import (
 	_ "embed"
 
-	"github.com/NoUseFreak/ocman/internal/app"
+	"github.com/ocman/ocman/internal/app"
 )
 
 // version is overridden at build time via -ldflags='-X main.version=...'.

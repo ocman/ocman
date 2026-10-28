@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // EnrichStoredSessions keeps the existing supervisor status authority without

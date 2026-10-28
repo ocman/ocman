@@ -8,9 +8,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 // CreationPendingError exposes only the Ocman recovery identity. The native

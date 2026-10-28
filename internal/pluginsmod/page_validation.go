@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // Validation reads the current schema on the owner, never a browser-supplied

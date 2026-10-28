@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 // Defaults for the storage limits. They exist because share creation is

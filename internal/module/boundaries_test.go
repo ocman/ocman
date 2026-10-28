@@ -37,7 +37,7 @@ func TestFeatureModuleImportBoundaries(t *testing.T) {
 					if forbidden == name {
 						continue
 					}
-					prefix := "github.com/NoUseFreak/ocman/internal/" + forbidden
+					prefix := "github.com/ocman/ocman/internal/" + forbidden
 					if importPath == prefix || strings.HasPrefix(importPath, prefix+"/") {
 						t.Errorf("%s imports %s; supply the dependency through Deps", path, importPath)
 					}

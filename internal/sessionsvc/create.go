@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/srvtiming"
 )
 
 // CreatedSession is the I/O-free projection passed to the creation hook.

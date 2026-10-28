@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/historyjournal"
 )
 
 func TestJournalRetriesStartupFailureWithoutNewHooks(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func TestRoutineTrailingSlashRequestsPersistResolvedSessionOwner(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 func conversationMetadata(ctx context.Context, tx *sql.Tx, key Key, d *Detail) error {

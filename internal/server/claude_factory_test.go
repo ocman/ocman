@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/factorymod"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factorymod"
+	"github.com/ocman/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // claudeFactoryLauncher is the real implementation launcher with the

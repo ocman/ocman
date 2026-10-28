@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
 // LaunchSpec describes a requested OpenCode instance. The port is

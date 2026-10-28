@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/module/moduletest"
 )
 
 type routeService struct {

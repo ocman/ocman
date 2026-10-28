@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // FileInput is one file to publish: an absolute Path (copied into

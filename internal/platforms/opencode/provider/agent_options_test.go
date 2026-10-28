@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestAgentOptionsDoNotDependOnProviders(t *testing.T) {

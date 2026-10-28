@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/module"
 )
 
 // Module owns the /api/maintenance/opencode-db routes and the Runner's

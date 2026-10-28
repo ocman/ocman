@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/opencodeskills"
+	"github.com/ocman/ocman/internal/opencodeskills"
 )
 
 // TestResolveAuthPassword_Precedence pins the env > file > flag

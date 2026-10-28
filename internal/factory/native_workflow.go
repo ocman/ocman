@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 	"gopkg.in/yaml.v3"
 )
 

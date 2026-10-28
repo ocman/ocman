@@ -3,7 +3,7 @@ package opencode
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
 func TestHistoryAdapterNeverNeedsLiveDiscovery(t *testing.T) {

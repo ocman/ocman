@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/mcp"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/ocman/ocman/internal/mcp"
 )
 
 func TestHandlerNegotiatesProtocolVersion(t *testing.T) {

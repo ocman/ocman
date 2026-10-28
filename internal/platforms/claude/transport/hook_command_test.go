@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/historyjournal"
 )
 
 func TestRunHookCommandJournalsEverySessionAndPostsOnlyWhenManaged(t *testing.T) {

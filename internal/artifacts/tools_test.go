@@ -10,8 +10,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcptest"
 
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 type fakeArtifacts struct {

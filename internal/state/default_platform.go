@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 const DefaultPlatformSetting = "platform.default"

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 type identityInventoryNative struct{ *nativePlatform }

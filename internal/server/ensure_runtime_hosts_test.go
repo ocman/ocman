@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/hostsvc"
 )
 
 func (h *factoryPlanningHost) RemoteID() string { return "local" }

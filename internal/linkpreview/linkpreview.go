@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 // State is the connect/error state of one preview.

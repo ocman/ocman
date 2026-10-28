@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/composerattachments"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/composerattachments"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/platforms"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

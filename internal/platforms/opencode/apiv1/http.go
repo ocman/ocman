@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // Upstream response limits bound buffering even for a faulty local server.

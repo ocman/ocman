@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 func factoryCheckRepo(t *testing.T) string {

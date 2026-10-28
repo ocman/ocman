@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Jira previews Jira Cloud issues with the viewer's Atlassian 3LO grant

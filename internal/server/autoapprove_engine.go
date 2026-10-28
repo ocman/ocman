@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 )
 
 // autoapprove_engine.go adapts server internals (state DB, OpenCode DB,

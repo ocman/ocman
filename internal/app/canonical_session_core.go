@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
-	"github.com/NoUseFreak/ocman/internal/platforms/ownedjudge"
-	"github.com/NoUseFreak/ocman/internal/pluginsmod"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/startup"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/statev2"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/platforms/ownedjudge"
+	"github.com/ocman/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func canonicalStartupError(ctx context.Context, err error) error {

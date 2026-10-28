@@ -3,8 +3,8 @@ package provider
 import (
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // legacyPatterns reports a supervisor older than providerprotocol.ExactPatternsVersion:

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/convevents"
 )
 
 func TestBackgroundAgentKind(t *testing.T) {

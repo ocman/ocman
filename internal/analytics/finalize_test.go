@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 func TestFinalizeClosesProjectionReaders(t *testing.T) {

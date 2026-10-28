@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 // GetDailyActivity returns retained activity over the past year.

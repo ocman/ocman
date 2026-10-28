@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 // Checks returns the combined CI/build status for a commit via

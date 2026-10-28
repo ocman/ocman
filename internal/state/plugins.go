@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 var (

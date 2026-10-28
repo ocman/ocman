@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestNumberedFramesDeliverEveryMappedEventAndDeduplicateBeforeMapping(t *testing.T) {

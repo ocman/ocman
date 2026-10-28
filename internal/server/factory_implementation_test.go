@@ -11,16 +11,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/factorymod"
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
-	"github.com/NoUseFreak/ocman/internal/forge/github"
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factorymod"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/forgejo"
+	"github.com/ocman/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type factoryImplementationHost struct {

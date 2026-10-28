@@ -3,7 +3,7 @@ package factorymod
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory"
 )
 
 // factoryMCPService is what the factory and factory_control MCP tools call.

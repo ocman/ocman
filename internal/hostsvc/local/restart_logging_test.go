@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/ocruntime"
 	log "github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 )

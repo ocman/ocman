@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
-	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/module"
+	opencodeplatform "github.com/ocman/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/remote"
 )
 
 func withManager(t *testing.T, srv *Server) *remote.Manager {

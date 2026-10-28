@@ -3,10 +3,10 @@ package server
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
+	"github.com/ocman/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/statev2/statev2test"
 )
 
 func TestMigratedPermissionInboxReplayAndReplyKeepOriginalNotification(t *testing.T) {

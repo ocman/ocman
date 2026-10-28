@@ -1038,12 +1038,12 @@ flowchart TD
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
     Modules -->|"projectforge: PR/issue lists, checks, handle via owner Host"| Forge
     Modules -->|"previews: forge credentials only (Deps.Forges)"| Forge
-    State -.->|registration types| Plugins[internal/plugins<br/>protocol, supervision, capability brokers]
+    State -.->|registration types| Plugins[sdk/protocol<br/>protocol, supervision, capability brokers]
     Modules -->|"pluginsmod: routes, supervision, conversation + session outboxes"| Plugins
     Plugins -->|token-bound NDJSON + private configuration fd| PluginExec[External plugin process]
     Modules -->|owner-routed PluginOperation RPC| RP
     Modules -->|"remotesmod: /api/remotes CRUD, remote-access settings, inventory loop"| RP
-    PluginSDK[sdk/plugin<br/>optional public Go SDK] -->|canonical DTO aliases + validators| Plugins
+    PluginSDK[sdk/plugin<br/>public Go SDK module] -->|canonical DTO aliases + validators| Plugins
 ```
 
 - **internal/app.** Application startup owns flags, database selection,
@@ -1386,9 +1386,11 @@ flowchart TD
   and result events, independently of delegated background tasks;
   terminal sessions use the transcript tail settled by
   `db.SettleSessionStatus`.
-- **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
+- **sdk/protocol.** External wire DTOs, bounded NDJSON, version negotiation,
   handshake and stream-order validation, executable discovery, and description
-  validation. `internal/pluginsmod` mounts it: its `Start` scans once (right
+  validation. It lives in the public `github.com/ocman/ocman/sdk` module (nested
+  in `sdk/`, standard library only, tagged `sdk/vX.Y.Z`); the host imports it
+  directly, so the protocol has a single definition. `internal/pluginsmod` mounts it: its `Start` scans once (right
   after auto-approve seeds the judge delay, before the other modules); `RescanPlugins` repeats the scan and records identities, checksums,
   and conflicts in state. Its `Run` drives the conversation reply pump and
   reconciliation; the server stops its processes after the listeners and
@@ -1405,7 +1407,7 @@ flowchart TD
   filters context by each action's approved grants, requires host-issued confirmation
   tokens when declared, and returns only typed results. Grant changes serialize with
   dispatch and are checked again before results or artifact bytes are returned. See the
-  [wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/internal/plugins/README.md).
+  [wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/protocol/README.md).
   The remote `PluginOperation` RPC accepts a closed set of host operations, never
   raw stdio messages. Both transports use the same lifecycle and action broker.
   Catalog identities are `(ownerId, description.id)`; nested capabilities and
@@ -1424,7 +1426,7 @@ flowchart TD
   are capped at 16 MiB on both transports.
 - **sdk/plugin.** Optional public Go lifecycle and action helpers reuse the canonical
   protocol DTOs and validators. `sdk/plugin/conformance` runs black-box executable
-  tests, including host-broker grant checks. `examples/ocman-plugin-fixture` is the
+  tests, including host-broker grant checks. `sdk/examples/ocman-plugin-fixture` is the
   deterministic executable used by the supervisor integration tests. Plugins in
   other languages can implement the same NDJSON contract directly.
 - **Plugin persistence.** `internal/state` stores discovered identities, capability
@@ -2165,7 +2167,7 @@ sequenceDiagram
     participant B as Browser palette / Settings / sidebar
     participant H as Hub HTTP handlers
     participant O as Installation owner
-    participant A as internal/plugins action broker
+    participant A as sdk/protocol action broker
     participant D as Owner state.db
     participant P as External plugin process
 

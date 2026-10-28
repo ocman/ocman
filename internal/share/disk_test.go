@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 func newTestStore(t *testing.T) *share.DiskStore {

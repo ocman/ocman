@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/providersupervisor/providertest"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor/providertest"
 )
 
 func emit(t *testing.T, p *providertest.Process, kind, properties string) {

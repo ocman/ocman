@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // SessionEventProjector normalizes an integration's owner-global stream before

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // MaterializeFactoryPlan creates the approved implementation graph and closes

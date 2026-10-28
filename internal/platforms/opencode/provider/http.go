@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv1"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv1"
 )
 
 // The provider owns client selection and catalog caching; apiv1 owns bounded

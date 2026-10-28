@@ -11,7 +11,8 @@
 #   coverage/go.json        { "pct": <n>, "sha": "<commit>", "ts": "<iso8601>" }
 #   coverage/frontend.json  { "pct": <n>, "sha": "<commit>", "ts": "<iso8601>" }
 #
-# Go coverage is measured across ./internal/... (the meaningful code;
+# Go coverage is measured across ./internal/... plus the plugin protocol
+# package that moved into the nested SDK module (the meaningful code;
 # matches `make test-coverage`) with cross-package instrumentation so
 # integration tests credit the internal packages they exercise, and
 # -covermode=atomic so it stays consistent with `make test-race`.
@@ -36,6 +37,10 @@ SUITE="${1:-all}"
 # make a run pass.
 MIN_GO_TEST_PACKAGES="${MIN_GO_TEST_PACKAGES:-27}"
 
+# The protocol package lives in the nested SDK module (replaced to ./sdk), so
+# it is named by import path; a ./sdk/... directory pattern would not resolve.
+SDK_COVER_PKG="github.com/ocman/ocman/sdk/protocol"
+
 mkdir -p coverage
 
 SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -49,7 +54,7 @@ EOF
 }
 
 collect_go() {
-	echo "==> Go coverage (./internal/...)"
+	echo "==> Go coverage (./internal/... and ${SDK_COVER_PKG})"
 	# Go 1.26 invokes an unavailable covdata tool for packages without test files.
 	#
 	# The list is assigned before use on purpose: `set -e` does not fire on
@@ -58,7 +63,7 @@ collect_go() {
 	# total came out points lower than reality. A separate `local` keeps the
 	# assignment's own exit status, which `local pkgs="$(...)"` would mask.
 	local pkgs
-	pkgs="$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./internal/...)"
+	pkgs="$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./internal/... "$SDK_COVER_PKG")"
 	local count
 	count="$(printf '%s\n' "$pkgs" | grep -c .)"
 	echo "    packages under test: ${count}"
@@ -69,7 +74,7 @@ collect_go() {
 	# internal/server runs ~250s locally but 420-515s instrumented on a loaded
 	# runner, so go test's 10m default timeout fails whole runs.
 	# shellcheck disable=SC2086 # word splitting is the point
-	go test $pkgs -count=1 -timeout 20m -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
+	go test $pkgs -count=1 -timeout 20m -coverpkg=./internal/...,"$SDK_COVER_PKG" -coverprofile=coverage/go.raw.out -covermode=atomic
 	# Drop generated files (e.g. *.pb.go) from the profile; the mode
 	# header line (first line) is preserved.
 	grep -vE '\.pb\.go:' coverage/go.raw.out > coverage/go.out

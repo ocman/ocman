@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // Method answers one client request. Returning a *codexappserver.RPCError

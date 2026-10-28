@@ -57,5 +57,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: fuzz-failures
-          path: internal/**/testdata/fuzz/
+          path: |
+            internal/**/testdata/fuzz/
+            sdk/**/testdata/fuzz/
           retention-days: 30

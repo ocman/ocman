@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestDevelopmentConversationFileAdoptsOldBuildDirectory(t *testing.T) {

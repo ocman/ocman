@@ -7,7 +7,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 // The conversation reply and session.v1 completion outboxes share one

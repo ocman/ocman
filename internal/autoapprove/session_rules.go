@@ -6,8 +6,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/permissions"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/permissions"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 const sessionRulesReason = "allowed by the session's permission mode"

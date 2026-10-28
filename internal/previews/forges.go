@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/linkpreview"
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/linkpreview"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 // previewEntry is one supported provider as the frontend sees it: which

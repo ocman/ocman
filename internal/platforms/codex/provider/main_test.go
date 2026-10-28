@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/codex/appserver/codextest"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // TestMain doubles as a fake `codex` executable when FAKE_CODEX is set: it

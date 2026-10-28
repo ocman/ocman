@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 func (m *Module) handleUIUsage(w http.ResponseWriter, r *http.Request) {

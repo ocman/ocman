@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/ocruntime"
 )
 
 // The server mounts the maintenance module behind its own guards, and

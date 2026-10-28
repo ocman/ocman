@@ -14,9 +14,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	_ "modernc.org/sqlite"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
-	"github.com/NoUseFreak/ocman/internal/sqliteutil"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/sqliteutil"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 // DB wraps the SQLite connection.

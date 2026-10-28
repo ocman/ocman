@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func TestPermissionKeysPreserveLegacyDeduplicationWithoutExposingNativeSessionID(t *testing.T) {

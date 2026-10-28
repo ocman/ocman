@@ -1,6 +1,6 @@
 package sessioncatalog
 
-import "github.com/NoUseFreak/ocman/internal/platforms/identity"
+import "github.com/ocman/ocman/internal/platforms/identity"
 
 func IsID(id string) bool {
 	return identity.IsSessionID(id)

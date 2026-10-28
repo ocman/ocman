@@ -28,7 +28,7 @@ import (
 // back-ends can group "ocman phase" spans separately from the
 // other server-side spans (which live under the ocman/server scope
 // via internal/telemetry).
-const tracerName = "github.com/NoUseFreak/ocman/internal/srvtiming"
+const tracerName = "github.com/ocman/ocman/internal/srvtiming"
 
 // Collector accumulates named durations for a single request.
 // Goroutine-safe: handlers may fan out work and have each goroutine

@@ -3,15 +3,15 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/term"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/hostsvc"
+	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/term"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // newLocalHost builds the in-process hostsvc.Host, wiring the tmux,

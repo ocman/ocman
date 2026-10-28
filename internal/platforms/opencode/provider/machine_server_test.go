@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // withMachineServer publishes port as the v2 machine server for one test.

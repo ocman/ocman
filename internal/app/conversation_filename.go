@@ -9,9 +9,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/NoUseFreak/ocman/internal/startup"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/statev2"
 	log "github.com/sirupsen/logrus"
 )
 

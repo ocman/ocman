@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // TestAaSvcSessionDirResolver exercises the SessionDir closure wired in

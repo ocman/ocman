@@ -10,11 +10,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/convstream"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/convstream"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 // convStreamModule serves the Ocman conversation event stream, the only

@@ -3,7 +3,7 @@ package opencode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // Sessions is the native runtime inventory used by identity migration and

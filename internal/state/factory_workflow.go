@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (d *DB) decideWorkflowStep(ctx context.Context, mutation model.GraphMutation) error {

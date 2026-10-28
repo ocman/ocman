@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/historyjournal"
 )
 
 func TestJournalConsumerUsesOwnerResolvedEntriesBeforeTranslation(t *testing.T) {

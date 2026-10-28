@@ -3,7 +3,7 @@ package convevents
 import (
 	"unicode/utf16"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 type MessageUpserted struct {

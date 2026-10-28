@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // ResolveBaseRef returns a verified base for new branches: the local default

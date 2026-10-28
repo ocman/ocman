@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 func TestQuietFeedRetriesBeforePoll(t *testing.T) {

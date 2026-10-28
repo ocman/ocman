@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 	"google.golang.org/grpc"
 )
 

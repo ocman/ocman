@@ -7,9 +7,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/startup"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/tasksvc"
 	log "github.com/sirupsen/logrus"
 )
 

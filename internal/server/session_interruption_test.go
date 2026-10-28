@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/remote"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 type interruptionLifecyclePlatform struct {

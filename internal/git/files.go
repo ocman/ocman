@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // ErrFileNotFound means the requested path is not a readable,

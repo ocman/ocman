@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/httpx"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (m *Module) HandleBackgroundTaskStop(w http.ResponseWriter, r *http.Request) {

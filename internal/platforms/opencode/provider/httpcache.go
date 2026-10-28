@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 // httpCache is a small TTL + singleflight cache for upstream OpenCode

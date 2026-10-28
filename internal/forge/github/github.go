@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // Empty read results for the lightweight store fake. Methods not stubbed by a

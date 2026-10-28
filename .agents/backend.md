@@ -1,8 +1,10 @@
 # Backend implementation rules
 
 Read [repository.md](repository.md) to locate ownership. Application packages
-live under `internal/`. The public plugin SDK is `sdk/plugin`; its DTOs alias
-canonical `internal/plugins` types rather than duplicating wire definitions.
+live under `internal/`. The public plugin SDK is the nested Go module `sdk/`
+(`github.com/ocman/ocman/sdk`, standard library only). `sdk/protocol` holds the
+canonical wire types, which the host imports directly and `sdk/plugin` aliases;
+never duplicate wire definitions or make `sdk/` import the root module.
 
 ## Feature modules
 

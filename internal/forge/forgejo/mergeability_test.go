@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
 )
 
 func TestPRMergeability(t *testing.T) {

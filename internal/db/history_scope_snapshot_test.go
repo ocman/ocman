@@ -3,7 +3,7 @@ package db
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // A scoped reader keeps reading the revision it validated, even after a

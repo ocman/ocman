@@ -3,7 +3,7 @@ package remote
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 func TestAssignProjectKeys(t *testing.T) {

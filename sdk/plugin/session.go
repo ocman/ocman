@@ -5,33 +5,33 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/sdk/protocol"
 )
 
 // Aliases and constants for session.v1, versioned independently of action.v1
 // and conversation.v1.
 type (
-	SessionRunParams = plugins.SessionRunParams
-	SessionRunResult = plugins.SessionRunResult
-	SessionCompleted = plugins.SessionCompleted
-	SessionUsage     = plugins.SessionUsage
+	SessionRunParams = protocol.SessionRunParams
+	SessionRunResult = protocol.SessionRunResult
+	SessionCompleted = protocol.SessionCompleted
+	SessionUsage     = protocol.SessionUsage
 )
 
 const (
-	SessionRunGrant        = plugins.SessionRunGrant
-	SessionProjectGrant    = plugins.SessionProjectGrant
-	SessionPluginGrant     = plugins.SessionPluginGrant
-	SessionProjectSetting  = plugins.SessionProjectSetting
-	SessionRunMethod       = plugins.SessionRunMethod
-	SessionCompletedMethod = plugins.SessionCompletedMethod
+	SessionRunGrant        = protocol.SessionRunGrant
+	SessionProjectGrant    = protocol.SessionProjectGrant
+	SessionPluginGrant     = protocol.SessionPluginGrant
+	SessionProjectSetting  = protocol.SessionProjectSetting
+	SessionRunMethod       = protocol.SessionRunMethod
+	SessionCompletedMethod = protocol.SessionCompletedMethod
 )
 
 // SessionCapability is session.v1.
-var SessionCapability = plugins.SessionCapability
+var SessionCapability = protocol.SessionCapability
 
-var ProjectSessionCapability = plugins.ProjectSessionCapability
-var PluginSessionCapability = plugins.PluginSessionCapability
-var ArchivedSessionCapability = plugins.ArchivedSessionCapability
+var ProjectSessionCapability = protocol.ProjectSessionCapability
+var PluginSessionCapability = protocol.PluginSessionCapability
+var ArchivedSessionCapability = protocol.ArchivedSessionCapability
 
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps
@@ -47,7 +47,7 @@ func NewSessionRun(operationID string, params SessionRunParams) (Call, error) {
 		return Call{}, err
 	}
 	call := Call{ID: 1, OperationID: operationID, Capability: SessionCapability.Name, Version: SessionCapability.Version,
-		Method: SessionRunMethod, DeadlineUnixMS: time.Now().Add(plugins.SessionRunTimeout).UnixMilli(), Params: data}
+		Method: SessionRunMethod, DeadlineUnixMS: time.Now().Add(protocol.SessionRunTimeout).UnixMilli(), Params: data}
 	if params.ProjectID != "" || params.NoTools {
 		call.Version = ProjectSessionCapability.Version
 	}

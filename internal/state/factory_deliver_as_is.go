@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // factoryVerificationWaiverKind records, per verification Issue, the approved

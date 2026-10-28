@@ -2,7 +2,7 @@ package autoapprove
 
 import (
 	"encoding/json"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func (t *Tee) dispatchEvent(eventType, dataJSON string) {

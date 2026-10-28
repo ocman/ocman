@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 var errHistoryImportIncomplete = errors.New("statev2 analytics unavailable: import-incomplete")

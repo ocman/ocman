@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	codexprovider "github.com/NoUseFreak/ocman/internal/platforms/codex/provider"
+	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
 )
 
 // supervisorArgs are the flags of `ocman provider codex`.

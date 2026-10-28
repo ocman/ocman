@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 // newTestClient builds a Client pointed at the given httptest.Server.

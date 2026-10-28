@@ -3,7 +3,7 @@ package owned
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // Checkpoint first, notify second. Final task completion must refresh archives

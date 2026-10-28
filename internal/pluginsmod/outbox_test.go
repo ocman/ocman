@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestOutboxRetryDelayIsBounded(t *testing.T) {

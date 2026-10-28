@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/forge/github"
 )
 
 func TestChecksCredentialErrors(t *testing.T) {

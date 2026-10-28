@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 type PermissionEvaluationMethod string

@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
 )
 
 // RunHookCommand handles `ocman hook [--addr A] [--journal DIR] <event>`, run

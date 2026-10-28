@@ -7,8 +7,8 @@ import (
 	"errors"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/sessionview"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/sessionview"
 )
 
 func (a *Adapter) ProxyEvents(ctx context.Context, id string, out io.Writer, flush func()) error {

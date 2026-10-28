@@ -3,9 +3,9 @@ package server
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 )
 
 // The local Host publishes to the registered adapter's own discovery, so a

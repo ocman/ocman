@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 func TestReadsShareCachedResponses(t *testing.T) {

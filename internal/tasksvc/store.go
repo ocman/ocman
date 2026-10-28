@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Schema belongs to this service. Conversation content remains in state_conv.db;

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // TestMain pins the installed-OpenCode check so no test runs the real

@@ -3,7 +3,7 @@ package conversationingest
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // receiptChanges returns a channel closed by the next read approval.

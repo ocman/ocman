@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/server"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/server"
+	"github.com/ocman/ocman/internal/state"
 	log "github.com/sirupsen/logrus"
 )
 

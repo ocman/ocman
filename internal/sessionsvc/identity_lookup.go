@@ -3,9 +3,9 @@ package sessionsvc
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 // LookupSessionIdentity is the legacy-link transport entry point. All physical

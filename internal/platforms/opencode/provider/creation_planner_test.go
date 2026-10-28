@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestPlannedCreationIdentityIsStableAndV2Only(t *testing.T) {

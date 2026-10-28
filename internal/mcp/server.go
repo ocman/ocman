@@ -5,9 +5,9 @@ import (
 	"maps"
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // Deps holds the dependencies injected into the MCP server by the

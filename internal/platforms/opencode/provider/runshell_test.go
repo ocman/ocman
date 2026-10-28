@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // The RunShell request contract (method, path, body, agent default) and

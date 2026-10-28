@@ -3,7 +3,7 @@ package claudecode
 import (
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (p *claudePlatform) CachedSessionObservations() map[string]platforms.LiveState {

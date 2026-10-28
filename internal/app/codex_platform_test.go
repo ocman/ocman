@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/NoUseFreak/ocman/internal/platforms/codex/appserver/codextest"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // TestCodexOnlyStartup runs `ocman -platforms codex` against a fake codex:

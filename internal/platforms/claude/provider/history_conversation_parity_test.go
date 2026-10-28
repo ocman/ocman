@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/conversationingest"
-	"github.com/NoUseFreak/ocman/internal/conversationread"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/conversationingest"
+	"github.com/ocman/ocman/internal/conversationread"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestHistoryConversationMatchesNativePagedContent(t *testing.T) {

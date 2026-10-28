@@ -3,8 +3,8 @@ package routines
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func TestRoutineLinkedBeforeSessionPublished(t *testing.T) {

@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // The account operation (AD-2, FR-7) only asks the user's own claude CLI:

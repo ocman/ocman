@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // overlay is the session's live state, restated by stream.hello. Every

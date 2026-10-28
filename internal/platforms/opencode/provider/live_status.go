@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // This file holds ocman's live view of which sessions are running a turn.

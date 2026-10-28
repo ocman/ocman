@@ -3,8 +3,8 @@ package claudecode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/provider"
 )
 
 // externalAdapter launches on the transcript's owner-local directory, never in

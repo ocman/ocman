@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 func TestPendingFeatureReferenceRetainsRecordWithoutPublishingExecutableLink(t *testing.T) {

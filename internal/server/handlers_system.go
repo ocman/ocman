@@ -11,10 +11,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // WithLogPath records the resolved log file path ("" = stderr only) so

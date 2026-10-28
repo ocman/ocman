@@ -8,9 +8,9 @@ import (
 
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/state"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 type listedPluginPane struct {

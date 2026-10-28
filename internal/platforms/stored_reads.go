@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // StoredSessionEnricher overlays only current platform observations onto stored

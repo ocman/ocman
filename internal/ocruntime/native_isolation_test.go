@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 func TestNativeRuntimeTmuxIsolation(t *testing.T) {

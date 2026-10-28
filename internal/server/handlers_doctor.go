@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // WithToolPathError records the toolpath.Ensure result so the doctor can

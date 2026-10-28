@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/pluginsmod"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 type pluginManagementTest struct {

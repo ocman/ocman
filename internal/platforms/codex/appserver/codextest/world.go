@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // World constants describe the store World serves.

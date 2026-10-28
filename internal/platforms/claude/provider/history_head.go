@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // Head reads indexed scalar metadata and checks the physical file version.

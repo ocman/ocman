@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 // Slack previews message permalinks (/archives/{channel}/p{ts}, optionally

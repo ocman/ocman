@@ -6,9 +6,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	"github.com/NoUseFreak/ocman/internal/platforms/codex/appserver/codextest"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 )
 
 // TestRecordedExtras replays the 0.164.0 extras recording over the protocol

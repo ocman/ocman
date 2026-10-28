@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // ReferenceSchema owns quarantined legacy associations. No hub-allocated token

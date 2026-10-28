@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/snooze"
+	"github.com/ocman/ocman/internal/snooze"
 )
 
 // The module is stateless, so each lifecycle entry can use a fresh value.

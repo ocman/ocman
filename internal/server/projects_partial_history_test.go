@@ -3,8 +3,8 @@ package server
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/conversationingest"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/conversationingest"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestProjectBrowsingDoesNotRequireAnalyticsReadiness(t *testing.T) {

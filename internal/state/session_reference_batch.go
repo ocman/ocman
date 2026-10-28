@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/startup"
 )
 
 // One indexed transaction-local mapping replaces one full table/JSON scan per

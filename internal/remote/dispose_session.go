@@ -3,8 +3,8 @@ package remote
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/platforms"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 var _ platforms.SessionDisposer = (*remotePlatform)(nil)

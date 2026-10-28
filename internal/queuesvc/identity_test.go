@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // Session identity is (platform, sessionID). Two machines can hand out the

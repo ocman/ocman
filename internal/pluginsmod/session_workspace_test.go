@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/state/statetest"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestPrivateModelWorkspacesAreIsolatedAndRejectSymlinks(t *testing.T) {

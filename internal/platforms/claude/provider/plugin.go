@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/launch"
+	"github.com/ocman/ocman/internal/platforms/claude/launch"
 )
 
 // The ocman plugin lives in a local marketplace of the same name (AD-11);

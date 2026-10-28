@@ -3,7 +3,7 @@ package factory
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (s *NativeService) canonicalMutationProjects(ctx context.Context, epic model.NativeEpic, mutation *GraphMutation) error {

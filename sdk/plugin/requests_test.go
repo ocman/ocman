@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/plugin"
 )
 
 func requestConnection(t *testing.T, limit int, negotiated bool, versions ...plugin.Version) (*plugin.Encoder, *plugin.Decoder, chan plugin.Request, <-chan error) {

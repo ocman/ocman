@@ -3,10 +3,10 @@ package opencode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/srvtiming"
+	"github.com/ocman/ocman/internal/state"
 	log "github.com/sirupsen/logrus"
 )
 

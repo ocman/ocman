@@ -15,13 +15,13 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/hostsvc"
+	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/platforms"
+	opencodeplatform "github.com/ocman/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // Ensure the sql import is used (needed for the sqlite3 driver side-effect

@@ -3,7 +3,7 @@ package autoapprove
 import (
 	"context"
 	"encoding/json"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"strings"
 )
 

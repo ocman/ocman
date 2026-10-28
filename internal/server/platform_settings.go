@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/platformsettings"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platformsettings"
 )
 
 func (s *Server) platformSettingsModule() *platformsettings.Module {

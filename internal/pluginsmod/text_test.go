@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/internal/db"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestLatestAssistantText(t *testing.T) {

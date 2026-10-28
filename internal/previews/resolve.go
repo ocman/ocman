@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/linkpreview"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/linkpreview"
 )
 
 // maxPreviewResolveBody bounds the transcript text one request may scan.

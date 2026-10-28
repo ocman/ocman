@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // recordedResult returns the result of the first recorded call of method.

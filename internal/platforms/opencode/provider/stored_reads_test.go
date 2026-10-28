@@ -9,11 +9,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	ocapi "github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	ocv2 "github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestStoredPanelsAndCataloguesDoNotNeedNativeDatabase(t *testing.T) {

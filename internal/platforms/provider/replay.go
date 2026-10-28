@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // AcknowledgeTurn is called only after the headless lifecycle/event handlers

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestLegacyIndexerDoesNotReadoptCanonicalHistoryKeys(t *testing.T) {

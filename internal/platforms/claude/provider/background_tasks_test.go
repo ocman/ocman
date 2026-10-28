@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/providersupervisor"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 func TestBackgroundTaskCountSnapshot(t *testing.T) {

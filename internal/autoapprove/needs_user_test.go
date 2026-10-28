@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // needsUserRecorder collects every prompt the pipeline hands to the user.

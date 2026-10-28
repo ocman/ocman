@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func commitCreation(ctx context.Context, p platforms.Platform, id string) error {

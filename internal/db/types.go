@@ -3,7 +3,7 @@ package db
 import (
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 // Message represents an OpenCode message.

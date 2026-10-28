@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/hostsvc"
 )
 
 func TestProjectOpencodeRootPlainDirectorySymlink(t *testing.T) {

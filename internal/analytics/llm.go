@@ -9,10 +9,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/pricing"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/pricing"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 // llmMetrics holds the OTel instruments for per-LLM-turn metrics.

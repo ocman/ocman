@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // History health is diagnostic only. Neither an incomplete scan nor a failed

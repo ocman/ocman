@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	internalmcp "github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // SendSessionMessage uses the composer's direct-send path, never the held queue.

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"maps"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (a *Adapter) storedUsage(ctx context.Context, id string) (map[string]platforms.Usage, error) {

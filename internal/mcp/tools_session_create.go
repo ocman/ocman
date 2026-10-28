@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // ErrInvalidSessionCreate marks a create failure caused by the caller's

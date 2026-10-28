@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // KindNativeTmux is the Instance.Kind reported by the native runtime.

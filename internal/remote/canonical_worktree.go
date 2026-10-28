@@ -3,9 +3,9 @@ package remote
 import (
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 func (h *remoteHost) decodeWorktreeSession(raw []byte) (*hostsvc.WorktreeSessionResult, error) {

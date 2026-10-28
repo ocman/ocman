@@ -1,6 +1,6 @@
 package server
 
-import "github.com/NoUseFreak/ocman/internal/module"
+import "github.com/ocman/ocman/internal/module"
 
 func finalizeModules(mods []module.Module) {
 	for i := len(mods) - 1; i >= 0; i-- {

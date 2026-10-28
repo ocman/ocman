@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 // loopbackOnly stands in for the server's localhost guard.

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/hostsvc"
 )
 
 // serveProjectForge sends r through the public mux as an origin-less

@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/state"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 type pluginDiscoveryFailure struct {

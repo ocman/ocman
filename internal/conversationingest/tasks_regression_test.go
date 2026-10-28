@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 func TestLiveSessionUpdateIsNotRecordedAsTask(t *testing.T) {

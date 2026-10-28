@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/db"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 func now() int64 { return time.Now().UnixMilli() }

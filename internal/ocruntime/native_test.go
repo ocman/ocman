@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 func TestNativeRuntimeLaunchUsesExistingTmuxSession(t *testing.T) {

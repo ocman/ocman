@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
 )
 
 // The fake CLI rejects stdin the real CLI cannot use, so a protocol bug in

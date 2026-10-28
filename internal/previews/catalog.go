@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/linkpreview"
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/linkpreview"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 type previewProviderView struct {

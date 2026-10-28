@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // Prompts of every session pass through with the asking session; the hub

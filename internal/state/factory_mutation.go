@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func mutateFactoryGraphTx(ctx context.Context, tx *sql.Tx, m model.GraphMutation, requiresApproval bool) error {

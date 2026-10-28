@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // extras records the operations beyond plain turns: one turn for history and

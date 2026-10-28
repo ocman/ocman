@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
 )
 
 type refreshKey struct{}

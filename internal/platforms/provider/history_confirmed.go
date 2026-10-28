@@ -3,7 +3,7 @@ package provider
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 func (a *Adapter) ConfirmHistory(ctx context.Context, id string, receipt providerprotocol.HistoryConfirmation) error {

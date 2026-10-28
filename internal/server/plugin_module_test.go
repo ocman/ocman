@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/pluginsmod"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/state"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // bindPlugins gives s's plugin module the lifetime context Start would.

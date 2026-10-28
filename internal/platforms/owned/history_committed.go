@@ -4,9 +4,9 @@ import (
 	"context"
 	"math"
 
-	"github.com/NoUseFreak/ocman/internal/conversationread"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/conversationread"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) HistoryCommitted(ctx context.Context, id string, snapshot *db.HistorySnapshot) error {

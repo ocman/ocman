@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider/claudetest"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
 )
 
 // Helper calls are bounded machine-wide by their own slots: never more than

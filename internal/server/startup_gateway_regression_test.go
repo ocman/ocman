@@ -12,8 +12,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/startup"
 )
 
 type startupFailureModule struct{}

@@ -3,9 +3,9 @@ package pluginsmod
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // Only protocol serialization and opaque receipt keys use this compatibility

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (d *DB) ListFactoryMergeGateDeliveries(ctx context.Context, observedBefore time.Time, limit int) ([]model.FactoryDeliveryObservation, error) {

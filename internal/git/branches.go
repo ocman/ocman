@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // ErrDirtyCheckout is returned by Checkout when git refuses to switch

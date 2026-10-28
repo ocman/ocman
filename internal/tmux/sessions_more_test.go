@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // fakeTmux installs a fake `tmux` executable at the front of PATH so the

@@ -3,8 +3,8 @@ package platforms
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/historyjournal"
 )
 
 // HistoryIdentity describes a physical, owner-local history source. It does not

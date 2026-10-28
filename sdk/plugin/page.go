@@ -3,40 +3,40 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/sdk/protocol"
 )
 
-type PageDescriptor = plugins.PageDescriptor
-type PageRequest = plugins.PageRequest
-type PageDocument = plugins.PageDocument
-type PageField = plugins.PageField
-type PageOption = plugins.PageOption
-type PageIssue = plugins.PageIssue
-type PageColumn = plugins.PageColumn
-type PageSummary = plugins.PageSummary
-type PageRow = plugins.PageRow
-type PageCollection = plugins.PageCollection
-type PageProperty = plugins.PageProperty
-type PageDetail = plugins.PageDetail
+type PageDescriptor = protocol.PageDescriptor
+type PageRequest = protocol.PageRequest
+type PageDocument = protocol.PageDocument
+type PageField = protocol.PageField
+type PageOption = protocol.PageOption
+type PageIssue = protocol.PageIssue
+type PageColumn = protocol.PageColumn
+type PageSummary = protocol.PageSummary
+type PageRow = protocol.PageRow
+type PageCollection = protocol.PageCollection
+type PageProperty = protocol.PageProperty
+type PageDetail = protocol.PageDetail
 
-var PageCapability = plugins.PageCapability
-var PageContributionCapability = plugins.PageContributionCapability
-var PluginPageCapability = plugins.PluginPageCapability
-var PageModelCapability = plugins.PageModelCapability
-var PageTableCapability = plugins.PageTableCapability
+var PageCapability = protocol.PageCapability
+var PageContributionCapability = protocol.PageContributionCapability
+var PluginPageCapability = protocol.PluginPageCapability
+var PageModelCapability = protocol.PageModelCapability
+var PageTableCapability = protocol.PageTableCapability
 
-var ValidatePageInput = plugins.ValidatePageInput
+var ValidatePageInput = protocol.ValidatePageInput
 
-const PageProjectGrant = plugins.PageProjectGrant
-const PagePluginGrant = plugins.PagePluginGrant
+const PageProjectGrant = protocol.PageProjectGrant
+const PagePluginGrant = protocol.PagePluginGrant
 
 func PageHandler(d Description, handle func(context.Context, string, PageRequest) (PageDocument, error)) Handler {
 	return func(ctx context.Context, call Call, _ func(json.RawMessage) error) (json.RawMessage, error) {
 		if call.Capability != "page" || call.Version.Major != 1 || call.Version.Minor > d.PageVersion().Minor || (call.Method != "read" && call.Method != "save" && call.Method != "validate") {
 			return nil, Failure(ErrorNotFound)
 		}
-		req, err := plugins.DecodePageRequest(call.Params)
-		if err != nil || !d.PageAllowed(req.PageID, d.RequestedGrants) || !d.PageRequestAllowed(req) || plugins.ValidatePageCall(call.Method, req, call.Version) != nil {
+		req, err := protocol.DecodePageRequest(call.Params)
+		if err != nil || !d.PageAllowed(req.PageID, d.RequestedGrants) || !d.PageRequestAllowed(req) || protocol.ValidatePageCall(call.Method, req, call.Version) != nil {
 			return nil, Failure(ErrorInvalidArgument)
 		}
 		if call.Method == "validate" {
@@ -55,9 +55,9 @@ func PageHandler(d Description, handle func(context.Context, string, PageRequest
 		raw, err := json.Marshal(result)
 		if err == nil {
 			var decoded PageDocument
-			decoded, err = plugins.DecodePageDocument(raw)
+			decoded, err = protocol.DecodePageDocument(raw)
 			if err == nil {
-				err = plugins.ValidatePageVersion(decoded, call.Version)
+				err = protocol.ValidatePageVersion(decoded, call.Version)
 			}
 		}
 		return raw, err

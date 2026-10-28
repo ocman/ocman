@@ -30,8 +30,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/gitexec"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // The first turn runs an approved command and edits a file with apply_patch;

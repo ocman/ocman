@@ -3,9 +3,9 @@ package owned
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (g *IdentityGateway) LookupReference(ctx context.Context, scope, reference string) (*platforms.SessionIdentity, error) {

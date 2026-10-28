@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 const factoryAttemptColumns = `id, epic_id, work_item_id, sequence, phase, terminal_outcome,

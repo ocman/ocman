@@ -1,6 +1,6 @@
 package convevents
 
-import "github.com/NoUseFreak/ocman/internal/db"
+import "github.com/ocman/ocman/internal/db"
 
 // QueuedMessage mirrors queuemod.MessageView (frontend QueuedMessage).
 type QueuedMessage struct {

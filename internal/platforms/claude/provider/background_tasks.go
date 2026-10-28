@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 func backgroundCountEvent(id string, count int, tasks ...[]map[string]string) providerprotocol.Event {

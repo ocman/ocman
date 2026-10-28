@@ -12,7 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
+	plugin "github.com/ocman/ocman/sdk/plugin"
 )
 
 type socketEnvelope struct {

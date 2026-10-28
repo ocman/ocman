@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/launch"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/platforms/claude/launch"
 )
 
 // worktreeNameArgs is the auto-approve judge's measured one-shot command:

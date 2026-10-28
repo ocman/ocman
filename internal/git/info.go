@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // Info is the per-directory snapshot surfaced to callers. The zero

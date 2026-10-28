@@ -4,11 +4,11 @@ import (
 	"context"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexprovider "github.com/NoUseFreak/ocman/internal/platforms/codex/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
+	"github.com/ocman/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // Session operations go to the supervisor, launching it when needed. Reads of

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // ponytail: one global idle limit. Make it a Formula/Epic setting when a

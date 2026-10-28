@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/ocman/ocman/internal/git"
 )
 
 // filesystemMux serves requests through the server's real route table, so

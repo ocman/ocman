@@ -3,8 +3,8 @@ package claudecode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platforms/provider"
 )
 
 // A failed API probe is not proof of absence. Only the tracked process's

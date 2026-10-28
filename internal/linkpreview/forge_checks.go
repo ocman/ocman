@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
-	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
-	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
+	"github.com/ocman/ocman/internal/forge/forgejo"
+	"github.com/ocman/ocman/internal/forge/github"
 )
 
 type previewRefreshKey struct{}

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"filippo.io/age"
-	"github.com/NoUseFreak/ocman/internal/relay"
-	"github.com/NoUseFreak/ocman/internal/share"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
+	"github.com/ocman/ocman/internal/state"
 )
 
 const PollInterval = 15 * time.Second

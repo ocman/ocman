@@ -3,8 +3,8 @@ package owned
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (a *Adapter) PluginSessionReference(ctx context.Context, id string) (string, error) {

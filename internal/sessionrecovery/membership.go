@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/git"
 )
 
 // Membership uses the same owner-local identity as managed launch. Each

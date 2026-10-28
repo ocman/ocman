@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/share"
 )
 
 func TestTruncateShareParts_ShortensLongStringsKeepsStructure(t *testing.T) {

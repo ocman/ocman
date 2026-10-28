@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // FetchPRHead fetches the standard GitHub/Forgejo pull ref into a stable local branch.

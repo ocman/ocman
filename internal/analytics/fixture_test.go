@@ -10,13 +10,13 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/NoUseFreak/ocman/internal/conversationingest"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/conversationingest"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // fixture is a module over a fresh OpenCode database (raw is its writable

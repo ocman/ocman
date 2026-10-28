@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // SentSession acknowledges delivery, not completion of the recipient's turn.

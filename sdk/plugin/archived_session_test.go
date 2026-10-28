@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/plugin"
 )
 
 func TestArchivedSessionNegotiates13AndFailsClosedOnOlderHosts(t *testing.T) {

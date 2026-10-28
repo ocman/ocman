@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // An input admitted while an interrupt awaits its acknowledgment was not

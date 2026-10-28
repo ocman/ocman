@@ -6,7 +6,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func (s *Service) persistLifecycle(asked askedPermission, sessionID, permissionID string, update state.PermissionLifecycle) {

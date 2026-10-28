@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/ocman/ocman/internal/git"
 )
 
 func TestWriteCreateError(t *testing.T) {

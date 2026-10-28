@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/providersupervisor/providertest"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor/providertest"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestProviderLaunchAndStop(t *testing.T) {

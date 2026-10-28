@@ -3,7 +3,7 @@ package claudecode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
 )
 
 func (p *claudePlatform) GenerateSessionTitle(ctx context.Context, directory, prompt string) (string, error) {

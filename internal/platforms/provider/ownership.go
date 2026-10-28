@@ -3,7 +3,7 @@ package provider
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // SessionOwnership probes the existing runtime only. Unsupported supervisors

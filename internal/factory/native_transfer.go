@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // ErrTrackerUncertain marks a create call that may have reached the tracker.

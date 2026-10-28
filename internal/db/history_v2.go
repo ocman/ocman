@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // readV2History uses the shared converter for supported messages, preserving

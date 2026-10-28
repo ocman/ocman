@@ -3,7 +3,7 @@ package claudeprovider
 import (
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // analyticsRows projects converted messages for the transcript index:

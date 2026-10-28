@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/hostsvc"
+	internalmcp "github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/statev2"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // Claude-only and mixed-platform user workflows (FR-1/2/4, AD-1/13).

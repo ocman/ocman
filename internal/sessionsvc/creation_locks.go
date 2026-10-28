@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type creationKey struct{ owner, request string }

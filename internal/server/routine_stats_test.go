@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/routines"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/routines"
+	"github.com/ocman/ocman/internal/state"
 )
 
 type routineUsagePlatform struct{ *fakePlatform }

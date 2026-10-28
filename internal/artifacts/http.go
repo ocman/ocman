@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func (m *Module) handleDelete(w http.ResponseWriter, r *http.Request, id string) {

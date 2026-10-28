@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // SummaryReader reads a session list row without loading messages or trees.

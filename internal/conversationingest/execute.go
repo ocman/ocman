@@ -6,7 +6,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.Progress) error) error {

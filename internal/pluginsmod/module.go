@@ -2,7 +2,7 @@
 // process supervision, owner-local management, the authenticated remote
 // PluginOperation seam, palette actions, read-only panes, and the
 // conversation.v1 broker with its durable reply outbox. The wire protocol,
-// supervisor and brokers stay in internal/plugins and the tables in
+// supervisor and brokers stay in the SDK's sdk/protocol and the tables in
 // internal/state; this package adapts them to the server's session, queue
 // and host infrastructure, which it reaches only through Deps.
 package pluginsmod
@@ -15,13 +15,13 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worker"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/worker"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // Sessions creates the session a conversation's first message runs in.

@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessionsvc"
 )
 
 func TestWorktreeCreationCarriesIdentityAndPreservesUncertainExecution(t *testing.T) {

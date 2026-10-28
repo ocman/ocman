@@ -7,9 +7,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worker"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/worker"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // conversationOutboxPrefix namespaces the wire operation id derived from a

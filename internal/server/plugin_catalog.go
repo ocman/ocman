@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // projectDirectory resolves only ingested owner-local project metadata. Missing

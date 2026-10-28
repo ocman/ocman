@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 // QuarantineUnattributedSessionReferences cannot assign sessions to an inferred

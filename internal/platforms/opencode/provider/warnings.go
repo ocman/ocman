@@ -1,6 +1,6 @@
 package opencode
 
-import "github.com/NoUseFreak/ocman/internal/platforms"
+import "github.com/ocman/ocman/internal/platforms"
 
 const duplicateOpenCodeServersWarningKind = "duplicate_opencode_servers"
 

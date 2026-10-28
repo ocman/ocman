@@ -18,16 +18,16 @@ linters:
       analyze-types: true
       forbid:
         - pattern: '^git\.(GetDiff|Lookup|LookupMany|ListBranches|Checkout|ListWorktrees|CreateWorktree|RemoveWorktree|ResolveRepoRoot|ResolveBaseRef)$'
-          pkg: '^github.com/NoUseFreak/ocman/internal/git$'
+          pkg: '^github.com/ocman/ocman/internal/git$'
           msg: Route host operations through hostsvc.Host.
         - pattern: '^tmux\.(ListClients|ListSessions|ListWindows|SwitchClient|LaunchOpencode.*)$'
-          pkg: '^github.com/NoUseFreak/ocman/internal/tmux$'
+          pkg: '^github.com/ocman/ocman/internal/tmux$'
           msg: Route host operations through hostsvc.Host.
         - pattern: '^term\.(AttachLocalPTY|CreateWindow|Windows|KillWindow)$'
-          pkg: '^github.com/NoUseFreak/ocman/internal/term$'
+          pkg: '^github.com/ocman/ocman/internal/term$'
           msg: Route host operations through hostsvc.Host.
         - pattern: '^gitexec\.(Output|Command)$'
-          pkg: '^github.com/NoUseFreak/ocman/internal/gitexec$'
+          pkg: '^github.com/ocman/ocman/internal/gitexec$'
           msg: Route host operations through hostsvc.Host.
   exclusions:
     rules:

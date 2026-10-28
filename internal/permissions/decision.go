@@ -1,8 +1,8 @@
 package permissions
 
 import (
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // Decision evaluates Ocman's manual rules. An empty decision means no rule

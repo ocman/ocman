@@ -1,4 +1,4 @@
-module github.com/NoUseFreak/ocman/site
+module github.com/ocman/ocman/site
 
 go 1.26.1
 

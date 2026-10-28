@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Schema owns the local cost ledger. No credentials or permission content are stored.

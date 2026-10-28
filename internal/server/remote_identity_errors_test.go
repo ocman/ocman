@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 type identityRPCHost struct{ hostsvc.Host }

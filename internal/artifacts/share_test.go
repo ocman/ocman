@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/relay"
-	"github.com/NoUseFreak/ocman/internal/share"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func artifactRelay(t *testing.T, cfg relay.Config) (*httptest.Server, string) {

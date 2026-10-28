@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 type catalogResp struct {

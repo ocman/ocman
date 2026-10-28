@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // conversationMarkdown renders a full conversation (session metadata +

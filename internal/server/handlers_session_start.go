@@ -3,9 +3,9 @@ package server
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessionlifecycle"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessionlifecycle"
 )
 
 type newSessionTarget = sessionlifecycle.Target

@@ -3,7 +3,7 @@ package sessionrecovery
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/ocruntime"
 )
 
 // Consult before refreshing preparation, discovery or current runtime rows.

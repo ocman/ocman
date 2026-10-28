@@ -3,9 +3,9 @@ package conversationingest
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func (w *sourceWorker) applyPendingChange(ctx context.Context, change platforms.HistoryChange, force bool) error {

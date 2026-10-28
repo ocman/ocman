@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // writeLaunchCatalogPlugin writes a serve plugin that dumps its fd-3 payload

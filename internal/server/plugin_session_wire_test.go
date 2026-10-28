@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/pluginsmod"
 
 	"context"
 	"database/sql"
@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/state"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestPluginSessionWireDenials(t *testing.T) {

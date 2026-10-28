@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (d *DB) PourFactoryEpic(ctx context.Context, id string, formula model.NativeFormula) (model.NativeEpic, []model.NativeIssue, error) {

@@ -3,8 +3,8 @@ package local
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (h *Host) hookPlugin() hostsvc.HookPluginManager {

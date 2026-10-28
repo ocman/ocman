@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/hostsvc"
+	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestHandleResolveTargets_SingleHostLocalOnly(t *testing.T) {

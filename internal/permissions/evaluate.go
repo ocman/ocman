@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // Allows reports whether rules allow every pattern of a permission prompt,

@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // ItemPart converts one reply item into a v1 part without ids. Items ocman

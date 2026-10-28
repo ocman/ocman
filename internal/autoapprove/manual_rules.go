@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/permissions"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/permissions"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func manualRulesKey(platform, sessionID string) string {

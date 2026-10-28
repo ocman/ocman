@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/relay"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/webhook"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/webhook"
 )
 
 func callWebhookMCP(t *testing.T, handler http.Handler, args map[string]any) mcplib.CallToolResult {

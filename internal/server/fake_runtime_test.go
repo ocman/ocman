@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/ocruntime"
 )
 
 // fakeRuntime is a server-package test double for ocruntime.Runtime that

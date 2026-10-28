@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/analytics"
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/analytics"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // analyticsModule exists without either database: its routes then answer

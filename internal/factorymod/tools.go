@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"net/url"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/ocman/ocman/internal/factory"
+	internalmcp "github.com/ocman/ocman/internal/mcp"
 )
 
 // toolService lists every Factory method the MCP tools may call.

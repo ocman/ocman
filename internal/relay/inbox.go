@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"filippo.io/age"
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 const inboxFormatVersion = 1

@@ -20,8 +20,8 @@ import (
 	"github.com/creack/pty"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/tmux"
 )
 
 // SessionName is the single dedicated tmux session that hosts every

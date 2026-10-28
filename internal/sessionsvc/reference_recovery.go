@@ -3,8 +3,8 @@ package sessionsvc
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/owned"
 )
 
 func (s *Service) RecoverSessionReferences(ctx context.Context, references *owned.ReferenceStore, scope string) (int, error) {

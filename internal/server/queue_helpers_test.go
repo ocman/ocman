@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/queuemod"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/queuemod"
 )
 
 // These helpers keep the HTTP/SSE acceptance fixtures exercising the module.

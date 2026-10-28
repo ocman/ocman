@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	gitpkg "github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/provider"
+	"github.com/ocman/ocman/internal/db"
+	gitpkg "github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/provider"
 )
 
 // A shared transcript listing can seed Knows on every supervisor. For owned

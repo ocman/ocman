@@ -58,7 +58,7 @@ Read [sessions.md](sessions.md) and [integrations.md](integrations.md).
 | --- | --- |
 | `internal/projectforge`, `internal/forge` | Owner-routed PR/issue operations and GitHub/Forgejo clients. |
 | `internal/factorymod`, `internal/factory` | Factory routes/tools/session launchers and domain dispatch. `factory_control` records proposals only; user confirmation executes them. Tables stay in state. State tests importing factory use `package state_test`. |
-| `internal/plugins`, `internal/pluginsmod`, `sdk/plugin`, `examples/ocman-plugin-*` | Protocol, supervision, owner management, SDK, examples, durable conversation/session delivery, launch catalogs and permission profiles. Read [plugins.md](plugins.md) for table ownership. |
+| `sdk/protocol`, `internal/pluginsmod`, `sdk/plugin`, `examples/ocman-plugin-*`, `sdk/examples/ocman-plugin-fixture` | Protocol, supervision, owner management, SDK, examples, durable conversation/session delivery, launch catalogs and permission profiles. Read [plugins.md](plugins.md) for table ownership. |
 | `internal/routines`, `internal/webhook` | Scheduling/session settlement and webhook capture/subscriptions. Remote receives the narrow webhook interface, not a module import. |
 | `internal/artifacts`, `internal/inbox`, `internal/sharing`, `internal/share` | Published files, cross-machine attention, exports and encrypted relay sharing. |
 | `internal/filesystem`, `internal/previews`, `internal/linkpreview`, `internal/previewauth` | Read-only browsing, inert signed files, preview routes/service and grants. |

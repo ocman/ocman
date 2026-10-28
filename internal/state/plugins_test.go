@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func pluginFixture(t *testing.T) (*DB, plugins.Description, []PluginInstance) {

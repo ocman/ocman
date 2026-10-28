@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // OpenCode v2 keeps MCP servers under mcp.servers.<name>. It still reads

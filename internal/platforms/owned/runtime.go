@@ -3,7 +3,7 @@ package owned
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) GenerateSessionTitle(ctx context.Context, directory, prompt string) (string, error) {

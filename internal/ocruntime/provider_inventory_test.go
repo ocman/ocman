@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestProviderInventoryIsRootAndPlatformScoped(t *testing.T) {

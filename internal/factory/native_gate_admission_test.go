@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestFactoryGateCreationAdmitsAnotherEpicWithoutIdleEvent(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
 // A backend reload builds a new adapter; nothing it routes on may be

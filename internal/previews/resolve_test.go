@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/linkpreview"
+	"github.com/ocman/ocman/internal/linkpreview"
 )
 
 type trackerResolver struct{ api string }

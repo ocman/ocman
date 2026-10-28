@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/hostsvc"
 	log "github.com/sirupsen/logrus"
 )
 

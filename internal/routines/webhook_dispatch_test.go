@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/relay"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/webhook"
+	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/webhook"
 )
 
 // RunWebhook reports a launch failure as a failed run with a nil error; the

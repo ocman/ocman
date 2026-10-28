@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/testutil"
 	_ "modernc.org/sqlite"
 )
 

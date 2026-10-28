@@ -46,7 +46,8 @@ trim = true
 conventional_commits = true
 filter_unconventional = true
 filter_commits = true
-tag_pattern = "v[0-9]*"
+# Anchored so the SDK module's sdk/vX.Y.Z tags never count as app releases.
+tag_pattern = "^v[0-9]"
 sort_commits = "newest"
 protect_breaking_commits = true
 

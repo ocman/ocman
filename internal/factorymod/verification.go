@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type factoryCheckHost interface {

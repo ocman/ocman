@@ -10,7 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/convevents/v1map"
+	"github.com/ocman/ocman/internal/convevents/v1map"
 )
 
 // CaptureEnv names the development-only directory that receives each live

@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // fakePlatform is a minimal Platform used for registry tests. All

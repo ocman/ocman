@@ -4,7 +4,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 // Server-side custom OTel instruments. These complement otelhttp's

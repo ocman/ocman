@@ -3,7 +3,7 @@ package platforms
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // RuntimeSessionReader provides uncached owner-local replacement candidates and

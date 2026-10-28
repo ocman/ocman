@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/pricing"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/pricing"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func (m *Module) handleStats(w http.ResponseWriter, r *http.Request) {

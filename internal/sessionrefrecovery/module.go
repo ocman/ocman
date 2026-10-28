@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 type Deps struct {

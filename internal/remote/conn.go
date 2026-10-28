@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 // Health is a RemoteConn's connection state (architecture Data Model).

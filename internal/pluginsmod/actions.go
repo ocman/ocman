@@ -8,8 +8,8 @@ import (
 	"mime"
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/remote"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // Actions is the palette action broker: admission, confirmation and receipts.

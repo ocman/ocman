@@ -136,8 +136,9 @@ ID, subpath or enabled tools is rejected in this mode. The all-tools-denied
 profile is applied before creating the turn. Older hosts reject the request
 locally instead of downgrading it to a project-backed session.
 
-Go plugins import `github.com/NoUseFreak/ocman/sdk/plugin`. The canonical types
-are shared with the host. Declare owner scope, the `page.project` grant and
+Go plugins import `github.com/ocman/ocman/sdk/plugin` from the
+`github.com/ocman/ocman/sdk` module. The canonical types are shared with the
+host. Declare owner scope, the `page.project` grant and
 `PageContributionCapability` for the 1.1 options:
 
 ```go
@@ -361,4 +362,4 @@ workspace example's tests show this pattern.
 For SDK lifecycle and action grant checks, see the
 [SDK conformance guide](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md#conformance-tests-for-external-plugins).
 For exact framing and capability rules, see the
-[wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/internal/plugins/README.md).
+[wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/protocol/README.md).

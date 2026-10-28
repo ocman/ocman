@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // entry is one indexed transcript: the list projection, message offsets and

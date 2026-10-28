@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 // requestRow attaches computed fields without changing the request-log API.

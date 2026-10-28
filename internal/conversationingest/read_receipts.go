@@ -2,7 +2,7 @@ package conversationingest
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func conversationRefreshes(sessions []statev2.Session) map[string]bool {

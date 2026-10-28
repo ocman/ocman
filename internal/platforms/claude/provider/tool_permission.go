@@ -1,7 +1,7 @@
 package claudeprovider
 
 import (
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 	"strings"
 )
 

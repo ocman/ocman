@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // DeliverAsIs is the user's way out of a review loop: running validators and

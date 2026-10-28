@@ -4,7 +4,7 @@ import (
 	"context"
 	"maps"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) prompts(ctx context.Context, rows []platforms.LivePrompt) ([]platforms.LivePrompt, error) {

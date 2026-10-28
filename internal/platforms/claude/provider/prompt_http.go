@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // servePrompt handles POST /permissions/{id}/reply and /questions/{id}/reply|reject.

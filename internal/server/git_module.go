@@ -3,9 +3,9 @@ package server
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/gitmod"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/gitmod"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // gitModule is stateless, so it is rebuilt on each call. Permission

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/conversationread"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/conversationread"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func (a *Adapter) waitStored(ctx context.Context, id string) bool {

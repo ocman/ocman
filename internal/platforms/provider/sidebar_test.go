@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestSidebarObservationsAreCacheOnlyAndDisconnectSafe(t *testing.T) {

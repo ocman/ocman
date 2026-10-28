@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // fakePlatform is a minimal Platform implementation for server-package

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 type Lookup func(context.Context, string, []string) (map[string]string, error)

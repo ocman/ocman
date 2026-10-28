@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 

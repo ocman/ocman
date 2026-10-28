@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestHistoryCatalogDefaultsStayOnReservedSnapshot(t *testing.T) {

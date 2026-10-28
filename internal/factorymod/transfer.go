@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // errFactoryTracker marks failures on the forge side of a transfer.

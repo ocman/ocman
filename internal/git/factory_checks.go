@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // FactoryWorktreePath returns the checkout of a Factory shared branch.

@@ -1,7 +1,7 @@
 package sessionsvc
 
 import (
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"testing"
 )
 

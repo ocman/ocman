@@ -10,8 +10,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcptest"
 
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	internalmcp "github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func buildEmbedFileServer(t *testing.T, sign internalmcp.FileSigner) *mcptest.Server {

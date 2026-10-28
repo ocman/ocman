@@ -1,11 +1,11 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/pluginsmod"
 
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestPluginSessionModuleCompletionTriggers(t *testing.T) {

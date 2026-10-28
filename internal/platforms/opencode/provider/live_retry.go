@@ -3,7 +3,7 @@ package opencode
 import (
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 type liveSessionStatus struct {

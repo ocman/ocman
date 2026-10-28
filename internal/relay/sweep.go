@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 // sweepWindowDays is how far back an expiry sweep looks.

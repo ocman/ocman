@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/owned"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/owned"
 )
 
 func (p *remotePlatform) ProxyEvents(ctx context.Context, id string, out io.Writer, flush func()) error {

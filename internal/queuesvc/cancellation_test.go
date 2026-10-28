@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestSweepStopsAdmittingSessionsAfterCancellation(t *testing.T) {

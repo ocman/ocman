@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/sessionsvc"
 )
 
 func TestCreatedRoutineEventCarriesFilterMetadata(t *testing.T) {

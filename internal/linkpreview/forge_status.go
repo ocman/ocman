@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
-	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/forge/forgejo"
+	"github.com/ocman/ocman/internal/forge/github"
 )
 
 // Use the sidebar's review parser and credential-scoped GitHub HTTP cache.

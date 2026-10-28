@@ -4,7 +4,7 @@ import (
 	"context"
 	"math"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // usageMatches reports whether the stored accounting for a session equals the

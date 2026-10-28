@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // reopenFactoryGraphApprovalTx freezes the edited graph and invalidates its old

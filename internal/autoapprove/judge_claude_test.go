@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // fakeClaude writes a stand-in claude that answers every -p call with reply

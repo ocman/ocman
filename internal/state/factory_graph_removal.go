@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 // The blocker queries use alias b. A proposed removal remains effective until

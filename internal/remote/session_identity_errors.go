@@ -3,7 +3,7 @@ package remote
 import (
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

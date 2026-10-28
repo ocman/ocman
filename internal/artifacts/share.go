@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/share"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/share"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // An artifact share is a relay share whose chunk 0 is a sealed JSON

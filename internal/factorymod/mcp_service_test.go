@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory"
 )
 
 // stubService records what the MCP wrapper forwards. Unimplemented methods

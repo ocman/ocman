@@ -9,9 +9,9 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	internalmcp "github.com/ocman/ocman/internal/mcp"
 )
 
 func webhookServerTools(handler http.Handler) []server.ServerTool {

@@ -3,7 +3,7 @@ package forgehttp
 import (
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge"
 )
 
 // PR is the subset of the pull-request JSON the sidebar reads. Forgejo's

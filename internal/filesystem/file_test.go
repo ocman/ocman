@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func newFileTestModule(t *testing.T) *Module {

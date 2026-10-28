@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 var (

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/textsearch"
+	"github.com/ocman/ocman/internal/textsearch"
 )
 
 type TextMatch struct {

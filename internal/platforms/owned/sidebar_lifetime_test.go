@@ -3,7 +3,7 @@ package owned
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestSidebarModuleFinalizationClosesReaderAcrossReloads(t *testing.T) {

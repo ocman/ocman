@@ -5,7 +5,7 @@ package moduletest
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 // Router is a module.Router over Mux. Handle and Setting apply Auth, Local

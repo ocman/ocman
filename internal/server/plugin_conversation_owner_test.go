@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/remote"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // otherOwnerHost stands in for a second machine. Touching it at all is the

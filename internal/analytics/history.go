@@ -3,7 +3,7 @@ package analytics
 import (
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // HistoryAnalytics configures the conversation analytics reader. Instances must

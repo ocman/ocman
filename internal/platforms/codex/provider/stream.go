@@ -4,7 +4,7 @@ import (
 	"maps"
 	"strings"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // Live returns the open message and the parts of item itemID, for publishing

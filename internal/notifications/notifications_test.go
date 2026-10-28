@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	webpush "github.com/SherClockHolmes/webpush-go"
+	"github.com/ocman/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func fixture(t *testing.T) *Module {

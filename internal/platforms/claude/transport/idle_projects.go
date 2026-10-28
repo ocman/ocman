@@ -3,8 +3,8 @@ package claudecode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
 )
 
 func (p *claudePlatform) ProjectRoot(ctx context.Context, directory string) (string, error) {

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestManagerStoreConcurrentReadsShareState(t *testing.T) {

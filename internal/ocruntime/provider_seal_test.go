@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/providersupervisor"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/providersupervisor"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestProviderSealIdleFencesResume(t *testing.T) {

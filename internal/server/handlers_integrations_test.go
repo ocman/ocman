@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
-	"github.com/NoUseFreak/ocman/internal/forge/github"
-	"github.com/NoUseFreak/ocman/internal/previewauth"
-	"github.com/NoUseFreak/ocman/internal/previews"
+	"github.com/ocman/ocman/internal/forge/forgejo"
+	"github.com/ocman/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previews"
 )
 
 // registerForgejoClient wires a forgejo client pointed at api into the

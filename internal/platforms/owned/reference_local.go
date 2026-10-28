@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
-	"github.com/NoUseFreak/ocman/internal/startup"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func (s *ReferenceStore) restoreLocalState(ctx context.Context, core *state.DB, catalogue *sessioncatalog.Store, owner, scope string) error {

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/forge/github"
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 // Forge previews GitHub or Forgejo/Gitea pull requests, issues and commits

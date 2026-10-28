@@ -3,11 +3,11 @@ package remote
 import (
 	"context"
 	"errors"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/hostsvc"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 )
 
 // ListenConfig configures the remote-side gRPC server.

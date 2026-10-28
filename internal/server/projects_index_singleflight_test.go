@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // projectsFetchRecorder counts db.GetProjects invocations and the peak

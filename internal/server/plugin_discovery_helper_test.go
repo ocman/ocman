@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/testutil"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func writeDiscoveryPlugin(t *testing.T, dir, name, id, version string) string {

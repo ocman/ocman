@@ -3,7 +3,7 @@ package autoapprove
 import (
 	"cmp"
 	"encoding/json"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"maps"
 	"slices"
 

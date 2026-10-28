@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // Source is one session's live upstream. Watch streams until ctx ends or

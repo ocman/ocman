@@ -3,7 +3,7 @@ package opencode
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) StorageSizes(ctx context.Context) ([]platforms.StorageSize, error) {

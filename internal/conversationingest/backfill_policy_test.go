@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/statev2"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 func TestBackfillBudgetTracksActualWork(t *testing.T) {

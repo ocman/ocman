@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // fuzzZones are the time zones FuzzEncodeCron schedules in: UTC plus zones

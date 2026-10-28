@@ -4,16 +4,16 @@ import (
 	"context"
 	"flag"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/provider"
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/transport"
-	codexprovider "github.com/NoUseFreak/ocman/internal/platforms/codex/provider"
-	codextransport "github.com/NoUseFreak/ocman/internal/platforms/codex/transport"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
-	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
-	"github.com/NoUseFreak/ocman/internal/pricing"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/claude/provider"
+	"github.com/ocman/ocman/internal/platforms/claude/transport"
+	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
+	codextransport "github.com/ocman/ocman/internal/platforms/codex/transport"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	opencodeplatform "github.com/ocman/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/pricing"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // knownPlatforms lists the valid values for the -platforms flag.

@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // RepoFiles reads the listed files of the repository containing dir on the

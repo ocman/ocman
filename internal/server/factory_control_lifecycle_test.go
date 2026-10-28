@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/factorymod"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factorymod"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func (f *fakeFactoryService) StopEpic(ctx context.Context, epicID string) error {

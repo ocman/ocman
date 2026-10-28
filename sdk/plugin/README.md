@@ -1,11 +1,48 @@
 # Go plugin SDK
 
-Import `github.com/NoUseFreak/ocman/sdk/plugin`. The SDK uses aliases to the host's
-canonical DTOs, codecs and stream validator, so there is one wire definition.
-It adds no dependencies. Go 1.26.1 or newer is required by the ocman module.
+The SDK is the Go module `github.com/ocman/ocman/sdk`, nested in this
+repository's `sdk/` directory. Add it to a plugin with the default Go proxy and
+checksum database; no `replace`, `GOPRIVATE` or vendoring is needed:
+
+```sh
+go get github.com/ocman/ocman/sdk@latest
+```
+
+Import `github.com/ocman/ocman/sdk/plugin` and, from tests,
+`github.com/ocman/ocman/sdk/plugin/conformance`. The module requires Go 1.25 or
+newer and depends only on the standard library. It does not pull in the ocman
+application module.
+
+`plugin` aliases the canonical DTOs, codecs and stream validator in
+[`github.com/ocman/ocman/sdk/protocol`](../protocol/README.md). The ocman host
+imports that package too, so there is one wire definition.
+
+## Versioning
+
+The SDK is versioned separately from ocman, with tags prefixed `sdk/`
+(`sdk/v0.1.0`, `sdk/v0.2.0`, ...). The Go toolchain resolves them as module
+versions `v0.1.0`, `v0.2.0`, and so on. Plain `vX.Y.Z` tags release the ocman
+application and never change the SDK version.
+
+- CI tags a new version on `main` whenever non-Markdown files under `sdk/`
+  change (`scripts/sdk-next-tag.sh`). The first tag is `sdk/v0.1.0`.
+- Before v1, a `feat` commit or a breaking Go API change bumps the minor.
+  Any other change bumps the patch.
+- From v1, breaking Go API changes need a new `/v2` module path.
+- Wire compatibility does not depend on SDK versions. The handshake negotiates
+  protocol and capability versions as described in the protocol contract, so an
+  SDK release does not need a matching ocman release.
+
+To tag manually (for example, when CI cannot), tag the commit on `main` and
+push the tag to Forgejo. The GitHub mirror then carries it to the Go proxy:
+
+```sh
+git tag -a -m "SDK v0.1.0" sdk/v0.1.0 <commit>
+git push origin sdk/v0.1.0
+```
 
 The SDK is optional. Any language can read and write NDJSON according to the
-[protocol contract](../../internal/plugins/README.md). `action.v1` is unary;
+[protocol contract](../protocol/README.md). `action.v1` is unary;
 streaming is available to separately negotiated capabilities. `pane.v1` is also
 unary: declare owner-local `Panes`, request `PaneProjectGrant`, and use
 `PaneHandler` to return a validated `PaneTree`. The bundled
@@ -13,16 +50,18 @@ unary: declare owner-local `Panes`, request `PaneProjectGrant`, and use
 
 ## Executable lifecycle
 
-Build the working example from the repository root:
+Build the working example and run the SDK tests from the `sdk/` directory.
+Root `go test ./...` does not include the nested module:
 
 ```sh
+cd sdk
 go build -o /tmp/ocman-plugin-fixture ./examples/ocman-plugin-fixture
-go test ./sdk/plugin/...
+go test ./...
 ```
 
 An executable accepts exactly one argument, `describe` or `serve`, and reads
 `OCMAN_PLUGIN_TOKEN`. Pass these to `plugin.Run` with the description, stdin,
-stdout and handler. See [the example](../../examples/ocman-plugin-fixture/main.go).
+stdout and handler. See [the example](../examples/ocman-plugin-fixture/main.go).
 Use stderr for diagnostics. Never print logs or launch tokens to stdout.
 
 `Run` emits the token-bound description in either mode. Describe exits immediately.
@@ -137,7 +176,7 @@ are needed. Empty model/agent selections use the host defaults. `NoTools` pins
 all-tools-denied rules before queueing. Handle `SessionCompleted.Usage` as
 optional observed consumption, never assume absent metadata means zero cost.
 
-Import `github.com/NoUseFreak/ocman/sdk/plugin/conformance` from a Go test package.
+Import `github.com/ocman/ocman/sdk/plugin/conformance` from a Go test package.
 The executable being tested can be written in any language. Supply deterministic,
 side-effect-free calls through `conformance.Cases`:
 

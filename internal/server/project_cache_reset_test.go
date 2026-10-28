@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/analytics"
-	"github.com/NoUseFreak/ocman/internal/statev2/statev2test"
+	"github.com/ocman/ocman/internal/analytics"
+	"github.com/ocman/ocman/internal/statev2/statev2test"
 )
 
 func TestConversationResetCannotResurrectCachedProjects(t *testing.T) {

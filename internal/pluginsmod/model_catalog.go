@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/remote"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func (m *Module) handlePluginModelCatalog(w http.ResponseWriter, r *http.Request) {

@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

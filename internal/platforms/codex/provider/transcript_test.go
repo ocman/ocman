@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // TestRecordedTranscriptDecodes decodes every server message of the recorded

@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/queuesvc"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/worker"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/queuesvc"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/worker"
 )
 
 type Sessions interface {

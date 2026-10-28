@@ -4,17 +4,17 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/sdk/protocol"
 )
 
-type PaneDescriptor = plugins.PaneDescriptor
-type PaneRead = plugins.PaneRead
-type PaneTree = plugins.PaneTree
-type TreeNode = plugins.TreeNode
+type PaneDescriptor = protocol.PaneDescriptor
+type PaneRead = protocol.PaneRead
+type PaneTree = protocol.PaneTree
+type TreeNode = protocol.TreeNode
 
-var PaneCapability = plugins.PaneCapability
+var PaneCapability = protocol.PaneCapability
 
-const PaneProjectGrant = plugins.PaneProjectGrant
+const PaneProjectGrant = protocol.PaneProjectGrant
 
 // PaneHandler serves a unary, cancellable read. The host checks grants and
 // owner routing before passing a directory to this handler.
@@ -23,7 +23,7 @@ func PaneHandler(description Description, read func(context.Context, PaneRead) (
 		if call.Capability != PaneCapability.Name || call.Version != PaneCapability.Version || call.Method != "read" {
 			return nil, Failure(ErrorNotFound)
 		}
-		request, err := plugins.DecodePaneRead(call.Params)
+		request, err := protocol.DecodePaneRead(call.Params)
 		if err != nil || !description.PaneAllowed(request.PaneID, description.RequestedGrants) {
 			return nil, Failure(ErrorInvalidArgument)
 		}
@@ -33,7 +33,7 @@ func PaneHandler(description Description, read func(context.Context, PaneRead) (
 		}
 		data, err := json.Marshal(tree)
 		if err == nil {
-			_, err = plugins.DecodePaneTree(data)
+			_, err = protocol.DecodePaneTree(data)
 		}
 		return data, err
 	}

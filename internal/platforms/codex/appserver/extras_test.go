@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 func TestExtraMethods(t *testing.T) {

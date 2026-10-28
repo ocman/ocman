@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/convevents"
 )
 
 var update = flag.Bool("update", false, "rewrite the .oce.jsonl goldens")

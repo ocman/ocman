@@ -12,10 +12,10 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcptest"
 
-	"github.com/NoUseFreak/ocman/internal/artifacts"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/artifacts"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 type artifactHost struct{ hostsvc.Host }

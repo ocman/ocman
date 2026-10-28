@@ -2,7 +2,7 @@ package provider
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) NativePermissionState(ctx context.Context, id string) (*platforms.NativePermissionState, error) {

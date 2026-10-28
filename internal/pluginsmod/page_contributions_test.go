@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/state/statetest"
-	"github.com/NoUseFreak/ocman/internal/testutil"
-	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
+	"github.com/ocman/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/testutil"
+	plugin "github.com/ocman/ocman/sdk/plugin"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestContributionProcessHelper(t *testing.T) {

@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func permissionPolicyParent(ctx context.Context, adapter platforms.Platform, id string) (string, error) {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/db"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // Codex's history app-server rewrites another process's inProgress turn to

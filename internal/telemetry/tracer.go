@@ -12,7 +12,7 @@ import (
 // and metric. Scope names are how OTel back-ends group telemetry by
 // the library that produced it; using one constant keeps ocman's
 // telemetry findable in a noisy collector.
-const instrumentationName = "github.com/NoUseFreak/ocman"
+const instrumentationName = "github.com/ocman/ocman"
 
 var enabled atomic.Bool
 

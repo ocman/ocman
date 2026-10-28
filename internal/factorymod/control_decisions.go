@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/factory"
 )
 
 func validateFactoryControlDecision(action string, args map[string]string) error {

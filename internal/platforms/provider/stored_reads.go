@@ -3,8 +3,8 @@ package provider
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) EnrichStoredSessions(ctx context.Context, rows []db.Session, parents map[string]string) error {

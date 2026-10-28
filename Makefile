@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check coverage-local lint lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check coverage-local lint lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts lint-release-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -166,10 +166,12 @@ build-backend:
 # downloaded. -trimpath keeps the checksum ocman approves reproducible.
 PLUGIN ?= slack
 PLUGIN_DIR ?= $(HOME)/.local/share/ocman/plugins
+# The fixture lives in the nested SDK module, so it is built by import path.
+PLUGIN_PKG = $(if $(filter fixture,$(PLUGIN)),github.com/ocman/ocman/sdk/examples,./examples)/ocman-plugin-$(PLUGIN)
 
 install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|fixture)
 	@mkdir -p "$(PLUGIN_DIR)"
-	go build -trimpath -o "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" ./examples/ocman-plugin-$(PLUGIN)
+	go build -trimpath -o "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" $(PLUGIN_PKG)
 	@shasum -a 256 "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" 2>/dev/null || sha256sum "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)"
 	@echo "Rescan in Settings -> Plugins on this machine, then configure and enable it."
 
@@ -267,8 +269,10 @@ test-all-fast: ## Run backend, frontend, and e2e suites in parallel (fail fast)
 	@$(MAKE) -j3 --no-print-directory test-backend test-frontend test-e2e \
 		GO_TEST_FLAGS=-failfast VITEST_FLAGS=--bail=1 PLAYWRIGHT_FLAGS=--max-failures=1
 
+# sdk/ is a nested module (github.com/ocman/ocman/sdk); root ./... skips it.
 test-backend:
 	go test $(GO_TEST_FLAGS) ./...
+	cd sdk && go test $(GO_TEST_FLAGS) ./...
 
 test-frontend:
 	cd frontend && pnpm test $(VITEST_FLAGS)
@@ -295,6 +299,7 @@ install-e2e-browsers: ## Install Playwright browser binaries
 # relevant so they're skipped here — run `make test` for the full suite.
 test-race: ## Run Go tests with -race
 	go test -race ./internal/...
+	cd sdk && go test -race ./...
 
 # Run every Fuzz* target across internal/ for FUZZTIME each. Fuzzing is
 # opt-in: `go test` only runs the seed corpus unless -fuzz is passed, so the
@@ -311,6 +316,7 @@ test-fuzz: ## Run all Fuzz* targets for FUZZTIME (default 10s) each
 # coverage targets in spec/backend-hardening.
 test-coverage: ## Print per-package Go coverage for internal/
 	go test -cover ./internal/...
+	cd sdk && go test -cover ./...
 
 # Collect total line coverage into coverage/*.json. Pass SUITE=go or
 # SUITE=frontend to collect just one side (default: both). Drives the
@@ -337,11 +343,14 @@ coverage-local: ## Collect coverage and check it against gh-pages (SUITE=go|fron
 	$(MAKE) --no-print-directory coverage-check SUITE="$(filter-out all,$(SUITE))" BASELINE_DIR="$$baseline"
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts
+lint: lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts lint-release-scripts
 
 lint-backend:
 	go vet ./...
 	golangci-lint run ./...
+	cd sdk && go mod tidy -diff
+	cd sdk && go vet ./...
+	cd sdk && golangci-lint run --config ../.golangci.yml ./...
 
 lint-frontend:
 	cd frontend && pnpm exec tsc -b && pnpm lint
@@ -357,6 +366,10 @@ lint-css-tokens:
 lint-fuzz-scripts:
 	./scripts/fuzz_test.sh
 
+# Self-test for the SDK release tag calculation, against throwaway repos.
+lint-release-scripts:
+	./scripts/sdk-next-tag_test.sh
+
 # Refresh the Go DTO snapshot (frontend/src/lib/contracts/go-dtos.json) that
 # the frontend's hand-written API types are checked against. The Go test
 # fails when the snapshot is stale; the vitest contract test fails when
@@ -371,8 +384,8 @@ contracts: ## Regenerate the frontend API contract snapshot from the Go DTOs
 # The generated *.pb.go are committed so CI / make build don't need protoc.
 proto:
 	PATH="$$(go env GOPATH)/bin:$$PATH" protoc \
-		--go_out=. --go_opt=module=github.com/NoUseFreak/ocman \
-		--go-grpc_out=. --go-grpc_opt=module=github.com/NoUseFreak/ocman \
+		--go_out=. --go_opt=module=github.com/ocman/ocman \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/ocman/ocman \
 		internal/remote/proto/remote.proto
 
 # --- Local observability stack (Grafana LGTM) ----------------------------

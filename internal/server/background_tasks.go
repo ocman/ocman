@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/taskmod"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/taskmod"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 func (s *Server) taskManager() *tasksvc.Manager {

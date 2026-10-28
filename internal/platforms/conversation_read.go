@@ -1,6 +1,6 @@
 package platforms
 
-import "github.com/NoUseFreak/ocman/internal/db"
+import "github.com/ocman/ocman/internal/db"
 
 // ConversationHead carries the platform configuration a stored conversation
 // read needs: pricing, composer defaults and warnings. It never contains

@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // HistoryReader borrows the browsing supervisor's index. It never creates a

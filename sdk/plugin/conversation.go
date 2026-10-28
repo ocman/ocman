@@ -4,24 +4,24 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/sdk/protocol"
 )
 
 // Aliases and constants for conversation.v1, versioned independently of action.v1.
 type (
-	ConversationMessage = plugins.ConversationMessage
-	ConversationReply   = plugins.ConversationReply
+	ConversationMessage = protocol.ConversationMessage
+	ConversationReply   = protocol.ConversationReply
 )
 
 const (
-	ConversationSessionGrant   = plugins.ConversationSessionGrant
-	ConversationProjectSetting = plugins.ConversationProjectSetting
-	ConversationMessageEvent   = plugins.ConversationMessageEvent
-	ConversationReplyMethod    = plugins.ConversationReplyMethod
+	ConversationSessionGrant   = protocol.ConversationSessionGrant
+	ConversationProjectSetting = protocol.ConversationProjectSetting
+	ConversationMessageEvent   = protocol.ConversationMessageEvent
+	ConversationReplyMethod    = protocol.ConversationReplyMethod
 )
 
 // ConversationCapability is conversation.v1.
-var ConversationCapability = plugins.ConversationCapability
+var ConversationCapability = protocol.ConversationCapability
 
 // NewConversationMessage builds a validated plugin to host event carrying one
 // normalized inbound message. Validating here keeps an unvalidated provider

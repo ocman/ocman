@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/protocol"
+	"github.com/ocman/ocman/sdk/plugin"
 )
 
 // RunActionGrants exercises a grant-requiring action through the canonical host
@@ -30,9 +30,9 @@ func RunActionGrants(t *testing.T, executable string, invocation plugin.ActionIn
 	}
 	var grants []string
 	calls := 0
-	broker := plugins.NewActionBroker(func(_ context.Context, _ string, admit func(plugins.Description, []string) error) error {
+	broker := protocol.NewActionBroker(func(_ context.Context, _ string, admit func(protocol.Description, []string) error) error {
 		return admit(d, grants)
-	}, func(_ context.Context, _ string, call plugins.Call) (<-chan plugins.Reply, error) {
+	}, func(_ context.Context, _ string, call protocol.Call) (<-chan protocol.Reply, error) {
 		calls++
 		// The broker must strip every context field not required by this action.
 		var sent plugin.ActionInvocation
@@ -56,12 +56,12 @@ func RunActionGrants(t *testing.T, executable string, invocation plugin.ActionIn
 		if chunks != 0 {
 			t.Fatal("action emitted chunks")
 		}
-		replies := make(chan plugins.Reply, 1)
-		replies <- plugins.Reply{Message: plugin.Envelope{Type: plugin.TypeResult, Result: &result}}
+		replies := make(chan protocol.Reply, 1)
+		replies <- protocol.Reply{Message: plugin.Envelope{Type: plugin.TypeResult, Result: &result}}
 		close(replies)
 		return replies, nil
 	})
-	r := plugins.ActionRequest{PluginID: d.ID, ActionID: action.ID, OperationID: "grant-test", Placement: action.Placement, Surface: "command-palette", Context: invocation.Context}
+	r := protocol.ActionRequest{PluginID: d.ID, ActionID: action.ID, OperationID: "grant-test", Placement: action.Placement, Surface: "command-palette", Context: invocation.Context}
 	response := broker.Invoke(t.Context(), r)
 	if response.Error == nil || response.Error.Category != plugin.ErrorPermissionDenied || calls != 0 {
 		t.Fatalf("denied action dispatched: %+v", response)

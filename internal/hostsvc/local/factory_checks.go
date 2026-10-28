@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/ocman/ocman/internal/git"
 )
 
 // factoryCheckOutputTail bounds what one command contributes to the report

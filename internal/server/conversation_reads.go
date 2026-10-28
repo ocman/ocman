@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (s *Server) conversationReadHeader(w http.ResponseWriter, adapter platforms.Platform, detail *platforms.SessionDetail) {

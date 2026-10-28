@@ -5,9 +5,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/analytics"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/analytics"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 // Cache/archiving tests exercise scheduling and overlays with an injected

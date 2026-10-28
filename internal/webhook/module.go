@@ -10,8 +10,8 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // historyCleanupInterval spaces webhook history sweeps; retention is 30 days,

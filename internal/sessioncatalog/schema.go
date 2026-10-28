@@ -3,7 +3,7 @@ package sessioncatalog
 import (
 	"database/sql"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 var Schema = state.ModuleSchema{

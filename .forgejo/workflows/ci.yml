@@ -107,6 +107,12 @@ jobs:
             go-${{ runner.os }}-${{ runner.arch }}-
       - name: go.mod tidy check
         run: go mod tidy -diff
+      # sdk/ is the nested public module github.com/ocman/ocman/sdk. Root
+      # ./... patterns skip it, so it is tidied, linted and tested on its own.
+      # Tidy also proves it requires nothing from the ocman root module.
+      - name: SDK go.mod tidy check
+        working-directory: sdk
+        run: go mod tidy -diff
       # Nothing detected drift between remote.proto and its committed
       # stubs. protoc is pinned by digest because the generator stamps
       # its own version into the output, so an unpinned toolchain would
@@ -150,12 +156,23 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
+      - name: golangci-lint (SDK module)
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11.4
+          working-directory: sdk
+          args: --config ../.golangci.yml
       - name: Require RAM-backed test TMPDIR
         run: ./scripts/ci-require-ram-tmpdir.sh /tmp/ram
       - name: Test root package
         env:
           TMPDIR: /tmp/ram
         run: go test .
+      - name: Test SDK module
+        env:
+          TMPDIR: /tmp/ram
+        working-directory: sdk
+        run: go test ./...
       - name: Test internal packages with coverage
         env:
           TMPDIR: /tmp/ram
@@ -394,3 +411,45 @@ jobs:
           git tag -a -F changelog.md --cleanup=verbatim "${NEXT_TAG}" "${TARGET_SHA}"
           git push origin "${NEXT_TAG}"
           printf 'Created and pushed tag %s from %s\n' "${NEXT_TAG}" "${TARGET_SHA}"
+      # sdk/ is the nested Go module github.com/ocman/ocman/sdk, versioned by
+      # its own sdk/vX.Y.Z tags (see sdk/plugin/README.md). These tags do not
+      # match the release workflow's "v*" filter, so they publish no binaries.
+      - name: Tag SDK module
+        id: sdk_tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          sdk_tag="$(./scripts/sdk-next-tag.sh "${TARGET_SHA}")"
+          if [ -z "${sdk_tag}" ]; then
+            printf '%s\n' "No SDK changes since the latest sdk/ tag"
+            exit 0
+          fi
+          if git rev-parse -q --verify "refs/tags/${sdk_tag}" > /dev/null; then
+            printf 'Tag already exists: %s\n' "${sdk_tag}"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a -m "SDK ${sdk_tag#sdk/}" "${sdk_tag}" "${TARGET_SHA}"
+          git push origin "${sdk_tag}"
+          printf 'tagged=true\n' >> "${GITHUB_OUTPUT}"
+          printf 'Created and pushed tag %s from %s\n' "${sdk_tag}" "${TARGET_SHA}"
+      # The GitHub push mirror (which the Go module proxy reads) otherwise
+      # waits for its 8h interval. Needs a token with repository admin rights;
+      # without one the tag still reaches GitHub on the next interval.
+      - name: Sync push mirrors
+        if: steps.decide.outputs.release == 'true' || steps.sdk_tag.outputs.tagged == 'true'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+          FORGEJO_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --request POST --header "Authorization: token ${RELEASE_TOKEN}" \
+            "${FORGEJO_API_URL}/repos/${REPOSITORY}/push_mirrors-sync")"
+          if [ "${status}" != "200" ]; then
+            printf '::warning::push mirror sync returned HTTP %s; tags reach GitHub on the next mirror interval\n' "${status}"
+          fi

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/webui"
+	"github.com/ocman/ocman/internal/webui"
 )
 
 // routes builds the full HTTP route table: API endpoints plus static

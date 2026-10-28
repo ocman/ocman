@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/forge/github"
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // forgeContext serves sidebar reads from the shared one-minute GitHub

@@ -1,6 +1,6 @@
 package convevents
 
-import "github.com/NoUseFreak/ocman/internal/db"
+import "github.com/ocman/ocman/internal/db"
 
 // Inflight is the current turn's content as the live source sees it.
 type Inflight struct {

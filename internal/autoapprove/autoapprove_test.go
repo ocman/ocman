@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // TestClaimAutoApprove verifies the in-flight dedup behaviour: the

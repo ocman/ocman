@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/hostsvc"
 )
 
 func TestWorktreeBaseProbeFailure(t *testing.T) {

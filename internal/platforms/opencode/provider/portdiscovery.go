@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
+	"github.com/ocman/ocman/internal/srvtiming"
 )
 
 // Discovery is one adapter's view of the OpenCode instances its Host

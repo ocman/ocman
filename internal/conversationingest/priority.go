@@ -3,7 +3,7 @@ package conversationingest
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // Requested reads must not wait behind the entire historical inventory or

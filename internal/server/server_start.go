@@ -11,7 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/startup"
 )
 
 // Start starts the HTTP server. It blocks until the context is cancelled,

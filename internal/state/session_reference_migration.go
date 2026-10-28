@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/startup"
+	"github.com/ocman/ocman/internal/startup"
 )
 
 // These are core-owned associations. Plugin tables have their own migration,

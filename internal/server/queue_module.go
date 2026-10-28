@@ -4,13 +4,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platformsettings"
-	"github.com/NoUseFreak/ocman/internal/queuemod"
-	"github.com/NoUseFreak/ocman/internal/queuesvc"
+	"github.com/ocman/ocman/internal/autoapprove"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platformsettings"
+	"github.com/ocman/ocman/internal/queuemod"
+	"github.com/ocman/ocman/internal/queuesvc"
 )
 
 func (s *Server) queueModule() *queuemod.Module {

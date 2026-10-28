@@ -5,9 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestCompletedUsage(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/srvtiming"
+	"github.com/ocman/ocman/internal/srvtiming"
 )
 
 // slowRequestThreshold is the wall-clock duration above which a request

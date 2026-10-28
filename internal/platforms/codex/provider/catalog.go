@@ -3,8 +3,8 @@ package codexprovider
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // ModelProvider is the provider half of Codex model references,

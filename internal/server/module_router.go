@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module"
 )
 
 // moduleRouter mounts module routes behind the server's guards and applies

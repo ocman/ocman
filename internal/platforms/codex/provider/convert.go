@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/db"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 // PlatformID is the platform id the provider advertises in /hello.

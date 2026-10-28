@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Remote execution observations belong to their owner. Display flags belong to

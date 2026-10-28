@@ -4,9 +4,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/queuesvc"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/queuesvc"
+	"github.com/ocman/ocman/internal/sessionsvc"
 )
 
 // writeSessionSvcError maps a sessionsvc error to an HTTP response.

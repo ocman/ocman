@@ -4,7 +4,7 @@ import (
 	"context"
 	"math"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) storedPanelData(ctx context.Context, id string) (*platforms.SessionDetail, platforms.StoredDetailProjector, error) {

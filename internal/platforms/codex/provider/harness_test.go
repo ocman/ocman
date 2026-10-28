@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	"github.com/NoUseFreak/ocman/internal/platforms/codex/appserver/codextest"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // harness runs a supervisor on a private socket against fake app-servers.

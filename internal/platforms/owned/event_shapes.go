@@ -1,6 +1,6 @@
 package owned
 
-import "github.com/NoUseFreak/ocman/internal/sessionview"
+import "github.com/ocman/ocman/internal/sessionview"
 
 var eventProperties = &sessionview.Shape{Variants: map[string]*sessionview.Shape{}}
 

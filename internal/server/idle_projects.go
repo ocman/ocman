@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/idleprojects"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/idleprojects"
 )
 
 func (s *Server) idleProjectsModule() *idleprojects.Module {

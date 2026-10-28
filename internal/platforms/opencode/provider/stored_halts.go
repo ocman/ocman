@@ -4,8 +4,8 @@ import (
 	"context"
 	"maps"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (a *Adapter) SetSessionHaltIdentity(toPublic, toNative func(context.Context, string) (string, error)) {

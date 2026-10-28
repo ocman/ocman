@@ -3,7 +3,7 @@ package owned
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 var _ platforms.Platform = (*Adapter)(nil)

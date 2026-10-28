@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/state"
 )
 
 type sessionAssociation struct{ platform, session, plugin string }

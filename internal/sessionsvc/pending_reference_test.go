@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 func TestPendingReferenceNeverResolvesThroughExplicitOrInferredPlatform(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/share"
+	"github.com/ocman/ocman/internal/share"
 )
 
 func TestNewID_RoundTripsThroughSplit(t *testing.T) {

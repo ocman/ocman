@@ -4,7 +4,7 @@ import (
 	"context"
 	"maps"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (s *Server) UsePermissionNotificationDeferrer(fn func(string, string) bool) *Server {

@@ -13,10 +13,10 @@ package previews
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/linkpreview"
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/previewauth"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/linkpreview"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // Forges are the hub's CLI/env forge credentials (gh, tea, *_TOKEN).

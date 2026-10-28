@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/testutil"
-	"github.com/NoUseFreak/ocman/sdk/plugin"
-	"github.com/NoUseFreak/ocman/sdk/plugin/conformance"
+	"github.com/ocman/ocman/sdk/protocol"
+	"github.com/ocman/ocman/sdk/internal/testutil"
+	"github.com/ocman/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/plugin/conformance"
 )
 
 func TestFixture(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ocman-plugin-fixture")
-	cmd := exec.Command("go", "build", "-o", path, "../../../examples/ocman-plugin-fixture")
+	cmd := exec.Command("go", "build", "-o", path, "../../examples/ocman-plugin-fixture")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", out, err)
 	}
@@ -40,7 +40,7 @@ func TestFixture(t *testing.T) {
 	t.Run("host-discovery-process-grants", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		entries, err := plugins.Scan(ctx, filepath.Dir(path), nil)
+		entries, err := protocol.Scan(ctx, filepath.Dir(path), nil)
 		if err != nil || len(entries) != 1 || entries[0].Err != nil {
 			t.Fatalf("discover: %+v %v", entries, err)
 		}
@@ -49,7 +49,7 @@ func TestFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 		ready := make(chan struct{}, 1)
-		p, err := plugins.StartProcess(ctx, plugins.LaunchConfig{Candidate: entries[0], DataDir: dataDir, Supported: entries[0].Description.Capabilities, OnHealth: func(h plugins.Health) {
+		p, err := protocol.StartProcess(ctx, protocol.LaunchConfig{Candidate: entries[0], DataDir: dataDir, Supported: entries[0].Description.Capabilities, OnHealth: func(h protocol.Health) {
 			if h.Status == "ready" {
 				select {
 				case ready <- struct{}{}:
@@ -68,15 +68,15 @@ func TestFixture(t *testing.T) {
 		}
 		var grants []string
 		calls := 0
-		broker := plugins.NewActionBroker(func(_ context.Context, _ string, admit func(plugins.Description, []string) error) error {
+		broker := protocol.NewActionBroker(func(_ context.Context, _ string, admit func(protocol.Description, []string) error) error {
 			return admit(entries[0].Description, grants)
-		}, func(ctx context.Context, _ string, call plugins.Call) (<-chan plugins.Reply, error) {
+		}, func(ctx context.Context, _ string, call protocol.Call) (<-chan protocol.Reply, error) {
 			calls++
 			return p.Call(ctx, call)
 		})
-		r := plugins.ActionRequest{PluginID: entries[0].Description.ID, ActionID: "session", OperationID: "granted", Placement: "session", Surface: "command-palette", Context: plugins.ActionContext{SessionID: "ses-1", OwnerID: "local"}}
+		r := protocol.ActionRequest{PluginID: entries[0].Description.ID, ActionID: "session", OperationID: "granted", Placement: "session", Surface: "command-palette", Context: protocol.ActionContext{SessionID: "ses-1", OwnerID: "local"}}
 		response := broker.Invoke(ctx, r)
-		if response.Error == nil || response.Error.Category != plugins.ErrorPermissionDenied || calls != 0 {
+		if response.Error == nil || response.Error.Category != protocol.ErrorPermissionDenied || calls != 0 {
 			t.Fatalf("missing grants dispatched: %+v", response)
 		}
 		grants = []string{"context.session"}
@@ -86,7 +86,7 @@ func TestFixture(t *testing.T) {
 		}
 		grants = nil
 		response = broker.Invoke(ctx, r)
-		if response.Error == nil || response.Error.Category != plugins.ErrorPermissionDenied || calls != 1 {
+		if response.Error == nil || response.Error.Category != protocol.ErrorPermissionDenied || calls != 1 {
 			t.Fatalf("revoked cached result: %+v", response)
 		}
 	})

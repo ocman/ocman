@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req platforms.SessionIdentityRequest) (*platforms.SessionIdentity, error) {

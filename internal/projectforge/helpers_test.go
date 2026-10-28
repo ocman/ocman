@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/hostsvc"
 )
 
 func newTestModule() *Module {

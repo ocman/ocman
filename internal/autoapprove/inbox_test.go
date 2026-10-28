@@ -1,10 +1,10 @@
 package autoapprove
 
 import (
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func TestObservedPromptNotifiesInboxWithJudgeDisabled(t *testing.T) {

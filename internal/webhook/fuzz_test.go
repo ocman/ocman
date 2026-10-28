@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/relay"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // rfc6901 is a reference RFC 6901 evaluator over decoded JSON: "~1" is "/",

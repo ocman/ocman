@@ -3,7 +3,7 @@ package platforms
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 func TestIdleObservationPreservesStoredOutcome(t *testing.T) {

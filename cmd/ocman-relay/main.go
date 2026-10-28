@@ -21,9 +21,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/relay"
-	"github.com/NoUseFreak/ocman/internal/share"
-	"github.com/NoUseFreak/ocman/internal/webui"
+	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
+	"github.com/ocman/ocman/internal/webui"
 )
 
 // shutdownGrace is how long in-flight requests get to finish after a

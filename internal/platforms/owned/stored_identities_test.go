@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func TestBatchedStoredIdentitiesPreserveScopeAndPublication(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/NoUseFreak/ocman/internal/sqliteutil"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/XSAM/otelsql"
+	"github.com/ocman/ocman/internal/sqliteutil"
+	"github.com/ocman/ocman/internal/telemetry"
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"

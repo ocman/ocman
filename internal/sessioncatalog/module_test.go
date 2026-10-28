@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func metadataHistory(t *testing.T) *statev2.DB {

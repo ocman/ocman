@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // countingRunner forwards to the real git binary and records how many

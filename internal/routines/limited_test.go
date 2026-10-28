@@ -3,7 +3,7 @@ package routines
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 func TestLimitedRunRemainsRunning(t *testing.T) {

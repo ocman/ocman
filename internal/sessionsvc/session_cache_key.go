@@ -1,6 +1,6 @@
 package sessionsvc
 
-import "github.com/NoUseFreak/ocman/internal/platforms"
+import "github.com/ocman/ocman/internal/platforms"
 
 // sessionCacheKey is owner-qualified; canonical adapters use Ocman IDs.
 type sessionCacheKey struct {

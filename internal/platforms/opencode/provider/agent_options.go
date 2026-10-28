@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // AgentNames reads only the agent catalog, scoped to the project directory.

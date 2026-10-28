@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
 func (a *Adapter) bindActiveSessionPort(id, port, status string) {

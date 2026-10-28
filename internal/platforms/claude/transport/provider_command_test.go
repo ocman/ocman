@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/providersupervisor"
-	"github.com/NoUseFreak/ocman/internal/providersupervisor/providertest"
+	"github.com/ocman/ocman/internal/providersupervisor"
+	"github.com/ocman/ocman/internal/providersupervisor/providertest"
 )
 
 func TestProviderCommandValidation(t *testing.T) {

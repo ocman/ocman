@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"github.com/NoUseFreak/ocman/internal/sqliteutil"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/sqliteutil"
+	"github.com/ocman/ocman/internal/telemetry"
 	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite"
 )

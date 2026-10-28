@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
 func TestListLoadedThreadsPaginates(t *testing.T) {

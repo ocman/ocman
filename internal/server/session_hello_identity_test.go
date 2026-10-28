@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func TestRemoteHelloPromptReplyKeepsOwnerAfterReconnect(t *testing.T) {

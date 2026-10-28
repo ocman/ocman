@@ -2,7 +2,7 @@ package claudecode
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (p *claudePlatform) NativePermissionState(ctx context.Context, id string) (*platforms.NativePermissionState, error) {

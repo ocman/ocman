@@ -3,7 +3,7 @@ package webhook
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/httpx"
 	"net/url"
 	"strings"
 )

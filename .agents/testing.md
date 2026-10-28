@@ -22,7 +22,7 @@ Use temporary databases. Never launch a real agent binary in platform tests.
 
 ```sh
 make test             # Go and Vitest
-make test-backend     # go test ./...
+make test-backend     # go test ./... in the root and the nested sdk/ module
 make test-frontend    # vitest run
 make test-race        # go test -race ./internal/...
 make test-fuzz        # every Fuzz* target for 10 seconds

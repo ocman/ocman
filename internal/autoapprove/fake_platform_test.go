@@ -3,7 +3,7 @@ package autoapprove
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // fakePlatform is a minimal platforms.Platform test double. It embeds

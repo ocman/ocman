@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // refreshSkew refreshes tokens slightly before their reported expiry.

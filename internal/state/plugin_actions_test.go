@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func TestPluginActionAuthorization(t *testing.T) {

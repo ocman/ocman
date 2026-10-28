@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/testutil"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestLaunchFailureDoesNotExposeEnvironmentCredentials(t *testing.T) {

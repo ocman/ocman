@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/tasksvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/tasksvc"
 )
 
 func TestCoalescedPriorityRequestsAllBypassLongBackfillCooldown(t *testing.T) {

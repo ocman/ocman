@@ -3,8 +3,8 @@ package autoapprove
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/platforms/identity"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/identity"
 )
 
 // The OpenCode judge owns native execution and cleanup. Only its in-flight

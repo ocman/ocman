@@ -1,6 +1,6 @@
 package opencode
 
-import "github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+import "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 
 // ResetCaches clears the process-wide HTTP and v2 dialect caches before a
 // backend reload, so the next backend never serves the previous one's

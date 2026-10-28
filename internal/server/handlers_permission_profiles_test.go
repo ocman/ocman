@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/pluginsmod"
 
 	"encoding/json"
 	"net/http"
@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessionsvc"
 )
 
 const readOnlyProfileBody = `{"name":"read-only","rules":[{"permission":"bash","pattern":"*","action":"deny"},{"permission":"edit","pattern":"*","action":"deny"},{"permission":"write","pattern":"*","action":"deny"}]}`

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // rateLimitPhrases are case-insensitive substrings that identify a

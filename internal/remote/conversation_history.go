@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

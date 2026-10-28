@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 const startChild = `{"subtype":"task_started","task_type":"local_agent","task_id":"child","tool_use_id":"spawn","description":"Investigate"}`

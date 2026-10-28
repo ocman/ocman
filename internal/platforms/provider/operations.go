@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/url"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {

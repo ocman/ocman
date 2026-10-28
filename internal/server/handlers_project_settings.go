@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // handleProjectSettings serves a project's ordered model list, keyed by

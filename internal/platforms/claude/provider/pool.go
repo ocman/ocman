@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/claude/launch"
+	"github.com/ocman/ocman/internal/platforms/claude/launch"
 )
 
 // proc is one live claude child, driven over stream-json pipes (AD-6).

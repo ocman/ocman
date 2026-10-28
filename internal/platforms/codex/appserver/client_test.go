@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	"github.com/NoUseFreak/ocman/internal/platforms/codex/appserver/codextest"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 )
 
 // TestMain doubles as a fake `codex` executable: Start runs this test binary

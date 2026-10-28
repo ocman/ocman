@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/provider"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 )
 
 // Session consumers start only after identity cutover. Kept together so prompt

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
 func TestSessionStatusOnPortBoundedHistory(t *testing.T) {

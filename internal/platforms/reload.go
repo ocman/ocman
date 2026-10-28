@@ -2,7 +2,7 @@ package platforms
 
 import (
 	"context"
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // ReloadIdleReader provides authoritative, fail-closed process status when the

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 var ticketID = regexp.MustCompile(`^[A-Z]{2,10}-[0-9]{1,9}$`)

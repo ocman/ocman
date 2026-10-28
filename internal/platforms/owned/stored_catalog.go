@@ -5,9 +5,9 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func (a *Adapter) storedCatalogHistory(ctx context.Context, directory, exclude string) ([]db.RecentModel, db.SessionDefaults, error) {

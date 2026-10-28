@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/module"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/state"
 )
 
 type Manager struct {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/module/moduletest"
 )
 
 // serveGit serves r through the git module wired to this server, without

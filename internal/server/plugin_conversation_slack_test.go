@@ -15,12 +15,12 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/NoUseFreak/ocman/internal/testutil"
-	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
-	"github.com/NoUseFreak/ocman/sdk/plugin/conformance"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
+	plugin "github.com/ocman/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/plugin/conformance"
+	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // These tests are the acceptance walkthrough for the bundled Slack plugin,

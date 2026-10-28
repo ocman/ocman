@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/git"
 )
 
 func (h stubHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*EnsureRuntimeResult, error) {

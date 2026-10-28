@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/composerattachments"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/ocman/ocman/internal/composerattachments"
+	"github.com/ocman/ocman/internal/hostsvc"
+	pb "github.com/ocman/ocman/internal/remote/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

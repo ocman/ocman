@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	"github.com/NoUseFreak/ocman/internal/analyticsdata"
+	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 func summarizeScopedTools(ctx context.Context, tx *sql.Tx, key Key, scope summaryScope) (map[string][]analyticsdata.ToolTiming, error) {

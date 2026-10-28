@@ -3,7 +3,7 @@ package hostsvc
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // PlatformServices retains optional host capabilities across identity adapters.

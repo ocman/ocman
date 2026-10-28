@@ -3,8 +3,8 @@ package factorymod
 import (
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // handleFactoryEpicModels handles POST /api/factory/epics/{epic}/models.

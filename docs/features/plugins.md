@@ -173,7 +173,7 @@ then kills and reaps the process group. Frames are limited to 1 MiB, general cal
 output to 8 MiB, and chunk/event queues are bounded. Invalid framing, stream
 ordering, or slow-consumer overflow terminates the process.
 
-The [wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/internal/plugins/README.md)
+The [wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/protocol/README.md)
 defines exact frames, validation rules, error categories, and HTTP endpoints.
 
 ## Authoring action.v1
@@ -564,20 +564,22 @@ uncertain action replay.
 ## Development workflow
 
 Use the optional [Go SDK](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md)
-at `github.com/NoUseFreak/ocman/sdk/plugin`, or implement the NDJSON contract in
-another language. `plugin.Run` handles the lifecycle and `plugin.ActionHandler`
+at `github.com/ocman/ocman/sdk/plugin`, or implement the NDJSON contract in
+another language. The SDK is a separate, dependency-free Go module; add it with
+`go get github.com/ocman/ocman/sdk@latest`. It is versioned with `sdk/vX.Y.Z`
+tags, independently of ocman releases. `plugin.Run` handles the lifecycle and `plugin.ActionHandler`
 validates action dispatch/results. `plugin.RunWithEvents` adds a plugin-initiated
 event source, `plugin.ConversationHandler` plus `plugin.NewConversationMessage`
 cover both conversation directions, and `plugin.SessionHandler` plus
 `plugin.NewSessionRun` cover both session directions. Plugins with settings read fd 3 before calling
 `Run` in serve mode. The deterministic
-[fixture](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-fixture/main.go)
+[fixture](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/examples/ocman-plugin-fixture/main.go)
 demonstrates both modes, actions, cancellation, and safe failures.
 
 From the ocman checkout, run:
 
 ```sh
-go test ./sdk/plugin/... ./internal/plugins
+(cd sdk && go test ./...)
 go test ./internal/pluginsmod ./internal/server ./internal/remote ./internal/state -run Plugin
 ```
 

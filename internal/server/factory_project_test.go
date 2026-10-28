@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 func TestFactoryCommonRootUsesMainWorktree(t *testing.T) {

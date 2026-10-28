@@ -3,7 +3,7 @@ package autoapprove
 import (
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // Removing an ask rule restores normal approval handling for requests already

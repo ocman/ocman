@@ -3,8 +3,8 @@ package opencode
 import (
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // providersFixture returns a minimal /provider response covering one

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/previews"
+	"github.com/ocman/ocman/internal/previews"
 )
 
 // previewsModule reads auth, remotes, the public URL and forge credentials

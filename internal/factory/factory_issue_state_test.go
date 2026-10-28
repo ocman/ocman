@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // These helpers put an issue into deferred and retry states for tests.

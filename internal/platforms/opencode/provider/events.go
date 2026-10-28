@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // ProxyEvents streams OpenCode's /event SSE to w until the upstream

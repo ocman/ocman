@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // WorktreeName uses the owner's small model in a temporary, tool-denied session.

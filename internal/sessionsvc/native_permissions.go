@@ -1,6 +1,6 @@
 package sessionsvc
 
-import "github.com/NoUseFreak/ocman/internal/platforms"
+import "github.com/ocman/ocman/internal/platforms"
 
 func validateNativePermissionUpdate(req platforms.SetPermissionRulesRequest) error {
 	if req.NativeMode == nil {

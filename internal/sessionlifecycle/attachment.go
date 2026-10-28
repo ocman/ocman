@@ -5,10 +5,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/NoUseFreak/ocman/internal/composerattachments"
-	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/httpx"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/composerattachments"
+	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (m *Module) HandleSessionAttachment(w http.ResponseWriter, r *http.Request) {

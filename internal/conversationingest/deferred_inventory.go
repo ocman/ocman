@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func inventoryDeferrals(err error) (int, error) {

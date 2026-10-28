@@ -3,7 +3,7 @@ package conversationingest
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/statev2"
 )
 
 func (w *sourceWorker) rememberSnapshot(ctx context.Context, key statev2.Key, result importResult, partial bool) (importResult, error) {

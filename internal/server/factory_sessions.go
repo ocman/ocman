@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // factoryAttemptID tags one session detail the way applySessionState tags the

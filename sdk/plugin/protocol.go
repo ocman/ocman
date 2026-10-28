@@ -5,86 +5,86 @@ package plugin
 import (
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/sdk/protocol"
 )
 
 // Aliases keep the SDK and host on the same canonical DTOs and validators.
 type (
-	Mode             = plugins.Mode
-	Scope            = plugins.Scope
-	Version          = plugins.Version
-	Capability       = plugins.Capability
-	Description      = plugins.Description
-	Setting          = plugins.Setting
-	MessageType      = plugins.MessageType
-	Envelope         = plugins.Envelope
-	Hello            = plugins.Hello
-	Negotiated       = plugins.Negotiated
-	Call             = plugins.Call
-	Chunk            = plugins.Chunk
-	Result           = plugins.Result
-	Event            = plugins.Event
-	Cancel           = plugins.Cancel
-	Shutdown         = plugins.Shutdown
-	WireError        = plugins.WireError
-	ErrorCategory    = plugins.ErrorCategory
-	ActionDescriptor = plugins.ActionDescriptor
-	ActionContext    = plugins.ActionContext
-	ActionSelection  = plugins.ActionSelection
-	ActionInvocation = plugins.ActionInvocation
-	ActionResult     = plugins.ActionResult
-	Decoder          = plugins.Decoder
-	Encoder          = plugins.Encoder
-	Stream           = plugins.Stream
-	Direction        = plugins.Direction
+	Mode             = protocol.Mode
+	Scope            = protocol.Scope
+	Version          = protocol.Version
+	Capability       = protocol.Capability
+	Description      = protocol.Description
+	Setting          = protocol.Setting
+	MessageType      = protocol.MessageType
+	Envelope         = protocol.Envelope
+	Hello            = protocol.Hello
+	Negotiated       = protocol.Negotiated
+	Call             = protocol.Call
+	Chunk            = protocol.Chunk
+	Result           = protocol.Result
+	Event            = protocol.Event
+	Cancel           = protocol.Cancel
+	Shutdown         = protocol.Shutdown
+	WireError        = protocol.WireError
+	ErrorCategory    = protocol.ErrorCategory
+	ActionDescriptor = protocol.ActionDescriptor
+	ActionContext    = protocol.ActionContext
+	ActionSelection  = protocol.ActionSelection
+	ActionInvocation = protocol.ActionInvocation
+	ActionResult     = protocol.ActionResult
+	Decoder          = protocol.Decoder
+	Encoder          = protocol.Encoder
+	Stream           = protocol.Stream
+	Direction        = protocol.Direction
 )
 
 const (
-	ProtocolMajor         = plugins.ProtocolMajor
-	ProtocolMinor         = plugins.ProtocolMinor
-	MaxMessageBytes       = plugins.MaxMessageBytes
-	MaxConcurrency        = plugins.MaxConcurrency
-	ModeDescribe          = plugins.ModeDescribe
-	ModeServe             = plugins.ModeServe
-	ScopeHub              = plugins.ScopeHub
-	ScopeOwner            = plugins.ScopeOwner
-	ScopeGlobal           = plugins.ScopeGlobal
-	TypeHello             = plugins.TypeHello
-	TypeCall              = plugins.TypeCall
-	TypeChunk             = plugins.TypeChunk
-	TypeResult            = plugins.TypeResult
-	TypeEvent             = plugins.TypeEvent
-	TypeCancel            = plugins.TypeCancel
-	TypeShutdown          = plugins.TypeShutdown
-	FromHost              = plugins.FromHost
-	FromPlugin            = plugins.FromPlugin
-	ErrorInvalidArgument  = plugins.ErrorInvalidArgument
-	ErrorPermissionDenied = plugins.ErrorPermissionDenied
-	ErrorNotFound         = plugins.ErrorNotFound
-	ErrorConflict         = plugins.ErrorConflict
-	ErrorUnavailable      = plugins.ErrorUnavailable
-	ErrorDeadlineExceeded = plugins.ErrorDeadlineExceeded
-	ErrorCancelled        = plugins.ErrorCancelled
-	ErrorInternal         = plugins.ErrorInternal
+	ProtocolMajor         = protocol.ProtocolMajor
+	ProtocolMinor         = protocol.ProtocolMinor
+	MaxMessageBytes       = protocol.MaxMessageBytes
+	MaxConcurrency        = protocol.MaxConcurrency
+	ModeDescribe          = protocol.ModeDescribe
+	ModeServe             = protocol.ModeServe
+	ScopeHub              = protocol.ScopeHub
+	ScopeOwner            = protocol.ScopeOwner
+	ScopeGlobal           = protocol.ScopeGlobal
+	TypeHello             = protocol.TypeHello
+	TypeCall              = protocol.TypeCall
+	TypeChunk             = protocol.TypeChunk
+	TypeResult            = protocol.TypeResult
+	TypeEvent             = protocol.TypeEvent
+	TypeCancel            = protocol.TypeCancel
+	TypeShutdown          = protocol.TypeShutdown
+	FromHost              = protocol.FromHost
+	FromPlugin            = protocol.FromPlugin
+	ErrorInvalidArgument  = protocol.ErrorInvalidArgument
+	ErrorPermissionDenied = protocol.ErrorPermissionDenied
+	ErrorNotFound         = protocol.ErrorNotFound
+	ErrorConflict         = protocol.ErrorConflict
+	ErrorUnavailable      = protocol.ErrorUnavailable
+	ErrorDeadlineExceeded = protocol.ErrorDeadlineExceeded
+	ErrorCancelled        = protocol.ErrorCancelled
+	ErrorInternal         = protocol.ErrorInternal
 )
 
 var (
-	ErrInvalidMessage      = plugins.ErrInvalidMessage
-	ErrMessageTooLarge     = plugins.ErrMessageTooLarge
-	ErrIncompatibleVersion = plugins.ErrIncompatibleVersion
-	ErrStreamOrder         = plugins.ErrStreamOrder
-	ErrHandshake           = plugins.ErrHandshake
+	ErrInvalidMessage      = protocol.ErrInvalidMessage
+	ErrMessageTooLarge     = protocol.ErrMessageTooLarge
+	ErrIncompatibleVersion = protocol.ErrIncompatibleVersion
+	ErrStreamOrder         = protocol.ErrStreamOrder
+	ErrHandshake           = protocol.ErrHandshake
 )
 
-func NewDecoder(r io.Reader) *Decoder { return plugins.NewDecoder(r) }
-func NewEncoder(w io.Writer) *Encoder { return plugins.NewEncoder(w) }
-func NewStream(mode Mode, token string, protocol Version, supported []Capability) (*Stream, error) {
-	return plugins.NewStream(mode, token, protocol, supported)
+func NewDecoder(r io.Reader) *Decoder { return protocol.NewDecoder(r) }
+func NewEncoder(w io.Writer) *Encoder { return protocol.NewEncoder(w) }
+func NewStream(mode Mode, token string, version Version, supported []Capability) (*Stream, error) {
+	return protocol.NewStream(mode, token, version, supported)
 }
-func Negotiate(protocol Version, supported []Capability, remote Description) (Negotiated, error) {
-	return plugins.Negotiate(protocol, supported, remote)
+func Negotiate(version Version, supported []Capability, remote Description) (Negotiated, error) {
+	return protocol.Negotiate(version, supported, remote)
 }
 
 func DecodeActionResults(data []byte) ([]ActionResult, error) {
-	return plugins.DecodeActionResults(data)
+	return protocol.DecodeActionResults(data)
 }

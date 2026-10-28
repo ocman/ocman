@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/ocruntime"
 )
 
 func TestManagedPortsRecoverOnlyHealthyOwnedInstances(t *testing.T) {

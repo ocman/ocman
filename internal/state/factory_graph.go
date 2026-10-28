@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/ocman/ocman/internal/factory/model"
 )
 
 func (d *DB) AppendFactoryIssueComment(ctx context.Context, epicID, issueID, actor, body string, at time.Time) (model.NativeIssueComment, error) {

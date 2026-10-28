@@ -132,7 +132,7 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 	// Export logrus records as OTel logs, correlated with the active span
 	// when the entry carries a context. A hook preserves the existing
 	// console output and logger's level filtering.
-	log.AddHook(otlplogrus.NewHook("github.com/NoUseFreak/ocman",
+	log.AddHook(otlplogrus.NewHook("github.com/ocman/ocman",
 		otlplogrus.WithLoggerProvider(lp),
 	))
 

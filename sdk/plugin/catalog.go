@@ -8,20 +8,20 @@ import (
 	"io"
 	"os"
 
-	"github.com/NoUseFreak/ocman/internal/plugins"
+	"github.com/ocman/ocman/sdk/protocol"
 )
 
 // Aliases and constants for the launch-time catalog delivered on fd 3.
 type (
-	CatalogAgent  = plugins.CatalogAgent
-	CatalogModel  = plugins.CatalogModel
-	CatalogModels = plugins.CatalogModels
-	LaunchCatalog = plugins.LaunchCatalog
+	CatalogAgent  = protocol.CatalogAgent
+	CatalogModel  = protocol.CatalogModel
+	CatalogModels = protocol.CatalogModels
+	LaunchCatalog = protocol.LaunchCatalog
 )
 
 const (
-	CatalogProjectSetting = plugins.CatalogProjectSetting
-	CatalogLaunchKey      = plugins.CatalogLaunchKey
+	CatalogProjectSetting = protocol.CatalogProjectSetting
+	CatalogLaunchKey      = protocol.CatalogLaunchKey
 )
 
 // Configuration is the fd-3 payload. Values holds every declared setting as
@@ -65,7 +65,7 @@ func ReadConfiguration() (Configuration, error) {
 		return Configuration{}, errors.New("missing configuration")
 	}
 	defer f.Close()
-	line, err := bufio.NewReader(io.LimitReader(f, plugins.MaxMessageBytes+1)).ReadBytes('\n')
+	line, err := bufio.NewReader(io.LimitReader(f, protocol.MaxMessageBytes+1)).ReadBytes('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return Configuration{}, err
 	}

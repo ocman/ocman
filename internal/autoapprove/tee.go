@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 	log "github.com/sirupsen/logrus"
 )
 

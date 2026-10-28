@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // TestRemotePlatform_SliceReads_MapUnavailable is the regression test

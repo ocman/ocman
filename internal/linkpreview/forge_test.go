@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/previewauth"
+	"github.com/ocman/ocman/internal/previewauth"
 )
 
 // forgeAPI fakes a GitHub/Forgejo API. acme/priv is visible only to

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // HookEvents are the status hooks the ocman plugin registers (AD-11). They

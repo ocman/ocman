@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/platforms"
-	codexappserver "github.com/NoUseFreak/ocman/internal/platforms/codex/appserver"
-	codexprovider "github.com/NoUseFreak/ocman/internal/platforms/codex/provider"
-	"github.com/NoUseFreak/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // history reads Codex's thread store through its own app-server, separate

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/ocman/ocman/internal/gitexec"
 )
 
 // Detect runs `git -C repoRoot remote -v`, classifies each parseable

@@ -3,7 +3,7 @@ package sessionsvc
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 func (s *Service) SetBackgroundLifecycle(ctx context.Context, platformID string, req platforms.SetBackgroundLifecycleRequest) error {

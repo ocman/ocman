@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/NoUseFreak/ocman/internal/factory"
-	"github.com/NoUseFreak/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/factory"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // Epic subroutes; Routes applies the method and localhost guards.

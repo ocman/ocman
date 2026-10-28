@@ -7,8 +7,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/module"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/module"
 )
 
 // statsRefreshInterval bounds database work independently of metric exports.

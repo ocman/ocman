@@ -9,8 +9,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 func TestLLMMetrics_Record(t *testing.T) {

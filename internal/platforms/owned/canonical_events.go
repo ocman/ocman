@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/NoUseFreak/ocman/internal/sessionview"
+	"github.com/ocman/ocman/internal/sessionview"
 )
 
 // CanonicalEventValidator validates declared session references in an

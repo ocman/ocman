@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/inbox"
-	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/ocman/ocman/internal/inbox"
+	"github.com/ocman/ocman/internal/state"
 )
 
 func TestFactoryInboxLinkStaysOnItsOwner(t *testing.T) {

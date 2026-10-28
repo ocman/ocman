@@ -1,9 +1,9 @@
 package server
 
 import (
-	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
-	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/forgejo"
+	"github.com/ocman/ocman/internal/forge/github"
 )
 
 // forgeClients holds the hub's forge clients, initialised once at server

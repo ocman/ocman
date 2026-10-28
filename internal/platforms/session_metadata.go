@@ -3,7 +3,7 @@ package platforms
 import (
 	"context"
 
-	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/ocman/ocman/internal/db"
 )
 
 // SessionMetadataReader supplies an indexed row without transcript aggregates
