@@ -8,12 +8,12 @@ import type { PluginUI } from '../lib/pluginUI';
 import { usePluginAction, usePluginCall, usePluginContext, usePluginMutation } from '../plugin-ui';
 
 const mocks = vi.hoisted(() => ({
-  uis: [] as unknown[], pages: [] as unknown[], pagesLoading: false, failedOwners: [] as string[], uisError: false, refetchPages: vi.fn(),
+  uis: [] as unknown[], pages: [] as unknown[], pagesLoading: false, failedOwners: [] as string[], discoveryError: false, uisError: false, refetchPages: vi.fn(),
   importModule: vi.fn(), postJSON: vi.fn(), invoke: vi.fn(),
 }));
 vi.mock('../lib/pluginUIModule', () => ({ importPluginModule: mocks.importModule }));
 vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(),
-  usePluginPages: () => ({ pages: mocks.pages, loading: mocks.pagesLoading, error: mocks.failedOwners.length > 0, failedOwners: mocks.failedOwners, refetch: mocks.refetchPages }) }));
+  usePluginPages: () => ({ pages: mocks.pages, loading: mocks.pagesLoading, error: mocks.failedOwners.length > 0, failedOwners: mocks.failedOwners, discoveryError: mocks.discoveryError, refetch: mocks.refetchPages }) }));
 vi.mock('../lib/api', async (original) => ({ ...await original<typeof import('../lib/api')>(),
   fetchJSON: () => mocks.uisError ? Promise.reject(new Error('offline')) : Promise.resolve(mocks.uis), postJSON: mocks.postJSON }));
 vi.mock('../lib/plugins', async (original) => ({ ...await original<typeof import('../lib/plugins')>(),
@@ -58,6 +58,7 @@ beforeEach(() => {
   mocks.pages = [];
   mocks.pagesLoading = false;
   mocks.failedOwners = [];
+  mocks.discoveryError = false;
   mocks.uisError = false;
   mocks.importModule.mockResolvedValue(Index);
   mocks.postJSON.mockImplementation((_url: string, body: { method: string }) => Promise.resolve(body.method === 'items.list' ? [{ name: 'Alpha' }] : { ok: true }));
@@ -222,4 +223,11 @@ it('reports a failed interface catalog instead of an unavailable plugin', async 
   mocks.uisError = false;
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByText('Alpha')).toBeInTheDocument();
+});
+
+it('refuses to guess the tier when owner discovery failed', async () => {
+  mocks.discoveryError = true;
+  mount('/plugins/org.example.catalog/settings');
+  expect(await screen.findByText('Could not load plugin pages')).toBeInTheDocument();
+  expect(mocks.importModule).not.toHaveBeenCalled();
 });

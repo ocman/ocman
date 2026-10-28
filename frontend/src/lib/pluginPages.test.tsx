@@ -96,3 +96,11 @@ it('reports which owners failed and refetches every catalog', async () => {
   expect(hosts.refetch).toHaveBeenCalled();
   expect(vi.mocked(fetchJSON).mock.calls.length).toBe(calls + 2);
 });
+
+it('reports failed owner discovery separately from per-owner failures', () => {
+  hosts.isError = true;
+  hosts.data = [];
+  const { result } = renderHook(() => usePluginPages(), { wrapper });
+  expect(result.current.discoveryError).toBe(true);
+  expect(result.current.failedOwners).toEqual([]);
+});

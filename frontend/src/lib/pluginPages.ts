@@ -44,6 +44,8 @@ export function usePluginPages() {
   return { pages: queries.flatMap((q) => q.isError ? [] : q.data ?? []), loading: hosts.isPending || queries.some((q) => q.isPending), error: hosts.isError || queries.some((q) => q.isError),
     /** Owners whose page catalog failed, so their declarations are unknown rather than empty. */
     failedOwners: owners.filter((_, i) => queries[i]?.isError),
+    /** Owner discovery failed, so no owner's declarations are known. */
+    discoveryError: hosts.isError,
     refetch: () => Promise.all([hosts.refetch(), ...queries.map((q) => q.refetch())]) };
 }
 

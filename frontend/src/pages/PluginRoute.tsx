@@ -23,7 +23,7 @@ export function PluginRoute() {
   const { uis, loading: uisLoading } = interfaces;
   if (pages.some((p) => p.ownerId === ownerId && p.pluginId === pluginId && p.page.id === segment)) return <PluginPage pageId={segment} />;
   // An unknown catalog is not an empty one: never guess which tier owns the URL.
-  if (ownerId === 'local' && segment && catalog.failedOwners.includes('local')) {
+  if (ownerId === 'local' && segment && (catalog.discoveryError || catalog.failedOwners.includes('local'))) {
     return <ErrorState title="Could not load plugin pages" description="This path may belong to a declared page. Check that ocman is reachable and retry.">
       <Button onClick={() => void catalog.refetch()}>Retry</Button>
     </ErrorState>;
