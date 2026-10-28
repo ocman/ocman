@@ -7,7 +7,7 @@ import { PluginPageNav, PluginPageTitle } from './PluginPageNav';
 const mocks = vi.hoisted(() => ({ pages: [] as unknown[], uis: [] as unknown[] }));
 vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(),
   usePluginPages: () => ({ pages: mocks.pages, loading: false, error: false }) }));
-vi.mock('../lib/pluginUI', () => ({ usePluginUIs: () => ({ uis: mocks.uis, loading: false, error: false }) }));
+vi.mock('../lib/pluginUI', async (original) => ({ ...await original<typeof import('../lib/pluginUI')>(), usePluginUIs: () => ({ uis: mocks.uis, loading: false, error: false }) }));
 
 beforeEach(() => {
   mocks.uis = [{ pluginId: 'org.example.catalog', pluginLabel: 'Catalog', ownerId: 'local', sdk: '^1.0.0', hostSdk: '1.0.0', compatible: true, index: { url: '/bundle', sha256: 'abc' }, actions: [] }];

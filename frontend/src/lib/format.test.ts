@@ -14,6 +14,7 @@ import {
   relativeTime,
   relativeTimeISO,
   formatDate,
+  formatExactDate,
   renderModel,
   shortPath,
   shortSessionID,
@@ -291,5 +292,17 @@ describe('shortSessionID', () => {
 
   it('compresses long ids to first-4 + ... + last-8', () => {
     expect(shortSessionID('1234567890abcdef0123456789')).toBe('1234...23456789');
+  });
+});
+
+describe('formatExactDate', () => {
+  const now = new Date(2026, 9, 28, 12).getTime();
+  it('omits the current year and shows other years', () => {
+    expect(formatExactDate(new Date(2026, 2, 4, 9, 5).getTime(), now)).toBe('Mar 4, 09:05');
+    expect(formatExactDate(new Date(2025, 11, 31, 23, 59), now)).toBe('Dec 31, 2025, 23:59');
+    expect(formatExactDate(new Date(2026, 0, 2, 7).toISOString(), now)).toBe('Jan 2, 07:00');
+  });
+  it('returns an empty string for invalid input', () => {
+    expect(formatExactDate('not a date', now)).toBe('');
   });
 });

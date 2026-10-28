@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { create } from 'zustand';
 import { fetchJSON, postJSON } from './api';
 import type { PluginAction } from './plugins';
 
@@ -31,3 +32,18 @@ export function callPluginUI<T>(pluginId: string, method: string, params: unknow
 
 /** The root query key of every ui.v1 call made by one plugin. */
 export const pluginUIQueryKey = (pluginId: string) => ['plugin-ui-call', pluginId];
+
+/** Header sub-titles set by mounted plugin interfaces, by plugin ID. */
+export const usePluginTitles = create<{ titles: Record<string, string>; setTitle: (pluginId: string, title?: string) => void }>((set) => ({
+  titles: {},
+  setTitle: (pluginId, title) => set((state) => {
+    const titles = { ...state.titles };
+    if (title) titles[pluginId] = title; else delete titles[pluginId];
+    return { titles };
+  }),
+}));
+
+/** The header title for a plugin interface: its name, then the page it set. */
+export function pluginHeaderTitle(label: string, title?: string) {
+  return title && title !== label ? `${label} / ${title}` : label;
+}

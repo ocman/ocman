@@ -5,6 +5,9 @@ import { pluginUIQueryKey, type PluginUI } from '../lib/pluginUI';
 import { importPluginModule } from '../lib/pluginUIModule';
 import type { PluginActionRequest } from '../lib/plugins';
 import { PluginHostContext, type PluginHostValue } from '../plugin-ui/context';
+// Plugins load @ocman/plugin-ui by URL, which never attaches its CSS. Import
+// it here so its styles ship with the app.
+import '../plugin-ui';
 import { ErrorBoundary, type FallbackRender } from './ErrorBoundary';
 import { ErrorState } from './ErrorState';
 import { LoadingState } from './LoadingState';
@@ -59,6 +62,7 @@ export function PluginUIHost({ ui }: { ui: PluginUI & { index: NonNullable<Plugi
   useEffect(() => () => { pending.current?.done(); pending.current = null; }, []);
   const host = useMemo<PluginHostValue>(() => ({
     pluginId: ui.pluginId,
+    pluginLabel: ui.pluginLabel,
     ownerId: ui.ownerId,
     basePath: `/plugins/${ui.pluginId}`,
     runAction: (actionId, context = {}) => new Promise<void>((resolve, reject) => {
@@ -73,7 +77,7 @@ export function PluginUIHost({ ui }: { ui: PluginUI & { index: NonNullable<Plugi
       };
       setAction(pending.current);
     }),
-  }), [ui.pluginId, ui.ownerId, ui.actions]);
+  }), [ui.pluginId, ui.pluginLabel, ui.ownerId, ui.actions]);
   const fallback: FallbackRender = ({ reset }) => <ErrorState title="This plugin's interface failed"
     description={`${ui.pluginLabel} could not load or render. Its declarative views and settings are unaffected.`}>
     <Button onClick={() => {

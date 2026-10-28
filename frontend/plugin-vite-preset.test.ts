@@ -54,3 +54,14 @@ it('inlines dynamic imports into the single bundle', async () => {
   writeFileSync(join(root, 'index.tsx'), `export default function Index() { return null; }\nexport const later = () => import('./lazy');\n`);
   expect(await buildProject(root)).toEqual(['index.js']);
 });
+
+it('leaves NODE_ENV and the JSX runtime alone outside vite build, so tests keep React act()', () => {
+  const plugin = ocmanPlugin();
+  const config = plugin.config as (config: object, env: { command: 'build' | 'serve'; mode: string }) => Record<string, unknown>;
+  const serve = config({}, { command: 'serve', mode: 'test' });
+  expect(serve.define).toBeUndefined();
+  expect(serve.oxc).toEqual({ jsx: { runtime: 'automatic' } });
+  const production = config({}, { command: 'build', mode: 'production' });
+  expect(production.define).toEqual({ 'process.env.NODE_ENV': '"production"' });
+  expect(production.oxc).toEqual({ jsx: { runtime: 'automatic', development: false } });
+});

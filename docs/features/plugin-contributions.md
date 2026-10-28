@@ -422,7 +422,9 @@ It refuses to bundle other subpaths of those packages, such as
 `react-dom/client`. Imported CSS is injected as one `<style>` element at load
 time, and there is no separate stylesheet. When consuming the packages from an
 ocman checkout, use pnpm `file:` dependencies with `dependenciesMeta.injected`
-so their declarations resolve this project's React types.
+so their declarations resolve this project's React types. Production settings
+(`NODE_ENV` and the production JSX runtime) apply only to `vite build`, so the
+same preset can be shared with a Vitest config that uses React Testing Library.
 
 ### Write the index
 
@@ -439,24 +441,43 @@ export default function Index() {
 ```
 
 Never create a router: the index is mounted inside ocman's router at
-`/plugins/<plugin-id>/*`, and relative links such as `items/7` and `..` work
-from there. The `@ocman/plugin-ui` 1.0 surface is:
+`/plugins/<plugin-id>/*`. Relative links resolve from the `<Route>` that
+renders them, so `items/7` from the index route and `..` from `items/:id` work.
+Outside your nested routes, inside the splat route itself, React Router 7
+resolves relative links from the full URL. Build those links from
+`usePluginContext().basePath`; `RouteTabs` already resolves from the plugin root.
+
+Follow ocman's page guidelines with the shared components. The app header owns
+the page title: `Page` sets its `title` there, after the plugin name, instead of
+rendering a second heading, and `usePageTitle` does the same for custom layouts.
+Use `SkeletonTable` or `SkeletonLines` for initial loading, `PageState` for
+empty and unavailable states, and `InlineAlert` with Retry when a background
+refresh fails while earlier content stays visible. Ask with `useConfirm`, never
+`window.confirm`. Name the item and the action, and set `destructive` so Cancel
+gets initial focus. Protect editors with `useUnsavedChangesGuard(dirty)`, which
+asks before any in-app link (including main navigation) or a page unload takes
+the user away; browser Back is not intercepted. Show recent activity with
+`RelativeTime`, and record dates with `formatExactDate`.
 
 | Group | Exports |
 | --- | --- |
 | Controls | `Button`, `SubmitButton`, `RouteButton`, `ButtonGroup`, `TextField`, `SearchField`, `SelectField`, `CheckboxField`, `TextareaField`, `ProjectPicker`, `ModelPicker` |
-| Tables and states | `DataTable` (`framed`), `EmptyState`, `LoadingState`, `ErrorState` |
-| Overlays and navigation | `Drawer`, `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` |
-| Display | `StatusBadge`, `SeverityPill`, `Pill` (`neutral`, `accent`, `success`, `warning`, `danger`) |
+| Tables and lists | `DataTable` (`framed`), `DataTableGroup` and `DataTableRow` (stacked on phones) |
+| States | `PageState`, `InlineAlert`, `SkeletonTable`, `SkeletonLines`, `EmptyState`, `LoadingState`, `ErrorState` |
+| Overlays and navigation | `Drawer`, `RouteTabs` (links), `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` (in-page panels) |
+| Display | `Icon`, `RelativeTime`, `StatusBadge`, `SeverityPill`, `Pill` (`neutral`, `accent`, `success`, `warning`, `danger`) |
 | Layout | `Page`, `Section`, `Properties`, `CodeBlock` |
-| Hooks | `usePluginContext`, `usePluginCall`, `usePluginMutation`, `usePluginAction` |
+| Hooks and helpers | `usePluginContext`, `usePluginCall`, `usePluginMutation`, `usePluginAction`, `usePageTitle`, `useConfirm`, `useUnsavedChangesGuard`, `formatExactDate` |
 
 `usePluginCall(method, params, { enabled, refetchInterval })` is a cached query
 scoped to your plugin. `usePluginMutation(method)` refreshes those queries on
 success. `usePluginAction(actionId).run(context)` opens ocman's action dialog for
 one of your declared actions. `ProjectPicker` and `ModelPicker` are limited to
 the plugin's owner and use the same value formats as page `projects` and `model`
-fields.
+fields. `Icon` and `PageState` name icons from the Bootstrap Icons 1.x set ocman
+ships, without the `bi-` prefix; use them rather than relying on the icon font
+directly. Exports marked "Since 1.1.0" in the declarations need
+`NewUIDescriptor("^1.1.0", ...)`.
 
 ### Test it
 

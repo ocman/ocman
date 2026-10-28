@@ -16,3 +16,13 @@ refuses to load an incompatible bundle and explains why.
 See the [contribution guide](../../docs/features/plugin-contributions.md#in-app-ui-with-uiv1)
 for the component list and hooks, and
 [ADR 0009](../../docs/adr/0009-let-plugins-ship-in-app-react-ui.md) for the design.
+
+## Changes
+
+- **1.1.0**: Adds `PageState`, `InlineAlert`, `SkeletonTable`, `SkeletonLines`,
+  `DataTableGroup`, `DataTableRow`, `RouteTabs`, `Icon`, `RelativeTime`,
+  `formatExactDate`, `usePageTitle`, `useConfirm` and `useUnsavedChangesGuard`.
+  `Page` now sets its title in the app header instead of rendering a second
+  heading. Fixes `@ocman/plugin-ui` styles, such as `Pill`, `Section` spacing
+  and `CodeBlock`, not loading in production builds.
+- **1.0.0**: Initial release.

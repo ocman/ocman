@@ -8,7 +8,7 @@ import { AppHeader } from './AppHeader';
 
 const inventory = vi.hoisted(() => ({ projects: [] as { directory: string; remoteId?: string; remoteName?: string }[] }));
 const plugins = vi.hoisted(() => ({ pages: [] as { ownerId: string; pluginId: string; page: { id: string; label: string } }[] }));
-vi.mock('../lib/pluginUI', () => ({ usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
+vi.mock('../lib/pluginUI', async (original) => ({ ...await original<typeof import('../lib/pluginUI')>(), usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
 vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(), usePluginPages: () => ({ pages: plugins.pages }) }));
 vi.mock('../lib/queries', () => ({ useProjects: () => ({ data: inventory.projects }) }));
 vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: () => true, useMultiHost: () => false }));

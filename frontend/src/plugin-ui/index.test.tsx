@@ -20,7 +20,7 @@ it('exposes exactly the published contract at runtime', () => {
   expect(PluginUI.PLUGIN_UI_VERSION).toBe(packageJSON.version);
 });
 
-const host: PluginHostValue = { pluginId: 'org.example.catalog', ownerId: 'local', basePath: '/plugins/org.example.catalog', runAction: () => Promise.resolve() };
+const host: PluginHostValue = { pluginId: 'org.example.catalog', pluginLabel: 'Catalog', ownerId: 'local', basePath: '/plugins/org.example.catalog', runAction: () => Promise.resolve() };
 
 function mount(children: ReactNode) {
   return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>
@@ -39,7 +39,8 @@ it('renders layout primitives with host structure and styling hooks', () => {
       <PluginUI.StatusBadge status="busy" />
     </PluginUI.Section>
   </PluginUI.Page>);
-  expect(screen.getByRole('heading', { level: 1, name: 'Catalog' }).closest('.plugin-page')).not.toBeNull();
+  expect(screen.getByRole('region', { name: 'Catalog' })).toHaveClass('plugin-page');
+  expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
   expect(screen.getByRole('heading', { level: 2, name: 'Details' }).closest('.plugin-page-heading')).not.toBeNull();
   expect(screen.getByRole('rowheader', { name: 'Owner' })).toBeInTheDocument();
   expect(container.querySelector('.plugin-severity-high')).toHaveTextContent('high');

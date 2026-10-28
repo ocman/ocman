@@ -8,7 +8,7 @@ import { useInbox, useSubscriptionUsage } from './lib/queries';
 import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
 
-vi.mock('./lib/pluginUI', () => ({ usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
+vi.mock('./lib/pluginUI', async (original) => ({ ...await original<typeof import('./lib/pluginUI')>(), usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
 vi.mock('./lib/pluginPages', () => ({ usePluginPages: () => ({ pages: [] }) }));
 
 vi.mock('./lib/queries', () => ({

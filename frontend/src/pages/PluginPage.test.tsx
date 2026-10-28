@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({ pages: [] as unknown[], call: vi.fn(), session
 vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(),
   usePluginPages: () => ({ pages: mocks.pages, loading: false, error: false }), callPluginPage: mocks.call,
 }));
-vi.mock('../lib/pluginUI', () => ({ usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
+vi.mock('../lib/pluginUI', async (original) => ({ ...await original<typeof import('../lib/pluginUI')>(), usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
 vi.mock('../lib/queries', () => ({ useProjects: () => ({ data: [{ directory: '/srv/project', remoteId: 'machine' }] }) }));
 vi.mock('../lib/api', async (original) => ({ ...await original<typeof import('../lib/api')>(), api: { sessions: mocks.sessions } }));
 vi.mock('../lib/plugins', async (original) => ({ ...await original<typeof import('../lib/plugins')>(), pluginActions: { list: mocks.actions } }));

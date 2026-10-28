@@ -1,4 +1,5 @@
-import { Navigate, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { RouteTabs } from '../../components/RouteTabs';
 import { usePageTitle } from '../../lib/headerContext';
 import { ActivityTab } from './ActivityTab';
 import { LogsTab } from './LogsTab';
@@ -35,13 +36,7 @@ export function AnalyticsTab() {
           {sections.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
         </select>
       </label>
-      <nav className="nav-tabs analytics-tabs" aria-label="Analytics sections">
-        {sections.map(([id, label]) => (
-          <NavLink key={id} className="nav-tab" to={{ pathname: `/analytics/${id}`, search }}>
-            {label}
-          </NavLink>
-        ))}
-      </nav>
+      <RouteTabs label="Analytics sections" className="analytics-tabs" tabs={sections.map(([id, label]) => ({ to: `/analytics/${id}`, label }))} />
       {section === 'overview' && <OverviewTab />}
       {section === 'activity' && <ActivityTab />}
       {section === 'models' && <ModelsTab />}

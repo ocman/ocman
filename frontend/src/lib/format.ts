@@ -138,6 +138,19 @@ export function formatDate(ts: number): string {
   });
 }
 
+/**
+ * Shared exact date for records and timestamp tooltips, e.g. "Oct 28, 21:32".
+ * The year is shown only when it differs from the current year.
+ */
+export function formatExactDate(value: number | string | Date, now = Date.now()): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+    ...(date.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' }),
+  });
+}
+
 /** Unambiguous timestamp for tooltips, e.g. "Thu, Oct 1, 2026, 16:32:05". */
 export function formatFullDateTime(ts: number): string {
   return new Date(ts).toLocaleString('en-US', {

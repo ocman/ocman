@@ -26,6 +26,11 @@ Look for shared components before writing markup or CSS:
   views, `EmptyState` for compact lists, `LoadingState`, `Tabs`,
   `SegmentedControl`, `SettingRow` and `HeaderPortal` for header actions.
 - Markdown: wrap `MarkdownContent` in `.oc-md`.
+- Confirmation: `useConfirm()` from `lib/useConfirm` (`ConfirmProvider` is
+  mounted in the app shell), never `window.confirm`. Unsaved editors use
+  `useUnsavedChangesGuard(dirty)`; the app's `BrowserRouter` has no `useBlocker`.
+- Route views styled as tabs use `RouteTabs` (links with `aria-current`).
+  Dates use `formatExactDate`; recent activity uses `RelativeTimestamp`.
 
 Do not hand-roll styled buttons, inputs, selects, danger colors or table frames.
 Extract repeated patterns instead of copying them.

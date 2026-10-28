@@ -22,9 +22,12 @@ tracks adoption without treating every existing page as already compliant.
 - [ ] Browse-and-open lists: explicit title controls and safe whole-row clicks.
 - [ ] Collection pages: stacked phone rows and visible primary actions.
 - [ ] Factory: reuse shared drawers and navigation styling.
-- [ ] Drawers: shared wide variant and unsaved-edit protection.
+- [ ] Drawers: shared wide variant and unsaved-edit protection. The shared
+  `useUnsavedChangesGuard` exists; editors still need to adopt it.
 - [ ] Destructive actions: shared confirmation dialog and pending/error states.
+  `useConfirm` exists and plugins use it; host `window.confirm` calls remain.
 - [ ] Dates, spacing and platform-neutral copy: remove page-specific variants.
+  `formatExactDate` and `RelativeTimestamp` are the shared formatters.
 
 ## Verification
 

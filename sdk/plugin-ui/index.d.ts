@@ -1,4 +1,4 @@
-// @ocman/plugin-ui 1.0.0: the public, semver-versioned surface a plugin UI
+// @ocman/plugin-ui 1.1.0: the public, semver-versioned surface a plugin UI
 // bundle may import. The host provides the implementation at runtime; plugin
 // builds keep this module external (see @ocman/plugin-vite). Additions are
 // minor releases; removals or changed meaning are major releases.
@@ -39,6 +39,35 @@ export interface PluginActionHandle {
 
 /** One of this plugin's declared actions. */
 export declare function usePluginAction(actionId: string): PluginActionHandle;
+
+/**
+ * Sets the app header title for the current plugin view (shown after the
+ * plugin name) and the document title. Since 1.1.0.
+ */
+export declare function usePageTitle(title: string): void;
+
+export interface ConfirmOptions {
+  /** Names the item, e.g. "Delete item Desk lamp?". */
+  title: string;
+  /** Known consequences. */
+  description?: ReactNode;
+  /** Names the action, e.g. "Delete item", never "OK". */
+  confirmLabel: string;
+  cancelLabel?: string;
+  /** Destructive actions use danger styling and initially focus Cancel. */
+  destructive?: boolean;
+}
+
+/** ocman's confirmation dialog; resolves true when confirmed. Since 1.1.0. */
+export declare function useConfirm(): (options: ConfirmOptions) => Promise<boolean>;
+
+/**
+ * While `dirty`, asks before leaving through any in-app link (including main
+ * navigation) and before the page unloads. Browser Back is not intercepted.
+ * `confirmDiscard` asks the same question for the plugin's own Cancel/Close.
+ * Since 1.1.0.
+ */
+export declare function useUnsavedChangesGuard(dirty: boolean): { confirmDiscard(): Promise<boolean> };
 
 // --- Controls -------------------------------------------------------------
 
@@ -87,11 +116,35 @@ export type DataTableProps = ComponentPropsWithoutRef<'table'> & {
   framed?: boolean;
 };
 export declare function DataTable(props: DataTableProps): JSX.Element;
+/** Grouped browse-and-open rows that stack on phones. Since 1.1.0. */
+export declare function DataTableGroup(props: { label: string; noun: string; count: number; children: ReactNode }): JSX.Element;
+/** One stacked row: a title link or button, a secondary line and end-aligned metadata or actions. Since 1.1.0. */
+export declare function DataTableRow(props: { primary: ReactNode; secondary?: ReactNode; meta?: ReactNode }): JSX.Element;
+/** Placeholder rows for initial table loading, with the real column headers. Since 1.1.0. */
+export declare function SkeletonTable(props: { columns: string[]; rows?: number; label: string }): JSX.Element;
+/** Placeholder text lines for initial loading of lists without columns. Since 1.1.0. */
+export declare function SkeletonLines(props: { rows?: number; label: string }): JSX.Element;
+/**
+ * Dedicated empty or unavailable state. `icon` names an icon (see `Icon`);
+ * defaults depend on `error`. Put Retry or creation actions in children.
+ * Since 1.1.0.
+ */
+export declare function PageState(props: { title: string; description: ReactNode; icon?: string; error?: boolean; children?: ReactNode }): JSX.Element;
+/** Compact warning that keeps content visible, e.g. a failed background refresh. Since 1.1.0. */
+export declare function InlineAlert(props: { children: ReactNode; onRetry?(): void; retrying?: boolean; compact?: boolean }): JSX.Element;
 export declare function EmptyState(props: ComponentPropsWithoutRef<'div'>): JSX.Element;
 export declare function LoadingState(props: { children: ReactNode }): JSX.Element;
 export declare function ErrorState(props: { title: string; description?: ReactNode; inline?: boolean; children?: ReactNode }): JSX.Element;
 
 // --- Overlays and navigation ----------------------------------------------
+
+/**
+ * Route views styled as tabs. They remain links with aria-current, and
+ * switching keeps the current search parameters. A `to` without a leading
+ * `/` is relative to the plugin root (`""` is the index; give it `end`).
+ * Since 1.1.0.
+ */
+export declare function RouteTabs(props: { label: string; tabs: { to: string; label: string; end?: boolean }[] }): JSX.Element;
 
 export declare function Drawer(props: { title: string; onClose(): void; closeLabel?: string; children: ReactNode }): JSX.Element;
 
@@ -119,8 +172,23 @@ export type PillTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
 /** A small inline pill for plugin-defined states. */
 export declare function Pill(props: { tone?: PillTone; children: ReactNode }): JSX.Element;
 
+/**
+ * An icon from the Bootstrap Icons 1.x set ocman ships, by name without the
+ * `bi-` prefix, e.g. "inbox". Decorative unless `label` is given. Since 1.1.0.
+ */
+export declare function Icon(props: { name: string; label?: string }): JSX.Element | null;
+
+/** Relative time that keeps counting, with the exact date on hover and focus. Since 1.1.0. */
+export declare function RelativeTime(props: { value: string | number | Date }): JSX.Element | null;
+/** ocman's exact date for records, e.g. "Oct 28, 21:32"; the year only when it differs. Since 1.1.0. */
+export declare function formatExactDate(value: string | number | Date): string;
+
 // --- Layout ---------------------------------------------------------------
 
+/**
+ * `Page` sets `title` as the app header title (see `usePageTitle`) instead of
+ * rendering a second heading; since 1.1.0. `Section` renders `title` as h2.
+ */
 export interface PageProps {
   title: string;
   description?: ReactNode;

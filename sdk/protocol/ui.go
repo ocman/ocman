@@ -22,7 +22,7 @@ const (
 	UIAppGrant = "ui.app"
 	// UISDKVersion is the host's @ocman/plugin-ui release. Plugins declare a
 	// compatible range; sdk/plugin-ui/package.json must carry the same value.
-	UISDKVersion = "1.0.0"
+	UISDKVersion = "1.1.0"
 	// UIIndexExpose is the routed application entry point mounted at
 	// /plugins/<id>/*. Other expose names are reserved for later entry points.
 	UIIndexExpose = "index"

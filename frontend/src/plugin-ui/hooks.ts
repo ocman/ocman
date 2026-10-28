@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PluginActionHandle, PluginCallOptions, PluginContextValue } from '@ocman/plugin-ui';
-import { callPluginUI, pluginUIQueryKey } from '../lib/pluginUI';
+import { callPluginUI, pluginHeaderTitle, pluginUIQueryKey, usePluginTitles } from '../lib/pluginUI';
+import { usePageTitle as useDocumentTitle } from '../lib/headerContext';
+import { formatExactDate as hostFormatExactDate } from '../lib/format';
+export { useConfirm } from '../lib/useConfirm';
+export { useUnsavedChangesGuard } from '../lib/useUnsavedChangesGuard';
 import { usePluginHost } from './context';
 
 export function usePluginContext(): PluginContextValue {
@@ -39,4 +43,18 @@ export function usePluginAction(actionId: string): PluginActionHandle {
       try { await runAction(actionId, context); } finally { setPending(false); }
     },
   };
+}
+
+export function usePageTitle(title: string) {
+  const { pluginId, pluginLabel } = usePluginHost();
+  const setTitle = usePluginTitles((state) => state.setTitle);
+  useDocumentTitle(pluginHeaderTitle(pluginLabel, title));
+  useEffect(() => {
+    setTitle(pluginId, title);
+    return () => setTitle(pluginId);
+  }, [pluginId, title, setTitle]);
+}
+
+export function formatExactDate(value: string | number | Date) {
+  return hostFormatExactDate(value);
 }

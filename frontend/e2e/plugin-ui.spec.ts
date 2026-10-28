@@ -30,11 +30,18 @@ test('mounts an in-app plugin UI with host singletons, nested routes, calls and 
 
   await page.goto('/plugins/org.example.catalog');
   const content = page.getByTestId('page-content');
-  await expect(content.getByRole('heading', { level: 1, name: 'Catalog' })).toBeVisible();
+  // The app header owns the title; plugin pages add no second heading.
+  const header = page.getByTestId('header-breadcrumb');
+  await expect(header).toHaveText('Catalog');
+  await expect(content.getByRole('region', { name: 'Catalog' })).toBeVisible();
+  await expect(content.getByRole('heading', { level: 1 })).toHaveCount(0);
   await expect(page.getByText('Mounted at /plugins/org.example.catalog')).toBeVisible();
   const table = page.getByRole('table', { name: 'Catalog items' });
   await expect(table.getByRole('link', { name: 'Office router' })).toBeVisible();
   await expect(table.getByText('high')).toBeVisible();
+  // Plugins import @ocman/plugin-ui by URL; its styles must still apply.
+  await expect(table.getByText('active').first()).toHaveCSS('border-radius', '999px');
+  await expect(content.getByRole('region', { name: 'Items' })).toHaveCSS('display', 'grid');
   await expect(page.getByRole('link', { name: 'Catalog' })).toHaveAttribute('aria-current', 'page');
 
   await page.getByRole('button', { name: 'Restore (0)' }).click();
@@ -44,10 +51,12 @@ test('mounts an in-app plugin UI with host singletons, nested routes, calls and 
 
   await table.getByRole('link', { name: 'Office router' }).click();
   await expect(page).toHaveURL(/\/plugins\/org\.example\.catalog\/items\/router$/);
-  await expect(content.getByRole('heading', { level: 1, name: 'Office router' })).toBeVisible();
+  await expect(header).toHaveText('Catalog / Office router');
+  await expect(page).toHaveTitle('Catalog / Office router - ocman');
   await expect(page.getByRole('rowheader', { name: 'Owner' })).toBeVisible();
   await page.getByRole('link', { name: 'Back to items' }).click();
   await expect(page).toHaveURL(/\/plugins\/org\.example\.catalog$/);
+  await expect(header).toHaveText('Catalog');
 
   expect(calls.every((c) => c.pluginId === 'org.example.catalog')).toBe(true);
   expect(calls.map((c) => c.method)).toContain('items.get');

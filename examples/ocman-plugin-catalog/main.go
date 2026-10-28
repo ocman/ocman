@@ -19,7 +19,7 @@ func description(bundle plugin.UIBundle) plugin.Description {
 		RequestedGrants: []string{plugin.UIAppGrant},
 		Actions: []plugin.ActionDescriptor{{ID: "reset", Label: "Restore sample catalog", Placement: "global",
 			Surfaces: []string{"command-palette"}, Confirmation: "Restore the sample catalog and discard status changes?"}},
-		UI: plugin.NewUIDescriptor("^1.0.0", bundle),
+		UI: plugin.NewUIDescriptor("^1.1.0", bundle),
 	}
 }
 

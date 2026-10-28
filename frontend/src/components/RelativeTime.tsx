@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { relativeTimeISO } from '../lib/format';
+import { formatExactDate, relativeTimeISO } from '../lib/format';
+import { Tooltip } from './Tooltip';
 
 const SECOND_MS = 1_000;
 const MINUTE_MS = 60_000;
@@ -35,4 +36,18 @@ export function RelativeTime({ iso }: { iso: string }) {
   }, [parsed]);
 
   return <>{relativeTimeISO(iso)}</>;
+}
+
+/**
+ * Recent activity: relative text that keeps counting, with the shared exact
+ * date on hover and keyboard focus.
+ */
+export function RelativeTimestamp({ value }: { value: string | number | Date }) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const iso = date.toISOString();
+  const exact = formatExactDate(date);
+  return <Tooltip content={exact}>
+    <time dateTime={iso} tabIndex={0} aria-label={`${relativeTimeISO(iso)}, ${exact}`}><RelativeTime iso={iso} /></time>
+  </Tooltip>;
 }

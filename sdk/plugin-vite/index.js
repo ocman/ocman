@@ -33,10 +33,14 @@ export function ocmanPlugin({ entry = 'src/index.tsx', outDir = 'dist' } = {}) {
   return {
     name: 'ocman-plugin-ui',
     enforce: 'pre',
-    config() {
+    config(_config, { command }) {
+      // Only `vite build` produces the shipped bundle. Leaving dev and test
+      // runs alone keeps React's development build, which React Testing
+      // Library needs (production React has no act()).
+      const production = command === 'build';
       return {
-        define: { 'process.env.NODE_ENV': JSON.stringify('production') },
-        oxc: { jsx: { runtime: 'automatic', development: false } },
+        ...(production ? { define: { 'process.env.NODE_ENV': JSON.stringify('production') } } : {}),
+        oxc: { jsx: { runtime: 'automatic', ...(production ? { development: false } : {}) } },
         build: {
           lib: { entry, formats: ['es'], fileName: () => 'index.js', cssFileName: 'index' },
           outDir,

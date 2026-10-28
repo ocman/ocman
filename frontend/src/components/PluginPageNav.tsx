@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { pageURL, usePluginPages, type PluginPage } from '../lib/pluginPages';
-import { usePluginUIs } from '../lib/pluginUI';
+import { pluginHeaderTitle, usePluginTitles, usePluginUIs } from '../lib/pluginUI';
 
 type NavEntry = { ownerId: string; pluginId: string; name: string; to: string };
 
@@ -25,12 +25,13 @@ function usePluginNavEntries(): NavEntry[] {
 export function PluginPageTitle() {
   const { pages } = usePluginPages();
   const { uis } = usePluginUIs();
+  const titles = usePluginTitles((state) => state.titles);
   const location = useLocation();
   const owner = new URLSearchParams(location.search).get('ownerId') || 'local';
   const page = pages.find((p) => p.ownerId === owner && pageURL(p).split('?')[0] === location.pathname);
   // In-app UI owns every sub-route of its plugin; declarative pages do not.
   const ui = uis.find((u) => u.ownerId === owner && `${location.pathname}/`.startsWith(`/plugins/${encodeURIComponent(u.pluginId)}/`));
-  return <>{page ? pluginLabel(page) : ui?.pluginLabel ?? 'Plugin workspace'}</>;
+  return <>{page ? pluginLabel(page) : ui ? pluginHeaderTitle(ui.pluginLabel, titles[ui.pluginId]) : 'Plugin workspace'}</>;
 }
 
 export function PluginPageNav({ onNavigate, replace }: { onNavigate?: () => void; replace?: boolean }) {

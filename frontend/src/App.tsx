@@ -1,3 +1,4 @@
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -301,7 +302,9 @@ function AuthenticatedApp() {
   return (
     <AuthGate>
       <HeaderProvider>
-        <AuthenticatedShell />
+        <ConfirmProvider>
+          <AuthenticatedShell />
+        </ConfirmProvider>
       </HeaderProvider>
     </AuthGate>
   );

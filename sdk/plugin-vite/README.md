@@ -20,6 +20,9 @@ The preset:
   `react-dom/client`;
 - inlines dynamic imports and assets, and injects imported CSS as one `<style>`
   element at load time;
-- leaves other files in `outDir`, such as a `.gitkeep` for `go:embed`.
+- leaves other files in `outDir`, such as a `.gitkeep` for `go:embed`;
+- applies production settings (`NODE_ENV`, the production JSX runtime) only to
+  `vite build`, so a Vitest config can reuse the preset with React Testing
+  Library, which needs React's development build.
 
 Serve the resulting `dist/index.js` with the Go SDK's `plugin.UIHandler`.

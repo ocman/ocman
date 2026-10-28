@@ -14,6 +14,7 @@ import { PluginProjectPicker } from '../components/PluginProjectPicker';
 import { PluginModelPicker } from '../components/PluginModelPicker';
 import { PluginPageValue } from '../components/PluginPageValue';
 import { usePluginHost } from './context';
+import { usePageTitle } from './hooks';
 import '../pages/PluginPage.css';
 import '../components/PluginPageContent.css';
 import './plugin-ui.css';
@@ -98,9 +99,11 @@ export function Pill({ tone = 'neutral', children }: { tone?: PillTone; children
   return <span className={`oc-plugin-pill oc-plugin-pill--${tone}`}>{children}</span>;
 }
 
+// The app header owns the page title, so Page sets it there.
 export function Page({ title, description, actions, children }: PageProps) {
-  return <section className="plugin-page">
-    <div className="plugin-page-heading"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{actions}</div>
+  usePageTitle(title);
+  return <section className="plugin-page" aria-label={title}>
+    {(description || actions) && <div className="plugin-page-heading oc-plugin-toolbar">{description ? <p>{description}</p> : <span />}{actions}</div>}
     {children}
   </section>;
 }
