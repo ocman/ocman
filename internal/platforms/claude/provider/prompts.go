@@ -277,6 +277,9 @@ func (l *live) recordLater(id string, pr *prompt) {
 	if running {
 		return
 	}
+	// A record in backoff no longer holds the turn (resolvingLocked): a
+	// settle deferred for it publishes now, or retries on its own.
+	l.settleIfDeferred(pr.proc.id)
 	go func() {
 		for delay := time.Duration(recordRetry.Load()); ; delay = min(2*delay, time.Minute) {
 			timer := time.NewTimer(delay)

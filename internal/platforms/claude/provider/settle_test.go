@@ -198,6 +198,57 @@ func TestRecordedPromptReplyCannotLoseToIdleEdge(t *testing.T) {
 	}
 }
 
+// A settle held back for a record that then fails is not left to that
+// record: once the record waits in retry backoff, the turn's end is
+// published (or retried on its own) without it, as during any outage.
+func TestDeferredSettleSurvivesFailedRecord(t *testing.T) {
+	fastRetries(t)
+	setRecordRetry(t, time.Hour) // the failed record stays in backoff
+	h, _ := promptHarness(t, writeFixture(t, askedTurn), func(h *liveHarness, e providerprotocol.Event) {
+		if e.Type == "permission.asked" {
+			var p platforms.LivePrompt
+			_ = json.Unmarshal(e.Properties, &p)
+			go func() {
+				_ = h.adapter.RespondPermission(context.Background(), platforms.RespondPermissionRequest{SessionID: p["sessionID"].(string), PermissionID: p["id"].(string), Reply: "once"})
+			}()
+		}
+	})
+	id := h.create(t)
+	held, release := make(chan struct{}), make(chan struct{})
+	var once atomic.Bool
+	setHook(t, func(point, sid string) {
+		if point == "recording" && sid == id && once.CompareAndSwap(false, true) {
+			close(held)
+			<-release
+		}
+	})
+	h.send(t, id, "go")
+	<-held
+	waitFor(t, "settle deferred for the record", func() bool {
+		h.live.mu.Lock()
+		defer h.live.mu.Unlock()
+		_, ok := h.live.deferred[id]
+		return ok
+	})
+	restore := h.spoolDown(t, id)
+	close(release) // the record fails and enters backoff
+	waitFor(t, "record in backoff", func() bool {
+		h.live.mu.Lock()
+		defer h.live.mu.Unlock()
+		for _, pr := range h.live.prompts {
+			if pr.retrying {
+				return true
+			}
+		}
+		return false
+	})
+	restore()
+	waitFor(t, "idle edge without the record", func() bool { _, _, n := h.events.get(id); return n == 1 })
+	if p := h.live.pendingPrompts(id, false); len(p) != 1 {
+		t.Fatalf("the unrecorded prompt = %+v, want it still pending", p)
+	}
+}
+
 // lateResolution runs turn A to the state TestLateResolutionAfterIdleAndReconnect
 // describes: A's idle edge published and acknowledged, the watcher
 // reconnected, then A's reply recorded and the supervisor released. A
