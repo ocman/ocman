@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, type PermissionRule } from '../lib/api';
 import { classifyPermissionMode, PERMISSION_MODES, type PermissionMode } from '../lib/permissionModes';
 import { Button, SubmitButton } from './Control';
@@ -166,7 +167,8 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
 function PermissionModeConfirmation({ mode, saving, onClose, onConfirm }: {
   mode: PermissionMode; saving: boolean; onClose: () => void; onConfirm: () => Promise<void>;
 }) {
-  return (
+  // Match the picker: disabled composer styles must not dim the modal or backdrop.
+  return createPortal(
     <Modal
       label="Confirm permission mode"
       backdropClassName="oc-cmd-backdrop oc-permission-confirm-backdrop"
@@ -185,7 +187,8 @@ function PermissionModeConfirmation({ mode, saving, onClose, onConfirm }: {
         <Button size="small" disabled={saving} onClick={onClose}>Cancel</Button>
         <SubmitButton size="small" variant="danger" data-autofocus pendingLabel="Applying…" onClick={onConfirm}>Confirm</SubmitButton>
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 

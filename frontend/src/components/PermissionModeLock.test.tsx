@@ -86,6 +86,21 @@ describe('PermissionModeLock', () => {
     expect(setPermissionRules).not.toHaveBeenCalled();
   });
 
+  it('renders the confirmation outside disabled composer styling, like the picker', async () => {
+    getPermissionRules.mockResolvedValue({ rules: [] });
+    const { container } = render(
+      <div className="oc-composer-disabled"><div className="oc-composer-bar-left">
+        <PermissionModeLock sessionId="s1" />
+      </div></div>,
+    );
+    await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
+    expect(container).not.toContainElement(screen.getByRole('dialog', { name: 'Permission mode...' }));
+    await userEvent.click(screen.getByText('YOLO'));
+    const confirmation = await screen.findByRole('dialog', { name: 'Confirm permission mode' });
+    expect(container).not.toContainElement(confirmation);
+    expect(confirmation.parentElement?.parentElement).toBe(document.body);
+  });
+
   it('applies yolo when confirmed', async () => {
     getPermissionRules.mockResolvedValue({ rules: [] });
     setPermissionRules.mockResolvedValue(undefined);
