@@ -13,7 +13,8 @@ set -euo pipefail
 rev="${1:-HEAD}"
 pathspec=(-- sdk ':(exclude,glob)sdk/**/*.md')
 
-latest="$(git tag -l 'sdk/v*' --merged "$rev" --sort=-version:refname | head -n 1)"
+# Drain the pipe so git cannot fail with SIGPIPE under pipefail.
+latest="$(git tag -l 'sdk/v*' --merged "$rev" --sort=-version:refname | sed -n '1p')"
 if [ -z "$latest" ]; then
 	echo "sdk/v0.1.0"
 	exit 0

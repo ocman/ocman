@@ -373,6 +373,7 @@ lint-fuzz-scripts:
 # Self-test for the SDK release tag calculation, against throwaway repos.
 lint-release-scripts:
 	./scripts/sdk-next-tag_test.sh
+	python3 scripts/test_tag_selection.py
 
 # Refresh the Go DTO snapshot (frontend/src/lib/contracts/go-dtos.json) that
 # the frontend's hand-written API types are checked against. The Go test

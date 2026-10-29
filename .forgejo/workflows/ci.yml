@@ -105,6 +105,8 @@ jobs:
           restore-keys: |
             go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-
+      - name: Release script regression tests
+        run: make lint-release-scripts
       - name: go.mod tidy check
         run: go mod tidy -diff
       # sdk/ is the nested public module github.com/ocman/ocman/sdk. Root
@@ -353,7 +355,8 @@ jobs:
 
           git fetch --force --tags origin
 
-          latest_tag="$(git tag -l 'v*' --sort=-version:refname | head -n 1)"
+          # Drain the pipe: head can give git SIGPIPE (141) under pipefail.
+          latest_tag="$(git tag -l 'v*' --sort=-version:refname | sed -n '1p')"
           next_tag="$(git-cliff --config cliff.toml --bumped-version)"
           if [ "${next_tag}" = "${latest_tag}" ]; then
             printf '%s\n' "No releasable conventional commits found"
