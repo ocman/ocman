@@ -250,8 +250,13 @@ changing its held queue. The response
 `get` to inspect replies. Do not blindly retry a failed request whose delivery is
 uncertain, since that can send the same prompt twice.
 
-`create` sends `prompt` to the new session. `model` (`provider/model`), `agent`,
-`worktree`, and `title` are optional. An omitted model inherits the calling
+`create` sends `prompt` to the new session. Supply either the caller's `platform`
+and `session_id`, or an explicit target `platform`, `model` (`provider/model`),
+and absolute `directory`. Directory-only requests are rejected rather than
+silently selecting defaults. This requirement applies only to MCP creation,
+not the plugin session API. Caller identity supplies inheritance context, not
+authorization. `agent`, `worktree`, and `title` are optional.
+With caller identity, an omitted model inherits the calling
 session's current model when `platform` and `session_id` are supplied, even with
 an explicit `directory`. Without a caller model, it uses the project's first
 configured model, then the platform's default selection. An omitted agent uses
@@ -262,10 +267,10 @@ and repositories without a usable base use the current checkout. Set
 `worktree: false` to use the given directory, or `worktree: true` to require a
 fresh worktree. Git probe failures return an error rather than choosing a target.
 `directory` must be absolute. When omitted, the target is the project root of the
-calling session, identified with `platform` and `session_id`. The calling session also
-determines which machine runs the new one and, without `platform`, its platform.
-With neither, a `model` with a platform prefix (`claudecode:anthropic/sonnet`)
-picks the platform, else the default platform applies. New sessions use the platform's
+calling session, identified with `platform` and `session_id`. `platform` also
+selects the machine that runs the new session. Without caller identity, all three
+target fields are required even when `model` has a platform prefix.
+New sessions use the platform's
 default permissions and do not inherit the caller's rules.
 
 OpenCode permissions apply to whole tools, so requiring approval for `create` or `send`

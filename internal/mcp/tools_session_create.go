@@ -64,6 +64,8 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 		return mcplib.NewToolResultError("session_id requires platform")
 	case in.Directory == "" && in.SessionID == "":
 		return mcplib.NewToolResultError("directory or the calling session's platform and session_id is required")
+	case in.SessionID == "" && (in.Platform == "" || in.Model == ""):
+		return mcplib.NewToolResultError("create requires caller platform and session_id, or explicit platform, model, and directory")
 	}
 	created, err := creator.CreateSession(ctx, in)
 	switch {

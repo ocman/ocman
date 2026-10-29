@@ -236,6 +236,7 @@ func TestClaudeMCPCreate(t *testing.T) {
 				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 				"params": map[string]any{"name": "sessions", "arguments": map[string]any{
 					"action": "create", "platform": "claudecode", "directory": repo,
+					"model": "anthropic/sonnet",
 					"worktree": worktree, "prompt": "Reply with exactly SPIKE_OK.",
 				}},
 			})
