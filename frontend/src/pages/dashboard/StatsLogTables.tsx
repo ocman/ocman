@@ -334,7 +334,7 @@ export function RequestLogTable({
           {requests.length === 0 ? (
             <EmptyRow colSpan={12} label="No requests matched the current filters" />
           ) : requests.map((request, idx) => (
-            <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
+            <tr key={JSON.stringify([request.sessionId, request.id])} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
               <td>{pageOffset + idx + 1}</td>
               <td>{formatDateTimeShort(request.timeCreated)}</td>
               <td className="mono">

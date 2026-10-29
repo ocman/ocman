@@ -144,3 +144,38 @@ describe('Subscription-backed cost', () => {
     expect(screen.getByTitle(/^API-equivalent cost/)).toHaveTextContent('API-equivalent');
   });
 });
+
+it('keeps shared native message IDs distinct across sessions and reorders', () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const base = makeMetrics().requests[0];
+    const requests = ['parent', 'child-a', 'child-b'].map((sessionId) => ({ ...base, sessionId }));
+    const { rerender } = renderTable(<RequestLogTable requests={requests} pageOffset={0} />);
+    const links = screen.getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual(requests.map((r) => `/session/${r.sessionId}`));
+    rerender(<MemoryRouter><RequestLogTable requests={[requests[2], requests[0]]} pageOffset={0} /><Location /></MemoryRouter>);
+    const reordered = screen.getAllByRole('link');
+    expect(reordered).toHaveLength(2);
+    expect(reordered[0]).toBe(links[2]);
+    expect(reordered[1]).toBe(links[0]);
+    expect(error).not.toHaveBeenCalled();
+  } finally {
+    error.mockRestore();
+  }
+});
+
+it('keeps each session model list attached to its row when sessions reorder', () => {
+  const base = makeMetrics().sessions[0];
+  const sessions = [
+    { ...base, id: 'parent', title: 'Parent', models: ['anthropic/claude', 'openai/gpt-test'] },
+    { ...base, id: 'child', title: 'Child', models: ['anthropic/claude'] },
+  ];
+  const { rerender } = renderTable(<SessionLogTable sessions={sessions} pageOffset={0} />);
+  const tooltip = screen.getByRole('tooltip');
+  expect(tooltip).toHaveTextContent('claude');
+  expect(tooltip).toHaveTextContent('gpt-test');
+  expect(tooltip.closest('tr')).toHaveTextContent('Parent');
+  rerender(<MemoryRouter><SessionLogTable sessions={[sessions[1], sessions[0]]} pageOffset={0} /><Location /></MemoryRouter>);
+  expect(screen.getByRole('tooltip')).toBe(tooltip);
+  expect(tooltip.closest('tr')).toHaveTextContent('Parent');
+});

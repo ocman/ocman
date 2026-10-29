@@ -75,9 +75,10 @@ func OpenHistoryAnalytics(path string, instances []string) (*DB, error) {
 	return &DB{db: conn, historyScope: &historyScopeValidation{}}, nil
 }
 
-// ScopedHistoryReader fails closed when legacy-shaped IDs would collide.
-// Storage is instance-scoped, but the existing response types cannot yet
-// express duplicate native IDs. Reject rather than merge unrelated sessions.
+// ScopedHistoryReader fails closed when legacy-shaped session IDs would collide.
+// Message IDs are session-local: Claude subagent bootstrap records can share
+// their parent's native API message ID. Queries must join by instance, session
+// and message, and response consumers must pair message IDs with session IDs.
 //
 // It validates the scope in one read transaction and returns a
 // reader bound to it. Every query building a response must use that reader:
@@ -111,18 +112,12 @@ func (d *DB) validateHistoryScope(ctx context.Context, tx *sql.Tx) error {
 	if d.historyScope.valid && d.historyScope.revision == revision {
 		return nil
 	}
-	for _, kind := range []string{"session", "message"} {
-		var duplicates int
-		from := `session f ON f.id=c.id`
-		if kind == "message" {
-			from = `history_fact f ON f.id=c.id JOIN session s ON s.instance_id=f.instance_id AND s.id=f.session_id`
-		}
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT f.id FROM main.analytics_conflict c CROSS JOIN `+from+` WHERE c.kind=? GROUP BY f.id HAVING count(*)>1 LIMIT 1)`, kind).Scan(&duplicates); err != nil {
-			return err
-		}
-		if duplicates > 0 {
-			return fmt.Errorf("history analytics native %s IDs collide across sources", kind)
-		}
+	var duplicates int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT f.id FROM main.analytics_conflict c CROSS JOIN session f ON f.id=c.id WHERE c.kind='session' GROUP BY f.id HAVING count(*)>1 LIMIT 1)`).Scan(&duplicates); err != nil {
+		return err
+	}
+	if duplicates > 0 {
+		return fmt.Errorf("history analytics native session IDs collide across sources")
 	}
 	d.historyScope.valid, d.historyScope.revision = true, revision
 	return nil

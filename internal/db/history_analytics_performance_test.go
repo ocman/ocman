@@ -163,10 +163,19 @@ func TestHistoryScopeDetectsLaterCollisionsAndPurgeRepair(t *testing.T) {
 			if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: key}, Messages: []statev2.Message{{ID: messageID, Role: "user"}}}); err != nil {
 				t.Fatal(err)
 			}
-			for range 2 {
-				if err := reader.checkHistoryScope(t.Context()); err == nil || !strings.Contains(err.Error(), collision+" IDs collide") {
-					t.Fatalf("missed later %s collision: %v", collision, err)
+			check := func() {
+				t.Helper()
+				err := reader.checkHistoryScope(t.Context())
+				if collision == "session" {
+					if err == nil || !strings.Contains(err.Error(), "session IDs collide") {
+						t.Fatalf("missed later session collision: %v", err)
+					}
+				} else if err != nil {
+					t.Fatalf("session-local message ID blocked scope: %v", err)
 				}
+			}
+			for range 2 {
+				check()
 			}
 			if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: key, SourceDeleted: true}, ExpectedRevision: 1}); err != nil {
 				t.Fatal(err)
@@ -177,16 +186,14 @@ func TestHistoryScopeDetectsLaterCollisionsAndPurgeRepair(t *testing.T) {
 			if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: key}, ExpectedRevision: 2}); err != nil {
 				t.Fatal(err)
 			}
-			if err := reader.checkHistoryScope(t.Context()); err == nil {
-				t.Fatal("restored collision was not detected")
-			}
+			check()
 		})
 	}
 }
 
 func TestHistoryScopeReusesValidationUntilHistoryChanges(t *testing.T) {
 	path, store := historyPerformanceStore(t)
-	reader, err := OpenHistoryAnalytics(path, []string{"one"})
+	reader, err := OpenHistoryAnalytics(path, []string{"one", "two"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,13 +203,16 @@ func TestHistoryScopeReusesValidationUntilHistoryChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Make any repeated full scan observable without wall-clock assertions.
-	if _, err := reader.db.Exec(`DROP VIEW history_fact; CREATE TEMP VIEW history_fact AS SELECT json('invalid') AS id`); err != nil {
+	if _, err := reader.db.Exec(`DROP VIEW session; CREATE TEMP VIEW session AS SELECT json('invalid') AS id`); err != nil {
 		t.Fatal(err)
 	}
 	if err := reader.checkHistoryScope(t.Context()); err != nil {
 		t.Fatalf("rescanned unchanged history: %v", err)
 	}
-	if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "one", SessionID: "two"}}, Messages: []statev2.Message{{ID: "message-first", Role: "assistant"}}}); err != nil {
+	if err := store.RegisterInstance(t.Context(), statev2.Instance{ID: "two", OwnerID: "owner", Platform: "p", SourceKey: "other"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "two", SessionID: "first"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := reader.checkHistoryScope(t.Context()); err == nil {

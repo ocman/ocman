@@ -122,6 +122,7 @@ type StopReasonCount struct {
 
 // RequestLogEntry holds request-level metrics for the request log table.
 type RequestLogEntry struct {
+	// ID is the native message ID, unique only together with SessionID.
 	ID               string  `json:"id"`
 	SessionID        string  `json:"sessionId"`
 	TimeCreated      int64   `json:"timeCreated"`

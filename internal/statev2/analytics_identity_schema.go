@@ -3,6 +3,8 @@ package statev2
 // Sparse conflict markers make strict reader validation independent of history
 // size. Triggers keep them atomic through refreshes, cascade purges and repairs.
 // Markers include retained/deleted sources; readers check active selected owners.
+// A message marker alone does not imply corruption: native subagent transcripts
+// can reuse a parent's API message ID in a different session.
 const analyticsIdentitySchema = `
 CREATE TABLE analytics_conflict (kind TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(kind,id)) WITHOUT ROWID;
 INSERT INTO analytics_conflict SELECT 'session',id FROM analytics_session GROUP BY id HAVING count(*)>1;
