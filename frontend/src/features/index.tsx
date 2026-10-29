@@ -32,6 +32,9 @@ import { PluginRoute } from '../pages/PluginRoute';
 import { PluginPageNav, PluginPageTitle } from '../components/PluginPageNav';
 import { BackgroundTasks } from '../pages/BackgroundTasks';
 import { ApplicationHealthSettings } from '../components/ApplicationHealthSettings';
+import { BetaFeaturesSettings } from '../components/BetaFeaturesSettings';
+import { BetaFeatureGate } from '../components/BetaFeatureGate';
+import type { BetaFeature } from '../lib/betaFeatures';
 
 // Factory pages pull in the epic graph (dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
@@ -55,6 +58,7 @@ export interface FeatureRoute {
 export interface Feature {
   Navigation?: ComponentType<{ onNavigate?: () => void; replace?: boolean }>;
   id: string;
+  beta?: BetaFeature;
   routes?: FeatureRoute[];
   /** Header title for every other path under this prefix. */
   titlePrefix?: { prefix: string; title: ReactNode };
@@ -84,6 +88,7 @@ export const FEATURES: Feature[] = [
   },
   {
     id: 'factory',
+    beta: 'factory',
     routes: [
       { path: '/factory', element: <Navigate to="/factory/overview" replace />, layout: 'page' },
       { path: '/factory/overview', element: <FactoryOverview />, layout: 'page' },
@@ -112,6 +117,7 @@ export const FEATURES: Feature[] = [
     nav: { to: '/artifacts', label: 'Artifacts', icon: 'bi-box-seam' },
   },
   { id: 'notifications', settings: { id: 'notifications', category: 'app', label: 'Notifications', mount: 'always', Section: NotificationsSection } },
+  { id: 'beta-features', settings: { id: 'beta-features', category: 'app', label: 'Beta features', mount: 'active', Section: BetaFeaturesSettings } },
   { id: 'device', settings: { id: 'device', category: 'app', label: 'This device', mount: 'always', Section: DeviceSettings, visible: 'device' } },
   { id: 'account', settings: { id: 'account', category: 'app', label: 'Account', mount: 'always', Section: AccountSettings, visible: 'account' } },
   { id: 'new-sessions', settings: { id: 'new-sessions', category: 'sessions', label: 'New sessions', mount: 'always', Section: NewSessionSettings } },
@@ -135,9 +141,12 @@ export const FEATURES: Feature[] = [
 ];
 
 export const featureRoutes = (layout: FeatureRoute['layout']) =>
-  FEATURES.flatMap((f) => (f.routes ?? []).filter((r) => r.layout === layout));
+  FEATURES.flatMap((f) => (f.routes ?? []).filter((r) => r.layout === layout).map((r) => ({
+    ...r,
+    element: f.beta ? <BetaFeatureGate feature={f.beta}>{r.element}</BetaFeatureGate> : r.element,
+  })));
 
-export const featureNav = FEATURES.flatMap((f) => (f.nav ? [f.nav] : []));
+export const featureNav = FEATURES.flatMap((f) => (f.nav ? [{ ...f.nav, beta: f.beta }] : []));
 export const featureNavigation = FEATURES.flatMap((f) => f.Navigation ? [f.Navigation] : []);
 
 export const featureSettings = FEATURES.flatMap((f) => (f.settings ? [f.settings] : []));

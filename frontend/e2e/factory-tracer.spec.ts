@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+test.use({ factoryBeta: true });
 
 test.beforeEach(async ({ mockedPage: page }) => {
   await page.route('/api/sessions/prepare', (route) => route.fulfill({ json: { platform: 'opencode', agents: [], commands: [], models: { models: [], hasProviders: false }, liveConnection: false } }));

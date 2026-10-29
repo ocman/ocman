@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+test.use({ factoryBeta: true });
 
 test('Epic and Queue show phase and attempt spending', async ({ mockedPage: page }) => {
   const epic = { id: 'usage-epic', goal: 'Account for spending', status: 'open', initialProject: '/repo', models: {}, progress: { requiredTotal: 1, requiredSucceeded: 0, optionalOpen: 0 } };

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+test.use({ factoryBeta: true });
 
 test('graph approval shows frozen parent groups and external dependencies', async ({ mockedPage: page }) => {
   const issues = [

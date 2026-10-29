@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhoneNavigation } from './PhoneNavigation';
+import { useBetaFeatures } from '../lib/betaFeatures';
 
 const plugins = vi.hoisted(() => ({ pages: [] as { ownerId: string; pluginId: string; page: { id: string; label: string } }[] }));
 vi.mock('../lib/pluginUI', async (original) => ({ ...await original<typeof import('../lib/pluginUI')>(), usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
@@ -15,6 +16,7 @@ const change = () => listeners.forEach(listener => listener());
 const removeEventListener = vi.fn();
 
 beforeEach(() => {
+  useBetaFeatures.setState({ factory: false });
   plugins.pages = [];
   phone = true;
   listeners = new Set();
@@ -34,6 +36,15 @@ function mount(path = '/sessions', unreadTotal = 0, state?: object, unreadSessio
 }
 
 describe('phone navigation', () => {
+  it('only shows Factory in More when the beta is enabled', async () => {
+    mount();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'More' }));
+    expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
+    act(() => useBetaFeatures.getState().setFactory(true));
+    expect(screen.getByRole('link', { name: 'Factory' })).toHaveAttribute('href', '/factory/overview');
+    act(() => useBetaFeatures.getState().setFactory(false));
+    expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
+  });
   it('replaces More with a plugin destination and returns directly to the previous page', async () => {
     plugins.pages = [{ ownerId: 'machine', pluginId: 'org.example.pentest', page: { id: 'pentest', label: 'Pentest' } }];
     function History() {
@@ -121,7 +132,7 @@ describe('phone navigation', () => {
     const more = screen.getByRole('button', { name: 'More' });
     await user.click(more);
     const dialog = screen.getByRole('dialog', { name: 'More destinations' });
-    for (const label of ['Factory', 'Routines', 'Artifacts', 'Analytics', 'Provider usage', 'Settings', 'Home']) {
+    for (const label of ['Routines', 'Artifacts', 'Analytics', 'Provider usage', 'Settings', 'Home']) {
       expect(within(dialog).getByRole('link', { name: label })).toBeInTheDocument();
     }
     await user.keyboard('{Escape}');

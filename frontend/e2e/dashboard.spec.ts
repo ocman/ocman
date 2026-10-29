@@ -350,7 +350,7 @@ test('overview renders summary and scoped date filters', async ({ mockedPage: pa
   await expect(page.getByRole('combobox', { name: 'Project scope' })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Last' })).toBeVisible();
   await expect(page.getByText('Total Cost', { exact: true })).toBeVisible();
-  await expect(page.getByText('Factory attempts', { exact: true })).toBeVisible();
+  await expect(page.getByText('Factory attempts', { exact: true })).toHaveCount(0);
 });
 
 test('analytics tabs keep their height when the page overflows', async ({ mockedPage: page }) => {

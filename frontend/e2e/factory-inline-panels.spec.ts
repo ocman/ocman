@@ -1,4 +1,5 @@
 import { test, expect, mockSessionWithLiveConnection } from './fixtures';
+test.use({ factoryBeta: true });
 
 for (const kind of ['recovery', 'approval']) {
   test(`Factory ${kind} scrolls with the conversation`, async ({ mockedPage: page }) => {

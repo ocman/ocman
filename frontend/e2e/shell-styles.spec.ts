@@ -1,4 +1,5 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
+test.use({ factoryBeta: true });
 
 for (const [platform, label] of [['opencode', 'OpenCode'], ['claudecode', 'Claude Code']]) {
   test(`${label} header icon is muted until hover and explains the platform`, async ({ mockedPage: page }) => {

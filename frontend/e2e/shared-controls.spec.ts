@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+test.use({ factoryBeta: true });
 
 test('permission text fields show keyboard focus and invalid styling inside a shared-header dialog', async ({ mockedPage: page }) => {
   await page.route('/api/routines', (route) => route.fulfill({ json: [] }));

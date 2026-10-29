@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsTab } from './SettingsTab';
+import { useBetaFeatures } from '../../lib/betaFeatures';
 
 const logout = vi.fn();
 const promptInstall = vi.fn();
@@ -67,6 +68,21 @@ function render(ui: ReactElement, url = '/settings') {
 }
 
 describe('SettingsTab actions', () => {
+  it('offers a searchable, default-off Factory beta toggle in App settings', async () => {
+    useBetaFeatures.setState({ factory: false });
+    const { unmount } = render(<SettingsTab />);
+    expect(screen.getByRole('heading', { name: 'Beta features' })).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'Enable Factory beta' })).not.toBeChecked();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Factory beta' } });
+    fireEvent.click(screen.getByRole('button', { name: /Factory beta/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Factory beta' }));
+    expect(useBetaFeatures.getState().factory).toBe(true);
+    unmount();
+    render(<SettingsTab />);
+    expect(screen.getByRole('checkbox', { name: 'Enable Factory beta' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Factory beta' }));
+    expect(useBetaFeatures.getState().factory).toBe(false);
+  });
   it('keeps application health in the System group instead of a global overlay', () => {
     render(<SettingsTab />);
     expect(screen.queryByText('Application health controls')).not.toBeInTheDocument();

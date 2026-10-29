@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+test.use({ factoryBeta: true });
 import { installPhoneReviewRoutes, phoneReviewPages } from './phone-review-fixtures';
 
 // Screenshots are for manual review; set E2E_REVIEW_SCREENSHOTS=1 to save them.

@@ -1827,7 +1827,8 @@ flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Pages -->|pending prompt, before HTTP acknowledgment| Comp
-    Stores --> Persistence[Browser persistence<br/>IndexedDB drafts, text + receipts]
+    Stores --> Persistence[Browser persistence<br/>IndexedDB drafts, text + receipts<br/>localStorage beta preferences]
+    Stores -->|beta opt-in: route gates, navigation + Factory analytics| Shell
     Comp -->|owner-scoped PR queries + repository/SHA checks persistence| Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Comp -->|delayed markdown hover: provider or Open Graph card, proxied image| API
@@ -1873,6 +1874,13 @@ flowchart TD
   Factory pages use `lazyComponent` to defer their imports. Backend plugins remain separate and reach the UI
   only through plugin panes and palette actions. The command palette and the
   session right-panel tabs still keep their own lists.
+- **Beta features.** Settings under App & notifications includes a default-off
+  Factory toggle persisted for this browser in `ocman-beta-features`.
+  The registry's beta metadata gates every Factory route before mounting its
+  page and hides desktop and phone navigation links. Analytics uses the same
+  preference to hide Factory inventory cards. Direct links show an enablement
+  message with a Settings link. This UI preference does not stop backend jobs,
+  restrict API access or remove stored Factory data.
 - **Background task notice.** OpenCode v2's session-owned running shells and active
   native child agents, plus managed Claude Code's tracked background tasks,
   publish absolute counts through

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+test.use({ factoryBeta: true });
 
 const epic = (id: string, goal: string, brief: string, done: number) => ({ id, status: 'open', goal, brief, initialProject: '/repo', progress: { requiredTotal: 8, requiredSucceeded: done, optionalOpen: 0 }, attempts: [] });
 const epics = [

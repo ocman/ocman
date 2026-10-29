@@ -2,6 +2,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { featureNav, featureNavigation } from '../features';
 import { useIsPhone } from '../lib/useIsPhone';
 import { usePhoneOverlay } from '../lib/usePhoneOverlay';
+import { useBetaFeatures, type BetaFeature } from '../lib/betaFeatures';
 import { Button } from './Control';
 import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
@@ -14,7 +15,7 @@ const tabs = [
   { to: '/inbox', label: 'Inbox', icon: 'bi-inbox' },
 ];
 
-const moreItems = [
+const moreItems: { to: string; label: string; icon: string; beta?: BetaFeature }[] = [
   { to: '/', label: 'Home', icon: 'bi-house' },
   ...featureNav,
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
@@ -33,6 +34,7 @@ export function PhoneNavigation({ unreadTotal, unreadSessions = 0 }: { unreadTot
 }
 
 function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unreadSessions: number }) {
+  const beta = useBetaFeatures();
   const { pathname } = useLocation();
   const [overlay, setOverlay] = usePhoneOverlay<'more'>('navigation');
   const moreOpen = overlay === 'more';
@@ -61,7 +63,7 @@ function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unrea
       <Modal label="More destinations" onClose={() => setOverlay(null)}>
         <ModalHeader title="More" onClose={() => setOverlay(null)} closeLabel="Close more destinations" />
         <nav aria-label="More destinations">
-          {moreItems.map(({ to, label, icon }) => <NavLink key={to} to={to} replace end={to === '/'}
+          {moreItems.filter((item) => !item.beta || beta[item.beta]).map(({ to, label, icon }) => <NavLink key={to} to={to} replace end={to === '/'}
             aria-label={to === '/' && unreadSessions ? `Home, ${unreadSessions} unread sessions` : label}>
              <i className={`bi ${icon}`} aria-hidden="true" /><span>{label}</span>
              {to === '/' && unreadSessions > 0 && <b className="nav-unread-badge" aria-hidden="true">{unreadSessions > 99 ? '99+' : unreadSessions}</b>}

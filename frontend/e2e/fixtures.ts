@@ -614,12 +614,19 @@ export function mockSessionWithLiveConnection(base = MOCK_SESSION) {
 // ---------------------------------------------------------------------------
 
 type OcmanFixtures = {
+  factoryBeta: boolean;
   /** Page with all default API mocks pre-installed. */
   mockedPage: Page;
 };
 
 export const test = base.extend<OcmanFixtures>({
-  mockedPage: async ({ page }, use) => {
+  factoryBeta: [false, { option: true }],
+  mockedPage: async ({ page, factoryBeta }, use) => {
+    if (factoryBeta) await page.addInitScript(() => {
+      if (!localStorage.getItem('ocman-beta-features')) {
+        localStorage.setItem('ocman-beta-features', JSON.stringify({ state: { factory: true }, version: 0 }));
+      }
+    });
     await installDefaultRoutes(page);
     // Playwright's fixture `use()` is not React's `use`, but the rule's
     // heuristic matches on the identifier. Disable the check here.

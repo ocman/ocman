@@ -11,6 +11,7 @@ import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { ChartCard, ChartSkeleton, ChartSkeletons, MetricCard, MetricCardsSkeleton } from './shared';
 import { MetricsSummaryCards } from './StatsLogTables';
+import { useBetaFeatures } from '../../lib/betaFeatures';
 
 const formatDatabaseSizeTime = (timestamp: number) => new Date(timestamp).toLocaleString('en-US', {
   year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -46,6 +47,7 @@ function DatabaseSizeChart({ samples, isLoading }: { samples?: DatabaseSizeSampl
 }
 
 export function OverviewTab() {
+  const factoryEnabled = useBetaFeatures((s) => s.factory);
   const { dirScope } = useDashboard();
   const [days, setDays] = useState(30);
   const metricsQ = useMetrics({ days: days || undefined, dir: dirScope || undefined });
@@ -61,7 +63,7 @@ export function OverviewTab() {
       <section aria-labelledby="inventory-heading">
         <h2 id="inventory-heading" className="analytics-section-heading">All-time inventory</h2>
         {overviewQ.error instanceof Error && <InlineAlert>{overviewQ.error.message}</InlineAlert>}
-        {overviewQ.isLoading && !overview && <MetricCardsSkeleton cards={7} label="Loading inventory" />}
+        {overviewQ.isLoading && !overview && <MetricCardsSkeleton cards={factoryEnabled ? 7 : 4} label="Loading inventory" />}
         {overview && (
           <>
           <div className="analytics-scope-note">Inventory totals are scoped to this {overview.inventoryScope} ocman instance.</div>
@@ -75,9 +77,11 @@ export function OverviewTab() {
             <MetricCard label="Projects" value={formatNumber(overview.totalProjects)} tone="blue" />
             <MetricCard label="Routines" value={formatNumber(overview.totalRoutines)} tone="green" />
             <MetricCard label="Routine runs" value={formatNumber(total(overview.routineRunsByStatus))} tone="purple" subvalue={breakdown(overview.routineRunsByStatus)} />
+            {factoryEnabled && <>
             <MetricCard label="Factory epics" value={formatNumber(total(overview.factoryEpicsByStatus))} tone="orange" subvalue={breakdown(overview.factoryEpicsByStatus)} />
             <MetricCard label="Factory issues" value={formatNumber(total(overview.factoryIssuesByStatus))} tone="orange" subvalue={breakdown(overview.factoryIssuesByStatus)} />
             <MetricCard label="Factory attempts" value={formatNumber(total(overview.factoryAttemptsByPhase))} tone="purple" subvalue={breakdown(overview.factoryAttemptsByTerminalOutcome)} />
+            </>}
           </div>
           </>
         )}

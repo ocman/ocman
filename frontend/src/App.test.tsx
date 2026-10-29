@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { MainNav } from './App';
 import { useInbox, useSubscriptionUsage } from './lib/queries';
 import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
+import { useBetaFeatures } from './lib/betaFeatures';
 
 vi.mock('./lib/pluginUI', async (original) => ({ ...await original<typeof import('./lib/pluginUI')>(), usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
 vi.mock('./lib/pluginPages', () => ({ usePluginPages: () => ({ pages: [] }) }));
@@ -19,6 +20,7 @@ vi.mock('./lib/queries', () => ({
 }));
 
 beforeEach(() => {
+  useBetaFeatures.setState({ factory: true });
   vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as never);
   vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
 });
@@ -53,6 +55,16 @@ describe('routeTitle', () => {
 });
 
 describe('MainNav', () => {
+  it('hides Factory until opted in and updates immediately when toggled', () => {
+    useBetaFeatures.setState({ factory: false });
+    render(<MemoryRouter><MainNav /></MemoryRouter>);
+    expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Routines' })).toBeInTheDocument();
+    act(() => useBetaFeatures.getState().setFactory(true));
+    expect(screen.getByRole('link', { name: 'Factory' })).toBeInTheDocument();
+    act(() => useBetaFeatures.getState().setFactory(false));
+    expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
+  });
   it.each([1, 12, 120])('announces %i unread messages and caps the visible badge', (unreadTotal) => {
     vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal } } as never);
     useUiStore.setState({ mainNavCollapsed: true });

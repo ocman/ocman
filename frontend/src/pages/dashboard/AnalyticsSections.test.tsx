@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,6 +50,7 @@ import { ModelsTab } from './ModelsTab';
 import { OverviewTab } from './OverviewTab';
 import { PerformanceTab } from './PerformanceTab';
 import { PermissionsTab } from './PermissionsTab';
+import { useBetaFeatures } from '../../lib/betaFeatures';
 
 const query = (data: unknown) => ({ data, isLoading: false, error: null });
 const metrics = {
@@ -67,6 +68,7 @@ function renderTab(component: React.ReactNode) {
 
 describe('analytics sections', () => {
   beforeEach(() => {
+    useBetaFeatures.setState({ factory: false });
     vi.clearAllMocks();
     useActivity.mockReturnValue(query([{ date: '2026-09-01', messages: 2, userMessages: 1, sessions: 1 }]));
     useHourly.mockReturnValue(query([{ hour: 12, sessions: 1 }]));
@@ -88,6 +90,7 @@ describe('analytics sections', () => {
   });
 
   it('keeps overview limited to summary data', () => {
+    useBetaFeatures.setState({ factory: true });
     renderTab(<OverviewTab />);
     const inventory = screen.getByRole('region', { name: 'All-time inventory' });
     const activity = screen.getByRole('region', { name: 'Request activity' });
@@ -109,6 +112,20 @@ describe('analytics sections', () => {
     expect(Object.keys(options.scales)).toEqual(['x', 'y']);
     expect(options.scales.y.type).toBe('logarithmic');
     expect(screen.getByText('Database sizes cover this local instance and are not project-scoped.')).toBeInTheDocument();
+  });
+
+  it('hides Factory inventory until enabled and responds to the beta toggle', () => {
+    renderTab(<OverviewTab />);
+    const inventory = screen.getByRole('region', { name: 'All-time inventory' });
+    expect(within(inventory).queryAllByText(/Factory/)).toHaveLength(0);
+    expect(within(inventory).getByText('Sessions')).toBeInTheDocument();
+    expect(within(inventory).getByText('Routine runs')).toBeInTheDocument();
+    act(() => useBetaFeatures.getState().setFactory(true));
+    for (const label of ['Factory epics', 'Factory issues', 'Factory attempts']) {
+      expect(within(inventory).getByText(label)).toBeInTheDocument();
+    }
+    act(() => useBetaFeatures.getState().setFactory(false));
+    expect(within(inventory).queryAllByText(/Factory/)).toHaveLength(0);
   });
 
   it('shows activity without a misleading model filter', () => {

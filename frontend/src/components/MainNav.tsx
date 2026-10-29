@@ -8,10 +8,11 @@ import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
 import { featureNav, featureNavigation } from '../features';
 import { PhoneNavigation } from './PhoneNavigation';
+import { useBetaFeatures, type BetaFeature } from '../lib/betaFeatures';
 import './MainNav.css';
 
 // activePrefix: sub-pages living outside the link's own path (singular routes, sibling tabs).
-const NAV_ITEMS: { to: string; label: string; icon: string; activePrefix?: string }[] = [
+const NAV_ITEMS: { to: string; label: string; icon: string; activePrefix?: string; beta?: BetaFeature }[] = [
   { to: '/', label: 'Home', icon: 'bi-house', activePrefix: '/session/' },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder', activePrefix: '/project/' },
@@ -27,6 +28,7 @@ export function MainNav({
   onMobileClose?: () => void;
 }) {
   const location = useLocation();
+  const beta = useBetaFeatures();
   const collapsed = useUiStore((state) => state.mainNavCollapsed);
   const toggleCollapsed = useUiStore((state) => state.toggleMainNav);
   const inbox = useInbox();
@@ -76,7 +78,7 @@ export function MainNav({
           <span className="main-nav-brand">ocman</span>
         </button>
         <nav id="main-navigation" aria-label="Main navigation">
-          {NAV_ITEMS.map((item) => navLink(item))}
+          {NAV_ITEMS.filter((item) => !item.beta || beta[item.beta]).map((item) => navLink(item))}
           {featureNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={onMobileClose} />)}
           <NavLink
             to="/inbox"

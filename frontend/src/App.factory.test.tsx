@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from './App';
+import { useBetaFeatures } from './lib/betaFeatures';
 import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useDeliverFactoryEpicAsIs, useFactoryControl, useFactoryFormula, useOpenFactoryControl, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useCancelFactoryIssueTransfer, useSetFactoryEpicPaused, useTransferFactoryIssue, useWorkEpic, useWorkEpics } from './lib/queries';
 
 vi.mock('./lib/queries', () => ({
@@ -45,6 +46,7 @@ async function renderRoute(path: string) {
 }
 
 beforeEach(() => {
+  useBetaFeatures.setState({ factory: true });
   vi.mocked(useWorkEpics).mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() } as never);
   vi.mocked(useWorkEpic).mockReturnValue({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() } as never);
 	vi.mocked(useFactoryIssues).mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() } as never);
@@ -76,6 +78,28 @@ beforeEach(() => {
 });
 
 describe('Factory routes', () => {
+  it.each(['/factory', '/factory/overview', '/factory/how-to', '/factory/epics', '/factory/epics/e1', '/factory/issues', '/factory/issues/i1', '/factory/queue', '/factory/configuration'])(
+    'requires opt-in before mounting %s', async (path) => {
+      useBetaFeatures.setState({ factory: false });
+      vi.mocked(useWorkEpics).mockClear();
+      vi.mocked(useWorkEpic).mockClear();
+      vi.mocked(useFactoryQueue).mockClear();
+      await renderRoute(path);
+      expect(screen.getByRole('heading', { name: 'Factory is in beta' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Open beta settings' })).toHaveAttribute('href', '/settings?tab=app#setting-factory-beta');
+      expect(useWorkEpics).not.toHaveBeenCalled();
+      expect(useWorkEpic).not.toHaveBeenCalled();
+      expect(useFactoryQueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it('unmounts an open Factory page when the beta is disabled', async () => {
+    await renderRoute('/factory/how-to');
+    expect(screen.getByRole('heading', { name: 'How Factory works' })).toBeInTheDocument();
+    act(() => useBetaFeatures.getState().setFactory(false));
+    expect(screen.queryByRole('heading', { name: 'How Factory works' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Factory is in beta' })).toBeInTheDocument();
+  });
   it('renders action inbox and live work on the Factory overview', async () => {
     await renderRoute('/factory');
     expect(screen.getByRole('heading', { name: 'Action inbox' })).toBeInTheDocument();

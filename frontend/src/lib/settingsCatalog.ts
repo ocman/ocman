@@ -28,6 +28,12 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  'factory-beta': {
+    group: 'app', title: 'Factory beta',
+    description: 'Enable the experimental Factory workspace. Off by default and saved for this browser. Disabling it hides the workspace but does not stop existing jobs or delete data.',
+    example: 'Enable Factory to create and monitor epics, then turn it off to hide it from navigation.',
+    keywords: 'beta features experimental opt in automation epics',
+  },
   'snooze-quick-choices': {
     group: 'sessions', title: 'Snooze quick choices',
     description: 'Add or remove snooze shortcuts and set their durations or local wake-up times. Saved for this browser.',

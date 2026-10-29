@@ -1,4 +1,5 @@
 import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
+test.use({ factoryBeta: true });
 import { installPhoneReviewRoutes } from './phone-review-fixtures';
 
 test.use({ viewport: { width: 390, height: 844 } });
