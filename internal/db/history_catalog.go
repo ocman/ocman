@@ -6,10 +6,31 @@ import (
 	"errors"
 )
 
+// CatalogPreferences reads model history in one snapshot. Unlike legacy
+// analytics responses, these queries join complete session identities and
+// aggregate model references, so shared message IDs in forks are safe.
+func (d *DB) CatalogPreferences(ctx context.Context, exclude, directory string) ([]RecentModel, SessionDefaults, error) {
+	if d.historyScope == nil {
+		return nil, SessionDefaults{}, errors.New("catalog preferences require a history reader")
+	}
+	tx, err := d.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, SessionDefaults{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	reader := &DB{db: d.db, historyScope: d.historyScope, snapshot: tx}
+	recents, err := reader.GetRecentModels(ctx, 50, 10)
+	if err != nil {
+		return nil, SessionDefaults{}, err
+	}
+	defaults, err := reader.GetSessionDefaults(ctx, exclude, directory)
+	return recents, defaults, err
+}
+
 // GetRecentModels samples the latest sessions in retained history.
 //
 // Catalog preferences use compact scalar facts, not retained message JSON.
-// Both queries stay on the scope's validated transaction and join full source
+// Both queries stay on the scope's read transaction and join full source
 // identities so matching native IDs cannot borrow another source's defaults.
 func (d *DB) GetRecentModels(ctx context.Context, sessionLimit, maxResults int) ([]RecentModel, error) {
 	if sessionLimit <= 0 {

@@ -46,17 +46,7 @@ func (a *Adapter) storedCatalogHistory(ctx context.Context, directory, exclude s
 		return nil, db.SessionDefaults{}, err
 	}
 	defer base.Close()
-	reader, release, err := base.ScopedHistoryReader(ctx)
-	if err != nil {
-		return nil, db.SessionDefaults{}, err
-	}
-	defer release()
-	recents, err := reader.GetRecentModels(ctx, 50, 10)
-	if err != nil {
-		return nil, db.SessionDefaults{}, err
-	}
-	defaults, err := reader.GetSessionDefaults(ctx, exclude, directory)
-	return recents, defaults, err
+	return base.CatalogPreferences(ctx, exclude, directory)
 }
 
 func (a *Adapter) storedDirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest, exclude string) (*platforms.DirectoryCatalog, error) {
