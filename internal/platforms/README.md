@@ -52,6 +52,14 @@ Shared runtime launch/probe/stop operations stay in `ocruntime` and the owning
 `hostsvc.Host`. Application browsing reads stay in the canonical history store;
 moving packages does not introduce native-storage fallbacks.
 
+## ACP execution foundation
+
+`acp` provides the shared ACP v1 process client using `github.com/coder/acp-go-sdk`.
+It is not wired into platform registration or default execution yet. It owns
+handshake, ordered updates, permission callbacks and basic session execution,
+not history ingestion, runtime ownership or automatic adapter installation.
+See [the transport contract and remaining integration work](acp/README.md).
+
 Go package identifiers are retained during the directory reorganization. For
 example, `opencode/api` declares `package ocapi` and `claude/provider` declares
 `package claudeprovider`. See the

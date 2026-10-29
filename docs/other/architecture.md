@@ -1828,6 +1828,24 @@ flowchart LR
   Native data access supplies ingestion and live execution; application browsing
   reads continue to use the canonical history store.
 
+The ACP execution foundation is separate from the active paths above. No platform
+currently routes execution through it:
+
+```mermaid
+flowchart LR
+    ACP[platforms/acp<br/>execution client] --> SDK[coder/acp-go-sdk<br/>ACP v1 JSON-RPC]
+    SDK -->|stdio| Agent[Installed ACP agent or adapter]
+    Agent -->|updates and permission requests| ACP
+```
+
+- `platforms/acp` launches an explicit executable, negotiates capabilities and
+  supports new/load/resume, prompts and cancellation. It preserves native IDs.
+- Its event callback must finish recording each update before returning. A failed
+  callback disconnects execution; permissions fail closed without a handler.
+- The client does not register a platform, install adapters, ingest history or
+  replace owner routing and supervisor recovery. Those remain required before
+  enabling it for any platform. Existing execution paths are unchanged.
+
 ## 3. Session and event data flow
 
 See [Session and event data flow](../architecture-events/) for the sequence
