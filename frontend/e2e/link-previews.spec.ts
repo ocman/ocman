@@ -67,7 +67,8 @@ test('add a token, preview, reload and remove it', async ({ mockedPage: page }) 
   await page.getByRole('button', { name: 'Add token for Tracker' }).click();
   await expect(page.getByText('Create a read-only token.')).toBeVisible();
   await page.getByLabel('Tracker token').fill('tok-1');
-  await page.getByRole('button', { name: 'Save token' }).click();
+  await page.getByRole('region', { name: 'Link previews', exact: true })
+    .getByRole('button', { name: 'Save token', exact: true }).click();
   await expect(page.getByText('alice · Acme')).toBeVisible();
   expect(token).toBe('tok-1');
 
