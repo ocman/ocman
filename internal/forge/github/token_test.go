@@ -69,3 +69,13 @@ func TestDiscoverToken(t *testing.T) {
 		}
 	})
 }
+
+func TestGhTokenIsScopedToGitHubAndNoninteractive(t *testing.T) {
+	bin, _ := tokenMachine(t)
+	t.Setenv("GH_HOST", "enterprise.example.com")
+	t.Setenv("GH_DEBUG", "api")
+	testutil.WriteScript(t, filepath.Join(bin, "gh"), "#!/bin/sh\nif [ \"$*\" = 'auth token --hostname github.com' ] && [ -z \"$GH_DEBUG\" ] && [ \"$GH_PROMPT_DISABLED\" = 1 ]; then echo github-token; else echo wrong-host-token; fi\n")
+	if got := tokenFromGhCommand(); got != "github-token" {
+		t.Fatalf("credential discovery was not scoped and noninteractive: %q", got)
+	}
+}

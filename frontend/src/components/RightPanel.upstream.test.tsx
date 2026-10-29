@@ -12,6 +12,7 @@ import * as upstreamApi from '../lib/upstreamApi';
 import { useGitInfo } from '../lib/useGitInfo';
 import type { Session } from '../lib/api';
 import { useUpstreamPreferences } from '../lib/upstreamPreferences';
+vi.mock('./upstream/SessionPullRequests', () => ({ SessionPullRequests: () => null }));
 
 vi.mock('../lib/useGitInfo', () => ({
   useGitInfo: vi.fn(() => ({ infos: {}, loading: false, error: null })),

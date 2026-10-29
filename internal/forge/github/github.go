@@ -11,11 +11,13 @@
 package github
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ocman/ocman/internal/forge/forgehttp"
 
@@ -85,7 +87,10 @@ func discoverToken() string {
 // tokenFromGhCommand runs `gh auth token` and returns the trimmed output.
 // Returns "" if gh is not installed or not authenticated.
 func tokenFromGhCommand() string {
-	cmd := exec.Command("gh", "auth", "token")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", "github.com")
+	cmd.Env = append(os.Environ(), "GH_DEBUG=", "GH_PROMPT_DISABLED=1")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

@@ -34,6 +34,12 @@ export const SETTINGS = {
     example: 'Enable Factory to create and monitor epics, then turn it off to hide it from navigation.',
     keywords: 'beta features experimental opt in automation epics',
   },
+  'source-control-token': {
+    group: 'connections', title: 'Source-control access token',
+    description: 'Verify and save a per-host forge token on the hub. Saved tokens override CLI and environment credentials and are never returned to the browser.',
+    example: 'Save a GitHub token for github.com, or select Forgejo / Gitea and enter your forge hostname. Git fetch and push authentication remains separate.',
+    keywords: 'github forgejo gitea tea gh pull request PR watch feedback authentication credentials',
+  },
   'snooze-quick-choices': {
     group: 'sessions', title: 'Snooze quick choices',
     description: 'Add or remove snooze shortcuts and set their durations or local wake-up times. Saved for this browser.',

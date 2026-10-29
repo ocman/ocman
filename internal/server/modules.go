@@ -19,11 +19,13 @@ import (
 	"github.com/ocman/ocman/internal/platforms/owned"
 	"github.com/ocman/ocman/internal/pluginsmod"
 	"github.com/ocman/ocman/internal/projectforge"
+	"github.com/ocman/ocman/internal/prworkflow"
 	"github.com/ocman/ocman/internal/remote"
 	"github.com/ocman/ocman/internal/remotesmod"
 	"github.com/ocman/ocman/internal/routines"
 	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/sharing"
+	"github.com/ocman/ocman/internal/sourcecontrol"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/tasksvc"
 	"github.com/ocman/ocman/internal/termmod"
@@ -39,6 +41,7 @@ func (s *Server) modules() []module.Module {
 	// other startup step. Plugins next: their discovery came after it.
 	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
 	mods = append(mods, s.backgroundTasksModule())
+	mods = append(mods, s.sourceControlModule(), s.prWorkflowModule())
 	mods = append(mods, s.sidebarModules()...)
 	if s.historyIngest != nil {
 		mods = append(mods, s.historyIngest)
@@ -106,7 +109,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema, sourcecontrol.Schema, prworkflow.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve
@@ -126,6 +129,7 @@ func (s *Server) projectForgeModule() *projectforge.Module {
 				return ok
 			},
 			Sessions: s.sessions,
+			LinkPR:   s.linkLaunchedPR,
 		}
 		if s.stateDB != nil {
 			d.Store = s.stateDB // untyped nil otherwise

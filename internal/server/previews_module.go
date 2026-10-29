@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strings"
 
+	"github.com/ocman/ocman/internal/forge/forgejo"
+	"github.com/ocman/ocman/internal/forge/github"
 	"github.com/ocman/ocman/internal/previews"
 )
 
@@ -33,17 +36,12 @@ func (s *Server) previewDeps() previews.Deps {
 // credentials, never the clients projectforge and factory share.
 func (s *Server) previewForges() previews.Forges {
 	var f previews.Forges
-	if s.integrations == nil {
-		return f
-	}
-	if s.integrations.GitHub != nil {
-		f.GitHubToken = s.integrations.GitHub.Token()
-	}
-	if reg := s.integrations.Forgejo; reg != nil {
-		for _, h := range reg.Hosts() {
-			if c := reg.ForHost(h); c != nil {
-				f.Forgejo = append(f.Forgejo, previews.ForgejoLogin{Host: h, BaseURL: c.BaseURL(), Token: c.Token()})
-			}
+	for _, entry := range s.sourceControlModule().Clients(context.Background()) {
+		switch c := entry.Client.(type) {
+		case *github.Client:
+			f.GitHubToken = c.Token()
+		case *forgejo.Client:
+			f.Forgejo = append(f.Forgejo, previews.ForgejoLogin{Host: entry.Host, BaseURL: c.BaseURL(), Token: c.Token()})
 		}
 	}
 	return f

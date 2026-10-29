@@ -21,6 +21,7 @@ vi.mock('../../lib/externalLinks', async (orig) => ({
 vi.mock('../../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../../components/upstream/PromptTemplateSettings', () => ({ PromptTemplateSettings: () => null }));
 vi.mock('../../components/RemoteSettings', () => ({ RemoteSettings: () => null }));
+vi.mock('../../components/SourceControlSettings', () => ({ SourceControlSettings: () => <p>Source-control setup</p> }));
 vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => <p>Sharing controls</p> }));
 vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
 vi.mock('../../components/MaintenanceSettings', () => ({ MaintenanceSettings: () => <p>Database controls</p> }));
@@ -99,7 +100,7 @@ describe('SettingsTab actions', () => {
     expect(screen.getByRole('heading', { name: 'Notifications', level: 3 })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'This device', level: 3 })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
-    for (const name of ['Remotes', 'Link previews', 'Public sharing', 'Webhooks']) {
+    for (const name of ['Remotes', 'Source control', 'Link previews', 'Public sharing', 'Webhooks']) {
       expect(screen.getByRole('heading', { name, level: 3 })).toBeVisible();
     }
   });

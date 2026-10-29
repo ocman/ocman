@@ -1,0 +1,4 @@
+.oc-source-control { display: grid; gap: 16px; }
+.oc-source-control > .oc-button { justify-self: start; }
+.oc-source-control form { border-top: 1px solid var(--border); padding-top: 12px; }
+.oc-source-control .oc-field { max-width: 100%; min-width: 0; }

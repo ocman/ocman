@@ -1,0 +1,15 @@
+.oc-session-prs { padding: 12px; border-bottom: 1px solid var(--border); display: grid; gap: 12px; }
+.oc-session-prs-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.oc-session-prs h3 { margin: 0; font-size: 13px; }
+.oc-session-prs p { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.oc-session-pr { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); min-width: 0; }
+.oc-session-pr > a { font-weight: 600; overflow-wrap: anywhere; }
+.oc-session-pr-meta { color: var(--text-dim); }
+.oc-session-pr-statuses { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11px; }
+.oc-session-pr-checks { display: inline-flex; align-items: center; gap: 5px; }
+.oc-session-pr-watch { color: var(--text-dim); }
+.oc-session-pr-watch.watching { color: var(--accent); }
+.oc-session-pr-link { display: flex; flex-wrap: wrap; gap: 6px; }
+.oc-session-pr-link select { width: 100%; }
+.oc-session-pr-link input { flex: 1; min-width: 80px; width: 80px; }
+.oc-session-prs .oc-button-group { flex-wrap: wrap; }

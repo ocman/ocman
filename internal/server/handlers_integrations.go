@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/forge/forgejo"
 	"github.com/ocman/ocman/internal/forge/github"
@@ -29,30 +31,15 @@ func newForgeClients() *forgeClients {
 // resolveForge returns the hub's client for a classified remote, or false
 // when its type is unsupported or its host has no configured client.
 func (s *Server) resolveForge(rem forge.Remote) (forge.Forge, bool) {
-	if s.integrations == nil {
-		return nil, false
+	// GitHub operations always target the canonical API, never a caller-supplied host.
+	if rem.Type == forge.RemoteTypeGitHub {
+		rem.Host = "github.com"
 	}
-	switch rem.Type {
-	case forge.RemoteTypeGitHub:
-		if s.integrations.GitHub == nil {
-			return nil, false
-		}
-		return s.integrations.GitHub, true
-	case forge.RemoteTypeForgejo:
-		if s.integrations.Forgejo == nil {
-			return nil, false
-		}
-		c := s.integrations.Forgejo.ForHost(rem.Host)
-		if c == nil {
-			return nil, false
-		}
-		return c, true
-	}
-	return nil, false
+	return s.sourceControlModule().Resolve(context.Background(), rem)
 }
 
 // knowsForgejo reports whether the hub has a Forgejo client for host; it
 // classifies an owner's remotes.
 func (s *Server) knowsForgejo(host string) bool {
-	return s.integrations != nil && s.integrations.Forgejo != nil && s.integrations.Forgejo.Knows(host)
+	return s.sourceControlModule().Knows(host)
 }

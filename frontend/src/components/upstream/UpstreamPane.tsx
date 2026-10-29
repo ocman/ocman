@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 import { UpstreamFilters } from './UpstreamFilters';
 import { onGitCommand } from '../../lib/useGlobalEvents';
 import { Spinner } from '../Spinner';
+import { SessionPullRequests } from './SessionPullRequests';
 
 function UpstreamDetectionStatus() {
   const [visible, setVisible] = useState(false);
@@ -24,6 +25,7 @@ function UpstreamDetectionStatus() {
 }
 
 interface UpstreamPaneProps {
+  sessionId?: string;
   launchPlatform?: string;
   /** Project directory the upstreams were detected for; keys the lists. */
   directory: string | undefined;
@@ -72,6 +74,7 @@ type Tab = 'prs' | 'issues';
  * reset filters or pagination of the other tab.
  */
 export function UpstreamPane({
+  sessionId,
   directory,
   projectId,
   currentDirectory = directory,
@@ -104,6 +107,7 @@ export function UpstreamPane({
   if (upstreamsReady && upstreams.length === 0) {
     return (
       <div className="oc-upstream-pane" data-testid="upstream-pane">
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} upstreams={upstreams} />}
         <NoUpstreamMessage directory={directory} />
       </div>
     );
@@ -118,6 +122,7 @@ export function UpstreamPane({
       </TabsList>
 
       <TabsContent value="prs" className="oc-upstream-panel">
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} upstreams={upstreams} />}
         <UpstreamTabContent
           key="prs"
           kind="prs"

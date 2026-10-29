@@ -96,14 +96,14 @@ func (m *Module) handleHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Mode == "session" {
-		m.launchSession(w, r, req, host, platform, prompt)
+		m.launchSession(w, r, req, host, platform, prompt, pr)
 		return
 	}
 	m.launchWorktree(w, r, req, host, platform, rem, f, repoRoot, prompt, vars, pr)
 }
 
 // launchSession creates a session in the project directory, no checkout.
-func (m *Module) launchSession(w http.ResponseWriter, r *http.Request, req handleRequest, host hostsvc.Host, platform, prompt string) {
+func (m *Module) launchSession(w http.ResponseWriter, r *http.Request, req handleRequest, host hostsvc.Host, platform, prompt string, pr *forge.PR) {
 	port := ""
 	_, base := platforms.SplitPlatformID(platform)
 	ensured, err := host.EnsureRuntime(r.Context(), base, state.ProjectRootForDirectory(req.Dir))
@@ -121,6 +121,7 @@ func (m *Module) launchSession(w http.ResponseWriter, r *http.Request, req handl
 		return
 	}
 	response := map[string]interface{}{"childSessionId": created.ID, "mode": "session", "platform": platform, "remoteId": host.RemoteID()}
+	m.linkPR(r.Context(), req, platform, created.ID, req.Dir, pr)
 	m.sendPrompt(r.Context(), platform, created.ID, prompt, response)
 	httpx.WriteJSON(w, response)
 }
@@ -174,6 +175,7 @@ func (m *Module) launchWorktree(
 		"branch": res.Branch, "platform": platform, "remoteId": host.RemoteID(),
 	}
 	m.sendPrompt(r.Context(), platform, res.SessionID, prompt, response)
+	m.linkPR(r.Context(), req, platform, res.SessionID, res.WorktreePath, pr)
 	httpx.WriteJSON(w, response)
 }
 

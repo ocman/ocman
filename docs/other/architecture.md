@@ -97,6 +97,34 @@ flowchart LR
 
 ## 1. System context
 
+### Session PR workflow
+
+```mermaid
+flowchart LR
+    UI[Setup and session PR pane] --> Setup[sourcecontrol]
+    UI --> Workflow[prworkflow]
+    Launch[projectforge launches] --> Workflow
+    Setup --> Credentials[(Private credential overrides)]
+    Workflow --> Links[(PR links and watch snapshots)]
+    Workflow -->|repository identity| Host[Owning Host]
+    Workflow -->|hub credentials| Forge[GitHub or Forgejo API]
+    Setup --> Forge
+    Workflow -->|changed checks or feedback| Queue[Shared session queue]
+    Queue --> Platform[Owning Platform]
+```
+
+- `sourcecontrol` owns privileged setup routes, verified per-host tokens and
+  live credential resolution for project PR operations, Factory and watches.
+  Saved tokens override CLI/environment discovery without altering Git auth.
+- `prworkflow` owns session-qualified links, feedback-task drafts and its joined
+  two-minute watch worker. It persists snapshots and pending notices separately
+  from conversations. The hub reads forge metadata; owner disconnection never
+  routes checkout or session work to another machine.
+- Watches are opt-in, deduplicate changes and queue follow-ups rather than
+  running an agent polling loop. Stop/unlink serializes with delivery. Merging
+  and session archival remain explicit user decisions. See
+  [Pull requests](../features/pull-requests.md).
+
 Everything external that the ocman process touches.
 
 ```mermaid

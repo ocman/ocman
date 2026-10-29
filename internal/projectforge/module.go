@@ -53,6 +53,7 @@ type Deps struct {
 	// Registered reports whether a platform adapter is registered.
 	Registered func(platformID string) bool
 	Sessions   Sessions
+	LinkPR     func(context.Context, string, string, string, string, string, int, *forge.PR)
 }
 
 // Module serves /api/project/{upstreams,prs,issues,pr-checks,

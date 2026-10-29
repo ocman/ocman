@@ -199,6 +199,7 @@ export function Pane({
           )}
           {tab === 'upstream' && (
             <UpstreamPane
+              sessionId={sessionId}
               directory={upstreamTarget.directory}
               projectId={upstreamTarget.projectId}
               currentDirectory={directory}

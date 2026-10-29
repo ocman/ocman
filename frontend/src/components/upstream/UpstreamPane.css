@@ -1,5 +1,7 @@
 .oc-upstream-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; color: var(--text); font-size: 13px; }
-.oc-upstream-panel:not([hidden]) { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.oc-upstream-panel:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
+.oc-upstream-panel > .oc-session-prs { flex-shrink: 0; }
+.oc-upstream-panel > .oc-upstream-tab-content { flex: none; overflow: visible; }
 .oc-upstream-tab-content { display: flex; flex-direction: column; flex: 1; overflow-y: auto; min-height: 0; }
 .oc-upstream-no-upstream { padding: 20px 16px; color: var(--text); font-size: 13px; line-height: 1.6; }
 .oc-upstream-no-upstream p { margin: 0 0 12px; }

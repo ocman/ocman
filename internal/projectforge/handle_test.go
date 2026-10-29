@@ -73,7 +73,7 @@ func TestLaunchSessionStopsOnProviderRuntimeFailure(t *testing.T) {
 		sessions := &countingSessions{}
 		m.Sessions = sessions
 		w := httptest.NewRecorder()
-		m.launchSession(w, httptest.NewRequest(http.MethodPost, "/", nil), handleRequest{Dir: "/repo"}, &worktreeHost{}, platform, "go")
+		m.launchSession(w, httptest.NewRequest(http.MethodPost, "/", nil), handleRequest{Dir: "/repo"}, &worktreeHost{}, platform, "go", nil)
 		if sessions.creates != wantCreates || (wantCreates == 0) != (w.Code != http.StatusOK) {
 			t.Fatalf("%s: creates = %d, status %d", platform, sessions.creates, w.Code)
 		}
