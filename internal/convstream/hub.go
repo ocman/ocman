@@ -89,13 +89,13 @@ func NewHub(opts Options) *Hub {
 // for after ("<epoch>:<seq>", or "" for a cold connect). A source that
 // fails before it ever connected returns its error.
 func (h *Hub) Subscribe(ctx context.Context, key Key, open func() Source, after string) (*Subscription, error) {
-	s, err := h.acquire(key, open)
+	w := &waiter{after: after, sub: make(chan *Subscription, 1)}
+	s, err := h.acquire(key, open, w)
 	if err != nil {
 		return nil, err
 	}
 	// A subscriber waiting for the first connection is attached by
 	// connectLocked itself, before the source can emit anything.
-	w := &waiter{after: after, sub: make(chan *Subscription, 1)}
 	for {
 		s.mu.Lock()
 		select {
@@ -116,10 +116,6 @@ func (h *Hub) Subscribe(ctx context.Context, key Key, open func() Source, after 
 			h.release(s)
 			return nil, err
 		}
-		if !w.queued {
-			w.queued = true
-			s.waiters = append(s.waiters, w)
-		}
 		changed := s.changed
 		s.mu.Unlock()
 		select {
@@ -135,9 +131,8 @@ func (h *Hub) Subscribe(ctx context.Context, key Key, open func() Source, after 
 }
 
 type waiter struct {
-	after  string
-	queued bool
-	sub    chan *Subscription
+	after string
+	sub   chan *Subscription
 }
 
 // dropWaiterLocked forgets w and closes a subscription attached to it that
@@ -151,7 +146,7 @@ func (s *session) dropWaiterLocked(w *waiter) {
 	}
 }
 
-func (h *Hub) acquire(key Key, open func() Source) (*session, error) {
+func (h *Hub) acquire(key Key, open func() Source, w *waiter) (*session, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.closed {
@@ -178,6 +173,11 @@ func (h *Hub) acquire(key Key, open func() Source) (*session, error) {
 			}
 			return nil, err
 		}
+	}
+	// Register before releasing s.mu: a newly started source may connect
+	// and emit before Subscribe gets another chance to take the lock.
+	if !s.everConnected {
+		s.waiters = append(s.waiters, w)
 	}
 	return s, nil
 }
