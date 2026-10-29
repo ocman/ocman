@@ -83,6 +83,7 @@ type Config struct {
 	// TrustProxy makes the server read the client address from
 	// X-Forwarded-For. Only enable it behind a proxy that overwrites
 	// that header, or clients can forge their rate-limit identity.
+	// It also trusts X-Forwarded-Proto for absolute viewer metadata URLs.
 	TrustProxy bool
 	// EnrollmentToken authorizes webhook inbox registration. An empty token
 	// disables registration while leaving existing inboxes usable.
@@ -203,7 +204,8 @@ func (s *Server) routes() {
 		// them.
 		s.mux.HandleFunc("GET /v/{id}", s.handleViewer)
 		s.mux.HandleFunc("GET /favicon.ico", assets.ServeHTTP)
-		s.mux.HandleFunc("GET /robots.txt", assets.ServeHTTP)
+		s.mux.HandleFunc("GET /share-preview.png", assets.ServeHTTP)
+		s.mux.HandleFunc("GET /robots.txt", s.handleViewerRobots)
 	}
 }
 
@@ -430,24 +432,6 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// handleViewer serves the single-page app shell for a share URL. The
-// decryption key lives in the fragment, so the relay receives only the
-// id here.
-func (s *Server) handleViewer(w http.ResponseWriter, r *http.Request) {
-	if !validID(r.PathValue("id")) {
-		http.Error(w, "share not found", http.StatusNotFound)
-		return
-	}
-	index, err := fs.ReadFile(s.cfg.Assets, "index.html")
-	if err != nil {
-		http.Error(w, "viewer is not available", http.StatusNotFound)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(index)
 }
 
 // authorise resolves a share and checks the bearer delete token. Every

@@ -22,6 +22,7 @@ key stays in the URL fragment, so it never reaches the relay.
 flowchart LR
     Owner[Owner ocman] -->|sealed completed turns<br/>artifact snapshots| Relay[ocman-relay]
     Relay --> Store[(share.DiskStore)]
+    Crawler[Link preview crawler] -->|generic HTML metadata + logo| Relay
     Viewer[Browser viewer] -->|ciphertext poll| Relay
     Viewer -->|WebCrypto decrypt| Thread[Shared conversation]
     Thread -->|explicit local fork| Local[Recipient ocman]
@@ -33,6 +34,13 @@ flowchart LR
   numbers, and the share id plus sequence is authenticated as GCM AAD.
 - Revocation deletes the relay prefix. The relay stores only a hash of its
   append/delete token and needs no database.
+- Viewer HTML includes generic Open Graph and Twitter summary metadata with
+  an ocman logo. Previews never contain conversation text, artifact titles or
+  decryption keys. Behind a TLS-terminating proxy, enable `-trust-proxy` and
+  have the proxy overwrite `X-Forwarded-For` and `X-Forwarded-Proto` so image
+  and page URLs use the public HTTPS scheme. Relay `robots.txt` allows known
+  preview crawlers to fetch only the viewer and logo; search engines remain
+  disallowed and viewer responses carry `X-Robots-Tag: noindex, nofollow`.
 - Forking fetches and decrypts in the recipient's authenticated local ocman
   UI, lets the recipient choose a local project, and parks the transcript as
   an unsent composer draft. Imported text never runs automatically.

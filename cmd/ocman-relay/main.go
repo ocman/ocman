@@ -56,7 +56,7 @@ func main() {
 	inboxSecretHeader := flag.String("inbox-secret-header", "X-Webhook-Secret", "header name used for optional inbox shared-secret validation")
 	createPerHour := flag.Float64("create-per-hour", relay.DefaultCreatePerHour, "share creations allowed per client address per hour")
 	createBurst := flag.Float64("create-burst", relay.DefaultCreateBurst, "burst capacity for share creation")
-	trustProxy := flag.Bool("trust-proxy", false, "read the client address from X-Forwarded-For (only behind a proxy that overwrites it)")
+	trustProxy := flag.Bool("trust-proxy", false, "read X-Forwarded-For and X-Forwarded-Proto (only behind a proxy that overwrites them)")
 	noViewer := flag.Bool("no-viewer", false, "serve the API only, without the bundled viewer")
 	flag.Parse()
 
