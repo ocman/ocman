@@ -69,9 +69,10 @@ func TestHistorySubagentBootstrapSharesNativeMessageIdentity(t *testing.T) {
 			t.Fatalf("%s: retained identity: %+v %v", id, page, err)
 		}
 		wantTools := []string{"tool-a", "tool-b"}
-		if id == "agent-a" {
+		switch id {
+		case "agent-a":
 			wantTools = []string{"tool-a"}
-		} else if id == "agent-b" {
+		case "agent-b":
 			wantTools = []string{"tool-b"}
 		}
 		if len(page.Parts) != len(wantTools) {
