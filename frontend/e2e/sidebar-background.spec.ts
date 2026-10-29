@@ -1,6 +1,6 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 
-test('sidebar background tasks spin slower than foreground work and respect reduced motion', async ({ mockedPage: page }) => {
+test('sidebar work keeps spinning at distinct speeds with reduced motion', async ({ mockedPage: page }) => {
   const rows = [
     { ...MOCK_SESSION, status: 'done', seen: true, backgroundTaskCount: 3, backgroundServiceCount: 1 },
     { ...MOCK_SESSION, id: 'foreground', title: 'Foreground work', status: 'busy' },
@@ -16,6 +16,8 @@ test('sidebar background tasks spin slower than foreground work and respect redu
   await expect(foreground).toHaveCSS('animation-duration', '0.8s');
   await expect(sidebar.getByRole('button').filter({ hasText: 'Service only' }).getByLabel('Session status: Done')).toHaveCSS('animation-name', 'none');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(background).toHaveCSS('animation-name', 'none');
-  await expect(foreground).toHaveCSS('animation-name', 'none');
+  await expect(background).toHaveCSS('animation-name', 'session-status-spin');
+  await expect(foreground).toHaveCSS('animation-name', 'session-status-spin');
+  await expect(background).toHaveCSS('animation-duration', '2.4s');
+  await expect(foreground).toHaveCSS('animation-duration', '0.8s');
 });
