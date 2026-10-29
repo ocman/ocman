@@ -1,10 +1,11 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer } from 'react';
 import type { SessionModelEntry } from '../../lib/api';
 import { ModelLabel } from '../ModelLogo';
 import { PlatformLogo } from '../PlatformBadge';
 import { CommandListPicker } from './CommandListPicker';
 import { buildModelEntries, isPinnedModel, modelSearchKeys, modelSectionOf, type ModelEntry } from './modelEntries';
 import { ModelBadges } from './ModelBadges';
+import { useModelPlatformTabs } from './useModelPlatformTabs';
 import './ModelPicker.css';
 
 export interface ModelPickerProps {
@@ -41,14 +42,7 @@ export function ModelPicker({
   onBack,
 }: ModelPickerProps) {
   const { rich: useRich, multiPlatform, entries } = buildModelEntries(models, modelEntries, currentModel);
-  const [platform, setPlatform] = useState('all');
-  const platforms = Array.from(
-    new Map(entries.filter((entry) => entry.platform).map((entry) => [entry.platform, entry.platformName])),
-    ([value, label]) => ({ value, label: <><PlatformLogo platform={value} />{label}</> }),
-  );
-  const showTabs = platforms.length > 1;
-  const activePlatform = showTabs && platforms.some((tab) => tab.value === platform) ? platform : 'all';
-  const visibleEntries = activePlatform === 'all' ? entries : entries.filter((entry) => entry.platform === activePlatform);
+  const { tabs, visibleEntries } = useModelPlatformTabs(entries);
 
   // Re-render every second while a cooldown is running so the countdown
   // moves and the badge drops the moment it expires.
@@ -101,11 +95,7 @@ export function ModelPicker({
     <CommandListPicker<ModelEntry>
       open={open}
       entries={visibleEntries}
-      tabs={showTabs ? {
-        value: activePlatform,
-        items: [{ value: 'all', label: 'All' }, ...platforms],
-        onChange: setPlatform,
-      } : undefined}
+      tabs={tabs}
       fuseKeys={modelSearchKeys}
       pinned={isPinnedModel}
       // Section only when we have rich data (string fallback has no section

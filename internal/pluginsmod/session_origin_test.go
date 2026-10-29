@@ -23,8 +23,9 @@ func (s *originTestSessions) CreateConfigured(_ context.Context, _ string, reque
 func TestPluginRunsAreTaggedAndArchiveOnlyOnRequest(t *testing.T) {
 	for _, archived := range []bool{false, true} {
 		creator := new(originTestSessions)
+		create, lookup := localPlatforms("opencode")
 		m := &Module{store: new(state.DB), plugins: openPluginStore(t), deps: Deps{
-			Local: func() hostsvc.Host { return modelTestHost{} }, Sessions: creator,
+			Local: func() hostsvc.Host { return modelTestHost{} }, Sessions: creator, CreatePlatform: create, Platform: lookup,
 			Enqueue: func(context.Context, string, bool, platforms.SendMessageRequest) error { return nil },
 		}}
 		root := t.TempDir()

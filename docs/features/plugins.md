@@ -478,9 +478,14 @@ resolved project are denied before session creation. `permissionProfile`
 names a permission profile created in ocman (`/api/permission-profiles`,
 which uses ocman's normal authentication like other settings); its
 rules are pinned verbatim onto the session at creation, and an unknown name
-fails the run. The session starts on the project's managed OpenCode instance
-and the prompt is queued like any follow-up, so an idle session answers now
-and a mid-turn message waits for the next idle edge.
+fails the run. The session starts on the platform the `model` reference names
+(`codex:openai/...` runs on Codex, an unprefixed model on OpenCode), or on the
+owner's default platform when `model` is empty, using that platform's managed
+runtime for the project. A platform that is not registered on the owner fails
+the run with `unavailable` before any session exists. The model keeps its
+platform prefix, and the prompt is queued like any follow-up, so an idle
+session answers now and a mid-turn message waits for the next idle edge. A
+retried `operationId` replays the session on the platform it was created on.
 
 Plugin sessions are tagged with the `plugin` origin and the plugin ID. The
 session sidebar hides them and their children until you check **Show plugins**

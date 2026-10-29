@@ -1,0 +1,18 @@
+.oc-picker-tabs,
+.oc-picker-tabs > .oc-tabs-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.oc-picker-tabs > .oc-tabs-list {
+  overflow-x: auto;
+}
+
+.oc-picker-tabs .oc-tabs-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}

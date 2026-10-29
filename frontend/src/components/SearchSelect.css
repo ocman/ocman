@@ -10,8 +10,8 @@
   width: 100%;
   text-align: left;
 }
-/* The closed field shows just the value; badges belong in the list. */
-.oc-search-select > button .oc-model-picker-badge {
+/* The closed field shows the value and its platform; other badges belong in the list. */
+.oc-search-select > button .oc-model-picker-badge:not(.oc-model-picker-badge--platform) {
   display: none;
 }
 .oc-search-select > button > span {
@@ -63,7 +63,7 @@
 .oc-search-select-menu [role='option']:focus {
   background: var(--bg-hover);
 }
-.oc-search-select-menu [aria-selected='true'] {
+.oc-search-select-menu [role='option'][aria-selected='true'] {
   box-shadow: inset 2px 0 var(--accent);
   color: var(--accent);
 }

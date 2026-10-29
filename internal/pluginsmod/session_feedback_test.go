@@ -77,7 +77,8 @@ func TestSessionRunReusesDurableResult(t *testing.T) {
 	db := openStore(t)
 	sessions := &stubSessions{}
 	prompts := 0
-	deps := Deps{Store: db, Local: func() hostsvc.Host { return stubHost{} }, Sessions: sessions,
+	create, lookup := localPlatforms("opencode")
+	deps := Deps{Store: db, Local: func() hostsvc.Host { return stubHost{} }, Sessions: sessions, CreatePlatform: create, Platform: lookup,
 		Enqueue: func(context.Context, string, bool, platforms.SendMessageRequest) error { prompts++; return nil }}
 	cfg := plugins.Config{Project: t.TempDir()}
 	p := plugins.SessionRunParams{Prompt: "once"}

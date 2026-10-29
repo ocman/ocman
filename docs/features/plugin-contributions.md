@@ -97,7 +97,10 @@ The drawer preference also requires page 1.4 and must be omitted for older hosts
 Use `PageModelCapability` instead of earlier page capability versions, and a field such as
 `PageField{Key: "model", Label: "Review model", Type: "model"}` to use ocman's
 searchable model picker. It lists models from the plugin owner's available
-platform catalogs, without selecting a project or starting a runtime.
+platform catalogs, without selecting a project or starting a runtime. When the
+owner has more than one platform, the picker shows the same platform tabs as
+the session model picker, and the closed field names the selected model's
+platform. The in-app `ModelPicker` component uses the same picker.
 
 The saved value is a string using ocman's `[platform:]provider/model` format.
 OpenCode references remain unprefixed for compatibility; other platforms retain

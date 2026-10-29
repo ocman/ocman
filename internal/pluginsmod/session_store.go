@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
 	plugins "github.com/ocman/ocman/sdk/protocol"
 )
@@ -99,6 +100,37 @@ func (d *Store) GetPluginSessionPlugin(ctx context.Context, platformID, sessionI
 		return "", false, state.ErrPluginState
 	}
 	return pluginID, true, nil
+}
+
+// pluginSessionPlatform resolves the platform a settled run receipt's session
+// was linked on, so a replay reads the session where it was created. Receipts
+// recorded before runs resolved their platform carry no link and were all
+// created on OpenCode; an ambiguous link fails closed.
+func (d *Store) pluginSessionPlatform(ctx context.Context, pluginID, sessionID string) (string, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT platform_id FROM plugin_session
+		WHERE plugin_id=? AND session_id=? LIMIT 2`, pluginID, sessionID)
+	if err != nil {
+		return "", state.ErrPluginState
+	}
+	defer rows.Close()
+	var found []string
+	for rows.Next() {
+		var platformID string
+		if err := rows.Scan(&platformID); err != nil {
+			return "", state.ErrPluginState
+		}
+		found = append(found, platformID)
+	}
+	if rows.Err() != nil {
+		return "", state.ErrPluginState
+	}
+	switch len(found) {
+	case 0:
+		return string(platforms.OpenCodeID), nil
+	case 1:
+		return found[0], nil
+	}
+	return "", plugins.ErrUnavailable
 }
 
 // ListPluginSessionSessions returns the durable session identities that may owe

@@ -45,6 +45,39 @@ it('keeps an unlisted value selectable and offers the default', async () => {
 	expect(onChange).toHaveBeenCalledWith('');
 });
 
+it('names the platform of an unlisted platform-qualified saved model', async () => {
+	const user = userEvent.setup();
+	const onChange = vi.fn();
+	render(<ModelSelect value="codex:openai/gpt-x" models={[]} modelEntries={[{ platform: 'opencode', platformName: 'OpenCode', provider: 'openai', model: 'gpt-5', isAvailable: true }]} onChange={onChange} />);
+	const field = screen.getByRole('combobox', { name: 'Model' });
+	expect(field).toHaveTextContent('openai/gpt-x');
+	expect(field).toHaveTextContent('codex');
+	await user.click(field);
+	await user.click(screen.getByRole('tab', { name: 'codex' }));
+	expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Default model', 'openai/gpt-xcodex']);
+	await user.click(screen.getByRole('option', { name: /gpt-x/ }));
+	expect(onChange).toHaveBeenCalledWith('codex:openai/gpt-x');
+});
+
+it('lists an unlisted unprefixed saved model under the OpenCode tab', async () => {
+	const user = userEvent.setup();
+	render(<ModelSelect value="openai/legacy" models={[]} modelEntries={[
+		{ platform: 'opencode', platformName: 'OpenCode', provider: 'openai', model: 'gpt-5', isAvailable: true },
+		{ platform: 'claudecode', platformName: 'Claude Code', provider: 'anthropic', model: 'sonnet', isAvailable: true },
+	]} onChange={vi.fn()} />);
+	await user.click(screen.getByRole('combobox', { name: 'Model' }));
+	expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['All', 'OpenCode', 'Claude Code']);
+	await user.click(screen.getByRole('tab', { name: 'OpenCode' }));
+	expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Default model', 'openai/legacyOpenCode', 'openai/gpt-5OpenCode']);
+});
+
+it('shows no platform tabs for a single-platform catalog', async () => {
+	const user = userEvent.setup();
+	render(<ModelSelect value="" models={[]} modelEntries={entries} onChange={vi.fn()} />);
+	await user.click(screen.getByRole('combobox', { name: 'Model' }));
+	expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+});
+
 it('leaves an unlisted saved model unflagged in a rich catalog', async () => {
 	const user = userEvent.setup();
 	const onChange = vi.fn();

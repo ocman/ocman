@@ -496,6 +496,29 @@ func TestEnqueue_EmptyRejected(t *testing.T) {
 	}
 }
 
+// A model for another platform is refused at admission instead of being
+// held as a message no drain can ever send.
+func TestEnqueue_ModelForAnotherPlatformRejected(t *testing.T) {
+	for _, tc := range []struct {
+		platform, model string
+		ok              bool
+	}{
+		{"opencode", "codex:openai/gpt-x", false},
+		{"r-box:claudecode", "codex:openai/gpt-x", false},
+		{"codex", "codex:openai/gpt-x", true},
+		{"r-box:codex", "codex:openai/gpt-x", true},
+		{"opencode", "openai/gpt-x", true},
+		{"codex", "", true},
+	} {
+		store := &memStore{}
+		svc := New(store, &recSender{}, statusStub{running: true, ok: true}, nil)
+		err := svc.Enqueue(t.Context(), tc.platform, false, platforms.SendMessageRequest{SessionID: "s1", Message: "hi", Model: tc.model})
+		if tc.ok != (err == nil) || !tc.ok && (!errors.Is(err, ErrModelPlatform) || len(store.msgs) != 0) {
+			t.Fatalf("%s with %q: err = %v, stored %d", tc.platform, tc.model, err, len(store.msgs))
+		}
+	}
+}
+
 // TestFlush_UnsendableHeadStopsBlockingQueue pins the dead-letter path.
 // The drain is strictly head-first, so before this a message that could
 // never send (deleted session, unregistered platform) silently stalled

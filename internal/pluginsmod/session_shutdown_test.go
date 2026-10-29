@@ -33,7 +33,8 @@ func (s *shutdownSessionCreator) CreateConfigured(ctx context.Context, _ string,
 func TestShutdownCancelsAndJoinsAdmittedRun(t *testing.T) {
 	db := openStore(t)
 	creator := &shutdownSessionCreator{entered: make(chan struct{}), cancelled: make(chan struct{}), release: make(chan struct{})}
-	m := NewModule(Deps{Store: db, Local: func() hostsvc.Host { return stubHost{} }, Sessions: creator})
+	create, lookup := localPlatforms("opencode")
+	m := NewModule(Deps{Store: db, Local: func() hostsvc.Host { return stubHost{} }, Sessions: creator, CreatePlatform: create, Platform: lookup})
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	m.Bind(ctx)

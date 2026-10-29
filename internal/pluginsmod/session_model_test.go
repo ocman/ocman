@@ -33,8 +33,9 @@ func TestNoToolsSessionPinsDenyRulesBeforeQueueing(t *testing.T) {
 	d := openPluginStore(t)
 	creator := new(modelTestSessions)
 	queued := false
+	create, lookup := localPlatforms("opencode")
 	m := &Module{store: new(state.DB), plugins: d, deps: Deps{
-		Local: func() hostsvc.Host { return modelTestHost{} }, Sessions: creator,
+		Local: func() hostsvc.Host { return modelTestHost{} }, Sessions: creator, CreatePlatform: create, Platform: lookup,
 		Enqueue: func(_ context.Context, _ string, _ bool, request platforms.SendMessageRequest) error {
 			if creator.calls != 1 || !reflect.DeepEqual(creator.rules, []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "deny"}}) {
 				t.Error("prompt admitted before no-tools rules")

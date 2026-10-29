@@ -15,6 +15,7 @@ import (
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/queuesvc"
 	"github.com/ocman/ocman/internal/testutil"
 	log "github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
@@ -76,6 +77,16 @@ func TestErrorResponsesClassifyCancellation(t *testing.T) {
 					t.Error("missing failure log")
 				}
 			})
+		}
+	}
+}
+
+func TestQueueAdmissionErrorsAreBadRequests(t *testing.T) {
+	for _, err := range []error{queuesvc.ErrEmptyMessage, fmt.Errorf("%w: wrong platform", queuesvc.ErrModelPlatform)} {
+		w := httptest.NewRecorder()
+		writeSessionSvcError(w, "queueing message", err)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("%v: status = %d", err, w.Code)
 		}
 	}
 }

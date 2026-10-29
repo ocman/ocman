@@ -16,7 +16,7 @@ func writeSessionSvcError(w http.ResponseWriter, msg string, err error) {
 		http.Error(w, ve.Error(), http.StatusBadRequest)
 		return
 	}
-	if errors.Is(err, queuesvc.ErrEmptyMessage) {
+	if errors.Is(err, queuesvc.ErrEmptyMessage) || errors.Is(err, queuesvc.ErrModelPlatform) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

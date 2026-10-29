@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -39,6 +39,29 @@ it('uses only owner-local platform catalogs and saves a platform-qualified selec
   expect(mocks.fetch).toHaveBeenCalledWith('/api/plugins/model-catalog?ownerId=box&platform=claudecode', expect.any(AbortSignal));
   expect(mocks.fetch).toHaveBeenCalledWith('/api/plugins/model-catalog?ownerId=box&platform=opencode', expect.any(AbortSignal));
   await user.click(screen.getByRole('combobox', { name: 'Review model' }));
+  await user.click(screen.getByRole('option', { name: /anthropic\/sonnet.*Claude Code/ }));
+  expect(onChange).toHaveBeenCalledWith({ model: 'claudecode:anthropic/sonnet' });
+});
+
+it('offers the model modal platform tabs and keeps the selected platform visible', async () => {
+  const user = userEvent.setup();
+  const { onChange } = mount('claudecode:anthropic/sonnet');
+  await waitFor(() => expect(screen.queryByText('Loading models…')).not.toBeInTheDocument());
+  const field = screen.getByRole('combobox', { name: 'Review model' });
+  expect(field).toHaveTextContent('anthropic/sonnet');
+  expect(field).toHaveTextContent('Claude Code');
+  await user.click(field);
+  const tabs = screen.getByRole('tablist', { name: 'Model platforms' });
+  expect(within(tabs).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['All', 'Claude Code', 'OpenCode']);
+  expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getAllByRole('option')).toHaveLength(3);
+  await user.click(screen.getByRole('tab', { name: 'OpenCode' }));
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Use default model', 'anthropic/otherOpenCode']);
+  expect(field).toHaveTextContent('Claude Code');
+  await user.type(screen.getByRole('textbox', { name: 'Search models' }), 'sonnet');
+  expect(screen.getByRole('textbox', { name: 'Search models' })).toHaveValue('sonnet');
+  expect(screen.queryByRole('option', { name: /sonnet/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('tab', { name: 'Claude Code' }));
   await user.click(screen.getByRole('option', { name: /anthropic\/sonnet.*Claude Code/ }));
   expect(onChange).toHaveBeenCalledWith({ model: 'claudecode:anthropic/sonnet' });
 });

@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
@@ -170,6 +171,10 @@ func (s *Service) lockFor(key sessionKey) func() {
 // nor images. Transports map it to a 400 (same shape sessionsvc uses).
 var ErrEmptyMessage = errors.New("message or images required")
 
+// ErrModelPlatform is returned by Enqueue when the message's model reference
+// names a platform other than the session's. Transports map it to a 400.
+var ErrModelPlatform = errors.New("model does not belong to the session's platform")
+
 // Enqueue appends a message to the session's queue.
 //
 // forceQueue is the caller's authoritative "hold this" signal — the
@@ -194,6 +199,11 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	}
 	if req.Message == "" && len(req.Images) == 0 {
 		return ErrEmptyMessage
+	}
+	// A model for another platform can never be sent; refuse it now rather
+	// than hold a message whose every drain attempt fails.
+	if _, err := platforms.ModelFor(platforms.ID(platformID).Base(), req.Model); err != nil {
+		return fmt.Errorf("%w: %w", ErrModelPlatform, err)
 	}
 	m := state.QueuedMessage{
 		ID:         newID(),

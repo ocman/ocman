@@ -1,6 +1,6 @@
 import type { SessionModelEntry } from '../../lib/api';
 import type { SearchKey } from '../../lib/weightedSearch';
-import { qualifyModelRef } from '../../lib/modelRef';
+import { qualifyModelRef, splitModelRef } from '../../lib/modelRef';
 
 // One model row shared by the ModelPicker modal and the ModelSelect field.
 // Derived from either rich server-side entries or plain `provider/model`
@@ -51,13 +51,14 @@ function fromRich(modelEntries: SessionModelEntry[], currentModel: string | unde
 // Plain strings carry no ranking data, so they render alphabetically by provider.
 export function fromStrings(models: string[], currentModel: string | undefined): ModelEntry[] {
   const entries: ModelEntry[] = models.map((m) => {
-    const idx = m.indexOf('/');
-    const provider = idx > 0 ? m.slice(0, idx) : '';
-    const model = idx > 0 ? m.slice(idx + 1) : m;
+    const { platform, model: ref } = splitModelRef(m);
+    const idx = ref.indexOf('/');
+    const provider = idx > 0 ? ref.slice(0, idx) : '';
+    const model = idx > 0 ? ref.slice(idx + 1) : ref;
     return {
       value: m,
-      platform: '',
-      platformName: '',
+      platform,
+      platformName: platform,
       provider,
       providerName: provider,
       model,

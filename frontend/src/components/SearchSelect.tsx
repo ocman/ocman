@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useClickOutside } from '../lib/useClickOutside';
 import { fuzzyMatch } from '../lib/format';
 import { Button } from './Control';
+import { PickerTabs, type PickerTabsConfig } from './PickerTabs';
 import './SearchSelect.css';
 
 export interface SearchSelectOption {
@@ -26,6 +27,10 @@ interface SearchSelectProps {
   onChange: (value: string) => void;
   // Custom ranking for a non-empty query; defaults to fuzzy label matching.
   search?: (query: string) => SearchSelectOption[];
+  // Tabs inside the open menu; `inTab` keeps the active tab's options while
+  // the closed field still shows a selection from any tab.
+  tabs?: PickerTabsConfig;
+  inTab?: (option: SearchSelectOption) => boolean;
 }
 
 // ponytail: fixed render cap keeps huge catalogs (8k+ models) instant; virtualize if scrolling past it matters.
@@ -42,6 +47,8 @@ export function SearchSelect({
   title,
   onChange,
   search: searchOptions,
+  tabs,
+  inTab,
 }: SearchSelectProps) {
   const id = useId();
   const root = useRef<HTMLSpanElement>(null);
@@ -52,9 +59,10 @@ export function SearchSelect({
   const open = menuOpen && !disabled;
   if (disabled && menuOpen) setOpen(false);
   const [query, setQuery] = useState('');
-  const visible = !query.trim() ? options
+  const listed = !query.trim() ? options
     : searchOptions ? searchOptions(query)
     : options.filter((option) => fuzzyMatch(query, `${option.label} ${option.value}`));
+  const visible = inTab ? listed.filter(inTab) : listed;
   const shown = visible.slice(0, MAX_VISIBLE);
 
   useClickOutside(root, open, () => setOpen(false));
@@ -93,37 +101,39 @@ export function SearchSelect({
       </Button>
       {open && (
         <span className="oc-search-select-menu">
-          <input
-            ref={search}
-            className="oc-field oc-field--search"
-            aria-label={searchLabel}
-            placeholder={searchLabel}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }}
-          />
-          <span id={id} role="listbox">
-            {shown.map((option, index) => [
-              !query.trim() && option.section && option.section !== shown[index - 1]?.section
-                && <span key={`h:${option.section}`} role="presentation" className="oc-search-select-header">{option.section}</span>,
-              <button
-                type="button"
-                role="option"
-                aria-selected={option.value === value}
-                disabled={option.disabled}
-                key={option.value}
-                onClick={() => {
-                  if (disabled || option.disabled) return;
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-              >
-                <span className="oc-search-select-label">{option.icon}{option.displayLabel ?? option.label}</span>
-              </button>,
-            ])}
-            {visible.length === 0 && <small>No matches</small>}
-            {visible.length > MAX_VISIBLE && <small>Type to search {visible.length - MAX_VISIBLE} more…</small>}
-          </span>
+          <PickerTabs tabs={tabs}>
+            <input
+              ref={search}
+              className="oc-field oc-field--search"
+              aria-label={searchLabel}
+              placeholder={searchLabel}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }}
+            />
+            <span id={id} role="listbox">
+              {shown.map((option, index) => [
+                !query.trim() && option.section && option.section !== shown[index - 1]?.section
+                  && <span key={`h:${option.section}`} role="presentation" className="oc-search-select-header">{option.section}</span>,
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={option.value === value}
+                  disabled={option.disabled}
+                  key={option.value}
+                  onClick={() => {
+                    if (disabled || option.disabled) return;
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="oc-search-select-label">{option.icon}{option.displayLabel ?? option.label}</span>
+                </button>,
+              ])}
+              {visible.length === 0 && <small>No matches</small>}
+              {visible.length > MAX_VISIBLE && <small>Type to search {visible.length - MAX_VISIBLE} more…</small>}
+            </span>
+          </PickerTabs>
         </span>
       )}
     </span>

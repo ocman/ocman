@@ -10,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/sessioncatalog"
@@ -137,7 +138,11 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 		if err != nil {
 			return id, err
 		}
-		return m.pluginWireSession(ctx, "opencode", id)
+		platformID, err := m.plugins.pluginSessionPlatform(ctx, pluginID, id)
+		if err != nil {
+			return "", err
+		}
+		return m.pluginWireSession(ctx, platformID, id)
 	}
 	defer func() {
 		if err := m.plugins.finishSessionRun(ctx, pluginID, operationID, sessionID, runErr); err != nil {
@@ -162,8 +167,11 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 		rules = []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "deny"}}
 	}
 	host := m.deps.Local()
-	const platformID = "opencode"
-	ensured, err := host.EnsureRuntime(ctx, platformID, filepath.Clean(config.Project))
+	platformID, base, err := m.sessionRunPlatform(ctx, host, params.Model)
+	if err != nil {
+		return "", err
+	}
+	ensured, err := host.EnsureRuntime(ctx, base, filepath.Clean(config.Project))
 	if err != nil {
 		return "", err
 	}
@@ -188,4 +196,26 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 		return "", err
 	}
 	return created.ID, nil
+}
+
+// sessionRunPlatform resolves the run's platform from its model reference,
+// else the owner's default, exactly as other session creators do. The model
+// keeps its platform prefix; an unregistered platform, or a model the
+// resolved platform cannot run, is refused before any session exists.
+func (m *Module) sessionRunPlatform(ctx context.Context, host hostsvc.Host, model string) (id, base string, err error) {
+	if m.deps.CreatePlatform == nil || m.deps.Platform == nil {
+		return "", "", plugins.ErrUnavailable
+	}
+	id, base, err = m.deps.CreatePlatform(ctx, host, "", model)
+	if err != nil {
+		log.WithError(err).WithField("model", model).Warn("resolving plugin session platform")
+		return "", "", plugins.ErrUnavailable
+	}
+	if _, ok := m.deps.Platform(id); !ok {
+		return "", "", plugins.ErrUnavailable
+	}
+	if _, err := platforms.ModelFor(platforms.ID(base), model); err != nil {
+		return "", "", &plugins.WireError{Category: plugins.ErrorInvalidArgument}
+	}
+	return id, base, nil
 }

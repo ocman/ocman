@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { weightedSearch, type SearchKey } from '../../lib/weightedSearch';
 import { Modal } from '../Modal';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../Tabs';
+import { PickerTabs, type PickerTabsConfig } from '../PickerTabs';
 import '../CommandPalette.css';
 import './ModelPicker.css';
 
@@ -101,11 +101,7 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
   onClose: () => void;
   /** Backspace-on-empty handler (model picker uses it to step back). */
   onBack?: () => void;
-  tabs?: {
-    value: string;
-    items: { value: string; label: ReactNode }[];
-    onChange: (value: string) => void;
-  };
+  tabs?: PickerTabsConfig;
 }
 
 /**
@@ -291,17 +287,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
       backdropClassName="oc-cmd-backdrop"
       dialogClassName={`oc-cmd-palette oc-model-picker${dialogClassName ? ` ${dialogClassName}` : ''}`}
     >
-      {tabs ? (
-        <Tabs className="oc-model-picker-tabs" value={tabs.value} onValueChange={(value) => {
-          setSelectedIndex(0);
-          tabs.onChange(value);
-        }}>
-          <TabsList aria-label="Model platforms">
-            {tabs.items.map((tab) => <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>)}
-          </TabsList>
-          <TabsContent value={tabs.value}>{content}</TabsContent>
-        </Tabs>
-      ) : content}
+      <PickerTabs tabs={tabs} onChange={() => setSelectedIndex(0)}>{content}</PickerTabs>
     </Modal>,
     document.body,
   );
