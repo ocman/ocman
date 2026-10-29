@@ -59,5 +59,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .session-status-indicator[data-state] { animation: none; }
+  /* Keep work-in-progress rotation visible; suppress only the attention pulse. */
+  .session-status-indicator[data-state="permission"] { animation: none; }
 }
