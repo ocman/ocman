@@ -19,6 +19,8 @@ interface StatusBadgeProps {
   status: string;
   resetsAt?: number;
   compact?: boolean;
+  /** Running finite background tasks, excluding declared services. */
+  backgroundTaskCount?: number;
   seen?: boolean;
   /** A pending permission/question prompt needs the user's attention. */
   pending?: boolean;
@@ -28,21 +30,22 @@ interface StatusBadgeProps {
   titleOverride?: string;
 }
 
-function indicatorState(status: string, seen?: boolean, pending?: boolean, draft?: boolean): SessionStatusIndicatorState {
+function indicatorState(status: string, seen?: boolean, pending?: boolean, draft?: boolean, backgroundTaskCount = 0): SessionStatusIndicatorState {
   if (pending) return 'permission';
   if (status === 'error') return 'error';
   if (status === 'limited') return 'limited';
   // A draft on a running turn keeps the spinner, in the draft colour.
   if (draft) return status === 'busy' ? 'draft-busy' : 'draft';
+  if (backgroundTaskCount > 0 && (status === 'done' || status === 'waiting')) return 'background';
   if (seen) return 'viewed';
   if (status === 'busy' || status === 'waiting' || status === 'interrupted') return status;
   return 'done';
 }
 
-export function StatusBadge({ status, resetsAt, compact, seen, pending, draft, titleOverride }: StatusBadgeProps) {
-  const state = indicatorState(status, seen, pending, draft);
+export function StatusBadge({ status, resetsAt, compact, backgroundTaskCount = 0, seen, pending, draft, titleOverride }: StatusBadgeProps) {
+  const state = indicatorState(status, seen, pending, draft, compact ? backgroundTaskCount : 0);
   const label = status === 'limited' && resetsAt ? `Limited until ${new Date(resetsAt).toLocaleString()}` : labels[status] || status;
-  const title = status === 'limited' ? label : pending
+  const title = state === 'background' ? `Waiting for ${backgroundTaskCount} background task${backgroundTaskCount === 1 ? '' : 's'}` : status === 'limited' ? label : pending
     ? 'Waiting for your response'
     : draft
       ? status === 'busy' ? 'Unsent draft — still working' : 'Unsent draft'

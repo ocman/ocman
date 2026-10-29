@@ -29,7 +29,7 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
   return sessions
     .map(
       (s) =>
-        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.lastUserPromptAt ?? 0}|${s.lastHaltAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}${s.snoozedUntil ? `|s:${s.snoozedUntil}` : ''}${s.factoryAttemptId ? `|f:${s.factoryAttemptId}` : ''}`,
+        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.lastUserPromptAt ?? 0}|${s.lastHaltAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}|${s.archived}${s.snoozedUntil ? `|s:${s.snoozedUntil}` : ''}${s.factoryAttemptId ? `|f:${s.factoryAttemptId}` : ''}${s.backgroundTaskCount || s.backgroundServiceCount ? `|bg:${s.backgroundTaskCount ?? 0}:${s.backgroundServiceCount ?? 0}` : ''}`,
     )
     .join(',');
 }

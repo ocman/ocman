@@ -73,6 +73,7 @@ export function SidebarSessionRow({
   const statusBadge = (
     <StatusBadge
       status={displayStatus}
+      backgroundTaskCount={Math.max(0, (sib.backgroundTaskCount ?? 0) - (sib.backgroundServiceCount ?? 0))}
       resetsAt={sib.resetsAt}
       compact
       seen={isTerminalStatus(displayStatus) && sib.seen}

@@ -3,6 +3,7 @@ import './SessionStatusIndicator.css';
 
 export type SessionStatusIndicatorState =
   | 'busy'
+  | 'background'
   | 'limited'
   | 'waiting'
   | 'done'
