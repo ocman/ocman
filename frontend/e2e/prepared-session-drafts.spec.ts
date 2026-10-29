@@ -27,6 +27,27 @@ async function prepareDraft(page: Page) {
   await page.route('**/api/sessions/resolve-targets', (route) => route.fulfill({ json: { candidates: [local, remote], remotes: [remote] } }));
 }
 
+for (const width of [1280, 390]) test(`large session launch errors stay bounded and scrollable at ${width}px`, async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width, height: 720 });
+  await prepareDraft(page);
+  const error = 'Failed to launch session. '.repeat(2000) + 'End of launch diagnostics.';
+  await page.route('**/api/sessions/start', (route) => route.fulfill({ status: 500, json: { error } }));
+  await page.goto('/session/new?dir=%2Frepo&draftId=large-launch-error');
+  const composer = page.getByRole('textbox');
+  await composer.fill('Start this session');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  const alert = page.getByRole('alert').filter({ hasText: 'End of launch diagnostics.' });
+  await expect(alert).toBeVisible();
+  expect((await alert.boundingBox())!.height).toBeLessThanOrEqual(720 * 0.75);
+  await expect(alert).toHaveCSS('overflow-y', 'auto');
+  expect(await alert.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await alert.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  expect(await alert.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await expect(composer).toBeInViewport();
+  await expect(composer).toHaveValue('Start this session');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+});
+
 test('a draft discarded in one tab is not resurrected by another tab\'s autosave', async ({ mockedPage: first }) => {
   const second = await first.context().newPage();
   await installDefaultRoutes(second);
