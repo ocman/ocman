@@ -218,6 +218,8 @@ function renderSpecialTool(
     }
     case 'question':
     case 'mcp_question':
+    case 'askuserquestion':
+    case 'AskUserQuestion':
     case 'Question': {
       // Render questions as a special interactive-looking card.
       const questionsData = inp.questions || (input as { questions?: unknown } | undefined)?.questions;
