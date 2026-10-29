@@ -5,7 +5,7 @@ import { clearDraft, discardDraft, getDraft, getDraftWriteError, resetDraftTexts
 import {
   beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft,
   getConversationDraft, hydrateDrafts, reconcileConversationStart, rememberConversationDraft, retryDraftRelocation,
-  selectionsKey, useNewConversationDrafts,
+  seedConversationDraft, selectionsKey, useNewConversationDrafts,
 } from './newConversationDrafts';
 import { getPendingDraftPayload, updateDraftAttachments } from './pendingDraftPayloads';
 import { readDraftStart } from './draftStartClaims';
@@ -250,4 +250,31 @@ it('keeps a draft, its text and live files when discarding cannot be stored, the
   await forgetConversationDraft('keep-on-fail');
   expect(getConversationDraft('keep-on-fail')).toBeUndefined();
   expect(await storedDraft('keep-on-fail')).toMatchObject({ deleted: true });
+});
+
+it('seeds a draft and its text together, visible here and in other tabs, without touching other drafts', async () => {
+  rememberConversationDraft(draft('existing'));
+  saveDraft('existing', 'kept');
+  await settle();
+  await seedConversationDraft(draft('seeded', { platform: undefined }), 'Review the change');
+  expect(getConversationDraft('seeded')).toMatchObject({ directory: '/repo', title: 'Draft' });
+  expect(getDraft('seeded')).toBe('Review the change');
+  expect(await storedDraft('seeded')).toMatchObject({ draftId: 'seeded', directory: '/repo' });
+  const { peer, texts } = await otherTab();
+  expect(peer.getConversationDraft('seeded')).toMatchObject({ title: 'Draft' });
+  expect(texts.getDraft('seeded')).toBe('Review the change');
+  expect(texts.getDraft('existing')).toBe('kept');
+  expect(useNewConversationDrafts.getState().starts.seeded).toBeUndefined();
+});
+
+it.each([
+  ['a live draft', async () => { rememberConversationDraft(draft('taken')); saveDraft('taken', 'mine'); await settle(); }],
+  ['a discarded draft', async () => { rememberConversationDraft(draft('taken')); await settle(); await forgetConversationDraft('taken'); }],
+  ['text stored by another tab', async () => { await transact(['texts'], 'readwrite', (tx) => tx.put('texts', 'taken', { text: 'peer', revision: 3 })); }],
+])('refuses to seed over %s', async (_name, arrange) => {
+  await arrange();
+  const before = await transact(['texts', 'drafts'], 'readonly', (tx) => Promise.all([tx.get('texts', 'taken'), tx.get('drafts', 'taken')]));
+  await expect(seedConversationDraft(draft('taken'), 'replacement')).rejects.toThrow('This draft already exists.');
+  expect(await transact(['texts', 'drafts'], 'readonly', (tx) => Promise.all([tx.get('texts', 'taken'), tx.get('drafts', 'taken')]))).toEqual(before);
+  expect(getDraft('taken')).not.toBe('replacement');
 });

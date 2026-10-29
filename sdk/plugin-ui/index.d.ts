@@ -1,4 +1,4 @@
-// @ocman/plugin-ui 1.1.0: the public, semver-versioned surface a plugin UI
+// @ocman/plugin-ui 1.2.0: the public, semver-versioned surface a plugin UI
 // bundle may import. The host provides the implementation at runtime; plugin
 // builds keep this module external (see @ocman/plugin-vite). Additions are
 // minor releases; removals or changed meaning are major releases.
@@ -39,6 +39,37 @@ export interface PluginActionHandle {
 
 /** One of this plugin's declared actions. */
 export declare function usePluginAction(actionId: string): PluginActionHandle;
+
+export interface SessionDraftOptions {
+  /** A project directory on the plugin's owner, as `ProjectPicker` returns it. */
+  directory: string;
+  /** Conversation title: one line of at most 200 characters. */
+  title?: string;
+  /**
+   * Composer text of at most 65,536 characters. ocman never sends it. It must
+   * not start with `/` or `!`, so it cannot become a command or shell input.
+   */
+  prompt?: string;
+}
+
+export interface SessionDraftHandle {
+  /**
+   * Saves a new conversation draft and opens it in the composer, where the
+   * user reviews, edits and sends it. Starts no session or agent and sends
+   * nothing. Existing drafts are never changed. Rejects, and sets `error`,
+   * when the options are invalid, the directory is not a project of this
+   * owner or the draft cannot be saved. Opening the draft is a navigation
+   * that `useUnsavedChangesGuard` does not intercept; call `confirmDiscard`
+   * first.
+   */
+  open(options: SessionDraftOptions): Promise<void>;
+  pending: boolean;
+  /** Why the last `open` failed; cleared when the next one starts. */
+  error: string | null;
+}
+
+/** Hands prepared text to the user as a new, editable conversation draft. Since 1.2.0. */
+export declare function useSessionDraft(): SessionDraftHandle;
 
 /**
  * Sets the app header title for the current plugin view (shown after the

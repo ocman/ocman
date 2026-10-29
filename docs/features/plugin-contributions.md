@@ -467,7 +467,7 @@ the user away; browser Back is not intercepted. Show recent activity with
 | Overlays and navigation | `Drawer`, `RouteTabs` (links), `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` (in-page panels) |
 | Display | `Icon`, `RelativeTime`, `StatusBadge`, `SeverityPill`, `Pill` (`neutral`, `accent`, `success`, `warning`, `danger`) |
 | Layout | `Page`, `Section`, `Properties`, `CodeBlock` |
-| Hooks and helpers | `usePluginContext`, `usePluginCall`, `usePluginMutation`, `usePluginAction`, `usePageTitle`, `useConfirm`, `useUnsavedChangesGuard`, `formatExactDate` |
+| Hooks and helpers | `usePluginContext`, `usePluginCall`, `usePluginMutation`, `usePluginAction`, `useSessionDraft`, `usePageTitle`, `useConfirm`, `useUnsavedChangesGuard`, `formatExactDate` |
 
 `usePluginCall(method, params, { enabled, refetchInterval })` is a cached query
 scoped to your plugin. `usePluginMutation(method)` refreshes those queries on
@@ -477,7 +477,55 @@ the plugin's owner and use the same value formats as page `projects` and `model`
 fields. `Icon` and `PageState` name icons from the Bootstrap Icons 1.x set ocman
 ships, without the `bi-` prefix; use them rather than relying on the icon font
 directly. Exports marked "Since 1.1.0" in the declarations need
-`NewUIDescriptor("^1.1.0", ...)`.
+`NewUIDescriptor("^1.1.0", ...)`, and those marked "Since 1.2.0" need
+`NewUIDescriptor("^1.2.0", ...)`.
+
+### Hand work to the user as a draft
+
+`useSessionDraft().open({ directory, title, prompt })` prepares work for the
+user without doing it. ocman saves a new conversation draft in that project,
+with the title and the prompt in the composer, and opens it. The user can edit
+the text, pick a model, machine or worktree, then send it, or discard the draft.
+Opening a draft starts no session or agent and sends nothing.
+
+```tsx
+import { Button, ButtonGroup, InlineAlert, Section, useSessionDraft } from '@ocman/plugin-ui';
+
+function Handoff({ directory }: { directory: string }) {
+  const draft = useSessionDraft();
+  const open = (title: string, prompt: string) => void draft.open({ directory, title, prompt }).catch(() => {});
+  return <Section title="Hand off work">
+    {draft.error && <InlineAlert>{draft.error}</InlineAlert>}
+    <ButtonGroup label="Drafts">
+      <Button disabled={draft.pending} onClick={() => open('Update deprecated API calls',
+        'Replace calls to the deprecated client.fetchAll() with client.list() and keep the tests passing.')}>Draft maintenance task</Button>
+      <Button disabled={draft.pending} onClick={() => open('Refresh the setup guide',
+        'Update docs/setup.md for the new install command.')}>Draft documentation update</Button>
+    </ButtonGroup>
+  </Section>;
+}
+```
+
+- `directory` must be a project on the plugin's owner, as `ProjectPicker`
+  returns it. ocman checks it against its project list before saving.
+- `title` is one line of at most 200 characters. `prompt` is at most 65,536
+  characters and must not start with `/` or `!`, so it cannot become a slash
+  command or shell input. Both are stored as plain text, so text copied from
+  elsewhere stays inert until the user sends it.
+- Each call creates a draft with a new identity. Existing drafts and their
+  text are never changed, and the draft uses the same browser storage, tab
+  synchronization and start safeguards as drafts the user creates.
+- `open` rejects and sets `error` when the options are invalid, the directory is
+  not a project, the project list cannot be loaded or the draft cannot be
+  saved. Show `error`, for example with `InlineAlert`. `pending` is true while
+  a draft opens, and a second call is refused until it finishes.
+- `useUnsavedChangesGuard` does not intercept this navigation. Call
+  `confirmDiscard` first if the page has unsaved edits.
+
+Use it rather than building `/session/new` links or writing to browser
+storage: the route only carries the project, title and draft identity, and
+ocman's draft storage is an internal format, not a supported API. Actions run work through the
+action dialog and page fields save data, so neither can prepare a prompt.
 
 ### Test it
 

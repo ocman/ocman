@@ -147,6 +147,27 @@ export function rememberConversationDraft(params: ConversationDraft) {
 }
 
 /**
+ * Create a draft and its composer text in one transaction, for text handed in
+ * from outside the composer. An identity that already exists, including a
+ * discarded one, is refused rather than overwritten.
+ */
+export async function seedConversationDraft(params: ConversationDraft, text: string) {
+  const draft = { ...params, createdAt: params.createdAt || Date.now() };
+  const record: TextRecord = { text, revision: 0 };
+  if (getConversationDraft(draft.draftId) || getDraft(draft.draftId)) throw new Error('This draft already exists.');
+  await transact(['texts', 'drafts'], 'readwrite', async (tx) => {
+    const [meta, stored] = await Promise.all([tx.get<StoredDraft>('drafts', draft.draftId), tx.get<TextRecord>('texts', draft.draftId)]);
+    if (meta || stored) throw new Error('This draft already exists.');
+    tx.put('drafts', draft.draftId, draft);
+    tx.put('texts', draft.draftId, record);
+  });
+  draftSeq.set(draft.draftId, (draftSeq.get(draft.draftId) || 0) + 1);
+  settleText(draft.draftId, record);
+  applyDrafts([[draft.draftId, draft]]);
+  publishDraftChange({ drafts: [draft.draftId], texts: [draft.draftId] });
+}
+
+/**
  * Discard a prepared draft. Live state (metadata, text, browser Files) is
  * dropped only after the tombstone commits; a failure rejects and keeps it.
  */

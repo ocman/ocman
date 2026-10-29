@@ -3,7 +3,28 @@
 import { useState } from '/plugin-shared/react.js';
 import { jsx, jsxs, Fragment } from '/plugin-shared/react-jsx-runtime.js';
 import { Route, Routes, useParams } from '/plugin-shared/react-router-dom.js';
-import { Button, DataTable, Page, Pill, Properties, RouteButton, Section, SeverityPill, usePluginAction, usePluginCall, usePluginContext } from '/plugin-shared/ocman-plugin-ui.js';
+import {
+  Button, ButtonGroup, DataTable, InlineAlert, Page, Pill, Properties, RouteButton, Section, SeverityPill, usePluginAction, usePluginCall, usePluginContext,
+  useSessionDraft,
+} from '/plugin-shared/ocman-plugin-ui.js';
+
+// Two unrelated workflows handed to the user as editable conversation drafts.
+const workflows = [
+  { label: 'Draft maintenance task', directory: '/home/user/projects/myapp', title: 'Update deprecated API calls',
+    prompt: 'Replace calls to the deprecated client.fetchAll() with client.list() and keep the tests passing.' },
+  { label: 'Draft documentation update', directory: '/home/user/projects/myapp', title: 'Refresh the setup guide',
+    prompt: 'Update docs/setup.md for the new install command.' },
+  { label: 'Draft in unknown project', directory: '/nowhere', title: 'Unavailable' },
+];
+
+function Handoff() {
+  const draft = useSessionDraft();
+  return jsxs(Section, { title: 'Hand off work', children: [
+    draft.error ? jsx(InlineAlert, { children: draft.error }) : null,
+    jsx(ButtonGroup, { label: 'Draft workflows', children: workflows.map(({ label, ...options }) =>
+      jsx(Button, { disabled: draft.pending, onClick: () => void draft.open(options).catch(() => {}), children: label }, label)) }),
+  ] });
+}
 
 function List() {
   const [clicks, setClicks] = useState(0);
@@ -18,7 +39,7 @@ function List() {
         jsx('td', { children: jsx(SeverityPill, { severity: item.priority }) }),
         jsx('td', { children: jsx(Pill, { tone: 'success', children: item.status }) }),
       ] }, item.id)),
-    }) }) })] });
+    }) }) }), jsx(Handoff, {})] });
 }
 
 function Detail() {

@@ -230,14 +230,15 @@ export function insertProvisionalSession(qc: QueryClient, session: Session): voi
 // Projects list
 // ---------------------------------------------------------------------------
 
+export const projectsQuery = {
+  queryKey: ['projects'],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api.projects(signal),
+  staleTime: 30_000, // projects change rarely
+};
+
 export function useProjects(options?: { enabled?: boolean }) {
   useActivityScope(options?.enabled === false ? undefined : 'projects');
-  return useQuery<Project[]>({
-    queryKey: ['projects'],
-    queryFn: ({ signal }) => api.projects(signal),
-    staleTime: 30_000, // projects change rarely
-    enabled: options?.enabled,
-  });
+  return useQuery<Project[]>({ ...projectsQuery, enabled: options?.enabled });
 }
 
 // ---------------------------------------------------------------------------

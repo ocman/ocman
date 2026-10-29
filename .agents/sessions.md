@@ -26,6 +26,10 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   in `lib/draftDb`, IndexedDB `ocman.drafts.v1`. Claims, failure, completion with
   retirement/relocation and discard each use one readwrite transaction. Never
   add another draft storage path.
+- Plugin UIs hand prompts over only through `@ocman/plugin-ui`
+  `useSessionDraft`, which validates the project and calls
+  `seedConversationDraft`: one transaction that refuses existing identities.
+  It never starts or sends; the user submits from the composer.
 - `composerDraft` and `newConversationDrafts` keep synchronous snapshots hydrated
   before render in `main.tsx`. BroadcastChannel triggers re-reads across tabs.
   Text revisions only grow and reject stale autosaves. Attachment snapshots use

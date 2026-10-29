@@ -75,7 +75,10 @@ navigation and its `Index` component owns `/plugins/<plugin-id>/*`. It routes
 with nested relative `<Routes>` and uses ocman's own buttons, tables, drawers,
 tabs, pickers and pills from `@ocman/plugin-ui`, so it matches the rest of the
 app. Data comes from plugin-defined `ui.v1` calls. Actions still run through
-ocman's action dialog with its confirmations, notices and downloads. A path whose
+ocman's action dialog with its confirmations, notices and downloads. A plugin can
+also open a new conversation draft in one of your projects, with a title and a
+prompt in the composer. Nothing runs until you review the prompt and send it,
+and you can edit or discard the draft like any other. A path whose
 first segment names one of the plugin's declared pages still opens that page.
 
 **Approving `ui.app` lets the plugin run UI code with your ocman session.** Its

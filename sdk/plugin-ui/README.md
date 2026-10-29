@@ -19,6 +19,8 @@ for the component list and hooks, and
 
 ## Changes
 
+- **1.2.0**: Adds `useSessionDraft`, which opens a new conversation draft in a
+  project with a title and composer text for the user to review and send.
 - **1.1.0**: Adds `PageState`, `InlineAlert`, `SkeletonTable`, `SkeletonLines`,
   `DataTableGroup`, `DataTableRow`, `RouteTabs`, `Icon`, `RelativeTime`,
   `formatExactDate`, `usePageTitle`, `useConfirm` and `useUnsavedChangesGuard`.
