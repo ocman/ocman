@@ -3,6 +3,8 @@ package protocol
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"math"
 	"slices"
 	"time"
 )
@@ -142,7 +144,16 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 	}
 	ctx, cancel := context.WithTimeout(ctx, SessionCompletedTimeout)
 	defer cancel()
-	value, err := unaryCall(ctx, b.authorize, b.call, pluginID, SessionAllowed, completion, func(d Description) Call {
+	value, err := unaryCall(ctx, b.authorize, func(ctx context.Context, id string, call Call) (<-chan Reply, error) {
+		// Reserve the largest request ID before dispatch. JSON escaping can make
+		// even text below the raw byte bound exceed the transport's frame limit.
+		frame := call
+		frame.ID = math.MaxUint64
+		if err := NewEncoder(io.Discard).Encode(Envelope{Type: TypeCall, Call: &frame}); err != nil {
+			return nil, &WireError{Category: ErrorInvalidArgument}
+		}
+		return b.call(ctx, id, call)
+	}, pluginID, SessionAllowed, completion, func(d Description) Call {
 		version := SessionCapability.Version
 		for _, c := range d.Capabilities {
 			if c.Name == "session" && c.Version.Major == 1 {

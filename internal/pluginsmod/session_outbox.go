@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/identity"
 	plugins "github.com/ocman/ocman/sdk/protocol"
@@ -66,7 +67,7 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 		log.WithError(err).WithField("session_id", sessionID).Warn("reading completed turn for session delivery")
 		return
 	}
-	messageID, text := latestAssistantText(detail.Messages, detail.Parts)
+	messageID, text := db.LatestAssistantTextVerbatim(detail.Messages, detail.Parts)
 	// A session.changed event can arrive before session.idle. It is a recovery
 	// path for a missed idle edge, never permission to publish a partial turn.
 	if detail.Session == nil || !conversationReplyReady(detail.Session.Status) {

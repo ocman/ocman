@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	plugins "github.com/ocman/ocman/sdk/protocol"
 )
@@ -61,7 +62,7 @@ func (m *Module) sendSession(ctx context.Context, pluginID string, params plugin
 	if err != nil || detail == nil || detail.Session == nil {
 		return "", plugins.ErrUnavailable
 	}
-	latest, text := latestAssistantText(detail.Messages, detail.Parts)
+	latest, text := db.LatestAssistantTextVerbatim(detail.Messages, detail.Parts)
 	if !conversationReplyReady(detail.Session.Status) || text == "" || latest == "" || !strings.HasSuffix(completedOperation, ":"+latest) {
 		return "", &plugins.WireError{Category: plugins.ErrorConflict}
 	}

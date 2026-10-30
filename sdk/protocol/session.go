@@ -49,9 +49,9 @@ const (
 	// SessionMaxPromptBytes bounds the run prompt well below the envelope
 	// limit, leaving room for the surrounding frame.
 	SessionMaxPromptBytes = 64 << 10
-	// SessionMaxTextBytes bounds one completed turn's text, the same bound
-	// conversation.v1 puts on a reply.
-	SessionMaxTextBytes = 64 << 10
+	// SessionMaxTextBytes is an upper bound on completed text. The encoded call,
+	// including JSON escaping and envelope metadata, must fit MaxMessageBytes.
+	SessionMaxTextBytes = MaxMessageBytes
 )
 
 // SessionRunParams are the closed parameters of a run: the prompt plus the
@@ -117,7 +117,9 @@ func (p SessionRunParams) Validate() error {
 func ValidPermissionProfileName(name string) bool { return validText(name) }
 
 func (c SessionCompleted) Validate() error {
-	if !validText(c.SessionID) || !conversationText(c.Text) || c.Usage != nil && c.Usage.Validate() != nil {
+	if !validText(c.SessionID) || strings.TrimSpace(c.Text) == "" || len(c.Text) > SessionMaxTextBytes || !utf8.ValidString(c.Text) ||
+		strings.ContainsFunc(c.Text, func(r rune) bool { return r != '\n' && r != '\r' && r != '\t' && (r < 0x20 || r == 0x7f) }) ||
+		c.Usage != nil && c.Usage.Validate() != nil {
 		return ErrInvalidMessage
 	}
 	return nil

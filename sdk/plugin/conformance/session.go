@@ -3,11 +3,12 @@ package conformance
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/sdk/protocol"
 	"github.com/ocman/ocman/sdk/plugin"
+	"github.com/ocman/ocman/sdk/protocol"
 )
 
 // RunSessionGrants exercises session.v1 through the canonical host broker. The
@@ -67,7 +68,7 @@ func RunSessionGrants(t *testing.T, executable string, project string) {
 		return protocol.Call{OperationID: "conformance-run", Capability: protocol.SessionCapability.Name, Version: protocol.SessionCapability.Version, Method: protocol.SessionRunMethod, Params: data}
 	}
 	params := protocol.SessionRunParams{Prompt: "conformance prompt", Agent: "build", Model: "provider/model", PermissionProfile: "read-only"}
-	completion := protocol.SessionCompleted{SessionID: "ses-conformance-1", Text: "conformance completion"}
+	completion := protocol.SessionCompleted{SessionID: "ses-conformance-1", Text: `{"items":["` + strings.Repeat("x", 90_000) + `"]}`}
 
 	if _, err := broker.Run(t.Context(), d.ID, runEvent(t, params)); err == nil || len(started) != 0 {
 		t.Fatalf("ungranted run started a session: %v", err)

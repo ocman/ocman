@@ -670,6 +670,14 @@ reorders around itself, delivered on the `session.idle` edge with periodic
 reconciliation, retried with bounded backoff, and settled by a durable receipt
 so a repeated edge appends nothing. A dead letter blocks only its own session.
 Successful completion values other than an empty JSON object are invalid.
+Session completion text is the newest assistant message's text parts concatenated
+verbatim, without progress messages, reasoning or tool output. Conversation's
+64 KiB cap and text sanitization do not apply. The complete JSON-encoded call
+must fit the protocol's 1 MiB frame limit, including escaping and metadata.
+Oversized or invalid completion text returns a structured `invalid_argument`
+delivery failure before dispatch; it is never shortened or acknowledged as a
+successful delivery. The outbox retains the full text and records the failed
+attempt under the same operation ID, following its normal retry/dead-letter rules.
 A process or host crash in the send/ack window replays the same operation ID;
 the consumer must durably deduplicate its effect. After six failures, the
 retained dead letter has no supported inspection/retry/discard controls yet.
