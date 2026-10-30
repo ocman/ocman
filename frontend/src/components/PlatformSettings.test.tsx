@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { fetchJSON, postJSON } from '../lib/api.requests';
 import { PlatformSettings } from './PlatformSettings';
 
@@ -100,7 +101,8 @@ it('fails closed on check and installation errors, including Escape dismissal', 
   vi.mocked(fetchJSON).mockRejectedValue('offline');
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not check Codex dependencies');
-  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Close$/ })).toBeEnabled());
+  await userEvent.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   expect(codex).not.toBeChecked();
 });
