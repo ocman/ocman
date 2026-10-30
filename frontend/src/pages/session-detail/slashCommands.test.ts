@@ -82,7 +82,7 @@ describe('runSlashCommand', () => {
     let finish!: () => void;
     const c = ctx({ handleCompact: vi.fn(() => new Promise<void>((resolve) => { finish = resolve; })) });
     const running = runSlashCommand(c, 'compact', '');
-    expect(c.pending.begin).toHaveBeenCalledWith('/compact', undefined, { confirmation: 'user' });
+    expect(c.pending.begin).toHaveBeenCalledWith('/compact');
     finish();
     await running;
   });

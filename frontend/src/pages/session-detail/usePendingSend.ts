@@ -53,8 +53,6 @@ export interface UsePendingSendResult {
     images?: PendingSendImage[],
     opts?: {
       id?: string; model?: string; agent?: string; reasoning?: string;
-      /** Commands must not be acknowledged by an unrelated running response. */
-      confirmation?: 'user';
     },
   ) => string;
   /** Set the failure flag on the pending entry. The bubble stays
@@ -91,10 +89,6 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
   // render) so the comparison is robust against re-renders /
   // strict-mode double-invoke / random observe ordering.
   const baselineUserIdsRef = useRef<Set<string> | null>(null);
-  // A queued send may not emit the user's message.created event to this
-  // client. A later assistant message proves that the server accepted it.
-  const pendingStartedAtRef = useRef<number | null>(null);
-  const requireUserConfirmationRef = useRef(false);
   const pendingIdRef = useRef<string | null>(null);
   // Latest `messages` reference observed during render. The
   // session-change effect uses this to recompute the baseline if
@@ -111,7 +105,6 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPending(null);
     baselineUserIdsRef.current = null;
-    pendingStartedAtRef.current = null;
     pendingIdRef.current = null;
   }, [sessionId]);
 
@@ -129,8 +122,6 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     const id = opts?.id ?? generateId();
     pendingIdRef.current = id;
     const startedAt = Date.now();
-    pendingStartedAtRef.current = startedAt;
-    requireUserConfirmationRef.current = opts?.confirmation === 'user';
     setPending({
       id,
       text,
@@ -152,7 +143,6 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     pendingIdRef.current = null;
     setPending(null);
     baselineUserIdsRef.current = null;
-    pendingStartedAtRef.current = null;
   };
 
   const observeMessages = (messages: Message[], parts?: Part[]) => {
@@ -167,17 +157,12 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
       if (!baseline.has(m.id) && (parts === undefined || parts.some((part) => part.messageId === m.id))) {
         setPending((prev) => (prev ? null : prev));
         baselineUserIdsRef.current = null;
-        pendingStartedAtRef.current = null;
         return;
       }
     }
-    const startedAt = pendingStartedAtRef.current;
-    if (startedAt === null) return;
-    if (!requireUserConfirmationRef.current && messages.some((m) => m.data.role === 'assistant' && m.timeCreated >= startedAt)) {
-      setPending((prev) => (prev ? null : prev));
-      baselineUserIdsRef.current = null;
-      pendingStartedAtRef.current = null;
-    }
+    // Assistant continuations can belong to an already-running turn. They
+    // cannot confirm this send, even when created after begin(). Keep the
+    // prompt visible until its user message and parts arrive via stream/history.
   };
 
   return { pending, begin, fail, clear, observeMessages };

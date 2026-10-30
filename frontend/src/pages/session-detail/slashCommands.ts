@@ -255,7 +255,7 @@ const undoRedo: SlashCommand = {
 const compact: SlashCommand = {
   live: true,
   run: async ({ handleCompact, pending, isCurrent }) => {
-    const id = pending.begin('/compact', undefined, { confirmation: 'user' });
+    const id = pending.begin('/compact');
     try {
       await handleCompact();
       if (isCurrent?.() !== false) pending.clear(id);

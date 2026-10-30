@@ -86,13 +86,35 @@ describe('usePendingSend — basic lifecycle', () => {
 });
 
 describe('usePendingSend — server-confirmed clear', () => {
+  it('keeps a mid-turn prompt visible through assistant continuation until its user message arrives', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const previous = makeUserMessage('previous', 100);
+    const { result, rerender } = renderHook(({ messages }: { messages: Message[] }) => {
+      const hook = usePendingSend(SID);
+      hook.observeMessages(messages, messages.filter((m) => m.data.role === 'user').map((m) => ({
+        id: `part-${m.id}`, messageId: m.id, sessionId: SID,
+        data: { type: 'text', text: m.id === 'previous' ? 'original prompt' : 'follow-up' },
+      })));
+      return hook;
+    }, { initialProps: { messages: [previous] } });
+    act(() => { result.current.begin('follow-up'); });
+    const continuation: Message = {
+      id: 'continuation', sessionId: SID, timeCreated: 1001, data: { role: 'assistant' },
+    };
+    rerender({ messages: [previous, continuation] });
+    expect(result.current.pending?.text).toBe('follow-up');
+    rerender({ messages: [previous, continuation, makeUserMessage('follow-up', 1002)] });
+    expect(result.current.pending).toBeNull();
+  });
+
   it('does not mistake the running response for acknowledgment of /compact', () => {
     const { result, rerender } = renderHook(({ messages }: { messages: Message[] }) => {
       const hook = usePendingSend(SID);
       hook.observeMessages(messages);
       return hook;
     }, { initialProps: { messages: [] as Message[] } });
-    act(() => result.current.begin('/compact', undefined, { confirmation: 'user' }));
+    act(() => result.current.begin('/compact'));
     rerender({ messages: [{ id: 'running', sessionId: SID, timeCreated: Date.now() + 1, data: { role: 'assistant' } }] });
     expect(result.current.pending?.text).toBe('/compact');
   });
@@ -156,7 +178,7 @@ describe('usePendingSend — server-confirmed clear', () => {
 		expect(result.current.pending?.text).toBe('hello');
 	});
 
-	it('clears when the response starts without a user-message SSE acknowledgment', () => {
+	it('keeps the prompt when the response starts without a user-message SSE acknowledgment', () => {
 		const { result, rerender } = renderHook(
 			({ messages }: { messages: Message[] }) => {
 				const hook = usePendingSend(SID);
@@ -169,12 +191,12 @@ describe('usePendingSend — server-confirmed clear', () => {
 			result.current.begin('queued follow-up');
 		});
 
-		// Queued sends may skip the user's message.created event but the
-		// assistant response proves the server accepted the prompt.
+		// A response alone cannot acknowledge the prompt. Its user message
+		// must arrive through the stream or a composed history snapshot.
 		rerender({
 			messages: [{ id: 'm-assist', sessionId: SID, timeCreated: Date.now() + 1, data: { role: 'assistant' } }],
 		});
-		expect(result.current.pending).toBe(null);
+		expect(result.current.pending?.text).toBe('queued follow-up');
 	});
 
   it('does NOT clear pending when the user message id matches one already present', () => {
