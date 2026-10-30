@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/share"
 )
 
@@ -210,6 +211,8 @@ func (s *Server) routes() {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Security-Policy", httpx.BrowserSecurityPolicy(r.Host))
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	s.mux.ServeHTTP(w, r)
 }
 

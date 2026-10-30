@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api, sharedExportMarkdownUrl, type SharedConversation } from '../lib/api';
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../components/AssistantThread';
+import { ExternalImageConsentContext } from '../lib/externalImageContext';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Button } from '../components/Control';
 import { PrintCollapseContext } from '../lib/printCollapseContext';
@@ -198,7 +199,7 @@ export function SharedConversationView({ relay = false }: { relay?: boolean }) {
               canSend={false}
               projectDirectory={session?.directory}
             >
-              <AssistantThread />
+              <ExternalImageConsentContext.Provider value={false}><AssistantThread /></ExternalImageConsentContext.Provider>
             </OcmanRuntimeProvider>
           </PrintCollapseContext.Provider>
         </ErrorBoundary>

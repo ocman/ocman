@@ -97,6 +97,33 @@ flowchart LR
 
 ## 1. System context
 
+### Browser resource boundaries
+
+```mermaid
+flowchart LR
+    Policy[httpx browser policy] --> Hub[Hub dashboard]
+    Policy --> Relay[Relay viewer]
+    Hub -->|local and embedded images| Gallery[Native image gallery]
+    Hub -->|per-image user consent| Wrapper[previews external-image wrapper]
+    Wrapper --> Frame[Opaque script-free iframe]
+    Frame -->|image requests to one origin only| Image[External image origin]
+    Hub -->|owner host and port only| Socket[Ocman WebSocket]
+    Relay -->|remote images blocked| Shared[Read-only shared content]
+```
+
+- `internal/httpx` owns the shared browser CSP and validates URL authorities
+  before adding origin-scoped WebSocket sources. Forwarded headers cannot widen
+  the browser's connection policy. Hub and relay responses block external images
+  by default; local, data and blob images remain available.
+- `internal/previews` serves an authenticated, stateless external-image HTML
+  wrapper after frontend consent. It performs no server-side fetch. The frame
+  has no script or same-origin grant, sends no referrer, and its own CSP allows
+  images only from the selected origin. The UI warns about IP/cookie disclosure
+  and does not persist consent. Public shares disable this private-endpoint path.
+- Inert HTML file responses use a separate default-deny CSP, including for
+  external subresources and forms. Interactive artifact previews retain their
+  existing script-only sandbox and documented self-navigation limitation.
+
 ### Agent-generated conversation results
 
 ```mermaid

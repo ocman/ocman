@@ -108,8 +108,6 @@ describe('MarkdownText', () => {
     [`${window.location.origin}/images/chart.png`, '/images/chart.png'],
     ['/api/file/token', '/api/file/token'],
     ['//old.ocman.example/api/file/token', '/api/file/token'],
-    ['https://example.com/chart.png', 'https://example.com/chart.png'],
-    ['https://example.com/api/file/token/extra', 'https://example.com/api/file/token/extra'],
   ])('renders image %s with source %s in both previews', async (url, expected) => {
     render(<MarkdownContent text={`![Chart](${url})`} />);
     expect(screen.getByRole('img', { name: 'Chart' })).toHaveAttribute('src', expected);
@@ -117,6 +115,14 @@ describe('MarkdownText', () => {
     for (const image of screen.getAllByRole('img', { name: 'Chart' })) {
       expect(image).toHaveAttribute('src', expected);
     }
+  });
+
+  it.each(['https://example.com/chart.png', 'https://example.com/api/file/token/extra'])('requires consent for external image %s', async url => {
+    const { container } = render(<MarkdownContent text={`![Chart](${url})`} />);
+    expect(container.querySelector('img, iframe')).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Load external image from example.com' }));
+    expect(screen.getByTitle('External image: Chart')).toHaveAttribute('sandbox', '');
+    expect(screen.getByTitle('External image: Chart')).toHaveAttribute('src', `/api/previews/external-image?url=${encodeURIComponent(url)}`);
   });
 
   it('uses the proxy origin for existing embedded file links', () => {

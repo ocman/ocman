@@ -164,15 +164,22 @@ Catalog and schema identifiers are never fetched from the network. The only
 network operation a result can initiate is a user-confirmed response through
 Ocman's existing session API.
 
-This does not make the whole dashboard a network-isolated sandbox. The main
-app's CSP permits HTTP/HTTPS images for existing conversation previews and
-WebSocket connections. Ordinary Markdown images may therefore load externally.
-Do not add URL-bearing components or generated HTML/JavaScript to this native
-catalog without a separate security review.
+The dashboard and relay viewer add a browser-level defense. Their CSP blocks
+external image loads and scopes WebSockets to the serving host and port. Local
+and embedded images still render. External conversation images require an
+explicit per-image opt-in in authenticated views, using a script-free opaque
+iframe whose policy allows only that image's origin. Consent resets on reload
+and is unavailable in public shared views. The wrapper does not fetch on the
+server or expose Ocman's DOM/storage; the external image request can still
+disclose the viewer's IP or that site's cookies. Normal user-clicked links
+remain links. See [HTTP serving](../../configuration/#http-serving).
+
+Do not add URL-bearing components or generated HTML/JavaScript to the native
+A2UI catalog without a separate security review.
 
 HTML [artifact previews](../artifacts/) have a separate iframe sandbox. Opt-in
-script execution never grants `allow-same-origin`, and the interactive preview
-CSP blocks external subresources and fetches. A sandboxed document can still
+script execution never grants `allow-same-origin`. Both preview modes block
+external subresources; the interactive policy also blocks fetches. A sandboxed document can still
 navigate itself, so that mode is not a strict no-egress environment.
 
 ## Factory

@@ -97,3 +97,8 @@ tool inventory in instructions. Feature modules register through `Deps.Tools`.
   credentials at call time. Keep forge clients server-owned. Fetch bounds,
   caching, rate-limit handling and PR freshness stay in `linkpreview`; credentials
   stay in `previewauth`.
+- Browser CSP lives in `internal/httpx`: no broad external-image or WebSocket
+  sources. External conversation images require per-image consent and the
+  authenticated `previews` wrapper's script-free opaque iframe; public shares
+  disable that opt-in. The wrapper never fetches on the server. Inert HTML also
+  blocks external subresources. Keep browser-test headers pinned to the handlers.

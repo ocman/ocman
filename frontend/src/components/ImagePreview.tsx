@@ -4,6 +4,8 @@ import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom';
 import { IconButton } from './IconButton';
 import { Button } from './Control';
 import { ZoomableGraphicModal } from './ZoomableGraphicModal';
+import { ExternalImagePreview } from './ExternalImagePreview';
+import { imageSource } from '../lib/imageSource';
 import './ImagePreview.css';
 
 type ImageEntry = { src: string; alt: string; element: HTMLButtonElement };
@@ -121,5 +123,8 @@ function RegisteredImage({ src = '', alt = '', buttonClassName, ...props }: Prev
 
 export function PreviewImage(props: PreviewImageProps) {
   const gallery = useContext(ImagePreviewContext);
-  return gallery ? <RegisteredImage {...props} /> : <ImagePreviewProvider><RegisteredImage {...props} /></ImagePreviewProvider>;
+  const source = imageSource(props.src ?? '');
+  if (source === 'blocked') return <span>Image source is not allowed.</span>;
+  if (source !== 'local') return <ExternalImagePreview key={source.href} url={source} alt={props.alt ?? ''} />;
+  return gallery ? <RegisteredImage {...props} srcSet={undefined} /> : <ImagePreviewProvider><RegisteredImage {...props} srcSet={undefined} /></ImagePreviewProvider>;
 }

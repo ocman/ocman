@@ -1,0 +1,4 @@
+{
+  "app": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://{{host}} wss://{{host}}; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; manifest-src 'self'",
+  "externalImage": "sandbox; default-src 'none'; img-src {{origin}}; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+}

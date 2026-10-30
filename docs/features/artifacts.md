@@ -93,9 +93,10 @@ Deleting an artifact from its page first revokes all of its live shares.
 
 Artifact HTML is treated as untrusted, even when an agent wrote it.
 
-- **Static (default).** The file is served with
-  `Content-Security-Policy: sandbox` and framed with an empty `sandbox`
-  attribute: an opaque origin, no script. Markup and inline CSS render, so
+- **Static (default).** The file is served with a sandbox CSP and
+  `default-src 'none'`, and framed with an empty `sandbox` attribute: an opaque
+  origin, no script, no external subresources or forms. Markup, inline CSS and
+  embedded `data:`/`blob:` media render, so
   pre-rendered pages are readable; pages that build their DOM in JavaScript
   stay blank, and controls driven by script do nothing.
 - **Interactive (opt-in, artifact page only).** **Run scripts** reloads the

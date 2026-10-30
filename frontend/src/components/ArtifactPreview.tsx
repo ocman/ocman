@@ -4,6 +4,7 @@ import { Button } from './Control';
 import { MarkdownContent } from './assistant/MarkdownText';
 import { InlineAlert } from './InlineAlert';
 import { LoadingState } from './LoadingState';
+import { PreviewImage } from './ImagePreview';
 import { readStorage, writeStorage } from '../lib/storage';
 import styles from './ArtifactPreview.module.css';
 
@@ -30,7 +31,7 @@ export function ArtifactPreview({ item, interactiveUrl }: { item: ArtifactItem; 
   }, [item.url, kind]);
 
   if (!item.url || kind === 'none') return null;
-  if (kind === 'image') return <img className={styles.image} src={item.url} alt={item.name ?? ''} data-testid="artifact-preview-image" />;
+  if (kind === 'image') return <PreviewImage className={styles.image} src={item.url} alt={item.name ?? ''} data-testid="artifact-preview-image" />;
   if (kind === 'html') return <HtmlPreview url={item.url} interactiveUrl={interactiveUrl} title={item.name ?? 'HTML preview'} />;
   if (error) return <InlineAlert>Preview unavailable.</InlineAlert>;
   if (text === undefined) return <LoadingState>Loading preview…</LoadingState>;

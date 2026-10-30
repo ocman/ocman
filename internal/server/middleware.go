@@ -12,6 +12,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/srvtiming"
 )
 
@@ -24,7 +25,7 @@ import (
 // stay at DEBUG.
 const slowRequestThreshold = 5 * time.Second
 
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; connect-src 'self' ws: wss:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; manifest-src 'self'"
+const contentSecurityPolicy = httpx.BrowserCSP
 
 // statusRecorder is a tiny http.ResponseWriter shim that captures the
 // final status code written by the wrapped handler. We need this
@@ -286,7 +287,7 @@ func (s *Server) withHostAllowlist(next http.Handler) http.Handler {
 
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		w.Header().Set("Content-Security-Policy", httpx.BrowserSecurityPolicy(r.Host))
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")

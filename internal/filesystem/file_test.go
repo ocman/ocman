@@ -141,7 +141,7 @@ func TestHandleFileProxy(t *testing.T) {
 		if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "inline;") {
 			t.Errorf("Content-Disposition = %q, want inline", cd)
 		}
-		if rec.Header().Get("Content-Security-Policy") != "sandbox; frame-ancestors 'self'" {
+		if rec.Header().Get("Content-Security-Policy") != httpx.InertFileCSP {
 			t.Errorf("missing sandbox CSP: %q", rec.Header().Get("Content-Security-Policy"))
 		}
 		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {

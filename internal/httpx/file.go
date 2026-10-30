@@ -6,8 +6,8 @@ import (
 )
 
 // InertFileCSP sandboxes a served file with every capability off: an opaque
-// origin and no script, whatever the embedding iframe allows.
-const InertFileCSP = "sandbox; frame-ancestors 'self'"
+// origin, no scripts or external subresources, whatever the iframe allows.
+const InertFileCSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
 
 // SetInertFileHeaders neutralises active content (SVG and HTML can carry
 // script) and lets only the dashboard itself frame the file, replacing the

@@ -130,8 +130,15 @@ long a request *body* may take to arrive (30 s for normal API calls, 5 min for u
 deliberately no global read/write timeout, so SSE streams and in-app terminals keep working.
 Ocman size-limits responses it reads from upstream services (OpenCode, GitHub/Forgejo). Browser
 responses deny framing and MIME sniffing and carry a Content Security Policy. That policy
-permits inline styles, external/data/blob images, blob workers, and WebSocket connections
-because the current SPA, attachments, service worker, and terminal need them.
+permits inline styles, same-origin/data/blob images, blob workers, and WebSockets only
+on the serving host and port. The same browser policy protects the relay viewer.
+External conversation images do not load automatically. In authenticated views, each
+image offers an explicit opt-in that loads it in a script-free, opaque-origin iframe
+restricted to that image's origin. The wrapper does not fetch anything on the server
+and sends no referrer. Loading may still disclose your IP address or that external
+site's cookies. Consent is not persisted; public shared views keep remote images
+blocked. Existing local/embedded images and user-clicked external links still work.
+Both static and interactive HTML file previews block external subresources.
 
 Privileged localhost routes reject cross-origin browser requests. Origin-less local CLI and
 MCP clients still work, but once password auth is configured they must present a valid auth

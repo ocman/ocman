@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/git"
+	"github.com/ocman/ocman/internal/httpx"
 )
 
 // filesystemMux serves requests through the server's real route table, so
@@ -173,7 +174,7 @@ func TestFileRoute_ServesSignedURLInertBehindAuth(t *testing.T) {
 		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
 	}
 	for header, want := range map[string]string{
-		"Content-Security-Policy": "sandbox; frame-ancestors 'self'",
+		"Content-Security-Policy": httpx.InertFileCSP,
 		"X-Frame-Options":         "SAMEORIGIN",
 		"X-Content-Type-Options":  "nosniff",
 	} {

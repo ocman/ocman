@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArtifactContent } from '../components/ArtifactContent';
 import type { ArtifactShare } from '../lib/artifactShare';
+import { ExternalImageConsentContext } from '../lib/externalImageContext';
 import styles from './ArtifactShareView.module.css';
 
 /** Read-only rendering of an artifact decrypted from a relay share. */
@@ -26,7 +27,7 @@ export function ArtifactShareView({ artifact }: { artifact: ArtifactShare }) {
         </div>
       </header>
       <main className={styles.content}>
-        <ArtifactContent description={artifact.description} links={links} files={files} />
+        <ExternalImageConsentContext.Provider value={false}><ArtifactContent description={artifact.description} links={links} files={files} /></ExternalImageConsentContext.Provider>
       </main>
     </div>
   );
