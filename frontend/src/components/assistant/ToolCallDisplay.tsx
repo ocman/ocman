@@ -36,6 +36,7 @@ import { factoryCardFromToolResult } from '../factoryCards';
 import { AnsiText, AnsweredQuestionBlock, BashPrompt, ToolDuration } from './toolRenderers';
 import { LazyInlineDiff } from './LazyInlineDiff';
 import { CompactToolCall } from './CompactToolCall';
+import { A2UIToolResult } from './A2UIResult';
 import { parseDiffPayload, renderOutput, renderPatch, shellOutputIsLong, shellOutputPreview, toolOutputPreview } from './toolOutputFormat';
 /**
  * Tool-call renderer. Validated Ocman approval artifacts render below the
@@ -62,6 +63,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
   return (
     <div className="oc-tool-source" data-perf="tool-call" data-tool-call-id={props.toolCallId}>
       {body}
+      <A2UIToolResult toolName={props.toolName} argsText={props.argsText} result={props.result} />
     </div>
   );
 };

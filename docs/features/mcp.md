@@ -97,6 +97,7 @@ in `tools.ocman` calls; variables and computed values are not evaluated for disp
 | `sessions` | Session listing, search, detail inspection, creation, and messaging. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With `content: true` it also scans user and assistant message text (not tool output) from the last `since_days` (default 7). Each hit returns up to five `{partId, messageId, role, snippet}` matches. Content search reads this machine's retained conversation history across platforms and never covers remote owners. Results depend on history ingestion progress. `get` and `send` need the recipient's `session_id`; pass `platform` when that ID is ambiguous. `create` starts a new session. `send` delivers `prompt` to an existing session. The tool cannot cancel sessions. |
 | `models` | Read the model catalog for an absolute `directory`, with optional `platform`. Pass the target's compound platform ID for a remote machine; omit it only when one platform is available. Returns `platform`, `models`, defaults, `hasProviders`, and `liveConnection`. Each model includes `provider`, `model`, `isAvailable`, and any reasoning variants. Use `provider/model` with `sessions` creation. Reads an existing instance without launching one; historical entries remain visible when live provider data is unavailable. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
+| `render_ui` | Render a structured result directly below the tool call using A2UI v0.9.1 and Ocman's custom catalog. Call `action: "help"` for the catalog, schemas and example, then `action: "render"` with `title`, `summary` and `messages`. Supports text, layouts, sortable tables, bar charts, text fields, checkboxes and buttons. See [Agent-generated results](#agent-generated-results). |
 
 To create a session on a specific platform, pass an absolute `directory` and
 `platform`, such as `claudecode` or `r-machine:claudecode`. No caller `session_id`
@@ -112,6 +113,47 @@ For example, list models before choosing one for a new session:
 Call `models` with these arguments. When `hasProviders` is true, entries with
 `isAvailable: true` belong to connected providers. When it is false, availability
 is unconfirmed and the list falls back to historical models and favorites.
+
+## Agent-generated results
+
+The `render_ui` tool advertises A2UI support in its description. Agents call
+`{"action":"help"}` to discover the supported protocol version, catalog ID,
+JSON schemas, limits and a complete form example. This works through the existing
+MCP connection; no A2A or AG-UI server is required. Agents should use it when a
+table, chart or form communicates better than prose, and keep a short text summary
+for clients without Ocman's renderer.
+
+Each `render` call contains one self-contained surface. Its messages use
+`version: "v0.9.1"`, start with `createSurface`, then define components through
+`updateComponents` and optionally replace scalar form data with `updateDataModel`.
+The catalog ID is `https://ocman.dev/a2ui/results/v1/catalog.json`. It is an
+identifier, not a URL the renderer fetches. This is a restricted custom catalog,
+not support for the complete A2UI basic catalog.
+
+Supported components are `Text`, `Column`, `Row`, `Card`, `Divider`, `Table`,
+`BarChart`, `TextField`, `CheckBox` and `Button`. Bindings reference a single
+top-level data field, such as `{"path":"/job"}`. See the tool's help for exact
+properties. HTML, scripts, external resources, functions, templates, theme
+overrides, `deleteSurface` and updates to earlier calls are not supported.
+
+The Go tool and browser validate against the same schemas. Results are limited
+to 64 KiB, 32 messages, 100 components, depth 16 and 500 rendered nodes. Tables
+have at most 200 rows and 12 columns; bar charts have at most 50 non-negative
+values. Invalid results remain available as ordinary tool output rather than
+being partially rendered. Tool validation errors use `VALIDATION_FAILED` so the
+agent can correct its payload.
+
+Results are retained with normal conversation tool output and can be rendered
+again after reload. Unsaved form edits are local to the mounted result and reset
+on reload or session changes. They are not sent while typing.
+
+Clicking a result button opens a review dialog showing the resolved A2UI action.
+Only **Send response** sends it as a normal user message to the displayed
+session's owning platform. The agent receives the action name, surface and
+component IDs, timestamp and resolved context. Rendering never performs an
+operation, and sending an action does not bypass session permissions. Read-only,
+shared and disconnected conversations disable form editing and action delivery.
+Tables can still be sorted locally.
 
 ## Factory
 

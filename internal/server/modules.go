@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/ocman/ocman/internal/agentui"
 	"github.com/ocman/ocman/internal/analytics"
 	"github.com/ocman/ocman/internal/artifacts"
 	"github.com/ocman/ocman/internal/db"
@@ -40,7 +41,7 @@ func (s *Server) modules() []module.Module {
 	// Auto-approve first: it seeds the judge delay, which ran before every
 	// other startup step. Plugins next: their discovery came after it.
 	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
-	mods = append(mods, s.backgroundTasksModule())
+	mods = append(mods, &agentui.Module{}, s.backgroundTasksModule())
 	mods = append(mods, s.sourceControlModule(), s.prWorkflowModule())
 	mods = append(mods, s.sidebarModules()...)
 	if s.historyIngest != nil {

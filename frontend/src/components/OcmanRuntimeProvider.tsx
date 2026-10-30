@@ -17,6 +17,8 @@ import { formatModelRef, isSessionRunning } from '../lib/sessionStatus';
 import { TurnSpeechContext, useTurnSpeech } from '../lib/turnSpeech';
 import { convertThreadMessage } from '../lib/threadMessageAdapter';
 import type { PendingSend } from '../pages/session-detail/usePendingSend';
+import { A2UIActionContext } from '../lib/a2uiActionContext';
+import type { A2UIAction } from '../lib/a2ui';
 
 interface Props {
   messages: Message[];
@@ -188,6 +190,11 @@ export function OcmanRuntimeProvider({
   }), [converted, isRunning, onNew]);
 
   const runtime = useExternalStoreRuntime(store);
+  const sendUIAction = useCallback(async (action: A2UIAction) => {
+    if (!canSend || !platformId) throw new Error('The owning session is disconnected or read-only.');
+    await sendMessage(sessionId, `A2UI user response:\n${JSON.stringify(action)}`, undefined, undefined, undefined, undefined, platformId);
+  }, [canSend, platformId, sendMessage, sessionId]);
+  const uiActions = useMemo(() => ({ scope: `${platformId}:${sessionId}`, send: canSend && platformId ? sendUIAction : undefined }), [platformId, sessionId, canSend, sendUIAction]);
 
   return (
     <AgentsContext.Provider value={agentList}>
@@ -196,7 +203,7 @@ export function OcmanRuntimeProvider({
           <TurnStatsContext.Provider value={turnStatsMap}>
             <AssistantRuntimeProvider runtime={runtime}>
               <TurnSpeechContext.Provider value={speech}>
-                {children}
+                <A2UIActionContext.Provider value={uiActions}>{children}</A2UIActionContext.Provider>
               </TurnSpeechContext.Provider>
             </AssistantRuntimeProvider>
           </TurnStatsContext.Provider>

@@ -1,0 +1,11 @@
+{
+  "$id": "https://ocman.dev/a2ui/results/v1/common_types.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$defs": {
+    "ComponentId": {"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,63}$"},
+    "ChildList": {"type":"array","maxItems":100,"uniqueItems":true,"items":{"$ref":"#/$defs/ComponentId"}},
+    "Binding": {"type":"object","required":["path"],"additionalProperties":false,"properties":{"path":{"type":"string","pattern":"^/[A-Za-z][A-Za-z0-9_]{0,63}$","not":{"enum":["/__proto__","/constructor","/prototype"]}}}},
+    "String": {"anyOf":[{"type":"string","maxLength":8000},{"$ref":"#/$defs/Binding"}]},
+    "Scalar": {"type":["string","number","boolean","null"],"maxLength":8000}
+  }
+}

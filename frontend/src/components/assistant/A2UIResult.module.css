@@ -1,0 +1,96 @@
+.result {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 8px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.result p,
+.result h2,
+.result h3 {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.caption {
+  color: var(--text-dim);
+  font-size: 0.85em;
+}
+
+.column,
+.field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.column > div,
+.row > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.divider {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.chart {
+  margin: 0;
+}
+
+.chart ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.chart li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(40px, 2fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.track {
+  height: 12px;
+  background: var(--bg);
+}
+
+.bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.preview {
+  max-height: 45vh;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg);
+  font-family: var(--font-conversation-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

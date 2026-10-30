@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
 import { act, render } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { useContext, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Message, Part, SessionStatus } from '../lib/api';
 import { useTurnStats } from '../lib/turnStats';
+import { A2UIActionContext } from '../lib/a2uiActionContext';
+import type { A2UIAction } from '../lib/a2ui';
+
+const { sendMessage } = vi.hoisted(() => ({ sendMessage: vi.fn().mockResolvedValue(undefined) }));
 
 let runtimeMessages: Array<{ content: unknown }> = [];
 let runtimeRunning = false;
@@ -19,7 +23,7 @@ vi.mock('@assistant-ui/react', () => ({
 }));
 
 vi.mock('../lib/apiStore', () => ({
-  useApiStore: (selector: (state: { sendMessage: ReturnType<typeof vi.fn> }) => unknown) => selector({ sendMessage: vi.fn() }),
+  useApiStore: (selector: (state: { sendMessage: ReturnType<typeof vi.fn> }) => unknown) => selector({ sendMessage }),
 }));
 
 vi.mock('../lib/uiStore', () => ({
@@ -30,6 +34,31 @@ import { OcmanRuntimeProvider } from './OcmanRuntimeProvider';
 
 afterEach(() => {
   vi.useRealTimers();
+  sendMessage.mockClear();
+});
+
+describe('A2UI action delivery', () => {
+  it('uses the owning compound platform and session, and disables delivery when disconnected', async () => {
+    let context!: React.ContextType<typeof A2UIActionContext>;
+    function Probe() { context = useContext(A2UIActionContext); return null; }
+    const view = (canSend: boolean, sessionId = 'first') => <OcmanRuntimeProvider messages={[]} parts={[]} sessionId={sessionId} platformId="r-machine:agent" canSend={canSend}><Probe /></OcmanRuntimeProvider>;
+    const action: A2UIAction = { action: { name: 'inspect', surfaceId: 'result', sourceComponentId: 'button', timestamp: '2026-10-30T00:00:00Z', context: { job: 'Backend' } } };
+    const { rerender } = render(view(true));
+    expect(context.scope).toBe('r-machine:agent:first');
+    await act(async () => { await context.send!(action); });
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith('first', `A2UI user response:\n${JSON.stringify(action)}`, undefined, undefined, undefined, undefined, 'r-machine:agent');
+    rerender(view(false));
+    expect(context.send).toBeUndefined();
+    rerender(view(true, 'second'));
+    expect(context.scope).toBe('r-machine:agent:second');
+    await act(async () => { await context.send!(action); });
+    expect(sendMessage).toHaveBeenLastCalledWith('second', expect.any(String), undefined, undefined, undefined, undefined, 'r-machine:agent');
+  });
+
+  it('does not infer an owner when the platform is missing', () => {
+    function Probe() { expect(useContext(A2UIActionContext).send).toBeUndefined(); return null; }
+    render(<OcmanRuntimeProvider messages={[]} parts={[]} sessionId="s" canSend><Probe /></OcmanRuntimeProvider>);
+  });
 });
 
 describe('OcmanRuntimeProvider turn lifecycle', () => {

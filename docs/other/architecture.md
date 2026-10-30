@@ -97,6 +97,32 @@ flowchart LR
 
 ## 1. System context
 
+### Agent-generated conversation results
+
+```mermaid
+flowchart LR
+    Agent[Agent MCP client] -->|render_ui help and render| Module[agentui module]
+    Schemas[Shared A2UI catalog and schemas] --> Module
+    Module -->|validated self-contained tool result| History[Normal conversation history]
+    History --> Renderer[Native React result renderer]
+    Schemas --> Renderer
+    Renderer -->|explicit action review| User[User confirmation]
+    User -->|normal owner-qualified message| Session[Existing session send path]
+    Session --> Agent
+```
+
+- `internal/agentui` contributes the `render_ui` MCP tool and validates the
+  restricted A2UI v0.9.1 result catalog. It has no database tables, network fetches
+  or session-mutation endpoints. Each call is an independent snapshot.
+- The browser revalidates retained tool output against the same schemas using
+  Ajv, then renders shared Ocman controls, tables and an accessible bar chart.
+  The catalog allows no generated code or external resources. Graph validation
+  bounds recursion and rendered node counts on both sides.
+- Action callbacks are scoped by `OcmanRuntimeProvider` to the owning platform
+  and session. User confirmation sends a normal message through the existing
+  send path. Shared, disconnected and ownerless views have no action callback;
+  session changes discard unsent UI interactions.
+
 ### Session PR workflow
 
 ```mermaid

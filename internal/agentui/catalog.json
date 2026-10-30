@@ -1,0 +1,19 @@
+{
+  "$id": "https://ocman.dev/a2ui/results/v1/catalog.json",
+  "catalogId": "https://ocman.dev/a2ui/results/v1/catalog.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$defs": {
+    "anyComponent": {
+      "oneOf": [
+        {"type":"object","required":["id","component","text"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"const":"Text"},"text":{"$ref":"common_types.json#/$defs/String"},"variant":{"enum":["body","h2","h3","caption"]}}},
+        {"type":"object","required":["id","component","children"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"enum":["Column","Row"]},"children":{"$ref":"common_types.json#/$defs/ChildList"}}},
+        {"type":"object","required":["id","component","child"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"const":"Card"},"child":{"$ref":"common_types.json#/$defs/ComponentId"}}},
+        {"type":"object","required":["id","component"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"const":"Divider"}}},
+        {"type":"object","required":["id","component","label","value"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"enum":["TextField","CheckBox"]},"label":{"type":"string","minLength":1,"maxLength":200},"value":{"$ref":"common_types.json#/$defs/Binding"}}},
+        {"type":"object","required":["id","component","child","action"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"const":"Button"},"child":{"$ref":"common_types.json#/$defs/ComponentId"},"action":{"type":"object","required":["event"],"additionalProperties":false,"properties":{"event":{"type":"object","required":["name"],"additionalProperties":false,"properties":{"name":{"type":"string","pattern":"^[A-Za-z][A-Za-z0-9_-]{0,63}$"},"context":{"type":"object","maxProperties":32,"propertyNames":{"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$","not":{"enum":["__proto__","constructor","prototype"]}},"additionalProperties":{"anyOf":[{"$ref":"common_types.json#/$defs/Scalar"},{"$ref":"common_types.json#/$defs/Binding"}]}}}}}}}},
+        {"type":"object","required":["id","component","columns","rows"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"const":"Table"},"columns":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"string","minLength":1,"maxLength":200}},"rows":{"type":"array","maxItems":200,"items":{"type":"array","maxItems":12,"items":{"$ref":"common_types.json#/$defs/Scalar"}}}}},
+        {"type":"object","required":["id","component","label","data"],"additionalProperties":false,"properties":{"id":{"$ref":"common_types.json#/$defs/ComponentId"},"component":{"const":"BarChart"},"label":{"type":"string","minLength":1,"maxLength":200},"data":{"type":"array","maxItems":50,"items":{"type":"object","required":["label","value"],"additionalProperties":false,"properties":{"label":{"type":"string","maxLength":200},"value":{"type":"number","minimum":0,"maximum":1000000000000}}}}}}
+      ]
+    }
+  }
+}
