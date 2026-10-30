@@ -32,6 +32,7 @@ type inboxMeta struct {
 	FetchHash          string         `json:"fetchHash"`
 	AcknowledgmentHash string         `json:"acknowledgmentHash"`
 	CreatedAt          int64          `json:"createdAt"`
+	LastPolledAt       int64          `json:"lastPolledAt,omitempty"`
 	SecretHash         string         `json:"secretHash,omitempty"`
 	SecretHeader       string         `json:"secretHeader,omitempty"`
 	Recipients         map[int]string `json:"recipients,omitempty"`
@@ -117,6 +118,7 @@ func (s *Server) handleRegisterInbox(w http.ResponseWriter, r *http.Request) {
 		FetchHash:          hashToken(fetchToken),
 		AcknowledgmentHash: hashToken(acknowledgmentToken),
 		CreatedAt:          s.cfg.Now().UnixMilli(),
+		LastPolledAt:       s.cfg.Now().UnixMilli(),
 		SecretHeader:       request.SecretHeader,
 	}
 	if request.Secret != "" {
@@ -235,7 +237,7 @@ func (s *Server) handleIngestInbox(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "inbox pending quota exceeded", http.StatusRequestEntityTooLarge)
 		return
 	}
-	if err := s.cfg.Store.Put(r.Context(), inboxDeliveryKey(id, deliveryID), ciphertext); err != nil {
+	if err := s.putInboxDelivery(r.Context(), id, deliveryID, ciphertext); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -372,7 +374,7 @@ func (s *Server) handleListInboxDeliveries(w http.ResponseWriter, r *http.Reques
 	if len(ids) == inboxPageSize {
 		page.Cursor = encodeInboxCursor(ids[len(ids)-1], through)
 	}
-	writeJSON(w, http.StatusOK, page)
+	s.finishInboxPoll(w, r, id, page)
 }
 
 func (s *Server) handleFetchInboxDelivery(w http.ResponseWriter, r *http.Request) {
@@ -400,6 +402,8 @@ func (s *Server) handleFetchInboxDelivery(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleAcknowledgeInboxDelivery(w http.ResponseWriter, r *http.Request) {
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
 	id := r.PathValue("id")
 	if _, ok := s.authoriseInbox(w, r, id, func(m inboxMeta) string { return m.AcknowledgmentHash }); !ok {
 		return
@@ -409,7 +413,7 @@ func (s *Server) handleAcknowledgeInboxDelivery(w http.ResponseWriter, r *http.R
 		http.Error(w, "delivery not found", http.StatusNotFound)
 		return
 	}
-	if err := s.cfg.Store.DeletePrefix(r.Context(), inboxDeliveryKey(id, deliveryID)); err != nil {
+	if err := s.deleteInboxDelivery(r.Context(), id, deliveryID); err != nil {
 		serverError(w, err)
 		return
 	}

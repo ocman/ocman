@@ -50,6 +50,7 @@ const (
 	DefaultInboxIngestPerHour        = 3600
 	DefaultInboxIngestBurst          = 100
 	DefaultInboxTTL                  = 30 * 24 * time.Hour
+	DefaultInboxDeliveryTTL          = 48 * time.Hour
 )
 
 // Store is the object storage a relay needs. *share.DiskStore is the
@@ -96,7 +97,8 @@ type Config struct {
 	MaxInboxPendingDeliveries int
 	InboxIngestPerHour        float64
 	InboxIngestBurst          float64
-	InboxTTL                  time.Duration
+	InboxTTL                  time.Duration // Maximum time without successful polling.
+	InboxDeliveryTTL          time.Duration // Maximum unacknowledged delivery age.
 	InboxSecretHeader         string
 	// Now is the clock, overridable in tests.
 	Now func() time.Time
@@ -159,6 +161,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.InboxTTL <= 0 {
 		cfg.InboxTTL = DefaultInboxTTL
+	}
+	if cfg.InboxDeliveryTTL <= 0 {
+		cfg.InboxDeliveryTTL = DefaultInboxDeliveryTTL
 	}
 	if cfg.InboxSecretHeader == "" {
 		cfg.InboxSecretHeader = "X-Webhook-Secret"

@@ -381,7 +381,10 @@ flowchart LR
   persists ciphertext plus visible size/timing metadata; the owning local or
   remote ocman decrypts it, durably accepts it in `state.db`, claims routine
   dispatches, then acknowledges the relay. A lost acknowledgment is retried
-  without duplicate scheduling.
+  without duplicate scheduling. Successful delivery polls renew the inbox's
+  30-day inactivity window, including when empty. Separate plaintext receipt
+  timestamps let the relay expire unacknowledged ciphertext after 48 hours;
+  acknowledgment removes ciphertext and its timestamp immediately.
 
 Remotes advertise enabled local platform ids in `Hello`. The hub registers
 one adapter per platform under `r-<instanceId>:<platform>`, sharing one host

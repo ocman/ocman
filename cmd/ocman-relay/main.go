@@ -52,7 +52,8 @@ func main() {
 	maxInboxPendingDeliveries := flag.Int("max-inbox-pending-deliveries", relay.DefaultMaxInboxPendingDeliveries, "maximum pending deliveries per inbox")
 	inboxIngestPerHour := flag.Float64("inbox-ingest-per-hour", relay.DefaultInboxIngestPerHour, "webhook ingests allowed per inbox per hour")
 	inboxIngestBurst := flag.Float64("inbox-ingest-burst", relay.DefaultInboxIngestBurst, "webhook ingest burst capacity per inbox")
-	inboxTTL := flag.Duration("inbox-ttl", relay.DefaultInboxTTL, "how long an inbox is retained")
+	inboxTTL := flag.Duration("inbox-ttl", relay.DefaultInboxTTL, "how long an inbox is retained without successful polling")
+	inboxDeliveryTTL := flag.Duration("inbox-delivery-ttl", relay.DefaultInboxDeliveryTTL, "how long unacknowledged webhook deliveries are retained")
 	inboxSecretHeader := flag.String("inbox-secret-header", "X-Webhook-Secret", "header name used for optional inbox shared-secret validation")
 	createPerHour := flag.Float64("create-per-hour", relay.DefaultCreatePerHour, "share creations allowed per client address per hour")
 	createBurst := flag.Float64("create-burst", relay.DefaultCreateBurst, "burst capacity for share creation")
@@ -80,6 +81,7 @@ func main() {
 		InboxIngestPerHour:        *inboxIngestPerHour,
 		InboxIngestBurst:          *inboxIngestBurst,
 		InboxTTL:                  *inboxTTL,
+		InboxDeliveryTTL:          *inboxDeliveryTTL,
 		InboxSecretHeader:         *inboxSecretHeader,
 		TTL:                       *ttl,
 		CreatePerHour:             *createPerHour,

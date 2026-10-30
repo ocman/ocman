@@ -169,6 +169,17 @@ Disabled routines are skipped, while deleted routines cancel queued
 dispatches. Revoking an inbox removes its subscriptions. Delivery and dispatch
 history is retained for 30 days.
 
+Relay inboxes expire after 30 days without a successful authenticated delivery
+poll. Empty polls renew the inbox too; incoming webhooks alone do not. Pending,
+unacknowledged relay messages expire after 48 hours from receipt, even if fetched
+for a failed processing attempt. Acknowledging a message removes it immediately.
+The relay's hourly sweep removes expired inboxes and messages. These defaults
+can be changed with `ocman-relay -inbox-ttl` and `-inbox-delivery-ttl`.
+Messages stored by an older relay without retention timestamps receive a full
+48-hour window from the first sweep after upgrading. Existing inboxes without
+polling timestamps also receive a full 30-day inactivity window. This relay
+retention is separate from ocman's local 30-day delivery and dispatch history.
+
 Use **Delete** to remove a routine from the UI and stop future scheduled runs.
 Deletion is soft: ocman retains the routine and its run history in `state.db`.
 
