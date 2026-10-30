@@ -26,6 +26,9 @@ tests. Startup may migrate automatically, so inspect resolved paths first.
 
 `mise` provides `air`, `node` and `pnpm`. Run `mise install` if tools are missing.
 Use `pnpm` for all Node commands. The Makefile and `make help` are authoritative.
+Frontend dev targets install locked dependencies before starting. Direct
+`pnpm build` or watcher-script runs require `pnpm install --frozen-lockfile`
+in `frontend/` first after pulling dependency changes.
 
 ```sh
 make dev              # Air backend :8229 and Vite frontend :8228, with HMR

@@ -102,6 +102,23 @@ function pluginSharedCommonJS(): Plugin {
   }
 }
 
+// A missing dependency (e.g. a stale node_modules) is left in the output as a
+// bare import without a warning. Browsers reject the entire module graph over
+// it, so the app renders a blank page. Fail the build instead.
+function noExternalImports(): Plugin {
+  return {
+    name: 'ocman-no-external-imports',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const external = Object.values(bundle).flatMap((chunk) =>
+        chunk.type === 'chunk'
+          ? [...chunk.imports, ...chunk.dynamicImports].filter((id) => !(id in bundle)).map((id) => `${chunk.fileName} -> ${id}`)
+          : [])
+      if (external.length) this.error(`unresolved imports in the build output:\n${external.join('\n')}`)
+    },
+  }
+}
+
 // OCMAN_PROFILE=1 builds against React's profiling renderer so <Profiler>
 // reports commit timings in a production bundle (used by `pnpm perf`).
 const profileBuild = process.env.OCMAN_PROFILE === '1'
@@ -109,6 +126,7 @@ const profileBuild = process.env.OCMAN_PROFILE === '1'
 export default defineConfig({
   plugins: [
     pluginSharedCommonJS(),
+    noExternalImports(),
     react(),
     // React Compiler — auto-memoizes components and hooks at build
     // time so we don't have to remember useMemo/useCallback for every

@@ -37,6 +37,12 @@ DEV_TARGETS := dev dev-prod dev-prod-watch dev-backend dev-remote
 $(DEV_TARGETS): export OCMAN_CONVERSATIONS_DB ?= $(if $(OCMAN_STATEV2_DB),$(OCMAN_STATEV2_DB),$(CURDIR)/state_conv.db)
 
 # --- dev targets ----------------------------------------------------------
+dev dev-prod dev-prod-watch dev-remote dev-frontend: frontend-deps
+
+frontend-deps:
+	cd frontend && pnpm install --frozen-lockfile
+
+.PHONY: frontend-deps build-frontend build-backend
 #
 # The dev loop lives in scripts/dev.sh, not here. `make` catches Ctrl+C and
 # does not forward it to a recipe shell, so a Makefile-hosted dev loop leaves
@@ -156,8 +162,8 @@ docs-build: ## Build the static docs site into site/public
 # Production build
 build: build-frontend build-backend
 
-build-frontend:
-	cd frontend && pnpm install --frozen-lockfile && pnpm build
+build-frontend: frontend-deps
+	cd frontend && pnpm build
 
 build-backend:
 	go build -ldflags "-X main.version=$(VERSION)" -o ocman .

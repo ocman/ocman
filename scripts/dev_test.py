@@ -12,6 +12,21 @@ import unittest
 
 
 class DevDataConfigTest(unittest.TestCase):
+    def test_frontend_make_targets_install_locked_dependencies_first(self):
+        root = Path(__file__).resolve().parent.parent
+        for target in ('dev', 'dev-prod', 'dev-prod-watch', 'dev-remote',
+                       'dev-frontend', 'build-frontend'):
+            with self.subTest(target=target):
+                result = subprocess.run(['make', '-n', target], cwd=root,
+                                        capture_output=True, text=True, check=True)
+                commands = result.stdout
+                install = 'pnpm install --frozen-lockfile'
+                self.assertEqual(commands.count(install), 1, commands)
+                self.assertLess(commands.index(install), commands.index(
+                    'pnpm build' if target in ('dev-prod', 'build-frontend')
+                    else './scripts/dev.sh' if target != 'dev-frontend'
+                    else 'pnpm dev'), commands)
+
     def test_dev_history_default_is_outside_air_temporary_directory(self):
         root = Path(__file__).resolve().parent.parent
         makefile = (root / "Makefile").read_text()
