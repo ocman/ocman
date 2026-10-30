@@ -35,6 +35,28 @@ const session = (over: Partial<Session>): Session => ({
 } as Session);
 
 describe('useSidebarProjectGroups', () => {
+  it('expands the draft project even without a session, including owner changes', () => {
+    const remoteKey = JSON.stringify(['box', '/repo/quiet']);
+    useUiStore.setState({ collapsedProjects: ['/repo/quiet', remoteKey] });
+    const { rerender } = renderHook(({ remoteId }) => useSidebarProjectGroups({
+      id: 'new', displayStatus: 'done', recentSessions: [],
+      activeProject: { directory: '/repo/quiet', remoteId },
+    }), { initialProps: { remoteId: 'local' } });
+    expect(useUiStore.getState().collapsedProjects).not.toContain('/repo/quiet');
+    rerender({ remoteId: 'box' });
+    expect(useUiStore.getState().collapsedProjects).not.toContain(remoteKey);
+  });
+  it('reveals each draft once without undoing a manual collapse on refresh', () => {
+    const { rerender } = renderHook(({ draftId }) => useSidebarProjectGroups({
+      id: 'new', displayStatus: 'done', recentSessions: [],
+      activeProject: { directory: '/repo/quiet', draftId },
+    }), { initialProps: { draftId: 'first' } });
+    act(() => useUiStore.setState({ collapsedProjects: ['/repo/quiet'] }));
+    rerender({ draftId: 'first' });
+    expect(useUiStore.getState().collapsedProjects).toContain('/repo/quiet');
+    rerender({ draftId: 'second' });
+    expect(useUiStore.getState().collapsedProjects).not.toContain('/repo/quiet');
+  });
   it('keeps the local action target when only a remote checkout has recent sessions', () => {
     projects.push({ directory: '/local/repo', projectKey: 'git:shared' } as Project,
       { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' } as Project);

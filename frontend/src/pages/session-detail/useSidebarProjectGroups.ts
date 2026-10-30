@@ -14,6 +14,8 @@ export interface UseSidebarProjectGroupsOptions {
   enabled?: boolean;
   /** Active session id from the URL. */
   id: string | undefined;
+  /** Project selected by a draft before it has a session. */
+  activeProject?: { directory: string; remoteId?: string; draftId?: string };
   recentSessions: Session[];
   /** Display status of the active session, layered over its row. */
   displayStatus: SessionStatus;
@@ -36,6 +38,7 @@ export interface UseSidebarProjectGroupsResult {
 export function useSidebarProjectGroups({
   enabled = true,
   id,
+  activeProject,
   recentSessions,
   displayStatus,
 }: UseSidebarProjectGroupsOptions): UseSidebarProjectGroupsResult {
@@ -49,14 +52,14 @@ export function useSidebarProjectGroups({
   const identity = projectIdentityIndex(allProjects ?? []);
   const expanded = useRef('');
   useEffect(() => {
-    const current = recentSessions.find(s => s.id === id);
+    const current = activeProject ?? recentSessions.find(s => s.id === id);
     if (!current) return;
     const key = identity(current.directory || '', current.remoteId).key;
-    const opened = `${id}:${key}`;
+    const opened = `${activeProject?.draftId ?? id}:${key}`;
     if (expanded.current === opened) return;
     expanded.current = opened;
     expandProjects([key]);
-  }, [id, recentSessions, identity, expandProjects]);
+  }, [id, activeProject, recentSessions, identity, expandProjects]);
   const archiveProject = api.archiveProject;
   // Optimistically-archived project roots: hides the group immediately
   // while /api/projects refetches (project-archive state isn't carried

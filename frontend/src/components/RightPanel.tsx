@@ -48,6 +48,7 @@ interface RightPanelProps {
   sessionId: string;
   platformId: string | undefined;
   directory: string | undefined;
+  remoteId?: string;
   // SSE-driven dirty tick passed through to both child hooks so an
   // edit event refreshes both panels in lockstep.
   dirtyTick?: number;
@@ -90,6 +91,7 @@ export function RightPanel({
   sessionId,
   platformId,
   directory,
+  remoteId,
   dirtyTick,
   session,
   messageBookmarkGroups,
@@ -119,7 +121,7 @@ export function RightPanel({
   // GitHub/Forgejo remote on this project"), keeping the feature
   // discoverable without cluttering projects that genuinely have
   // no upstream.
-  const upstreamTarget = useProjectTarget(directory, session);
+  const upstreamTarget = useProjectTarget(directory, session ?? (directory ? { remoteId } : undefined));
   const upstreamsResult = useUpstreams(visible && openTabs.includes('upstream') ? upstreamTarget.directory : undefined, upstreamTarget.remoteId);
   const pluginPanesResult = usePluginPanes(visible && session ? session.remoteId || 'local' : undefined, documentVisible);
   const pluginPanes = pluginPanesResult.isError ? [] : pluginPanesResult.data ?? [];

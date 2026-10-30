@@ -845,7 +845,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     sidebarProjectGroups,
     handleReorderProjects,
     handleArchiveProjectFromSidebar,
-  } = useSidebarProjectGroups({ id, recentSessions, displayStatus, enabled: sidebarVisible || (openModal === 'move' && documentVisible) });
+  } = useSidebarProjectGroups({ id, activeProject: newConversation ?? undefined, recentSessions, displayStatus, enabled: sidebarVisible || (openModal === 'move' && documentVisible) });
 
   return (
     <PerfProfiler id="SessionPage">
@@ -887,7 +887,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onArchiveSession={handleArchiveSession}
           onPinSession={handlePinSession}
           onNewSession={() => openProjectSessionPalette(
-            session?.directory ? projectRootForDirectory(session.directory) : undefined,
+            projectRootForDirectory(session?.directory ?? newConversation?.directory ?? '') || undefined,
           )}
           onClientSelect={handleClientSelect}
           onNewSessionInDirectory={handleNewSessionInDirectory}
@@ -1158,8 +1158,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
             visible={detailsVisible}
             onCloseMobilePanel={closeMobilePanel}
             sessionId={id}
-            platformId={session?.platform}
-            directory={session?.directory}
+            platformId={session?.platform ?? newConversation?.platform}
+            directory={session?.directory ?? newConversation?.directory}
+            remoteId={session?.remoteId ?? newConversation?.remoteId}
             dirtyTick={changesDirtyTick}
             session={session ?? undefined}
             messageBookmarkGroups={messageBookmarkGroups}

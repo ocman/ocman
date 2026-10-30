@@ -71,6 +71,15 @@ beforeEach(() => {
   }) as unknown as ReturnType<typeof useGitInfo>);
 });
 
+it.each(['local', 'box'])('switches the retained upstream project to a draft on %s without a placeholder session', async (remoteId) => {
+  const { rerender } = render(panel(session('s1', '/previous', 'previous')));
+  await screen.findByText('PR 1');
+  rerender(<RightPanel sessionId="new" platformId="opencode" directory="/draft" remoteId={remoteId}
+    messageBookmarkGroups={[]} selectedMessageBookmarkKey={null}
+    onRemoveMessageBookmark={vi.fn()} onScrollToMessageBookmark={vi.fn()} />);
+  await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenLastCalledWith('/draft', remoteId, expect.any(AbortSignal)));
+});
+
 it('refreshes the retained PR list when switching to another session of the same project', async () => {
   const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
   expect(await screen.findByText('PR 1')).toBeInTheDocument();
