@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutoApproveSection } from './AutoApproveSection';
 
@@ -75,9 +75,12 @@ describe('AutoApproveSection reviewer model', () => {
 
   it('lists the catalog and labels the built-in default', async () => {
     store.getJudgeModel.mockResolvedValue('');
-    store.getJudgeModelOptions.mockResolvedValue({ models: ['anthropic/claude-haiku-4-5'], default: 'anthropic/claude-haiku-4-5' });
+    store.getJudgeModelOptions.mockImplementation(() => new Promise(resolve => {
+      setTimeout(() => resolve({ models: ['anthropic/claude-haiku-4-5'], default: 'anthropic/claude-haiku-4-5' }), 50);
+    }));
     render(<AutoApproveSection />);
-    expect(await screen.findByRole('combobox', { name: 'Auto-approve reviewer model' })).toHaveTextContent('Default (anthropic/claude-haiku-4-5)');
+    expect(screen.getByRole('combobox', { name: 'Auto-approve reviewer model' })).toHaveTextContent(/^Default$/);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Auto-approve reviewer model' })).toHaveTextContent('Default (anthropic/claude-haiku-4-5)'));
   });
 
   it('hides the OpenCode reviewer model without OpenCode', async () => {
