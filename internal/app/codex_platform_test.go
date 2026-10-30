@@ -40,6 +40,7 @@ app-server) OCMAN_TEST_FAKE_CODEX=1 exec %q ;;
 *) exit 2 ;;
 esac
 `, exe))
+	testutil.WriteScript(t, filepath.Join(bin, "codex-acp"), fmt.Sprintf("#!/bin/sh\nOCMAN_TEST_FAKE_CODEX_ACP=1 exec %q\n", exe))
 	if err := os.MkdirAll(filepath.Join(dir, ".codex"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +49,7 @@ esac
 		t.Fatal(err)
 	}
 	base, out, stop := startClaudeOcman(t, "TestCodexOnlyStartup", dir, "OCMAN_TEST_PLATFORMS=codex", "CODEX_HOME=",
+		"OCMAN_TEST_FAKE_ACP_STATE="+filepath.Join(dir, "acp-state.json"),
 		"OCMAN_FAKE_PROVIDER_PID_DIR="+filepath.Join(dir, "pids"))
 	defer stop()
 

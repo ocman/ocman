@@ -36,7 +36,7 @@ func ItemPart(it codexappserver.Item, ts int64) map[string]any {
 	case codexappserver.ItemMcpToolCall:
 		return toolPart(it, it.Server+"_"+it.Tool, arguments(it.Arguments), it.Tool, mcpOutput(it.Result), ts)
 	case codexappserver.ItemDynamicToolCall:
-		return toolPart(it, it.Tool, arguments(it.Arguments), it.Tool, "", ts)
+		return toolPart(it, it.Tool, arguments(it.Arguments), it.Tool, mcpOutput(it.Result), ts)
 	case codexappserver.ItemWebSearch:
 		return toolPart(it, "websearch", map[string]any{"query": it.Query}, it.Query, "", ts)
 	case codexappserver.ItemImageView:

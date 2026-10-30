@@ -65,19 +65,11 @@ func TestCancelledPermissionNeverApproves(t *testing.T) {
 }
 
 func TestHostCallbacksFailClosed(t *testing.T) {
-	c := callbacks{}
-	ctx := t.Context()
-	_, readErr := c.ReadTextFile(ctx, acp.ReadTextFileRequest{})
-	_, writeErr := c.WriteTextFile(ctx, acp.WriteTextFileRequest{})
-	_, createErr := c.CreateTerminal(ctx, acp.CreateTerminalRequest{})
-	_, killErr := c.KillTerminal(ctx, acp.KillTerminalRequest{})
-	_, outputErr := c.TerminalOutput(ctx, acp.TerminalOutputRequest{})
-	_, releaseErr := c.ReleaseTerminal(ctx, acp.ReleaseTerminalRequest{})
-	_, waitErr := c.WaitForTerminalExit(ctx, acp.WaitForTerminalExitRequest{})
-	for _, err := range []error{readErr, writeErr, createErr, killErr, outputErr, releaseErr, waitErr} {
-		var rpc *acp.RequestError
-		if !errors.As(err, &rpc) || rpc.Code != -32601 {
-			t.Fatalf("host callback did not reject: %v", err)
+	w := &wire{}
+	for _, method := range []string{"fs/read_text_file", "fs/write_text_file", "terminal/create", "terminal/kill", "terminal/output", "terminal/release", "terminal/wait_for_exit"} {
+		_, rpc := w.handle(t.Context(), method, []byte(`{}`))
+		if rpc == nil || rpc.Code != -32601 {
+			t.Fatalf("host callback did not reject %s: %v", method, rpc)
 		}
 	}
 }

@@ -39,9 +39,12 @@ type DB struct {
 	enabledPlatforms atomic.Pointer[func() []string]
 }
 
-// DefaultDBPath returns the default path to the ocman state database.
+// DefaultDBPath returns OCMAN_STATE_DB when set, otherwise the default state path.
 // Falls back to a relative path if the home directory cannot be determined.
 func DefaultDBPath() string {
+	if path := os.Getenv("OCMAN_STATE_DB"); path != "" {
+		return path
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return filepath.Join(".local", "share", "ocman", "state.db")

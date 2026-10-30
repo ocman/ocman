@@ -74,12 +74,16 @@ func TestACPAgentProcess(t *testing.T) {
 			caps := map[string]any{}
 			if mode != "no-capabilities" {
 				caps["loadSession"] = true
-				caps["sessionCapabilities"] = map[string]any{"resume": map[string]any{}}
+				caps["sessionCapabilities"] = map[string]any{"resume": map[string]any{}, "fork": map[string]any{}}
 			}
 			reply(map[string]any{"protocolVersion": version, "agentInfo": map[string]any{"name": "fake", "version": "test"},
 				"agentCapabilities": caps, "authMethods": []any{map[string]any{"id": "test-login", "name": "Test login"}}})
 		case "authenticate":
 			reply(map[string]any{})
+		case "session/set_config_option", "_session/test":
+			reply(map[string]any{})
+		case "session/fork":
+			reply(map[string]any{"sessionId": "forked"})
 		case "session/new", "session/load", "session/resume":
 			var params struct {
 				Cwd        string `json:"cwd"`

@@ -7,6 +7,7 @@ import (
 
 	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
 	"github.com/ocman/ocman/internal/platforms/claude/transport"
+	"github.com/ocman/ocman/internal/platforms/codex/acptest"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 	codextransport "github.com/ocman/ocman/internal/platforms/codex/transport"
 	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
@@ -21,9 +22,15 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	// The fake `codex app-server` that codex-only tests put on PATH.
+	if os.Getenv("OCMAN_TEST_FAKE_CODEX_ACP") != "" {
+		acptest.Serve(os.Stdin, os.Stdout, acptest.Config{State: os.Getenv("OCMAN_TEST_FAKE_ACP_STATE"), Reply: codextest.LiveReply})
+		os.Exit(0)
+	}
 	if os.Getenv("OCMAN_TEST_FAKE_CODEX") != "" {
 		s := codextest.Serve(os.Stdin, os.Stdout)
-		codextest.World(s)
+		if path := os.Getenv("OCMAN_TEST_FAKE_ACP_STATE"); path != "" {
+			acptest.ConfigureNative(s, path, true)
+		}
 		<-s.Done()
 		os.Exit(0)
 	}

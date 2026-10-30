@@ -2,6 +2,7 @@ package acpexec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -73,6 +74,27 @@ func (c *Client) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptRes
 // Cancel requests interruption. The eventual Prompt result confirms settlement.
 func (c *Client) Cancel(ctx context.Context, sessionID acp.SessionId) error {
 	return c.conn.Cancel(ctx, acp.CancelNotification{SessionId: sessionID})
+}
+
+// SetConfigOption selects an option advertised in the session's config options.
+func (c *Client) SetConfigOption(ctx context.Context, p acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
+	return c.conn.SetSessionConfigOption(ctx, p)
+}
+
+func (c *Client) ForkSession(ctx context.Context, p acp.UnstableForkSessionRequest) (acp.UnstableForkSessionResponse, error) {
+	if c.info.AgentCapabilities.SessionCapabilities.Fork == nil {
+		return acp.UnstableForkSessionResponse{}, platforms.ErrUnsupported
+	}
+	if err := absoluteDirectory(p.Cwd); err != nil {
+		return acp.UnstableForkSessionResponse{}, err
+	}
+	return c.conn.UnstableForkSession(ctx, p)
+}
+
+// CallExtension is for explicitly negotiated, agent-specific operations. It
+// never substitutes another operation after a failure.
+func (c *Client) CallExtension(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	return c.conn.CallExtension(ctx, method, params)
 }
 
 func absoluteDirectory(dir string) error {

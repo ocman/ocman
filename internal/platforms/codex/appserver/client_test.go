@@ -108,34 +108,13 @@ func TestHandshakeFailure(t *testing.T) {
 	}
 }
 
-func TestThreadAndTurnMethods(t *testing.T) {
+func TestThreadMetadataMethods(t *testing.T) {
 	c, s := attach(t, codexappserver.Options{})
 	thread := map[string]any{"id": "thr_1", "cwd": "/repo", "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
-	threadResp := func(json.RawMessage) (any, error) {
-		return map[string]any{"thread": thread, "model": "gpt-5", "modelProvider": "openai", "cwd": "/repo"}, nil
-	}
-	for _, m := range []string{"thread/start", "thread/resume", "thread/fork"} {
-		s.Handle(m, threadResp)
-	}
 	s.Handle("thread/read", func(json.RawMessage) (any, error) { return map[string]any{"thread": thread}, nil })
 	empty := func(json.RawMessage) (any, error) { return map[string]any{}, nil }
-	for _, m := range []string{"thread/archive", "thread/name/set", "thread/compact/start", "turn/interrupt"} {
+	for _, m := range []string{"thread/archive", "thread/name/set"} {
 		s.Handle(m, empty)
-	}
-	s.Handle("turn/start", func(json.RawMessage) (any, error) {
-		return map[string]any{"turn": map[string]any{"id": "turn_1", "status": "inProgress", "items": []any{}}}, nil
-	})
-	s.Handle("turn/steer", func(json.RawMessage) (any, error) { return map[string]any{"turnId": "turn_1"}, nil })
-
-	start, err := c.StartThread(ctx(t), codexappserver.ThreadStartParams{Cwd: "/repo", Sandbox: "workspace-write", ApprovalPolicy: "on-request"})
-	if err != nil || start.Thread.ID != "thr_1" || start.Model != "gpt-5" || start.Thread.Source.Kind != "appServer" {
-		t.Fatalf("StartThread = %+v, %v", start, err)
-	}
-	if _, err := c.ResumeThread(ctx(t), codexappserver.ThreadResumeParams{ThreadID: "thr_1"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.ForkThread(ctx(t), codexappserver.ThreadForkParams{ThreadID: "thr_1"}); err != nil {
-		t.Fatal(err)
 	}
 	if th, err := c.ReadThread(ctx(t), "thr_1", true); err != nil || th.Cwd != "/repo" || th.Status.Type != "idle" {
 		t.Fatalf("ReadThread = %+v, %v", th, err)
@@ -146,39 +125,17 @@ func TestThreadAndTurnMethods(t *testing.T) {
 	if err := c.SetThreadName(ctx(t), "thr_1", "title"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.CompactThread(ctx(t), "thr_1"); err != nil {
-		t.Fatal(err)
-	}
-	turn, err := c.StartTurn(ctx(t), codexappserver.TurnStartParams{ThreadID: "thr_1", Input: []codexappserver.UserInput{codexappserver.TextInput("hi")}})
-	if err != nil || turn.ID != "turn_1" || turn.Status != codexappserver.TurnInProgress {
-		t.Fatalf("StartTurn = %+v, %v", turn, err)
-	}
-	if id, err := c.SteerTurn(ctx(t), codexappserver.TurnSteerParams{ThreadID: "thr_1", ExpectedTurnID: "turn_1"}); err != nil || id != "turn_1" {
-		t.Fatalf("SteerTurn = %q, %v", id, err)
-	}
-	if err := c.InterruptTurn(ctx(t), "thr_1", "turn_1"); err != nil {
-		t.Fatal(err)
-	}
 
 	calls := s.Calls()
 	var methods []string
 	for _, call := range calls {
 		methods = append(methods, call.Method)
 	}
-	want := []string{"initialize", "thread/start", "thread/resume", "thread/fork", "thread/read", "thread/archive",
-		"thread/name/set", "thread/compact/start", "turn/start", "turn/steer", "turn/interrupt"}
+	want := []string{"initialize", "thread/read", "thread/archive", "thread/name/set"}
 	if !slices.Equal(methods, want) {
 		t.Fatalf("methods = %q", methods)
 	}
-	// Wire spelling the server requires: sandbox is a mode string on
-	// thread/start and text inputs carry snake_case text_elements.
-	if got := string(calls[1].Params); !strings.Contains(got, `"sandbox":"workspace-write"`) || !strings.Contains(got, `"approvalPolicy":"on-request"`) {
-		t.Fatalf("thread/start params = %s", got)
-	}
-	if got := string(calls[8].Params); !strings.Contains(got, `{"type":"text","text":"hi","text_elements":[]}`) {
-		t.Fatalf("turn/start params = %s", got)
-	}
-	if got := string(calls[4].Params); got != `{"threadId":"thr_1","includeTurns":true}` {
+	if got := string(calls[1].Params); got != `{"threadId":"thr_1","includeTurns":true}` {
 		t.Fatalf("thread/read params = %s", got)
 	}
 }
@@ -188,9 +145,6 @@ func TestReadThreadError(t *testing.T) {
 	var rpc *codexappserver.RPCError
 	if _, err := c.ReadThread(ctx(t), "x", false); !errors.As(err, &rpc) || rpc.Code != -32601 {
 		t.Fatalf("err = %v", err)
-	}
-	if _, err := c.StartTurn(ctx(t), codexappserver.TurnStartParams{}); err == nil {
-		t.Fatal("expected error")
 	}
 }
 

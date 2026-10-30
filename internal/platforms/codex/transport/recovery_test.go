@@ -27,7 +27,7 @@ func TestRestartChangesCodexHome(t *testing.T) {
 	first.Close()
 	// Model a tmux server retaining the previous dashboard's environment.
 	env := filepath.Join(r.data, "tmux-env")
-	if err := os.WriteFile(env, []byte("FAKE_CODEX=1\nCODEX_HOME="+os.Getenv("CODEX_HOME")+"\nFAKE_CODEX_LAUNCHES="+os.Getenv("FAKE_CODEX_LAUNCHES")+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(env, []byte("FAKE_CODEX=1\nCODEX_HOME="+os.Getenv("CODEX_HOME")+"\nFAKE_CODEX_LAUNCHES="+os.Getenv("FAKE_CODEX_LAUNCHES")+"\nFAKE_CODEX_ACP_STATE="+os.Getenv("FAKE_CODEX_ACP_STATE")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("OCMAN_FAKE_TMUX_ENV", env)

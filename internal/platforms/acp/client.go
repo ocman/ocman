@@ -29,7 +29,7 @@ type Options struct {
 // There is deliberately no automatic retry, native fallback or session-ID
 // conversion: a failed mutation may already have reached the agent.
 type Client struct {
-	conn      *acp.ClientSideConnection
+	conn      *wire
 	info      acp.InitializeResponse
 	proc      *process
 	mu        sync.Mutex
@@ -53,7 +53,7 @@ func Start(ctx context.Context, opts Options, handlers Handlers) (*Client, error
 		return nil, err
 	}
 	c := &Client{proc: p}
-	c.conn = acp.NewClientSideConnection(callbacks{handlers: handlers, failed: c.failUpdate}, p.stdin, p.stdout)
+	c.conn = newWire(callbacks{handlers: handlers, failed: c.failUpdate}, p.stdin, p.stdout)
 	if opts.Logger != nil {
 		c.conn.SetLogger(opts.Logger)
 	}
@@ -68,12 +68,16 @@ func (c *Client) initialize(ctx context.Context, version string) error {
 	if version == "" {
 		version = "dev"
 	}
+	capabilities := acp.ClientCapabilities{}
+	if c.conn.callbacks.handlers.Elicitation != nil {
+		capabilities.Elicitation = &acp.ElicitationCapabilities{Form: &acp.ElicitationFormCapabilities{}}
+	}
 	info, err := c.conn.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 		ClientInfo:      &acp.Implementation{Name: "ocman", Version: version},
 		// File and terminal operations remain agent-owned. Do not advertise
 		// host capabilities until they have owner-routed implementations.
-		ClientCapabilities: acp.ClientCapabilities{},
+		ClientCapabilities: capabilities,
 	})
 	if err != nil {
 		if ctx.Err() != nil {

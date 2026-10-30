@@ -1071,7 +1071,7 @@ flowchart TD
     Supervisor --> Claude[platforms/claude/provider + launch<br/>index, converter, SDK-compatible claude children]
     Registry --> CodexPlatform[platforms/codex/transport<br/>machine-wide supervisor + history app-server]
     CodexPlatform -->|execute, probe ownership, drain and seal idle owners| Provider
-    Supervisor --> Codex[platforms/codex/provider + appserver<br/>converter, one codex app-server]
+    Supervisor --> Codex[platforms/codex/provider + appserver<br/>ACP execution, native history + converter]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC
     Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
@@ -1120,29 +1120,28 @@ flowchart TD
   `codex app-server` over stdio, with an in-process fake in
   `appserver/codextest`. `platforms/codex/provider` converts Codex thread items
   into v1 messages and parts through one converter shared by stored and live
-  items, reads paged thread history, and implements the supervisor backend: one
-  app-server hosts every thread it drives, resumed on first use; failed
-  connections are retired before replacement. Approvals and user input become
-  ocman prompts, and a send during a turn steers it. Item updates and terminal
-  events reach the spool before idle; failed upserts and turn ends retry
-  without releasing admission, and oversized output carries an explicit
-  truncation marker. `platforms/codex/transport` registers the opt-in
-  `codex` platform. It runs one machine-wide supervisor (`ocman provider codex`)
-  through `ocruntime.BackendRuntime`, launched on first use, reattached after a
-  restart and replaced when it dies, and forwards to whichever adapter is
-  current. A separate read-only app-server serves history ingestion and the
-  model catalog, so browsing never launches the supervisor. Both processes use
-  the captured canonical Codex home. A changed home, CLI, backend identity or
-  bound MCP listener drains and replaces the supervisor before new execution.
-  During replacement, pending prompts, replies and abort remain routed to the
-  old supervisor, using only version-independent routes on protocol mismatch.
-  Ownership recovery uses `thread/loaded/list`, never history, to reuse an idle
-  thread in the current app-server. For an older supervisor in the same managed
-  runtime directory and root, the transport verifies the exact thread and Codex
-  home twice, drains only if idle, then seals the drain before stopping it.
-  Sealing prevents a racing reconnect from resuming admission before shutdown.
-  Only explicit pre-turn ownership rejections permit bounded retries. Unknown,
-  active, incompatible or unprobeable owners remain untouched.
+  items. Its supervisor drives a shared installed `codex-acp` process through
+  `platforms/acp` by default. Native app-server connections supply history and
+  account metadata and persist title changes. They never resume ACP-owned threads
+  for execution. ACP chunks
+  preserve native item IDs, seed the native reply group and reconcile the final
+  stored turn and rollout accounting before idle. Approvals and scoped form
+  questions use Ocman's prompt lifecycle; their resolution is spooled before
+  the ACP callback returns. Steering opts into `promptRequired`, preventing an
+  idle steer from starting an untracked turn. Failed events and terminal writes
+  retain admission until durable publication recovers. `codex/transport` still
+  registers the opt-in `codex` platform, launches its machine-wide supervisor
+  through `ocruntime.BackendRuntime` and reattaches after dashboard restarts.
+  Browsing uses a separate native reader and never starts execution. All paths
+  share the captured canonical Codex home; `CODEX_PATH` selects the same CLI.
+  Adapter executable, home, CLI, backend identity and MCP listener form the
+  supervisor launch identity. Changing them drains and replaces it while prompt
+  replies and abort remain routed to the old supervisor. ACP offers no raw shell,
+  fork-at-message or native loaded-writer probe. Those capabilities are disabled,
+  not implemented through a second native writer. Native execution routes,
+  notifications and loaded-writer recovery have been removed. Other owners,
+  including older Ocman supervisors, are never stopped. Adapter errors never
+  trigger native execution fallback or automatic prompt replay.
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux launcher and terminal host wiring. Its session paths (SSE tee,
   notify, permission replies) still drive the auto-approve pipeline. It is the
@@ -1828,23 +1827,31 @@ flowchart LR
   Native data access supplies ingestion and live execution; application browsing
   reads continue to use the canonical history store.
 
-The ACP execution foundation is separate from the active paths above. No platform
-currently routes execution through it:
+Codex uses the shared ACP execution transport inside its existing supervisor:
 
 ```mermaid
 flowchart LR
-    ACP[platforms/acp<br/>execution client] --> SDK[coder/acp-go-sdk<br/>ACP v1 JSON-RPC]
-    SDK -->|stdio| Agent[Installed ACP agent or adapter]
-    Agent -->|updates and permission requests| ACP
+    Executor[codex/provider<br/>ACP execution] --> ACP[platforms/acp]
+    ACP --> SDK[coder/acp-go-sdk<br/>JSON-RPC framing]
+    SDK -->|stdio| Adapter[Installed codex-acp]
+    Adapter --> Writer[Codex execution app-server]
+    Executor --> Reader[Native history + title metadata]
+    Executor --> Converter[Single Codex converter]
+    Reader --> Converter
+    Converter --> Spool[Existing supervisor spool]
 ```
 
 - `platforms/acp` launches an explicit executable, negotiates capabilities and
   supports new/load/resume, prompts and cancellation. It preserves native IDs.
 - Its event callback must finish recording each update before returning. A failed
   callback disconnects execution; permissions fail closed without a handler.
+- The wire dispatcher retains session/tool fields on form elicitation requests
+  that the SDK's generated form union omits. Questions cannot borrow another
+  session's context. Only supported, non-secret form fields reach the UI.
 - The client does not register a platform, install adapters, ingest history or
-  replace owner routing and supervisor recovery. Those remain required before
-  enabling it for any platform. Existing execution paths are unchanged.
+  replace owner routing and supervisor recovery. Codex retains these native
+  integrations; OpenCode and Claude execution are unchanged. Tests use the
+  disposable `codex/acptest` peer and native history fixture.
 
 ## 3. Session and event data flow
 

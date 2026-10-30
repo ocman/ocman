@@ -19,7 +19,23 @@ reads, stores or refreshes your Codex credentials.
 
 1. Install the Codex CLI and sign in once in a terminal (`codex login`).
    Recorded protocol fixtures use **0.164.0**.
-2. Enable Codex in Settings → Platforms, or for one launch:
+2. Install Node.js 22 or newer and the ACP adapter on every machine that will
+   execute Codex sessions:
+
+   ```sh
+   pnpm add -g @agentclientprotocol/codex-acp@2.5.0
+   ```
+
+   `codex-acp` must be on Ocman's PATH. Execution uses ACP automatically; there
+   is no separate ACP toggle and no silent native execution fallback. Ocman
+   sets `CODEX_PATH` to the same Codex executable used for native history and
+   passes the same canonical `CODEX_HOME` to both.
+   Settings shows a copyable install command when you select Codex. Setup then
+   checks for the CLI, Node.js and adapter. If pnpm has no global bin directory,
+   run `pnpm setup`, reopen your terminal and ensure `PNPM_HOME` is on Ocman's
+   PATH. Restart Ocman if its PATH changed, then click **Re-check**. Enabling
+   Codex never installs packages automatically.
+3. Enable Codex in Settings → Platforms, or for one launch:
 
    ```sh
    ocman -platforms opencode,claudecode,codex
@@ -28,16 +44,17 @@ reads, stores or refreshes your Codex credentials.
 
    Codex is not enabled by default. Without `opencode` in the list, ocman does
    not need OpenCode, its binary or its database.
-3. Pick a Codex model when starting a new conversation. The model list holds
+4. Pick a Codex model when starting a new conversation. The model list holds
    the models `codex` reports (`model/list`), tagged with their platform; a
    reference names the platform as a prefix, for example
    `codex:openai/gpt-5.5`. The list is cached for ten minutes.
 
 ## How it works
 
-Ocman talks to Codex only through `codex app-server`, Codex's own JSON-RPC
-interface, rather than its terminal UI. Rollout files supply token accounting
-as described below.
+Ocman executes Codex through the
+[Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp).
+Native `codex app-server` reads and rollout files still supply history,
+account metadata and token accounting.
 
 - **History.** A read-only `codex app-server` lists and reads the threads in
   `$CODEX_HOME` (default `~/.codex`), archived and subagent threads included.
@@ -47,31 +64,27 @@ as described below.
   from the thread's rollout file (`token_usage_record` lines), including the
   zstd-compressed rollouts Codex writes for older threads.
 - **Sessions ocman drives.** One background supervisor per machine runs on
-  ocman's `tmux -L ocman-agents` server and hosts one `codex app-server` for
-  every thread it drives. It starts with the first session operation, not
+  ocman's `tmux -L ocman-agents` server and hosts one shared `codex-acp` process
+  for all threads it drives. The adapter owns the execution app-server; native
+  readers never resume its threads for execution. It starts with the first session operation, not
   with ocman. A running turn and a waiting permission survive an ocman
   restart; a reboot ends them, and the next send starts a new supervisor. If
   the supervisor stops, the next action starts a new one; an action that was
   already on its way to the old one fails and can be repeated.
 - **Composer.** Send, image attachments, abort, rename, model and reasoning
   effort. A message sent while a turn runs is added to that turn (Codex's
-  `turn/steer`) rather than starting another; Ctrl/Cmd+Enter holds it for the
+  ACP steering extension) rather than starting another; Ctrl/Cmd+Enter holds it for the
   next turn instead. Replies, reasoning summaries and command output stream
-  as they arrive. File edits show as patches.
+  as they arrive. Native turn reconciliation publishes complete tool payloads
+  and accounting before idle. File edits show as patches.
 - **Slash commands.** `/review` reviews your uncommitted changes, or follows
   the instructions you type after it; `/compact` summarizes the conversation
   to free context. Every enabled skill Codex reports for the session's
   directory is offered too: `/<skill> <prompt>` sends the prompt with that
   skill attached. Compaction and reviews run as turns, so the session shows as
   busy until they finish.
-- **Shell (`!`).** `!command` runs the command in the session's directory
-  without involving the model, and its output appears in the conversation.
-  Codex runs it **unsandboxed with full access**, like a terminal, regardless
-  of the session's sandbox.
-- **Fork.** `/fork` copies the whole thread, or forks from a prompt you pick:
-  the fork keeps the turns before it, so you can take the conversation in
-  another direction from there. Forking from the first prompt gives an empty
-  conversation in the same directory.
+- **Fork.** `/fork` copies the whole thread through ACP. Forking at a selected
+  prompt is unavailable.
 - **Panels and usage.** The session changes panel lists every file Codex
   edited with its diff, and the session info panel shows token totals and how
   full the context was after the latest turn. Analytics counts Codex tokens.
@@ -82,11 +95,10 @@ as described below.
 ## Thread ownership conflicts
 
 Codex allows only one process to write a thread at a time, even when it is idle.
-Ocman automatically reuses an idle thread already loaded in its current
-app-server. If an older ocman supervisor in the same managed runtime inventory
-owns it, ocman verifies the thread and Codex home, drains the supervisor only
-when it has no active turns or pending prompts, and stops it before retrying.
-Retries are bounded and happen only before Codex accepts a turn.
+Ocman reuses sessions already loaded in its ACP connection. ACP does not expose
+a native loaded-writer probe, so Ocman does not stop another process or retry a
+send through a native execution path. This applies to older Ocman supervisors
+too; close their thread before sending it through ACP.
 
 An external, active or unverifiable owner is never stopped. The failed message
 shows recovery instructions. Close the thread in the owning Codex terminal or
@@ -114,6 +126,12 @@ none of these, prompts are left to you.
   does not restore the files those turns changed and cannot redo, so ocman
   does not offer it.
 - No agent selector: Codex has no main agents to switch between.
+- No direct `!` shell execution or fork-at-message through ACP. Raw shell
+  requests fail as unsupported; they are never sent to the model as prompts.
+- Form questions support strings, choices and booleans. Secret and unsupported
+  structured forms are declined rather than guessed or routed to another session.
+- ACP notices without native message IDs go to diagnostics rather than creating
+  conversation messages that cannot be reconciled with native history.
 - The session info panel lists no MCP or LSP servers, and Codex reports no
   price, so cost is estimated from token counts where a price is known.
 - Usage windows the plan does not have show as "not reported yet".

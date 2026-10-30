@@ -1,5 +1,5 @@
 // Package codexprovider implements the Codex backend: it drives
-// `codex app-server` and converts its threads into ocman's event format.
+// Codex through ACP and converts native threads into ocman's event format.
 package codexprovider
 
 import (
@@ -38,10 +38,9 @@ type Converter struct {
 }
 
 type group struct {
-	info     map[string]any
-	parts    []map[string]any
-	times    []int64
-	sections map[string]int // streamed reasoning summary index per part
+	info  map[string]any
+	parts []map[string]any
+	times []int64
 }
 
 // AddHistory converts a paged read: the thread's metadata, its turns without

@@ -34,7 +34,7 @@ type harness struct {
 	spool string
 }
 
-func newHarness(t *testing.T, setup func(*codextest.Server)) *harness {
+func newHarness(t *testing.T, setup func(*codextest.Server), options ...Options) *harness {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "cx-") // short: unix socket path limit
 	if err != nil {
@@ -58,7 +58,12 @@ func newHarness(t *testing.T, setup func(*codextest.Server)) *harness {
 		}
 		return codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{}, handler)
 	}
-	sup, b, err := newSupervisor(ctx, Options{Start: start}, filepath.Join(dir, "spool"))
+	opts := Options{Start: start}
+	if len(options) > 0 {
+		opts = options[0]
+		opts.Start = start
+	}
+	sup, b, err := newSupervisor(ctx, opts, filepath.Join(dir, "spool"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +74,7 @@ func newHarness(t *testing.T, setup func(*codextest.Server)) *harness {
 	h.client = &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}}
-	t.Cleanup(func() { cancel(); <-served; h.client.CloseIdleConnections() })
+	t.Cleanup(func() { cancel(); b.closeClient(); <-served; h.client.CloseIdleConnections() })
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		if resp, err := h.client.Get("http://codex/hello"); err == nil {
 			_ = resp.Body.Close()

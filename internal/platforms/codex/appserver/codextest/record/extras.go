@@ -41,7 +41,7 @@ func extras(ctx context.Context, c *codexappserver.Client, h *handler, id, home,
 	}
 
 	step("turn")
-	if _, err := c.StartTurn(ctx, codexappserver.TurnStartParams{ThreadID: id, Input: []codexappserver.UserInput{codexappserver.TextInput("Reply with the word ready.")}}); err != nil {
+	if err := c.Call(ctx, codexappserver.MethodTurnStart, codexappserver.TurnStartParams{ThreadID: id, Input: []codexappserver.UserInput{codexappserver.TextInput("Reply with the word ready.")}}, nil); err != nil {
 		return err
 	}
 	first, ok := waitTurn(3 * time.Minute)

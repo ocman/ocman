@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +35,32 @@ func TestDoctorReportsMixedResults(t *testing.T) {
 
 	if c := stateDirCheck(filepath.Join(dir, "missing")); c.OK {
 		t.Errorf("missing state dir reported ok: %+v", c)
+	}
+}
+
+func TestDoctorChecksCodexAdapterOnlyWhenEnabled(t *testing.T) {
+	original := lookPath
+	t.Cleanup(func() { lookPath = original })
+	lookPath = func(bin string) (string, error) {
+		if bin == "codex-acp" {
+			return "", errors.New("missing")
+		}
+		return "/bin/" + bin, nil
+	}
+	for _, enabled := range []bool{false, true} {
+		checks := New(Deps{PlatformEnabled: func(id string) bool { return enabled && id == "codex" }}).Doctor(t.Context())
+		found := false
+		for _, check := range checks {
+			if check.ID == "codex-acp" {
+				found = true
+				if check.OK || !check.Required || !strings.Contains(check.Hint, "pnpm add -g @agentclientprotocol/codex-acp@2.5.0") {
+					t.Fatalf("adapter check = %+v", check)
+				}
+			}
+		}
+		if found != enabled {
+			t.Fatalf("adapter check present = %v, enabled = %v", found, enabled)
+		}
 	}
 }
 

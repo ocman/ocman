@@ -3,16 +3,13 @@ package codexprovider
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
+	acpexec "github.com/ocman/ocman/internal/platforms/acp"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/providerprotocol"
 	"github.com/ocman/ocman/internal/providersupervisor"
@@ -20,12 +17,14 @@ import (
 
 // Options configures a Codex supervisor.
 type Options struct {
-	CLI     string   // codex executable
-	Args    []string // extra app-server arguments, such as -c overrides
-	Env     []string // child environment; nil inherits this process's
-	Dir     string   // app-server working directory, the project root
-	Version string   // ocman version reported as clientInfo
-	// Start connects to an app-server. Nil spawns CLI; tests attach a fake.
+	CLI        string          // codex executable
+	Env        []string        // child environment; nil inherits this process's
+	Dir        string          // app-server working directory, the project root
+	Version    string          // ocman version reported as clientInfo
+	ACPCommand acpexec.Command // installed adapter; empty uses codex-acp
+	Home       string          // canonical Codex home shared with native history
+	MCPAddr    string          // bound ocman MCP listener
+	// Start connects the native reader. Nil spawns CLI; tests attach a fake.
 	Start func(context.Context, codexappserver.Handler) (*codexappserver.Client, error)
 }
 
@@ -34,14 +33,14 @@ type Options struct {
 // with 501. Revert is not offered: thread/revert drops history without
 // restoring files and has no redo. Codex has no switchable main agents.
 func Capabilities() providerprotocol.Capabilities {
-	return providerprotocol.Capabilities{Rename: true, Ownership: true, Capabilities: platforms.Capabilities{
+	return providerprotocol.Capabilities{Rename: true, Capabilities: platforms.Capabilities{
 		Composer: true, Abort: true, Events: true, RespondPermission: true, RespondQuestion: true,
 		AutoApprove: true, PushPrompts: true, ExactPatterns: true, PermissionRules: true, ModelCatalog: true,
-		Compact: true, Fork: true, ForkAtMessage: true, ShellExec: true, SlashCommands: true, FileChanges: true, SessionInfo: true}}
+		Compact: true, Fork: true, SlashCommands: true, FileChanges: true, SessionInfo: true}}
 }
 
 // NewSupervisor serves Codex threads over the provider protocol. One
-// app-server process hosts every thread the supervisor drives; it starts on
+// ACP adapter hosts every thread the supervisor drives; it starts on
 // first use and again after it exits.
 func NewSupervisor(ctx context.Context, opts Options, spool string) (*providersupervisor.Supervisor, error) {
 	sup, _, err := newSupervisor(ctx, opts, spool)
@@ -50,6 +49,7 @@ func NewSupervisor(ctx context.Context, opts Options, spool string) (*providersu
 
 func newSupervisor(ctx context.Context, opts Options, spool string) (*providersupervisor.Supervisor, *backend, error) {
 	b := &backend{opts: opts, ctx: ctx, sessions: map[string]*session{}, prompts: map[string]*prompt{}}
+	b.acp = newACPExecution(b)
 	sup, err := providersupervisor.New(spool, providersupervisor.Backend{
 		Hello: providerprotocol.Hello{ProtocolVersion: providerprotocol.CurrentVersion, PlatformID: PlatformID, CLIVersion: cliVersion(opts),
 			Capabilities: Capabilities()},
@@ -75,6 +75,7 @@ type backend struct {
 	opts Options
 	ctx  context.Context
 	sup  *providersupervisor.Supervisor
+	acp  *acpExecution
 
 	startMu       sync.Mutex // serializes app-server starts
 	publicationMu sync.Mutex // serializes pending upserts and terminal recovery
@@ -84,7 +85,6 @@ type backend struct {
 	mu       sync.Mutex
 	client   *codexappserver.Client
 	gen      uint64 // client generation; events of older clients are dropped
-	loaded   map[string]bool
 	sessions map[string]*session
 	prompts  map[string]*prompt
 }
@@ -98,10 +98,6 @@ type session struct {
 	title           string
 	accepted        uint64 // turns admitted (BeginTurn)
 	running         bool   // admitted and not settled
-	turn            string // the running Codex turn
-	conv            *Converter
-	base            *codexappserver.TokenUsage // thread totals before the turn
-	used            *TurnUsage                 // the turn's usage so far
 	status          db.SessionStatus
 	view            []viewEntry
 }
@@ -138,17 +134,16 @@ func (b *backend) conn(ctx context.Context) (*codexappserver.Client, uint64, err
 	b.gen++
 	gen = b.gen
 	b.mu.Unlock()
-	h := &events{b: b, gen: gen}
 	start := b.opts.Start
 	if start == nil {
 		start = b.spawn
 	}
-	c, err := start(ctx, h)
+	c, err := start(ctx, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("starting codex app-server: %w", err)
 	}
 	b.mu.Lock()
-	b.client, b.loaded = c, map[string]bool{}
+	b.client = c
 	b.mu.Unlock()
 	go func() {
 		<-c.Done()
@@ -159,11 +154,14 @@ func (b *backend) conn(ctx context.Context) (*codexappserver.Client, uint64, err
 }
 
 func (b *backend) spawn(ctx context.Context, h codexappserver.Handler) (*codexappserver.Client, error) {
-	return codexappserver.Start(ctx, codexappserver.Options{CLI: b.opts.CLI, Args: b.opts.Args, Env: b.opts.Env, Dir: b.opts.Dir,
+	return codexappserver.Start(ctx, codexappserver.Options{CLI: b.opts.CLI, Env: b.opts.Env, Dir: b.opts.Dir,
 		Client: codexappserver.ClientInfo{Name: "ocman", Title: "ocman", Version: b.opts.Version}, ExperimentalAPI: true, Stderr: os.Stderr}, h)
 }
 
 func (b *backend) closeClient() {
+	if b.acp != nil {
+		b.acp.close()
+	}
 	b.mu.Lock()
 	c := b.client
 	b.mu.Unlock()
@@ -180,42 +178,15 @@ func (b *backend) lost(gen uint64, err error) {
 	b.retire(gen, err)
 }
 
-func (b *backend) retire(gen uint64, err error) {
+func (b *backend) retire(gen uint64, _ error) {
 	b.mu.Lock()
 	if gen != b.gen || b.client == nil {
 		b.mu.Unlock()
 		return
 	}
-	b.client, b.loaded = nil, nil
-	if b.ctx.Err() != nil {
-		// Shutdown: publish nothing; the turns end with this process.
-		b.mu.Unlock()
-		return
-	}
-	running := map[string]uint64{}
-	for id, s := range b.sessions {
-		if s.running {
-			running[id] = s.accepted
-		}
-	}
-	var stale []string
-	for id := range b.prompts {
-		stale = append(stale, id)
-	}
+	// Native reader loss never settles the independently owned ACP turn.
+	b.client = nil
 	b.mu.Unlock()
-	if err == nil || errors.Is(err, io.EOF) {
-		err = errors.New("codex app-server exited")
-	}
-	for _, id := range stale {
-		b.cancelPrompt(id)
-	}
-	for id, admission := range running {
-		b.errorMessage(id, err.Error())
-		b.settle(id, db.StatusError, admission)
-	}
-	if len(running) > 0 {
-		log.WithError(err).Warn("codex: app-server exited during a turn")
-	}
 }
 
 // apply runs under the supervisor's publishing lock, so snapshots and the
@@ -237,7 +208,7 @@ func (b *backend) apply(id, key string, event providerprotocol.Event) {
 		}
 		s.status = db.SessionStatus(p.Status.Type)
 	case "session.idle":
-		s.running, s.turn, s.conv, s.base, s.used = false, "", nil, nil, nil
+		s.running = false
 		if s.status != db.StatusError && s.status != db.StatusInterrupted {
 			s.status = db.StatusDone
 		}

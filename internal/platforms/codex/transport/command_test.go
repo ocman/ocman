@@ -20,12 +20,12 @@ func TestParseSupervisorArgs(t *testing.T) {
 		t.Fatalf("args = %+v %v", a, err)
 	}
 	opts := a.options()
-	if opts.Dir != "/r" || !slices.Contains(opts.Env, "CODEX_HOME=/codex-home") || !slices.Equal(opts.Args, []string{"-c", `mcp_servers.ocman.url="http://127.0.0.1:9/mcp"`}) {
+	if opts.Dir != "/r" || !slices.Contains(opts.Env, "CODEX_HOME=/codex-home") || opts.MCPAddr != "127.0.0.1:9" || opts.ACPCommand.Executable != "codex-acp" {
 		t.Fatalf("options = %+v", opts)
 	}
 	a.MCPAddr = ""
-	if a.options().Args != nil {
-		t.Fatal("MCP override without an address")
+	if a.options().MCPAddr != "" {
+		t.Fatal("MCP offered without an address")
 	}
 	for _, args := range [][]string{
 		{"--socket", "rel", "--spool", "/sp", "--repo", "/r"},
@@ -138,12 +138,15 @@ func TestForwarding(t *testing.T) {
 	ev := &idles{ch: make(chan string, 8)}
 	p.SetSessionEventSink(ev.sink())
 	go func() { _ = p.WatchEvents(ctx) }()
-	// Shell, compaction and a slash command each run a turn that settles.
+	// Raw shell has no ACP primitive and must never fall through to an LLM.
+	if err := p.RunShell(ctx, platforms.RunShellRequest{SessionID: "thr", Command: "ls"}); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatalf("raw shell = %v", err)
+	}
+	// Compaction and a slash command each run a turn that settles.
 	for _, op := range []struct {
 		name string
 		run  func() error
 	}{
-		{"shell", func() error { return p.RunShell(ctx, platforms.RunShellRequest{SessionID: "thr", Command: "ls"}) }},
 		{"compact", func() error { return p.Compact(ctx, platforms.CompactRequest{SessionID: "thr"}) }},
 		{"command", func() error {
 			return p.ExecuteCommand(ctx, platforms.ExecuteCommandRequest{SessionID: "thr", Command: "compact"})

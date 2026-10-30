@@ -1,8 +1,8 @@
 # ACP execution transport
 
-`acpexec` is the shared ACP v1 execution client. This is a transport foundation,
-not a registered platform or a user-selectable execution backend yet. Existing
-OpenCode, Claude and Codex execution paths are unchanged.
+`acpexec` is the shared ACP v1 execution client. Codex uses it by default inside
+its existing supervisor. It is an execution transport, not another platform ID.
+OpenCode and Claude execution paths are unchanged.
 
 ## Commands
 
@@ -39,7 +39,10 @@ must be supplied on the owning machine through the child environment.
 - `Cancel` requests interruption; a prompt's terminal response confirms settlement.
   Timeout, transport failure and cancellation never authorize automatic replay or
   native fallback. The client does not release session ownership on these errors.
-- File, terminal, terminal-auth and elicitation capabilities are not advertised.
+- File, terminal and terminal-auth capabilities are not advertised. Form
+  elicitation is advertised only when its optional handler is provided. The
+  wire dispatcher preserves the session/tool scope omitted by the SDK's
+  generated elicitation union, so concurrent session questions stay isolated.
   File and terminal callbacks reject requests rather than executing host actions.
   The agent remains responsible for its own tools. `Authenticate` accepts only
   advertised agent-handled auth methods.
@@ -48,12 +51,14 @@ must be supplied on the owning machine through the child environment.
   for platform-specific descendant cleanup and supervisor lifecycle management.
 
 The maintained [Go ACP SDK](https://github.com/coder/acp-go-sdk) owns the JSON-RPC
-wire types and framing. Tests use a disposable test executable as the agent,
+wire types and framing. A small dispatcher retains scoped form fields alongside
+the generated SDK payload. Tests use a disposable test executable as the agent,
 never an installed agent, credentials or writable platform databases.
 
-## Integration work still required
+## Platform integration requirements
 
-Before enabling this transport for a platform:
+Codex implements these requirements in `codex/provider/acp_*.go`. Other platforms
+must meet them before enabling this transport:
 
 1. Launch through the owning Host/runtime and retain one execution owner per
    session. Keep native platform IDs and the owner/source-scoped identity mapping.

@@ -25,7 +25,11 @@ func recordedResult(t *testing.T, dir, method string, out any) {
 	for scanner.Scan() {
 		var line struct {
 			Dir string `json:"dir"`
-			Msg wire   `json:"msg"`
+			Msg struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+				Result json.RawMessage `json:"result"`
+			} `json:"msg"`
 		}
 		_ = json.Unmarshal(scanner.Bytes(), &line)
 		if line.Dir == "send" && line.Msg.Method != "" {

@@ -27,7 +27,7 @@ import (
 
 // supervisorIdentity is part of the launch identity: a supervisor launched
 // with another CLI or an older backend is drained and replaced.
-const supervisorIdentity = "codex-supervisor/v2"
+const supervisorIdentity = "codex-supervisor/acp-v1"
 
 // Config is what New needs from the application.
 type Config struct {
@@ -52,6 +52,7 @@ func New(ctx context.Context, cfg Config) platforms.Integration {
 type launcher struct {
 	exe string // ocman, launched as `ocman provider codex`
 	cli string // codex
+	acp string // installed codex-acp adapter
 }
 
 func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error) {
@@ -66,6 +67,12 @@ func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error)
 		l.cli = "codex"
 		if path, err := exec.LookPath(l.cli); err == nil {
 			l.cli = path
+		}
+	}
+	if l.acp == "" {
+		l.acp = "codex-acp"
+		if path, err := exec.LookPath(l.acp); err == nil {
+			l.acp = path
 		}
 	}
 	home, err := codexHome()
@@ -87,10 +94,10 @@ func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error)
 		return nil, fmt.Errorf("permission rules unreadable: %w", err) // never start without the saved denies
 	}
 	ctx, stop := context.WithCancel(ctx)
-	p := &Platform{ctx: ctx, stop: stop, cli: l.cli, root: root, home: home, rules: rules, history: newHistory(l.cli, cfg.Version, home)}
+	p := &Platform{ctx: ctx, stop: stop, cli: l.cli, acpCLI: l.acp, root: root, home: home, rules: rules, history: newHistory(l.cli, cfg.Version, home)}
 	runtime := ocruntime.NewBackendRuntime(codexprovider.PlatformID, l.exe, filepath.Join(cfg.DataDir, "p"))
 	runtime.Args = func() []string {
-		args := []string{"--codex-cli", l.cli, "--codex-home", home, "--ocman-version", cfg.Version}
+		args := []string{"--codex-cli", l.cli, "--codex-acp-cli", l.acp, "--codex-home", home, "--ocman-version", cfg.Version}
 		if addr, _ := p.mcpAddr.Load().(string); addr != "" {
 			args = append(args, "--mcp-addr", addr)
 		}
@@ -98,7 +105,7 @@ func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error)
 	}
 	runtime.Identity = func() string {
 		addr, _ := p.mcpAddr.Load().(string)
-		return strings.Join([]string{l.cli, home, supervisorIdentity, addr}, "\x00")
+		return strings.Join([]string{l.cli, l.acp, home, supervisorIdentity, addr}, "\x00")
 	}
 	p.mgr = &local.ProviderManager{Runtime: runtime, State: cfg.State, OnDrain: p.onDrain}
 	if cfg.State != nil {
@@ -113,6 +120,7 @@ type Platform struct {
 	ctx     context.Context
 	stop    context.CancelFunc
 	cli     string
+	acpCLI  string
 	root    string
 	home    string
 	mgr     *local.ProviderManager
@@ -142,6 +150,7 @@ func (*Platform) DisplayName() string { return platforms.DisplayName(codexprovid
 func (*Platform) Capabilities() platforms.Capabilities {
 	caps := codexprovider.Capabilities().Capabilities
 	caps.ExactPatterns = true
+	caps.LiveConnectionHint = "Install codex, codex-acp and tmux on this machine, then sign in with codex login."
 	return caps
 }
 
@@ -150,7 +159,8 @@ func (p *Platform) Available(context.Context) bool { return p.RuntimeAvailable()
 
 func (p *Platform) RuntimeAvailable() bool {
 	_, err := exec.LookPath(p.cli)
-	return err == nil && tmux.IsAvailable()
+	_, acpErr := exec.LookPath(p.acpCLI)
+	return err == nil && acpErr == nil && tmux.IsAvailable()
 }
 
 // SetMCPAddr replaces a surviving supervisor safely if its listener changed.

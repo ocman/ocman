@@ -25,10 +25,12 @@ remain in `platforms/provider`, `providerprotocol` and `providersupervisor`.
   `codexrecord` build tag.
 - `codex/provider` implements the Codex backend: the single Codex-to-v1
   converter shared by stored history and live items, the history reader, and
-  the supervisor that drives threads on one app-server.
+  the supervisor that drives threads through the installed `codex-acp` adapter.
+  Native readers supply history, metadata and accounting, never a second writer.
 - `codex/transport` composes the platform: one machine-wide supervisor under
   tmux (`ocman provider codex`), launched on first use and replaced when it
   dies, plus a separate read-only app-server for history and the model catalog.
+  Launch identity includes the adapter executable, CLI, home and MCP listener.
 
 Codex history is read through `thread/list`, `thread/turns/list` and
 `thread/items/list`. Only per-turn token usage, which the app-server does not
@@ -55,7 +57,7 @@ moving packages does not introduce native-storage fallbacks.
 ## ACP execution foundation
 
 `acp` provides the shared ACP v1 process client using `github.com/coder/acp-go-sdk`.
-It is not wired into platform registration or default execution yet. It owns
+Codex uses it for execution by default. OpenCode and Claude execution are unchanged. It owns
 handshake, ordered updates, permission callbacks and basic session execution,
 not history ingestion, runtime ownership or automatic adapter installation.
 See [the transport contract and remaining integration work](acp/README.md).

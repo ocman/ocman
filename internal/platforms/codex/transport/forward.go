@@ -76,15 +76,15 @@ func (p *Platform) ForkSession(ctx context.Context, req platforms.ForkSessionReq
 }
 
 func (p *Platform) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
-	return p.doSession(ctx, req.SessionID, func(a *provider.Adapter) error { return a.SendMessage(ctx, req) })
+	return p.do(ctx, func(a *provider.Adapter) error { return a.SendMessage(ctx, req) })
 }
 
 func (p *Platform) ExecuteCommand(ctx context.Context, req platforms.ExecuteCommandRequest) error {
-	return p.doSession(ctx, req.SessionID, func(a *provider.Adapter) error { return a.ExecuteCommand(ctx, req) })
+	return p.do(ctx, func(a *provider.Adapter) error { return a.ExecuteCommand(ctx, req) })
 }
 
 func (p *Platform) RunShell(ctx context.Context, req platforms.RunShellRequest) error {
-	return p.doSession(ctx, req.SessionID, func(a *provider.Adapter) error { return a.RunShell(ctx, req) })
+	return p.do(ctx, func(a *provider.Adapter) error { return a.RunShell(ctx, req) })
 }
 
 func (p *Platform) RespondPermission(ctx context.Context, req platforms.RespondPermissionRequest) error {
@@ -108,7 +108,7 @@ func (p *Platform) Abort(ctx context.Context, req platforms.AbortRequest) error 
 }
 
 func (p *Platform) RenameSession(ctx context.Context, req platforms.RenameSessionRequest) error {
-	return p.doSession(ctx, req.SessionID, func(a *provider.Adapter) error { return a.RenameSession(ctx, req) })
+	return p.do(ctx, func(a *provider.Adapter) error { return a.RenameSession(ctx, req) })
 }
 
 // Rulesets are ocman's own (provider.Rules); the adapter serves them
@@ -124,7 +124,7 @@ func (p *Platform) SetPermissionRules(ctx context.Context, req platforms.SetPerm
 }
 
 func (p *Platform) Compact(ctx context.Context, req platforms.CompactRequest) error {
-	return p.doSession(ctx, req.SessionID, func(a *provider.Adapter) error { return a.Compact(ctx, req) })
+	return p.do(ctx, func(a *provider.Adapter) error { return a.Compact(ctx, req) })
 }
 
 // ChangesFromStored and InfoFromStored project the session panels from

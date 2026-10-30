@@ -31,7 +31,7 @@ func (b *backend) serveRead(ctx context.Context, w http.ResponseWriter, r *http.
 	case path == "/permissions" || path == "/questions":
 		v = b.pendingPrompts(q.Get("sessionID"), path == "/questions")
 	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/ownership"):
-		v, err = b.ownership(ctx, strings.TrimSuffix(strings.TrimPrefix(path, "/sessions/"), "/ownership"))
+		err = platforms.ErrUnsupported
 	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/lifecycle"):
 		v, err = b.lifecycle(ctx, strings.TrimSuffix(strings.TrimPrefix(path, "/sessions/"), "/lifecycle"))
 	case strings.HasPrefix(path, "/sessions/") && !strings.Contains(strings.TrimPrefix(path, "/sessions/"), "/"):

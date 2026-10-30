@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	acpexec "github.com/ocman/ocman/internal/platforms/acp"
 	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
 )
 
@@ -22,6 +23,7 @@ type supervisorArgs struct {
 	Home                string // canonical Codex store and account directory
 	MCPAddr             string // ocman's bound MCP listener; empty omits it
 	Version             string
+	ACPCLI              string
 }
 
 func parseSupervisorArgs(args []string) (supervisorArgs, error) {
@@ -31,6 +33,7 @@ func parseSupervisorArgs(args []string) (supervisorArgs, error) {
 	flags.StringVar(&a.Spool, "spool", "", "per-session spool directory")
 	flags.StringVar(&a.Repo, "repo", "", "supervisor root directory")
 	flags.StringVar(&a.CLI, "codex-cli", "codex", "the dashboard's codex executable")
+	flags.StringVar(&a.ACPCLI, "codex-acp-cli", "codex-acp", "installed Codex ACP adapter executable")
 	flags.StringVar(&a.Home, "codex-home", "", "the dashboard's canonical Codex home")
 	flags.StringVar(&a.MCPAddr, "mcp-addr", "", "ocman's bound MCP listener address")
 	flags.StringVar(&a.Version, "ocman-version", "dev", "ocman version reported to Codex")
@@ -43,15 +46,13 @@ func parseSupervisorArgs(args []string) (supervisorArgs, error) {
 	return a, nil
 }
 
-// options configures the supervisor's app-server: ocman's MCP server is
-// offered to every thread through a config override.
+// options configures ACP execution and its separate native reader. Only ACP
+// offers Ocman's MCP server to execution sessions.
 func (a supervisorArgs) options() codexprovider.Options {
-	opts := codexprovider.Options{CLI: a.CLI, Dir: a.Repo, Version: a.Version}
+	opts := codexprovider.Options{CLI: a.CLI, Dir: a.Repo, Version: a.Version,
+		ACPCommand: acpexec.Command{Executable: a.ACPCLI}, Home: a.Home, MCPAddr: a.MCPAddr}
 	if a.Home != "" {
 		opts.Env = append(os.Environ(), "CODEX_HOME="+a.Home)
-	}
-	if a.MCPAddr != "" {
-		opts.Args = []string{"-c", `mcp_servers.ocman.url="http://` + a.MCPAddr + `/mcp"`}
 	}
 	return opts
 }

@@ -128,21 +128,6 @@ func (c *Client) stop(grace time.Duration) error {
 	return c.waitErr
 }
 
-func (c *Client) StartThread(ctx context.Context, p ThreadStartParams) (*ThreadResponse, error) {
-	var out ThreadResponse
-	return &out, c.Call(ctx, MethodThreadStart, p, &out)
-}
-
-func (c *Client) ResumeThread(ctx context.Context, p ThreadResumeParams) (*ThreadResponse, error) {
-	var out ThreadResponse
-	return &out, c.Call(ctx, MethodThreadResume, p, &out)
-}
-
-func (c *Client) ForkThread(ctx context.Context, p ThreadForkParams) (*ThreadResponse, error) {
-	var out ThreadResponse
-	return &out, c.Call(ctx, MethodThreadFork, p, &out)
-}
-
 func (c *Client) ReadThread(ctx context.Context, id string, turns bool) (*Thread, error) {
 	var out ThreadReadResponse
 	if err := c.Call(ctx, MethodThreadRead, ThreadReadParams{ThreadID: id, IncludeTurns: turns}, &out); err != nil {
@@ -200,19 +185,6 @@ func (c *Client) ListItems(ctx context.Context, threadID string) ([]ItemEntry, e
 	})
 }
 
-func (c *Client) ShellCommand(ctx context.Context, threadID, command string) error {
-	return c.Call(ctx, MethodShellCommand, ShellCommandParams{ThreadID: threadID, Command: command}, nil)
-}
-
-// StartReview starts an inline review and returns its turn.
-func (c *Client) StartReview(ctx context.Context, p ReviewStartParams) (*Turn, error) {
-	var out TurnResponse
-	if err := c.Call(ctx, MethodReviewStart, p, &out); err != nil {
-		return nil, err
-	}
-	return &out.Turn, nil
-}
-
 // ListSkills lists the skills available in each directory.
 func (c *Client) ListSkills(ctx context.Context, cwds ...string) ([]SkillsEntry, error) {
 	var out SkillsListResponse
@@ -241,28 +213,6 @@ func (c *Client) ArchiveThread(ctx context.Context, id string) error {
 
 func (c *Client) SetThreadName(ctx context.Context, id, name string) error {
 	return c.Call(ctx, MethodThreadNameSet, ThreadNameSetParams{ThreadID: id, Name: name}, nil)
-}
-
-func (c *Client) CompactThread(ctx context.Context, id string) error {
-	return c.Call(ctx, MethodThreadCompact, ThreadIDParams{ThreadID: id}, nil)
-}
-
-func (c *Client) StartTurn(ctx context.Context, p TurnStartParams) (*Turn, error) {
-	var out TurnResponse
-	if err := c.Call(ctx, MethodTurnStart, p, &out); err != nil {
-		return nil, err
-	}
-	return &out.Turn, nil
-}
-
-func (c *Client) SteerTurn(ctx context.Context, p TurnSteerParams) (string, error) {
-	var out TurnSteerResponse
-	err := c.Call(ctx, MethodTurnSteer, p, &out)
-	return out.TurnID, err
-}
-
-func (c *Client) InterruptTurn(ctx context.Context, threadID, turnID string) error {
-	return c.Call(ctx, MethodTurnInterrupt, TurnInterruptParams{ThreadID: threadID, TurnID: turnID}, nil)
 }
 
 // ListModels returns every page of the model catalog.

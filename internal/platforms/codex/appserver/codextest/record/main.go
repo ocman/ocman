@@ -242,8 +242,8 @@ func run(cli, out, keep string) error {
 	if _, err := client.ListModels(ctx, false); err != nil {
 		return err
 	}
-	start, err := client.StartThread(ctx, codexappserver.ThreadStartParams{Cwd: repo, Sandbox: "workspace-write", ApprovalPolicy: "untrusted"})
-	if err != nil {
+	var start codexappserver.ThreadResponse
+	if err := client.Call(ctx, codexappserver.MethodThreadStart, codexappserver.ThreadStartParams{Cwd: repo, Sandbox: "workspace-write", ApprovalPolicy: "untrusted"}, &start); err != nil {
 		return err
 	}
 	id := start.Thread.ID
@@ -251,7 +251,7 @@ func run(cli, out, keep string) error {
 		return extras(ctx, client, h, id, home, out, rec)
 	}
 	for _, text := range prompts {
-		if _, err := client.StartTurn(ctx, codexappserver.TurnStartParams{ThreadID: id, Input: []codexappserver.UserInput{codexappserver.TextInput(text)}}); err != nil {
+		if err := client.Call(ctx, codexappserver.MethodTurnStart, codexappserver.TurnStartParams{ThreadID: id, Input: []codexappserver.UserInput{codexappserver.TextInput(text)}}, nil); err != nil {
 			return err
 		}
 		select {

@@ -80,13 +80,23 @@ sessions and helpers. Its transport mirrors Python Agent SDK 0.2.166, initialize
 ## Codex
 
 `internal/platforms/codex` follows the same backend protocol as Claude, with
-one machine-wide supervisor (keyed by `<data>/codex-supervisor`) hosting one
-`codex app-server` for every thread. History, the model and command catalog
+one machine-wide supervisor (keyed by `<data>/codex-supervisor`) hosting the
+installed `codex-acp` adapter for execution by default. `CODEX_PATH` pins its
+execution CLI to the native reader's CLI and `CODEX_HOME` is shared explicitly.
+Never fall back to native execution after an ACP error. History, the model and command catalog
 and the account use a separate read-only app-server, so browsing never
 launches the supervisor. Token usage is the one value read from rollout files.
-`codexprovider.Converter` is the only Codex-to-v1 converter. Tests use
+Native reader connections have no execution handlers or execution mutation helpers.
+Ownership conflicts fail closed, including conflicts with older Ocman supervisors.
+When Codex is enabled, host Doctor checks the CLI, Node.js and installed adapter;
+Settings supplies the pinned install command without installing on toggle.
+`codexprovider.Converter` is the only Codex-to-v1 converter. ACP chunks retain
+native item IDs, seed native reply grouping and reconcile the final native turn
+before idle. Permission/question resolutions must be spooled before returning
+their ACP callbacks. Raw shell, fork-at-message and ACP loaded-writer probes
+are unsupported and capability-gated. Tests use
 `codextest` fakes and the recorded fixtures under
-`codex/provider/testdata/<version>`, never the real `codex`; re-record with the
+`codex/provider/testdata/<version>` plus `codex/acptest`, never real agents; re-record with the
 `codexrecord`-tagged recorder. Codex is opt-in: `-platforms` defaults exclude it.
 
 ## OpenCode v1 and v2

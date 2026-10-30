@@ -51,11 +51,11 @@ Conversation storage and ingestion are always enabled. Dev targets keep
 `state_conv.db` in this checkout's root. Tests use temporary stores; builds do
 not start ingestion.
 This isolates only conversation history: `internal/app/run.go` still opens
-application state through `state.DefaultDBPath()`, which resolves to the user's
-normal `~/.local/share/ocman/state.db`. There is currently no application-state
-path flag or environment override. Do not start backend dev targets until an
-explicit override is implemented and configured with disposable checkout-local
-state. Verify native platform paths too; `-db` alone does not isolate v1 managed
+application state through `state.DefaultDBPath()`, which defaults to the user's
+normal `~/.local/share/ocman/state.db`. Set `OCMAN_STATE_DB` to an absolute,
+disposable checkout-local path before starting backend dev targets. Its parent
+also isolates provider runtime state and artifacts. Set `-conversations-db`
+explicitly alongside it. Verify native platform paths too; `-db` alone does not isolate v1 managed
 OpenCode writes. Do not change `HOME` to work around the missing override.
 Air must keep `clean_on_exit = false` in `.air.toml` (`make dev-remote` reuses
 it): deleting `tmp/` also deletes history from older dev runs still using that

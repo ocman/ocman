@@ -5,123 +5,42 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"strconv"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
-	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
-	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 )
 
-func TestRemarksReplacementRetiresBeforeWatcher(t *testing.T) {
+func TestNativeReaderReplacementPreservesACPAdmission(t *testing.T) {
 	h := newHarness(t, scripted)
 	c, _, err := h.b.conn(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// This backend owns a captured generation without an exit watcher.
-	// Reconnection must retire it itself, regardless of watcher scheduling.
-	b := &backend{ctx: h.b.ctx, opts: h.b.opts, sup: h.b.sup, client: c, gen: 1,
-		loaded: map[string]bool{"thr": true}, sessions: map[string]*session{"thr": {running: true, accepted: 7}}, prompts: map[string]*prompt{}}
+	h.start("thr")
 	_ = c.Close()
-	_ = c.Notify("force-closed-write", nil)
 	<-c.Done()
-	next, gen, err := b.conn(t.Context())
+	next, gen, err := h.b.conn(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = next.Close() })
-	if gen != 2 || b.sessions["thr"].running {
-		t.Fatalf("replacement skipped retirement: gen=%d running=%v", gen, b.sessions["thr"].running)
+	if next == c || gen != 2 {
+		t.Fatalf("reader was not replaced: %d", gen)
 	}
-	b.mu.Lock()
-	b.sessions["thr"].running = true
-	b.sessions["thr"].accepted = 8
-	b.mu.Unlock()
-	b.lost(1, errors.New("late watcher"))
-	b.mu.Lock()
-	running := b.sessions["thr"].running
-	b.mu.Unlock()
-	if !running {
-		t.Fatal("old watcher settled replacement turn")
-	}
-}
-
-func TestRemarksStaleThreadResponses(t *testing.T) {
-	for _, create := range []bool{false, true} {
-		t.Run(strconv.FormatBool(create), func(t *testing.T) {
-			entered, release := make(chan struct{}), make(chan struct{})
-			h := newHarness(t, func(s *codextest.Server) {
-				scripted(s)
-				method := codexappserver.MethodThreadResume
-				if create {
-					method = codexappserver.MethodThreadStart
-				}
-				s.Handle(method, func(json.RawMessage) (any, error) {
-					close(entered)
-					<-release
-					return map[string]any{"thread": thread("thr"), "cwd": "/repo"}, nil
-				})
-			})
-			c, gen, err := h.b.conn(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-			done := make(chan error, 1)
-			go func() {
-				if create {
-					_, err := h.b.create(t.Context(), platforms.CreateSessionRequest{Directory: "/repo"})
-					done <- err
-				} else {
-					done <- h.b.load(t.Context(), c, gen, "thr")
-				}
-			}()
-			<-entered
-			h.b.lost(gen, errors.New("connection lost before response application"))
-			close(release)
-			if err := <-done; err == nil || errors.Is(err, platforms.ErrCreationRejected) {
-				t.Fatalf("stale response = %v", err)
-			}
-		})
-	}
-}
-
-func TestRemarksFinalUpsertRecovery(t *testing.T) {
-	h := newHarness(t, scripted)
-	h.start("thr")
-	restore := breakSpool(t, h)
-	h.b.item("thr", codexappserver.Item{ID: "a", Type: "agentMessage", Text: "retained"})
-	h.b.turnCompleted("thr", &codexappserver.Turn{ID: "t1", Status: codexappserver.TurnCompleted})
+	h.b.lost(1, errors.New("late watcher"))
 	h.b.mu.Lock()
 	running := h.b.sessions["thr"].running
 	h.b.mu.Unlock()
 	if !running {
-		restore()
-		t.Fatal("idle overtook failed upsert")
-	}
-	restore()
-	h.next("message.part.updated", func(p map[string]any) bool { return part(p)["text"] == "retained" })
-	h.next("session.idle", nil)
-	found := false
-	for _, event := range h.b.snapshot("thr") {
-		if event.Type == "message.part.updated" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("recovered snapshot lost final part")
+		t.Fatal("read-only connection failure settled ACP turn")
 	}
 }
 
 func TestRemarksHistoryMetadataRace(t *testing.T) {
-	h := newHarness(t, scripted)
-	if _, err := h.b.create(t.Context(), platforms.CreateSessionRequest{Directory: "/repo"}); err != nil {
-		t.Fatal(err)
-	}
+	h, _ := acpHarness(t)
+	createACP(t, h)
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 	wg.Go(func() {
@@ -156,6 +75,7 @@ func TestRemarksExitedProcessReaped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(b.closeClient)
 	c, _, err := b.conn(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -170,22 +90,27 @@ func TestRemarksExitedProcessReaped(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for !errors.Is(syscall.Kill(result.PID, 0), syscall.ESRCH) {
 		if time.Now().After(deadline) {
-			t.Fatal("spawned app-server was not reaped")
+			t.Fatal("reader not reaped")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-func TestRemarksModelOverride(t *testing.T) {
-	h := newHarness(t, scripted)
-	if err := h.b.send(t.Context(), "thr", platforms.SendMessageRequest{Message: "hi", Model: "other/custom"}); err != nil {
+func TestACPRejectsUnexpectedNativeRequests(t *testing.T) {
+	h, _ := acpHarness(t)
+	createACP(t, h)
+	if _, _, err := h.b.conn(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	h.b.mu.Lock()
-	c := h.b.sessions["thr"].conv
-	h.b.mu.Unlock()
-	if c.ProviderID != "other" || c.ModelID != "custom" {
-		t.Fatalf("override = %+v", c)
+	response, err := h.fake().Request("item/commandExecution/requestApproval", json.RawMessage(`{"threadId":"thr"}`))
+	if err != nil {
+		t.Fatal(err)
 	}
-	h.b.settle("thr", db.StatusDone, 1)
+	if got := <-response; got.Error == nil || got.Error.Code != -32601 {
+		t.Fatalf("native reader accepted an execution request: %+v", got)
+	}
+	if code := h.call("POST", "/sessions/thr/send", platforms.SendMessageRequest{Message: "hi"}, nil); code != 204 {
+		t.Fatal(code)
+	}
+	h.next("session.idle", nil)
 }

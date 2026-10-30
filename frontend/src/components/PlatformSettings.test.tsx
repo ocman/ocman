@@ -8,6 +8,21 @@ vi.mock('../lib/api.requests', () => ({ fetchJSON: vi.fn(), postJSON: vi.fn() })
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.useRealTimers());
 
+it('shows adapter installation help when enabling Codex without installing anything automatically', async () => {
+  vi.mocked(fetchJSON).mockResolvedValue({ enabled: ['opencode'] });
+  render(<PlatformSettings />);
+  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  await waitFor(() => expect(codex).toBeEnabled());
+  expect(screen.queryByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0')).toBeNull();
+  fireEvent.click(codex);
+  expect(screen.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0')).toBeVisible();
+  expect(screen.getByText(/Node.js 22/)).toBeVisible();
+  expect(screen.getByText(/PNPM_HOME/)).toBeVisible();
+  expect(postJSON).not.toHaveBeenCalled();
+  fireEvent.click(codex);
+  expect(screen.queryByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0')).toBeNull();
+});
+
 it('loads saved platforms and applies a desktop selection', async () => {
   vi.mocked(fetchJSON).mockResolvedValue({ enabled: ['opencode', 'claudecode'] });
   vi.mocked(postJSON).mockResolvedValue({ enabled: ['claudecode'] });

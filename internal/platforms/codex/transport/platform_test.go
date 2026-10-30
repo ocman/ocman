@@ -39,6 +39,7 @@ func newRig(t *testing.T) *rig {
 	t.Cleanup(func() { _ = os.RemoveAll(data) })
 	pids := installFakeTmux(t)
 	t.Setenv("FAKE_CODEX", "1")
+	t.Setenv("FAKE_CODEX_ACP_STATE", filepath.Join(t.TempDir(), "state.json"))
 	t.Setenv("CODEX_HOME", t.TempDir())
 	t.Setenv("FAKE_CODEX_LAUNCHES", filepath.Join(data, "launches"))
 	store, err := state.Open(statetest.Path(t))
@@ -51,7 +52,7 @@ func newRig(t *testing.T) *rig {
 
 func (r *rig) platform(ctx context.Context) *Platform {
 	r.t.Helper()
-	p, err := newPlatform(ctx, Config{State: r.store, DataDir: r.data, Version: "test"}, launcher{exe: r.exe, cli: r.exe})
+	p, err := newPlatform(ctx, Config{State: r.store, DataDir: r.data, Version: "test"}, launcher{exe: r.exe, cli: r.exe, acp: r.exe})
 	if err != nil {
 		r.t.Fatal(err)
 	}

@@ -22,59 +22,6 @@ func (c *Converter) Live(itemID string) (info map[string]any, parts []map[string
 	return openInfo(c.cur.info), parts
 }
 
-// Delta appends streamed text to an open item's part and returns it: agent
-// message and reasoning text, or command output. Unknown items return nil.
-func (c *Converter) Delta(method string, d codexappserver.DeltaNotification) map[string]any {
-	if c.cur == nil {
-		return nil
-	}
-	id := "prt_" + d.ItemID
-	var part map[string]any
-	for _, p := range c.cur.parts {
-		if p["id"] == id {
-			part = p
-		}
-	}
-	if part == nil {
-		return nil
-	}
-	switch method {
-	case codexappserver.NotifyAgentMessageDelta, codexappserver.NotifyReasoningSummary, codexappserver.NotifyReasoningText:
-		if part["type"] != "text" && part["type"] != "reasoning" {
-			return nil
-		}
-		text, _ := part["text"].(string)
-		// A new reasoning summary section starts a new paragraph.
-		if method == codexappserver.NotifyReasoningSummary && d.SummaryIndex != nil && *d.SummaryIndex > 0 && c.section(id) != *d.SummaryIndex {
-			c.setSection(id, *d.SummaryIndex)
-			text += "\n\n"
-		}
-		part["text"] = text + d.Delta
-	case codexappserver.NotifyCommandOutputDelta:
-		state, ok := part["state"].(map[string]any)
-		if !ok {
-			return nil
-		}
-		output, _ := state["output"].(string)
-		state["output"] = output + d.Delta
-		state["metadata"].(map[string]any)["output"] = state["output"]
-	default:
-		return nil
-	}
-	return part
-}
-
-func (c *Converter) section(part string) int {
-	return c.cur.sections[part]
-}
-
-func (c *Converter) setSection(part string, n int) {
-	if c.cur.sections == nil {
-		c.cur.sections = map[string]int{}
-	}
-	c.cur.sections[part] = n
-}
-
 // Settle records the turn's outcome on the open reply and returns its final
 // info. A failed turn without a reply gets one, msg_<turn id>, carrying the
 // error; any other turn without a reply returns nil. Stored history (AddTurn)
@@ -94,16 +41,6 @@ func (c *Converter) Settle(turn *codexappserver.Turn) map[string]any {
 		applyUsage(c.cur.info, u)
 	}
 	return c.cur.info
-}
-
-// SetUsage records a turn's token usage on the open reply and returns its
-// info; nil when no reply is open yet.
-func (c *Converter) SetUsage(u TurnUsage) map[string]any {
-	if c.cur == nil || c.cur.info["role"] != "assistant" {
-		return nil
-	}
-	applyUsage(c.cur.info, u)
-	return openInfo(c.cur.info)
 }
 
 // Tokens maps Codex usage to v1 tokens. Codex counts cached input inside

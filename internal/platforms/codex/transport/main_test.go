@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
-	"time"
 
+	"github.com/ocman/ocman/internal/platforms/codex/acptest"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 )
@@ -24,6 +24,8 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	case os.Getenv("FAKE_CODEX") == "":
 		os.Exit(m.Run())
+	case len(os.Args) == 1 && os.Getenv("FAKE_CODEX_ACP_STATE") != "":
+		acptest.Serve(os.Stdin, os.Stdout, acptest.Config{State: os.Getenv("FAKE_CODEX_ACP_STATE"), Permission: os.Getenv("FAKE_CODEX_APPROVAL") != ""})
 	case len(os.Args) > 1 && os.Args[1] == "--version":
 		fmt.Println("codex-cli 9.9.9")
 	case len(os.Args) > 1 && os.Args[1] == "app-server":
@@ -37,6 +39,9 @@ func TestMain(m *testing.M) {
 		}
 		s := codextest.Serve(os.Stdin, os.Stdout)
 		fakeCodex(s)
+		if path := os.Getenv("FAKE_CODEX_ACP_STATE"); path != "" {
+			acptest.ConfigureNative(s, path)
+		}
 		<-s.Done()
 	default:
 		os.Exit(2)
@@ -49,46 +54,8 @@ func thread(id string) map[string]any {
 		"createdAt": 1, "updatedAt": 2, "modelProvider": "openai", "preview": "hello", "turns": []any{}}
 }
 
-// fakeCodex scripts one thread, "thr": every turn completes shortly after
-// it starts.
+// fakeCodex supplies native metadata only. Execution belongs to the ACP peer.
 func fakeCodex(s *codextest.Server) {
-	threadResp := func(json.RawMessage) (any, error) {
-		return map[string]any{"thread": thread("thr"), "model": "gpt", "modelProvider": "openai", "cwd": "/repo"}, nil
-	}
-	s.Handle(codexappserver.MethodThreadStart, threadResp)
-	s.Handle(codexappserver.MethodThreadResume, threadResp)
-	if os.Getenv("FAKE_CODEX_OWNERSHIP_CONFLICT") != "" {
-		s.Handle(codexappserver.MethodThreadResume, func(json.RawMessage) (any, error) {
-			return nil, &codexappserver.RPCError{Code: -32600, Message: "thread thr already has an active writer"}
-		})
-	}
-	s.Handle(codexappserver.MethodTurnStart, func(json.RawMessage) (any, error) {
-		go func() {
-			time.Sleep(20 * time.Millisecond)
-			if os.Getenv("FAKE_CODEX_APPROVAL") != "" {
-				reply, err := s.Request(codexappserver.RequestCommandApproval, map[string]any{"threadId": "thr", "turnId": "t1", "itemId": "c", "command": "rm x"})
-				if err != nil {
-					return
-				}
-				<-reply
-			}
-			_ = s.Notify(codexappserver.NotifyTurnCompleted, map[string]any{"threadId": "thr", "turn": map[string]any{"id": "t1", "status": "completed"}})
-		}()
-		return map[string]any{"turn": map[string]any{"id": "t1", "status": "inProgress", "items": []any{}}}, nil
-	})
-	// Shell commands and compaction run as turns that complete shortly.
-	for _, m := range []string{codexappserver.MethodShellCommand, codexappserver.MethodThreadCompact} {
-		s.Handle(m, func(json.RawMessage) (any, error) {
-			go func() {
-				time.Sleep(20 * time.Millisecond)
-				_ = s.Notify(codexappserver.NotifyTurnCompleted, map[string]any{"threadId": "thr", "turn": map[string]any{"id": "t1", "status": "completed"}})
-			}()
-			return map[string]any{}, nil
-		})
-	}
-	s.Handle(codexappserver.MethodThreadFork, func(json.RawMessage) (any, error) {
-		return map[string]any{"thread": thread("thr-fork"), "model": "gpt", "modelProvider": "openai", "cwd": "/repo"}, nil
-	})
 	s.Handle(codexappserver.MethodSkillsList, func(json.RawMessage) (any, error) {
 		return map[string]any{"data": []any{map[string]any{"cwd": "/repo", "skills": []any{map[string]any{"name": "pdf", "description": "PDF", "path": "/s/pdf", "enabled": true}}}}}, nil
 	})
