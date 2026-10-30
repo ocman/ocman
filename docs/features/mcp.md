@@ -155,6 +155,26 @@ operation, and sending an action does not bypass session permissions. Read-only,
 shared and disconnected conversations disable form editing and action delivery.
 Tables can still be sorted locally.
 
+### Security boundary
+
+The A2UI renderer accepts data, not web content. Text, table cells, chart labels
+and form values are rendered as literal text. The catalog rejects images,
+iframes, HTML properties, arbitrary styles, resource URLs and function calls.
+Catalog and schema identifiers are never fetched from the network. The only
+network operation a result can initiate is a user-confirmed response through
+Ocman's existing session API.
+
+This does not make the whole dashboard a network-isolated sandbox. The main
+app's CSP permits HTTP/HTTPS images for existing conversation previews and
+WebSocket connections. Ordinary Markdown images may therefore load externally.
+Do not add URL-bearing components or generated HTML/JavaScript to this native
+catalog without a separate security review.
+
+HTML [artifact previews](../artifacts/) have a separate iframe sandbox. Opt-in
+script execution never grants `allow-same-origin`, and the interactive preview
+CSP blocks external subresources and fetches. A sandboxed document can still
+navigate itself, so that mode is not a strict no-egress environment.
+
 ## Factory
 
 Ocman installs the `ocman-factory` skill globally for OpenCode. It teaches the

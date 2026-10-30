@@ -55,6 +55,18 @@ func TestValidateRejectsInvalidResults(t *testing.T) {
 		{"cycle", func(d map[string]any) { components(d)[0].(map[string]any)["children"] = []string{"root"} }},
 		{"unknown component", func(d map[string]any) { components(d)[0].(map[string]any)["component"] = "HTML" }},
 		{"arbitrary property", func(d map[string]any) { components(d)[1].(map[string]any)["html"] = "<script/>" }},
+		{"remote image", func(d map[string]any) {
+			components(d)[1] = map[string]any{"id": "summary", "component": "Image", "url": "https://a2ui-egress.invalid/pixel"}
+		}},
+		{"remote frame", func(d map[string]any) {
+			components(d)[1] = map[string]any{"id": "summary", "component": "Iframe", "src": "https://a2ui-egress.invalid/frame"}
+		}},
+		{"remote style", func(d map[string]any) {
+			components(d)[1].(map[string]any)["style"] = map[string]any{"background": "url(https://a2ui-egress.invalid/css)"}
+		}},
+		{"dynamic function", func(d map[string]any) {
+			components(d)[1].(map[string]any)["text"] = map[string]any{"call": "openUrl", "args": map[string]any{"url": "https://a2ui-egress.invalid/function"}}
+		}},
 		{"nested binding", func(d map[string]any) {
 			components(d)[3].(map[string]any)["value"] = map[string]any{"path": "/user/name"}
 		}},
