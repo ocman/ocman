@@ -273,9 +273,10 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type taskData struct {
-		Platform string          `json:"platform"`
-		Messages json.RawMessage `json:"messages"`
-		Parts    json.RawMessage `json:"parts"`
+		Platform string           `json:"platform"`
+		Status   db.SessionStatus `json:"status,omitempty"`
+		Messages json.RawMessage  `json:"messages"`
+		Parts    json.RawMessage  `json:"parts"`
 	}
 	result := make(map[string]taskData, len(ids))
 	for _, taskID := range ids {
@@ -335,7 +336,11 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		result[taskID] = taskData{Platform: string(adapter.ID()), Messages: msgsJSON, Parts: ptsJSON}
+		var status db.SessionStatus
+		if detail.Session != nil {
+			status = detail.Session.Status
+		}
+		result[taskID] = taskData{Platform: string(adapter.ID()), Status: status, Messages: msgsJSON, Parts: ptsJSON}
 	}
 
 	httpx.WriteJSON(w, map[string]interface{}{"tasks": result})

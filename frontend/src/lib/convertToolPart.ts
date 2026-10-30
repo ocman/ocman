@@ -187,7 +187,12 @@ function renderSpecialTool(
       const taskId = extractTaskId(st);
       let taskOutput = '';
       let taskDetails: string[][] = [];
-      const status = toolStatus(ctx, st.status, partIdx);
+      const subSession: TaskSessionData | undefined = taskId ? ctx.taskLiveOutput?.[taskId] : undefined;
+      const childStatus = subSession?.status;
+      const status = childStatus
+        ? (childStatus === 'busy' ? 'running'
+          : childStatus === 'done' || childStatus === 'waiting' ? 'completed' : 'error')
+        : toolStatus(ctx, st.status, partIdx);
       if (typeof st.output === 'string' && st.output.trim()) {
         // Some platforms wrap the final output in <task_result> tags;
         // strip the OpenCode task_id line if present.
@@ -195,9 +200,6 @@ function renderSpecialTool(
         taskDetails = parsed.details;
         taskOutput = truncate(parsed.text.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(), 5000);
       }
-      // Sub-session data for the embedded thread preview — available
-      // while running (polling) and after completion (persisted).
-      const subSession: TaskSessionData | undefined = taskId ? ctx.taskLiveOutput?.[taskId] : undefined;
       // Live tool list comes from the platform hook cache, injected by
       // the backend into state.metadata.liveTools for the running Task.
       type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };

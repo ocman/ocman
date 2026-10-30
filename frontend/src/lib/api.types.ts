@@ -524,6 +524,8 @@ export interface SharedConversation {
  * thread preview inside a Task tool card.
  */
 export interface TaskSessionData {
+  /** Child lifecycle status, independent of whether its launch tool finished. */
+  status?: SessionStatus;
   messages: Message[];
   parts: Part[];
 }

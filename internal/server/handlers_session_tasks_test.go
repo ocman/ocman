@@ -12,8 +12,9 @@ import (
 
 type sessionTasksResponse struct {
 	Tasks map[string]struct {
-		Messages json.RawMessage `json:"messages"`
-		Parts    json.RawMessage `json:"parts"`
+		Status   db.SessionStatus `json:"status"`
+		Messages json.RawMessage  `json:"messages"`
+		Parts    json.RawMessage  `json:"parts"`
 	} `json:"tasks"`
 	Children json.RawMessage `json:"children"`
 }
@@ -38,7 +39,7 @@ func TestHandleSessionTasks_ReturnsTaskDataWithoutStateDB(t *testing.T) {
 	reg.Register(&fakePlatform{
 		sessions: []db.Session{{ID: "task-1"}},
 		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
-			return &platforms.SessionDetail{}, nil
+			return &platforms.SessionDetail{Session: &db.Session{Status: db.StatusBusy}}, nil
 		},
 	})
 	s := New(nil, nil, "127.0.0.1:0", reg, nil)
@@ -52,7 +53,26 @@ func TestHandleSessionTasks_ReturnsTaskDataWithoutStateDB(t *testing.T) {
 	if string(task.Messages) != "[]" || string(task.Parts) != "[]" {
 		t.Fatalf("task = %+v", task)
 	}
+	if task.Status != db.StatusBusy {
+		t.Fatalf("task status = %q, want busy", task.Status)
+	}
 	if body.Children != nil {
 		t.Fatalf("response includes retired children field: %s", body.Children)
+	}
+}
+
+func TestHandleSessionTasks_AllowsMissingSessionHeader(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{
+		sessions: []db.Session{{ID: "task-1"}},
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{}, nil
+		},
+	})
+	s := New(nil, nil, "127.0.0.1:0", reg, nil)
+	body := getSessionTasks(t, s, "/api/session/parent-1/tasks?ids=task-1")
+	task, ok := body.Tasks["task-1"]
+	if !ok || task.Status != "" || string(task.Messages) != "[]" || string(task.Parts) != "[]" {
+		t.Fatalf("task = %+v, found = %v", task, ok)
 	}
 }

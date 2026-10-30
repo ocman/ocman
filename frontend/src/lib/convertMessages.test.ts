@@ -954,6 +954,20 @@ describe('convertMessages', () => {
     expect(parsedResult.subSession.parts).toHaveLength(1);
   });
 
+  it('keeps a background child running after its launch tool completes', () => {
+    const out = convertMessages(
+      [makeMessage('m', { role: 'assistant' })],
+      [makePart('m', { type: 'tool', tool: 'task', state: {
+        status: 'completed', input: { description: 'background review' },
+        output: 'task_id: ses_child\nAgent launched in background.',
+      } } as PartData)],
+      undefined,
+      { ses_child: { messages: [], parts: [], status: 'busy' } },
+    );
+    const task = asContentArray(out[0].content).find((item) => item.type === 'tool-call') as { argsText: string };
+    expect(task.argsText).toBe('running\nbackground review');
+  });
+
   it('renders completed task with taskOutput when no sub-session data is available', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages(

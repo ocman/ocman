@@ -11,6 +11,47 @@ afterEach(() => {
 });
 
 describe('useSubagentTracking', () => {
+  it('keeps polling a resumed task until its child becomes busy', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    const request = vi.spyOn(api, 'sessionTasks')
+      .mockResolvedValueOnce({ tasks: { ses_child: { messages: [], parts: [], status: 'waiting' } } })
+      .mockResolvedValueOnce({ tasks: { ses_child: { messages: [], parts: [], status: 'waiting' } } })
+      .mockResolvedValue({ tasks: { ses_child: { messages: [], parts: [], status: 'busy' } } });
+    const part = {
+      id: 'tool', messageId: 'message', sessionId: 'parent', timeCreated: 1000,
+      data: { type: 'tool', tool: 'task', state: { status: 'running', metadata: { taskId: 'ses_child' } } },
+    } as Part;
+    const { result } = renderHook(() => useSubagentTracking([part], 'parent'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(request.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(result.current.taskLiveOutput.ses_child.status).toBe('busy');
+  });
+
+  it('continues tracking a busy child after the launch tool completes', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({
+      tasks: { ses_child: { messages: [], parts: [], status: 'busy' } },
+    });
+    const part = {
+      id: 'tool', messageId: 'message', sessionId: 'parent', timeCreated: 1000,
+      data: { type: 'tool', tool: 'task', state: { status: 'completed', metadata: { taskId: 'ses_child' } } },
+    } as Part;
+    const { result } = renderHook(() => useSubagentTracking([part], 'parent'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.runningTaskIds).toEqual([{ taskId: 'ses_child', status: 'running' }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(request.mock.calls.length).toBeGreaterThan(1);
+    request.mockResolvedValue({ tasks: { ses_child: { messages: [], parts: [], status: 'waiting' } } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(result.current.runningTaskIds).toEqual([]);
+    const settledCalls = request.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(request).toHaveBeenCalledTimes(settledCalls);
+  });
+
   it('does not treat retired new_session calls as native tasks', async () => {
     const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({ tasks: {} });
     const part = {

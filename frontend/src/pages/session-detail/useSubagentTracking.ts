@@ -46,8 +46,8 @@ export interface UseSubagentTrackingResult {
  * preview of the subagent conversation.
  *
  * The hook runs a 2-second poll against /api/session/{id}/tasks for
- * running tasks, and a one-shot fetch for completed tasks whose
- * sub-session data hasn't been loaded yet.
+ * running child sessions, and a one-shot fetch for completed launch calls.
+ * A completed launch can still have a busy child, which continues polling.
  */
 export function useSubagentTracking(
   parts: Part[],
@@ -64,8 +64,8 @@ export function useSubagentTracking(
     reset();
   }, [sessionId]);
 
-  // Split task-tool parts into in-flight (state.status === 'running',
-  // polled below) and completed ones (fetched once).
+  // Keep tracking while either the launch call or its child is running.
+  // A resumed child can still report its previous settled turn initially.
   const { runningTaskIds, completedTaskIds } = useMemo(() => {
     const running: RunningTaskEntry[] = [];
     const completed: string[] = [];
@@ -74,14 +74,15 @@ export function useSubagentTracking(
       if (!d || typeof d !== 'object') continue;
       if (!isTaskTool(d.tool)) continue;
       const st = d.state as Record<string, unknown> | undefined;
-      const status = (st?.status as string) || 'running';
       const taskId = extractTaskId(st);
       if (!taskId) continue;
+      const childStatus = taskLiveOutput[taskId]?.status;
+      const status = childStatus === 'busy' ? 'running' : (st?.status as string) || 'running';
       if (status === 'running') running.push({ taskId, status });
       else completed.push(taskId);
     }
     return { runningTaskIds: running, completedTaskIds: completed };
-  }, [parts]);
+  }, [parts, taskLiveOutput]);
 
   const runningTaskKey = runningTaskIds.map(({ taskId }) => taskId).join('\0');
 
