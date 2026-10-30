@@ -107,6 +107,48 @@ describe('ModelPicker platforms', () => {
   });
 
   it.each([
+    ['ArrowRight', ['OpenCode', 'Claude Code', 'All']],
+    ['ArrowLeft', ['Claude Code', 'OpenCode', 'All']],
+  ] as const)('cycles platform tabs with %s without moving focus or clearing search', async (key, names) => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(<ModelPicker open models={[]} modelEntries={mixed} onSelect={onSelect} onClose={onClose} />);
+    const input = screen.getByRole('combobox');
+    await user.click(input);
+    await user.type(input, 'Sonnet');
+    for (const name of names) {
+      await user.keyboard(`{${key}}`);
+      expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+      expect(input).toHaveFocus();
+      expect(input).toHaveValue('Sonnet');
+      expect(screen.getAllByRole('option')).toHaveLength(name === 'All' ? 2 : 1);
+    }
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await user.keyboard('{ArrowLeft}{Enter}');
+    expect(onSelect).toHaveBeenCalledWith('claudecode:anthropic/sonnet');
+  });
+
+  it('resets the highlighted row when switching tabs, even with no search results', () => {
+    render(<ModelPicker open models={[]} modelEntries={mixed} onSelect={vi.fn()} onClose={vi.fn()} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowRight' });
+    fireEvent.keyDown(input, { key: 'ArrowLeft' });
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    fireEvent.change(input, { target: { value: 'missing-model' } });
+    fireEvent.keyDown(input, { key: 'ArrowLeft' });
+    expect(screen.getByRole('tab', { name: 'Claude Code' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('No models found')).toBeInTheDocument();
+  });
+
+  it.each(['ArrowLeft', 'ArrowRight'])('leaves %s unhandled without platform tabs', (key) => {
+    render(<ModelPicker open models={['anthropic/sonnet']} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(fireEvent.keyDown(screen.getByRole('combobox'), { key })).toBe(true);
+  });
+
+  it.each([
     { models: ['anthropic/sonnet'] },
     { models: [], modelEntries: [mixed[0]] },
     { models: [], modelEntries: [mixed[1]] },

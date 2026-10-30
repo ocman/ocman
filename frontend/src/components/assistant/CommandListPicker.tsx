@@ -188,6 +188,13 @@ export function CommandListPicker<T extends PickerEntryBase>({
     if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && tabs && tabs.items.length > 1) {
+      e.preventDefault();
+      const current = tabs.items.findIndex((tab) => tab.value === tabs.value);
+      const direction = e.key === 'ArrowRight' ? 1 : -1;
+      const next = (current + direction + tabs.items.length) % tabs.items.length;
+      setSelectedIndex(0);
+      tabs.onChange(tabs.items[next].value);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelectedIndex(Math.min(effectiveIndex + 1, entryIndexes.length - 1));
