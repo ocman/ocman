@@ -31,11 +31,12 @@ func TestMain(m *testing.M) {
 	case len(os.Args) > 1 && os.Args[1] == "--version":
 		fmt.Println("codex-cli 9.9.9")
 	case len(os.Args) > 1 && os.Args[1] == "app-server":
-		s := codextest.Serve(os.Stdin, os.Stdout)
-		scripted(s)
-		if path := os.Getenv("FAKE_CODEX_ACP_STATE"); path != "" {
-			acptest.ConfigureNative(s, path)
-		}
+		s := codextest.Serve(os.Stdin, os.Stdout, func(s *codextest.Server) {
+			scripted(s)
+			if path := os.Getenv("FAKE_CODEX_ACP_STATE"); path != "" {
+				acptest.ConfigureNative(s, path)
+			}
+		})
 		if os.Getenv("FAKE_CODEX") == "exit" {
 			s.Handle("test/exit", func(json.RawMessage) (any, error) {
 				go func() { time.Sleep(100 * time.Millisecond); os.Exit(0) }()

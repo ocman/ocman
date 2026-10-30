@@ -27,10 +27,11 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	if os.Getenv("OCMAN_TEST_FAKE_CODEX") != "" {
-		s := codextest.Serve(os.Stdin, os.Stdout)
-		if path := os.Getenv("OCMAN_TEST_FAKE_ACP_STATE"); path != "" {
-			acptest.ConfigureNative(s, path, true)
-		}
+		s := codextest.Serve(os.Stdin, os.Stdout, func(s *codextest.Server) {
+			if path := os.Getenv("OCMAN_TEST_FAKE_ACP_STATE"); path != "" {
+				acptest.ConfigureNative(s, path, true)
+			}
+		})
 		<-s.Done()
 		os.Exit(0)
 	}

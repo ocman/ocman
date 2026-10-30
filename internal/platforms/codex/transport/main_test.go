@@ -37,11 +37,12 @@ func TestMain(m *testing.M) {
 			_, _ = fmt.Fprintf(f, "%s %q\n", os.Getenv("CODEX_HOME"), os.Args[1:])
 			_ = f.Close()
 		}
-		s := codextest.Serve(os.Stdin, os.Stdout)
-		fakeCodex(s)
-		if path := os.Getenv("FAKE_CODEX_ACP_STATE"); path != "" {
-			acptest.ConfigureNative(s, path)
-		}
+		s := codextest.Serve(os.Stdin, os.Stdout, func(s *codextest.Server) {
+			fakeCodex(s)
+			if path := os.Getenv("FAKE_CODEX_ACP_STATE"); path != "" {
+				acptest.ConfigureNative(s, path)
+			}
+		})
 		<-s.Done()
 	default:
 		os.Exit(2)

@@ -74,10 +74,13 @@ func New(t testing.TB) (*Server, Pipes) {
 }
 
 // Serve runs a fake server on an existing stream, such as a helper process's
-// stdio.
-func Serve(r io.Reader, w io.Writer) *Server {
+// stdio. Setup callbacks register handlers before any request can be read.
+func Serve(r io.Reader, w io.Writer, setup ...func(*Server)) *Server {
 	s := &Server{w: w, done: make(chan struct{}), methods: map[string]Method{}, replies: map[string]chan Reply{}}
 	s.Handle(codexappserver.MethodInitialize, func(json.RawMessage) (any, error) { return Info, nil })
+	for _, configure := range setup {
+		configure(s)
+	}
 	go s.read(r)
 	return s
 }
