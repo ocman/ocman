@@ -587,7 +587,10 @@ special files, empty source and more than 10,000 files are refused.
 
 The host pins deny-all rules and permits only the `read` tool for the exact
 regular files present at admission. Reads must use the absolute paths in the
-resolved source directory. Plugins should prepare an inventory file so the
+resolved source directory. Permission rules include exact absolute and source-root
+relative names because providers may normalize absolute inputs to relative
+resources before checking them. Neither form allows a directory wildcard.
+Plugins should prepare an inventory file so the
 model can discover the corpus without unrestricted search or shell tools.
 Edits, writes, commands, network, MCP and delegation remain denied. Files added
 later are not automatically readable. `noTools`, `permissionProfile` and `agent`

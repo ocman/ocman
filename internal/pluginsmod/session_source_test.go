@@ -48,7 +48,7 @@ func TestReadOnlySourceSessionsPinReadToolsBeforeSending(t *testing.T) {
 			m := &Module{store: new(state.DB), plugins: openPluginStore(t), deps: Deps{
 				Local: func() hostsvc.Host { return modelTestHost{} }, Sessions: creator, CreatePlatform: create, Platform: lookup,
 				Enqueue: func(context.Context, string, bool, platforms.SendMessageRequest) error {
-					if len(creator.rules) != 2 || creator.rules[0].Permission != "*" || creator.rules[0].Action != "deny" || creator.rules[1].Permission != "read" || creator.rules[1].Action != "allow" {
+					if len(creator.rules) != 3 || creator.rules[0].Permission != "*" || creator.rules[0].Action != "deny" || creator.rules[1].Permission != "read" || creator.rules[1].Action != "allow" || creator.rules[2].Permission != "read" || creator.rules[2].Action != "allow" {
 						t.Fatalf("source policy was not pinned before prompt delivery: %+v", creator.rules)
 					}
 					sent = true
@@ -130,7 +130,7 @@ func TestSourceSessionRulesBoundFilesAndRejectControlPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if rules, err := sourceSessionRules(t.Context(), root); err != nil || len(rules) != maxSessionSourceFiles+1 {
+	if rules, err := sourceSessionRules(t.Context(), root); err != nil || len(rules) != 2*maxSessionSourceFiles+1 {
 		t.Fatalf("source at file limit refused: rules=%d err=%v", len(rules), err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "overflow.txt"), nil, 0444); err != nil {

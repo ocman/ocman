@@ -40,7 +40,15 @@ func sourceSessionRules(ctx context.Context, directory string) ([]platforms.Perm
 		if files > maxSessionSourceFiles {
 			return plugins.ErrInvalidMessage
 		}
-		rules = append(rules, platforms.PermissionRule{Permission: "read", Pattern: providerprotocol.ExactPattern(filepath.ToSlash(path)), Action: "allow"})
+		relative, err := filepath.Rel(directory, path)
+		if err != nil || !filepath.IsLocal(relative) {
+			return plugins.ErrInvalidMessage
+		}
+		// Providers may authorize absolute input paths against location-relative
+		// resources. Pin both representations without a directory wildcard.
+		for _, resource := range []string{path, relative} {
+			rules = append(rules, platforms.PermissionRule{Permission: "read", Pattern: providerprotocol.ExactPattern(filepath.ToSlash(resource)), Action: "allow"})
+		}
 		return nil
 	})
 	if err != nil {
