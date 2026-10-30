@@ -11,16 +11,17 @@ import (
 // edge. images_json / model / agent / reasoning carry the send options so
 // the flush reconstructs the original SendMessage faithfully.
 type QueuedMessage struct {
-	ID         string `json:"id"`
-	Platform   string `json:"platform"`
-	SessionID  string `json:"sessionID"`
-	Position   int64  `json:"position"`
-	Text       string `json:"text"`
-	ImagesJSON string `json:"imagesJSON,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Agent      string `json:"agent,omitempty"`
-	Reasoning  string `json:"reasoning,omitempty"`
-	CreatedAt  int64  `json:"createdAt"`
+	ID                 string `json:"id"`
+	Platform           string `json:"platform"`
+	SessionID          string `json:"sessionID"`
+	Position           int64  `json:"position"`
+	Text               string `json:"text"`
+	ImagesJSON         string `json:"imagesJSON,omitempty"`
+	Model              string `json:"model,omitempty"`
+	Agent              string `json:"agent,omitempty"`
+	Reasoning          string `json:"reasoning,omitempty"`
+	PreserveSelections bool   `json:"preserveSelections,omitempty"`
+	CreatedAt          int64  `json:"createdAt"`
 	// Attempts counts consecutive failed sends. Once it reaches
 	// QueuedMessageAttemptLimit the row is Blocked: it stays visible with
 	// LastError but is skipped by the drain so the rest of the queue moves.
@@ -42,16 +43,16 @@ func (d *DB) EnqueueMessage(ctx context.Context, m QueuedMessage) error {
 	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO queued_message
 			(id, platform, session_id, position, text, images_json,
-			 model, agent, reasoning, created_at)
+			 model, agent, reasoning, created_at, preserve_selections)
 		VALUES (
 			?, ?, ?,
 			COALESCE((SELECT MAX(position) FROM queued_message
 			          WHERE platform = ? AND session_id = ?), 0) + 1,
-			?, ?, ?, ?, ?, ?)
+			?, ?, ?, ?, ?, ?, ?)
 	`,
 		m.ID, m.Platform, m.SessionID,
 		m.Platform, m.SessionID,
-		m.Text, m.ImagesJSON, m.Model, m.Agent, m.Reasoning, m.CreatedAt,
+		m.Text, m.ImagesJSON, m.Model, m.Agent, m.Reasoning, m.CreatedAt, m.PreserveSelections,
 	)
 	if err != nil {
 		return fmt.Errorf("enqueuing message: %w", err)
@@ -89,14 +90,14 @@ func (d *DB) HeadQueuedMessage(ctx context.Context, platform, sessionID string) 
 	var m QueuedMessage
 	err := d.db.QueryRowContext(ctx, `
 		SELECT id, platform, session_id, position, text, images_json,
-		       model, agent, reasoning, created_at, attempts, last_error, blocked
+		       model, agent, reasoning, created_at, attempts, last_error, blocked, preserve_selections
 		FROM queued_message
 		WHERE platform = ? AND session_id = ? AND blocked = 0
 		ORDER BY position ASC
 		LIMIT 1
 	`, platform, sessionID).Scan(
 		&m.ID, &m.Platform, &m.SessionID, &m.Position, &m.Text, &m.ImagesJSON,
-		&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt, &m.Attempts, &m.LastError, &m.Blocked,
+		&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt, &m.Attempts, &m.LastError, &m.Blocked, &m.PreserveSelections,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -159,7 +160,7 @@ func (d *DB) SessionsWithQueuedMessages(ctx context.Context) ([]QueuedSession, e
 func (d *DB) ListQueuedMessages(ctx context.Context, platform, sessionID string) ([]QueuedMessage, error) {
 	return d.queuedMessages(ctx, `
 		SELECT id, platform, session_id, position, text, images_json,
-		       model, agent, reasoning, created_at, attempts, last_error, blocked
+		       model, agent, reasoning, created_at, attempts, last_error, blocked, preserve_selections
 		FROM queued_message
 		WHERE platform = ? AND session_id = ?
 		ORDER BY position ASC
@@ -176,7 +177,7 @@ func (d *DB) ListQueuedMessages(ctx context.Context, platform, sessionID string)
 func (d *DB) ListQueuedMessagesAnyPlatform(ctx context.Context, sessionID string) ([]QueuedMessage, error) {
 	return d.queuedMessages(ctx, `
 		SELECT id, platform, session_id, position, text, images_json,
-		       model, agent, reasoning, created_at, attempts, last_error, blocked
+		       model, agent, reasoning, created_at, attempts, last_error, blocked, preserve_selections
 		FROM queued_message
 		WHERE session_id = ?
 		ORDER BY platform ASC, position ASC
@@ -194,7 +195,7 @@ func (d *DB) queuedMessages(ctx context.Context, query string, args ...any) ([]Q
 		var m QueuedMessage
 		if err := rows.Scan(
 			&m.ID, &m.Platform, &m.SessionID, &m.Position, &m.Text, &m.ImagesJSON,
-			&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt, &m.Attempts, &m.LastError, &m.Blocked,
+			&m.Model, &m.Agent, &m.Reasoning, &m.CreatedAt, &m.Attempts, &m.LastError, &m.Blocked, &m.PreserveSelections,
 		); err != nil {
 			return nil, fmt.Errorf("scanning queued message: %w", err)
 		}

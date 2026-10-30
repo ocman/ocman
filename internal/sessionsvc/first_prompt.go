@@ -43,8 +43,14 @@ func (s *Service) PrepareSendMessage(ctx context.Context, platformID string, req
 	if err != nil {
 		return nil, err
 	}
-	if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {
-		return nil, err
+	if req.PreserveSelections {
+		if req.Model != "" || req.Agent != "" || req.Reasoning != "" {
+			return nil, validation("preserved selections cannot be overridden")
+		}
+	} else {
+		if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {
+			return nil, err
+		}
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

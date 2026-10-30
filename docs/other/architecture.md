@@ -212,7 +212,9 @@ flowchart LR
   `session.source` grant. The owner resolves a contained subpath and pins exact
   file-read permissions before creation and prompt delivery. Approved plugins can
   follow up on their latest completed turn through the same session queue, with
-  durable admission receipts and unchanged permissions. Other tools remain
+  durable admission receipts and unchanged permissions. Queued follow-ups persist
+  a preserve-selections policy so delivery does not apply project model defaults
+  or provider fallthrough. Other tools remain
   denied. Creation receipts, platforms and the completion outbox are reused;
   the host does not interpret the source or its output schema.
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to

@@ -63,7 +63,7 @@ func TestSessionFollowupKeepsSessionAndDeduplicatesAcrossRestart(t *testing.T) {
 			if err != nil || id != "session-a" || len(*sent) != 1 {
 				t.Fatalf("follow-up failed: id=%s sent=%d err=%v", id, len(*sent), err)
 			}
-			if (*sent)[0].SessionID != "session-a" || (*sent)[0].Agent != "" || (*sent)[0].Model != "" || (*sent)[0].Message != prompt {
+			if (*sent)[0].SessionID != "session-a" || (*sent)[0].Agent != "" || (*sent)[0].Model != "" || (*sent)[0].Message != prompt || !(*sent)[0].PreserveSelections {
 				t.Fatalf("session selections changed: %+v", (*sent)[0])
 			}
 			restarted := &Module{plugins: m.plugins, deps: m.deps}

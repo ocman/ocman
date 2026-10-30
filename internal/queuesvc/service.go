@@ -175,6 +175,8 @@ var ErrEmptyMessage = errors.New("message or images required")
 // names a platform other than the session's. Transports map it to a 400.
 var ErrModelPlatform = errors.New("model does not belong to the session's platform")
 
+var ErrSelectionConflict = errors.New("preserved selections cannot be overridden")
+
 // Enqueue appends a message to the session's queue.
 //
 // forceQueue is the caller's authoritative "hold this" signal — the
@@ -200,21 +202,25 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	if req.Message == "" && len(req.Images) == 0 {
 		return ErrEmptyMessage
 	}
+	if req.PreserveSelections && (req.Model != "" || req.Agent != "" || req.Reasoning != "") {
+		return ErrSelectionConflict
+	}
 	// A model for another platform can never be sent; refuse it now rather
 	// than hold a message whose every drain attempt fails.
 	if _, err := platforms.ModelFor(platforms.ID(platformID).Base(), req.Model); err != nil {
 		return fmt.Errorf("%w: %w", ErrModelPlatform, err)
 	}
 	m := state.QueuedMessage{
-		ID:         newID(),
-		Platform:   platformID,
-		SessionID:  req.SessionID,
-		Text:       req.Message,
-		ImagesJSON: encodeImages(req.Images),
-		Model:      req.Model,
-		Agent:      req.Agent,
-		Reasoning:  req.Reasoning,
-		CreatedAt:  nowMillis(),
+		ID:                 newID(),
+		Platform:           platformID,
+		SessionID:          req.SessionID,
+		Text:               req.Message,
+		ImagesJSON:         encodeImages(req.Images),
+		Model:              req.Model,
+		Agent:              req.Agent,
+		Reasoning:          req.Reasoning,
+		PreserveSelections: req.PreserveSelections,
+		CreatedAt:          nowMillis(),
 	}
 
 	key := sessionKey{Platform: platformID, SessionID: req.SessionID}

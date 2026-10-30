@@ -79,7 +79,7 @@ func (m *Module) sendSession(ctx context.Context, pluginID string, params plugin
 	}
 	// Retain the session's existing creation identity and all pinned selections.
 	// Never create a session, reset permissions or send through another owner.
-	if err := m.deps.Enqueue(ctx, platformID, false, platforms.SendMessageRequest{SessionID: sessionID, Message: params.Prompt}); err != nil {
+	if err := m.deps.Enqueue(ctx, platformID, false, platforms.SendMessageRequest{SessionID: sessionID, Message: params.Prompt, PreserveSelections: true}); err != nil {
 		return "", err
 	}
 	return m.pluginWireSession(ctx, platformID, sessionID)

@@ -68,12 +68,13 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool,
 		}
 	}
 	req := platforms.SendMessageRequest{
-		SessionID: head.SessionID,
-		Message:   head.Text,
-		Images:    decodeImages(head.ImagesJSON),
-		Model:     head.Model,
-		Agent:     head.Agent,
-		Reasoning: head.Reasoning,
+		SessionID:          head.SessionID,
+		Message:            head.Text,
+		Images:             decodeImages(head.ImagesJSON),
+		Model:              head.Model,
+		Agent:              head.Agent,
+		Reasoning:          head.Reasoning,
+		PreserveSelections: head.PreserveSelections,
 	}
 	send := func(ctx context.Context) error { return s.sender.SendNow(ctx, head.Platform, req) }
 	var prepareErr error

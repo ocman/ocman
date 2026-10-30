@@ -38,6 +38,9 @@ type SendMessageRequest struct {
 	// follow-up queue return ErrUnsupported and the caller falls back to
 	// ocman's own queue. Empty = deliver now.
 	Delivery string `json:",omitempty"`
+	// PreserveSelections retains the runtime's current model, agent and variant,
+	// bypassing project defaults and provider fallthrough. Overrides must be empty.
+	PreserveSelections bool `json:",omitempty"`
 }
 
 // NativeQueue is implemented by adapters whose platform can hold
