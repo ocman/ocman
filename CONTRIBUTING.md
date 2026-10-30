@@ -33,9 +33,9 @@ pnpm --dir frontend install --frozen-lockfile
 ```
 
 Before starting `make dev`, configure disposable databases isolated to this
-checkout and branch. The current dev targets isolate conversation history but
-still use the user's normal application `state.db`; an application-state path
-override must be implemented and configured before backend development startup.
+checkout and branch. Set `OCMAN_STATE_DB` to an absolute disposable path and
+set `-conversations-db` alongside it. Native platform homes and managed agent
+databases must also be isolated before backend development startup.
 See the [database isolation prerequisite](docs/other/contributing.md#database-isolation-before-startup).
 Once isolated, the frontend runs on http://localhost:8228 and the backend on
 port 8229. Use pnpm for all frontend commands. Tests use temporary databases

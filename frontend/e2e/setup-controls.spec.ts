@@ -22,3 +22,28 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('button', { name: width <= 640 ? 'Filter sessions' : 'Include archived', exact: true })).toBeVisible();
   });
 }
+
+for (const width of [1280, 390]) {
+  test(`Codex selection explains adapter installation at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    let enabled = ['opencode', 'claudecode'];
+    await page.route('/api/settings/platforms', async route => {
+      if (route.request().method() === 'POST') enabled = route.request().postDataJSON().enabled;
+      await route.fulfill({ json: { enabled } });
+    });
+    await page.goto('/settings?tab=platforms');
+    const codex = page.getByRole('checkbox', { name: 'Codex', exact: true });
+    await expect(codex).toBeEnabled();
+    await codex.check();
+    await expect(page.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy adapter install command' })).toBeVisible();
+    await expect(page.getByText(/Node.js 22/)).toBeVisible();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Platform changes applied.', { exact: true })).toBeVisible();
+    await page.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0', { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`codex-setup-${width}.png`), fullPage: true });
+    expect(enabled).toContain('codex');
+    await codex.uncheck();
+    await expect(page.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0', { exact: true })).toBeHidden();
+  });
+}

@@ -64,11 +64,11 @@ Use pnpm for Node commands and keep `pnpm-lock.yaml` current.
 Development must use disposable databases isolated to this checkout and branch.
 A different port does not isolate data. Tests already use temporary stores.
 
-**Current limitation:** `make dev*` selects a checkout-local `state_conv.db`,
-but application startup still resolves `state.db` to the user's normal
-`~/.local/share/ocman/state.db`. There is currently no application-state path
-flag or environment override. Do not start these targets against your normal
-account until an explicit state-path override is implemented and configured.
+`make dev*` selects a checkout-local `state_conv.db`, but application state
+defaults to `~/.local/share/ocman/state.db`. Set `OCMAN_STATE_DB` to an absolute,
+disposable checkout-local path before starting the backend, and set
+`-conversations-db` to an isolated path beside it. The state database's parent
+also holds provider runtime state and artifacts.
 The OpenCode source and any managed agent's writable databases must also be
 isolated. See `.agents/development.md` for the repository's isolation rules.
 
