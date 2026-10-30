@@ -45,9 +45,16 @@ describe('SessionPullRequests', () => {
     try {
       mount(); await act(async () => {});
       vi.mocked(prWorkflowApi.links).mockClear();
-      await act(() => vi.advanceTimersByTimeAsync(30_000)); expect(prWorkflowApi.links).not.toHaveBeenCalled();
+      await act(() => vi.advanceTimersByTimeAsync(60_000)); expect(prWorkflowApi.links).not.toHaveBeenCalled();
       visible.mockReturnValue('visible');
-      await act(() => vi.advanceTimersByTimeAsync(30_000)); expect(prWorkflowApi.links).toHaveBeenCalledTimes(1);
+      await act(() => vi.advanceTimersByTimeAsync(60_000)); expect(prWorkflowApi.links).toHaveBeenCalledTimes(1);
     } finally { visible.mockRestore(); vi.useRealTimers(); }
+  });
+  it('uses cached reads on mount and only forces a refresh on request', async () => {
+    mount(); await screen.findByRole('button', { name: 'Watch PR' });
+    expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', 'r-box:opencode', false);
+    vi.mocked(prWorkflowApi.links).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh links' }));
+    await waitFor(() => expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', 'r-box:opencode', true));
   });
 });

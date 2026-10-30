@@ -12,6 +12,7 @@ it('uses the hub credential routes without putting secrets in URLs', () => {
 });
 it('qualifies session reads and mutations by platform and handles empty unlink responses', () => {
   prWorkflowApi.links('s/1', 'r-box:opencode'); expect(fetchJSON).toHaveBeenCalledWith('/api/session/s%2F1/pull-requests?platform=r-box%3Aopencode');
+  prWorkflowApi.links('s/1', 'r-box:opencode', true); expect(fetchJSON).toHaveBeenLastCalledWith('/api/session/s%2F1/pull-requests?platform=r-box%3Aopencode&refresh=true');
   prWorkflowApi.change('s1', 'r-box:opencode', { action: 'watch', number: 42, host: 'github.com', repo: 'team/repo' });
   expect(postJSON).toHaveBeenLastCalledWith('/api/session/s1/pull-requests?platform=r-box%3Aopencode', expect.objectContaining({ action: 'watch' }), { parseJSON: true });
   prWorkflowApi.change('s1', 'r-box:opencode', { action: 'unlink', number: 42 });

@@ -80,9 +80,13 @@ func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOption
 
 func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.PR, error) {
 	path := fmt.Sprintf("/api/v1/repos/%s/pulls/%d", repo, number)
-	raw, _, err := forgehttp.GetJSON[forgehttp.PR](ctx, c.fetch, path, "pull", statusErr(path))
+	raw, rl, err := forgehttp.GetJSON[forgehttp.PR](ctx, c.fetch, path, "pull", forgehttp.UpstreamStatus)
 	if err != nil {
 		return forge.PR{}, err
+	}
+	if rl.Limited || rl.Stale && forgehttp.FreshReads(ctx) {
+		rl.Limited = true
+		return forge.PR{}, forgehttp.UpstreamStatus(http.StatusTooManyRequests, rl)
 	}
 	return toPR(raw, c.host, repo), nil
 }

@@ -66,7 +66,7 @@ func CurrentUser(ctx context.Context, fetch Fetch, host, path, token string) (fo
 	if token == "" {
 		return forge.CurrentUser{}, forge.ErrUnauthenticated
 	}
-	raw, _, err := GetJSON[struct {
+	raw, rl, err := GetJSON[struct {
 		Login string `json:"login"`
 	}](ctx, fetch, path, "/user", func(status int, rl forge.RateLimit) error {
 		if status == http.StatusUnauthorized || status == http.StatusForbidden {
@@ -76,6 +76,10 @@ func CurrentUser(ctx context.Context, fetch Fetch, host, path, token string) (fo
 	})
 	if err != nil {
 		return forge.CurrentUser{}, err
+	}
+	if rl.Limited || rl.Stale && FreshReads(ctx) {
+		rl.Limited = true
+		return forge.CurrentUser{}, UpstreamStatus(http.StatusTooManyRequests, rl)
 	}
 	return forge.CurrentUser{Host: host, Login: raw.Login}, nil
 }

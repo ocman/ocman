@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
 )
 
 func (c *Client) Feedback(ctx context.Context, repo string, number int) ([]forge.Remark, error) {
@@ -25,8 +26,9 @@ func (c *Client) Feedback(ctx context.Context, repo string, number int) ([]forge
 			if err != nil {
 				return nil, err
 			}
-			if rl.Limited || status != http.StatusOK {
-				return nil, fmt.Errorf("github feedback unavailable: status %d", status)
+			if rl.Limited || rl.Stale || status != http.StatusOK {
+				rl.Limited = rl.Limited || rl.Stale
+				return nil, forgehttp.UpstreamStatus(status, rl)
 			}
 			var rows []struct {
 				ID          int64  `json:"id"`

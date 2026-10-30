@@ -25,24 +25,24 @@ function SessionLinks({ sessionId, platform, upstreams }: Props) {
   const [prompt, setPrompt] = useState<string | null>(null);
   const mounted = useRef(true);
   const confirm = useConfirm();
-  const load = useCallback(async () => { const result = await prWorkflowApi.links(sessionId, platform); if (mounted.current) setLinks(result.pullRequests); }, [sessionId, platform]);
+  const load = useCallback(async (refresh = false) => { const result = await prWorkflowApi.links(sessionId, platform, refresh); if (mounted.current) { setLinks(result.pullRequests); setError(''); } }, [sessionId, platform]);
   useEffect(() => {
     mounted.current = true;
     void load().catch(() => { if (mounted.current) setError('Could not load linked PRs.'); });
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load().catch(() => { if (mounted.current) setError('Could not refresh linked PRs.'); }); }, 30_000);
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load().catch(() => { if (mounted.current) setError('Could not refresh linked PRs.'); }); }, 60_000);
     return () => { mounted.current = false; window.clearInterval(timer); };
   }, [load]);
-  const run = async (action: () => Promise<unknown>) => {
+  const run = async (action: () => Promise<unknown>, reload = true) => {
     setBusy(true); setError('');
-    try { await action(); if (mounted.current) await load(); }
+    try { await action(); if (mounted.current && reload) await load(); }
     catch (err) { if (mounted.current) setError(err instanceof Error ? err.message : 'PR action failed.'); }
     finally { if (mounted.current) setBusy(false); }
   };
   const change = (link: PRLink, action: string) => prWorkflowApi.change(sessionId, platform, { action, number: link.number, host: link.remote.host, repo: link.remote.repo });
   const feedback = (link: PRLink, action: string) => run(async () => { const result = await prWorkflowApi.feedback(sessionId, platform, link, action); if (mounted.current) setPrompt(result.prompt); });
   return <section className="oc-session-prs" aria-label="Linked pull requests">
-    <div className="oc-session-prs-heading"><h3>Linked to this session</h3><Button variant="ghost" size="small" disabled={busy} onClick={() => void run(load)}>Refresh links</Button></div>
-    {error && <p role="alert">{error} <Button variant="ghost" onClick={() => void run(load)}>Retry links</Button></p>}
+    <div className="oc-session-prs-heading"><h3>Linked to this session</h3><Button variant="ghost" size="small" disabled={busy} onClick={() => void run(() => load(true), false)}>Refresh links</Button></div>
+    {error && <p role="alert">{error} <Button variant="ghost" onClick={() => void run(load, false)}>Retry links</Button></p>}
     {links === null && !error && <p role="status">Loading linked PRs…</p>}
     {links?.length === 0 && <p>No linked PRs. Link one below or launch a session from a PR.</p>}
     {links?.map((link) => <article className="oc-session-pr" key={`${link.remote.host}/${link.remote.repo}/${link.number}`}>

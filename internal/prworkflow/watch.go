@@ -4,24 +4,36 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/ocman/ocman/internal/forge"
+	"github.com/ocman/ocman/internal/forge/forgehttp"
+	"github.com/ocman/ocman/internal/forge/github"
 	"github.com/ocman/ocman/internal/platforms"
 )
 
 type Snapshot struct {
-	SHA      string
-	Checks   forge.CIState
-	Failed   []string
-	Conflict bool
-	Remarks  map[string]string
+	SHA           string
+	Checks        forge.CIState
+	Failed        []string
+	Conflict      bool
+	Remarks       map[string]string
+	UpdatedAt     time.Time
+	RemarksReadAt time.Time
+	InFlight      bool
+	reusedRemarks bool
 }
 
 func (m *Module) read(ctx context.Context, l Link) (*Snapshot, forge.PR, error) {
+	return m.readSnapshot(ctx, l, false)
+}
+
+func (m *Module) readSnapshot(ctx context.Context, l Link, selective bool) (*Snapshot, forge.PR, error) {
+	ctx = forgehttp.WithFreshReads(ctx)
 	f, ok := m.d.ResolveForge(l.Remote)
 	if !ok {
 		return nil, forge.PR{}, fmt.Errorf("forge unavailable")
@@ -30,22 +42,35 @@ func (m *Module) read(ctx context.Context, l Link) (*Snapshot, forge.PR, error) 
 	if err != nil {
 		return nil, pr, err
 	}
-	s := &Snapshot{SHA: pr.HeadSHA, Conflict: pr.Mergeable != nil && !*pr.Mergeable, Remarks: map[string]string{}}
+	s := &Snapshot{SHA: pr.HeadSHA, Conflict: pr.Mergeable != nil && !*pr.Mergeable, Remarks: map[string]string{}, UpdatedAt: pr.UpdatedAt, InFlight: pr.Mergeable == nil}
+	// A terminal PR needs no checks or comment pagination to stop its watch.
+	if pr.Status == "merged" || pr.Status == "closed" {
+		return s, pr, nil
+	}
 	if pr.HeadSHA != "" {
 		checks, rl, err := f.Checks(ctx, l.Remote.Repo, pr.HeadSHA)
 		if err != nil {
 			return nil, pr, err
 		}
 		if rl.Limited || rl.Stale {
-			return nil, pr, fmt.Errorf("forge rate limited")
+			return nil, pr, &forgehttp.ResponseError{Status: 429, RateLimit: forge.RateLimit{Limited: true, ResetAt: rl.ResetAt}}
 		}
 		s.Checks = checks.State
 		for _, c := range checks.Checks {
+			if c.State == forge.CIStatePending || c.State == forge.CIStateUnknown {
+				s.InFlight = true
+			}
 			if c.State == forge.CIStateFailure {
 				s.Failed = append(s.Failed, c.Name)
 			}
 		}
+		s.InFlight = s.InFlight || checks.State == forge.CIStatePending
 		sort.Strings(s.Failed)
+	}
+	if selective && !feedbackDue(l.Snapshot, pr, m.now()) {
+		s.Remarks, s.RemarksReadAt = l.Snapshot.Remarks, l.Snapshot.RemarksReadAt
+		s.reusedRemarks = true
+		return s, pr, nil
 	}
 	if reader, ok := f.(forge.FeedbackReader); ok {
 		remarks, err := reader.Feedback(ctx, l.Remote.Repo, l.Number)
@@ -64,6 +89,7 @@ func (m *Module) read(ctx context.Context, l Link) (*Snapshot, forge.PR, error) 
 			s.Remarks[r.ID] = hex.EncodeToString(hash[:])
 		}
 	}
+	s.RemarksReadAt = m.now()
 	return s, pr, nil
 }
 
@@ -109,11 +135,16 @@ func (m *Module) sweep(ctx context.Context) {
 		err error
 	}
 	reads := map[string]readResult{}
+	for host, until := range m.paused {
+		if !until.After(m.now()) {
+			delete(m.paused, host)
+		}
+	}
 	for _, l := range links {
 		if ctx.Err() != nil {
 			return
 		}
-		if (!l.Watching && l.Pending == "") || l.NextAt > time.Now().UnixMilli() {
+		if l.Pending == "" && (!l.Watching || l.NextAt > m.now().UnixMilli()) {
 			continue
 		}
 		readCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -126,16 +157,46 @@ func (m *Module) sweep(ctx context.Context) {
 			continue
 		}
 		if l.Pending == "" {
-			key := fmt.Sprintf("%s/%s/%d", l.Remote.Host, l.Remote.Repo, l.Number)
+			host := string(l.Remote.Type) + "/" + l.Remote.Host
+			if until := m.paused[host]; until.After(m.now()) {
+				l.NextAt = until.UnixMilli()
+				l.LastError = "Forge rate limited. Watching will resume after the retry deadline."
+				_ = m.put(readCtx, l)
+				cancel()
+				continue
+			}
+			// Different owners and feedback watermarks must not share a partial read.
+			key := fmt.Sprintf("%s\x00%s\x00%s/%s/%d/%t", l.RemoteID, l.Directory, host, l.Remote.Repo, l.Number, feedbackDue(l.Snapshot, l.PR, m.now()))
 			read, ok := reads[key]
 			if !ok {
-				read.s, read.pr, read.err = m.read(readCtx, l)
+				read.s, read.pr, read.err = m.readSnapshot(github.WithCache(readCtx), l, true)
 				reads[key] = read
 			}
+			if read.s != nil && read.s.reusedRemarks && l.Snapshot != nil {
+				copySnapshot := *read.s
+				copySnapshot.Remarks, copySnapshot.RemarksReadAt = l.Snapshot.Remarks, l.Snapshot.RemarksReadAt
+				read.s = &copySnapshot
+			}
 			if read.err != nil {
+				if ctx.Err() != nil {
+					cancel()
+					continue
+				}
+				if errors.Is(read.err, forge.ErrRateLimited) {
+					until := m.now().Add(2 * time.Minute)
+					var response *forgehttp.ResponseError
+					if errors.As(read.err, &response) && response.RateLimit.ResetAt.After(until) {
+						until = response.RateLimit.ResetAt
+					}
+					m.paused[host] = until
+					l.NextAt, l.LastError = until.UnixMilli(), "Forge rate limited. Watching will resume after the retry deadline."
+					_ = m.put(readCtx, l)
+					cancel()
+					continue
+				}
 				l.Failures++
 				l.LastError = "Could not read the forge. Retrying with backoff."
-				l.NextAt = time.Now().Add(time.Duration(1<<min(l.Failures, 5)) * time.Minute).UnixMilli()
+				l.NextAt = m.now().Add(time.Duration(1<<min(l.Failures, 5)) * time.Minute).UnixMilli()
 				if l.Failures >= 8 {
 					l.Watching = false
 					l.LastError = "Watch stopped after repeated read failures. Recheck source-control setup and start watching again."
@@ -166,6 +227,9 @@ func (m *Module) sweep(ctx context.Context) {
 				l.CommentWakes = 0
 			}
 			l.PR, l.Snapshot, l.Failures, l.NextAt, l.LastError = pr, read.s, 0, 0, ""
+			if quietPR(pr, read.s, m.now()) {
+				l.NextAt = m.now().Add(5 * time.Minute).UnixMilli()
+			}
 			if pr.Status == "merged" || pr.Status == "closed" {
 				l.Watching = false
 				news = []string{"PR is " + pr.Status + ". Watching has stopped. No session was archived."}

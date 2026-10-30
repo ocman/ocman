@@ -39,9 +39,13 @@ func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOption
 }
 
 func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.PR, error) {
-	raw, _, err := forgehttp.GetJSON[forgehttp.PR](ctx, c.fetch, fmt.Sprintf("/repos/%s/pulls/%d", repo, number), "pull", forgehttp.UpstreamStatus)
+	raw, rl, err := forgehttp.GetJSON[forgehttp.PR](ctx, c.fetch, fmt.Sprintf("/repos/%s/pulls/%d", repo, number), "pull", forgehttp.UpstreamStatus)
 	if err != nil {
 		return forge.PR{}, err
+	}
+	if rl.Limited || rl.Stale && forgehttp.FreshReads(ctx) {
+		rl.Limited = true
+		return forge.PR{}, forgehttp.UpstreamStatus(http.StatusTooManyRequests, rl)
 	}
 	return toPR(raw, repo), nil
 }

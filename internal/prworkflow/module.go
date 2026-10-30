@@ -28,13 +28,15 @@ type Deps struct {
 	// Enqueue is the shared session queue, never a platform-specific send.
 	Enqueue func(context.Context, string, platforms.SendMessageRequest) error
 	Ready   func(context.Context, Target) bool
+	Now     func() time.Time
 }
 type Module struct {
-	d  Deps
-	mu sync.Mutex
+	d      Deps
+	mu     sync.Mutex
+	paused map[string]time.Time
 }
 
-func New(d Deps) *Module     { return &Module{d: d} }
+func New(d Deps) *Module     { return &Module{d: d, paused: make(map[string]time.Time)} }
 func (*Module) Name() string { return "pr-workflow" }
 func (m *Module) Routes(r module.Router) {
 	r.Local("GET /api/session/{id}/pull-requests", m.list)
@@ -56,7 +58,11 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range links {
 		if f, ok := m.d.ResolveForge(links[i].Remote); ok {
-			ctx, cancel := context.WithTimeout(github.WithCache(r.Context()), 10*time.Second)
+			ctx := github.WithCache(r.Context())
+			if r.URL.Query().Get("refresh") == "true" {
+				ctx = github.WithRefresh(ctx)
+			}
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			pr, err := f.LookupPR(ctx, links[i].Remote.Repo, links[i].Number)
 			cancel()
 			if err == nil {

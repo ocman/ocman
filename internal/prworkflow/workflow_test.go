@@ -20,15 +20,18 @@ import (
 
 type fakeForge struct {
 	forge.Forge
-	pr          forge.PR
-	checks      forge.CIStatus
-	remarks     []forge.Remark
-	err         error
-	checkErr    error
-	feedbackErr error
-	userErr     error
-	limited     bool
-	reads       int
+	pr            forge.PR
+	checks        forge.CIStatus
+	remarks       []forge.Remark
+	err           error
+	checkErr      error
+	feedbackErr   error
+	userErr       error
+	limited       bool
+	reads         int
+	feedbackReads int
+	checkReads    int
+	userReads     int
 }
 
 func (f *fakeForge) LookupPR(context.Context, string, int) (forge.PR, error) {
@@ -36,18 +39,21 @@ func (f *fakeForge) LookupPR(context.Context, string, int) (forge.PR, error) {
 	return f.pr, f.err
 }
 func (f *fakeForge) Checks(context.Context, string, string) (forge.CIStatus, forge.RateLimit, error) {
+	f.checkReads++
 	if f.checkErr != nil {
 		return forge.CIStatus{}, forge.RateLimit{}, f.checkErr
 	}
 	return f.checks, forge.RateLimit{Limited: f.limited}, f.err
 }
 func (f *fakeForge) Feedback(context.Context, string, int) ([]forge.Remark, error) {
+	f.feedbackReads++
 	if f.feedbackErr != nil {
 		return nil, f.feedbackErr
 	}
 	return f.remarks, f.err
 }
 func (f *fakeForge) CurrentUser(context.Context) (forge.CurrentUser, error) {
+	f.userReads++
 	if f.userErr != nil {
 		return forge.CurrentUser{}, f.userErr
 	}
@@ -215,7 +221,7 @@ func TestWatchBackoffAndCommentLoopLimit(t *testing.T) {
 	x := newFixture(t)
 	x.link(t)
 	x.watch(t)
-	x.f.limited = true
+	x.f.checkErr = errors.New("checks unavailable")
 	x.m.sweep(t.Context())
 	l := x.only(t)
 	if l.Failures != 1 || l.NextAt <= time.Now().UnixMilli() || l.Snapshot == nil {
@@ -236,7 +242,7 @@ func TestWatchBackoffAndCommentLoopLimit(t *testing.T) {
 	if x.only(t).Watching {
 		t.Fatal("watch did not stop after repeated failures")
 	}
-	x.f.limited = false
+	x.f.checkErr = nil
 	x.watch(t)
 	for i := 0; i < 10; i++ {
 		x.f.remarks = []forge.Remark{{ID: "review", Author: "other", Body: strings.Repeat("x", i+1)}}

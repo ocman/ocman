@@ -48,12 +48,27 @@ Changes queue a session follow-up through the shared delivery queue:
 - New or edited comments and review feedback, excluding the current forge user.
 - Newly reported merge conflicts.
 
+Quiet PRs with settled checks and known mergeability slow down to roughly five
+to six minutes after 30 minutes without a metadata update. Feedback is reread
+when the head or metadata changes, and on the first poll after ten minutes to
+catch comment edits that do not update the PR timestamp. Missing
+timestamps keep the full-read behavior. GitHub background reads share the same
+one-minute response cache as the sidebar and previews.
+
+The linked-PR pane refreshes once per minute while the document is visible.
+**Refresh links** explicitly revalidates GitHub metadata within the shared
+request budget; reopening the pane uses the cached read path.
+
 Active turns and sessions waiting on prompts are not interrupted. Disconnected
 owners are skipped without falling back to the hub. Read failures preserve the
 last good snapshot and back off. Eight consecutive failures stop the watch and
 show an explanation. Ten consecutive comment-only updates also stop it, limiting
 automated reply loops. A merged or closed PR stops its watch without archiving
 the session.
+
+Rate limits pause reads until the provider's retry deadline, with a two-minute
+minimum pause. They do not count toward the eight-failure limit. Stale responses
+do not advance the watch snapshot or its feedback watermark.
 
 Watch state and pending notifications survive restarts. A crash after queue
 acceptance but before the notification receipt is saved can repeat a notice.
