@@ -18,7 +18,9 @@ type router struct {
 }
 
 func (r *router) LocalSetting(path string, handler http.HandlerFunc) {
-	r.path, r.handler = path, handler
+	if path == "/api/settings/platforms" {
+		r.path, r.handler = path, handler
+	}
 }
 
 func TestSettings(t *testing.T) {

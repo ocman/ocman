@@ -1077,6 +1077,7 @@ flowchart TD
     Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
     Registry -->|session detail, summary, lifecycle + usage reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
+    Modules -->|platform setup: local-only check/install| Router
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
     Modules --> HistoryImport[internal/conversationingest<br/>owner-local import + repairs]
@@ -1191,7 +1192,13 @@ flowchart TD
   `Run`. Accounting reads use statev2 projections through `internal/db`.
   The session snapshot, client-activity demand leases, `/api/system/stats` and the
   server's own OTel instruments stay in core.
-- **Platform settings** (`internal/platformsettings`). Settings → Platforms saves
+- **Platform settings** (`internal/platformsettings`). Selecting Codex in Settings
+  first checks prerequisites through the local host's optional
+  `hostsvc.PlatformSetupManager`. Localhost-guarded setup/install routes delegate
+  to `hostsvc/local`; only an explicit install POST runs the fixed pinned adapter
+  command, with a timeout, bounded output and serialized installation. The modal
+  rechecks on dismissal and enables the toggle only when prerequisites pass.
+  Settings saves
   the local startup selection in state.db. Application startup reads it before
   opening the OpenCode database or registering adapters; an explicit
   `-platforms` flag takes precedence. Saving fences new local turns while active

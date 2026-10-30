@@ -70,6 +70,32 @@ func TestPlatformSettingsOwnerLocalRoute(t *testing.T) {
 	}
 }
 
+func TestPlatformSetupRejectsUntrustedInstallRequests(t *testing.T) {
+	srv, _ := startTestServer(t, nil)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ peer, origin string }{
+		{"192.0.2.1:1234", ""},
+		{"127.0.0.1:1234", "https://example.com"},
+	} {
+		for _, action := range []struct{ method, path string }{
+			{http.MethodGet, "/api/settings/platforms/codex/setup"},
+			{http.MethodPost, "/api/settings/platforms/codex/install"},
+		} {
+			r := httptest.NewRequest(action.method, action.path, nil)
+			r.RemoteAddr = tc.peer
+			r.Header.Set("Origin", tc.origin)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("%+v %+v: %d", tc, action, w.Code)
+			}
+		}
+	}
+}
+
 func TestConfigReloadWaitsForLocalTurnsPromptsAndQueue(t *testing.T) {
 	srv, _ := startTestServer(t, nil)
 	srv.registry = platforms.NewRegistry()

@@ -30,11 +30,17 @@ reads, stores or refreshes your Codex credentials.
    is no separate ACP toggle and no silent native execution fallback. Ocman
    sets `CODEX_PATH` to the same Codex executable used for native history and
    passes the same canonical `CODEX_HOME` to both.
-   Settings shows a copyable install command when you select Codex. Setup then
-   checks for the CLI, Node.js and adapter. If pnpm has no global bin directory,
+   Selecting Codex in Settings checks the CLI, Node.js version and adapter before
+   enabling its toggle. Missing dependencies open a setup modal with a copyable
+   command, **Install**, **Check again** and **Close**. Install runs the pinned
+   adapter command as Ocman's user on the machine running Ocman; it requires
+   Node.js 22+, pnpm and the Codex CLI already installed. Every modal dismissal
+   checks again and leaves Codex off unless dependencies are available. Click
+   **Save** to apply the selection. Login is separate and is not verified by
+   the dependency check. If pnpm has no global bin directory,
    run `pnpm setup`, reopen your terminal and ensure `PNPM_HOME` is on Ocman's
-   PATH. Restart Ocman if its PATH changed, then click **Re-check**. Enabling
-   Codex never installs packages automatically.
+   PATH. Restart Ocman if its PATH changed, then click **Check again**. Nothing
+   is installed without clicking **Install**.
 3. Enable Codex in Settings → Platforms, or for one launch:
 
    ```sh

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
@@ -29,12 +30,20 @@ type Module struct {
 	idle                func(context.Context) (bool, error)
 	inFlight            int
 	admitted            uint64 // Begin calls ever, so a reload sees one raced in
+	setup               func() hostsvc.PlatformSetupManager
 }
 
 func New(store *state.DB) *Module { return &Module{store: store} }
 func (m *Module) Name() string    { return "platform-settings" }
 func (m *Module) Routes(r module.Router) {
 	r.LocalSetting("/api/settings/platforms", m.settings)
+	r.LocalSetting("GET /api/settings/platforms/{platform}/setup", m.checkSetup)
+	r.LocalSetting("POST /api/settings/platforms/{platform}/install", m.installSetup)
+}
+
+func (m *Module) WithSetup(setup func() hostsvc.PlatformSetupManager) *Module {
+	m.setup = setup
+	return m
 }
 
 func (m *Module) Configure(reload func(), active []string, overridden bool, idle func(context.Context) (bool, error)) {

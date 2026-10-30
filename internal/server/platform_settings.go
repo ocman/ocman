@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/ocman/ocman/internal/hostsvc"
 	"strings"
 
 	"github.com/ocman/ocman/internal/platforms"
@@ -10,7 +11,12 @@ import (
 )
 
 func (s *Server) platformSettingsModule() *platformsettings.Module {
-	return s.platformSettingsMod.get(func() *platformsettings.Module { return platformsettings.New(s.stateDB) })
+	return s.platformSettingsMod.get(func() *platformsettings.Module {
+		return platformsettings.New(s.stateDB).WithSetup(func() hostsvc.PlatformSetupManager {
+			host, _ := s.router().Local().(hostsvc.PlatformSetupManager)
+			return host
+		})
+	})
 }
 
 func (s *Server) WithConfigReload(reload func(), selected string, overridden bool) *Server {

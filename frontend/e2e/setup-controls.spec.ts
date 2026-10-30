@@ -24,9 +24,19 @@ for (const width of [1280, 390]) {
 }
 
 for (const width of [1280, 390]) {
-  test(`Codex selection explains adapter installation at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+  test(`Codex selection checks, installs and rechecks dependencies at ${width}px`, async ({ mockedPage: page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
     let enabled = ['opencode', 'claudecode'];
+    let ready = false;
+    let checks = 0;
+    await page.route('/api/settings/platforms/codex/setup', route => {
+      checks++;
+      return route.fulfill({ json: { ready, installable: true, checks: [{ id: 'codex-acp', label: 'Codex ACP adapter', ok: ready, detail: 'Not installed', hint: 'Install the adapter.' }] } });
+    });
+    await page.route('/api/settings/platforms/codex/install', route => {
+      ready = true;
+      return route.fulfill({ json: { ready, installable: true, checks: [] } });
+    });
     await page.route('/api/settings/platforms', async route => {
       if (route.request().method() === 'POST') enabled = route.request().postDataJSON().enabled;
       await route.fulfill({ json: { enabled } });
@@ -34,14 +44,25 @@ for (const width of [1280, 390]) {
     await page.goto('/settings?tab=platforms');
     const codex = page.getByRole('checkbox', { name: 'Codex', exact: true });
     await expect(codex).toBeEnabled();
-    await codex.check();
+    await codex.click();
+    await expect(page.getByRole('dialog', { name: 'Set up Codex' })).toBeVisible();
+    await expect(codex).not.toBeChecked();
     await expect(page.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Copy adapter install command' })).toBeVisible();
     await expect(page.getByText(/Node.js 22/)).toBeVisible();
+    await page.getByRole('button', { name: 'Check again', exact: true }).click();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(codex).not.toBeChecked();
+    expect(checks).toBe(3);
+    await codex.click();
+    await page.getByRole('button', { name: 'Install', exact: true }).click();
+    await expect(page.getByText('Dependencies are available. Close to enable Codex.')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`codex-setup-${width}.png`), fullPage: true });
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(codex).toBeChecked();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Platform changes applied.', { exact: true })).toBeVisible();
-    await page.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0', { exact: true }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: testInfo.outputPath(`codex-setup-${width}.png`), fullPage: true });
     expect(enabled).toContain('codex');
     await codex.uncheck();
     await expect(page.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0', { exact: true })).toBeHidden();
