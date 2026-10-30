@@ -67,3 +67,27 @@ PR context and open an editable task. Review and copy it into the session when
 ready. Nothing is sent to the agent or posted to the forge by preparing a task.
 Review feedback is bounded in the draft; larger discussions direct the agent to
 the forge for the remaining context. Forge content is explicitly untrusted.
+
+## MCP tool
+
+The `pull_requests` tool exposes these workflows to local agents. Start with
+`{"action":"help"}` for inputs, output descriptions and examples.
+
+- `upstreams`, `list`, `checks`, `mergeability` read project forge information.
+  Supply an absolute `directory` and explicit `remote_id`, using `local` for
+  this machine. Except `upstreams`, also supply the upstream `remote` name.
+- `launch` starts a PR session or worktree. Supply the project inputs plus
+  `number`, `platform`, `mode` (`session` or `worktree`) and `task` (`handle` or
+  `review`). It does not create a PR. Cross-fork fetch confirmation stays in
+  the dashboard.
+- `linked`, `link`, `unlink`, `watch`, `unwatch` manage session PR links and
+  watches. Supply `session_id` and `platform`, including its remote owner prefix
+  when applicable. Mutations also need `number`; `link` uses `remote`, while
+  the others use the `host` and `repo` returned by `linked`.
+- `feedback`, `checks_prompt`, `conflicts_prompt` return unsent task prompts.
+  Supply the session identifiers, `host`, `repo` and `number`.
+
+Launches and watches require user authorization because they can consume model
+credits. Draft actions do not send messages or post comments. No action merges,
+force-pushes, archives sessions or changes credentials. Disconnected explicit
+owners fail closed, just as in the dashboard.

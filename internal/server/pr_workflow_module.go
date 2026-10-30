@@ -55,7 +55,8 @@ func forgeConnections(integrations *forgeClients) []sourcecontrol.Discovered {
 func (s *Server) prWorkflowModule() *prworkflow.Module {
 	return s.prWorkflowMod.get(func() *prworkflow.Module {
 		return prworkflow.New(prworkflow.Deps{
-			DB: s.stateDB, Target: s.prTarget, Owner: s.prOwner, ResolveForge: s.resolveForge, Ready: s.prWatchReady,
+			ProjectHandler: s.projectForgeModule().PRToolHandler(),
+			DB:             s.stateDB, Target: s.prTarget, Owner: s.prOwner, ResolveForge: s.resolveForge, Ready: s.prWatchReady,
 			Enqueue: func(ctx context.Context, platform string, req platforms.SendMessageRequest) error {
 				return s.queueSvc().Enqueue(ctx, platform, true, req)
 			},

@@ -78,7 +78,7 @@ func TestMainMuxMCPListsInboxRoutineAndSessionTools(t *testing.T) {
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"inbox"`) || !strings.Contains(rec.Body.String(), `"name":"routines"`) || !strings.Contains(rec.Body.String(), `"name":"sessions"`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"inbox"`) || !strings.Contains(rec.Body.String(), `"name":"routines"`) || !strings.Contains(rec.Body.String(), `"name":"sessions"`) || !strings.Contains(rec.Body.String(), `"name":"pull_requests"`) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }

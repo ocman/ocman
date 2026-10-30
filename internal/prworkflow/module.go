@@ -19,10 +19,12 @@ import (
 
 type Target struct{ Platform, SessionID, Directory, RemoteID string }
 type Deps struct {
-	DB           *state.DB
-	Target       func(http.ResponseWriter, *http.Request, string) (Target, bool)
-	Owner        func(context.Context, Target) (hostsvc.Host, error)
-	ResolveForge func(forge.Remote) (forge.Forge, bool)
+	// ProjectHandler serves only the project PR routes exposed to MCP.
+	ProjectHandler http.Handler
+	DB             *state.DB
+	Target         func(http.ResponseWriter, *http.Request, string) (Target, bool)
+	Owner          func(context.Context, Target) (hostsvc.Host, error)
+	ResolveForge   func(forge.Remote) (forge.Forge, bool)
 	// Enqueue is the shared session queue, never a platform-specific send.
 	Enqueue func(context.Context, string, platforms.SendMessageRequest) error
 	Ready   func(context.Context, Target) bool

@@ -103,6 +103,8 @@ flowchart LR
 flowchart LR
     UI[Setup and session PR pane] --> Setup[sourcecontrol]
     UI --> Workflow[prworkflow]
+    MCP[Agent pull_requests tool] --> Workflow
+    MCP --> Launch
     Launch[projectforge launches] --> Workflow
     Setup --> Credentials[(Private credential overrides)]
     Workflow --> Links[(PR links and watch snapshots)]
@@ -120,6 +122,10 @@ flowchart LR
   two-minute watch worker. It persists snapshots and pending notices separately
   from conversations. The hub reads forge metadata; owner disconnection never
   routes checkout or session work to another machine.
+- Its `pull_requests` MCP tool reuses fixed session HTTP handlers and an injected
+  `projectforge` PR-only handler. MCP authentication precedes dispatch; existing
+  owner checks and validation still apply. Draft actions return prompts without
+  sending them, and cross-fork fetch confirmation remains dashboard-only.
 - Watches are opt-in, deduplicate changes and queue follow-ups rather than
   running an agent polling loop. Stop/unlink serializes with delivery. Merging
   and session archival remain explicit user decisions. See
