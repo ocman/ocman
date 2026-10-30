@@ -137,7 +137,7 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 		process, err := plugins.StartProcess(m.ctx, plugins.LaunchConfig{
 			ReadyTimeout:  m.deps.ReadyTimeout,
 			Candidate:     plugins.Discovery{Path: registration.ExecutablePath, Checksum: registration.Checksum, Description: registration.Description},
-			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.ArchivedSessionCapability, plugins.PaneCapability, plugins.PageTableCapability, plugins.UICapability},
+			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.ReadOnlySessionCapability, plugins.PaneCapability, plugins.PageTableCapability, plugins.UICapability},
 			DataDir:       dir,
 			Configuration: configuration,
 			OnHealth: func(h plugins.Health) {

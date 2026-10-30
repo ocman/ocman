@@ -57,6 +57,9 @@ func SessionAllowed(d Description, grants []string) error {
 	if slices.Contains(d.RequestedGrants, SessionPluginGrant) && !slices.Contains(grants, SessionPluginGrant) {
 		return &WireError{Category: ErrorPermissionDenied}
 	}
+	if slices.Contains(d.RequestedGrants, SessionSourceGrant) && !slices.Contains(grants, SessionSourceGrant) {
+		return &WireError{Category: ErrorPermissionDenied}
+	}
 	if projectSessionDeclared(d) && slices.Contains(d.RequestedGrants, SessionProjectGrant) && !slices.Contains(grants, SessionProjectGrant) {
 		return &WireError{Category: ErrorPermissionDenied}
 	}
@@ -73,14 +76,14 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if err := ctx.Err(); err != nil {
 		return SessionRunResult{}, err
 	}
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > ArchivedSessionCapability.Version.Minor || call.Method != SessionRunMethod {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > ReadOnlySessionCapability.Version.Minor || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	params, err := DecodeSessionRunParams(call.Params)
-	if err != nil || params.Archived && call.Version.Minor < ArchivedSessionCapability.Version.Minor {
+	if err != nil || params.Archived && call.Version.Minor < ArchivedSessionCapability.Version.Minor || params.ReadOnly && call.Version.Minor < ReadOnlySessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	ctx, cancel := context.WithTimeout(ctx, SessionRunTimeout)
@@ -139,7 +142,7 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 		version := SessionCapability.Version
 		for _, c := range d.Capabilities {
 			if c.Name == "session" && c.Version.Major == 1 {
-				version.Minor = min(c.Version.Minor, ArchivedSessionCapability.Version.Minor)
+				version.Minor = min(c.Version.Minor, ReadOnlySessionCapability.Version.Minor)
 			}
 		}
 		return Call{

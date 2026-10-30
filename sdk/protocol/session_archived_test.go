@@ -13,7 +13,8 @@ func TestSessionBrokerArchivedRequiresMinor3(t *testing.T) {
 		{SessionCapability.Version, false},
 		{PluginSessionCapability.Version, false},
 		{ArchivedSessionCapability.Version, true},
-		{Version{Major: 1, Minor: 4}, false},
+		{ReadOnlySessionCapability.Version, true},
+		{Version{Major: 1, Minor: 5}, false},
 	} {
 		h := &sessionHarness{description: sessionDescription(), grants: []string{SessionRunGrant}, project: "/repo"}
 		call := sessionRunEvent(t, SessionRunParams{Prompt: "verify", Archived: true})

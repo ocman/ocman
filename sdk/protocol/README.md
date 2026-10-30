@@ -570,6 +570,38 @@ Permission prompts remain in ocman and are never exposed to the provider.
 
 ## session.v1
 
+### Read-only prepared source, minor 4
+
+`session` 1.4 adds `readOnly: true` for a private workspace session. The plugin
+must request and obtain both `session.plugin` and the new `session.source` grant,
+in addition to `session.run`. It prepares source below
+`<plugin-data>/model-workspaces/<sha256(workspaceId)>/<subpath>` and supplies that
+nonempty relative `subpath`. No registered project or arbitrary host directory
+is selected. Missing directories, traversal, symlink escapes, symlink entries,
+special files, empty source and more than 10,000 files are refused.
+
+```json
+{"workspaceId":"docs-a","readOnly":true,"subpath":"prepared-documents",
+ "archived":true,"prompt":"Read the supplied inventory and index these documents."}
+```
+
+The host pins deny-all rules and permits only the `read` tool for the exact
+regular files present at admission. Reads must use the absolute paths in the
+resolved source directory. Plugins should prepare an inventory file so the
+model can discover the corpus without unrestricted search or shell tools.
+Edits, writes, commands, network, MCP and delegation remain denied. Files added
+later are not automatically readable. `noTools`, `permissionProfile` and `agent`
+cannot be combined with this mode. Existing workspace turns remain tool-denied.
+
+This is a tool-permission policy, not an operating-system sandbox. A native
+plugin remains trusted code and must keep its prepared files stable for the
+session's lifetime. The same interface supports document indexing and manifest
+analysis; the host does not interpret either corpus or its response schema.
+
+Older hosts reject the new mode rather than silently creating a tool-disabled
+or unrestricted session. The existing creation receipt, archived-session
+identity, usage reporting and completion outbox apply unchanged.
+
 The host negotiates `session` major 1, minor 0, independently of `action` and
 `conversation`. A session plugin requires `scope: "owner"`, the requested and
 approved `session.run` grant, and a required, non-secret scalar string `project`

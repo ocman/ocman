@@ -166,6 +166,12 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	if params.NoTools {
 		rules = []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "deny"}}
 	}
+	if params.ReadOnly {
+		rules, err = sourceSessionRules(ctx, dir)
+		if err != nil {
+			return "", &plugins.WireError{Category: plugins.ErrorPermissionDenied}
+		}
+	}
 	host := m.deps.Local()
 	platformID, base, err := m.sessionRunPlatform(ctx, host, params.Model)
 	if err != nil {

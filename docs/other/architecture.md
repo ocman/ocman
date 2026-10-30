@@ -200,13 +200,19 @@ flowchart LR
     Native -->|owner-local ingestion| Ocman
     Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
-    Ocman -->|supervised NDJSON,<br/>incl. UI bundles| Plugins[Trusted native plugins]
+    Ocman <-->|supervised NDJSON,<br/>UI bundles and scoped sessions| Plugins[Trusted native plugins]
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
     Ocman <-->|authenticated gRPC| Remotes[Remote ocman instances]
     Ocman -->|encrypted shares + webhook poll| Relay[ocman-relay]
     Ocman -.->|optional OTLP| Otel[Telemetry collector]
 ```
 
+- **Prepared source sessions.** Plugins may prepare source under their private
+  model workspace and request a read-only session with the separately approved
+  `session.source` grant. The owner resolves a contained subpath and pins exact
+  file-read permissions before creation and prompt delivery. Other tools remain
+  denied. Creation receipts, platforms and the completion outbox are reused;
+  the host does not interpret the source or its output schema.
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.

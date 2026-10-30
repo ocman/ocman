@@ -99,6 +99,15 @@ also builds its UI (requires pnpm). See the
 
 ## Trust and installation
 
+Plugins can request `session.source` to run a read-only inspection of prepared
+files in their private workspace. The host allows the session to read only the
+files present at admission, with no shell, writes, network tools or delegation.
+For example, one session can index supplied documentation or inspect dependency
+manifests and return several results. This separate grant does not give ordinary
+tool-disabled workspace sessions filesystem access. Plugins remain responsible
+for preparing and retaining their source; see the
+[SDK protocol](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/protocol/README.md#read-only-prepared-source-minor-4).
+
 **Plugins are trusted native code, including during discovery.** Rescanning runs
 each candidate's `describe` command before you enable it. Only install code you
 trust to run with the ocman user's operating-system access. Grants limit the

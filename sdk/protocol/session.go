@@ -25,8 +25,12 @@ var PluginSessionCapability = Capability{Name: "session", Version: Version{Major
 // ArchivedSessionCapability adds the archived run parameter.
 var ArchivedSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 3}}
 
+// ReadOnlySessionCapability permits file inspection of prepared workspace source.
+var ReadOnlySessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 4}}
+
 const SessionProjectGrant = "session.project"
 const SessionPluginGrant = "session.plugin"
+const SessionSourceGrant = "session.source"
 
 const (
 	// SessionRunMethod routes the plugin-initiated run request. It is the
@@ -58,6 +62,7 @@ type SessionRunParams struct {
 	ProjectID         string `json:"projectId,omitempty"`
 	WorkspaceID       string `json:"workspaceId,omitempty"`
 	NoTools           bool   `json:"noTools,omitempty"`
+	ReadOnly          bool   `json:"readOnly,omitempty"`
 	Prompt            string `json:"prompt"`
 	Agent             string `json:"agent,omitempty"`
 	Model             string `json:"model,omitempty"`
@@ -86,7 +91,10 @@ type SessionCompleted struct {
 // allows newlines and tabs, unlike validText, because prompts are multi-line;
 // other control characters are rejected, as in conversation.v1.
 func (p SessionRunParams) Validate() error {
-	if p.WorkspaceID != "" && (!actionID.MatchString(p.WorkspaceID) || p.ProjectID != "" || !p.NoTools || p.Subpath != "") {
+	if p.ReadOnly && (p.WorkspaceID == "" || p.NoTools || p.Subpath == "" || p.PermissionProfile != "" || p.Agent != "") {
+		return ErrInvalidMessage
+	}
+	if p.WorkspaceID != "" && (!actionID.MatchString(p.WorkspaceID) || p.ProjectID != "" || (!p.ReadOnly && (!p.NoTools || p.Subpath != ""))) {
 		return ErrInvalidMessage
 	}
 	if p.ProjectID != "" && !actionID.MatchString(p.ProjectID) {
@@ -151,6 +159,12 @@ func (d Description) validateSession() error {
 		return ErrInvalidMessage
 	}
 	if !slices.Contains(d.RequestedGrants, SessionRunGrant) {
+		return ErrInvalidMessage
+	}
+	if slices.Contains(d.RequestedGrants, SessionSourceGrant) &&
+		(!slices.Contains(d.RequestedGrants, SessionPluginGrant) || !slices.ContainsFunc(d.Capabilities, func(c Capability) bool {
+			return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 4
+		})) {
 		return ErrInvalidMessage
 	}
 	if slices.Contains(d.RequestedGrants, SessionPluginGrant) {
