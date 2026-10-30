@@ -10,6 +10,9 @@ import { useWorkEpics } from '../../lib/queries';
 import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
 import { MemoryRouter } from 'react-router-dom';
 import { rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { useBetaFeatures } from '../../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 vi.mock('../../components/BackendStats', () => ({
   BackendStats: () => null,

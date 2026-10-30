@@ -10,6 +10,7 @@ import { IconButton } from './IconButton';
 import { ExploreModal } from './ExploreModal';
 import { ProjectQuickSettings } from './ProjectQuickSettings';
 import { useProjects } from '../lib/queries';
+import { useBetaFeatures } from '../lib/betaFeatures';
 import './AppHeader.css';
 
 function ProjectMachinePill({ remoteId }: { remoteId: string }) {
@@ -21,6 +22,7 @@ function ProjectMachinePill({ remoteId }: { remoteId: string }) {
 export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
   const location = useLocation();
   const path = location.pathname;
+  const factory = useBetaFeatures((s) => s.factory);
   const { info } = useHeaderInfo();
   const routeSessionId = path.startsWith('/session/')
     ? decodeURIComponent(path.slice('/session/'.length).split('/')[0])
@@ -29,7 +31,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
   const [exploring, setExploring] = useState(false);
   const exploreDir = routeSessionId ? sessionInfo.sessionProjectFull : undefined;
 
-  let breadcrumb: ReactNode = routeTitle(path, sessionInfo.sessionTitle);
+  let breadcrumb: ReactNode = !factory && path.startsWith('/factory') ? 'Feature unavailable' : routeTitle(path, sessionInfo.sessionTitle);
   const projectDir = routeProjectDir(path);
   const projectOwner = new URLSearchParams(location.search).get('remoteId') || 'local';
   if (projectDir?.split('/').pop()) {

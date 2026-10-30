@@ -6,6 +6,7 @@ import { onPageResume } from './pageResume';
 import { watchKeepalive } from './sseKeepalive';
 import type { QueuedMessage, Session } from './api';
 import { clearSettingsCache } from './projectSettingsCache';
+import { useBetaFeatures } from './betaFeatures';
 
 /**
  * App-wide SSE subscriber for `/api/events`.
@@ -262,7 +263,10 @@ function open(): void {
   const next = new EventSource('/api/events');
   source = next;
   stopWatch = watchKeepalive(next, recycle);
-  next.addEventListener('ocman.settings.changed', clearSettingsCache);
+  next.addEventListener('ocman.settings.changed', () => {
+    clearSettingsCache();
+    void useBetaFeatures.getState().load();
+  });
   next.addEventListener('ocman.inbox.changed', () => {
     for (const cb of inboxChangedListeners) cb();
   });

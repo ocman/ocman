@@ -213,6 +213,7 @@ test('message markdown preserves line breaks and has a full-width divider', asyn
 
 for (const reply of ['once', 'always', 'reject'] as const) {
   test(`permission inbox supports ${reply} and archives the resolved request`, async ({ mockedPage: page }) => {
+    await page.route('/api/settings/beta-features', (route) => route.fulfill({ json: { factory: true } }));
     let resolved = false;
     let received: unknown;
     const permission = { platform: 'r-laptop:opencode', sessionId: 'child-session', permissionId: 'perm-1', permission: 'bash', patterns: ['git status'], always: ['git *'], metadata: { command: 'git status' } };

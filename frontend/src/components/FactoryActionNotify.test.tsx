@@ -8,11 +8,13 @@ import { FactoryActionNotify } from './FactoryActionNotify';
 import { PromptToastViewport } from './PromptToast';
 import type { InboxItem } from '../lib/api';
 import { useUiStore } from '../lib/uiStore';
+import { useBetaFeatures } from '../lib/betaFeatures';
 
 vi.mock('../lib/api', () => ({ api: { inbox: vi.fn(() => new Promise(() => {})) } }));
 const item = (id: string, extra: Partial<InboxItem> = {}): InboxItem => ({ id: `factory-action-${id}`, remoteId: 'local', category: 'factory', title: 'Ship it', body: 'Review', createdAt: 1, ...extra });
 const notifications = vi.fn();
 beforeEach(() => {
+  useBetaFeatures.setState({ factory: true });
   useUiStore.setState({ notificationsEnabled: true });
   vi.spyOn(document, 'hasFocus').mockReturnValue(false);
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);

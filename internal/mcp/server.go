@@ -13,6 +13,8 @@ import (
 // Deps holds the dependencies injected into the MCP server by the
 // ocman server package. All fields are required unless noted.
 type Deps struct {
+	// ToolFilter controls discovery and invocation at request time.
+	ToolFilter mcpserver.ToolFilterFunc
 	// ToolMiddleware applies public transport identity/security boundaries.
 	ToolMiddleware mcpserver.ToolHandlerMiddleware
 	// Tools are contributed by feature modules (module.ToolProvider).
@@ -41,6 +43,9 @@ func New(deps Deps) *Server {
 		"1.0.0",
 		mcpserver.WithToolCapabilities(false),
 	)
+	if deps.ToolFilter != nil {
+		mcpserver.WithToolFilter(deps.ToolFilter)(s)
+	}
 	if deps.ToolMiddleware != nil {
 		s.Use(deps.ToolMiddleware)
 	}

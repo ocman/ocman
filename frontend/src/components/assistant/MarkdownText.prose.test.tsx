@@ -1,13 +1,23 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarkdownContent } from './MarkdownText';
+import { useBetaFeatures } from '../../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 // Bound card expansion so the unfixed renderer fails without recursing forever.
 vi.mock('../FactoryActionCard', () => ({ FactoryActionCard: () => <span>Expanded approval card</span> }));
 
 describe('prose-only Markdown', () => {
+  it('leaves stored prose intact without exposing disabled feature links or cards', () => {
+    useBetaFeatures.setState({ factory: false });
+    render(<MemoryRouter><MarkdownContent text="[Review](/factory/epics/ship?human=1)" /></MemoryRouter>);
+    expect(screen.getByText('Review')).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Review' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Expanded approval card')).not.toBeInTheDocument();
+  });
   it.each([
     '[[ocman:card type=factory-epic epic=ship action=approve_plan]]',
     '[Review](/factory/epics/ship?human=1)',

@@ -17,6 +17,7 @@ import { factoryActionFromHref } from '../factoryEpicStatus';
 import { remarkFactoryCards } from '../factoryCards';
 import { remarkFactoryIssueReferences } from '../factoryIssueReferences';
 import { FactoryIssueReference } from '../FactoryIssueReference';
+import { useBetaFeatures } from '../../lib/betaFeatures';
 import { ZoomableGraphicModal } from '../ZoomableGraphicModal';
 import { PreviewImage } from '../ImagePreview';
 import { CopyButton } from '../CopyButton';
@@ -140,6 +141,8 @@ function MarkdownLink(props: any) {
   const { node: _node, href: originalHref, children, factoryCards = true, ...rest } = props;
   const href = relativeFileURL(originalHref);
   const routed = useInRouterContext();
+  const factoryEnabled = useBetaFeatures((s) => s.factory);
+  if (!factoryEnabled && (props['data-ocman-card'] || href?.startsWith('/factory/'))) return <>{children}</>;
   if (factoryCards && props['data-ocman-card'] && routed) {
     return <FactoryMarkerCard epicID={props['data-ocman-epic']} issueID={props['data-ocman-issue']} action={props['data-ocman-action']}>{children}</FactoryMarkerCard>;
   }

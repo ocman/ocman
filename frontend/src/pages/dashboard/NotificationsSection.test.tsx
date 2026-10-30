@@ -5,6 +5,9 @@ import { NotificationsSection } from './SettingsSections';
 import { useUiStore } from '../../lib/uiStore';
 import { enablePush, disablePush, pushSubscribed, pushSupported } from '../../lib/pushNotifications';
 import { useBadgeSettings, useSaveBadgeSettings } from '../../lib/badgeSettings';
+import { useBetaFeatures } from '../../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 vi.mock('../../lib/pushNotifications', () => ({ enablePush: vi.fn(), disablePush: vi.fn(), pushSubscribed: vi.fn(), pushSupported: vi.fn() }));
 vi.mock('../../lib/badgeSettings', () => ({ useBadgeSettings: vi.fn(), useSaveBadgeSettings: vi.fn() }));
@@ -18,6 +21,13 @@ beforeEach(() => {
   vi.mocked(enablePush).mockResolvedValue(undefined);
   vi.mocked(disablePush).mockResolvedValue(undefined);
   useUiStore.setState({ notificationsEnabled: false });
+});
+
+it('hides the Factory badge source when the beta is disabled', () => {
+  useBetaFeatures.setState({ factory: false });
+  render(<NotificationsSection />);
+  expect(screen.queryByText('Factory Inbox unread')).not.toBeInTheDocument();
+  expect(screen.getByText('Primary Inbox unread')).toBeInTheDocument();
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); useUiStore.setState({ notificationsEnabled: false }); });
 

@@ -71,6 +71,11 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 
 ## Tools
 
+Factory tools are available only when the instance-wide Factory beta toggle
+is enabled under Settings → App → Beta features. Disabling it removes them
+from discovery and rejects calls, including from clients with a cached tool
+list. Other MCP tools remain available.
+
 Agents should include a short, goal-focused `intent` string on every tool call,
 including help and read-only calls, for example
 `"intent": "Find the session that reported the build failure"`. The tool schemas

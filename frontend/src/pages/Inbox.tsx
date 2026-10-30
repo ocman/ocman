@@ -15,6 +15,7 @@ import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
 import { useClickOutside } from '../lib/useClickOutside';
 import { useShortcut } from '../lib/shortcutRegistry';
+import { useBetaFeatures } from '../lib/betaFeatures';
 import './Inbox.css';
 
 function sourceLabel(remoteId: string) {
@@ -54,6 +55,7 @@ function InboxPermissionActions({ permission }: { permission: NonNullable<InboxI
 }
 
 export function Inbox() {
+  const factory = useBetaFeatures((s) => s.factory);
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = filters.find(({ id }) => id === searchParams.get('status'))?.id ?? 'all';
   const activeKey = searchParams.get('item');
@@ -78,8 +80,9 @@ export function Inbox() {
   // Safari doesn't focus a clicked button, so blur carries no relatedTarget;
   // outside clicks are detected here instead of in onBlur.
   useClickOutside(actions, true, () => actions.current?.removeAttribute('open'));
-  const activeCategory = searchParams.get('category') ?? 'all';
-  const items = inbox.data ? inbox.data.items : [];
+  const requestedCategory = searchParams.get('category') ?? 'all';
+  const activeCategory = !factory && requestedCategory === 'factory' ? 'all' : requestedCategory;
+  const items = inbox.data?.items ?? [];
   const activeItem = items.find((item) => itemKey(item) === activeKey);
   const activeSession = activeItem?.session ?? (activeItem?.permission ? { ...activeItem.permission, title: '' } : undefined);
   const categoryItems = items.filter((item) => activeCategory === 'all' || itemCategory(item) === activeCategory);
@@ -172,7 +175,7 @@ export function Inbox() {
             <SegmentedControl label="Message status" compact options={filters.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={filter} onChange={(id) => { setFilter(id); setSelected(new Set()); }} />
           </div>
           <div className="inbox-filter-row">
-            <SegmentedControl label="Message type" compact options={categories.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={activeCategory} onChange={selectCategory} />
+            <SegmentedControl label="Message type" compact options={categories.filter(({ id }) => factory || id !== 'factory').map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={activeCategory} onChange={selectCategory} />
             <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
               <summary className="oc-button oc-button--default oc-button--small" aria-label="Inbox actions" title="Inbox actions"><i className="bi bi-three-dots" aria-hidden="true" /></summary>
               <div className="inbox-action-menu-items">

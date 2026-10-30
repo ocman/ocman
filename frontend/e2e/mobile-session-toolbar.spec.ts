@@ -21,7 +21,8 @@ for (const width of [320, 390, 640]) {
     expect(row.y - searchBox.y - searchBox.height).toBeLessThanOrEqual(16);
     await toolbar.getByRole('button', { name: 'Filter sessions' }).click();
     const filters = page.getByRole('dialog', { name: 'Session filters' });
-    await expect(filters.getByRole('checkbox')).toHaveCount(7);
+    await expect(filters.getByRole('checkbox')).toHaveCount(6);
+    await expect(filters.getByRole('checkbox', { name: 'Show factory' })).toHaveCount(0);
     await expect(filters.getByRole('checkbox', { name: 'Show routines' })).toBeVisible();
     await expect(filters.getByRole('checkbox', { name: 'Show plugins' })).toBeVisible();
     await expect(filters.getByRole('checkbox', { name: 'Show archived' })).toBeVisible();

@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { api, type InboxItem } from '../lib/api';
 import { useShortcutDispatcher } from '../lib/shortcutRegistry';
 import { Inbox } from './Inbox';
+import { useBetaFeatures } from '../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 /** Routes keydown events to registered shortcuts, as App does. */
 function Shortcuts() {
@@ -45,6 +48,18 @@ describe('Inbox', () => {
     vi.spyOn(api, 'pinInboxItem').mockResolvedValue(undefined);
     vi.spyOn(api, 'respondPermission').mockResolvedValue(undefined);
     vi.spyOn(api, 'archiveInboxItems').mockResolvedValue(undefined);
+  });
+
+  it('hides disabled Factory messages, deep links and filters and restores them on opt-in', async () => {
+    useBetaFeatures.setState({ factory: false });
+    renderInbox('/inbox?category=factory&item=laptop%3A2');
+    await screen.findByRole('button', { name: /Build \*\*finished\*\*/ });
+    expect(screen.queryByRole('radio', { name: 'Factory' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Remote note')).not.toBeInTheDocument();
+    expect(api.markInboxItemRead).not.toHaveBeenCalled();
+    act(() => useBetaFeatures.setState({ factory: true }));
+    expect(await screen.findByRole('heading', { name: 'Remote note' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Factory' })).toBeChecked();
   });
 
   it('restores the selected remote item from its URL instead of opening the first item', async () => {

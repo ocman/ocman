@@ -1,4 +1,5 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
+test.use({ factoryBeta: true });
 
 test('badge-counted old Factory session remains discoverable outside recent history', async ({ mockedPage: page }, testInfo) => {
   const old = { ...MOCK_SESSION, id: 'old-factory', title: 'Old Factory verification',

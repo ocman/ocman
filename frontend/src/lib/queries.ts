@@ -18,6 +18,8 @@ import { queryClient as appQueryClient } from './queryClient';
 import { useActivityScope } from './activityScopes';
 import { withDeadline } from './coalescedRefresh';
 import { queryEventRefresh } from './queryEventRefresh';
+import { useBetaFeatures } from './betaFeatures';
+import { withoutFactoryInbox } from './betaInbox';
 import type {
   Session,
   Project,
@@ -40,11 +42,13 @@ import type {
 export const INBOX_TIMEOUT_MS = 20_000;
 
 export function useInbox(archived = false, background = false) {
+  const factory = useBetaFeatures((s) => s.factory);
   return useQuery<InboxResponse>({
     queryKey: archived ? ['inbox', 'archived'] : ['inbox'],
     queryFn: ({ signal }) => withDeadline(INBOX_TIMEOUT_MS, (deadline) => api.inbox(deadline, archived), signal),
     refetchInterval: 10_000,
     refetchIntervalInBackground: background,
+    select: factory ? undefined : withoutFactoryInbox,
   });
 }
 

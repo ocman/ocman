@@ -1,4 +1,5 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
+test.use({ factoryBeta: true });
 
 const rows = [
   MOCK_SESSION,

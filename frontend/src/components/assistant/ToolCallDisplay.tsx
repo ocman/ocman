@@ -31,6 +31,7 @@ import { parseCreatedArtifact } from '../../lib/artifactsApi';
 import { ApprovalFootnote } from './ApprovalFootnote';
 import { TaskToolCard } from './TaskToolCard';
 import { FactoryMarkerCard } from '../FactoryMarkerCard';
+import { useBetaFeatures } from '../../lib/betaFeatures';
 import { factoryCardFromToolResult } from '../factoryCards';
 import { AnsiText, AnsweredQuestionBlock, BashPrompt, ToolDuration } from './toolRenderers';
 import { LazyInlineDiff } from './LazyInlineDiff';
@@ -82,6 +83,7 @@ function toolApprovals(artifact: unknown): ToolApproval[] {
 }
 
 const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolName, argsText: rawArgsText, artifact, result, full = false, ...props }) => {
+  const factoryEnabled = useBetaFeatures((s) => s.factory);
   const [expandedState, setExpanded] = useState(full);
   const compactToolCalls = useUiStore((s) => s.compactToolCalls) && !full;
   // While printing / saving to PDF, force every block open so the
@@ -366,7 +368,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
     expanded ? 'oc-tool-compact-expanded' : '',
   ].filter(Boolean).join(' ');
   const hasBody = !!(detail || outputDisplay);
-  const factoryCard = factoryCardFromToolResult(toolName, outputDisplay);
+  const factoryCard = factoryEnabled ? factoryCardFromToolResult(toolName, outputDisplay) : null;
   const compactLine = (
     <>
       <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>

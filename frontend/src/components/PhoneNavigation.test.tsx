@@ -40,9 +40,9 @@ describe('phone navigation', () => {
     mount();
     await userEvent.setup().click(screen.getByRole('button', { name: 'More' }));
     expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
-    act(() => useBetaFeatures.getState().setFactory(true));
+    act(() => useBetaFeatures.setState({ factory: true }));
     expect(screen.getByRole('link', { name: 'Factory' })).toHaveAttribute('href', '/factory/overview');
-    act(() => useBetaFeatures.getState().setFactory(false));
+    act(() => useBetaFeatures.setState({ factory: false }));
     expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
   });
   it('replaces More with a plugin destination and returns directly to the previous page', async () => {

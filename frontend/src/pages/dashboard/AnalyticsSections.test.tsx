@@ -120,11 +120,11 @@ describe('analytics sections', () => {
     expect(within(inventory).queryAllByText(/Factory/)).toHaveLength(0);
     expect(within(inventory).getByText('Sessions')).toBeInTheDocument();
     expect(within(inventory).getByText('Routine runs')).toBeInTheDocument();
-    act(() => useBetaFeatures.getState().setFactory(true));
+    act(() => useBetaFeatures.setState({ factory: true }));
     for (const label of ['Factory epics', 'Factory issues', 'Factory attempts']) {
       expect(within(inventory).getByText(label)).toBeInTheDocument();
     }
-    act(() => useBetaFeatures.getState().setFactory(false));
+    act(() => useBetaFeatures.setState({ factory: false }));
     expect(within(inventory).queryAllByText(/Factory/)).toHaveLength(0);
   });
 

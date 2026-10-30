@@ -71,6 +71,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Settings endpoints — user preferences that must be shared with the
 	// backend. The judge settings belong to the auto-approve module.
 	s.defaultAgentSetting().Mount(setting, "/api/settings/default-agent")
+	s.betaFeaturesSetting().Mount(setting, "/api/settings/beta-features")
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
 	s.worktreeInheritSetting().Mount(setting, "/api/settings/worktree-inherit-permissions")

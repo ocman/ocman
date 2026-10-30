@@ -68,7 +68,7 @@ export const MOCK_PROJECT = {
 // Default API stubs — applied to every test page
 // ---------------------------------------------------------------------------
 
-export async function installDefaultRoutes(page: Page) {
+export async function installDefaultRoutes(page: Page, factoryBeta = false) {
   // Keep unmocked API calls out of Vite's absent-backend proxy. Specific routes below take priority.
   await page.route('/api/**', (route: Route) =>
     route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }),
@@ -355,6 +355,11 @@ export async function installDefaultRoutes(page: Page) {
   await page.route('/api/settings/**', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) }),
   );
+  let factory = factoryBeta;
+  await page.route('/api/settings/beta-features', async (route) => {
+    if (route.request().method() === 'POST') factory = route.request().postDataJSON().factory === true;
+    await route.fulfill({ json: { factory } });
+  });
   await page.route('/api/settings/default-agent', (route: Route) =>
     route.fulfill({ json: { defaultAgent: 'build' } }),
   );
@@ -622,12 +627,7 @@ type OcmanFixtures = {
 export const test = base.extend<OcmanFixtures>({
   factoryBeta: [false, { option: true }],
   mockedPage: async ({ page, factoryBeta }, use) => {
-    if (factoryBeta) await page.addInitScript(() => {
-      if (!localStorage.getItem('ocman-beta-features')) {
-        localStorage.setItem('ocman-beta-features', JSON.stringify({ state: { factory: true }, version: 0 }));
-      }
-    });
-    await installDefaultRoutes(page);
+    await installDefaultRoutes(page, factoryBeta);
     // Playwright's fixture `use()` is not React's `use`, but the rule's
     // heuristic matches on the identifier. Disable the check here.
     // eslint-disable-next-line react-hooks/rules-of-hooks

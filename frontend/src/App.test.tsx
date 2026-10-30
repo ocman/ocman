@@ -60,9 +60,9 @@ describe('MainNav', () => {
     render(<MemoryRouter><MainNav /></MemoryRouter>);
     expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Routines' })).toBeInTheDocument();
-    act(() => useBetaFeatures.getState().setFactory(true));
+    act(() => useBetaFeatures.setState({ factory: true }));
     expect(screen.getByRole('link', { name: 'Factory' })).toBeInTheDocument();
-    act(() => useBetaFeatures.getState().setFactory(false));
+    act(() => useBetaFeatures.setState({ factory: false }));
     expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
   });
   it.each([1, 12, 120])('announces %i unread messages and caps the visible badge', (unreadTotal) => {

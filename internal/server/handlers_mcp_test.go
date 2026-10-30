@@ -228,7 +228,8 @@ func TestMCPServerURL(t *testing.T) {
 
 func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv := New(nil, nil, "", nil, nil)
+	srv := New(nil, openTestStateDB(t), "", nil, nil)
+	enableFactoryBeta(t, srv)
 	useFactory(srv, svc)
 	mux := mustRoutes(t, srv)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"factory","arguments":{"action":"mutate_graph","mutation_json":"{\"epicId\":\"epic\",\"action\":\"edit\",\"issueId\":\"i\",\"title\":\"t\"}"}}}`
@@ -251,7 +252,8 @@ func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 
 func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}
-	srv := New(nil, nil, "", nil, nil)
+	srv := New(nil, openTestStateDB(t), "", nil, nil)
+	enableFactoryBeta(t, srv)
 	useFactory(srv, svc)
 	mux := mustRoutes(t, srv)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"factory","arguments":{"action":"create","goal":"Ship","initial_project":"/repo","acknowledge_local_execution":true}}}`
@@ -271,7 +273,8 @@ func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 
 func TestMainMuxMCPProposesExecutableIssueCreation(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv := New(nil, nil, "", nil, nil)
+	srv := New(nil, openTestStateDB(t), "", nil, nil)
+	enableFactoryBeta(t, srv)
 	useFactory(srv, svc)
 	mux := mustRoutes(t, srv)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"factory","arguments":{"action":"mutate_graph","mutation_json":"{\"epicId\":\"epic\",\"action\":\"create\",\"parentId\":\"epic.1\",\"kind\":\"task\",\"title\":\"Work\"}"}}}`

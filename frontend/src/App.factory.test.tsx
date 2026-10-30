@@ -85,7 +85,7 @@ describe('Factory routes', () => {
       vi.mocked(useWorkEpic).mockClear();
       vi.mocked(useFactoryQueue).mockClear();
       await renderRoute(path);
-      expect(screen.getByRole('heading', { name: 'Factory is in beta' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Feature unavailable' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Open beta settings' })).toHaveAttribute('href', '/settings?tab=app#setting-factory-beta');
       expect(useWorkEpics).not.toHaveBeenCalled();
       expect(useWorkEpic).not.toHaveBeenCalled();
@@ -96,9 +96,9 @@ describe('Factory routes', () => {
   it('unmounts an open Factory page when the beta is disabled', async () => {
     await renderRoute('/factory/how-to');
     expect(screen.getByRole('heading', { name: 'How Factory works' })).toBeInTheDocument();
-    act(() => useBetaFeatures.getState().setFactory(false));
+    act(() => useBetaFeatures.setState({ factory: false }));
     expect(screen.queryByRole('heading', { name: 'How Factory works' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Factory is in beta' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Feature unavailable' })).toBeInTheDocument();
   });
   it('renders action inbox and live work on the Factory overview', async () => {
     await renderRoute('/factory');

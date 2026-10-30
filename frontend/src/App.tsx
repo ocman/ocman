@@ -48,6 +48,7 @@ import { MainNav } from './components/MainNav';
 import { ImagePreviewProvider } from './components/ImagePreview';
 import { featureRoutes } from './features';
 import { patchSessionLists } from './lib/sessionsCache';
+import { BetaFeaturesSync } from './components/BetaFeaturesSync';
 
 // Analytics (chart.js) loads with its route.
 const AnalyticsTab = lazyComponent(() => import('./pages/dashboard/AnalyticsTab').then((m) => m.AnalyticsTab), 'Loading analytics…');
@@ -316,6 +317,7 @@ function AuthenticatedShell() {
   return (
     <>
       <ClientActivityReporter />
+      <BetaFeaturesSync />
       <FaviconNotify />
       <BellNotify />
       <NotificationNotify />

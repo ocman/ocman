@@ -6,6 +6,7 @@ import { cleanTitle } from '../lib/format';
 import { Button } from './Control';
 import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
 import { FactoryActionNotify } from './FactoryActionNotify';
+import { useBetaFeatures } from '../lib/betaFeatures';
 
 /**
  * Renders an in-app Radix toast for every session that's blocking on
@@ -28,6 +29,7 @@ import { FactoryActionNotify } from './FactoryActionNotify';
  * top-right so prompts don't get hidden behind the composer/chat UI.
  */
 export function PromptToastNotify() {
+  const factory = useBetaFeatures((s) => s.factory);
   const navigate = useNavigate();
   const { toasts, dismiss } = useToastNotify();
   // Subscribe to the app-wide /api/events stream so a permission that's
@@ -57,7 +59,7 @@ export function PromptToastNotify() {
 
   return (
     <Toast.Provider swipeDirection="right" duration={Infinity}>
-      <FactoryActionNotify />
+      {factory && <FactoryActionNotify />}
       {toasts.map((t) => {
         const { heading, body } = describe(t);
         return (

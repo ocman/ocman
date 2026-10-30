@@ -117,6 +117,7 @@ func (s *Server) buildMCPHandler() http.Handler {
 
 func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handler {
 	deps := internalmcp.Deps{
+		ToolFilter:     s.filterBetaTools,
 		SignFile:       s.FileURL,
 		SessionService: sessionService,
 	}

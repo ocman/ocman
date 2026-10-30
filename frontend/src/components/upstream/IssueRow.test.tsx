@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { IssueRow } from './IssueRow';
 import type { Issue } from '../../lib/upstreamApi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import { useBetaFeatures } from '../../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
   return {

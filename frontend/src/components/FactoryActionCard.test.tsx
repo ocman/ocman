@@ -9,7 +9,9 @@ import { factoryActionFromHref } from './factoryEpicStatus';
 import { MarkdownContent } from './assistant/MarkdownText';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import type { ComponentProps } from 'react';
+import { useBetaFeatures } from '../lib/betaFeatures';
 
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryIssues: vi.fn(), reopenFactoryIssue: vi.fn(),

@@ -7,6 +7,9 @@ import { useNotifySnapshot } from '../../lib/useNotifyData';
 import { useUiStore } from '../../lib/uiStore';
 import { SessionSidebar, type SessionSidebarProps } from './SessionSidebar';
 import { seedView } from '../../test/oceFixtures';
+import { useBetaFeatures } from '../../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 vi.mock('../../lib/useNotifyData', () => ({ useNotifySnapshot: vi.fn() }));
 vi.mock('../../components/BackendStats', () => ({ BackendStats: () => null }));

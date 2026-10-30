@@ -5,6 +5,9 @@ import { attentionSessionCount, updateAppBadge, useAppBadge } from './useAppBadg
 import { useNotifySnapshot } from './useNotifyData';
 import { useInbox } from './queries';
 import { useBadgeSettings } from './badgeSettings';
+import { useBetaFeatures } from './betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 vi.mock('./useNotifyData', () => ({ useNotifySnapshot: vi.fn() }));
 const mockEntries = (entries: unknown[] | null) =>

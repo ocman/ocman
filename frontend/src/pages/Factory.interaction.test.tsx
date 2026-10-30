@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useBetaFeatures } from '../lib/betaFeatures';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
@@ -96,6 +97,7 @@ async function fillEpicForm(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+  useBetaFeatures.setState({ factory: true });
 	vi.mocked(api.prepareSession).mockReset().mockResolvedValue({ platform: 'opencode', agents: [], commands: [], models: { models: [], hasProviders: false }, liveConnection: false });
 	vi.mocked(api.sessionModels).mockReset().mockResolvedValue({ models: [], hasProviders: false });
   vi.mocked(api.factoryEpic).mockReset();

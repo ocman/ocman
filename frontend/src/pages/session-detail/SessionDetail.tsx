@@ -85,6 +85,7 @@ import { SessionModals, type MessageJumpHistory, type SessionModal } from './Ses
 import { SessionComposerSlot, SessionPromptSlot } from './SessionComposerSlot';
 import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
 import { FactorySessionRecovery } from '../../components/FactorySessionRecovery';
+import { useBetaFeatures } from '../../lib/betaFeatures';
 import { SessionSidebar } from './SessionSidebar';
 import { useDocumentVisible, usePanelOpen, usePanelVisible } from '../../lib/usePanelVisible';
 import { SessionEmptyDetail, SessionLoadError } from './SessionStatusViews';
@@ -140,7 +141,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
   const newConversation = id === NEW_SESSION_ID ? parseNewSessionParams(searchParams) : null;
-  const factoryEpicID = searchParams.get('factoryEpic') ?? '';
+  const factoryEnabled = useBetaFeatures((s) => s.factory);
+  const factoryEpicID = factoryEnabled ? searchParams.get('factoryEpic') ?? '' : '';
   const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
   const [sidebarScroll, setSidebarScroll] = useState({ sessionId: '', tick: 0 });
   const [commitSourceJump, setCommitSourceJump] = useState<{
@@ -1066,10 +1068,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   )}
                   footer={factoryEpicID || session.factoryAttemptId || showPendingPrompt || showSseDebug ? (
                     <>
-                      <ErrorBoundary name="session:factory" inline resetKey={session.id}>
+                      {factoryEnabled && <ErrorBoundary name="session:factory" inline resetKey={session.id}>
                         <FactoryPlanApproval epicID={factoryEpicID} platformID={session.platform} sessionID={session.id} />
                         {session.factoryAttemptId && <FactorySessionRecovery key={`${session.platform}/${session.id}`} platformID={session.platform} sessionID={session.id} />}
-                      </ErrorBoundary>
+                      </ErrorBoundary>}
                       {showSseDebug && (
                         <details className="oc-sse-debug">
                           <summary>SSE debug ({sseDebugEvents.length})</summary>

@@ -7,6 +7,9 @@ import { useIsPhone } from '../../lib/useIsPhone';
 import { useUiStore } from '../../lib/uiStore';
 import type { DashboardCtx } from './context';
 import { SessionsTab } from './SessionsTab';
+import { useBetaFeatures } from '../../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 const dashboard = vi.fn();
 vi.mock('./context', () => ({ useDashboard: () => dashboard() }));

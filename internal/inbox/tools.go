@@ -17,7 +17,10 @@ type inboxStore interface {
 	RecallInboxItem(context.Context, string) error
 }
 
-type inboxTools struct{ store inboxStore }
+type inboxTools struct {
+	store          inboxStore
+	factoryEnabled func(context.Context) bool
+}
 
 func inboxServerTools(tools *inboxTools) []server.ServerTool {
 	if tools == nil || tools.store == nil {
@@ -36,10 +39,14 @@ func (t *inboxTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*m
 	}
 	switch action {
 	case "help":
+		categoryHelp := "general (default); routine is accepted but displayed in Primary; permission is reserved for live requests"
+		if t.factoryEnabled == nil || t.factoryEnabled(ctx) {
+			categoryHelp = "general (default) or factory; routine is accepted but displayed in Primary; permission is reserved for live requests"
+		}
 		return internalmcp.ToolResultJSON(map[string]any{
 			"actions": []string{"help", "send", "recall"},
 			"help":    map[string]any{"action": "Describes every available Inbox action.", "example": `{"action":"help"}`, "output_schema": "Inbox action documentation"},
-			"send":    map[string]any{"required": []string{"title", "body"}, "optional": map[string]string{"category": "general (default) or factory; routine is accepted but displayed in Primary; permission is reserved for live requests", "session_id": "originating session ID; provide together with platform", "platform": "owner-local platform of the originating session"}, "action": "Sends an unread item to this ocman instance's Inbox. Include session_id and platform when sending from a coding-agent session.", "example": `{"action":"send","title":"Review complete","body":"The pull request is ready.","category":"general","session_id":"ses_1","platform":"opencode"}`, "output_schema": map[string]string{"id": "opaque item ID"}},
+			"send":    map[string]any{"required": []string{"title", "body"}, "optional": map[string]string{"category": categoryHelp, "session_id": "originating session ID; provide together with platform", "platform": "owner-local platform of the originating session"}, "action": "Sends an unread item to this ocman instance's Inbox. Include session_id and platform when sending from a coding-agent session.", "example": `{"action":"send","title":"Review complete","body":"The pull request is ready.","category":"general","session_id":"ses_1","platform":"opencode"}`, "output_schema": map[string]string{"id": "opaque item ID"}},
 			"recall":  map[string]any{"required": []string{"item_id"}, "action": "Recalls an item. Unknown and already recalled IDs succeed.", "example": `{"action":"recall","item_id":"opaque-id"}`, "output_schema": map[string]string{"status": "recalled"}},
 			"rules":   []string{"title and body must be nonblank", "item IDs are opaque and owner-local"},
 			"errors":  []string{"action is required", "unknown action", "title is required", "body is required", "item_id is required", "inbox request failed"},
@@ -53,8 +60,11 @@ func (t *inboxTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*m
 			return mcplib.NewToolResultError("body is required"), nil
 		}
 		category := req.GetString("category", state.InboxGeneral)
+		if category == state.InboxFactory && t.factoryEnabled != nil && !t.factoryEnabled(ctx) {
+			return mcplib.NewToolResultError("category is unavailable"), nil
+		}
 		if category != state.InboxGeneral && category != state.InboxFactory && category != state.InboxRoutine {
-			return mcplib.NewToolResultError("category must be general, factory, or routine"), nil
+			return mcplib.NewToolResultError("category is invalid"), nil
 		}
 		// Routine run notices own the Routines category; agent-sent messages belong in Primary.
 		if category == state.InboxRoutine {

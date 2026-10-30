@@ -1,4 +1,5 @@
 import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
+test.use({ factoryBeta: true });
 
 for (const width of [1280, 390]) {
   test(`new Factory actions notify and open the action inbox at ${width}px`, async ({ mockedPage: page }, testInfo) => {

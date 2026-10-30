@@ -34,7 +34,8 @@ type Remotes interface {
 }
 
 type Deps struct {
-	Store *state.DB
+	FactoryEnabled func(context.Context) bool
+	Store          *state.DB
 	// Remotes is nil on a single-host install; the Inbox is then local only.
 	Remotes func() Remotes
 	// Platform finds the adapter that owns a pending permission.
@@ -81,7 +82,7 @@ func (m *Module) Run(ctx context.Context) {
 }
 
 func (m *Module) Tools() []mcpserver.ServerTool {
-	return inboxServerTools(&inboxTools{store: m.Store})
+	return inboxServerTools(&inboxTools{store: m.Store, factoryEnabled: m.FactoryEnabled})
 }
 
 func (m *Module) changed() { m.Broadcast("ocman.inbox.changed", []byte(`{}`)) }

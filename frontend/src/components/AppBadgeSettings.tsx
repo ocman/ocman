@@ -2,6 +2,7 @@ import { SettingRow, SettingToggle } from './SettingRow';
 import { InlineAlert } from './InlineAlert';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { useBadgeSettings, useSaveBadgeSettings, type BadgeSettings } from '../lib/badgeSettings';
+import { useBetaFeatures } from '../lib/betaFeatures';
 
 const sources: { key: keyof BadgeSettings; label: string; desc: string }[] = [
   { key: 'sessions', label: 'Unread sessions and input requests', desc: 'Includes permission and choice prompts. Routine sessions are excluded.' },
@@ -19,10 +20,11 @@ function BadgeSource({ source, settings, disabled, onSave }: { source: typeof so
 }
 
 export function AppBadgeSettings() {
+  const factory = useBetaFeatures((s) => s.factory);
   const query = useBadgeSettings();
   const update = useSaveBadgeSettings();
   return <SettingRow setting="app-icon-badge" block>
     {query.isError && <InlineAlert onRetry={() => { void query.refetch(); }} retrying={query.isFetching}>Could not load badge settings.</InlineAlert>}
-    {query.data && sources.map((source) => <BadgeSource key={source.key} source={source} settings={query.data} disabled={query.isFetching || update.isPending} onSave={update.mutateAsync} />)}
+    {query.data && sources.filter((source) => factory || source.key !== 'factory').map((source) => <BadgeSource key={source.key} source={source} settings={query.data} disabled={query.isFetching || update.isPending} onSave={update.mutateAsync} />)}
   </SettingRow>;
 }

@@ -30,7 +30,7 @@ export type SettingEntry = {
 export const SETTINGS = {
   'factory-beta': {
     group: 'app', title: 'Factory beta',
-    description: 'Enable the experimental Factory workspace. Off by default and saved for this browser. Disabling it hides the workspace but does not stop existing jobs or delete data.',
+    description: 'Enable the experimental Factory workspace and MCP tools for this instance. Off by default. Disabling it hides its interface but does not stop existing jobs or delete data.',
     example: 'Enable Factory to create and monitor epics, then turn it off to hide it from navigation.',
     keywords: 'beta features experimental opt in automation epics',
   },
@@ -55,8 +55,8 @@ export const SETTINGS = {
   'app-icon-badge': {
     group: 'app', title: 'App icon badge',
     description: 'Choose which unread items contribute to the installed app icon count. These settings apply to every device connected to this ocman instance, including background push. Reading or archiving items removes their count.',
-    example: 'Include unread sessions and Primary Inbox messages, but disable Factory and Routines messages. Permission and choice prompts count once per session, never again as Inbox permission items.',
-    keywords: 'badge count ipad ios unread primary factory routines permissions choices',
+    example: 'Include unread sessions and Primary Inbox messages, but disable automated messages. Permission and choice prompts count once per session, never again as Inbox permission items.',
+    keywords: 'badge count ipad ios unread primary routines permissions choices',
   },
   'enabled-platforms': {
     group: 'agents', title: 'Enabled platforms',
@@ -67,7 +67,7 @@ export const SETTINGS = {
   'idle-project-timeout': {
     group: 'system',
     title: 'Stop idle project instances after',
-    description: 'Minutes of inactivity after all normal sessions are archived. 0 means Never (the default). Running sessions, pending prompts, queued messages, and active routines or Factory work keep the instance alive. Routines wake stopped projects automatically. Applies to Claude supervisors on this machine; OpenCode is excluded. Configure remote instances on their own Settings page.',
+    description: 'Minutes of inactivity after all normal sessions are archived. 0 means Never (the default). Running sessions, pending prompts, queued messages, and active automation keep the instance alive. Routines wake stopped projects automatically. Applies to Claude supervisors on this machine; OpenCode is excluded. Configure remote instances on their own Settings page.',
     example: '30 stops an idle Claude supervisor after half an hour, keeping its sessions and worktrees.',
     keywords: 'cull cleanup timeout tmux supervisor resources',
   },

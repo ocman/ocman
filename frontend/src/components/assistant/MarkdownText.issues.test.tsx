@@ -3,9 +3,12 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type FactoryIssue } from '../../lib/api';
 import { MarkdownContent } from './MarkdownText';
+import { useBetaFeatures } from '../../lib/betaFeatures';
+
+beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
 const issue: FactoryIssue = { id: 'upload-fix.1.2', epicId: 'upload-fix', project: '/repo', kind: 'implementation', title: 'Fix attachment uploads', status: 'open' };
 
