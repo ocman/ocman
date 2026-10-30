@@ -1,4 +1,6 @@
 .oc-upstream-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; color: var(--text); font-size: 13px; }
+.oc-upstream-tabs-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-right: 8px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.oc-upstream-tabs-row > .oc-tabs-list { flex: 1; border-bottom: 0; }
 .oc-upstream-panel:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
 .oc-upstream-panel > .oc-session-prs { flex-shrink: 0; }
 .oc-upstream-panel > .oc-upstream-tab-content { flex: none; overflow: visible; }

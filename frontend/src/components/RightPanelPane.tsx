@@ -13,6 +13,7 @@ import { ArtifactsPane } from './ArtifactsPane';
 import type { PluginPane as PluginPaneDescriptor } from '../lib/pluginPanes';
 import type { ProjectTarget } from '../lib/useProjectTarget';
 import { PaneHeader } from './RightPanelPaneHeader';
+import { LinkPullRequestModal } from './upstream/LinkPullRequestModal';
 
 export interface PaneProps {
   tab: ChangesSidebarTab;
@@ -113,6 +114,9 @@ export function Pane({
   // in the pane header can spin its icon while a request is in flight.
   const [loading, setLoading] = useState(false);
   const handleLoadingChange = useCallback((next: boolean) => setLoading(next), []);
+  const [linkTarget, setLinkTarget] = useState<string | null>(null);
+  const [linksVersion, setLinksVersion] = useState(0);
+  const sessionKey = `${platformId}:${sessionId}`;
 
   // Same ref+flag dance as refresh, for the pane's fullscreen diff
   // browser. Only the diff panes wire it up; the rest never set the
@@ -201,6 +205,8 @@ export function Pane({
             <UpstreamPane
               sessionId={sessionId}
               directory={upstreamTarget.directory}
+              linksVersion={linksVersion}
+              onLinkPullRequest={session?.id === sessionId && platformId ? () => setLinkTarget(sessionKey) : undefined}
               projectId={upstreamTarget.projectId}
               currentDirectory={directory}
               actionsEnabled={session?.id === sessionId && !!directory}
@@ -226,6 +232,14 @@ export function Pane({
           )}
         </ErrorBoundary>
       </div>
+      {tab === 'upstream' && linkTarget === sessionKey && platformId && <LinkPullRequestModal
+        key={sessionKey}
+        sessionId={sessionId}
+        platform={platformId}
+        upstreams={upstreams}
+        onClose={() => setLinkTarget(null)}
+        onLinked={() => { setLinksVersion((value) => value + 1); setLinkTarget(null); }}
+      />}
     </>
   );
 }

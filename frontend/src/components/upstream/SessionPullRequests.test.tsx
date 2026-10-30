@@ -11,7 +11,7 @@ vi.mock('../../lib/prWorkflowApi', () => ({ prWorkflowApi: { links: vi.fn(), cha
 const confirm = vi.fn();
 const upstream = { remote: 'origin', host: 'github.com', type: 'github' as const, repo: 'team/repo' };
 const link: PRLink = { platform: 'r-box:opencode', sessionId: 's1', remoteId: 'box', directory: '/repo', remote: upstream, number: 42, watching: false, pr: { number: 42, title: 'Improve authentication', body: '', author: 'dries', status: 'open', url: 'https://github.com/team/repo/pull/42', branch: 'feature', updatedAt: '', host: 'github.com', repo: 'team/repo', labels: [], assignees: [], requestedReviewers: [], crossFork: false } };
-function mount() { return render(<MemoryRouter><ConfirmContext.Provider value={confirm}><SessionPullRequests sessionId="s1" platform="r-box:opencode" upstreams={[upstream]} /></ConfirmContext.Provider></MemoryRouter>); }
+function mount() { return render(<MemoryRouter><ConfirmContext.Provider value={confirm}><SessionPullRequests sessionId="s1" platform="r-box:opencode" /></ConfirmContext.Provider></MemoryRouter>); }
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [link] }); vi.mocked(prWorkflowApi.change).mockResolvedValue(link); vi.mocked(prWorkflowApi.feedback).mockResolvedValue({ prompt: 'Investigate the failed tests. Do not merge.' }); confirm.mockResolvedValue(true); });
 
 describe('SessionPullRequests', () => {
@@ -22,13 +22,28 @@ describe('SessionPullRequests', () => {
   });
   it('stops and unlinks without starting new agent work', async () => {
     vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [{ ...link, watching: true, lastError: 'Retrying with backoff.' }] });
-    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Stop watching' })); await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', expect.objectContaining({ action: 'unwatch' })));
+    mount();
+    const stop = await screen.findByRole('button', { name: 'Stop watching' });
+    expect(stop.querySelector('i')).toHaveClass('bi-sign-stop');
+    expect(stop).toHaveTextContent('');
+    expect(screen.getByRole('button', { name: 'Unlink' }).querySelector('i')).toHaveClass('bi-x-lg');
+    expect(stop.closest('.oc-session-pr-repo')).toHaveTextContent('github.com/team/repo');
+    fireEvent.click(stop); await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', expect.objectContaining({ action: 'unwatch' })));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Unlink' })).toBeEnabled()); fireEvent.click(screen.getByRole('button', { name: 'Unlink' })); await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', expect.objectContaining({ action: 'unlink' }))); expect(screen.getByText('Retrying with backoff.')).toBeInTheDocument();
   });
-  it('links a PR manually and retains the selected upstream', async () => {
+  it('keeps the manual linking form out of the sidebar', async () => {
     vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] }); mount(); expect(await screen.findByText(/No linked PRs/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('PR upstream'), { target: { value: 'origin' } }); fireEvent.change(screen.getByLabelText('PR number to link'), { target: { value: '42' } }); fireEvent.click(screen.getByRole('button', { name: 'Link PR' }));
-    await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', { action: 'link', number: 42, remote: 'origin' })); await waitFor(() => expect(screen.getByLabelText('PR number to link')).toHaveValue(null));
+    expect(screen.queryByLabelText('PR number to link')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Link PR' })).not.toBeInTheDocument();
+  });
+  it('reloads linked PRs after the modal links a pull request', async () => {
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+    const view = (version: number) => <MemoryRouter><ConfirmContext.Provider value={confirm}><SessionPullRequests sessionId="s1" platform="r-box:opencode" linksVersion={version} /></ConfirmContext.Provider></MemoryRouter>;
+    const { rerender } = render(view(0));
+    await screen.findByText(/No linked PRs/);
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [link] });
+    rerender(view(1));
+    await screen.findByRole('button', { name: 'Watch PR' });
   });
   it.each([['Address feedback', 'feedback'], ['Fix failing checks', 'checks'], ['Resolve conflicts', 'conflicts']])('prepares %s as an editable task without sending', async (label, action) => {
     mount(); fireEvent.click(await screen.findByRole('button', { name: label }));

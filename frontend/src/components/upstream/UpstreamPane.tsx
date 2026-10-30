@@ -13,6 +13,7 @@ import { UpstreamFilters } from './UpstreamFilters';
 import { onGitCommand } from '../../lib/useGlobalEvents';
 import { Spinner } from '../Spinner';
 import { SessionPullRequests } from './SessionPullRequests';
+import { IconButton } from '../IconButton';
 
 function UpstreamDetectionStatus() {
   const [visible, setVisible] = useState(false);
@@ -26,6 +27,8 @@ function UpstreamDetectionStatus() {
 
 interface UpstreamPaneProps {
   sessionId?: string;
+  linksVersion?: number;
+  onLinkPullRequest?: () => void;
   launchPlatform?: string;
   /** Project directory the upstreams were detected for; keys the lists. */
   directory: string | undefined;
@@ -75,6 +78,8 @@ type Tab = 'prs' | 'issues';
  */
 export function UpstreamPane({
   sessionId,
+  linksVersion,
+  onLinkPullRequest,
   directory,
   projectId,
   currentDirectory = directory,
@@ -107,7 +112,8 @@ export function UpstreamPane({
   if (upstreamsReady && upstreams.length === 0) {
     return (
       <div className="oc-upstream-pane" data-testid="upstream-pane">
-        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} upstreams={upstreams} />}
+        {onLinkPullRequest && <div className="oc-upstream-tabs-row"><IconButton variant="ghost" icon="bi-paperclip" label="Link pull request" onClick={onLinkPullRequest} /></div>}
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} />}
         <NoUpstreamMessage directory={directory} />
       </div>
     );
@@ -116,13 +122,16 @@ export function UpstreamPane({
   return (
     <LaunchPlatformContext.Provider value={launchPlatform}>
     <Tabs value={tab} onValueChange={(value) => setPreferences({ tab: value === 'issues' ? 'issues' : 'prs' })} className="oc-upstream-pane" data-testid="upstream-pane">
+      <div className="oc-upstream-tabs-row">
       <TabsList aria-label="Pull requests and issues">
         <TabsTrigger value="prs" data-testid="upstream-tab-prs">PRs</TabsTrigger>
         <TabsTrigger value="issues" data-testid="upstream-tab-issues">Issues</TabsTrigger>
       </TabsList>
+      {onLinkPullRequest && <IconButton variant="ghost" icon="bi-paperclip" label="Link pull request" onClick={onLinkPullRequest} />}
+      </div>
 
       <TabsContent value="prs" className="oc-upstream-panel">
-        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} upstreams={upstreams} />}
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} />}
         <UpstreamTabContent
           key="prs"
           kind="prs"
