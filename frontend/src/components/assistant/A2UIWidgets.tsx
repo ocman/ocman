@@ -12,9 +12,14 @@ export function ResultTable({ columns, rows }: { columns: string[]; rows: Scalar
       ? left - right : String(left ?? '').localeCompare(String(right ?? ''));
     return sort.descending ? -comparison : comparison;
   }) : rows;
-  return <DataTable framed>
+  return <DataTable framed className={styles.table}>
     <thead><tr>{columns.map((column, i) => <th key={i} scope="col" aria-sort={sort?.column === i ? (sort.descending ? 'descending' : 'ascending') : 'none'}>
-      <Button type="button" variant="ghost" size="compact" onClick={() => setSort({ column: i, descending: sort?.column === i && !sort.descending })}>{column}</Button>
+      <Button type="button" variant="ghost" size="compact" className={styles.sortButton}
+        title={sort?.column === i && !sort.descending ? 'Sort descending' : 'Sort ascending'}
+        onClick={() => setSort({ column: i, descending: sort?.column === i && !sort.descending })}>
+        <span>{column}</span>
+        <span className={styles.sortIndicator} aria-hidden="true">{sort?.column === i ? (sort.descending ? '↓' : '↑') : '↕'}</span>
+      </Button>
     </th>)}</tr></thead>
     <tbody>{ordered.map((row, i) => <tr key={i}>{columns.map((_, j) => <td key={j}>{String(row[j] ?? '')}</td>)}</tr>)}</tbody>
   </DataTable>;

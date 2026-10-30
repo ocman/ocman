@@ -14,7 +14,14 @@ for (const width of [1280, 390]) {
         'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'",
       } });
     });
-    const output = JSON.stringify({ ocmanA2ui: sampleResult() });
+    const sample = sampleResult();
+    for (const message of sample.messages) {
+      if ('updateComponents' in message) {
+        const table = message.updateComponents.components.find(component => component.component === 'Table');
+        if (table?.component === 'Table') table.columns[0] = 'Sample observation';
+      }
+    }
+    const output = JSON.stringify({ ocmanA2ui: sample });
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
       session: { ...MOCK_SESSION, status: 'done', liveConnection: true },
       liveConnection: true, platform: 'opencode',
@@ -35,6 +42,23 @@ for (const width of [1280, 390]) {
     await page.goto(`/session/${MOCK_SESSION.id}`);
     const result = page.getByRole('region', { name: 'Build investigation' });
     await expect(result.getByRole('heading', { name: 'Failed jobs' })).toBeVisible();
+    await expect(result).toHaveCSS('border-radius', '0px');
+    const header = result.getByRole('columnheader', { name: 'Sample observation' });
+    const sortButton = header.getByRole('button', { name: 'Sample observation' });
+    await expect(sortButton).toHaveCSS('justify-content', 'space-between');
+    await expect(sortButton).toHaveCSS('text-align', 'left');
+    await expect(sortButton).toHaveCSS('border-radius', '0px');
+    expect(await sortButton.evaluate(button => button.scrollHeight <= button.clientHeight)).toBe(true);
+    expect(await sortButton.evaluate(button => getComputedStyle(button).color))
+      .toBe(await result.evaluate(element => getComputedStyle(element).color));
+    await expect(sortButton).toHaveAttribute('title', 'Sort ascending');
+    await sortButton.click();
+    await expect(header).toHaveAttribute('aria-sort', 'ascending');
+    await expect(sortButton).toHaveAttribute('title', 'Sort descending');
+    await expect(result.getByRole('row').nth(1)).toContainText('Backend');
+    await sortButton.click();
+    await expect(header).toHaveAttribute('aria-sort', 'descending');
+    await expect(result.getByRole('row').nth(1)).toContainText('Frontend');
     await expect(result.getByRole('textbox', { name: 'Investigate job' })).toBeEnabled();
     await result.getByRole('textbox', { name: 'Investigate job' }).fill('Frontend');
     await result.getByRole('checkbox', { name: 'Include logs' }).check();

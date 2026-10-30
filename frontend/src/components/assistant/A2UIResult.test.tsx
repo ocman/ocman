@@ -20,9 +20,16 @@ describe('A2UI result rendering', () => {
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('hr')).toBeInTheDocument();
     const table = screen.getByRole('table');
+    const failures = within(table).getByRole('button', { name: 'Failures' });
+    expect(failures).toHaveAttribute('title', 'Sort ascending');
+    expect(within(failures).getByText('↕')).toHaveAttribute('aria-hidden', 'true');
     fireEvent.click(within(table).getByRole('button', { name: 'Failures' }));
+    expect(failures).toHaveAttribute('title', 'Sort descending');
+    expect(within(failures).getByText('↑')).toHaveAttribute('aria-hidden', 'true');
     expect(within(table).getAllByRole('row')[1]).toHaveTextContent('Backend2');
     fireEvent.click(within(table).getByRole('button', { name: 'Failures' }));
+    expect(failures).toHaveAttribute('title', 'Sort ascending');
+    expect(within(failures).getByText('↓')).toHaveAttribute('aria-hidden', 'true');
     expect(within(table).getAllByRole('row')[1]).toHaveTextContent('Frontend10');
     fireEvent.click(within(table).getByRole('button', { name: 'Job' }));
     expect(within(table).getAllByRole('row')[1]).toHaveTextContent('Backend2');
