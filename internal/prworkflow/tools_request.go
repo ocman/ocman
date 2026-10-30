@@ -46,7 +46,14 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 			method = http.MethodPost
 			payload["action"] = action
 			if action == "link" {
-				required = append(required, "remote")
+				args := req.GetArguments()
+				_, hasHost := args["host"]
+				_, hasRepo := args["repo"]
+				if hasHost || hasRepo {
+					required = append(required, "host", "repo")
+				} else {
+					required = append(required, "remote")
+				}
 			} else {
 				required = append(required, "host", "repo")
 			}

@@ -156,12 +156,12 @@ flowchart LR
 flowchart LR
     UI[Setup and session PR pane] --> Setup[sourcecontrol]
     UI --> Workflow[prworkflow]
-    MCP[Agent pull_requests tool] --> Workflow
+    MCP[Agent pull_requests tool] -->|session and optional explicit repository| Workflow
     MCP --> Launch
     Launch[projectforge launches] --> Workflow
     Setup --> Credentials[(Private credential overrides)]
     Workflow --> Links[(PR links and watch snapshots)]
-    Workflow -->|repository identity| Host[Owning Host]
+    Workflow -->|owner check; checkout upstream when needed| Host[Owning Host]
     Workflow -->|cached metadata and checks; selective feedback| Forge[GitHub or Forgejo API]
     Setup --> Forge
     Workflow -->|changed checks or feedback| Queue[Shared session queue]
@@ -175,6 +175,11 @@ flowchart LR
   two-minute watch worker. It persists snapshots and pending notices separately
   from conversations. The hub reads forge metadata; owner disconnection never
   routes checkout or session work to another machine.
+- Explicit `host` and `repo` links resolve through configured hub forge clients
+  without consulting the session checkout's upstreams. The session retains its
+  owning project and directory; links can refer to multiple other repositories.
+  The linked-PR badge reads checks through a session-qualified endpoint using
+  the saved repository identity, including for links created from an upstream.
 - Watch reads reuse GitHub's credential-scoped one-minute transport cache with
   sidebar and preview reads. Head/metadata timestamps gate feedback pagination,
   with a ten-minute safety reread. Quiet settled PRs slow to five-minute due

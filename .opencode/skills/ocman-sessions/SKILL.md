@@ -19,13 +19,17 @@ the PR visible in ocman's session controls. Start with
 for the tool's current inputs.
 
 Use your current session's `session_id` and `platform`, including the compound platform ID
-for a remote session, the PR's number, and the matching upstream remote name.
+for a remote session, the PR's number, and its explicit forge `host` and `repo`
+in `owner/name` format. This also links PRs created in another repository without
+moving the originating session to that project. The host needs a configured hub
+forge client. Alternatively, supply `remote` from the session's checkout instead
+of `host` and `repo`, never a remote name resolved from another checkout.
 Do not guess the session identity or assume the upstream is `origin`. If the
 caller context does not provide your identity, use `sessions` search/get to
 confirm it against the current checkout and conversation. If it remains
 ambiguous, ask rather than linking to another session.
 
-`{"action":"link","intent":"Attach the created PR to this session","platform":"opencode","session_id":"ses_caller","remote":"origin","number":42}`
+`{"action":"link","intent":"Attach the created PR to this session","platform":"opencode","session_id":"ses_caller","host":"github.com","repo":"other/project","number":42}`
 
 Then verify with `{"action":"linked","intent":"Verify the created PR is linked to this session","platform":"opencode","session_id":"ses_caller"}`.
 Confirm that the returned links contain the matching repository and PR number

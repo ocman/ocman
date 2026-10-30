@@ -49,6 +49,10 @@ func TestPRToolRoutes(t *testing.T) {
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			args := map[string]any{"action": tc.action, "directory": "/src/a b", "remote_id": "box", "remote": "origin", "session_id": "s1", "platform": "r-box:opencode", "host": "github.com", "repo": "a/b", "number": float64(42), "sha": "abc", "state": "all", "mine": "alice", "page": float64(2), "refresh": true, "mode": "worktree", "task": "review", "fetchHead": true}
+			if tc.action == "link" {
+				delete(args, "host")
+				delete(args, "repo")
+			}
 			method, path, body, err := prToolRequest(tc.action, toolRequest(args))
 			if err != nil {
 				t.Fatal(err)
@@ -155,7 +159,8 @@ func TestPRToolSessionLifecycle(t *testing.T) {
 	}
 	call := func(action string, fail bool) *mcplib.CallToolResult {
 		t.Helper()
-		result, err := tools[0].Handler(t.Context(), toolRequest(map[string]any{"action": action, "session_id": "s1", "platform": "r-box:opencode", "host": "github.com", "repo": "team/repo", "remote": "origin", "number": float64(42)}))
+		args := map[string]any{"action": action, "session_id": "s1", "platform": "r-box:opencode", "host": "github.com", "repo": "team/repo", "number": float64(42)}
+		result, err := tools[0].Handler(t.Context(), toolRequest(args))
 		if err != nil || result.IsError != fail {
 			t.Fatalf("%s: %+v %v", action, result, err)
 		}

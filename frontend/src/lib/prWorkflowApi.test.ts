@@ -23,3 +23,13 @@ it('prepares feedback only for the selected linked PR', () => {
   prWorkflowApi.feedback('s1', 'r-box:opencode', link, 'feedback');
   expect(postJSON).toHaveBeenCalledWith('/api/session/s1/pull-request-feedback?platform=r-box%3Aopencode', { action: 'feedback', number: 42, host: 'github.com', repo: 'team/repo' });
 });
+it('loads checks by saved repository and session identity, not checkout remote', () => {
+  const signal = new AbortController().signal;
+  const link = { platform: 'r-box:opencode', sessionId: 's/1', number: 42, remote: { host: 'github.com', repo: 'other/project' }, pr: { headSha: 'abcdef' } } as PRLink;
+  for (const refresh of [false, true]) {
+    prWorkflowApi.checks(link, signal, refresh);
+    expect(fetchJSON).toHaveBeenLastCalledWith(`/api/session/s%2F1/pull-request-checks?platform=r-box%3Aopencode&host=github.com&repo=other%2Fproject&number=42&sha=abcdef${refresh ? '&refresh=true' : ''}`, signal);
+  }
+  prWorkflowApi.checks({ ...link, pr: { ...link.pr, headSha: undefined } }, signal);
+  expect(fetchJSON).toHaveBeenLastCalledWith(expect.stringContaining('sha='), signal);
+});

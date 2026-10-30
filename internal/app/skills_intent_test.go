@@ -40,6 +40,7 @@ func TestSessionsSkillTeachesPRCompletion(t *testing.T) {
 		`"action":"link"`, `"action":"linked"`, "current session",
 		"compound platform ID", "before reporting completion", "PR URL",
 		"Do not enable watching unless requested", "Do not guess",
+		"another repository", "originating session", `"host":"github.com"`, `"repo":"other/project"`,
 	} {
 		if !strings.Contains(text, guidance) {
 			t.Errorf("missing PR completion guidance: %s", guidance)

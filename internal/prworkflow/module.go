@@ -40,6 +40,7 @@ func New(d Deps) *Module     { return &Module{d: d, paused: make(map[string]time
 func (*Module) Name() string { return "pr-workflow" }
 func (m *Module) Routes(r module.Router) {
 	r.Local("GET /api/session/{id}/pull-requests", m.list)
+	r.Local("GET /api/session/{id}/pull-request-checks", m.checks)
 	r.Local("POST /api/session/{id}/pull-requests", m.change)
 	r.Local("POST /api/session/{id}/pull-request-feedback", m.feedback)
 }
@@ -96,6 +97,12 @@ func (m *Module) change(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "A positive PR number is required", http.StatusBadRequest)
 		return
 	}
+	if req.Action == "link" && (req.Host != "" || req.Repo != "") {
+		if _, err := explicitRemote(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.d.DB == nil {
@@ -105,9 +112,13 @@ func (m *Module) change(w http.ResponseWriter, r *http.Request) {
 	var l Link
 	if req.Action == "link" {
 		var err error
-		l, err = m.newLink(r.Context(), t, req.Remote, req.Number)
+		if req.Host != "" || req.Repo != "" {
+			l, err = m.externalLink(r.Context(), t, req)
+		} else {
+			l, err = m.newLink(r.Context(), t, req.Remote, req.Number)
+		}
 		if err != nil {
-			http.Error(w, "Could not link PR. Check its number, upstream and owner connection.", http.StatusBadGateway)
+			http.Error(w, "Could not link PR. Check its number, repository, forge configuration and owner connection.", http.StatusBadGateway)
 			return
 		}
 		// Linking twice must not reset an existing watch.

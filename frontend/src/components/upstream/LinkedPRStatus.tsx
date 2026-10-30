@@ -1,5 +1,4 @@
-import type { PRLink } from '../../lib/prWorkflowApi';
-import { fetchPRChecks } from '../../lib/upstreamApi';
+import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
 import { prChecksCacheKey } from '../../lib/prChecksCache';
 import { CI_LABEL, usePRChecks } from '../../lib/usePRChecks';
 import './ExpandableRow.css';
@@ -9,9 +8,9 @@ export function LinkedPRStatus({ link }: { link: PRLink }) {
   const sha = link.pr.headSha ?? '';
   const checks = usePRChecks(
     prChecksCacheKey(link.remote.host, link.remote.repo, sha),
-    `${link.remoteId}\0${link.directory}\0${link.remote.remote}\0${sha}`,
+    `${link.platform}\0${link.sessionId}\0${link.remote.host}\0${link.remote.repo}\0${sha}`,
     !!sha,
-    (signal, refresh) => fetchPRChecks({ dir: link.directory, remoteId: link.remoteId, remote: link.remote.remote, sha, signal, refresh }),
+    (signal, refresh) => prWorkflowApi.checks(link, signal, refresh),
   );
   const checkLabel = checks.error ? 'Could not load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
   return <div className="oc-session-pr-statuses" aria-label={`PR #${link.number} status`}>

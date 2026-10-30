@@ -32,6 +32,11 @@ an upstream and enter the PR number. Links are persisted with the session's
 platform, owning machine, repository and PR number. Launching a session or
 worktree from a PR also saves its link. Multiple PRs can be linked to one session.
 
+Agents can also link PRs from other repositories through the MCP tool by supplying
+the forge `host`, `repo` in `owner/name` format, and PR `number`. The relationship
+stays attached to the originating session without moving it to another project.
+The host must be supported by a configured hub forge client.
+
 **Unlink** removes the relationship and stops its watch. It does not close the
 PR, delete its branch or archive the session. PRs opened independently by an
 agent or outside ocman must be linked manually.
@@ -97,10 +102,21 @@ The `pull_requests` tool exposes these workflows to local agents. Start with
   the dashboard.
 - `linked`, `link`, `unlink`, `watch`, `unwatch` manage session PR links and
   watches. Supply `session_id` and `platform`, including its remote owner prefix
-  when applicable. Mutations also need `number`; `link` uses `remote`, while
-  the others use the `host` and `repo` returned by `linked`.
+  when applicable. Mutations also need `number`; `link` accepts either `remote`
+  from the session's checkout or explicit `host` and `repo`, not both. Use the
+  latter for a PR created in another repository. Other mutations use the `host`
+  and `repo` returned by `linked`.
 - `feedback`, `checks_prompt`, `conflicts_prompt` return unsent task prompts.
   Supply the session identifiers, `host`, `repo` and `number`.
+
+For example, to attach another repository's PR to the session that created it:
+
+```json
+{"action":"link","platform":"opencode","session_id":"ses_example","host":"github.com","repo":"other/project","number":42}
+```
+
+After creating a PR, agents must link it and verify the repository and number
+with `action: "linked"` before reporting completion. Linking does not start a watch.
 
 Launches and watches require user authorization because they can consume model
 credits. Draft actions do not send messages or post comments. No action merges,
