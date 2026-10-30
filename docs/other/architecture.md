@@ -210,7 +210,9 @@ flowchart LR
 - **Prepared source sessions.** Plugins may prepare source under their private
   model workspace and request a read-only session with the separately approved
   `session.source` grant. The owner resolves a contained subpath and pins exact
-  file-read permissions before creation and prompt delivery. Other tools remain
+  file-read permissions before creation and prompt delivery. Approved plugins can
+  follow up on their latest completed turn through the same session queue, with
+  durable admission receipts and unchanged permissions. Other tools remain
   denied. Creation receipts, platforms and the completion outbox are reused;
   the host does not interpret the source or its output schema.
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to

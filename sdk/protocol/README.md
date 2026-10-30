@@ -570,6 +570,26 @@ Permission prompts remain in ocman and are never exposed to the provider.
 
 ## session.v1
 
+### Follow-up turns, minor 5
+
+`session` 1.5 adds the plugin-to-host `send` method, gated by the separately
+approved `session.send` grant alongside the existing session grants. Its closed
+parameters are `{"after":"sess-out:123","prompt":"Clarify the supplied inventory"}`.
+`after` is the opaque operation ID passed to the plugin's completed handler, not
+a session ID invented by the caller. The result is `{"sessionId":"..."}` for
+the existing session. A new completed call later carries the next turn and its
+own stable operation ID and per-turn usage.
+
+The host verifies ownership, current grants, idle state and the latest completed
+turn. It keeps the original directory, model, agent and permission rules. One
+durable admission per completed turn prevents duplicate sends across retries,
+restarts and concurrent requests. Changed prompts or operation IDs conflict;
+uncertain enqueue failures remain fenced. Older hosts refuse this operation.
+Plugins must retain distinct completion receipts and account for every turn.
+For example, document indexing and dependency inventory workflows can request
+clarification without losing their inspected context. The host does not parse
+the result or enforce a domain-specific response format.
+
 ### Read-only prepared source, minor 4
 
 `session` 1.4 adds `readOnly: true` for a private workspace session. The plugin

@@ -161,6 +161,9 @@ func (d Description) validateSession() error {
 	if !slices.Contains(d.RequestedGrants, SessionRunGrant) {
 		return ErrInvalidMessage
 	}
+	if slices.Contains(d.RequestedGrants, SessionSendGrant) && !slices.ContainsFunc(d.Capabilities, func(c Capability) bool { return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 5 }) {
+		return ErrInvalidMessage
+	}
 	if slices.Contains(d.RequestedGrants, SessionSourceGrant) &&
 		(!slices.Contains(d.RequestedGrants, SessionPluginGrant) || !slices.ContainsFunc(d.Capabilities, func(c Capability) bool {
 			return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 4

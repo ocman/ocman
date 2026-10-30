@@ -59,6 +59,7 @@ func (m *Module) buildSessions() {
 		})
 	m.sessionBroker.ResolveProject = m.deps.ProjectDirectory
 	m.sessionBroker.ResolveWorkspace = m.pluginModelWorkspace
+	m.sessionBroker.Continue = m.sendSession
 	m.sessionJobs = worker.NewKeyed(m.runSessionJob, func(j sessionJob) string { return j.pluginID })
 	m.sessionDeliveries = worker.NewKeyed(func(c PluginSessionCompletion) {
 		module.RunWithRecover("plugin-session-delivery", func() { m.DeliverSessionCompletion(c) })

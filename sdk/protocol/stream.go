@@ -98,7 +98,7 @@ func (s *Stream) accept(direction Direction, e Envelope) error {
 	case TypeCall:
 		c := e.Call
 		if direction == FromPlugin {
-			if c.Capability != SessionCapability.Name || c.Method != SessionRunMethod || c.ID <= s.pluginLastID || len(s.pluginActive) >= s.limit || !s.hasCapabilityVersion(c.Capability, c.Version) {
+			if c.Capability != SessionCapability.Name || (c.Method != SessionRunMethod && (c.Method != SessionSendMethod || c.Version.Major != 1 || c.Version.Minor < 5)) || c.ID <= s.pluginLastID || len(s.pluginActive) >= s.limit || !s.hasCapabilityVersion(c.Capability, c.Version) {
 				return ErrStreamOrder
 			}
 			s.pluginLastID = c.ID

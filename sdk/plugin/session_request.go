@@ -6,7 +6,23 @@ import "encoding/json"
 // a constructor's minimum version. Extension fields cannot be downgraded onto
 // session 1.0. Reject those locally without tearing down other valid requests.
 func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
-	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > ReadOnlySessionCapability.Version.Minor {
+	if call.Capability == SessionCapability.Name && call.Method == SessionSendMethod {
+		var params SessionSendParams
+		n, ready := stream.Negotiation()
+		if call.Version != FollowupSessionCapability.Version || json.Unmarshal(call.Params, &params) != nil || params.Validate() != nil {
+			return call, true
+		}
+		if ready {
+			for _, c := range n.Capabilities {
+				if c.Name == SessionCapability.Name && c.Version.Major == 1 && c.Version.Minor >= 5 {
+					call.Version = c.Version
+					return call, false
+				}
+			}
+		}
+		return call, true
+	}
+	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > FollowupSessionCapability.Version.Minor {
 		return call, false
 	}
 	n, ready := stream.Negotiation()

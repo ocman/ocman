@@ -11,10 +11,11 @@ import (
 // Aliases and constants for session.v1, versioned independently of action.v1
 // and conversation.v1.
 type (
-	SessionRunParams = protocol.SessionRunParams
-	SessionRunResult = protocol.SessionRunResult
-	SessionCompleted = protocol.SessionCompleted
-	SessionUsage     = protocol.SessionUsage
+	SessionRunParams  = protocol.SessionRunParams
+	SessionSendParams = protocol.SessionSendParams
+	SessionRunResult  = protocol.SessionRunResult
+	SessionCompleted  = protocol.SessionCompleted
+	SessionUsage      = protocol.SessionUsage
 )
 
 const (
@@ -22,6 +23,8 @@ const (
 	SessionProjectGrant    = protocol.SessionProjectGrant
 	SessionPluginGrant     = protocol.SessionPluginGrant
 	SessionSourceGrant     = protocol.SessionSourceGrant
+	SessionSendGrant       = protocol.SessionSendGrant
+	SessionSendMethod      = protocol.SessionSendMethod
 	SessionProjectSetting  = protocol.SessionProjectSetting
 	SessionRunMethod       = protocol.SessionRunMethod
 	SessionCompletedMethod = protocol.SessionCompletedMethod
@@ -34,6 +37,7 @@ var ProjectSessionCapability = protocol.ProjectSessionCapability
 var PluginSessionCapability = protocol.PluginSessionCapability
 var ArchivedSessionCapability = protocol.ArchivedSessionCapability
 var ReadOnlySessionCapability = protocol.ReadOnlySessionCapability
+var FollowupSessionCapability = protocol.FollowupSessionCapability
 
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps

@@ -34,6 +34,7 @@ type SessionStart func(ctx context.Context, pluginID string, config Config, para
 type SessionBroker struct {
 	ResolveProject   func(context.Context, string) (string, error)
 	ResolveWorkspace func(context.Context, string, string) (string, error)
+	Continue         func(context.Context, string, SessionSendParams, string) (string, error)
 	authorize        SessionAuthorization
 	start            SessionStart
 	call             ActionCall
@@ -76,7 +77,10 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if err := ctx.Err(); err != nil {
 		return SessionRunResult{}, err
 	}
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > ReadOnlySessionCapability.Version.Minor || call.Method != SessionRunMethod {
+	if call.Method == SessionSendMethod {
+		return b.send(ctx, pluginID, call)
+	}
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > FollowupSessionCapability.Version.Minor || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
@@ -142,7 +146,7 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 		version := SessionCapability.Version
 		for _, c := range d.Capabilities {
 			if c.Name == "session" && c.Version.Major == 1 {
-				version.Minor = min(c.Version.Minor, ReadOnlySessionCapability.Version.Minor)
+				version.Minor = min(c.Version.Minor, FollowupSessionCapability.Version.Minor)
 			}
 		}
 		return Call{
