@@ -17,6 +17,7 @@ func prToolHelp() *mcplib.CallToolResult {
 		"launch":           "Requires number, platform, mode (session|worktree), task (handle|review). Starts an agent session, optionally on the PR worktree, and links the PR. Does not create a PR. Cross-fork fetch confirmation is available only in the dashboard.",
 		"linked":           "Returns pullRequests linked to the session, including watch state and last saved metadata.",
 		"link":             "Links an existing PR without starting a watch. Repeated linking preserves an existing watch.",
+		"after_creation":   "After creating a PR with the forge CLI or API, use action link with the current session_id and platform (including its remote compound ID), matching upstream remote name and PR number. Verify the matching repository and PR number with action linked before reporting completion. If linking or verification fails, report the failure alongside the PR URL; do not recreate the PR. Do not enable watching unless requested.",
 		"unlink":           "Removes the session link and stops its watch. Returns status: unlinked.",
 		"watch":            "Opt-in persistent watch of an open PR. Polls every two minutes and queues changed checks, comments or conflicts to the linked session when ready. Returns the saved link.",
 		"unwatch":          "Stops watching and clears pending notices, retaining the link. Returns the saved link.",

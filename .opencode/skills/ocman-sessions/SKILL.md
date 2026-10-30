@@ -1,6 +1,6 @@
 ---
 name: ocman-sessions
-description: Use when the user asks to inspect, search, start, or message ocman sessions, or to delegate work to an OpenCode subagent with an explicit model.
+description: Use when creating a pull request in an ocman session, inspecting, searching, starting, or messaging ocman sessions, or delegating work to an OpenCode subagent with an explicit model.
 ---
 
 # Ocman Sessions
@@ -9,6 +9,31 @@ Include a short, goal-focused `intent` on every ocman MCP call, including help
 and read-only calls, so the user sees why you are calling the tool. In Code Mode,
 write `intent` as an inline string literal, not a variable or computed value.
 This explains the call; it does not grant permission or change the operation.
+
+## Link created pull requests
+
+After creating a pull request with the repository's forge CLI or API, link it to
+the current session using `pull_requests` before reporting completion. This makes
+the PR visible in ocman's session controls. Start with
+`{"action":"help","intent":"Check how to link the created PR to this session"}`
+for the tool's current inputs.
+
+Use your current session's `session_id` and `platform`, including the compound platform ID
+for a remote session, the PR's number, and the matching upstream remote name.
+Do not guess the session identity or assume the upstream is `origin`. If the
+caller context does not provide your identity, use `sessions` search/get to
+confirm it against the current checkout and conversation. If it remains
+ambiguous, ask rather than linking to another session.
+
+`{"action":"link","intent":"Attach the created PR to this session","platform":"opencode","session_id":"ses_caller","remote":"origin","number":42}`
+
+Then verify with `{"action":"linked","intent":"Verify the created PR is linked to this session","platform":"opencode","session_id":"ses_caller"}`.
+Confirm that the returned links contain the matching repository and PR number
+before reporting completion. If linking or verification fails, report that
+failure alongside the PR URL. Do not recreate an already-created PR to retry
+linking. Do not enable watching unless requested.
+
+## Inspect and manage sessions
 
 Use the `sessions` MCP tool. Start with `{"action":"help","intent":"Check how to find or start the requested session"}` for current
 schemas, limits, examples, and errors. Its actions:

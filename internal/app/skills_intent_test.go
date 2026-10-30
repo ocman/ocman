@@ -32,3 +32,17 @@ func TestSkillsTeachToolIntent(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionsSkillTeachesPRCompletion(t *testing.T) {
+	text := string(skillCatalog["ocman-sessions"])
+	for _, guidance := range []string{
+		"creating a pull request", "After creating a pull request", "`pull_requests`",
+		`"action":"link"`, `"action":"linked"`, "current session",
+		"compound platform ID", "before reporting completion", "PR URL",
+		"Do not enable watching unless requested", "Do not guess",
+	} {
+		if !strings.Contains(text, guidance) {
+			t.Errorf("missing PR completion guidance: %s", guidance)
+		}
+	}
+}

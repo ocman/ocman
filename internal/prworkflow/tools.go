@@ -26,7 +26,7 @@ func (m *Module) Tools() []server.ServerTool {
 		mux.Handle("/api/project/", m.d.ProjectHandler)
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("pull_requests",
-		mcplib.WithDescription("Browse PRs and checks, launch PR sessions, link PRs to sessions, watch changes, and prepare feedback/check/conflict task drafts. Use action help for inputs and safety rules. Never merges or changes credentials."),
+		mcplib.WithDescription("Browse PRs and checks, launch PR sessions, link PRs to sessions, watch changes, and prepare feedback/check/conflict task drafts. After creating a PR, use action link to attach it to the current session, then verify with action linked before reporting completion. If linking or verification fails, report the failure alongside the PR URL. Do not enable watching unless requested. Use action help for inputs and safety rules. Never merges or changes credentials."),
 		mcplib.WithString("action", mcplib.Required()),
 		mcplib.WithString("directory"), mcplib.WithString("remote_id"), mcplib.WithString("remote"),
 		mcplib.WithString("session_id"), mcplib.WithString("platform"),

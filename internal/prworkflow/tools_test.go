@@ -17,6 +17,20 @@ func toolRequest(args map[string]any) mcplib.CallToolRequest {
 	return req
 }
 
+func TestPRToolTeachesPostCreationLinking(t *testing.T) {
+	x := newFixture(t)
+	help := prToolHelp().Content[0].(mcplib.TextContent).Text
+	for name, text := range map[string]string{"description": x.m.Tools()[0].Tool.Description, "help": help} {
+		t.Run(name, func(t *testing.T) {
+			for _, guidance := range []string{"After creating a PR", "action link", "action linked", "current session", "before reporting completion", "PR URL", "Do not enable watching unless requested"} {
+				if !strings.Contains(text, guidance) {
+					t.Errorf("missing post-creation guidance: %s", guidance)
+				}
+			}
+		})
+	}
+}
+
 func TestPRToolRoutes(t *testing.T) {
 	for _, tc := range []struct{ action, method, path, bodyAction string }{
 		{"upstreams", "GET", "/api/project/upstreams", ""},
