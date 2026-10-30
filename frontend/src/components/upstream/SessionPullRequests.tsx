@@ -38,6 +38,7 @@ function SessionLinks({ sessionId, platform, linksVersion }: Props) {
   };
   const change = (link: PRLink, action: string) => prWorkflowApi.change(sessionId, platform, { action, number: link.number, host: link.remote.host, repo: link.remote.repo });
   const feedback = (link: PRLink, action: string) => run(async () => { const result = await prWorkflowApi.feedback(sessionId, platform, link, action); if (mounted.current) setPrompt(result.prompt); });
+  if (links?.length === 0 && !error) return null;
   return <section className="oc-session-prs" aria-label="Linked pull requests">
     <div className="oc-session-prs-heading">
       <div className="oc-session-prs-title"><h3>Linked to this session</h3>
@@ -49,7 +50,6 @@ function SessionLinks({ sessionId, platform, linksVersion }: Props) {
     </div>
     {error && <p role="alert">{error} <Button variant="ghost" onClick={() => void run(load, false)}>Retry links</Button></p>}
     {links === null && !error && <p role="status">Loading linked PRs…</p>}
-    {links?.length === 0 && <p>No linked PRs. Agents can link them, or use the paperclip above.</p>}
     {links?.map((link) => <article className="oc-session-pr" key={`${link.remote.host}/${link.remote.repo}/${link.number}`}>
       <a href={link.pr.url} target="_blank" rel="noreferrer noopener">#{link.number} {link.pr.title}</a>
       <div className="oc-session-pr-repo">

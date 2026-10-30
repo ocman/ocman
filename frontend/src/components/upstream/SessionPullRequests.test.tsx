@@ -31,8 +31,13 @@ describe('SessionPullRequests', () => {
     fireEvent.click(stop); await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', expect.objectContaining({ action: 'unwatch' })));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Unlink' })).toBeEnabled()); fireEvent.click(screen.getByRole('button', { name: 'Unlink' })); await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', expect.objectContaining({ action: 'unlink' }))); expect(screen.getByText('Retrying with backoff.')).toBeInTheDocument();
   });
-  it('keeps the manual linking form out of the sidebar', async () => {
-    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] }); mount(); expect(await screen.findByText(/No linked PRs/)).toBeInTheDocument();
+  it('hides the entire section when there are no linked PRs', async () => {
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+    await act(async () => { mount(); });
+    expect(screen.queryByRole('region', { name: 'Linked pull requests' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Linked to this session')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh links' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/No linked PRs/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('PR number to link')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Link PR' })).not.toBeInTheDocument();
   });
@@ -40,10 +45,18 @@ describe('SessionPullRequests', () => {
     vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
     const view = (version: number) => <MemoryRouter><ConfirmContext.Provider value={confirm}><SessionPullRequests sessionId="s1" platform="r-box:opencode" linksVersion={version} /></ConfirmContext.Provider></MemoryRouter>;
     const { rerender } = render(view(0));
-    await screen.findByText(/No linked PRs/);
+    await act(async () => {});
+    expect(screen.queryByRole('region', { name: 'Linked pull requests' })).not.toBeInTheDocument();
     vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [link] });
     rerender(view(1));
     await screen.findByRole('button', { name: 'Watch PR' });
+  });
+  it('hides the section after unlinking the last PR', async () => {
+    mount();
+    const unlink = await screen.findByRole('button', { name: 'Unlink' });
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+    fireEvent.click(unlink);
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Linked pull requests' })).not.toBeInTheDocument());
   });
   it.each([['Address feedback', 'feedback'], ['Fix failing checks', 'checks'], ['Resolve conflicts', 'conflicts']])('prepares %s as an editable task without sending', async (label, action) => {
     mount(); fireEvent.click(await screen.findByRole('button', { name: label }));
