@@ -518,9 +518,14 @@ outbox keyed by the session's newest assistant message, delivered on the
 `session.idle` edge (and reconciled periodically), in per-session arrival
 order with a stable `sess-out:<id>` operation id, so a retry is recognizable
 as a repeat. A completion that exhausts its retries becomes a dead letter
-that blocks only its own session. Ocman never sends reasoning parts, tool
-output or permission text — the newest assistant message's sanitized text only.
-Permission prompts stay in ocman.
+that blocks only its own session. Ocman sends only the newest assistant message's
+text parts concatenated verbatim, without intermediate progress, reasoning parts,
+tool output or permission text. Conversation's 64 KiB cap and sanitization do not
+apply. The complete encoded call must fit the
+[protocol's 1 MiB frame limit](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/protocol/README.md#framing-and-messages),
+including JSON escaping and metadata. Invalid or oversized results fail delivery
+with `invalid_argument`, retaining the full outbox payload for normal retries
+and dead-letter handling rather than truncating it. Permission prompts stay in ocman.
 
 Completion delivery is at-least-once while pending. A crash after the consumer
 acts but before ocman acknowledges replays the same operation ID, including

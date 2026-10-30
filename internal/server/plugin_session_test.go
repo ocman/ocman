@@ -198,9 +198,9 @@ func newSessionFixture(t *testing.T) *sessionFixture {
 				},
 				Parts: []db.Part{
 					{ID: "p0", MessageID: "m1", Data: json.RawMessage(`{"type":"text","text":"the prompt"}`)},
-					// A control character exercises the reply sanitizer; the reasoning
-					// part must never reach the plugin.
-					{ID: "p1", MessageID: "m2", Data: json.RawMessage(`{"type":"text","text":"ans\bwer"}`)},
+					// Session text is delivered verbatim, without conversation
+					// sanitization. The reasoning part must never reach the plugin.
+					{ID: "p1", MessageID: "m2", Data: json.RawMessage(`{"type":"text","text":"answer"}`)},
 					{ID: "p2", MessageID: "m2", Data: json.RawMessage(`{"type":"reasoning","text":"private"}`)},
 				},
 			}, nil
