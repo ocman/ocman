@@ -26,6 +26,17 @@ func (b *SessionBroker) workspace(ctx context.Context, pluginID string, d Descri
 	if err != nil || !filepath.IsAbs(dir) {
 		return Config{}, &WireError{Category: ErrorPermissionDenied}
 	}
+	admitted.AssociatedProject = ""
+	if params.AssociatedProjectID != "" {
+		if !slices.ContainsFunc(d.Capabilities, func(c Capability) bool { return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 6 }) || !slices.Contains(d.RequestedGrants, SessionAssociateGrant) || !slices.Contains(grants, SessionAssociateGrant) || b.ResolveProject == nil {
+			return Config{}, &WireError{Category: ErrorPermissionDenied}
+		}
+		target, err := b.ResolveProject(ctx, params.AssociatedProjectID)
+		if err != nil || !filepath.IsAbs(target) {
+			return Config{}, &WireError{Category: ErrorPermissionDenied}
+		}
+		admitted.AssociatedProject = target
+	}
 	admitted.Project = dir
 	return admitted, nil
 }

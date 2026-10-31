@@ -1,7 +1,7 @@
 import type { Project } from './api';
 import { projectRootForDirectory } from './worktrees';
 
-type Checkout = Pick<Project, 'directory' | 'remoteId' | 'remoteName' | 'platform' | 'projectKey' | 'mergedIntoDirectory' | 'mergedIntoRemoteId'>;
+type Checkout = Pick<Project, 'directory' | 'associatedDirectory' | 'remoteId' | 'remoteName' | 'platform' | 'projectKey' | 'mergedIntoDirectory' | 'mergedIntoRemoteId'>;
 export type ProjectIdentity = Checkout & { key: string };
 
 export const checkoutKey = (directory: string, remoteId?: string) =>
@@ -18,7 +18,7 @@ export function projectIdentityIndex(projects: Checkout[]) {
     byCheckout.set(checkoutKey(directory, project.remoteId), key);
     const previous = representatives.get(key);
     if (!previous || (previous.remoteId && previous.remoteId !== 'local' && (!project.remoteId || project.remoteId === 'local'))) {
-      representatives.set(key, { directory, remoteId: project.remoteId,
+      representatives.set(key, { directory: projectRootForDirectory(project.associatedDirectory || directory), remoteId: project.remoteId,
         remoteName: project.remoteName, platform: project.platform, projectKey: project.projectKey, key });
     }
   }

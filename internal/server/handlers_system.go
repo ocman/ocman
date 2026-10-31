@@ -94,6 +94,9 @@ func foldWorktreeProjects(projects []db.ProjectStats) []db.ProjectStats {
 		if !ok {
 			cp := p
 			cp.Directory = k.root
+			if cp.AssociatedDirectory != "" {
+				cp.AssociatedDirectory = projectRootForDirectory(cp.AssociatedDirectory)
+			}
 			merged[k] = &cp
 			order = append(order, k)
 			continue

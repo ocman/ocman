@@ -157,13 +157,14 @@ func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 	out := make([]db.ProjectStats, 0, len(idents))
 	for _, id := range idents {
 		out = append(out, db.ProjectStats{
-			Directory:      id.Dir,
-			SessionCount:   id.SessionCount,
-			MessageCount:   id.MessageCount,
-			LastUsed:       id.LastUsed,
-			TotalTokensIn:  id.TotalTokensIn,
-			TotalTokensOut: id.TotalTokensOut,
-			TotalCost:      id.TotalCost,
+			AssociatedDirectory: id.AssociatedDirectory,
+			Directory:           id.Dir,
+			SessionCount:        id.SessionCount,
+			MessageCount:        id.MessageCount,
+			LastUsed:            id.LastUsed,
+			TotalTokensIn:       id.TotalTokensIn,
+			TotalTokensOut:      id.TotalTokensOut,
+			TotalCost:           id.TotalCost,
 		})
 	}
 	return out, nil

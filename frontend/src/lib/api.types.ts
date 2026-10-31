@@ -1014,6 +1014,7 @@ export interface ModelCostPoint {
 }
 
 export interface Project {
+  associatedDirectory?: string;
   mergedIntoDirectory?: string;
   mergedIntoRemoteId?: string;
   projectKey?: string;

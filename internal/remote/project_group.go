@@ -2,10 +2,10 @@ package remote
 
 import (
 	"context"
-	"github.com/ocman/ocman/internal/platforms"
 	"strings"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 // AssignProjectKeys labels connected components of shared upstreams. Checkout
@@ -22,6 +22,9 @@ func AssignProjectKeys(projects []db.ProjectStats) {
 	seen := map[string]int{}
 	for i, p := range projects {
 		parent[i] = i
+		if p.AssociatedDirectory != "" {
+			continue
+		}
 		for _, key := range p.UpstreamKeys {
 			if key == "" {
 				continue
@@ -33,8 +36,29 @@ func AssignProjectKeys(projects []db.ProjectStats) {
 			}
 		}
 	}
-	keys := map[int]string{}
+	checkouts := map[string]int{}
 	for i, p := range projects {
+		checkouts[projectCheckoutKey(p.RemoteID, p.Directory)] = i
+	}
+	for i, p := range projects {
+		if p.AssociatedDirectory != "" {
+			if target, ok := checkouts[projectCheckoutKey(p.RemoteID, p.AssociatedDirectory)]; ok {
+				parent[root(i)] = root(target)
+			}
+		}
+	}
+	keys := map[int]string{}
+	fallbacks := map[int]string{}
+	for i, p := range projects {
+		if p.AssociatedDirectory == "" {
+			key := projectDirectoryKey(p.RemoteID, p.Directory)
+			if previous := fallbacks[root(i)]; previous == "" || key < previous {
+				fallbacks[root(i)] = key
+			}
+		}
+		if p.AssociatedDirectory != "" {
+			continue
+		}
 		for _, key := range p.UpstreamKeys {
 			if key != "" && (keys[root(i)] == "" || key < keys[root(i)]) {
 				keys[root(i)] = key
@@ -44,14 +68,26 @@ func AssignProjectKeys(projects []db.ProjectStats) {
 	for i := range projects {
 		if key := keys[root(i)]; key != "" {
 			projects[i].ProjectKey = "git:" + key
+		} else if key := fallbacks[root(i)]; key != "" {
+			projects[i].ProjectKey = key
 		} else {
-			owner := projects[i].RemoteID
-			if owner == "" {
-				owner = "local"
-			}
-			projects[i].ProjectKey = "dir:" + owner + ":" + projects[i].Directory
+			projects[i].ProjectKey = projectDirectoryKey(projects[i].RemoteID, projects[i].Directory)
 		}
 	}
+}
+
+func projectDirectoryKey(owner, directory string) string {
+	if owner == "" {
+		owner = "local"
+	}
+	return "dir:" + owner + ":" + directory
+}
+
+func projectCheckoutKey(owner, directory string) string {
+	if owner == "" {
+		owner = "local"
+	}
+	return owner + "\x00" + directory
 }
 
 // Older owners advertise only the origin key. Basenames never match across hosts.
@@ -70,11 +106,17 @@ func identityUpstreams(p ProjectIdentity) []string {
 func (m *Manager) ResolveProjectTargets(source db.ProjectStats, localProjects []ProjectIdentity) []TargetCandidate {
 	projects := []db.ProjectStats{source}
 	for _, p := range localProjects {
+		if p.AssociatedDirectory != "" {
+			continue
+		}
 		projects = append(projects, db.ProjectStats{Directory: p.Dir, RemoteID: "local", UpstreamKeys: identityUpstreams(p)})
 	}
 	m.invMu.RLock()
 	for owner, inventory := range m.inventory {
 		for _, p := range inventory {
+			if p.AssociatedDirectory != "" {
+				continue
+			}
 			projects = append(projects, db.ProjectStats{Directory: p.Dir, RemoteID: owner, UpstreamKeys: identityUpstreams(p)})
 		}
 	}

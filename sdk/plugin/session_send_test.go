@@ -2,19 +2,17 @@ package plugin_test
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/ocman/ocman/sdk/plugin"
 )
 
 func TestSessionSendNegotiationAndOlderHostRefusal(t *testing.T) {
-	for _, older := range []bool{false, true} {
-		t.Run(map[bool]string{false: "supported", true: "older-host"}[older], func(t *testing.T) {
-			version := plugin.FollowupSessionCapability.Version
-			if older {
-				version = plugin.ReadOnlySessionCapability.Version
-			}
-			enc, dec, requests, done := requestConnection(t, 2, true, plugin.FollowupSessionCapability.Version, version)
+	for _, version := range []plugin.Version{plugin.ReadOnlySessionCapability.Version, plugin.FollowupSessionCapability.Version, plugin.AssociatedSessionCapability.Version} {
+		t.Run(strconv.Itoa(version.Minor), func(t *testing.T) {
+			older := version.Minor < 5
+			enc, dec, requests, done := requestConnection(t, 2, true, plugin.AssociatedSessionCapability.Version, version)
 			call, err := plugin.NewSessionSend("send-1", plugin.SessionSendParams{After: "sess-out:1", Prompt: "Clarify the supplied inventory"})
 			if err != nil {
 				t.Fatal(err)

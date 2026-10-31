@@ -2469,6 +2469,10 @@ sequenceDiagram
     T->>B: Deadline-bound unary request
     B->>D: Read enabled installation, grants and optional scalar project
     B->>R: Session 1.1 projectId, resolve owner-local root after session.project grant
+    opt Session 1.6 workspace attribution
+        B->>R: Resolve associatedProjectId on the same owner after session.associate grant
+        B->>D: Persist source-directory to project-directory display association
+    end
     B->>B: Reject traversal and resolved symlink escape
     B->>D: Reserve plugin and operation ID, or return stored result
     B->>D: Resolve named profile rules, or pin all-tools-denied for noTools
@@ -2498,6 +2502,15 @@ sequenceDiagram
   not infer ownership from directories or fall back to another machine.
   `noTools` overrides profile rules with an all-tools-denied rule before prompt
   admission. Blank agent/model values preserve host defaults.
+- Session 1.6 `associatedProjectId` resolves through that same owner-local catalog
+  under `session.associate`, independently of the private execution directory.
+  `pluginsmod/session_projects.go` owns the append-only schema migration and
+  immutable directory association. The owner overlays it during project-index
+  refresh, including zero-stat targets without history. Remote inventories carry
+  the association; shared upstream groups and browser project identities retain
+  source statistics but select real project directories for display and launch.
+  Permissions and session directories never change, and source cleanup cannot
+  erase the association. Historical unassociated runs need an explicit merge.
 - `internal/pluginsmod/session_outbox.go` records and pumps completions. The durable
   mapping and AUTOINCREMENT outbox ID survive reopen. Pending deliveries replay
   after a crash, including one after the consumer's effect but before host ack.

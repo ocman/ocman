@@ -78,7 +78,7 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 	if projects, err := s.router().Local().Projects(r.Context()); err == nil {
 		local := make([]remote.ProjectIdentity, 0, len(projects))
 		for _, p := range projects {
-			local = append(local, remote.ProjectIdentity{Dir: p.Directory, UpstreamKeys: p.UpstreamKeys})
+			local = append(local, remote.ProjectIdentity{Dir: p.Directory, UpstreamKeys: p.UpstreamKeys, AssociatedDirectory: p.AssociatedDirectory})
 		}
 		candidates = s.remotes.ResolveProjectTargets(db.ProjectStats{Directory: req.Dir, RemoteID: req.RemoteID, UpstreamKeys: keys}, local)
 	}

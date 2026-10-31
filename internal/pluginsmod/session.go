@@ -153,6 +153,11 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	if err := m.plugins.PluginSessionBacklogFull(ctx, pluginID); err != nil {
 		return "", plugins.ErrUnavailable
 	}
+	if config.AssociatedProject != "" {
+		if err := m.plugins.associateSessionProject(ctx, pluginID, dir, filepath.Clean(config.AssociatedProject)); err != nil {
+			return "", err
+		}
+	}
 	var rules []platforms.PermissionRule
 	if params.PermissionProfile != "" {
 		resolved, err := m.plugins.ResolvePermissionProfile(ctx, params.PermissionProfile)

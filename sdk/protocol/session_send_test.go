@@ -45,8 +45,13 @@ func TestSessionSendReauthorizesAndPreservesParameters(t *testing.T) {
 	if result, err := b.Run(t.Context(), "org.example.run", call); err != nil || result.SessionID != "existing-session" || sends != 1 {
 		t.Fatalf("send failed: %+v %v", result, err)
 	}
+	call.Version = AssociatedSessionCapability.Version
+	h.description.Capabilities = []Capability{AssociatedSessionCapability}
+	if result, err := b.Run(t.Context(), "org.example.run", call); err != nil || result.SessionID != "existing-session" || sends != 2 {
+		t.Fatalf("send failed at association minor: %+v %v", result, err)
+	}
 	h.grants = []string{SessionRunGrant}
-	if _, err := b.Run(t.Context(), "org.example.run", call); err == nil || sends != 1 {
+	if _, err := b.Run(t.Context(), "org.example.run", call); err == nil || sends != 2 {
 		t.Fatal("revoked send grant did not block follow-up")
 	}
 	for _, data := range []string{`{"after":"sess-out:1","prompt":"Clarify","model":"override"}`, `{"after":"","prompt":"Clarify"}`, `{"after":"sess-out:1","prompt":" "}`} {

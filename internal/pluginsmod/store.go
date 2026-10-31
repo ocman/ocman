@@ -14,7 +14,7 @@ import (
 // before main took those numbers.
 var Schema = state.ModuleSchema{
 	Module: "plugins",
-	Tables: []string{"plugin_permission_profiles", "plugin_session", "plugin_session_outbox", "plugin_session_run"},
+	Tables: []string{"plugin_permission_profiles", "plugin_session", "plugin_session_outbox", "plugin_session_run", "plugin_session_project"},
 	Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS plugin_permission_profiles (
 			id TEXT PRIMARY KEY,
@@ -24,7 +24,7 @@ var Schema = state.ModuleSchema{
 			return err
 		}
 		return migratePluginSession(tx)
-	}, migratePluginSessionRuns, migratePluginSessionUsage},
+	}, migratePluginSessionRuns, migratePluginSessionUsage, migratePluginSessionProjects},
 }
 
 // sessionDoneRetention keeps delivered session receipts as long as the

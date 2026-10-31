@@ -751,17 +751,18 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 				base = selectPlatform(m.remotePlatforms(remoteID), m.base)
 			}
 			out = append(out, db.ProjectStats{
-				Directory:      p.Dir,
-				UpstreamKeys:   identityUpstreams(p),
-				SessionCount:   p.SessionCount,
-				MessageCount:   p.MessageCount,
-				LastUsed:       p.LastUsed,
-				TotalTokensIn:  p.TotalTokensIn,
-				TotalTokensOut: p.TotalTokensOut,
-				TotalCost:      p.TotalCost,
-				RemoteID:       remoteID,
-				RemoteName:     name,
-				Platform:       platforms.CompoundPlatformID(remoteID, base),
+				AssociatedDirectory: p.AssociatedDirectory,
+				Directory:           p.Dir,
+				UpstreamKeys:        identityUpstreams(p),
+				SessionCount:        p.SessionCount,
+				MessageCount:        p.MessageCount,
+				LastUsed:            p.LastUsed,
+				TotalTokensIn:       p.TotalTokensIn,
+				TotalTokensOut:      p.TotalTokensOut,
+				TotalCost:           p.TotalCost,
+				RemoteID:            remoteID,
+				RemoteName:          name,
+				Platform:            platforms.CompoundPlatformID(remoteID, base),
 			})
 		}
 	}

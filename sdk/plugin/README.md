@@ -154,6 +154,14 @@ Background runs set `Archived: true` and declare `ArchivedSessionCapability`
 (session 1.3); the session is created archived. `NewSessionRun` marks 1.3 as
 the minimum, and an older negotiated version gets a local `invalid_argument`.
 
+For grouping a workspace run under its source project, declare
+`AssociatedSessionCapability` and add `SessionAssociateGrant`. Set
+`AssociatedProjectID` alongside `WorkspaceID`; unlike `ProjectID`, this does not
+select an execution directory or grant file access. Keep the existing `NoTools`
+or `ReadOnly` policy. The association is durable per workspace directory, so use
+a separate workspace or prepared-source subpath for each project. See
+[session 1.6](../protocol/README.md#project-association-minor-6) for the contract.
+
 For plugin-local storage and a single homepage read without project discovery,
 use `PluginPageCapability` for page 1.2, request `PagePluginGrant`, and declare
 `PageDescriptor{Scope: "plugin"}`. The homepage request has no project identity.

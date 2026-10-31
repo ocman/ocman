@@ -194,6 +194,11 @@ func EnrichProjectStats(ctx context.Context, stats []db.ProjectStats) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(enrichParallelism)
 	for i := range stats {
+		if stats[i].AssociatedDirectory != "" {
+			stats[i].UpstreamKeys = nil
+			stats[i].UpstreamOrigin = ""
+			continue
+		}
 		g.Go(func() error {
 			upstreams, err := projectUpstreamsCache.upstreams(ctx, stats[i].Directory)
 			if err != nil {
@@ -228,18 +233,19 @@ func projectIdentities(stats []db.ProjectStats) []ProjectIdentity {
 			key = NormalizeProjectIdentity("", p.Directory)
 		}
 		out = append(out, ProjectIdentity{
-			Key:            key,
-			Origin:         origin,
-			Basename:       basenameOf(p.Directory),
-			Dir:            p.Directory,
-			UpstreamKeys:   slices.Clone(p.UpstreamKeys),
-			Platform:       p.Platform,
-			SessionCount:   p.SessionCount,
-			MessageCount:   p.MessageCount,
-			LastUsed:       p.LastUsed,
-			TotalTokensIn:  p.TotalTokensIn,
-			TotalTokensOut: p.TotalTokensOut,
-			TotalCost:      p.TotalCost,
+			AssociatedDirectory: p.AssociatedDirectory,
+			Key:                 key,
+			Origin:              origin,
+			Basename:            basenameOf(p.Directory),
+			Dir:                 p.Directory,
+			UpstreamKeys:        slices.Clone(p.UpstreamKeys),
+			Platform:            p.Platform,
+			SessionCount:        p.SessionCount,
+			MessageCount:        p.MessageCount,
+			LastUsed:            p.LastUsed,
+			TotalTokensIn:       p.TotalTokensIn,
+			TotalTokensOut:      p.TotalTokensOut,
+			TotalCost:           p.TotalCost,
 		})
 	}
 	return out

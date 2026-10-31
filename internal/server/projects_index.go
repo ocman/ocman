@@ -181,6 +181,9 @@ func (s *Server) refreshProjectsIndexOnce(ctx context.Context) error {
 	}
 	projects, err := s.getProjects(ctx)
 	if err == nil {
+		projects, err = s.pluginsModule().AssociateProjects(ctx, projects)
+	}
+	if err == nil {
 		enrich := s.projects.enrich
 		if enrich == nil {
 			enrich = remote.EnrichProjectStats

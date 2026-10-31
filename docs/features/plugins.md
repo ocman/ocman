@@ -99,6 +99,14 @@ also builds its UI (requires pnpm). See the
 
 ## Trust and installation
 
+Plugins can associate a private-workspace session with a code project instead
+of displaying its temporary source directory as a separate project. This requires
+the plugin to send `associatedProjectId` using session protocol 1.6 and have the
+`session.associate` grant. It changes grouping only, not the session's working
+directory or file permissions. Associations survive removal of the source copy
+and host restarts. Older sessions without that metadata can be grouped with the
+dashboard's project merge action; ocman does not guess their project from files.
+
 Plugins can request `session.source` to run a read-only inspection of prepared
 files in their private workspace. The host allows the session to read only the
 files present at admission, with no shell, writes, network tools or delegation.

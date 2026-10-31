@@ -264,6 +264,8 @@ type ModelCostPoint struct {
 
 // ProjectStats holds per-directory aggregated data.
 type ProjectStats struct {
+	// AssociatedDirectory attributes a plugin source copy to an owner-local project.
+	AssociatedDirectory string `json:"associatedDirectory,omitempty"`
 	MergedIntoDirectory string `json:"mergedIntoDirectory,omitempty"`
 	MergedIntoRemoteID  string `json:"mergedIntoRemoteId,omitempty"`
 

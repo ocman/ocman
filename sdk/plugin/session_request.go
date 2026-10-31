@@ -22,7 +22,7 @@ func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 		}
 		return call, true
 	}
-	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > FollowupSessionCapability.Version.Minor {
+	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > AssociatedSessionCapability.Version.Minor {
 		return call, false
 	}
 	n, ready := stream.Negotiation()
@@ -47,6 +47,9 @@ func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 			return call, true
 		}
 		if capability.Version.Minor < 4 && params.ReadOnly {
+			return call, true
+		}
+		if capability.Version.Minor < 6 && params.AssociatedProjectID != "" {
 			return call, true
 		}
 		call.Version = capability.Version

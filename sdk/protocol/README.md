@@ -570,6 +570,34 @@ Permission prompts remain in ocman and are never exposed to the provider.
 
 ## session.v1
 
+### Project association, minor 6
+
+Session 1.6 adds optional `associatedProjectId` to workspace runs. It is an
+opaque project ID from the executing owner's project catalog, not a path or Git
+URL. Declare `AssociatedSessionCapability` and request `session.associate` as well
+as the workspace's existing grants. The owner resolves the ID before admission;
+unknown projects, missing grants and unavailable lookup fail closed.
+
+```json
+{"workspaceId":"scan-a","associatedProjectId":"project-123","readOnly":true,"subpath":"source-2059222746","archived":true,"prompt":"Review the prepared source"}
+```
+
+The association changes dashboard and sidebar grouping only. Execution stays in
+the private workspace subpath with exactly the same read-only or tool-denied
+rules. `session.associate` does not authorize project execution or grant access
+to the associated project's files. The host persists
+the directory-to-project association, including after source cleanup or restart,
+and joins it with the project's ordinary Git-remote group across machines.
+New session targets use the associated checkout, never the temporary copy.
+
+A workspace directory can belong to only one project. Reusing it with another
+association returns `conflict`; use a fresh subpath for each project's source.
+Omit the field for multi-project or project-independent runs. `projectId` still
+selects an execution directory and remains incompatible with `workspaceId`.
+The Go SDK refuses to downgrade association requests to older negotiated minors.
+Existing unassociated sessions are not inferred from file names or source text;
+use the dashboard's project merge action to group historical entries explicitly.
+
 ### Follow-up turns, minor 5
 
 `session` 1.5 adds the plugin-to-host `send` method, gated by the separately

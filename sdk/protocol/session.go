@@ -28,9 +28,13 @@ var ArchivedSessionCapability = Capability{Name: "session", Version: Version{Maj
 // ReadOnlySessionCapability permits file inspection of prepared workspace source.
 var ReadOnlySessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 4}}
 
+// AssociatedSessionCapability adds display-only project attribution for private workspaces.
+var AssociatedSessionCapability = Capability{Name: "session", Version: Version{Major: 1, Minor: 6}}
+
 const SessionProjectGrant = "session.project"
 const SessionPluginGrant = "session.plugin"
 const SessionSourceGrant = "session.source"
+const SessionAssociateGrant = "session.associate"
 
 const (
 	// SessionRunMethod routes the plugin-initiated run request. It is the
@@ -59,15 +63,18 @@ const (
 // subpath of the approved project. There is no directory parameter: the
 // approved project is always the base, and a subpath can only reach inside it.
 type SessionRunParams struct {
-	ProjectID         string `json:"projectId,omitempty"`
-	WorkspaceID       string `json:"workspaceId,omitempty"`
-	NoTools           bool   `json:"noTools,omitempty"`
-	ReadOnly          bool   `json:"readOnly,omitempty"`
-	Prompt            string `json:"prompt"`
-	Agent             string `json:"agent,omitempty"`
-	Model             string `json:"model,omitempty"`
-	PermissionProfile string `json:"permissionProfile,omitempty"`
-	Subpath           string `json:"subpath,omitempty"`
+	ProjectID string `json:"projectId,omitempty"`
+	// AssociatedProjectID groups a private workspace directory under an owner-local
+	// project without changing the execution directory or permissions. Requires 1.6.
+	AssociatedProjectID string `json:"associatedProjectId,omitempty"`
+	WorkspaceID         string `json:"workspaceId,omitempty"`
+	NoTools             bool   `json:"noTools,omitempty"`
+	ReadOnly            bool   `json:"readOnly,omitempty"`
+	Prompt              string `json:"prompt"`
+	Agent               string `json:"agent,omitempty"`
+	Model               string `json:"model,omitempty"`
+	PermissionProfile   string `json:"permissionProfile,omitempty"`
+	Subpath             string `json:"subpath,omitempty"`
 	// Archived creates the session already archived, for background runs
 	// that should stay out of the sidebar.
 	Archived bool `json:"archived,omitempty"`
@@ -91,6 +98,9 @@ type SessionCompleted struct {
 // allows newlines and tabs, unlike validText, because prompts are multi-line;
 // other control characters are rejected, as in conversation.v1.
 func (p SessionRunParams) Validate() error {
+	if p.AssociatedProjectID != "" && (p.WorkspaceID == "" || !actionID.MatchString(p.AssociatedProjectID)) {
+		return ErrInvalidMessage
+	}
 	if p.ReadOnly && (p.WorkspaceID == "" || p.NoTools || p.Subpath == "" || p.PermissionProfile != "" || p.Agent != "") {
 		return ErrInvalidMessage
 	}
@@ -161,6 +171,12 @@ func (d Description) validateSession() error {
 		return ErrInvalidMessage
 	}
 	if !slices.Contains(d.RequestedGrants, SessionRunGrant) {
+		return ErrInvalidMessage
+	}
+	if slices.Contains(d.RequestedGrants, SessionAssociateGrant) &&
+		(!slices.Contains(d.RequestedGrants, SessionPluginGrant) || !slices.ContainsFunc(d.Capabilities, func(c Capability) bool {
+			return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 6
+		})) {
 		return ErrInvalidMessage
 	}
 	if slices.Contains(d.RequestedGrants, SessionSendGrant) && !slices.ContainsFunc(d.Capabilities, func(c Capability) bool { return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 5 }) {

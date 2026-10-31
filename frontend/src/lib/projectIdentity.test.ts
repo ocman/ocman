@@ -3,6 +3,25 @@ import { groupProjects, projectIdentityIndex } from './projectIdentity';
 import type { Project } from './api';
 
 describe('projectIdentityIndex', () => {
+  it.each([false, true])('uses the associated project rather than a source-copy path, reversed=%s', (reversed) => {
+    const projects = [
+      { directory: '/private/source-2059222746', associatedDirectory: '/projects/platform-service', projectKey: 'git:platform', sessionCount: 2, messageCount: 3, totalTokensIn: 4, totalTokensOut: 5, lastUsed: 6 },
+      { directory: '/projects/platform-service', projectKey: 'git:platform', sessionCount: 0, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 },
+    ];
+    if (reversed) projects.reverse();
+    const identity = projectIdentityIndex(projects);
+    expect(identity('/private/source-2059222746')).toMatchObject({ directory: '/projects/platform-service', key: 'git:platform' });
+    expect(groupProjects(projects)).toEqual([expect.objectContaining({ directory: '/projects/platform-service', sessionCount: 2, messageCount: 3 })]);
+  });
+  it('keeps local project preference when an associated source copy lives on another owner', () => {
+    const identity = projectIdentityIndex([
+      { directory: '/private/source', associatedDirectory: '/remote/project', remoteId: 'box', projectKey: 'git:shared' },
+      { directory: '/local/project', projectKey: 'git:shared' },
+      { directory: '/remote/project', remoteId: 'box', projectKey: 'git:shared' },
+    ]);
+    expect(identity('/private/source', 'box')).toMatchObject({ directory: '/local/project', remoteId: undefined });
+    expect(identity('/private/source').key).not.toBe('git:shared');
+  });
   it('keeps the persisted target addressable when its remote checkout disappears', () => {
     const index = projectIdentityIndex([
       { directory: '/source', projectKey: 'merged', mergedIntoDirectory: '/target', mergedIntoRemoteId: 'box' },

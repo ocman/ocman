@@ -10,12 +10,13 @@ import (
 // fetch remote; Key and Origin retain a credential-free single-remote identity
 // for older hubs. Dir is the absolute path on the owning host.
 type ProjectIdentity struct {
-	Key          string   `json:"key"`
-	Origin       string   `json:"origin"`
-	Basename     string   `json:"basename"`
-	Dir          string   `json:"dir"`
-	UpstreamKeys []string `json:"upstreamKeys,omitempty"`
-	Platform     string   `json:"platform,omitempty"`
+	Key                 string   `json:"key"`
+	Origin              string   `json:"origin"`
+	Basename            string   `json:"basename"`
+	Dir                 string   `json:"dir"`
+	UpstreamKeys        []string `json:"upstreamKeys,omitempty"`
+	AssociatedDirectory string   `json:"associatedDirectory,omitempty"`
+	Platform            string   `json:"platform,omitempty"`
 
 	// Aggregate stats carried across the wire so the hub's project list
 	// can show real counts for remote projects (not just identities).

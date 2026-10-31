@@ -9,7 +9,9 @@ import (
 // conversation message or session run. Providers cannot choose these values.
 type Config struct {
 	Project string
-	Values  map[string]json.RawMessage
+	// AssociatedProject is an owner-resolved display target, never an execution path.
+	AssociatedProject string
+	Values            map[string]json.RawMessage
 }
 
 // unaryCall authorizes pluginID with allowed, sends payload as the call built
