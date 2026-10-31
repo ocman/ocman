@@ -37,6 +37,7 @@ type SessionBroker struct {
 	ResolveProject   func(context.Context, string) (string, error)
 	ResolveWorkspace func(context.Context, string, string) (string, error)
 	Continue         func(context.Context, string, SessionSendParams, string) (string, error)
+	StopTools        func(context.Context, string, string) error
 	authorize        SessionAuthorization
 	start            SessionStart
 	call             ActionCall
@@ -82,14 +83,17 @@ func (b *SessionBroker) Run(ctx context.Context, pluginID string, call Call) (Se
 	if call.Method == SessionSendMethod {
 		return b.send(ctx, pluginID, call)
 	}
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > AssociatedSessionCapability.Version.Minor || call.Method != SessionRunMethod {
+	if call.Method == SessionStopMethod {
+		return b.stopTools(ctx, pluginID, call)
+	}
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor > ToolSessionCapability.Version.Minor || call.Method != SessionRunMethod {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	if !validText(call.OperationID) {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	params, err := DecodeSessionRunParams(call.Params)
-	if err != nil || params.Archived && call.Version.Minor < ArchivedSessionCapability.Version.Minor || params.ReadOnly && call.Version.Minor < ReadOnlySessionCapability.Version.Minor || params.AssociatedProjectID != "" && call.Version.Minor < AssociatedSessionCapability.Version.Minor {
+	if err != nil || params.Tools != nil && call.Version.Minor < 7 || params.Archived && call.Version.Minor < ArchivedSessionCapability.Version.Minor || params.ReadOnly && call.Version.Minor < ReadOnlySessionCapability.Version.Minor || params.AssociatedProjectID != "" && call.Version.Minor < AssociatedSessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorInvalidArgument}
 	}
 	ctx, cancel := context.WithTimeout(ctx, SessionRunTimeout)
@@ -157,7 +161,7 @@ func (b *SessionBroker) Completed(ctx context.Context, pluginID, operationID str
 		version := SessionCapability.Version
 		for _, c := range d.Capabilities {
 			if c.Name == "session" && c.Version.Major == 1 {
-				version.Minor = min(c.Version.Minor, AssociatedSessionCapability.Version.Minor)
+				version.Minor = min(c.Version.Minor, ToolSessionCapability.Version.Minor)
 			}
 		}
 		return Call{

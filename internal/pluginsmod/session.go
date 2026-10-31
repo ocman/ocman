@@ -60,6 +60,7 @@ func (m *Module) buildSessions() {
 	m.sessionBroker.ResolveProject = m.deps.ProjectDirectory
 	m.sessionBroker.ResolveWorkspace = m.pluginModelWorkspace
 	m.sessionBroker.Continue = m.sendSession
+	m.sessionBroker.StopTools = m.stopSessionTools
 	m.sessionJobs = worker.NewKeyed(m.runSessionJob, func(j sessionJob) string { return j.pluginID })
 	m.sessionDeliveries = worker.NewKeyed(func(c PluginSessionCompletion) {
 		module.RunWithRecover("plugin-session-delivery", func() { m.DeliverSessionCompletion(c) })
@@ -167,6 +168,9 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	if params.NoTools {
 		rules = []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "deny"}}
 	}
+	if params.Tools != nil {
+		rules = toolSessionRules()
+	}
 	if params.ReadOnly {
 		rules, err = sourceSessionRules(ctx, dir)
 		if err != nil {
@@ -216,6 +220,18 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 		log.WithError(err).WithFields(log.Fields{"plugin_id": pluginID, "session_id": created.ID}).
 			Error("linking plugin session; its completed turns will not be delivered")
 		return "", err
+	}
+	if params.Tools != nil {
+		prompt, err := m.openSessionTools(pluginID, platformID, created.ID, params.Tools)
+		if err != nil {
+			return "", err
+		}
+		params.Prompt += prompt
+		defer func() {
+			if runErr != nil {
+				_ = m.stopSessionTools(context.WithoutCancel(ctx), pluginID, params.Tools.Context)
+			}
+		}()
 	}
 	if err := m.deps.Enqueue(ctx, platformID, false, platforms.SendMessageRequest{
 		SessionID: created.ID, Message: params.Prompt, Agent: params.Agent, Model: params.Model,

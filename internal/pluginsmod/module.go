@@ -116,6 +116,7 @@ type Module struct {
 	sessionJobs       *worker.Worker[sessionJob]
 	sessionDeliveries *worker.Worker[PluginSessionCompletion]
 	sessionOutbox     *outbox[PluginSessionCompletion]
+	sessionTools      sync.Map // random bearer token -> *sessionToolBinding; never restored after restart
 }
 
 var (

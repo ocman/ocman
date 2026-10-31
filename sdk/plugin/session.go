@@ -16,6 +16,9 @@ type (
 	SessionRunResult  = protocol.SessionRunResult
 	SessionCompleted  = protocol.SessionCompleted
 	SessionUsage      = protocol.SessionUsage
+	SessionTools      = protocol.SessionTools
+	SessionTool       = protocol.SessionTool
+	SessionToolCall   = protocol.SessionToolCall
 )
 
 const (
@@ -25,6 +28,8 @@ const (
 	SessionSourceGrant     = protocol.SessionSourceGrant
 	SessionAssociateGrant  = protocol.SessionAssociateGrant
 	SessionSendGrant       = protocol.SessionSendGrant
+	SessionToolsGrant      = protocol.SessionToolsGrant
+	SessionToolMethod      = protocol.SessionToolMethod
 	SessionSendMethod      = protocol.SessionSendMethod
 	SessionProjectSetting  = protocol.SessionProjectSetting
 	SessionRunMethod       = protocol.SessionRunMethod
@@ -40,6 +45,8 @@ var ArchivedSessionCapability = protocol.ArchivedSessionCapability
 var ReadOnlySessionCapability = protocol.ReadOnlySessionCapability
 var FollowupSessionCapability = protocol.FollowupSessionCapability
 var AssociatedSessionCapability = protocol.AssociatedSessionCapability
+
+var ToolSessionCapability = protocol.ToolSessionCapability
 
 // NewSessionRun builds a validated plugin to host call asking the host to
 // start a session in the plugin's one approved project. Validating here keeps
@@ -70,6 +77,9 @@ func NewSessionRun(operationID string, params SessionRunParams) (Call, error) {
 	}
 	if params.AssociatedProjectID != "" {
 		call.Version = AssociatedSessionCapability.Version
+	}
+	if params.Tools != nil {
+		call.Version = ToolSessionCapability.Version
 	}
 	if err := (Envelope{Type: TypeCall, Call: &call}).Validate(); err != nil {
 		return Call{}, err

@@ -211,13 +211,17 @@ flowchart LR
     Native -->|owner-local ingestion| Ocman
     Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
-    Ocman <-->|supervised NDJSON,<br/>UI bundles and scoped sessions| Plugins[Trusted native plugins]
+    Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
     Ocman <-->|authenticated gRPC| Remotes[Remote ocman instances]
     Ocman -->|encrypted shares + webhook poll| Relay[ocman-relay]
     Ocman -.->|optional OTLP| Otel[Telemetry collector]
 ```
 
+- **Plugin-owned session tools.** The session broker pins deny-all permissions
+  with one MCP dispatcher exception. Short-lived bindings route bounded tool
+  calls back to the owning plugin, rechecking grants before dispatch. Plugin
+  code owns validation and operation semantics. See [session tools](../features/session-tools.md).
 - **Prepared source sessions.** Plugins may prepare source under their private
   model workspace and request a read-only session with the separately approved
   `session.source` grant. The owner resolves a contained subpath and pins exact

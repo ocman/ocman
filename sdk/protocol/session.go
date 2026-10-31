@@ -66,15 +66,16 @@ type SessionRunParams struct {
 	ProjectID string `json:"projectId,omitempty"`
 	// AssociatedProjectID groups a private workspace directory under an owner-local
 	// project without changing the execution directory or permissions. Requires 1.6.
-	AssociatedProjectID string `json:"associatedProjectId,omitempty"`
-	WorkspaceID         string `json:"workspaceId,omitempty"`
-	NoTools             bool   `json:"noTools,omitempty"`
-	ReadOnly            bool   `json:"readOnly,omitempty"`
-	Prompt              string `json:"prompt"`
-	Agent               string `json:"agent,omitempty"`
-	Model               string `json:"model,omitempty"`
-	PermissionProfile   string `json:"permissionProfile,omitempty"`
-	Subpath             string `json:"subpath,omitempty"`
+	AssociatedProjectID string        `json:"associatedProjectId,omitempty"`
+	WorkspaceID         string        `json:"workspaceId,omitempty"`
+	NoTools             bool          `json:"noTools,omitempty"`
+	Tools               *SessionTools `json:"tools,omitempty"`
+	ReadOnly            bool          `json:"readOnly,omitempty"`
+	Prompt              string        `json:"prompt"`
+	Agent               string        `json:"agent,omitempty"`
+	Model               string        `json:"model,omitempty"`
+	PermissionProfile   string        `json:"permissionProfile,omitempty"`
+	Subpath             string        `json:"subpath,omitempty"`
 	// Archived creates the session already archived, for background runs
 	// that should stay out of the sidebar.
 	Archived bool `json:"archived,omitempty"`
@@ -98,13 +99,16 @@ type SessionCompleted struct {
 // allows newlines and tabs, unlike validText, because prompts are multi-line;
 // other control characters are rejected, as in conversation.v1.
 func (p SessionRunParams) Validate() error {
+	if p.Tools != nil && (p.Tools.Validate() != nil || p.WorkspaceID == "" || p.NoTools || p.ReadOnly || p.Subpath != "" || p.Agent != "" || p.PermissionProfile != "") {
+		return ErrInvalidMessage
+	}
 	if p.AssociatedProjectID != "" && (p.WorkspaceID == "" || !actionID.MatchString(p.AssociatedProjectID)) {
 		return ErrInvalidMessage
 	}
 	if p.ReadOnly && (p.WorkspaceID == "" || p.NoTools || p.Subpath == "" || p.PermissionProfile != "" || p.Agent != "") {
 		return ErrInvalidMessage
 	}
-	if p.WorkspaceID != "" && (!actionID.MatchString(p.WorkspaceID) || p.ProjectID != "" || (!p.ReadOnly && (!p.NoTools || p.Subpath != ""))) {
+	if p.WorkspaceID != "" && (!actionID.MatchString(p.WorkspaceID) || p.ProjectID != "" || (!p.ReadOnly && p.Tools == nil && (!p.NoTools || p.Subpath != ""))) {
 		return ErrInvalidMessage
 	}
 	if p.ProjectID != "" && !actionID.MatchString(p.ProjectID) {
@@ -171,6 +175,9 @@ func (d Description) validateSession() error {
 		return ErrInvalidMessage
 	}
 	if !slices.Contains(d.RequestedGrants, SessionRunGrant) {
+		return ErrInvalidMessage
+	}
+	if slices.Contains(d.RequestedGrants, SessionToolsGrant) && (!slices.Contains(d.RequestedGrants, SessionPluginGrant) || !slices.ContainsFunc(d.Capabilities, func(c Capability) bool { return c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 7 })) {
 		return ErrInvalidMessage
 	}
 	if slices.Contains(d.RequestedGrants, SessionAssociateGrant) &&

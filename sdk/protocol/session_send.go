@@ -28,7 +28,7 @@ func (p SessionSendParams) Validate() error {
 }
 
 func (b *SessionBroker) send(ctx context.Context, pluginID string, call Call) (SessionRunResult, error) {
-	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor < 5 || call.Version.Minor > AssociatedSessionCapability.Version.Minor {
+	if call.Capability != SessionCapability.Name || call.Version.Major != 1 || call.Version.Minor < 5 || call.Version.Minor > ToolSessionCapability.Version.Minor {
 		return SessionRunResult{}, &WireError{Category: ErrorNotFound}
 	}
 	var params SessionSendParams

@@ -2,10 +2,25 @@ package plugin
 
 import "encoding/json"
 
+func sessionStopVersion(call Call, stream *Stream) (Call, bool) {
+	n, ready := stream.Negotiation()
+	if ready && call.Version == ToolSessionCapability.Version {
+		for _, c := range n.Capabilities {
+			if c.Name == "session" && c.Version.Major == 1 && c.Version.Minor >= 7 {
+				return call, false
+			}
+		}
+	}
+	return call, true
+}
+
 // sessionRequestVersion uses the exact negotiated wire version, regardless of
 // a constructor's minimum version. Extension fields cannot be downgraded onto
 // session 1.0. Reject those locally without tearing down other valid requests.
 func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
+	if call.Capability == SessionCapability.Name && call.Method == "stop" {
+		return sessionStopVersion(call, stream)
+	}
 	if call.Capability == SessionCapability.Name && call.Method == SessionSendMethod {
 		var params SessionSendParams
 		n, ready := stream.Negotiation()
@@ -22,7 +37,7 @@ func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 		}
 		return call, true
 	}
-	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > AssociatedSessionCapability.Version.Minor {
+	if call.Capability != SessionCapability.Name || call.Method != SessionRunMethod || call.Version.Major != 1 || call.Version.Minor > ToolSessionCapability.Version.Minor {
 		return call, false
 	}
 	n, ready := stream.Negotiation()
@@ -50,6 +65,9 @@ func sessionRequestVersion(call Call, stream *Stream) (Call, bool) {
 			return call, true
 		}
 		if capability.Version.Minor < 6 && params.AssociatedProjectID != "" {
+			return call, true
+		}
+		if capability.Version.Minor < 7 && params.Tools != nil {
 			return call, true
 		}
 		call.Version = capability.Version

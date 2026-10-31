@@ -625,6 +625,17 @@ For example, document indexing and dependency inventory workflows can request
 clarification without losing their inspected context. The host does not parse
 the result or enforce a domain-specific response format.
 
+### Plugin-owned session tools, minor 7
+
+Session 1.7 adds `tools` on private workspace runs and the `session.tools`
+grant. Its catalog, opaque context, call/time limits and optional observed
+dollar cap are defined by `SessionTools`. The host denies all native tools
+and permits only the generic `plugin_session_tool` MCP dispatcher. Each call
+rechecks grants and forwards a bounded `tool` callback to the owning plugin.
+The plugin can revoke its context through `stop`; tokens expire on completion
+and are not restored after restart. See [the full contract and independent
+examples](../../docs/features/session-tools.md).
+
 ### Read-only prepared source, minor 4
 
 `session` 1.4 adds `readOnly: true` for a private workspace session. The plugin

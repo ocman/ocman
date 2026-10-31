@@ -73,6 +73,7 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 	if detail.Session == nil || !conversationReplyReady(detail.Session.Status) {
 		return
 	}
+	m.revokeSessionTools(platformID, sessionID)
 	if text == "" {
 		return
 	}

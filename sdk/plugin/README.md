@@ -146,6 +146,10 @@ references, with an empty string selecting the default. Older hosts reject the
 new field rather than rendering it as free text.
 
 Independent plugin workspaces use collection item IDs, not project identities.
+For bounded plugin-owned tools in a private session, see
+[plugin session tools](../../docs/features/session-tools.md). Declare
+`ToolSessionCapability` and obtain `SessionToolsGrant`; the host denies native
+tools and routes only the supplied catalog back through `SessionToolHandler`.
 Workspace actions declare placement `plugin` with the `context.workspace` grant.
 Model-only sessions use `PluginSessionCapability`, `SessionPluginGrant`, and
 `SessionRunParams{WorkspaceID: id, NoTools: true}`. The host chooses a private
