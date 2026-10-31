@@ -592,6 +592,13 @@ New session targets use the associated checkout, never the temporary copy.
 
 A workspace directory can belong to only one project. Reusing it with another
 association returns `conflict`; use a fresh subpath for each project's source.
+The host reserves attribution before creation and commits it once the session
+exists, before enqueueing the prompt. Confirmed creation failures release only
+their own reservation; failures after creation retain the association. Pending
+reservations are invisible in project inventories and fence concurrent creation.
+Uncertain native outcomes, cancelled creation and claims left by a crash remain
+unavailable rather than permitting another project to claim a directory that
+may already contain a session.
 Omit the field for multi-project or project-independent runs. `projectId` still
 selects an execution directory and remains incompatible with `workspaceId`.
 The Go SDK refuses to downgrade association requests to older negotiated minors.

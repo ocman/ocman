@@ -2471,12 +2471,13 @@ sequenceDiagram
     B->>R: Session 1.1 projectId, resolve owner-local root after session.project grant
     opt Session 1.6 workspace attribution
         B->>R: Resolve associatedProjectId on the same owner after session.associate grant
-        B->>D: Persist source-directory to project-directory display association
     end
     B->>B: Reject traversal and resolved symlink escape
     B->>D: Reserve plugin and operation ID, or return stored result
     B->>D: Resolve named profile rules, or pin all-tools-denied for noTools
+    B->>D: Reserve provisional directory attribution, if requested
     B->>S: CreateConfigured with pinned rules
+    B->>D: Commit attribution after creation, release own claim on confirmed failure
     B->>D: Link session to plugin
     B->>S: Enqueue prompt with exact agent/model
     B->>D: Persist run result
@@ -2505,7 +2506,11 @@ sequenceDiagram
 - Session 1.6 `associatedProjectId` resolves through that same owner-local catalog
   under `session.associate`, independently of the private execution directory.
   `pluginsmod/session_projects.go` owns the append-only schema migration and
-  immutable directory association. The owner overlays it during project-index
+  immutable directory association. Provisional operation-qualified claims fence
+  concurrent creation and stay out of inventories. Confirmed pre-creation errors
+  release only that claim; creation commits attribution independently of caller
+  cancellation, and later delivery failures cannot erase it. Uncertain native
+  outcomes and abandoned claims remain fenced. The owner overlays committed attribution during project-index
   refresh, including zero-stat targets without history. Remote inventories carry
   the association; shared upstream groups and browser project identities retain
   source statistics but select real project directories for display and launch.

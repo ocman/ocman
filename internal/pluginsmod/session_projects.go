@@ -3,10 +3,8 @@ package pluginsmod
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 
 	"github.com/ocman/ocman/internal/db"
-	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 func migratePluginSessionProjects(tx *sql.Tx) error {
@@ -16,30 +14,8 @@ func migratePluginSessionProjects(tx *sql.Tx) error {
 	return err
 }
 
-// A prepared directory has one durable display owner, even after its files vanish.
-// Reusing it for a different project would misattribute earlier sessions.
-func (d *Store) associateSessionProject(ctx context.Context, pluginID, directory, project string) error {
-	if !filepath.IsAbs(directory) || !filepath.IsAbs(project) || directory == project {
-		return plugins.ErrInvalidMessage
-	}
-	result, err := d.db.ExecContext(ctx, `INSERT INTO plugin_session_project (directory,plugin_id,project_directory)
-		VALUES (?,?,?) ON CONFLICT(directory) DO UPDATE SET project_directory=excluded.project_directory
-		WHERE plugin_session_project.plugin_id=excluded.plugin_id AND plugin_session_project.project_directory=excluded.project_directory`, directory, pluginID, project)
-	if err != nil {
-		return err
-	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return &plugins.WireError{Category: plugins.ErrorConflict}
-	}
-	return nil
-}
-
 func (d *Store) sessionProjectAssociations(ctx context.Context) (map[string]string, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT directory,project_directory FROM plugin_session_project`)
+	rows, err := d.db.QueryContext(ctx, `SELECT directory,project_directory FROM plugin_session_project WHERE committed=1`)
 	if err != nil {
 		return nil, err
 	}

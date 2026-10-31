@@ -24,7 +24,7 @@ var Schema = state.ModuleSchema{
 			return err
 		}
 		return migratePluginSession(tx)
-	}, migratePluginSessionRuns, migratePluginSessionUsage, migratePluginSessionProjects},
+	}, migratePluginSessionRuns, migratePluginSessionUsage, migratePluginSessionProjects, migratePluginSessionProjectReservations},
 }
 
 // sessionDoneRetention keeps delivered session receipts as long as the

@@ -153,11 +153,6 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	if err := m.plugins.PluginSessionBacklogFull(ctx, pluginID); err != nil {
 		return "", plugins.ErrUnavailable
 	}
-	if config.AssociatedProject != "" {
-		if err := m.plugins.associateSessionProject(ctx, pluginID, dir, filepath.Clean(config.AssociatedProject)); err != nil {
-			return "", err
-		}
-	}
 	var rules []platforms.PermissionRule
 	if params.PermissionProfile != "" {
 		resolved, err := m.plugins.ResolvePermissionProfile(ctx, params.PermissionProfile)
@@ -187,6 +182,21 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 	if err != nil {
 		return "", err
 	}
+	var association *sessionProjectReservation
+	if config.AssociatedProject != "" {
+		association, err = m.plugins.reserveSessionProject(ctx, pluginID, operationID, dir, filepath.Clean(config.AssociatedProject))
+		if err != nil {
+			return "", err
+		}
+	}
+	creationMayExist := false
+	defer func() {
+		if !creationMayExist {
+			if err := association.release(ctx); err != nil {
+				log.WithError(err).Warn("releasing plugin project association")
+			}
+		}
+	}()
 	created, err := m.deps.Sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{
 		Directory: dir, Title: "plugin:" + pluginID + ":" + operationID, Port: ensured.Port(),
 		Creation: &platforms.CreationIdentity{
@@ -195,6 +205,11 @@ func (m *Module) startSessionRun(ctx context.Context, pluginID string, config pl
 		},
 	}, rules)
 	if err != nil {
+		creationMayExist = uncertainSessionCreation(err)
+		return "", err
+	}
+	creationMayExist = true
+	if err := association.commit(ctx); err != nil {
 		return "", err
 	}
 	if err := m.plugins.LinkPluginSession(ctx, platformID, created.ID, pluginID); err != nil {

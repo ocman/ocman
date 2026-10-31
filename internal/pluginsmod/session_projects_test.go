@@ -15,6 +15,14 @@ import (
 	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
+func bindTestProject(ctx context.Context, store *Store, plugin, directory, project string) error {
+	reservation, err := store.reserveSessionProject(ctx, plugin, "seed", directory, project)
+	if err != nil {
+		return err
+	}
+	return reservation.commit(ctx)
+}
+
 func TestSessionProjectAssociationPersistsAndCannotBeReassigned(t *testing.T) {
 	path := statetest.Path(t)
 	database, err := state.Open(path, Schema)
@@ -25,7 +33,7 @@ func TestSessionProjectAssociationPersistsAndCannotBeReassigned(t *testing.T) {
 	store := NewStore(database)
 	ctx := t.Context()
 	for range 2 {
-		if err := store.associateSessionProject(ctx, "reader", "/private/source", "/projects/platform-service"); err != nil {
+		if err := bindTestProject(ctx, store, "reader", "/private/source", "/projects/platform-service"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -36,7 +44,7 @@ func TestSessionProjectAssociationPersistsAndCannotBeReassigned(t *testing.T) {
 		{"reader", "/private/source", "relative"},
 		{"reader", "/same", "/same"},
 	} {
-		if err := store.associateSessionProject(ctx, tc.plugin, tc.dir, tc.target); err == nil {
+		if err := bindTestProject(ctx, store, tc.plugin, tc.dir, tc.target); err == nil {
 			t.Fatalf("unsafe association accepted: %+v", tc)
 		}
 	}
@@ -56,14 +64,14 @@ func TestSessionProjectAssociationPersistsAndCannotBeReassigned(t *testing.T) {
 	if _, err := store.sessionProjectAssociations(ctx); err == nil {
 		t.Fatal("association read failure hidden")
 	}
-	if err := store.associateSessionProject(ctx, "reader", "/private/source", "/projects/platform-service"); err == nil {
+	if err := bindTestProject(ctx, store, "reader", "/private/source", "/projects/platform-service"); err == nil {
 		t.Fatal("association write failure hidden")
 	}
 }
 
 func TestAssociateProjectsPreservesSourceStatsAndIncludesMissingTarget(t *testing.T) {
 	store := openPluginStore(t)
-	if err := store.associateSessionProject(t.Context(), "reader", "/private/source", "/projects/platform-service"); err != nil {
+	if err := bindTestProject(t.Context(), store, "reader", "/private/source", "/projects/platform-service"); err != nil {
 		t.Fatal(err)
 	}
 	m := &Module{plugins: store}
