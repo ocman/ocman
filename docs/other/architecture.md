@@ -161,6 +161,7 @@ flowchart LR
     Launch[projectforge launches] --> Workflow
     Setup --> Credentials[(Private credential overrides)]
     Workflow --> Links[(PR links and watch snapshots)]
+    Links -->|unfinished task counts| UI
     Workflow -->|owner check; checkout upstream when needed| Host[Owning Host]
     Workflow -->|cached metadata and checks; selective feedback| Forge[GitHub or Forgejo API]
     Setup --> Forge
@@ -193,6 +194,11 @@ flowchart LR
   running an agent polling loop. Stop/unlink serializes with delivery. Merging
   and session archival remain explicit user decisions. See
   [Pull requests](../features/pull-requests.md).
+- Session lists add durable watches to native background-task counts, keyed by
+  the full platform and session identity. Active watches and pending terminal
+  notices keep the background indicator visible and delay completion-based
+  archive resurfacing without holding foreground execution busy. Stop, unlink,
+  or terminal notice delivery removes that watch's contribution.
 
 Everything external that the ocman process touches.
 

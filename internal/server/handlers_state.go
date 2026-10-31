@@ -175,6 +175,9 @@ func (s *Server) applySessionStateReadOnly(ctx context.Context, sessions []db.Se
 }
 
 func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.Session, write bool) error {
+	if err := s.overlayPRWatchTasks(ctx, sessions); err != nil {
+		return err
+	}
 	snoozed, err := s.stateDB.SnoozedSessions(ctx)
 	if err != nil {
 		return err
@@ -319,6 +322,9 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 // applyNotifySessionState overlays seen and archive state without the full
 // list's per-session unread aggregates, pin, routine or Factory lookups.
 func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Session) error {
+	if err := s.overlayPRWatchTasks(ctx, sessions); err != nil {
+		return err
+	}
 	mode, err := s.archiveResurfaceMode(ctx)
 	if err != nil {
 		return err

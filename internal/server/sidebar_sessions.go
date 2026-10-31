@@ -177,6 +177,9 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			return nil, err
 		}
 	}
+	if err := s.overlayPRWatchTasks(ctx, all); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(all, func(i, j int) bool {
 		if all[i].TimeUpdated == all[j].TimeUpdated {
 			return all[i].ID < all[j].ID

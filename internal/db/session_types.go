@@ -141,6 +141,8 @@ type Session struct {
 	LastErrorMessage string `json:"-"`
 	LastErrorAt      int64  `json:"-"`
 	SourceChild      bool   `json:"-"` // native hierarchy, distinct from application child links
+	// Non-wire contribution tracked for idempotent hub overlays.
+	ApplicationBackgroundTaskCount int `json:"-"`
 }
 
 // SessionNotice explains transient conditions without exposing platform details.
