@@ -61,13 +61,14 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		req.MustCreateBranch = true
 	}
 
-	baseRef := req.BaseRef
-	if req.NewBranch && baseRef == "" {
-		baseRef, err = git.ResolveBaseRef(ctx, repoRoot)
+	// Check eligibility before launching a runtime, but leave default selection
+	// to worktree creation so it can discover and fetch the remote default.
+	if req.NewBranch && req.BaseRef == "" {
+		base, err := git.ResolveBaseRef(ctx, repoRoot)
 		if err != nil {
 			return nil, err
 		}
-		if baseRef == "" {
+		if base == "" {
 			return nil, fmt.Errorf("worktree: repository has no usable commit; use the current checkout or create an initial commit")
 		}
 	}
@@ -88,7 +89,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	hostsvc.ReportProgress(ctx, hostsvc.StepWorktree, hostsvc.StepActive)
 	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
 		RepoRoot: repoRoot, Branch: req.Branch, NewBranch: req.NewBranch,
-		BaseRef: baseRef, MustCreateBranch: req.MustCreateBranch,
+		BaseRef: req.BaseRef, MustCreateBranch: req.MustCreateBranch,
 	})
 	hostsvc.FinishStep(ctx, hostsvc.StepWorktree, err)
 	ensured := <-ensuredCh

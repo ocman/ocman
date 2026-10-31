@@ -213,10 +213,15 @@ func CreateWorktree(ctx context.Context, req CreateWorktreeRequest) (*CreateWork
 
 	args := []string{"-C", req.RepoRoot, "worktree", "add"}
 	if newBranch {
-		args = append(args, "-b", req.Branch, "--", target)
-		if req.BaseRef != "" {
-			args = append(args, req.BaseRef)
+		base, err := freshWorktreeBase(ctx, req.RepoRoot, req.BaseRef)
+		if err != nil {
+			return nil, err
 		}
+		if base == "" {
+			return nil, fmt.Errorf("worktree: repository has no usable commit; use the current checkout or create an initial commit")
+		}
+		args = append(args, "-b", req.Branch, "--", target)
+		args = append(args, base)
 	} else {
 		args = append(args, "--", target, req.Branch)
 	}

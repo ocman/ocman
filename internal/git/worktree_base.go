@@ -10,8 +10,9 @@ import (
 	"github.com/ocman/ocman/internal/gitexec"
 )
 
-// ResolveBaseRef returns a verified base for new branches: the local default
-// branch, its remote-tracking ref, the current branch, then detached HEAD.
+// ResolveBaseRef returns a verified base for new branches: the remote default,
+// its local branch, the current branch, then detached HEAD. This read-only probe
+// does not fetch; creation refreshes remote bases before using them.
 // Empty without error means no usable commit is available.
 // Named refs are fully qualified so branch/tag collisions cannot change identity.
 func ResolveBaseRef(ctx context.Context, repoRoot string) (string, error) {
@@ -20,7 +21,7 @@ func ResolveBaseRef(ctx context.Context, repoRoot string) (string, error) {
 		return "", err
 	}
 	if remote != "" {
-		for _, ref := range []string{"refs/heads/" + strings.TrimPrefix(remote, "refs/remotes/origin/"), remote} {
+		for _, ref := range []string{remote, "refs/heads/" + strings.TrimPrefix(remote, "refs/remotes/origin/")} {
 			if valid, err := verifyBaseCommit(ctx, repoRoot, ref); err != nil || valid {
 				if err != nil {
 					return "", err

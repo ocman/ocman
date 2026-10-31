@@ -13,12 +13,17 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   preparation; failures have a visible retry.
 - Worktree eligibility reads git info, the owner's worktrees and verified base
   ref. Linked worktrees, non-repositories and repositories without a usable
-  commit use the current checkout. Prefer a remote-tracking default when its
-  local branch is missing, then current branch or detached HEAD. Never assume
+  commit use the current checkout. Prefer the remote-tracking default, then its
+  local branch, current branch or detached HEAD. Never assume
   `main`. Fully qualify named refs. Git probe errors remain retryable errors,
   not missing commits. Factory requires a named delivery target, falling back
   from detached defaults to verified local `main`/`master` or explicit selection.
   Legacy recovery uses the same preparation.
+- New worktree branches discover and fetch the origin default at creation when
+  no base is selected. Explicit remote-tracking bases are fetched too. Fetch
+  failures block creation; explicit local refs/commits and existing branches or
+  worktrees are never updated automatically. Local-only repositories need no fetch.
+  Without origin, use the sole remote or require an explicit base if ambiguous.
 - Machine selection changes the route only. Each draft retains its `draftId`
   query parameter and `draftKey`. Prepared local conversations appear in the
   sidebar, first within their project in grouped view, before sessions exist.

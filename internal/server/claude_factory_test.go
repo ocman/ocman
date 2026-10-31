@@ -21,7 +21,8 @@ type claudeFactoryLauncher struct {
 }
 
 func (claudeFactoryLauncher) PrepareImplementationWorkspace(context.Context, string, string, string, string) (string, string, error) {
-	return "main", "", nil
+	// This fixture deliberately uses a local snapshot, not the fake forge URL.
+	return "main", "refs/heads/main", nil
 }
 
 // An Epic created with platform claudecode plans and dispatches its

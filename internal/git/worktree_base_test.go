@@ -18,7 +18,7 @@ func TestBaseResolutionErrors(t *testing.T) {
 		commands        [][]string
 	}{
 		{"symbolic ref", `[ "$3" = symbolic-ref ]`, nil},
-		{"local default", `[ "$7" = 'refs/heads/main^{commit}' ]`, [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}}},
+		{"local default", `[ "$7" = 'refs/heads/main^{commit}' ]`, [][]string{{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}}},
 		{"remote default", `[ "$7" = 'refs/remotes/origin/main^{commit}' ]`, [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"branch", "-m", "develop"}}},
 		{"current symbolic ref", `[ "$3" = symbolic-ref ] && [ "$5" = HEAD ]`, nil},
 		{"current commit", `[ "$7" = 'refs/heads/main^{commit}' ]`, nil},
@@ -65,7 +65,7 @@ func TestResolveBaseRefCreatesWorktree(t *testing.T) {
 	}{
 		{"remote default collides with local branch", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"branch", "-m", "origin/main"}}, "refs/remotes/origin/main"},
 		{"local branch collides with tag", [][]string{{"tag", "main"}}, "refs/heads/main"},
-		{"local default", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"checkout", "-b", "develop"}}, "refs/heads/main"},
+		{"remote preferred over local default", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"checkout", "-b", "develop"}}, "refs/remotes/origin/main"},
 		{"remote-only default", [][]string{{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}, {"branch", "-m", "develop"}}, "refs/remotes/origin/main"},
 		{"stale remote HEAD", [][]string{{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/missing"}, {"branch", "-m", "develop"}}, "refs/heads/develop"},
 		{"detached HEAD", [][]string{{"checkout", "--detach"}, {"branch", "-D", "main"}}, "HEAD"},
@@ -73,6 +73,9 @@ func TestResolveBaseRefCreatesWorktree(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := initTestRepo(t)
 			ctx := context.Background()
+			upstream := filepath.Join(t.TempDir(), "upstream.git")
+			gitRun(t, repo, "clone", "--bare", repo, upstream)
+			gitRun(t, repo, "remote", "add", "origin", upstream)
 			for _, args := range tc.commands {
 				if out, err := gitexec.Command(ctx, append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
 					t.Fatalf("setup %v: %v: %s", args, err, out)
