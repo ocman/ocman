@@ -410,9 +410,12 @@ func TestGetMetricsDashboard_DailyEstimatedCostByModel(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	now := time.Now()
-	dayOne := now.Add(-25 * time.Hour)
-	dayTwo := now.Add(-time.Hour)
+	today := time.Now()
+	// Reproduce the CI window where now-1h and the +1 minute message straddle midnight.
+	now := time.Date(today.Year(), today.Month(), today.Day(), 0, 59, 0, 0, time.Local)
+	// Keep each day's fixtures away from midnight, including the +1 minute message.
+	dayTwo := time.Date(now.Year(), now.Month(), now.Day()-1, 12, 0, 0, 0, now.Location())
+	dayOne := dayTwo.AddDate(0, 0, -1)
 	insertSession(t, db, "s1", "session", "/p", dayOne.UnixMilli(), dayTwo.UnixMilli())
 	insertMessage(t, db, "day-one", "s1", dayOne.UnixMilli(), map[string]interface{}{
 		"role": "assistant", "finish": "end_turn", "cost": 99.0,
@@ -431,7 +434,7 @@ func TestGetMetricsDashboard_DailyEstimatedCostByModel(t *testing.T) {
 	})
 
 	dash, err := storedFixture(t, db).GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
-		Days: 7, Since: now.Add(-48 * time.Hour).UnixMilli(),
+		Days: 7, Since: dayOne.Add(-time.Hour).UnixMilli(),
 		Pricing: stubPricing{inputRate: 0.01},
 	})
 	if err != nil {
