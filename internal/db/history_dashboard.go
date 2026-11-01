@@ -91,12 +91,10 @@ type durationPercentiles struct{ p50, p95 int64 }
 // dashboardWindow is every request group in one directory/time window plus
 // the calendar ranges they cover. It is independent of agent/model filters.
 type dashboardWindow struct {
-	groups  []dashboardGroup
-	ranges  []labelRange
-	agents  map[string]struct{}
-	models  map[string]struct{}
-	layout  string
-	sinceAt int64
+	groups []dashboardGroup
+	ranges []labelRange
+	agents map[string]struct{}
+	models map[string]struct{}
 }
 
 func dashboardLayout(days int) string {
@@ -165,7 +163,7 @@ func (d *DB) loadDashboardWindow(ctx context.Context, opts MetricsDashboardOptio
 		return nil, err
 	}
 	defer rows.Close()
-	w := &dashboardWindow{layout: layout, sinceAt: since, agents: map[string]struct{}{}, models: map[string]struct{}{}}
+	w := &dashboardWindow{agents: map[string]struct{}{}, models: map[string]struct{}{}}
 	hours := map[int64]bool{} // bucket -> clean
 	for rows.Next() {
 		var g dashboardGroup
