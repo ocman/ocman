@@ -6,7 +6,9 @@ import { postJSON } from './api.requests';
 // re-mints stale ones when it renders them.
 const FILE_URL = /^\/api\/file\/([^/?#]+)$/;
 const REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
-const refreshed = new Map<string, Promise<string>>();
+// Per stale URL: the in-flight or settled refresh, and its replacement once
+// known so the entry can be evicted when that replacement nears expiry too.
+const refreshed = new Map<string, { pending: Promise<string>; url?: string }>();
 
 /** Whether an origin-relative embedded-file URL must be re-minted before use:
  * tokens from before URLs expired, and ones expiring within a day. */
@@ -19,15 +21,23 @@ export function fileURLNeedsRefresh(href: string, now = Date.now()): boolean {
   return Number(parts[1]) * 1000 - now < REFRESH_MARGIN_MS;
 }
 
-/** Asks the server for a fresh URL for the same file; shared per page load. */
+/** Asks the server for a fresh URL for the same file. Concurrent callers share
+ * one request, and later ones reuse its result until that URL needs a refresh
+ * itself, so a long-lived dashboard never hands out an expired replacement. */
 export function refreshFileURL(href: string): Promise<string> {
-  let pending = refreshed.get(href);
-  if (!pending) {
-    pending = postJSON<{ url: string }>('/api/files/refresh', { url: href }).then(resp => resp.url);
-    refreshed.set(href, pending);
-    pending.catch(() => refreshed.delete(href));
-  }
-  return pending;
+  const cached = refreshed.get(href);
+  if (cached && !(cached.url && fileURLNeedsRefresh(cached.url))) return cached.pending;
+  const entry: { pending: Promise<string>; url?: string } = {
+    pending: postJSON<{ url: string }>('/api/files/refresh', { url: href }).then(resp => {
+      entry.url = resp.url;
+      return resp.url;
+    }),
+  };
+  refreshed.set(href, entry);
+  entry.pending.catch(() => {
+    if (refreshed.get(href) === entry) refreshed.delete(href);
+  });
+  return entry.pending;
 }
 
 /** Returns href, swapped for a re-minted URL once a stale one is refreshed.

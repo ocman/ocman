@@ -57,4 +57,25 @@ describe('useFreshFileURL', () => {
     await expect(refreshFileURL('/api/file/L3g.sig')).resolves.toBe('/api/file/L3g.99.new');
     expect(postJSON).toHaveBeenCalledTimes(2);
   });
+
+  it('re-mints again once the cached replacement itself nears expiry', async () => {
+    vi.useFakeTimers({ now });
+    try {
+      const stale = '/api/file/L3g.sig';
+      const first = `/api/file/L3g.${inDays(7)}.one`;
+      const second = `/api/file/L3g.${inDays(14)}.two`;
+      postJSON.mockResolvedValueOnce({ url: first }).mockResolvedValueOnce({ url: second });
+      await expect(refreshFileURL(stale)).resolves.toBe(first);
+      // Still fresh a day later: reused without asking the server again.
+      vi.setSystemTime(now + 86_400_000);
+      await expect(refreshFileURL(stale)).resolves.toBe(first);
+      expect(postJSON).toHaveBeenCalledTimes(1);
+      // A long-lived dashboard a week on must not reuse the expired one.
+      vi.setSystemTime(now + 7 * 86_400_000);
+      await expect(refreshFileURL(stale)).resolves.toBe(second);
+      expect(postJSON).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
