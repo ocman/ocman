@@ -96,8 +96,9 @@ func TestSpoolRequiresCompletedAckAndRetainsSnapshotGap(t *testing.T) {
 	// Closing the client body does not join server-side lease cleanup.
 	server.Close()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.prune(); err != nil {
+	err = s.prune()
+	s.mu.Unlock()
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(s.sessions["s"].records) != 0 {
@@ -108,9 +109,7 @@ func TestSpoolRequiresCompletedAckAndRetainsSnapshotGap(t *testing.T) {
 		t.Fatal(string(data), err)
 	}
 	// Sequence remains monotonic after truncation.
-	if err := s.publish(providerprotocol.Event{Type: "session.status", Properties: json.RawMessage(`{"sessionID":"s","status":{"type":"busy"}}`)}, nil); err != nil {
-		t.Fatal(err)
-	}
+	publish(t, s, "session.status", `{"sessionID":"s","status":{"type":"busy"}}`)
 	if s.seq != 4 {
 		t.Fatal(s.seq)
 	}

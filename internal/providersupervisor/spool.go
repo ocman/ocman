@@ -1,4 +1,33 @@
 // Package providersupervisor hosts a provider independently of the dashboard.
+//
+// # Sequencing and durability
+//
+// Every event gets a supervisor-wide sequence under Supervisor.mu. That mutex
+// guards in-memory state only: spool file IO runs without it, so HTTP routes,
+// snapshots, /events batching and other sessions never wait on an fsync.
+//
+// Publish is durable before it returns: it assigns a sequence, queues the
+// record on its session's spool and waits. Whichever waiting publisher finds
+// the spool idle writes every queued record of that session with one append
+// and one fsync (group commit), then hands the spool to the next writer. A
+// record is exposed (retained for /events, folded into session state) and its
+// apply callback runs only after its fsync succeeded, under Supervisor.mu and
+// in sequence order within its session, on the publishing goroutine. A failed
+// write is never exposed and never applied; Publish returns the error. The
+// queue is bounded by the number of blocked publishers.
+//
+// Sessions commit independently, so a later sequence in one session can be
+// exposed before an earlier one of another. Unscoped /events streams therefore
+// deliver only up to the watermark below which every sequence is settled; a
+// snapshot lease scopes its stream to the snapshot's session, whose records
+// are always exposed in order.
+//
+// BeginTurn, PublishIf and headless prompt replays are barriers: they wait
+// until no sequenced record is unsettled, hold off new publishers, check their
+// condition and then commit their events one by one, each durable before the
+// next is sequenced. A condition therefore observes every earlier apply, and a
+// turn accepted after it was checked cannot be followed by its events. While
+// a barrier commits, /drain and /seal-idle do not report idle.
 package providersupervisor
 
 import (
@@ -25,6 +54,28 @@ type record struct {
 	Completed bool                   `json:"completed,omitempty"`
 }
 
+type entryState int
+
+const (
+	entryQueued  entryState = iota // sequenced, waiting for a writer
+	entryWriting                   // in a group commit
+	entryDurable                   // synced, waiting for its turn to be exposed
+	entryFailed                    // the write failed; never exposed
+)
+
+// entry is a sequenced record on its way to its spool.
+type entry struct {
+	id     string
+	spool  *sessionSpool
+	meta   eventMeta
+	rec    record
+	data   []byte // encoded record, without Completed
+	replay bool
+	apply  func()
+	state  entryState
+	err    error
+}
+
 type sessionSpool struct {
 	records []record
 	ack     uint64
@@ -32,11 +83,19 @@ type sessionSpool struct {
 	limited bool
 	pending map[string]record
 	pruning bool // a rewrite of this spool is in flight
+
+	queue     []*entry   // sequenced, not yet exposed or discarded, in order
+	writing   bool       // a publisher is writing queued entries
+	last      uint64     // highest exposed sequence
+	admitting int        // BeginTurn calls not yet settled
+	cond      *sync.Cond // on Supervisor.mu: queue progress
+	io        sync.Mutex // spool file appends and prune's swap; taken before Supervisor.mu
 }
 
 type cursorLease struct {
 	cursor  uint64
 	expires time.Time // zero means an attached stream
+	session string    // a snapshot's session; empty streams every session
 }
 
 // Supervisor serializes snapshot reads with publishing. Provider state must be
@@ -52,6 +111,11 @@ type Supervisor struct {
 	idleDrainToken string
 	admitted       int
 	backend        Backend
+
+	unresolved map[uint64]struct{} // sequenced, neither exposed nor discarded
+	exclusive  bool                // a barrier is committing
+	barriers   int                 // barriers waiting to commit
+	gate       *sync.Cond          // on mu: unresolved shrank or a barrier finished
 }
 
 func New(dir string, backend Backend) (*Supervisor, error) {
@@ -61,7 +125,8 @@ func New(dir string, backend Backend) (*Supervisor, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	s := &Supervisor{dir: dir, backend: backend, sessions: make(map[string]*sessionSpool), leases: make(map[string]cursorLease), changed: make(chan struct{})}
+	s := &Supervisor{dir: dir, backend: backend, sessions: make(map[string]*sessionSpool), leases: make(map[string]cursorLease), changed: make(chan struct{}), unresolved: make(map[uint64]struct{})}
+	s.gate = sync.NewCond(&s.mu)
 	return s, nil
 }
 
@@ -71,13 +136,31 @@ func (s *Supervisor) Active(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.sessions[id]
-	return p != nil && (p.active || len(p.pending) != 0)
+	return p != nil && (p.active || len(p.pending) != 0 || p.admitting != 0)
+}
+
+// settled reports that no record is on its way to a spool.
+func (s *Supervisor) settled() bool {
+	return len(s.unresolved) == 0 && !s.exclusive
+}
+
+// watermark is the highest sequence below which every record is settled:
+// what an unscoped stream may deliver without skipping a later exposure.
+func (s *Supervisor) watermark() uint64 {
+	mark := s.seq
+	for seq := range s.unresolved {
+		if seq-1 < mark {
+			mark = seq - 1
+		}
+	}
+	return mark
 }
 
 func (s *Supervisor) session(id string) *sessionSpool {
 	p := s.sessions[id]
 	if p == nil {
 		p = &sessionSpool{pending: make(map[string]record)}
+		p.cond = sync.NewCond(&s.mu)
 		s.sessions[id] = p
 	}
 	return p
@@ -93,7 +176,14 @@ func (s *Supervisor) path(id string) string {
 func (s *Supervisor) Publish(event providerprotocol.Event, apply func()) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.publish(event, apply)
+	for s.exclusive || s.barriers != 0 {
+		s.gate.Wait()
+	}
+	e, err := s.sequence(event, apply, false)
+	if err != nil {
+		return err
+	}
+	return s.await(e)
 }
 
 // PublishIf publishes events in order only while ok holds, atomically with
@@ -102,15 +192,7 @@ func (s *Supervisor) Publish(event providerprotocol.Event, apply func()) error {
 func (s *Supervisor) PublishIf(ok func() bool, apply func(providerprotocol.Event), events ...providerprotocol.Event) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !ok() {
-		return false, nil
-	}
-	for _, event := range events {
-		if err := s.publish(event, func() { apply(event) }); err != nil {
-			return true, err
-		}
-	}
-	return true, nil
+	return s.barrier(ok, events, func(event providerprotocol.Event) func() { return func() { apply(event) } }, false)
 }
 
 // BeginTurn registers ownership before a backend schedules asynchronous work.
@@ -123,18 +205,53 @@ func (s *Supervisor) BeginTurn(id string, apply func()) error {
 	if s.draining {
 		return fmt.Errorf("supervisor is draining")
 	}
+	p := s.session(id)
+	p.admitting++
+	defer func() { p.admitting-- }()
 	props, _ := json.Marshal(map[string]any{"sessionID": id, "status": map[string]string{"type": "busy"}})
-	return s.publish(providerprotocol.Event{Type: "session.status", Properties: props}, apply)
+	// A drain that began while earlier records settled still refuses the turn.
+	ok, err := s.barrier(func() bool { return !s.draining }, []providerprotocol.Event{{Type: "session.status", Properties: props}}, func(providerprotocol.Event) func() { return apply }, false)
+	if err == nil && !ok {
+		err = fmt.Errorf("supervisor is draining")
+	}
+	return err
 }
 
-func (s *Supervisor) publish(event providerprotocol.Event, apply func()) error {
-	return s.append(event, apply, false)
+// barrier commits events in order once every earlier record has settled,
+// holding off new publishers, and only while ok (if any) holds. Called and
+// returns with s.mu held.
+func (s *Supervisor) barrier(ok func() bool, events []providerprotocol.Event, apply func(providerprotocol.Event) func(), replay bool) (bool, error) {
+	s.barriers++
+	for !s.settled() {
+		s.gate.Wait()
+	}
+	s.barriers--
+	s.exclusive = true
+	defer func() {
+		s.exclusive = false
+		s.gate.Broadcast()
+	}()
+	if ok != nil && !ok() {
+		return false, nil
+	}
+	for _, event := range events {
+		e, err := s.sequence(event, apply(event), replay)
+		if err != nil {
+			return true, err
+		}
+		if err := s.await(e); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
 }
 
-// append records event. A replay re-delivers a pending prompt under a new
-// sequence: it does not open a turn, so a prompt that outlived its turn's
-// idle edge cannot hold the session active once it is resolved.
-func (s *Supervisor) append(event providerprotocol.Event, apply func(), replay bool) error {
+// eventMeta is what the supervisor reads from an event's properties.
+type eventMeta struct {
+	session, id, requestID, status string
+}
+
+func parseEvent(event providerprotocol.Event) (eventMeta, error) {
 	var props struct {
 		SessionID string `json:"sessionID"`
 		ID        string `json:"id"`
@@ -150,61 +267,166 @@ func (s *Supervisor) append(event providerprotocol.Event, apply func(), replay b
 		} `json:"status"`
 	}
 	if err := json.Unmarshal(event.Properties, &props); err != nil {
-		return err
+		return eventMeta{}, err
 	}
-	id := props.SessionID
-	if id == "" {
-		id = props.Info.SessionID
+	meta := eventMeta{session: props.SessionID, id: props.ID, requestID: props.RequestID, status: props.Status.Type}
+	if meta.session == "" {
+		meta.session = props.Info.SessionID
 	}
-	if id == "" {
-		id = props.Part.SessionID
+	if meta.session == "" {
+		meta.session = props.Part.SessionID
 	}
-	if id == "" {
-		return fmt.Errorf("event missing sessionID")
+	if meta.session == "" {
+		return eventMeta{}, fmt.Errorf("event missing sessionID")
 	}
-	if (event.Type == "permission.asked" || event.Type == "question.asked") && props.ID == "" {
-		return fmt.Errorf("prompt missing id")
+	if (event.Type == "permission.asked" || event.Type == "question.asked") && meta.id == "" {
+		return eventMeta{}, fmt.Errorf("prompt missing id")
+	}
+	return meta, nil
+}
+
+// sequence validates event, assigns its sequence and queues it on its spool.
+// A replay re-delivers a pending prompt under a new sequence: it does not open
+// a turn, so a prompt that outlived its turn's idle edge cannot hold the
+// session active once it is resolved.
+func (s *Supervisor) sequence(event providerprotocol.Event, apply func(), replay bool) (*entry, error) {
+	meta, err := parseEvent(event)
+	if err != nil {
+		return nil, err
 	}
 	if s.seq == ^uint64(0) {
-		return fmt.Errorf("event sequence exhausted")
+		return nil, fmt.Errorf("event sequence exhausted")
 	}
-	p := s.session(id)
-	rec := record{Sequence: s.seq + 1, Event: event, Completed: event.Type == "session.idle" && !p.limited}
+	// Own the payload; callers often reuse a stream-json read buffer.
+	event.Properties = append(json.RawMessage(nil), event.Properties...)
+	rec := record{Sequence: s.seq + 1, Event: event}
 	data, err := json.Marshal(rec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(data) > providerprotocol.MaxEventBytes-128 {
-		return fmt.Errorf("event exceeds size limit")
+		return nil, fmt.Errorf("event exceeds size limit")
 	}
-	f, err := os.OpenFile(s.path(id), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	s.seq = rec.Sequence
+	p := s.session(meta.session)
+	e := &entry{id: meta.session, spool: p, meta: meta, rec: rec, data: data, replay: replay, apply: apply}
+	p.queue = append(p.queue, e)
+	s.unresolved[rec.Sequence] = struct{}{}
+	return e, nil
+}
+
+// syncSpool makes an append durable; tests substitute a slow disk.
+var syncSpool = (*os.File).Sync
+
+// await commits e, writing its spool's queue when no other publisher is, then
+// exposes it once every earlier record of its session is settled. Called and
+// returns with s.mu held.
+func (s *Supervisor) await(e *entry) error {
+	p := e.spool
+	for {
+		switch {
+		case e.state == entryQueued && !p.writing:
+			s.writeQueued(e.id, p)
+			continue
+		case (e.state == entryDurable || e.state == entryFailed) && p.queue[0] == e:
+			return s.settle(e)
+		}
+		p.cond.Wait()
+	}
+}
+
+// writeQueued group-commits every queued record of p: one append and one
+// fsync, without s.mu. Called and returns with s.mu held.
+func (s *Supervisor) writeQueued(id string, p *sessionSpool) {
+	p.writing = true
+	// Completed depends on the limited state before the record, which the
+	// durable records still awaiting exposure precede.
+	limited := p.limited
+	var batch []*entry
+	var data []byte
+	for _, e := range p.queue {
+		if e.state == entryFailed {
+			continue
+		}
+		completed := e.rec.Event.Type == "session.idle" && !limited
+		if e.rec.Event.Type == "session.status" {
+			limited = e.meta.status == "limited"
+		}
+		if e.state != entryQueued {
+			continue
+		}
+		e.state = entryWriting
+		e.rec.Completed = completed
+		line := e.data
+		if completed {
+			line, _ = json.Marshal(e.rec) // sequence marshalled it without the flag
+		}
+		batch = append(batch, e)
+		data = append(append(data, line...), '\n')
+	}
+	path := s.path(id)
+	s.mu.Unlock()
+	p.io.Lock()
+	err := appendSpool(path, data)
+	s.mu.Lock()
+	p.io.Unlock()
+	for _, e := range batch {
+		e.state, e.err = entryDurable, err
+		if err != nil {
+			e.state = entryFailed
+		}
+	}
+	p.writing = false
+	p.cond.Broadcast()
+}
+
+func appendSpool(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(append(data, '\n'))
+	_, err = f.Write(data)
 	if err == nil {
-		err = f.Sync()
+		err = syncSpool(f)
 	}
 	closeErr := f.Close()
 	if err != nil {
 		return err
 	}
-	if closeErr != nil {
-		return closeErr
+	return closeErr
+}
+
+// settle removes the head entry e of its spool's queue, exposing it unless its
+// write failed. Called with s.mu held.
+func (s *Supervisor) settle(e *entry) error {
+	p := e.spool
+	p.queue = p.queue[1:]
+	delete(s.unresolved, e.rec.Sequence)
+	defer func() {
+		p.cond.Broadcast()
+		s.gate.Broadcast()
+		close(s.changed)
+		s.changed = make(chan struct{})
+	}()
+	if e.state == entryFailed {
+		if s.seq == e.rec.Sequence {
+			s.seq-- // never exposed: reusing it is invisible
+		}
+		return e.err
 	}
-	s.seq = rec.Sequence
-	// Own the payload; callers often reuse a stream-json read buffer.
-	rec.Event.Properties = append(json.RawMessage(nil), event.Properties...)
+	rec := e.rec
 	p.records = append(p.records, rec)
-	switch event.Type {
+	p.last = rec.Sequence
+	switch rec.Event.Type {
 	case "permission.asked", "question.asked":
-		p.pending[props.ID] = rec
-		p.active = p.active || !replay
+		p.pending[e.meta.id] = rec
+		p.active = p.active || !e.replay
 	case "permission.replied", "question.replied", "question.rejected":
-		delete(p.pending, props.RequestID)
+		delete(p.pending, e.meta.requestID)
 	case "session.status":
-		p.limited = props.Status.Type == "limited"
-		if props.Status.Type == "busy" || props.Status.Type == "retry" || props.Status.Type == "waiting" || props.Status.Type == "limited" {
+		p.limited = e.meta.status == "limited"
+		switch e.meta.status {
+		case "busy", "retry", "waiting", "limited":
 			p.active = true
 		}
 	case "session.idle":
@@ -212,21 +434,23 @@ func (s *Supervisor) append(event providerprotocol.Event, apply func(), replay b
 			p.active = false
 		}
 	}
-	if apply != nil {
-		apply()
+	if e.apply != nil {
+		e.apply()
 	}
-	close(s.changed)
-	s.changed = make(chan struct{})
 	return nil
 }
 
 func (s *Supervisor) newLease(cursor uint64, expires time.Time) (string, error) {
+	return s.newScopedLease(cursor, expires, "")
+}
+
+func (s *Supervisor) newScopedLease(cursor uint64, expires time.Time, session string) (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
 	id := hex.EncodeToString(b[:])
-	s.leases[id] = cursorLease{cursor: cursor, expires: expires}
+	s.leases[id] = cursorLease{cursor: cursor, expires: expires, session: session}
 	if !expires.IsZero() {
 		time.AfterFunc(time.Until(expires), func() {
 			s.mu.Lock()
@@ -303,6 +527,9 @@ func pruneCut(p *sessionSpool, minimum uint64) int {
 // pruneTestHook runs while a spool is rewritten without s.mu.
 var pruneTestHook = func() {}
 
+// pruneSession rewrites p's spool without its prunable head. The bulk rewrite
+// runs without any lock; the swap holds p.io, so no append lands in the old
+// file after the records that follow the head were copied.
 func (s *Supervisor) pruneSession(id string, p *sessionSpool) error {
 	cut := pruneCut(p, s.floor())
 	if cut == 0 {
@@ -315,38 +542,54 @@ func (s *Supervisor) pruneSession(id string, p *sessionSpool) error {
 	defer func() { p.pruning = false }()
 	path := s.path(id)
 	tmp := path + ".tmp"
+	abandon := func(f *os.File) {
+		if f != nil {
+			_ = f.Close()
+		}
+		_ = os.Remove(tmp)
+	}
 
 	// The bulk rewrite runs unlocked: publishing goes on meanwhile.
 	s.mu.Unlock()
 	f, err := writeRecords(tmp, keep)
 	pruneTestHook()
+	if err != nil {
+		s.mu.Lock()
+		abandon(nil)
+		return err
+	}
+	p.io.Lock() // no append now until the swap
+	defer p.io.Unlock()
+	s.mu.Lock()
+	// Records synced meanwhile follow: exposed ones, then those still queued
+	// for exposure.
+	extra := append([]record(nil), p.records[seen:]...)
+	for _, e := range p.queue {
+		if e.state == entryDurable {
+			extra = append(extra, e.rec)
+		}
+	}
+	s.mu.Unlock()
+	err = appendRecords(f, extra)
+	if err == nil {
+		err = f.Close()
+		f = nil
+	}
 	s.mu.Lock()
 	if err != nil {
-		_ = os.Remove(tmp)
+		abandon(f)
 		return err
 	}
 	// A consumer that attached meanwhile may still need what was cut.
 	if s.floor() < dropped {
-		_ = f.Close()
-		_ = os.Remove(tmp)
+		abandon(nil)
 		return nil
 	}
-	// Records published meanwhile follow, under the lock like any append.
-	extra := p.records[seen:]
-	if err := appendRecords(f, extra); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
 	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+		abandon(nil)
 		return err
 	}
-	p.records = append(keep, extra...)
+	p.records = append(keep, p.records[seen:]...)
 	return nil
 }
 
@@ -363,7 +606,7 @@ func writeRecords(path string, recs []record) (*os.File, error) {
 	return f, nil
 }
 
-// appendRecords writes recs to f and syncs it, like append does per event.
+// appendRecords writes recs to f and syncs it, like a spool append.
 func appendRecords(f *os.File, recs []record) error {
 	var data []byte
 	for _, rec := range recs {
@@ -376,7 +619,7 @@ func appendRecords(f *os.File, recs []record) error {
 	if _, err := f.Write(data); err != nil {
 		return err
 	}
-	return f.Sync()
+	return syncSpool(f)
 }
 
 func askedID(e providerprotocol.Event) string {

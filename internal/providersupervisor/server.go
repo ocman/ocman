@@ -53,7 +53,7 @@ func (s *Supervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.mu.Lock()
-		idle := s.admitted == 0
+		idle := s.admitted == 0 && s.settled()
 		for _, p := range s.sessions {
 			if p.active || len(p.pending) != 0 {
 				idle = false
@@ -144,8 +144,12 @@ func (s *Supervisor) snapshot(w http.ResponseWriter, r *http.Request) {
 		event.Properties = append(json.RawMessage(nil), event.Properties...)
 		owned = append(owned, event)
 	}
-	lease, err := s.newLease(s.seq, time.Now().Add(time.Minute))
-	cursor := s.seq
+	// Every record of id up to the cursor is applied, and none after it: its
+	// session commits in order, and everything below the watermark settled.
+	// The lease streams only id, so other sessions' unsettled records do not
+	// matter.
+	cursor := max(s.watermark(), s.session(id).last)
+	lease, err := s.newScopedLease(cursor, time.Now().Add(time.Minute), id)
 	s.mu.Unlock()
 	if err != nil {
 		wireError(w, 500, err)
@@ -197,6 +201,7 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	lease := r.URL.Query().Get("lease")
+	scope := "" // a snapshot's session, or every session
 	if lease != "" {
 		pin, ok := s.leases[lease]
 		if !ok || pin.cursor != after || pin.expires.IsZero() || time.Now().After(pin.expires) {
@@ -204,7 +209,8 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 			wireError(w, 409, fmt.Errorf("snapshot lease expired; refresh snapshot"))
 			return
 		}
-		s.leases[lease] = cursorLease{cursor: after}
+		scope = pin.session
+		s.leases[lease] = cursorLease{cursor: after, session: scope}
 	} else {
 		if after > s.seq {
 			s.mu.Unlock()
@@ -230,11 +236,7 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		for _, event := range pending {
-			if err = s.append(event, nil, true); err != nil {
-				break
-			}
-		}
+		_, err = s.barrier(nil, pending, func(providerprotocol.Event) func() { return nil }, true)
 	}
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.leases, lease); s.logPrune(); s.mu.Unlock() }()
@@ -251,16 +253,35 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
+	// advance moves the lease to cursor and prunes what it no longer pins.
+	advance := func(cursor uint64) error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.leases[lease] = cursorLease{cursor: cursor, session: scope}
+		return s.prune()
+	}
 	for {
 		s.mu.Lock()
 		var batch []record
-		for _, p := range s.sessions {
+		// Below the watermark every record is settled: nothing exposed later
+		// can fall behind a delivered cursor.
+		mark := s.watermark()
+		if p := s.sessions[scope]; scope != "" && p != nil {
+			// A session commits in order: its exposed records never skip.
 			for _, rec := range p.records {
 				if rec.Sequence > after {
-					if headless && rec.Sequence <= p.ack && strings.HasPrefix(rec.Event.Type, "session.") {
-						rec.Event.Acknowledged = true // history kept for a late resolution
-					}
 					batch = append(batch, rec)
+				}
+			}
+		} else if scope == "" {
+			for _, p := range s.sessions {
+				for _, rec := range p.records {
+					if rec.Sequence > after && rec.Sequence <= mark {
+						if headless && rec.Sequence <= p.ack && strings.HasPrefix(rec.Event.Type, "session.") {
+							rec.Event.Acknowledged = true // history kept for a late resolution
+						}
+						batch = append(batch, rec)
+					}
 				}
 			}
 		}
@@ -280,11 +301,15 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 			after = rec.Sequence
-			s.mu.Lock()
-			s.leases[lease] = cursorLease{cursor: after}
-			err = s.prune()
-			s.mu.Unlock()
-			if err != nil {
+			if advance(after) != nil {
+				return
+			}
+		}
+		// A scoped stream has seen every record of its session up to the
+		// watermark, so it does not pin other sessions' records below it.
+		if scope != "" && mark > after {
+			after = mark
+			if advance(after) != nil {
 				return
 			}
 		}

@@ -33,7 +33,10 @@ and capabilities, and OpenCode v1 event shapes plus `limited` with `resetsAt`.
   caches, never package globals. Its headless watcher reconnects and acknowledges
   completed turns; browser streams replay from leased snapshots.
 - `providersupervisor.Supervisor` sequences events and syncs them to a per-session
-  spool before publication. Reconnect uses `/events?after=<seq>`. Truncate only
+  spool before publication. Spool IO runs outside `Supervisor.mu` with
+  per-session group commit; `BeginTurn`, `PublishIf` and replays are
+  barriers. See the package doc before changing the commit order.
+  Reconnect uses `/events?after=<seq>`. Truncate only
   after the headless watcher acknowledges completion; browser snapshots lease
   cursors until SSE attaches. `/drain` stops new turns before replacement.
 - Claude browsing uses one in-process supervisor per machine on a private temp
