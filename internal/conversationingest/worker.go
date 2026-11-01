@@ -275,14 +275,6 @@ func (w *sourceWorker) snapshot(ctx context.Context, id string) (*db.HistorySnap
 	}
 }
 
-func (w *sourceWorker) remember(ctx context.Context, id string, result importResult) (importResult, error) {
-	if err := w.module.deps.Store.SetSourceState(ctx, w.instance.ID, versionKey+id, result.version); err != nil {
-		return importResult{}, err
-	}
-	w.versions[id] = result.version
-	return result, nil
-}
-
 func (w *sourceWorker) markDeleted(ctx context.Context, session statev2.Session) error {
 	store := w.module.deps.Store
 	cursor, err := store.Checkpoint(ctx, session.InstanceID, snapshotStream(session.SessionID))

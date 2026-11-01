@@ -111,11 +111,16 @@ type Batch struct {
 	Messages         []Message
 	Parts            []Part
 	Checkpoint       *CheckpointUpdate
+	// Source commits ingestion bookkeeping with the content, including on a
+	// duplicate checkpoint.
+	Source *SourceUpdate
 }
 
 type CommitResult struct {
 	Revision  int64
 	Duplicate bool
+	// UsageMismatch reports that Source.Verify failed after the writes.
+	UsageMismatch bool
 }
 
 // Detail is one consistent, paginated snapshot of retained history.

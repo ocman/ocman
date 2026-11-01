@@ -60,7 +60,7 @@ func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.
 			if err != nil {
 				failed++
 				outcome, cause = "failed", err.Error()
-				w.forget(ctx, entry.ID)
+				w.withdraw(ctx, entry.ID)
 				if ctx.Err() == nil {
 					w.module.report(w.instance.ID, entry.ID, err)
 				}
@@ -68,35 +68,19 @@ func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.
 				if p.verify {
 					outcome = w.classify(result, hint, hinted, entry.ID)
 				}
-				if result.outcome != "deferred" && result.outcome != "source-deleted" {
-					matched, checkErr := w.usageMatches(ctx, entry.ID, result.usage)
-					switch {
-					case checkErr != nil:
-						failed++
-						outcome, cause = "failed", checkErr.Error()
-						w.forget(ctx, entry.ID)
-						w.module.report(w.instance.ID, entry.ID, checkErr)
-					case !matched:
-						// Unchanged content is not rewritten, so this does not self-heal.
-						// It means a normalization or column mapping bug to investigate.
-						progress.Counters["usage-mismatch"]++
-						failed++
-						cause = "usage mismatch"
-						w.forget(ctx, entry.ID)
-						log.WithFields(log.Fields{"instance_id": w.instance.ID, "session_id": entry.ID}).
-							Warn("conversation history accounting differs from source; investigate the mapping")
-					default:
-						err := w.approveRead(ctx, entry.ID, result.version, ticket)
-						if err == nil && w.feed != nil {
-							err = w.advanceSequence(ctx, entry.ID, result.version)
-						}
-						if err != nil {
-							failed++
-							outcome, cause = "failed", err.Error()
-							w.forget(ctx, entry.ID)
-							w.module.report(w.instance.ID, entry.ID, err)
-						}
-					}
+				switch {
+				case result.outcome == "deferred", result.outcome == "source-deleted":
+				case result.mismatch:
+					// The import withheld the receipt and hint in its commit.
+					// Unchanged content is not rewritten, so this does not self-heal.
+					// It means a normalization or column mapping bug to investigate.
+					progress.Counters["usage-mismatch"]++
+					failed++
+					cause = "usage mismatch"
+					log.WithFields(log.Fields{"instance_id": w.instance.ID, "session_id": entry.ID}).
+						Warn("conversation history accounting differs from source; investigate the mapping")
+				default:
+					w.readReady(entry.ID, ticket)
 				}
 			}
 			if cause == "" && result.outcome == "deferred" {

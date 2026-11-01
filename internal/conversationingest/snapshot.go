@@ -14,7 +14,9 @@ import (
 type importResult struct {
 	outcome string // imported, unchanged, deferred or source-deleted
 	version string
-	usage   statev2.Usage
+	// mismatch reports retained accounting that differs from the snapshot;
+	// the read receipt and version hint were withheld in the same commit.
+	mismatch bool
 }
 
 // Both cursors commit in the content transaction. A crash cannot advance the
@@ -27,9 +29,6 @@ type snapshotCursor struct {
 func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry, full ...bool) (importResult, error) {
 	ticket := w.module.readTicket(w.source.AdapterID, entry.ID)
 	store := w.module.deps.Store
-	if err := w.clearReadReceipt(ctx, entry.ID); err != nil {
-		return importResult{}, err
-	}
 	key := statev2.Key{InstanceID: w.instance.ID, SessionID: entry.ID}
 	stored, err := store.SessionState(ctx, key)
 	if err != nil {
@@ -46,7 +45,7 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 	}
 	snapshot, err := w.sourceSnapshot(ctx, entry.ID, saved.Source)
 	if errors.Is(err, db.ErrHistoryChanged) {
-		w.forget(ctx, entry.ID)
+		w.withdraw(ctx, entry.ID)
 		return importResult{outcome: "deferred"}, nil
 	}
 	if err != nil {
@@ -65,7 +64,9 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		if err := w.confirmSnapshot(ctx, entry.ID, snapshot); err != nil {
 			return importResult{}, err
 		}
-		return w.rememberSnapshot(ctx, key, importResult{"unchanged", snapshot.Version, statev2.Usage{}}, true)
+		// Runtime bootstrap cannot validate absent content. Keep the committed
+		// accounting and every previously retained message, unverified.
+		return w.recordSource(ctx, key, importResult{outcome: "unchanged", version: snapshot.Version}, nil)
 	}
 	batch, digest, err := Normalize(key, snapshot)
 	if err != nil {
@@ -83,12 +84,18 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 	if w.feed != nil {
 		version = entry.Version
 	}
-	result := importResult{"unchanged", version, expectedUsage(batch)}
+	result := importResult{outcome: "unchanged", version: version}
+	var verify *statev2.Usage
+	if !snapshot.Partial {
+		usage := expectedUsage(batch)
+		verify = &usage
+	}
 	if next != cursor || stored.ReadFormat != statev2.ConversationReadFormat {
 		batch.ExpectedRevision = stored.Revision
 		if next != cursor {
 			batch.Checkpoint = &statev2.CheckpointUpdate{Stream: snapshotStream(entry.ID), ExpectedCursor: cursor, Cursor: next}
 		}
+		batch.Source = w.sourceUpdate(entry.ID, version, verify)
 		committed, err := store.Commit(ctx, batch)
 		if err != nil {
 			return importResult{}, fmt.Errorf("committing conversation history: %w", err)
@@ -96,11 +103,17 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		if !committed.Duplicate {
 			result.outcome = "imported"
 		}
+		result.mismatch = committed.UsageMismatch
+		w.noteVersion(entry.ID, result)
+		if err := w.confirmSnapshot(ctx, entry.ID, snapshot); err != nil {
+			return importResult{}, err
+		}
+		return result, nil
 	}
 	if err := w.confirmSnapshot(ctx, entry.ID, snapshot); err != nil {
 		return importResult{}, err
 	}
-	return w.rememberSnapshot(ctx, key, result, snapshot.Partial)
+	return w.recordSource(ctx, key, result, verify)
 }
 
 func (w *sourceWorker) confirmSnapshot(ctx context.Context, id string, snapshot *db.HistorySnapshot) error {

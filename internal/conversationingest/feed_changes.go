@@ -100,10 +100,12 @@ func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChang
 	}
 	if _, err := store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: w.instance.ID,
 		Checkpoint: statev2.CheckpointUpdate{Stream: sequencePrefix + c.SessionID, ExpectedCursor: current, Cursor: version},
-		Batches:    []statev2.StreamBatch{{Session: &batch.Session, Messages: batch.Messages, Parts: batch.Parts}}}); err != nil {
+		Batches:     []statev2.StreamBatch{{Session: &batch.Session, Messages: batch.Messages, Parts: batch.Parts}},
+		SourceState: map[string]string{readReadyPrefix + c.SessionID: version}}); err != nil {
 		return err
 	}
-	return w.approveRead(ctx, c.SessionID, version, ticket)
+	w.readReady(c.SessionID, ticket)
+	return nil
 }
 
 func (w *sourceWorker) advanceSequence(ctx context.Context, sessionID, version string) error {

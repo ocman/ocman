@@ -54,23 +54,6 @@ func TestNullErrorIsNotAFailure(t *testing.T) {
 	}
 }
 
-func TestSameUsageToleratesOnlySummationOrder(t *testing.T) {
-	want := statev2.Usage{Messages: 2, Cost: 0.3, TokensInput: 5}
-	if !sameUsage(want, statev2.Usage{Messages: 2, Cost: 0.1 + 0.2, TokensInput: 5}) {
-		t.Fatal("summation order rejected")
-	}
-	for name, got := range map[string]statev2.Usage{
-		"message count": {Messages: 1, Cost: 0.3, TokensInput: 5},
-		"cost":          {Messages: 2, Cost: 0.31, TokensInput: 5},
-		"tokens":        {Messages: 2, Cost: 0.3, TokensInput: 6},
-		"cache":         {Messages: 2, Cost: 0.3, TokensInput: 5, TokensCacheWrite: 1},
-	} {
-		if sameUsage(want, got) {
-			t.Fatalf("%s mismatch accepted", name)
-		}
-	}
-}
-
 func TestVerificationMatchesStoredAccounting(t *testing.T) {
 	f := fakeSource("first")
 	f.snapshots["session"] = accountedSnapshot()
@@ -91,16 +74,6 @@ func TestVerificationMatchesStoredAccounting(t *testing.T) {
 	}
 	if got := tasks[0].Progress.Counters; got["usage-mismatch"] != 0 || got["matched"] != 1 {
 		t.Fatalf("verification counters: %+v", got)
-	}
-}
-
-func TestUsageMatchesReportsStoreErrors(t *testing.T) {
-	m, _ := testImporter(t, fakeSource("one"))
-	if err := m.deps.Store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if ok, err := m.workers[0].usageMatches(t.Context(), "session", statev2.Usage{}); err == nil || ok {
-		t.Fatalf("closed store: ok=%v err=%v", ok, err)
 	}
 }
 

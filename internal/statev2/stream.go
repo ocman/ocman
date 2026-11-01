@@ -16,6 +16,9 @@ type StreamUpdate struct {
 	InstanceID string
 	Checkpoint CheckpointUpdate
 	Batches    []StreamBatch
+	// SourceState commits bookkeeping, such as read receipts, with the
+	// stream; an empty value removes the key. Skipped for duplicates.
+	SourceState map[string]string
 }
 
 // StreamBatch is one session's incremental change. Unlike a snapshot Batch,
@@ -82,6 +85,9 @@ func (d *DB) ApplyStream(ctx context.Context, u StreamUpdate) (StreamResult, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO checkpoint(instance_id,stream,cursor) VALUES(?,?,?)
 		ON CONFLICT(instance_id,stream) DO UPDATE SET cursor=excluded.cursor`, u.InstanceID, c.Stream, c.Cursor); err != nil {
+		return StreamResult{}, err
+	}
+	if _, err := applySource(ctx, tx, Key{InstanceID: u.InstanceID}, &SourceUpdate{State: u.SourceState}); err != nil {
 		return StreamResult{}, err
 	}
 	if err := tx.Commit(); err != nil {

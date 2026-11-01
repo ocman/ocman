@@ -27,7 +27,14 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 			return result, err
 		}
 		if cursor == c.Cursor {
-			return CommitResult{Duplicate: true}, nil
+			if batch.Source == nil {
+				return CommitResult{Duplicate: true}, nil
+			}
+			mismatch, err := applySource(ctx, tx, s.Key, batch.Source)
+			if err != nil {
+				return result, err
+			}
+			return CommitResult{Duplicate: true, UsageMismatch: mismatch}, tx.Commit()
 		}
 		if cursor != c.ExpectedCursor {
 			return result, ErrConflict
@@ -60,6 +67,11 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 	if c := batch.Checkpoint; c != nil {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO checkpoint(instance_id,stream,cursor) VALUES(?,?,?)
 			ON CONFLICT(instance_id,stream) DO UPDATE SET cursor=excluded.cursor`, s.InstanceID, c.Stream, c.Cursor); err != nil {
+			return CommitResult{}, err
+		}
+	}
+	if batch.Source != nil {
+		if result.UsageMismatch, err = applySource(ctx, tx, s.Key, batch.Source); err != nil {
 			return CommitResult{}, err
 		}
 	}

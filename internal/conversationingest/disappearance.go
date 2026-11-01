@@ -53,7 +53,7 @@ func (w *sourceWorker) resolveMissingState(ctx context.Context, id string, ticke
 			return err
 		}
 	}
-	w.forget(ctx, id)
+	w.withdraw(ctx, id)
 	delete(w.failing, id)
 	w.publishMissing(id, ticket)
 	return nil
@@ -100,7 +100,7 @@ func (w *sourceWorker) resolveAbsent(ctx context.Context, present map[string]boo
 		// Live retained rows are handled by the pass's revision-guarded
 		// deletions. Do not repeat them against the old captured revision.
 		if !present[id] && (stored[id].Revision == 0 || stored[id].SourceDeleted) {
-			w.forget(ctx, id)
+			w.withdraw(ctx, id)
 			delete(w.failing, id)
 			w.publishMissing(id, ticket)
 		}
