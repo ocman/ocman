@@ -263,10 +263,12 @@ is incomplete; there is no native-database fallback. The retired
 Analytics → Models & Cost also shows the subscription limits described below.
 
 Settings → Provider accounts shows the Claude account's subscription type and
-its 5-hour and weekly utilisation. Ocman asks your `claude` binary for both: the
-plan comes from the CLI's startup handshake (no prompt is sent, re-checked at
-most every 10 minutes), and utilisation from the rate-limit reports the CLI
-emits during sessions ocman runs. A window the CLI has not reported, or whose
+its 5-hour, weekly and per-model weekly utilisation. Ocman asks your `claude`
+binary for both in one startup handshake (no prompt is sent): the plan comes
+from the handshake and utilisation from the CLI's `get_usage` request, re-checked
+at most every minute. A CLI without `get_usage` is re-checked at most every 10
+minutes, and its utilisation comes from the rate-limit reports the CLI emits
+during sessions ocman runs. A window the CLI has not reported, or whose
 reset time has passed, shows **not reported yet**; terminal-started sessions
 do not contribute. Reports are kept per Claude configuration directory and per
 login: after switching `CLAUDE_CONFIG_DIR` or logging another account in, the

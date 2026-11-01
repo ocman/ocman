@@ -15,7 +15,7 @@ func readInput(stdin *bufio.Reader, expected string) ([]byte, error) {
 		if err != nil {
 			return got, err
 		}
-		checkInput(got)
+		checkInput(got, expected)
 		subtype := subtypeOf(got)
 		if subtype == "initialize" && expected != "initialize" {
 			acknowledge(got)

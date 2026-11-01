@@ -6,7 +6,8 @@
 // with status 3. A recorded control_request row naming a request.subtype
 // only accepts that subtype. Every stdin line must be a well-formed user message or
 // control request (checkInput); a control request with an unknown subtype is
-// answered with the CLI's error response, as 2.1.220 does. It never contacts
+// answered with the CLI's error response, as 2.1.220 does, unless the next
+// stdin row expects that subtype and records the reply. It never contacts
 // Anthropic or reads credentials.
 //
 // Environment:
@@ -209,8 +210,9 @@ func main() {
 // checkInput rejects stdin the real CLI cannot use: anything but a JSON
 // object, a user message without user content, or a control request without
 // a request id and subtype. initialize needs array-valued MCP server lists
-// (spike §5: `{}` was rejected).
-func checkInput(got []byte) {
+// (spike §5: `{}` was rejected). Any other subtype is answered as
+// unsupported unless the fixture expects it next.
+func checkInput(got []byte, expected string) {
 	var m struct {
 		Type    string `json:"type"`
 		Message *struct {
@@ -243,6 +245,7 @@ func checkInput(got []byte) {
 				fail(3, "initialize: sdkMcpServers and webSearchIsolationExemptMcpServers must be arrays of strings")
 			}
 		case "interrupt", "set_model":
+		case expected: // the fixture records the reply
 		default:
 			reply, _ := json.Marshal(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "error",
 				"request_id": m.RequestID, "error": "Unsupported control request subtype: " + m.Request.Subtype}})

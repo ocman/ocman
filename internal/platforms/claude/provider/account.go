@@ -21,14 +21,17 @@ import (
 // The account operation (AD-2, FR-7) only asks the user's own claude CLI:
 // ocman never reads, stores or proxies Claude credentials (requirements
 // Overview). The subscription type comes from the control protocol's
-// initialize response (spike §5). Utilisation comes only from the structured
-// rate_limit_event lines of sessions ocman drives, shared by every supervisor
-// through UsagePath; a window the CLI has not reported is simply absent
-// (approved FR-7 departure, claude-code-provider.1.3.68).
+// initialize response (spike §5) and utilisation from the CLI's structured
+// get_usage answer in the same handshake. A CLI without get_usage falls back
+// to the rate_limit_event lines of sessions ocman drives, shared by every
+// supervisor through UsagePath; a window the CLI has not reported is simply
+// absent (approved FR-7 departure, claude-code-provider.1.3.68).
 
 const (
-	accountTTL    = 10 * time.Minute
-	initRequestID = "ocman-initialize"
+	accountTTL     = 10 * time.Minute
+	usageTTL       = time.Minute // matches the analytics cache in front of it
+	initRequestID  = "ocman-initialize"
+	usageRequestID = "ocman-usage"
 )
 
 // usageWindows maps the CLI's rateLimitType to the protocol's window name.
@@ -44,6 +47,7 @@ type account struct {
 	at        time.Time
 	plan      string
 	email     string
+	limits    []providerprotocol.RateLimit // from get_usage; nil when the CLI lacks it
 }
 
 // usageScope is one Claude configuration's observed windows, and the
@@ -60,9 +64,12 @@ func newAccount(opts Options) *account {
 // get returns the subscription type and every unexpired observed window.
 // No account in the CLI's initialize response is platforms.ErrNotFound.
 func (a *account) get(ctx context.Context) (providerprotocol.Account, error) {
-	plan, err := a.subscription(ctx)
+	plan, reported, err := a.subscription(ctx)
 	if err != nil {
 		return providerprotocol.Account{}, err
+	}
+	if reported != nil {
+		return providerprotocol.Account{SubscriptionType: plan, RateLimits: reported}, nil
 	}
 	a.mu.Lock()
 	email := a.email
@@ -86,22 +93,88 @@ func (a *account) get(ctx context.Context) (providerprotocol.Account, error) {
 	return providerprotocol.Account{SubscriptionType: plan, RateLimits: limits}, nil
 }
 
-func (a *account) subscription(ctx context.Context) (string, error) {
+// subscription returns the plan and, when the CLI answers get_usage, its
+// windows. Windows age out faster than the plan, so a CLI with get_usage is
+// asked again after usageTTL.
+func (a *account) subscription(ctx context.Context) (string, []providerprotocol.RateLimit, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if !a.at.IsZero() && time.Since(a.at) < accountTTL {
-		return a.plan, nil
+	ttl := accountTTL
+	if a.limits != nil {
+		ttl = usageTTL
 	}
-	res, err := initialize(ctx, a.slots, a.cli, os.TempDir(), a.env()) // no project settings or hooks
+	if !a.at.IsZero() && time.Since(a.at) < ttl {
+		return a.plan, a.limits, nil
+	}
+	var usage *cliUsage
+	res, err := handshake(ctx, a.slots, a.cli, os.TempDir(), a.env(), &usage) // no project settings or hooks
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	info := res.Account
 	if info == nil || (info.SubscriptionType == "" && info.Email == "") {
-		return "", platforms.ErrNotFound
+		return "", nil, platforms.ErrNotFound
 	}
-	a.plan, a.email, a.at = info.SubscriptionType, info.Email, time.Now()
-	return a.plan, nil
+	a.plan, a.email, a.limits, a.at = info.SubscriptionType, info.Email, usage.rateLimits(), time.Now()
+	return a.plan, a.limits, nil
+}
+
+// cliUsage is the part of the CLI's experimental get_usage answer ocman
+// reads: utilisation is a percentage and resets are ISO 8601.
+type cliUsage struct {
+	RateLimitsAvailable bool `json:"rate_limits_available"`
+	RateLimits          *struct {
+		FiveHour          *cliWindow `json:"five_hour"`
+		SevenDay          *cliWindow `json:"seven_day"`
+		SevenDayOpus      *cliWindow `json:"seven_day_opus"`
+		SevenDaySonnet    *cliWindow `json:"seven_day_sonnet"`
+		SevenDayOAuthApps *cliWindow `json:"seven_day_oauth_apps"`
+		ModelScoped       []struct {
+			DisplayName string `json:"display_name"`
+			cliWindow
+		} `json:"model_scoped"`
+	} `json:"rate_limits"`
+}
+
+type cliWindow struct {
+	Utilization *float64 `json:"utilization"`
+	ResetsAt    *string  `json:"resets_at"`
+}
+
+// rateLimits is nil when the CLI gave no usage answer, and empty when the
+// login has no plan windows (API key or a third-party provider).
+func (u *cliUsage) rateLimits() []providerprotocol.RateLimit {
+	if u == nil {
+		return nil
+	}
+	out := []providerprotocol.RateLimit{}
+	if !u.RateLimitsAvailable || u.RateLimits == nil {
+		return out
+	}
+	add := func(name string, w *cliWindow) {
+		if w == nil || w.Utilization == nil {
+			return
+		}
+		limit := providerprotocol.RateLimit{Name: name, Utilization: max(0, min(1, *w.Utilization/100))}
+		if w.ResetsAt != nil {
+			if at, err := time.Parse(time.RFC3339Nano, *w.ResetsAt); err == nil {
+				limit.ResetsAt = at.UnixMilli()
+			}
+		}
+		out = append(out, limit)
+	}
+	r := u.RateLimits
+	add("five_hour", r.FiveHour)
+	add("weekly", r.SevenDay)
+	add("7 days · Opus", r.SevenDayOpus)
+	add("7 days · Sonnet", r.SevenDaySonnet)
+	add("7 days · OAuth apps", r.SevenDayOAuthApps)
+	for _, m := range r.ModelScoped {
+		if m.DisplayName != "" {
+			add("7 days · "+m.DisplayName, &m.cliWindow)
+		}
+	}
+	return out
 }
 
 type initAccount struct {
@@ -128,6 +201,13 @@ func init() { initTimeout.Store(int64(15 * time.Second)) }
 // message is sent, so no turn runs, no transcript is written and nothing is
 // billed. args are extra launch flags (e.g. --plugin-dir).
 func initialize(ctx context.Context, slots, cli, dir string, env []string, args ...string) (initResponse, error) {
+	return handshake(ctx, slots, cli, dir, env, nil, args...)
+}
+
+// handshake is initialize that, when usage is non-nil, then asks get_usage
+// without the local transcript scan. A CLI that rejects or never answers
+// get_usage leaves *usage nil; only initialize decides the error.
+func handshake(ctx context.Context, slots, cli, dir string, env []string, usage **cliUsage, args ...string) (initResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(initTimeout.Load()))
 	defer cancel()
 	release, err := HelperSlot(ctx, slots)
@@ -157,23 +237,47 @@ func initialize(ctx context.Context, slots, cli, dir string, env []string, args 
 	}
 	lines := bufio.NewScanner(stdout)
 	lines.Buffer(nil, 32<<20)
+	var res *initResponse
 	for lines.Scan() {
 		var m struct {
 			Type     string `json:"type"`
 			Response struct {
-				Subtype   string       `json:"subtype"`
-				RequestID string       `json:"request_id"`
-				Error     string       `json:"error"`
-				Response  initResponse `json:"response"`
+				Subtype   string          `json:"subtype"`
+				RequestID string          `json:"request_id"`
+				Error     string          `json:"error"`
+				Response  json.RawMessage `json:"response"`
 			} `json:"response"`
 		}
-		if json.Unmarshal(lines.Bytes(), &m) != nil || m.Type != "control_response" || m.Response.RequestID != initRequestID {
+		if json.Unmarshal(lines.Bytes(), &m) != nil || m.Type != "control_response" {
 			continue
 		}
-		if m.Response.Subtype != "success" {
-			return initResponse{}, fmt.Errorf("claude initialize: %s", m.Response.Error)
+		switch {
+		case m.Response.RequestID == initRequestID && res == nil:
+			if m.Response.Subtype != "success" {
+				return initResponse{}, fmt.Errorf("claude initialize: %s", m.Response.Error)
+			}
+			res = &initResponse{}
+			if err := json.Unmarshal(m.Response.Response, res); err != nil {
+				return initResponse{}, fmt.Errorf("claude initialize: %w", err)
+			}
+			if usage == nil {
+				return *res, nil
+			}
+			req, _ := json.Marshal(map[string]any{"type": "control_request", "request_id": usageRequestID,
+				"request": map[string]any{"subtype": "get_usage", "skip_behaviors": true}})
+			if _, err := stdin.Write(append(req, '\n')); err != nil {
+				return *res, nil
+			}
+		case m.Response.RequestID == usageRequestID && res != nil:
+			var u cliUsage
+			if m.Response.Subtype == "success" && json.Unmarshal(m.Response.Response, &u) == nil {
+				*usage = &u
+			}
+			return *res, nil
 		}
-		return m.Response.Response, nil
+	}
+	if res != nil {
+		return *res, nil
 	}
 	return initResponse{}, errors.New("claude exited before answering initialize")
 }

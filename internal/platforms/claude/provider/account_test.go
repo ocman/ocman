@@ -1,6 +1,7 @@
 package claudeprovider
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -102,11 +103,12 @@ func TestAccountPlanFromInitializeIsCached(t *testing.T) {
 		} `json:"request"`
 	}
 	lines := strings.Split(strings.TrimSpace(string(must(os.ReadFile(stdin)))), "\n")
-	if len(lines) != 1 || json.Unmarshal([]byte(lines[0]), &sent) != nil || sent.Type != "control_request" ||
-		sent.RequestID != initRequestID || sent.Request.Subtype != "initialize" || sent.Request.SDKMcpServers == nil {
-		t.Fatalf("stdin = %q; want one initialize request and no user message", lines)
+	// The fake rejects get_usage like an older CLI, so the plan stays cached.
+	if len(lines) != 2 || json.Unmarshal([]byte(lines[0]), &sent) != nil || sent.Type != "control_request" ||
+		sent.RequestID != initRequestID || sent.Request.Subtype != "initialize" || sent.Request.SDKMcpServers == nil || !strings.Contains(lines[1], `"get_usage"`) {
+		t.Fatalf("stdin = %q; want initialize, get_usage and no user message", lines)
 	}
-	if _, err := a.get(t.Context()); err != nil || len(strings.Split(strings.TrimSpace(string(must(os.ReadFile(stdin)))), "\n")) != 1 {
+	if _, err := a.get(t.Context()); err != nil || len(strings.Split(strings.TrimSpace(string(must(os.ReadFile(stdin)))), "\n")) != 2 {
 		t.Fatalf("second read ran the CLI again: %v", err)
 	}
 }
@@ -207,6 +209,82 @@ func TestUsageWindowsScopedToConfiguration(t *testing.T) {
 	relogged := newAccount(Options{CLI: a.cli, UsagePath: a.usagePath, ConfigDir: "/config/a"})
 	if got, err := relogged.get(t.Context()); err != nil || len(got.RateLimits) != 0 {
 		t.Fatalf("another login saw the windows: %+v %v", got, err)
+	}
+}
+
+// usageFixture answers initialize with teamAccount, then get_usage with
+// response (the CLI 2.1.309 shape, trimmed).
+func usageFixture(t *testing.T, response string) {
+	t.Helper()
+	path := initFixture(t, teamAccount)
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(response)); err != nil {
+		t.Fatal(err)
+	}
+	rows := `{"direction":"stdin","message":{"type":"control_request","request":{"subtype":"get_usage"}}}
+{"direction":"stdout","message":{"type":"control_response","response":` + compact.String() + `}}
+`
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(rows); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_CLAUDE_FIXTURE", path)
+}
+
+// The CLI's structured get_usage answer supplies every window, even when no
+// driven session has crossed a rate_limit_event warning threshold.
+func TestAccountReportsCLIUsage(t *testing.T) {
+	a, stdin := fakeAccount(t, teamAccount)
+	usageFixture(t, `{"subtype":"success","request_id":"ocman-usage","response":{"subscription_type":"team","rate_limits_available":true,"rate_limits":{
+		"five_hour":{"utilization":71,"resets_at":"2026-11-01T20:40:00.8978+00:00"},
+		"seven_day":{"utilization":32,"resets_at":"2026-11-04T08:00:00Z"},
+		"seven_day_opus":null,"seven_day_sonnet":{"utilization":5,"resets_at":null},"seven_day_oauth_apps":{"utilization":null,"resets_at":null},
+		"model_scoped":[{"display_name":"Fable","utilization":20,"resets_at":"2026-11-04T07:59:59Z"}]}}}`)
+	got, err := a.get(t.Context())
+	want := []providerprotocol.RateLimit{
+		{Name: "five_hour", Utilization: 0.71, ResetsAt: 1793565600897},
+		{Name: "weekly", Utilization: 0.32, ResetsAt: 1793779200000},
+		{Name: "7 days · Sonnet", Utilization: 0.05},
+		{Name: "7 days · Fable", Utilization: 0.2, ResetsAt: 1793779199000},
+	}
+	if err != nil || got.SubscriptionType != "Claude Team" || len(got.RateLimits) != len(want) {
+		t.Fatalf("account = %+v, %v", got, err)
+	}
+	for i := range want {
+		if got.RateLimits[i] != want[i] {
+			t.Fatalf("window %d = %+v, want %+v", i, got.RateLimits[i], want[i])
+		}
+	}
+	var sent struct {
+		Request struct {
+			Subtype       string `json:"subtype"`
+			SkipBehaviors bool   `json:"skip_behaviors"`
+		} `json:"request"`
+	}
+	lines := strings.Split(strings.TrimSpace(string(must(os.ReadFile(stdin)))), "\n")
+	if len(lines) != 2 || json.Unmarshal([]byte(lines[1]), &sent) != nil || sent.Request.Subtype != "get_usage" || !sent.Request.SkipBehaviors {
+		t.Fatalf("stdin = %q; want initialize, then get_usage without the transcript scan", lines)
+	}
+}
+
+// API-key and third-party logins have no plan windows; an older CLI rejects
+// get_usage and the observed windows remain the fallback.
+func TestAccountCLIUsageUnavailable(t *testing.T) {
+	a, _ := fakeAccount(t, teamAccount)
+	usageFixture(t, `{"subtype":"success","request_id":"ocman-usage","response":{"subscription_type":null,"rate_limits_available":false,"rate_limits":null}}`)
+	if got, err := a.get(t.Context()); err != nil || got.RateLimits == nil || len(got.RateLimits) != 0 {
+		t.Fatalf("account = %+v, %v; want no windows", got, err)
+	}
+
+	old, _ := fakeAccount(t, teamAccount) // the fake answers get_usage as unsupported
+	future := time.Now().Add(time.Hour).Unix()
+	old.observe(json.RawMessage(`{"status":"allowed_warning","resetsAt":` + itoa(future) + `,"rateLimitType":"five_hour","utilization":0.5}`))
+	if got, err := old.get(t.Context()); err != nil || len(got.RateLimits) != 1 || got.RateLimits[0].Utilization != 0.5 {
+		t.Fatalf("account = %+v, %v; want the observed window", got, err)
 	}
 }
 
