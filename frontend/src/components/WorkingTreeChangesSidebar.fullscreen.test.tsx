@@ -29,13 +29,13 @@ vi.mock('../lib/useWorkingTreeDiff', () => ({
   }),
 }));
 
-it('passes structured rename paths to the fullscreen browser', () => {
+it('passes structured rename paths to the fullscreen browser', async () => {
   let openFullscreen: () => void = () => {};
   render(<WorkingTreeChangesSidebar directory="/repo" onFullscreen={(open) => { openFullscreen = open; }} />);
 
   act(() => openFullscreen());
 
   const dialog = screen.getByRole('dialog', { name: 'Working tree' });
-  const tree = within(within(dialog).getByTestId('changed-files-tree').shadowRoot as unknown as HTMLElement);
+  const tree = within((await within(dialog).findByTestId('changed-files-tree')).shadowRoot as unknown as HTMLElement);
   expect(tree.getByRole('treeitem', { name: 'b.ts' })).toBeInTheDocument();
 });

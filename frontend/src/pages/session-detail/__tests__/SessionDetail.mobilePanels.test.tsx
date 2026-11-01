@@ -215,7 +215,7 @@ describe('SessionDetail — phone overlay panels', () => {
       await waitFor(() => expect(fullscreen).toBeEnabled());
       await userEvent.click(fullscreen);
       const dialog = screen.getByRole('dialog', { name: 'Session changes' });
-      const tree = within(within(dialog).getByTestId('changed-files-tree').shadowRoot as unknown as HTMLElement);
+      const tree = within((await within(dialog).findByTestId('changed-files-tree')).shadowRoot as unknown as HTMLElement);
       const second = tree.getByRole('treeitem', { name: 'second.ts' });
       await userEvent.click(second);
       expect(second).toHaveAttribute('aria-selected', 'true');

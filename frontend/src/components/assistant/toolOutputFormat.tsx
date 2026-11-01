@@ -1,14 +1,14 @@
 // Non-component helpers for tool output: diff payload parsing, read/diff
 // and patch formatting, and preview truncation.
-import { Suspense } from 'react';
-import { PatchDiff } from '@pierre/diffs/react';
-import { DIFF_OPTIONS } from '../diffOptions';
+import { lazyComponent } from '../lazyComponent';
 import { HighlightedCode } from './HighlightedCode';
 import {
   shortenPatchPath,
   applyPatchToUnifiedFileDiffs,
   type ApplyPatchFileDiff,
 } from '../../lib/threadHelpers';
+
+const PatchFileDiff = lazyComponent(() => import('./PatchFileDiff').then((m) => m.PatchFileDiff), 'Loading diff…');
 
 // Structured diff payload emitted by convertMessages.ts for edit/write tools.
 export interface DiffPayload {
@@ -98,29 +98,23 @@ export function renderPatch(patchText: string) {
   const fileDiffs = applyPatchToUnifiedFileDiffs(patchText);
   if (fileDiffs.length > 0) {
     return (
-      <Suspense fallback={null}>
-        <div className="oc-patch-diffs">
-          {fileDiffs.map((file, index) => {
-            const meta = patchActionMeta(file.action);
-            return (
-              <div key={`${file.action}:${file.oldPath || ''}:${file.path}:${index}`} className="oc-patch-diff-file">
-                <div className={`oc-patch-diff-header oc-patch-diff-header-${file.action}`}>
-                  <span className="oc-patch-diff-badge">{meta.label}</span>
-                  <span className="oc-patch-diff-action">{meta.text}</span>
-                  <span className="oc-patch-diff-path">
-                    {file.oldPath ? `${shortenPatchPath(file.oldPath)} -> ${shortenPatchPath(file.path)}` : shortenPatchPath(file.path)}
-                  </span>
-                </div>
-                <PatchDiff
-                  patch={file.patch}
-                  options={{ ...DIFF_OPTIONS, disableFileHeader: true }}
-                  disableWorkerPool
-                />
+      <div className="oc-patch-diffs">
+        {fileDiffs.map((file, index) => {
+          const meta = patchActionMeta(file.action);
+          return (
+            <div key={`${file.action}:${file.oldPath || ''}:${file.path}:${index}`} className="oc-patch-diff-file">
+              <div className={`oc-patch-diff-header oc-patch-diff-header-${file.action}`}>
+                <span className="oc-patch-diff-badge">{meta.label}</span>
+                <span className="oc-patch-diff-action">{meta.text}</span>
+                <span className="oc-patch-diff-path">
+                  {file.oldPath ? `${shortenPatchPath(file.oldPath)} -> ${shortenPatchPath(file.path)}` : shortenPatchPath(file.path)}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      </Suspense>
+              <PatchFileDiff patch={file.patch} />
+            </div>
+          );
+        })}
+      </div>
     );
   }
 

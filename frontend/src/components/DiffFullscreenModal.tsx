@@ -2,8 +2,11 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { FileBrowserModal } from './FileBrowserModal';
 import { IconButton } from './IconButton';
-import { ChangedFilesTree } from './ChangedFilesTree';
+import { lazyComponent } from './lazyComponent';
 import { EmptyState } from './EmptyState';
+
+// @pierre/trees loads when the fullscreen diff opens.
+const ChangedFilesTree = lazyComponent(() => import('./ChangedFilesTree').then((m) => m.ChangedFilesTree), 'Loading files…');
 
 // One entry in the fullscreen diff browser. `body` is the already-
 // built diff element for the file; React only renders the selected

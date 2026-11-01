@@ -67,7 +67,7 @@ describe('MarkdownText', () => {
     render(<MarkdownText text={'```mermaid\nflowchart LR\n  A --> B\n```'} />);
 
     await user.click(await screen.findByRole('button', { name: 'Expand Mermaid diagram' }));
-    const dialog = screen.getByRole('dialog', { name: 'Mermaid diagram' });
+    const dialog = await screen.findByRole('dialog', { name: 'Mermaid diagram' });
     const diagram = dialog.querySelector<HTMLElement>('.oc-mermaid-modal-diagram');
 
     expect(dialog.parentElement?.parentElement).toBe(document.body);
@@ -93,7 +93,7 @@ describe('MarkdownText', () => {
     render(<MarkdownText text="![Garden wiring](/api/file/token)" />);
 
     await user.click(screen.getByRole('button', { name: 'Expand Garden wiring' }));
-    const dialog = screen.getByRole('dialog', { name: 'Garden wiring' });
+    const dialog = await screen.findByRole('dialog', { name: 'Garden wiring' });
     const viewport = screen.getByLabelText('Garden wiring viewport');
 
     expect(dialog.parentElement?.parentElement).toBe(document.body);

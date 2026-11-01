@@ -63,17 +63,17 @@ it('opens the session changes modal on the clicked file with its individual edit
   expect(within(row).getByTitle(change.path)).toHaveTextContent(change.displayPath);
   expect(screen.queryByText('session patch')).not.toBeInTheDocument();
   await user.click(row);
-  expect(dialog().getByLabelText(change.path)).toHaveTextContent('session patch');
+  expect(await dialog().findByLabelText(change.path)).toHaveTextContent('session patch');
   await user.click(dialog().getByRole('button', { name: 'Show 2 individual edits' }));
-  expect(dialog().getByText('first edit')).toBeInTheDocument();
-  expect(dialog().getByText('old → new')).toBeInTheDocument();
+  expect(await dialog().findByText('first edit')).toBeInTheDocument();
+  expect(await dialog().findByText('old → new')).toBeInTheDocument();
   await user.click(dialog().getByRole('button', { name: 'Hide 2 individual edits' }));
   expect(dialog().queryByText('first edit')).not.toBeInTheDocument();
 });
 
-it('falls back to the legacy session diff without an edits toggle', () => {
+it('falls back to the legacy session diff without an edits toggle', async () => {
   render(<FileChangeGroup change={{ ...change, editCount: 1, patch: '', before: 'before', after: 'after' }} />);
-  expect(screen.getByText('before → after')).toBeInTheDocument();
+  expect(await screen.findByText('before → after')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /individual edits/ })).not.toBeInTheDocument();
 });
 
@@ -95,5 +95,5 @@ it('opens the working tree modal on the clicked file, keeping badges and binary 
   await user.click(dialog().getByRole('button', { name: 'Close' }));
 
   await user.click(renamed);
-  expect(dialog().getByLabelText('src/new.ts')).toHaveTextContent('working patch');
+  expect(await dialog().findByLabelText('src/new.ts')).toHaveTextContent('working patch');
 });

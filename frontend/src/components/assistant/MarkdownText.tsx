@@ -17,12 +17,15 @@ import { remarkFactoryCards } from '../factoryCards';
 import { remarkFactoryIssueReferences } from '../factoryIssueReferences';
 import { FactoryIssueReference } from '../FactoryIssueReference';
 import { useBetaFeatures } from '../../lib/betaFeatures';
-import { ZoomableGraphicModal } from '../ZoomableGraphicModal';
+import { lazyComponent } from '../lazyComponent';
 import { PreviewImage } from '../ImagePreview';
 import { CopyButton } from '../CopyButton';
 import { splitMarkdownBlocks } from './markdownBlocks';
 import { lazyModule, useLazyModule } from '../../lib/lazyModule';
 import './Reasoning.css';
+
+// react-zoom-pan-pinch loads when a diagram is expanded.
+const ZoomableGraphicModal = lazyComponent(() => import('../ZoomableGraphicModal').then((m) => m.ZoomableGraphicModal), 'Loading diagram…');
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
 function loadMermaid() {

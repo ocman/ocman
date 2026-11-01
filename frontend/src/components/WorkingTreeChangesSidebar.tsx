@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 import type { WorkingTreeFile } from '../lib/api';
 import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
-import { RawDiffView } from './RawDiffView';
+import { lazyComponent } from './lazyComponent';
 import type { FullscreenDiffFile } from './DiffFullscreenModal';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
 import { ChangedFileRow } from './ChangedFileRow';
 import { ChangesListPane, type ChangesPaneCallbacks } from './ChangesListPane';
+
+// @pierre/diffs (with Shiki) loads with the first diff on screen.
+const RawDiffView = lazyComponent(() => import('./RawDiffView').then((m) => m.RawDiffView), 'Loading diff…');
 
 // WorkingTreeChangesSidebar shows `git diff HEAD` (plus untracked
 // files) for the session's directory. Visually mirrors

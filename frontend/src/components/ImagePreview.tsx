@@ -3,10 +3,13 @@ import type { ComponentProps, ReactNode } from 'react';
 import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom';
 import { IconButton } from './IconButton';
 import { Button } from './Control';
-import { ZoomableGraphicModal } from './ZoomableGraphicModal';
+import { lazyComponent } from './lazyComponent';
 import { ExternalImagePreview } from './ExternalImagePreview';
 import { imageSource } from '../lib/imageSource';
 import './ImagePreview.css';
+
+// react-zoom-pan-pinch loads with the first opened preview.
+const ZoomableGraphicModal = lazyComponent(() => import('./ZoomableGraphicModal').then((m) => m.ZoomableGraphicModal), 'Loading preview…');
 
 type ImageEntry = { src: string; alt: string; element: HTMLButtonElement };
 type Gallery = {

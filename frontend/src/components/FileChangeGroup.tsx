@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { FileChange, SessionEdit } from '../lib/api';
-import { DiffView } from './DiffView';
-import { RawDiffView } from './RawDiffView';
+import { lazyComponent } from './lazyComponent';
+
+// @pierre/diffs (with Shiki) loads with the first diff on screen.
+const DiffView = lazyComponent(() => import('./DiffView').then((m) => m.DiffView), 'Loading diff…');
+const RawDiffView = lazyComponent(() => import('./RawDiffView').then((m) => m.RawDiffView), 'Loading diff…');
 
 // The diff body for one session-changes file, shown in the fullscreen
 // diff browser. Modern OpenCode parts ship a unified-diff `patch`

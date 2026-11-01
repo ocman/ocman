@@ -1,14 +1,17 @@
 import { useRef } from 'react';
 import { useIsPrinting } from '../../lib/useIsPrinting';
 import { useNearViewport } from '../../lib/useNearViewport';
-import { InlineDiff } from './toolRenderers';
+import { lazyComponent } from '../lazyComponent';
 import type { DiffPayload } from './toolOutputFormat';
+
+const InlineDiff = lazyComponent(() => import('./InlineDiff').then((m) => m.InlineDiff), 'Loading diff…');
 
 /**
  * An inline edit diff that skips syntax highlighting until it scrolls near
  * the thread viewport. Highlighting every diff synchronously on mount was
  * the largest cost of opening a long session; the plain rendering has the
- * same rows, so nothing shifts when colour arrives.
+ * same rows, so nothing shifts when colour arrives. The diff renderer
+ * itself loads with the first diff.
  */
 export function LazyInlineDiff({ payload }: { payload: DiffPayload }) {
   const ref = useRef<HTMLDivElement>(null);

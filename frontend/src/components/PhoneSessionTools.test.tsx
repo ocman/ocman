@@ -9,13 +9,13 @@ vi.mock('./ProjectQuickSettings', () => ({ ProjectQuickSettings: ({ children, di
 vi.mock('./HostBadge', () => ({ HostBadge: () => <span>Machine</span> }));
 vi.mock('./ExploreModal', () => ({ ExploreModal: ({ dir, remoteId, onClose }: { dir: string; remoteId: string; onClose: () => void }) => <div role="dialog" aria-label={`${remoteId}:${dir}`}><button onClick={onClose}>Close explorer</button></div> }));
 
-it.each([undefined, 'remote-one'])('opens and closes files on the session owner %s', (remoteId) => {
+it.each([undefined, 'remote-one'])('opens and closes files on the session owner %s', async (remoteId) => {
   render(<MemoryRouter><PhoneSessionTools session={{ directory: '/repos/project', remoteId } as Session} /></MemoryRouter>);
   expect(screen.getByTestId('project')).toHaveAttribute('data-directory', '/repos/project');
   if (remoteId) expect(screen.getByTestId('project')).toHaveAttribute('data-owner', remoteId);
   expect(document.getElementById('phone-session-tools-slot')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Explore project files' }));
-  expect(screen.getByRole('dialog', { name: `${remoteId || 'local'}:/repos/project` })).toBeInTheDocument();
+  expect(await screen.findByRole('dialog', { name: `${remoteId || 'local'}:/repos/project` })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Close explorer' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });

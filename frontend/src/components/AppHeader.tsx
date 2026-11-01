@@ -7,11 +7,14 @@ import { ProjectLabel } from './ProjectLabel';
 import { PlatformBadge } from './PlatformBadge';
 import { HostBadge } from './HostBadge';
 import { IconButton } from './IconButton';
-import { ExploreModal } from './ExploreModal';
+import { lazyComponent } from './lazyComponent';
 import { ProjectQuickSettings } from './ProjectQuickSettings';
 import { useProjects } from '../lib/queries';
 import { useBetaFeatures } from '../lib/betaFeatures';
 import './AppHeader.css';
+
+// The file explorer (@pierre/trees and @pierre/diffs) loads when opened.
+const ExploreModal = lazyComponent(() => import('./ExploreModal').then((m) => m.ExploreModal), 'Loading files…');
 
 function ProjectMachinePill({ remoteId }: { remoteId: string }) {
   const { data: projects } = useProjects({ enabled: remoteId !== 'local' });

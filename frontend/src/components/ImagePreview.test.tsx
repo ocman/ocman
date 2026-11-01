@@ -33,7 +33,7 @@ describe('image preview navigation', () => {
     </MemoryRouter>);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Expand First' }));
     expect(screen.getByTestId('url').textContent).toMatch(/image=/);
-    expect(within(screen.getByRole('dialog')).getByRole('img')).toHaveAttribute('src', '/first.png');
+    expect(within(await screen.findByRole('dialog')).getByRole('img')).toHaveAttribute('src', '/first.png');
   });
 
   it('navigates markdown images and attachments with arrows and buttons, preserving URL context', async () => {
@@ -43,7 +43,7 @@ describe('image preview navigation', () => {
     </MemoryRouter>);
     await user.click(screen.getByRole('button', { name: 'Expand First' }));
     const firstURL = screen.getByTestId('url').textContent;
-    expect(screen.getByRole('button', { name: 'Previous image' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Previous image' })).toBeDisabled();
     await user.keyboard('{ArrowLeft}');
     expect(screen.getByTestId('url')).toHaveTextContent(firstURL!);
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));

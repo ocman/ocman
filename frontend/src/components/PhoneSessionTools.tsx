@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import type { Session } from '../lib/api';
-import { ExploreModal } from './ExploreModal';
+import { lazyComponent } from './lazyComponent';
 import { IconButton } from './IconButton';
 import { ProjectQuickSettings } from './ProjectQuickSettings';
 import { HostBadge } from './HostBadge';
 import { ProjectLabel } from './ProjectLabel';
+
+// The file explorer (@pierre/trees and @pierre/diffs) loads when opened.
+const ExploreModal = lazyComponent(() => import('./ExploreModal').then((m) => m.ExploreModal), 'Loading files…');
 
 export function PhoneSessionTools({ session }: { session?: Session }) {
   const [exploring, setExploring] = useState(false);

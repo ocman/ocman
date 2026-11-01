@@ -1,11 +1,8 @@
-// Small components shared by ToolCallDisplay: inline diffs, ANSI shell
-// output, answered questions, and durations.
-import React, { useState, useEffect, Suspense, type FC } from 'react';
-import { MultiFileDiff } from '@pierre/diffs/react';
-import { DIFF_OPTIONS } from '../diffOptions';
+// Small components shared by ToolCallDisplay: ANSI shell output, answered
+// questions, and durations. Inline diffs live in InlineDiff.tsx.
+import React, { useState, useEffect, type FC } from 'react';
 import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../../lib/ansi';
 import { formatToolDuration, type QuestionData } from '../../lib/threadHelpers';
-import type { DiffPayload } from './toolOutputFormat';
 
 export const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean; label?: string }> = ({
   startedAt,
@@ -45,23 +42,6 @@ export const BashPrompt: FC<{ running: boolean }> = ({ running }) => {
 
   return <span className="oc-shell-prompt" data-testid={running ? 'bash-spinner' : undefined} title={running ? 'Running' : undefined}>{running ? bashSpinnerFrames[frame] : '$'}</span>;
 };
-
-// Renders a before/after diff using @pierre/diffs. `plain` skips syntax
-// highlighting (same rows and height) for diffs far from the viewport.
-export function InlineDiff({ payload, plain = false }: { payload: DiffPayload; plain?: boolean }) {
-  const name = payload.filePath || 'file';
-  const lang = plain ? 'text' : undefined;
-  return (
-    <Suspense fallback={null}>
-      <MultiFileDiff
-        oldFile={{ name, contents: payload.before, lang }}
-        newFile={{ name, contents: payload.after, lang }}
-        options={DIFF_OPTIONS}
-        disableWorkerPool
-      />
-    </Suspense>
-  );
-}
 
 export function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData[]; answers: string[] }) {
   return (

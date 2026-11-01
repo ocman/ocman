@@ -480,7 +480,7 @@ describe('AssistantThread attached images', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     await user.keyboard('{Enter}');
-    expect(screen.getByRole('dialog', { name: 'shot.png' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'shot.png' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Zoom in' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Close image' }));
