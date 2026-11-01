@@ -19,6 +19,8 @@ type HistoryIdentity struct {
 // every retained session, including completed children and hidden helpers. A
 // failed or partial inventory must return an error, never a successful empty list.
 // Snapshots must be internally consistent and contain all messages and parts.
+// A session removed before its snapshot is read returns ErrNotFound. Ingestion
+// must still confirm absence with a complete inventory before marking deletion.
 // These reads must not launch agents, acknowledge turns, or publish lifecycle events.
 // A reader is bound to one physical identity for its lifetime; changing source
 // configuration requires replacing the reader and its worker, never rebinding it.

@@ -422,13 +422,14 @@ platform-owned.
 flowchart LR
     Import[conversationingest module<br/>source workers + paced backfill]
     Adapters[Local platform adapters<br/>snapshots, runtime children + tails] --> Import
-    Events[Session invalidations<br/>periodic repair] --> Import
+    Events[UI session invalidations<br/>internal helpers excluded] --> Import
     Import -->|health + task progress APIs| UI[Settings application health<br/>and Background tasks]
     Import -->|snapshots, deltas or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
     Rules[internal/analyticsdata<br/>shared accounting and timing] --> Commit
     Rules --> Analytics
     Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox)]
     Commit -->|post-commit content receipts| Adapters
+    Import -->|confirmed-absence refresh results| Adapters
     History --> Reader[conversationread<br/>read-only WAL snapshots]
     Adapters -->|bounded lifecycle and version only| Reader
     Reader -->|bounded wait for initial import or stale snapshot| Import
@@ -452,6 +453,14 @@ flowchart LR
   background wait and bypass its budget; live updates are not CPU-throttled.
   Shutdown cancels the wait, preserving each completed snapshot's checkpoint.
 - Source deletion never removes retained history.
+  A missing snapshot requires a complete source inventory to confirm absence;
+  failed or deferred inventories cannot turn a read failure into a deletion.
+  Confirmed absence resolves captured refresh tickets as not-found, rather than
+  successful content validation, without acknowledging newer requests. Feed
+  batches continue past individual failures and retry only unapplied events,
+  preserving deletion flags and sequences. Ocman's temporary naming and judge
+  helpers do not produce UI activity callbacks; the history feed still imports
+  their content independently.
 - Unresolved creation reservations defer affected identities, not the entire
   import. Partial inventories never authorize deletion or complete verification.
   Claude supervisor discovery failures return available transcript/runtime rows

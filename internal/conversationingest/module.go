@@ -50,6 +50,7 @@ type Module struct {
 	instances     map[string]string
 	readRequests  map[[2]string]uint64
 	readValidated map[[2]string]uint64
+	readMissing   map[[2]string]uint64
 }
 
 func NewModule(deps Deps) *Module {

@@ -3,6 +3,7 @@ package opencode
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,9 @@ func (a *Adapter) HistoryMessages(ctx context.Context, sessionID string, message
 		return nil, fmt.Errorf("opencode history source unavailable")
 	}
 	snap, err := a.db.HistoryMessages(ctx, sessionID, messageIDs)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, platforms.ErrNotFound
+	}
 	if errors.Is(err, db.ErrHistoryUnsupported) {
 		return nil, platforms.ErrUnsupported
 	}

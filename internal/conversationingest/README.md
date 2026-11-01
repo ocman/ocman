@@ -97,6 +97,13 @@ snapshot. Failed reads, normalization or commits are retried; progress is record
 only after success. Retrying sessions that already failed records a new failed
 task only when the failure changes. A restart safely revisits all sources using persisted progress.
 
+A source not-found result can race deliberate cleanup of a temporary helper.
+Ingestion confirms absence with a complete inventory before treating that read
+as obsolete. It retains any committed content and resolves waiting refreshes as
+not-found instead of leaving them to time out. Failed or deferred inventories
+never authorize disappearance. Feed batches continue past individual failures;
+retries preserve each unapplied event's sequence, message IDs and deletion flag.
+
 Missing sessions are marked source-deleted only after a complete successful
 inventory. Missing messages/parts are marked only from a successful complete
 snapshot. All content remains retained.

@@ -3,6 +3,8 @@ package conversationingest
 import (
 	"context"
 	"fmt"
+
+	"github.com/ocman/ocman/internal/db"
 )
 
 func (m *Module) readTicket(adapterID, id string) uint64 {
@@ -22,19 +24,17 @@ func (m *Module) RefreshStored(ctx context.Context, adapterID, id string) error 
 		return ctx.Err()
 	}
 	key := [2]string{adapterID, id}
-	m.receiptMu.Lock()
-	if m.readRequests == nil {
-		m.readRequests = map[[2]string]uint64{}
-	}
-	m.readRequests[key]++
-	ticket := m.readRequests[key]
-	m.receiptMu.Unlock()
+	ticket := m.nextReadTicket(adapterID, id)
 	m.requestRead(adapterID, id)
 	for {
 		changed := m.receiptChanges()
 		m.receiptMu.Lock()
 		validated := m.readValidated[key]
+		missing := m.readMissing[key]
 		m.receiptMu.Unlock()
+		if missing >= ticket {
+			return db.ErrSessionNotFound
+		}
 		if validated >= ticket {
 			return nil
 		}
@@ -44,4 +44,15 @@ func (m *Module) RefreshStored(ctx context.Context, adapterID, id string) error 
 		case <-changed:
 		}
 	}
+}
+
+func (m *Module) nextReadTicket(adapterID, id string) uint64 {
+	m.receiptMu.Lock()
+	defer m.receiptMu.Unlock()
+	if m.readRequests == nil {
+		m.readRequests = map[[2]string]uint64{}
+	}
+	key := [2]string{adapterID, id}
+	m.readRequests[key]++
+	return m.readRequests[key]
 }

@@ -265,7 +265,7 @@ func TestPriorityReadCannotBeOverwrittenByOlderBackfillSequence(t *testing.T) {
 			m.requestRead("bulk", "session-2")
 		}
 	}
-	if err := w.catchUpFeed(t.Context(), map[string]bool{}); err != nil {
+	if err := w.catchUpFeed(t.Context(), map[string]bool{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.order) != 3 || f.order[0] != "session-0" || f.order[1] != "session-2" || f.order[2] != "session-1" {

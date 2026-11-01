@@ -2,6 +2,8 @@ package opencode
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/ocman/ocman/internal/db"
@@ -29,6 +31,9 @@ func (a *Adapter) HistorySnapshot(ctx context.Context, id string) (*db.HistorySn
 	}
 	snapshot, err := a.db.HistorySnapshot(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			err = platforms.ErrNotFound
+		}
 		return nil, fmt.Errorf("reading OpenCode source snapshot: %w", err)
 	}
 	return a.historyProject(ctx, snapshot, err)

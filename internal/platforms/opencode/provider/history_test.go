@@ -1,10 +1,19 @@
 package opencode
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
+
+func TestHistorySnapshotReportsMissingSession(t *testing.T) {
+	a := New(newTestDBWithSession(t, "session", "/repo"), nil, nil, ocapi.Auth{})
+	if _, err := a.HistorySnapshot(t.Context(), "deleted-helper"); !errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("missing snapshot = %v, want typed not-found", err)
+	}
+}
 
 func TestHistoryAdapterNeverNeedsLiveDiscovery(t *testing.T) {
 	database := newTestDBWithSession(t, "session", "/repo")

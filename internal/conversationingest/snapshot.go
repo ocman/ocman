@@ -12,7 +12,7 @@ import (
 )
 
 type importResult struct {
-	outcome string // imported, unchanged or deferred
+	outcome string // imported, unchanged, deferred or source-deleted
 	version string
 	usage   statev2.Usage
 }
@@ -25,6 +25,7 @@ type snapshotCursor struct {
 }
 
 func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry, full ...bool) (importResult, error) {
+	ticket := w.module.readTicket(w.source.AdapterID, entry.ID)
 	store := w.module.deps.Store
 	if err := w.clearReadReceipt(ctx, entry.ID); err != nil {
 		return importResult{}, err
@@ -49,6 +50,15 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		return importResult{outcome: "deferred"}, nil
 	}
 	if err != nil {
+		if missingSession(err) {
+			gone, checkErr := w.reconcileMissing(ctx, entry.ID, ticket)
+			if checkErr != nil {
+				return importResult{}, checkErr
+			}
+			if gone {
+				return importResult{outcome: "source-deleted"}, nil
+			}
+		}
 		return importResult{}, fmt.Errorf("reading source history: %w", err)
 	}
 	if snapshot != nil && snapshot.SourceCursor != "" && snapshot.SourceCursor == saved.Source {

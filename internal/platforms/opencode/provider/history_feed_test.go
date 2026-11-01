@@ -134,6 +134,13 @@ func TestWatchHistoryStreamsMachineServerFirehose(t *testing.T) {
 	}
 }
 
+func TestHistoryMessagesReportsDeletedSession(t *testing.T) {
+	a := New(v2HistoryDB(t), nil, nil, ocapi.Auth{})
+	if _, err := a.HistoryMessages(t.Context(), "deleted-helper", []string{"msg_user"}); !errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("missing incremental snapshot = %v, want typed not-found", err)
+	}
+}
+
 func TestWatchHistoryRequiresV2MachineServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()

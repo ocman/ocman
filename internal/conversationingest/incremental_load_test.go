@@ -113,7 +113,7 @@ func TestFeedActivityDoesNotRereadAlreadyAppliedSequence(t *testing.T) {
 	if err := w.ensureInstance(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.catchUpFeed(t.Context(), map[string]bool{}); err != nil {
+	if err := w.catchUpFeed(t.Context(), map[string]bool{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	reads := f.reads

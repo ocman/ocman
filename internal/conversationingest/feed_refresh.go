@@ -50,5 +50,5 @@ func (w *sourceWorker) explicitReadPending(id string) bool {
 	m.receiptMu.Lock()
 	defer m.receiptMu.Unlock()
 	key := [2]string{w.source.AdapterID, id}
-	return m.readRequests[key] > m.readValidated[key]
+	return m.readRequests[key] > max(m.readValidated[key], m.readMissing[key])
 }

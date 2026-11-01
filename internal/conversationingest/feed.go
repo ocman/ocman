@@ -3,8 +3,6 @@ package conversationingest
 import (
 	"context"
 	"errors"
-	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -190,7 +188,7 @@ func (w *sourceWorker) drainFeed(ctx context.Context) {
 	err := w.ensureInstance(ctx)
 	if err == nil && (catchUp || dirty[""]) {
 		w.readiness(false)
-		err = w.catchUpFeed(ctx, dirty)
+		err = w.catchUpFeed(ctx, dirty, pending)
 	}
 	if err == nil {
 		err = w.applyChanges(ctx, pending, dirty)
@@ -206,12 +204,12 @@ func (w *sourceWorker) drainFeed(ctx context.Context) {
 		// independently of sequence checkpoints, including deferred reads.
 		w.mu.Lock()
 		for id := range dirty {
-			w.dirty[id] = true
-		}
-		for id := range pending {
-			w.dirty[id] = true
+			w.dirty[id] = w.dirty[id] || dirty[id]
 		}
 		w.mu.Unlock()
+		for _, change := range pending {
+			w.enqueue(*change)
+		}
 		w.feedState.mu.Lock()
 		w.feedState.catchUp = true
 		w.feedState.mu.Unlock()
@@ -228,10 +226,15 @@ func (w *sourceWorker) drainFeed(ctx context.Context) {
 // catchUpFeed reads only sessions whose durable sequence differs from the one
 // already applied, plus sessions the source no longer lists (retained as
 // deleted). The inventory is a list of identities, not conversation content.
-func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool) error {
+func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool, pending map[string]*platforms.HistoryChange) error {
 	store := w.module.deps.Store
 	readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)
 	defer cancel()
+	tickets := w.module.readTickets(w.source.AdapterID)
+	known, err := store.Sessions(ctx, w.instance.ID)
+	if err != nil {
+		return err
+	}
 	sequences, err := w.feed.HistorySequences(readCtx)
 	sequenceDeferred, err := inventoryDeferrals(err)
 	if err != nil {
@@ -249,15 +252,11 @@ func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool) e
 	if err != nil {
 		return err
 	}
-	known, err := store.Sessions(ctx, w.instance.ID)
-	if err != nil {
-		return err
-	}
 	stored := map[string]statev2.Session{}
 	for _, s := range known {
 		stored[s.SessionID] = s
 	}
-	p := pass{deferred: max(sequenceDeferred, deferred)}
+	p := pass{deferred: max(sequenceDeferred, deferred), absenceTickets: tickets}
 	present := map[string]bool{}
 	for _, entry := range inventory {
 		if entry.ID == "" || present[entry.ID] {
@@ -283,118 +282,28 @@ func (w *sourceWorker) catchUpFeed(ctx context.Context, dirty map[string]bool) e
 			delete(w.failing, id)
 		}
 	}
-	for id := range dirty {
-		if id != "" && !present[id] {
-			delete(dirty, id)
-		}
+	var passErr error
+	if len(p.reads) > 0 || len(p.deletions) > 0 || p.deferred > 0 {
+		passErr = w.requireComplete(w.runPrepared(ctx, p))
 	}
-	if len(p.reads) == 0 && len(p.deletions) == 0 && p.deferred == 0 {
-		return nil
-	}
-	return w.requireComplete(w.runPrepared(ctx, p))
-}
-
-// applyChanges handles live changes and explicit repair requests.
-func (w *sourceWorker) applyChanges(ctx context.Context, pending map[string]*platforms.HistoryChange, dirty map[string]bool) error {
-	ids := make([]string, 0, len(pending))
-	for id := range pending {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		if err := w.applyPendingChange(ctx, *pending[id], dirty[id]); err != nil {
-			return err
-		}
-	}
-	for id := range dirty {
-		if id == "" || pending[id] != nil {
-			continue
-		}
-		if err := w.refreshFeedSession(ctx, id, dirty[id]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChange) error {
-	store := w.module.deps.Store
-	key := statev2.Key{InstanceID: w.instance.ID, SessionID: c.SessionID}
-	version := db.SequenceVersion(c.Seq, true)
-	stored, err := store.SessionState(ctx, key)
-	if err != nil {
-		return err
-	}
-	exists := stored.Revision > 0
-	if exists && !stored.SourceDeleted && stored.ReadFormat == statev2.ConversationReadFormat {
-		applied, err := store.Checkpoint(ctx, w.instance.ID, sequencePrefix+c.SessionID)
-		if err != nil {
-			return err
-		}
-		if applied == version && !w.explicitReadPending(c.SessionID) {
-			return nil
-		}
-	}
-	switch {
-	case c.Deleted:
-		if exists && !stored.SourceDeleted {
-			if err := w.markDeleted(ctx, stored); err != nil {
-				return err
+	if p.deferred == 0 {
+		for id, change := range pending {
+			if !present[id] && !change.Deleted {
+				if _, ok := tickets[id]; !ok {
+					tickets[id] = 0
+				}
+				delete(pending, id)
 			}
 		}
-		return w.advanceSequence(ctx, c.SessionID, version)
-	case c.Resync || !exists || stored.SourceDeleted || stored.ReadFormat != statev2.ConversationReadFormat:
-		return w.requireComplete(w.execute(ctx, pass{reads: []db.HistoryEntry{{ID: c.SessionID, Version: version}}}, nil))
+		for id := range dirty {
+			if id != "" && !present[id] {
+				if _, ok := tickets[id]; !ok {
+					tickets[id] = 0 // include unticketed repair hints
+				}
+				delete(dirty, id)
+			}
+		}
+		w.resolveAbsent(ctx, present, tickets, stored)
 	}
-	readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)
-	ticket := w.module.readTicket(w.source.AdapterID, c.SessionID)
-	snapshot, err := w.feed.HistoryMessages(readCtx, c.SessionID, uniqueSorted(c.MessageIDs))
-	cancel()
-	if err != nil {
-		return err
-	}
-	batch, _, err := Normalize(key, snapshot)
-	if err != nil {
-		return err
-	}
-	current, err := store.Checkpoint(ctx, w.instance.ID, sequencePrefix+c.SessionID)
-	if err != nil {
-		return err
-	}
-	if current == version {
-		return w.approveRead(ctx, c.SessionID, version, ticket)
-	}
-	if _, err := store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: w.instance.ID,
-		Checkpoint: statev2.CheckpointUpdate{Stream: sequencePrefix + c.SessionID, ExpectedCursor: current, Cursor: version},
-		Batches:    []statev2.StreamBatch{{Session: &batch.Session, Messages: batch.Messages, Parts: batch.Parts}}}); err != nil {
-		return err
-	}
-	return w.approveRead(ctx, c.SessionID, version, ticket)
-}
-
-// advanceSequence records the sequence a session's stored history reflects.
-func (w *sourceWorker) advanceSequence(ctx context.Context, sessionID, version string) error {
-	store := w.module.deps.Store
-	current, err := store.Checkpoint(ctx, w.instance.ID, sequencePrefix+sessionID)
-	if err != nil || current == version {
-		return err
-	}
-	_, err = store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: w.instance.ID,
-		Checkpoint: statev2.CheckpointUpdate{Stream: sequencePrefix + sessionID, ExpectedCursor: current, Cursor: version}})
-	return err
-}
-
-func (w *sourceWorker) sessionVersion(ctx context.Context, id string) (string, error) {
-	sequences, err := w.feed.HistorySequences(ctx)
-	if err != nil {
-		return "", err
-	}
-	seq, ok := sequences[id]
-	return db.SequenceVersion(seq, ok), nil
-}
-
-func uniqueSorted(ids []string) []string {
-	out := append([]string{}, ids...)
-	slices.Sort(out)
-	return slices.Compact(out)
+	return passErr
 }

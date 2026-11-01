@@ -29,6 +29,9 @@ func (t *Tee) dispatchEventInDirectory(eventType, dataJSON, directory string) {
 	if effectiveType == "" {
 		effectiveType = typeOnly.Type
 	}
+	if t.internalHelperEvent(effectiveType, dataJSON) {
+		return
+	}
 	switch effectiveType {
 	case "permission.asked", "permission.v2.asked":
 		t.dispatchPermissionAsked(directory, dataJSON)

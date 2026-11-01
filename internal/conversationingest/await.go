@@ -42,6 +42,7 @@ func (m *Module) AwaitStored(ctx context.Context, adapterID, id string) bool {
 	if m == nil || m.deps.Store == nil || id == "" {
 		return false
 	}
+	ticket := m.nextReadTicket(adapterID, id)
 	m.requestRead(adapterID, id)
 	for ctx.Err() == nil {
 		changed := m.receiptChanges()
@@ -50,6 +51,12 @@ func (m *Module) AwaitStored(ctx context.Context, adapterID, id string) bool {
 			if err == nil && s.Revision > 0 && statev2.ReadableConversationFormat(s.ReadFormat) {
 				return true
 			}
+		}
+		m.receiptMu.Lock()
+		missing := m.readMissing[[2]string{adapterID, id}] >= ticket
+		m.receiptMu.Unlock()
+		if missing {
+			return false
 		}
 		select {
 		case <-ctx.Done():

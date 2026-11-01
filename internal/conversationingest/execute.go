@@ -68,7 +68,7 @@ func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.
 				if p.verify {
 					outcome = w.classify(result, hint, hinted, entry.ID)
 				}
-				if result.outcome != "deferred" {
+				if result.outcome != "deferred" && result.outcome != "source-deleted" {
 					matched, checkErr := w.usageMatches(ctx, entry.ID, result.usage)
 					switch {
 					case checkErr != nil:
@@ -127,7 +127,7 @@ func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.
 		}
 		err = func() error {
 			defer release()
-			return w.markDeleted(ctx, session)
+			return w.resolveMissingState(ctx, session.SessionID, p.absenceTickets[session.SessionID], session)
 		}()
 		if err != nil {
 			return err

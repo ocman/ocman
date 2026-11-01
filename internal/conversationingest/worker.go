@@ -50,14 +50,15 @@ type sourceWorker struct {
 // pass is one planned scan of a source: the sessions to read and the stored
 // sessions the source no longer lists.
 type pass struct {
-	verify     bool
-	full       bool // explicit source-wide repair bypasses transcript cursors
-	background bool // historical work shares the module's resource budget
-	routine    bool // one already stored session; suppress routine task records
-	reads      []db.HistoryEntry
-	deletions  []statev2.Session
-	skipped    int64
-	deferred   int // unresolved creation identities; never authorize absence markers
+	verify         bool
+	full           bool // explicit source-wide repair bypasses transcript cursors
+	background     bool // historical work shares the module's resource budget
+	routine        bool // one already stored session; suppress routine task records
+	reads          []db.HistoryEntry
+	deletions      []statev2.Session
+	skipped        int64
+	deferred       int               // unresolved creation identities; never authorize absence markers
+	absenceTickets map[string]uint64 // captured before the inventory proving absence
 }
 
 func (w *sourceWorker) run(ctx context.Context) {
@@ -132,6 +133,12 @@ func (w *sourceWorker) prepare(ctx context.Context, dirty map[string]bool) (pass
 		return p, err
 	}
 	readCtx, cancel := context.WithTimeout(ctx, deps.ReadTimeout)
+	defer cancel()
+	p.absenceTickets = w.module.readTickets(w.source.AdapterID)
+	known, err := deps.Store.Sessions(ctx, w.instance.ID)
+	if err != nil {
+		return p, err
+	}
 	entries, deferred, err := readInventory(readCtx, w.source.Reader)
 	cancel()
 	if err != nil {
@@ -149,10 +156,6 @@ func (w *sourceWorker) prepare(ctx context.Context, dirty map[string]bool) (pass
 		if deferred == 0 && !present[id] {
 			delete(w.failing, id)
 		}
-	}
-	known, err := deps.Store.Sessions(ctx, w.instance.ID)
-	if err != nil {
-		return p, err
 	}
 	deleted := map[string]bool{}
 	refresh := conversationRefreshes(known)
@@ -177,6 +180,15 @@ func (w *sourceWorker) prepare(ctx context.Context, dirty map[string]bool) (pass
 		}
 	}
 	p.routine = !p.verify && len(p.reads) == 1 && len(p.deletions) == 0 && existing[p.reads[0].ID]
+	if deferred == 0 {
+		for id, ticket := range p.absenceTickets {
+			if !present[id] && !existing[id] {
+				if err := w.resolveMissingState(ctx, id, ticket, statev2.Session{}); err != nil {
+					return p, err
+				}
+			}
+		}
+	}
 	return p, nil
 }
 
@@ -280,8 +292,5 @@ func (w *sourceWorker) markDeleted(ctx context.Context, session statev2.Session)
 	session.SourceDeleted = true
 	_, err = store.Commit(ctx, statev2.Batch{Session: session, ExpectedRevision: session.Revision,
 		Checkpoint: &statev2.CheckpointUpdate{Stream: snapshotStream(session.SessionID), ExpectedCursor: cursor, Cursor: "deleted:" + cursor}})
-	if err == nil {
-		w.module.publishReceipt(w.source.AdapterID, session.SessionID)
-	}
 	return err
 }

@@ -43,6 +43,7 @@ type Tee struct {
 	OnTerminalPart       func(part terminalPart)
 	OnGitCommand         func(sessionID, action string)
 	gitCommandHints      map[string]bool
+	internalHelpers      map[string]bool
 }
 
 type terminalPart struct {

@@ -310,7 +310,8 @@ type sessionRefChild struct {
 	ID        string `json:"id"`
 	SessionID string `json:"sessionID"`
 	// Title is only meaningful on a session record.
-	Title string `json:"title"`
+	Title    string `json:"title"`
+	ParentID string `json:"parentID"`
 }
 
 // parseSessionRef reads the enveloped shape, falling back to the flat
