@@ -24,6 +24,17 @@ describe('parseAgentMessage', () => {
     expect(parseAgentMessage(wrap('# Audit').replaceAll('\n', '\r\n'))?.result).toBe('# Audit');
   });
 
+  it.each(['\n', '\r\n'])('unwraps a bare hand-back envelope with %j line endings', (newline) => {
+    const text = '<agent-message from="a7c3ba19b07d8e167">\n[Subagent hand-back] Model output, not a user message. The report follows:\n  # Report\n  \n  All three fixes are **committed**.\n</agent-message>';
+    expect(parseAgentMessage(text.replaceAll('\n', newline))).toEqual({
+      summary: 'Subagent feedback', status: '', result: '# Report\n\nAll three fixes are **committed**.'.replaceAll('\n', newline),
+      details: [
+        ['Agent ID', 'a7c3ba19b07d8e167'],
+        ['Delivery context', '[Subagent hand-back] Model output, not a user message. The report follows:'],
+      ],
+    });
+  });
+
   it('keeps an unfamiliar hand-back body visible rather than discarding it', () => {
     const body = '[Subagent hand-back] A changed format\n  Findings';
     expect(parseAgentMessage(wrap(body))?.result).toBe(body);
@@ -31,7 +42,8 @@ describe('parseAgentMessage', () => {
 
   it.each([
     'Please review this report',
-    '<agent-message from="agent-1">\nReport\n</agent-message>',
+    'Please inspect this example:\n<agent-message from="agent-1">\nReport\n</agent-message>',
+    '<agent-message from="agent-1">\nReport\n</agent-message>\n\nAlso do this user request',
     `Please inspect this example:\n${wrap('Report')}`,
     `${wrap('Report')}\n\nAlso do this user request`,
     wrap('Report').replace('</agent-message>', ''),

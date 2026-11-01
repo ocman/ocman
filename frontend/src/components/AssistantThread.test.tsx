@@ -99,10 +99,9 @@ import { formatFullDateTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { TurnSpeechContext } from '../lib/turnSpeech';
 
-it('renders a Claude agent hand-back as subagent feedback rather than a user bubble', () => {
+it.each(['Another Claude session sent a message:\n', ''])('renders an agent hand-back with prefix %j as subagent feedback rather than a user bubble', (prefix) => {
   threadState.renderUser = true;
-  message.content = [{ type: 'text', text: `Another Claude session sent a message:
-<agent-message from="a0f4644f22af5fdf8">
+  message.content = [{ type: 'text', text: `${prefix}<agent-message from="a0f4644f22af5fdf8">
 [Subagent hand-back] The text below is the final report of a subagent. The report follows:
   # Backend architecture audit
 

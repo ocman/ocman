@@ -1,7 +1,7 @@
 // Display-only parsing. The stored user-role envelope and its safety context
 // remain unchanged; this does not authenticate the sender or grant authority.
 export function parseAgentMessage(text: string) {
-  const envelope = /^\s*Another Claude session sent a message:\s*\n<agent-message from="([^"<>\r\n]+)">\r?\n([\s\S]*)\r?\n<\/agent-message>(?:\s*\n\s*\n(That "other Claude session" is an agent working inside this[\s\S]*))?\s*$/.exec(text);
+  const envelope = /^\s*(?:Another Claude session sent a message:\s*\n)?<agent-message from="([^"<>\r\n]+)">\r?\n([\s\S]*)\r?\n<\/agent-message>(?:\s*\n\s*\n(That "other Claude session" is an agent working inside this[\s\S]*))?\s*$/.exec(text);
   if (!envelope) return null;
 
   let result = envelope[2].trim();
