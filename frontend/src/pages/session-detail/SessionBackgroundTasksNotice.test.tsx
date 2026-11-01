@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { renderWithQuery } from '../../test/renderWithQuery';
 import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
@@ -57,4 +57,31 @@ it('does not carry watch state between session owners', async () => {
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   await waitFor(() => expect(prWorkflowApi.links).toHaveBeenLastCalledWith('s1', 'r-box:fake'));
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
+
+it('shows an initial watch-list failure even without native tasks and retries the read', async () => {
+  vi.mocked(prWorkflowApi.links).mockRejectedValue(new Error('Owner disconnected'));
+  renderWithQuery(<SessionBackgroundTasksNotice sessionId="s1" platform="r-box:fake" count={0} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('PR watch status unavailable');
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [watch] });
+  fireEvent.click(screen.getByRole('button', { name: 'Retry PR watch status' }));
+  await screen.findByRole('button', { name: '1 background task running' });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('warns on refresh failure without hiding watches or native tasks and clears the warning on retry', async () => {
+  const { client } = renderWithQuery(<SessionBackgroundTasksNotice sessionId="s1" platform="fake" count={1}
+    tasks={[{ id: 'shell', description: 'Run tests' }]} />);
+  fireEvent.click(await screen.findByRole('button', { name: '2 background tasks running' }));
+  vi.mocked(prWorkflowApi.links).mockRejectedValue(new Error('PR storage unavailable'));
+  await act(async () => { await client.refetchQueries({ queryKey: ['session-pr-background-tasks', 'fake', 's1'] }); });
+  expect(await screen.findByRole('alert')).toHaveTextContent('PR watch status may be outdated');
+  expect(screen.getByText('Watching team/repo#42: Fix login')).toBeVisible();
+  expect(screen.getByText('Run tests')).toBeVisible();
+  vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+  fireEvent.click(screen.getByRole('button', { name: 'Retry PR watch status' }));
+  await screen.findByRole('button', { name: '1 background task running' });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByText('Run tests')).toBeVisible();
 });
