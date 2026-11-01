@@ -58,6 +58,26 @@ type PermissionJudge struct {
 	// helpers holds the native and public IDs of live judge helper sessions,
 	// so prompts they raise never enter the auto-approve pipeline.
 	helpers sync.Map
+	// slots bounds concurrent OpenCode judgments (session + LLM turn), like
+	// the Claude judge's helper slots. Nil means unbounded.
+	slots chan struct{}
+}
+
+// maxConcurrentOpenCodeJudges matches the Claude helper-slot cap.
+const maxConcurrentOpenCodeJudges = 2
+
+// acquireSlot waits for a judgment slot without holding any lock. It fails
+// when ctx ends first, so a waiter never outlives the judge timeout.
+func (j *PermissionJudge) acquireSlot(ctx context.Context) (func(), error) {
+	if j.slots == nil {
+		return func() {}, nil
+	}
+	select {
+	case j.slots <- struct{}{}:
+		return func() { <-j.slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // trackHelper marks id as a live judge helper session; the returned func
@@ -99,6 +119,7 @@ func newPermissionJudge(auth ocapi.Auth) *PermissionJudge {
 		httpClient:    &http.Client{Timeout: judgeTimeout, Transport: auth.Transport(http.DefaultTransport)},
 		modelProvider: judgeModelProvider,
 		modelID:       judgeModelID,
+		slots:         make(chan struct{}, maxConcurrentOpenCodeJudges),
 	}
 }
 
@@ -141,6 +162,12 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 		log.WithField("directory", directory).Warn("auto-approve judge: no running OpenCode instance found, falling through to human")
 		return JudgeResult{Verdict: verdictNeedsUser}
 	}
+	release, err := j.acquireSlot(ctx)
+	if err != nil {
+		log.WithError(err).Warn("auto-approve judge: no judge slot before the timeout, falling through to human")
+		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
+	}
+	defer release()
 	sessionID, err := j.createSession(ctx, port, directory, "(auto-approve subagent)")
 	if err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to create judge session")
