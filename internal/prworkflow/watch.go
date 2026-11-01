@@ -169,6 +169,10 @@ func (m *Module) sweep(ctx context.Context) {
 				read.s, read.pr, read.err = m.readSnapshot(github.WithCache(readCtx), l, true)
 				reads[key] = read
 			}
+			// A forge read can exhaust its deadline. Persistence and delivery need
+			// a fresh budget, while still honoring worker cancellation.
+			cancel()
+			readCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
 			if read.s != nil && read.s.reusedRemarks && l.Snapshot != nil {
 				copySnapshot := *read.s
 				copySnapshot.Remarks, copySnapshot.RemarksReadAt = l.Snapshot.Remarks, l.Snapshot.RemarksReadAt
