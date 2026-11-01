@@ -2,11 +2,13 @@ package codextransport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -309,4 +312,66 @@ func TestHistoryStartFailure(t *testing.T) {
 		t.Fatalf("account = %v", err)
 	}
 	p.history.close() // nothing started
+}
+
+// The JSON-RPC client has no deadline of its own. A wedged history
+// app-server must fail each read within historyTimeout and be replaced on
+// the next use instead of blocking every reader indefinitely.
+func TestHistoryCallsTimeOutAndReplaceWedgedAppServer(t *testing.T) {
+	restore := historyTimeout
+	historyTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { historyTimeout = restore })
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	var mu sync.Mutex
+	starts, healthy := 0, false
+	p := &Platform{history: &history{start: func(ctx context.Context) (*codexappserver.Client, error) {
+		s, pipes := codextest.New(t)
+		mu.Lock()
+		starts++
+		ok := healthy
+		mu.Unlock()
+		for _, method := range []string{codexappserver.MethodThreadList, codexappserver.MethodThreadRead, codexappserver.MethodModelList, codexappserver.MethodAccountRead} {
+			if ok {
+				s.Handle(method, func(json.RawMessage) (any, error) { return map[string]any{"data": []any{}}, nil })
+				continue
+			}
+			s.Handle(method, func(json.RawMessage) (any, error) { <-release; return nil, errors.New("released") })
+		}
+		return codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{}, nil)
+	}}}
+	t.Cleanup(p.history.close)
+	ops := map[string]func(context.Context) error{
+		"sessions":  func(ctx context.Context) error { _, err := p.Sessions(ctx, "", 0); return err },
+		"inventory": func(ctx context.Context) error { _, err := p.HistoryInventory(ctx); return err },
+		"snapshot":  func(ctx context.Context) error { _, err := p.HistorySnapshot(ctx, "x"); return err },
+		"metadata":  func(ctx context.Context) error { _, err := p.SessionIdentityMetadata(ctx, "x"); return err },
+		"catalog": func(ctx context.Context) error {
+			_, err := p.LiveDirectoryCatalog(ctx, platforms.DirectoryCatalogRequest{})
+			return err
+		},
+		"account": func(ctx context.Context) error { _, err := p.Account(ctx); return err },
+	}
+	for name, op := range ops {
+		done := make(chan error, 1)
+		go func() { done <- op(context.Background()) }()
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("%s on a wedged app-server = %v", name, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s blocked on a wedged app-server", name)
+		}
+	}
+	mu.Lock()
+	wedged := starts
+	healthy = true
+	mu.Unlock()
+	if wedged != len(ops) {
+		t.Fatalf("a timed-out app-server was reused: %d starts for %d reads", wedged, len(ops))
+	}
+	if _, err := p.Sessions(context.Background(), "", 0); err != nil {
+		t.Fatalf("replacement app-server: %v", err)
+	}
 }

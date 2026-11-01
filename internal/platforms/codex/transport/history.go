@@ -2,6 +2,7 @@ package codextransport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,11 @@ type cached[T any] struct {
 	at    time.Time
 }
 
+// historyTimeout bounds each history app-server call, like the supervisor's
+// rpcTimeout. The JSON-RPC client has no deadline of its own, so a wedged
+// app-server would otherwise block every reader indefinitely.
+var historyTimeout = 30 * time.Second
+
 func (c cached[T]) fresh() bool { return !c.at.IsZero() && time.Since(c.at) < catalogTTL }
 
 func newHistory(cli, version, home string) *history {
@@ -56,7 +62,9 @@ func (h *history) conn(ctx context.Context) (*codexappserver.Client, error) {
 			return h.client, nil
 		}
 	}
-	c, err := h.start(ctx)
+	start, cancel := context.WithTimeout(ctx, historyTimeout)
+	defer cancel()
+	c, err := h.start(start)
 	if err != nil {
 		return nil, fmt.Errorf("%w: starting codex app-server: %w", platforms.ErrHistoryUnavailable, err)
 	}
@@ -73,13 +81,55 @@ func (h *history) close() {
 	}
 }
 
+// timed runs one app-server call within historyTimeout. A call that hit that
+// timeout, rather than the caller's own deadline, marks the app-server
+// unhealthy: it is closed so the next use starts a new one.
+func timed[T any](ctx context.Context, h *history, c *codexappserver.Client, call func(context.Context) (T, error)) (T, error) {
+	bounded, cancel := context.WithTimeout(ctx, historyTimeout)
+	defer cancel()
+	out, err := call(bounded)
+	if err != nil && ctx.Err() == nil && errors.Is(bounded.Err(), context.DeadlineExceeded) {
+		h.mu.Lock()
+		if h.client == c {
+			_ = c.Close()
+			h.client = nil
+		}
+		h.mu.Unlock()
+	}
+	return out, err
+}
+
+// timedClient bounds every HistoryReader call on one app-server client.
+type timedClient struct {
+	h *history
+	c *codexappserver.Client
+}
+
+func (t timedClient) ListThreads(ctx context.Context, p codexappserver.ThreadListParams) ([]codexappserver.Thread, error) {
+	return timed(ctx, t.h, t.c, func(ctx context.Context) ([]codexappserver.Thread, error) { return t.c.ListThreads(ctx, p) })
+}
+
+func (t timedClient) ReadThread(ctx context.Context, id string, turns bool) (*codexappserver.Thread, error) {
+	return timed(ctx, t.h, t.c, func(ctx context.Context) (*codexappserver.Thread, error) { return t.c.ReadThread(ctx, id, turns) })
+}
+
+func (t timedClient) ListTurns(ctx context.Context, threadID, itemsView string) ([]codexappserver.Turn, error) {
+	return timed(ctx, t.h, t.c, func(ctx context.Context) ([]codexappserver.Turn, error) {
+		return t.c.ListTurns(ctx, threadID, itemsView)
+	})
+}
+
+func (t timedClient) ListItems(ctx context.Context, threadID string) ([]codexappserver.ItemEntry, error) {
+	return timed(ctx, t.h, t.c, func(ctx context.Context) ([]codexappserver.ItemEntry, error) { return t.c.ListItems(ctx, threadID) })
+}
+
 // reader binds a HistoryReader to the current client.
 func (h *history) reader(ctx context.Context) (*codexprovider.HistoryReader, error) {
 	c, err := h.conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &codexprovider.HistoryReader{Client: c}, nil
+	return &codexprovider.HistoryReader{Client: timedClient{h, c}}, nil
 }
 
 // sessions lists stored threads, archived ones included.
@@ -88,9 +138,10 @@ func (h *history) sessions(ctx context.Context, dir string, since int64) ([]db.S
 	if err != nil {
 		return nil, err
 	}
+	reader := timedClient{h, c}
 	out := []db.Session{}
 	for _, archived := range []bool{false, true} {
-		threads, err := c.ListThreads(ctx, codexappserver.ThreadListParams{SourceKinds: codexappserver.AllSourceKinds, Archived: &archived, Cwd: dir})
+		threads, err := reader.ListThreads(ctx, codexappserver.ThreadListParams{SourceKinds: codexappserver.AllSourceKinds, Archived: &archived, Cwd: dir})
 		if err != nil {
 			return nil, err
 		}
@@ -170,14 +221,16 @@ func (p *Platform) LiveDirectoryCatalog(ctx context.Context, req platforms.Direc
 			return nil, err
 		}
 		if !models.fresh() {
-			list, err := c.ListModels(ctx, false)
+			list, err := timed(ctx, h, c, func(ctx context.Context) ([]codexappserver.Model, error) { return c.ListModels(ctx, false) })
 			if err != nil {
 				return nil, err
 			}
 			models = cached[*platforms.DirectoryCatalog]{codexprovider.Catalog(list), time.Now()}
 		}
 		if req.Directory != "" && !commands.fresh() {
-			skills, err := c.ListSkills(ctx, req.Directory)
+			skills, err := timed(ctx, h, c, func(ctx context.Context) ([]codexappserver.SkillsEntry, error) {
+				return c.ListSkills(ctx, req.Directory)
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -209,11 +262,11 @@ func (p *Platform) Account(ctx context.Context) (*providerprotocol.Account, erro
 	if err != nil {
 		return nil, err
 	}
-	account, err := c.ReadAccount(ctx)
+	account, err := timed(ctx, p.history, c, c.ReadAccount)
 	if err != nil {
 		return nil, err
 	}
-	limits, err := c.ReadRateLimits(ctx)
+	limits, err := timed(ctx, p.history, c, c.ReadRateLimits)
 	if err != nil {
 		limits = nil
 	}
