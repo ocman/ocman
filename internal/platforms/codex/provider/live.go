@@ -100,6 +100,7 @@ type session struct {
 	running         bool   // admitted and not settled
 	status          db.SessionStatus
 	view            []viewEntry
+	metadata        db.Session // native child identity, never application ancestry
 }
 
 type viewEntry struct {

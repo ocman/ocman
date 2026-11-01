@@ -65,7 +65,10 @@ func (b *backend) runtime(dir string) []db.Session {
 	out := []db.Session{}
 	for id, s := range b.sessions {
 		if s.dir != "" && (dir == "" || dir == s.dir) {
-			out = append(out, db.Session{ID: id, Platform: PlatformID, Title: s.title, Directory: s.dir, Status: b.statusLocked(id, ""), LiveConnection: true})
+			row := s.metadata
+			row.ID, row.Platform, row.Title, row.Directory = id, PlatformID, s.title, s.dir
+			row.Status, row.LiveConnection = b.statusLocked(id, ""), true
+			out = append(out, row)
 		}
 	}
 	return out

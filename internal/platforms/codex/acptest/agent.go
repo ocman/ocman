@@ -16,14 +16,15 @@ import (
 )
 
 type State struct {
-	CLI       string                     `json:"cli"`
-	Home      string                     `json:"home"`
-	Directory string                     `json:"directory"`
-	CreatedAt int64                      `json:"createdAt"`
-	Revision  int64                      `json:"revision"`
-	Turns     []codexappserver.Turn      `json:"turns"`
-	Items     []codexappserver.ItemEntry `json:"items"`
-	Calls     []string                   `json:"calls"`
+	CLI                string                     `json:"cli"`
+	Home               string                     `json:"home"`
+	Directory          string                     `json:"directory"`
+	CreatedAt          int64                      `json:"createdAt"`
+	Revision           int64                      `json:"revision"`
+	Turns              []codexappserver.Turn      `json:"turns"`
+	Items              []codexappserver.ItemEntry `json:"items"`
+	Calls              []string                   `json:"calls"`
+	ClientCapabilities map[string]any             `json:"clientCapabilities"`
 }
 
 func ReadState(path string) State {
@@ -82,7 +83,12 @@ func (a *agent) handle(ctx context.Context, method string, raw json.RawMessage) 
 	a.mu.Unlock()
 	switch method {
 	case "initialize":
+		var request struct {
+			ClientCapabilities map[string]any `json:"clientCapabilities"`
+		}
+		_ = json.Unmarshal(raw, &request)
 		a.mu.Lock()
+		a.state.ClientCapabilities = request.ClientCapabilities
 		a.state.CLI, a.state.Home = os.Getenv("CODEX_PATH"), os.Getenv("CODEX_HOME")
 		a.saveLocked()
 		a.mu.Unlock()
@@ -112,11 +118,21 @@ func (a *agent) handle(ctx context.Context, method string, raw json.RawMessage) 
 		if os.Getenv("FAKE_CODEX_OWNERSHIP_CONFLICT") != "" && method == "session/resume" {
 			return nil, &acp.RequestError{Code: -32600, Message: "thread thr already has an active writer"}
 		}
+		if method == "session/resume" && os.Getenv("FAKE_CODEX_ACP_RESUME_CHILD") != "" {
+			_ = a.conn.SendNotification(ctx, "session/update", map[string]any{"sessionId": "thr", "update": map[string]any{
+				"sessionUpdate": "subagent_update", "sessionId": "thr:subagent:child", "state": map[string]any{"state": "running"},
+			}})
+		}
 		return map[string]any{}, nil
 	case "session/fork":
 		return map[string]any{"sessionId": "thr-fork"}, nil
 	case "_session/steering":
 		return map[string]any{"outcome": "injected"}, nil
+	case "_test/notify":
+		if err := a.conn.SendNotification(ctx, "session/update", raw); err != nil {
+			return nil, acp.NewInternalError(nil)
+		}
+		return map[string]any{}, nil
 	case "session/cancel":
 		a.mu.Lock()
 		if a.cancel != nil {

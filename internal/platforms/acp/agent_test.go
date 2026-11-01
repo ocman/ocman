@@ -56,6 +56,16 @@ func TestACPAgentProcess(t *testing.T) {
 		}
 		switch m.Method {
 		case "initialize":
+			if mode == "subagents" {
+				var raw struct {
+					Capabilities map[string]json.RawMessage `json:"clientCapabilities"`
+				}
+				_ = json.Unmarshal(m.Params, &raw)
+				if string(raw.Capabilities["subagents"]) != "{}" || len(raw.Capabilities["elicitation"]) == 0 {
+					rpcError(-32602, "subagent and elicitation capabilities must coexist")
+					continue
+				}
+			}
 			var request acp.InitializeRequest
 			_ = json.Unmarshal(m.Params, &request)
 			if request.ClientInfo == nil || request.ClientInfo.Name != "ocman" || request.ProtocolVersion != 1 ||
@@ -103,6 +113,11 @@ func TestACPAgentProcess(t *testing.T) {
 			_ = json.Unmarshal(m.Params, &p)
 			text := p.Prompt[0].Text.Text
 			switch text {
+			case "subagent":
+				send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": "native-session", "update": map[string]any{"sessionUpdate": "subagent_update", "sessionId": "native-session:subagent:child", "state": map[string]any{"state": "running"}},
+				}})
+				reply(map[string]any{"stopReason": "end_turn"})
 			case "auth-error":
 				rpcError(-32000, "authentication required")
 			case "disconnect":

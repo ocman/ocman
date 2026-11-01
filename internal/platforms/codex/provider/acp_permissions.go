@@ -14,9 +14,7 @@ import (
 )
 
 func (a *acpExecution) permission(ctx context.Context, req acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
-	a.mu.Lock()
-	active := a.turns[string(req.SessionId)] != nil
-	a.mu.Unlock()
+	sessionID, active := a.interactionSession(ctx, string(req.SessionId))
 	if !active {
 		return acp.RequestPermissionResponse{Outcome: acp.NewRequestPermissionOutcomeCancelled()}, nil
 	}
@@ -39,10 +37,10 @@ func (a *acpExecution) permission(ctx context.Context, req acp.RequestPermission
 		patterns = []string{providerprotocol.ExactPattern(string(req.ToolCall.ToolCallId))}
 	}
 	metadata["acpOptions"], metadata["acpToolCall"] = req.Options, req.ToolCall
-	props := map[string]any{"id": id, "sessionID": string(req.SessionId), "permission": kind,
+	props := map[string]any{"id": id, "sessionID": sessionID, "permission": kind,
 		"patterns": patterns, "always": patterns, "metadata": metadata, "tool": map[string]any{"callID": req.ToolCall.ToolCallId}}
 	responses := make(chan acp.RequestPermissionResponse, 1)
-	pr := &prompt{session: string(req.SessionId), props: props, recorded: make(chan struct{})}
+	pr := &prompt{session: sessionID, props: props, recorded: make(chan struct{})}
 	pr.deliver = func(value any) error {
 		decision, ok := value.(codexappserver.ApprovalResponse)
 		if !ok {

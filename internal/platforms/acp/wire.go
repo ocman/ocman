@@ -36,6 +36,25 @@ func (w *wire) handle(ctx context.Context, method string, raw json.RawMessage) (
 	var err error
 	switch method {
 	case acp.ClientMethodSessionUpdate:
+		var kind struct {
+			Update struct {
+				Kind string `json:"sessionUpdate"`
+			} `json:"update"`
+		}
+		if err := json.Unmarshal(raw, &kind); err != nil {
+			return nil, acp.NewInvalidParams(nil)
+		}
+		if kind.Update.Kind == "subagent_update" && w.callbacks.handlers.Subagent != nil {
+			var p SubagentNotification
+			if err := json.Unmarshal(raw, &p); err != nil || p.SessionID == "" || p.Update.SessionID == "" {
+				return nil, acp.NewInvalidParams(nil)
+			}
+			err = w.callbacks.handlers.Subagent(ctx, p)
+			if err != nil && w.callbacks.failed != nil {
+				w.callbacks.failed(err)
+			}
+			break
+		}
 		var p acp.SessionNotification
 		if err := decodeACP(raw, &p); err != nil {
 			return nil, err
@@ -90,6 +109,25 @@ func (w *wire) Done() <-chan struct{}         { return w.conn.Done() }
 func (w *wire) SetLogger(logger *slog.Logger) { w.conn.SetLogger(logger) }
 
 func (w *wire) Initialize(ctx context.Context, p acp.InitializeRequest) (acp.InitializeResponse, error) {
+	if w.callbacks.handlers.Subagent != nil {
+		// Add the extension without advertising unsupported filesystem/terminal
+		// operations or discarding the SDK's other negotiated capabilities.
+		data, err := json.Marshal(p)
+		if err != nil {
+			return acp.InitializeResponse{}, err
+		}
+		var request map[string]any
+		if err := json.Unmarshal(data, &request); err != nil {
+			return acp.InitializeResponse{}, err
+		}
+		capabilities, _ := request["clientCapabilities"].(map[string]any)
+		if capabilities == nil {
+			capabilities = map[string]any{}
+		}
+		capabilities["subagents"] = map[string]any{}
+		request["clientCapabilities"] = capabilities
+		return acp.SendRequest[acp.InitializeResponse](w.conn, ctx, acp.AgentMethodInitialize, request)
+	}
 	return acp.SendRequest[acp.InitializeResponse](w.conn, ctx, acp.AgentMethodInitialize, p)
 }
 

@@ -22,9 +22,7 @@ type acpQuestionField struct {
 
 func (a *acpExecution) question(ctx context.Context, req acpexec.ElicitationRequest) (acp.UnstableCreateElicitationResponse, error) {
 	cancelled := acp.UnstableCreateElicitationResponse{Cancel: &acp.UnstableCreateElicitationCancel{}}
-	a.mu.Lock()
-	active := a.turns[string(req.SessionID)] != nil
-	a.mu.Unlock()
+	sessionID, active := a.interactionSession(ctx, string(req.SessionID))
 	if !active || req.Form == nil {
 		return cancelled, nil
 	}
@@ -37,10 +35,10 @@ func (a *acpExecution) question(ctx context.Context, req acpexec.ElicitationRequ
 		questions[i] = field.question
 	}
 	id := "que_" + uuid.NewString()
-	props := map[string]any{"id": id, "sessionID": string(req.SessionID), "questions": v1Questions(questions),
+	props := map[string]any{"id": id, "sessionID": sessionID, "questions": v1Questions(questions),
 		"tool": map[string]any{"callID": req.ToolCallID}}
 	responses := make(chan acp.UnstableCreateElicitationResponse, 1)
-	pr := &prompt{session: string(req.SessionID), question: true, questions: questions, props: props, recorded: make(chan struct{})}
+	pr := &prompt{session: sessionID, question: true, questions: questions, props: props, recorded: make(chan struct{})}
 	pr.deliver = func(value any) error {
 		input, ok := value.(codexappserver.UserInputResponse)
 		if !ok {

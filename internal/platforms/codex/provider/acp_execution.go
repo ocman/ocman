@@ -18,14 +18,17 @@ import (
 // acpExecution owns the sole execution connection. backend.conn remains a
 // separate native reader; it must never load these threads for execution.
 type acpExecution struct {
-	b          *backend
-	startMu    sync.Mutex
-	mu         sync.Mutex
-	client     *acpexec.Client
-	loaded     map[string]bool
-	fresh      map[string]bool
-	generation uint64
-	turns      map[string]*acpTurn
+	b            *backend
+	startMu      sync.Mutex
+	mu           sync.Mutex
+	client       *acpexec.Client
+	loaded       map[string]bool
+	loading      map[string]bool // verified roots whose resume notifications precede the response
+	fresh        map[string]bool
+	generation   uint64
+	turns        map[string]*acpTurn
+	children     map[string]acpChild // ACP ID to proven native identity
+	childChanged chan struct{}       // wakes interactions queued behind native identity proof
 }
 
 type acpTurn struct {
@@ -45,7 +48,7 @@ type acpTurn struct {
 }
 
 func newACPExecution(b *backend) *acpExecution {
-	return &acpExecution{b: b, loaded: map[string]bool{}, fresh: map[string]bool{}, turns: map[string]*acpTurn{}}
+	return &acpExecution{b: b, loaded: map[string]bool{}, loading: map[string]bool{}, fresh: map[string]bool{}, turns: map[string]*acpTurn{}, children: map[string]acpChild{}, childChanged: make(chan struct{})}
 }
 
 func (a *acpExecution) conn(ctx context.Context) (*acpexec.Client, error) {
@@ -58,6 +61,7 @@ func (a *acpExecution) conn(ctx context.Context) (*acpexec.Client, error) {
 		select {
 		case <-c.Done():
 			_ = c.Close()
+			a.retireChildrenLocked(a.generation)
 		default:
 			return c, nil
 		}
@@ -93,6 +97,12 @@ func (a *acpExecution) conn(ctx context.Context) (*acpexec.Client, error) {
 			}
 			return a.update(ctx, p)
 		},
+		Subagent: func(ctx context.Context, p acpexec.SubagentNotification) error {
+			if !current() {
+				return nil
+			}
+			return a.subagent(ctx, p)
+		},
 		Permission: func(ctx context.Context, p acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
 			if !current() {
 				return acp.RequestPermissionResponse{Outcome: acp.NewRequestPermissionOutcomeCancelled()}, nil
@@ -115,7 +125,15 @@ func (a *acpExecution) conn(ctx context.Context) (*acpexec.Client, error) {
 	}
 	a.mu.Lock()
 	a.client, a.loaded = c, map[string]bool{}
+	a.loading = map[string]bool{}
+	a.children = map[string]acpChild{}
+	close(a.childChanged)
+	a.childChanged = make(chan struct{})
 	a.mu.Unlock()
+	go func() {
+		<-c.Done()
+		a.retireChildren(generation)
+	}()
 	return c, nil
 }
 
@@ -170,6 +188,15 @@ func (a *acpExecution) create(ctx context.Context, req platforms.CreateSessionRe
 }
 
 func (a *acpExecution) resume(ctx context.Context, c *acpexec.Client, id string) error {
+	a.mu.Lock()
+	child := false
+	for _, entry := range a.children {
+		child = child || entry.native == id
+	}
+	a.mu.Unlock()
+	if child {
+		return platforms.ErrUnsupported
+	}
 	a.b.mu.Lock()
 	s := a.b.sessionLocked(id)
 	a.b.mu.Unlock()
@@ -196,6 +223,13 @@ func (a *acpExecution) resume(ctx context.Context, c *acpexec.Client, id string)
 	if thread.ID != id {
 		return errors.New("codex history returned a different thread")
 	}
+	if thread.ParentThreadID != "" {
+		return platforms.ErrUnsupported
+	}
+	a.mu.Lock()
+	a.loading[id] = true
+	a.mu.Unlock()
+	defer func() { a.mu.Lock(); delete(a.loading, id); a.mu.Unlock() }()
 	_, err = c.ResumeSession(ctx, acp.ResumeSessionRequest{SessionId: acp.SessionId(id), Cwd: thread.Cwd, McpServers: a.servers()})
 	if err != nil {
 		return threadLoadError(err) // ownership rejection never authorizes a native resume

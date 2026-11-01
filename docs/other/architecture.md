@@ -1937,13 +1937,14 @@ Codex uses the shared ACP execution transport inside its existing supervisor:
 ```mermaid
 flowchart LR
     Executor[codex/provider<br/>ACP execution] --> ACP[platforms/acp]
-    ACP --> SDK[coder/acp-go-sdk<br/>JSON-RPC framing]
+    ACP --> SDK[coder/acp-go-sdk<br/>JSON-RPC framing + subagent extension]
     SDK -->|stdio| Adapter[Installed codex-acp]
     Adapter --> Writer[Codex execution app-server]
     Executor --> Reader[Native history + title metadata]
     Executor --> Converter[Single Codex converter]
     Reader --> Converter
     Converter --> Spool[Existing supervisor spool]
+    ACP -->|verified native child identities + live status| Spool
 ```
 
 - `platforms/acp` launches an explicit executable, negotiates capabilities and
@@ -1953,6 +1954,13 @@ flowchart LR
 - The wire dispatcher retains session/tool fields on form elicitation requests
   that the SDK's generated form union omits. Questions cannot borrow another
   session's context. Only supported, non-secret form fields reach the UI.
+- Codex negotiates ACP v1 `subagent_update` notifications. The supervisor decodes
+  the adapter's child-session wrapper and verifies each native thread's immediate
+  parent through the read-only app-server before publishing its identity. Native
+  child status enters the existing spool, runtime inventory and canonical sidebar
+  observations. A root turn ending does not settle its children; losing the ACP
+  connection interrupts their live observations. Child permission and question
+  requests use native IDs, and native children cannot be resumed as root sessions.
 - The client does not register a platform, install adapters, ingest history or
   replace owner routing and supervisor recovery. Codex retains these native
   integrations; OpenCode and Claude execution are unchanged. Tests use the

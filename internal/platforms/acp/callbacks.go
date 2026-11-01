@@ -15,6 +15,7 @@ type Handlers struct {
 	Update      func(context.Context, acp.SessionNotification) error
 	Permission  func(context.Context, acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error)
 	Elicitation func(context.Context, ElicitationRequest) (acp.UnstableCreateElicitationResponse, error)
+	Subagent    func(context.Context, SubagentNotification) error
 }
 
 type callbacks struct {
