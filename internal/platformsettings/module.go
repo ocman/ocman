@@ -58,10 +58,12 @@ func DrainContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, drainKey{}, true)
 }
 
+// Begin fences new work only for a settings change. A recovery reload waits for
+// natural idleness; its bindings are durable and also apply on restart.
 func (m *Module) Begin(ctx context.Context) (func(), error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if (m.pending || m.recoveryPending) && ctx.Value(drainKey{}) != true {
+	if m.pending && ctx.Value(drainKey{}) != true {
 		return nil, fmt.Errorf("platform configuration is reloading after active work finishes: %w", platforms.ErrBusy)
 	}
 	m.inFlight++

@@ -2,17 +2,15 @@ package platformsettings
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
 
-func TestRecoveryReloadDrainsAdmissionAndWaitsForAuthoritativeIdle(t *testing.T) {
+func TestRecoveryReloadWaitsForAuthoritativeIdleWithoutFencingNewWork(t *testing.T) {
 	m := New(nil)
 	reloads := 0
 	idle := false
@@ -27,19 +25,26 @@ func TestRecoveryReloadDrainsAdmissionAndWaitsForAuthoritativeIdle(t *testing.T)
 	if m.tryReload(t.Context()) || reloads != 0 {
 		t.Fatal("reload interrupted admitted work")
 	}
-	if _, err := m.Begin(t.Context()); !errors.Is(err, platforms.ErrBusy) {
-		t.Fatalf("new work bypassed drain: %v", err)
-	}
-	drain, err := m.Begin(DrainContext(t.Context()))
+	// Recovery bindings are already durable, so a busy machine must keep
+	// accepting new sessions and turns instead of waiting for a global idle.
+	fresh, err := m.Begin(t.Context())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("recovery reload fenced new work: %v", err)
 	}
-	drain()
+	fresh()
 	finish()
 	if m.tryReload(t.Context()) {
 		t.Fatal("reload ignored busy runtime")
 	}
 	idle = true
+	raced, err := m.Begin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.tryReload(t.Context()) || reloads != 0 {
+		t.Fatal("reload ran under admitted work")
+	}
+	raced()
 	if !m.tryReload(t.Context()) || reloads != 1 {
 		t.Fatalf("settled recovery did not reload: %d", reloads)
 	}

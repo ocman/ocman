@@ -1041,7 +1041,9 @@ flowchart LR
   contacting the owner on replay. It requires quiescent state users.
   The canonical-only `sessionrefrecovery` module polls connected canonical owners
   for unresolved proofs. It persists bindings without rekeying live application
-  tables, then requests the existing admission drain and authoritative idle check.
+  tables, then requests a reload gated by the authoritative idle check. Unlike a
+  platform-settings change, it does not fence new sessions or turns; a busy
+  machine applies the bindings at the next natural idle point or restart.
   A graceful backend reload applies those bindings through the fenced background task
   and rebuilds caches and workers. Held quarantine queues remain durable and do
   not block the reload. Saving unchanged platform settings cannot cancel it.
