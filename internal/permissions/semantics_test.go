@@ -63,6 +63,7 @@ func semanticsCases() []semanticsCase {
 		// Across patterns any deny denies and only all-allow allows.
 		{name: "every pattern must allow", exact: true, configured: []platforms.PermissionRule{bash("git *", "allow")}, permission: "bash", patterns: []string{"git status", "rm x"}, want: "ask"},
 		{name: "any deny denies", configured: []platforms.PermissionRule{bash("git *", "allow"), bash("rm *", "deny")}, permission: "bash", patterns: []string{"git status", "rm x"}, want: "deny"},
+		{name: "unknown action asks", exact: true, configured: []platforms.PermissionRule{bash("*", "bogus")}, permission: "bash", patterns: []string{"ls"}, want: "ask"},
 		{name: "wildcard permission without patterns", configured: []platforms.PermissionRule{rule("*", "*", "allow")}, permission: "webfetch", want: "allow"},
 
 		// Exact platforms: a prompt pattern stands for its literal value and an
@@ -99,13 +100,7 @@ var evaluators = []struct {
 		name:    "autoapprove manual rules",
 		applies: func(tc semanticsCase) bool { return !tc.preflight },
 		eval: func(_ *testing.T, tc semanticsCase) string {
-			patterns := append([]string(nil), tc.patterns...)
-			if tc.exact {
-				for i := range patterns {
-					patterns[i] = providerprotocol.PatternValue(patterns[i])
-				}
-			}
-			return permissions.Decision(tierless(tc), tc.permission, patterns)
+			return ruleSet(tc).Decide(tc.permission, tc.patterns)
 		},
 	},
 	{
@@ -114,11 +109,7 @@ var evaluators = []struct {
 		name:    "autoapprove session rules",
 		applies: func(tc semanticsCase) bool { return !tc.preflight },
 		eval: func(_ *testing.T, tc semanticsCase) string {
-			allows := permissions.Allows
-			if tc.exact {
-				allows = permissions.AllowsExact
-			}
-			if allows(tierless(tc), tc.permission, tc.patterns) {
+			if ruleSet(tc).Allows(tc.permission, tc.patterns) {
 				return "allow"
 			}
 			return "not allow"
@@ -126,10 +117,12 @@ var evaluators = []struct {
 	},
 }
 
-// tierless is the rule list an evaluator without a configured/approved
-// boundary receives: approvals after the configured rules.
-func tierless(tc semanticsCase) []platforms.PermissionRule {
-	return append(append([]platforms.PermissionRule(nil), tc.configured...), tc.approved...)
+// ruleSet is tc as the autoapprove callers build it, matching like the
+// platform's capabilities say. Their rule sources hold no approvals today;
+// the tier is passed so the boundary holds on every path.
+func ruleSet(tc semanticsCase) permissions.RuleSet {
+	caps := platforms.Capabilities{ExactPatterns: tc.exact}
+	return permissions.RuleSet{Matcher: permissions.MatcherFor(caps), Configured: tc.configured, Approved: tc.approved}
 }
 
 func decideByProviderRules(t *testing.T, tc semanticsCase) string {

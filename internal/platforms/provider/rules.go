@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ocman/ocman/internal/permissions"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
 	log "github.com/sirupsen/logrus"
@@ -160,47 +161,28 @@ func (r *Rules) settle(pid string, always bool) error {
 	})
 }
 
-// Decide evaluates a prompt like OpenCode: per pattern the last matching rule
-// wins, any deny denies, any ask asks, and only all-allow allows. It returns
-// "" when the judge or the user must decide.
+// Decide evaluates a prompt with permissions.RuleSet: the session's ruleset
+// is the configured tier and its "Allow always" replies the approved tier,
+// so approvals may satisfy ask rules but never configured denials. A
+// prompt's patterns are exact patterns: they match the call itself. It
+// returns "once", "reject", or "" when the judge or the user must decide.
 func (r *Rules) Decide(prompt platforms.LivePrompt) string {
 	id, _ := prompt["sessionID"].(string)
 	permission, _ := prompt["permission"].(string)
+	set := permissions.RuleSet{Matcher: permissions.ExactMatch}
 	r.mu.Lock()
-	rules := append(append([]platforms.PermissionRule{}, r.data.Rules[id]...), r.data.Approved[id]...)
-	configured := len(r.data.Rules[id])
+	set.Configured = append([]platforms.PermissionRule{}, r.data.Rules[id]...)
+	set.Approved = append([]platforms.PermissionRule{}, r.data.Approved[id]...)
 	r.mu.Unlock()
-	patterns := prompt.StringsField("patterns")
-	if len(patterns) == 0 {
-		patterns = []string{"*"}
-	}
-	result := "allow"
 	metadata, _ := prompt["metadata"].(map[string]any)
-	preflight, _ := metadata["ocmanPreflight"].(bool)
-	for _, pattern := range patterns {
-		// A prompt's patterns are exact patterns: match the call itself.
-		value := providerprotocol.PatternValue(pattern)
-		action := "ask"
-		if preflight {
-			action = "allow"
-		} // no ocman restriction: continue to native checks
-		for i, rule := range rules {
-			if i == configured && action == "deny" {
-				break // saved approvals may satisfy ask rules, never configured denials
-			}
-			if providerprotocol.MatchPattern(rule.Permission, permission) && providerprotocol.MatchPattern(rule.Pattern, value) {
-				action = rule.Action
-			}
-		}
-		switch {
-		case action == "deny":
-			return "reject"
-		case action != "allow":
-			result = ""
-		}
+	if preflight, _ := metadata["ocmanPreflight"].(bool); preflight {
+		set.Default = permissions.ActionAllow // no ocman restriction: continue to native checks
 	}
-	if result == "allow" {
+	switch set.Decide(permission, prompt.StringsField("patterns")) {
+	case permissions.ActionAllow:
 		return "once"
+	case permissions.ActionDeny:
+		return "reject"
 	}
 	return ""
 }

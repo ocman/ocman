@@ -81,13 +81,8 @@ func (s *Service) manualDecision(ctx context.Context, adapter platforms.Platform
 		}
 		rules = append(rules, own...)
 	}
-	patterns := append([]string(nil), asked.patterns...)
-	if adapter.Capabilities().ExactPatterns {
-		for i := range patterns {
-			patterns[i] = providerprotocol.PatternValue(patterns[i])
-		}
-	}
-	return permissions.Decision(rules, asked.permission, patterns), nil
+	set := permissions.RuleSet{Matcher: permissions.MatcherFor(adapter.Capabilities()), Configured: rules}
+	return set.Decide(asked.permission, asked.patterns), nil
 }
 
 func (s *Service) applyManualRules(ctx context.Context, adapter platforms.Platform, sessionID, permissionID string, asked askedPermission) bool {

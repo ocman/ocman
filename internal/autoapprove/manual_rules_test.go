@@ -81,6 +81,13 @@ func TestManualRulesScopeAndExactValues(t *testing.T) {
 			t.Fatalf("%+v: decision %q, %v", tc, got, err)
 		}
 	}
+	// Glob platforms read rules like OpenCode, where a backslash is "/".
+	for command, want := range map[string]string{"cat /etc/shadow": "deny", "cat *": ""} {
+		got, err := svc.manualDecision(t.Context(), &fakePlatform{}, "child", askedPermission{permission: "bash", patterns: []string{command}})
+		if err != nil || got != want {
+			t.Fatalf("glob %q: decision %q, %v, want %q", command, got, err, want)
+		}
+	}
 	// A child's more recent explicit rule overrides an ancestor's rule.
 	saveManualRules(t, store, "fake", "child", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "ask"}})
 	got, err := svc.manualDecision(t.Context(), &fakePlatform{}, "child", askedPermission{permission: "bash", patterns: []string{"cat *"}})

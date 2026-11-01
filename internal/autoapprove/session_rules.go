@@ -92,8 +92,5 @@ func (s *Service) allowedBySessionRules(ctx context.Context, adapter platforms.P
 		}
 		rules = append(rules, own...)
 	}
-	if adapter.Capabilities().ExactPatterns {
-		return permissions.AllowsExact(rules, permission, patterns)
-	}
-	return permissions.Allows(rules, permission, patterns)
+	return permissions.RuleSet{Matcher: permissions.MatcherFor(adapter.Capabilities()), Configured: rules}.Allows(permission, patterns)
 }
