@@ -69,26 +69,26 @@ type MetricsDashboardOptions struct {
 // chart library can render a "no data" placeholder without a nil
 // guard.
 func (d *DB) GetMetricsDashboard(ctx context.Context, opts MetricsDashboardOptions) (*MetricsDashboard, error) {
-	w, groups, err := d.loadDashboard(ctx, opts)
+	e, err := d.loadDashboard(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	dashboard := &MetricsDashboard{
-		AvailableAgents: sortedKeys(w.agents),
-		AvailableModels: sortedKeys(w.models),
+		AvailableAgents: sortedKeys(e.window.agents),
+		AvailableModels: sortedKeys(e.window.models),
 	}
-	if err := d.populatePerformance(ctx, dashboard, w, groups, opts); err != nil {
+	if err := d.populatePerformance(ctx, dashboard, e, opts); err != nil {
 		return nil, err
 	}
 	dashboard.TotalRequests = dashboard.Summary.Requests
-	if dashboard.Requests, err = d.requestPage(ctx, opts, groups); err != nil {
+	if dashboard.Requests, err = d.entryPage(ctx, e, opts); err != nil {
 		return nil, err
 	}
-	sessions, err := sessionLog(ctx, groups, opts)
+	sessions, err := sessionLog(ctx, e.groups, opts)
 	if err != nil {
 		return nil, err
 	}
-	projects, err := projectLog(ctx, groups, opts)
+	projects, err := projectLog(ctx, e.groups, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -99,15 +99,15 @@ func (d *DB) GetMetricsDashboard(ctx context.Context, opts MetricsDashboardOptio
 
 // GetMetricsPerformance returns only the summary and chart data.
 func (d *DB) GetMetricsPerformance(ctx context.Context, opts MetricsDashboardOptions) (*MetricsPerformance, error) {
-	w, groups, err := d.loadDashboard(ctx, opts)
+	e, err := d.loadDashboard(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	dashboard := &MetricsDashboard{
-		AvailableAgents: sortedKeys(w.agents),
-		AvailableModels: sortedKeys(w.models),
+		AvailableAgents: sortedKeys(e.window.agents),
+		AvailableModels: sortedKeys(e.window.models),
 	}
-	if err := d.populatePerformance(ctx, dashboard, w, groups, opts); err != nil {
+	if err := d.populatePerformance(ctx, dashboard, e, opts); err != nil {
 		return nil, err
 	}
 	return &MetricsPerformance{
@@ -123,21 +123,12 @@ func (d *DB) GetMetricsPerformance(ctx context.Context, opts MetricsDashboardOpt
 	}, nil
 }
 
-// loadDashboard reads the window summaries and applies agent/model filters.
-func (d *DB) loadDashboard(ctx context.Context, opts MetricsDashboardOptions) (*dashboardWindow, []dashboardGroup, error) {
-	w, err := d.loadDashboardWindow(ctx, opts)
-	if err != nil {
-		return nil, nil, err
-	}
-	return w, w.filtered(opts), nil
-}
-
-func (d *DB) populatePerformance(ctx context.Context, dashboard *MetricsDashboard, w *dashboardWindow, groups []dashboardGroup, opts MetricsDashboardOptions) error {
-	overall, byLabel, err := d.durationPercentiles(ctx, w, opts, groups)
+func (d *DB) populatePerformance(ctx context.Context, dashboard *MetricsDashboard, e *dashboardEntry, opts MetricsDashboardOptions) error {
+	overall, byLabel, err := d.entryPercentiles(ctx, e, opts)
 	if err != nil {
 		return err
 	}
-	dashboard.StopReasons = stopReasonCounts(aggregateGroups(dashboard, groups, overall, byLabel, opts))
+	dashboard.StopReasons = stopReasonCounts(aggregateGroups(dashboard, e.groups, overall, byLabel, opts))
 	return nil
 }
 
@@ -146,28 +137,28 @@ func (d *DB) GetMetricsLog(ctx context.Context, opts MetricsDashboardOptions, ki
 	if kind != MetricsLogRequests && kind != MetricsLogSessions && kind != MetricsLogProjects {
 		return nil, fmt.Errorf("unknown metrics log kind %q", kind)
 	}
-	w, groups, err := d.loadDashboard(ctx, opts)
+	e, err := d.loadDashboard(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	result := &MetricsLog{
 		Kind:            kind,
-		AvailableAgents: sortedKeys(w.agents),
-		AvailableModels: sortedKeys(w.models),
+		AvailableAgents: sortedKeys(e.window.agents),
+		AvailableModels: sortedKeys(e.window.models),
 	}
 	switch kind {
 	case MetricsLogRequests:
-		for i := range groups {
-			result.Total += groups[i].messages
+		for i := range e.groups {
+			result.Total += e.groups[i].messages
 		}
-		result.Requests, err = d.requestPage(ctx, opts, groups)
+		result.Requests, err = d.entryPage(ctx, e, opts)
 	case MetricsLogSessions:
 		var sessions []SessionLogEntry
-		sessions, err = sessionLog(ctx, groups, opts)
+		sessions, err = sessionLog(ctx, e.groups, opts)
 		result.Total, result.Sessions = len(sessions), paginateSlice(sessions, opts.SessionOffset, opts.SessionLimit)
 	default:
 		var projects []ProjectLogEntry
-		projects, err = projectLog(ctx, groups, opts)
+		projects, err = projectLog(ctx, e.groups, opts)
 		result.Total, result.Projects = len(projects), paginateSlice(projects, opts.ProjectOffset, opts.ProjectLimit)
 	}
 	if err != nil {

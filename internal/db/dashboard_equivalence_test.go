@@ -169,6 +169,18 @@ func TestDashboardSummariesMatchRequestScan(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertSameJSON(t, name+"/dashboard", want, got)
+			for _, pass := range []string{"cold", "cached"} {
+				snapshot, release, err := reader.ScopedHistoryReader(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := snapshot.GetMetricsDashboard(t.Context(), opts)
+				release()
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertSameJSON(t, name+"/snapshot/"+pass, want, got)
+			}
 			performance, err := reader.GetMetricsPerformance(t.Context(), opts)
 			if err != nil {
 				t.Fatal(err)
@@ -320,5 +332,73 @@ func TestRequestLogPagesInSQL(t *testing.T) {
 		if log.Requests[i].TimeCreated > log.Requests[i-1].TimeCreated {
 			t.Fatalf("request log not most recent first: %+v", log.Requests)
 		}
+	}
+}
+
+// TestDashboardCacheServesUnchangedHistory proves repeated reads at one
+// change_outbox revision reuse the window, including sliding cutoffs that
+// cross no request, and that new ingestion or a crossed request rebuilds.
+func TestDashboardCacheServesUnchangedHistory(t *testing.T) {
+	now := time.Now()
+	path, store := dashboardEquivalenceStore(t, now)
+	reader, err := OpenHistoryAnalytics(path, []string{"one", "two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	performance := func(opts MetricsDashboardOptions) *MetricsPerformance {
+		t.Helper()
+		snapshot, release, err := reader.ScopedHistoryReader(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer release()
+		got, err := snapshot.GetMetricsPerformance(t.Context(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	since := now.Add(-30 * 24 * time.Hour).UnixMilli()
+	opts := MetricsDashboardOptions{Days: 30, Since: since}
+	cached := performance(opts)
+	writer, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	// Remove summaries without appending to change_outbox: only a cache hit
+	// can still report them.
+	if _, err := writer.Exec(`DELETE FROM analytics_hour`); err != nil {
+		t.Fatal(err)
+	}
+	opts.Since = since + 1
+	if got := performance(opts); got.Summary.Requests != cached.Summary.Requests || got.Summary.TotalCost != cached.Summary.TotalCost {
+		t.Fatalf("unchanged history re-read the database: %d requests, want %d", got.Summary.Requests, cached.Summary.Requests)
+	}
+	opts.Since = since + 3*24*3600000 // crosses requests: rebuilt from the mutated store
+	if got := performance(opts); got.Summary.Requests >= cached.Summary.Requests {
+		t.Fatalf("cutoff crossing requests reused the window: %d requests", got.Summary.Requests)
+	}
+	// New ingestion appends to change_outbox and rebuilds hour rows.
+	batch := statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "one", SessionID: "fresh"}, Title: "Fresh", Directory: "/fresh", UpdatedAt: now.UnixMilli()},
+		Messages: []statev2.Message{{ID: "fresh", Role: "assistant", CreatedAt: now.UnixMilli(), Extensions: json.RawMessage(`{"role":"assistant","cost":1,"tokens":{"input":1,"output":1}}`)}}}
+	if _, err := store.Commit(t.Context(), batch); err != nil {
+		t.Fatal(err)
+	}
+	opts.Since = since + 1
+	if got := performance(opts); got.Summary.Requests == cached.Summary.Requests {
+		t.Fatalf("new revision served the old window: %d requests", got.Summary.Requests)
+	}
+	// The cache keeps at most dashboardCacheEntries windows per reader.
+	for i := range dashboardCacheEntries + 4 {
+		performance(MetricsDashboardOptions{Dir: fmt.Sprintf("/dir-%d", i)})
+	}
+	if n := reader.historyScope.dashboards.len(); n > dashboardCacheEntries {
+		t.Fatalf("cache holds %d windows, bound %d", n, dashboardCacheEntries)
+	}
+	// Readers without a validated snapshot never cache.
+	if _, err := reader.GetMetricsPerformance(t.Context(), MetricsDashboardOptions{Dir: "/uncached"}); err != nil {
+		t.Fatal(err)
 	}
 }

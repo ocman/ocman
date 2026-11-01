@@ -702,6 +702,13 @@ calculation logic. Permission decisions, UI usage and database-size history keep
 their original sources. Provider/subscription quotas are live platform account
 reads, not history estimates. Live streaming and execution remain platform-owned.
 
+Each reader caches up to 16 metrics windows keyed by the snapshot's
+`change_outbox` high-water mark, local time zone, directory, day range and
+agent/model filters. Repeated dashboard, performance and log requests with no
+new ingestion reuse them; a moved cutoff reuses a window only when no request
+lies between the two cutoffs. Pricing, session identity and the zero-filled
+series are applied per response.
+
 Storage-size sampling also stays behind the platform boundary:
 
 ```mermaid

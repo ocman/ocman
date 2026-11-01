@@ -8,14 +8,19 @@ import (
 	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
-// requestPage returns one page of the filtered request log, most recent
+// pageRow is one request log row before pricing and session identity.
+type pageRow struct {
+	RequestLogEntry
+	instance string
+}
+
+// requestRows returns one page of the filtered request log, most recent
 // first, paginated in SQLite. groups are the window's filtered request groups;
 // their raw agent/provider/model combinations express the agent/model filter
 // with the same trimming and model-key rules as the summaries.
-func (d *DB) requestPage(ctx context.Context, opts MetricsDashboardOptions, groups []dashboardGroup) ([]RequestLogEntry, error) {
-	out := []RequestLogEntry{}
+func (d *DB) requestRows(ctx context.Context, opts MetricsDashboardOptions, groups []dashboardGroup) ([]pageRow, error) {
 	if len(groups) == 0 {
-		return out, nil
+		return nil, nil
 	}
 	query := `SELECT m.instance_id,m.id,m.session_id,m.time_created,m.agent,m.provider,m.model,m.cost,
 		m.input_tokens,m.output_tokens,m.cache_read,m.cache_write,m.duration_ms,m.tokens_per_second,m.finish
@@ -51,30 +56,42 @@ func (d *DB) requestPage(ctx context.Context, opts MetricsDashboardOptions, grou
 		return nil, err
 	}
 	defer rows.Close()
+	var out []pageRow
 	for rows.Next() {
-		var r RequestLogEntry
-		var instance, provider, model string
-		if err := rows.Scan(&instance, &r.ID, &r.SessionID, &r.TimeCreated, &r.Agent, &provider, &model, &r.Cost,
+		var r pageRow
+		var provider, model string
+		if err := rows.Scan(&r.instance, &r.ID, &r.SessionID, &r.TimeCreated, &r.Agent, &provider, &model, &r.Cost,
 			&r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheWriteTokens, &r.DurationMs, &r.TokensPerSecond, &r.StopReason); err != nil {
 			return nil, err
 		}
 		r.Agent = strings.TrimSpace(r.Agent)
 		r.Model = analyticsdata.ModelKey(provider, strings.TrimSpace(model))
-		if opts.SessionIdentity != nil {
-			if r.SessionID, err = opts.SessionIdentity(ctx, instance, r.SessionID); err != nil {
-				return nil, err
-			}
-		}
 		if r.StopReason == "" {
 			r.StopReason = "none"
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// finishPage resolves session identity and prices each page row.
+func finishPage(ctx context.Context, rows []pageRow, opts MetricsDashboardOptions) ([]RequestLogEntry, error) {
+	out := make([]RequestLogEntry, len(rows))
+	for i, row := range rows {
+		r := row.RequestLogEntry
+		if opts.SessionIdentity != nil {
+			var err error
+			if r.SessionID, err = opts.SessionIdentity(ctx, row.instance, r.SessionID); err != nil {
+				return nil, err
+			}
 		}
 		if opts.Pricing != nil {
 			r.CalcCost = opts.Pricing.CalcCost(r.Model, r.InputTokens, r.OutputTokens, r.CacheReadTokens, r.CacheWriteTokens)
 		}
 		r.EffectiveCost = effectiveCost(r.Cost, r.CalcCost)
-		out = append(out, r)
+		out[i] = r
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // groupCombos lists the distinct raw agent/provider/model values of groups.

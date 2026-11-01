@@ -25,6 +25,10 @@ type DB struct {
 	historyScope *historyScopeValidation
 	// snapshot binds a history reader's queries to one read transaction.
 	snapshot *sql.Tx
+	// revision is the change_outbox high-water mark of snapshot, when
+	// revisionKnown; it keys cached dashboard windows.
+	revision      int64
+	revisionKnown bool
 	// sessionTotals is true when the session table carries OpenCode's
 	// denormalised cost/tokens_input/tokens_output columns, letting the
 	// session list skip re-aggregating every message blob.

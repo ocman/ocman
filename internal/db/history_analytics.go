@@ -92,14 +92,15 @@ func (d *DB) ScopedHistoryReader(ctx context.Context) (*DB, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := d.validateHistoryScope(ctx, tx); err != nil {
+	revision, err := d.validateHistoryScope(ctx, tx)
+	if err != nil {
 		_ = tx.Rollback()
 		return nil, nil, err
 	}
-	return &DB{db: d.db, historyScope: d.historyScope, snapshot: tx}, func() { _ = tx.Rollback() }, nil
+	return &DB{db: d.db, historyScope: d.historyScope, snapshot: tx, revision: revision, revisionKnown: true}, func() { _ = tx.Rollback() }, nil
 }
 
-func (d *DB) validateHistoryScope(ctx context.Context, tx *sql.Tx) error {
+func (d *DB) validateHistoryScope(ctx context.Context, tx *sql.Tx) (int64, error) {
 	d.historyScope.mu.Lock()
 	defer d.historyScope.mu.Unlock()
 	// Every content change and purge appends an outbox row atomically. The
@@ -107,24 +108,27 @@ func (d *DB) validateHistoryScope(ctx context.Context, tx *sql.Tx) error {
 	// the revision every later read in the transaction observes.
 	var revision int64
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence),0) FROM main.change_outbox`).Scan(&revision); err != nil {
-		return err
+		return 0, err
 	}
 	if d.historyScope.valid && d.historyScope.revision == revision {
-		return nil
+		return revision, nil
 	}
 	var duplicates int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT f.id FROM main.analytics_conflict c CROSS JOIN session f ON f.id=c.id WHERE c.kind='session' GROUP BY f.id HAVING count(*)>1 LIMIT 1)`).Scan(&duplicates); err != nil {
-		return err
+		return 0, err
 	}
 	if duplicates > 0 {
-		return fmt.Errorf("history analytics native session IDs collide across sources")
+		return 0, fmt.Errorf("history analytics native session IDs collide across sources")
 	}
 	d.historyScope.valid, d.historyScope.revision = true, revision
-	return nil
+	return revision, nil
 }
 
 type historyScopeValidation struct {
 	mu       sync.Mutex
 	valid    bool
 	revision int64
+	// dashboards caches metrics windows by the revision above; see
+	// history_dashboard_cache.go.
+	dashboards dashboardCache
 }
