@@ -23,7 +23,7 @@ func (s *Server) startSessionServices(ctx context.Context, workers *sync.WaitGro
 			workers.Go(func() { health.RunOpenCodeHealthChecks(ctx) })
 		}
 		workers.Go(func() { ocv2.WatchInstalledVersion(ctx) })
-		workers.Go(ensureOpenCodeMCPLayout)
+		workers.Go(s.ensureOpenCodeMCPLayout)
 		if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
 			workers.Go(func() { sup.RunMachineSupervisor(ctx) })
 		}

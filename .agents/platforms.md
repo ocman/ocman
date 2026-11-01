@@ -69,7 +69,8 @@ decided by `provider.Rules`, auto-approval and the user. Without OpenCode use
 `autoapprove.ClaudeJudge`. Terminal sessions use transcript status.
 
 The hook plugin checks `OCMAN_MANAGED=1`, so standalone Claude skips it.
-`ocman hook <event>` posts to MCP `/hook` with a one-second timeout and always
+`ocman hook <event>` posts to MCP `/hook`, with the bearer token read from
+`--token-file`, with a one-second timeout and always
 exits zero; the server forwards to provider `/hooks`. Ignore hooks for sessions
 ocman drives. Install through `hostsvc.HookPluginManager`, not application flags.
 Tests use `claudetest.Binary` and versioned fixtures, never real `claude`.

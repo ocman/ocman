@@ -16,6 +16,7 @@ import (
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/hostsvc/local"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
 	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
@@ -27,7 +28,9 @@ import (
 
 // supervisorIdentity is part of the launch identity: a supervisor launched
 // with another CLI or an older backend is drained and replaced.
-const supervisorIdentity = "codex-supervisor/acp-v1-subagents"
+// mcp-token/v1: supervisors from before the MCP bearer token drain and are
+// replaced, so no session keeps connecting without it.
+const supervisorIdentity = "codex-supervisor/acp-v1-subagents/mcp-token-v1"
 
 // Config is what New needs from the application.
 type Config struct {
@@ -99,7 +102,7 @@ func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error)
 	runtime.Args = func() []string {
 		args := []string{"--codex-cli", l.cli, "--codex-acp-cli", l.acp, "--codex-home", home, "--ocman-version", cfg.Version}
 		if addr, _ := p.mcpAddr.Load().(string); addr != "" {
-			args = append(args, "--mcp-addr", addr)
+			args = append(args, "--mcp-addr", addr, "--mcp-token-file", mcpauth.TokenPath(cfg.DataDir))
 		}
 		return args
 	}

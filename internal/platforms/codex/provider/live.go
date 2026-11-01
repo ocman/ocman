@@ -24,6 +24,9 @@ type Options struct {
 	ACPCommand acpexec.Command // installed adapter; empty uses codex-acp
 	Home       string          // canonical Codex home shared with native history
 	MCPAddr    string          // bound ocman MCP listener
+	// MCPTokenFile holds that listener's bearer token (mcpauth), read for
+	// each session so a regenerated token is picked up.
+	MCPTokenFile string
 	// Start connects the native reader. Nil spawns CLI; tests attach a fake.
 	Start func(context.Context, codexappserver.Handler) (*codexappserver.Client, error)
 }

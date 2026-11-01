@@ -636,6 +636,9 @@ export interface McpConfigStatus {
   configured: boolean;
   currentUrl?: string;
   wantUrl: string;
+  // Authorization header value the entry must send, referencing ocman's
+  // token file; absent when the endpoint needs none.
+  wantAuthHeader?: string;
   editable: boolean;
   reason?: string;
   // No stable MCP URL exists (desktop app whose dedicated listener did not

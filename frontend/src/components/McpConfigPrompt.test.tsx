@@ -169,7 +169,27 @@ describe('McpConfigPrompt', () => {
 
     // A different endpoint (e.g. the port moved) prompts again.
     mocks.getMcpConfig.mockResolvedValue(status({ wantUrl: 'http://127.0.0.1:9999/mcp' }));
-    render(<McpConfigPrompt />);
+    const second = render(<McpConfigPrompt />);
     expect(await screen.findByTestId('mcp-config-prompt')).toHaveTextContent('9999');
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await waitFor(() => expect(screen.queryByTestId('mcp-config-prompt')).toBeNull());
+    second.unmount();
+
+    // So does a newly required bearer-token header on the same endpoint.
+    mocks.getMcpConfig.mockResolvedValue(status({ wantUrl: 'http://127.0.0.1:9999/mcp', wantAuthHeader: 'Bearer {file:/s/mcp-token}' }));
+    render(<McpConfigPrompt />);
+    expect(await screen.findByTestId('mcp-config-prompt')).toBeInTheDocument();
+  });
+
+  it('shows the token header to add by hand', async () => {
+    mocks.getMcpConfig.mockResolvedValue(status({
+      path: '/home/u/.config/opencode/opencode.jsonc',
+      editable: false,
+      reason: 'config is JSONC; comments would be lost',
+      wantAuthHeader: 'Bearer {file:/home/u/.local/share/ocman/mcp-token}',
+    }));
+    render(<McpConfigPrompt />);
+    expect(await screen.findByTestId('mcp-config-prompt'))
+      .toHaveTextContent('with the header Authorization: Bearer {file:/home/u/.local/share/ocman/mcp-token}');
   });
 });

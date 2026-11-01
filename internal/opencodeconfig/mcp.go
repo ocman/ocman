@@ -45,6 +45,9 @@ type Status struct {
 	CurrentURL string `json:"currentUrl,omitempty"`
 	// WantURL is the URL ocman would write.
 	WantURL string `json:"wantUrl"`
+	// WantAuthHeader is the Authorization header value ocman would write
+	// (AuthHeader); empty when the endpoint needs none.
+	WantAuthHeader string `json:"wantAuthHeader,omitempty"`
 	// Editable is false when Install would refuse (see ErrNotEditable);
 	// Reason then explains why, for display.
 	Editable bool   `json:"editable"`
@@ -82,16 +85,49 @@ func Path() (string, error) {
 	return plain, nil
 }
 
+// AuthHeader is the Authorization value ocman registers for its dedicated
+// MCP listener. OpenCode replaces {file:...} with the token file's contents
+// when it loads the config, so the token itself never lands in the config,
+// which is often world-readable.
+func AuthHeader(tokenFile string) string { return "Bearer {file:" + tokenFile + "}" }
+
+// authCurrent reports whether headers carry the token reference; an empty
+// tokenFile means the endpoint needs no header.
+func authCurrent(headers map[string]string, tokenFile string) bool {
+	return tokenFile == "" || headers["Authorization"] == AuthHeader(tokenFile)
+}
+
+// setAuthHeader adds the token reference to an entry's headers, keeping any
+// other headers. An empty tokenFile leaves the entry alone.
+func setAuthHeader(fields map[string]json.RawMessage, tokenFile string) error {
+	if tokenFile == "" {
+		return nil
+	}
+	headers, err := object(fields["headers"], `"headers"`)
+	if err != nil {
+		return err
+	}
+	if headers["Authorization"], err = json.Marshal(AuthHeader(tokenFile)); err != nil {
+		return err
+	}
+	fields["headers"], err = json.Marshal(headers)
+	return err
+}
+
 // Check reports whether the ocman MCP entry is present and current.
 // wantURL is the endpoint ocman wants registered (see
-// Server.mcpServerURL). A missing config file is not an error: it just
-// means "not configured, and Install will create it".
-func Check(wantURL string) (Status, error) {
+// Server.mcpServerURL); tokenFile, when set, is the bearer-token file the
+// entry must reference (AuthHeader). A missing config file is not an
+// error: it just means "not configured, and Install will create it".
+func Check(wantURL, tokenFile string) (Status, error) {
 	path, err := Path()
 	if err != nil {
 		return Status{}, err
 	}
 	st := Status{Path: path, WantURL: wantURL, Editable: true}
+	if tokenFile != "" {
+		st.WantAuthHeader = AuthHeader(tokenFile)
+	}
 
 	raw, err := os.ReadFile(path) //nolint:gosec // path is ocman's own config location
 	if errors.Is(err, os.ErrNotExist) {
@@ -117,7 +153,7 @@ func Check(wantURL string) (Status, error) {
 		return st, nil
 	}
 	if ocv2.InstalledV2() {
-		checkV2(doc, &st)
+		checkV2(doc, &st, tokenFile)
 		return st, nil
 	}
 	entry, ok := mcpEntry(doc)
@@ -125,15 +161,15 @@ func Check(wantURL string) (Status, error) {
 		return st, nil
 	}
 	st.CurrentURL = entry.URL
-	st.Configured = entry.URL == wantURL && enabled(entry)
+	st.Configured = entry.URL == wantURL && enabled(entry) && authCurrent(entry.Headers, tokenFile)
 	return st, nil
 }
 
 // Install writes the ocman MCP entry into the global config and returns
 // the path of the backup it took first (empty when there was no file to
 // back up). Everything else in the file is preserved as-is.
-func Install(wantURL string) (string, error) {
-	st, err := Check(wantURL)
+func Install(wantURL, tokenFile string) (string, error) {
+	st, err := Check(wantURL, tokenFile)
 	if err != nil {
 		return "", err
 	}
@@ -159,9 +195,9 @@ func Install(wantURL string) (string, error) {
 	}
 
 	if ocv2.InstalledV2() {
-		err = setV2Entry(doc, wantURL, false)
+		err = setV2Entry(doc, wantURL, false, tokenFile)
 	} else {
-		err = setMCPEntry(doc, wantURL)
+		err = setMCPEntry(doc, wantURL, tokenFile)
 	}
 	if err != nil {
 		return "", err
@@ -206,9 +242,10 @@ func backupPath(path string, now time.Time) string {
 
 // mcpServer is the subset of a v1 (flat) MCP entry ocman cares about.
 type mcpServer struct {
-	Type    string `json:"type"`
-	URL     string `json:"url"`
-	Enabled *bool  `json:"enabled"`
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Enabled *bool             `json:"enabled"`
+	Headers map[string]string `json:"headers"`
 }
 
 // enabled treats a missing "enabled" as true, matching OpenCode, which
@@ -230,18 +267,46 @@ func mcpEntry(doc map[string]json.RawMessage) (mcpServer, bool) {
 
 // setMCPEntry replaces doc["mcp"]["ocman"] in the v1 layout, leaving any
 // other server definitions (and their unknown fields) untouched.
-func setMCPEntry(doc map[string]json.RawMessage, url string) error {
+func setMCPEntry(doc map[string]json.RawMessage, url, tokenFile string) error {
 	servers := map[string]json.RawMessage{}
 	if rawMCP, ok := doc["mcp"]; ok {
 		if err := json.Unmarshal(rawMCP, &servers); err != nil {
 			return fmt.Errorf("%w: \"mcp\" is not an object: %w", ErrNotEditable, err)
 		}
 	}
-	entry, err := json.Marshal(map[string]interface{}{
-		"type":    "remote",
-		"url":     url,
-		"enabled": true,
-	})
+	fields := map[string]json.RawMessage{
+		"type":    json.RawMessage(`"remote"`),
+		"enabled": json.RawMessage("true"),
+	}
+	var err error
+	if fields["url"], err = json.Marshal(url); err != nil {
+		return err
+	}
+	if err := setAuthHeader(fields, tokenFile); err != nil {
+		return err
+	}
+	return putV1Entry(doc, servers, fields)
+}
+
+// setV1AuthHeader adds the token reference to an existing flat entry,
+// keeping all its other fields.
+func setV1AuthHeader(doc map[string]json.RawMessage, tokenFile string) error {
+	servers, err := object(doc["mcp"], `"mcp"`)
+	if err != nil {
+		return err
+	}
+	fields, err := object(servers[ServerName], `"mcp ocman entry"`)
+	if err != nil {
+		return err
+	}
+	if err := setAuthHeader(fields, tokenFile); err != nil {
+		return err
+	}
+	return putV1Entry(doc, servers, fields)
+}
+
+func putV1Entry(doc, servers, fields map[string]json.RawMessage) error {
+	entry, err := json.Marshal(fields)
 	if err != nil {
 		return err
 	}

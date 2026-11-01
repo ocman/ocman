@@ -17,6 +17,7 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/gui"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/opencodeskills"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/claude/transport"
@@ -91,7 +92,7 @@ func run() {
 	opencodeGeneratePassword := flag.Bool("opencode-server-generate-password", false, "generate an ephemeral managed OpenCode API password at startup")
 	otelEndpoint := flag.String("otel", "", "OTLP/HTTP endpoint URL (e.g. http://localhost:4318). Empty disables telemetry. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT.")
 	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
-	mcpAddr := flag.String("mcp-addr", "127.0.0.1:8227", "loopback listen address for the MCP endpoint; local clients reach it without auth, so it must be a loopback address. Empty disables the dedicated listener (/mcp then only lives on -addr, behind auth).")
+	mcpAddr := flag.String("mcp-addr", "127.0.0.1:8227", "loopback listen address for the MCP endpoint; local clients authenticate with the bearer token in <state dir>/mcp-token, and it must be a loopback address. Empty disables the dedicated listener (/mcp then only lives on -addr, behind auth).")
 	publicBaseURL := flag.String("public-base-url", "", "externally reachable base URL for share links (e.g. https://ocman.example.com); falls back to "+publicBaseURLEnv+" env, then the request Host")
 	relayURL := flag.String("relay-url", "", "base URL of the share relay for cross-machine sharing (e.g. https://share.example.com); falls back to "+share.RelayURLEnv+" env, then the built-in default")
 	remoteListen := flag.String("remote-listen", "", "bind address for the remote-access gRPC server (e.g. 0.0.0.0:8230); empty disables it (multi-remote support)")
@@ -311,6 +312,7 @@ func run() {
 			WithPublicBaseURL(resolvedBaseURL).
 			WithRelay(resolvedRelayURL, relaySource).
 			WithMCPAddr(*mcpAddr).
+			WithMCPTokenFile(mcpauth.TokenPath(state.DefaultDataDir())).
 			WithOpenCodeDBPath(openCodeDBPath).
 			WithOpenCodeService(useService).
 			WithLogPath(logPath).

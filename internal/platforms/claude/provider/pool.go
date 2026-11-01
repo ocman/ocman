@@ -204,7 +204,7 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 		return nil, err
 	}
 	mcp := l.opts.mcpConfig()
-	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, mcp)...)
+	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, l.opts.mcpConfigArg(mcp))...)
 	cmd.Dir = o.Directory
 	cmd.Env = claudecli.Environment(l.opts.ConfigEnv, o.Directory)
 	cmd.Env = append(cmd.Env, "OCMAN_MANAGED=1")

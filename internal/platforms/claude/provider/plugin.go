@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms/claude/launch"
 )
 
@@ -95,12 +96,15 @@ func hooksJSON(hook string) []byte {
 }
 
 // HookCommand is the hook command prefix for the ocman binary exe. Status
-// posts to the loopback listener at addr; history appends to journal. Either
-// may be empty.
-func HookCommand(exe, addr, journal string) string {
+// posts to the loopback listener at addr with the bearer token read from
+// tokenFile; history appends to journal. Any may be empty.
+func HookCommand(exe, addr, tokenFile, journal string) string {
 	cmd := `"` + exe + `" hook`
 	if addr != "" {
 		cmd += " --addr " + addr
+		if tokenFile != "" {
+			cmd += " --token-file '" + strings.ReplaceAll(tokenFile, "'", `'\''`) + "'"
+		}
 	}
 	if journal != "" {
 		cmd += " --journal '" + strings.ReplaceAll(journal, "'", `'\''`) + "'"
@@ -240,6 +244,34 @@ func WriteLaunchConfig(path, mcpAddr string) error {
 		return err
 	}
 	return os.Rename(path+".tmp", path)
+}
+
+// mcpConfigArg is the --mcp-config argument for config: a 0600 file beside
+// the token file whose ocman entry carries the listener's bearer token, so
+// the token never appears in argv. Without a readable token the config is
+// passed inline as before, and ocman's listener refuses the connection.
+func (o Options) mcpConfigArg(config string) string {
+	token := mcpauth.ReadToken(o.MCPTokenPath)
+	if config == "" || token == "" {
+		return config
+	}
+	var doc struct {
+		MCPServers map[string]map[string]any `json:"mcpServers"`
+	}
+	if json.Unmarshal([]byte(config), &doc) != nil || doc.MCPServers["ocman"] == nil {
+		return config
+	}
+	doc.MCPServers["ocman"]["headers"] = mcpauth.Headers(token)
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return config
+	}
+	sum := sha256.Sum256(data)
+	path := filepath.Join(filepath.Dir(o.MCPTokenPath), "claude-mcp-"+hex.EncodeToString(sum[:6])+".json")
+	if err := mcpauth.WritePrivateFile(path, data); err != nil {
+		return config
+	}
+	return path
 }
 
 // mcpConfig is the --mcp-config for a child spawned now.

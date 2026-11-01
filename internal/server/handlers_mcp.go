@@ -14,6 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
 	internalmcp "github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/opencodeconfig"
 	"github.com/ocman/ocman/internal/platforms"
@@ -34,7 +35,7 @@ func (s *Server) handleMCPConfigStatus(w http.ResponseWriter, _ *http.Request) {
 		})
 		return
 	}
-	st, err := opencodeconfig.Check(s.mcpServerURL())
+	st, err := opencodeconfig.Check(s.mcpServerURL(), s.mcpClientTokenFile())
 	if err != nil {
 		log.WithError(err).Debug("mcp: cannot resolve opencode config path")
 		httpx.WriteJSON(w, map[string]interface{}{
@@ -57,7 +58,7 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 		return
 	}
 	url := s.mcpServerURL()
-	backup, err := opencodeconfig.Install(url)
+	backup, err := opencodeconfig.Install(url, s.mcpClientTokenFile())
 	if err != nil {
 		log.WithError(err).Warn("mcp: installing opencode config failed")
 		status := http.StatusInternalServerError
@@ -68,7 +69,7 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 		http.Error(w, err.Error(), status)
 		return
 	}
-	st, err := opencodeconfig.Check(url)
+	st, err := opencodeconfig.Check(url, s.mcpClientTokenFile())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -83,18 +84,49 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 	})
 }
 
-// ensureOpenCodeMCPLayout runs at startup so an ocman entry installed
-// for OpenCode v1 keeps working after an upgrade to v2: v2 drops codemode
-// from v1-style entries and would hide ocman's tools behind Code Mode.
-func ensureOpenCodeMCPLayout() {
-	backup, err := opencodeconfig.EnsureV2Layout()
+// ensureOpenCodeMCPLayout runs at startup so an installed ocman entry keeps
+// working: an entry installed for OpenCode v1 survives an upgrade to v2 (v2
+// drops codemode from v1-style entries and would hide ocman's tools behind
+// Code Mode), and an entry installed before the listener required a bearer
+// token gains the token-file reference.
+func (s *Server) ensureOpenCodeMCPLayout() {
+	backup, err := opencodeconfig.EnsureEntry(s.mcpClientTokenFile())
 	switch {
 	case errors.Is(err, opencodeconfig.ErrNotEditable):
-		log.WithError(err).Info("mcp: cannot update the OpenCode config for v2; set codemode to false for ocman by hand")
+		log.WithError(err).Info("mcp: cannot update ocman's OpenCode MCP entry; set codemode to false and the Authorization header by hand (see the MCP docs)")
 	case err != nil:
-		log.WithError(err).Warn("mcp: updating the OpenCode config for v2 failed")
+		log.WithError(err).Warn("mcp: updating ocman's OpenCode MCP entry failed")
 	case backup != "":
-		log.WithField("backup", backup).Info("mcp: moved ocman's OpenCode MCP entry to the v2 layout with Code Mode off")
+		log.WithField("backup", backup).Info("mcp: updated ocman's OpenCode MCP entry (v2 layout, Code Mode off, bearer token)")
+	}
+}
+
+// WithMCPTokenFile sets where the dedicated MCP listener's bearer token is
+// published for same-user clients. Must be called before Start.
+func (s *Server) WithMCPTokenFile(path string) *Server {
+	s.mcpTokenFile = path
+	return s
+}
+
+// mcpClientTokenFile is the token file clients of mcpServerURL must send,
+// or "" when that URL is the main port (where normal auth applies instead)
+// or no file is published.
+func (s *Server) mcpClientTokenFile() string {
+	if s.mcpAddr == "" {
+		return ""
+	}
+	return s.mcpTokenFile
+}
+
+// requireMCPToken admits only requests bearing the install's MCP token.
+func (s *Server) requireMCPToken(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !mcpauth.Authorized(r, s.mcpToken) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="ocman"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h(w, r)
 	}
 }
 
@@ -287,13 +319,13 @@ func (s *Server) WithMCPAddr(addr string) *Server {
 // returns a shutdown func (never nil).
 //
 // Why a second port: native MCP clients cannot present an auth cookie,
-// so this endpoint has to accept the loopback peer as its credential.
-// On the main port that would be unsafe — a reverse proxy fronting
-// ocman makes every forwarded request look loopback, which would expose
-// privileged Factory and file tools to the internet. A separate loopback-bound
-// listener is unreachable through that proxy by construction.
+// so this endpoint accepts a per-install bearer token (mcpauth) instead,
+// and only from a loopback peer. On the main port that would be unsafe —
+// a reverse proxy fronting ocman makes every forwarded request look
+// loopback. A separate loopback-bound listener is unreachable through that
+// proxy by construction.
 //
-// Any problem (non-loopback address, port in use) is logged and the
+// Any problem (non-loopback address, port in use, no token) is logged and the
 // dedicated listener is skipped: /mcp stays available on the main port
 // under the normal auth rules, so this fails closed, never open.
 func (s *Server) startMCPListener() func() {
@@ -309,11 +341,25 @@ func (s *Server) startMCPListener() func() {
 		return noop
 	}
 	if !isLoopbackHostname(strings.Trim(host, "[]")) {
-		log.WithField("addr", s.mcpAddr).Warn("mcp: -mcp-addr must be a loopback address (the endpoint is unauthenticated); dedicated MCP listener disabled")
+		log.WithField("addr", s.mcpAddr).Warn("mcp: -mcp-addr must be a loopback address (any local user can connect); dedicated MCP listener disabled")
 		s.mcpListenErr = "-mcp-addr " + s.mcpAddr + " is not a loopback address"
 		s.mcpAddr = ""
 		return noop
 	}
+	// Every local UID can reach a loopback port, so the listener also
+	// requires the install's bearer token. Without one it stays off.
+	var store mcpauth.SecretStore
+	if s.stateDB != nil {
+		store = s.stateDB
+	}
+	token, err := mcpauth.Ensure(s.lifetime(), store, s.mcpTokenFile)
+	if err != nil {
+		log.WithError(err).Warn("mcp: cannot load the MCP bearer token, dedicated MCP listener disabled")
+		s.mcpListenErr = "MCP bearer token unavailable: " + err.Error()
+		s.mcpAddr = ""
+		return noop
+	}
+	s.mcpToken = token
 	ln, err := net.Listen("tcp", s.mcpAddr)
 	if err != nil {
 		log.WithError(err).WithField("addr", s.mcpAddr).Warn("mcp: cannot bind -mcp-addr, dedicated MCP listener disabled")
@@ -334,12 +380,13 @@ func (s *Server) startMCPListener() func() {
 	mux := http.NewServeMux()
 	// requireLoopbackPeer is belt-and-braces: the listener is already
 	// loopback-bound, but it also rejects cross-origin browser requests.
-	// OpenCode sessions use this endpoint. Operator decisions remain user-only;
-	// mutable Factory Issues can be maintained from any agent session.
-	h := s.requireLoopbackPeer(s.mcpHandler().ServeHTTP)
+	// requireMCPToken is the credential. Agent sessions use this endpoint.
+	// Operator decisions remain user-only; mutable Factory Issues can be
+	// maintained from any agent session.
+	h := s.requireLoopbackPeer(s.requireMCPToken(s.mcpHandler().ServeHTTP))
 	mux.HandleFunc("/mcp", h)
 	mux.HandleFunc("/mcp/", h)
-	mux.HandleFunc("POST /hook", s.requireLoopbackPeer(s.handleHook))
+	mux.HandleFunc("POST /hook", s.requireLoopbackPeer(s.requireMCPToken(s.handleHook)))
 	srv := newHTTPServer(ln.Addr().String(), s.requests.track(withSecurityHeaders(s.withMCPReadiness(mux))))
 	listenerCtx, stopRequests := context.WithCancel(s.lifetime())
 	srv.BaseContext = func(net.Listener) context.Context { return listenerCtx }

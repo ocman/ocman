@@ -238,13 +238,17 @@ or its binary has moved:
   is stopped. Conversation history ingestion follows that journal instead of
   polling; see [architecture](../other/architecture.md).
 - **Status hooks** post the session id to ocman's MCP listener (`-mcp-addr`),
-  only from Claude processes ocman launched (`OCMAN_MANAGED=1`). `Notification`
+  with the listener's bearer token, only from Claude processes ocman launched
+  (`OCMAN_MANAGED=1`). `Notification`
   and `PreToolUse` are status-only, so standalone sessions never execute ocman
   for them. Hooks also report a best-effort Claude process ID for the
   external-instance warning; hooks from processes ocman starts are excluded.
 
-The hook command holds the ocman binary path, listener address and journal
-path; ocman rewrites and refreshes the plugin when any of them change.
+The hook command holds the ocman binary path, listener address, the path of
+the listener's bearer-token file and the journal path; ocman rewrites and
+refreshes the plugin when any of them change. The token itself stays in the
+`0600` token file and never appears in the hook command (see
+[MCP authentication](mcp.md#authentication)).
 
 ## Usage and subscription
 

@@ -142,7 +142,7 @@ func TestRunHookPostsSessionID(t *testing.T) {
 	}))
 	defer srv.Close()
 	input := `{"tool_input":{"content":"` + strings.Repeat("x", 1<<20) + `"},"session_id":"s1","cwd":"/w"}`
-	HandleHook(strings.TrimPrefix(srv.URL, "http://"), "", "PreToolUse", true, strings.NewReader(input), time.Second)
+	HandleHook(strings.TrimPrefix(srv.URL, "http://"), "", "", "PreToolUse", true, strings.NewReader(input), time.Second)
 	if e := <-got; e != (providerprotocol.HookEvent{Event: "PreToolUse", SessionID: "s1", PID: 42, Managed: true}) {
 		t.Fatalf("event = %+v", e)
 	}
@@ -159,7 +159,7 @@ func TestRunHookReturnsWithinTimeoutWhenOcmanIsDown(t *testing.T) {
 	defer w.Close()
 	go func() { _, _ = w.Write([]byte(`{"session_id":"s1"}`)) }()
 	start := time.Now()
-	HandleHook(ln.Addr().String(), "", "Stop", true, stuck, HookTimeout)
+	HandleHook(ln.Addr().String(), "", "", "Stop", true, stuck, HookTimeout)
 	if d := time.Since(start); d > 1500*time.Millisecond {
 		t.Fatalf("hook took %v", d)
 	}
@@ -167,11 +167,11 @@ func TestRunHookReturnsWithinTimeoutWhenOcmanIsDown(t *testing.T) {
 	addr := ln.Addr().String()
 	_ = ln.Close()
 	start = time.Now()
-	HandleHook(addr, "", "Stop", true, strings.NewReader(`{"session_id":"s1"}`), HookTimeout)
+	HandleHook(addr, "", "", "Stop", true, strings.NewReader(`{"session_id":"s1"}`), HookTimeout)
 	if d := time.Since(start); d > HookTimeout {
 		t.Fatalf("refused hook took %v", d)
 	}
-	HandleHook(addr, "", "Stop", true, strings.NewReader(`not json`), HookTimeout)
+	HandleHook(addr, "", "", "Stop", true, strings.NewReader(`not json`), HookTimeout)
 }
 
 func sessionStatus(t *testing.T, h *liveHarness, id string) db.SessionStatus {

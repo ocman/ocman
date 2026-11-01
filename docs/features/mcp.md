@@ -17,7 +17,8 @@ The server uses the Streamable HTTP transport and listens on its own
 loopback-only port, separate from the web UI:
 
 - `http://127.0.0.1:8227/mcp` is the dedicated MCP listener (`-mcp-addr`).
-  It works the same in dev and production, and needs no credentials.
+  It works the same in dev and production and requires the install's bearer
+  token (see [Authentication](#authentication)).
 - `http://localhost:8228/mcp` is the same endpoint on the web UI's port,
   both in dev (Vite proxies it to the backend on `:8229`) and for the
   production binary's default `-addr`. Password auth applies there, so a
@@ -28,12 +29,46 @@ paths are localhost-only. Origin-less native MCP clients work,
 cross-origin browser requests are rejected.
 
 The dedicated listener exists because MCP clients cannot present an auth
-cookie, so it has to treat the loopback peer address as the credential. That
-is unsafe on the web UI's port, where every request forwarded by a reverse
-proxy arrives from `127.0.0.1`. Binding a separate loopback-only listener
-keeps it out of reach of a proxy pointed at the main port. Ocman refuses to
-bind `-mcp-addr` to a non-loopback address, and `-mcp-addr ""` disables the
-dedicated listener entirely.
+cookie. It is unsafe to accept them on the web UI's port, where every request
+forwarded by a reverse proxy arrives from `127.0.0.1`. Binding a separate
+loopback-only listener keeps it out of reach of a proxy pointed at the main
+port. Ocman refuses to bind `-mcp-addr` to a non-loopback address, and
+`-mcp-addr ""` disables the dedicated listener entirely.
+
+## Authentication
+
+Every local user, not only you, can connect to a loopback port, so the
+dedicated listener does not trust the peer address alone. `/mcp` and
+`POST /hook` on it require `Authorization: Bearer <token>` and answer `401`
+otherwise.
+
+Ocman generates the token once per install, keeps it sealed in `state.db`
+and writes it on every start to `mcp-token` in the state directory
+(`~/.local/share/ocman/mcp-token` by default, beside `state.db`) with mode
+`0600`. If ocman cannot load the token, the dedicated listener stays off.
+
+- OpenCode: the installed entry carries
+  `"headers": {"Authorization": "Bearer {file:<state dir>/mcp-token}"}`.
+  OpenCode substitutes the file's contents when it loads the config, so the
+  token never lands in `opencode.json`. On startup ocman adds this header to
+  an entry installed by an older version, after the usual backup. Restart
+  OpenCode to pick it up.
+- Claude Code and Codex sessions that ocman launches receive the token from
+  ocman itself: Claude through a private `--mcp-config` file in the state
+  directory, Codex through ACP session setup. Neither puts it on a command
+  line.
+- The Claude hook plugin's `ocman hook` command reads the token from the file
+  named by `--token-file` (default: the state directory's `mcp-token`).
+- Any other client, for example a Claude Code you start in a terminal, needs
+  the header added by hand:
+
+  ```sh
+  claude mcp add --transport http ocman http://127.0.0.1:8227/mcp \
+    --header "Authorization: Bearer $(cat ~/.local/share/ocman/mcp-token)"
+  ```
+
+  This copies the token into that client's config, so keep that file
+  private. The token never goes in a URL or query string.
 
 ## Setup
 
@@ -60,7 +95,10 @@ global config:
     "ocman": {
       "type": "remote",
       "url": "http://127.0.0.1:8227/mcp",
-      "enabled": true
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {file:~/.local/share/ocman/mcp-token}"
+      }
     }
   }
 }

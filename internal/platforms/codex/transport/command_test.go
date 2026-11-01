@@ -15,12 +15,12 @@ import (
 )
 
 func TestParseSupervisorArgs(t *testing.T) {
-	a, err := parseSupervisorArgs([]string{"--socket", "/s", "--spool", "/sp", "--repo", "/r", "--codex-cli", "/bin/codex", "--codex-home", "/codex-home", "--mcp-addr", "127.0.0.1:9", "--ocman-version", "1.2"})
+	a, err := parseSupervisorArgs([]string{"--socket", "/s", "--spool", "/sp", "--repo", "/r", "--codex-cli", "/bin/codex", "--codex-home", "/codex-home", "--mcp-addr", "127.0.0.1:9", "--mcp-token-file", "/d/mcp-token", "--ocman-version", "1.2"})
 	if err != nil || a.CLI != "/bin/codex" || a.Version != "1.2" {
 		t.Fatalf("args = %+v %v", a, err)
 	}
 	opts := a.options()
-	if opts.Dir != "/r" || !slices.Contains(opts.Env, "CODEX_HOME=/codex-home") || opts.MCPAddr != "127.0.0.1:9" || opts.ACPCommand.Executable != "codex-acp" {
+	if opts.Dir != "/r" || !slices.Contains(opts.Env, "CODEX_HOME=/codex-home") || opts.MCPAddr != "127.0.0.1:9" || opts.MCPTokenFile != "/d/mcp-token" || opts.ACPCommand.Executable != "codex-acp" {
 		t.Fatalf("options = %+v", opts)
 	}
 	a.MCPAddr = ""
@@ -88,7 +88,7 @@ func TestForwarding(t *testing.T) {
 	defer cancel()
 	p := r.platform(ctx)
 	p.SetMCPAddr("127.0.0.1:9")
-	if args := p.mgr.Runtime.Args(); !slices.Contains(args, "--mcp-addr") || !slices.Contains(args, "127.0.0.1:9") {
+	if args := p.mgr.Runtime.Args(); !slices.Contains(args, "--mcp-addr") || !slices.Contains(args, "127.0.0.1:9") || !slices.Contains(args, "--mcp-token-file") {
 		t.Fatalf("launch args = %q", args)
 	}
 	// Before a supervisor runs, nothing is pending and nothing launches.

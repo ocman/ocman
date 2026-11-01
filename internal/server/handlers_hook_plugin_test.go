@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
@@ -61,7 +62,16 @@ func TestHookReachesPlatformOnMCPListener(t *testing.T) {
 	srv.mcpAddr = "127.0.0.1:0"
 	defer srv.startMCPListener()()
 
-	resp, err := http.Post("http://"+srv.mcpAddr+"/hook", "application/json", strings.NewReader(`{"event":"Stop","sessionID":"s1"}`))
+	post := func(body string) (*http.Response, error) {
+		req, err := http.NewRequest(http.MethodPost, "http://"+srv.mcpAddr+"/hook", strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		mcpauth.SetHeader(req, srv.mcpToken)
+		return http.DefaultClient.Do(req)
+	}
+	resp, err := post(`{"event":"Stop","sessionID":"s1"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +79,7 @@ func TestHookReachesPlatformOnMCPListener(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent || len(events) != 1 || events[0] != (providerprotocol.HookEvent{Event: "Stop", SessionID: "s1"}) {
 		t.Fatalf("status %d, events %+v", resp.StatusCode, events)
 	}
-	resp, err = http.Post("http://"+srv.mcpAddr+"/hook", "application/json", strings.NewReader(`nope`))
+	resp, err = post(`nope`)
 	if err != nil {
 		t.Fatal(err)
 	}

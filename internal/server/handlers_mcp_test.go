@@ -11,14 +11,16 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/factory"
 	internalmcp "github.com/ocman/ocman/internal/mcp"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/statev2"
 )
 
-// The dedicated MCP listener is the credential-free path for local MCP
-// clients: it must serve them even when password auth is configured,
-// because a native MCP client has no way to send an auth cookie.
+// The dedicated MCP listener is the cookie-free path for local MCP
+// clients: it must serve them, with the install's bearer token, even when
+// password auth is configured, because a native MCP client has no way to
+// send an auth cookie.
 func TestMCPListenerServesLocalClientWithPasswordAuth(t *testing.T) {
 	srv := testServer(t)
 	srv.auth = newTestAuth(t, "hunter2")
@@ -30,6 +32,7 @@ func TestMCPListenerServesLocalClientWithPasswordAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mcpauth.SetHeader(req, srv.mcpToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	resp, err := http.DefaultClient.Do(req)

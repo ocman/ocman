@@ -124,7 +124,9 @@ func TestClaudeHookPlugin(t *testing.T) {
 	}
 	hooks, err := os.ReadFile(filepath.Join(dir, ".local", "share", "ocman", "claude-marketplace", "ocman", "hooks", "hooks.json"))
 	// History hooks record terminal sessions in the isolated test journal.
-	if err != nil || !bytes.Contains(hooks, []byte("hook --addr "+mcp+" --journal '")) || !bytes.Contains(hooks, []byte("/ocman/journal/claudecode' Stop 2")) {
+	// Status posts carry the listener's bearer token from the private token file.
+	tokenFlag := "hook --addr " + mcp + " --token-file '" + filepath.Join(dir, ".local", "share", "ocman", "mcp-token") + "' --journal '"
+	if err != nil || !bytes.Contains(hooks, []byte(tokenFlag)) || !bytes.Contains(hooks, []byte("/ocman/journal/claudecode' Stop 2")) {
 		t.Fatalf("hooks.json = %s, %v", hooks, err)
 	}
 

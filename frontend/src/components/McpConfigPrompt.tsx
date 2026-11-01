@@ -41,11 +41,13 @@ export function McpConfigPrompt() {
   }, [openCode]);
 
   if (!openCode || !status || status.configured) return null;
-  if (installed === null && dismissedUrl === status.wantUrl) return null;
+  // A newly required header re-prompts even where this URL was dismissed.
+  const dismissKey = status.wantAuthHeader ? `${status.wantUrl} ${status.wantAuthHeader}` : status.wantUrl;
+  if (installed === null && dismissedUrl === dismissKey) return null;
 
   function dismiss() {
-    writeStorage(DISMISS_STORAGE_KEY, status!.wantUrl);
-    setDismissedUrl(status!.wantUrl);
+    writeStorage(DISMISS_STORAGE_KEY, dismissKey);
+    setDismissedUrl(dismissKey);
   }
 
   async function install() {
@@ -94,7 +96,7 @@ export function McpConfigPrompt() {
         <PromptToastBody data-testid="mcp-config-prompt">
           {status.unavailable ? status.reason : status.editable
             ? <>Register <code>{status.wantUrl}</code> in {status.path}?</>
-            : <>Add <code>{status.wantUrl}</code> to {status.path} by hand — {status.reason}</>}
+            : <>Add <code>{status.wantUrl}</code>{status.wantAuthHeader && <> with the header <code>Authorization: {status.wantAuthHeader}</code></>} to {status.path} by hand — {status.reason}</>}
         </PromptToastBody>
         {error && (
           <PromptToastBody data-testid="mcp-config-error">

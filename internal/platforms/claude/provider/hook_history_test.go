@@ -49,11 +49,11 @@ func TestHistoryHooksRunOutsideOcman(t *testing.T) {
 }
 
 func TestHookCommandQuotesJournalPath(t *testing.T) {
-	cmd := HookCommand("/opt/o cman/ocman", "127.0.0.1:1", "/tmp/it's here")
+	cmd := HookCommand("/opt/o cman/ocman", "127.0.0.1:1", "", "/tmp/it's here")
 	if cmd != `"/opt/o cman/ocman" hook --addr 127.0.0.1:1 --journal '/tmp/it'\''s here'` {
 		t.Fatalf("command = %s", cmd)
 	}
-	if got := HookCommand("/bin/ocman", "", "/j"); got != `"/bin/ocman" hook --journal '/j'` {
+	if got := HookCommand("/bin/ocman", "", "/t", "/j"); got != `"/bin/ocman" hook --journal '/j'` {
 		t.Fatalf("command without listener = %s", got)
 	}
 }

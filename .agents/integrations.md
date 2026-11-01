@@ -39,8 +39,10 @@ tool inventory in instructions. Feature modules register through `Deps.Tools`.
 
 - Use one `Server.mcpHandler` at both mounts. The web listener's `/mcp` uses
   `requireLocalhost` and password auth. The dedicated default
-  `127.0.0.1:8227/mcp` uses `requireLoopbackPeer`, treating the peer as credential
-  for native clients without browser cookies. Refuse non-loopback `-mcp-addr`.
+  `127.0.0.1:8227/mcp` and its `/hook` require `requireLoopbackPeer` plus the
+  per-install bearer token from `internal/mcpauth` (sealed in state.db,
+  published 0600 as `<state dir>/mcp-token`). Never accept the peer alone and
+  never put the token in argv or a URL. Refuse non-loopback `-mcp-addr`.
 - `McpConfigPrompt` polls config once per load and offers installation through
   `internal/opencodeconfig`. Back up first and write atomically. Refuse JSONC or
   commented JSON that cannot round-trip losslessly. Respect XDG and explicit

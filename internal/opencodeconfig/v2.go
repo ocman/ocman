@@ -17,10 +17,11 @@ import (
 
 // v2Server is the subset of a v2 MCP entry ocman manages.
 type v2Server struct {
-	Type     string `json:"type"`
-	URL      string `json:"url"`
-	Disabled *bool  `json:"disabled,omitempty"`
-	Codemode *bool  `json:"codemode,omitempty"`
+	Type     string            `json:"type"`
+	URL      string            `json:"url"`
+	Disabled *bool             `json:"disabled,omitempty"`
+	Codemode *bool             `json:"codemode,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty"`
 }
 
 // current reports whether the entry is enabled with Code Mode off.
@@ -66,7 +67,7 @@ func v2Entry(doc map[string]json.RawMessage) (v2Server, bool) {
 
 // checkV2 fills st from the entry OpenCode v2 actually loads. A leftover
 // flat entry is not configured: it would shadow or duplicate ours.
-func checkV2(doc map[string]json.RawMessage, st *Status) {
+func checkV2(doc map[string]json.RawMessage, st *Status, tokenFile string) {
 	legacy, hasLegacy := mcpEntry(doc)
 	entry, ok := v2Entry(doc)
 	switch {
@@ -75,12 +76,13 @@ func checkV2(doc map[string]json.RawMessage, st *Status) {
 	case hasLegacy:
 		st.CurrentURL = legacy.URL
 	}
-	st.Configured = ok && !hasLegacy && entry.URL == st.WantURL && entry.current()
+	st.Configured = ok && !hasLegacy && entry.URL == st.WantURL && entry.current() &&
+		authCurrent(entry.Headers, tokenFile)
 }
 
 // setV2Entry writes ocman's entry to mcp.servers with Code Mode off and
 // removes any flat v1 entry, leaving every other server untouched.
-func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool) error {
+func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool, tokenFile string) error {
 	mcp, err := object(doc["mcp"], `"mcp"`)
 	if err != nil {
 		return err
@@ -110,6 +112,9 @@ func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool) error
 		fields["disabled"] = json.RawMessage("true")
 	}
 	fields["codemode"] = json.RawMessage("false")
+	if err := setAuthHeader(fields, tokenFile); err != nil {
+		return err
+	}
 	entry, err := json.Marshal(fields)
 	if err != nil {
 		return err
@@ -123,13 +128,15 @@ func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool) error
 	return err
 }
 
-// EnsureV2Layout keeps an existing ocman entry usable under OpenCode v2:
-// it moves the entry to the v2 layout with Code Mode off, keeping its URL
-// and enabled state. It never adds an entry, since installing stays the
-// user's choice, and does nothing under v1 or when the entry is current.
-// It returns the backup path when it rewrote the file.
-func EnsureV2Layout() (string, error) {
-	if !ocv2.InstalledV2() {
+// EnsureEntry keeps an existing ocman entry usable. Under OpenCode v2 it
+// moves the entry to the v2 layout with Code Mode off, keeping its URL and
+// enabled state. Under either version it adds the bearer-token reference
+// (AuthHeader) when tokenFile is set and the entry lacks it. It never adds
+// an entry, since installing stays the user's choice, and does nothing when
+// the entry is current. It returns the backup path when it rewrote the file.
+func EnsureEntry(tokenFile string) (string, error) {
+	v2 := ocv2.InstalledV2()
+	if !v2 && tokenFile == "" {
 		return "", nil
 	}
 	path, err := Path()
@@ -151,9 +158,18 @@ func EnsureV2Layout() (string, error) {
 		return "", fmt.Errorf("%w: %w", ErrNotEditable, err)
 	}
 	legacy, hasLegacy := mcpEntry(doc)
+	if !v2 {
+		if !hasLegacy || authCurrent(legacy.Headers, tokenFile) {
+			return "", nil
+		}
+		if err := setV1AuthHeader(doc, tokenFile); err != nil {
+			return "", err
+		}
+		return writeDoc(path, raw, doc)
+	}
 	entry, ok := v2Entry(doc)
 	switch {
-	case ok && !hasLegacy && entry.Codemode != nil && !*entry.Codemode:
+	case ok && !hasLegacy && entry.Codemode != nil && !*entry.Codemode && authCurrent(entry.Headers, tokenFile):
 		return "", nil
 	case ok:
 	case hasLegacy:
@@ -162,7 +178,7 @@ func EnsureV2Layout() (string, error) {
 	default:
 		return "", nil
 	}
-	if err := setV2Entry(doc, entry.URL, entry.Disabled != nil && *entry.Disabled); err != nil {
+	if err := setV2Entry(doc, entry.URL, entry.Disabled != nil && *entry.Disabled, tokenFile); err != nil {
 		return "", err
 	}
 	return writeDoc(path, raw, doc)

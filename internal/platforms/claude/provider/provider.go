@@ -15,6 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
 	"github.com/ocman/ocman/internal/providersupervisor"
@@ -42,6 +43,9 @@ type Options struct {
 	// supervisor that outlives a dashboard restart follows a rebound
 	// listener. Empty uses MCPConfig only.
 	LaunchPath string
+	// MCPTokenPath holds the MCP listener's bearer token (mcpauth); each
+	// child gets it through a private --mcp-config file. Empty sends none.
+	MCPTokenPath string
 	// ConfigEnv is the CLAUDE_CONFIG_DIR claude children get, carried
 	// explicitly from the dashboard (an empty value unsets it); nil inherits
 	// this process's environment.
@@ -66,7 +70,7 @@ const (
 func DefaultOptions(dataDir string) Options {
 	config := ConfigDir(os.Getenv("CLAUDE_CONFIG_DIR"))
 	return Options{IndexPath: filepath.Join(dataDir, "claude-index.db"), ConfigDir: config, CLI: "claude", Sweep: 5 * time.Second,
-		StatePath: filepath.Join(dataDir, "claude-sessions.json"), UsagePath: filepath.Join(dataDir, "claude-usage.json"), LaunchPath: filepath.Join(dataDir, "claude-launch.json"), MaxProcs: DefaultMaxProcs, IdleTimeout: DefaultIdleTimeout,
+		StatePath: filepath.Join(dataDir, "claude-sessions.json"), UsagePath: filepath.Join(dataDir, "claude-usage.json"), LaunchPath: filepath.Join(dataDir, "claude-launch.json"), MCPTokenPath: mcpauth.TokenPath(dataDir), MaxProcs: DefaultMaxProcs, IdleTimeout: DefaultIdleTimeout,
 		SlotDir: filepath.Join(dataDir, "claude-slots")}
 }
 

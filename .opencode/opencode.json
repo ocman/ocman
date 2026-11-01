@@ -4,7 +4,10 @@
     "ocman": {
       "type": "remote",
       "url": "http://127.0.0.1:8227/mcp",
-      "enabled": true
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {file:~/.local/share/ocman/mcp-token}"
+      }
     }
   }
 }

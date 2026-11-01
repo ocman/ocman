@@ -139,7 +139,7 @@ func TestCheck(t *testing.T) {
 			if tt.file != "" {
 				writeConfig(t, filepath.Join(dir, tt.file), tt.body)
 			}
-			st, err := Check(want)
+			st, err := Check(want, "")
 			if err != nil {
 				t.Fatalf("Check: %v", err)
 			}
@@ -166,7 +166,7 @@ func TestInstallCreatesConfig(t *testing.T) {
 	dir := configHome(t)
 	const want = "http://127.0.0.1:8227/mcp"
 
-	backup, err := Install(want)
+	backup, err := Install(want, "")
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestInstallCreatesConfig(t *testing.T) {
 		t.Errorf("backup = %q, want none for a fresh config", backup)
 	}
 
-	st, err := Check(want)
+	st, err := Check(want, "")
 	if err != nil || !st.Configured {
 		t.Fatalf("after Install: configured=%v err=%v", st.Configured, err)
 	}
@@ -207,7 +207,7 @@ func TestInstallPreservesOtherKeysAndBacksUp(t *testing.T) {
 	writeConfig(t, path, original)
 
 	const want = "http://127.0.0.1:8227/mcp"
-	backup, err := Install(want)
+	backup, err := Install(want, "")
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
@@ -261,10 +261,10 @@ func TestInstallUpdatesStaleURL(t *testing.T) {
 	writeConfig(t, path, `{"mcp":{"ocman":{"type":"remote","url":"http://localhost:8228/mcp","enabled":true}}}`)
 
 	const want = "http://127.0.0.1:8227/mcp"
-	if _, err := Install(want); err != nil {
+	if _, err := Install(want, ""); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	st, _ := Check(want)
+	st, _ := Check(want, "")
 	if !st.Configured || st.CurrentURL != want {
 		t.Fatalf("stale entry not updated: %+v", st)
 	}
@@ -281,7 +281,7 @@ func TestInstallRefusesNonEditable(t *testing.T) {
 			body := "{\n  // hand-written\n  \"theme\": \"x\"\n}"
 			writeConfig(t, path, body)
 
-			if _, err := Install("http://127.0.0.1:8227/mcp"); !errors.Is(err, ErrNotEditable) {
+			if _, err := Install("http://127.0.0.1:8227/mcp", ""); !errors.Is(err, ErrNotEditable) {
 				t.Fatalf("Install err = %v, want ErrNotEditable", err)
 			}
 			raw, err := os.ReadFile(path)
@@ -304,7 +304,7 @@ func TestInstallRefusesNonEditable(t *testing.T) {
 func TestInstallRefusesNonObjectMCP(t *testing.T) {
 	dir := configHome(t)
 	writeConfig(t, filepath.Join(dir, "opencode.json"), `{"mcp":"nope"}`)
-	if _, err := Install("http://127.0.0.1:8227/mcp"); !errors.Is(err, ErrNotEditable) {
+	if _, err := Install("http://127.0.0.1:8227/mcp", ""); !errors.Is(err, ErrNotEditable) {
 		t.Fatalf("Install err = %v, want ErrNotEditable", err)
 	}
 }

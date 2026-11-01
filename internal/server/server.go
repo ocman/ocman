@@ -94,6 +94,12 @@ type Server struct {
 	// mcpListenErr explains why the dedicated MCP listener did not bind
 	// ("" when it bound or was disabled). Reported by /api/doctor.
 	mcpListenErr string
+	// mcpToken is the bearer token the dedicated MCP listener requires
+	// (mcpauth); loaded or generated when the listener starts.
+	mcpToken string
+	// mcpTokenFile is where that token is published for same-user clients
+	// (WithMCPTokenFile); empty keeps it in state.db only.
+	mcpTokenFile string
 	// toolPathErr is the toolpath.Ensure failure, reported by /api/doctor.
 	toolPathErr error
 

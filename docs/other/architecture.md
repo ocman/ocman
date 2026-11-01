@@ -1823,6 +1823,12 @@ flowchart TD
   them. Session messaging resolves the recipient's canonical identity or
   unambiguous platform, then uses the shared `sendNow` and `sessionsvc` path.
   It never creates a session or touches the held queue.
+- **internal/mcpauth.** The dedicated loopback MCP listener (`/mcp`, `/hook`)
+  requires a per-install bearer token. `mcpauth` generates it once, seals it
+  in `state.db` and publishes it 0600 as `<state dir>/mcp-token`. OpenCode's
+  installed entry references that file through `{file:...}`; the Claude and
+  Codex supervisors and `ocman hook` read it themselves, so the token never
+  appears in argv, URLs or `opencode.json`.
 - **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and
   `recall`. Sends write the owning host's `state.db`; remote sends and recalls
   cross the owner-routed gRPC seam. The browser alone lists, reads, and

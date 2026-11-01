@@ -100,7 +100,8 @@ optional, localhost-only MCP server exposing Factory, Inbox, routine, session
 inspection, creation and messaging, and file-embedding tools.
 
 Point your OpenCode config at the dedicated listener,
-`http://127.0.0.1:8227/mcp`, in development and production. See the
+`http://127.0.0.1:8227/mcp`, in development and production, sending the bearer
+token from `~/.local/share/ocman/mcp-token`. See the
 [MCP integration guide](docs/features/mcp.md) for setup and the full tool list.
 
 ## Managing sessions across machines

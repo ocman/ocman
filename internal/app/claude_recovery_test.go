@@ -109,7 +109,12 @@ func TestDashboardKillRestartComposition(t *testing.T) {
 		data, _ := os.ReadFile(args)
 		_ = json.Unmarshal(data, &argv)
 		if i := slices.Index(argv, "--mcp-config"); i >= 0 {
-			return argv[i+1]
+			// The token-bearing config is a private file, never argv.
+			config, err := os.ReadFile(argv[i+1])
+			if err != nil || !strings.Contains(string(config), `"Authorization":"Bearer `) {
+				return "inline or tokenless: " + argv[i+1]
+			}
+			return string(config)
 		}
 		return ""
 	}

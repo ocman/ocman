@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
@@ -22,9 +23,10 @@ const HookTimeout = time.Second
 var hookPID = hookClaudePID
 
 // HandleHook reads Claude's hook input once, appends history events to the
-// journal in every session, and posts status to addr only when managed. It
+// journal in every session, and posts status to addr, with the bearer token
+// read from tokenFile, only when managed. It
 // never fails or blocks Claude beyond timeout.
-func HandleHook(addr, journal, event string, managed bool, stdin io.Reader, timeout time.Duration) {
+func HandleHook(addr, tokenFile, journal, event string, managed bool, stdin io.Reader, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	done := make(chan struct{})
@@ -37,6 +39,9 @@ func HandleHook(addr, journal, event string, managed bool, stdin io.Reader, time
 				PID: hookPID(ctx), Managed: os.Getenv("OCMAN_MANAGED") == "1"})
 			if req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/hook", bytes.NewReader(body)); err == nil {
 				req.Header.Set("Content-Type", "application/json")
+				if token := mcpauth.ReadToken(tokenFile); token != "" {
+					mcpauth.SetHeader(req, token)
+				}
 				if resp, err := http.DefaultClient.Do(req); err == nil {
 					_ = resp.Body.Close()
 				}

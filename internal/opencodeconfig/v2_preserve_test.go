@@ -19,7 +19,7 @@ func TestEnsureV2LayoutPreservesServerOptions(t *testing.T) {
 				mcp = `{"servers":` + mcp + `}`
 			}
 			writeConfig(t, path, `{"mcp":`+mcp+`}`)
-			if _, err := EnsureV2Layout(); err != nil {
+			if _, err := EnsureEntry(""); err != nil {
 				t.Fatal(err)
 			}
 			_, servers := readDoc(t, path)

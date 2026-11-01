@@ -452,7 +452,8 @@ func history(args []string) {
 }
 
 // probeMCP connects to the --mcp-config servers like the CLI does at start:
-// an MCP initialize over streamable HTTP, answered with serverInfo.
+// an MCP initialize over streamable HTTP, answered with serverInfo. Like the
+// CLI, the value is a JSON string or a path to a JSON file.
 func probeMCP(log string, args []string) {
 	for i := 0; i+1 < len(args); i++ {
 		if args[i] != "--mcp-config" {
@@ -460,21 +461,29 @@ func probeMCP(log string, args []string) {
 		}
 		var config struct {
 			MCPServers map[string]struct {
-				URL string `json:"url"`
+				URL     string            `json:"url"`
+				Headers map[string]string `json:"headers"`
 			} `json:"mcpServers"`
 		}
-		_ = json.Unmarshal([]byte(args[i+1]), &config)
+		raw := []byte(args[i+1])
+		if !strings.HasPrefix(strings.TrimSpace(args[i+1]), "{") {
+			raw, _ = os.ReadFile(args[i+1])
+		}
+		_ = json.Unmarshal(raw, &config)
 		for _, server := range config.MCPServers {
-			appendLine(log, server.URL+" "+initializeMCP(server.URL))
+			appendLine(log, server.URL+" "+initializeMCP(server.URL, server.Headers))
 		}
 	}
 }
 
-func initializeMCP(url string) string {
+func initializeMCP(url string, headers map[string]string) string {
 	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"fakeclaude","version":"0"}}}`
 	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
 		return "failed: " + err.Error()

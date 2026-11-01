@@ -11,6 +11,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms"
 	acpexec "github.com/ocman/ocman/internal/platforms/acp"
 )
@@ -158,7 +159,11 @@ func (a *acpExecution) servers() []acp.McpServer {
 	if a.b.opts.MCPAddr == "" {
 		return []acp.McpServer{}
 	}
-	return []acp.McpServer{{Http: &acp.McpServerHttpInline{Name: "ocman", Url: "http://" + a.b.opts.MCPAddr + "/mcp", Headers: []acp.HttpHeader{}}}}
+	headers := []acp.HttpHeader{}
+	if token := mcpauth.ReadToken(a.b.opts.MCPTokenFile); token != "" {
+		headers = append(headers, acp.HttpHeader{Name: "Authorization", Value: mcpauth.Header(token)})
+	}
+	return []acp.McpServer{{Http: &acp.McpServerHttpInline{Name: "ocman", Url: "http://" + a.b.opts.MCPAddr + "/mcp", Headers: headers}}}
 }
 
 func (a *acpExecution) create(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {

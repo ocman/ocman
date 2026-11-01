@@ -22,6 +22,7 @@ type supervisorArgs struct {
 	CLI                 string // the dashboard's codex executable
 	Home                string // canonical Codex store and account directory
 	MCPAddr             string // ocman's bound MCP listener; empty omits it
+	MCPTokenFile        string // file holding that listener's bearer token
 	Version             string
 	ACPCLI              string
 }
@@ -36,6 +37,7 @@ func parseSupervisorArgs(args []string) (supervisorArgs, error) {
 	flags.StringVar(&a.ACPCLI, "codex-acp-cli", "codex-acp", "installed Codex ACP adapter executable")
 	flags.StringVar(&a.Home, "codex-home", "", "the dashboard's canonical Codex home")
 	flags.StringVar(&a.MCPAddr, "mcp-addr", "", "ocman's bound MCP listener address")
+	flags.StringVar(&a.MCPTokenFile, "mcp-token-file", "", "file holding the MCP listener's bearer token")
 	flags.StringVar(&a.Version, "ocman-version", "dev", "ocman version reported to Codex")
 	if err := flags.Parse(args); err != nil {
 		return a, err
@@ -50,7 +52,7 @@ func parseSupervisorArgs(args []string) (supervisorArgs, error) {
 // offers Ocman's MCP server to execution sessions.
 func (a supervisorArgs) options() codexprovider.Options {
 	opts := codexprovider.Options{CLI: a.CLI, Dir: a.Repo, Version: a.Version,
-		ACPCommand: acpexec.Command{Executable: a.ACPCLI}, Home: a.Home, MCPAddr: a.MCPAddr}
+		ACPCommand: acpexec.Command{Executable: a.ACPCLI}, Home: a.Home, MCPAddr: a.MCPAddr, MCPTokenFile: a.MCPTokenFile}
 	if a.Home != "" {
 		opts.Env = append(os.Environ(), "CODEX_HOME="+a.Home)
 	}

@@ -55,7 +55,7 @@ func TestInstallV2WritesServersLayout(t *testing.T) {
 		"other":{"type":"local","command":["x"],"enabled":true},
 		"servers":{"kept":{"type":"remote","url":"http://k/mcp","disabled":false}}}}`)
 
-	if _, err := Install(testURL); err != nil {
+	if _, err := Install(testURL, ""); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	doc, servers := readDoc(t, path)
@@ -75,7 +75,7 @@ func TestInstallV2WritesServersLayout(t *testing.T) {
 			t.Errorf("mcp.servers.ocman[%s] = %v, want %v (entry %v)", k, got[k], v, got)
 		}
 	}
-	if st, err := Check(testURL); err != nil || !st.Configured {
+	if st, err := Check(testURL, ""); err != nil || !st.Configured {
 		t.Errorf("Check after Install: %+v, %v", st, err)
 	}
 }
@@ -109,7 +109,7 @@ func TestCheckV2(t *testing.T) {
 			defer ocv2.SetInstalledV2(true)()
 			dir := configHome(t)
 			writeConfig(t, filepath.Join(dir, "opencode.json"), `{"mcp":`+tc.mcp+`}`)
-			st, err := Check(testURL)
+			st, err := Check(testURL, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -158,7 +158,7 @@ func TestEnsureV2Layout(t *testing.T) {
 			if tc.body != "" {
 				writeConfig(t, path, `{"theme":"x",`+tc.body[1:])
 			}
-			backup, err := EnsureV2Layout()
+			backup, err := EnsureEntry("")
 			if err != nil {
 				t.Fatalf("EnsureV2Layout: %v", err)
 			}
@@ -190,7 +190,7 @@ func TestEnsureV2Layout(t *testing.T) {
 			if raw, _ := os.ReadFile(path); !json.Valid(raw) || !containsTheme(raw) {
 				t.Errorf("other keys not preserved: %s", raw)
 			}
-			if again, err := EnsureV2Layout(); err != nil || again != "" {
+			if again, err := EnsureEntry(""); err != nil || again != "" {
 				t.Errorf("second run rewrote again: %q, %v", again, err)
 			}
 		})
@@ -214,7 +214,7 @@ func TestEnsureV2LayoutRefusesUneditable(t *testing.T) {
 			dir := configHome(t)
 			path := filepath.Join(dir, tc.file)
 			writeConfig(t, path, tc.body)
-			backup, err := EnsureV2Layout()
+			backup, err := EnsureEntry("")
 			if name == "mcp not object" {
 				// No readable ocman entry: nothing to repair.
 				if err != nil || backup != "" {
