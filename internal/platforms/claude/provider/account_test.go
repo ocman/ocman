@@ -271,6 +271,57 @@ func TestAccountReportsCLIUsage(t *testing.T) {
 	}
 }
 
+// A CLI with get_usage is asked again once usageTTL passes; one without it
+// keeps the plan for accountTTL.
+func TestAccountUsageRefreshCadence(t *testing.T) {
+	usage := func(percent string) string {
+		return `{"subtype":"success","request_id":"ocman-usage","response":{"rate_limits_available":true,"rate_limits":{"five_hour":{"utilization":` + percent + `,"resets_at":null}}}}`
+	}
+	probes := func(stdin string) int {
+		return len(strings.Split(strings.TrimSpace(string(must(os.ReadFile(stdin)))), "\n")) / 2
+	}
+	for name, tc := range map[string]struct {
+		first, second string
+		age           time.Duration
+		probes        int
+		want          float64 // the second read's five-hour utilisation
+	}{
+		"supported, fresh":   {usage("10"), usage("40"), usageTTL - time.Second, 1, 0.1},
+		"supported, expired": {usage("10"), usage("40"), usageTTL + time.Second, 2, 0.4},
+		"unavailable, expired": {`{"subtype":"success","request_id":"ocman-usage","response":{"rate_limits_available":false}}`,
+			usage("40"), usageTTL + time.Second, 2, 0.4},
+		"unsupported, within plan TTL": {"", usage("40"), accountTTL - time.Second, 1, -1},
+		"unsupported, expired":         {"", usage("40"), accountTTL + time.Second, 2, 0.4},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, stdin := fakeAccount(t, teamAccount) // the fake rejects get_usage unless a fixture answers it
+			if tc.first != "" {
+				usageFixture(t, tc.first)
+			}
+			if _, err := a.get(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			usageFixture(t, tc.second)
+			a.mu.Lock()
+			a.at = time.Now().Add(-tc.age)
+			a.mu.Unlock()
+			got, err := a.get(t.Context())
+			if err != nil || probes(stdin) != tc.probes {
+				t.Fatalf("probes = %d, %v; want %d", probes(stdin), err, tc.probes)
+			}
+			if tc.want < 0 {
+				if len(got.RateLimits) != 0 {
+					t.Fatalf("windows = %+v; want none", got.RateLimits)
+				}
+				return
+			}
+			if len(got.RateLimits) != 1 || got.RateLimits[0].Utilization != tc.want {
+				t.Fatalf("windows = %+v; want five_hour at %v", got.RateLimits, tc.want)
+			}
+		})
+	}
+}
+
 // API-key and third-party logins have no plan windows; an older CLI rejects
 // get_usage and the observed windows remain the fallback.
 func TestAccountCLIUsageUnavailable(t *testing.T) {
