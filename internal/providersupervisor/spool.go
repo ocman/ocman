@@ -204,7 +204,7 @@ func (s *Supervisor) Publish(event providerprotocol.Event, apply func()) error {
 func (s *Supervisor) PublishIf(ok func() bool, apply func(providerprotocol.Event), events ...providerprotocol.Event) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.barrier(ok, events, func(event providerprotocol.Event) func() { return func() { apply(event) } }, false)
+	return s.barrier(ok, func() []providerprotocol.Event { return events }, func(event providerprotocol.Event) func() { return func() { apply(event) } }, false)
 }
 
 // BeginTurn registers ownership before a backend schedules asynchronous work.
@@ -222,7 +222,8 @@ func (s *Supervisor) BeginTurn(id string, apply func()) error {
 	defer func() { p.admitting-- }()
 	props, _ := json.Marshal(map[string]any{"sessionID": id, "status": map[string]string{"type": "busy"}})
 	// A drain that began while earlier records settled still refuses the turn.
-	ok, err := s.barrier(func() bool { return !s.draining }, []providerprotocol.Event{{Type: "session.status", Properties: props}}, func(providerprotocol.Event) func() { return apply }, false)
+	busy := []providerprotocol.Event{{Type: "session.status", Properties: props}}
+	ok, err := s.barrier(func() bool { return !s.draining }, func() []providerprotocol.Event { return busy }, func(providerprotocol.Event) func() { return apply }, false)
 	if err == nil && !ok {
 		err = fmt.Errorf("supervisor is draining")
 	}
@@ -230,9 +231,10 @@ func (s *Supervisor) BeginTurn(id string, apply func()) error {
 }
 
 // barrier commits events in order once every earlier record has settled,
-// holding off new publishers, and only while ok (if any) holds. Called and
+// holding off new publishers, and only while ok (if any) holds. events is
+// built after that, so it observes every earlier apply too. Called and
 // returns with s.mu held.
-func (s *Supervisor) barrier(ok func() bool, events []providerprotocol.Event, apply func(providerprotocol.Event) func(), replay bool) (bool, error) {
+func (s *Supervisor) barrier(ok func() bool, events func() []providerprotocol.Event, apply func(providerprotocol.Event) func(), replay bool) (bool, error) {
 	s.barriers++
 	for !s.settled() {
 		s.gate.Wait()
@@ -246,7 +248,7 @@ func (s *Supervisor) barrier(ok func() bool, events []providerprotocol.Event, ap
 	if ok != nil && !ok() {
 		return false, nil
 	}
-	for _, event := range events {
+	for _, event := range events() {
 		e, err := s.sequence(event, apply(event), replay)
 		if err != nil {
 			return true, err

@@ -228,15 +228,20 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 	}
 	// Headless reconnects must see unresolved requests even when after their
 	// original event. New sequences preserve strict exclusive-cursor semantics.
+	// The barrier collects them once earlier writes settled: a reply still
+	// syncing resolves its prompt, which must not be replayed.
 	headless := r.URL.Query().Get("consumer") == "headless"
 	if headless {
-		var pending []providerprotocol.Event
-		for _, p := range s.sessions {
-			for _, rec := range p.pending {
-				if rec.Sequence <= after {
-					pending = append(pending, rec.Event)
+		pending := func() []providerprotocol.Event {
+			var events []providerprotocol.Event
+			for _, p := range s.sessions {
+				for _, rec := range p.pending {
+					if rec.Sequence <= after {
+						events = append(events, rec.Event)
+					}
 				}
 			}
+			return events
 		}
 		_, err = s.barrier(nil, pending, func(providerprotocol.Event) func() { return nil }, true)
 	}

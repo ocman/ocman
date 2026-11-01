@@ -291,6 +291,45 @@ func TestPruneKeepsDurableUnexposedRecords(t *testing.T) {
 	}
 }
 
+// A headless replay collects pending prompts only after earlier writes have
+// settled: a reply still syncing when the replay starts resolves its ask, so
+// the replay must not re-publish it.
+func TestHeadlessReplaySkipsPromptResolvedMeanwhile(t *testing.T) {
+	s := supervisor(t)
+	publish(t, s, "permission.asked", `{"sessionID":"s","id":"p"}`)
+	release, _, entered := slowDisk(t, s, "s")
+	replied := make(chan error, 1)
+	go func() {
+		replied <- s.Publish(event("permission.replied", `{"sessionID":"s","requestID":"p","reply":"once"}`), nil)
+	}()
+	<-entered
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		s.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/events?consumer=headless&after=1", nil).WithContext(ctx))
+	}()
+	waitFor(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.barriers == 1 })
+	release()
+	if err := <-replied; err != nil {
+		t.Fatal(err)
+	}
+	// The replay has committed once no barrier waits or commits.
+	waitFor(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.barriers == 0 && !s.exclusive })
+	cancel()
+	<-served
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rec := range s.sessions["s"].records[2:] {
+		t.Errorf("replayed a resolved prompt: %s %s", rec.Event.Type, rec.Event.Properties)
+	}
+	if len(s.sessions["s"].pending) != 0 {
+		t.Fatal("resolved prompt is pending again")
+	}
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
