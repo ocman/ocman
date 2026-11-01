@@ -3,8 +3,8 @@
 import { Suspense } from 'react';
 import { PatchDiff } from '@pierre/diffs/react';
 import { DIFF_OPTIONS } from '../diffOptions';
+import { HighlightedCode } from './HighlightedCode';
 import {
-  highlightDiffCode,
   shortenPatchPath,
   applyPatchToUnifiedFileDiffs,
   type ApplyPatchFileDiff,
@@ -76,7 +76,7 @@ export function renderOutput(text: string, languageHint?: string) {
             <span className="oc-diff-ln">{oldLn.trim()}</span>
             <span className="oc-diff-ln">{newLn.trim()}</span>
             {code
-              ? <span className="oc-diff-code" dangerouslySetInnerHTML={{ __html: highlightDiffCode(code, languageHint) }} />
+              ? <HighlightedCode className="oc-diff-code" code={code} language={languageHint} />
               : <span className="oc-diff-code">{' '}</span>}
           </div>
         );

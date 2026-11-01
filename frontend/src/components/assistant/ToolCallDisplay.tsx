@@ -13,7 +13,6 @@ import { useIsPrinting } from '../../lib/useIsPrinting';
 import { usePrintCollapse } from '../../lib/printCollapseContext';
 import { useUiStore } from '../../lib/uiStore';
 import {
-  highlightDiffCode,
   toolOutputLanguage,
   extractPatchPayload,
   splitToolArgs,
@@ -35,6 +34,7 @@ import { useBetaFeatures } from '../../lib/betaFeatures';
 import { factoryCardFromToolResult } from '../factoryCards';
 import { AnsiText, AnsweredQuestionBlock, BashPrompt, ToolDuration } from './toolRenderers';
 import { LazyInlineDiff } from './LazyInlineDiff';
+import { HighlightedCode } from './HighlightedCode';
 import { CompactToolCall } from './CompactToolCall';
 import { A2UIToolResult } from './A2UIResult';
 import { parseDiffPayload, renderOutput, renderPatch, shellOutputIsLong, shellOutputPreview, toolOutputPreview } from './toolOutputFormat';
@@ -331,7 +331,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
         {!forcePrintCollapse && (
           <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
             <pre className="oc-shell-block" data-testid="shell-output-block">
-{description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <span className="oc-shell-cmd" dangerouslySetInnerHTML={{ __html: highlightDiffCode(command, 'bash') }} />{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
+{description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <HighlightedCode className="oc-shell-cmd" code={command} language="bash" />{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
               {bashIsLong && (
                 <button
                   type="button"

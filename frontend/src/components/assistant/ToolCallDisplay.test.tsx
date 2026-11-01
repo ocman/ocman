@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -110,11 +110,12 @@ describe('ToolCallDisplay bash output', () => {
     );
   });
 
-  it('syntax-highlights the command as bash', () => {
+  it('syntax-highlights the command as bash once highlight.js loads', async () => {
     const { container } = renderTool({ argsText: 'completed\ngrep -n "foo" file', result: '' });
 
     const cmd = container.querySelector('.oc-shell-cmd')!;
-    expect(cmd.querySelector('[class^="hljs-"]')).not.toBeNull();
+    expect(cmd.textContent).toBe('grep -n "foo" file');
+    await waitFor(() => expect(cmd.querySelector('[class^="hljs-"]')).not.toBeNull());
     expect(cmd.textContent).toBe('grep -n "foo" file');
   });
 
@@ -537,13 +538,13 @@ describe('ToolCallDisplay artifact card', () => {
 });
 
 describe('ToolCallDisplay generic diff output', () => {
-  it('highlights diff lines with the language of the file-path argument', () => {
+  it('highlights diff lines with the language of the file-path argument', async () => {
     const { container } = renderTool({
       toolName: 'custom_tool',
       argsText: 'completed\n{"filePath":"main.go"}',
       result: '  1    1   - func old() {}\n  2    2   + func next() {}',
     });
     fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(container.querySelectorAll('.oc-diff-code .hljs-keyword')).toHaveLength(2);
+    await waitFor(() => expect(container.querySelectorAll('.oc-diff-code .hljs-keyword')).toHaveLength(2));
   });
 });

@@ -1,4 +1,4 @@
-import hljs from 'highlight.js/lib/common';
+import { highlighter } from './highlighter';
 
 /**
  * File-extension to highlight.js language mapping for diff and code
@@ -137,15 +137,16 @@ export function toolOutputLanguage(title: string, detail: string): string | unde
 /**
  * Run highlight.js on a snippet with the explicit `languageHint`.
  * Without a known hint the code is only escaped: autodetection runs
- * every grammar and this is called once per diff line. Errors during
- * highlighting also fall back to HTML-escaped raw text so we never
- * inject unhighlighted markup with unescaped angle brackets.
+ * every grammar and this is called once per diff line. Until highlight.js
+ * has loaded (see `highlighter`), and on errors during highlighting, the
+ * code is HTML-escaped raw text so we never inject unescaped angle brackets.
  */
 export function highlightDiffCode(code: string, languageHint?: string): string {
   if (!code) return '';
 
+  const hljs = highlighter.get();
   try {
-    if (languageHint && hljs.getLanguage(languageHint)) {
+    if (hljs && languageHint && hljs.getLanguage(languageHint)) {
       return hljs.highlight(code, { language: languageHint, ignoreIllegals: true }).value;
     }
   } catch { /* fall through to escaped text */ }

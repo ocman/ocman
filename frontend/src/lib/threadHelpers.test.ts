@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import hljs from 'highlight.js/lib/common';
+import { highlighter } from './highlighter';
 import {
   EXTENSION_LANGUAGE_MAP,
   escapeHtml,
@@ -88,15 +89,17 @@ describe('highlightDiffCode', () => {
     expect(highlightDiffCode('')).toBe('');
   });
 
-  it('produces some highlighted output for a known language', () => {
-    const result = highlightDiffCode('const x = 1;', 'javascript');
-    expect(typeof result).toBe('string');
-    expect(result.length).toBeGreaterThan(0);
+  it('escapes the code until highlight.js has loaded, then highlights it', async () => {
+    expect(highlighter.get()).toBeUndefined();
+    expect(highlightDiffCode('a < b', 'javascript')).toBe('a &lt; b');
+    await highlighter.load();
+    expect(highlightDiffCode('const x = 1;', 'javascript')).toContain('<span class="hljs-keyword">const</span>');
   });
 
-  it('escapes instead of autodetecting when the hint is missing or unknown', () => {
+  it('escapes instead of autodetecting when the hint is missing or unknown', async () => {
     // highlightAuto runs every grammar; per diff line that dominated
     // tool-output rendering.
+    await highlighter.load();
     const auto = vi.spyOn(hljs, 'highlightAuto');
     expect(highlightDiffCode('<b>x</b>', 'no-such-language')).toBe('&lt;b&gt;x&lt;/b&gt;');
     expect(highlightDiffCode('<b>x</b>')).toBe('&lt;b&gt;x&lt;/b&gt;');

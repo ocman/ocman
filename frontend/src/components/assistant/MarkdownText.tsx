@@ -6,7 +6,6 @@ import ReactMarkdown from 'react-markdown';
 import type { ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import rehypeHighlight from 'rehype-highlight';
 import type { ComponentProps, FC, ReactNode } from 'react';
 import { Link, useInRouterContext } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
@@ -22,6 +21,7 @@ import { ZoomableGraphicModal } from '../ZoomableGraphicModal';
 import { PreviewImage } from '../ImagePreview';
 import { CopyButton } from '../CopyButton';
 import { splitMarkdownBlocks } from './markdownBlocks';
+import { lazyModule, useLazyModule } from '../../lib/lazyModule';
 import './Reasoning.css';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
@@ -174,12 +174,15 @@ const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards, remarkFactoryIssueReferen
 const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
 const PROSE_PLUGINS = [remarkGfm, remarkFactoryIssueReferences];
 const PROSE_PLUGINS_WITH_BREAKS = [...PROSE_PLUGINS, remarkBreaks];
-// rehype-highlight builds a lowlight instance and registers ~37 languages
-// each time it is attached, and react-markdown attaches plugins on every
-// render; reuse one transformer.
-let highlightTransformer: ReturnType<typeof rehypeHighlight> | undefined;
-const sharedRehypeHighlight = () => (highlightTransformer ??= rehypeHighlight());
-const REHYPE_PLUGINS = [sharedRehypeHighlight];
+// rehype-highlight (and the highlight.js grammars behind it) loads on first
+// use; code blocks render unhighlighted until then. It builds a lowlight
+// instance and registers ~37 languages each time it is attached, and
+// react-markdown attaches plugins on every render; reuse one transformer.
+const highlightPlugins = lazyModule(() => import('rehype-highlight').then(({ default: rehypeHighlight }) => {
+  const transformer = rehypeHighlight();
+  return [() => transformer];
+}));
+const NO_REHYPE_PLUGINS: [] = [];
 
 function removeTrailingDuration(node: ReactNode, duration: string): ReactNode {
   let remaining = duration.length;
@@ -272,10 +275,11 @@ type MarkdownContentProps = { text: string; preserveLineBreaks?: boolean; factor
 const MarkdownBlock = memo(function MarkdownBlock({ text, preserveLineBreaks, factoryCards }: Required<MarkdownContentProps>) {
   const plugins = factoryCards ? REMARK_PLUGINS : PROSE_PLUGINS;
   const pluginsWithBreaks = factoryCards ? REMARK_PLUGINS_WITH_BREAKS : PROSE_PLUGINS_WITH_BREAKS;
+  const rehypePlugins = useLazyModule(highlightPlugins) ?? NO_REHYPE_PLUGINS;
   return (
     <ReactMarkdown
       remarkPlugins={preserveLineBreaks ? pluginsWithBreaks : plugins}
-      rehypePlugins={REHYPE_PLUGINS}
+      rehypePlugins={rehypePlugins}
       components={factoryCards ? MARKDOWN_COMPONENTS : PROSE_COMPONENTS}
     >
       {text}
