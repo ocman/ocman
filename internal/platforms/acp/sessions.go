@@ -62,18 +62,23 @@ func (c *Client) ResumeSession(ctx context.Context, p acp.ResumeSessionRequest) 
 // A context cancellation requests cancellation of the remote turn too, but is
 // not proof the turn stopped. Callers must not retry or release ownership on it.
 func (c *Client) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResponse, error) {
+	op, err := c.beginSessionOp(ctx, p.SessionId, true)
+	if err != nil {
+		return acp.PromptResponse{}, err
+	}
 	c.mu.Lock()
-	delete(c.sessionErr, p.SessionId) // a failure belongs to the prompt it interrupted
+	c.sessions[p.SessionId].pending = nil // a failure belongs to the prompt it interrupted
 	c.mu.Unlock()
 	result, err := c.conn.Prompt(ctx, p)
+	recordErr := c.endSessionOp(p.SessionId, op)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.updateErr != nil {
-		return acp.PromptResponse{}, fmt.Errorf("recording ACP update: %w", c.updateErr)
+	updateErr := c.updateErr
+	c.mu.Unlock()
+	if updateErr != nil {
+		return acp.PromptResponse{}, fmt.Errorf("recording ACP update: %w", updateErr)
 	}
-	if failed := c.sessionErr[p.SessionId]; failed != nil {
-		delete(c.sessionErr, p.SessionId)
-		return acp.PromptResponse{}, fmt.Errorf("recording ACP update: %w", failed)
+	if recordErr != nil {
+		return acp.PromptResponse{}, recordErr
 	}
 	return result, err
 }

@@ -32,7 +32,10 @@ must be supplied on the owning machine through the child environment.
 - `Prompt` streams typed SDK notifications into `Handlers.Update`. Notifications
   are ordered, and preceding callbacks finish before a successful prompt result.
   A failed update handler cancels and fails that session's prompt, so a
-  persistence failure cannot appear to be a recorded successful turn. Other
+  persistence failure cannot appear to be a recorded successful turn. ACP
+  cancellation is session-scoped, so that cancellation is fenced: the failed
+  prompt does not return, and the session's next operation is not admitted,
+  until it has been sent or skipped because the prompt already settled. Other
   sessions on the shared adapter keep running; only transport failures and
   failed subagent updates disconnect. Every session's updates share one
   goroutine, so handlers must not block on slow work such as RPC polling.

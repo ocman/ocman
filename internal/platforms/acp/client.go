@@ -29,12 +29,33 @@ type Options struct {
 // There is deliberately no automatic retry, native fallback or session-ID
 // conversion: a failed mutation may already have reached the agent.
 type Client struct {
-	conn       *wire
-	info       acp.InitializeResponse
-	proc       *process
-	mu         sync.Mutex
-	updateErr  error                   // transport-wide recording failure
-	sessionErr map[acp.SessionId]error // recording failure of a session's current prompt
+	conn      *wire
+	info      acp.InitializeResponse
+	proc      *process
+	mu        sync.Mutex
+	updateErr error // transport-wide recording failure
+	sessions  map[acp.SessionId]*sessionState
+
+	beforeFailureCancel func() // test seam: runs before a failure cancellation is sent
+}
+
+// sessionState tracks a session's in-flight operations. ACP cancellation is
+// session-scoped, so the cancellation issued for a failed prompt is fenced: the
+// failed prompt does not return, and no further operation on the session is
+// admitted, until that cancellation has been sent or skipped.
+type sessionState struct {
+	ops     map[*sessionOp]struct{}
+	pending error         // recording failure outside any operation
+	fence   chan struct{} // closed when an outstanding failure cancellation ends
+}
+
+// sessionOp is one in-flight operation. Updates recorded while it runs belong
+// to it.
+type sessionOp struct {
+	prompt  bool
+	settled bool          // the agent answered; a cancellation can no longer target it
+	err     error         // first recording failure during the operation
+	fence   chan struct{} // the failure cancellation issued for this prompt
 }
 
 // sessionCancelTimeout bounds the cancellation sent after a session's update
@@ -57,7 +78,7 @@ func Start(ctx context.Context, opts Options, handlers Handlers) (*Client, error
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{proc: p, sessionErr: map[acp.SessionId]error{}}
+	c := &Client{proc: p, sessions: map[acp.SessionId]*sessionState{}}
 	c.conn = newWire(callbacks{handlers: handlers, failed: c.failUpdate, sessionFailed: c.failSessionUpdate}, p.stdin, p.stdout)
 	if opts.Logger != nil {
 		c.conn.SetLogger(opts.Logger)
@@ -116,24 +137,121 @@ func (c *Client) failUpdate(err error) {
 }
 
 // A session's failed event sink must not end other sessions' turns on the
-// shared adapter. Fail and cancel only that session's prompt; transport
-// failures still end the connection through Done.
+// shared adapter. Fail only that session's active operations and cancel its
+// unsettled prompt; transport failures still end the connection through Done.
+// A failure outside any operation cancels nothing: no prompt is running that
+// the session-scoped cancellation could safely target.
 func (c *Client) failSessionUpdate(sessionID acp.SessionId, err error) {
 	c.mu.Lock()
-	first := c.sessionErr[sessionID] == nil
-	if first {
-		c.sessionErr[sessionID] = err
-	}
-	c.mu.Unlock()
-	if !first {
+	defer c.mu.Unlock()
+	s := c.session(sessionID)
+	if len(s.ops) == 0 {
+		if s.pending == nil {
+			s.pending = err
+		}
 		return
 	}
-	// Never write to the peer from the shared notification goroutine.
-	go func() {
+	for op := range s.ops {
+		if op.err != nil {
+			continue
+		}
+		op.err = err
+		if op.prompt && !op.settled && op.fence == nil {
+			op.fence = make(chan struct{})
+			s.fence = op.fence
+			// Never write to the peer from the shared notification goroutine.
+			go c.cancelFailedPrompt(sessionID, op, c.beforeFailureCancel)
+		}
+	}
+}
+
+// cancelFailedPrompt cancels op's turn unless it has already settled, then
+// releases the fence holding back the prompt's return and the next operation.
+// Because nothing else on the session is admitted meanwhile, the cancellation
+// can only reach the prompt generation it was issued for.
+func (c *Client) cancelFailedPrompt(sessionID acp.SessionId, op *sessionOp, before func()) {
+	if before != nil {
+		before()
+	}
+	c.mu.Lock()
+	superseded := op.settled
+	c.mu.Unlock()
+	if !superseded {
 		ctx, cancel := context.WithTimeout(context.Background(), sessionCancelTimeout)
-		defer cancel()
 		_ = c.conn.Cancel(ctx, acp.CancelNotification{SessionId: sessionID})
-	}()
+		cancel()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	close(op.fence)
+	s := c.sessions[sessionID]
+	if s.fence == op.fence {
+		s.fence = nil
+	}
+	c.release(sessionID, s)
+}
+
+// session returns the state for sessionID. c.mu must be held.
+func (c *Client) session(sessionID acp.SessionId) *sessionState {
+	s := c.sessions[sessionID]
+	if s == nil {
+		s = &sessionState{ops: map[*sessionOp]struct{}{}}
+		c.sessions[sessionID] = s
+	}
+	return s
+}
+
+// release forgets an idle session. c.mu must be held.
+func (c *Client) release(sessionID acp.SessionId, s *sessionState) {
+	if len(s.ops) == 0 && s.pending == nil && s.fence == nil {
+		delete(c.sessions, sessionID)
+	}
+}
+
+// beginSessionOp admits an operation once any outstanding failure cancellation
+// on the session has ended, so that cancellation cannot reach the new operation.
+func (c *Client) beginSessionOp(ctx context.Context, sessionID acp.SessionId, prompt bool) (*sessionOp, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for {
+		s := c.session(sessionID)
+		if s.fence == nil {
+			op := &sessionOp{prompt: prompt}
+			s.ops[op] = struct{}{}
+			return op, nil
+		}
+		fence := s.fence
+		c.mu.Unlock()
+		select {
+		case <-fence:
+			c.mu.Lock()
+		case <-ctx.Done():
+			c.mu.Lock()
+			c.release(sessionID, c.session(sessionID))
+			return nil, ctx.Err()
+		}
+	}
+}
+
+// endSessionOp settles op, waits for a failure cancellation issued for it and
+// returns the first update that could not be recorded while it ran.
+func (c *Client) endSessionOp(sessionID acp.SessionId, op *sessionOp) error {
+	c.mu.Lock()
+	op.settled = true
+	fence := op.fence
+	c.mu.Unlock()
+	if fence != nil {
+		<-fence // bounded by sessionCancelTimeout or the transport closing
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.sessions[sessionID]
+	delete(s.ops, op)
+	c.release(sessionID, s)
+	if op.err != nil {
+		return fmt.Errorf("recording ACP update: %w", op.err)
+	}
+	return nil
 }
 
 // Close closes the pipes, then waits briefly before killing and reaping a

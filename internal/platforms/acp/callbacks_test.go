@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	acp "github.com/coder/acp-go-sdk"
 )
@@ -116,5 +117,62 @@ func TestFailedUpdateIsScopedToItsSession(t *testing.T) {
 	result, err := c.Prompt(testContext(t), acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("again")}})
 	if err != nil || result.StopReason != acp.StopReasonEndTurn {
 		t.Fatalf("recovered turn = %+v, %v", result, err)
+	}
+}
+
+// The cancellation sent after a recording failure belongs to the failed
+// prompt. It must not outlive that prompt and interrupt the session's next turn.
+func TestFailureCancellationCannotCancelSuccessor(t *testing.T) {
+	want := errors.New("event spool unavailable")
+	successorStarted := make(chan struct{})
+	c := startTestClient(t, "normal", Handlers{Update: func(_ context.Context, p acp.SessionNotification) error {
+		if chunk := p.Update.AgentMessageChunk; chunk != nil && chunk.Content.Text != nil {
+			switch chunk.Content.Text.Text {
+			case "boom":
+				return want
+			case "started":
+				close(successorStarted)
+			}
+		}
+		return nil
+	}})
+	c.mu.Lock()
+	// Delay the failure cancellation until the successor runs, or until a
+	// correctly fenced client has shown it will not admit the successor first.
+	c.beforeFailureCancel = func() {
+		select {
+		case <-successorStarted:
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	c.mu.Unlock()
+	ctx := testContext(t)
+	if _, err := c.Prompt(ctx, acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("boom")}}); !errors.Is(err, want) {
+		t.Fatalf("lost recording failure: %v", err)
+	}
+	type outcome struct {
+		response acp.PromptResponse
+		err      error
+	}
+	result := make(chan outcome, 1)
+	go func() {
+		response, err := c.Prompt(ctx, acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("wait")}})
+		result <- outcome{response, err}
+	}()
+	select {
+	case <-successorStarted:
+	case <-ctx.Done():
+		t.Fatal("successor never started")
+	}
+	select {
+	case got := <-result:
+		t.Fatalf("the failed prompt's cancellation ended its successor: %+v, %v", got.response, got.err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if err := c.Cancel(ctx, "native-session"); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-result; got.err != nil || got.response.StopReason != acp.StopReasonCancelled {
+		t.Fatalf("successor = %+v, %v", got.response, got.err)
 	}
 }
