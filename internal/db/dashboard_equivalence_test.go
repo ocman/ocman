@@ -293,3 +293,32 @@ func TestDashboardSummaryReadsHourSummaries(t *testing.T) {
 			before.Summary.Requests, before.Summary.TotalCost, after.Summary.Requests, after.Summary.TotalCost)
 	}
 }
+
+// TestRequestLogPagesInSQL proves the request log only materializes the
+// requested page: session identity resolves once per returned row.
+func TestRequestLogPagesInSQL(t *testing.T) {
+	now := time.Now()
+	path, _ := dashboardEquivalenceStore(t, now)
+	reader, err := OpenHistoryAnalytics(path, []string{"one", "two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	calls := 0
+	opts := MetricsDashboardOptions{RequestLimit: 5, RequestOffset: 2, SessionIdentity: func(_ context.Context, _, id string) (string, error) {
+		calls++
+		return id, nil
+	}}
+	log, err := reader.GetMetricsLog(t.Context(), opts, MetricsLogRequests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if log.Total < 100 || len(log.Requests) != 5 || calls != 5 {
+		t.Fatalf("request log total %d, page %d, identity calls %d; want page and calls 5", log.Total, len(log.Requests), calls)
+	}
+	for i := 1; i < len(log.Requests); i++ {
+		if log.Requests[i].TimeCreated > log.Requests[i-1].TimeCreated {
+			t.Fatalf("request log not most recent first: %+v", log.Requests)
+		}
+	}
+}

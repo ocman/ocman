@@ -81,7 +81,7 @@ func (d *DB) GetMetricsDashboard(ctx context.Context, opts MetricsDashboardOptio
 		return nil, err
 	}
 	dashboard.TotalRequests = dashboard.Summary.Requests
-	if dashboard.Requests, err = d.requestPage(ctx, opts); err != nil {
+	if dashboard.Requests, err = d.requestPage(ctx, opts, groups); err != nil {
 		return nil, err
 	}
 	sessions, err := sessionLog(ctx, groups, opts)
@@ -160,7 +160,7 @@ func (d *DB) GetMetricsLog(ctx context.Context, opts MetricsDashboardOptions, ki
 		for i := range groups {
 			result.Total += groups[i].messages
 		}
-		result.Requests, err = d.requestPage(ctx, opts)
+		result.Requests, err = d.requestPage(ctx, opts, groups)
 	case MetricsLogSessions:
 		var sessions []SessionLogEntry
 		sessions, err = sessionLog(ctx, groups, opts)
@@ -174,15 +174,6 @@ func (d *DB) GetMetricsLog(ctx context.Context, opts MetricsDashboardOptions, ki
 		return nil, err
 	}
 	return result, nil
-}
-
-// requestPage returns the most recent filtered requests for the page.
-func (d *DB) requestPage(ctx context.Context, opts MetricsDashboardOptions) ([]RequestLogEntry, error) {
-	filtered, _, _, err := d.scanHistoryRequests(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	return paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset), nil
 }
 
 // bucketAcc accumulates per-time-bucket metrics while building the series.
@@ -409,27 +400,6 @@ func emptyModelCostSeries(mainSeries []MetricsPoint, daily bool) []ModelCostPoin
 		if !daily || len(out) == 0 || out[len(out)-1].Label != label {
 			out = append(out, ModelCostPoint{Label: label, Costs: []float64{}})
 		}
-	}
-	return out
-}
-
-// paginateRequests returns the request log page for the given offset/limit,
-// ordered most-recent-first.
-func paginateRequests(filtered []requestRow, limit, offset int) []RequestLogEntry {
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > len(filtered) {
-		offset = len(filtered)
-	}
-	end := len(filtered) - offset
-	page := filtered[:end]
-	if limit > 0 && len(page) > limit {
-		page = page[len(page)-limit:]
-	}
-	out := make([]RequestLogEntry, len(page))
-	for i, j := 0, len(page)-1; j >= 0; i, j = i+1, j-1 {
-		out[i] = page[j].RequestLogEntry
 	}
 	return out
 }

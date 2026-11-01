@@ -674,8 +674,9 @@ in the same transaction as its history and checkpoint:
   summary, series and session/project logs sum these rows instead of messages;
   only partial or calendar-splitting hours read exact facts.
 - `analytics_fact` retains normalized per-request values and computed model,
-  tool and unknown durations. Metrics rank duration percentiles in SQLite
-  without parsing message JSON or rereading tool parts.
+  tool and unknown durations. Metrics rank duration percentiles in SQLite and
+  page the request log with LIMIT/OFFSET, without parsing message JSON or
+  rereading tool parts.
   Live pricing is applied to summed tokens per model.
 - `analytics_question` retains question wait intervals for runtime accounting.
 - `analytics_conflict` contains only duplicate native-ID candidates, maintained

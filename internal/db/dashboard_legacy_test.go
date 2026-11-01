@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ocman/ocman/internal/analyticsdata"
@@ -13,7 +14,7 @@ import (
 // match it on the same fixture.
 
 func (d *DB) legacyMetricsDashboard(ctx context.Context, opts MetricsDashboardOptions) (*MetricsDashboard, error) {
-	filtered, agentSet, modelSet, err := d.scanHistoryRequests(ctx, opts)
+	filtered, agentSet, modelSet, err := d.legacyScanRequests(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +30,7 @@ func (d *DB) legacyMetricsDashboard(ctx context.Context, opts MetricsDashboardOp
 		return dashboard.StopReasons[i].Reason < dashboard.StopReasons[j].Reason
 	})
 	dashboard.TotalRequests = len(filtered)
-	dashboard.Requests = paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
+	dashboard.Requests = legacyPaginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
 	legacyPopulateSessionLog(dashboard, filtered, opts.SessionLimit, opts.SessionOffset)
 	legacyPopulateProjectLog(dashboard, filtered, opts.ProjectLimit, opts.ProjectOffset)
 	return dashboard, nil
@@ -304,4 +305,108 @@ func legacyPopulateProjectLog(dashboard *MetricsDashboard, filtered []requestRow
 
 	dashboard.TotalProjects = len(entries)
 	dashboard.Projects = paginateSlice(entries, projectOffset, projectLimit)
+}
+
+// requestRow attaches computed fields without changing the request-log API.
+type requestRow struct {
+	RequestLogEntry
+	sessionTitle, sessionDirectory string
+	estimatedCostByType            CostByType
+	completed                      bool
+	isError                        bool
+	modelStarted                   int64
+	agentDurationMs                int64
+	toolDurationMs                 int64
+	unknownDurationMs              int64
+}
+
+func (d *DB) legacyScanRequests(ctx context.Context, opts MetricsDashboardOptions) ([]requestRow, map[string]struct{}, map[string]struct{}, error) {
+	query := `SELECT m.instance_id,s.title,s.directory,m.id,m.session_id,m.time_created,m.agent,m.provider,m.model,m.cost,
+		m.input_tokens,m.output_tokens,m.cache_read,m.cache_write,m.started_at,m.duration_ms,
+		m.agent_ms,m.tool_ms,m.unknown_ms,m.tokens_per_second,m.finish,m.is_error,m.is_completed
+		FROM history_fact m JOIN session s ON s.instance_id=m.instance_id AND s.id=m.session_id
+		WHERE m.role='assistant' AND m.valid=1`
+	var args []any
+	if opts.Since > 0 {
+		query += ` AND m.time_created>=?`
+		args = append(args, opts.Since)
+	}
+	if clause, values := directoryWhere(opts.Dir); clause != "" {
+		query += ` AND ` + clause
+		args = append(args, values...)
+	}
+	query += ` ORDER BY m.time_created ASC,m.id ASC,m.session_id ASC,m.instance_id ASC` // ties were unordered; pin them like the SQL page
+	rows, err := d.reads().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer rows.Close()
+	agents, models := map[string]struct{}{}, map[string]struct{}{}
+	var result []requestRow
+	for rows.Next() {
+		var r requestRow
+		var provider, model string
+		var instance string
+		if err := rows.Scan(&instance, &r.sessionTitle, &r.sessionDirectory, &r.ID, &r.SessionID, &r.TimeCreated, &r.Agent, &provider, &model, &r.Cost,
+			&r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheWriteTokens, &r.modelStarted, &r.DurationMs,
+			&r.agentDurationMs, &r.toolDurationMs, &r.unknownDurationMs, &r.TokensPerSecond, &r.StopReason, &r.isError, &r.completed); err != nil {
+			return nil, nil, nil, err
+		}
+		r.Agent = strings.TrimSpace(r.Agent)
+		r.Model = analyticsdata.ModelKey(provider, strings.TrimSpace(model))
+		if r.Agent != "" {
+			agents[r.Agent] = struct{}{}
+		}
+		if r.Model != "" {
+			models[r.Model] = struct{}{}
+		}
+		if (opts.AgentFilter != "" && opts.AgentFilter != r.Agent) || (opts.ModelFilter != "" && opts.ModelFilter != r.Model) {
+			continue
+		}
+		if opts.SessionIdentity != nil {
+			id, err := opts.SessionIdentity(ctx, instance, r.SessionID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			r.SessionID = id
+		}
+		if r.StopReason == "" {
+			r.StopReason = "none"
+		}
+		legacyPriceRequest(&r, opts.Pricing)
+		result = append(result, r)
+	}
+	return result, agents, models, rows.Err()
+}
+
+func legacyPriceRequest(entry *requestRow, pricing CostCalculator) {
+	if pricing != nil {
+		entry.CalcCost = pricing.CalcCost(entry.Model, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
+		entry.estimatedCostByType = CostByType{
+			Input: pricing.CalcCost(entry.Model, entry.InputTokens, 0, 0, 0), Output: pricing.CalcCost(entry.Model, 0, entry.OutputTokens, 0, 0),
+			CacheRead: pricing.CalcCost(entry.Model, 0, 0, entry.CacheReadTokens, 0), CacheWrite: pricing.CalcCost(entry.Model, 0, 0, 0, entry.CacheWriteTokens),
+		}
+	}
+	entry.EffectiveCost = effectiveCost(entry.Cost, entry.CalcCost)
+}
+
+// paginateRequests returns the request log page for the given offset/limit,
+// ordered most-recent-first.
+func legacyPaginateRequests(filtered []requestRow, limit, offset int) []RequestLogEntry {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(filtered) {
+		offset = len(filtered)
+	}
+	end := len(filtered) - offset
+	page := filtered[:end]
+	if limit > 0 && len(page) > limit {
+		page = page[len(page)-limit:]
+	}
+	out := make([]RequestLogEntry, len(page))
+	for i, j := 0, len(page)-1; j >= 0; i, j = i+1, j-1 {
+		out[i] = page[j].RequestLogEntry
+	}
+	return out
 }

@@ -291,16 +291,7 @@ func (d *DB) durationPercentiles(ctx context.Context, w *dashboardWindow, opts M
 		args = append(args, dirArgs...)
 	}
 	if opts.AgentFilter != "" || opts.ModelFilter != "" {
-		seen := map[[3]string]bool{}
-		var combos [][3]string
-		for _, g := range groups {
-			key := [3]string{g.rawAgent, g.provider, g.rawModel}
-			if !seen[key] {
-				seen[key] = true
-				combos = append(combos, key)
-			}
-		}
-		rawCombos, err := json.Marshal(combos)
+		rawCombos, err := json.Marshal(groupCombos(groups))
 		if err != nil {
 			return overall, byLabel, err
 		}
