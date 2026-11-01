@@ -33,6 +33,7 @@ func (c *Client) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.N
 
 // LoadSession replays agent history through Update. This does not replace the
 // native history reader or prove ownership of an externally running session.
+// Replayed history that cannot be recorded fails the load.
 func (c *Client) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
 	if !c.info.AgentCapabilities.LoadSession {
 		return acp.LoadSessionResponse{}, platforms.ErrUnsupported
@@ -43,7 +44,25 @@ func (c *Client) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (acp
 	if p.McpServers == nil {
 		p.McpServers = []acp.McpServer{}
 	}
-	return c.conn.LoadSession(ctx, p)
+	return sessionCall(ctx, c, p.SessionId, false, func() (acp.LoadSessionResponse, error) {
+		return c.conn.LoadSession(ctx, p)
+	})
+}
+
+// sessionCall runs one operation on sessionID. An update for the session that
+// cannot be recorded while it runs fails the operation. A failure recorded
+// while no operation ran fails the next one before anything is sent.
+func sessionCall[T any](ctx context.Context, c *Client, sessionID acp.SessionId, prompt bool, call func() (T, error)) (T, error) {
+	var zero T
+	op, err := c.beginSessionOp(ctx, sessionID, prompt)
+	if err != nil {
+		return zero, err
+	}
+	result, err := call()
+	if recordErr := c.endSessionOp(sessionID, op); recordErr != nil {
+		return zero, recordErr
+	}
+	return result, err
 }
 
 // ResumeSession resumes without replay. Never substitute LoadSession implicitly:
@@ -55,30 +74,23 @@ func (c *Client) ResumeSession(ctx context.Context, p acp.ResumeSessionRequest) 
 	if err := absoluteDirectory(p.Cwd); err != nil {
 		return acp.ResumeSessionResponse{}, err
 	}
-	return c.conn.ResumeSession(ctx, p)
+	return sessionCall(ctx, c, p.SessionId, false, func() (acp.ResumeSessionResponse, error) {
+		return c.conn.ResumeSession(ctx, p)
+	})
 }
 
 // Prompt returns after the turn's preceding Update callbacks have finished.
 // A context cancellation requests cancellation of the remote turn too, but is
 // not proof the turn stopped. Callers must not retry or release ownership on it.
 func (c *Client) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptResponse, error) {
-	op, err := c.beginSessionOp(ctx, p.SessionId, true)
-	if err != nil {
-		return acp.PromptResponse{}, err
-	}
-	c.mu.Lock()
-	c.sessions[p.SessionId].pending = nil // a failure belongs to the prompt it interrupted
-	c.mu.Unlock()
-	result, err := c.conn.Prompt(ctx, p)
-	recordErr := c.endSessionOp(p.SessionId, op)
+	result, err := sessionCall(ctx, c, p.SessionId, true, func() (acp.PromptResponse, error) {
+		return c.conn.Prompt(ctx, p)
+	})
 	c.mu.Lock()
 	updateErr := c.updateErr
 	c.mu.Unlock()
 	if updateErr != nil {
 		return acp.PromptResponse{}, fmt.Errorf("recording ACP update: %w", updateErr)
-	}
-	if recordErr != nil {
-		return acp.PromptResponse{}, recordErr
 	}
 	return result, err
 }
@@ -90,7 +102,16 @@ func (c *Client) Cancel(ctx context.Context, sessionID acp.SessionId) error {
 
 // SetConfigOption selects an option advertised in the session's config options.
 func (c *Client) SetConfigOption(ctx context.Context, p acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
-	return c.conn.SetSessionConfigOption(ctx, p)
+	var sessionID acp.SessionId
+	switch {
+	case p.ValueId != nil:
+		sessionID = p.ValueId.SessionId
+	case p.Boolean != nil:
+		sessionID = p.Boolean.SessionId
+	}
+	return sessionCall(ctx, c, sessionID, false, func() (acp.SetSessionConfigOptionResponse, error) {
+		return c.conn.SetSessionConfigOption(ctx, p)
+	})
 }
 
 func (c *Client) ForkSession(ctx context.Context, p acp.UnstableForkSessionRequest) (acp.UnstableForkSessionResponse, error) {
@@ -100,7 +121,9 @@ func (c *Client) ForkSession(ctx context.Context, p acp.UnstableForkSessionReque
 	if err := absoluteDirectory(p.Cwd); err != nil {
 		return acp.UnstableForkSessionResponse{}, err
 	}
-	return c.conn.UnstableForkSession(ctx, p)
+	return sessionCall(ctx, c, p.SessionId, false, func() (acp.UnstableForkSessionResponse, error) {
+		return c.conn.UnstableForkSession(ctx, p)
+	})
 }
 
 // CallExtension is for explicitly negotiated, agent-specific operations. It

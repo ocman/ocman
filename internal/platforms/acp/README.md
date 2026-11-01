@@ -29,6 +29,9 @@ must be supplied on the owning machine through the child environment.
 - `NewSession`, `LoadSession` and `ResumeSession` preserve native session IDs and
   require absolute working directories. Load and resume are capability-gated.
   Load replays history; resume does not. There is no implicit substitution.
+- An update that cannot be recorded fails every operation active on its
+  session, including a load replaying history. A failure while no operation
+  runs fails the session's next operation; it is never silently discarded.
 - `Prompt` streams typed SDK notifications into `Handlers.Update`. Notifications
   are ordered, and preceding callbacks finish before a successful prompt result.
   A failed update handler cancels and fails that session's prompt, so a

@@ -176,3 +176,83 @@ func TestFailureCancellationCannotCancelSuccessor(t *testing.T) {
 		t.Fatalf("successor = %+v, %v", got.response, got.err)
 	}
 }
+
+// A caller that gives up while a failure cancellation is outstanding is never
+// admitted and leaves no operation behind.
+func TestFencedAdmissionHonorsContext(t *testing.T) {
+	c := &Client{sessions: map[acp.SessionId]*sessionState{}}
+	fence := make(chan struct{})
+	c.session("native-session").fence = fence
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if op, err := c.beginSessionOp(ctx, "native-session", true); op != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("admitted past the fence: %v, %v", op, err)
+	}
+	if s := c.sessions["native-session"]; s == nil || len(s.ops) != 0 {
+		t.Fatalf("fenced session state = %+v", s)
+	}
+	admitted := make(chan *sessionOp, 1)
+	go func() {
+		op, _ := c.beginSessionOp(t.Context(), "native-session", true)
+		admitted <- op
+	}()
+	select {
+	case <-admitted:
+		t.Fatal("admitted while the failure cancellation was outstanding")
+	case <-time.After(50 * time.Millisecond):
+	}
+	c.mu.Lock()
+	c.sessions["native-session"].fence = nil
+	close(fence)
+	c.mu.Unlock()
+	if op := <-admitted; op == nil || !op.prompt {
+		t.Fatalf("not admitted after the fence: %+v", op)
+	}
+}
+
+// History replayed by LoadSession that cannot be recorded must fail the load,
+// and a failure outside any operation must reach the next one rather than be
+// silently discarded.
+func TestRecordingFailuresReachSessionOperations(t *testing.T) {
+	want := errors.New("event spool unavailable")
+	c := startTestClient(t, "normal", Handlers{Update: func(_ context.Context, p acp.SessionNotification) error {
+		if chunk := p.Update.AgentMessageChunk; chunk != nil && chunk.Content.Text != nil && chunk.Content.Text.Text == "history" {
+			return want
+		}
+		return nil
+	}})
+	ctx := testContext(t)
+	if _, err := c.LoadSession(ctx, acp.LoadSessionRequest{Cwd: t.TempDir(), SessionId: "native-session"}); !errors.Is(err, want) {
+		t.Fatalf("load hid its recording failure: %v", err)
+	}
+	if _, err := c.Prompt(ctx, acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("hello")}}); err != nil {
+		t.Fatalf("a reported load failure leaked into the next prompt: %v", err)
+	}
+	idle := errors.New("late update unavailable")
+	c.failSessionUpdate("native-session", idle)
+	if _, err := c.Prompt(ctx, acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("hello")}}); !errors.Is(err, idle) {
+		t.Fatalf("prompt erased an unreported recording failure: %v", err)
+	}
+	if _, err := c.Prompt(ctx, acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("hello")}}); err != nil {
+		t.Fatalf("reported failure was not consumed: %v", err)
+	}
+	c.failSessionUpdate("native-session", idle)
+	if _, err := c.ResumeSession(ctx, acp.ResumeSessionRequest{Cwd: t.TempDir(), SessionId: "native-session"}); !errors.Is(err, idle) {
+		t.Fatalf("resume erased an unreported recording failure: %v", err)
+	}
+	c.failSessionUpdate("native-session", idle)
+	model := acp.SetSessionConfigOptionRequest{ValueId: &acp.SetSessionConfigOptionValueId{SessionId: "native-session", ConfigId: "model", Value: "m"}}
+	if _, err := c.SetConfigOption(ctx, model); !errors.Is(err, idle) {
+		t.Fatalf("config change erased an unreported recording failure: %v", err)
+	}
+	c.failSessionUpdate("native-session", idle)
+	toggle := acp.SetSessionConfigOptionRequest{Boolean: &acp.SetSessionConfigOptionBoolean{SessionId: "native-session", ConfigId: "fast", Value: true}}
+	if _, err := c.SetConfigOption(ctx, toggle); !errors.Is(err, idle) {
+		t.Fatalf("config toggle erased an unreported recording failure: %v", err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.sessions) != 0 {
+		t.Fatalf("idle session state retained: %+v", c.sessions)
+	}
+}

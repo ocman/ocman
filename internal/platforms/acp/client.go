@@ -210,12 +210,19 @@ func (c *Client) release(sessionID acp.SessionId, s *sessionState) {
 
 // beginSessionOp admits an operation once any outstanding failure cancellation
 // on the session has ended, so that cancellation cannot reach the new operation.
+// An unreported failure from outside any operation fails this one instead of
+// being discarded.
 func (c *Client) beginSessionOp(ctx context.Context, sessionID acp.SessionId, prompt bool) (*sessionOp, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for {
 		s := c.session(sessionID)
 		if s.fence == nil {
+			if failed := s.pending; failed != nil {
+				s.pending = nil
+				c.release(sessionID, s)
+				return nil, fmt.Errorf("recording ACP update: %w", failed)
+			}
 			op := &sessionOp{prompt: prompt}
 			s.ops[op] = struct{}{}
 			return op, nil
