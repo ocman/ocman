@@ -13,11 +13,17 @@ import (
 	"io"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // maxLine bounds one inbound message. Item payloads such as command output and
 // file diffs can be large, so this is generous.
 const maxLine = 64 << 20
+
+// replyTimeout bounds answering a server-initiated request. Replies can be
+// written from the reader goroutine, which a peer that stops draining stdin
+// must not wedge forever.
+var replyTimeout = 10 * time.Second
 
 // ErrClosed reports a call on a connection whose peer has gone away.
 var ErrClosed = errors.New("codex app-server connection closed")
@@ -159,12 +165,16 @@ func (c *Conn) Reply(id json.RawMessage, result any) error {
 	if raw == nil {
 		raw = json.RawMessage("{}")
 	}
-	return c.send(context.Background(), message{ID: id, Result: raw})
+	ctx, cancel := context.WithTimeout(context.Background(), replyTimeout)
+	defer cancel()
+	return c.send(ctx, message{ID: id, Result: raw})
 }
 
 // ReplyError rejects a server-initiated request.
 func (c *Conn) ReplyError(id json.RawMessage, code int, msg string) error {
-	return c.send(context.Background(), message{ID: id, Error: &RPCError{Code: code, Message: msg}})
+	ctx, cancel := context.WithTimeout(context.Background(), replyTimeout)
+	defer cancel()
+	return c.send(ctx, message{ID: id, Error: &RPCError{Code: code, Message: msg}})
 }
 
 // send hands m to the writer goroutine and waits for it to be written. ctx
@@ -243,7 +253,7 @@ func (c *Conn) dispatch(m message) {
 	switch {
 	case m.Method != "" && hasID(m.ID):
 		if c.handler == nil {
-			_ = c.ReplyError(m.ID, -32601, "method not found")
+			go func() { _ = c.ReplyError(m.ID, -32601, "method not found") }() // never write from the reader
 			return
 		}
 		c.handler.Request(m.ID, m.Method, m.Params)
@@ -258,11 +268,15 @@ func (c *Conn) dispatch(m message) {
 		if ch == nil {
 			return
 		}
+		r := response{result: m.Result}
 		if m.Error != nil {
-			ch <- response{err: m.Error}
-			return
+			r = response{err: m.Error}
 		}
-		ch <- response{result: m.Result}
+		// A duplicate or late response must never block the reader.
+		select {
+		case ch <- r:
+		default:
+		}
 	}
 }
 
@@ -277,7 +291,10 @@ func (c *Conn) close(err error) {
 	c.pending = map[string]chan response{}
 	c.mu.Unlock()
 	for _, ch := range pending {
-		ch <- response{err: err}
+		select { // a caller may hold an unconsumed response already
+		case ch <- response{err: err}:
+		default:
+		}
 	}
 	close(c.done)
 }

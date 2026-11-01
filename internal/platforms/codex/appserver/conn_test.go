@@ -379,3 +379,57 @@ func TestOversizedLineEndsConnection(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// A duplicate response for a call that has not consumed its first one must
+// never block the single reader goroutine.
+func TestDuplicateResponseDoesNotStallReader(t *testing.T) {
+	rec := newRecorder()
+	p := newPeer(t, rec)
+	p.conn.mu.Lock()
+	p.conn.pending["7"] = make(chan response, 1)
+	p.conn.mu.Unlock()
+	go func() {
+		_, _ = io.WriteString(p.out, "{\"id\":7,\"result\":{}}\n{\"id\":7,\"result\":{}}\n{\"method\":\"after\"}\n")
+	}()
+	wait(t, rec.got)
+}
+
+// A response the caller never consumed must not block close, or Done never
+// closes and every later caller hangs.
+func TestUnconsumedResponseDoesNotBlockClose(t *testing.T) {
+	p := newPeer(t, nil)
+	ch := make(chan response, 1)
+	ch <- response{result: json.RawMessage(`{}`)}
+	p.conn.mu.Lock()
+	p.conn.pending["7"] = ch
+	p.conn.mu.Unlock()
+	_ = p.out.Close()
+	wait(t, p.conn.Done())
+}
+
+// Replies are written from the reader goroutine; a peer that stops draining
+// stdin must not wedge them forever.
+func TestReplyToStalledPeerIsBounded(t *testing.T) {
+	restore := replyTimeout
+	replyTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { replyTimeout = restore })
+	clientR, serverW := io.Pipe()
+	serverR, clientW := io.Pipe()
+	conn := NewConn(clientR, clientW, nil)
+	t.Cleanup(func() { _ = serverW.Close(); _ = serverR.Close() })
+	for name, reply := range map[string]func() error{
+		"reply": func() error { return conn.Reply(json.RawMessage("1"), nil) },
+		"error": func() error { return conn.ReplyError(json.RawMessage("2"), -32601, "no") },
+	} {
+		done := make(chan error, 1)
+		go func() { done <- reply() }()
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("%s err = %v", name, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s to a stalled peer never returned", name)
+		}
+	}
+}
