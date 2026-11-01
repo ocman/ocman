@@ -45,6 +45,12 @@ type acpTurn struct {
 	userSeeded bool
 	command    bool
 	title      string // requested title to persist once a fresh thread materializes
+	// Native user seeding polls history off the shared ACP notification
+	// goroutine. Items recorded meanwhile wait in buffered, in first-seen order.
+	buffered   []string
+	seedDone   chan struct{} // closed when seeding finishes; nil until started
+	seedCancel context.CancelFunc
+	err        error // session-scoped failure detected outside an ACP callback
 }
 
 func newACPExecution(b *backend) *acpExecution {

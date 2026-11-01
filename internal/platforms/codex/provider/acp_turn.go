@@ -108,7 +108,11 @@ func (a *acpExecution) run(c *acpexec.Client, id string, input []acp.ContentBloc
 	if !a.finishInteractions(id) {
 		return
 	}
+	a.awaitSeed(turn, err != nil || response.StopReason == acp.StopReasonCancelled)
 	turn.mu.Lock()
+	if turn.err != nil {
+		err = turn.err
+	}
 	if err == nil {
 		err = a.reconcile(a.b.ctx, id, turn, response.StopReason == acp.StopReasonCancelled)
 	}

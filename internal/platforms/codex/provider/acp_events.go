@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	log "github.com/sirupsen/logrus"
 )
+
+// acpSeedTimeout bounds how long a turn waits for native history to report its
+// user message before the turn fails.
+const acpSeedTimeout = 5 * time.Second
 
 type acpItem struct {
 	native codexappserver.Item
@@ -54,10 +59,21 @@ func (a *acpExecution) update(ctx context.Context, p acp.SessionNotification) er
 		return nil
 	}
 	if !turn.userSeeded && !turn.command {
-		if err := a.seedUser(ctx, id, itemID, turn); err != nil {
-			return err
+		// Never poll native history here: the SDK delivers every session's
+		// notifications on this goroutine. Publish once the user is seeded.
+		if !slices.Contains(turn.buffered, itemID) {
+			turn.buffered = append(turn.buffered, itemID)
 		}
+		if turn.seedDone == nil {
+			a.startSeed(id, turn)
+		}
+		return nil
 	}
+	return a.publishItem(id, turn, itemID)
+}
+
+// publishItem requires turn.mu.
+func (a *acpExecution) publishItem(id string, turn *acpTurn, itemID string) error {
 	entry := turn.items[itemID]
 	turn.conv.AddItem(entry.native, turn.started)
 	info, parts := turn.conv.Live(itemID)
@@ -155,9 +171,59 @@ func acpToolItem(tool acp.SessionUpdateToolCall, started int64) codexappserver.I
 	return it
 }
 
-func (a *acpExecution) seedUser(ctx context.Context, id, firstItem string, turn *acpTurn) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+// startSeed requires turn.mu. The seeding goroutine is bounded by
+// acpSeedTimeout and cancelled when the turn's prompt settles.
+func (a *acpExecution) startSeed(id string, turn *acpTurn) {
+	ctx, cancel := context.WithTimeout(a.b.ctx, acpSeedTimeout)
+	done := make(chan struct{})
+	turn.seedDone, turn.seedCancel = done, cancel
+	go func() {
+		defer close(done)
+		defer cancel()
+		if err := a.seedUser(ctx, id, turn); err != nil && !errors.Is(err, context.Canceled) {
+			a.failTurn(id, turn, err)
+		}
+	}()
+}
+
+// awaitSeed lets user seeding finish before settlement, or stops it when the
+// turn ended without a reply to group.
+func (a *acpExecution) awaitSeed(turn *acpTurn, stop bool) {
+	turn.mu.Lock()
+	done, cancel := turn.seedDone, turn.seedCancel
+	turn.mu.Unlock()
+	if done == nil {
+		return
+	}
+	if stop {
+		cancel()
+	}
+	<-done
+}
+
+// failTurn fails one session's turn without disconnecting the shared adapter.
+func (a *acpExecution) failTurn(id string, turn *acpTurn, err error) {
+	turn.mu.Lock()
+	if turn.err == nil {
+		turn.err = err
+	}
+	turn.mu.Unlock()
+	a.mu.Lock()
+	c, current := a.client, a.turns[id] == turn
+	a.mu.Unlock()
+	if c == nil || !current {
+		return
+	}
+	ctx, cancel := context.WithTimeout(a.b.ctx, rpcTimeout)
 	defer cancel()
+	if err := c.Cancel(ctx, acp.SessionId(id)); err != nil {
+		log.WithError(err).WithField("session", id).Warn("cancelling failed Codex ACP turn")
+	}
+}
+
+// seedUser polls native history without holding turn.mu, then seeds the user
+// and publishes the items buffered while it waited.
+func (a *acpExecution) seedUser(ctx context.Context, id string, turn *acpTurn) error {
 	native, _, err := a.b.conn(ctx)
 	if err != nil {
 		return err
@@ -174,6 +240,8 @@ func (a *acpExecution) seedUser(ctx context.Context, id, firstItem string, turn 
 			}
 		}
 		if index >= 0 && entries[index].Item.ID != turn.baseUser {
+			turn.mu.Lock()
+			defer turn.mu.Unlock()
 			turn.nativeID = entries[index].TurnID
 			user := entries[index].Item
 			if user.StartedAtMs == 0 {
@@ -186,7 +254,7 @@ func (a *acpExecution) seedUser(ctx context.Context, id, firstItem string, turn 
 			// empty reasoning item ACP never reports. Seed preceding items so
 			// streamed and historical assistant message IDs stay identical.
 			for _, entry := range entries[index+1:] {
-				if entry.Item.ID == firstItem {
+				if turn.items[entry.Item.ID] != nil {
 					break
 				}
 				item := entry.Item
@@ -201,7 +269,15 @@ func (a *acpExecution) seedUser(ctx context.Context, id, firstItem string, turn 
 				a.b.publishMessage(id, info, parts)
 			}
 			turn.userSeeded = true
-			return nil
+			buffered := turn.buffered
+			turn.buffered = nil
+			var failed error
+			for _, itemID := range buffered {
+				if err := a.publishItem(id, turn, itemID); err != nil && failed == nil {
+					failed = err
+				}
+			}
+			return failed
 		}
 		timer := time.NewTimer(25 * time.Millisecond)
 		select {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -51,6 +53,88 @@ func TestACPToolAndThoughtUpdatesUseNativeConverter(t *testing.T) {
 	}
 	if err := update(`{"sessionId":"thr","update":{"sessionUpdate":"tool_call_update","toolCallId":"unknown","status":"completed"}}`); err == nil {
 		t.Fatal("unknown tool update accepted")
+	}
+}
+
+// The SDK delivers every session's notifications on one goroutine. Waiting for
+// one session's native user identity must never stall that shared stream.
+func TestACPUpdateNeverWaitsForNativeUserIdentity(t *testing.T) {
+	h, _ := acpHarness(t)
+	if _, _, err := h.b.conn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var materialized atomic.Bool
+	h.fake().Handle(codexappserver.MethodThreadItems, func(json.RawMessage) (any, error) {
+		if !materialized.Load() {
+			return nil, &codexappserver.RPCError{Code: -32600, Message: "no rollout"}
+		}
+		return map[string]any{"data": []codexappserver.ItemEntry{
+			{TurnID: "t1", StartedAtMs: 1000, Item: codexappserver.Item{ID: "u1", Type: "userMessage", Content: []codexappserver.UserInput{codexappserver.TextInput("hi")}}},
+			{TurnID: "t1", StartedAtMs: 1000, Item: codexappserver.Item{ID: "a1", Type: "agentMessage"}},
+		}}, nil
+	})
+	turn := &acpTurn{conv: &Converter{SessionID: "thr"}, items: map[string]*acpItem{}, started: 1000}
+	other := &acpTurn{conv: &Converter{SessionID: "other"}, items: map[string]*acpItem{}, started: 1000, userSeeded: true}
+	h.b.acp.mu.Lock()
+	h.b.acp.turns["thr"], h.b.acp.turns["other"] = turn, other
+	h.b.acp.mu.Unlock()
+	update := func(raw string) error {
+		var event acp.SessionNotification
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			t.Fatal(err)
+		}
+		return h.b.acp.update(t.Context(), event)
+	}
+	start := time.Now()
+	if err := update(`{"sessionId":"thr","update":{"sessionUpdate":"agent_message_chunk","messageId":"a1","content":{"type":"text","text":"Hel"}}}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := update(`{"sessionId":"other","update":{"sessionUpdate":"agent_message_chunk","messageId":"b1","content":{"type":"text","text":"unblocked"}}}`); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("session updates blocked on native history for %s", elapsed)
+	}
+	h.next("message.part.updated", func(p map[string]any) bool { return part(p)["text"] == "unblocked" })
+	if err := update(`{"sessionId":"thr","update":{"sessionUpdate":"agent_message_chunk","messageId":"a1","content":{"type":"text","text":"lo"}}}`); err != nil {
+		t.Fatal(err)
+	}
+	materialized.Store(true)
+	user := h.next("message.updated", func(p map[string]any) bool { return info(p)["sessionID"] == "thr" })
+	if info(user)["id"] != "msg_u1" || info(user)["role"] != "user" {
+		t.Fatalf("buffered reply published before its native user: %+v", user)
+	}
+	h.next("message.part.updated", func(p map[string]any) bool { return part(p)["id"] == "prt_a1" && part(p)["text"] == "Hello" })
+	turn.mu.Lock()
+	seeded, native := turn.userSeeded, turn.nativeID
+	turn.mu.Unlock()
+	if !seeded || native != "t1" {
+		t.Fatalf("seeded=%v native=%q", seeded, native)
+	}
+}
+
+func TestACPUserSeedingFailureFailsOnlyItsTurn(t *testing.T) {
+	h, _ := acpHarness(t)
+	createACP(t, h)
+	if _, _, err := h.b.conn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	h.fake().Handle(codexappserver.MethodThreadItems, func(json.RawMessage) (any, error) {
+		return nil, errors.New("items unavailable")
+	})
+	sendACP(t, h, platforms.SendMessageRequest{Message: "hi"})
+	failed := h.next("message.updated", func(p map[string]any) bool { return info(p)["error"] != nil })
+	if msg := info(failed)["error"].(map[string]any)["data"].(map[string]any)["message"].(string); !strings.Contains(msg, "items unavailable") {
+		t.Fatal(msg)
+	}
+	h.next("session.idle", nil)
+	h.b.acp.mu.Lock()
+	c := h.b.acp.client
+	h.b.acp.mu.Unlock()
+	select {
+	case <-c.Done():
+		t.Fatal("one session's seeding failure disconnected the shared adapter")
+	default:
 	}
 }
 

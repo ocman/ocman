@@ -159,7 +159,7 @@ func TestACPReaderFailuresAndNativeHistoryLag(t *testing.T) {
 	native := h.fake()
 	native.Handle(codexappserver.MethodThreadItems, func(json.RawMessage) (any, error) { return nil, errors.New("items unavailable") })
 	turn := &acpTurn{conv: &Converter{SessionID: "thr"}}
-	if err := h.b.acp.seedUser(t.Context(), "thr", "a", turn); err == nil {
+	if err := h.b.acp.seedUser(t.Context(), "thr", turn); err == nil {
 		t.Fatal("read error ignored")
 	}
 	native.Handle(codexappserver.MethodThreadItems, func(json.RawMessage) (any, error) {
@@ -167,7 +167,7 @@ func TestACPReaderFailuresAndNativeHistoryLag(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
-	if err := h.b.acp.seedUser(ctx, "thr", "a", turn); err == nil {
+	if err := h.b.acp.seedUser(ctx, "thr", turn); err == nil {
 		t.Fatal("history timeout ignored")
 	}
 	native.Handle(codexappserver.MethodThreadTurns, func(json.RawMessage) (any, error) { return nil, errors.New("turns unavailable") })
