@@ -24,6 +24,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	auth := s.requireAuth
 	setting := func(pattern string, h http.HandlerFunc) { api.HandleFunc(pattern, s.settingsHandler(auth(h))) }
 	api.HandleFunc("GET /api/projects", auth(s.handleProjects))
+	api.HandleFunc("POST /api/projects/resolve", auth(s.handleResolveProjectIdentities))
 	api.HandleFunc("GET /api/system/stats", auth(s.handleSystemStats))
 	api.HandleFunc("GET /api/session-identity", auth(s.handleSessionIdentity))
 	api.HandleFunc("GET /api/sessions", auth(s.handleSessions))

@@ -8,9 +8,15 @@ import { BackendStats } from './BackendStats';
 vi.mock('./BackgroundTaskCounter', () => ({ BackgroundTaskCounter: () => null }));
 import { useUiStore } from '../lib/uiStore';
 import { TOOLTIP_DELAY_MS } from './Tooltip';
+import { projectIdentityIndex } from '../lib/projectIdentity';
 
 const { useSessions, useProjects, refetch } = vi.hoisted(() => ({ useSessions: vi.fn(), useProjects: vi.fn(), refetch: vi.fn() }));
 vi.mock('../lib/queries', () => ({ useSessions, useProjects, useRunningSessionCount: () => ({ data: { count: 3 } }) }));
+vi.mock('../lib/useProjectIdentityIndex', () => ({
+  useProjectIdentityIndex: (projects: Parameters<typeof projectIdentityIndex>[0]) => projectIdentityIndex(projects, [
+    { checkout: { directory: '/checkout/alpha', remoteId: 'box' }, project: { key: 'alpha', directory: '/repo/alpha' } },
+  ]),
+}));
 
 function Location() {
   const location = useLocation();
@@ -27,7 +33,6 @@ beforeEach(() => {
   vi.useFakeTimers();
   useProjects.mockReturnValue({ data: [
     { directory: '/repo/alpha', projectKey: 'alpha' },
-    { directory: '/checkout/alpha', projectKey: 'alpha', remoteId: 'box', remoteName: 'Box' },
   ] });
   useSessions.mockReturnValue({ data: [
     { id: 'local', title: 'Local task', directory: '/repo/alpha', platform: 'opencode', status: 'busy' },

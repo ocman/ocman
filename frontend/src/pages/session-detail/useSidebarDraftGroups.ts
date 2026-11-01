@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { fuzzyMatch } from '../../lib/format';
 import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
-import { projectIdentityIndex } from '../../lib/projectIdentity';
+import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 import { useUiStore } from '../../lib/uiStore';
 import { orderSidebarProjectGroups } from './useSidebarProjectGroups';
 import type { SidebarProjectGroup } from './SessionSidebar';
@@ -11,12 +11,9 @@ export function useSidebarDraftGroups(groups: SidebarProjectGroup[], searchQuery
   const projectOrder = useUiStore((state) => state.projectOrder);
   const location = useLocation();
   const activeId = location.pathname === '/session/new' ? new URLSearchParams(location.search).get('draftId') || 'new' : null;
-  if (!drafts.length) return groups;
   const projects = groups.filter((group) => !group.isPinned);
-  const identity = projectIdentityIndex(projects.flatMap((group) => [
-    { ...group, projectKey: group.key },
-    ...group.sessions.map((session) => ({ ...session, projectKey: group.key })),
-  ]));
+  const identity = useProjectIdentityIndex(projects.map((group) => ({ ...group, projectKey: group.key })), drafts);
+  if (!drafts.length) return groups;
   const result = groups.map((group) => ({ ...group, drafts: [] as typeof drafts }));
   for (const draft of drafts) {
     const target = identity(draft.directory, draft.remoteId);

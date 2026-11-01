@@ -380,16 +380,19 @@ flowchart LR
   Credential-free upstream keys normalize SSH and HTTP
   transport syntax, `.git` suffixes, host casing and default ports. The hub assigns
   a shared `projectKey` to checkouts connected by any common upstream, including
-  chains through a checkout with multiple remotes. `/api/projects` keeps each
-  owner's checkout row, counts and archive state. The browser groups those rows
-  and their sessions by `projectKey`; project detail includes sessions from every
+  chains through a checkout with multiple remotes. `/api/projects` returns one
+  final project per group, with summed counts and costs, latest activity, and
+  archive state true only when every member is archived. Checkout rows and merge
+  metadata stay private to the backend. The browser resolves its existing session
+  and draft directories through `POST /api/projects/resolve`, which returns final
+  identities in request order. Project detail includes sessions from every
   matching host. Actions still target a specific owner and directory. Repositories
   without network remotes fall back to owner-scoped directories, with the existing
   worktree folding. Local filesystem remotes never identify cross-host projects.
   The dashboard's merge action saves owner-qualified source-checkout to target-checkout mappings in
   the hub's `state.db` setting `projects.merges`. `/api/projects` applies it after
   upstream grouping, resolving the checkouts' current keys so Git remote changes
-  do not undo saved merges, and includes the selected target checkout for display.
+  do not undo saved merges, and uses the selected target checkout for display.
   Dashboard totals, sidebar groups and project session lists share this identity.
   Merge chains follow the final target, and a transaction rejects cycles.
   Upstream memberships and saved checkout edges form connected components, so
@@ -397,7 +400,23 @@ flowchart LR
   has multiple saved destinations, the lowest stable checkout key selects its
   display representative independently of inventory order.
   Session directories, owners and transcripts stay intact. Successful merges
-  publish `ocman.projects.changed` so other browsers refresh their project list.
+  publish `ocman.projects.changed` so other browsers refresh their project list
+  and identity lookups. Directory scopes filter final projects, not private
+  checkout rows. Archiving a final project updates every member on the backend.
+
+```mermaid
+flowchart LR
+    Inventory[Owner project snapshots] --> Catalog[Hub project catalog]
+    Merges[(Saved checkout mappings)] --> Catalog
+    Catalog -->|GET /api/projects| Projects[Final projects and totals]
+    Directories[Session and draft directories] -->|POST /api/projects/resolve| Catalog
+    Catalog -->|final identities only| Browser[Selectors and session grouping]
+    Projects --> Browser
+```
+
+The hub retains checkout membership for merges and archive operations. Neither
+project response requires the browser to reconstruct upstream or manual merges.
+
 - **Encrypted webhooks.** Providers submit plaintext to the relay's ingestion
   URL, where ocman encrypts a versioned age X25519 envelope. The relay
   persists ciphertext plus visible size/timing metadata; the owning local or

@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
-import type { Session } from '../lib/api';
+import type { Project, Session } from '../lib/api';
 import { useProjects, useSessions } from '../lib/queries';
-import { projectIdentityIndex, type ProjectIdentity } from '../lib/projectIdentity';
+import type { ProjectIdentity } from '../lib/projectIdentity';
+import { useProjectIdentityIndex } from '../lib/useProjectIdentityIndex';
 import { cleanTitle } from '../lib/format';
 import { Button, RouteButton } from './Control';
 import { EmptyState } from './EmptyState';
@@ -18,15 +19,6 @@ export function ActiveSessions({ count, enabled }: { count: number; enabled: boo
   const open = enabled && position !== null;
   const sessions = useSessions({ limit: 0 }, { enabled: open, poll: true });
   const projects = useProjects({ enabled: open });
-  const identity = projectIdentityIndex(projects.data ?? []);
-  const groups = new Map<string, { project: ProjectIdentity; sessions: Session[] }>();
-  for (const session of sessions.data ?? []) {
-    if (session.status !== 'busy') continue;
-    const project = identity(session.directory, session.remoteId);
-    const group = groups.get(project.key) ?? { project, sessions: [] };
-    group.sessions.push(session);
-    groups.set(project.key, group);
-  }
 
   const cancelTimer = () => clearTimeout(timer.current);
   const close = () => { cancelTimer(); setPosition(null); };
@@ -60,14 +52,27 @@ export function ActiveSessions({ count, enabled }: { count: number; enabled: boo
         <h2 className={styles.title}>Total active sessions</h2>
         {sessions.isError ? <EmptyState>Could not load active sessions. <Button variant="ghost" size="small" onClick={() => void sessions.refetch()}>Retry</Button></EmptyState>
           : sessions.isPending ? <EmptyState>Loading active sessions…</EmptyState>
-          : groups.size === 0 ? <EmptyState>No active sessions</EmptyState>
-          : [...groups.values()].map(({ project, sessions: rows }) => <section key={project.key} className={styles.project}>
-            <h3 className={styles.projectTitle}><ProjectLabel path={project.directory} />{project.remoteName && <small> · {project.remoteName}</small>}</h3>
-            {rows.map(session => <RouteButton key={`${session.platform}:${session.id}`} className={styles.session}
-              to={`/session/${encodeURIComponent(session.id)}?platform=${encodeURIComponent(session.platform)}`}
-              onClick={close}>{cleanTitle(session.title) || session.id}</RouteButton>)}
-          </section>)}
+          : open && <ActiveSessionGroups projects={projects.data ?? []} sessions={sessions.data ?? []} onClose={close} />}
       </div>
     </Popover>
   </>;
+}
+
+function ActiveSessionGroups({ projects, sessions, onClose }: { projects: Project[]; sessions: Session[]; onClose: () => void }) {
+  const identity = useProjectIdentityIndex(projects, sessions);
+  const groups = new Map<string, { project: ProjectIdentity; sessions: Session[] }>();
+  for (const session of sessions) {
+    if (session.status !== 'busy') continue;
+    const project = identity(session.directory, session.remoteId);
+    const group = groups.get(project.key) ?? { project, sessions: [] };
+    group.sessions.push(session);
+    groups.set(project.key, group);
+  }
+  if (groups.size === 0) return <EmptyState>No active sessions</EmptyState>;
+  return [...groups.values()].map(({ project, sessions: rows }) => <section key={project.key} className={styles.project}>
+    <h3 className={styles.projectTitle}><ProjectLabel path={project.directory} />{project.remoteName && <small> · {project.remoteName}</small>}</h3>
+    {rows.map(session => <RouteButton key={`${session.platform}:${session.id}`} className={styles.session}
+      to={`/session/${encodeURIComponent(session.id)}?platform=${encodeURIComponent(session.platform)}`}
+      onClick={onClose}>{cleanTitle(session.title) || session.id}</RouteButton>)}
+  </section>);
 }

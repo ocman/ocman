@@ -81,13 +81,11 @@ func (s *Server) handleProjectMerge(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "fetching projects", err)
 		return
 	}
+	catalog := finalProjectCatalog(projects)
 	find := func(target state.ProjectMergeTarget) (state.ProjectMergeTarget, bool) {
-		for _, p := range projects {
+		for _, p := range catalog.projects {
 			if p.Directory == target.Directory && state.NormalizeRemoteID(p.RemoteID) == state.NormalizeRemoteID(target.RemoteID) {
 				return state.ProjectMergeTarget{Key: p.ProjectKey, Directory: p.Directory, RemoteID: p.RemoteID}, true
-			}
-			if p.MergedIntoDirectory != "" && p.MergedIntoDirectory == target.Directory && state.NormalizeRemoteID(p.MergedIntoRemoteID) == state.NormalizeRemoteID(target.RemoteID) {
-				return state.ProjectMergeTarget{Key: p.ProjectKey, Directory: p.MergedIntoDirectory, RemoteID: p.MergedIntoRemoteID}, true
 			}
 		}
 		return state.ProjectMergeTarget{}, false

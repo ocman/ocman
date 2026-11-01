@@ -162,6 +162,7 @@ export function CommandPalette() {
   const paletteOpen = useUiStore((s) => s.paletteOpen);
   const paletteMode = useUiStore((s) => s.paletteMode);
   const projectSessionInitialDirectory = useUiStore((s) => s.projectSessionInitialDirectory);
+  const projectSessionInitialRemoteId = useUiStore((s) => s.projectSessionInitialRemoteId);
   const rawClosePalette = useUiStore((s) => s.closePalette);
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
@@ -333,12 +334,14 @@ export function CommandPalette() {
     setProjectListLoaded(false);
     setProjectListError(null);
     projects(controller.signal)
-      .then((list) => {
+      .then(async (list) => {
+        const initial = projectSessionInitialDirectory && !list.some((project) => project.directory === projectSessionInitialDirectory && (project.remoteId || 'local') === (projectSessionInitialRemoteId || 'local'))
+          ? (await api.resolveProjectIdentities([{ directory: projectSessionInitialDirectory, remoteId: projectSessionInitialRemoteId }], controller.signal))[0] : undefined;
         if (controller.signal.aborted) return;
         setProjectList(list);
         if (projectSessionInitialDirectory) {
           const sorted = [...list].sort((a, b) => b.lastUsed - a.lastUsed);
-          const index = sorted.findIndex((project) => project.directory === projectSessionInitialDirectory);
+          const index = sorted.findIndex((project) => initial ? project.projectKey === initial.key : project.directory === projectSessionInitialDirectory && (project.remoteId || 'local') === (projectSessionInitialRemoteId || 'local'));
           setSelectedIndex(index < 0 ? 0 : index);
         }
         setProjectListLoading(false);
@@ -353,7 +356,7 @@ export function CommandPalette() {
         setProjectListError(message);
       });
     return () => controller.abort();
-  }, [paletteOpen, mode, projectSessionInitialDirectory, projects]);
+  }, [paletteOpen, mode, projectSessionInitialDirectory, projectSessionInitialRemoteId, projects]);
 
   useEffect(() => () => {
     projectBrowserAbortRef.current?.abort();

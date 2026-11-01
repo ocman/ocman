@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
     paletteOpen: true,
     paletteMode: 'project' as 'command' | 'search' | 'project' | 'project-session',
     projectSessionInitialDirectory: undefined as string | undefined,
+    projectSessionInitialRemoteId: undefined as string | undefined,
     closePalette: vi.fn(),
     openProjectPalette: vi.fn(() => {
       uiState.paletteMode = 'project';
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => {
   const apiState = {
     cachedSessions: [],
     getProjects: vi.fn(async (): Promise<Project[]> => []),
+    resolveProjectIdentities: vi.fn(),
     browseDirectories: vi.fn(),
     searchDirectories: vi.fn(),
     refreshCachedSessions: vi.fn(async () => []),
@@ -52,6 +54,7 @@ vi.mock('../lib/uiStore', () => {
 vi.mock('../lib/api', async () => {
   const real = await vi.importActual<typeof import('../lib/api')>('../lib/api');
   return { ...real, api: { ...real.api, projects: mocks.apiState.getProjects,
+    resolveProjectIdentities: mocks.apiState.resolveProjectIdentities,
     browseDirectories: mocks.apiState.browseDirectories, searchDirectories: mocks.apiState.searchDirectories,
     tmuxSessions: mocks.apiState.getTmuxSessions, tmuxClients: mocks.apiState.getTmuxClients,
     tmuxSwitch: mocks.apiState.switchTmuxSession } };
@@ -88,6 +91,7 @@ describe('CommandPalette project mode', () => {
     mocks.uiState.paletteOpen = true;
     mocks.uiState.paletteMode = 'project';
     mocks.uiState.projectSessionInitialDirectory = undefined;
+    mocks.uiState.projectSessionInitialRemoteId = undefined;
     mocks.apiState.cachedSessions = [];
     mocks.apiState.getProjects.mockResolvedValue([
       {
@@ -289,6 +293,32 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.browseDirectories).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, 'source-box'])('uses final API projects and owner-qualified preselection: %s', async (remoteId) => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/local/source';
+    mocks.uiState.projectSessionInitialRemoteId = remoteId;
+    const stats = { sessionCount: 1, messageCount: 1, totalTokensIn: 1, totalTokensOut: 1, lastUsed: 1 };
+    mocks.apiState.getProjects.mockResolvedValue([
+      { ...stats, directory: '/other/repo', lastUsed: 10 },
+      { ...stats, directory: '/remote/target', projectKey: 'merged', remoteId: 'box', platform: 'r-box:opencode' },
+    ]);
+    mocks.apiState.resolveProjectIdentities.mockResolvedValue([{ key: 'merged', directory: '/remote/target', remoteId: 'box' }]);
+
+    renderPalette();
+
+    const target = await screen.findByText('remote/target');
+    expect(screen.queryByText('local/source')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('option')).toHaveLength(3);
+    expect(target.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(target);
+    await waitFor(() => {
+      const location = screen.getByTestId('location').textContent!;
+      expect(location).toContain('/session/new?dir=%2Fremote%2Ftarget&remoteId=box');
+      expect(location).toContain('&platform=r-box%3Aopencode');
+    });
+    expect(mocks.apiState.resolveProjectIdentities).toHaveBeenCalledWith([{ directory: '/local/source', remoteId }], expect.any(AbortSignal));
+  });
+
   it('preselects the requested project in session-project mode', async () => {
     mocks.uiState.paletteMode = 'project-session';
     mocks.uiState.projectSessionInitialDirectory = '/Users/peter/workspace/research';
@@ -297,6 +327,21 @@ describe('CommandPalette project mode', () => {
 
     const project = await screen.findByText('workspace/research');
     expect(project.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('preselects the requested owner when final projects share a path', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/repo';
+    mocks.uiState.projectSessionInitialRemoteId = 'box';
+    const stats = { sessionCount: 1, messageCount: 1, totalTokensIn: 1, totalTokensOut: 1, lastUsed: 1 };
+    mocks.apiState.getProjects.mockResolvedValue([
+      { ...stats, directory: '/repo', projectKey: 'local' },
+      { ...stats, directory: '/repo', projectKey: 'remote', remoteId: 'box', remoteName: 'Box' },
+    ]);
+    renderPalette();
+    const box = await screen.findByRole('option', { name: /Box/ });
+    expect(box).toHaveAttribute('aria-selected', 'true');
+    expect(mocks.apiState.resolveProjectIdentities).not.toHaveBeenCalled();
   });
 
   it('focuses the project picker when it opens', () => {

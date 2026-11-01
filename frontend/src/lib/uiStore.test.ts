@@ -37,15 +37,20 @@ describe('uiStore sidebar view', () => {
 
 describe('uiStore project session palette', () => {
   it('opens with an initial project and clears it on close', () => {
-    initial.openProjectSessionPalette('/repo');
+    initial.openProjectSessionPalette('/repo', 'box');
     expect(useUiStore.getState()).toMatchObject({
       paletteOpen: true,
       paletteMode: 'project-session',
       projectSessionInitialDirectory: '/repo',
+      projectSessionInitialRemoteId: 'box',
     });
 
     initial.closePalette();
     expect(useUiStore.getState().projectSessionInitialDirectory).toBeUndefined();
+    expect(useUiStore.getState().projectSessionInitialRemoteId).toBeUndefined();
+    initial.openProjectSessionPalette('/another', 'other');
+    initial.openPalette('command');
+    expect(useUiStore.getState().projectSessionInitialRemoteId).toBeUndefined();
   });
 });
 

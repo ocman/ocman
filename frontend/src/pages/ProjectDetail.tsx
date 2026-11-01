@@ -6,7 +6,7 @@ import { cleanTitle, fuzzyMatch } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { useProjects, useSessions } from '../lib/queries';
-import { projectIdentityIndex } from '../lib/projectIdentity';
+import { useProjectIdentityIndex } from '../lib/useProjectIdentityIndex';
 import { Button, ButtonGroup, SearchField } from '../components/Control';
 import styles from './ProjectDetail.module.css';
 import { ProjectShell } from './ProjectShell';
@@ -46,7 +46,6 @@ export function ProjectDetail() {
   // computed inside the queryFn at fetch time.
   const sinceHours = timeRange > 0 ? timeRange : undefined;
   const projectsQ = useProjects();
-  const identity = projectIdentityIndex(projectsQ.data ?? []);
   const sessionsQ = useSessions(
     { sinceHours, limit: 0 },
     { poll: true, enabled: !!directory },
@@ -56,6 +55,7 @@ export function ProjectDetail() {
     { sinceHours, limit: 0, accounting: true },
     { poll: true, enabled: !!directory },
   );
+  const identity = useProjectIdentityIndex(projectsQ.data ?? [], [...(sessionsQ.data ?? []), { directory: directory ?? '', remoteId: ownerId ?? undefined }]);
   const projectKey = identity(directory ?? '', ownerId ?? undefined).key;
   const accounting = new Map((accountingQ.data ?? []).map(s => [`${s.platform}:${s.id}`, s]));
   const activityPendingKeys = new Set<string>();

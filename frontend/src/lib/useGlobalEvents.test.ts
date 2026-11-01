@@ -35,6 +35,7 @@ import {
   useGlobalEvents,
 } from './useGlobalEvents';
 import { KEEPALIVE_TIMEOUT_MS } from './sseKeepalive';
+import { queryClient } from './queryClient';
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -420,6 +421,12 @@ describe('useGlobalEvents queue.updated handler', () => {
 });
 
 describe('useGlobalEvents projects.changed handler', () => {
+  it('invalidates cached final-identity lookups after a merge or inventory change', () => {
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    __handleProjectsChangedForTests();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['project-identities'] });
+    invalidate.mockRestore();
+  });
   it('notifies registered listeners', () => {
     const cb = vi.fn();
     const unsub = onProjectsChanged(cb);

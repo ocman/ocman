@@ -888,6 +888,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onPinSession={handlePinSession}
           onNewSession={() => openProjectSessionPalette(
             projectRootForDirectory(session?.directory ?? newConversation?.directory ?? '') || undefined,
+            session?.remoteId ?? newConversation?.remoteId,
           )}
           onClientSelect={handleClientSelect}
           onNewSessionInDirectory={handleNewSessionInDirectory}

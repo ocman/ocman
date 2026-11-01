@@ -39,7 +39,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "fetching projects", err)
 		return
 	}
-	httpx.WriteJSON(w, projects)
+	httpx.WriteJSON(w, finalProjectCatalog(projects).projects)
 }
 
 func (s *Server) listProjects(ctx context.Context) ([]db.ProjectStats, error) {

@@ -217,7 +217,7 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &projects); err != nil {
 		t.Fatal(err)
 	}
-	if rr.Code != http.StatusOK || len(projects) != 2 || projects[0].ProjectKey != projects[1].ProjectKey {
+	if rr.Code != http.StatusOK || len(projects) != 1 || projects[0].Directory != localRepo || projects[0].ProjectKey == "" {
 		t.Fatalf("cross-owner project grouping = %s", rr.Body.String())
 	}
 }

@@ -7,6 +7,7 @@ import { watchKeepalive } from './sseKeepalive';
 import type { QueuedMessage, Session } from './api';
 import { clearSettingsCache } from './projectSettingsCache';
 import { useBetaFeatures } from './betaFeatures';
+import { queryClient } from './queryClient';
 
 /**
  * App-wide SSE subscriber for `/api/events`.
@@ -194,6 +195,7 @@ export function onProjectsChanged(cb: () => void): () => void {
 }
 
 function handleProjectsChanged(): void {
+  void queryClient.invalidateQueries({ queryKey: ['project-identities'] });
   for (const cb of projectsChangedListeners) cb();
 }
 

@@ -19,6 +19,7 @@ type projectArchiveHost struct {
 	remoteID string
 	stopped  string
 	stopErr  error
+	projects []db.ProjectStats
 }
 
 func (h *projectArchiveHost) RemoteID() string {
@@ -31,6 +32,10 @@ func (h *projectArchiveHost) RemoteID() string {
 func (h *projectArchiveHost) StopProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
 	h.stopped = req.ProjectDir
 	return h.stopErr
+}
+
+func (h *projectArchiveHost) Projects(context.Context) ([]db.ProjectStats, error) {
+	return append([]db.ProjectStats(nil), h.projects...), nil
 }
 
 type projectArchiveRemoteHost struct {

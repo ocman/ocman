@@ -5,7 +5,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useProjects } from '../../lib/queries';
 import { shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
-import { projectIdentityIndex } from '../../lib/projectIdentity';
+import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 import { compareSidebarCompletion, rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SidebarProjectGroup } from './SessionSidebar';
@@ -49,7 +49,7 @@ export function useSidebarProjectGroups({
   // unarchived project, even ones with no session in the recent window.
   const projectsQuery = useProjects({ enabled });
   const allProjects = projectsQuery.data;
-  const identity = projectIdentityIndex(allProjects ?? []);
+  const identity = useProjectIdentityIndex(allProjects ?? [], [...recentSessions, ...(activeProject ? [activeProject] : [])], enabled);
   const expanded = useRef('');
   useEffect(() => {
     const current = activeProject ?? recentSessions.find(s => s.id === id);
@@ -158,10 +158,8 @@ export function useSidebarProjectGroups({
     const root = projectRootForDirectory(directory);
     if (!root) return;
     const key = identity(root, remoteId).key;
-    const members = (allProjects ?? []).filter((p) => identity(p.directory, p.remoteId).key === key);
     setArchivedProjectRoots((prev) => new Set(prev).add(key));
-    Promise.all((members.length ? members : [{ directory: root, remoteId }]).map((p) =>
-      archiveProject(p.directory, true, p.remoteId || 'local')))
+    archiveProject(root, true, remoteId || 'local')
       .then(() => projectsQuery.refetch())
       .catch((err) => {
         remoteLog.error('Failed to archive project', err);

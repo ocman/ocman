@@ -165,10 +165,11 @@ export type UiStore = {
   paletteOpen: boolean;
   paletteMode: PaletteMode;
   projectSessionInitialDirectory: string | undefined;
+  projectSessionInitialRemoteId: string | undefined;
   openCommandPalette: () => void;
   openSearchPalette: () => void;
   openProjectPalette: () => void;
-  openProjectSessionPalette: (initialDirectory?: string) => void;
+  openProjectSessionPalette: (initialDirectory?: string, remoteId?: string) => void;
   openPalette: (mode: PaletteMode) => void;
   closePalette: () => void;
 
@@ -343,22 +344,25 @@ export const useUiStore = create<UiStore>()(
       paletteOpen: false,
       paletteMode: 'command',
       projectSessionInitialDirectory: undefined,
+      projectSessionInitialRemoteId: undefined,
       openCommandPalette: () => { labelInteraction('palette-open'); set({ paletteOpen: true, paletteMode: 'command' }); },
       openSearchPalette: () => set({ paletteOpen: true, paletteMode: 'search' }),
       openProjectPalette: () => set({ paletteOpen: true, paletteMode: 'project' }),
-      openProjectSessionPalette: (initialDirectory) => set({
+      openProjectSessionPalette: (initialDirectory, remoteId) => set({
         paletteOpen: true,
         paletteMode: 'project-session',
         projectSessionInitialDirectory: initialDirectory,
+        projectSessionInitialRemoteId: remoteId,
       }),
       openPalette: (mode: PaletteMode) => {
         labelInteraction('palette-open');
-        set({ paletteOpen: true, paletteMode: mode, projectSessionInitialDirectory: undefined });
+        set({ paletteOpen: true, paletteMode: mode, projectSessionInitialDirectory: undefined, projectSessionInitialRemoteId: undefined });
       },
       closePalette: () => set({
         paletteOpen: false,
         paletteCommand: null,
         projectSessionInitialDirectory: undefined,
+        projectSessionInitialRemoteId: undefined,
       }),
 
       paletteCommand: null,

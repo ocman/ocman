@@ -3,6 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ProjectDetail } from './ProjectDetail';
+import { projectIdentityIndex } from '../lib/projectIdentity';
 
 const merging = vi.hoisted(() => ({ enabled: false, missingTarget: false }));
 
@@ -15,16 +16,23 @@ const history = vi.hoisted(() => ({ sessions: [
 
 vi.mock('../lib/queries', () => ({
   useProjects: () => ({ isLoading: false, data: merging.missingTarget ? [
-    { directory: '/elsewhere', projectKey: 'merged', mergedIntoDirectory: '/remote/gone', mergedIntoRemoteId: 'gone' },
+    { directory: '/remote/gone', projectKey: 'merged', remoteId: 'gone' },
   ] : [
     { directory: '/repos/ocman', projectKey: 'git:shared' },
-    { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' },
-    ...(merging.enabled ? [{ directory: '/elsewhere', projectKey: 'git:shared', mergedIntoDirectory: '/repos/ocman' }] : []),
   ] }),
   useSessions: (params?: { limit?: number }) => ({
     isLoading: false,
     data: params?.limit === 0 ? history.sessions : history.sessions.slice(0, params?.limit ?? 500),
   }),
+}));
+
+vi.mock('../lib/useProjectIdentityIndex', () => ({
+  useProjectIdentityIndex: (projects: Parameters<typeof projectIdentityIndex>[0]) => projectIdentityIndex(projects, [
+    { checkout: { directory: '/remote/clone', remoteId: 'other' }, project: { directory: '/repos/ocman', key: 'git:shared' } },
+    ...(merging.enabled || merging.missingTarget ? [{ checkout: { directory: '/elsewhere' }, project: merging.missingTarget
+      ? { directory: '/remote/gone', remoteId: 'gone', key: 'merged' }
+      : { directory: '/repos/ocman', key: 'git:shared' } }] : []),
+  ]),
 }));
 
 beforeEach(() => {

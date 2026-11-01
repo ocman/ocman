@@ -5,7 +5,6 @@ import { ProjectLabel } from '../../components/ProjectLabel';
 import { usePageTitle } from '../../lib/headerContext';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { matchesScope } from '../../lib/projectTree';
-import { groupProjects, projectIdentityIndex } from '../../lib/projectIdentity';
 import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
@@ -30,18 +29,17 @@ export function ProjectsTab() {
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
   const [search, setSearch] = useState('');
   const [mergeSource, setMergeSource] = useState<Project | null>(null);
-  const groupedProjects = groupProjects(projects);
 
   // The picker is sourced from the full project list (so the user can
   // navigate up/down the tree); the table itself is filtered to the
   // active scope. matchesScope mirrors the SQL predicate used by the
   // backend (see spec/stats-project-filter/architecture.md, AD-7).
   const q = search.trim();
-  const visibleProjects = groupProjects(projects
+  const visibleProjects = projects
     // Remote projects carry no session aggregates (inventory-only), so
     // don't drop them on the sessionCount>0 gate that hides empty locals.
     .filter((p) => p.remoteId || p.sessionCount > 0)
-    .filter((p) => matchesScope(p.directory, dirScope)), projectIdentityIndex(projects))
+    .filter((p) => matchesScope(p.directory, dirScope))
     .filter((p) => !q || fuzzyMatch(q, p.directory));
 
   if (projectsLoading && projects.length === 0) {
@@ -130,7 +128,7 @@ export function ProjectsTab() {
         ))}
       </tbody>
     </DataTable>
-    {mergeSource && <MergeProjectModal source={mergeSource} projects={groupedProjects}
+    {mergeSource && <MergeProjectModal source={mergeSource} projects={projects}
       onClose={() => setMergeSource(null)} onMerged={() => { void refetchProjects(); }} />}
     </div>
   );

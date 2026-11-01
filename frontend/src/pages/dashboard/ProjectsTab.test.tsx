@@ -70,14 +70,14 @@ describe('ProjectsTab', () => {
     expect(screen.getByText('No other projects available.')).toBeVisible();
   });
 
-  it.each(['/source', '/target'])('only totals checkout rows within the %s directory scope', (dirScope) => {
+  it('uses final API totals and filters by the final directory', () => {
     const projects = [
-      makeProject({ directory: '/source', projectKey: 'merged', mergedIntoDirectory: '/target', sessionCount: 2 }),
-      makeProject({ directory: '/target', projectKey: 'merged', sessionCount: 7 }),
+      makeProject({ directory: '/target', projectKey: 'merged', sessionCount: 9 }),
     ];
-    renderTab({ projects, dirScope });
+    renderTab({ projects, dirScope: '/target' });
     expect(screen.getByText('/target')).toBeInTheDocument();
-    expect(screen.getByRole('cell', { name: dirScope === '/source' ? '2' : '7' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: '9' })).toBeInTheDocument();
+    expect(screen.queryByText('/source')).not.toBeInTheDocument();
     expect(screen.queryByText('No projects found')).not.toBeInTheDocument();
   });
   it('selects a different project, merges it, and refreshes the list', async () => {

@@ -17,6 +17,12 @@ vi.hoisted(() => {
 
 import { api, type Project, type Session } from '../../lib/api';
 import { useUiStore } from '../../lib/uiStore';
+import { projectIdentityIndex, type ProjectResolution } from '../../lib/projectIdentity';
+
+const resolutions: ProjectResolution[] = [];
+vi.mock('../../lib/useProjectIdentityIndex', () => ({
+  useProjectIdentityIndex: (projects: Parameters<typeof projectIdentityIndex>[0]) => projectIdentityIndex(projects, resolutions),
+}));
 
 const projects: Project[] = [
   { directory: '/repo/quiet', lastUsed: 5, archived: false } as Project,
@@ -58,8 +64,8 @@ describe('useSidebarProjectGroups', () => {
     expect(useUiStore.getState().collapsedProjects).not.toContain('/repo/quiet');
   });
   it('keeps the local action target when only a remote checkout has recent sessions', () => {
-    projects.push({ directory: '/local/repo', projectKey: 'git:shared' } as Project,
-      { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' } as Project);
+    projects.push({ directory: '/local/repo', projectKey: 'git:shared' } as Project);
+    resolutions.push({ checkout: { directory: '/remote/clone', remoteId: 'other' }, project: { directory: '/local/repo', key: 'git:shared' } });
     try {
       const { result } = renderHook(() => useSidebarProjectGroups({ id: undefined, displayStatus: 'done', recentSessions: [
         session({ directory: '/remote/clone', remoteId: 'other', remoteName: 'Other', platform: 'r-other:opencode' }),
@@ -68,15 +74,16 @@ describe('useSidebarProjectGroups', () => {
         directory: '/local/repo', remoteId: 'local', remoteName: undefined, platform: undefined,
       });
     } finally {
-      projects.splice(-2);
+      projects.pop();
+      resolutions.pop();
     }
   });
-  it('groups same-path checkouts across hosts and archives each explicit owner', async () => {
+  it('groups backend-resolved checkouts and archives the final project once', async () => {
     const shared = [
       { directory: '/local/repo', projectKey: 'git:shared', lastUsed: 1 },
-      { directory: '/local/repo', remoteId: 'other', projectKey: 'git:shared', lastUsed: 2 },
     ] as Project[];
     projects.push(...shared);
+    resolutions.push({ checkout: { directory: '/local/repo', remoteId: 'other' }, project: { directory: '/local/repo', key: 'git:shared' } });
     const archiveProject = vi.fn(async () => ({ ok: true }));
     vi.spyOn(api, 'archiveProject').mockImplementation(archiveProject);
     try {
@@ -91,10 +98,11 @@ describe('useSidebarProjectGroups', () => {
       expect(groups[0].sessions).toHaveLength(2);
       await act(async () => { result.current.handleArchiveProjectFromSidebar('/local/repo'); });
       expect(archiveProject).toHaveBeenCalledWith('/local/repo', true, 'local');
-      expect(archiveProject).toHaveBeenCalledWith('/local/repo', true, 'other');
+      expect(archiveProject).toHaveBeenCalledTimes(1);
       expect(result.current.sidebarProjectGroups.some(g => g.key === 'git:shared')).toBe(false);
     } finally {
       projects.splice(-shared.length);
+      resolutions.pop();
     }
   });
 

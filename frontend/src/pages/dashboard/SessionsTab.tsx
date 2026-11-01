@@ -17,6 +17,7 @@ import { useSessionListFilters } from '../../lib/useSessionListFilters';
 import { useSessionFilterPreference } from '../../lib/useSessionFilterPreference';
 import { SESSION_FILTER_DEFAULTS, SESSION_FILTER_FIELDS, hiddenSessionOrigins, matchesSessionListFilters } from '../../lib/sessionListFilters';
 import { hasPendingPrompt } from '../../lib/sessionVisibility';
+import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 
 // ---------------------------------------------------------------------------
 // Sessions tab
@@ -43,8 +44,9 @@ export function SessionsTab() {
   </>;
 
   const q = search.trim();
+  const identity = useProjectIdentityIndex(projects, sessions, !!dirScope);
   const filteredSessions = sessions
-    .filter((s) => matchesScope(s.directory, dirScope) || phone && alwaysShowPrompts && hasPendingPrompt(s))
+    .filter((s) => matchesScope(identity(s.directory, s.remoteId).directory, dirScope) || phone && alwaysShowPrompts && hasPendingPrompt(s))
     .filter((s) => {
       const searchMatches = !q || fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`);
       return phone ? matchesSessionListFilters(s, filters, hidden, searchMatches) : searchMatches;
@@ -58,7 +60,7 @@ export function SessionsTab() {
         </InlineAlert>
       )}
       {phone ? <PhoneSessionsToolbar projects={projects} dirScope={dirScope} setDirScope={setDirScope}
-        search={search} setSearch={setSearch} onNewSession={openProjectSessionPalette}
+        search={search} setSearch={setSearch} onNewSession={() => openProjectSessionPalette()}
         filtersActive={SESSION_FILTER_FIELDS.some(([key]) => filters[key] !== SESSION_FILTER_DEFAULTS[key])}>
         <TimeRangeControl value={timeRange} onChange={setTimeRange} />
         <SessionFilterControls value={filters} onChange={(key, checked) => ({
@@ -77,7 +79,7 @@ export function SessionsTab() {
         actionIcon="bi-plus-lg"
         actionLabel="New session"
         actionTitle="Create a new OpenCode session in a known project"
-        onAction={openProjectSessionPalette}
+        onAction={() => openProjectSessionPalette()}
       />
         {filterControls}</>}
       <SessionTable

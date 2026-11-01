@@ -36,9 +36,11 @@ Manual project merging is hub-local display bookkeeping, not a session move.
 current upstream groups and preserve merges across Git remote changes. Upstream
 membership plus saved merges forms connected components; crossed groups cannot
 undo saved merges. Multiple destinations use the lowest stable checkout key.
-Keep target aliases for disconnected remotes in `projectIdentityIndex`. Filter
-checkout rows by directory scope before computing totals. Never change session
-directories or owners to merge their display groups.
+Keep checkout membership and disconnected-target aliases private to the backend.
+`GET /api/projects` returns only final projects with aggregated totals; directory
+scope applies to those final records. `POST /api/projects/resolve` resolves known
+session and draft directories to final identities without exposing merge metadata.
+Never change session directories or owners to merge their display groups.
 
 ## PR and issue pane
 

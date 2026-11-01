@@ -1013,10 +1013,15 @@ export interface ModelCostPoint {
   costs: number[];
 }
 
+export interface ProjectIdentity {
+  key: string;
+  directory: string;
+  remoteId?: string;
+  remoteName?: string;
+  platform?: string;
+}
+
 export interface Project {
-  associatedDirectory?: string;
-  mergedIntoDirectory?: string;
-  mergedIntoRemoteId?: string;
   projectKey?: string;
   upstreamKeys?: string[];
   directory: string;

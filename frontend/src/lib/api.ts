@@ -12,7 +12,7 @@ export interface FactoryControlAction { id: string; epicId: string; action: stri
 import type {
   WebhookDelivery, WebhookInbox, WebhookSubscription, ClientActivity, Stats, MetricsPerformance,
   AnalyticsOverview, DatabaseSizeSample, SubscriptionUsageResponse, MetricsLog, MetricsLogKind,
-  PermissionStats, Project, InboxResponse, InboxItem, FactoryEpic, CreateWorkEpicRequest,
+  PermissionStats, Project, ProjectIdentity, InboxResponse, InboxItem, FactoryEpic, CreateWorkEpicRequest,
   FactoryClaimedPlan, FactoryMaterialization, FactoryIssue, FactoryIssueComment, FactoryGraphMutation,
   FactoryQueueItem, FactoryRecoveryGate, FactoryAuthorityEscalationGate, FactoryProjectRequestGate,
   FactoryProposal, FactoryPlanGateDecisionRequest, FactoryPlanGate, FactoryFormula,
@@ -40,6 +40,8 @@ export function sharedExportMarkdownUrl(token: string): string {
 }
 
 export const api = {
+  resolveProjectIdentities: (checkouts: Array<{ directory: string; remoteId?: string }>, signal?: AbortSignal) =>
+    postJSON<ProjectIdentity[]>('/api/projects/resolve', { checkouts }, { signal }),
   ...settingsApi(fetchJSON, postJSON),
   ...sessionApi,
   ...hostApi,

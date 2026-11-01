@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../../lib/api';
+import { api } from '../../lib/api';
 import { useIsPhone } from '../../lib/useIsPhone';
 import { useUiStore } from '../../lib/uiStore';
 import type { DashboardCtx } from './context';
@@ -49,6 +50,26 @@ function mount(overrides: Partial<DashboardCtx> = {}) {
 beforeEach(() => { localStorage.clear(); vi.mocked(useIsPhone).mockReturnValue(true); });
 
 describe('session status filters', () => {
+  it.each([true, false])('includes backend-resolved source sessions in a final project scope, phone=%s', async (phone) => {
+    vi.mocked(useIsPhone).mockReturnValue(phone);
+    const resolve = vi.spyOn(api, 'resolveProjectIdentities').mockImplementation(async (checkouts) => checkouts.map((checkout) => checkout.directory === '/source'
+      ? { key: 'final', directory: '/final/repo' }
+      : { key: 'other', directory: checkout.directory }));
+    try {
+      mount({
+        dirScope: '/final',
+        projects: [{ directory: '/final/repo', projectKey: 'final' }] as DashboardCtx['projects'],
+        sessions: [
+          { ...sessions[0], id: 'source', title: 'Source work', directory: '/source', remoteId: 'box' },
+          { ...sessions[0], id: 'target', title: 'Target work', directory: '/final/repo' },
+          { ...sessions[0], id: 'unrelated', title: 'Unrelated work', directory: '/other' },
+        ],
+      });
+      expect(await screen.findByText('Source work')).toBeInTheDocument();
+      expect(screen.getByText('Target work')).toBeInTheDocument();
+      expect(screen.queryByText('Unrelated work')).not.toBeInTheDocument();
+    } finally { resolve.mockRestore(); }
+  });
   it('hides routine and Factory sessions by default just like the desktop sidebar', () => {
     mount({ sessions: [
       ...sessions,

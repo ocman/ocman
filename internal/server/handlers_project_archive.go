@@ -56,22 +56,48 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	remoteID = host.RemoteID()
-
-	var err error
-	if req.Archived {
-		// Best-effort: a dead tmux session, a removed/non-git directory
-		// or an unreachable remote must not block the bookkeeping the
-		// user actually asked for.
-		if err := host.StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
-			log.WithError(err).WithField("project", root).Warn("archive: stopping project opencode")
-		}
-		err = s.stateDB.ArchiveProject(r.Context(), remoteID, root)
-	} else {
-		err = s.stateDB.UnarchiveProject(r.Context(), remoteID, root)
-	}
+	projects, err := s.listProjects(r.Context())
 	if err != nil {
-		httpx.ServerError(w, "updating archived project state", err)
+		httpx.ServerError(w, "fetching projects", err)
 		return
+	}
+	catalog := finalProjectCatalog(projects)
+	key := catalog.resolve(projectCheckout{Directory: root, RemoteID: remoteID}).Key
+	type archiveTarget struct {
+		host hostsvc.Host
+		root string
+	}
+	targets := []archiveTarget{}
+	for _, project := range projects {
+		if project.ProjectKey != key {
+			continue
+		}
+		owner, ok := s.resolveOwner(w, project.Directory, state.NormalizeRemoteID(project.RemoteID))
+		if !ok {
+			return
+		}
+		targets = append(targets, archiveTarget{owner, project.Directory})
+	}
+	if len(targets) == 0 {
+		targets = append(targets, archiveTarget{host, root})
+	}
+
+	for _, target := range targets {
+		if req.Archived {
+			// Best-effort: a dead tmux session, a removed/non-git directory
+			// or an unreachable remote must not block the bookkeeping the
+			// user actually asked for.
+			if err := target.host.StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: target.root}); err != nil {
+				log.WithError(err).WithField("project", target.root).Warn("archive: stopping project opencode")
+			}
+			err = s.stateDB.ArchiveProject(r.Context(), target.host.RemoteID(), target.root)
+		} else {
+			err = s.stateDB.UnarchiveProject(r.Context(), target.host.RemoteID(), target.root)
+		}
+		if err != nil {
+			httpx.ServerError(w, "updating archived project state", err)
+			return
+		}
 	}
 
 	httpx.WriteJSON(w, map[string]bool{"ok": true})

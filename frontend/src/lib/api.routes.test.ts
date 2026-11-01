@@ -32,6 +32,7 @@ const rows: Array<[string, () => Promise<unknown>, string, string, unknown?]> = 
   ['metricLogs', () => api.metricLogs({ kind: 'tool' as never, limit: 5 }), 'GET', '/api/metric-logs?kind=tool&limit=5'],
   ['permissionStats', () => api.permissionStats({ days: 1 }), 'GET', '/api/permission-stats?days=1'],
   ['projects', () => api.projects(), 'GET', '/api/projects'],
+  ['resolveProjectIdentities', () => api.resolveProjectIdentities([{ directory: '/source', remoteId: 'box' }]), 'POST', '/api/projects/resolve', { checkouts: [{ directory: '/source', remoteId: 'box' }] }],
   ['inbox archived', () => api.inbox(undefined, true), 'GET', '/api/inbox?archived=true'],
   ['markInboxItemRead', () => api.markInboxItemRead('i', 'local'), 'POST', '/api/inbox/open', { id: 'i', remoteId: 'local' }],
   ['markInboxItemUnread', () => api.markInboxItemUnread('i', 'local'), 'POST', '/api/inbox/unread', { id: 'i', remoteId: 'local' }],

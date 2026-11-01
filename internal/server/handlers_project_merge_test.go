@@ -28,7 +28,7 @@ func TestProjectMergeKeepsCheckoutsAndIncludesRemoteMembers(t *testing.T) {
 		}
 	}
 	merge(`{"source":{"directory":"/source"},"target":{"directory":"/target"}}`, http.StatusOK)
-	projects := getProjects(t, srv)
+	projects := projectCheckouts(t, srv)
 	if len(projects) != 4 {
 		t.Fatalf("lost checkout rows: %v", projects)
 	}
@@ -69,7 +69,7 @@ func TestProjectMergeSurvivesUpstreamChanges(t *testing.T) {
 			if changed != "source" {
 				target.UpstreamKeys = []string{"new-target"}
 			}
-			projects := getProjects(t, srv)
+			projects := projectCheckouts(t, srv)
 			if projects[0].ProjectKey != projects[1].ProjectKey {
 				t.Fatalf("upstream change undid merge: %+v", projects)
 			}
@@ -91,12 +91,12 @@ func TestProjectMergeSurvivesMissingTargetAndMergesAgain(t *testing.T) {
 	}
 	merge(`{"source":{"directory":"/source"},"target":{"directory":"/target","remoteId":"box"}}`)
 	projects = []db.ProjectStats{projects[0], projects[2]}
-	got := getProjects(t, srv)
+	got := projectCheckouts(t, srv)
 	if got[0].ProjectKey != "dir:box:/target" || got[0].MergedIntoDirectory != "/target" {
 		t.Fatalf("missing target erased merge: %+v", got)
 	}
 	merge(`{"source":{"directory":"/target","remoteId":"box"},"target":{"directory":"/next"}}`)
-	got = getProjects(t, srv)
+	got = projectCheckouts(t, srv)
 	if got[0].ProjectKey != got[1].ProjectKey || got[0].MergedIntoDirectory != "/next" {
 		t.Fatalf("chained merge lost source: %+v", got)
 	}
@@ -119,7 +119,7 @@ func TestProjectMergeCombinesCrossedUpstreamGroups(t *testing.T) {
 	projects[0].UpstreamKeys, projects[3].UpstreamKeys = []string{"x"}, []string{"x"}
 	projects[1].UpstreamKeys, projects[2].UpstreamKeys = []string{"y"}, []string{"y"}
 	for range 2 {
-		got := getProjects(t, srv)
+		got := projectCheckouts(t, srv)
 		for _, p := range got {
 			if p.ProjectKey != got[0].ProjectKey || p.MergedIntoDirectory != "/b" {
 				t.Fatalf("crossed upstreams split saved merges: %+v", got)
@@ -129,4 +129,13 @@ func TestProjectMergeCombinesCrossedUpstreamGroups(t *testing.T) {
 			projects[i], projects[j] = projects[j], projects[i]
 		}
 	}
+}
+
+func projectCheckouts(t *testing.T, srv *Server) []db.ProjectStats {
+	t.Helper()
+	projects, err := srv.listProjects(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return projects
 }
