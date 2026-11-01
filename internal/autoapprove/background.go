@@ -41,6 +41,13 @@ func (s *Service) Ensure(
 	patterns []string,
 	metadata map[string]any,
 ) {
+	// The judge's own helper session is never judged: it is created tool-less,
+	// so a prompt from it is unexpected and must not be approved by itself.
+	if s.judge.helperSession(sessionID) {
+		log.WithFields(log.Fields{"sessionID": sessionID, "permission": permission}).
+			Warn("auto-approve: ignoring permission prompt from judge helper session")
+		return
+	}
 	// Keep the first complete asked snapshot for durable attribution and
 	// tool-call correlation; permission.replied carries only IDs and reply.
 	asked := s.rememberAskedForEnsure(string(platformID), sessionID, permissionID, permission, patterns, metadata)

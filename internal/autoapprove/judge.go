@@ -55,6 +55,25 @@ type PermissionJudge struct {
 	modelMu         sync.RWMutex
 	modelProvider   string
 	modelID         string
+	// helpers holds the native and public IDs of live judge helper sessions,
+	// so prompts they raise never enter the auto-approve pipeline.
+	helpers sync.Map
+}
+
+// trackHelper marks id as a live judge helper session; the returned func
+// clears the mark.
+func (j *PermissionJudge) trackHelper(id string) func() {
+	j.helpers.Store(id, struct{}{})
+	return func() { j.helpers.Delete(id) }
+}
+
+// helperSession reports whether id is a live judge helper session.
+func (j *PermissionJudge) helperSession(id string) bool {
+	if j == nil || id == "" {
+		return false
+	}
+	_, ok := j.helpers.Load(id)
+	return ok
 }
 
 func (j *PermissionJudge) model() (provider, modelID string) {
@@ -127,6 +146,7 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 		log.WithError(err).Warn("auto-approve judge: failed to create judge session")
 		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
+	defer j.trackHelper(sessionID)()
 	// A cancelled judgment still gets a fresh context for best-effort cleanup.
 	defer func() {
 		delCtx, delCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -141,6 +161,9 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 		if err != nil {
 			return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 		}
+	}
+	if publicID != sessionID {
+		defer j.trackHelper(publicID)()
 	}
 	if onSessionCreated != nil {
 		onSessionCreated(publicID)

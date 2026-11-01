@@ -68,3 +68,43 @@ func TestJudgeSessionCallbackUsesCanonicalIdentityButCleanupRemainsNative(t *tes
 		}
 	}
 }
+
+// A permission prompt raised by the judge's own helper session must never
+// enter the auto-approve pipeline: the judge would otherwise judge (and
+// possibly approve) a tool call made by itself.
+func TestEnsureSkipsJudgeHelperSessionPrompts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/session":
+			_, _ = w.Write([]byte(`{"id":"native-judge"}`))
+		case r.Method == http.MethodDelete:
+			_, _ = w.Write([]byte(`true`))
+		case r.URL.Path == "/session/native-judge/prompt_async":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			_, _ = w.Write([]byte(`[{"info":{"role":"assistant","finish":"stop"},"parts":[{"type":"text","text":"{\"verdict\":\"safe\",\"reasoning\":\"ok\"}"}]}]`))
+		}
+	}))
+	defer server.Close()
+	p := &canonicalJudgePlatform{id: "ocm_" + uuid.NewString()}
+	svc := NewService(Deps{DefaultEnabled: true, OpencodePlatform: func() platforms.Platform { return p }})
+	svc.judge.openCodePort = func(string) string { return strings.TrimPrefix(server.URL, "http://127.0.0.1:") }
+	claimed := func() int {
+		svc.autoApproveMu.Lock()
+		defer svc.autoApproveMu.Unlock()
+		return len(svc.autoApprove)
+	}
+	var during int
+	svc.judge.JudgeWithCallback(t.Context(), "/repo", "read", nil, nil, nil, func(string) {
+		svc.Ensure("opencode", nil, "native-judge", "perm-native", "bash", []string{"rm -rf /"}, nil)
+		svc.Ensure("opencode", nil, p.id, "perm-public", "bash", []string{"rm -rf /"}, nil)
+		during = claimed()
+	})
+	if during != 0 {
+		t.Fatalf("judge helper session prompts entered the pipeline: %d claimed", during)
+	}
+	// The marker lives only as long as the helper session.
+	if svc.judge.helperSession("native-judge") || svc.judge.helperSession(p.id) {
+		t.Fatal("judge helper marker outlived its session")
+	}
+}
