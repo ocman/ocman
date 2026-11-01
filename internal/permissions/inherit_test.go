@@ -84,14 +84,20 @@ func TestBuildInheritedRules(t *testing.T) {
 			count: 1,
 		},
 		{
-			name: "patternable key with no patterns falls back to star",
+			// A pattern-less approval for a patternable key must never widen
+			// into a wildcard rule (e.g. "bash *"); it is skipped.
+			name: "patternable key with no patterns is not inherited",
 			rows: []state.ApprovedPermission{
 				ap("read"),
+				ap("bash"),
+				ap("bash", "git *"),
+				ap("todowrite"),
 			},
 			want: []platforms.PermissionRule{
-				{Permission: "read", Pattern: "*", Action: "allow"},
+				{Permission: "bash", Pattern: "git *", Action: "allow"},
+				{Permission: "todowrite", Pattern: "", Action: "allow"},
 			},
-			count: 1,
+			count: 2,
 		},
 		{
 			name: "richer permission text resolves to leading key",

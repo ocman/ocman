@@ -137,8 +137,8 @@ func BuildInheritedRulesWithLive(ctx context.Context, lister ApprovalLister, rea
 //   - Flat-action keys (todowrite, question, …) emit one allow rule with
 //     an empty pattern.
 //   - Patternable keys emit one allow rule per deduplicated pattern
-//     (per key). A patternable key recorded with no patterns emits a
-//     single "*" allow rule so the approval isn't silently lost.
+//     (per key). A patternable key recorded with no patterns is skipped
+//     (warn log) rather than widened into a "*" wildcard rule.
 //   - Total allow rules are capped at maxInheritedPatterns.
 //
 // An empty parent (no approvals) returns (nil, 0, nil).
@@ -170,18 +170,22 @@ func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, p
 				Debug("permissions: dropping approval with unknown permission key")
 			continue
 		}
+		flat := flatKey(platform, key)
+		if !flat && len(ap.Patterns) == 0 {
+			// Never widen a pattern-less approval into a wildcard rule
+			// (e.g. "bash *"): the parent approved something specific.
+			log.WithField("key", key).
+				Warn("permissions: not inheriting approval without patterns for a patternable key")
+			continue
+		}
 		if _, ok := patternsByKey[key]; !ok {
 			keyOrder = append(keyOrder, key)
 			patternsByKey[key] = nil
 		}
-		if flatKey(platform, key) {
+		if flat {
 			continue // flat keys carry no patterns
 		}
-		pats := ap.Patterns
-		if len(pats) == 0 {
-			pats = []string{"*"}
-		}
-		for _, p := range pats {
+		for _, p := range ap.Patterns {
 			dk := key + "\x00" + p
 			if seen[dk] {
 				continue
