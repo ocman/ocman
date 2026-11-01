@@ -75,9 +75,10 @@ func Checkout(ctx context.Context, dir, branch string) error {
 	if _, err := gitexec.Output(cctx, dir, "check-ref-format", "--branch", branch); err != nil {
 		return errors.New("invalid branch name")
 	}
-	// `--` would turn the branch into a pathspec; --end-of-options keeps
-	// it a branch operand.
-	cmd := gitexec.Command(cctx, "-C", dir, "checkout", "--end-of-options", branch)
+	// The trailing `--` ends option parsing and marks branch as the commit
+	// operand, not a pathspec. Older git (2.39 in CI) treats `checkout
+	// --end-of-options <branch>` as a pathspec; this form works everywhere.
+	cmd := gitexec.Command(cctx, "-C", dir, "checkout", branch, "--")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := string(out)
