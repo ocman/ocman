@@ -191,14 +191,17 @@ flowchart LR
   owner checks and validation still apply. Draft actions return prompts without
   sending them, and cross-fork fetch confirmation remains dashboard-only.
 - Watches are opt-in, deduplicate changes and queue follow-ups rather than
-  running an agent polling loop. Stop/unlink serializes with delivery. Merging
+  running an agent polling loop. Polling continues while a session cannot accept
+  follow-ups, so merged or closed PRs stop their watches. Notification delivery
+  waits until the session is ready. Stop/unlink serializes with delivery. Merging
   and session archival remain explicit user decisions. See
   [Pull requests](../features/pull-requests.md).
 - Session lists add durable watches to native background-task counts, keyed by
-  the full platform and session identity. Active watches and pending terminal
-  notices keep the background indicator visible and delay completion-based
+  the full platform and session identity. Active watches and pending nonterminal
+  updates keep the background indicator visible and delay completion-based
   archive resurfacing without holding foreground execution busy. Stop, unlink,
-  or terminal notice delivery removes that watch's contribution.
+  or detecting a merged or closed PR removes that watch's contribution, even
+  when its final notice still awaits delivery.
 
 Everything external that the ocman process touches.
 

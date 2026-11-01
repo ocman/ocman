@@ -39,7 +39,7 @@ func TestWatchBackgroundCountsFollowDurableLifecycle(t *testing.T) {
 	if l := x.only(t); l.Watching || l.Pending == "" {
 		t.Fatalf("terminal notice not pending: %+v", l)
 	}
-	check(1)
+	check(0)
 	x.sendErr = nil
 	x.m.sweep(t.Context())
 	check(0)

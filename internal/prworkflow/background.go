@@ -6,7 +6,8 @@ import (
 	"github.com/ocman/ocman/internal/state"
 )
 
-// BackgroundCounts includes active watches and terminal notices awaiting delivery.
+// BackgroundCounts includes active watches and nonterminal updates awaiting delivery.
+// A merged or closed PR must not keep its session in progress for a queued notice.
 // These are hub-owned tasks, including when the session executes remotely.
 func BackgroundCounts(ctx context.Context, db *state.DB) (map[state.Key]int, error) {
 	counts := map[state.Key]int{}
@@ -14,7 +15,8 @@ func BackgroundCounts(ctx context.Context, db *state.DB) (map[state.Key]int, err
 		return counts, nil
 	}
 	rows, err := db.SQL().QueryContext(ctx, `SELECT platform, session_id, COUNT(*) FROM session_pull_request
-		WHERE json_extract(payload, '$.watching') = 1 OR COALESCE(json_extract(payload, '$.Pending'), '') <> ''
+		WHERE json_extract(payload, '$.watching') = 1 OR (COALESCE(json_extract(payload, '$.Pending'), '') <> ''
+		AND COALESCE(json_extract(payload, '$.pr.status'), '') NOT IN ('merged', 'closed'))
 		GROUP BY platform, session_id`)
 	if err != nil {
 		return nil, err
