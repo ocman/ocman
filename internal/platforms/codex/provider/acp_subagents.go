@@ -13,7 +13,10 @@ import (
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
-type acpChild struct{ native, parent, root string }
+type acpChild struct {
+	native, parent, root string
+	running              bool // observed lifecycle, including a busy event still waiting for the spool
+}
 
 // ACP v1's subagent extension uses a connection-scoped wrapper, not a native
 // thread ID. Decode only this adapter's pinned format, then prove the native
@@ -92,6 +95,10 @@ func (a *acpExecution) subagent(ctx context.Context, p acpexec.SubagentNotificat
 	default:
 		return errors.New("unknown Codex subagent state")
 	}
+	a.mu.Lock()
+	child.running = status == db.StatusBusy
+	a.children[p.Update.SessionID] = child
+	a.mu.Unlock()
 	a.b.emit(child.native, "", "session.status", map[string]any{"sessionID": child.native, "status": map[string]any{"type": status}})
 	if status != db.StatusBusy {
 		a.b.emit(child.native, "", "session.idle", map[string]any{"sessionID": child.native})
@@ -149,15 +156,21 @@ func (a *acpExecution) retireChildrenLocked(generation uint64) {
 		return
 	}
 	children := make([]acpChild, 0, len(a.children))
-	for _, child := range a.children {
+	for id, child := range a.children {
 		children = append(children, child)
+		child.running = false
+		a.children[id] = child
 	}
 	a.mu.Unlock()
 	for _, child := range children {
-		a.b.mu.Lock()
-		active := a.b.sessionLocked(child.native).status == db.StatusBusy
-		a.b.mu.Unlock()
-		if active {
+		// Keep this generation's mapping until withdrawn child interactions are
+		// durable, just as root turns do before their terminal lifecycle.
+		if !a.finishInteractions(child.native) {
+			return
+		}
+		// Queue interruption behind a failed busy write, not merely when busy
+		// already reached persisted state. Otherwise recovery could revive it.
+		if child.running {
 			a.b.emit(child.native, "", "session.status", map[string]any{"sessionID": child.native, "status": map[string]any{"type": db.StatusInterrupted}})
 			a.b.emit(child.native, "", "session.idle", map[string]any{"sessionID": child.native})
 		}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	acp "github.com/coder/acp-go-sdk"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
@@ -90,6 +91,14 @@ func TestRemarksPromptRecordingRetries(t *testing.T) {
 	createACP(t, h)
 	sendACP(t, h, platforms.SendMessageRequest{Message: "hi"})
 	id := h.next("permission.asked", nil)["id"].(string)
+	// ACP requests can overtake earlier notification callbacks. Drain those
+	// callbacks before breaking storage, so only resolution writes fail here.
+	barrier := acp.SessionNotification{SessionId: "thr", Update: acp.SessionUpdate{
+		AvailableCommandsUpdate: &acp.SessionAvailableCommandsUpdate{AvailableCommands: []acp.AvailableCommand{}},
+	}}
+	if _, err := h.b.acp.client.CallExtension(t.Context(), "_test/notify", barrier); err != nil {
+		t.Fatal(err)
+	}
 	restore := breakSpool(t, h)
 	for range 2 {
 		if err := h.b.replyPermission(id, "once"); !errors.Is(err, platforms.ErrReplyUnrecorded) {
