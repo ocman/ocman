@@ -2,8 +2,8 @@
 // Usage endpoints (/api/stats, /api/metrics*, /api/metric-logs,
 // /api/analytics/*, /api/activity, /api/models, /api/hourly*,
 // /api/permission-stats, /api/cost/calc), UI-usage recording, subscription
-// usage, and the background work behind them: database-size sampling, the
-// OTel stats gauges and the LLM-turn scanner.
+// usage, and the background work behind them: database-size and subscription
+// sampling, the OTel stats gauges and the LLM-turn scanner.
 //
 // Queries stay in internal/db (OpenCode, read-only) and internal/state;
 // the session snapshot and the server's own OTel instruments (HTTP, SSE,
@@ -53,6 +53,7 @@ type Module struct {
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 	getStats                func(context.Context) (*db.Stats, error)
 	statsRefreshEvery       time.Duration
+	subscriptionSampleEvery time.Duration
 
 	// statsSnapshot is the last good stats computation, read by the gauges.
 	statsMu       sync.Mutex
@@ -81,6 +82,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("GET /api/analytics/agent-run-hours", data(m.handleAgentRunHours))
 	r.Handle("POST /api/ui-usage", m.handleUIUsage)
 	r.Local("GET /api/provider-usage", m.handleSubscriptionUsage)
+	r.Local("GET /api/provider-usage/history", m.handleSubscriptionUsageHistory)
 	r.Handle("GET /api/metrics", data(m.handleMetrics))
 	r.Handle("GET /api/metrics/performance", data(m.handleMetricsPerformance))
 	r.Handle("GET /api/metric-logs", data(m.handleMetricLogs))
@@ -92,8 +94,8 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("POST /api/cost/calc", m.handleCalcCost)
 }
 
-// Run samples database sizes, scans LLM turns (only with telemetry on) and
-// serves the stats gauges, which refresh lazily on the first collection.
+// Run samples database sizes and subscriptions, scans LLM turns when telemetry
+// is on and serves the stats gauges, which refresh on the first collection.
 // It returns once every worker has, so no query outlives the databases.
 func (m *Module) Run(ctx context.Context) {
 	if reg, err := m.registerStatsMetrics(ctx, telemetry.Meter()); err != nil {
@@ -104,6 +106,7 @@ func (m *Module) Run(ctx context.Context) {
 	var workers sync.WaitGroup
 	workers.Go(func() { m.runLLMMetricsLoop(ctx) })
 	workers.Go(func() { m.runDatabaseSizeLoop(ctx) })
+	workers.Go(func() { m.runSubscriptionUsageLoop(ctx) })
 	workers.Wait()
 	<-ctx.Done() // the gauges stay registered for the server's lifetime
 }

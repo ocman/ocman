@@ -339,6 +339,20 @@ flowchart LR
   Ocman never reads provider credentials or falls back to another platform's login.
   Each platform response is cached for one minute; removed platforms disappear
   immediately. The browser receives usage, not credentials or workspace IDs.
+  An analytics worker also probes each enabled local platform at startup and
+  every five minutes, independent of the dashboard and telemetry. Fresh
+  normalized account snapshots are stored in the analytics-owned
+  `subscription_usage_samples` table in state.db, one row per platform and
+  five-minute bucket for the latest 30 days. Older complete UTC hours keep only
+  their latest actual snapshot indefinitely, without averaging across resets.
+  Each response identifies the resolution of its samples. Failed probes retain
+  only their status, not error details
+  or fabricated zero usage. Unsupported platforms and remote adapters are skipped.
+  `/api/provider-usage/history?days=7` is localhost-only and accepts 1 to 365 days,
+  or 0 for all history.
+  The page's History view plots quota and budget utilization, with gaps at
+  failures, unreported metrics, resets, plan changes and extended downtime.
+  History is per platform on this machine, not a cumulative token estimate.
   `/api/provider-usage` also reads
   the analytics-owned `provider_usage` ledger in state.db. The server injects
   a recorder into auto-approve so keyed requests to TypeSafe's hosted System
@@ -446,6 +460,9 @@ flowchart LR
     Registry --> Claude[Claude CLI account and observed limits]
     Registry --> OpenCode[OpenCode service usage limits]
     Analytics --> Ledger[Local TypeSafe estimate ledger]
+    Analytics -->|five-minute snapshots, hourly after 30 days| History[Subscription history in state.db]
+    UI -->|History view| HistoryAPI[Local history endpoint]
+    HistoryAPI --> History
 ```
 
 Account reads stay inside each platform integration. The analytics module only

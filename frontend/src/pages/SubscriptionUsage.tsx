@@ -8,7 +8,10 @@ import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
 import { ProviderSpend } from './ProviderSpend';
 import { ProviderBudget } from './ProviderBudget';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import './SubscriptionUsage.css';
+
+const History = lazy(() => import('./SubscriptionUsageHistory').then(module => ({ default: module.SubscriptionUsageHistory })));
 
 const STATUS_LABELS: Record<string, string> = {
   expired: 'Platform authentication expired',
@@ -88,5 +91,17 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
 
 export function SubscriptionUsage() {
   usePageTitle('Provider usage');
-  return <div className="subscription-page"><SubscriptionUsageContent /></div>;
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'history' ? 'history' : 'current';
+  return <div className="subscription-page"><Tabs value={view} onValueChange={value => setParams(previous => {
+    const next = new URLSearchParams(previous);
+    if (value === 'current') next.delete('view'); else next.set('view', value);
+    return next;
+  })}>
+    <TabsList aria-label="Provider usage views"><TabsTrigger value="current">Current usage</TabsTrigger><TabsTrigger value="history">History</TabsTrigger></TabsList>
+    <TabsContent value="current"><SubscriptionUsageContent /></TabsContent>
+    <TabsContent value="history"><Suspense fallback={<LoadingState>Loading subscription history</LoadingState>}><History /></Suspense></TabsContent>
+  </Tabs></div>;
 }
+import { lazy, Suspense } from 'react';
+import { useSearchParams } from 'react-router-dom';

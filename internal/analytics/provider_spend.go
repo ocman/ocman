@@ -9,17 +9,18 @@ import (
 	"github.com/ocman/ocman/internal/state"
 )
 
-// Schema owns the local cost ledger. No credentials or permission content are stored.
+// Schema owns local cost estimates and platform-reported subscription history.
+// No credentials or permission content are stored.
 var Schema = state.ModuleSchema{
 	Module: "analytics",
-	Tables: []string{"provider_usage"},
+	Tables: []string{"provider_usage", "subscription_usage_samples"},
 	Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 		_, err := tx.Exec(`CREATE TABLE provider_usage (
 			created_at INTEGER NOT NULL, model TEXT NOT NULL,
 			input_tokens INTEGER, output_tokens INTEGER, estimated_usd REAL
 		); CREATE INDEX provider_usage_created ON provider_usage(created_at);`)
 		return err
-	}},
+	}, createSubscriptionUsageHistory},
 }
 
 type providerSpend struct {

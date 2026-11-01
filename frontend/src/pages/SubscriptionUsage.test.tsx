@@ -1,13 +1,30 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render as renderUI, screen } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSubscriptionUsage } from '../lib/queries';
 import { SubscriptionUsage, SubscriptionUsageContent } from './SubscriptionUsage';
 
 vi.mock('../lib/queries', () => ({ useSubscriptionUsage: vi.fn() }));
+vi.mock('./SubscriptionUsageHistory', () => ({ SubscriptionUsageHistory: () => <div>Subscription history panel</div> }));
+
+function render(ui: ReactElement) { return renderUI(ui, { wrapper: MemoryRouter }); }
 
 describe('SubscriptionUsage', () => {
   beforeEach(() => vi.resetAllMocks());
+
+  it('keeps the selected view and unrelated parameters in the URL', async () => {
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
+    function Location() { return <output data-testid="view-location">{useLocation().search}</output>; }
+    renderUI(<MemoryRouter initialEntries={['/provider-usage?days=30&remoteId=local']}><SubscriptionUsage /><Location /></MemoryRouter>);
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'History' }), { key: 'Enter' });
+    expect(await screen.findByText('Subscription history panel')).toBeInTheDocument();
+    expect(screen.getByTestId('view-location')).toHaveTextContent('?days=30&remoteId=local&view=history');
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Current usage' }), { key: 'Enter' });
+    expect(screen.getByTestId('view-location')).toHaveTextContent('?days=30&remoteId=local');
+    expect(screen.queryByText('Subscription history panel')).not.toBeInTheDocument();
+  });
 
   it('shows remaining platform-reported budgets without a token estimate', () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({

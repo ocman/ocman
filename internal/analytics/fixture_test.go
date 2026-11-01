@@ -73,7 +73,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { database.Close() })
-	store, err := state.Open(statetest.At(t, filepath.Join(dir, "state.db")))
+	store, err := state.Open(statetest.At(t, filepath.Join(dir, "state.db")), Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

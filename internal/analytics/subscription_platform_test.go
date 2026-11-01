@@ -106,6 +106,8 @@ func TestPlatformUsageCacheAndRegistryChanges(t *testing.T) {
 
 type noAccountPlatform struct{ platforms.Platform }
 
+func (*noAccountPlatform) ID() platforms.ID { return "no-account" }
+
 func TestPlatformUsageDoesNotCacheCanceledReads(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

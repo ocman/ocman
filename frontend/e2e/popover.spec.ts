@@ -1,5 +1,26 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 
+test('subscription history graphs persisted readings and keeps its period on reload', async ({ mockedPage: page }) => {
+  const now = Date.now();
+  await page.route('**/api/provider-usage/history?*', route => route.fulfill({ json: {
+    sampleIntervalMs: 300000,
+    samples: [0, 1, 2].map(index => ({ sampledAt: now - (2 - index) * 300000, provider: {
+      id: 'codex', name: 'Codex', plan: 'pro', status: 'ok', windows: [{ name: '5 hours', usedPercent: 20 + index * 10, resetsAt: new Date(now + 3600000).toISOString() }],
+    } })),
+  } }));
+  await page.goto('/provider-usage');
+  await page.getByRole('tab', { name: 'History', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Subscription usage history', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Codex subscription usage history' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'History period' }).selectOption('30');
+  await expect(page).toHaveURL(/view=history&days=30/);
+  await page.reload();
+  await expect(page.getByRole('combobox', { name: 'History period' })).toHaveValue('30');
+  await expect(page.getByRole('img', { name: 'Codex subscription usage history' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Current usage', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Subscription usage history', exact: true })).not.toBeVisible();
+});
+
 test('provider usage shows the local seven-day TypeSafe estimate', async ({ mockedPage: page }) => {
   await page.route('/api/provider-usage', route => route.fulfill({ json: { providers: [{
     id: 'typesafe', name: 'TypeSafe', status: 'ok', windows: [], spend: {
