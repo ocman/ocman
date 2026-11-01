@@ -15,7 +15,9 @@ var quotaActionReasons = map[string]bool{"account_rate_limit": true, "free_tier_
 
 // OnSessionRetry cools the session's provider when a retry parks longer
 // than the patience threshold or names a quota wall. A short backoff is
-// the platform's business.
+// the platform's business. Like OnSessionIdle it runs on the module's
+// lifetime with a bounded owner read, and Run joins it before state.db
+// closes.
 func (s *Module) OnSessionRetry(platformID, sessionID string, nextAttempt int64, actionReason string) {
 	var wait time.Duration
 	if nextAttempt > 0 {
@@ -24,7 +26,18 @@ func (s *Module) OnSessionRetry(platformID, sessionID string, nextAttempt int64,
 		s.retryNext.Store(fallKey(platformID, sessionID), next)
 		wait = time.Until(next)
 	}
-	ctx := context.Background()
+	s.mu.Lock()
+	if s.stopped || s.ctx.Err() != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.idleHandlers.Add(1)
+	lifetime := s.ctx
+	s.mu.Unlock()
+	defer s.idleHandlers.Done()
+
+	ctx, cancel := context.WithTimeout(lifetime, ownerReadTimeout)
+	defer cancel()
 	if patience, _ := s.CooldownTimes(ctx); !quotaActionReasons[actionReason] && wait <= patience {
 		return
 	}

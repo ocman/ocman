@@ -82,3 +82,69 @@ func TestShutdownCancelsPreSendLifecycleRead(t *testing.T) {
 		})
 	}
 }
+
+// TestShutdownCancelsAndJoinsRetryCooldownRead is a regression test: the
+// retry edge read state.db and the owner on context.Background(), so a
+// slow read outlived Run and the database it reads.
+func TestShutdownCancelsAndJoinsRetryCooldownRead(t *testing.T) {
+	store := statetest.Open(t)
+	p := blockedOwner{entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}), t: t}
+	m := NewModule(Deps{
+		Store: store, Sessions: func() Sessions { return nil },
+		Adapter:   func(context.Context, string, string) (platforms.Platform, bool) { return p, true },
+		SendNow:   func(context.Context, string, platforms.SendMessageRequest) error { return nil },
+		Broadcast: func(string, []byte) {},
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if err := m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	retryDone, runDone := make(chan struct{}), make(chan struct{})
+	go func() { m.OnSessionRetry("r-owner:opencode", "s1", 0, "account_rate_limit"); close(retryDone) }()
+	<-p.entered
+	cancel()
+	go func() { m.Run(ctx); close(runDone) }()
+	defer func() { close(p.release); <-retryDone; <-runDone }()
+	select {
+	case <-p.cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not cancel the retry cooldown read")
+	}
+	select {
+	case <-runDone:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after the retry read was cancelled")
+	}
+	select {
+	case <-retryDone:
+	default:
+		t.Fatal("Run returned before joining the retry handler")
+	}
+}
+
+// TestRetryAfterRunTouchesNothing checks that a retry edge arriving after
+// Run returned does not reach the owner or state.db.
+func TestRetryAfterRunTouchesNothing(t *testing.T) {
+	store := statetest.Open(t)
+	adapterCalls := 0
+	m := NewModule(Deps{
+		Store: store, Sessions: func() Sessions { return nil },
+		Adapter: func(context.Context, string, string) (platforms.Platform, bool) {
+			adapterCalls++
+			return lifecyclePlatform{}, true
+		},
+		SendNow:   func(context.Context, string, platforms.SendMessageRequest) error { return nil },
+		Broadcast: func(string, []byte) {},
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	if err := m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	m.Run(ctx)
+	m.OnSessionRetry("r-owner:opencode", "s1", 0, "account_rate_limit")
+	if adapterCalls != 0 {
+		t.Fatalf("retry after Run resolved the owner %d times", adapterCalls)
+	}
+}
