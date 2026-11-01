@@ -5,18 +5,23 @@ import { Button } from '../../components/Control';
 import { Popover } from '../../components/Popover';
 import styles from './BackgroundTasksNotice.module.css';
 
+interface NoticeTask extends BackgroundTask { onStop?: () => Promise<unknown> }
+
 interface Props {
   count: number; tasks?: BackgroundTask[]; sessionId?: string; platform?: string; canStop?: boolean; canClassify?: boolean;
+  additionalTasks?: NoticeTask[];
 }
 
-export function BackgroundTasksNotice(props: Props) {
-  return props.count > 0 ? <RunningBackgroundTasksNotice {...props} /> : null;
+export function BackgroundTasksNotice({ additionalTasks = [], ...props }: Props) {
+  const count = props.count + additionalTasks.length;
+  return count > 0 ? <RunningBackgroundTasksNotice {...props} count={count} additionalTasks={additionalTasks} /> : null;
 }
 
 // Matches the .oc-popover width.
 const PANEL_WIDTH = 340;
 
-function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platform = '', canStop = false, canClassify = false }: Props) {
+function RunningBackgroundTasksNotice({ count, tasks: nativeTasks = [], additionalTasks = [], sessionId = '', platform = '', canStop = false, canClassify = false }: Props) {
+  const tasks: NoticeTask[] = [...nativeTasks, ...additionalTasks];
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
   const [position, setPosition] = useState<CSSProperties | null>(null);
@@ -44,11 +49,12 @@ function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platf
     setError('');
     setPosition({ left, bottom: window.innerHeight - rect.top + 4 });
   };
-  const stop = async (task: BackgroundTask) => {
+  const stop = async (task: NoticeTask) => {
     setPending(previous => new Set(previous).add(task.id));
     setError('');
     try {
-      await api.stopBackgroundTask(sessionId, task.id, platform);
+      if (task.onStop) await task.onStop();
+      else await api.stopBackgroundTask(sessionId, task.id, platform);
     } catch (err) {
       setError(`Could not stop ${task.description || task.id}: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
@@ -87,16 +93,16 @@ function RunningBackgroundTasksNotice({ count, tasks = [], sessionId = '', platf
           {tasks.length === 0 ? <p>Task details are unavailable from this backend.</p> : <ul className={styles.tasks}>
             {tasks.map(task => <li key={task.id} className={styles.task}>
               <span className={styles.description} title={task.description || task.id}>{task.description || task.id}</span>
-              {canClassify && <Button variant="ghost" size="small" disabled={lifecycles === null || pending.has(task.id)}
+              {canClassify && !task.onStop && <Button variant="ghost" size="small" disabled={lifecycles === null || pending.has(task.id)}
                 title="Tasks delay archive resurfacing until they finish. Persistent services do not."
                 aria-label={`Mark ${task.description || task.id} as ${(lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'task' : 'service'}`}
                 onClick={() => void classify(task, (lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'task' : 'service')}>
                 {(lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'Service' : 'Task'}</Button>}
-              {task.kind !== 'agent' && <Button variant="danger" size="small" disabled={!canStop || pending.has(task.id)}
+              {task.kind !== 'agent' && <Button variant="danger" size="small" disabled={(!canStop && !task.onStop) || pending.has(task.id)}
                 aria-label={`Stop ${task.description || task.id}`} onClick={() => void stop(task)}>{pending.has(task.id) ? 'Stopping…' : 'Stop'}</Button>}
             </li>)}
           </ul>}
-          {tasks.length > 0 && !canStop && <p>Individual stopping is unavailable from this backend or connection.</p>}
+          {nativeTasks.length > 0 && !canStop && <p>Individual stopping is unavailable from this backend or connection.</p>}
           {error && <p role="alert">{error}</p>}
         </div>
       </Popover>

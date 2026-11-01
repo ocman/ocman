@@ -33,7 +33,7 @@ import { SessionTerminalDock } from '../../components/SessionTerminalDock';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
 import './ComposerNotices.css';
-import { BackgroundTasksNotice } from './BackgroundTasksNotice';
+import { SessionBackgroundTasksNotice } from './SessionBackgroundTasksNotice';
 import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionPermissions } from '../../components/session/SessionPermissions';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
@@ -1029,7 +1029,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         onAbort: handleAbort,
                         isRunning,
                         footerStatus: (
-                          <BackgroundTasksNotice key={`${session.platform}:${session.id}`} count={view.backgroundTaskCount ?? 0} tasks={view.backgroundTasks}
+                          <SessionBackgroundTasksNotice key={`${session.platform}:${session.id}`} count={view.backgroundTaskCount ?? 0} tasks={view.backgroundTasks}
                             sessionId={session.id} platform={session.platform} canStop={!!caps.backgroundTaskStop && portAvailable} canClassify={!!caps.backgroundTaskLifecycle && portAvailable} />
                         ),
                         disabled: !portAvailable || hasPendingPrompt,
