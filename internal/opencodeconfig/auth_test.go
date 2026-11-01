@@ -18,23 +18,13 @@ func entryHeaders(t *testing.T, path string, v2 bool) map[string]any {
 	doc, servers := readDoc(t, path)
 	entry := servers[ServerName]
 	if !v2 {
-		var flat map[string]map[string]any
-		if err := json.Unmarshal(mustJSON(t, doc.MCP), &flat); err != nil {
+		entry = nil
+		if err := json.Unmarshal(doc.MCP[ServerName], &entry); err != nil {
 			t.Fatal(err)
 		}
-		entry = flat[ServerName]
 	}
 	headers, _ := entry["headers"].(map[string]any)
 	return headers
-}
-
-func mustJSON(t *testing.T, v any) []byte {
-	t.Helper()
-	data, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
 
 // Install references the token file, never the token, and Check only calls
