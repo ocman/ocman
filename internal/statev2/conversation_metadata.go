@@ -79,10 +79,14 @@ func conversationMetadata(ctx context.Context, tx *sql.Tx, key Key, d *Detail) e
 		}
 		d.Conversation.UserModel = analyticsdata.ModelKey(provider, model)
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(max(CASE WHEN role='assistant' THEN completed_at ELSE 0 END),0),
-		COALESCE(max(CASE WHEN role='user' THEN time_created ELSE 0 END),0),COALESCE(sum(CASE WHEN role='assistant' THEN duration_ms ELSE 0 END),0)
+	if err := tx.QueryRowContext(ctx, `SELECT last_turn_completed_at,last_user_prompt_at
+		FROM sidebar_attention WHERE instance_id=? AND session_id=?`, key.InstanceID, key.SessionID).
+		Scan(&d.Conversation.LastTurnCompletedAt, &d.Conversation.LastUserPromptAt); err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(CASE WHEN role='assistant' THEN duration_ms ELSE 0 END),0)
 		FROM analytics_fact WHERE instance_id=? AND session_id=?`, key.InstanceID, key.SessionID).
-		Scan(&d.Conversation.LastTurnCompletedAt, &d.Conversation.LastUserPromptAt, &d.Conversation.ActiveDurationMs); err != nil {
+		Scan(&d.Conversation.ActiveDurationMs); err != nil {
 		return err
 	}
 	if err := conversationDefaults(ctx, tx, key, d); err != nil {

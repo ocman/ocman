@@ -14,6 +14,7 @@ func TestCompactSidebarPreservesAttentionTimestamps(t *testing.T) {
 	_, err := a.history.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "source", SessionID: id}, CreatedAt: 1, UpdatedAt: 400, ReadFormat: statev2.ConversationReadFormat}, ExpectedRevision: 1, Messages: []statev2.Message{
 		{ID: "u", Role: "user", ConversationVisible: true, CreatedAt: 300},
 		{ID: "a", Role: "assistant", ConversationVisible: true, CreatedAt: 310, CompletedAt: 350, Position: 1, Finish: "stop"},
+		{ID: "step", Role: "assistant", ConversationVisible: true, CreatedAt: 380, CompletedAt: 390, Position: 2, Finish: "tool-calls"},
 	}})
 	if err != nil {
 		t.Fatal(err)

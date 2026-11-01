@@ -8,7 +8,7 @@ import (
 func TestAttentionProjectionTracksSnapshotCorrectionsAndStream(t *testing.T) {
 	d := openTestDB(t)
 	b := fixture("first")
-	b.Messages = []Message{{ID: "u", Role: "user", CreatedAt: 100, ConversationVisible: true}, {ID: "a", Role: "assistant", CreatedAt: 110, CompletedAt: 120, ConversationVisible: true, Position: 1}, {ID: "hidden", Role: "user", CreatedAt: 999}}
+	b.Messages = []Message{{ID: "u", Role: "user", CreatedAt: 100, ConversationVisible: true}, {ID: "a", Role: "assistant", CreatedAt: 110, CompletedAt: 120, Finish: "stop", ConversationVisible: true, Position: 1}, {ID: "hidden", Role: "user", CreatedAt: 999}}
 	b.Parts = nil
 	commit(t, d, b)
 	assert := func(completed, prompt int64) {
