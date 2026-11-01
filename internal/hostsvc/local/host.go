@@ -86,10 +86,16 @@ type Host struct {
 	// sf coalesces identical operations; runtimeLocks serialize root mutations.
 	sf           singleflight.Group
 	runtimeLocks sync.Map // repo root -> *sync.Mutex; inventory never takes these
-	// background tracks detached worktree naming so tests can wait for it.
+	// background tracks detached worktree naming and shared runtime
+	// launches; Finalize cancels and joins them.
 	background sync.WaitGroup
 	// instances retains cleanup handles; only successful probes authorize routing.
-	mu          sync.Mutex
+	mu sync.Mutex
+	// detached ends detached work at Finalize (created lazily, guarded by
+	// mu); finalized refuses new detached work.
+	detached       context.Context
+	cancelDetached context.CancelFunc
+	finalized      bool
 	instances   map[string]*ocruntime.Instance
 	authorized  map[string]string
 	generations map[string]uint64
@@ -114,6 +120,64 @@ func New(deps Deps) *Host {
 		stopped:         map[string]bool{},
 		portWaitTimeout: 15 * time.Second, portWaitInterval: 200 * time.Millisecond,
 	}
+}
+
+// finalizeTimeout bounds how long Finalize waits for detached work.
+const finalizeTimeout = 10 * time.Second
+
+// Finalize cancels detached worktree naming and shared runtime launches and
+// waits, bounded by finalizeTimeout, for them to unwind, so none outlives
+// the state database the server closes next. Later detached work is
+// refused.
+func (h *Host) Finalize() {
+	h.mu.Lock()
+	h.finalized = true
+	h.mu.Unlock()
+	h.detachedLifetime()
+	h.cancelDetached()
+	done := make(chan struct{})
+	go func() {
+		h.background.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(finalizeTimeout):
+		log.WithField("timeout", finalizeTimeout).Warn("host: detached work still running at shutdown")
+	}
+}
+
+// detachedLifetime is the context Finalize cancels, created on first use
+// so a zero Host works.
+func (h *Host) detachedLifetime() context.Context {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.detached == nil {
+		h.detached, h.cancelDetached = context.WithCancel(context.Background())
+	}
+	return h.detached
+}
+
+// startDetached admits work that outlives its caller: the returned
+// context keeps the caller's values and ends after timeout or at
+// Finalize, and done must be called when the work returns. It reports
+// false once the host is finalized.
+func (h *Host) startDetached(ctx context.Context, timeout time.Duration) (context.Context, func(), bool) {
+	lifetime := h.detachedLifetime()
+	h.mu.Lock()
+	if h.finalized {
+		h.mu.Unlock()
+		return nil, nil, false
+	}
+	h.background.Add(1)
+	h.mu.Unlock()
+	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	stop := context.AfterFunc(lifetime, cancel)
+	return detached, func() {
+		stop()
+		cancel()
+		h.background.Done()
+	}, true
 }
 
 func (h *Host) ValidateFactoryHandoff(ctx context.Context, repoRoot, branch string) (string, error) {

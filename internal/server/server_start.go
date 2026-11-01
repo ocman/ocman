@@ -42,6 +42,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		if running {
 			<-done
 		}
+		s.finalizeLocalHost()
 		finalizeModules(s.modules())
 	}()
 	if !startup.OwnsListener(ctx) {

@@ -35,7 +35,11 @@ func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProj
 
 const sfLaunchTimeout = 2 * time.Minute
 
-// The shared launch outlives any one caller, bounded by sfLaunchTimeout.
+// errHostFinalized refuses detached work once the host is shutting down.
+var errHostFinalized = errors.New("host is shutting down")
+
+// The shared launch outlives any one caller, bounded by sfLaunchTimeout
+// and ended by Finalize, which joins it.
 func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error), operation string) (*hostsvc.EnsureRuntimeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -45,9 +49,12 @@ func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(contex
 		err error
 	}
 	done := make(chan sfResult, 1)
-	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), sfLaunchTimeout)
+	detached, finish, ok := h.startDetached(ctx, sfLaunchTimeout)
+	if !ok {
+		return nil, errHostFinalized
+	}
 	go func() {
-		defer cancel()
+		defer finish()
 		v, err, _ := h.sf.Do(operation+"\x00"+repoRoot, func() (any, error) {
 			finish := h.beginRuntimeMutation(repoRoot)
 			defer finish()

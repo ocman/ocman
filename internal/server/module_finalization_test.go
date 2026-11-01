@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/ocman/ocman/internal/hostsvc"
+	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/module"
 )
 
@@ -40,5 +42,36 @@ func TestStartupFailureFinalizesOpenedModuleResources(t *testing.T) {
 	}
 	if m.opened.Load() != 1 || m.closed.Load() != 1 {
 		t.Fatalf("resource leak after startup failure: opens=%d closes=%d", m.opened.Load(), m.closed.Load())
+	}
+}
+
+type finalizeCountingHost struct {
+	*hostlocal.Host
+	finalized atomic.Int32
+}
+
+func (h *finalizeCountingHost) Finalize() {
+	h.finalized.Add(1)
+	h.Host.Finalize()
+}
+
+// TestServerTeardownFinalizesLocalHost is a regression test: the local
+// host's detached worktree naming and runtime launches were never joined
+// before the caller closed state.db.
+func TestServerTeardownFinalizesLocalHost(t *testing.T) {
+	t.Setenv("OCMAN_PLUGIN_DIR", t.TempDir())
+	s := testServer(t)
+	host := &finalizeCountingHost{Host: hostlocal.New(hostlocal.Deps{})}
+	s.hostRouter = hostsvc.NewRouter(host)
+	s.registry.Register(&startupModulePlatform{fakePlatform: &fakePlatform{}, mod: &resourceModule{fail: true}})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StartOnListener(t.Context(), ln); err == nil {
+		t.Fatal("expected startup failure")
+	}
+	if got := host.finalized.Load(); got != 1 {
+		t.Fatalf("local host finalized %d times at teardown, want 1", got)
 	}
 }

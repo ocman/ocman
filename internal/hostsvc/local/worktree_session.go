@@ -143,13 +143,13 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		return nil, fmt.Errorf("creating worktree session: %w", err)
 	}
 	if name := h.worktreeNamer(req.Platform, port); req.AutoName && name != nil {
-		h.background.Add(1)
-		go func() {
-			defer h.background.Done()
-			bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			h.nameWorktree(bg, name, repoRoot, req.Branch, suffix, req.Prompt)
-		}()
+		// Naming is best-effort: once finalized the provisional branch stays.
+		if bg, finish, ok := h.startDetached(ctx, 30*time.Second); ok {
+			go func() {
+				defer finish()
+				h.nameWorktree(bg, name, repoRoot, req.Branch, suffix, req.Prompt)
+			}()
+		}
 	}
 	return &hostsvc.WorktreeSessionResult{
 		SessionID: created.ID, WorktreePath: res.Path, Branch: res.Branch,
