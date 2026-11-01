@@ -201,14 +201,14 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `-auth-password` | _(unset)_ | Password to require. Prefer `OCMAN_AUTH_PASSWORD` or `-auth-password-file`. |
 | `-auth-password-file` | _(unset)_ | Read auth password from file (trailing whitespace trimmed). |
 | `-auth-session-ttl` | `720h` (30 days) | Auth cookie lifetime. |
-| `-auth-trust-localhost` | `false` | Exempt loopback clients from auth. Also `OCMAN_AUTH_TRUST_LOCALHOST=1`. |
+| `-auth-trust-localhost` | `false` | Exempt loopback clients from auth. Refused with a non-loopback `-addr` / `-gui-addr` or a public `-public-base-url` unless `-insecure-no-auth` is set. Also `OCMAN_AUTH_TRUST_LOCALHOST=1`. |
 | `-opencode-server-password-file` | _(unset)_ | Read the managed OpenCode API password from a file (trailing whitespace trimmed). |
 | `-opencode-server-generate-password` | `false` | Generate an ephemeral managed OpenCode API password at startup. |
 | `-remote-listen` | _(unset, off)_ | Bind address for the remote-access gRPC server (multi-remote), e.g. `0.0.0.0:8230`. Empty disables it. |
 | `-remote-tls-cert` | _(unset)_ | TLS certificate file for the remote-access gRPC server (enables TLS with `-remote-tls-key`). |
 | `-remote-tls-key` | _(unset)_ | TLS key file for the remote-access gRPC server. |
 | `-remote-trusted-overlay` | `false` | Explicitly allow plaintext remote gRPC on a trusted overlay network. |
-| `-insecure-no-auth` | `false` | Allow a non-loopback `-addr` / `-gui-addr` or a public `-public-base-url` with no password configured. Also `OCMAN_INSECURE_NO_AUTH=1`. |
+| `-insecure-no-auth` | `false` | Allow a non-loopback `-addr` / `-gui-addr` or a public `-public-base-url` with no password configured or with `-auth-trust-localhost`. Also `OCMAN_INSECURE_NO_AUTH=1`. |
 
 ## Environment variables
 
@@ -260,7 +260,11 @@ listener, set one of the following (highest precedence first):
 
 Once auth is configured it applies to every client, localhost included. For local dev loops,
 pass `-auth-trust-localhost` (or `OCMAN_AUTH_TRUST_LOCALHOST=1`) to restore the loopback
-bypass.
+bypass. That bypass counts as no authentication when ocman is exposed: with a non-loopback
+listen address or a public base URL, ocman refuses to start with `-auth-trust-localhost` even
+when a password is configured, because behind a reverse proxy every request arrives from
+`127.0.0.1`. Use it only on a loopback listener without a public base URL, or override with
+`-insecure-no-auth`.
 
 Ocman bcrypt-hashes the password at startup. Auth cookies are HMAC-signed and stateless, using
 a key persisted in `state.db` so logins survive restarts. Login attempts are rate-limited to

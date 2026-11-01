@@ -134,6 +134,7 @@ func run() {
 		resolvedBaseURL = strings.TrimSpace(os.Getenv(publicBaseURLEnv))
 	}
 	if err := validateListenExposure(httpListenAddr, resolvedBaseURL, authPasswordValue != "",
+		*authTrustLocalhost || parseBoolEnv(os.Getenv(authTrustLocalhostEnv)),
 		*insecureNoAuth || parseBoolEnv(os.Getenv(insecureNoAuthEnv))); err != nil {
 		fatal("%v", err)
 	}

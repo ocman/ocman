@@ -250,37 +250,45 @@ func TestValidateListenExposure(t *testing.T) {
 		addr           string
 		baseURL        string
 		authConfigured bool
+		trustLocalhost bool
 		allowInsecure  bool
 		wantErr        bool
 	}{
-		{"loopback without auth still starts", "127.0.0.1:8228", "", false, false, false},
-		{"loopback name without auth still starts", "localhost:8228", "", false, false, false},
-		{"ipv6 loopback without auth still starts", "[::1]:8228", "", false, false, false},
-		{"wildcard without auth refuses", "0.0.0.0:8228", "", false, false, true},
-		{"bare port without auth refuses", ":8228", "", false, false, true},
-		{"lan address without auth refuses", "192.168.1.10:8228", "", false, false, true},
-		{"wildcard with auth starts", "0.0.0.0:8228", "", true, false, false},
-		{"wildcard with explicit opt-out starts", "0.0.0.0:8228", "", false, true, false},
-		{"loopback with loopback base url starts", "127.0.0.1:8228", "http://127.0.0.1:8228", false, false, false},
-		{"loopback with localhost base url starts", "127.0.0.1:8228", "https://localhost:8443", false, false, false},
-		{"loopback with public base url refuses", "127.0.0.1:8228", "https://ocman.example.ts.net", false, false, true},
-		{"loopback with host-only base url refuses", "127.0.0.1:8228", "ocman.example.com", false, false, true},
-		{"loopback with public base url and auth starts", "127.0.0.1:8228", "https://ocman.example.ts.net", true, false, false},
-		{"loopback with public base url and opt-out starts", "127.0.0.1:8228", "https://ocman.example.ts.net", false, true, false},
-		{"loopback with bracketed ipv6 loopback base url starts", "127.0.0.1:8228", "http://[::1]:8443", false, false, false},
-		{"loopback with bare ipv6 loopback base url starts", "127.0.0.1:8228", "http://[::1]", false, false, false},
-		{"loopback with ipv6 loopback range base url starts", "127.0.0.1:8228", "http://127.0.0.2:8228", false, false, false},
-		{"loopback with localhost-suffixed base url starts", "127.0.0.1:8228", "https://ocman.localhost:8443", false, false, false},
-		{"loopback with public ipv6 base url refuses", "127.0.0.1:8228", "https://[2001:db8::1]", false, false, true},
-		{"loopback with ipv6-looking base url refuses", "127.0.0.1:8228", "https://[::1:123]", false, false, true},
-		{"loopback with malformed base url refuses", "127.0.0.1:8228", "http://%zz", false, false, true},
+		{"loopback without auth still starts", "127.0.0.1:8228", "", false, false, false, false},
+		{"loopback name without auth still starts", "localhost:8228", "", false, false, false, false},
+		{"ipv6 loopback without auth still starts", "[::1]:8228", "", false, false, false, false},
+		{"wildcard without auth refuses", "0.0.0.0:8228", "", false, false, false, true},
+		{"bare port without auth refuses", ":8228", "", false, false, false, true},
+		{"lan address without auth refuses", "192.168.1.10:8228", "", false, false, false, true},
+		{"wildcard with auth starts", "0.0.0.0:8228", "", true, false, false, false},
+		{"wildcard with explicit opt-out starts", "0.0.0.0:8228", "", false, false, true, false},
+		{"loopback with loopback base url starts", "127.0.0.1:8228", "http://127.0.0.1:8228", false, false, false, false},
+		{"loopback with localhost base url starts", "127.0.0.1:8228", "https://localhost:8443", false, false, false, false},
+		{"loopback with public base url refuses", "127.0.0.1:8228", "https://ocman.example.ts.net", false, false, false, true},
+		{"loopback with host-only base url refuses", "127.0.0.1:8228", "ocman.example.com", false, false, false, true},
+		{"loopback with public base url and auth starts", "127.0.0.1:8228", "https://ocman.example.ts.net", true, false, false, false},
+		{"loopback with public base url and opt-out starts", "127.0.0.1:8228", "https://ocman.example.ts.net", false, false, true, false},
+		{"loopback with bracketed ipv6 loopback base url starts", "127.0.0.1:8228", "http://[::1]:8443", false, false, false, false},
+		{"loopback with bare ipv6 loopback base url starts", "127.0.0.1:8228", "http://[::1]", false, false, false, false},
+		{"loopback with ipv6 loopback range base url starts", "127.0.0.1:8228", "http://127.0.0.2:8228", false, false, false, false},
+		{"loopback with localhost-suffixed base url starts", "127.0.0.1:8228", "https://ocman.localhost:8443", false, false, false, false},
+		{"loopback with public ipv6 base url refuses", "127.0.0.1:8228", "https://[2001:db8::1]", false, false, false, true},
+		{"loopback with ipv6-looking base url refuses", "127.0.0.1:8228", "https://[::1:123]", false, false, false, true},
+		{"loopback with malformed base url refuses", "127.0.0.1:8228", "http://%zz", false, false, false, true},
+		// Trusting localhost exempts every loopback peer, and a proxy makes
+		// every request loopback: with exposure it is no authentication.
+		{"loopback with auth and trust-localhost starts", "127.0.0.1:8228", "", true, true, false, false},
+		{"loopback with auth, trust-localhost and loopback base url starts", "127.0.0.1:8228", "http://localhost:8228", true, true, false, false},
+		{"wildcard with auth and trust-localhost refuses", "0.0.0.0:8228", "", true, true, false, true},
+		{"loopback with public base url, auth and trust-localhost refuses", "127.0.0.1:8228", "https://ocman.example.ts.net", true, true, false, true},
+		{"wildcard with auth, trust-localhost and opt-out starts", "0.0.0.0:8228", "", true, true, true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateListenExposure(tt.addr, tt.baseURL, tt.authConfigured, tt.allowInsecure)
+			err := validateListenExposure(tt.addr, tt.baseURL, tt.authConfigured, tt.trustLocalhost, tt.allowInsecure)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("validateListenExposure(%q, %q, auth=%v, insecure=%v) error = %v, wantErr %v",
-					tt.addr, tt.baseURL, tt.authConfigured, tt.allowInsecure, err, tt.wantErr)
+				t.Fatalf("validateListenExposure(%q, %q, auth=%v, trust=%v, insecure=%v) error = %v, wantErr %v",
+					tt.addr, tt.baseURL, tt.authConfigured, tt.trustLocalhost, tt.allowInsecure, err, tt.wantErr)
 			}
 			if tt.wantErr && !strings.Contains(err.Error(), "-insecure-no-auth") {
 				t.Errorf("error must name the opt-out flag, got: %v", err)

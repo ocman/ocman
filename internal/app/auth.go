@@ -54,8 +54,23 @@ func resolveOpenCodePassword(fileValue string, generate bool) (string, error) {
 // A public -public-base-url counts as exposure even on a loopback bind: it
 // documents a reverse proxy in front of ocman, and every proxied request
 // arrives from 127.0.0.1, so the loopback peer check is no credential.
-func validateListenExposure(addr, publicBaseURL string, authConfigured, allowInsecure bool) error {
-	if authConfigured || allowInsecure {
+//
+// -auth-trust-localhost exempts every loopback peer from auth, the login
+// limiter and the localhost-only route checks. Behind that same proxy every
+// request is a loopback peer, so with any exposure a configured password
+// protects nothing and counts as no auth at all.
+func validateListenExposure(addr, publicBaseURL string, authConfigured, trustLocalhost, allowInsecure bool) error {
+	if allowInsecure {
+		return nil
+	}
+	exposed := !isLoopbackAddr(addr) || (publicBaseURL != "" && !baseURLIsLoopback(publicBaseURL))
+	if authConfigured && trustLocalhost && exposed {
+		return fmt.Errorf("refusing to run with -auth-trust-localhost (%s) while exposed via -addr %s or -public-base-url %q: "+
+			"a reverse proxy makes every request look local, so trusting localhost disables the password for everyone. "+
+			"Drop -auth-trust-localhost, bind to 127.0.0.1 with no public base URL, or pass -insecure-no-auth (%s=1) to override",
+			authTrustLocalhostEnv, addr, publicBaseURL, insecureNoAuthEnv)
+	}
+	if authConfigured {
 		return nil
 	}
 	if !isLoopbackAddr(addr) {
