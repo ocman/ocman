@@ -27,13 +27,24 @@ type lifecycleStore struct {
 	upsertErr       error
 	attempted       chan struct{}
 	getEnabledBlock <-chan struct{}
+	getEnabledErr   error
 }
 
 func (s *lifecycleStore) GetAutoApprove(context.Context, string, string) (bool, bool, error) {
 	if s.getEnabledBlock != nil {
 		<-s.getEnabledBlock
 	}
-	return s.enabled, s.exists, nil
+	return s.enabled, s.exists, s.getEnabledErr
+}
+
+// A failed per-session setting read must not fall back to the default:
+// the session may have been explicitly disabled, so the judge stays off.
+func TestPrepareAutoApproveFailsClosedOnSettingReadError(t *testing.T) {
+	store := &lifecycleStore{enabled: false, exists: true, getEnabledErr: errors.New("database is locked")}
+	s := NewService(Deps{DefaultEnabled: true, Store: store})
+	if _, enabled := s.prepareAutoApprove(t.Context(), "opencode", "ses", "per", askedPermission{}); enabled {
+		t.Fatal("judge enabled after a failed per-session setting read")
+	}
 }
 func (s *lifecycleStore) GetJudgeDelayMs(context.Context) (int64, error) { return s.delay, nil }
 func (*lifecycleStore) GetPromptSections(context.Context) ([]state.PromptSection, error) {

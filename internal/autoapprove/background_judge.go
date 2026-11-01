@@ -3,8 +3,11 @@ package autoapprove
 import (
 	"context"
 	"encoding/json"
-	"github.com/ocman/ocman/internal/platforms"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
+
+	"github.com/ocman/ocman/internal/platforms"
 )
 
 type judgeInputs struct {
@@ -19,7 +22,14 @@ func (s *Service) prepareAutoApprove(ctx context.Context, platformID platforms.I
 	}
 	enabled := s.deps.DefaultEnabled
 	if s.deps.Store != nil {
-		if perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID); err == nil && exists {
+		perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID)
+		switch {
+		case err != nil:
+			// Fail closed: the session may have been explicitly disabled.
+			log.WithError(err).WithField("sessionID", sessionID).
+				Warn("auto-approve: reading session setting failed, leaving the prompt to the user")
+			enabled = false
+		case exists:
 			enabled = perSession
 		}
 	}
