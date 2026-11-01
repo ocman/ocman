@@ -224,6 +224,85 @@ func TestSidebarBusyExpiresAndOldGenerationsCannotReviveIt(t *testing.T) {
 	}
 }
 
+// The worker ticks every 500 ms, but an unchanged event cache must not become
+// a committed write per tick. A marker written out of band survives unchanged
+// ticks, so the worker did not rewrite the observations.
+func TestSidebarSnapshotSkipsUnchangedObservations(t *testing.T) {
+	a, p, _ := storedFixture(t)
+	native := &sidebarNative{nativePlatform: p, t: t, observations: map[string]platforms.LiveState{"native": {Status: "busy"}}}
+	a.native = native
+	worker := &sidebarWorker{adapter: a}
+	if err := worker.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer worker.Close(t.Context())
+	if err := worker.snapshot(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	read := func() db.Session {
+		t.Helper()
+		rows, err := a.SidebarSessions(t.Context(), platforms.SidebarQuery{})
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("sidebar: %+v %v", rows, err)
+		}
+		return rows[0]
+	}
+	marker := map[string]statev2.SidebarObservation{"native": {Status: "limited", ResetsAt: 99}}
+	if err := a.history.ReplaceSidebarObservations(t.Context(), a.observationScope(), a.sidebarGeneration, time.Now().Add(time.Minute).UnixMilli(), marker); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if err := worker.snapshot(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if row := read(); row.Status != db.StatusLimited || row.ResetsAt != 99 {
+		t.Fatalf("unchanged snapshot rewrote observations: %+v", row)
+	}
+	native.observations = map[string]platforms.LiveState{"native": {Status: "busy", PendingQuestion: true}}
+	if err := worker.snapshot(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if row := read(); !row.PendingQuestion || row.ResetsAt != 0 {
+		t.Fatalf("changed observations were not written: %+v", row)
+	}
+
+	// A due lease is renewed without rewriting unchanged observations.
+	marker = map[string]statev2.SidebarObservation{"native": {Status: "busy", PendingQuestion: true, ResetsAt: 7}}
+	if err := a.history.ReplaceSidebarObservations(t.Context(), a.observationScope(), a.sidebarGeneration, time.Now().Add(-time.Second).UnixMilli(), marker); err != nil {
+		t.Fatal(err)
+	}
+	if row := read(); row.LiveConnection {
+		t.Fatalf("expired lease still live: %+v", row)
+	}
+	if err := worker.snapshot(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if row := read(); row.LiveConnection {
+		t.Fatalf("fresh lease renewed early: %+v", row)
+	}
+	worker.leaseUntil = time.Now().Add(sidebarLeaseTTL - sidebarLeaseRenewEvery - time.Second)
+	if err := worker.snapshot(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if row := read(); !row.LiveConnection || row.ResetsAt != 7 {
+		t.Fatalf("lease renewal missing or rewrote observations: %+v", row)
+	}
+
+	// Becoming unavailable is written immediately, even with unchanged rows.
+	a.native = drainingSidebarNative{native}
+	if err := worker.snapshot(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if row := read(); row.LiveConnection {
+		t.Fatalf("unavailable source kept its lease: %+v", row)
+	}
+}
+
+type drainingSidebarNative struct{ *sidebarNative }
+
+func (drainingSidebarNative) CachedSessionAvailable() bool { return false }
+
 func TestSidebarBubblesNativePromptsButNotApplicationLinks(t *testing.T) {
 	a, p, id := storedFixture(t)
 	publish(t, a, db.Session{ID: "child", ParentID: "native", Directory: "/stored", Title: "child"})

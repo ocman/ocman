@@ -80,6 +80,24 @@ func (d *DB) ReplaceSidebarObservations(ctx context.Context, scope Instance, gen
 	return tx.Commit()
 }
 
+// RenewSidebarLease extends the current generation's lease with one UPDATE
+// and leaves the observations untouched. Callers write observations through
+// ReplaceSidebarObservations only when they change.
+func (d *DB) RenewSidebarLease(ctx context.Context, scope Instance, generation string, expiresAt int64) error {
+	result, err := d.db.ExecContext(ctx, `UPDATE sidebar_connection SET expires_at=? WHERE owner_id=? AND platform=? AND source_key=? AND generation=?`, expiresAt, scope.OwnerID, scope.Platform, scope.SourceKey, generation)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (d *DB) SetSidebarBranch(ctx context.Context, owner, directory, branch string, observedAt int64) error {
 	if owner == "" || directory == "" {
 		return fmt.Errorf("sidebar: owner and directory required")

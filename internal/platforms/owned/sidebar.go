@@ -2,6 +2,7 @@ package owned
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"time"
 
@@ -82,9 +83,27 @@ func (a *Adapter) observationScope() statev2.Instance {
 // Its worker copies event caches, never transcript listings or supervisor RPCs.
 func (a *Adapter) SidebarModule() module.Module { return &sidebarWorker{adapter: a} }
 
+// The worker samples the event cache every sidebarSnapshotInterval so status
+// changes reach the sidebar within half a second, but it commits only when the
+// observations change. The lease guards against a stalled worker whose last
+// checkpoint would otherwise stay live: disconnects, drains and restarts are
+// written (or invalidated by a new generation) on the next tick, so the TTL
+// only bounds how long a hung worker's state can linger. A 30 s lease renewed
+// every 10 s trades that bound (previously 3 s) for one cheap UPDATE per 10 s
+// instead of a full replace transaction twice a second.
+const (
+	sidebarSnapshotInterval = 500 * time.Millisecond
+	sidebarLeaseTTL         = 30 * time.Second
+	sidebarLeaseRenewEvery  = 10 * time.Second
+)
+
 type sidebarWorker struct {
 	adapter    *Adapter
 	background map[string][2]int
+	// written is the generation and encoded observations last committed;
+	// leaseUntil is the lease written with them (0 when unavailable).
+	written    string
+	leaseUntil time.Time
 }
 
 func (w *sidebarWorker) Name() string       { return "sidebar-" + string(w.adapter.ID()) }
@@ -113,7 +132,7 @@ func (w *sidebarWorker) Finalize() {
 	}
 }
 func (w *sidebarWorker) Run(ctx context.Context) {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(sidebarSnapshotInterval)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
@@ -149,13 +168,38 @@ func (w *sidebarWorker) snapshot(ctx context.Context) error {
 	for id, live := range liveRows {
 		observations[id] = statev2.SidebarObservation{Status: live.Status, ResetsAt: live.ResetsAt, PendingPermission: live.PendingPermission, PendingQuestion: live.PendingQuestion, BackgroundTasks: live.BackgroundTaskCount, BackgroundServices: live.BackgroundServiceCount}
 	}
-	expiresAt := time.Now().Add(3 * time.Second).UnixMilli()
+	now := time.Now()
+	leaseUntil := now.Add(sidebarLeaseTTL)
 	if source, ok := a.native.(platforms.CachedSessionAvailability); ok && !source.CachedSessionAvailable() {
-		expiresAt = 0
+		leaseUntil = time.Time{}
 	}
-	if err := a.history.ReplaceSidebarObservations(ctx, a.observationScope(), a.sidebarGeneration, expiresAt, observations); err != nil {
+	raw, err := json.Marshal(observations)
+	if err != nil {
 		return err
+	}
+	written := a.sidebarGeneration + "\x00" + string(raw)
+	switch {
+	case written != w.written || leaseUntil.IsZero() != w.leaseUntil.IsZero():
+		if err := a.history.ReplaceSidebarObservations(ctx, a.observationScope(), a.sidebarGeneration, leaseMillis(leaseUntil), observations); err != nil {
+			w.written = ""
+			return err
+		}
+		w.written, w.leaseUntil = written, leaseUntil
+	case !leaseUntil.IsZero() && w.leaseUntil.Sub(now) < sidebarLeaseTTL-sidebarLeaseRenewEvery:
+		if err := a.history.RenewSidebarLease(ctx, a.observationScope(), a.sidebarGeneration, leaseMillis(leaseUntil)); err != nil {
+			w.written = ""
+			return err
+		}
+		w.leaseUntil = leaseUntil
 	}
 	w.publishBackgroundChanges(ctx, observations)
 	return nil
+}
+
+// leaseMillis encodes an unavailable source's zero lease as 0.
+func leaseMillis(until time.Time) int64 {
+	if until.IsZero() {
+		return 0
+	}
+	return until.UnixMilli()
 }

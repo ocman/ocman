@@ -158,6 +158,19 @@ func TestSidebarObservationGenerationAndBranchOrdering(t *testing.T) {
 	if err := d.db.QueryRow(`SELECT status FROM sidebar_observation`).Scan(&status); err != nil || status != "waiting" {
 		t.Fatalf("observation=%q %v", status, err)
 	}
+	if err := d.RenewSidebarLease(t.Context(), scope, "old", 1000); !errors.Is(err, ErrConflict) {
+		t.Fatalf("old runtime renewed its lease: %v", err)
+	}
+	if err := d.RenewSidebarLease(t.Context(), scope, "new", 250); err != nil {
+		t.Fatal(err)
+	}
+	var expires int64
+	if err := d.db.QueryRow(`SELECT expires_at FROM sidebar_connection`).Scan(&expires); err != nil || expires != 250 {
+		t.Fatalf("renewed lease=%d %v", expires, err)
+	}
+	if err := d.db.QueryRow(`SELECT status FROM sidebar_observation`).Scan(&status); err != nil || status != "waiting" {
+		t.Fatalf("lease renewal changed observation=%q %v", status, err)
+	}
 	if err := d.ReplaceSidebarObservations(t.Context(), scope, "new", 300, nil); err != nil {
 		t.Fatal(err)
 	}
