@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"time"
 
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -62,6 +64,14 @@ func (p *remotePlatform) Available(_ context.Context) bool {
 	return p.conn.Health() == HealthConnected
 }
 
+// capabilitiesTimeout bounds one capability fetch from a remote, so a
+// half-open connection cannot block request paths that read capabilities.
+var capabilitiesTimeout = 3 * time.Second
+
+// Capabilities returns the capabilities fetched when this adapter's
+// connection was published. Adapters are rebuilt on every reconnect, so a
+// remote upgrade is re-read. If that prefetch failed, it retries here on a
+// bounded detached context and reports zero capabilities on failure.
 func (p *remotePlatform) Capabilities() platforms.Capabilities {
 	p.mu.RLock()
 	if p.capsSet {
@@ -69,14 +79,26 @@ func (p *remotePlatform) Capabilities() platforms.Capabilities {
 		return p.caps
 	}
 	p.mu.RUnlock()
-	// Fetch lazily and cache.
-	payload, err := p.call(context.Background(), "Capabilities", "", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), capabilitiesTimeout)
+	defer cancel()
+	caps, err := p.loadCapabilities(ctx)
 	if err != nil {
+		log.WithError(err).WithField("platform", p.ID()).Warn("remote: fetch platform capabilities failed")
 		return platforms.Capabilities{}
+	}
+	return caps
+}
+
+// loadCapabilities fetches the remote platform's capabilities and caches
+// them on success.
+func (p *remotePlatform) loadCapabilities(ctx context.Context) (platforms.Capabilities, error) {
+	payload, err := p.call(ctx, "Capabilities", "", nil)
+	if err != nil {
+		return platforms.Capabilities{}, err
 	}
 	var caps platforms.Capabilities
 	if err := unmarshalJSON(payload, &caps); err != nil {
-		return platforms.Capabilities{}
+		return platforms.Capabilities{}, err
 	}
 	if p.base == string(platforms.OpenCodeID) {
 		// Remotes predating these flags always supported both on OpenCode.
@@ -86,7 +108,7 @@ func (p *remotePlatform) Capabilities() platforms.Capabilities {
 	p.caps = caps
 	p.capsSet = true
 	p.mu.Unlock()
-	return caps
+	return caps, nil
 }
 
 func (p *remotePlatform) Sessions(ctx context.Context, dir string, since int64) ([]db.Session, error) {

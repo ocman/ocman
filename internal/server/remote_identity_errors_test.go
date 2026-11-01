@@ -19,6 +19,9 @@ type identityRPCHost struct{ hostsvc.Host }
 
 func (identityRPCHost) Projects(context.Context) ([]db.ProjectStats, error) { return nil, nil }
 
+// Capabilities answers the hub's connect-time capability prefetch.
+func (identityRPCHost) Capabilities() hostsvc.HostCaps { return hostsvc.HostCaps{} }
+
 func TestRemoteIdentityHTTPStatusMatchesLocalOwner(t *testing.T) {
 	owner, _ := canonicalHTTPFixture(t)
 	if err := owner.registry.EnableCanonicalSessions(); err != nil {

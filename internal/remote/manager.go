@@ -238,6 +238,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 			}).withPluginReferences(m.store))
 		}
 		host := newRemoteHost(mr.conn)
+		prefetchCapabilities(ctx, localID, adapters, host)
 		if !m.publishAdapters(localID, mr, adapters, host) {
 			// Superseded while connecting, or an unusable handshake: a
 			// newer dial or a disconnect/removal owns this id now. Record
@@ -266,6 +267,24 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		mr.conn.markOffline()
 		m.persistHealth(ctx, localID, mr.conn)
 		log.WithField("remote", localID).Info("remote: disconnected, reconnecting")
+	}
+}
+
+// prefetchCapabilities reads the capabilities of a freshly connected
+// remote's adapters before they are published, so request paths serve them
+// from the connection's cache. It runs outside m.mu (capability probes must
+// never run under it) and bounds the whole probe by capabilitiesTimeout. A
+// failure is logged and left for a bounded retry on first use.
+func prefetchCapabilities(ctx context.Context, localID int64, adapters []*remotePlatform, host *remoteHost) {
+	ctx, cancel := context.WithTimeout(ctx, capabilitiesTimeout)
+	defer cancel()
+	for _, platform := range adapters {
+		if _, err := platform.loadCapabilities(ctx); err != nil {
+			log.WithError(err).WithFields(log.Fields{"remote": localID, "platform": platform.base}).Warn("remote: prefetch platform capabilities failed")
+		}
+	}
+	if _, err := host.loadCapabilities(ctx); err != nil {
+		log.WithError(err).WithField("remote", localID).Warn("remote: prefetch host capabilities failed")
 	}
 }
 

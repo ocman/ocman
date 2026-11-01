@@ -3,7 +3,9 @@ package remote
 import (
 	"context"
 	"errors"
+	"sync"
 
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,6 +23,10 @@ import (
 // processes live on the owner (R-C).
 type remoteHost struct {
 	conn *RemoteConn
+
+	mu      sync.RWMutex
+	caps    hostsvc.HostCaps
+	capsSet bool
 }
 
 func newRemoteHost(conn *RemoteConn) *remoteHost { return &remoteHost{conn: conn} }
@@ -30,9 +36,36 @@ func (h *remoteHost) RemoteID() string { return h.conn.RemoteID() }
 // Doctor is hub-local only for now; remotes report no checks.
 func (h *remoteHost) Doctor(context.Context) []hostsvc.DoctorCheck { return nil }
 
+// Capabilities returns the host capabilities fetched when this host's
+// connection was published; a host is rebuilt on every reconnect. If that
+// prefetch failed, it retries on a bounded detached context.
 func (h *remoteHost) Capabilities() hostsvc.HostCaps {
-	caps, _ := hostCall[hostsvc.HostCaps](context.Background(), h.conn, "HostCapabilities", nil)
+	h.mu.RLock()
+	if h.capsSet {
+		defer h.mu.RUnlock()
+		return h.caps
+	}
+	h.mu.RUnlock()
+	ctx, cancel := context.WithTimeout(context.Background(), capabilitiesTimeout)
+	defer cancel()
+	caps, err := h.loadCapabilities(ctx)
+	if err != nil {
+		log.WithError(err).WithField("remoteId", h.RemoteID()).Warn("remote: fetch host capabilities failed")
+	}
 	return caps
+}
+
+// loadCapabilities fetches the remote host's capabilities and caches them
+// on success.
+func (h *remoteHost) loadCapabilities(ctx context.Context) (hostsvc.HostCaps, error) {
+	caps, err := hostCall[hostsvc.HostCaps](ctx, h.conn, "HostCapabilities", nil)
+	if err != nil {
+		return hostsvc.HostCaps{}, err
+	}
+	h.mu.Lock()
+	h.caps, h.capsSet = caps, true
+	h.mu.Unlock()
+	return caps, nil
 }
 
 // hostCall sends args (when non-nil) as the payload of method and decodes
