@@ -17,13 +17,13 @@ import (
 func TestGetSettingCancelledContext(t *testing.T) {
 	database := openTestStateDB(t)
 
-	database.db.SetMaxOpenConns(1)
-	conn, err := database.db.Conn(t.Context())
+	database.reader().SetMaxOpenConns(1)
+	conn, err := database.reader().Conn(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	before := database.db.Stats().WaitCount
+	before := database.reader().Stats().WaitCount
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
@@ -31,10 +31,10 @@ func TestGetSettingCancelledContext(t *testing.T) {
 		done <- err
 	}()
 	deadline := time.Now().Add(time.Second)
-	for database.db.Stats().WaitCount == before && time.Now().Before(deadline) {
+	for database.reader().Stats().WaitCount == before && time.Now().Before(deadline) {
 		runtime.Gosched()
 	}
-	if database.db.Stats().WaitCount == before {
+	if database.reader().Stats().WaitCount == before {
 		t.Fatal("GetSetting did not block waiting for the held connection")
 	}
 	cancel()

@@ -12,7 +12,7 @@ import (
 // "explicit empty string" from "not set". Callers typically fall back
 // to a default when ok is false.
 func (d *DB) GetSetting(ctx context.Context, key string) (value string, ok bool, err error) {
-	err = d.db.QueryRowContext(ctx, `SELECT value FROM setting WHERE key = ?`, key).Scan(&value)
+	err = d.reader().QueryRowContext(ctx, `SELECT value FROM setting WHERE key = ?`, key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", false, nil
 	}

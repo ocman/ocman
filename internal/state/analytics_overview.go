@@ -19,7 +19,7 @@ func (d *DB) AnalyticsOverviewCounts(ctx context.Context) (AnalyticsOverviewCoun
 		FactoryAttemptsByPhase:           map[string]int{},
 		FactoryAttemptsByTerminalOutcome: map[string]int{},
 	}
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reader().QueryContext(ctx, `
 		SELECT 'total_routines', '', count(*) FROM routine WHERE deleted = 0
 		UNION ALL SELECT 'routine_runs', state, count(*) FROM routine_run GROUP BY state
 		UNION ALL SELECT 'factory_epics', status, count(*) FROM factory_epic GROUP BY status

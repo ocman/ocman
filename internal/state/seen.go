@@ -40,7 +40,7 @@ type SeenSessionState struct {
 }
 
 func (d *DB) SeenSessionStates(ctx context.Context) (map[Key]SeenSessionState, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, session_time_updated, interrupted FROM seen_session`)
+	rows, err := d.reader().QueryContext(ctx, `SELECT platform, session_id, session_time_updated, interrupted FROM seen_session`)
 	if err != nil {
 		return nil, fmt.Errorf("listing seen sessions: %w", err)
 	}

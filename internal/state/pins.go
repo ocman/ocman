@@ -35,7 +35,7 @@ func (d *DB) UnpinSession(ctx context.Context, platform, sessionID string) error
 // PinnedSessions returns every pinned session's pinned_at timestamp,
 // keyed by (platform, session-id).
 func (d *DB) PinnedSessions(ctx context.Context) (map[Key]int64, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, pinned_at FROM pinned_session`)
+	rows, err := d.reader().QueryContext(ctx, `SELECT platform, session_id, pinned_at FROM pinned_session`)
 	if err != nil {
 		return nil, fmt.Errorf("listing pinned sessions: %w", err)
 	}

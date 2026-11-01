@@ -171,7 +171,7 @@ func (d *DB) ProjectsUnarchivedSince(ctx context.Context, cutoff int64) (map[Pro
 }
 
 func (d *DB) unarchivedSince(ctx context.Context, kind string, cutoff int64) (map[ProjectKey]bool, error) {
-	rows, err := d.db.QueryContext(ctx,
+	rows, err := d.reader().QueryContext(ctx,
 		`SELECT remote_id, entity_key FROM unarchived_entity WHERE kind = ? AND unarchived_at >= ?`,
 		kind, cutoff,
 	)
@@ -196,7 +196,7 @@ func (d *DB) unarchivedSince(ctx context.Context, kind string, cutoff int64) (ma
 // ArchivedSessions returns every archived session's time_updated,
 // keyed by (platform, session-id).
 func (d *DB) ArchivedSessions(ctx context.Context) (map[Key]int64, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, session_time_updated FROM archived_session`)
+	rows, err := d.reader().QueryContext(ctx, `SELECT platform, session_id, session_time_updated FROM archived_session`)
 	if err != nil {
 		return nil, fmt.Errorf("listing archived sessions: %w", err)
 	}
@@ -251,7 +251,7 @@ func (d *DB) UnarchiveProject(ctx context.Context, remoteID, projectRoot string)
 // ArchivedProjects returns every archived project's archived_at time, keyed
 // by (remoteID, folded project root).
 func (d *DB) ArchivedProjects(ctx context.Context) (map[ProjectKey]int64, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT remote_id, project_root, archived_at FROM archived_project`)
+	rows, err := d.reader().QueryContext(ctx, `SELECT remote_id, project_root, archived_at FROM archived_project`)
 	if err != nil {
 		return nil, fmt.Errorf("listing archived projects: %w", err)
 	}

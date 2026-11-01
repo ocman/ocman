@@ -112,7 +112,7 @@ func (d *DB) UpsertPermissionLifecycle(ctx context.Context, lifecycle Permission
 // PermissionApprovalStats aggregates permission requests observed at or after
 // since in the exact directory. Dates are UTC and durations are milliseconds.
 func (d *DB) PermissionApprovalStats(ctx context.Context, since int64, directory string) (PermissionApprovalStats, error) {
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reader().QueryContext(ctx, `
 		SELECT session_id, requested_at, judge_started_at, judge_completed_at, resolved_at,
 		       evaluation_method, evaluation_result, resolution, manually_preempted
 		FROM permission_lifecycle

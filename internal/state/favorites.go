@@ -44,7 +44,7 @@ func (d *DB) RemoveModelFavorite(ctx context.Context, platform, provider, model 
 // ModelFavorites returns every favorited model for the given platform,
 // ordered by creation time ascending (oldest favorite first).
 func (d *DB) ModelFavorites(ctx context.Context, platform string) ([]ModelFavorite, error) {
-	rows, err := d.db.QueryContext(ctx,
+	rows, err := d.reader().QueryContext(ctx,
 		`SELECT platform, provider_id, model_id FROM model_favorite
 		 WHERE platform = ?
 		 ORDER BY created_at ASC`,

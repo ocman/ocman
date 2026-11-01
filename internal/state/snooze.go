@@ -34,7 +34,7 @@ func (d *DB) SnoozeSession(ctx context.Context, platform, sessionID string, unti
 
 // SnoozedSessions returns deadlines keyed by owner-qualified session identity.
 func (d *DB) SnoozedSessions(ctx context.Context) (map[Key]int64, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, snoozed_until FROM archived_session WHERE snoozed_until > 0`)
+	rows, err := d.reader().QueryContext(ctx, `SELECT platform, session_id, snoozed_until FROM archived_session WHERE snoozed_until > 0`)
 	if err != nil {
 		return nil, err
 	}

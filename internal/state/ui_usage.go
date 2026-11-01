@@ -120,7 +120,7 @@ func (d *DB) RecordUIUsage(ctx context.Context, intervals []UIUsageInterval, now
 }
 
 func (d *DB) UIUsageDays(ctx context.Context, since time.Time) ([]UIUsageDay, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT date, active_ms / 1000.0 FROM ui_usage_daily WHERE date >= ? ORDER BY date`, since.UTC().Format(time.DateOnly))
+	rows, err := d.reader().QueryContext(ctx, `SELECT date, active_ms / 1000.0 FROM ui_usage_daily WHERE date >= ? ORDER BY date`, since.UTC().Format(time.DateOnly))
 	if err != nil {
 		return nil, err
 	}

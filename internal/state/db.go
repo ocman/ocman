@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,7 +25,9 @@ import (
 // sharelinks.go, remote.go, identity.go, inbox.go); this file owns
 // the connection lifecycle and shared helpers.
 type DB struct {
-	db      *sql.DB
+	db *sql.DB
+	// read is a small mode=ro pool over committed WAL snapshots; see reader.
+	read    *sql.DB
 	dataDir string
 	// foreignKeys reports that the database was clean and enforcement on.
 	foreignKeys bool
@@ -93,6 +96,15 @@ func Open(path string, modules ...ModuleSchema) (*DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// Readers share the writer's busy timeout and see only committed WAL
+	// snapshots; query_only rejects a write routed here by mistake.
+	read, err := sqliteutil.OpenPool(fmt.Sprintf("file:%s?mode=ro&_busy_timeout=5000&_pragma=query_only(1)", path),
+		"ocman", sqliteutil.Pool{MaxOpen: 4, MaxIdle: 4})
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("opening state read pool: %w", err)
+	}
+	stateDB.read = read
 	_, _ = otelsql.RegisterDBStatsMetrics(db,
 		otelsql.WithAttributes(
 			semconv.DBSystemSqlite,
@@ -116,11 +128,11 @@ func openStateSQL(dsn string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("pinging state database: %w", err)
 	}
-	// Serialize all access on a single connection. The state DB is
-	// written concurrently (HTTP handlers + the background remote dial
-	// goroutine), and SQLite allows only one writer at a time — with a
-	// multi-connection pool that races into SQLITE_BUSY despite WAL +
-	// busy_timeout. One connection is plenty for a single-user dashboard.
+	// Serialize writes on a single connection. The state DB is written
+	// concurrently (HTTP handlers + the background remote dial goroutine),
+	// and SQLite allows only one writer at a time — with a multi-connection
+	// pool that races into SQLITE_BUSY despite WAL + busy_timeout. Hot
+	// read-only methods use the separate read pool (see reader).
 	db.SetMaxOpenConns(1)
 	return db, nil
 }
@@ -210,7 +222,23 @@ func foreignKeyViolations(db *sql.DB) ([]string, error) {
 
 // Close closes the state database.
 func (d *DB) Close() error {
-	return d.db.Close()
+	var readErr error
+	if d.read != nil {
+		readErr = d.read.Close()
+	}
+	return errors.Join(readErr, d.db.Close())
+}
+
+// reader returns the read-only pool for methods that only read committed
+// state. They must not queue behind the single writer connection, which a
+// long write transaction (catalog reconcile, migrations, imports) holds.
+// Never use it inside a write transaction or for read-modify-write logic;
+// handles wrapped directly in tests fall back to the writer.
+func (d *DB) reader() *sql.DB {
+	if d.read != nil {
+		return d.read
+	}
+	return d.db
 }
 
 // SizeBytes returns SQLite's current logical database size.

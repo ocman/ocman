@@ -186,7 +186,7 @@ func (d *DB) listInboxItems(ctx context.Context, archived bool) ([]InboxItem, er
 	if archived {
 		condition = "archived_at IS NOT NULL"
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT `+inboxItemColumns+` FROM inbox_item WHERE `+condition+` ORDER BY created_at DESC, id DESC`)
+	rows, err := d.reader().QueryContext(ctx, `SELECT `+inboxItemColumns+` FROM inbox_item WHERE `+condition+` ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing Inbox items: %w", err)
 	}
@@ -216,7 +216,7 @@ func (d *DB) UnpinInboxItem(ctx context.Context, remoteID, itemID string) error 
 }
 
 func (d *DB) PinnedInboxItems(ctx context.Context) (map[InboxKey]int64, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT remote_id, item_id, pinned_at FROM pinned_inbox_item`)
+	rows, err := d.reader().QueryContext(ctx, `SELECT remote_id, item_id, pinned_at FROM pinned_inbox_item`)
 	if err != nil {
 		return nil, err
 	}

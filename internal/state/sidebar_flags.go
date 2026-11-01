@@ -13,7 +13,7 @@ type SidebarFlags struct {
 
 func (d *DB) SidebarFlags(ctx context.Context) (SidebarFlags, error) {
 	f := SidebarFlags{Seen: map[Key]SeenSessionState{}, Pinned: map[Key]int64{}, Archived: map[Key]int64{}, Snoozed: map[Key]int64{}, Projects: map[ProjectKey]int64{}, Mode: "halt"}
-	rows, err := d.db.QueryContext(ctx, `SELECT 'seen',platform,session_id,session_time_updated,interrupted,'' FROM seen_session
+	rows, err := d.reader().QueryContext(ctx, `SELECT 'seen',platform,session_id,session_time_updated,interrupted,'' FROM seen_session
 	 UNION ALL SELECT 'pin',platform,session_id,pinned_at,0,'' FROM pinned_session
 	 UNION ALL SELECT 'archive',platform,session_id,session_time_updated,snoozed_until,'' FROM archived_session
 	 UNION ALL SELECT 'project',remote_id,project_root,archived_at,0,'' FROM archived_project

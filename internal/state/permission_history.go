@@ -27,7 +27,7 @@ func (d *DB) SessionPermissionHistory(ctx context.Context, platform string, sess
 		args = append(args, id)
 	}
 	args = append(args, args...)
-	rows, err := d.db.QueryContext(ctx, `
+	rows, err := d.reader().QueryContext(ctx, `
 		WITH requests AS (
 			SELECT permission_json AS payload, created_at AS requested_at, 0 AS resolved_at
 			FROM inbox_item
