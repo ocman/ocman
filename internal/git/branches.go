@@ -67,7 +67,17 @@ func Checkout(ctx context.Context, dir, branch string) error {
 	cctx, cancel := context.WithTimeout(ctx, branchCommandTimeout)
 	defer cancel()
 
-	cmd := gitexec.Command(cctx, "-C", dir, "checkout", branch)
+	// The branch comes from a client: never let it parse as an option
+	// (e.g. --orphan=x) and only accept a valid branch name.
+	if strings.HasPrefix(branch, "-") {
+		return errors.New("invalid branch name")
+	}
+	if _, err := gitexec.Output(cctx, dir, "check-ref-format", "--branch", branch); err != nil {
+		return errors.New("invalid branch name")
+	}
+	// `--` would turn the branch into a pathspec; --end-of-options keeps
+	// it a branch operand.
+	cmd := gitexec.Command(cctx, "-C", dir, "checkout", "--end-of-options", branch)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := string(out)

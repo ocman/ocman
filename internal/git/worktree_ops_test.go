@@ -378,6 +378,18 @@ func TestRemove_DirtyRefusedThenForce(t *testing.T) {
 	}
 }
 
+// A path beginning with "-" is an operand, never an option.
+func TestRemove_DashPrefixedPathIsNotAnOption(t *testing.T) {
+	repo := initTestRepo(t)
+	gitRun(t, repo, "worktree", "add", "-b", "dash", "--", "-wt", "main")
+	if err := RemoveWorktree(context.Background(), repo, "-wt", false); err != nil {
+		t.Fatalf("RemoveWorktree(-wt): %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "-wt")); !os.IsNotExist(err) {
+		t.Errorf("worktree dir still present: %v", err)
+	}
+}
+
 func TestClassifyRemoveError(t *testing.T) {
 	if err := classifyRemoveError(errors.New("exit 128"),
 		"fatal: '/x' is a main working tree"); !errors.Is(err, ErrMainWorktree) {

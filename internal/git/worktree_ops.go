@@ -280,7 +280,7 @@ func RenameBranch(ctx context.Context, repoRoot, oldName, newName string) error 
 	return nil
 }
 
-// RemoveWorktree runs `git worktree remove [--force] <path>` for a worktree in
+// RemoveWorktree runs `git worktree remove [--force] -- <path>` for a worktree in
 // repoRoot. git itself enforces the important guards — it refuses the
 // main checkout and refuses a dirty tree unless --force is given — so we
 // just classify those two failures into typed errors:
@@ -296,7 +296,7 @@ func RemoveWorktree(ctx context.Context, repoRoot, path string, force bool) erro
 	if force {
 		args = append(args, "--force")
 	}
-	args = append(args, path)
+	args = append(args, "--", path)
 
 	cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
 	defer cancel()

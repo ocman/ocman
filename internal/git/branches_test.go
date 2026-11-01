@@ -90,3 +90,18 @@ func TestCheckout_DirtyRejected(t *testing.T) {
 		t.Fatalf("Checkout dirty err = %v, want ErrDirtyCheckout", err)
 	}
 }
+
+// A branch that looks like an option must never reach git as one:
+// `git checkout --orphan=x` would otherwise create and switch to an orphan.
+func TestCheckout_RejectsOptionLikeAndInvalidBranch(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	for _, branch := range []string{"--orphan=evil", "-Bevil", "--detach", "-", "bad..name"} {
+		if err := Checkout(context.Background(), dir, branch); err == nil {
+			t.Errorf("Checkout(%q) succeeded, want rejection", branch)
+		}
+		if b := Lookup(context.Background(), dir).Branch; b != "main" {
+			t.Fatalf("after Checkout(%q) branch = %q, want main", branch, b)
+		}
+	}
+}
