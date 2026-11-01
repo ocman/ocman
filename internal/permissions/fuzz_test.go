@@ -64,7 +64,7 @@ func FuzzInheritedLiveRulesWin(f *testing.F) {
 			t.Fatalf("kept %d approvals, want the newest %d of %d", len(kept), len(want), len(approved))
 		}
 		for _, pattern := range []string{askPattern, "allowed/" + askPattern} {
-			if evaluate(live, askPerm, pattern, wildcardMatch) == "ask" {
+			if (RuleSet{Configured: live}).Decide(askPerm, []string{pattern}) == ActionNone {
 				continue
 			}
 			if got, want := Allows(merged, askPerm, []string{pattern}), Allows(live, askPerm, []string{pattern}); got != want {

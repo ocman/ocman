@@ -1,6 +1,9 @@
 package permissions
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
@@ -110,4 +113,29 @@ func (m Matcher) match(pattern, s string) bool {
 		return providerprotocol.MatchPattern(pattern, s)
 	}
 	return wildcardMatch(s, pattern)
+}
+
+// wildcardMatch mirrors OpenCode's Wildcard.match: `*` matches anything,
+// `?` one character, backslashes compare as slashes, and a trailing " *"
+// also matches the bare command ("git *" matches "git").
+func wildcardMatch(str, pattern string) bool {
+	str = strings.ReplaceAll(str, `\`, "/")
+	pattern = strings.ReplaceAll(pattern, `\`, "/")
+	var expr strings.Builder
+	for _, r := range pattern {
+		switch r {
+		case '*':
+			expr.WriteString(".*")
+		case '?':
+			expr.WriteString(".")
+		default:
+			expr.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+	escaped := expr.String()
+	if strings.HasSuffix(escaped, " .*") {
+		escaped = strings.TrimSuffix(escaped, " .*") + "( .*)?"
+	}
+	re, err := regexp.Compile("(?s)^" + escaped + "$")
+	return err == nil && re.MatchString(str)
 }

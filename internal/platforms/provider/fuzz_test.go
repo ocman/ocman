@@ -13,8 +13,8 @@ import (
 // "Allow always" grant recorded as providerprotocol.ExactPattern(granted)
 // allows a prompt for ExactPattern(asked) only when asked == granted. It
 // must hold for the adapter's own Rules.Decide, whether the grant is an
-// approval or an inherited session rule, and for permissions.AllowsExact,
-// which the autoapprove pipeline uses for the same prompts.
+// approval or an inherited session rule, and for permissions.RuleSet with
+// ExactMatch, which the autoapprove pipeline uses for the same prompts.
 func FuzzExactGrantMatchesOnlyItself(f *testing.F) {
 	for _, s := range [][2]string{
 		{"cat *", "cat /etc/shadow"},
@@ -49,8 +49,8 @@ func FuzzExactGrantMatchesOnlyItself(f *testing.F) {
 		}
 		grant := []platforms.PermissionRule{{Permission: "bash", Pattern: pattern, Action: "allow"}}
 		prompt := []string{providerprotocol.ExactPattern(asked)}
-		if got := permissions.AllowsExact(grant, "bash", prompt); got != want {
-			t.Fatalf("AllowsExact: grant %q, prompt %q allowed=%v", granted, asked, got)
+		if got := (permissions.RuleSet{Matcher: permissions.ExactMatch, Configured: grant}).Allows("bash", prompt); got != want {
+			t.Fatalf("RuleSet.Allows: grant %q, prompt %q allowed=%v", granted, asked, got)
 		}
 		r, err := OpenRules("")
 		if err != nil {

@@ -7,7 +7,39 @@ import (
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
-func TestAllowsExact(t *testing.T) {
+// Allows is the session-rules sweep on a glob platform: rules allow every
+// pattern of the prompt.
+func Allows(rules []platforms.PermissionRule, permission string, patterns []string) bool {
+	return RuleSet{Matcher: GlobMatch, Configured: rules}.Allows(permission, patterns)
+}
+
+func TestRuleSetDecide(t *testing.T) {
+	rules := []platforms.PermissionRule{
+		{Permission: "bash", Pattern: "tea do *", Action: "allow"},
+		{Permission: "bash", Pattern: "tea do delete*", Action: "ask"},
+		{Permission: "bash", Pattern: "tea do delete all", Action: "deny"},
+	}
+	for _, matcher := range []Matcher{GlobMatch, ExactMatch} {
+		for _, tc := range []struct {
+			permission string
+			patterns   []string
+			want       string
+		}{
+			{"bash", []string{"tea do something"}, ActionAllow},
+			{"bash", []string{"tea do delete one"}, ActionAsk},
+			{"bash", []string{"tea do something", "tea do delete all"}, ActionDeny},
+			{"bash", []string{"tea do something", "unrelated"}, ActionAsk},
+			{"edit", []string{"tea do something"}, ActionNone},
+			{"bash", nil, ActionNone},
+		} {
+			if got := (RuleSet{Matcher: matcher, Configured: rules}).Decide(tc.permission, tc.patterns); got != tc.want {
+				t.Errorf("matcher %d: Decide(%q, %q) = %q, want %q", matcher, tc.permission, tc.patterns, got, tc.want)
+			}
+		}
+	}
+}
+
+func TestRuleSetAllowsExact(t *testing.T) {
 	exact := providerprotocol.ExactPattern
 	rule := func(pattern, action string) platforms.PermissionRule {
 		return platforms.PermissionRule{Permission: "bash", Pattern: pattern, Action: action}
@@ -28,14 +60,14 @@ func TestAllowsExact(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := AllowsExact(tt.rules, "bash", tt.patterns); got != tt.want {
-				t.Fatalf("AllowsExact = %v, want %v", got, tt.want)
+			if got := (RuleSet{Matcher: ExactMatch, Configured: tt.rules}).Allows("bash", tt.patterns); got != tt.want {
+				t.Fatalf("Allows = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestAllows(t *testing.T) {
+func TestRuleSetAllowsGlob(t *testing.T) {
 	yolo := []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}
 	autoEdit := []platforms.PermissionRule{
 		{Permission: "edit", Pattern: "*", Action: "allow"},
