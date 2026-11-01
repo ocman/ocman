@@ -5,7 +5,17 @@ import (
 	"slices"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
 )
+
+// CostCalculator supplies public API rates independently of Claude's billing.
+type CostCalculator interface {
+	CalcCost(string, int64, int64, int64, int64) float64
+}
+
+func (p *claudePlatform) StoredReadConfig(string) *platforms.ConversationHead {
+	return &platforms.ConversationHead{Pricing: p.pricing, DirectoryDefaults: true}
+}
 
 // EnrichStoredSessions keeps the existing supervisor status authority without
 // enumerating transcript-backed sessions. LiveSessions contains only runtime

@@ -148,10 +148,10 @@ export function SessionInfoSidebar({
   //    `session.totalCost` (same source, SQL-summed) when the
   //    SessionInfo endpoint hasn't loaded yet or doesn't exist.
   //  - Est: token-derived estimate from the pricing table, computed
-  //    server-side. Only meaningful for the OpenCode SessionInfo
-  //    endpoint. We hide the Est row when it's 0 to avoid a
-  //    duplicate-looking "$0.00" line on platforms that don't emit
-  //    one.
+  //    server-side. Falls back to the stored session estimate when
+  //    live info is unavailable. We hide the Est row when it's 0 to
+  //    avoid a duplicate-looking "$0.00" line on platforms that don't
+  //    emit one.
   //
   // Showing both side-by-side makes subscription-plan sessions
   // ($0 Cost + non-zero Est) obvious, and gives a sanity-check on
@@ -160,7 +160,9 @@ export function SessionInfoSidebar({
   const displayCost = data?.context.cost && data.context.cost > 0
     ? data.context.cost
     : (session?.totalCost ?? 0);
-  const displayEst = data?.context.estCost ?? 0;
+  const displayEst = data?.context.estCost && data.context.estCost > 0
+    ? data.context.estCost
+    : (session?.totalEstCost ?? 0);
   const sessionSection = session ? (
     <SessionSection
       session={session}

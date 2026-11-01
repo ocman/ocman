@@ -36,10 +36,29 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 function renderSidebar(session: Session, onNavigateCommit?: Parameters<typeof SessionInfoSidebar>[0]['onNavigateCommit']) {
   return render(
     <MemoryRouter>
-      <SessionInfoSidebar sessionId={session.id} platformId="opencode" session={session} onNavigateCommit={onNavigateCommit} />
+      <SessionInfoSidebar sessionId={session.id} platformId={session.platform} session={session} onNavigateCommit={onNavigateCommit} />
     </MemoryRouter>,
   );
 }
+
+describe('SessionInfoSidebar costs', () => {
+  it('shows the stored API estimate for Claude without live info', () => {
+    renderSidebar(makeSession({ platform: 'claudecode', totalEstCost: 1.25 }));
+    expect(screen.getByText('Est').parentElement).toHaveTextContent('$1.25');
+  });
+
+  it.each([0, 2.5])('uses a positive info estimate, otherwise the stored estimate: %s', (estCost) => {
+    sessionInfoResult.data = { supported: false, context: { tokens: 0, cost: 0, estCost } };
+    renderSidebar(makeSession({ platform: 'claudecode', totalEstCost: 1.25 }));
+    expect(screen.getByText('Est').parentElement).toHaveTextContent(estCost > 0 ? '$2.50' : '$1.25');
+    sessionInfoResult.data = null;
+  });
+
+  it('hides the estimate when no pricing is available', () => {
+    renderSidebar(makeSession({ platform: 'claudecode' }));
+    expect(screen.queryByText('Est')).not.toBeInTheDocument();
+  });
+});
 
 describe('SessionInfoSidebar parent link', () => {
   it('loads git information from the session owner', () => {

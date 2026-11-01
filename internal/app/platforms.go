@@ -26,7 +26,7 @@ var knownPlatforms = map[string]func(context.Context, *db.DB, *state.DB, ocapi.A
 		if f := flag.Lookup("mcp-addr"); f != nil {
 			addr = f.Value.String()
 		}
-		return claudecode.New(ctx, database, stateDB, skillCatalog, addr)
+		return claudecode.New(ctx, database, stateDB, skillCatalog, addr, pricing.Load())
 	},
 	codexprovider.PlatformID: func(ctx context.Context, _ *db.DB, stateDB *state.DB, _ ocapi.Auth) platforms.Integration {
 		return codextransport.New(ctx, codextransport.Config{State: stateDB, DataDir: state.DefaultDataDir(), Version: version})

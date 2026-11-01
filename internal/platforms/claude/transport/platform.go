@@ -26,7 +26,7 @@ import (
 )
 
 // New serves the machine's Claude transcripts to history ingestion and drives the sessions ocman launches through per-project supervisors.
-func New(ctx context.Context, database *db.DB, stateDB *state.DB, skills map[string][]byte, mcpAddr string) platforms.Integration {
+func New(ctx context.Context, database *db.DB, stateDB *state.DB, skills map[string][]byte, mcpAddr string, pricing CostCalculator) platforms.Integration {
 	exe, err := os.Executable()
 	if err != nil {
 		log.WithError(err).Warn("Claude Code sessions unavailable")
@@ -36,6 +36,7 @@ func New(ctx context.Context, database *db.DB, stateDB *state.DB, skills map[str
 	if p == nil {
 		return nil // a typed nil would register a broken platform
 	}
+	p.pricing = pricing
 	return p
 }
 
@@ -152,6 +153,7 @@ func (p *claudePlatform) Close() {
 // drive launched sessions (projects.go).
 type claudePlatform struct {
 	history *claudeprovider.HistoryReader
+	pricing CostCalculator
 	*provider.Adapter
 	projects    *claudeProjects
 	mcpAddr     atomic.Value // string: ocman's bound MCP listener
