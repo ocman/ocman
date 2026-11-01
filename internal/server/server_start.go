@@ -94,6 +94,13 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// MCP clients work without a cookie, without exposing the tools
 	// through a reverse proxy on the main port.
 	stopMCP := s.startMCPListener()
+	// Repair the OpenCode entry only now that the listener has settled its
+	// address and auth mode (including a fallback to the main port), and
+	// hand it those values rather than letting it read shared fields.
+	if s.openCodeEnabled() {
+		url, tokenFile := s.mcpServerURL(), s.mcpClientTokenFile()
+		workers.Go(func() { ensureOpenCodeMCPLayout(url, tokenFile) })
+	}
 	closeModules, err := s.launchServingServices(ctx)
 	if err != nil {
 		stopMCP()

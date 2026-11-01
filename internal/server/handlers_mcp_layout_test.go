@@ -36,7 +36,7 @@ func TestEnsureOpenCodeMCPLayout(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			(&Server{}).ensureOpenCodeMCPLayout()
+			ensureOpenCodeMCPLayout("http://127.0.0.1:8227/mcp", "")
 
 			raw, err := os.ReadFile(path)
 			if err != nil {
@@ -59,5 +59,5 @@ func TestEnsureOpenCodeMCPLayoutReportsUnreadableConfig(t *testing.T) {
 	// A directory where the config file should be makes the read fail
 	// with an error other than "not editable"; startup must survive it.
 	t.Setenv("OPENCODE_CONFIG", dir)
-	(&Server{}).ensureOpenCodeMCPLayout()
+	ensureOpenCodeMCPLayout("http://127.0.0.1:8227/mcp", "")
 }

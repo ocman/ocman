@@ -61,7 +61,7 @@ func TestMCPConfigInstallReferencesTokenFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"mcp":{"ocman":{"type":"remote","url":"http://127.0.0.1:8227/mcp","enabled":true}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	srv.ensureOpenCodeMCPLayout()
+	ensureOpenCodeMCPLayout(srv.mcpServerURL(), srv.mcpClientTokenFile())
 	if raw, _ := os.ReadFile(path); !strings.Contains(string(raw), "{file:/state/mcp-token}") {
 		t.Fatalf("startup repair left %s", raw)
 	}
