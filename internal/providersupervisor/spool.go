@@ -28,6 +28,17 @@
 // next is sequenced. A condition therefore observes every earlier apply, and a
 // turn accepted after it was checked cannot be followed by its events. While
 // a barrier commits, /drain and /seal-idle do not report idle.
+//
+// # Retention
+//
+// A session's records are kept until its turn is acknowledged and every
+// lease that may need them has passed it. Retention is per session: a
+// snapshot lease holds back only its own session, while unscoped streams
+// (the headless watcher) hold back every session. Past retainLimit records
+// in a session, leases that hold its acknowledged turns are invalidated
+// rather than pinning memory: an unclaimed snapshot lease then answers 409
+// (refresh the snapshot) and an attached stream ends, so its consumer takes
+// a new snapshot. Unacknowledged turns are never truncated.
 package providersupervisor
 
 import (
@@ -106,7 +117,8 @@ type Supervisor struct {
 	seq            uint64
 	sessions       map[string]*sessionSpool
 	leases         map[string]cursorLease
-	changed        chan struct{}
+	evicted        map[string]bool // attached leases invalidated by the retention cap
+	changed       chan struct{}
 	draining       bool
 	idleDrainToken string
 	admitted       int
@@ -125,7 +137,7 @@ func New(dir string, backend Backend) (*Supervisor, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	s := &Supervisor{dir: dir, backend: backend, sessions: make(map[string]*sessionSpool), leases: make(map[string]cursorLease), changed: make(chan struct{}), unresolved: make(map[uint64]struct{})}
+	s := &Supervisor{dir: dir, backend: backend, sessions: make(map[string]*sessionSpool), leases: make(map[string]cursorLease), evicted: make(map[string]bool), changed: make(chan struct{}), unresolved: make(map[uint64]struct{})}
 	s.gate = sync.NewCond(&s.mu)
 	return s, nil
 }
@@ -486,19 +498,39 @@ func (s *Supervisor) logPrune() {
 	}
 }
 
-// floor is the lowest sequence a consumer may still need.
-func (s *Supervisor) floor() uint64 {
+// floor is the lowest sequence a consumer of session id may still need:
+// leases scoped to another session do not hold it back.
+func (s *Supervisor) floor(id string) uint64 {
 	minimum := s.seq
-	for id, lease := range s.leases {
+	for lid, lease := range s.leases {
 		if !lease.expires.IsZero() && time.Now().After(lease.expires) {
-			delete(s.leases, id)
+			delete(s.leases, lid)
 			continue
 		}
-		if lease.cursor < minimum {
+		if (lease.session == "" || lease.session == id) && lease.cursor < minimum {
 			minimum = lease.cursor
 		}
 	}
 	return minimum
+}
+
+// retainLimit caps the records a session keeps for lagging leases. Past it,
+// leases behind the session's acknowledged turns are invalidated instead.
+var retainLimit = 2048
+
+// evictBehind invalidates the leases that hold session id below cursor: an
+// unclaimed snapshot lease then fails with 409, and an attached stream ends,
+// so either consumer takes a new snapshot.
+func (s *Supervisor) evictBehind(id string, cursor uint64) {
+	for lid, lease := range s.leases {
+		if (lease.session == "" || lease.session == id) && lease.cursor < cursor {
+			delete(s.leases, lid)
+			if lease.expires.IsZero() {
+				s.evicted[lid] = true
+			}
+			log.WithFields(log.Fields{"session": id, "cursor": lease.cursor}).Warn("provider supervisor: lease fell behind the retention cap; consumer must refresh its snapshot")
+		}
+	}
 }
 
 // pruneCut is how many leading records of p are prunable.
@@ -531,7 +563,13 @@ var pruneTestHook = func() {}
 // runs without any lock; the swap holds p.io, so no append lands in the old
 // file after the records that follow the head were copied.
 func (s *Supervisor) pruneSession(id string, p *sessionSpool) error {
-	cut := pruneCut(p, s.floor())
+	minimum := s.floor(id)
+	cut := pruneCut(p, minimum)
+	// Only leases hold acknowledged turns: past the cap, they yield.
+	if len(p.records)-cut > retainLimit && p.ack > minimum && pruneCut(p, p.ack) > cut {
+		s.evictBehind(id, p.ack)
+		cut = pruneCut(p, s.floor(id))
+	}
 	if cut == 0 {
 		return nil
 	}
@@ -581,7 +619,7 @@ func (s *Supervisor) pruneSession(id string, p *sessionSpool) error {
 		return err
 	}
 	// A consumer that attached meanwhile may still need what was cut.
-	if s.floor() < dropped {
+	if s.floor(id) < dropped {
 		abandon(nil)
 		return nil
 	}

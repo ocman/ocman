@@ -189,6 +189,8 @@ func (s *Supervisor) ack(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+var errLeaseEvicted = errors.New("lease fell behind the retention cap")
+
 func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 	after := uint64(0)
 	var err error
@@ -239,7 +241,13 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 		_, err = s.barrier(nil, pending, func(providerprotocol.Event) func() { return nil }, true)
 	}
 	s.mu.Unlock()
-	defer func() { s.mu.Lock(); delete(s.leases, lease); s.logPrune(); s.mu.Unlock() }()
+	defer func() {
+		s.mu.Lock()
+		delete(s.leases, lease)
+		delete(s.evicted, lease)
+		s.logPrune()
+		s.mu.Unlock()
+	}()
 	if err != nil {
 		wireError(w, 500, err)
 		return
@@ -253,15 +261,24 @@ func (s *Supervisor) events(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
-	// advance moves the lease to cursor and prunes what it no longer pins.
+	// advance moves the lease to cursor and prunes what it no longer pins. A
+	// lease the retention cap invalidated ends the stream: the consumer may
+	// have missed pruned records and must take a new snapshot.
 	advance := func(cursor uint64) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if s.evicted[lease] {
+			return errLeaseEvicted
+		}
 		s.leases[lease] = cursorLease{cursor: cursor, session: scope}
 		return s.prune()
 	}
 	for {
 		s.mu.Lock()
+		if s.evicted[lease] {
+			s.mu.Unlock()
+			return
+		}
 		var batch []record
 		// Below the watermark every record is settled: nothing exposed later
 		// can fall behind a delivered cursor.
