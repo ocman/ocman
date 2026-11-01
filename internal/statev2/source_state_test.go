@@ -8,7 +8,13 @@ import (
 
 func TestUsageMatchesToleratesOnlySummationOrder(t *testing.T) {
 	want := Usage{Messages: 2, Cost: 0.3, TokensInput: 5}
-	if !want.Matches(Usage{Messages: 2, Cost: 0.1 + 0.2, TokensInput: 5}) {
+	// Runtime operands: the constant expression 0.1 + 0.2 is exact and equals 0.3.
+	a, b := 0.1, 0.2
+	summed := a + b
+	if summed == want.Cost {
+		t.Fatal("fixture no longer exercises a rounding difference")
+	}
+	if !want.Matches(Usage{Messages: 2, Cost: summed, TokensInput: 5}) {
 		t.Fatal("summation order rejected")
 	}
 	for name, got := range map[string]Usage{
