@@ -170,6 +170,7 @@ func TestExplicitOwnerFailsClosed(t *testing.T) {
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodGet, "/api/git/info?dirs=/r&remoteId=gone", ""},
 		{http.MethodGet, "/api/git/branches?dir=/r&remoteId=gone", ""},
+		{http.MethodPost, "/api/git/checkout", `{"dir":"/r","branch":"b","remoteId":"gone"}`},
 		{http.MethodGet, "/api/worktree/list?dir=/r&remoteId=gone", ""},
 		{http.MethodGet, "/api/worktree/default-base-ref?dir=/r&remoteId=gone", ""},
 		{http.MethodPost, "/api/worktree/remove", `{"projectDir":"/r","path":"/r/.wt/x","force":true,"remoteId":"gone"}`},

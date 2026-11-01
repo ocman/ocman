@@ -38,7 +38,7 @@ describe('api.gitBranches / gitCheckout', () => {
     expect(signal).toBe(controller.signal);
   });
 
-  it('gitCheckout POSTs dir + branch', async () => {
+  it('gitCheckout POSTs dir, branch and the explicit owner', async () => {
     let capturedURL = '';
     let capturedBody: unknown = null;
     stubFetch((url, init) => {
@@ -46,14 +46,14 @@ describe('api.gitBranches / gitCheckout', () => {
       capturedBody = JSON.parse((init?.body as string) ?? '{}');
       return new Response(JSON.stringify({ branch: 'feature/x' }), { status: 200 });
     });
-    const res = await api.gitCheckout('/a', 'feature/x');
+    const res = await api.gitCheckout('/a', 'feature/x', 'box');
     expect(capturedURL).toBe('/api/git/checkout');
-    expect(capturedBody).toEqual({ dir: '/a', branch: 'feature/x' });
+    expect(capturedBody).toEqual({ dir: '/a', branch: 'feature/x', remoteId: 'box' });
     expect(res.branch).toBe('feature/x');
   });
 
   it('gitCheckout surfaces a 409 dirty-tree conflict as an Error', async () => {
     stubFetch(() => new Response('checkout would overwrite local changes', { status: 409 }));
-    await expect(api.gitCheckout('/a', 'other')).rejects.toThrow(/overwrite/);
+    await expect(api.gitCheckout('/a', 'other', 'local')).rejects.toThrow(/overwrite/);
   });
 });

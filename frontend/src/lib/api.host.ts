@@ -24,7 +24,9 @@ export const hostApi = {
   repoFile: (dir: string, path: string, remoteId: string, signal?: AbortSignal, ignored = false) =>
     fetchJSON<RepoFileContent>(`/api/git/file?dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(path)}&remoteId=${encodeURIComponent(remoteId)}${ignored ? '&ignored=1' : ''}`, signal),
   gitBranches: (dir: string, signal?: AbortSignal, remoteId?: string) => fetchJSON<{ branches: string[] }>(`/api/git/branches?dir=${encodeURIComponent(dir)}${remoteId ? `&remoteId=${encodeURIComponent(remoteId)}` : ''}`, signal),
-  gitCheckout: (dir: string, branch: string) => postJSON<{ branch: string }>('/api/git/checkout', { dir, branch }),
+  // Explicit ownership fails closed when the remote is disconnected.
+  gitCheckout: (dir: string, branch: string, remoteId: string) =>
+    postJSON<{ branch: string }>('/api/git/checkout', { dir, branch, remoteId }),
   remoteAccess: (signal?: AbortSignal) => fetchJSON<RemoteAccessStatus>('/api/settings/remote-access', signal),
   revealRemoteToken: () => postJSON<{ token: string }>('/api/settings/remote-access/reveal-token', undefined),
   listRemotes: (signal?: AbortSignal) => fetchJSON<RemoteStatus[]>('/api/remotes', signal),

@@ -138,7 +138,8 @@ func (m *Module) handleGitBranches(w http.ResponseWriter, r *http.Request) {
 // the hub over localhost; the hub delegates to a remote over the Host
 // seam transparently).
 //
-// Request body: {"dir": "/abs/path", "branch": "feature"}
+// Request body: {"dir": "/abs/path", "branch": "feature", "remoteId": "local"}
+// remoteId is the explicit owner; when empty the owner is inferred from dir.
 //
 // Status codes:
 //
@@ -146,10 +147,12 @@ func (m *Module) handleGitBranches(w http.ResponseWriter, r *http.Request) {
 //	400 Bad Req    — dir/branch missing or dir relative
 //	409 Conflict   — checkout would overwrite local changes
 //	502 Bad Gateway — git invocation failed
+//	503 Service Unavailable — explicit owner is disconnected
 func (m *Module) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Dir    string `json:"dir"`
-		Branch string `json:"branch"`
+		Dir      string `json:"dir"`
+		Branch   string `json:"branch"`
+		RemoteID string `json:"remoteId"`
 	}
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &body) {
 		return
@@ -162,7 +165,13 @@ func (m *Module) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dir must be an absolute path", http.StatusBadRequest)
 		return
 	}
-	err := m.ForDir(body.Dir).GitCheckout(r.Context(), body.Dir, body.Branch)
+	// Fail closed on an explicit owner: a disconnected remote must not
+	// degrade to the hub and switch the hub's same-path clone instead.
+	host, ok := m.Owner(w, body.Dir, body.RemoteID)
+	if !ok {
+		return
+	}
+	err := host.GitCheckout(r.Context(), body.Dir, body.Branch)
 	if err != nil {
 		// ErrDirtyCheckout doesn't survive gRPC as a typed sentinel, so
 		// also match on the message a remote host relays back.
