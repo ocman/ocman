@@ -537,7 +537,9 @@ button.session-sidebar-group-header.collapsed::before {
 .session-sidebar-pin-btn.pinned { color: var(--accent4); }
 .session-sidebar-pin-btn.pinned:hover { background: var(--accent); color: var(--white); border-color: var(--accent); }
 
-.session-sidebar-archive-btn {
+/* Compound with the shared .session-archive-btn class so this override does
+   not depend on stylesheet load order (route splitting changes that order). */
+.session-archive-btn.session-sidebar-archive-btn {
   width: 20px;
   height: 20px;
   min-width: 20px;
@@ -666,7 +668,7 @@ button.session-sidebar-group-header.collapsed::before {
   .session-sidebar-actions { display: flex; gap: 6px; }
   .session-sidebar-item { padding-top: 12px; padding-bottom: 12px; max-height: none; }
   .session-sidebar-pin-btn,
-  .session-sidebar-archive-btn {
+  .session-archive-btn.session-sidebar-archive-btn {
     width: 28px;
     height: 28px;
     min-width: 28px;
