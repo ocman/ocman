@@ -14,10 +14,16 @@ type blockedOwner struct {
 	entered   chan struct{}
 	release   chan struct{}
 	cancelled chan struct{}
-	t         *testing.T
+	// returned, when set, closes as Session returns: inside the caller's
+	// handler, before any deferred WaitGroup.Done.
+	returned chan struct{}
+	t        *testing.T
 }
 
 func (p blockedOwner) Session(ctx context.Context, _ string, _, _ int) (*platforms.SessionDetail, error) {
+	if p.returned != nil {
+		defer close(p.returned)
+	}
 	if _, ok := ctx.Deadline(); !ok {
 		p.t.Error("cooldown read has no deadline")
 	}

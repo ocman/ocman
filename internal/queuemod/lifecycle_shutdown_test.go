@@ -88,7 +88,7 @@ func TestShutdownCancelsPreSendLifecycleRead(t *testing.T) {
 // slow read outlived Run and the database it reads.
 func TestShutdownCancelsAndJoinsRetryCooldownRead(t *testing.T) {
 	store := statetest.Open(t)
-	p := blockedOwner{entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}), t: t}
+	p := blockedOwner{entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}), returned: make(chan struct{}), t: t}
 	m := NewModule(Deps{
 		Store: store, Sessions: func() Sessions { return nil },
 		Adapter:   func(context.Context, string, string) (platforms.Platform, bool) { return p, true },
@@ -116,10 +116,18 @@ func TestShutdownCancelsAndJoinsRetryCooldownRead(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Run did not return after the retry read was cancelled")
 	}
+	// Run waited for the handler: the owner read inside it has returned. The
+	// caller's retryDone closes after the handler's deferred Done, so it
+	// gets a bounded wait rather than a non-blocking check.
 	select {
-	case <-retryDone:
+	case <-p.returned:
 	default:
 		t.Fatal("Run returned before joining the retry handler")
+	}
+	select {
+	case <-retryDone:
+	case <-time.After(time.Second):
+		t.Fatal("retry handler did not return")
 	}
 }
 
