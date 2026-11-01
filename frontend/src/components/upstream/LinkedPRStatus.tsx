@@ -12,10 +12,10 @@ export function LinkedPRStatus({ link }: { link: PRLink }) {
     !!sha,
     (signal, refresh) => prWorkflowApi.checks(link, signal, refresh),
   );
-  const checkLabel = checks.error ? 'Could not load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : CI_LABEL[checks.state];
+  const checkLabel = checks.error ? 'Could not load checks' : checks.loading && !checks.loaded ? 'Loading checks…' : checks.state === 'failure' ? 'Checks failed' : CI_LABEL[checks.state];
   return <div className="oc-session-pr-statuses" aria-label={`PR #${link.number} status`}>
     <span className={`oc-upstream-status oc-upstream-status-${link.pr.status}`}>{link.pr.status}</span>
     <span className="oc-session-pr-checks"><span className={`oc-upstream-ci-dot oc-upstream-ci-dot-${checks.error ? 'unknown' : checks.state}`} role="img" aria-label={checkLabel} />{checkLabel}</span>
-    <span className={`oc-session-pr-watch${link.watching ? ' watching' : ''}`}>{link.watching ? 'Watching in background' : 'Not watching'}</span>
+    <span className={`oc-session-pr-watch${link.watching ? ' watching' : ''}`}>{link.watching ? 'Watching' : 'Not watching'}</span>
   </div>;
 }

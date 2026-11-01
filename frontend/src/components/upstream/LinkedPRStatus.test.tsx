@@ -12,8 +12,8 @@ beforeEach(() => { vi.mocked(usePRChecks).mockReturnValue({ state: 'failure', ch
 it.each(['open', 'draft', 'merged', 'closed'] as const)('uses the shared %s badge and a colored check indicator', (status) => {
   render(<LinkedPRStatus link={{ ...link, pr: { ...link.pr, status } }} />);
   expect(screen.getByText(status)).toHaveClass(`oc-upstream-status-${status}`);
-  expect(screen.getByRole('img', { name: 'Some checks failed' })).toHaveClass('oc-upstream-ci-dot-failure');
-  expect(screen.getByText('Watching in background')).toHaveClass('watching');
+  expect(screen.getByRole('img', { name: 'Checks failed' })).toHaveClass('oc-upstream-ci-dot-failure');
+  expect(screen.getByText('Watching', { exact: true })).toHaveClass('watching');
 });
 it('reuses the owner-qualified shared check query and supports missing SHAs', () => {
   const { rerender } = render(<LinkedPRStatus link={link} />);

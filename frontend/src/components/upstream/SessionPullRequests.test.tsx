@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { renderWithQuery as render } from '../../test/renderWithQuery';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -59,7 +60,14 @@ describe('SessionPullRequests', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Linked pull requests' })).not.toBeInTheDocument());
   });
   it.each([['Address feedback', 'feedback'], ['Fix failing checks', 'checks'], ['Resolve conflicts', 'conflicts']])('prepares %s as an editable task without sending', async (label, action) => {
-    mount(); fireEvent.click(await screen.findByRole('button', { name: label }));
+    const user = userEvent.setup();
+    mount();
+    const fix = await screen.findByRole('button', { name: 'Fix' });
+    expect(fix).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(label)).not.toBeInTheDocument();
+    await user.click(fix);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+    await user.click(screen.getByRole('menuitem', { name: label }));
     expect(await screen.findByRole('dialog', { name: 'Review feedback task' })).toBeInTheDocument(); expect(prWorkflowApi.feedback).toHaveBeenCalledWith('s1', 'r-box:opencode', link, action); expect(prWorkflowApi.change).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('PR feedback task'), { target: { value: 'Edited task' } }); expect(screen.getByLabelText('PR feedback task')).toHaveValue('Edited task'); fireEvent.click(screen.getByRole('button', { name: /^Close$/ })); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });

@@ -75,9 +75,9 @@ for (const width of [1440, 390]) {
     }
     const linked = page.getByRole('region', { name: 'Linked pull requests' });
     await expect(linked.getByText('code.example.com/other/project')).toBeVisible();
-    await expect(linked.getByText('Watching in background', { exact: false })).toBeVisible();
+    await expect(linked.getByText('Watching', { exact: true })).toBeVisible();
     await expect(linked.getByText('open', { exact: true })).toHaveClass(/oc-upstream-status-open/);
-    await expect(linked.getByRole('img', { name: 'Some checks failed' })).toHaveClass(/oc-upstream-ci-dot-failure/);
+    await expect(linked.getByRole('img', { name: 'Checks failed' })).toHaveClass(/oc-upstream-ci-dot-failure/);
     expect(linkedChecksRequested).toBe(true);
     await expect(linked.getByRole('article')).toHaveCSS('border-radius', '0px');
     await expect(linked.getByRole('button', { name: 'Stop watching' }).locator('i')).toHaveClass(/bi-sign-stop/);
@@ -113,7 +113,8 @@ for (const width of [1440, 390]) {
     await linked.getByRole('button', { name: 'Watch PR' }).click();
     await page.getByRole('button', { name: 'Start watching', exact: true }).click();
     await expect(linked.getByRole('button', { name: 'Stop watching' })).toBeVisible();
-    await linked.getByRole('button', { name: 'Address feedback' }).click();
+    await linked.getByRole('button', { name: 'Fix', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Address feedback' }).click();
     await expect(page.getByRole('dialog', { name: 'Review feedback task' })).toBeVisible();
     await expect(page.getByLabel('PR feedback task')).toContainText('regression test');
     await page.screenshot({ path: info.outputPath(`pr-feedback-${width}.png`), fullPage: true });

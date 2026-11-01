@@ -5,6 +5,7 @@ import { ModalHeader } from '../ModalHeader';
 import { ModalFooter } from '../ModalFooter';
 import { CopyButton } from '../CopyButton';
 import { IconButton } from '../IconButton';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../DropdownMenu';
 import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
 import { useConfirm } from '../../lib/useConfirm';
 import { LinkedPRStatus } from './LinkedPRStatus';
@@ -62,9 +63,16 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0 }:
       <LinkedPRStatus link={link} />
       {link.lastError && <p role="status">{link.lastError}</p>}
       <ButtonGroup label={`PR #${link.number} feedback`}>
-        <Button size="small" disabled={busy} onClick={() => void feedback(link, 'feedback')}>Address feedback</Button>
-        <Button size="small" disabled={busy} onClick={() => void feedback(link, 'checks')}>Fix failing checks</Button>
-        <Button size="small" disabled={busy} onClick={() => void feedback(link, 'conflicts')}>Resolve conflicts</Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild disabled={busy}>
+            <Button size="small" disabled={busy}>Fix <i className="bi bi-chevron-down" aria-hidden="true" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem disabled={busy} onSelect={() => void feedback(link, 'feedback')}>Address feedback</DropdownMenuItem>
+            <DropdownMenuItem disabled={busy} onSelect={() => void feedback(link, 'checks')}>Fix failing checks</DropdownMenuItem>
+            <DropdownMenuItem disabled={busy} onSelect={() => void feedback(link, 'conflicts')}>Resolve conflicts</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </ButtonGroup>
     </article>)}
     {prompt !== null && <Modal label="Review feedback task" onClose={() => setPrompt(null)}><ModalHeader title="Review feedback task" closeLabel="Close feedback task" onClose={() => setPrompt(null)} /><p>Review this task before copying it into your session. Nothing has been sent.</p><TextareaField aria-label="PR feedback task" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={14} /><ModalFooter label="Feedback task actions"><CopyButton text={prompt} label="Copy task" /><Button onClick={() => setPrompt(null)}>Close</Button></ModalFooter></Modal>}
