@@ -90,6 +90,11 @@ func (s *Service) applyManualRules(ctx context.Context, adapter platforms.Platfo
 	defer s.manualRulesMu.RUnlock()
 	action, err := s.manualDecision(ctx, adapter, sessionID, asked)
 	if err != nil {
+		if ctx.Err() != nil {
+			// Cancelled because the prompt was answered or the evaluation
+			// stopped: not a rule-read failure, so flag nothing and stop.
+			return true
+		}
 		s.handleUnsafeVerdict(adapter.ID(), sessionID, permissionID, JudgeResult{Verdict: verdictNeedsUser, Reasoning: "Could not read session permission rules; review this request manually"})
 		return true
 	}

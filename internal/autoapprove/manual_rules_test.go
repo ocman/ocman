@@ -1,6 +1,7 @@
 package autoapprove
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -235,5 +236,29 @@ func TestManualPolicyHTTP(t *testing.T) {
 	rules, err := m.svc.manualRules(t.Context(), "fake", "s")
 	if err != nil || len(rules) != 0 {
 		t.Fatalf("clear: %+v, %v", rules, err)
+	}
+}
+
+// A reply that lands while the session rules are being read cancels the
+// background evaluation. That cancellation is not a rule-read failure: the
+// prompt is already answered, so nothing may be flagged for the user.
+func TestManualRulesCancelledReadDoesNotFlagAnsweredPrompt(t *testing.T) {
+	store := statetest.Open(t)
+	svc := NewService(Deps{Store: store})
+	var emitted bytes.Buffer
+	svc.RegisterSink("s", &emitted, nil)
+	rec := &replyRecorder{}
+	adapter := &fakePlatform{respondPermissionFn: rec.record}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if !svc.applyManualRules(ctx, adapter, "s", "p", askedPermission{permission: "bash", patterns: []string{"make"}}) {
+		t.Fatal("cancelled evaluation fell through to the judge")
+	}
+	if emitted.Len() != 0 {
+		t.Fatalf("cancelled evaluation flagged an answered prompt: %s", emitted.String())
+	}
+	if rec.count() != 0 {
+		t.Fatalf("cancelled evaluation replied: %+v", rec.replies)
 	}
 }
