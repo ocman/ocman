@@ -11,31 +11,46 @@ import type { ComponentType, ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import type { SettingsGroupId } from '../lib/settingsCatalog';
 import { lazyComponent } from '../components/lazyComponent';
-import { Routines } from '../pages/Routines';
-import { Artifacts } from '../pages/Artifacts';
-import { ArtifactDetail } from '../pages/ArtifactDetail';
-import { PluginSettings } from '../components/PluginSettings';
-import { AutoApproveSection } from '../pages/dashboard/AutoApproveSection';
-import { SharingSettings } from '../components/SharingSettings';
-import { WebhookRelaySettings } from '../components/WebhookRelaySettings';
-import { IdleProjectSettings } from '../components/IdleProjectSettings';
-import { PlatformSettings } from '../components/PlatformSettings';
-import { ConversationSection, NotificationsSection, SessionsSection } from '../pages/dashboard/SettingsSections';
-import { AccountSettings, DeviceSettings, LinkPreviewSection, NewSessionSettings, RemoteSection } from '../pages/dashboard/CoreSettingsSections';
 import type { RevealRequest } from '../lib/useRevealSetting';
-import { ProviderAccountSettings } from '../pages/dashboard/ProviderAccountSettings';
-import { ModelFallbackSettings, WorktreePermissionSettings } from '../pages/dashboard/SessionAgentSettings';
-import { SpeechSettings } from '../components/SpeechSettings';
-import { HookPluginSettings } from '../components/HookPluginSettings';
-import { MaintenanceSettings } from '../components/MaintenanceSettings';
-import { PluginRoute } from '../pages/PluginRoute';
 import { PluginPageNav, PluginPageTitle } from '../components/PluginPageNav';
-import { BackgroundTasks } from '../pages/BackgroundTasks';
-import { ApplicationHealthSettings } from '../components/ApplicationHealthSettings';
-import { BetaFeaturesSettings } from '../components/BetaFeaturesSettings';
 import { BetaFeatureGate } from '../components/BetaFeatureGate';
 import type { BetaFeature } from '../lib/betaFeatures';
-import { SourceControlSettings } from '../components/SourceControlSettings';
+
+// Every page and settings section loads with its route or settings group, so
+// the registry itself (read by the nav and header on every page) stays small.
+const PluginRoute = lazyComponent(() => import('../pages/PluginRoute').then((m) => m.PluginRoute));
+const BackgroundTasks = lazyComponent(() => import('../pages/BackgroundTasks').then((m) => m.BackgroundTasks));
+const Routines = lazyComponent(() => import('../pages/Routines').then((m) => m.Routines));
+const Artifacts = lazyComponent(() => import('../pages/Artifacts').then((m) => m.Artifacts));
+const ArtifactDetail = lazyComponent(() => import('../pages/ArtifactDetail').then((m) => m.ArtifactDetail));
+
+type SectionProps = { target?: RevealRequest | null };
+const settingsSections = () => import('../pages/dashboard/SettingsSections');
+const coreSettingsSections = () => import('../pages/dashboard/CoreSettingsSections');
+const sessionAgentSettings = () => import('../pages/dashboard/SessionAgentSettings');
+const NotificationsSection = lazyComponent<SectionProps>(() => settingsSections().then((m) => m.NotificationsSection));
+const ConversationSection = lazyComponent<SectionProps>(() => settingsSections().then((m) => m.ConversationSection));
+const SessionsSection = lazyComponent<SectionProps>(() => settingsSections().then((m) => m.SessionsSection));
+const DeviceSettings = lazyComponent<SectionProps>(() => coreSettingsSections().then((m) => m.DeviceSettings));
+const AccountSettings = lazyComponent<SectionProps>(() => coreSettingsSections().then((m) => m.AccountSettings));
+const NewSessionSettings = lazyComponent<SectionProps>(() => coreSettingsSections().then((m) => m.NewSessionSettings));
+const RemoteSection = lazyComponent<SectionProps>(() => coreSettingsSections().then((m) => m.RemoteSection));
+const LinkPreviewSection = lazyComponent<SectionProps>(() => coreSettingsSections().then((m) => m.LinkPreviewSection));
+const ModelFallbackSettings = lazyComponent<SectionProps>(() => sessionAgentSettings().then((m) => m.ModelFallbackSettings));
+const WorktreePermissionSettings = lazyComponent<SectionProps>(() => sessionAgentSettings().then((m) => m.WorktreePermissionSettings));
+const BetaFeaturesSettings = lazyComponent<SectionProps>(() => import('../components/BetaFeaturesSettings').then((m) => m.BetaFeaturesSettings));
+const SpeechSettings = lazyComponent<SectionProps>(() => import('../components/SpeechSettings').then((m) => m.SpeechSettings));
+const PlatformSettings = lazyComponent<SectionProps>(() => import('../components/PlatformSettings').then((m) => m.PlatformSettings));
+const ProviderAccountSettings = lazyComponent<SectionProps>(() => import('../pages/dashboard/ProviderAccountSettings').then((m) => m.ProviderAccountSettings));
+const HookPluginSettings = lazyComponent<SectionProps>(() => import('../components/HookPluginSettings').then((m) => m.HookPluginSettings));
+const AutoApproveSection = lazyComponent<SectionProps>(() => import('../pages/dashboard/AutoApproveSection').then((m) => m.AutoApproveSection));
+const SourceControlSettings = lazyComponent<SectionProps>(() => import('../components/SourceControlSettings').then((m) => m.SourceControlSettings));
+const PluginSettings = lazyComponent<SectionProps>(() => import('../components/PluginSettings').then((m) => m.PluginSettings));
+const SharingSettings = lazyComponent<SectionProps>(() => import('../components/SharingSettings').then((m) => m.SharingSettings));
+const WebhookRelaySettings = lazyComponent<SectionProps>(() => import('../components/WebhookRelaySettings').then((m) => m.WebhookRelaySettings));
+const IdleProjectSettings = lazyComponent<SectionProps>(() => import('../components/IdleProjectSettings').then((m) => m.IdleProjectSettings));
+const ApplicationHealthSettings = lazyComponent<SectionProps>(() => import('../components/ApplicationHealthSettings').then((m) => m.ApplicationHealthSettings));
+const MaintenanceSettings = lazyComponent<SectionProps>(() => import('../components/MaintenanceSettings').then((m) => m.MaintenanceSettings));
 
 // Factory pages pull in the epic graph (dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');

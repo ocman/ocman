@@ -9,10 +9,14 @@ import { searchSettings } from '../../lib/settingsCatalog';
 
 afterEach(() => useUiStore.setState({ compactToolCalls: false }));
 
-it('registers a searchable Conversation section', () => {
-  expect(featureSettings.find((group) => group.id === 'conversation')).toMatchObject({
-    label: 'Conversation', Section: ConversationSection,
-  });
+it('registers a searchable Conversation section', async () => {
+  const group = featureSettings.find((g) => g.id === 'conversation');
+  expect(group).toMatchObject({ label: 'Conversation' });
+  // The registry loads the section on first render.
+  const { Section } = group!;
+  render(<Section />);
+  expect(screen.getByRole('status')).toHaveTextContent('Loading…');
+  expect(await screen.findByRole('checkbox', { name: 'Compact tool calls' })).toBeInTheDocument();
   expect(searchSettings('compact', { sessions: 'Sessions' })).toContainEqual(
     expect.objectContaining({ id: 'compact-tool-calls', group: 'sessions' }),
   );

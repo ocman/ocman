@@ -4,16 +4,10 @@ import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
-import { DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
+import { DashboardLayout, LegacyAnalyticsRedirect } from './pages/Dashboard';
 import { lazyComponent } from './components/lazyComponent';
-import { ProjectDetail } from './pages/ProjectDetail';
 import { RootRedirect } from './pages/RootRedirect';
-import { WorktreesView } from './pages/WorktreesView';
-import { ProjectSettingsView } from './pages/ProjectSettingsView';
 import { SessionDetail } from './pages/session-detail';
-import { SharedConversationView } from './pages/SharedConversationView';
-import { ImportSharedConversation } from './pages/ImportSharedConversation';
-import { SubscriptionUsage } from './pages/SubscriptionUsage';
 import { onInboxChanged, onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { CommandPalette } from './components/CommandPalette';
@@ -43,7 +37,6 @@ import { remoteLog } from './lib/remoteLog';
 import './lib/useLongTaskMonitor';
 import { installPerfMonitor } from './lib/perfMonitor';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
-import { Inbox } from './pages/Inbox';
 import { MainNav } from './components/MainNav';
 import { ImagePreviewProvider } from './components/ImagePreview';
 import { featureRoutes } from './features';
@@ -52,6 +45,19 @@ import { BetaFeaturesSync } from './components/BetaFeaturesSync';
 
 // Analytics (chart.js) loads with its route.
 const AnalyticsTab = lazyComponent(() => import('./pages/dashboard/AnalyticsTab').then((m) => m.AnalyticsTab), 'Loading analytics…');
+
+// Secondary pages load with their route so the entry chunk stays small.
+// The session detail page is the primary view and stays eager.
+const SessionsTab = lazyComponent(() => import('./pages/dashboard/SessionsTab').then((m) => m.SessionsTab));
+const ProjectsTab = lazyComponent(() => import('./pages/dashboard/ProjectsTab').then((m) => m.ProjectsTab));
+const SettingsTab = lazyComponent(() => import('./pages/dashboard/SettingsTab').then((m) => m.SettingsTab), 'Loading settings…');
+const SubscriptionUsage = lazyComponent(() => import('./pages/SubscriptionUsage').then((m) => m.SubscriptionUsage));
+const WorktreesView = lazyComponent(() => import('./pages/WorktreesView').then((m) => m.WorktreesView));
+const ProjectSettingsView = lazyComponent(() => import('./pages/ProjectSettingsView').then((m) => m.ProjectSettingsView));
+const ProjectDetail = lazyComponent(() => import('./pages/ProjectDetail').then((m) => m.ProjectDetail));
+const ImportSharedConversation = lazyComponent(() => import('./pages/ImportSharedConversation').then((m) => m.ImportSharedConversation));
+const Inbox = lazyComponent(() => import('./pages/Inbox').then((m) => m.Inbox), 'Loading inbox…');
+const SharedConversationView = lazyComponent(() => import('./pages/SharedConversationView').then((m) => m.SharedConversationView), 'Loading conversation…');
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner

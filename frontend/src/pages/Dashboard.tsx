@@ -5,11 +5,6 @@ import { useUiStore } from '../lib/uiStore';
 import { useSessions as useTQSessions, useProjects as useTQProjects } from '../lib/queries';
 import { DashboardContext, type DashboardCtx } from './dashboard/context';
 
-// Re-export tab components so App.tsx can import from a single place.
-export { SessionsTab } from './dashboard/SessionsTab';
-export { ProjectsTab } from './dashboard/ProjectsTab';
-export { SettingsTab } from './dashboard/SettingsTab';
-
 export function LegacyAnalyticsRedirect({ section }: { section: 'overview' | 'performance' }) {
   const { search } = useLocation();
   return <Navigate to={`/analytics/${section}${search}`} replace />;

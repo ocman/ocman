@@ -77,7 +77,8 @@ describe('SettingsTab actions', () => {
     vi.mocked(postJSON).mockImplementation(async (_path, body) => body as never);
     const { unmount } = render(<SettingsTab />);
     expect(screen.getByRole('heading', { name: 'Beta features' })).toBeVisible();
-    expect(screen.getByRole('checkbox', { name: 'Enable Factory beta' })).not.toBeChecked();
+    // Settings sections load with the settings page.
+    expect(await screen.findByRole('checkbox', { name: 'Enable Factory beta' })).not.toBeChecked();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Factory beta' } });
     fireEvent.click(screen.getByRole('button', { name: /Factory beta/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Factory beta' }));
@@ -88,12 +89,12 @@ describe('SettingsTab actions', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Factory beta' }));
     await waitFor(() => expect(useBetaFeatures.getState().factory).toBe(false));
   });
-  it('keeps application health in the System group instead of a global overlay', () => {
+  it('keeps application health in the System group instead of a global overlay', async () => {
     render(<SettingsTab />);
     expect(screen.queryByText('Application health controls')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'System' }));
     expect(screen.getByRole('heading', { name: 'Application health', level: 3 })).toBeVisible();
-    expect(screen.getByText('Application health controls')).toBeVisible();
+    expect(await screen.findByText('Application health controls')).toBeVisible();
   });
   it('groups settings into seven categories with visible sections', () => {
     render(<SettingsTab />);
@@ -236,13 +237,14 @@ describe('SettingsTab actions', () => {
     expect(screen.getByRole('tab', { name: 'Link rules' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('explains why a conditional setting is missing', () => {
+  it('explains why a conditional setting is missing', async () => {
     // SessionsSection is mocked empty, as it renders with auto-archive off.
     render(<SettingsTab />);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Archive after' } });
     expect(screen.getByRole('button', { name: /Archive after/ })).toHaveTextContent('automatic archiving is turned on');
     fireEvent.click(screen.getByRole('button', { name: /Archive after/ }));
-    expect(screen.getByRole('status')).toHaveTextContent('Archive after is not shown right now. Shown only when automatic archiving is turned on.');
+    // Wait for the visible sections' loading states to clear.
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Archive after is not shown right now. Shown only when automatic archiving is turned on.'));
   });
 
   it('keeps install and sign-out actions working inside setting rows', () => {
