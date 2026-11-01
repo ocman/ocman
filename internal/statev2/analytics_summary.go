@@ -97,11 +97,8 @@ func refreshAnalyticsSummary(ctx context.Context, tx *sql.Tx, key Key, ids []str
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO analytics_hour
-		SELECT instance_id,session_id,(time_created/3600000)*3600000,role,provider,model,valid,
-		min(time_created),max(time_created),count(*),sum(input_tokens),sum(output_tokens),sum(cache_read),sum(cache_write),sum(cost)
-		FROM analytics_fact WHERE instance_id=? AND session_id=?`+strings.ReplaceAll(scope.hours, "bucket", "(time_created/3600000)*3600000")+`
-		GROUP BY instance_id,session_id,3,role,provider,model,valid`, scope.hourArgs...); err != nil {
+	if _, err := tx.ExecContext(ctx, analyticsHourInsert+` WHERE instance_id=? AND session_id=?`+
+		strings.ReplaceAll(scope.hours, "bucket", "(time_created/3600000)*3600000")+analyticsHourGroup, scope.hourArgs...); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO analytics_session

@@ -668,11 +668,15 @@ concurrency and agent runtime. Each imported batch commits these derived tables
 in the same transaction as its history and checkpoint:
 
 - `analytics_session` contains compact metadata and session accounting totals.
-- `analytics_hour` groups counts and tokens by source, session, UTC hour, role
-  and provider/model. Activity/model charts sum these rows instead of messages.
+- `analytics_hour` groups counts and tokens by source, session, UTC hour, role,
+  provider/model, agent and stop reason, with outcome, timing and
+  priced/unpriced token sums. Activity/model charts and the metrics dashboard
+  summary, series and session/project logs sum these rows instead of messages;
+  only partial or calendar-splitting hours read exact facts.
 - `analytics_fact` retains normalized per-request values and computed model,
-  tool and unknown durations. Metrics/logs retain request-level percentiles and
-  live pricing without parsing message JSON or rereading tool parts.
+  tool and unknown durations. Metrics rank duration percentiles in SQLite
+  without parsing message JSON or rereading tool parts.
+  Live pricing is applied to summed tokens per model.
 - `analytics_question` retains question wait intervals for runtime accounting.
 - `analytics_conflict` contains only duplicate native-ID candidates, maintained
   by insert/delete triggers so validation does not scan the whole history.

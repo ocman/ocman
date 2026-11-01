@@ -7,12 +7,11 @@ import (
 	"slices"
 	"sort"
 	"time"
-
-	"github.com/ocman/ocman/internal/analyticsdata"
 )
 
 // CostCalculator can compute the API-equivalent cost for a request given token counts.
-// Pass nil to skip calculated-cost population.
+// Pass nil to skip calculated-cost population. Implementations must be linear
+// in each token count for a model: dashboards price summed tokens per model.
 type CostCalculator interface {
 	CalcCost(modelID string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
 }
@@ -70,37 +69,47 @@ type MetricsDashboardOptions struct {
 // chart library can render a "no data" placeholder without a nil
 // guard.
 func (d *DB) GetMetricsDashboard(ctx context.Context, opts MetricsDashboardOptions) (*MetricsDashboard, error) {
-	filtered, agentSet, modelSet, err := d.scanDashboardRows(ctx, opts)
+	w, groups, err := d.loadDashboard(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
-
 	dashboard := &MetricsDashboard{
-		AvailableAgents: sortedKeys(agentSet),
-		AvailableModels: sortedKeys(modelSet),
+		AvailableAgents: sortedKeys(w.agents),
+		AvailableModels: sortedKeys(w.models),
 	}
-
-	d.populatePerformance(dashboard, filtered, opts)
-
-	dashboard.TotalRequests = len(filtered)
-	dashboard.Requests = paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
-
-	populateSessionLog(dashboard, filtered, opts.SessionLimit, opts.SessionOffset)
-	populateProjectLog(dashboard, filtered, opts.ProjectLimit, opts.ProjectOffset)
+	if err := d.populatePerformance(ctx, dashboard, w, groups, opts); err != nil {
+		return nil, err
+	}
+	dashboard.TotalRequests = dashboard.Summary.Requests
+	if dashboard.Requests, err = d.requestPage(ctx, opts); err != nil {
+		return nil, err
+	}
+	sessions, err := sessionLog(ctx, groups, opts)
+	if err != nil {
+		return nil, err
+	}
+	projects, err := projectLog(ctx, groups, opts)
+	if err != nil {
+		return nil, err
+	}
+	dashboard.TotalSessions, dashboard.Sessions = len(sessions), paginateSlice(sessions, opts.SessionOffset, opts.SessionLimit)
+	dashboard.TotalProjects, dashboard.Projects = len(projects), paginateSlice(projects, opts.ProjectOffset, opts.ProjectLimit)
 	return dashboard, nil
 }
 
 // GetMetricsPerformance returns only the summary and chart data.
 func (d *DB) GetMetricsPerformance(ctx context.Context, opts MetricsDashboardOptions) (*MetricsPerformance, error) {
-	filtered, agentSet, modelSet, err := d.scanDashboardRows(ctx, opts)
+	w, groups, err := d.loadDashboard(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	dashboard := &MetricsDashboard{
-		AvailableAgents: sortedKeys(agentSet),
-		AvailableModels: sortedKeys(modelSet),
+		AvailableAgents: sortedKeys(w.agents),
+		AvailableModels: sortedKeys(w.models),
 	}
-	d.populatePerformance(dashboard, filtered, opts)
+	if err := d.populatePerformance(ctx, dashboard, w, groups, opts); err != nil {
+		return nil, err
+	}
 	return &MetricsPerformance{
 		AvailableAgents:           dashboard.AvailableAgents,
 		AvailableModels:           dashboard.AvailableModels,
@@ -114,52 +123,66 @@ func (d *DB) GetMetricsPerformance(ctx context.Context, opts MetricsDashboardOpt
 	}, nil
 }
 
-func (d *DB) populatePerformance(dashboard *MetricsDashboard, filtered []requestRow, opts MetricsDashboardOptions) {
-	stopCounts := d.aggregateSummaryAndBuckets(dashboard, filtered, opts.Days, opts.Since)
-	for reason, count := range stopCounts {
-		dashboard.StopReasons = append(dashboard.StopReasons, StopReasonCount{Reason: reason, Count: count})
+// loadDashboard reads the window summaries and applies agent/model filters.
+func (d *DB) loadDashboard(ctx context.Context, opts MetricsDashboardOptions) (*dashboardWindow, []dashboardGroup, error) {
+	w, err := d.loadDashboardWindow(ctx, opts)
+	if err != nil {
+		return nil, nil, err
 	}
-	sort.Slice(dashboard.StopReasons, func(i, j int) bool {
-		if dashboard.StopReasons[i].Count != dashboard.StopReasons[j].Count {
-			return dashboard.StopReasons[i].Count > dashboard.StopReasons[j].Count
-		}
-		return dashboard.StopReasons[i].Reason < dashboard.StopReasons[j].Reason
-	})
+	return w, w.filtered(opts), nil
+}
+
+func (d *DB) populatePerformance(ctx context.Context, dashboard *MetricsDashboard, w *dashboardWindow, groups []dashboardGroup, opts MetricsDashboardOptions) error {
+	overall, byLabel, err := d.durationPercentiles(ctx, w, opts, groups)
+	if err != nil {
+		return err
+	}
+	dashboard.StopReasons = stopReasonCounts(aggregateGroups(dashboard, groups, overall, byLabel, opts))
+	return nil
 }
 
 // GetMetricsLog returns one paginated log grain without building chart data.
 func (d *DB) GetMetricsLog(ctx context.Context, opts MetricsDashboardOptions, kind MetricsLogKind) (*MetricsLog, error) {
-	filtered, agentSet, modelSet, err := d.scanDashboardRows(ctx, opts)
+	if kind != MetricsLogRequests && kind != MetricsLogSessions && kind != MetricsLogProjects {
+		return nil, fmt.Errorf("unknown metrics log kind %q", kind)
+	}
+	w, groups, err := d.loadDashboard(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	result := &MetricsLog{
 		Kind:            kind,
-		AvailableAgents: sortedKeys(agentSet),
-		AvailableModels: sortedKeys(modelSet),
+		AvailableAgents: sortedKeys(w.agents),
+		AvailableModels: sortedKeys(w.models),
 	}
-	dashboard := &MetricsDashboard{}
 	switch kind {
 	case MetricsLogRequests:
-		result.Total = len(filtered)
-		result.Requests = paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
+		for i := range groups {
+			result.Total += groups[i].messages
+		}
+		result.Requests, err = d.requestPage(ctx, opts)
 	case MetricsLogSessions:
-		populateSessionLog(dashboard, filtered, opts.SessionLimit, opts.SessionOffset)
-		result.Total, result.Sessions = dashboard.TotalSessions, dashboard.Sessions
-	case MetricsLogProjects:
-		populateProjectLog(dashboard, filtered, opts.ProjectLimit, opts.ProjectOffset)
-		result.Total, result.Projects = dashboard.TotalProjects, dashboard.Projects
+		var sessions []SessionLogEntry
+		sessions, err = sessionLog(ctx, groups, opts)
+		result.Total, result.Sessions = len(sessions), paginateSlice(sessions, opts.SessionOffset, opts.SessionLimit)
 	default:
-		return nil, fmt.Errorf("unknown metrics log kind %q", kind)
+		var projects []ProjectLogEntry
+		projects, err = projectLog(ctx, groups, opts)
+		result.Total, result.Projects = len(projects), paginateSlice(projects, opts.ProjectOffset, opts.ProjectLimit)
+	}
+	if err != nil {
+		return nil, err
 	}
 	return result, nil
 }
 
-// scanDashboardRows queries assistant messages within the given options window
-// and returns the filtered request rows plus the pre-filter agent/model sets
-// (used to keep dropdowns populated even when a filter is active).
-func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions) (filtered []requestRow, agentSet, modelSet map[string]struct{}, err error) {
-	return d.scanHistoryRequests(ctx, opts)
+// requestPage returns the most recent filtered requests for the page.
+func (d *DB) requestPage(ctx context.Context, opts MetricsDashboardOptions) ([]RequestLogEntry, error) {
+	filtered, _, _, err := d.scanHistoryRequests(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset), nil
 }
 
 // bucketAcc accumulates per-time-bucket metrics while building the series.
@@ -179,7 +202,7 @@ type bucketAcc struct {
 	costByModel          map[string]float64
 	estimatedCostByModel map[string]float64
 	durationCount        int
-	durations            []int64
+	p50, p95             int64
 	completedRequests    int
 	successfulRequests   int
 	errorRequests        int
@@ -251,8 +274,8 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 				CacheReadTokens:         b.cacheReadTokens,
 				OutputTokens:            b.outputTokens,
 				AvgDurationMs:           avgDur,
-				P50DurationMs:           float64(analyticsdata.Percentile(b.durations, 50)),
-				P95DurationMs:           float64(analyticsdata.Percentile(b.durations, 95)),
+				P50DurationMs:           float64(b.p50),
+				P95DurationMs:           float64(b.p95),
 				AvgCacheEfficiency:      b.totalCacheEff / float64(n),
 				Count:                   b.count,
 				CompletedRequests:       b.completedRequests,
@@ -437,7 +460,7 @@ func costDescLess(costI, costJ float64, timeI, timeJ int64) bool {
 	return timeI > timeJ
 }
 
-// logAcc accumulates the request rows of one session or project.
+// logAcc accumulates the request groups of one session or project.
 type logAcc struct {
 	title, directory                         string
 	requests, errors, durationCount          int
@@ -447,119 +470,11 @@ type logAcc struct {
 	agents, models, sessions                 map[string]struct{}
 }
 
-func (a *logAcc) add(r requestRow) {
-	a.requests++
-	a.in += r.InputTokens
-	a.out += r.OutputTokens
-	a.cacheRead += r.CacheReadTokens
-	a.cacheWrite += r.CacheWriteTokens
-	a.duration += r.DurationMs
-	a.cost += r.Cost
-	a.calcCost += r.CalcCost
-	a.effectiveCost += r.EffectiveCost
-	if r.TokensPerSecond > 0 {
-		a.tokPerSec += r.TokensPerSecond
-		a.durationCount++
-	}
-	a.first = min(a.first, r.TimeCreated)
-	a.last = max(a.last, r.TimeCreated)
-	if r.Agent != "" {
-		a.agents[r.Agent] = struct{}{}
-	}
-	if r.Model != "" {
-		a.models[r.Model] = struct{}{}
-	}
-	a.sessions[r.SessionID] = struct{}{}
-	if r.isError {
-		a.errors++
-	}
-}
-
 func (a *logAcc) avgTokensPerSec() float64 {
 	if a.durationCount == 0 {
 		return 0
 	}
 	return a.tokPerSec / float64(a.durationCount)
-}
-
-// groupRequests accumulates rows by key in first-seen order. Titles and
-// directories come from the same retained snapshot as the request rows.
-func groupRequests(rows []requestRow, key func(requestRow) string) ([]string, map[string]*logAcc) {
-	var order []string
-	accs := make(map[string]*logAcc)
-	for _, r := range rows {
-		k := key(r)
-		acc, ok := accs[k]
-		if !ok {
-			acc = &logAcc{
-				title: r.sessionTitle, directory: r.sessionDirectory,
-				first: r.TimeCreated, last: r.TimeCreated,
-				agents: map[string]struct{}{}, models: map[string]struct{}{}, sessions: map[string]struct{}{},
-			}
-			accs[k] = acc
-			order = append(order, k)
-		}
-		acc.add(r)
-	}
-	return order, accs
-}
-
-// populateSessionLog aggregates the already-filtered request rows by session id
-// and applies pagination.
-func populateSessionLog(dashboard *MetricsDashboard, filtered []requestRow, sessionLimit, sessionOffset int) {
-	order, accs := groupRequests(filtered, func(r requestRow) string { return r.SessionID })
-	entries := make([]SessionLogEntry, 0, len(accs))
-	for _, id := range order {
-		a := accs[id]
-		entries = append(entries, SessionLogEntry{
-			ID: id, Title: a.title, Directory: a.directory,
-			FirstRequestTime: a.first, LastRequestTime: a.last,
-			Requests: a.requests, InputTokens: a.in, OutputTokens: a.out,
-			CacheReadTokens: a.cacheRead, CacheWriteTokens: a.cacheWrite,
-			TotalTokens: a.in + a.out, TotalDurationMs: a.duration, AvgTokensPerSec: a.avgTokensPerSec(),
-			Cost: a.cost, CalcCost: a.calcCost, EffectiveCost: a.effectiveCost,
-			Agents: sortedKeys(a.agents), Models: sortedKeys(a.models), ErrorCount: a.errors,
-		})
-	}
-
-	// Sort by total cost descending so the dashboard surfaces the
-	// most expensive sessions first — that's what users actually
-	// want to scan when they open the metrics view.
-	sort.Slice(entries, func(i, j int) bool {
-		return costDescLess(entries[i].Cost, entries[j].Cost,
-			entries[i].LastRequestTime, entries[j].LastRequestTime)
-	})
-
-	dashboard.TotalSessions = len(entries)
-	dashboard.Sessions = paginateSlice(entries, sessionOffset, sessionLimit)
-}
-
-// populateProjectLog aggregates the already-filtered request rows by project
-// directory and applies pagination using each row's retained session metadata.
-func populateProjectLog(dashboard *MetricsDashboard, filtered []requestRow, projectLimit, projectOffset int) {
-	order, accs := groupRequests(filtered, func(r requestRow) string { return r.sessionDirectory })
-	entries := make([]ProjectLogEntry, 0, len(accs))
-	for _, dir := range order {
-		a := accs[dir]
-		entries = append(entries, ProjectLogEntry{
-			Directory: dir, Sessions: len(a.sessions),
-			Requests: a.requests, InputTokens: a.in, OutputTokens: a.out,
-			CacheReadTokens: a.cacheRead, CacheWriteTokens: a.cacheWrite,
-			TotalTokens: a.in + a.out, TotalDurationMs: a.duration, AvgTokensPerSec: a.avgTokensPerSec(),
-			Cost: a.cost, CalcCost: a.calcCost, EffectiveCost: a.effectiveCost,
-			Models: sortedKeys(a.models), ErrorCount: a.errors, LastRequestTime: a.last,
-		})
-	}
-
-	// Sort by total cost descending so the most expensive projects
-	// surface first. Mirrors the per-session sort above.
-	sort.Slice(entries, func(i, j int) bool {
-		return costDescLess(entries[i].Cost, entries[j].Cost,
-			entries[i].LastRequestTime, entries[j].LastRequestTime)
-	})
-
-	dashboard.TotalProjects = len(entries)
-	dashboard.Projects = paginateSlice(entries, projectOffset, projectLimit)
 }
 
 func sortedKeys(values map[string]struct{}) []string {
