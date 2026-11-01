@@ -79,10 +79,21 @@ describe('SessionPullRequests', () => {
     } finally { visible.mockRestore(); vi.useRealTimers(); }
   });
   it('uses cached reads on mount and only forces a refresh on request', async () => {
-    mount(); await screen.findByRole('button', { name: 'Watch PR' });
+    const view = (refreshVersion: number) => <MemoryRouter><ConfirmContext.Provider value={confirm}><SessionPullRequests sessionId="s1" platform="r-box:opencode" refreshVersion={refreshVersion} /></ConfirmContext.Provider></MemoryRouter>;
+    const { rerender } = render(view(0)); await screen.findByRole('button', { name: 'Watch PR' });
+    expect(screen.queryByText('Linked to this session')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh links' })).not.toBeInTheDocument();
     expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', 'r-box:opencode', false);
     vi.mocked(prWorkflowApi.links).mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh links' }));
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [{ ...link, pr: { ...link.pr, title: 'Updated PR title' } }] });
+    rerender(view(1));
     await waitFor(() => expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', 'r-box:opencode', true));
+    expect(await screen.findByRole('link', { name: '#42 Updated PR title' })).toBeInTheDocument();
+    vi.mocked(prWorkflowApi.links).mockRejectedValueOnce(new Error('offline'));
+    rerender(view(2));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh linked PRs.');
+    expect(screen.getByRole('link', { name: '#42 Updated PR title' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry links' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 });

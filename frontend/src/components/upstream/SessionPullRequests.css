@@ -1,9 +1,6 @@
-.oc-session-prs { padding: 12px; border-bottom: 1px solid var(--border); display: grid; gap: 12px; }
-.oc-session-prs-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.oc-session-prs-title { display: flex; align-items: center; gap: 4px; }
-.oc-session-prs h3 { margin: 0; font-size: 13px; }
+.oc-session-prs { padding: 8px; border-bottom: 1px solid var(--border); display: grid; gap: 8px; }
 .oc-session-prs p { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
-.oc-session-pr { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 0; background: var(--bg-card); min-width: 0; }
+.oc-session-pr { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 0; background: var(--bg-card); min-width: 0; }
 .oc-session-pr-repo { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .oc-session-pr-repo > p { min-width: 0; }
 .oc-session-pr-repo > .oc-button-group { flex-shrink: 0; }

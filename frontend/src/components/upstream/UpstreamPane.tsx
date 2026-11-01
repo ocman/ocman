@@ -99,6 +99,16 @@ export function UpstreamPane({
 
   const { tab, prState, issueState, prMine, issueMine } = useUpstreamPreferences((state) => state.preferences);
   const setPreferences = useUpstreamPreferences((state) => state.setPreferences);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const registerRefresh = useCallback((refresh: () => void) => {
+    onRefresh?.(() => {
+      setRefreshVersion((version) => version + 1);
+      refresh();
+    });
+  }, [onRefresh]);
+  useEffect(() => {
+    if (upstreamsReady && upstreams.length === 0) registerRefresh(() => {});
+  }, [registerRefresh, upstreamsReady, upstreams.length]);
 
   // Tell the parent we have no diff summary to contribute. Done once
   // because the value never changes.
@@ -113,7 +123,7 @@ export function UpstreamPane({
     return (
       <div className="oc-upstream-pane" data-testid="upstream-pane">
         {onLinkPullRequest && <div className="oc-upstream-tabs-row"><IconButton variant="ghost" icon="bi-paperclip" label="Link pull request" onClick={onLinkPullRequest} /></div>}
-        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} />}
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} refreshVersion={refreshVersion} />}
         <NoUpstreamMessage directory={directory} />
       </div>
     );
@@ -131,7 +141,7 @@ export function UpstreamPane({
       </div>
 
       <TabsContent value="prs" className="oc-upstream-panel">
-        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} />}
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} refreshVersion={refreshVersion} />}
         <UpstreamTabContent
           key="prs"
           kind="prs"
@@ -145,7 +155,7 @@ export function UpstreamPane({
           onStateChange={(prState) => setPreferences({ prState })}
           mine={prMine}
           onMineChange={(prMine) => setPreferences({ prMine })}
-          onRefresh={onRefresh}
+          onRefresh={registerRefresh}
           onLoadingChange={onLoadingChange}
           currentBranch={currentBranch}
         />
@@ -164,7 +174,7 @@ export function UpstreamPane({
           onStateChange={(issueState) => setPreferences({ issueState })}
           mine={issueMine}
           onMineChange={(issueMine) => setPreferences({ issueMine })}
-          onRefresh={onRefresh}
+          onRefresh={registerRefresh}
           onLoadingChange={onLoadingChange}
           currentBranch={currentBranch}
         />

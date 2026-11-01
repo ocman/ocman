@@ -5,23 +5,23 @@ import { ModalHeader } from '../ModalHeader';
 import { ModalFooter } from '../ModalFooter';
 import { CopyButton } from '../CopyButton';
 import { IconButton } from '../IconButton';
-import { Tooltip } from '../Tooltip';
 import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
 import { useConfirm } from '../../lib/useConfirm';
 import { LinkedPRStatus } from './LinkedPRStatus';
 import './SessionPullRequests.css';
 
-interface Props { sessionId: string; platform: string; linksVersion?: number }
+interface Props { sessionId: string; platform: string; linksVersion?: number; refreshVersion?: number }
 export function SessionPullRequests(props: Props) {
   return <SessionLinks key={`${props.platform}:${props.sessionId}`} {...props} />;
 }
 
-function SessionLinks({ sessionId, platform, linksVersion }: Props) {
+function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0 }: Props) {
   const [links, setLinks] = useState<PRLink[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [prompt, setPrompt] = useState<string | null>(null);
   const mounted = useRef(true);
+  const lastRefresh = useRef(refreshVersion);
   const confirm = useConfirm();
   const load = useCallback(async (refresh = false) => { const result = await prWorkflowApi.links(sessionId, platform, refresh); if (mounted.current) { setLinks(result.pullRequests); setError(''); } }, [sessionId, platform]);
   useEffect(() => {
@@ -30,6 +30,11 @@ function SessionLinks({ sessionId, platform, linksVersion }: Props) {
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void load().catch(() => { if (mounted.current) setError('Could not refresh linked PRs.'); }); }, 60_000);
     return () => { mounted.current = false; window.clearInterval(timer); };
   }, [load, linksVersion]);
+  useEffect(() => {
+    if (lastRefresh.current === refreshVersion) return;
+    lastRefresh.current = refreshVersion;
+    void load(true).catch(() => { if (mounted.current) setError('Could not refresh linked PRs.'); });
+  }, [load, refreshVersion]);
   const run = async (action: () => Promise<unknown>, reload = true) => {
     setBusy(true); setError('');
     try { await action(); if (mounted.current && reload) await load(); }
@@ -40,14 +45,6 @@ function SessionLinks({ sessionId, platform, linksVersion }: Props) {
   const feedback = (link: PRLink, action: string) => run(async () => { const result = await prWorkflowApi.feedback(sessionId, platform, link, action); if (mounted.current) setPrompt(result.prompt); });
   if (links?.length === 0 && !error) return null;
   return <section className="oc-session-prs" aria-label="Linked pull requests">
-    <div className="oc-session-prs-heading">
-      <div className="oc-session-prs-title"><h3>Linked to this session</h3>
-        <Tooltip content="Watches run on the hub. No automatic merges. Configure source control in Settings → Connections.">
-          <IconButton variant="ghost" icon="bi-question-circle" label="About linked pull requests" title="" />
-        </Tooltip>
-      </div>
-      <Button variant="ghost" size="small" disabled={busy} onClick={() => void run(() => load(true), false)}>Refresh links</Button>
-    </div>
     {error && <p role="alert">{error} <Button variant="ghost" onClick={() => void run(load, false)}>Retry links</Button></p>}
     {links === null && !error && <p role="status">Loading linked PRs…</p>}
     {links?.map((link) => <article className="oc-session-pr" key={`${link.remote.host}/${link.remote.repo}/${link.number}`}>

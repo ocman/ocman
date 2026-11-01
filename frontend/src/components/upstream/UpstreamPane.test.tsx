@@ -10,6 +10,10 @@ import { cachePRChecks, getCachedPRChecks } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import type { GitCommandHint } from '../../lib/useGlobalEvents';
 import { useProjectTarget } from '../../lib/useProjectTarget';
+import { prWorkflowApi } from '../../lib/prWorkflowApi';
+import { ConfirmContext } from '../../lib/useConfirm';
+
+vi.mock('../../lib/prWorkflowApi', () => ({ prWorkflowApi: { links: vi.fn() } }));
 
 const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], error: null as Error | null, page: 1, hasMore: false, setPage: vi.fn(), refresh: vi.fn() }));
 const gitHints = vi.hoisted(() => new Set<(hint: GitCommandHint) => void>());
@@ -48,6 +52,20 @@ beforeEach(() => {
 });
 
 describe('UpstreamPane owner-scoped resources', () => {
+  it.each([true, false])('refreshes linked PRs with the sidebar, supported upstream=%s', async (supported) => {
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+    let refresh: (() => void) | undefined;
+    const onRefresh = (callback: () => void) => { refresh = callback; };
+    render(<ConfirmContext.Provider value={vi.fn()}><UpstreamPane sessionId="s1" launchPlatform="r-box:opencode" directory="/repo" remoteId="box" upstreams={supported ? [upstreams[0]] : []} onRefresh={onRefresh} /></ConfirmContext.Provider>);
+    await waitFor(() => expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', 'r-box:opencode', false));
+    expect(refresh).toBeDefined();
+    vi.mocked(prWorkflowApi.links).mockClear();
+    await act(async () => { refresh!(); });
+    expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', 'r-box:opencode', true);
+    expect(screen.queryByRole('region', { name: 'Linked pull requests' })).not.toBeInTheDocument();
+    if (supported) expect(upstreamListMock.refresh).toHaveBeenCalledOnce();
+  });
+
   it.each(['PRs', 'Issues'])('shows a muted access hint for a Forgejo 404 in %s', async (tab) => {
     upstreamListMock.error = new upstreamApi.UpstreamApiError({ error: {
       code: 'upstream_status',
