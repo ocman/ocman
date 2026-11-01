@@ -61,8 +61,9 @@ timestamps keep the full-read behavior. GitHub background reads share the same
 one-minute response cache as the sidebar and previews.
 
 The linked-PR pane refreshes once per minute while the document is visible.
-**Refresh links** explicitly revalidates GitHub metadata within the shared
-request budget; reopening the pane uses the cached read path.
+The sidebar **Refresh** control refreshes both the PR list and linked PRs,
+explicitly revalidating GitHub metadata within the shared request budget.
+Reopening the pane uses the cached read path.
 
 Active turns and sessions waiting on prompts are not interrupted. Disconnected
 owners are skipped without falling back to the hub. Read failures preserve the
