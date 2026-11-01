@@ -90,7 +90,7 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 // Code Mode), and an entry installed before the listener required a bearer
 // token gains the token-file reference.
 func (s *Server) ensureOpenCodeMCPLayout() {
-	backup, err := opencodeconfig.EnsureEntry(s.mcpClientTokenFile())
+	backup, err := opencodeconfig.EnsureEntry(s.mcpServerURL(), s.mcpClientTokenFile())
 	switch {
 	case errors.Is(err, opencodeconfig.ErrNotEditable):
 		log.WithError(err).Info("mcp: cannot update ocman's OpenCode MCP entry; set codemode to false and the Authorization header by hand (see the MCP docs)")

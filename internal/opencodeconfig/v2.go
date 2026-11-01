@@ -131,10 +131,13 @@ func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool, token
 // EnsureEntry keeps an existing ocman entry usable. Under OpenCode v2 it
 // moves the entry to the v2 layout with Code Mode off, keeping its URL and
 // enabled state. Under either version it adds the bearer-token reference
-// (AuthHeader) when tokenFile is set and the entry lacks it. It never adds
-// an entry, since installing stays the user's choice, and does nothing when
-// the entry is current. It returns the backup path when it rewrote the file.
-func EnsureEntry(tokenFile string) (string, error) {
+// (AuthHeader) when tokenFile is set and the entry lacks it, but only when
+// the entry's URL is listenerURL, the finalized URL of ocman's own MCP
+// listener: an entry pointing anywhere else never receives the credential.
+// It never adds an entry, since installing stays the user's choice, and does
+// nothing when the entry is current. It returns the backup path when it
+// rewrote the file.
+func EnsureEntry(listenerURL, tokenFile string) (string, error) {
 	v2 := ocv2.InstalledV2()
 	if !v2 && tokenFile == "" {
 		return "", nil
@@ -159,18 +162,17 @@ func EnsureEntry(tokenFile string) (string, error) {
 	}
 	legacy, hasLegacy := mcpEntry(doc)
 	if !v2 {
-		if !hasLegacy || authCurrent(legacy.Headers, tokenFile) {
+		token := tokenFor(legacy.URL, listenerURL, tokenFile)
+		if !hasLegacy || authCurrent(legacy.Headers, token) {
 			return "", nil
 		}
-		if err := setV1AuthHeader(doc, tokenFile); err != nil {
+		if err := setV1AuthHeader(doc, token); err != nil {
 			return "", err
 		}
 		return writeDoc(path, raw, doc)
 	}
 	entry, ok := v2Entry(doc)
 	switch {
-	case ok && !hasLegacy && entry.Codemode != nil && !*entry.Codemode && authCurrent(entry.Headers, tokenFile):
-		return "", nil
 	case ok:
 	case hasLegacy:
 		disabled := !enabled(legacy)
@@ -178,8 +180,21 @@ func EnsureEntry(tokenFile string) (string, error) {
 	default:
 		return "", nil
 	}
-	if err := setV2Entry(doc, entry.URL, entry.Disabled != nil && *entry.Disabled, tokenFile); err != nil {
+	token := tokenFor(entry.URL, listenerURL, tokenFile)
+	if ok && !hasLegacy && entry.Codemode != nil && !*entry.Codemode && authCurrent(entry.Headers, token) {
+		return "", nil
+	}
+	if err := setV2Entry(doc, entry.URL, entry.Disabled != nil && *entry.Disabled, token); err != nil {
 		return "", err
 	}
 	return writeDoc(path, raw, doc)
+}
+
+// tokenFor returns tokenFile only for an entry whose URL is listenerURL, so
+// repair never points the credential at another host or port.
+func tokenFor(entryURL, listenerURL, tokenFile string) string {
+	if listenerURL == "" || entryURL != listenerURL {
+		return ""
+	}
+	return tokenFile
 }

@@ -158,7 +158,7 @@ func TestEnsureV2Layout(t *testing.T) {
 			if tc.body != "" {
 				writeConfig(t, path, `{"theme":"x",`+tc.body[1:])
 			}
-			backup, err := EnsureEntry("")
+			backup, err := EnsureEntry(testURL, "")
 			if err != nil {
 				t.Fatalf("EnsureV2Layout: %v", err)
 			}
@@ -190,7 +190,7 @@ func TestEnsureV2Layout(t *testing.T) {
 			if raw, _ := os.ReadFile(path); !json.Valid(raw) || !containsTheme(raw) {
 				t.Errorf("other keys not preserved: %s", raw)
 			}
-			if again, err := EnsureEntry(""); err != nil || again != "" {
+			if again, err := EnsureEntry(testURL, ""); err != nil || again != "" {
 				t.Errorf("second run rewrote again: %q, %v", again, err)
 			}
 		})
@@ -214,7 +214,7 @@ func TestEnsureV2LayoutRefusesUneditable(t *testing.T) {
 			dir := configHome(t)
 			path := filepath.Join(dir, tc.file)
 			writeConfig(t, path, tc.body)
-			backup, err := EnsureEntry("")
+			backup, err := EnsureEntry(testURL, "")
 			if name == "mcp not object" {
 				// No readable ocman entry: nothing to repair.
 				if err != nil || backup != "" {
