@@ -270,7 +270,7 @@ func startClaudeOcmanCmd(t *testing.T, test, dir string, env ...string) (string,
 	out := &bytes.Buffer{}
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^"+test+"$")
 	cmd.Stdout, cmd.Stderr = out, out
-	cmd.Env = append(os.Environ(), "OCMAN_TEST_CLAUDE_ADDR="+addr,
+	cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_CLAUDE_ADDR="+addr,
 		"PATH="+filepath.Join(dir, "bin")+":/usr/bin:/bin", "HOME="+dir, "CLAUDE_CONFIG_DIR=",
 		"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
 		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=", "OCMAN_TEST_MCP_ADDR=")

@@ -13,6 +13,7 @@ import (
 
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // TestMain doubles as a fake `codex` executable: Start runs this test binary
@@ -243,7 +244,7 @@ func TestStartProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := codexappserver.Options{CLI: exe, Env: append(os.Environ(), "FAKE_CODEX=serve")}
+	opts := codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=serve")}
 	c, err := codexappserver.Start(ctx(t), opts, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -266,7 +267,7 @@ func TestStartProcessFailures(t *testing.T) {
 	}
 	exe, _ := os.Executable()
 	// The child exits before answering initialize.
-	_, err := codexappserver.Start(ctx(t), codexappserver.Options{CLI: exe, Env: append(os.Environ(), "FAKE_CODEX=fail")}, nil)
+	_, err := codexappserver.Start(ctx(t), codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=fail")}, nil)
 	if err == nil || !errors.Is(err, codexappserver.ErrClosed) {
 		t.Fatalf("early exit err = %v", err)
 	}
@@ -283,7 +284,7 @@ func TestStartUnresponsiveChild(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := codexappserver.Start(hctx, codexappserver.Options{CLI: exe, Env: append(os.Environ(), "FAKE_CODEX=hang")}, nil)
+		_, err := codexappserver.Start(hctx, codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=hang")}, nil)
 		done <- err
 	}()
 	select {

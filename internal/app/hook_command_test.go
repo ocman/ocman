@@ -14,7 +14,8 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/ocman/ocman/internal/platforms/claude/transport"
+	claudecode "github.com/ocman/ocman/internal/platforms/claude/transport"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // TestHookCommandExitsZeroWhenOcmanIsDown runs `ocman hook` as a process
@@ -41,7 +42,7 @@ func TestHookCommandExitsZeroWhenOcmanIsDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestHookCommandExitsZeroWhenOcmanIsDown$")
-	cmd.Env = append(os.Environ(), "OCMAN_TEST_HOOK_ADDR="+ln.Addr().String())
+	cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_HOOK_ADDR=" + ln.Addr().String())
 	cmd.Stdin = stdin
 	start := time.Now()
 	out, err := cmd.CombinedOutput()

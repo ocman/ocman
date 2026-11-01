@@ -19,8 +19,9 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 type reloadAuthPlatform struct{ startupPlatform }
@@ -81,7 +82,7 @@ func TestGeneratedOpenCodePasswordSurvivesReload(t *testing.T) {
 	childCtx, cancelChild := context.WithCancel(context.Background())
 	t.Cleanup(cancelChild)
 	cmd := exec.CommandContext(childCtx, os.Args[0], "-test.run=^TestGeneratedOpenCodePasswordSurvivesReload$")
-	cmd.Env = append(os.Environ(), "OCMAN_TEST_RELOAD_AUTH=1", "OCMAN_TEST_AUTH_ENDPOINT="+upstream.URL, "OCMAN_TEST_AUTH_ADDR="+addr,
+	cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_RELOAD_AUTH=1", "OCMAN_TEST_AUTH_ENDPOINT="+upstream.URL, "OCMAN_TEST_AUTH_ADDR="+addr,
 		"HOME="+home, "XDG_DATA_HOME="+home, "XDG_CONFIG_HOME="+home, "OCMAN_PLUGIN_DIR="+home,
 		"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=", "OTEL_EXPORTER_OTLP_ENDPOINT=")
 	type result struct {

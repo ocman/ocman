@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestDefaultPlatforms(t *testing.T) {
@@ -16,7 +18,7 @@ func TestDefaultPlatforms(t *testing.T) {
 		return
 	}
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestDefaultPlatforms$")
-	cmd.Env = append(os.Environ(), "OCMAN_TEST_PLATFORM_HELP=1", "WAILS_BINDINGS=", "HOME="+t.TempDir())
+	cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_PLATFORM_HELP=1", "WAILS_BINDINGS=", "HOME="+t.TempDir())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("help: %v\n%s", err, out)

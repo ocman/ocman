@@ -14,7 +14,9 @@ import (
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
+
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func testOptions(t *testing.T, mode string) Options {
@@ -25,7 +27,7 @@ func testOptions(t *testing.T, mode string) Options {
 	}
 	return Options{
 		Command: Command{Executable: exe, Args: []string{"-test.run=^TestACPAgentProcess$", "--", mode}},
-		Dir:     t.TempDir(), Env: append(os.Environ(), "OCMAN_ACP_TEST_PROCESS=1"),
+		Dir:     t.TempDir(), Env: testutil.IsolatedEnv("OCMAN_ACP_TEST_PROCESS=1"),
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Version: "test",
 	}
 }

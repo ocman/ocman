@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestProcessCleanup(t *testing.T) {
@@ -32,7 +34,7 @@ func TestProcessCleanup(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			cmd := exec.Command(os.Args[0], "-test.run=^TestProcessCleanup$")
-			cmd.Env = append(os.Environ(), "CLAUDETEST_CLEANUP_CHILD="+dir, "CLAUDETEST_CLEANUP_MODE="+mode)
+			cmd.Env = testutil.IsolatedEnv("CLAUDETEST_CLEANUP_CHILD="+dir, "CLAUDETEST_CLEANUP_MODE="+mode)
 			out, err := cmd.CombinedOutput()
 			if (err == nil) != (mode == "success") {
 				t.Fatalf("child exit: %v\n%s", err, out)

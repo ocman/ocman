@@ -12,6 +12,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providersupervisor"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestSDKChildEnvironment(t *testing.T) {
@@ -22,7 +23,7 @@ func TestSDKChildEnvironment(t *testing.T) {
 	for _, config := range []*string{nil, new(""), new("/chosen")} {
 		env := (Options{ConfigEnv: config}).childEnv()
 		if env == nil {
-			env = os.Environ()
+			env = testutil.IsolatedEnv()
 		}
 		values := map[string]string{}
 		for _, kv := range env {

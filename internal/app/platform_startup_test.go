@@ -18,8 +18,9 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 type startupPlatform struct{ platforms.Platform }
@@ -99,7 +100,7 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestStartupWithoutOpenCode$")
-			cmd.Env = append(os.Environ(), "OCMAN_TEST_NO_OPENCODE="+mode, "OCMAN_TEST_EXEC_MARKER="+marker, "OCMAN_TEST_STARTUP_ADDR="+addr,
+			cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_NO_OPENCODE="+mode, "OCMAN_TEST_EXEC_MARKER="+marker, "OCMAN_TEST_STARTUP_ADDR="+addr,
 				"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir,
 				"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
 				"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=")

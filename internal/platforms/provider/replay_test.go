@@ -15,6 +15,7 @@ import (
 
 	"github.com/ocman/ocman/internal/providerprotocol"
 	"github.com/ocman/ocman/internal/providersupervisor/providertest"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func emit(t *testing.T, p *providertest.Process, kind, properties string) {
@@ -197,7 +198,7 @@ func TestKilledDashboardProcessReplaysAfterItsLastCursor(t *testing.T) {
 			t.Fatal(err)
 		}
 		cmd := exec.Command(exe, "-test.run=^TestDashboardConsumerProcess$")
-		cmd.Env = append(os.Environ(), "OCMAN_TEST_CONSUMER_SOCKET="+p.Socket, "OCMAN_TEST_CONSUMER_AFTER="+strconv.FormatUint(after, 10))
+		cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_CONSUMER_SOCKET="+p.Socket, "OCMAN_TEST_CONSUMER_AFTER="+strconv.FormatUint(after, 10))
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			t.Fatal(err)

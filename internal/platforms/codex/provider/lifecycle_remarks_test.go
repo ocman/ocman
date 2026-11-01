@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func TestNativeReaderReplacementPreservesACPAdmission(t *testing.T) {
@@ -71,7 +72,7 @@ func TestRemarksExitedProcessReaped(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	_, b, err := newSupervisor(ctx, Options{CLI: exe, Env: append(os.Environ(), "FAKE_CODEX=exit")}, t.TempDir())
+	_, b, err := newSupervisor(ctx, Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=exit")}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

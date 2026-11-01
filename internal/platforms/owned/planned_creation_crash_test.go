@@ -18,6 +18,7 @@ import (
 	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // The fake platform has its own durable database, independent of Ocman's writer.
@@ -112,7 +113,7 @@ func TestPlannedCreationSurvivesHardKill(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPlannedCreationCrashChild$")
-			cmd.Env = append(os.Environ(), "OCMAN_TEST_CREATION_CRASH_ROOT="+root, "OCMAN_TEST_CREATION_CRASH_STAGE="+stage)
+			cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_CREATION_CRASH_ROOT="+root, "OCMAN_TEST_CREATION_CRASH_STAGE="+stage)
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
 				t.Fatal(err)

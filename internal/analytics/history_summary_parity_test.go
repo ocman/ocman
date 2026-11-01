@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // Analytics buckets with SQLite's localtime, whose timezone is fixed
@@ -24,7 +25,7 @@ func TestHistorySummaryExactCutoffsAndLocalBuckets(t *testing.T) {
 	for _, zone := range []string{"UTC", "Asia/Kathmandu", "America/New_York"} {
 		t.Run(zone, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestHistorySummaryExactCutoffsAndLocalBuckets$", "-test.count=1", "-test.v")
-			cmd.Env = append(os.Environ(), "TZ="+zone, childEnv+"="+zone)
+			cmd.Env = testutil.IsolatedEnv("TZ="+zone, childEnv+"="+zone)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("%v\n%s", err, out)
 			}
