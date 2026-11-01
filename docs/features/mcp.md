@@ -60,15 +60,28 @@ and writes it on every start to `mcp-token` in the state directory
 - The Claude hook plugin's `ocman hook` command reads the token from the file
   named by `--token-file` (default: the state directory's `mcp-token`).
 - Any other client, for example a Claude Code you start in a terminal, needs
-  the header added by hand:
+  the header from a private configuration file. Do not pass the token as a
+  command-line argument, for example with `claude mcp add --header` or
+  `claude mcp add-json`: other local users can read a process's arguments.
+  For Claude Code, write an MCP config file that only you can read, the same
+  way ocman configures the Claude sessions it launches:
 
   ```sh
-  claude mcp add --transport http ocman http://127.0.0.1:8227/mcp \
-    --header "Authorization: Bearer $(cat ~/.local/share/ocman/mcp-token)"
+  (
+    umask 077
+    mkdir -p ~/.config/ocman
+    printf '{"mcpServers":{"ocman":{"type":"http","url":"http://127.0.0.1:8227/mcp","headers":{"Authorization":"Bearer %s"}}}}\n' \
+      "$(cat ~/.local/share/ocman/mcp-token)" > ~/.config/ocman/claude-mcp.json
+  )
+  claude --mcp-config ~/.config/ocman/claude-mcp.json
   ```
 
-  This copies the token into that client's config, so keep that file
-  private. The token never goes in a URL or query string.
+  `umask 077` creates the file with mode `0600`. `printf` is a shell builtin
+  in bash and zsh, and `cat` only receives the token file's path, so the token
+  never appears in any process's arguments. Pass the file's path to
+  `--mcp-config` on every start, for example from a shell alias. The file
+  holds a copy of the token, so keep it private and rewrite it if you replace
+  `mcp-token`. The token never goes in a URL or query string.
 
 ## Setup
 
