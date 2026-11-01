@@ -17,4 +17,6 @@
 .subscription-window progress::-webkit-progress-value { background: var(--accent); }
 .subscription-window progress::-moz-progress-bar { background: var(--accent); }
 .subscription-history-chart { height: 300px; }
+.subscription-limits-history { margin-bottom: 24px; }
+.subscription-limits-history .metrics-chart-body { height: auto; }
 @media (max-width: 640px) { .subscription-page-heading { align-items: stretch; flex-direction: column; } }

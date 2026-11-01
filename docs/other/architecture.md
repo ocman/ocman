@@ -352,6 +352,9 @@ flowchart LR
   or 0 for all history.
   The page's History view plots quota and budget utilization, with gaps at
   failures, unreported metrics, resets, plan changes and extended downtime.
+  Analytics → Models uses the same history endpoint for seven-day subscription
+  limit graphs. The current-usage page, popover and account settings retain
+  their progress indicators.
   History is per platform on this machine, not a cumulative token estimate.
   `/api/provider-usage` also reads
   the analytics-owned `provider_usage` ledger in state.db. The server injects
@@ -462,6 +465,7 @@ flowchart LR
     Analytics --> Ledger[Local TypeSafe estimate ledger]
     Analytics -->|five-minute snapshots, hourly after 30 days| History[Subscription history in state.db]
     UI -->|History view| HistoryAPI[Local history endpoint]
+    Models[Analytics Models graphs] -->|last seven days| HistoryAPI
     HistoryAPI --> History
 ```
 

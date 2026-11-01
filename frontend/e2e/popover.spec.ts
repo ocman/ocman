@@ -1,5 +1,44 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 
+test('analytics graphs subscription history while current usage keeps its progress bars', async ({ mockedPage: page }) => {
+  const now = Date.now();
+  const provider = { id: 'opencode', name: 'OpenCode', plan: 'OpenCode Go', status: 'ok',
+    windows: [{ name: 'Rolling', usedPercent: 40, resetsAt: new Date(now + 3600000).toISOString() }],
+    budgets: [{ id: 'monthly', name: 'Monthly budget', limitUSD: 100, spentUSD: 25, remainingUSD: 75 }],
+  };
+  await page.route('**/api/provider-usage', route => route.fulfill({ json: { providers: [provider] } }));
+  await page.route('**/api/provider-accounts', route => route.fulfill({ json: { accounts: [{
+    platform: 'opencode', displayName: 'OpenCode', status: 'ok', subscriptionType: 'OpenCode Go', rateLimits: [],
+  }] } }));
+  await page.route('**/api/provider-usage/history?*', route => route.fulfill({ json: {
+    sampleIntervalMs: 300000,
+    samples: [0, 1, 2].map(index => ({ sampledAt: now - (2 - index) * 300000,
+      provider: { ...provider, windows: [{ ...provider.windows[0], usedPercent: 20 + index * 10 }] },
+    })),
+  } }));
+  await page.goto('/analytics/models');
+  const content = page.getByTestId('page-content');
+  await expect(content.getByRole('img', { name: 'OpenCode subscription usage history' })).toBeVisible();
+  await expect(content.getByRole('progressbar')).toHaveCount(0);
+  const nextChart = await content.getByRole('heading', { name: 'Model Usage', exact: true }).boundingBox();
+  const historyChart = await content.getByRole('img', { name: 'OpenCode subscription usage history' }).boundingBox();
+  expect(nextChart!.y).toBeGreaterThan(historyChart!.y + historyChart!.height);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const graph = content.getByRole('img', { name: 'OpenCode subscription usage history' });
+  await expect(async () => {
+    const box = await graph.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  }).toPass();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/provider-usage');
+  await expect(content.getByRole('progressbar', { name: 'OpenCode Rolling usage' })).toHaveAttribute('value', '40');
+  await expect(content.getByRole('img')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Provider usage', exact: true }).click();
+  const popover = page.getByRole('dialog', { name: 'Provider usage' });
+  await expect(popover.getByRole('progressbar', { name: 'OpenCode Rolling usage' })).toHaveAttribute('value', '40');
+  await expect(popover.getByRole('img')).toHaveCount(0);
+});
+
 test('subscription history graphs persisted readings and keeps its period on reload', async ({ mockedPage: page }) => {
   const now = Date.now();
   await page.route('**/api/provider-usage/history?*', route => route.fulfill({ json: {
