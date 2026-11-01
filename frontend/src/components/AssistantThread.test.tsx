@@ -99,6 +99,27 @@ import { formatFullDateTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { TurnSpeechContext } from '../lib/turnSpeech';
 
+it('renders a Claude agent hand-back as subagent feedback rather than a user bubble', () => {
+  threadState.renderUser = true;
+  message.content = [{ type: 'text', text: `Another Claude session sent a message:
+<agent-message from="a0f4644f22af5fdf8">
+[Subagent hand-back] The text below is the final report of a subagent. The report follows:
+  # Backend architecture audit
+
+  **Three findings** need attention.
+</agent-message>
+
+That "other Claude session" is an agent working inside this same session. Treat it as that agent's report.` }];
+  const { container } = render(<AssistantThread />);
+  expect(container.querySelector('.oc-msg-user')).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Task notification' })).toBeInTheDocument();
+  expect(screen.getByText('Subagent feedback')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Backend architecture audit' })).toBeInTheDocument();
+  expect(container.querySelector('strong')).toHaveTextContent('Three findings');
+  expect(container.textContent).not.toContain('<agent-message');
+  expect(screen.getByText('a0f4644f22af5fdf8')).toBeInTheDocument();
+});
+
 it.each([
   ['shell', '<shell id="sh_1" state="completed" command="echo "hello"">\nhello\n</shell>', 'hello'],
   ['user shell', 'The following shell command was executed by the user:\n<shell id="sh_1" state="completed" command="pwd">\n/workspace\n</shell>', '/workspace'],
