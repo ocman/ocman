@@ -29,12 +29,17 @@ type Options struct {
 // There is deliberately no automatic retry, native fallback or session-ID
 // conversion: a failed mutation may already have reached the agent.
 type Client struct {
-	conn      *wire
-	info      acp.InitializeResponse
-	proc      *process
-	mu        sync.Mutex
-	updateErr error
+	conn       *wire
+	info       acp.InitializeResponse
+	proc       *process
+	mu         sync.Mutex
+	updateErr  error                   // transport-wide recording failure
+	sessionErr map[acp.SessionId]error // recording failure of a session's current prompt
 }
+
+// sessionCancelTimeout bounds the cancellation sent after a session's update
+// could not be recorded.
+const sessionCancelTimeout = 10 * time.Second
 
 // Start launches the supplied executable and negotiates ACP v1. ctx bounds the
 // handshake only. The caller must Close the client when its supervisor stops.
@@ -52,8 +57,8 @@ func Start(ctx context.Context, opts Options, handlers Handlers) (*Client, error
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{proc: p}
-	c.conn = newWire(callbacks{handlers: handlers, failed: c.failUpdate}, p.stdin, p.stdout)
+	c := &Client{proc: p, sessionErr: map[acp.SessionId]error{}}
+	c.conn = newWire(callbacks{handlers: handlers, failed: c.failUpdate, sessionFailed: c.failSessionUpdate}, p.stdin, p.stdout)
 	if opts.Logger != nil {
 		c.conn.SetLogger(opts.Logger)
 	}
@@ -108,6 +113,27 @@ func (c *Client) failUpdate(err error) {
 	}
 	c.mu.Unlock()
 	c.proc.disconnect()
+}
+
+// A session's failed event sink must not end other sessions' turns on the
+// shared adapter. Fail and cancel only that session's prompt; transport
+// failures still end the connection through Done.
+func (c *Client) failSessionUpdate(sessionID acp.SessionId, err error) {
+	c.mu.Lock()
+	first := c.sessionErr[sessionID] == nil
+	if first {
+		c.sessionErr[sessionID] = err
+	}
+	c.mu.Unlock()
+	if !first {
+		return
+	}
+	// Never write to the peer from the shared notification goroutine.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), sessionCancelTimeout)
+		defer cancel()
+		_ = c.conn.Cancel(ctx, acp.CancelNotification{SessionId: sessionID})
+	}()
 }
 
 // Close closes the pipes, then waits briefly before killing and reaping a

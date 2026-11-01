@@ -8,7 +8,9 @@ import (
 )
 
 // Handlers receive ordered session updates and concurrent permission requests.
-// Update must finish recording an event before returning. Permission must honor
+// Update must finish recording an event before returning; every session's
+// updates share one goroutine, so it must not block on slow work. An Update
+// error fails only that session's prompt. Permission must honor
 // ctx, which is cancelled when the request or connection ends. Neither callback
 // should retain SDK-owned mutable data without copying it.
 type Handlers struct {
@@ -19,13 +21,19 @@ type Handlers struct {
 }
 
 type callbacks struct {
-	handlers Handlers
-	failed   func(error)
+	handlers      Handlers
+	failed        func(error)                // ends the shared transport
+	sessionFailed func(acp.SessionId, error) // fails only that session's prompt
 }
 
 func (c callbacks) SessionUpdate(ctx context.Context, p acp.SessionNotification) error {
 	err := c.handlers.Update(ctx, p)
-	if err != nil && c.failed != nil {
+	if err == nil {
+		return nil
+	}
+	if p.SessionId != "" && c.sessionFailed != nil {
+		c.sessionFailed(p.SessionId, err)
+	} else if c.failed != nil {
 		c.failed(err)
 	}
 	return err

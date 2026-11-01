@@ -31,8 +31,11 @@ must be supplied on the owning machine through the child environment.
   Load replays history; resume does not. There is no implicit substitution.
 - `Prompt` streams typed SDK notifications into `Handlers.Update`. Notifications
   are ordered, and preceding callbacks finish before a successful prompt result.
-  A failed update handler disconnects the transport and fails the prompt, so a
-  persistence failure cannot appear to be a recorded successful turn.
+  A failed update handler cancels and fails that session's prompt, so a
+  persistence failure cannot appear to be a recorded successful turn. Other
+  sessions on the shared adapter keep running; only transport failures and
+  failed subagent updates disconnect. Every session's updates share one
+  goroutine, so handlers must not block on slow work such as RPC polling.
 - Permission callbacks receive the native request and offered options. A missing
   handler or cancelled request cancels permission. Invalid or unoffered choices
   are rejected. Handlers must honor cancellation and be concurrency-safe.

@@ -48,7 +48,11 @@ func (a *acpExecution) update(ctx context.Context, p acp.SessionNotification) er
 		itemID = string(u.ToolCallUpdate.ToolCallId)
 		entry := turn.items[itemID]
 		if entry == nil {
-			return fmt.Errorf("codex ACP updated unknown tool %q", itemID)
+			// The start may predate this turn's admission. Synthesize the item;
+			// native reconciliation publishes the authoritative tool at settlement.
+			log.WithFields(log.Fields{"session": id, "tool": itemID}).Warn("Codex ACP updated an unseen tool call")
+			entry = &acpItem{tool: acp.SessionUpdateToolCall{ToolCallId: u.ToolCallUpdate.ToolCallId}}
+			turn.items[itemID] = entry
 		}
 		mergeACPTool(&entry.tool, u.ToolCallUpdate)
 		entry.native = acpToolItem(entry.tool, turn.started)

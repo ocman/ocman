@@ -3,6 +3,7 @@ package acpexec
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -81,9 +82,39 @@ func TestFailedUpdateCannotCompleteSuccessfully(t *testing.T) {
 	if !errors.Is(err, want) {
 		t.Fatalf("lost recording failure: %v", err)
 	}
+}
+
+// One session's recording failure must not disconnect the shared adapter and
+// fail every other session's turn.
+func TestFailedUpdateIsScopedToItsSession(t *testing.T) {
+	want := errors.New("event spool unavailable")
+	var fail atomic.Bool
+	fail.Store(true)
+	c := startTestClient(t, "normal", Handlers{Update: func(context.Context, acp.SessionNotification) error {
+		if fail.Load() {
+			return want
+		}
+		return nil
+	}})
+	_, err := c.Prompt(testContext(t), acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("hello")}})
+	if !errors.Is(err, want) {
+		t.Fatalf("lost recording failure: %v", err)
+	}
 	select {
 	case <-c.Done():
-	case <-testContext(t).Done():
-		t.Fatal("connection kept running after recording failure")
+		t.Fatal("a session's recording failure disconnected the shared adapter")
+	default:
+	}
+	// An update without a session cannot be scoped and ends the transport.
+	var scoped, transport bool
+	cb := callbacks{handlers: Handlers{Update: func(context.Context, acp.SessionNotification) error { return want }},
+		failed: func(error) { transport = true }, sessionFailed: func(acp.SessionId, error) { scoped = true }}
+	if err := cb.SessionUpdate(t.Context(), acp.SessionNotification{}); !errors.Is(err, want) || scoped || !transport {
+		t.Fatalf("unscoped failure: %v scoped=%v transport=%v", err, scoped, transport)
+	}
+	fail.Store(false)
+	result, err := c.Prompt(testContext(t), acp.PromptRequest{SessionId: "native-session", Prompt: []acp.ContentBlock{acp.TextBlock("again")}})
+	if err != nil || result.StopReason != acp.StopReasonEndTurn {
+		t.Fatalf("recovered turn = %+v, %v", result, err)
 	}
 }

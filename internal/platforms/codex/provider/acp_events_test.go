@@ -51,8 +51,13 @@ func TestACPToolAndThoughtUpdatesUseNativeConverter(t *testing.T) {
 	if got := ItemPart(turn.items["generic"].native, 1)["state"].(map[string]any)["error"]; got != "failed" {
 		t.Fatal(got)
 	}
-	if err := update(`{"sessionId":"thr","update":{"sessionUpdate":"tool_call_update","toolCallId":"unknown","status":"completed"}}`); err == nil {
-		t.Fatal("unknown tool update accepted")
+	// An update for a tool whose start was never seen is synthesized, not a
+	// failure that would end the turn.
+	if err := update(`{"sessionId":"thr","update":{"sessionUpdate":"tool_call_update","toolCallId":"unknown","title":"late","status":"completed","rawInput":{"command":"pwd"}}}`); err != nil {
+		t.Fatal(err)
+	}
+	if late := turn.items["unknown"]; late == nil || late.native.Command != "pwd" || late.native.Status != "completed" {
+		t.Fatalf("unknown tool update was not synthesized: %+v", late)
 	}
 }
 
