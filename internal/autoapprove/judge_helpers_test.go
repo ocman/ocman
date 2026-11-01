@@ -18,17 +18,26 @@ func TestCreateJudgeSessionHiddenAtCreation(t *testing.T) {
 	const title = "(auto-approve subagent)"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/session" {
-			var payload map[string]string
+			var payload struct {
+				Title      string                    `json:"title"`
+				Directory  string                    `json:"directory"`
+				Permission []platforms.PermissionRule `json:"permission"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Error(err)
 			}
+			// The judge only reads and answers: it must never run tools.
+			denyAll := []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "deny"}}
+			if len(payload.Permission) != 1 || payload.Permission[0] != denyAll[0] {
+				t.Errorf("judge session permission = %+v, want %+v", payload.Permission, denyAll)
+			}
 			// OpenCode publishes session.created before returning this response.
 			// The sidebar's subagent title filter must already apply then.
-			if payload["title"] != title {
-				t.Errorf("session visible at creation: title = %q, want %q", payload["title"], title)
+			if payload.Title != title {
+				t.Errorf("session visible at creation: title = %q, want %q", payload.Title, title)
 			}
-			if payload["directory"] != "/project" {
-				t.Errorf("directory = %q, want /project", payload["directory"])
+			if payload.Directory != "/project" {
+				t.Errorf("directory = %q, want /project", payload.Directory)
 			}
 			_, _ = w.Write([]byte(`{"id":"judge"}`))
 			return

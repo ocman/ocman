@@ -16,8 +16,14 @@ import (
 // the authenticated helper lifecycle except through canonical projection.
 type HelperClient struct{ HTTPClient *http.Client }
 
+// helperDenyAll is the ruleset every helper session is created with, like
+// the worktree-name helper's: a helper only answers in text, so any tool call
+// it attempts is denied natively instead of reaching a permission prompt.
+var helperDenyAll = []map[string]string{{"permission": "*", "pattern": "*", "action": "deny"}}
+
+// CreateSession creates a tool-less helper session (deny-all permissions).
 func (j HelperClient) CreateSession(ctx context.Context, port, directory, title string) (string, error) {
-	payload, _ := json.Marshal(map[string]string{"directory": directory, "title": title})
+	payload, _ := json.Marshal(map[string]any{"directory": directory, "title": title, "permission": helperDenyAll})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%s/session", port), bytes.NewReader(payload))
 	if err != nil {
 		return "", err
