@@ -194,7 +194,16 @@ func TestFileRoute_ServesSignedURLInertBehindAuth(t *testing.T) {
 		t.Errorf("tampered token status = %d, want 403", rr.Code)
 	}
 
+	refresh := httptest.NewRequest(http.MethodPost, "/api/files/refresh", strings.NewReader(`{"url":"`+link+`"}`))
+	refresh.Header.Set("Content-Type", "application/json")
+	if rr := serve(refresh); rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"url":"/api/file/`) {
+		t.Errorf("refresh = %d %s, want a fresh file URL", rr.Code, rr.Body.String())
+	}
+
 	srv.auth = &Auth{hmacKey: []byte(strings.Repeat("k", 32)), cookieName: authCookieName}
+	if rr := serve(httptest.NewRequest(http.MethodPost, "/api/files/refresh", strings.NewReader(`{"url":"`+link+`"}`))); rr.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated refresh status = %d, want 401", rr.Code)
+	}
 	for _, path := range []string{link, "/api/git/files?remoteId=local&dir=/tmp", "/api/git/file?remoteId=local&dir=/tmp&path=a"} {
 		if rr := serve(httptest.NewRequest(http.MethodGet, path, nil)); rr.Code != http.StatusUnauthorized {
 			t.Errorf("unauthenticated %s status = %d, want 401", path, rr.Code)

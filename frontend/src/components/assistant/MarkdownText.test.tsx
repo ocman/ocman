@@ -125,6 +125,23 @@ describe('MarkdownText', () => {
     expect(screen.getByTitle('External image: Chart')).toHaveAttribute('src', `/api/previews/external-image?url=${encodeURIComponent(url)}`);
   });
 
+  it('re-mints stale embedded file URLs for images and links', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const { url } = JSON.parse(String(init?.body)) as { url: string };
+      return new Response(JSON.stringify({ url: `${url}.fresh` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      render(<MarkdownContent text={'![Stale](/api/file/L3g.c2ln)\n\n[Doc](/api/file/L2Q.c2ln)'} />);
+      await waitFor(() => expect(screen.getByRole('img', { name: 'Stale' })).toHaveAttribute('src', '/api/file/L3g.c2ln.fresh'));
+      await waitFor(() => expect(screen.getByRole('link', { name: 'Doc' })).toHaveAttribute('href', '/api/file/L2Q.c2ln.fresh'));
+      expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/api/files/refresh'))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.stubGlobal('ResizeObserver', ResizeObserver);
+    }
+  });
+
   it('uses the proxy origin for existing embedded file links', () => {
     render(<MarkdownContent text="[Report](http://localhost:8228/api/file/token)" />);
     expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', '/api/file/token');

@@ -24,8 +24,8 @@ func TestFileToken_RoundTrip(t *testing.T) {
 	key := []byte("0123456789abcdef0123456789abcdef")
 	path := "/tmp/some dir/diagram.svg"
 
-	tok := signFilePath(key, path)
-	got, ok := verifyFileToken(key, tok)
+	tok := testSign(key, path)
+	got, ok := testVerify(key, tok)
 	if !ok || got != path {
 		t.Fatalf("verifyFileToken = %q, %v; want %q, true", got, ok, path)
 	}
@@ -37,22 +37,22 @@ func TestFileToken_RoundTrip(t *testing.T) {
 func TestFileToken_Rejects(t *testing.T) {
 	key := []byte("0123456789abcdef0123456789abcdef")
 	other := []byte("fedcba9876543210fedcba9876543210")
-	valid := signFilePath(key, "/etc/hosts")
+	valid := testSign(key, "/etc/hosts")
 
-	tampered := signFilePath(key, "/tmp/a") // swap the payload, keep a real sig
-	forged := strings.SplitN(signFilePath(key, "/etc/shadow"), ".", 2)[0] + "." + strings.SplitN(tampered, ".", 2)[1]
+	tampered := testSign(key, "/tmp/a") // swap the payload, keep a real sig
+	forged := strings.SplitN(testSign(key, "/etc/shadow"), ".", 2)[0] + "." + strings.SplitN(tampered, ".", 2)[1]
 
 	tests := []struct{ name, token string }{
 		{"empty", ""},
 		{"no separator", "abcdef"},
 		{"bad base64", "!!!.###"},
-		{"wrong key", signFilePath(other, "/etc/hosts")},
+		{"wrong key", testSign(other, "/etc/hosts")},
 		{"swapped payload", forged},
 		{"truncated sig", valid[:len(valid)-4]},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, ok := verifyFileToken(key, tt.token); ok {
+			if _, ok := testVerify(key, tt.token); ok {
 				t.Errorf("verifyFileToken(%q) accepted an invalid token", tt.token)
 			}
 		})
@@ -95,7 +95,7 @@ func TestFileURL_RelativeAndVerifiable(t *testing.T) {
 		t.Fatalf("FileURL = %q, want prefix %q", url, want)
 	}
 	key, _ := s.fileTokenSecret(t.Context())
-	if got, ok := verifyFileToken(key, strings.TrimPrefix(url, want)); !ok || got != "/tmp/chart.png" {
+	if got, ok := testVerify(key, strings.TrimPrefix(url, want)); !ok || got != "/tmp/chart.png" {
 		t.Errorf("token in URL did not verify: %q, %v", got, ok)
 	}
 }
@@ -126,7 +126,7 @@ func TestHandleFileProxy(t *testing.T) {
 
 	t.Run("serves an image inline", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, filePathPrefix+signFilePath(key, png), nil)
+		req := httptest.NewRequest(http.MethodGet, filePathPrefix+testSign(key, png), nil)
 		s.handleFileProxy(rec, req)
 
 		if rec.Code != http.StatusOK {
@@ -151,7 +151,7 @@ func TestHandleFileProxy(t *testing.T) {
 
 	t.Run("downloads an opaque type", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, filePathPrefix+signFilePath(key, zip), nil)
+		req := httptest.NewRequest(http.MethodGet, filePathPrefix+testSign(key, zip), nil)
 		s.handleFileProxy(rec, req)
 
 		if rec.Code != http.StatusOK {
@@ -174,7 +174,7 @@ func TestHandleFileProxy(t *testing.T) {
 
 	t.Run("404 for a signed but missing file", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, filePathPrefix+signFilePath(key, filepath.Join(dir, "gone.png")), nil)
+		req := httptest.NewRequest(http.MethodGet, filePathPrefix+testSign(key, filepath.Join(dir, "gone.png")), nil)
 		s.handleFileProxy(rec, req)
 
 		if rec.Code != http.StatusNotFound {
@@ -184,7 +184,7 @@ func TestHandleFileProxy(t *testing.T) {
 
 	t.Run("404 for a directory", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, filePathPrefix+signFilePath(key, dir), nil)
+		req := httptest.NewRequest(http.MethodGet, filePathPrefix+testSign(key, dir), nil)
 		s.handleFileProxy(rec, req)
 
 		if rec.Code != http.StatusNotFound {
@@ -247,8 +247,8 @@ func TestFileURLRecoversAfterCanceledFirstLoad(t *testing.T) {
 
 func TestFileTokenRejectsBadSignatureEncoding(t *testing.T) {
 	key := []byte("0123456789abcdef0123456789abcdef")
-	enc := strings.SplitN(signFilePath(key, "/etc/hosts"), ".", 2)[0]
-	if _, ok := verifyFileToken(key, enc+".!!!"); ok {
+	enc := strings.SplitN(testSign(key, "/etc/hosts"), ".", 2)[0]
+	if _, ok := testVerify(key, enc+".!!!"); ok {
 		t.Error("accepted a signature that is not base64")
 	}
 }

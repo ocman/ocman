@@ -372,9 +372,15 @@ chart, an SVG diagram, a generated PDF. `embed_file` closes that gap.
    the conversation, other types become a link the browser opens or
    downloads.
 
-The token is an HMAC over the absolute path, signed with a key persisted
-in `state.db`, so links keep working across restarts while a hand-crafted
-or altered path is rejected with `403`. The endpoint sits behind the
+The token carries the absolute path and an expiry six to seven days out,
+both covered by an HMAC signed with a key persisted in `state.db`. Links
+survive restarts, while a hand-crafted, altered or expired token is rejected
+with `403`. Transcripts keep the original URL, so when the ocman UI renders
+an embed whose URL has expired, or expires within a day, it asks
+`POST /api/files/refresh` for a fresh URL to the same file. Copies of the URL
+outside ocman, such as exported or pasted transcripts, stop working on their
+own. URLs minted before expiries existed are refreshed the same way but are
+no longer served directly. The endpoint sits behind the
 normal dashboard auth guard, and responses carry `nosniff` plus a
 `Content-Security-Policy: sandbox` header so an SVG or HTML asset opened
 as a top-level document cannot run script.

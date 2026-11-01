@@ -18,6 +18,7 @@ import { remarkFactoryIssueReferences } from '../factoryIssueReferences';
 import { FactoryIssueReference } from '../FactoryIssueReference';
 import { useBetaFeatures } from '../../lib/betaFeatures';
 import { lazyComponent } from '../lazyComponent';
+import { useFreshFileURL } from '../../lib/fileUrls';
 import { PreviewImage } from '../ImagePreview';
 import { CopyButton } from '../CopyButton';
 import { splitMarkdownBlocks } from './markdownBlocks';
@@ -119,7 +120,7 @@ function relativeFileURL(href: string | undefined): string | undefined {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownImage({ node: _node, alt = '', src, ...props }: ComponentProps<'img'> & { node?: unknown }) {
-  return <PreviewImage buttonClassName="oc-md-image" alt={alt} src={relativeFileURL(src)} {...props} />;
+  return <PreviewImage buttonClassName="oc-md-image" alt={alt} src={useFreshFileURL(relativeFileURL(src))} {...props} />;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,7 +143,7 @@ function CodeBlockPre(props: any) {
 function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { node: _node, href: originalHref, children, factoryCards = true, ...rest } = props;
-  const href = relativeFileURL(originalHref);
+  const href = useFreshFileURL(relativeFileURL(originalHref));
   const routed = useInRouterContext();
   const factoryEnabled = useBetaFeatures((s) => s.factory);
   if (!factoryEnabled && (props['data-ocman-card'] || href?.startsWith('/factory/'))) return <>{children}</>;

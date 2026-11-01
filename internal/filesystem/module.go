@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/module"
@@ -36,11 +37,14 @@ type Module struct {
 	Deps
 	keyMu sync.Mutex
 	key   []byte
+	// now is the clock file-URL expiries are minted and checked against;
+	// tests replace it.
+	now func() time.Time
 }
 
 var _ module.Module = (*Module)(nil)
 
-func NewModule(deps Deps) *Module { return &Module{Deps: deps} }
+func NewModule(deps Deps) *Module { return &Module{Deps: deps, now: time.Now} }
 
 func (m *Module) Name() string { return "filesystem" }
 
@@ -50,6 +54,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Local("GET /api/filesystem/directories", m.handleDirectories)
 	r.Local("GET /api/filesystem/directory-search", m.handleDirectorySearch)
 	r.Handle("GET "+filePathPrefix, m.handleFileProxy)
+	r.Handle("POST "+fileRefreshPath, m.handleFileURLRefresh)
 	r.Handle("GET /api/git/files", m.handleRepoFiles)
 	r.Handle("GET /api/git/file", m.handleRepoFile)
 }
