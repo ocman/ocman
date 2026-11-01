@@ -74,3 +74,13 @@ func (s *Server) lifetime() context.Context {
 	}
 	return s.lifetimeCtx
 }
+
+// lifetimeCallTimeout bounds one callback's owner or state.db work when
+// the caller has no context of its own.
+const lifetimeCallTimeout = 10 * time.Second
+
+// lifetimeCall is a bounded context for callback work that has no caller
+// context: it ends with the server, before state.db closes.
+func (s *Server) lifetimeCall() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(s.lifetime(), lifetimeCallTimeout)
+}

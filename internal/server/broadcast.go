@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -246,7 +245,7 @@ func (s *Server) broadcastGlobalEvent(event string, data []byte) {
 // answered via the TUI / another tab). reason is a short tag for
 // diagnostics ("auto-approved", "replied").
 func (s *Server) broadcastPermissionResolved(platform, sessionID, permissionID, reason string) {
-	s.resolvePermissionInbox(context.Background(), platform, sessionID, permissionID)
+	s.resolvePermissionInbox(s.lifetime(), platform, sessionID, permissionID)
 	s.broadcastResolved("ocman.permission.resolved", "permissionId", platform, sessionID, permissionID, reason)
 }
 

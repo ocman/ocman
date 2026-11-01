@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -36,7 +35,9 @@ func (s *Server) previewDeps() previews.Deps {
 // credentials, never the clients projectforge and factory share.
 func (s *Server) previewForges() previews.Forges {
 	var f previews.Forges
-	for _, entry := range s.sourceControlModule().Clients(context.Background()) {
+	ctx, cancel := s.lifetimeCall()
+	defer cancel()
+	for _, entry := range s.sourceControlModule().Clients(ctx) {
 		switch c := entry.Client.(type) {
 		case *github.Client:
 			f.GitHubToken = c.Token()

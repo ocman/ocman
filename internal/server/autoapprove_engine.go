@@ -81,7 +81,9 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 			s.onSessionIdle(platform, session)
 		},
 		BroadcastQueueChanged: func(platformID, sessionID string) {
-			s.broadcastQueueUpdated(context.Background(), platformID, sessionID)
+			ctx, cancel := s.lifetimeCall()
+			defer cancel()
+			s.broadcastQueueUpdated(ctx, platformID, sessionID)
 		},
 		// The retry, change and title hooks fire from the OpenCode watcher only.
 		SessionRetry: func(session string, status autoapprove.SessionStatus) {
@@ -96,7 +98,8 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		},
 		BroadcastGlobalEvent: s.broadcastGlobalEvent,
 		BroadcastGitCommand: func(sessionID, action string) {
-			s.broadcastGitCommand(context.Background(), string(opencode.PlatformID), sessionID, action)
+			// broadcastGitCommand bounds its own reads.
+			s.broadcastGitCommand(s.lifetime(), string(opencode.PlatformID), sessionID, action)
 		},
 		DefaultEnabled: s.autoApproveDefault,
 	}
@@ -145,7 +148,8 @@ func (s *Server) openCodeEnabled() bool {
 // autoApproveSessionDir reads OpenCode sessions from its database and any
 // other platform's sessions through the adapter that owns them.
 func (s *Server) autoApproveSessionDir(sessionID string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := s.lifetimeCall()
+	defer cancel()
 	if row, err := s.sessionMetadata(ctx, "", sessionID); err == nil && row != nil && row.Directory != "" {
 		return row.Directory, nil
 	}

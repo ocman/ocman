@@ -1,8 +1,6 @@
 package server
 
 import (
-	"context"
-
 	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/forge/forgejo"
 	"github.com/ocman/ocman/internal/forge/github"
@@ -35,7 +33,9 @@ func (s *Server) resolveForge(rem forge.Remote) (forge.Forge, bool) {
 	if rem.Type == forge.RemoteTypeGitHub {
 		rem.Host = "github.com"
 	}
-	return s.sourceControlModule().Resolve(context.Background(), rem)
+	ctx, cancel := s.lifetimeCall()
+	defer cancel()
+	return s.sourceControlModule().Resolve(ctx, rem)
 }
 
 // knowsForgejo reports whether the hub has a Forgejo client for host; it
