@@ -118,8 +118,9 @@ type Event struct {
 }
 
 type Account struct {
-	SubscriptionType string      `json:"subscriptionType"`
-	RateLimits       []RateLimit `json:"rateLimits"`
+	SubscriptionType string                     `json:"subscriptionType"`
+	RateLimits       []RateLimit                `json:"rateLimits"`
+	Budgets          []platforms.ProviderBudget `json:"budgets,omitempty"`
 }
 
 type RateLimit struct {

@@ -53,23 +53,22 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
-	sessionPreparation      *sessionPreparation
-	tasks                   lazy[*tasksvc.Manager]
-	historyIngest           *conversationingest.Module
-	historyAnalytics        *analytics.HistoryAnalytics
-	historyOwner            string
-	historyCommits          *historyCommits
-	db                      *db.DB
-	subscriptionCredentials func(context.Context) (map[string]db.SubscriptionOAuth, error)
-	stateDB                 *state.DB
-	addr                    string
-	registry                *platforms.Registry
-	sessions                *sessionsvc.Service
-	auth                    *Auth
-	integrations            *forgeClients
-	startTime               time.Time
-	projects                projectsIndexState
-	autoApproveDefault      bool
+	sessionPreparation *sessionPreparation
+	tasks              lazy[*tasksvc.Manager]
+	historyIngest      *conversationingest.Module
+	historyAnalytics   *analytics.HistoryAnalytics
+	historyOwner       string
+	historyCommits     *historyCommits
+	db                 *db.DB
+	stateDB            *state.DB
+	addr               string
+	registry           *platforms.Registry
+	sessions           *sessionsvc.Service
+	auth               *Auth
+	integrations       *forgeClients
+	startTime          time.Time
+	projects           projectsIndexState
+	autoApproveDefault bool
 	// publicBaseURL is the externally reachable base URL used to build
 	// absolute share links (e.g. "https://ocman.example.com"). Empty
 	// means "derive from the incoming request's scheme + Host header",
@@ -224,9 +223,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		runtime: ocruntime.NewNativeRuntime(),
 	}
 	registry.SetSessionEventSink(s.sessionEventSink())
-	if database != nil && database.V2() {
-		s.subscriptionCredentials = database.SubscriptionCredentials
-	}
 	stateDB.SetEnabledPlatforms(s.localPlatformIDs)
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.

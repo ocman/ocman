@@ -330,12 +330,15 @@ flowchart LR
   Only rollout token accounting reads native files. Execution uses the user's
   own Codex login. Browsing uses retained history after ingestion, just like
   other platforms. See [Codex](../features/codex.md).
-- **Provider usage.** `/provider-usage` reads OpenCode's local OAuth credentials
-  server-side for normalized quota windows. V2 reads the configured OpenCode
-  database through `internal/db`, selecting the active credential or, for
-  legacy rows without a selection, the newest account. It never falls back to
-  stale `auth.json` credentials. V1 still reads `auth.json`. OpenCode remains
-  responsible for token refresh; ocman only reads credentials.
+- **Provider usage.** `/provider-usage` asks enabled platform adapters for their
+  account and quota windows. Codex reads its installed app-server; Claude reads
+  its own CLI account and observed rate-limit events. OpenCode V2 reads its own
+  Go allowances and Console budgets through the running service's
+  `/api/experimental/usage/limits`, including spent and remaining USD.
+  Unsupported versions omit the account. Unavailable apps report unavailable;
+  Ocman never reads provider credentials or falls back to another platform's login.
+  Each platform response is cached for one minute; removed platforms disappear
+  immediately. The browser receives usage, not credentials or workspace IDs.
   `/api/provider-usage` also reads
   the analytics-owned `provider_usage` ledger in state.db. The server injects
   a recorder into auto-approve so keyed requests to TypeSafe's hosted System
@@ -432,6 +435,23 @@ one adapter per platform under `r-<instanceId>:<platform>`, sharing one host
 adapter and connection. Older remotes without the list remain OpenCode-only.
 Duplicate instance ids are rejected for the whole remote, even when the
 advertised platforms differ.
+
+### Provider account usage
+
+```mermaid
+flowchart LR
+    UI[Provider usage] --> Analytics[Analytics module]
+    Analytics --> Registry[Enabled platform adapters]
+    Registry --> Codex[Installed Codex app-server]
+    Registry --> Claude[Claude CLI account and observed limits]
+    Registry --> OpenCode[OpenCode service usage limits]
+    Analytics --> Ledger[Local TypeSafe estimate ledger]
+```
+
+Account reads stay inside each platform integration. The analytics module only
+normalizes the returned quota windows and budgets; it has no provider tokens
+or direct provider HTTP clients. Local API estimates remain explicitly separate
+from account-reported allowances and budgets.
 
 ### Statev2 history ingestion
 
@@ -656,9 +676,9 @@ platforms. Startup logs identify this backfill. Failure rolls back the upgrade.
 connections and scoped TEMP views installed on every connection. Each response
 uses one selected reader for all dates, including today. Filters, pricing,
 pagination, subagent rollups and observed permission waits keep their current
-calculation logic. Permission decisions, UI usage, database-size history and
-provider/subscription quotas keep their original sources. Live streaming and
-execution remain platform-owned.
+calculation logic. Permission decisions, UI usage and database-size history keep
+their original sources. Provider/subscription quotas are live platform account
+reads, not history estimates. Live streaming and execution remain platform-owned.
 
 Storage-size sampling also stays behind the platform boundary:
 

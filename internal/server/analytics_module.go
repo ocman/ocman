@@ -19,11 +19,10 @@ func (s *Server) analyticsModule() *analytics.Module {
 				}
 				return s.registry.Platforms()
 			},
-			SubscriptionCredentials: s.subscriptionCredentials,
-			HistoryAnalytics:        func() *analytics.HistoryAnalytics { return s.historyAnalytics },
-			SessionIdentity:         s.historySessionPublicID,
-			Store:                   s.stateDB,
-			Version:                 func() string { return s.version },
+			HistoryAnalytics: func() *analytics.HistoryAnalytics { return s.historyAnalytics },
+			SessionIdentity:  s.historySessionPublicID,
+			Store:            s.stateDB,
+			Version:          func() string { return s.version },
 			TypeSafeConfigured: func(ctx context.Context) (bool, error) {
 				if s.stateDB == nil {
 					return false, nil

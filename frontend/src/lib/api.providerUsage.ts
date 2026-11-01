@@ -7,3 +7,13 @@ export interface ProviderSpend {
   periodStart: string;
   periodEnd: string;
 }
+
+export interface ProviderBudget {
+  id?: string;
+  name: string;
+  description?: string;
+  limitUSD: number;
+  spentUSD: number;
+  remainingUSD: number;
+  resetsAt?: string;
+}

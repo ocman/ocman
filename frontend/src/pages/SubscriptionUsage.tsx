@@ -7,10 +7,12 @@ import { InlineAlert } from '../components/InlineAlert';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
 import { ProviderSpend } from './ProviderSpend';
+import { ProviderBudget } from './ProviderBudget';
 import './SubscriptionUsage.css';
 
 const STATUS_LABELS: Record<string, string> = {
-  expired: 'OpenCode token expired',
+  expired: 'Platform authentication expired',
+  signed_out: 'Sign in using the platform app to view usage.',
   unauthorized: 'Authentication rejected',
   rate_limited: 'Temporarily rate limited',
   upstream_error: 'Usage unavailable',
@@ -24,9 +26,10 @@ function ProviderCard({ provider, compact = false }: { provider: SubscriptionPro
         {provider.plan && <span className="subscription-plan">{provider.plan.charAt(0).toUpperCase() + provider.plan.slice(1)}</span>}
       </header>
       {provider.status !== 'ok' && <p className="subscription-status">{STATUS_LABELS[provider.status] ?? 'Usage unavailable'}</p>}
-      {provider.status === 'ok' && provider.windows.length === 0 && !provider.spend && <p className="subscription-status">No quota windows reported.</p>}
+      {provider.status === 'ok' && provider.windows.length === 0 && !provider.spend && !provider.budgets?.length && <p className="subscription-status">No quota windows reported.</p>}
       {provider.spend && <ProviderSpend spend={provider.spend} />}
       <div className="subscription-windows">
+        {provider.budgets?.map((budget) => <ProviderBudget key={budget.id ?? budget.name} budget={budget} />)}
         {provider.windows.map((window) => (
           <div className="subscription-window" key={`${window.name}-${window.resetsAt ?? ''}`}>
             <div className="subscription-window-label">
@@ -63,7 +66,7 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
       <div className="subscription-page-heading">
         <div>
           {compact ? <h2>Provider usage</h2> : <h1>Provider usage</h1>}
-          <p>Subscription limits and API cost estimates for connected providers.</p>
+          <p>Subscription limits and budgets reported by enabled platform apps. Local API estimates are listed separately.</p>
         </div>
         <RefreshButton size="small" variant="default" onClick={() => void usage.refetch()} loading={usage.isFetching} />
       </div>
@@ -73,7 +76,7 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
         </InlineAlert>
       )}
       {usage.isLoading && !usage.data && <LoadingState>Loading provider usage</LoadingState>}
-      {usage.data?.providers.length === 0 && <EmptyState>No supported provider credentials found.</EmptyState>}
+      {usage.data?.providers.length === 0 && <EmptyState>No enabled platform apps report provider usage.</EmptyState>}
       {usage.data && usage.data.providers.length > 0 && (
         <div className="subscription-grid">
           {usage.data.providers.map((provider) => <ProviderCard provider={provider} compact={compact} key={provider.id} />)}

@@ -773,7 +773,7 @@ export interface Stats {
   totalCost: number;
 }
 
-export type SubscriptionProviderStatus = 'ok' | 'expired' | 'unauthorized' | 'rate_limited' | 'upstream_error';
+export type SubscriptionProviderStatus = 'ok' | 'expired' | 'signed_out' | 'unauthorized' | 'rate_limited' | 'upstream_error';
 
 export interface SubscriptionUsageWindow {
   name: string;
@@ -788,6 +788,7 @@ export interface SubscriptionProviderUsage {
   status: SubscriptionProviderStatus;
   windows: SubscriptionUsageWindow[];
   spend?: import('./api.providerUsage').ProviderSpend;
+  budgets?: import('./api.providerUsage').ProviderBudget[];
 }
 
 export interface SubscriptionUsageResponse {

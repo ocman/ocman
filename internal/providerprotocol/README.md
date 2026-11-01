@@ -67,6 +67,11 @@ prompts to the user.
 | GET /account | `Account` |
 | POST /hooks | `HookEvent`, external-session status and advisory ownership; optional `pid` and `managed` identify the originating process; 204 |
 
+`Account` optionally includes platform-reported `budgets` in USD alongside
+subscription type and rate limits. Missing budgets mean no budget information
+was reported, not an unlimited or zero balance. This additive field does not
+change protocol negotiation and never contains provider credentials.
+
 Optional Platform capabilities also support GET `/sessions/{id}/changes`, GET
 `/sessions/{id}/info`, and POST `/sessions/{id}/move` using the shared Platform
 DTOs. Mutations with no response return 204. Errors return JSON `Error`; 404 means

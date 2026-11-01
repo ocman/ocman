@@ -33,9 +33,8 @@ type Deps struct {
 	Platforms func() []platforms.Platform
 	// HistoryAnalytics is resolved per request so startup wiring can finish
 	// before the module's lazy dependencies are used.
-	HistoryAnalytics        func() *HistoryAnalytics
-	SubscriptionCredentials func(context.Context) (map[string]db.SubscriptionOAuth, error)
-	SessionIdentity         func(context.Context, string, string) (string, error)
+	HistoryAnalytics func() *HistoryAnalytics
+	SessionIdentity  func(context.Context, string, string) (string, error)
 	// Store is ocman's state database; may be nil.
 	Store *state.DB
 	// Version is the build version reported by /api/stats, read per request.
@@ -48,7 +47,6 @@ type Deps struct {
 type Module struct {
 	deps Deps
 
-	subscription      subscriptionUsageClient
 	subscriptionCache subscriptionUsageCache
 
 	// Test seams; nil means the database.
@@ -65,9 +63,7 @@ func NewModule(deps Deps) *Module {
 	if deps.Version == nil {
 		deps.Version = func() string { return "" }
 	}
-	client := newSubscriptionUsageClient()
-	client.credentials = deps.SubscriptionCredentials
-	return &Module{deps: deps, subscription: client}
+	return &Module{deps: deps}
 }
 
 func (m *Module) Name() string { return "analytics" }

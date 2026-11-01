@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,6 @@ func spendModule(t *testing.T) *Module {
 	t.Helper()
 	store := statetest.Open(t, Schema)
 	m := newTestModule(Deps{Store: store, TypeSafeConfigured: func(context.Context) (bool, error) { return true, nil }})
-	m.subscription.authPath = filepath.Join(t.TempDir(), "missing.json")
 	return m
 }
 
@@ -92,7 +90,7 @@ func TestProviderUsageRouteWithNoOAuth(t *testing.T) {
 	if err := m.RecordTypeSafeUsage(ctx, "jev-1.14.0", &input, nil); err != nil {
 		t.Fatal(err)
 	}
-	// The cached OAuth response must not cache or accumulate the local ledger.
+	// The cached platform response must not cache or accumulate the local ledger.
 	for range 2 {
 		rec := serve(routes(m), http.MethodGet, "/api/provider-usage", "")
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"estimatedUSD":0.042`) || strings.Count(rec.Body.String(), `"id":"typesafe"`) != 1 {

@@ -2,44 +2,28 @@ package analytics
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providerprotocol"
 )
-
-const (
-	openAIUsageURL    = "https://chatgpt.com/backend-api/wham/usage"
-	anthropicUsageURL = "https://api.anthropic.com/api/oauth/usage"
-)
-
-type subscriptionUsageClient struct {
-	http         *http.Client
-	authPath     string
-	openAIURL    string
-	anthropicURL string
-	credentials  func(context.Context) (map[string]db.SubscriptionOAuth, error)
-}
 
 type subscriptionUsageResponse struct {
 	Providers []subscriptionProviderUsage `json:"providers"`
 }
 
 type subscriptionProviderUsage struct {
-	ID      string                    `json:"id"`
-	Name    string                    `json:"name"`
-	Plan    string                    `json:"plan,omitempty"`
-	Status  string                    `json:"status"`
-	Windows []subscriptionUsageWindow `json:"windows"`
-	Spend   *providerSpend            `json:"spend,omitempty"`
+	ID      string                     `json:"id"`
+	Name    string                     `json:"name"`
+	Plan    string                     `json:"plan,omitempty"`
+	Status  string                     `json:"status"`
+	Windows []subscriptionUsageWindow  `json:"windows"`
+	Budgets []platforms.ProviderBudget `json:"budgets,omitempty"`
+	Spend   *providerSpend             `json:"spend,omitempty"`
 }
 
 type subscriptionUsageWindow struct {
@@ -48,282 +32,107 @@ type subscriptionUsageWindow struct {
 	ResetsAt    string  `json:"resetsAt,omitempty"`
 }
 
-type subscriptionOAuth = db.SubscriptionOAuth
-
-func newSubscriptionUsageClient() subscriptionUsageClient {
-	return subscriptionUsageClient{
-		http: &http.Client{
-			Timeout:       10 * time.Second,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-		authPath:     openCodeAuthPath(),
-		openAIURL:    openAIUsageURL,
-		anthropicURL: anthropicUsageURL,
-	}
-}
-
-func openCodeAuthPath() string {
-	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
-		return filepath.Join(dir, "opencode", "auth.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".local", "share", "opencode", "auth.json")
+type subscriptionAccountReader interface {
+	Account(context.Context) (*providerprotocol.Account, error)
 }
 
 const subscriptionUsageTTL = time.Minute
 
-// subscriptionUsageCache keeps the last upstream answer for a minute so a
-// reopened panel or a leaned-on Refresh button can't hammer the providers.
-// ponytail: the lock is held across the fetch, so concurrent requests wait
-// for one upstream call instead of starting their own.
+// Cache each platform independently, but always enumerate the current registry
+// so disabling a platform immediately removes its account from the response.
 type subscriptionUsageCache struct {
-	mu    sync.Mutex
-	at    time.Time
-	value subscriptionUsageResponse
+	mu      sync.Mutex
+	entries map[platforms.ID]subscriptionUsageEntry
 }
 
-func (c *subscriptionUsageCache) get(ctx context.Context, client subscriptionUsageClient) (subscriptionUsageResponse, error) {
+type subscriptionUsageEntry struct {
+	at    time.Time
+	value subscriptionProviderUsage
+}
+
+func (c *subscriptionUsageCache) get(ctx context.Context, adapters []platforms.Platform) subscriptionUsageResponse {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.at.IsZero() && time.Since(c.at) < subscriptionUsageTTL {
-		return c.value, nil
+	usage := subscriptionUsageResponse{Providers: []subscriptionProviderUsage{}}
+	if c.entries == nil {
+		c.entries = map[platforms.ID]subscriptionUsageEntry{}
 	}
-	usage, err := fetchSubscriptionUsage(ctx, client)
-	if err != nil {
-		return subscriptionUsageResponse{}, err
+	active := map[platforms.ID]bool{}
+	for _, p := range adapters {
+		reader, ok := p.(subscriptionAccountReader)
+		if !ok {
+			continue
+		}
+		active[p.ID()] = true
+		entry, cached := c.entries[p.ID()]
+		if !cached || time.Since(entry.at) >= subscriptionUsageTTL {
+			value, supported := fetchPlatformSubscription(ctx, p, reader)
+			if !supported {
+				delete(c.entries, p.ID())
+				continue
+			}
+			entry = subscriptionUsageEntry{at: time.Now(), value: value}
+			if ctx.Err() == nil {
+				c.entries[p.ID()] = entry
+			}
+		}
+		usage.Providers = append(usage.Providers, entry.value)
 	}
-	c.value, c.at = usage, time.Now()
-	return usage, nil
+	for id := range c.entries {
+		if !active[id] {
+			delete(c.entries, id)
+		}
+	}
+	return usage
 }
 
 func (m *Module) handleSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
-	usage, err := m.subscriptionCache.get(r.Context(), m.subscription)
-	if err == nil {
-		// Append local spend outside the OAuth cache so new calls appear on refresh.
-		err = m.appendTypeSafeUsage(r.Context(), &usage)
+	var adapters []platforms.Platform
+	if m.deps.Platforms != nil {
+		adapters = m.deps.Platforms()
 	}
-	if err != nil {
+	usage := m.subscriptionCache.get(r.Context(), adapters)
+	// Local TypeSafe estimates are separate from platform-reported account usage.
+	if err := m.appendTypeSafeUsage(r.Context(), &usage); err != nil {
 		httpx.ServerError(w, "failed to read provider usage", err)
 		return
 	}
 	httpx.WriteJSON(w, usage)
 }
 
-func fetchSubscriptionUsage(ctx context.Context, client subscriptionUsageClient) (subscriptionUsageResponse, error) {
-	auth, err := readSubscriptionCredentials(ctx, client)
-	if err != nil {
-		return subscriptionUsageResponse{}, err
-	}
-	providers := make([]subscriptionProviderUsage, 0, 2)
-	if usableOAuth(auth["openai"]) {
-		providers = append(providers, fetchOpenAIUsage(ctx, client, auth["openai"]))
-	} else if configuredOAuth(auth["openai"]) {
-		providers = append(providers, subscriptionProviderUsage{ID: "openai", Name: "OpenAI", Status: "expired", Windows: []subscriptionUsageWindow{}})
-	}
-	if usableOAuth(auth["anthropic"]) {
-		providers = append(providers, fetchAnthropicUsage(ctx, client, auth["anthropic"]))
-	} else if configuredOAuth(auth["anthropic"]) {
-		providers = append(providers, subscriptionProviderUsage{ID: "anthropic", Name: "Anthropic", Status: "expired", Windows: []subscriptionUsageWindow{}})
-	}
-	return subscriptionUsageResponse{Providers: providers}, nil
-}
-
-func readSubscriptionCredentials(ctx context.Context, client subscriptionUsageClient) (map[string]subscriptionOAuth, error) {
-	if client.credentials != nil {
-		return client.credentials(ctx)
-	}
-	var auth struct {
-		OpenAI    subscriptionOAuth `json:"openai"`
-		Anthropic subscriptionOAuth `json:"anthropic"`
-	}
-	file, err := os.Open(client.authPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+func fetchPlatformSubscription(ctx context.Context, p platforms.Platform, reader subscriptionAccountReader) (subscriptionProviderUsage, bool) {
+	out := subscriptionProviderUsage{ID: string(p.ID()), Name: p.DisplayName(), Status: "upstream_error", Windows: []subscriptionUsageWindow{}}
+	account, err := reader.Account(ctx)
+	switch {
+	case errors.Is(err, platforms.ErrUnsupported):
+		return out, false
+	case errors.Is(err, platforms.ErrNotFound):
+		out.Status = "signed_out"
+	case errors.Is(err, platforms.ErrPlatformUnauthenticated):
+		out.Status = "unauthorized"
+	case err == nil && account != nil:
+		out.Status, out.Plan, out.Budgets = "ok", account.SubscriptionType, account.Budgets
+		for _, limit := range account.RateLimits {
+			out.Windows = append(out.Windows, subscriptionUsageWindow{Name: subscriptionWindowName(limit.Name), UsedPercent: max(0, min(100, limit.Utilization*100)), ResetsAt: subscriptionReset(limit.ResetsAt)})
 		}
-		return nil, errors.New("cannot open OpenCode auth file")
 	}
-	defer file.Close()
-	if err := json.NewDecoder(io.LimitReader(file, 1<<20)).Decode(&auth); err != nil {
-		return nil, errors.New("cannot decode OpenCode auth file")
-	}
-
-	return map[string]subscriptionOAuth{"openai": auth.OpenAI, "anthropic": auth.Anthropic}, nil
+	return out, true
 }
 
-func configuredOAuth(auth subscriptionOAuth) bool {
-	return auth.Type == "oauth" && strings.TrimSpace(auth.Access) != ""
-}
-
-func usableOAuth(auth subscriptionOAuth) bool {
-	return configuredOAuth(auth) && (auth.Expires <= 0 || auth.Expires > time.Now().UnixMilli())
-}
-
-type openAIWindow struct {
-	UsedPercent       float64 `json:"used_percent"`
-	LimitWindowSecond int64   `json:"limit_window_seconds"`
-	ResetAt           int64   `json:"reset_at"`
-}
-
-type openAIRateLimit struct {
-	Primary   *openAIWindow `json:"primary_window"`
-	Secondary *openAIWindow `json:"secondary_window"`
-}
-
-func fetchOpenAIUsage(ctx context.Context, client subscriptionUsageClient, auth subscriptionOAuth) subscriptionProviderUsage {
-	result := subscriptionProviderUsage{ID: "openai", Name: "OpenAI", Status: "upstream_error", Windows: []subscriptionUsageWindow{}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.openAIURL, nil)
-	if err != nil {
-		return result
-	}
-	req.Header.Set("Authorization", "Bearer "+auth.Access)
-	req.Header.Set("Accept", "application/json")
-	if auth.AccountID != "" {
-		req.Header.Set("ChatGPT-Account-Id", auth.AccountID)
-	}
-
-	resp, err := client.http.Do(req)
-	if err != nil {
-		return result
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		result.Status = subscriptionHTTPStatus(resp.StatusCode)
-		return result
-	}
-	var body struct {
-		PlanType             string          `json:"plan_type"`
-		RateLimit            openAIRateLimit `json:"rate_limit"`
-		AdditionalRateLimits []struct {
-			Name      string          `json:"limit_name"`
-			RateLimit openAIRateLimit `json:"rate_limit"`
-		} `json:"additional_rate_limits"`
-	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body) != nil {
-		return result
-	}
-	result.Status = "ok"
-	result.Plan = body.PlanType
-	result.Windows = appendOpenAIWindows(result.Windows, "", body.RateLimit)
-	for _, additional := range body.AdditionalRateLimits {
-		result.Windows = appendOpenAIWindows(result.Windows, additional.Name, additional.RateLimit)
-	}
-	return result
-}
-
-func appendOpenAIWindows(windows []subscriptionUsageWindow, prefix string, limits openAIRateLimit) []subscriptionUsageWindow {
-	for _, window := range []*openAIWindow{limits.Primary, limits.Secondary} {
-		if window == nil {
-			continue
-		}
-		name := usageWindowName(window.LimitWindowSecond)
-		if prefix != "" {
-			name = prefix + " · " + name
-		}
-		windows = append(windows, subscriptionUsageWindow{Name: name, UsedPercent: clampPercent(window.UsedPercent), ResetsAt: unixTime(window.ResetAt)})
-	}
-	return windows
-}
-
-func usageWindowName(seconds int64) string {
-	switch seconds {
-	case 5 * 60 * 60:
+func subscriptionWindowName(name string) string {
+	switch name {
+	case "five_hour":
 		return "5 hours"
-	case 7 * 24 * 60 * 60:
+	case "weekly":
 		return "7 days"
-	case 2628000:
-		return "Monthly"
 	default:
-		return "Usage window"
+		return name
 	}
 }
 
-func fetchAnthropicUsage(ctx context.Context, client subscriptionUsageClient, auth subscriptionOAuth) subscriptionProviderUsage {
-	result := subscriptionProviderUsage{ID: "anthropic", Name: "Anthropic", Status: "upstream_error", Windows: []subscriptionUsageWindow{}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.anthropicURL, nil)
-	if err != nil {
-		return result
-	}
-	req.Header.Set("Authorization", "Bearer "+auth.Access)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
-	resp, err := client.http.Do(req)
-	if err != nil {
-		return result
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		result.Status = subscriptionHTTPStatus(resp.StatusCode)
-		return result
-	}
-	type window struct {
-		Utilization float64 `json:"utilization"`
-		ResetsAt    string  `json:"resets_at"`
-	}
-	var body struct {
-		FiveHour          *window `json:"five_hour"`
-		SevenDay          *window `json:"seven_day"`
-		SevenDayOAuthApps *window `json:"seven_day_oauth_apps"`
-		SevenDayOpus      *window `json:"seven_day_opus"`
-		SevenDaySonnet    *window `json:"seven_day_sonnet"`
-		Limits            []struct {
-			Kind     string  `json:"kind"`
-			Percent  float64 `json:"percent"`
-			ResetsAt string  `json:"resets_at"`
-			Scope    struct {
-				Model *struct {
-					DisplayName string `json:"display_name"`
-				} `json:"model"`
-			} `json:"scope"`
-		} `json:"limits"`
-	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body) != nil {
-		return result
-	}
-	result.Status = "ok"
-	for _, item := range []struct {
-		name   string
-		window *window
-	}{
-		{"5 hours", body.FiveHour},
-		{"7 days", body.SevenDay},
-		{"7 days · Sonnet only", body.SevenDaySonnet},
-		{"7 days · OAuth apps", body.SevenDayOAuthApps},
-		{"7 days · Opus", body.SevenDayOpus},
-	} {
-		if item.window != nil {
-			result.Windows = append(result.Windows, subscriptionUsageWindow{Name: item.name, UsedPercent: clampPercent(item.window.Utilization), ResetsAt: item.window.ResetsAt})
-		}
-	}
-	for _, limit := range body.Limits {
-		if limit.Kind == "weekly_scoped" && limit.Scope.Model != nil && limit.Scope.Model.DisplayName != "" {
-			result.Windows = append(result.Windows, subscriptionUsageWindow{Name: "7 days · " + limit.Scope.Model.DisplayName, UsedPercent: clampPercent(limit.Percent), ResetsAt: limit.ResetsAt})
-		}
-	}
-	return result
-}
-
-func subscriptionHTTPStatus(status int) string {
-	switch status {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return "unauthorized"
-	case http.StatusTooManyRequests:
-		return "rate_limited"
-	default:
-		return "upstream_error"
-	}
-}
-
-func clampPercent(value float64) float64 {
-	return max(0, min(100, value))
-}
-
-func unixTime(value int64) string {
-	if value <= 0 {
+func subscriptionReset(millis int64) string {
+	if millis <= 0 {
 		return ""
 	}
-	return time.Unix(value, 0).UTC().Format(time.RFC3339)
+	return time.UnixMilli(millis).UTC().Format(time.RFC3339)
 }

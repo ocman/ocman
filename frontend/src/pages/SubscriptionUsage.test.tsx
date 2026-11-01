@@ -9,6 +9,20 @@ vi.mock('../lib/queries', () => ({ useSubscriptionUsage: vi.fn() }));
 describe('SubscriptionUsage', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  it('shows remaining platform-reported budgets without a token estimate', () => {
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      data: { providers: [{ id: 'opencode', name: 'OpenCode', status: 'ok', windows: [], budgets: [{
+        name: 'Monthly budget', limitUSD: 100, spentUSD: 25, remainingUSD: 75, resetsAt: '2026-12-01T00:00:00Z',
+      }] }] },
+    } as never);
+    render(<SubscriptionUsage />);
+    expect(screen.getByText('$75.00 remaining')).toBeInTheDocument();
+    expect(screen.getByText('$25.00 of $100.00 used')).toBeInTheDocument();
+    expect(screen.queryByText('No quota windows reported.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Estimated cost/)).not.toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Monthly budget budget usage' })).toHaveValue(25);
+  });
+
   it('shows provider usage with a scoped seven-day cost estimate', () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({
       data: { providers: [{ id: 'typesafe', name: 'TypeSafe', status: 'ok', windows: [], spend: {
@@ -119,6 +133,12 @@ describe('SubscriptionUsage', () => {
     expect(screen.queryByText('Loading provider usage')).not.toBeInTheDocument();
   });
 
+  it('asks signed-out users to sign in through their platform app', () => {
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [{ id: 'codex', name: 'Codex', status: 'signed_out', windows: [] }] } } as never);
+    render(<SubscriptionUsage />);
+    expect(screen.getByText('Sign in using the platform app to view usage.')).toBeInTheDocument();
+  });
+
   it('shows loading and empty states', () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({ isLoading: true } as never);
     const { rerender } = render(<SubscriptionUsage />);
@@ -127,7 +147,7 @@ describe('SubscriptionUsage', () => {
 
     vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
     rerender(<SubscriptionUsage />);
-    expect(screen.getByText('No supported provider credentials found.')).toBeInTheDocument();
+    expect(screen.getByText('No enabled platform apps report provider usage.')).toBeInTheDocument();
     expect(screen.queryByText('Loading provider usage')).not.toBeInTheDocument();
   });
 
