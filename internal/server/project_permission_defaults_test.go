@@ -10,6 +10,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/projectsmod"
 )
 
 func TestStartProjectPermissionDefault(t *testing.T) {
@@ -24,7 +25,7 @@ func TestStartProjectPermissionDefault(t *testing.T) {
 				srv.hostRouter = hostsvc.NewRouter(nil)
 				srv.hostRouter.RegisterRemote(owner, remoteOwner)
 			}
-			if err := srv.stateDB.SetSetting(t.Context(), projectDefaultsKey("/repo", owner), `{"permissionMode":"auto-edit"}`); err != nil {
+			if err := srv.stateDB.SetSetting(t.Context(), projectsmod.DefaultsKey("/repo", owner), `{"permissionMode":"auto-edit"}`); err != nil {
 				t.Fatal(err)
 			}
 			var rules []platforms.PermissionRule
@@ -53,30 +54,6 @@ func TestStartProjectPermissionDefault(t *testing.T) {
 	}
 }
 
-func TestProjectPermissionPresets(t *testing.T) {
-	for _, tc := range []struct {
-		mode string
-		want []platforms.PermissionRule
-	}{
-		{"", nil},
-		{"default", nil},
-		{"plan", []platforms.PermissionRule{{Permission: "edit", Pattern: "*", Action: "deny"}, {Permission: "bash", Pattern: "*", Action: "deny"}}},
-		{"auto-edit", []platforms.PermissionRule{{Permission: "edit", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "ask"}}},
-		{"yolo", []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}},
-	} {
-		t.Run(tc.mode, func(t *testing.T) {
-			d := projectDefaults{PermissionMode: tc.mode}
-			got, err := d.permissionRules()
-			if err != nil || !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("rules = %#v, err = %v", got, err)
-			}
-			if err := d.validate(); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-}
-
 func TestStartProjectPermissionUnreadableDefaults(t *testing.T) {
 	for _, raw := range []string{`{broken`, `{"permissionMode":"unknown"}`} {
 		srv, reg := startTestServer(t, nil)
@@ -84,7 +61,7 @@ func TestStartProjectPermissionUnreadableDefaults(t *testing.T) {
 			t.Fatal("created a session with unreadable permissions")
 			return nil, nil
 		}})
-		if err := srv.stateDB.SetSetting(t.Context(), projectDefaultsKey("/repo", "local"), raw); err != nil {
+		if err := srv.stateDB.SetSetting(t.Context(), projectsmod.DefaultsKey("/repo", "local"), raw); err != nil {
 			t.Fatal(err)
 		}
 		w := httptest.NewRecorder()

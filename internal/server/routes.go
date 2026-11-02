@@ -23,8 +23,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// localhost guard, which also validates browser origin.
 	auth := s.requireAuth
 	setting := func(pattern string, h http.HandlerFunc) { api.HandleFunc(pattern, s.settingsHandler(auth(h))) }
-	api.HandleFunc("GET /api/projects", auth(s.handleProjects))
-	api.HandleFunc("POST /api/projects/resolve", auth(s.handleResolveProjectIdentities))
 	api.HandleFunc("GET /api/system/stats", auth(s.handleSystemStats))
 	api.HandleFunc("GET /api/session-identity", auth(s.handleSessionIdentity))
 	api.HandleFunc("GET /api/sessions", auth(s.handleSessions))
@@ -43,12 +41,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 
 	// PR/Issue sidebar endpoints (upstreams, lists, checks, handle) and the
 	// prompt templates belong to the project forge module.
-	// Project archive state (own state.db; no launch), same auth posture
-	// as the per-session archive endpoint.
-	api.HandleFunc("POST /api/project/archive", auth(s.handleProjectArchive))
-	api.HandleFunc("POST /api/project/merge", auth(s.handleProjectMerge))
-	// Per-project model list (own state.db setting row), same posture.
-	api.HandleFunc("/api/project/settings", s.settingsHandler(auth(s.handleProjectSettings)))
 	s.mountModules(api)
 
 	// Registration of ocman in OpenCode's global config. The install

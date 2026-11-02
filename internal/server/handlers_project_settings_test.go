@@ -19,7 +19,7 @@ func TestHandleProjectSettings(t *testing.T) {
 			target += "?dir=" + url.QueryEscape(dir)
 		}
 		rr := httptest.NewRecorder()
-		srv.handleProjectSettings(rr, httptest.NewRequest(method, target, strings.NewReader(body)))
+		serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(method, target, strings.NewReader(body)))
 		return rr
 	}
 	expect := func(rr *httptest.ResponseRecorder, code int, body string) {

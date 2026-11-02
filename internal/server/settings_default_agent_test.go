@@ -16,7 +16,7 @@ import (
 func TestProjectSettingsDefaultAgent(t *testing.T) {
 	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	rec := httptest.NewRecorder()
-	srv.getProjectSettings(rec, httptest.NewRequest(http.MethodGet, "/api/project/settings?dir=/repo", nil))
+	serveModule(srv, srv.projectsModule(), rec, httptest.NewRequest(http.MethodGet, "/api/project/settings?dir=/repo", nil))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"defaultAgent":"build"`) {
 		t.Fatalf("default agent: %d %s", rec.Code, rec.Body)
 	}
@@ -92,7 +92,7 @@ func TestDefaultAgentSetting(t *testing.T) {
 		}
 	}
 	rec := httptest.NewRecorder()
-	srv.getProjectSettings(rec, httptest.NewRequest(http.MethodGet, "/api/project/settings?dir=/other", nil))
+	serveModule(srv, srv.projectsModule(), rec, httptest.NewRequest(http.MethodGet, "/api/project/settings?dir=/other", nil))
 	if !strings.Contains(rec.Body.String(), `"defaultAgent":"custom-agent"`) {
 		t.Fatal(rec.Body)
 	}

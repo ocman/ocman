@@ -31,7 +31,9 @@ Core retains manager construction/start/stop, the gRPC listener, registry, Host
 router and owner resolution. Stop the manager after `Server.Start` returns and
 before state.db closes.
 
-Manual project merging is hub-local display bookkeeping, not a session move.
+`internal/projectsmod` owns the project list, identity resolution, archive,
+merge and project settings routes. Manual project merging is hub-local display
+bookkeeping, not a session move.
 `projects.merges` stores owner-qualified checkout mappings. Resolve them against
 current upstream groups and preserve merges across Git remote changes. Upstream
 membership plus saved merges forms connected components; crossed groups cannot
@@ -47,7 +49,7 @@ Never change session directories or owners to merge their display groups.
 `internal/projectforge` owns all project forge endpoints. Every request requires
 `remoteId`, with `local` for the hub. Detect repositories and fetch cross-fork
 refs on the owner Host. Forge metadata uses the hub's clients; launches use the
-owner's compound platform. Keep archive/quick settings in server code and
+owner's compound platform. Keep archive/quick settings in `projectsmod` and
 session start in `sessionlifecycle`.
 
 - Keep the pane available with an empty state if no supported remote exists.

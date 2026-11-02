@@ -212,7 +212,7 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 		t.Fatalf("local source: candidates %+v; want local %s and machine %s", c, localRepo, remoteRepo)
 	}
 	rr := httptest.NewRecorder()
-	srv.handleProjects(rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
 	var projects []db.ProjectStats
 	if err := json.Unmarshal(rr.Body.Bytes(), &projects); err != nil {
 		t.Fatal(err)

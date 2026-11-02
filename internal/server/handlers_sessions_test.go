@@ -109,7 +109,7 @@ func TestHandleSessions_EmptyRegistry(t *testing.T) {
 func TestHandleProjects_NilDB(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 	rr := httptest.NewRecorder()
-	srv.handleProjects(rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
 
 	if rr.Code != 200 {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)

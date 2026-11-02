@@ -368,7 +368,7 @@ flowchart TD
     Server --> AutoApprove[internal/autoapprove<br/>session rules, safe-command cache + Judge seam]
     Browser -->|/permissions: session policy + request history| AutoApprove
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, Finalize, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, favorites, tmuxmod, filesystem, projectforge, previews, analytics, termmod, gitmod, remotesmod, platformsettings]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, Finalize, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, favorites, projectsmod, tmuxmod, filesystem, projectforge, previews, analytics, termmod, gitmod, remotesmod, platformsettings]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Modules -->|"queuemod: bounded preparation, then admitted delivery"| Sessions
@@ -574,8 +574,17 @@ flowchart TD
   forge with its own clients (`ResolveForge`, `KnowsForgejo`, read at call
   time). The module keeps the bounded, collapsed upstream-detection cache and
   launches through the shared session path on the owner's compound platform.
-  Prompt templates stay hub-wide settings, not owner-scoped. Project archive,
-  quick settings stay in the server. Session start belongs to `internal/sessionlifecycle`.
+  Prompt templates stay hub-wide settings, not owner-scoped. Project archive
+  and quick settings belong to `internal/projectsmod`. Session start belongs to
+  `internal/sessionlifecycle`.
+- **Projects** (`internal/projectsmod`). Owns `GET /api/projects`,
+  `POST /api/projects/resolve`, `POST /api/project/{archive,merge}` and
+  `/api/project/settings`. It lists the local host's projects plus the remote
+  inventory, applies archive state, worktree folding, upstream keys and saved
+  merges, and builds the final project catalog. Owner resolution, the remote
+  inventory, broadcasts, the default agent and the queue's project-model cache
+  are injected from core. The projects index loop stays in the server; rows
+  stay in `internal/state`.
 - **Session lifecycle** (`internal/sessionlifecycle`). Owns prepare/start,
   progress broadcasts, first delivery, attachment uploads, direct mutations,
   reload and confirmed restart. Preparation reads catalogs without launching;

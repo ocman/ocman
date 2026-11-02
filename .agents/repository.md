@@ -58,6 +58,7 @@ Read [sessions.md](sessions.md) and [integrations.md](integrations.md).
 | Path | Responsibility |
 | --- | --- |
 | `internal/projectforge`, `internal/forge`, `internal/sourcecontrol` | Owner-routed PR/issue operations, GitHub/Forgejo clients, and hub forge credential discovery, overrides and setup routes. |
+| `internal/projectsmod` | Project list, final identities, archive, merge and per-project settings routes. The projects index loop stays in server. |
 | `internal/factorymod`, `internal/factory` | Factory routes/tools/session launchers and domain dispatch. `factory_control` records proposals only; user confirmation executes them. Tables stay in state. State tests importing factory use `package state_test`. |
 | `sdk/protocol`, `internal/pluginsmod`, `sdk/plugin`, `examples/ocman-plugin-*`, `sdk/examples/ocman-plugin-fixture` | Protocol, supervision, owner management, SDK, examples, durable conversation/session delivery, launch catalogs and permission profiles. Read [plugins.md](plugins.md) for table ownership. |
 | `internal/routines`, `internal/webhook` | Scheduling/session settlement and webhook capture/subscriptions. Remote receives the narrow webhook interface, not a module import. |

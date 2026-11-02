@@ -11,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/projectsmod"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -301,7 +302,7 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 		if len(archivedProjects) > 0 {
 			// Per owning host: an archived /repo on another machine says
 			// nothing about this session's project.
-			key := projectArchiveKey(sessions[i].RemoteID, sessions[i].Directory)
+			key := projectsmod.ArchiveKey(sessions[i].RemoteID, sessions[i].Directory)
 			if projectArchivedAt, ok := archivedProjects[key]; ok && sessions[i].TimeUpdated <= projectArchivedAt {
 				sessions[i].Archived = true
 			}
@@ -363,7 +364,7 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 				sessions[i].Archived = true
 			}
 		}
-		projectKey := projectArchiveKey(sessions[i].RemoteID, sessions[i].Directory)
+		projectKey := projectsmod.ArchiveKey(sessions[i].RemoteID, sessions[i].Directory)
 		if archivedAt, ok := archivedProjects[projectKey]; ok && sessions[i].TimeUpdated <= archivedAt {
 			sessions[i].Archived = true
 		}

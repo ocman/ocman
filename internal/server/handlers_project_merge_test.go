@@ -22,7 +22,7 @@ func TestProjectMergeKeepsCheckoutsAndIncludesRemoteMembers(t *testing.T) {
 	merge := func(body string, want int) {
 		t.Helper()
 		rr := httptest.NewRecorder()
-		srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
+		serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
 		if rr.Code != want {
 			t.Fatalf("got %d: %s", rr.Code, rr.Body.String())
 		}
@@ -59,7 +59,7 @@ func TestProjectMergeSurvivesUpstreamChanges(t *testing.T) {
 			target := db.ProjectStats{Directory: "/target", SessionCount: 1}
 			srv.remoteProjectsFn = func() []db.ProjectStats { return []db.ProjectStats{source, target} }
 			rr := httptest.NewRecorder()
-			srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(`{"source":{"directory":"/source"},"target":{"directory":"/target"}}`)))
+			serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(`{"source":{"directory":"/source"},"target":{"directory":"/target"}}`)))
 			if rr.Code != http.StatusOK {
 				t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
 			}
@@ -84,7 +84,7 @@ func TestProjectMergeSurvivesMissingTargetAndMergesAgain(t *testing.T) {
 	merge := func(body string) {
 		t.Helper()
 		rr := httptest.NewRecorder()
-		srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
+		serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
 		if rr.Code != http.StatusOK {
 			t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
 		}
@@ -111,7 +111,7 @@ func TestProjectMergeCombinesCrossedUpstreamGroups(t *testing.T) {
 		`{"source":{"directory":"/c"},"target":{"directory":"/d"}}`,
 	} {
 		rr := httptest.NewRecorder()
-		srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
+		serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(body)))
 		if rr.Code != http.StatusOK {
 			t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
 		}

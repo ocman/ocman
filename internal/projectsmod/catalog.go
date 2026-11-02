@@ -1,4 +1,4 @@
-package server
+package projectsmod
 
 import (
 	"net/http"
@@ -29,7 +29,7 @@ type projectCatalog struct {
 	checkouts map[string]projectIdentity
 }
 
-func finalProjectCatalog(checkouts []db.ProjectStats) projectCatalog {
+func finalCatalog(checkouts []db.ProjectStats) projectCatalog {
 	representatives := make(map[string]db.ProjectStats)
 	byCheckout := make(map[string]db.ProjectStats, len(checkouts))
 	for _, p := range checkouts {
@@ -85,7 +85,7 @@ func finalProjectCatalog(checkouts []db.ProjectStats) projectCatalog {
 }
 
 func (c projectCatalog) resolve(checkout projectCheckout) projectIdentity {
-	root := projectRootForDirectory(checkout.Directory)
+	root := state.ProjectRootForDirectory(checkout.Directory)
 	key := state.ProjectMergeKey(checkout.RemoteID, root)
 	if project, ok := c.checkouts[key]; ok {
 		return project
@@ -93,7 +93,7 @@ func (c projectCatalog) resolve(checkout projectCheckout) projectIdentity {
 	return projectIdentity{Key: key, Directory: root, RemoteID: checkout.RemoteID}
 }
 
-func (s *Server) handleResolveProjectIdentities(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleResolveIdentities(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Checkouts []projectCheckout `json:"checkouts"`
 	}
@@ -106,12 +106,12 @@ func (s *Server) handleResolveProjectIdentities(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-	projects, err := s.listProjects(r.Context())
+	projects, err := m.List(r.Context())
 	if err != nil {
 		httpx.ServerError(w, "resolving projects", err)
 		return
 	}
-	catalog := finalProjectCatalog(projects)
+	catalog := finalCatalog(projects)
 	identities := make([]projectIdentity, 0, len(req.Checkouts))
 	for _, checkout := range req.Checkouts {
 		identities = append(identities, catalog.resolve(checkout))

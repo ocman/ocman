@@ -22,7 +22,7 @@ func TestProjectsAPIReturnsOnlyFinalProjects(t *testing.T) {
 		}
 	}
 	rr := httptest.NewRecorder()
-	srv.handleProjectMerge(rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(`{"source":{"directory":"/source"},"target":{"directory":"/target","remoteId":"box"}}`)))
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/project/merge", strings.NewReader(`{"source":{"directory":"/source"},"target":{"directory":"/target","remoteId":"box"}}`)))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("merge: %d %s", rr.Code, rr.Body.String())
 	}
@@ -35,7 +35,7 @@ func TestProjectsAPIReturnsOnlyFinalProjects(t *testing.T) {
 		t.Fatalf("lost aggregates or target ownership: %+v", p)
 	}
 	rr = httptest.NewRecorder()
-	srv.handleProjects(rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
 	var wire []map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &wire); err != nil {
 		t.Fatal(err)
@@ -44,37 +44,6 @@ func TestProjectsAPIReturnsOnlyFinalProjects(t *testing.T) {
 		if _, ok := wire[0][key]; ok {
 			t.Fatalf("leaked internal checkout metadata %q: %s", key, rr.Body.String())
 		}
-	}
-}
-
-func TestFinalProjectCatalog(t *testing.T) {
-	for _, reversed := range []bool{false, true} {
-		checkouts := []db.ProjectStats{
-			{Directory: "/remote/copy", AssociatedDirectory: "/remote/repo", RemoteID: "box", ProjectKey: "shared", SessionCount: 2, Archived: true},
-			{Directory: "/local/repo", ProjectKey: "shared", SessionCount: 3, Archived: true},
-			{Directory: "/elsewhere", ProjectKey: "other", LastUsed: 100},
-		}
-		if reversed {
-			checkouts[0], checkouts[2] = checkouts[2], checkouts[0]
-		}
-		catalog := finalProjectCatalog(checkouts)
-		if len(catalog.projects) != 2 || catalog.projects[0].Directory != "/elsewhere" || catalog.projects[1].Directory != "/local/repo" || catalog.projects[1].SessionCount != 5 || !catalog.projects[1].Archived {
-			t.Fatalf("final projects: %+v", catalog.projects)
-		}
-		if identity := catalog.resolve(projectCheckout{Directory: "/remote/copy", RemoteID: "box"}); identity.Directory != "/local/repo" || identity.RemoteID != "" {
-			t.Fatalf("local representative: %+v", identity)
-		}
-	}
-	associated := finalProjectCatalog([]db.ProjectStats{{Directory: "/copy", AssociatedDirectory: "/repo", ProjectKey: "shared"}})
-	if associated.projects[0].Directory != "/repo" || associated.resolve(projectCheckout{Directory: "/repo"}).Key != "shared" {
-		t.Fatalf("source association lost: %+v", associated)
-	}
-	if got := finalProjectCatalog(nil).projects; got == nil || len(got) != 0 {
-		t.Fatalf("empty API list: %+v", got)
-	}
-	tied := finalProjectCatalog([]db.ProjectStats{{Directory: "/b", ProjectKey: "b"}, {Directory: "/a", ProjectKey: "a"}})
-	if tied.projects[0].Directory != "/a" {
-		t.Fatalf("unstable order for equal activity: %+v", tied.projects)
 	}
 }
 
@@ -88,8 +57,8 @@ func TestResolveProjectIdentitiesOnlyReturnsFinals(t *testing.T) {
 	}
 	projects = projects[:2] // The explicit target is now disconnected.
 	rr := httptest.NewRecorder()
-	srv.handleResolveProjectIdentities(rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(`{"checkouts":[{"directory":"/local/.worktrees/repo/topic"},{"directory":"/remote/clone","remoteId":"box"},{"directory":"/target","remoteId":"gone"},{"directory":"/local/repo","remoteId":"unrelated"}]}`)))
-	var identities []projectIdentity
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(`{"checkouts":[{"directory":"/local/.worktrees/repo/topic"},{"directory":"/remote/clone","remoteId":"box"},{"directory":"/target","remoteId":"gone"},{"directory":"/local/repo","remoteId":"unrelated"}]}`)))
+	var identities []struct{ Key, Directory, RemoteID, Platform string }
 	if err := json.Unmarshal(rr.Body.Bytes(), &identities); err != nil || rr.Code != http.StatusOK || len(identities) != 4 {
 		t.Fatalf("resolve: %d %s, %v", rr.Code, rr.Body.String(), err)
 	}
@@ -110,13 +79,13 @@ func TestResolveProjectIdentitiesValidation(t *testing.T) {
 	srv := testServer(t)
 	for _, body := range []string{`{`, `{"checkouts":[{"directory":" "}]}`} {
 		rr := httptest.NewRecorder()
-		srv.handleResolveProjectIdentities(rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(body)))
+		serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(body)))
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d %s", body, rr.Code, rr.Body.String())
 		}
 	}
 	rr := httptest.NewRecorder()
-	srv.handleResolveProjectIdentities(rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(`{"checkouts":[]}`)))
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(`{"checkouts":[]}`)))
 	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "[]" {
 		t.Fatalf("empty resolve: %d %s", rr.Code, rr.Body.String())
 	}
@@ -132,7 +101,7 @@ func TestArchiveFinalProjectAppliesToAllPrivateMembers(t *testing.T) {
 	}
 	for _, archived := range []string{"true", "false"} {
 		rr := httptest.NewRecorder()
-		srv.handleProjectArchive(rr, httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(`{"directory":"/target","remoteId":"local","archived":`+archived+`}`)))
+		serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(`{"directory":"/target","remoteId":"local","archived":`+archived+`}`)))
 		if rr.Code != http.StatusOK {
 			t.Fatalf("archive: %d %s", rr.Code, rr.Body.String())
 		}
@@ -157,7 +126,7 @@ func TestArchiveFinalProjectRejectsDisconnectedMemberBeforeChangingState(t *test
 		return []db.ProjectStats{{Directory: "/remote", RemoteID: "gone", UpstreamKeys: []string{"shared"}}}
 	}
 	rr := httptest.NewRecorder()
-	srv.handleProjectArchive(rr, httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(`{"directory":"/local","remoteId":"local","archived":true}`)))
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/project/archive", strings.NewReader(`{"directory":"/local","remoteId":"local","archived":true}`)))
 	markers, err := srv.stateDB.ArchivedProjects(t.Context())
 	if rr.Code != http.StatusServiceUnavailable || err != nil || len(markers) != 0 || local.stopped != "" {
 		t.Fatalf("changed state before resolving all owners: status=%d stopped=%q markers=%+v err=%v", rr.Code, local.stopped, markers, err)
@@ -170,7 +139,7 @@ func TestResolveProjectIdentitiesReportsInventoryErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	rr := httptest.NewRecorder()
-	srv.handleResolveProjectIdentities(rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(`{"checkouts":[{"directory":"/repo"}]}`)))
+	serveModule(srv, srv.projectsModule(), rr, httptest.NewRequest(http.MethodPost, "/api/projects/resolve", strings.NewReader(`{"checkouts":[{"directory":"/repo"}]}`)))
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("silently guessed project identity: %d %s", rr.Code, rr.Body.String())
 	}

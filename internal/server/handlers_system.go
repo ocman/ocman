@@ -1,20 +1,15 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
-	"github.com/ocman/ocman/internal/remote"
-	"github.com/ocman/ocman/internal/state"
 )
 
 // WithLogPath records the resolved log file path ("" = stderr only) so
@@ -32,148 +27,6 @@ func (s *Server) WithVersion(v string) *Server {
 
 // LogPath returns the resolved log file path, "" when logging to stderr only.
 func (s *Server) LogPath() string { return s.logPath }
-
-func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.listProjects(r.Context())
-	if err != nil {
-		httpx.ServerError(w, "fetching projects", err)
-		return
-	}
-	httpx.WriteJSON(w, finalProjectCatalog(projects).projects)
-}
-
-func (s *Server) listProjects(ctx context.Context) ([]db.ProjectStats, error) {
-	// Local projects flow through the host seam and owner-local statev2 history.
-	projects, err := s.router().Local().Projects(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// Append remote projects from the inventory cache, tagged with their
-	// owning remote so the frontend can label them and target the right
-	// machine when creating a session.
-	if s.remoteProjectsFn != nil {
-		projects = append(projects, s.remoteProjectsFn()...)
-	} else if s.remotes != nil {
-		projects = append(projects, s.remotes.RemoteProjects()...)
-	}
-	// Apply archive state after remotes are appended so remote projects
-	// honour the archived_project markers too (they otherwise re-appear on
-	// every refresh). Newer activity still auto-unarchives — most recent
-	// timestamp wins.
-	if err := s.applyProjectArchiveState(ctx, projects); err != nil {
-		return nil, err
-	}
-	// Fold worktree directories into their repo root and merge duplicate
-	// rows so each project appears once, then sort by last activity.
-	projects = foldWorktreeProjects(projects)
-	remote.AssignProjectKeys(projects)
-	if err := s.applyProjectMerges(ctx, projects); err != nil {
-		return nil, err
-	}
-	sort.SliceStable(projects, func(i, j int) bool {
-		return projects[i].LastUsed > projects[j].LastUsed
-	})
-	if projects == nil {
-		projects = []db.ProjectStats{} // [] not null for the frontend
-	}
-	return projects, nil
-}
-
-// foldWorktreeProjects collapses <repo>/.worktrees/<repo>/<slug> directories
-// back to the repo root and merges rows that fold to the same project,
-// summing aggregate stats and keeping the newest activity. Rows are keyed
-// per owning host (RemoteID) so identical paths on different machines stay
-// separate. The folded root replaces the directory of the merged entry.
-func foldWorktreeProjects(projects []db.ProjectStats) []db.ProjectStats {
-	type key struct{ remoteID, root string }
-	merged := make(map[key]*db.ProjectStats)
-	order := make([]key, 0, len(projects))
-	for _, p := range projects {
-		k := key{p.RemoteID, projectRootForDirectory(p.Directory)}
-		agg, ok := merged[k]
-		if !ok {
-			cp := p
-			cp.Directory = k.root
-			if cp.AssociatedDirectory != "" {
-				cp.AssociatedDirectory = projectRootForDirectory(cp.AssociatedDirectory)
-			}
-			merged[k] = &cp
-			order = append(order, k)
-			continue
-		}
-		agg.SessionCount += p.SessionCount
-		agg.UpstreamKeys = append(agg.UpstreamKeys, p.UpstreamKeys...)
-		agg.MessageCount += p.MessageCount
-		agg.TotalTokensIn += p.TotalTokensIn
-		agg.TotalTokensOut += p.TotalTokensOut
-		agg.TotalCost += p.TotalCost
-		if p.LastUsed > agg.LastUsed {
-			agg.LastUsed = p.LastUsed
-		}
-		agg.Archived = agg.Archived && p.Archived
-	}
-	out := make([]db.ProjectStats, 0, len(order))
-	for _, k := range order {
-		out = append(out, *merged[k])
-	}
-	return out
-}
-
-// applyProjectArchiveState overlays the Archived flag from state.db onto
-// a project slice, folding directories to their project root. A project
-// auto-unarchives (and the marker is deleted) when any of its sessions'
-// activity (LastUsed) is newer than archived_at, mirroring the per-
-// session archive semantics in applySessionState.
-//
-// Everything is keyed per owning host (remoteID, root), matching
-// foldWorktreeProjects: the same path on two machines is two projects, so
-// one host's archive must not hide the other's and activity on one must not
-// unarchive the other.
-func (s *Server) applyProjectArchiveState(ctx context.Context, projects []db.ProjectStats) error {
-	archived, err := s.stateDB.ArchivedProjects(ctx)
-	if err != nil {
-		return err
-	}
-	if len(archived) == 0 {
-		return nil
-	}
-
-	// Newest activity per (host, folded root) across all matching directories.
-	newest := map[state.ProjectKey]int64{}
-	for _, p := range projects {
-		key := projectArchiveKey(p.RemoteID, p.Directory)
-		if p.LastUsed > newest[key] {
-			newest[key] = p.LastUsed
-		}
-	}
-
-	// Auto-unarchive any project with newer activity than its archive
-	// time, persisting the change so it stays unarchived.
-	for key, archivedAt := range archived {
-		if newest[key] > archivedAt {
-			if err := s.stateDB.UnarchiveProject(ctx, key.RemoteID, key.Root); err != nil {
-				return err
-			}
-			delete(archived, key)
-		}
-	}
-
-	for i := range projects {
-		if _, ok := archived[projectArchiveKey(projects[i].RemoteID, projects[i].Directory)]; ok {
-			projects[i].Archived = true
-		}
-	}
-	return nil
-}
-
-// projectArchiveKey builds a project's archive identity: its owning host
-// plus its folded repo root. An unstamped RemoteID means the local machine.
-func projectArchiveKey(remoteID, directory string) state.ProjectKey {
-	return state.ProjectKey{
-		RemoteID: state.NormalizeRemoteID(remoteID),
-		Root:     projectRootForDirectory(directory),
-	}
-}
 
 func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
 	var req struct {

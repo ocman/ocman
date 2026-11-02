@@ -1,4 +1,4 @@
-package server
+package projectsmod
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"github.com/ocman/ocman/internal/state"
 )
 
-func (s *Server) applyProjectMerges(ctx context.Context, projects []db.ProjectStats) error {
-	merges, err := s.stateDB.ProjectMerges(ctx)
+func (m *Module) applyMerges(ctx context.Context, projects []db.ProjectStats) error {
+	merges, err := m.d.Store.ProjectMerges(ctx)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (s *Server) applyProjectMerges(ctx context.Context, projects []db.ProjectSt
 }
 
 // Merge is hub-local display bookkeeping; sessions retain their owning checkout.
-func (s *Server) handleProjectMerge(w http.ResponseWriter, r *http.Request) {
+func (m *Module) handleMerge(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Source state.ProjectMergeTarget `json:"source"`
 		Target state.ProjectMergeTarget `json:"target"`
@@ -76,12 +76,12 @@ func (s *Server) handleProjectMerge(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
-	projects, err := s.listProjects(r.Context())
+	projects, err := m.List(r.Context())
 	if err != nil {
 		httpx.ServerError(w, "fetching projects", err)
 		return
 	}
-	catalog := finalProjectCatalog(projects)
+	catalog := finalCatalog(projects)
 	find := func(target state.ProjectMergeTarget) (state.ProjectMergeTarget, bool) {
 		for _, p := range catalog.projects {
 			if p.Directory == target.Directory && state.NormalizeRemoteID(p.RemoteID) == state.NormalizeRemoteID(target.RemoteID) {
@@ -107,7 +107,7 @@ func (s *Server) handleProjectMerge(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	target.Key = state.ProjectMergeKey(target.RemoteID, target.Directory)
-	err = s.stateDB.MergeProjects(r.Context(), sources, target)
+	err = m.d.Store.MergeProjects(r.Context(), sources, target)
 	if errors.Is(err, state.ErrSameProject) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -116,6 +116,6 @@ func (s *Server) handleProjectMerge(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "merging projects", err)
 		return
 	}
-	s.broadcastGlobalEvent("ocman.projects.changed", []byte(`{}`))
+	m.d.Broadcast("ocman.projects.changed", []byte(`{}`))
 	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }

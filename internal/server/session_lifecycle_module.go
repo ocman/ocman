@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/projectsmod"
 	"github.com/ocman/ocman/internal/sessionlifecycle"
 )
 
@@ -17,11 +18,11 @@ func (s *Server) sessionLifecycleModule() *sessionlifecycle.Module {
 		Owner:          s.resolveOwner,
 		CreatePlatform: s.createPlatform,
 		PermissionDefaults: func(ctx context.Context, dir, owner string) ([]platforms.PermissionRule, error) {
-			defaults, err := s.getProjectDefaults(ctx, dir, owner)
+			defaults, err := projectsmod.LoadDefaults(ctx, s.stateDB, dir, owner)
 			if err != nil || defaults == nil {
 				return nil, err
 			}
-			return defaults.permissionRules()
+			return defaults.PermissionRules()
 		},
 		ProjectDefaultModel: s.projectDefaultModel,
 		Platforms: func() []platforms.Platform {

@@ -72,7 +72,7 @@ func TestHandleProjects_Empty(t *testing.T) {
 	srv := testServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjects(rr, req)
+	serveModule(srv, srv.projectsModule(), rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
@@ -105,7 +105,7 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	rr := httptest.NewRecorder()
-	srv.handleProjects(rr, req)
+	serveModule(srv, srv.projectsModule(), rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
@@ -123,7 +123,7 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	srv.handleProjects(rr, req)
+	serveModule(srv, srv.projectsModule(), rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}

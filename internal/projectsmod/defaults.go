@@ -1,4 +1,4 @@
-package server
+package projectsmod
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 
 // Project defaults are hub preferences, scoped to an owner and repository.
 // Empty values inherit the existing defaults.
-type projectDefaults struct {
+type Defaults struct {
 	Model          string `json:"model"`
 	Agent          string `json:"agent"`
 	Worktree       string `json:"worktree"`
 	PermissionMode string `json:"permissionMode,omitempty"`
 }
 
-func projectDefaultsKey(dir, owner string) string {
+func DefaultsKey(dir, owner string) string {
 	if owner == "" {
 		owner = "local"
 	}
@@ -28,19 +28,19 @@ func projectDefaultsKey(dir, owner string) string {
 	return "project-defaults:" + string(key)
 }
 
-func (s *Server) getProjectDefaults(ctx context.Context, dir, owner string) (*projectDefaults, error) {
-	raw, ok, err := s.stateDB.GetSetting(ctx, projectDefaultsKey(dir, owner))
+func LoadDefaults(ctx context.Context, store *state.DB, dir, owner string) (*Defaults, error) {
+	raw, ok, err := store.GetSetting(ctx, DefaultsKey(dir, owner))
 	if err != nil || !ok {
 		return nil, err
 	}
-	var defaults projectDefaults
+	var defaults Defaults
 	if err := json.Unmarshal([]byte(raw), &defaults); err != nil {
 		return nil, fmt.Errorf("decoding project defaults: %w", err)
 	}
 	return &defaults, nil
 }
 
-func (d projectDefaults) validate() error {
+func (d Defaults) validate() error {
 	if d.Model != "" {
 		if err := state.ValidateProjectModels([]string{d.Model}); err != nil {
 			return err
@@ -52,13 +52,13 @@ func (d projectDefaults) validate() error {
 	if d.Worktree != "" && d.Worktree != "worktree" && d.Worktree != "current" {
 		return fmt.Errorf("worktree must be worktree, current, or empty")
 	}
-	if _, err := d.permissionRules(); err != nil {
+	if _, err := d.PermissionRules(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (d projectDefaults) permissionRules() ([]platforms.PermissionRule, error) {
+func (d Defaults) PermissionRules() ([]platforms.PermissionRule, error) {
 	switch d.PermissionMode {
 	case "", "default":
 		return nil, nil

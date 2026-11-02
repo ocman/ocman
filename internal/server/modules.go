@@ -65,7 +65,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule(), s.favoritesModule())
+	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule(), s.favoritesModule(), s.projectsModule())
 	if recovery := s.sessionRecoveryModule(); recovery != nil {
 		mods = append(mods, recovery)
 	}
