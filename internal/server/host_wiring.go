@@ -57,8 +57,8 @@ func (s *Server) newLocalHost() hostsvc.Host {
 			_, ok := s.registry.Get(platforms.ID(id))
 			return ok
 		},
-		LaunchTmux:            s.gateLaunchTmux(tmux.LaunchOpencode),
-		Runtime:               s.gatedRuntime(),
+		LaunchTmux:            tmux.LaunchOpencode,
+		Runtime:               s.runtime,
 		BeforeReplace:         s.recordOpencodeReplacement,
 		BeforeStop:            s.beginOpencodeReplacementStopWithInstance,
 		AfterStop:             s.confirmOpencodeReplacement,

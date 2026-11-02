@@ -227,7 +227,7 @@ func run() {
 
 		// Open the OpenCode database only when the opencode platform is enabled.
 		var database *db.DB
-		openCodeDBPath := "" // maintenance is offered only for an opened database
+		openCodeDBPath := ""
 		dbExplicit := false
 		flag.Visit(func(f *flag.Flag) { dbExplicit = dbExplicit || f.Name == "db" })
 		if enabledPlatforms[string(opencodeplatform.PlatformID)] {
@@ -317,7 +317,6 @@ func run() {
 			WithRelay(resolvedRelayURL, relaySource).
 			WithMCPAddr(*mcpAddr).
 			WithMCPTokenFile(mcpauth.TokenPath(state.DefaultDataDir())).
-			WithOpenCodeDBPath(openCodeDBPath).
 			WithOpenCodeService(useService).
 			WithLogPath(logPath).
 			WithVersion(version).

@@ -153,7 +153,7 @@ directories; v2 uses the machine-wide instance described above.
 - Gate managed launch UI on `HostCaps.OpencodeLaunch`, not `Tmux`.
 - Runtime lookup uses only managed inventory, except v2's registered service.
   Never adopt external instances. Cache for ten seconds. Reserve `lsof` for
-  opt-in maintenance and development port cleanup.
+  development port cleanup.
 - `opencode.Discovery` is owned by each adapter, not globally. The server wires
   Host hooks to that adapter so backend reload starts with empty discovery.
 

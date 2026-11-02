@@ -25,7 +25,6 @@ import (
 	"github.com/ocman/ocman/internal/inbox"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/notifications"
-	"github.com/ocman/ocman/internal/ocmaint"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platformsettings"
@@ -174,14 +173,11 @@ type Server struct {
 	openCodeAuth ocapi.Auth
 	// useOpenCodeService routes v2 to OpenCode's background service.
 	useOpenCodeService bool
-	// maintMod runs OpenCode database maintenance; nil without a DB path.
-	// Its gate refuses opencode launches while a job runs.
-	maintMod      *ocmaint.Module
-	logPath       string // resolved log file; "" when stderr only
-	version       string // build version (main.version), reported by /api/stats
-	startupIssues []StartupIssue
-	factoryMod    lazy[*factorymod.Module]
-	analyticsMod  lazy[*analytics.Module]
+	logPath            string // resolved log file; "" when stderr only
+	version            string // build version (main.version), reported by /api/stats
+	startupIssues      []StartupIssue
+	factoryMod         lazy[*factorymod.Module]
+	analyticsMod       lazy[*analytics.Module]
 
 	projectForgeMod     lazy[*projectforge.Module]
 	prWorkflowMod       lazy[*prworkflow.Module]

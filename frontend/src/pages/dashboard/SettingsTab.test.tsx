@@ -12,10 +12,8 @@ vi.mock('../../lib/api.requests', async (original) => ({ ...await original<typeo
 const logout = vi.fn();
 const promptInstall = vi.fn();
 const ios = vi.hoisted(() => ({ value: false }));
-const openCode = vi.hoisted(() => ({ value: true }));
 const device = vi.hoisted(() => ({ canInstall: true, installed: false }));
 const account = vi.hoisted(() => ({ required: true }));
-vi.mock('../../lib/useCapabilities', () => ({ useLocalOpenCode: () => openCode.value }));
 vi.mock('../../lib/externalLinks', async (orig) => ({
   ...(await orig<typeof import('../../lib/externalLinks')>()),
   isIOS: () => ios.value,
@@ -27,7 +25,6 @@ vi.mock('../../components/RemoteSettings', () => ({ RemoteSettings: () => null }
 vi.mock('../../components/SourceControlSettings', () => ({ SourceControlSettings: () => <p>Source-control setup</p> }));
 vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => <p>Sharing controls</p> }));
 vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
-vi.mock('../../components/MaintenanceSettings', () => ({ MaintenanceSettings: () => <p>Database controls</p> }));
 vi.mock('../../components/WebhookRelaySettings', () => ({ WebhookRelaySettings: () => null }));
 vi.mock('./ProviderAccountSettings', () => ({ ProviderAccountSettings: () => null }));
 vi.mock('../../components/HookPluginSettings', () => ({ HookPluginSettings: () => null }));
@@ -129,8 +126,8 @@ describe('SettingsTab actions', () => {
     const { router } = render(<SettingsTab />, '/settings?tab=plugins&q=disk+space&dir=project');
     fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'connections' } });
     expect(router.state.location.search).toBe('?tab=connections&dir=project');
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
-    fireEvent.click(screen.getByRole('button', { name: /Remove old diffs/ }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'idle project' } });
+    fireEvent.click(screen.getByRole('button', { name: /Stop idle project instances/ }));
     expect(router.state.location.search).toBe('?tab=system&dir=project');
   });
 
@@ -189,23 +186,6 @@ describe('SettingsTab actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sessions' }));
     expect(screen.getByText('Sharing controls')).not.toBeVisible();
   });
-  it('hides the OpenCode maintenance group without OpenCode', () => {
-    openCode.value = false;
-    try {
-      render(<SettingsTab />);
-      fireEvent.click(screen.getByRole('button', { name: 'System' }));
-      expect(screen.queryByRole('heading', { name: 'Database maintenance' })).not.toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Resource management' })).toBeVisible();
-    } finally {
-      openCode.value = true;
-    }
-  });
-  it('mounts maintenance only when its group is opened', () => {
-    render(<SettingsTab />);
-    expect(screen.queryByText('Database controls')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'System' }));
-    expect(screen.getByText('Database controls')).toBeVisible();
-  });
   beforeEach(() => {
     logout.mockReset();
     promptInstall.mockReset();
@@ -213,10 +193,10 @@ describe('SettingsTab actions', () => {
 
   it('searches settings and jumps to the matching group', () => {
     render(<SettingsTab />);
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
-    fireEvent.click(screen.getByRole('button', { name: /Remove old diffs/ }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'share link' } });
+    fireEvent.click(screen.getByRole('button', { name: /Allow public sharing/ }));
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
-    expect(screen.getByText('Database controls')).toBeVisible();
+    expect(screen.getByText('Sharing controls')).toBeVisible();
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'nothing-like-this' } });
     expect(screen.getByRole('status')).toHaveTextContent('No settings match');

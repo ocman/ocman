@@ -7,11 +7,7 @@ SQLite uses pure-Go `modernc.org/sqlite`, without CGo. Read
 
 - OpenCode's database defaults to `~/.local/share/opencode/opencode.db`, opened
   read-only with `mode=ro`; do not change the foreign database's journal mode.
-  The only ocman writer is user-started
-  `internal/ocmaint` maintenance. It stops managed instances, blocks launches and
-  refuses while another process holds the file. It moves `summary.diffs` older
-  than thirty days into `<db>.ocman-diffs` for restoration. Jobs must finish before state.db closes
-  and must never leave launches blocked. Maintenance mutation routes are local.
+  Ocman never writes it.
 - Ocman's writable state defaults to `~/.local/share/ocman/state.db` and migrates
   on startup. Session state is keyed by `(platform, session_id)`.
 - Durable `state_conv.db` beside state.db owns retained conversations, project
@@ -21,7 +17,7 @@ SQLite uses pure-Go `modernc.org/sqlite`, without CGo. Read
   `analytics-cache.db` is unused; do not recreate or sync it. Conversation-store
   path overrides and adoption are documented in `docs/configuration/_index.md`.
 - Analytics routes, subscription usage and joined workers belong to
-  `internal/analytics`; DB maintenance belongs to `ocmaint`. Core keeps
+  `internal/analytics`. Core keeps
   session snapshots, client demand leases, system stats and HTTP/SSE/index
   instruments. Subscription usage reads local OAuth tokens with a one-minute
   cache; never return tokens to the browser.

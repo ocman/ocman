@@ -11,7 +11,7 @@ export const phoneReviewPages = [
   ['usage', '/provider-usage'], ['import-share', '/import-share'],
   ...['overview', 'epics', 'epics/mobile-review', 'issues', 'queue', 'configuration', 'how-to'].map(s => [`factory-${s.replaceAll('/', '-')}`, `/factory/${s}`]),
   ...['overview', 'activity', 'models', 'performance', 'permissions', 'logs'].map(s => [`analytics-${s}`, `/analytics/${s}`]),
-  ...['notifications', 'sessions', 'conversation', 'remotes', 'plugins', 'platforms', 'idle-projects', 'auto-approve', 'sharing', 'webhooks', 'templates', 'link-previews', 'maintenance', 'provider-accounts'].map(s => [`settings-${s}`, `/settings?tab=${s}`]),
+  ...['notifications', 'sessions', 'conversation', 'remotes', 'plugins', 'platforms', 'idle-projects', 'auto-approve', 'sharing', 'webhooks', 'templates', 'link-previews', 'provider-accounts'].map(s => [`settings-${s}`, `/settings?tab=${s}`]),
 ] as const;
 
 /** Populated read-only fixtures; no review request reaches a real backend. */
@@ -56,6 +56,5 @@ export async function installPhoneReviewRoutes(page: Page) {
   } }));
   await page.route('/api/settings/platforms', r => r.fulfill({ json: { enabled: ['opencode', 'claudecode'] } }));
   await page.route('/api/settings/idle-project-timeout', r => r.fulfill({ json: { minutes: 30 } }));
-  await page.route('/api/maintenance/opencode-db', r => r.fulfill({ json: { available: false, job: { running: false } } }));
   await page.route('/api/provider-accounts', r => r.fulfill({ json: { accounts: [] } }));
 }

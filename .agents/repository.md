@@ -49,7 +49,6 @@ Read [remotes-and-forges.md](remotes-and-forges.md) for ownership rules.
 | `internal/sidebar` | Compact session-list queries over the history projection, read-only catalogue/user-state joins and generation-scoped event-cache observations. No request-time accounting or platform RPCs. |
 | `internal/analyticsdata` | Shared accounting metadata and tool-timing rules used by legacy queries and ingestion-maintained analytics summaries. |
 | `internal/analytics`, `internal/pricing`, `internal/srvtiming`, `internal/telemetry` | Analytics, LiteLLM price cache/costs, request timing and optional OTLP. |
-| `internal/ocmaint` | User-started OpenCode DB maintenance and launch gating. |
 | `internal/tasksvc`, `internal/taskmod` | Bounded owner-local background work, durable task progress in state.db and read-only task APIs. |
 
 Read [sessions.md](sessions.md) and [integrations.md](integrations.md).

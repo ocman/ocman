@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../../lib/headerContext';
 import { useAuthStore } from '../../lib/authStore';
-import { useLocalOpenCode } from '../../lib/useCapabilities';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingDescription } from '../../components/SettingRow';
 import { isIOS } from '../../lib/externalLinks';
@@ -19,7 +18,7 @@ export function SettingsTab() {
   usePageTitle('Settings');
   const authRequired = useAuthStore((s) => s.authRequired);
   const { canInstall, installed } = usePwaInstall();
-  const visibility = { device: isIOS() || canInstall || installed, account: authRequired, maintenance: useLocalOpenCode() };
+  const visibility = { device: isIOS() || canInstall || installed, account: authRequired };
   const [params, setParams] = useSearchParams();
   const active = settingsCategory(params.get('tab'));
   const query = params.get('q') ?? '';

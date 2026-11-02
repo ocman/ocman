@@ -15,9 +15,8 @@ Ocman opens OpenCode's database read-only
 (`~/.local/share/opencode/opencode.db` by default). Its own state, meaning
 archived flags, favourites, settings and queued messages, lives in a separate
 writable database at `~/.local/share/ocman/state.db`. Retained conversations,
-search and analytics live in `state_conv.db` beside it. The explicit
-[OpenCode maintenance tool](../features/maintenance.md) is the exception to
-read-only source access: it modifies the source database only when you start it.
+search and analytics live in `state_conv.db` beside it. Ocman never writes
+OpenCode's database.
 
 ## Why is the composer disabled on some sessions?
 

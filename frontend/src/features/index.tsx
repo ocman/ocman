@@ -50,7 +50,6 @@ const SharingSettings = lazyComponent<SectionProps>(() => import('../components/
 const WebhookRelaySettings = lazyComponent<SectionProps>(() => import('../components/WebhookRelaySettings').then((m) => m.WebhookRelaySettings));
 const IdleProjectSettings = lazyComponent<SectionProps>(() => import('../components/IdleProjectSettings').then((m) => m.IdleProjectSettings));
 const ApplicationHealthSettings = lazyComponent<SectionProps>(() => import('../components/ApplicationHealthSettings').then((m) => m.ApplicationHealthSettings));
-const MaintenanceSettings = lazyComponent<SectionProps>(() => import('../components/MaintenanceSettings').then((m) => m.MaintenanceSettings));
 
 // Factory pages pull in the epic graph (dagre): load them with the route.
 const factoryPages = () => import('../pages/Factory');
@@ -90,7 +89,7 @@ export interface Feature {
     label: string;
     mount: 'always' | 'active';
     Section: ComponentType<{ target?: RevealRequest | null }>;
-    visible?: 'device' | 'account' | 'maintenance';
+    visible?: 'device' | 'account';
     /** Sections with conditional or multiple headings render their own frame. */
     ownSections?: boolean;
   };
@@ -154,7 +153,6 @@ export const FEATURES: Feature[] = [
   { id: 'webhooks', settings: { id: 'webhooks', category: 'connections', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },
   { id: 'idle-projects', settings: { id: 'idle-projects', category: 'system', label: 'Resource management', mount: 'active', Section: IdleProjectSettings } },
   { id: 'application-health', settings: { id: 'application-health', category: 'system', label: 'Application health', mount: 'active', Section: ApplicationHealthSettings } },
-  { id: 'maintenance', settings: { id: 'maintenance', category: 'system', label: 'Database maintenance', mount: 'active', Section: MaintenanceSettings, visible: 'maintenance' } },
 ];
 
 export const featureRoutes = (layout: FeatureRoute['layout']) =>

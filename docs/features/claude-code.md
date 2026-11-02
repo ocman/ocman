@@ -32,7 +32,7 @@ reads, stores, copies or refreshes your Claude credentials.
 
    Without `opencode` in the list ocman does not need OpenCode, its binary or
    its database, and never runs or looks for it. OpenCode-only features are
-   hidden: Settings → Maintenance, the reviewer model, the OpenCode MCP config
+   hidden: the reviewer model, the OpenCode MCP config
    prompt and `/restart-opencode`.
 3. Pick a model when starting a new conversation: the model list holds every
    platform's models on that machine, each tagged with its platform, and the

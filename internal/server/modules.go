@@ -69,7 +69,7 @@ func (s *Server) modules() []module.Module {
 	if recovery := s.sessionRecoveryModule(); recovery != nil {
 		mods = append(mods, recovery)
 	}
-	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.maintenanceModule(), s.gitModule(), s.remotesModule(), s.sessionLifecycleModule(), s.queueModule(), s.convStreamModule())
+	return append(mods, s.tmuxModule(), s.filesystemModule(), s.projectForgeModule(), s.previewsModule(), s.analyticsModule(), s.termModule(), s.gitModule(), s.remotesModule(), s.sessionLifecycleModule(), s.queueModule(), s.convStreamModule())
 }
 
 // tmuxModule is stateless, so it is rebuilt on each call.

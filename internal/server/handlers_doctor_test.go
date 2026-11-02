@@ -140,7 +140,7 @@ func TestDoctorReportsUnsupportedOpenCodeVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
 			if tt.other {
-				reg.Register(&fakePlatform{id: "claudecode"})
+				reg.Register(&fakePlatform{PlatformID: "claudecode"})
 			}
 			srv.WithStartupIssues(StartupIssue{ID: IssueOpenCodeUnsupported, Message: "OpenCode v1 is installed", Hint: "Upgrade"})
 			srv.hostRouter = hostsvc.NewRouter(doctorHost{})

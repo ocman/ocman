@@ -44,7 +44,7 @@ type HostCaps struct {
 	// gates managed-launch UI on this flag (#390 / AD-8).
 	OpencodeLaunch bool `json:"opencodeLaunch"`
 	// OpenCode reports that the OpenCode platform is enabled on the host.
-	// OpenCode-only settings (maintenance, its MCP config, the judge
+	// OpenCode-only settings (its MCP config, the judge
 	// model) are shown only when it is (FR-1).
 	OpenCode bool `json:"opencode"`
 }

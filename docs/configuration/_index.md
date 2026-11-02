@@ -16,9 +16,9 @@ layer of tabs or collapsible panels.
 | Permissions | Auto-approve, AI reviewer, Worktrees |
 | Connections & sharing | Remotes, Link previews, Public sharing, Webhooks |
 | Plugins | Plugin management and per-plugin settings |
-| System | Resource management, Application health, Database maintenance |
+| System | Resource management, Application health |
 
-Device, account, hooks and database sections appear only when applicable. Search
+Device, account and hooks sections appear only when applicable. Search
 opens the matching category and scrolls to the setting. Existing links to the old
 categories still open the corresponding new category.
 
@@ -330,7 +330,6 @@ OpenCode runs one server for every project on a machine. Ocman follows that:
   `codemode` from them. At startup ocman moves an existing ocman entry to the new layout,
   keeping its URL and enabled state, after backing up the config. It never adds an entry you
   haven't installed, and it leaves a JSONC config alone.
-- **Settings → Maintenance** is not available; it only knows the OpenCode v1 storage layout.
 
 Use `/reload-opencode` in an existing conversation to refresh the owning machine's
 OpenCode skills and configuration without restarting its server. Running turns

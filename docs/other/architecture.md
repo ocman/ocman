@@ -93,12 +93,7 @@ flowchart LR
   date attributes. Dashboard graphs read SQLite, so collector outages cannot
   erase their history. Five minutes without interaction stops counting; long
   timer gaps do not count sleep. This is installation-wide, not named-user data.
-- **opencode.db.** Foreign data, opened read-only. The one exception is the
-  user-started maintenance job (`internal/ocmaint`, Settings → Maintenance).
-  It stops the managed instances, refuses while any other process holds the
-  file, and moves old `summary.diffs` patches into a restorable dump. Only this
-  opt-in maintenance operation uses lsof to check file holders; missing lsof
-  makes maintenance fail closed, not application startup.
+- **opencode.db.** Foreign data, opened read-only. Ocman never writes it.
   On an OpenCode v2 machine each connection gets TEMP views named `session`,
   `message` and `part` over v2's `session_v2`/`session_message` tables, so
   every query keeps its v1 SQL (`internal/db/v2views.go`).
@@ -372,7 +367,7 @@ flowchart TD
     Server --> AutoApprove[internal/autoapprove<br/>session rules, safe-command cache + Judge seam]
     Browser -->|/permissions: session policy + request history| AutoApprove
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, Finalize, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, favorites, tmuxmod, filesystem, projectforge, previews, analytics, termmod, ocmaint, gitmod, remotesmod, platformsettings]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, Finalize, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, favorites, tmuxmod, filesystem, projectforge, previews, analytics, termmod, gitmod, remotesmod, platformsettings]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Modules -->|"queuemod: bounded preparation, then admitted delivery"| Sessions
@@ -494,10 +489,7 @@ flowchart TD
   sessions and launches through the owner's `hostsvc.Host`, client list and
   switch on this machine's tmux), the browser terminals (`internal/termmod`:
   window controls and the WebSocket bridge, attached through the owner's
-  `hostsvc.Host`), OpenCode database maintenance
-  (`internal/ocmaint`: `/api/maintenance/opencode-db` routes and the job
-  runner; the server's launch gate asks it `LaunchBlocked`, and its `Run`
-  holds the worker join until a running job finishes), remote management
+  `hostsvc.Host`), remote management
   (`internal/remotesmod`: `/api/remotes` CRUD + reconnect, this instance's
   `/api/settings/remote-access` status and token reveal, and the inventory
   refresh loop among the joined workers; the `remote.Manager`, its gRPC
