@@ -5,6 +5,28 @@ import type { Session } from '../../lib/api';
 import type { SidebarProjectGroup as Group } from './SessionSidebar';
 import { SidebarProjectGroup } from './SidebarProjectGroup';
 
+vi.mock('../../lib/useCapabilities', () => ({ useMultiHost: () => false }));
+
+it.each([false, true])('shows the remote icon and name beside the project when collapsed=%s', (collapsed) => {
+  const group: Group = { key: 'remote-project', directory: '/parent/repo', sessions: [],
+    remoteId: 'r1', remoteName: 'Build host', lastUpdated: 0, aggregate: { kind: 'none' } };
+  render(<SidebarProjectGroup group={group} collapsed={collapsed} siblingGitInfos={{}}
+    toggleCollapsedProject={vi.fn()} onNewSessionInDirectory={vi.fn()} onArchiveProject={vi.fn()}
+    renderRow={() => null} />);
+  const badge = screen.getByLabelText('Build host');
+  expect(badge.parentElement).toHaveClass('session-sidebar-group-header');
+  expect(badge.querySelector('.bi-hdd-network')).toHaveAttribute('aria-hidden', 'true');
+});
+
+it('does not add a remote badge to a local project', () => {
+  const group: Group = { key: 'local-project', directory: '/parent/repo', sessions: [],
+    remoteId: 'local', remoteName: 'Local', lastUpdated: 0, aggregate: { kind: 'none' } };
+  render(<SidebarProjectGroup group={group} collapsed={false} siblingGitInfos={{}}
+    toggleCollapsedProject={vi.fn()} onNewSessionInDirectory={vi.fn()} onArchiveProject={vi.fn()}
+    renderRow={() => null} />);
+  expect(screen.queryByLabelText('Local')).not.toBeInTheDocument();
+});
+
 it('keeps the main checkout first and worktrees ordered by completion, not streaming activity', () => {
   const newer = { id: 'newer', platform: 'opencode', directory: '/parent/.worktrees/repo/newer',
     timeCreated: 1, timeUpdated: 20, lastTurnCompletedAt: 20 } as Session;

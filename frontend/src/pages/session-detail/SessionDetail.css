@@ -242,9 +242,11 @@ button.session-sidebar-group-header.collapsed::before {
   padding-left: 16px;
 }
 .session-sidebar-group-header-row .host-badge {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
   align-self: center;
-  margin: 0 6px;
+  text-transform: none;
 }
 .session-sidebar-group-label {
   flex: 1;

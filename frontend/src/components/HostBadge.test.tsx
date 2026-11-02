@@ -10,6 +10,14 @@ vi.mock('../lib/useCapabilities', () => ({
 }));
 
 describe('HostBadge', () => {
+  it('can replace the status dot with a machine icon while retaining offline information', () => {
+    multiHost.mockReturnValue(false);
+    render(<HostBadge remoteId="r1" remoteName="Build host" alwaysShow showIcon stale />);
+    const badge = screen.getByLabelText('Build host (offline — last known)');
+    expect(badge).toHaveClass('host-badge--icon', 'stale');
+    expect(badge).toHaveTextContent('Build host (offline)');
+    expect(badge.querySelector('.bi-hdd-network')).toHaveAttribute('aria-hidden', 'true');
+  });
   it('can show the local owner in a styled project header on a single-host install', () => {
     multiHost.mockReturnValue(false);
     render(<HostBadge remoteId="local" remoteName="This machine" alwaysShow className="header-machine-pill" />);

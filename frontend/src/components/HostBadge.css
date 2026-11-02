@@ -38,3 +38,16 @@
 .host-badge.stale::before {
   background: var(--text-dim);
 }
+
+.host-badge--icon::before {
+  display: none;
+}
+
+.host-badge--icon > .bi {
+  flex-shrink: 0;
+}
+
+.host-badge-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

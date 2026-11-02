@@ -10,6 +10,8 @@ interface HostBadgeProps {
   stale?: boolean;
   /** Project headers show the owner even on a single-host install. */
   alwaysShow?: boolean;
+  /** Replace the status dot with a machine icon. */
+  showIcon?: boolean;
   className?: string;
 }
 
@@ -19,19 +21,21 @@ interface HostBadgeProps {
  * adds no information. Display-only: it never branches behaviour on the
  * host identity, it just shows the server-provided label.
  */
-export function HostBadge({ remoteName, remoteId, stale, alwaysShow = false, className = '' }: HostBadgeProps) {
+export function HostBadge({ remoteName, remoteId, stale, alwaysShow = false, showIcon = false, className = '' }: HostBadgeProps) {
   const multi = useMultiHost();
   // Session rows omit the local owner; project headers always show it.
   // An offline remote may arrive without a name — still flag it as remote.
   if (!alwaysShow && (!multi || !remoteId || remoteId === 'local')) return null;
   const label = remoteName || 'Remote';
   const classes = ['host-badge', className];
+  if (showIcon) classes.push('host-badge--icon');
   if (stale) classes.push('stale');
   const title = stale ? `${label} (offline — last known)` : label;
   return (
     <span className={classes.join(' ').trim()} title={title} aria-label={title}>
-      {label}
-      {stale ? ' (offline)' : ''}
+      {showIcon && <i className="bi bi-hdd-network" aria-hidden="true" />}
+      {showIcon ? <span className="host-badge-label">{label}{stale ? ' (offline)' : ''}</span>
+        : <>{label}{stale ? ' (offline)' : ''}</>}
     </span>
   );
 }

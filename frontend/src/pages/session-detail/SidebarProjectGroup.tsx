@@ -63,8 +63,9 @@ export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleC
           aria-expanded={!collapsed} title={group.directory || 'Unknown project'}
           onClick={() => toggleCollapsedProject(group.key ?? group.directory)}>
           <ProjectLabel className="session-sidebar-group-label" path={group.directory} />
+          <HostBadge showIcon alwaysShow={!!hostRemoteId && hostRemoteId !== 'local'}
+            remoteName={hostRemoteName} remoteId={hostRemoteId} stale={remoteSession?.stale} />
         </button>
-        <HostBadge remoteName={hostRemoteName} remoteId={hostRemoteId} stale={remoteSession?.stale} />
         {group.directory && <>
           <IconButton variant="ghost" size="compact" className="session-sidebar-group-new" icon="bi-plus-lg"
             label={`New session in ${label}`} onClick={(e) => {
