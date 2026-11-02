@@ -2,9 +2,9 @@ import { useState } from 'react';
 import type { PickerTabsConfig } from '../PickerTabs';
 import { PlatformLogo } from '../PlatformBadge';
 import type { ModelEntry } from './modelEntries';
+import { refPlatformOrDefault } from '../../lib/modelRef';
 
-// An unprefixed reference is OpenCode's (lib/modelRef).
-const platformOf = (entry: ModelEntry) => entry.platform || 'opencode';
+const platformOf = (entry: ModelEntry) => refPlatformOrDefault(entry.platform);
 
 /**
  * Platform tabs over model entries: "All" plus one tab per platform, shown

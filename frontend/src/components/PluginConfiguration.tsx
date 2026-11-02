@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { basePlatform } from '../lib/modelRef';
 import { useProjects } from '../lib/queries';
 import { useMachinePlatforms } from '../lib/useCapabilities';
 import type { PluginInput, PluginRegistration } from '../lib/plugins';
@@ -30,7 +31,7 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
   // The installation's platform picks the catalog (AD-13); base ids, since the
   // owner resolves them against its own platforms.
   const platform = slack ? String(values.platform ?? '') : '';
-  const platformOptions = useMachinePlatforms(plugin.ownerId).map((p) => ({ value: p.id.slice(p.id.indexOf(':') + 1), label: p.displayName }));
+  const platformOptions = useMachinePlatforms(plugin.ownerId).map((p) => ({ value: basePlatform(p.id), label: p.displayName }));
   const projects = (useProjects({ enabled: slack }).data ?? []).filter((item) => (item.remoteId || 'local') === plugin.ownerId && !item.archived);
   const catalogKey = `${platform}\0${project}`;
   const options = project && catalog.project === catalogKey ? catalog : emptyCatalog;

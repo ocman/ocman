@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { SessionModelEntry } from '../lib/api';
 import { weightedSearch } from '../lib/weightedSearch';
-import { splitModelRef } from '../lib/modelRef';
+import { refPlatformOrDefault, splitModelRef } from '../lib/modelRef';
 import { buildModelEntries, fromStrings, isPinnedModel, modelSearchKeys, modelSectionOf, type ModelEntry } from './assistant/modelEntries';
 import { ModelBadges } from './assistant/ModelBadges';
 import { useModelPlatformTabs } from './assistant/useModelPlatformTabs';
@@ -36,10 +36,10 @@ export function ModelSelect({ value, onChange, models, modelEntries, ariaLabel =
     // Keep a saved value selectable even when the catalog no longer lists it.
     if (!value || built.entries.some((e) => e.value === value)) return built;
     const [saved] = fromStrings([value], value);
-    const savedPlatform = saved.platform || 'opencode';
-    saved.platformName = built.entries.find((e) => (e.platform || 'opencode') === savedPlatform)?.platformName || saved.platformName;
+    const savedPlatform = refPlatformOrDefault(saved.platform);
+    saved.platformName = built.entries.find((e) => refPlatformOrDefault(e.platform) === savedPlatform)?.platformName || saved.platformName;
     const all = [saved, ...built.entries];
-    return { ...built, multiPlatform: new Set(all.map((e) => e.platform || 'opencode')).size > 1, entries: all };
+    return { ...built, multiPlatform: new Set(all.map((e) => refPlatformOrDefault(e.platform))).size > 1, entries: all };
   }, [models, modelEntries, value]);
   const { tabs, visibleEntries, inTab } = useModelPlatformTabs(entries);
   const byValue = new Map(entries.map((e) => [e.value, e]));

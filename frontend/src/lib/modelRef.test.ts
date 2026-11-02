@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basePlatform, modelRefForSession, modelRefPlatform, qualifyModelRef, splitModelRef } from './modelRef';
+import { basePlatform, modelRefForSession, modelRefPlatform, qualifyModelRef, refPlatformOrDefault, splitModelRef } from './modelRef';
 
 describe('model references', () => {
   it('splits only a prefix before the first slash', () => {
@@ -15,6 +15,9 @@ describe('model references', () => {
     expect(modelRefPlatform('claudecode:a/b')).toBe('claudecode');
     expect(modelRefPlatform('')).toBe('');
     expect(basePlatform('r-box:claudecode')).toBe('claudecode');
+    expect(basePlatform('codex')).toBe('codex');
+    expect(refPlatformOrDefault('')).toBe('opencode');
+    expect(refPlatformOrDefault('codex')).toBe('codex');
   });
   it('fits a reference to an existing session', () => {
     expect(modelRefForSession('claudecode:a/b', 'r-box:claudecode')).toBe('a/b');

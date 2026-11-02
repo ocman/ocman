@@ -1,4 +1,5 @@
 import './PlatformBadge.css';
+import { basePlatform } from '../lib/modelRef';
 import { useMultiPlatform } from '../lib/useCapabilities';
 import { Tooltip } from './Tooltip';
 
@@ -13,19 +14,6 @@ const META: Record<string, { label: string; short: string; icon: string }> = {
   claudecode: { label: 'Claude Code', short: 'CC', icon: '/platform-claudecode.svg' },
   codex: { label: 'Codex', short: 'CX', icon: '/platform-codex.svg' },
 };
-
-/**
- * Strips the remote-routing prefix from a possibly-compound platform id
- * ("r-<remoteId>:<base>" -> "<base>"). A bare id is returned unchanged.
- * Pure string handling for display — not platform-identity branching.
- */
-function basePlatform(platform: string): string {
-  if (platform.startsWith('r-')) {
-    const sep = platform.indexOf(':');
-    if (sep >= 0) return platform.slice(sep + 1);
-  }
-  return platform;
-}
 
 export function PlatformLogo({ platform }: { platform: string }) {
   const meta = META[basePlatform(platform)];

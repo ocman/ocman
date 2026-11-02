@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { queryClient } from './queryClient';
+import { basePlatform } from './modelRef';
 import { onSseConnect } from './useGlobalEvents';
 
 // How often a mounted consumer waiting on an absent host re-asks the
@@ -122,14 +123,7 @@ export function useMultiPlatform(): boolean {
   // before de-duping so the platform badge stays hidden when every
   // session is really the same platform.
   const bases = new Set(
-    (all?.platforms ?? []).map((p) => {
-      const id = p.id;
-      if (id.startsWith('r-')) {
-        const sep = id.indexOf(':');
-        if (sep >= 0) return id.slice(sep + 1);
-      }
-      return id;
-    }),
+    (all?.platforms ?? []).map((p) => basePlatform(p.id)),
   );
   return bases.size > 1;
 }

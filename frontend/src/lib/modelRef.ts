@@ -16,9 +16,14 @@ export function qualifyModelRef(platform: string | undefined, model: string): st
   return !model || !platform || platform === OPENCODE ? model : `${platform}:${model}`;
 }
 
+/** The base platform of a split reference; an unprefixed one is OpenCode's. */
+export function refPlatformOrDefault(platform: string | undefined): string {
+  return platform || OPENCODE;
+}
+
 /** The base platform a reference starts a new session on ('' for none). */
 export function modelRefPlatform(ref: string): string {
-  return ref ? splitModelRef(ref).platform || OPENCODE : '';
+  return ref ? refPlatformOrDefault(splitModelRef(ref).platform) : '';
 }
 
 /** The owner-local platform of an id: "r-box:claudecode" is "claudecode". */

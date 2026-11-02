@@ -1,6 +1,6 @@
 import type { SessionModelEntry } from '../../lib/api';
 import type { SearchKey } from '../../lib/weightedSearch';
-import { qualifyModelRef, splitModelRef } from '../../lib/modelRef';
+import { qualifyModelRef, refPlatformOrDefault, splitModelRef } from '../../lib/modelRef';
 
 // One model row shared by the ModelPicker modal and the ModelSelect field.
 // Derived from either rich server-side entries or plain `provider/model`
@@ -84,7 +84,7 @@ export function buildModelEntries(models: string[], modelEntries: SessionModelEn
   const rich = !!(modelEntries && modelEntries.length > 0);
   const entries = rich ? fromRich(modelEntries!, currentModel) : fromStrings(models, currentModel);
   // The platform badge only tells rows apart when the list spans platforms.
-  const multiPlatform = new Set(entries.map((e) => e.platform || 'opencode')).size > 1;
+  const multiPlatform = new Set(entries.map((e) => refPlatformOrDefault(e.platform))).size > 1;
   return { rich, multiPlatform, entries };
 }
 
