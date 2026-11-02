@@ -15,8 +15,8 @@ enableGitInfo = false
   [[module.mounts]]
     source = "../docs"
     target = "content/docs"
-    # ADRs are internal design records, not user docs.
-    files = ["! adr/**"]
+    # ADRs and agent skill docs are internal, not user docs.
+    files = ["! adr/**", "! agents/**"]
   [[module.mounts]]
     source = "../docs/sessions.png"
     target = "static/sessions.png"

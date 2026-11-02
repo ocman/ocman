@@ -158,6 +158,7 @@ docs: ## Serve the docs site with live reload and open it (DOCS_BIND/DOCS_HOST/D
 docs-build: ## Build the static docs site into site/public
 	cd site && hugo --minify --gc --cleanDestinationDir
 	test ! -e site/public/docs/adr
+	test ! -e site/public/docs/agents
 
 # Production build
 build: build-frontend build-backend

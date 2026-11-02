@@ -5,8 +5,7 @@ How engineering skills consume this repository's domain documentation.
 ## Before exploring
 
 - Read `CONTEXT.md` at the repository root.
-- Read relevant records under `docs/adr/` when that directory exists.
-- If either is absent, proceed silently; domain-modeling creates them only when needed.
+- Read relevant records under `docs/adr/`.
 
 ## Layout
 

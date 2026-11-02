@@ -75,11 +75,12 @@ exits zero; the server forwards to provider `/hooks`. Ignore hooks for sessions
 ocman drives. Install through `hostsvc.HookPluginManager`, not application flags.
 Tests use `claudetest.Binary` and versioned fixtures, never real `claude`.
 
-`internal/platforms/claude/launch` shares the Agent SDK-compatible child environment for
-sessions and helpers. Its transport mirrors Python Agent SDK 0.2.166, initializes
-  live children before prompting, acknowledges controls and settles foreground
-  results from session state independently of background-task events. Preserve
-  the CLI's native prompt/settings preset.
+`internal/platforms/claude/launch` shares the Agent SDK-compatible child
+environment for sessions and helpers. Its transport mirrors the Python Agent SDK
+version pinned in `launch.SDKVersion`, initializes live children before
+prompting, acknowledges controls and settles foreground results from session
+state independently of background-task events. Preserve the CLI's native
+prompt/settings preset.
 
 ## Codex
 

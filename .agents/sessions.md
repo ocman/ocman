@@ -121,7 +121,8 @@ stored-message guesses.
   prompts can resurface early. Unknown lifecycle declarations default to task.
   Owner-local lifecycle overrides live in sessioncatalog; never infer services
   from command names or duration, or use browser replay as archive activity.
-- Do not reintroduce `STATUS_GRACE_MS` or sticky-busy sidebar merging.
+- Sidebar status is the server's turn-lifecycle status. Do not add client-side
+  grace periods or sticky-busy merging over newer poll results.
 - Conversation reads are composed: `convstream.Hub.Compose` lays streamed
   content stored history lacks over `GET /api/session/{id}` and returns
   `stream.cursor`. The browser replays only events after it and rereads on
@@ -130,8 +131,10 @@ stored-message guesses.
 - Canonical adapters read persisted session data only from statev2;
   `owned.New` requires the store. Native transcript/database reads belong to
   ingestion, identity probes or explicit runtime-safety probes, never a browsing
-   fallback. Do not add browsing methods to native integrations. Sidebar lists use the compact `session_sidebar` projection and `internal/sidebar` reader, not accounting summaries. Event-cache
-  enrichment may change only live observation fields, not persisted facts.
+  fallback. Do not add browsing methods to native integrations. Sidebar lists
+  use the compact `session_sidebar` projection and `internal/sidebar` reader,
+  not accounting summaries. Event-cache enrichment may change only live
+  observation fields, not persisted facts.
 - Acknowledge stored refreshes before broadcasting a new row or title. Refresh
   tickets must be captured before the source snapshot starts; unrelated receipts
   and older in-flight reads cannot satisfy them. Creation metadata is persisted

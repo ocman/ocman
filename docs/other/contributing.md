@@ -3,6 +3,23 @@ title: Contributing
 weight: 7
 ---
 
+Ocman's primary repository, issue tracker and CI are on
+[Forgejo](https://forgejo.nousefreak.be/dries/ocman); GitHub hosts a mirror.
+Submit pull requests to Forgejo and check its
+[issues](https://forgejo.nousefreak.be/dries/ocman/issues) before opening a new
+one on either host.
+
+## Reporting bugs and requesting features
+
+For bugs, include steps to reproduce, expected and actual behavior, your
+ocman and agent versions, OS, and browser. Mention whether you use the
+web UI or desktop app and whether a remote machine is involved. Include
+relevant logs or screenshots, with tokens and private session content removed.
+
+For feature requests, describe the problem you want to solve, your proposed
+behavior, and any workarounds you have tried. Discuss larger changes in an
+issue before implementing them.
+
 ## Architecture
 
 Ocman serves an embedded React SPA from one Go binary. Platform adapters own
@@ -59,6 +76,14 @@ its task-specific `.agents/` guides before changing an area.
 
 Use pnpm for Node commands and keep `pnpm-lock.yaml` current.
 
+Fork the repository, clone your fork, and create a branch from the latest
+`main`. From the repository root:
+
+```sh
+mise install
+pnpm --dir frontend install --frozen-lockfile
+```
+
 ### Database isolation before startup
 
 Development must use disposable databases isolated to this checkout and branch.
@@ -108,6 +133,20 @@ before the fix. For code changes, run relevant tests and `make lint`; before
 committing, collect coverage and compare it with the baseline as described in
 `.agents/testing.md`. Coverage must not drop. Documentation-only changes need
 link checks and `make docs-build` when published content changes.
+
+## Pull requests
+
+- Keep each pull request focused on one change and link the related issue.
+- Follow the surrounding code's naming and structure. Keep the frontend
+  platform-agnostic and route host operations through `hostsvc.Host`.
+- Add tests as described above; coverage must not drop.
+- Update user-facing documentation in `docs/` when behavior changes. Update
+  [architecture diagrams](architecture.md) when their components or data flows
+  change.
+- Run `make test` and `make lint`. Run `make test-e2e` for browser workflow
+  changes and `make build` for build or packaging changes.
+- Describe what changed and how you verified it. Include screenshots for
+  visible UI changes.
 
 ## Platform-agnostic frontend
 

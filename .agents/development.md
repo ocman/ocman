@@ -24,7 +24,8 @@ tests. Startup may migrate automatically, so inspect resolved paths first.
 
 ## Tooling and commands
 
-`mise` provides `air`, `node` and `pnpm`. Run `mise install` if tools are missing.
+`mise.toml` pins the development tools, including `air`, `node`, `pnpm`,
+`golangci-lint`, `protoc` and `hugo`. Run `mise install` if tools are missing.
 Use `pnpm` for all Node commands. The Makefile and `make help` are authoritative.
 Frontend dev targets install locked dependencies before starting. Direct
 `pnpm build` or watcher-script runs require `pnpm install --frozen-lockfile`

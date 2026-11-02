@@ -55,6 +55,7 @@ do not load the whole folder. Markdown links do not automatically load files.
 | Finding package ownership or architecture documentation | [.agents/repository.md](.agents/repository.md) |
 | Go modules, routes, workers, events or persistence | [.agents/backend.md](.agents/backend.md) |
 | React, UI, routing, settings or browser state | [.agents/frontend.md](.agents/frontend.md) |
+| Adding or changing a page's layout, actions or UX | [.agents/page-design.md](.agents/page-design.md) |
 | Platform adapters, Claude, OpenCode compatibility or runtimes | [.agents/platforms.md](.agents/platforms.md) |
 | Session creation, drafts, worktrees, permissions, status or queues | [.agents/sessions.md](.agents/sessions.md) |
 | Remote ownership, projects, PRs or issues | [.agents/remotes-and-forges.md](.agents/remotes-and-forges.md) |

@@ -39,7 +39,7 @@ Read [remotes-and-forges.md](remotes-and-forges.md) for ownership rules.
 | --- | --- |
 | `internal/sessionsvc`, `internal/sessionlifecycle` | Shared mutations, prepare/start, progress, attachments, direct commands, reload/restart. |
 | `internal/sessionrecovery` | Workerless owner-local interruption history, replacement membership and admission/stop reconciliation. Queries stay in state; Claude supervisor recovery stays in its adapter. |
-| `internal/sessiontitles` | Owner-local `FirstPromptAdded` naming. Claude uses a tool-free nonpersisted Haiku helper with native 2.1.289 title prompt and helper slots; `/auto-title` preserves custom/manual names atomically. No naming command enters the conversation. |
+| `internal/sessiontitles` | Owner-local `FirstPromptAdded` naming. Claude uses a tool-free nonpersisted Haiku helper with the CLI's native title prompt (`session_title_prompt.go`) and helper slots; `/auto-title` preserves custom/manual names atomically. No naming command enters the conversation. |
 | `internal/queuesvc`, `internal/queuemod` | Queue domain and route/worker/native inbox coordination. |
 | `internal/permissions`, `internal/autoapprove` | Inherited rules, judging, provenance and pending-prompt/watch lifetime. |
 | `internal/snooze` | Snooze route and joined wake worker, checked on startup and every minute independently of auto-archive. Archive persistence stays in state. |
@@ -49,7 +49,7 @@ Read [remotes-and-forges.md](remotes-and-forges.md) for ownership rules.
 | `internal/analyticsdata` | Shared accounting metadata and tool-timing rules used by legacy queries and ingestion-maintained analytics summaries. |
 | `internal/analytics`, `internal/pricing`, `internal/srvtiming`, `internal/telemetry` | Analytics, LiteLLM price cache/costs, request timing and optional OTLP. |
 | `internal/ocmaint` | User-started OpenCode DB maintenance and launch gating. |
-| `internal/tasksvc`, `internal/taskmod` | Bounded owner-local background work, durable task progress in state.db and read-only task APIs. History ingestion is the first producer. |
+| `internal/tasksvc`, `internal/taskmod` | Bounded owner-local background work, durable task progress in state.db and read-only task APIs. |
 
 Read [sessions.md](sessions.md) and [integrations.md](integrations.md).
 
@@ -74,9 +74,10 @@ for feature safety constraints and [backend.md](backend.md) for module ownership
 ## Frontend, documentation and deployment
 
 - `frontend/` is the React/TypeScript/Vite SPA. Read [frontend.md](frontend.md).
-- `docs/` contains all published documentation, organized as `introduction/`,
+- `docs/` contains the published documentation, organized as `introduction/`,
   `features/`, `configuration/`, `faq/` and `other/`. Chapters have `_index.md`;
-  `title` and `weight` front matter drive navigation.
+  `title` and `weight` front matter drive navigation. `docs/adr/` (design
+  records) and `docs/agents/` (agent skill docs) are excluded from the site.
 - `site/` contains Hugo/Hextra config, templates and landing page. `hugo.toml`
   mounts `docs/` read-only; do not create a second copy of its content.
 - `spec/` holds detailed designs and acceptance criteria. Link to it rather

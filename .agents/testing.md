@@ -21,7 +21,7 @@ Use temporary databases. Never launch a real agent binary in platform tests.
 ## Local commands
 
 ```sh
-make test             # Go and Vitest
+make test             # Go, Vitest and development-script tests
 make test-backend     # go test ./... in the root and the nested sdk/ module
 make test-frontend    # vitest run
 make test-race        # go test -race ./internal/...
@@ -35,9 +35,12 @@ make coverage-check SUITE=frontend BASELINE_DIR=<baseline>
 make lint
 ```
 
-`make lint` runs Go vet, golangci-lint, TypeScript, ESLint and the repository
-checks for platform branching, host helpers, settings rows and CSS tokens, plus
-the fuzz-script self-test. Install golangci-lint; CI enforces more than vet.
+`make lint` runs Go vet and golangci-lint for the root and `sdk/` modules
+(including the rule keeping host helpers behind `hostsvc.Host`), `go mod tidy
+-diff` in `sdk/`, TypeScript, ESLint (including repository rules against
+platform-identity checks and raw settings rows), Stylelint, the
+generated A2UI catalog check, the CSS token guard and self-tests for the fuzz
+and SDK release scripts. Install golangci-lint; CI enforces more than vet.
 See `.golangci.yml` and `spec/ci-coverage-ratchet/` for the configuration.
 
 ## CI
