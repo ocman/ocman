@@ -86,7 +86,10 @@ Create/fork rejections known to precede allocation include error code
 response leaves allocation uncertain. Older supervisors omit the code and remain
 conservative; clients must never infer safe replay from a status alone.
 Composer gates creation and sending; rename, native queue and account have
-additional protocol capability flags. Browsing and lifecycle reads are required.
+additional protocol capability flags. Lifecycle reads are required. Browsing
+reads (`GET /sessions?directory=`, `GET /sessions/{id}` and `GET /catalog`) are
+served only by backends whose platform browses through the adapter; Codex reads
+its own app-server instead and answers them 501.
 
 Busy responses preserve the backend's user-facing message. A 409 with code
 `session_owned_elsewhere` is a definite rejection before turn admission. It
