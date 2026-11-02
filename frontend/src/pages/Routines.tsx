@@ -77,7 +77,7 @@ export function Routines() {
 
       <TabsContent value="routines" className={styles.panel}>
         <header className={styles.header}><p>Save a prompt, run it now, or schedule it for later.</p><Button type="button" variant="accent" onClick={openCreate}><i className="bi bi-plus-lg" aria-hidden="true" />New routine</Button></header>
-        {routineList.isError && routineList.data === undefined ? <PageState error icon="bi-exclamation-circle" title="Routines are unavailable" description={routineList.error.message}><Button type="button" onClick={retry} disabled={routineList.isFetching} aria-busy={routineList.isFetching}>Retry</Button></PageState>
+        {routineList.isError && routineList.data === undefined ? <PageState error title="Routines are unavailable" description={routineList.error.message} onRetry={retry} retrying={routineList.isFetching} />
           : routineList.isPending ? <SkeletonTable columns={['Name', 'Project', 'Session', 'Trigger', 'Last run', 'Status', 'Actions']} rows={3} label="Loading routines" />
           : routines.length === 0 ? <PageState icon="bi-clock-history" title="No routines yet" description="Save a prompt to run manually, on a schedule, or when a webhook arrives."><Button type="button" variant="accent" onClick={openCreate}>Create a routine</Button></PageState> : (
           <section className={styles.list} aria-label="Saved routines"><DataTable framed><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
@@ -97,7 +97,7 @@ export function Routines() {
       <TabsContent value="inboxes" className={styles.panel}>
         <section aria-label="Webhook inboxes" className={styles.panel}>
           <header className={styles.header}><p>Inboxes capture encrypted webhook deliveries. Routines subscribe to an inbox and filter which deliveries run them.</p><Button type="button" variant="accent" onClick={() => setInboxDrawer('')}><i className="bi bi-plus-lg" aria-hidden="true" />New inbox</Button></header>
-          {inboxList.isError && inboxList.data === undefined ? <PageState error icon="bi-exclamation-circle" title="Webhook inboxes are unavailable" description={inboxList.error.message}><Button type="button" onClick={retry} disabled={inboxList.isFetching} aria-busy={inboxList.isFetching}>Retry</Button></PageState>
+          {inboxList.isError && inboxList.data === undefined ? <PageState error title="Webhook inboxes are unavailable" description={inboxList.error.message} onRetry={retry} retrying={inboxList.isFetching} />
             : inboxList.isPending ? <SkeletonTable columns={['Name', 'Linked routines', 'Deliveries']} rows={3} label="Loading webhook inboxes" />
             : inboxes.length === 0 ? <PageState icon="bi-inbox" title="No webhook inboxes yet" description="Create an inbox to capture webhook deliveries and trigger routines."><Button type="button" variant="accent" onClick={() => setInboxDrawer('')}>Create an inbox</Button></PageState> : (
             <section className={styles.list} aria-label="Saved inboxes"><DataTable framed><thead><tr><th>Name</th><th>Linked routines</th><th>Deliveries</th></tr></thead><tbody>{inboxes.map((inbox) => (

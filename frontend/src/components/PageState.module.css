@@ -3,3 +3,7 @@
 .heading { margin: 0; color: var(--text); font-size: 16px; }
 .description { max-width: 420px; margin: 0; color: var(--subtext0); font-size: 13px; line-height: 1.6; }
 .error .icon { color: var(--danger); }
+.compact { min-height: 0; gap: 8px; padding: 16px; }
+.compact .icon { font-size: 20px; }
+.compact .heading { font-size: 14px; }
+.compact .description { max-width: none; font-size: 12px; }

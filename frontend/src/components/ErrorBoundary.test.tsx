@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ErrorInfo } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
-import styles from './ErrorState.module.css';
+import styles from './PageState.module.css';
 
 // remoteLog is hit from componentDidCatch. We mock it so the test asserts
 // the boundary forwards crashes to the server log without performing a real
@@ -153,11 +153,11 @@ describe('ErrorBoundary', () => {
         <span>hidden</span>
       </PreErrored>,
     );
-    expect(html).toContain(`${styles.root} ${styles.inline}`);
+    expect(html).toContain(`${styles.root} ${styles.error} ${styles.compact}`);
     expect(html).toContain('display error');
     expect(html).toContain('Try again');
     expect(html).toContain('oc-button');
-    expect(html).not.toContain('hidden');
+    expect(html).not.toContain('<span>hidden</span>');
   });
 
   it('honours the static fallback prop over the default UI', () => {

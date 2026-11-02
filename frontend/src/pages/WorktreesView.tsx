@@ -140,7 +140,7 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
       {loading && !loaded ? (
         <SkeletonTable columns={['Branch', 'Path', 'Sessions', 'Last activity', 'Actions']} rows={3} label="Loading worktrees" />
       ) : error && !loaded ? (
-        <PageState error icon="bi-exclamation-circle" title="Worktrees are unavailable" description={error}><Button type="button" onClick={() => void load()} disabled={loading} aria-busy={loading}>Retry</Button></PageState>
+        <PageState error title="Worktrees are unavailable" description={error} onRetry={() => void load()} retrying={loading} />
       ) : rows.length === 0 ? (
         <PageState icon="bi-diagram-3" title="No worktrees found" description="Create a worktree session to work in a separate branch and checkout." />
       ) : (

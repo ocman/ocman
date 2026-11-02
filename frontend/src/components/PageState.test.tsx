@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { PageState } from './PageState';
 
 describe('PageState', () => {
@@ -18,5 +18,23 @@ describe('PageState', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Reports are unavailable');
     expect(screen.getByText('Server offline')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible();
+  });
+
+  it('offers a pending Retry and a default icon for an unavailable state', () => {
+    const onRetry = vi.fn();
+    const { container, rerender } = render(<PageState error title="Reports are unavailable" onRetry={onRetry} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('i')).toHaveClass('bi-exclamation-circle');
+    expect(container.querySelector('p')).toBeNull();
+    rerender(<PageState error title="Reports are unavailable" onRetry={onRetry} retrying />);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('renders a plain empty state without an icon', () => {
+    const { container } = render(<PageState title="Nothing here" description="Empty." />);
+    expect(container.querySelector('i')).toBeNull();
+    expect(container.querySelector('[data-error-state]')).toBeNull();
   });
 });

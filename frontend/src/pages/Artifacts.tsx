@@ -70,7 +70,7 @@ export function Artifacts() {
         </SelectField>
       </div>
     </header>
-    {unavailable ? <PageState error icon="bi-exclamation-circle" title="Artifacts are unavailable" description={list.error.message}><Button type="button" onClick={retry} disabled={list.isFetching} aria-busy={list.isFetching}>Retry</Button></PageState> : <>
+    {unavailable ? <PageState error title="Artifacts are unavailable" description={list.error.message} onRetry={retry} retrying={list.isFetching} /> : <>
       {list.error && <InlineAlert onRetry={retry} retrying={list.isFetching}>{list.error.message}</InlineAlert>}
       {list.isPending ? <SkeletonTable columns={['Title', 'Project', 'Session', 'Items', 'Size', 'Created']} rows={3} label="Loading artifacts" />
         : artifacts.length > 0 ? <ArtifactList artifacts={artifacts} listSearch={params.toString()} />
