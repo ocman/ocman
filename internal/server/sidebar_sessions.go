@@ -52,6 +52,8 @@ func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuery, strict bool) ([]db.Session, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	adapters := s.registry.Platforms()
 	var remoteFlags state.SidebarFlags
 	if s.stateDB != nil {
@@ -92,24 +94,7 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 		page.Limit += q.Offset
 	}
 	all := []db.Session{}
-	if local != nil {
-		rows, err := local.SidebarSessionsFor(ctx, sources, page)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, rows...)
-		for _, a := range adapters {
-			if isLocalAdapter(a) {
-				owned := []db.Session{}
-				for _, row := range rows {
-					if row.Platform == string(a.ID()) {
-						owned = append(owned, row)
-					}
-				}
-				s.registry.RememberSessions(a.ID(), owned)
-			}
-		}
-	}
+	// Start remote reads before the local query so owner latency overlaps.
 	var wg sync.WaitGroup
 	for i, a := range adapters {
 		if isLocalAdapter(a) {
@@ -151,6 +136,26 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			}
 			results[i], failures[i] = reader.SidebarSessions(ctx, remotePage)
 		}(i, a, ctx)
+	}
+	if local != nil {
+		rows, err := local.SidebarSessionsFor(ctx, sources, page)
+		if err != nil {
+			cancel()
+			wg.Wait()
+			return nil, err
+		}
+		all = append(all, rows...)
+		for _, a := range adapters {
+			if isLocalAdapter(a) {
+				owned := []db.Session{}
+				for _, row := range rows {
+					if row.Platform == string(a.ID()) {
+						owned = append(owned, row)
+					}
+				}
+				s.registry.RememberSessions(a.ID(), owned)
+			}
+		}
 	}
 	wg.Wait()
 	for i, rows := range results {

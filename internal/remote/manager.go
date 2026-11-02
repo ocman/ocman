@@ -464,20 +464,6 @@ func (m *Manager) refreshInventory(ctx context.Context, mr *managedRemote) {
 	m.invMu.Unlock()
 }
 
-// RefreshInventories re-fetches every connected remote's inventory. Call
-// periodically and on reconnect (AD-8). Safe to call concurrently.
-func (m *Manager) RefreshInventories(ctx context.Context) {
-	m.mu.RLock()
-	managed := make([]*managedRemote, 0, len(m.remotes))
-	for _, mr := range m.remotes {
-		managed = append(managed, mr)
-	}
-	m.mu.RUnlock()
-	for _, mr := range managed {
-		m.refreshInventory(ctx, mr)
-	}
-}
-
 // resolveDir maps an absolute directory to the owning remote ID, or ""
 // for local. A dir that exactly matches a remote's known project path
 // resolves to that remote (AD-16b prefers explicit owner refs; this is
