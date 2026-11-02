@@ -109,7 +109,7 @@ The Makefile and `make help` are authoritative.
 | `make test` | Go, Vitest and development-script tests |
 | `make test-e2e` | Build frontend and run the separate Playwright suite |
 | `make test-all-fast` | Go, frontend and Playwright in parallel, each stopping at its first failure |
-| `make lint` | Go vet, golangci-lint, TypeScript, ESLint, Stylelint and repository guards |
+| `make lint` | golangci-lint (including govet), TypeScript, ESLint, Stylelint and repository guards |
 | `make build` | Frontend build followed by Go binary build |
 | `make docs-build` | Build the published documentation into `site/public/` |
 | `make clean` | Remove the binary, `tmp/` and embedded frontend assets; older dev history may still be under `tmp/` |

@@ -43,12 +43,12 @@ make coverage-check SUITE=frontend BASELINE_DIR=<baseline>
 make lint
 ```
 
-`make lint` runs Go vet and golangci-lint for the root and `sdk/` modules
-(including the rule keeping host helpers behind `hostsvc.Host`), `go mod tidy
--diff` in `sdk/`, TypeScript, ESLint (including repository rules against
-platform-identity checks and raw settings rows), Stylelint, the
-generated A2UI catalog check, the CSS token guard and self-tests for the fuzz
-and SDK release scripts. Install golangci-lint; CI enforces more than vet.
+`make lint` runs golangci-lint (which includes govet) for the root and `sdk/`
+modules (including the rule keeping host helpers behind `hostsvc.Host`), `go mod
+tidy -diff` in `sdk/`, TypeScript, ESLint (including repository rules against
+platform-identity checks and raw settings rows), Stylelint, the generated A2UI
+catalog check, the CSS token guard and self-tests for the fuzz and SDK release
+scripts. Install golangci-lint.
 See `.golangci.yml` and `spec/ci-coverage-ratchet/` for the configuration.
 
 ## CI

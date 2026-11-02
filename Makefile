@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check coverage-local lint lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts lint-release-scripts contracts otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev restart-claude-supervisors frontend-deps build build-frontend build-backend build-desktop install-plugin installer-mac run clean test test-dev-scripts test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz coverage coverage-check coverage-local lint lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts lint-release-scripts lint-ci-scripts contracts proto otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -46,8 +46,6 @@ dev dev-prod dev-prod-watch dev-remote dev-frontend: frontend-deps
 frontend-deps:
 	cd frontend && pnpm install --frozen-lockfile
 
-.PHONY: frontend-deps build-frontend build-backend
-#
 # The dev loop lives in scripts/dev.sh, not here. `make` catches Ctrl+C and
 # does not forward it to a recipe shell, so a Makefile-hosted dev loop leaves
 # air/vite orphaned on Ctrl+C (worst inside tmux). `exec`ing the script makes
@@ -133,18 +131,15 @@ restart-claude-supervisors: ## Stop managed Claude supervisors; next create/send
 		done || exit $$?; \
 	done
 
-.PHONY: restart-claude-supervisors
-
 # Emergency nuke: kill anything holding the dev ports. Use when a previous
 # `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
 # run even when nothing is listening — xargs is a no-op on empty stdin on
 # both BSD and GNU.
 kill-dev:
 	@echo "Reclaiming dev ports 8228, 8229, 8230, and $(RELAY_PORT)..."
-	@lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
-	@lsof -tiTCP:$(RELAY_PORT) -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@for port in 8228 8229 8230 $(RELAY_PORT); do \
+		lsof -tiTCP:$$port -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
+	done
 	@pkill -x air 2>/dev/null || true
 	@echo "Done. Run 'make dev' / 'make dev-remote' / 'make dev-prod-watch' to restart."
 
@@ -180,7 +175,7 @@ PLUGIN_DIR ?= $(HOME)/.local/share/ocman/plugins
 # The fixture lives in the nested SDK module, so it is built by import path.
 PLUGIN_PKG = $(if $(filter fixture,$(PLUGIN)),github.com/ocman/ocman/sdk/examples,./examples)/ocman-plugin-$(PLUGIN)
 
-install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|fixture|catalog)
+install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|workspaces|fixture|catalog)
 	@mkdir -p "$(PLUGIN_DIR)"
 	@if [ -f examples/ocman-plugin-$(PLUGIN)/ui/package.json ]; then \
 		pnpm --dir examples/ocman-plugin-$(PLUGIN)/ui install --frozen-lockfile && \
@@ -197,8 +192,7 @@ install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|fi
 # All assets are therefore served from the Go `//go:embed static/*` FS in
 # internal/webui/static — NOT from Wails's own asset server. So the frontend
 # must be built into internal/webui/static (the `pnpm build` output).
-build-desktop: ## Build the Wails desktop app (outputs to build/bin/)
-	cd frontend && pnpm install --frozen-lockfile && pnpm build
+build-desktop: build-frontend ## Build the Wails desktop app (outputs to build/bin/)
 	@mkdir -p build
 	rsvg-convert -w 1024 -h 1024 frontend/public/favicon.svg -o build/appicon.png
 	wails build -skipbindings -s -o ocman-desktop -ldflags "-X main.version=$(VERSION)"
@@ -272,7 +266,6 @@ clean:
 # Run both Go and frontend test suites
 test: test-backend test-frontend test-dev-scripts
 
-.PHONY: test-dev-scripts
 test-dev-scripts: ## Test dev log streaming and shutdown without launching ocman
 	python3 scripts/dev_test.py
 
@@ -327,11 +320,6 @@ export FUZZTIME
 test-fuzz: ## Run all Fuzz* targets for FUZZTIME (default 10s) each
 	./scripts/fuzz.sh
 
-# Print per-package coverage for internal/.
-test-coverage: ## Print per-package Go coverage for internal/
-	go test -cover ./internal/...
-	cd sdk && go test -cover ./...
-
 # Collect total line coverage into coverage/*.json. Pass SUITE=go or
 # SUITE=frontend to collect just one side (default: both). Drives the
 # CI coverage ratchet (spec/ci-coverage-ratchet).
@@ -357,13 +345,12 @@ coverage-local: ## Collect coverage and check it against gh-pages (SUITE=go|fron
 	$(MAKE) --no-print-directory coverage-check SUITE="$(filter-out all,$(SUITE))" BASELINE_DIR="$$baseline"
 
 # Run all linters and type checks
-lint: lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts lint-release-scripts
+lint: lint-backend lint-frontend lint-css-tokens lint-fuzz-scripts lint-release-scripts lint-ci-scripts
 
+# golangci-lint's standard linter set includes govet.
 lint-backend:
-	go vet ./...
 	golangci-lint run ./...
 	cd sdk && go mod tidy -diff
-	cd sdk && go vet ./...
 	cd sdk && golangci-lint run --config ../.golangci.yml ./...
 
 lint-frontend:
@@ -384,6 +371,10 @@ lint-fuzz-scripts:
 lint-release-scripts:
 	./scripts/sdk-next-tag_test.sh
 	python3 scripts/test_tag_selection.py
+
+# Self-test for the script CI uses to read pinned tool versions.
+lint-ci-scripts:
+	./scripts/ci-tool-versions_test.sh
 
 # Refresh the Go DTO snapshot (frontend/src/lib/contracts/go-dtos.json) that
 # the frontend's hand-written API types are checked against. The Go test
@@ -475,7 +466,7 @@ install-hooks: ## Install pre-commit + pre-push hooks (requires pre-commit: pip 
 #
 # `make help` lists every target with a `## ` doc comment after the
 # colon. Targets without a doc comment are intentionally hidden from
-# the listing — most of them are dev-loop internals (kill-children,
+# the listing — most of them are dev-loop internals (frontend-deps,
 # build-frontend, etc) that the user shouldn't need to invoke
 # directly.
 help: ## Show this help

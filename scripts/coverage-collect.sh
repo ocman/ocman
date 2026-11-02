@@ -12,8 +12,8 @@
 #   coverage/frontend.json  { "pct": <n>, "sha": "<commit>", "ts": "<iso8601>" }
 #
 # Go coverage is measured across ./internal/... plus the plugin protocol
-# package that moved into the nested SDK module (the meaningful code;
-# matches `make test-coverage`) with cross-package instrumentation so
+# package that moved into the nested SDK module (the meaningful code)
+# with cross-package instrumentation so
 # integration tests credit the internal packages they exercise, and
 # -covermode=atomic so it stays consistent with `make test-race`.
 # Generated files (protobuf/gRPC
