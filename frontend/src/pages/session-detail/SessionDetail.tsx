@@ -19,8 +19,6 @@ import { sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api } from '../../lib/api';
-import type { Message, Part, SessionInfoCommit } from '../../lib/api';
-import { parsePart } from '../../lib/convertMessages';
 import { cleanTitle } from '../../lib/format';
 import type { MessageBookmark } from '../../lib/messageBookmarks';
 import { useMessageBookmarks } from './useMessageBookmarks';
@@ -91,6 +89,7 @@ import { SessionSidebar } from './SessionSidebar';
 import { useDocumentVisible, usePanelOpen, usePanelVisible } from '../../lib/usePanelVisible';
 import { SessionEmptyDetail, SessionLoadError } from './SessionStatusViews';
 import { useSessionActions } from './useSessionActions';
+import { useCommitSourceJump, useCommitSourceState } from './useCommitSourceJump';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { platformMessageCount, useSession } from './useSession';
 import { usePendingSend } from './usePendingSend';
@@ -108,19 +107,6 @@ const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
 const ALL_MESSAGES_LIMIT = 2_147_483_647;
 const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
-
-function hasCommitSource(messages: Message[], parts: Part[], commit: SessionInfoCommit): boolean {
-  if (!messages.some((message) => message.id === commit.sourceMessageId)) return false;
-  const part = parts.find((candidate) => (
-    candidate.id === commit.toolPartId && candidate.messageId === commit.sourceMessageId
-  ));
-  if (!part) return false;
-  const data = parsePart(part);
-  const callID = data.callID || part.id;
-  return data.type === 'tool'
-    && (data.tool === 'bash' || data.tool === 'mcp_bash')
-    && callID === (commit.toolCallId || commit.toolPartId);
-}
 
 /**
  * Props for the inner SessionDetail component.
@@ -146,13 +132,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const factoryEpicID = factoryEnabled ? searchParams.get('factoryEpic') ?? '' : '';
   const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
   const [sidebarScroll, setSidebarScroll] = useState({ sessionId: '', tick: 0 });
-  const [commitSourceJump, setCommitSourceJump] = useState<{
-    sessionId: string;
-    platformId: string;
-    messageId: string;
-    toolCallId: string;
-    tick: number;
-  } | null>(null);
+  const commitSource = useCommitSourceState();
+  const commitSourceJump = commitSource.jump;
   // Route changes must win over in-flight streaming work. flushSync
   // forces React Router's location update to commit immediately so
   // the SSE lifecycle (keyed off the route id) tears down before
@@ -242,66 +223,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
     observeMessages(messages, parts);
   }, [messages, parts, observeMessages]);
 
-  const [commitSourceStatus, setCommitSourceStatus] = useState<{
-    sessionId: string;
-    platformId: string;
-    message: string;
-  } | null>(null);
-  const commitSourceAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => () => {
-    commitSourceAbortRef.current?.abort();
-    commitSourceAbortRef.current = null;
-  }, [id, session?.platform]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a route/owner change invalidates imperative navigation state from the previous transcript.
-    setCommitSourceJump(null);
-    setCommitSourceStatus(null);
-  }, [id, session?.platform]);
-
-  const showCommitSource = (commit: SessionInfoCommit) => {
-    if (!session || session.id !== id) return;
-    commitSourceAbortRef.current?.abort();
-    commitSourceAbortRef.current = null;
-    const sessionId = session.id;
-    const platformId = session.platform;
-    setCommitSourceStatus(null);
-    const jump = () => {
-      closeMobilePanel();
-      setCommitSourceJump((current) => ({
-        sessionId,
-        platformId,
-        messageId: commit.sourceMessageId,
-        toolCallId: commit.toolCallId || commit.toolPartId,
-        tick: (current?.tick ?? 0) + 1,
-      }));
-    };
-
-    if (hasCommitSource(messages, parts, commit)) {
-      jump();
-      return;
-    }
-
-    const controller = new AbortController();
-    commitSourceAbortRef.current = controller;
-    void api.session(sessionId, ALL_MESSAGES_LIMIT, 0, controller.signal, platformId)
-      .then((detail) => {
-        if (controller.signal.aborted) return;
-        if (detail.session.id !== sessionId || detail.session.platform !== platformId) return;
-        if (!hasCommitSource(detail.messages, detail.parts, commit)) {
-          setCommitSourceStatus({ sessionId, platformId, message: 'Source call is no longer available.' });
-          return;
-        }
-        jump();
-        hydrateHistory(detail.messages, detail.parts, storedMessageIds(detail));
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        remoteLog.error('Failed to load commit source', error);
-        setCommitSourceStatus({ sessionId, platformId, message: 'Source call could not be loaded.' });
-      });
-  };
+  const { showCommitSource, commitSourceStatus } = useCommitSourceJump(commitSource, {
+    id, session, messages, parts, hydrateHistory, closeMobilePanel,
+  });
 
   const { firstUnreadMessageId, unreadMessageCount } = useUnreadMarker(session, messages);
   const { visibleSessionWarnings, dismissSessionWarning } = useSessionWarnings(session);
@@ -1170,7 +1094,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             onRemoveMessageBookmark={handleRemoveMessageBookmark}
             onScrollToMessageBookmark={handleScrollToMessageBookmark}
             onNavigateCommit={showCommitSource}
-            commitSourceStatus={commitSourceStatus && commitSourceStatus.sessionId === session?.id && commitSourceStatus.platformId === session?.platform ? commitSourceStatus.message : null}
+            commitSourceStatus={commitSourceStatus}
           />
           </PerfProfiler>
         )}
