@@ -9,6 +9,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // serve intercepts execution only. History, catalog, account and spool routes
@@ -22,7 +23,7 @@ func (a *acpExecution) serve(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path == "/sessions" {
 		var req platforms.CreateSessionRequest
 		var response *platforms.CreateSessionResponse
-		err := decode(r, &req)
+		err := providersupervisor.Decode(r, &req)
 		if err == nil {
 			response, err = a.create(ctx, req)
 		}
@@ -39,7 +40,7 @@ func (a *acpExecution) serve(w http.ResponseWriter, r *http.Request) bool {
 	switch op {
 	case "send":
 		var req platforms.SendMessageRequest
-		if err = decode(r, &req); err == nil {
+		if err = providersupervisor.Decode(r, &req); err == nil {
 			err = a.send(ctx, id, req)
 		}
 	case "abort":
@@ -48,7 +49,7 @@ func (a *acpExecution) serve(w http.ResponseWriter, r *http.Request) bool {
 		err = a.send(ctx, id, platforms.SendMessageRequest{Message: "/compact"})
 	case "command":
 		var req platforms.ExecuteCommandRequest
-		if err = decode(r, &req); err == nil {
+		if err = providersupervisor.Decode(r, &req); err == nil {
 			message := "/" + strings.TrimPrefix(strings.TrimSpace(req.Command), "/")
 			if req.Arguments != "" {
 				message += " " + req.Arguments
@@ -58,14 +59,14 @@ func (a *acpExecution) serve(w http.ResponseWriter, r *http.Request) bool {
 	case "fork":
 		var req platforms.ForkSessionRequest
 		var response *platforms.CreateSessionResponse
-		if err = decode(r, &req); err == nil {
+		if err = providersupervisor.Decode(r, &req); err == nil {
 			response, err = a.fork(ctx, id, req.MessageID)
 		}
 		reply(w, response, err)
 		return true
 	case "rename":
 		var req platforms.RenameSessionRequest
-		if err = decode(r, &req); err == nil {
+		if err = providersupervisor.Decode(r, &req); err == nil {
 			err = a.rename(ctx, id, req.Title)
 		}
 	default:
@@ -116,7 +117,7 @@ func (a *acpExecution) fork(ctx context.Context, id, messageID string) (*platfor
 
 func (a *acpExecution) rename(ctx context.Context, id, title string) error {
 	if strings.TrimSpace(title) == "" {
-		return statusError{http.StatusBadRequest, errors.New("title is required")}
+		return providersupervisor.WithStatus(http.StatusBadRequest, errors.New("title is required"))
 	}
 	c, _, err := a.b.conn(ctx)
 	if err != nil {

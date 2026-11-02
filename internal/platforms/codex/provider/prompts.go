@@ -11,6 +11,7 @@ import (
 
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // question is one field of an ACP elicitation, as the question UI shows it.
@@ -78,14 +79,14 @@ func (b *backend) answer(id string, question bool, response func(*prompt) any, t
 		return platforms.ErrNotFound
 	case pr.answering:
 		b.mu.Unlock()
-		return statusError{http.StatusConflict, errors.New("prompt is being answered")}
+		return providersupervisor.WithStatus(http.StatusConflict, errors.New("prompt is being answered"))
 	}
 	props["sessionID"], props["requestID"] = pr.session, id
 	data, _ := json.Marshal(props)
 	decision := providerprotocol.Event{Type: typ, Properties: data}
 	if pr.reply != nil && (pr.reply.Type != typ || !bytes.Equal(pr.reply.Properties, data)) {
 		b.mu.Unlock()
-		return statusError{http.StatusUnprocessableEntity, errors.New("codex already received a different decision for this prompt; that decision stands")}
+		return providersupervisor.WithStatus(http.StatusUnprocessableEntity, errors.New("codex already received a different decision for this prompt; that decision stands"))
 	}
 	pr.answering = true
 	delivered := pr.reply != nil
@@ -110,7 +111,7 @@ func (b *backend) answer(id string, question bool, response func(*prompt) any, t
 	reply := *pr.reply
 	b.mu.Unlock()
 	if err := b.record(id, pr, reply); err != nil {
-		return statusError{http.StatusServiceUnavailable, fmt.Errorf("%w: %w", platforms.ErrReplyUnrecorded, err)}
+		return providersupervisor.WithStatus(http.StatusServiceUnavailable, fmt.Errorf("%w: %w", platforms.ErrReplyUnrecorded, err))
 	}
 	return nil
 }
@@ -136,7 +137,7 @@ func (b *backend) replyPermission(id string, reply string) error {
 		decision.accept = true
 	case "reject":
 	default:
-		return statusError{http.StatusBadRequest, errors.New("reply must be once, always or reject")}
+		return providersupervisor.WithStatus(http.StatusBadRequest, errors.New("reply must be once, always or reject"))
 	}
 	return b.answer(id, false, func(*prompt) any { return decision },
 		"permission.replied", map[string]any{"reply": reply})

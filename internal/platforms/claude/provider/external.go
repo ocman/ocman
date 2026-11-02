@@ -7,6 +7,7 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // resumable is intentionally independent of process ownership. An external
@@ -29,7 +30,7 @@ func (l *live) claimForTurn(ctx context.Context, id string) (owned, error) {
 		return owned{}, platforms.ErrNotFound
 	}
 	if e.ParentID != "" || e.RootID != e.ID || !filepath.IsAbs(e.Directory) {
-		return owned{}, statusError{http.StatusForbidden, errReadOnly}
+		return owned{}, providersupervisor.WithStatus(http.StatusForbidden, errReadOnly)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

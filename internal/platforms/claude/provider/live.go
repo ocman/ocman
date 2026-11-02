@@ -58,7 +58,7 @@ func (l *live) foreign(o *owned) bool {
 }
 
 func (l *live) foreignError(o owned) error {
-	return statusError{http.StatusForbidden, fmt.Errorf("this Claude session was started under Claude configuration %s and is unavailable under %s", o.Config, l.opts.ConfigDir)}
+	return providersupervisor.WithStatus(http.StatusForbidden, fmt.Errorf("this Claude session was started under Claude configuration %s and is unavailable under %s", o.Config, l.opts.ConfigDir))
 }
 
 var errReadOnly = errors.New("this Claude session cannot be continued as an independent conversation")

@@ -14,6 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 	acpexec "github.com/ocman/ocman/internal/platforms/acp"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 func (a *acpExecution) send(ctx context.Context, id string, req platforms.SendMessageRequest) error {
@@ -24,7 +25,7 @@ func (a *acpExecution) send(ctx context.Context, id string, req platforms.SendMe
 	}
 	input, err := acpInput(req)
 	if err != nil {
-		return statusError{http.StatusBadRequest, err}
+		return providersupervisor.WithStatus(http.StatusBadRequest, err)
 	}
 	a.b.mu.Lock()
 	s := a.b.sessionLocked(id)
@@ -89,7 +90,7 @@ func (a *acpExecution) send(ctx context.Context, id string, req platforms.SendMe
 		}
 	})
 	if err != nil {
-		return statusError{http.StatusConflict, err}
+		return providersupervisor.WithStatus(http.StatusConflict, err)
 	}
 	a.mu.Lock()
 	a.turns[id] = turn

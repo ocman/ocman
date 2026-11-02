@@ -7,6 +7,7 @@ import (
 
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 func backgroundCountEvent(id string, count int, tasks ...[]map[string]string) providerprotocol.Event {
@@ -50,7 +51,7 @@ func (l *live) abortRequest(r *http.Request, id string) error {
 		return l.abort(r.Context(), id)
 	}
 	var req platforms.AbortRequest
-	if err := decode(r, &req); err != nil {
+	if err := providersupervisor.Decode(r, &req); err != nil {
 		return err
 	}
 	if req.TaskID == "" {

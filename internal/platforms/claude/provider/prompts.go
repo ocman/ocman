@@ -16,6 +16,7 @@ import (
 
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // prompt is an unanswered can_use_tool request from a claude child. The
@@ -145,14 +146,14 @@ func (l *live) answer(id string, question bool, respond func(*prompt) map[string
 		return platforms.ErrNotFound
 	case pr.answering:
 		l.mu.Unlock()
-		return statusError{http.StatusConflict, errors.New("prompt is being answered")}
+		return providersupervisor.WithStatus(http.StatusConflict, errors.New("prompt is being answered"))
 	}
 	data, _ := json.Marshal(props(pr))
 	decision := providerprotocol.Event{Type: typ, Properties: data}
 	delivered := pr.reply != nil
 	if delivered && (pr.reply.Type != decision.Type || !bytes.Equal(pr.reply.Properties, decision.Properties)) {
 		l.mu.Unlock()
-		return statusError{http.StatusUnprocessableEntity, errors.New("claude already received a different decision for this prompt; that decision stands")}
+		return providersupervisor.WithStatus(http.StatusUnprocessableEntity, errors.New("claude already received a different decision for this prompt; that decision stands"))
 	}
 	pr.answering = true
 	l.mu.Unlock()
@@ -183,7 +184,7 @@ func (l *live) answer(id string, question bool, respond func(*prompt) map[string
 	}
 	if err := l.record(id, pr); err != nil {
 		l.recordLater(id, pr)
-		return statusError{http.StatusServiceUnavailable, fmt.Errorf("%w: %w", platforms.ErrReplyUnrecorded, err)}
+		return providersupervisor.WithStatus(http.StatusServiceUnavailable, fmt.Errorf("%w: %w", platforms.ErrReplyUnrecorded, err))
 	}
 	return nil
 }
@@ -322,7 +323,7 @@ func init() {
 
 func (l *live) replyPermission(id string, req platforms.RespondPermissionRequest) error {
 	if req.Reply != "once" && req.Reply != "always" && req.Reply != "reject" {
-		return statusError{http.StatusBadRequest, errors.New("reply must be once, always or reject")}
+		return providersupervisor.WithStatus(http.StatusBadRequest, errors.New("reply must be once, always or reject"))
 	}
 	// "always" is remembered by ocman, never written into Claude's settings.
 	return l.answer(id, false, func(pr *prompt) map[string]any {

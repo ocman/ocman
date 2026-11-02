@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // 2.1.299 reports the fallback to default after an unsupported model switch.
@@ -61,11 +62,11 @@ func (l *live) serveNativePermission(w http.ResponseWriter, r *http.Request) boo
 		if err != nil {
 			reply(w, nil, err)
 		} else {
-			writeJSON(w, http.StatusOK, state)
+			providersupervisor.WriteJSON(w, http.StatusOK, state)
 		}
 	case http.MethodPost:
 		var req platforms.SetPermissionRulesRequest
-		err := decode(r, &req)
+		err := providersupervisor.Decode(r, &req)
 		if err == nil {
 			err = l.setNativeMode(r.Context(), id, req.NativeMode)
 		}
@@ -105,7 +106,7 @@ func (l *live) setNativeMode(ctx context.Context, id string, mode *string) error
 		return err
 	}
 	if mode == nil || (*mode != "default" && *mode != "auto") {
-		return statusError{http.StatusBadRequest, errors.New("native permission mode must be default or auto")}
+		return providersupervisor.WithStatus(http.StatusBadRequest, errors.New("native permission mode must be default or auto"))
 	}
 	l.nativeModeMu.Lock()
 	defer l.nativeModeMu.Unlock()
@@ -127,7 +128,7 @@ func (l *live) setNativeMode(ctx context.Context, id string, mode *string) error
 		return err
 	}
 	if _, err := l.control(ctx, p, "", map[string]any{"subtype": "set_permission_mode", "mode": *mode}); err != nil {
-		return statusError{http.StatusUnprocessableEntity, err}
+		return providersupervisor.WithStatus(http.StatusUnprocessableEntity, err)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

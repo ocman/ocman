@@ -8,6 +8,7 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // HistoryConfirmation describes content actually committed by ingestion. Native
@@ -91,7 +92,7 @@ func (l *live) confirmHistory(id string, receipt providerprotocol.HistoryConfirm
 
 func (l *live) confirmHistoryRequest(r *http.Request, id string) error {
 	var receipt providerprotocol.HistoryConfirmation
-	if err := decode(r, &receipt); err != nil {
+	if err := providersupervisor.Decode(r, &receipt); err != nil {
 		return err
 	}
 	l.confirmHistory(id, receipt)

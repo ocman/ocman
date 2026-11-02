@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 func TestNativeAutoVersionGate(t *testing.T) {
@@ -96,7 +97,7 @@ func TestNativeModeLiveControlAndModelFallback(t *testing.T) {
 			auto := "auto"
 			err := l.setNativeMode(t.Context(), "s", &auto)
 			if refused {
-				if err == nil || errStatus(err) != http.StatusUnprocessableEntity || l.owned["s"].NativeMode != "" {
+				if err == nil || (providersupervisor.Replies{}).ErrStatus(err) != http.StatusUnprocessableEntity || l.owned["s"].NativeMode != "" {
 					t.Fatalf("refused update=%v mode=%s", err, l.owned["s"].NativeMode)
 				}
 				return

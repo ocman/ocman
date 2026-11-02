@@ -14,6 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms"
 	acpexec "github.com/ocman/ocman/internal/platforms/acp"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // acpExecution owns the sole execution connection. backend.conn remains a
@@ -169,7 +170,7 @@ func (a *acpExecution) servers() []acp.McpServer {
 
 func (a *acpExecution) create(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	if err := absoluteACPDirectory(req.Directory); err != nil {
-		return nil, errors.Join(platforms.ErrCreationRejected, statusError{http.StatusBadRequest, err})
+		return nil, errors.Join(platforms.ErrCreationRejected, providersupervisor.WithStatus(http.StatusBadRequest, err))
 	}
 	c, err := a.conn(ctx)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // HookEvents are the status hooks the ocman plugin registers (AD-11). They
@@ -46,7 +47,7 @@ func hookStatus(event string) (db.SessionStatus, bool) {
 func (l *live) hook(req providerprotocol.HookEvent) error {
 	status, ok := hookStatus(req.Event)
 	if !ok || req.SessionID == "" {
-		return statusError{http.StatusBadRequest, fmt.Errorf("invalid hook event %q", req.Event)}
+		return providersupervisor.WithStatus(http.StatusBadRequest, fmt.Errorf("invalid hook event %q", req.Event))
 	}
 	l.observeExternal(req)
 	if req.Event == "SessionEnd" {

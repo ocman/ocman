@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 // servePrompt handles POST /permissions/{id}/reply and /questions/{id}/reply|reject.
@@ -18,12 +19,12 @@ func (l *live) servePrompt(w http.ResponseWriter, r *http.Request) {
 	switch parts[0] + "/" + parts[2] {
 	case "permissions/reply":
 		var req platforms.RespondPermissionRequest
-		if err = decode(r, &req); err == nil {
+		if err = providersupervisor.Decode(r, &req); err == nil {
 			err = l.replyPermission(parts[1], req)
 		}
 	case "questions/reply":
 		var req platforms.RespondQuestionRequest
-		if err = decode(r, &req); err == nil {
+		if err = providersupervisor.Decode(r, &req); err == nil {
 			err = l.replyQuestion(parts[1], req.Answers)
 		}
 	case "questions/reject":

@@ -2,7 +2,6 @@ package claudeprovider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -161,12 +160,6 @@ type handler struct {
 	account *account
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.live.serveNativePermission(w, r) {
 		return
@@ -192,16 +185,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/sessions/") && !strings.Contains(strings.TrimPrefix(path, "/sessions/"), "/"):
 		v, err = h.detail(r)
 	default:
-		writeJSON(w, http.StatusNotImplemented, providerprotocol.Error{Code: "unsupported", Message: "unsupported operation"})
+		providersupervisor.WriteJSON(w, http.StatusNotImplemented, providerprotocol.Error{Code: "unsupported", Message: "unsupported operation"})
 		return
 	}
 	switch {
 	case errors.Is(err, platforms.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, providerprotocol.Error{Code: "not_found", Message: "not found"})
+		providersupervisor.WriteJSON(w, http.StatusNotFound, providerprotocol.Error{Code: "not_found", Message: "not found"})
 	case err != nil:
-		writeJSON(w, http.StatusInternalServerError, providerprotocol.Error{Message: err.Error()})
+		providersupervisor.WriteJSON(w, http.StatusInternalServerError, providerprotocol.Error{Message: err.Error()})
 	default:
-		writeJSON(w, http.StatusOK, v)
+		providersupervisor.WriteJSON(w, http.StatusOK, v)
 	}
 }
 

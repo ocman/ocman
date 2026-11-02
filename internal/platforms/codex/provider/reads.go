@@ -10,6 +10,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
+	"github.com/ocman/ocman/internal/providersupervisor"
 )
 
 func (b *backend) serveRead(ctx context.Context, w http.ResponseWriter, r *http.Request) {
@@ -26,7 +27,7 @@ func (b *backend) serveRead(ctx context.Context, w http.ResponseWriter, r *http.
 	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/lifecycle"):
 		v, err = b.lifecycle(ctx, strings.TrimSuffix(strings.TrimPrefix(path, "/sessions/"), "/lifecycle"))
 	default:
-		writeJSON(w, http.StatusNotImplemented, providerprotocol.Error{Code: "unsupported", Message: "unsupported operation"})
+		providersupervisor.WriteJSON(w, http.StatusNotImplemented, providerprotocol.Error{Code: "unsupported", Message: "unsupported operation"})
 		return
 	}
 	reply(w, v, err)
