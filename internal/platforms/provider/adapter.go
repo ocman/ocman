@@ -22,7 +22,6 @@ import (
 var (
 	_ platforms.Integration         = (*Adapter)(nil)
 	_ platforms.LifecycleReader     = (*Adapter)(nil)
-	_ platforms.NativeQueue         = (*Adapter)(nil)
 	_ platforms.PermissionRefresher = (*Adapter)(nil)
 	_ platforms.SessionEventSource  = (*Adapter)(nil)
 )

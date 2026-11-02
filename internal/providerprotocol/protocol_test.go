@@ -34,7 +34,7 @@ func TestHelloWireCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hello.PlatformID != "test" || hello.CLIVersion != "1.2.3" || !hello.Capabilities.Composer || !hello.Capabilities.Events || !hello.Capabilities.NativeQueue || !hello.Capabilities.Rename || !hello.Capabilities.Account {
+	if hello.PlatformID != "test" || hello.CLIVersion != "1.2.3" || !hello.Capabilities.Composer || !hello.Capabilities.Events || !hello.Capabilities.Rename || !hello.Capabilities.Account {
 		t.Fatal(hello)
 	}
 	data, err := json.Marshal(hello)

@@ -43,20 +43,11 @@ type Hello struct {
 
 type Capabilities struct {
 	platforms.Capabilities
-	NativeQueue    bool `json:"nativeQueue"`
 	Rename         bool `json:"rename"`
 	Account        bool `json:"account"`
 	Replay         bool `json:"replay"`                   // explicit turn acknowledgments and leased snapshots
 	Hooks          bool `json:"hooks"`                    // POST /hooks: status of sessions started outside ocman
 	HistoryConfirm bool `json:"historyConfirm,omitempty"` // optional durable-history receipts for transient views
-	Ownership      bool `json:"ownership,omitempty"`      // loaded-thread ownership probes, without launching a runtime
-}
-
-// SessionOwnership proves a thread is loaded in a supervisor's native runtime.
-type SessionOwnership struct {
-	SourceKey string `json:"sourceKey"`
-	Loaded    bool   `json:"loaded"`
-	Idle      bool   `json:"idle"`
 }
 
 const CodeSessionOwnedElsewhere = "session_owned_elsewhere"
@@ -162,5 +153,3 @@ type RejectQuestionRequest = platforms.RejectQuestionRequest
 type PermissionRule = platforms.PermissionRule
 type SetPermissionRulesRequest = platforms.SetPermissionRulesRequest
 type DirectoryCatalog = platforms.DirectoryCatalog
-type NativeQueuedMessage = platforms.NativeQueuedMessage
-type CancelNativeQueuedRequest = platforms.CancelNativeQueuedRequest

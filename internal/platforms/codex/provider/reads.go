@@ -23,8 +23,6 @@ func (b *backend) serveRead(ctx context.Context, w http.ResponseWriter, r *http.
 		v = b.runtime(q.Get("directory"))
 	case path == "/permissions" || path == "/questions":
 		v = b.pendingPrompts(q.Get("sessionID"), path == "/questions")
-	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/ownership"):
-		err = platforms.ErrUnsupported
 	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/lifecycle"):
 		v, err = b.lifecycle(ctx, strings.TrimSuffix(strings.TrimPrefix(path, "/sessions/"), "/lifecycle"))
 	default:

@@ -40,9 +40,6 @@ prompts to the user.
 | POST /sessions/{id}/compact | `CompactRequest` |
 | POST /sessions/{id}/abort | `AbortRequest`, optional `TaskID` stops only that background task and requires `backgroundTaskStop` |
 | POST /sessions/{id}/send | `SendMessageRequest` |
-| POST /sessions/{id}/hold | `SendMessageRequest`, Delivery="queue" |
-| GET /sessions/{id}/held | `[]NativeQueuedMessage`, oldest first |
-| POST /sessions/{id}/held/{messageId}/cancel | `CancelNativeQueuedRequest` |
 | POST /sessions/{id}/command | `ExecuteCommandRequest` |
 | POST /sessions/{id}/shell | `RunShellRequest` |
 | GET /permissions?sessionID= | `[]LivePrompt`, reconciliation only |
@@ -50,8 +47,6 @@ prompts to the user.
 | GET /questions?sessionID= | `[]LivePrompt`, reconciliation only |
 | POST /questions/{id}/reply | `RespondQuestionRequest` |
 | POST /questions/{id}/reject | `RejectQuestionRequest` |
-| GET /sessions/{id}/rules | `[]PermissionRule` |
-| POST /sessions/{id}/rules | `SetPermissionRulesRequest` |
 | GET /sessions/{id}/native-permission | Optional `nativeAutoPermission`: `NativePermissionState` |
 | POST /sessions/{id}/native-permission | Optional `nativeAutoPermission`: `SetPermissionRulesRequest` with only `NativeMode`; rules are unchanged |
 | GET /catalog?directory= | `DirectoryCatalog` |
@@ -63,7 +58,6 @@ prompts to the user.
 | POST /drain-idle?token= | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
 | POST /resume?token= | `DrainState`, restores admission only for the matching cleanup pause |
 | POST /seal-idle?token= | `DrainState`, commits the matching idle pause to replacement; only `idle:true` authorizes stopping the supervisor, and `/resume` cannot undo it |
-| GET /sessions/{id}/ownership | Optional `ownership` capability: `SessionOwnership`, native loaded-thread proof with source key and idle state; never launches a runtime |
 | GET /account | `Account` |
 | POST /hooks | `HookEvent`, external-session status and advisory ownership; optional `pid` and `managed` identify the originating process; 204 |
 
@@ -85,17 +79,19 @@ Create/fork rejections known to precede allocation include error code
 `platforms.ErrCreationRejected`. Without that explicit guarantee, even an error
 response leaves allocation uncertain. Older supervisors omit the code and remain
 conservative; clients must never infer safe replay from a status alone.
-Composer gates creation and sending; rename, native queue and account have
-additional protocol capability flags. Lifecycle reads are required. Browsing
-reads (`GET /sessions?directory=`, `GET /sessions/{id}` and `GET /catalog`) are
-served only by backends whose platform browses through the adapter; Codex reads
-its own app-server instead and answers them 501.
+Composer gates creation and sending; rename and account have additional
+protocol capability flags. Rulesets live in ocman (`provider.Rules`), not in
+backends, and no backend holds a native follow-up queue: `SendMessageRequest`
+with a `Delivery` is unsupported. Lifecycle reads are required. Browsing reads
+(`GET /sessions?directory=`, `GET /sessions/{id}` and `GET /catalog`) are served
+only by backends whose platform browses through the adapter; Codex reads its
+own app-server instead and answers them 501.
 
 Busy responses preserve the backend's user-facing message. A 409 with code
 `session_owned_elsewhere` is a definite rejection before turn admission. It
 permits bounded recovery only after verifying an idle managed owner for the
 same native thread and source key. Other busy or transport errors never permit
-automatic replay. A backend without ownership probes or idle sealing cannot be
+automatic replay. A backend without idle sealing cannot be
 stopped for ownership recovery. Sealing atomically rechecks the cleanup token
 and idle state, then clears the resumable token so reconnect cannot undo the
 replacement fence. An uncertain stop after sealing leaves the fence intact.

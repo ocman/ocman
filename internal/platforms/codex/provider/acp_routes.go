@@ -15,10 +15,6 @@ import (
 // retain the existing provider implementation and never resume a native writer.
 func (a *acpExecution) serve(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == http.MethodGet {
-		if strings.HasSuffix(r.URL.Path, "/ownership") {
-			reply(w, nil, platforms.ErrUnsupported)
-			return true
-		}
 		return false
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), rpcTimeout)

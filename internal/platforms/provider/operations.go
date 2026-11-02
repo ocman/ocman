@@ -11,16 +11,10 @@ import (
 )
 
 func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
-	path := "/send"
-	supported := a.Capabilities().Composer
-	if req.Delivery == "queue" {
-		path = "/hold"
-		supported = supported && a.hello.Capabilities.NativeQueue
-	}
-	if req.Delivery != "" && req.Delivery != "queue" {
+	if req.Delivery != "" { // backends hold no native follow-up queue
 		return platforms.ErrUnsupported
 	}
-	return a.call(ctx, supported, "POST", sessionPath(req.SessionID, path), req, nil)
+	return a.call(ctx, a.Capabilities().Composer, "POST", sessionPath(req.SessionID, "/send"), req, nil)
 }
 
 // Hook forwards a CLI hook event for a session started outside ocman.
@@ -96,22 +90,24 @@ func (a *Adapter) RenameSession(ctx context.Context, req platforms.RenameSession
 func (a *Adapter) Compact(ctx context.Context, req platforms.CompactRequest) error {
 	return a.call(ctx, a.Capabilities().Compact, "POST", sessionPath(req.SessionID, "/compact"), req, nil)
 }
-func (a *Adapter) PermissionRules(ctx context.Context, id string) ([]platforms.PermissionRule, error) {
-	if r := a.localRules(); r != nil {
-		return r.get(id), nil
+
+// Rulesets are ocman's own (SetRules); no backend serves them.
+func (a *Adapter) PermissionRules(_ context.Context, id string) ([]platforms.PermissionRule, error) {
+	r := a.localRules()
+	if r == nil {
+		return nil, platforms.ErrUnsupported
 	}
-	var rules []platforms.PermissionRule
-	err := a.call(ctx, a.Capabilities().PermissionRules, "GET", sessionPath(id, "/rules"), nil, &rules)
-	return rules, err
+	return r.get(id), nil
 }
 func (a *Adapter) SetPermissionRules(ctx context.Context, req platforms.SetPermissionRulesRequest) error {
 	if req.NativeMode != nil {
 		return a.call(ctx, a.Capabilities().NativeAutoPermission, "POST", sessionPath(req.SessionID, "/native-permission"), req, nil)
 	}
-	if r := a.localRules(); r != nil {
-		return r.set(req.SessionID, req.Rules)
+	r := a.localRules()
+	if r == nil {
+		return platforms.ErrUnsupported
 	}
-	return a.call(ctx, a.Capabilities().PermissionRules, "POST", sessionPath(req.SessionID, "/rules"), req, nil)
+	return r.set(req.SessionID, req.Rules)
 }
 
 // DisposeSession lets configured creates (routines, inherited worktree
@@ -153,14 +149,6 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 }
 func (a *Adapter) ForkSession(ctx context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
 	return a.create(ctx, a.Capabilities().Fork, sessionPath(req.SessionID, "/fork"), req)
-}
-func (a *Adapter) NativeQueued(ctx context.Context, id string) ([]platforms.NativeQueuedMessage, error) {
-	var messages []platforms.NativeQueuedMessage
-	err := a.call(ctx, a.hello.Capabilities.NativeQueue, "GET", sessionPath(id, "/held"), nil, &messages)
-	return messages, err
-}
-func (a *Adapter) CancelNativeQueued(ctx context.Context, req platforms.CancelNativeQueuedRequest) error {
-	return a.call(ctx, a.hello.Capabilities.NativeQueue, "POST", sessionPath(req.SessionID, "/held/"+url.PathEscape(req.ID)+"/cancel"), req, nil)
 }
 
 // LiveSessions lists the statuses the provider's own process settled

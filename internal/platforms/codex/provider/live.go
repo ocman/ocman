@@ -38,7 +38,7 @@ type Options struct {
 func Capabilities() providerprotocol.Capabilities {
 	return providerprotocol.Capabilities{Rename: true, Capabilities: platforms.Capabilities{
 		Composer: true, Abort: true, Events: true, RespondPermission: true, RespondQuestion: true,
-		AutoApprove: true, PushPrompts: true, ExactPatterns: true, PermissionRules: true, ModelCatalog: true,
+		AutoApprove: true, PushPrompts: true, PermissionRules: true, ModelCatalog: true,
 		Compact: true, Fork: true, SlashCommands: true, FileChanges: true, SessionInfo: true}}
 }
 

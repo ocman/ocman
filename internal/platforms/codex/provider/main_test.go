@@ -106,7 +106,7 @@ func TestPublicSupervisorAlwaysSelectsACP(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &hello); err != nil {
 		t.Fatal(err)
 	}
-	if hello.Capabilities.Ownership || hello.Capabilities.ShellExec || hello.Capabilities.ForkAtMessage {
+	if hello.Capabilities.ShellExec || hello.Capabilities.ForkAtMessage {
 		t.Fatalf("native execution was selected: %+v", hello.Capabilities)
 	}
 }

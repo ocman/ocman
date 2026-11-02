@@ -46,7 +46,7 @@ func allCapabilities() providerprotocol.Capabilities {
 		Compact: true, Fork: true, Move: true, Events: true, AgentCatalog: true,
 		ModelCatalog: true, SlashCommands: true, ShellExec: true, FileChanges: true,
 		SessionInfo: true, AutoApprove: true, PermissionRules: true,
-	}, Rename: true, NativeQueue: true, Account: true}
+	}, Rename: true, Account: true}
 }
 
 func newFake(t *testing.T, caps providerprotocol.Capabilities) *fakeProvider {
@@ -193,15 +193,12 @@ func TestMutationContract(t *testing.T) {
 		t.Fatal(forked)
 	}
 	send := platforms.SendMessageRequest{SessionID: "s", Message: "hello", Images: []platforms.ImageAttachment{{URL: "data:image/png;base64,AA==", Mime: "image/png"}}, Model: "model", Agent: "build", Reasoning: "high"}
-	queued := send
-	queued.Delivery = "queue"
 	tests := []struct {
 		path string
 		body any
 		run  func() error
 	}{
 		{"/sessions/s/send", send, func() error { return a.SendMessage(t.Context(), send) }},
-		{"/sessions/s/hold", queued, func() error { return a.SendMessage(t.Context(), queued) }},
 		{"/sessions/s/abort", platforms.AbortRequest{SessionID: "s"}, func() error { return a.Abort(t.Context(), platforms.AbortRequest{SessionID: "s"}) }},
 		{"/sessions/s/rename", platforms.RenameSessionRequest{SessionID: "s", Title: "renamed"}, func() error {
 			return a.RenameSession(t.Context(), platforms.RenameSessionRequest{SessionID: "s", Title: "renamed"})
@@ -222,14 +219,8 @@ func TestMutationContract(t *testing.T) {
 		{"/questions/q/reject", platforms.RejectQuestionRequest{SessionID: "s", RequestID: "q"}, func() error {
 			return a.RejectQuestion(t.Context(), platforms.RejectQuestionRequest{SessionID: "s", RequestID: "q"})
 		}},
-		{"/sessions/s/rules", platforms.SetPermissionRulesRequest{SessionID: "s", Rules: []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "ask"}}}, func() error {
-			return a.SetPermissionRules(t.Context(), platforms.SetPermissionRulesRequest{SessionID: "s", Rules: []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "ask"}}})
-		}},
 		{"/sessions/s/move", platforms.MoveSessionRequest{SessionID: "s", Directory: "/other"}, func() error {
 			return a.MoveSession(t.Context(), platforms.MoveSessionRequest{SessionID: "s", Directory: "/other"})
-		}},
-		{"/sessions/s/held/h/cancel", platforms.CancelNativeQueuedRequest{SessionID: "s", ID: "h"}, func() error {
-			return a.CancelNativeQueued(t.Context(), platforms.CancelNativeQueuedRequest{SessionID: "s", ID: "h"})
 		}},
 	}
 	for _, tt := range tests {
@@ -252,8 +243,6 @@ func TestCatalogAndOptionalReadContract(t *testing.T) {
 	f.reply("GET", "/sessions/s", platforms.SessionDetail{Session: &s})
 	catalog := platforms.DirectoryCatalog{Agents: []platforms.AgentCatalogEntry{{Name: "build"}}, Commands: []platforms.SlashCommandEntry{{Name: "skill"}}, Models: &platforms.SessionModelsResponse{Models: []platforms.SessionModel{{Model: "model"}}}, LiveConnection: true}
 	f.reply("GET", "/catalog", catalog)
-	f.reply("GET", "/sessions/s/rules", []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "ask"}})
-	f.reply("GET", "/sessions/s/held", []platforms.NativeQueuedMessage{{ID: "h", Text: "followup"}})
 	f.reply("GET", "/account", providerprotocol.Account{SubscriptionType: "max", RateLimits: []providerprotocol.RateLimit{{Name: "weekly", Utilization: 0.5, ResetsAt: 100}}})
 	a := f.adapter(t)
 	direct, err := a.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: "/repo"})
@@ -261,15 +250,25 @@ func TestCatalogAndOptionalReadContract(t *testing.T) {
 	if !direct.LiveConnection || direct.Agents[0].Name != "build" || direct.Commands[0].Name != "skill" || direct.Models.Models[0].Model != "model" {
 		t.Fatal(direct)
 	}
-	rules, err := a.PermissionRules(t.Context(), "s")
-	requireNoError(t, err)
-	if rules[0].Action != "ask" {
-		t.Fatal(rules)
+	// Rulesets are ocman's own: without SetRules there is nothing to serve,
+	// and no backend route is asked, whatever the backend advertises.
+	f.mu.Lock()
+	before := len(f.calls)
+	f.mu.Unlock()
+	if _, err := a.PermissionRules(t.Context(), "s"); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatal(err)
 	}
-	held, err := a.NativeQueued(t.Context(), "s")
-	requireNoError(t, err)
-	if held[0].Text != "followup" {
-		t.Fatal(held)
+	if err := a.SetPermissionRules(t.Context(), platforms.SetPermissionRulesRequest{SessionID: "s"}); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatal(err)
+	}
+	if err := a.SendMessage(t.Context(), platforms.SendMessageRequest{SessionID: "s", Delivery: "queue"}); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	after := len(f.calls)
+	f.mu.Unlock()
+	if after != before {
+		t.Fatalf("%d unsupported operations reached the backend", after-before)
 	}
 	account, err := a.Account(t.Context())
 	requireNoError(t, err)
@@ -297,8 +296,6 @@ func TestCapabilitiesGateEveryOptionalMethod(t *testing.T) {
 		func() error { _, err := a.PermissionRules(t.Context(), "s"); return err },
 		func() error { _, err := a.CreateSession(t.Context(), platforms.CreateSessionRequest{}); return err },
 		func() error { _, err := a.ForkSession(t.Context(), platforms.ForkSessionRequest{}); return err },
-		func() error { _, err := a.NativeQueued(t.Context(), "s"); return err },
-		func() error { return a.CancelNativeQueued(t.Context(), platforms.CancelNativeQueuedRequest{}) },
 		func() error { _, err := a.Account(t.Context()); return err },
 		func() error { _, err := a.ListPermissions(t.Context(), "s"); return err },
 		func() error { _, err := a.ListQuestions(t.Context(), "s"); return err },
