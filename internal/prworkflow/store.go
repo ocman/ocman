@@ -10,8 +10,11 @@ import (
 	"github.com/ocman/ocman/internal/state"
 )
 
-var Schema = state.ModuleSchema{Module: "pr-workflow", Tables: []string{"session_pull_request"}, Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
+var Schema = state.ModuleSchema{Module: "pr-workflow", Tables: []string{"session_pull_request", "pr_workflow_import"}, Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 	_, err := tx.Exec(`CREATE TABLE session_pull_request (platform TEXT NOT NULL, session_id TEXT NOT NULL, host TEXT NOT NULL, repo TEXT NOT NULL, number INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(platform,session_id,host,repo,number))`)
+	return err
+}, func(tx *sql.Tx) error {
+	_, err := tx.Exec(`CREATE TABLE pr_workflow_import (receipt TEXT PRIMARY KEY NOT NULL)`)
 	return err
 }}}
 

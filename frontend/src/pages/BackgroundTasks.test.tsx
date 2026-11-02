@@ -59,6 +59,17 @@ describe('Background tasks', () => {
     expect(screen.queryByRole('button', { name: 'Start task' })).not.toBeInTheDocument();
   });
 
+  it('distinguishes local and remote tasks even when their IDs collide', async () => {
+    vi.mocked(backgroundTasks).mockResolvedValue([
+      task('same', { title: 'Local scan' }),
+      task('same', { title: 'Remote scan', ownerId: 'workstation' }),
+    ]);
+    renderWithQuery(<BackgroundTasks />);
+    expect(await screen.findByText('Remote scan')).toBeVisible();
+    expect(screen.getByLabelText('This machine')).toBeVisible();
+    expect(screen.getByLabelText('workstation')).toBeVisible();
+  });
+
   it('shows loading and read failures rather than a false empty result', async () => {
     vi.mocked(backgroundTasks).mockReturnValue(new Promise(() => {}));
     const first = renderWithQuery(<BackgroundTasks />);

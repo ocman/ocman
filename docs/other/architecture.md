@@ -29,7 +29,7 @@ flowchart LR
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
     Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
-    Ocman <-->|authenticated gRPC| Remotes[Remote ocman instances]
+    Ocman <-->|authenticated gRPC:<br/>sessions, owner PR workflows and task reads| Remotes[Remote ocman instances]
     Ocman -->|encrypted shares + webhook poll| Relay[ocman-relay]
     Ocman -.->|optional OTLP| Otel[Telemetry collector]
 ```
@@ -58,6 +58,16 @@ flowchart LR
   bundle from `/api/plugins/ui/bundle`, and the bundle shares the SPA's React,
   router, query client and `@ocman/plugin-ui` through `/plugin-shared/` entries
   (ADR 0009).
+- **Owner-local background work.** `prworkflow` routes session PR operations
+  through the resolved Platform's optional `PullRequestWorkflow` interface.
+  The session owner stores links, polls the forge and queues updates; the hub
+  reads watch counts by platform for session completion indicators. Legacy
+  hub links transfer with durable import receipts before polling, preserving
+  checkpoints and preventing retries from resurrecting owner-deleted links.
+  `taskmod` aggregates read-only `tasksvc.Reader` observations through the
+  owning Host's optional `BackgroundTaskHost` interface. Remote RPCs expose
+  only closed PR operations and task reads, never arbitrary HTTP forwarding or
+  task submission. See [multi-remote](../features/multi-remote.md).
 - **Conversation PR previews.** Showing a card or switching sessions revalidates
   PR metadata, checks and review status. The browser bundles simultaneous lookups
   by owner, deduplicates identical requests, and cancels a shared request only

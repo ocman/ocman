@@ -58,6 +58,13 @@ type Task struct {
 
 type Work func(context.Context, *Reporter) error
 
+// Reader exposes only task observations, never submission or cancellation.
+type Reader interface {
+	List(context.Context, Status, string, int) ([]Task, error)
+	Get(context.Context, string) (Task, error)
+	ActiveCount(context.Context) (int, error)
+}
+
 func ValidStatus(status Status) bool {
 	switch status {
 	case Queued, Running, Succeeded, Failed, Cancelled, Interrupted:

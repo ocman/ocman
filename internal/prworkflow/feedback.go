@@ -15,6 +15,9 @@ func (m *Module) feedback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if m.forward(w, r, t, "feedback") {
+		return
+	}
 	var req changeRequest
 	if !httpx.ReadJSON(w, r, 4096, &req) {
 		return

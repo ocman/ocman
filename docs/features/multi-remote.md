@@ -122,6 +122,20 @@ list with its host badge.
 - **PRs and issues.** The project sidebar sends the owning `remoteId` for
   upstream detection, lists, checks, identity lookups, branch highlighting,
   and session/worktree launches. Repository work runs on the owner.
+- **Session PR watches.** Linked PRs, polling checkpoints and pending updates
+  live on the session's owning machine. Linking, watching, stopping a watch,
+  checks and feedback drafts behave the same through the hub or directly on
+  that machine. The owner polls with its own forge credentials and delivers
+  updates through its session queue, even while the hub is disconnected.
+  Older hub-stored links transfer automatically when the owner is reachable;
+  failed transfers retain the original state and never poll on the wrong host.
+  Upgrade both instances to use owner-routed watches.
+- **Background tasks.** The task page and active counter include application
+  work on this machine and connected remotes, with machine badges on each row.
+  Progress and history stay on the machine doing the work; the hub reads them
+  over authenticated gRPC. The task API accepts `remoteId` to scope list,
+  count and detail reads; an explicit disconnected owner returns unavailable,
+  never another machine's tasks. Remote task support requires an updated remote.
 - **Worktrees.** The project Worktrees page (`/project/<dir>/worktrees`)
   belongs to one machine, named by `?remoteId=<id>`; without it the page is
   this machine's. Listing, creating, deleting, session counts and *Open

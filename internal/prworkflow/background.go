@@ -8,7 +8,8 @@ import (
 
 // BackgroundCounts includes active watches and nonterminal updates awaiting delivery.
 // A merged or closed PR must not keep its session in progress for a queued notice.
-// These are hub-owned tasks, including when the session executes remotely.
+// Watches are owned by the same instance as their session. Legacy hub rows are
+// transferred by the PR workflow before polling resumes.
 func BackgroundCounts(ctx context.Context, db *state.DB) (map[state.Key]int, error) {
 	counts := map[state.Key]int{}
 	if db == nil {

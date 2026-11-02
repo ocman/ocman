@@ -3,6 +3,7 @@ import { Button, SelectField } from '../components/Control';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
+import { HostBadge } from '../components/HostBadge';
 import { backgroundTasks, type BackgroundTask, type BackgroundTaskStatus } from '../lib/backgroundTasks';
 import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import './BackgroundTasks.css';
@@ -32,8 +33,8 @@ function TaskProgress({ task }: { task: BackgroundTask }) {
 function TaskGroup({ title, tasks }: { title: string; tasks: BackgroundTask[] }) {
   if (tasks.length === 0) return null;
   return <DataTableGroup label={title} noun="tasks" count={tasks.length}>
-    {tasks.map((task) => <DataTableRow key={task.id}
-      primary={<><strong>{task.title}</strong> <span className="background-task-state" data-status={task.status}>{labels[task.status]}</span></>}
+    {tasks.map((task) => <DataTableRow key={`${task.ownerId}:${task.id}`}
+      primary={<><strong>{task.title}</strong> <span className="background-task-state" data-status={task.status}>{labels[task.status]}</span> <HostBadge alwaysShow remoteId={task.ownerId} remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} /></>}
       secondary={<TaskProgress task={task} />}
       meta={<time dateTime={new Date(task.updatedAt).toISOString()}>{new Date(task.updatedAt).toLocaleString()}</time>}
     />)}
@@ -50,7 +51,7 @@ export function BackgroundTasks() {
   const active = tasks.filter((task) => task.status === 'queued' || task.status === 'running');
   const recent = tasks.filter((task) => task.status !== 'queued' && task.status !== 'running');
   return <section className="background-tasks" aria-label="Ocman background tasks">
-    <p>Ocman work on this instance, separate from coding-agent tasks. History sync retries failed sessions automatically; analytics continues using imported data.</p>
+    <p>Ocman work on this machine and connected remotes, separate from coding-agent tasks. History sync retries failed sessions automatically; analytics continues using imported data.</p>
     <div className="background-tasks-controls">
       <SelectField aria-label="Task status" value={status} onChange={(event) => setStatus(event.target.value as BackgroundTaskStatus | '')}>
         <option value="">All statuses</option>

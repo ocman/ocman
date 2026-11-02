@@ -144,6 +144,16 @@ func (m *Module) sweep(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// Legacy hub watches move to the session owner before polling or
+		// delivering anything. An unavailable owner never falls back locally.
+		if owner, err := m.remote(targetOf(l)); err != nil {
+			continue
+		} else if owner != nil {
+			transferCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			_ = m.migrate(transferCtx, targetOf(l), owner)
+			cancel()
+			continue
+		}
 		if l.Pending == "" && (!l.Watching || l.NextAt > m.now().UnixMilli()) {
 			continue
 		}

@@ -13,6 +13,7 @@ import (
 	pb "github.com/ocman/ocman/internal/remote/proto"
 	"github.com/ocman/ocman/internal/sessionsvc"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/tasksvc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -32,6 +33,8 @@ type Server struct {
 	permissionNotificationDeferred func(string, string) bool
 	plugins                        PluginHandler
 	permissionPolicy               PermissionPolicyHandler
+	pullRequests                   PullRequestHandler
+	backgroundTasks                tasksvc.Reader
 }
 
 func (s *Server) UseInboxStore(store *state.DB) *Server { s.inboxStore = store; return s }

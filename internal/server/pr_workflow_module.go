@@ -25,11 +25,33 @@ func (s *Server) prWorkflowModule() *prworkflow.Module {
 		return prworkflow.New(prworkflow.Deps{
 			ProjectHandler: s.projectForgeModule().PRToolHandler(),
 			DB:             s.stateDB, Target: s.prTarget, Owner: s.prOwner, ResolveForge: s.resolveForge, Ready: s.prWatchReady,
+			Remote: s.remotePRWorkflow,
 			Enqueue: func(ctx context.Context, platform string, req platforms.SendMessageRequest) error {
 				return s.queueSvc().Enqueue(ctx, platform, true, req)
 			},
 		})
 	})
+}
+
+func (s *Server) remotePRWorkflow(t prworkflow.Target) (platforms.PullRequestWorkflow, error) {
+	owner, _ := platforms.SplitPlatformID(t.Platform)
+	if owner == "" {
+		return nil, nil
+	}
+	p, ok := s.registry.Get(platforms.ID(t.Platform))
+	if !ok {
+		return nil, platforms.ErrRemoteOffline
+	}
+	workflow, ok := p.(platforms.PullRequestWorkflow)
+	if !ok {
+		return nil, platforms.ErrUnsupported
+	}
+	return workflow, nil
+}
+
+// RemotePullRequestOperation is invoked only after remote RPC authentication.
+func (s *Server) RemotePullRequestOperation(ctx context.Context, platform string, req platforms.PullRequestRequest) platforms.PullRequestResponse {
+	return s.prWorkflowModule().Operation(ctx, platform, req)
 }
 
 func (s *Server) prTarget(w http.ResponseWriter, r *http.Request, id string) (prworkflow.Target, bool) {

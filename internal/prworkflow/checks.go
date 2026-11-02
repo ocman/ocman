@@ -18,6 +18,9 @@ func (m *Module) checks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if m.forward(w, r, t, "checks") {
+		return
+	}
 	q := r.URL.Query()
 	number, err := strconv.Atoi(q.Get("number"))
 	sha := q.Get("sha")

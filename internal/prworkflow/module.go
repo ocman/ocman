@@ -2,6 +2,7 @@ package prworkflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -29,6 +30,8 @@ type Deps struct {
 	Enqueue func(context.Context, string, platforms.SendMessageRequest) error
 	Ready   func(context.Context, Target) bool
 	Now     func() time.Time
+	// Remote resolves only remote session owners. Local targets return nil.
+	Remote func(Target) (platforms.PullRequestWorkflow, error)
 }
 type Module struct {
 	d      Deps
@@ -48,6 +51,9 @@ func (m *Module) Routes(r module.Router) {
 func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 	t, ok := m.d.Target(w, r, r.PathValue("id"))
 	if !ok {
+		return
+	}
+	if m.forward(w, r, t, "list") {
 		return
 	}
 	m.mu.Lock()
@@ -87,6 +93,9 @@ type changeRequest struct {
 func (m *Module) change(w http.ResponseWriter, r *http.Request) {
 	t, ok := m.d.Target(w, r, r.PathValue("id"))
 	if !ok {
+		return
+	}
+	if m.forward(w, r, t, "change") {
 		return
 	}
 	var req changeRequest
@@ -232,6 +241,19 @@ func (m *Module) newLink(ctx context.Context, t Target, remote string, number in
 func (m *Module) LinkCreated(ctx context.Context, t Target, remote string, number int, known ...*forge.PR) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if owner, err := m.remote(t); err != nil {
+		return err
+	} else if owner != nil {
+		if err := m.migrate(ctx, t, owner); err != nil {
+			return err
+		}
+		body, err := json.Marshal(createdLink{Remote: remote, Number: number, Known: known})
+		if err != nil {
+			return err
+		}
+		response, err := owner.PullRequestOperation(ctx, platforms.PullRequestRequest{Operation: "created", SessionID: t.SessionID, Body: body})
+		return responseError(response, err)
+	}
 	l, err := m.newLink(ctx, t, remote, number, known...)
 	if err != nil {
 		return err
