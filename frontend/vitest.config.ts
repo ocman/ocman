@@ -11,8 +11,8 @@ import react from '@vitejs/plugin-react';
 // Default environment is `node` for speed; integration tests that
 // render React components opt in via the per-file pragma:
 //   // @vitest-environment jsdom
-// at the top of the spec. setupFiles wires up @testing-library/jest-dom
-// matchers; they are inert under the node env.
+// at the top of the spec. setupFiles loads DOM matchers and React Testing
+// Library only for those tests, while sharing state isolation with Node tests.
 export default defineConfig({
   plugins: [react()],
   // The plugin UI contract tests read the published packages in ../sdk.

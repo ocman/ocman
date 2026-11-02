@@ -1,16 +1,17 @@
-// Loaded by every vitest run. Imports @testing-library/jest-dom so
-// integration tests get matchers like `toBeInTheDocument`. The
-// import is a no-op under the node environment because the matchers
-// only register when `expect` is in scope, which it is for vitest.
+// Shared state isolation applies to both Node and jsdom tests. Only jsdom
+// tests load DOM matchers and React Testing Library.
 import './test/broadcastChannel';
-import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { closeDraftDbForTests } from './src/lib/draftDb';
 import { queryClient } from './src/lib/queryClient';
 
 import { afterEach } from 'vitest';
-import { cleanup, configure } from '@testing-library/react';
+
+// A static import would load the DOM dependency graph even for pure Node tests.
+const cleanup = typeof document === 'undefined'
+  ? undefined
+  : (await import('./test/setupDom')).cleanup;
 
 // jsdom ships no ResizeObserver, which anything measuring its own box (React
 // Flow, xterm) constructs on mount. A no-op observer is enough: jsdom never
@@ -26,23 +27,12 @@ if (!('ResizeObserver' in globalThis)) {
   });
 }
 
-// Auto-cleanup the rendered DOM between tests so a stale tree from a
-// previous case can't satisfy a `findByRole` query in the next one.
-// Also fires under the node environment but degrades to a no-op when
-// no document was rendered.
+// Keep DOM cleanup before shared state resets so unmount effects finish first.
 afterEach(() => {
-  cleanup();
+  cleanup?.();
   // Each test gets an empty draft database; module memory is reset by the tests that use it.
   closeDraftDbForTests();
   // The app-wide session cache (lib/sessionsCache) starts empty per test.
   queryClient.clear();
   globalThis.indexedDB = new IDBFactory();
 });
-
-// CI runners are noticeably slower than dev hardware: cold-start the
-// SessionDetail integration test (which re-imports ~30 modules per
-// `renderSessionPage` call) routinely takes 2-3 s on the runner versus
-// <500 ms locally. Lift the default `waitFor` timeout from 1 s to 5 s
-// so the first slow render doesn't fail the suite. Per-call timeouts
-// in the test bodies are honoured as overrides.
-configure({ asyncUtilTimeout: 5000 });
