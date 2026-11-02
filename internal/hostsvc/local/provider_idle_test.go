@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/providerprotocol"
@@ -95,6 +96,56 @@ func TestIdleCullRollbackAndInterruptedCleanupRecovery(t *testing.T) {
 				t.Fatal("did not cancel original request")
 			}
 		})
+	}
+}
+
+// Cleanup and Ensure share the per-root lock, so a reconnect cannot resume
+// an idle pause between DrainIdle and Stop: no extra fence is needed.
+func TestIdleCullFencesConcurrentEnsure(t *testing.T) {
+	dir := providertest.Directory(t)
+	sup, err := providersupervisor.New(filepath.Join(dir, "spool"), providersupervisor.Backend{Hello: providerprotocol.Hello{
+		PlatformID: "fake", ProtocolVersion: providerprotocol.CurrentVersion, CLIVersion: "test",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := statetest.Open(t)
+	runtime := ocruntime.NewBackendRuntime("fake", "/unused", dir)
+	manager := &ProviderManager{Runtime: runtime, State: store}
+	var culling, raced atomic.Bool
+	ensured := make(chan error, 1)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/hello" && culling.Load() {
+			raced.Store(true)
+		}
+		sup.ServeHTTP(w, r)
+		if r.URL.Path == "/drain-idle" {
+			culling.Store(true)
+			go func() {
+				_, err := manager.ensureRoot(context.WithoutCancel(r.Context()), "/repo")
+				ensured <- err
+			}()
+			time.Sleep(50 * time.Millisecond) // Give a lock-free Ensure time to race.
+		}
+	})}
+	socket := filepath.Join(dir, "s")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	// An invalid handle makes Stop fail without tmux, so cleanup rolls back.
+	mustIdle(t, store.UpsertManagedProvider(t.Context(), "fake", "/repo", state.ManagedInstance{Endpoint: "unix://" + socket, Kind: ocruntime.KindProviderTmux, RuntimeID: "invalid/name"}))
+	if _, err := manager.CullIdle(t.Context(), "/repo", func(context.Context) (bool, error) { return true, nil }, func() {}); err == nil {
+		t.Fatal("expected the invalid handle to fail Stop")
+	}
+	culling.Store(false)
+	if err := <-ensured; err != nil {
+		t.Fatal(err)
+	}
+	if raced.Load() {
+		t.Fatal("Ensure probed the supervisor while cleanup held its idle pause")
 	}
 }
 

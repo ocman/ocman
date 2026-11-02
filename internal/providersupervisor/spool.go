@@ -27,7 +27,7 @@
 // condition and then commit their events one by one, each durable before the
 // next is sequenced. A condition therefore observes every earlier apply, and a
 // turn accepted after it was checked cannot be followed by its events. While
-// a barrier commits, /drain and /seal-idle do not report idle.
+// a barrier commits, /drain and /drain-idle do not report idle.
 //
 // # Retention
 //

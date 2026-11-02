@@ -403,7 +403,7 @@ flowchart TD
     Modules -->|idleprojects: idle timeout through hostsvc.IdleProjectRuntime| ClaudePlatform
     Supervisor --> Claude[platforms/claude/provider + launch<br/>index, converter, SDK-compatible claude children]
     Registry --> CodexPlatform[platforms/codex/transport<br/>machine-wide supervisor + history app-server]
-    CodexPlatform -->|execute, probe ownership, drain and seal idle owners| Provider
+    CodexPlatform -->|execute and drain idle owners| Provider
     Supervisor --> Codex[platforms/codex/provider + appserver<br/>ACP execution, native history + converter]
     Registry -->|SessionEventSink: status + idle| Server
     Modules -->|Factory + routine usage via platforms.UsageReader| OC

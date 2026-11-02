@@ -57,7 +57,6 @@ prompts to the user.
 | POST /drain | `DrainState`, stops new turns before reporting whether all sessions are idle |
 | POST /drain-idle?token= | `DrainState`, stops admission only when already idle; active turns, admitted requests, limited sessions and pending prompts refuse culling |
 | POST /resume?token= | `DrainState`, restores admission only for the matching cleanup pause |
-| POST /seal-idle?token= | `DrainState`, commits the matching idle pause to replacement; only `idle:true` authorizes stopping the supervisor, and `/resume` cannot undo it |
 | GET /account | `Account` |
 | POST /hooks | `HookEvent`, external-session status and advisory ownership; optional `pid` and `managed` identify the originating process; 204 |
 
@@ -91,17 +90,16 @@ Busy responses preserve the backend's user-facing message. A 409 with code
 `session_owned_elsewhere` is a definite rejection before turn admission. It
 permits bounded recovery only after verifying an idle managed owner for the
 same native thread and source key. Other busy or transport errors never permit
-automatic replay. A backend without idle sealing cannot be
-stopped for ownership recovery. Sealing atomically rechecks the cleanup token
-and idle state, then clears the resumable token so reconnect cannot undo the
-replacement fence. An uncertain stop after sealing leaves the fence intact.
+automatic replay.
 
 Idle culling uses the optional `/drain-idle` route rather than `/drain`. A random
 token scopes each cleanup pause and its rollback; replacement `/drain` clears
 the token, so rollback cannot undo replacement. `/hello` exposes an optional
 `idleDrainToken` while paused, letting the owner recover interrupted cleanup on
 the next Ensure, including after a dashboard restart or lost response. Rollback
-uses a bounded context independent of the cancelled cleanup request. Older
+uses a bounded context independent of the cancelled cleanup request. Cleanup
+and Ensure hold the owner's per-project lock, so a reconnect cannot resume a
+cleanup pause between the idle drain and Stop. Older
 supervisors that reject idle draining stay running until replaced normally.
 
 SSE frames carry `id: <positive uint64>` and `data: <Event JSON>`. `after` is
