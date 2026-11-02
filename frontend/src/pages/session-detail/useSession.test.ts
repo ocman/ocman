@@ -631,16 +631,17 @@ describe('useSession — bounded stream work (#722)', () => {
     unmount();
   });
 
-  it('keeps the streamed completion when the turn-end read still holds the open reply', async () => {
+  it('shows the ending a turn-end read composes over history that has not stored it', async () => {
     const { result, sse, fetchSession, unmount } = await setup();
     const reply = (data: Record<string, unknown>) => ({ id: 'reply', sessionId: SID, timeCreated: 3, data: { role: 'assistant', ...data } }) as SessionDetail['messages'][number];
     const final = { finish: 'stop', cost: 0.5, tokens: { input: 10, output: 20 }, time: { created: 3, completed: 9 } };
-    fetchSession.mockResolvedValue(makeDetail({ messages: [reply({ time: { created: 3 } })] }));
+    // The owner overlays the streamed ending on the lagging stored reply.
+    fetchSession.mockResolvedValue(makeDetail({ messages: [reply(final)], stream: { cursor: 'e1:3' } }));
     act(() => {
-      sse.emitOce(busy);
-      sse.emitOce({ type: 'message.upserted', message: reply(final) });
+      sse.emitOce(busy, { epoch: 'e1', seq: 1 });
+      sse.emitOce({ type: 'message.upserted', message: reply(final) }, { epoch: 'e1', seq: 2 });
     });
-    await act(async () => { sse.emitOce(idleEdge); sse.emitOce(turnEnded()); });
+    await act(async () => { sse.emitOce(idleEdge, { epoch: 'e1', seq: 3 }); sse.emitOce(turnEnded(), { epoch: 'e1', seq: 4 }); });
     expect(fetchSession).toHaveBeenCalledTimes(2);
     expect(result.current.messages.find((m) => m.id === 'reply')?.data).toMatchObject(final);
     unmount();

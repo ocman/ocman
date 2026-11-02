@@ -129,7 +129,7 @@ func (v *ledgerView) decide(d *platforms.SessionDetail, p *composePlan) {
 	}
 	for _, id := range v.msgOrder {
 		have, ok := stored[id]
-		if ok && v.settled[id] && !pending[id] && (!completed(v.msgs[id].Data) || completed(have.Data)) {
+		if ok && v.settled[id] && !pending[id] && endingCovered(v.msgs[id].Data, have.Data) {
 			p.confirmed["m:"+id] = v.rev["m:"+id]
 		}
 	}
@@ -155,7 +155,7 @@ func (v *ledgerView) overlay(d *platforms.SessionDetail, limit int, gone map[str
 		case !ok && m.TimeCreated >= oldest:
 			d.Messages = append(d.Messages, m)
 			added = append(added, id)
-		case ok && completed(m.Data) && !completed(d.Messages[i].Data):
+		case ok && !endingCovered(m.Data, d.Messages[i].Data):
 			d.Messages[i] = m
 		}
 	}

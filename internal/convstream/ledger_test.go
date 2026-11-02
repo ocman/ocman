@@ -174,7 +174,7 @@ func TestComposeReleasesOnlyWhatHistoryStores(t *testing.T) {
 
 	// The completed stored message owns its parts, even with less text. The
 	// running turn's part stays until its turn ends.
-	done := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop"}`)},
+	done := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop","time":{"created":20,"completed":30}}`)},
 		Parts: []db.Part{storedPart("p1", "msg_1", "")}}
 	slow := l.begin()
 	composeOnce(l, done, 30, 0, now)
@@ -189,7 +189,7 @@ func TestComposeReleasesOnlyWhatHistoryStores(t *testing.T) {
 		l.commit(plan)
 	}
 	l.end(slow, now)
-	done = &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop"}`)},
+	done = &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, `{"role":"assistant","finish":"stop","time":{"created":20,"completed":30}}`)},
 		Parts: []db.Part{storedPart("p1", "msg_1", "")}}
 	composeOnce(l, done, 30, 0, now)
 	if len(l.content.parts) != 1 || l.content.parts["running"] == nil || len(l.content.msgs) != 1 || l.content.msgs["msg_2"].ID == "" {
@@ -197,6 +197,42 @@ func TestComposeReleasesOnlyWhatHistoryStores(t *testing.T) {
 	}
 	if texts(done)["p1"] != "" {
 		t.Fatal("completed stored part was overwritten")
+	}
+}
+
+func TestComposeKeepsAStreamedEndingUntilHistoryStoresIt(t *testing.T) {
+	for _, tc := range []struct{ name, live, early, done string }{
+		{"finish before completion",
+			`{"role":"assistant","finish":"stop","tokens":{"output":20},"time":{"created":20,"completed":30}}`,
+			`{"role":"assistant","finish":"stop","time":{"created":20}}`,
+			`{"role":"assistant","finish":"stop","tokens":{"output":20},"time":{"created":20,"completed":30}}`},
+		{"error only",
+			`{"role":"assistant","error":{"name":"APIError"},"time":{"created":20,"completed":30}}`,
+			`{"role":"assistant","time":{"created":20,"completed":30}}`,
+			`{"role":"assistant","error":{"name":"APIError"},"time":{"created":20,"completed":30}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := &ledger{}
+			now := time.Now()
+			l.apply(convevents.MessageUpserted{Message: message("msg_1", 20, tc.live)}, now)
+			l.settle()
+			// Successive lagging reads all show the streamed ending.
+			for range 2 {
+				lagging := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, tc.early)}}
+				composeOnce(l, lagging, 30, 0, now)
+				if got := string(lagging.Messages[0].Data); got != tc.live {
+					t.Fatalf("lagging read = %s, want the streamed ending", got)
+				}
+			}
+			if len(l.content.msgs) != 1 {
+				t.Fatal("a read without the ending released the streamed message")
+			}
+			stored := &platforms.SessionDetail{Messages: []db.Message{message("msg_1", 20, tc.done)}}
+			composeOnce(l, stored, 30, 0, now)
+			if len(l.content.msgs) != 0 {
+				t.Fatal("history storing the ending did not release the streamed message")
+			}
+		})
 	}
 }
 

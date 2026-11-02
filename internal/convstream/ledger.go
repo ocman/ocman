@@ -368,11 +368,36 @@ func (l *ledger) commit(p composePlan) {
 }
 
 func completed(data json.RawMessage) bool {
-	var m struct {
-		Finish string `json:"finish"`
-		Time   struct {
-			Completed int64 `json:"completed"`
-		} `json:"time"`
+	e, ok := readEnding(data)
+	return ok && (e.Finish != "" || e.Time.Completed != 0)
+}
+
+// ending is what a message records about how its step ended.
+type ending struct {
+	Finish string          `json:"finish"`
+	Error  json.RawMessage `json:"error"`
+	Time   struct {
+		Completed int64 `json:"completed"`
+	} `json:"time"`
+}
+
+func readEnding(data json.RawMessage) (ending, bool) {
+	var e ending
+	return e, json.Unmarshal(data, &e) == nil
+}
+
+func (e ending) ended() bool {
+	return e.Finish != "" || len(e.Error) > 0 && string(e.Error) != "null"
+}
+
+// endingCovered reports whether stored records every ending live carries:
+// its finish or error and its completion time. History can store a step's
+// finish before its completion, and the turn summary needs both.
+func endingCovered(live, stored json.RawMessage) bool {
+	l, ok := readEnding(live)
+	if !ok {
+		return true
 	}
-	return json.Unmarshal(data, &m) == nil && (m.Finish != "" || m.Time.Completed != 0)
+	s, _ := readEnding(stored)
+	return (!l.ended() || s.ended()) && (l.Time.Completed == 0 || s.Time.Completed != 0)
 }
