@@ -15,7 +15,7 @@ platform-owned.
 ```mermaid
 flowchart LR
     Import[conversationingest module<br/>source workers + paced backfill]
-    Adapters[Local platform adapters<br/>scoped family discovery + resumable tails] --> Import
+    Adapters[Local platform adapters<br/>single-session sequences + resumable tails] --> Import
     Events[UI session invalidations<br/>internal helpers excluded] --> Import
     Import -->|health + task progress APIs| UI[Settings application health<br/>and Background tasks]
     Import -->|snapshots, deltas or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
@@ -106,6 +106,11 @@ flowchart LR
   Incremental mutations invalidate full-snapshot digests atomically.
   Live activity hints and replayed events whose sequence is already applied do
   not force full-session reads. Explicit repairs still validate the source.
+  A targeted repair reads that session's durable sequence through the optional
+  `HistorySequenceReader`, resolving only its canonical identity. OpenCode uses
+  an indexed lookup in `event_sequence`; startup and reconnect catch-up still
+  list all sequences. Feed adapters without the optional reader retain the
+  inventory fallback.
 - Claude follows its hook journal (`internal/historyjournal`). Hooks append a
   record pointing at the changed transcript in every session, including
   terminal sessions and while ocman is stopped. At startup the worker compares

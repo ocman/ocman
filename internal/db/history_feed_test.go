@@ -37,10 +37,19 @@ func TestHistorySequencesListOnlySessions(t *testing.T) {
 	if err != nil || len(seqs) != 2 || seqs["ses_a"] != 12 || seqs["ses_b"] != 3 {
 		t.Fatalf("sequences = %v, %v", seqs, err)
 	}
+	if seq, ok, err := d.HistorySequence(t.Context(), "ses_a"); err != nil || !ok || seq != 12 {
+		t.Fatalf("sequence = %d %v %v", seq, ok, err)
+	}
+	if _, ok, err := d.HistorySequence(t.Context(), "ses_missing"); err != nil || ok {
+		t.Fatalf("missing sequence = %v %v", ok, err)
+	}
 	// v1 has no durable event sequence: callers must fall back explicitly.
 	v1 := &DB{db: d.db}
 	if _, err := v1.HistorySequences(t.Context()); !errors.Is(err, ErrHistoryUnsupported) {
 		t.Fatalf("v1 sequences = %v", err)
+	}
+	if _, _, err := v1.HistorySequence(t.Context(), "ses_a"); !errors.Is(err, ErrHistoryUnsupported) {
+		t.Fatalf("v1 sequence = %v", err)
 	}
 	if _, err := v1.HistoryMessages(t.Context(), "ses_a", nil); !errors.Is(err, ErrHistoryUnsupported) {
 		t.Fatalf("v1 messages = %v", err)

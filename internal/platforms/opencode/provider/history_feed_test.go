@@ -151,6 +151,15 @@ func TestWatchHistoryRequiresV2MachineServer(t *testing.T) {
 	if _, err := v1.HistorySequences(ctx); !errors.Is(err, platforms.ErrUnsupported) {
 		t.Fatalf("v1 sequences = %v", err)
 	}
+	if _, _, err := v1.HistorySequence(ctx, "s"); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatalf("v1 sequence = %v", err)
+	}
+	if _, _, err := New(nil, nil, nil, ocapi.Auth{}).HistorySequence(ctx, "s"); err == nil {
+		t.Fatal("missing source read a sequence")
+	}
+	if seq, ok, err := New(v2HistoryDB(t), nil, nil, ocapi.Auth{}).HistorySequence(ctx, "ses_a"); err != nil || !ok || seq != 4 {
+		t.Fatalf("v2 sequence = %d %v %v", seq, ok, err)
+	}
 	withMachineServer(t, "")
 	if err := New(v2HistoryDB(t), nil, nil, ocapi.Auth{}).WatchHistory(ctx, func() {}, func(platforms.HistoryChange) {}); !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		t.Fatalf("no machine server = %v", err)

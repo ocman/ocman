@@ -45,6 +45,13 @@ type HistoryFeed interface {
 	WatchHistory(ctx context.Context, connected func(), change func(HistoryChange)) error
 }
 
+// HistorySequenceReader is optional on a HistoryFeed. It reads one session's
+// durable sequence without listing and resolving every session in the source.
+// ok is false when the session has no recorded events or is not listed.
+type HistorySequenceReader interface {
+	HistorySequence(ctx context.Context, sessionID string) (seq int64, ok bool, err error)
+}
+
 // HistoryJournal is optional on a HistoryReader whose source has no durable
 // feed but whose hooks append transcript-change records (historyjournal) in
 // every session. Ingestion follows the journal instead of polling.

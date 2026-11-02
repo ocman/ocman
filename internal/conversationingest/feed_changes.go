@@ -120,6 +120,13 @@ func (w *sourceWorker) advanceSequence(ctx context.Context, sessionID, version s
 }
 
 func (w *sourceWorker) sessionVersion(ctx context.Context, id string) (string, error) {
+	if reader, ok := w.feed.(platforms.HistorySequenceReader); ok {
+		seq, ok, err := reader.HistorySequence(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return db.SequenceVersion(seq, ok), nil
+	}
 	sequences, err := w.feed.HistorySequences(ctx)
 	if err != nil {
 		return "", err

@@ -44,6 +44,20 @@ func (d *DB) HistorySequences(ctx context.Context) (map[string]int64, error) {
 	return out, rows.Err()
 }
 
+// HistorySequence returns one session's latest durable event sequence; ok is
+// false when the session has no recorded events.
+func (d *DB) HistorySequence(ctx context.Context, sessionID string) (int64, bool, error) {
+	if v2, err := d.historyV2(ctx); err != nil || !v2 {
+		return 0, false, unsupported(err)
+	}
+	var seq int64
+	err := d.db.QueryRowContext(ctx, `SELECT seq FROM main.event_sequence WHERE aggregate_id=?`, sessionID).Scan(&seq)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	return seq, err == nil, err
+}
+
 // SequenceVersion is the stored-history freshness version for a session: its
 // latest durable event sequence, or "seq:none" when it has no events.
 func SequenceVersion(seq int64, ok bool) string {

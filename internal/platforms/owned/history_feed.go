@@ -45,6 +45,40 @@ func (a *Adapter) HistorySequences(ctx context.Context) (map[string]int64, error
 	return out, nil
 }
 
+// HistorySequence resolves only the requested session. Unknown and purged
+// sessions report no sequence, as they are absent from HistorySequences.
+func (a *Adapter) HistorySequence(ctx context.Context, id string) (int64, bool, error) {
+	feed, ok := a.native.(platforms.HistoryFeed)
+	if !ok {
+		return 0, false, platforms.ErrUnsupported
+	}
+	nativeID, err := a.nativeID(ctx, id)
+	switch {
+	case errors.Is(err, platforms.ErrNotFound):
+		return 0, false, nil
+	case errors.Is(err, sessioncatalog.ErrCreating), errors.Is(err, sessioncatalog.ErrCreationFailed):
+		return 0, false, &platforms.HistoryDeferred{Count: 1}
+	case err != nil:
+		return 0, false, err
+	}
+	var seq int64
+	var found bool
+	if reader, single := feed.(platforms.HistorySequenceReader); single {
+		seq, found, err = reader.HistorySequence(ctx, nativeID)
+	} else {
+		var sequences map[string]int64
+		sequences, err = feed.HistorySequences(ctx)
+		seq, found = sequences[nativeID]
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if err := a.checkSource(ctx); err != nil {
+		return 0, false, err
+	}
+	return seq, found, nil
+}
+
 func (a *Adapter) HistoryMessages(ctx context.Context, id string, messageIDs []string) (*db.HistorySnapshot, error) {
 	nativeID, err := a.nativeID(ctx, id)
 	if err != nil {

@@ -28,6 +28,17 @@ func (a *Adapter) HistorySequences(ctx context.Context) (map[string]int64, error
 	return seqs, err
 }
 
+func (a *Adapter) HistorySequence(ctx context.Context, sessionID string) (int64, bool, error) {
+	if a.db == nil {
+		return 0, false, fmt.Errorf("opencode history source unavailable")
+	}
+	seq, ok, err := a.db.HistorySequence(ctx, sessionID)
+	if errors.Is(err, db.ErrHistoryUnsupported) {
+		return 0, false, platforms.ErrUnsupported
+	}
+	return seq, ok, err
+}
+
 func (a *Adapter) HistoryMessages(ctx context.Context, sessionID string, messageIDs []string) (*db.HistorySnapshot, error) {
 	if a.db == nil {
 		return nil, fmt.Errorf("opencode history source unavailable")

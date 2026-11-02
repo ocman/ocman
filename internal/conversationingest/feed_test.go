@@ -21,6 +21,7 @@ type fakeFeed struct {
 	messageErr   error
 	changes      chan platforms.HistoryChange
 	connects     int
+	listings     int
 }
 
 func newFakeFeed() *fakeFeed {
@@ -31,6 +32,7 @@ func newFakeFeed() *fakeFeed {
 func (f *fakeFeed) HistorySequences(context.Context) (map[string]int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.listings++
 	out := map[string]int64{}
 	for k, v := range f.sequences {
 		out[k] = v
