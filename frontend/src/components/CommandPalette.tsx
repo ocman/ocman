@@ -137,9 +137,20 @@ function isCurrentDirectoryQuery(query: string, directory: string): boolean {
   return trimmed === directory || trimmed === directoryQueryPrefix(directory);
 }
 
+function projectSelectionKey(project: Project): string {
+  return project.projectKey ?? `${project.remoteId || 'local'}\0${project.directory}`;
+}
+
+function resultProjectKey(item: ResultItem | undefined): string | null {
+  return item?.kind === 'project' ? projectSelectionKey(item.project)
+    : item?.kind === 'new-project' ? 'new-project' : null;
+}
+
 export function CommandPalette() {
   const [query, setQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [fallbackIndex, setFallbackIndex] = useState(0);
+  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const explicitlySelectedProject = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // Results are a listbox driven from the input (combobox +
@@ -179,7 +190,8 @@ export function CommandPalette() {
   const projectList = projectQuery.data;
   const projectListError = projectList ? null : projectQuery.error ? projectQuery.error.message || 'Failed to load projects' : null;
   // The requested project is preselected once per open; later refetches keep the user's selection.
-  const preselectedFor = useRef<string | null>(null);
+  const [preselectedFor, setPreselectedFor] = useState<string | null>(null);
+  const [projectResolutionError, setProjectResolutionError] = useState<string | null>(null);
   const [projectBrowser, setProjectBrowser] = useState<ProjectBrowserState>(CLOSED_PROJECT_BROWSER);
   const projectBrowserAbortRef = useRef<AbortController | null>(null);
   const projectSearchAbortRef = useRef<AbortController | null>(null);
@@ -196,7 +208,7 @@ export function CommandPalette() {
     setWorktreeError(null);
     resetProjectBrowser();
     rawClosePalette();
-  }, [rawClosePalette, resetProjectBrowser]);
+  }, [rawClosePalette, resetProjectBrowser, setWorktreeError]);
 
   const openProjectBrowser = useCallback((directory?: string, opts?: { query?: string }) => {
     projectBrowserAbortRef.current?.abort();
@@ -205,7 +217,7 @@ export function CommandPalette() {
     const controller = new AbortController();
     projectBrowserAbortRef.current = controller;
     setQuery(opts?.query ?? '');
-    setSelectedIndex(0);
+    setFallbackIndex(0);
     inputRef.current?.focus();
     setProjectBrowser((prev) => ({
       ...prev,
@@ -223,7 +235,7 @@ export function CommandPalette() {
       .then((resp) => {
         if (controller.signal.aborted) return;
         projectBrowserAbortRef.current = null;
-        setSelectedIndex(0);
+        setFallbackIndex(0);
         setProjectBrowser({
           open: true,
           directory: resp.directory,
@@ -305,13 +317,17 @@ export function CommandPalette() {
         },
       }),
     })),
-  ], [launchAllowed, contributions.actions, contributions.context]);
+  ], [launchAllowed, contributions.actions, contributions.context, setActionInvocation]);
 
   useEffect(() => {
     if (!paletteOpen) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuery('');
-    setSelectedIndex(0);
+    setFallbackIndex(0);
+    setSelectedProjectKey(null);
+    explicitlySelectedProject.current = false;
+    setPreselectedFor(null);
+    setProjectResolutionError(null);
     // Depend on `mode` too: reopening into a different mode while the palette
     // is already open must clear any leftover query.
   }, [paletteOpen, mode]);
@@ -323,27 +339,27 @@ export function CommandPalette() {
   }, [paletteOpen, mode, projectBrowser.open, projectBrowser.loading, openProjectBrowser]);
 
   useEffect(() => {
-    if (!paletteOpen) preselectedFor.current = null;
-  }, [paletteOpen]);
-
-  useEffect(() => {
     const directory = projectSessionInitialDirectory;
     const owner = projectSessionInitialRemoteId || 'local';
     const key = `${directory}\0${owner}`;
-    if (!paletteOpen || mode !== 'project-session' || !directory || !projectList || preselectedFor.current === key) return;
+    if (!paletteOpen || mode !== 'project-session' || !directory || !projectList || preselectedFor === key || explicitlySelectedProject.current) return;
     const controller = new AbortController();
     const requested = (project: Project) => project.directory === directory && (project.remoteId || 'local') === owner;
     (async () => {
       const initial = projectList.some(requested) ? undefined
         : (await api.resolveProjectIdentities([{ directory, remoteId: projectSessionInitialRemoteId }], controller.signal))[0];
-      if (controller.signal.aborted) return;
-      const sorted = [...projectList].sort((a, b) => b.lastUsed - a.lastUsed);
-      const index = sorted.findIndex((project) => initial ? project.projectKey === initial.key : requested(project));
-      preselectedFor.current = key;
-      setSelectedIndex(index < 0 ? 0 : index);
-    })().catch(() => {});
+      if (controller.signal.aborted || explicitlySelectedProject.current) return;
+      const project = projectList.find((project) => initial ? project.projectKey === initial.key : requested(project));
+      if (!project) throw new Error('Could not resolve the requested project. Select a project to continue.');
+      setPreselectedFor(key);
+      setSelectedProjectKey(projectSelectionKey(project));
+      setProjectResolutionError(null);
+    })().catch((error: unknown) => {
+      if (controller.signal.aborted || explicitlySelectedProject.current) return;
+      setProjectResolutionError(error instanceof Error ? error.message : 'Could not resolve the requested project.');
+    });
     return () => controller.abort();
-  }, [paletteOpen, mode, projectSessionInitialDirectory, projectSessionInitialRemoteId, projectList]);
+  }, [paletteOpen, mode, projectSessionInitialDirectory, projectSessionInitialRemoteId, projectList, preselectedFor]);
 
   useEffect(() => () => {
     projectBrowserAbortRef.current?.abort();
@@ -372,7 +388,7 @@ export function CommandPalette() {
         .then((resp) => {
           if (controller.signal.aborted) return;
           projectSearchAbortRef.current = null;
-          setSelectedIndex(0);
+          setFallbackIndex(0);
           setProjectBrowser((prev) => ({
             ...prev,
             searchEntries: resp.entries,
@@ -494,6 +510,29 @@ export function CommandPalette() {
     return uniqueResults;
   }, [mode, query, sessions, staticCommands, projectBrowser, projectList]);
 
+  const awaitingProjectResolution = !!projectSessionInitialDirectory && preselectedFor !== `${projectSessionInitialDirectory}\0${projectSessionInitialRemoteId || 'local'}`;
+  const selectedIndex = mode !== 'project-session' ? fallbackIndex
+    : selectedProjectKey !== null ? results.findIndex((item) => resultProjectKey(item) === selectedProjectKey)
+    : awaitingProjectResolution ? -1 : fallbackIndex;
+
+  function selectIndex(next: number) {
+    setFallbackIndex(next);
+    if (mode === 'project-session') {
+      explicitlySelectedProject.current = true;
+      setSelectedProjectKey(resultProjectKey(results[next]));
+    }
+  }
+
+  // Capture the default row by identity too, before a background refresh can reorder it.
+  useEffect(() => {
+    if (mode !== 'project-session' || !paletteOpen || selectedProjectKey !== null || awaitingProjectResolution) return;
+    const key = resultProjectKey(results[fallbackIndex]);
+    if (key !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedProjectKey(key);
+    }
+  }, [mode, paletteOpen, selectedProjectKey, awaitingProjectResolution, results, fallbackIndex]);
+
   useEffect(() => {
     if (!listRef.current) return;
     const item = listRef.current.children[selectedIndex] as HTMLElement | undefined;
@@ -536,7 +575,7 @@ export function CommandPalette() {
     } else if (item.kind === 'scoped') {
       if (item.id === 'scoped.new-project') {
         setQuery('');
-        setSelectedIndex(0);
+        setFallbackIndex(0);
         openProjectSessionPalette();
         return;
       }
@@ -589,10 +628,10 @@ export function CommandPalette() {
       closePalette();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
+      selectIndex(Math.min(selectedIndex + 1, results.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
+      selectIndex(Math.max(selectedIndex - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (results[selectedIndex]) {
@@ -622,7 +661,7 @@ export function CommandPalette() {
             aria-expanded="true"
             aria-autocomplete="list"
             aria-controls={listId}
-            aria-activedescendant={results.length > 0 ? optionId(selectedIndex) : undefined}
+            aria-activedescendant={results[selectedIndex] ? optionId(selectedIndex) : undefined}
             placeholder={
               mode === 'command'
                 ? '> commands, :stats, sessions...'
@@ -635,7 +674,8 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setSelectedIndex(0);
+              setFallbackIndex(0);
+              setSelectedProjectKey(null);
             }}
             onKeyDown={onInputKeyDown}
           />
@@ -643,6 +683,7 @@ export function CommandPalette() {
         </div>
         {contributions.unavailable && <p role="status">Some plugin actions are unavailable.</p>}
         {worktreeError && <InlineAlert>{worktreeError}</InlineAlert>}
+        {mode === 'project-session' && projectResolutionError && <InlineAlert>{projectResolutionError}</InlineAlert>}
         {mode === 'project' && projectBrowser.open && (
           <div className="oc-cmd-browser-bar">
             <button
@@ -708,7 +749,7 @@ export function CommandPalette() {
                   {...optionProps(i)}
                   className={`oc-cmd-item${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseMove={() => setSelectedIndex(i)}
+                  onMouseMove={() => selectIndex(i)}
                 >
                   <span
                     className="oc-cmd-status"
@@ -737,7 +778,7 @@ export function CommandPalette() {
                   {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseMove={() => setSelectedIndex(i)}
+                  onMouseMove={() => selectIndex(i)}
                 >
                   <i className="bi bi-folder oc-cmd-item-icon" />
                   <div className="oc-cmd-item-content">
@@ -762,7 +803,7 @@ export function CommandPalette() {
                   {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseMove={() => setSelectedIndex(i)}
+                  onMouseMove={() => selectIndex(i)}
                 >
                   <i className="bi bi-arrow-up oc-cmd-item-icon" />
                   <div className="oc-cmd-item-content">
@@ -780,7 +821,7 @@ export function CommandPalette() {
                   {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseMove={() => setSelectedIndex(i)}
+                  onMouseMove={() => selectIndex(i)}
                 >
                   <i className="bi bi-folder oc-cmd-item-icon" />
                   <div className="oc-cmd-item-content">
@@ -798,7 +839,7 @@ export function CommandPalette() {
                   {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseMove={() => setSelectedIndex(i)}
+                  onMouseMove={() => selectIndex(i)}
                 >
                   <i className={`bi ${item.entry.project ? 'bi-folder-check' : 'bi-folder'} oc-cmd-item-icon`} />
                   <div className="oc-cmd-item-content">
@@ -818,7 +859,7 @@ export function CommandPalette() {
                   {...optionProps(i)}
                   className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                   onClick={() => handleSelect(item)}
-                  onMouseMove={() => setSelectedIndex(i)}
+                  onMouseMove={() => selectIndex(i)}
                 >
                   <i className="bi bi-plus-circle oc-cmd-item-icon" />
                   <div className="oc-cmd-item-content">
@@ -835,7 +876,7 @@ export function CommandPalette() {
                 {...optionProps(i)}
                 className={`oc-cmd-item oc-cmd-item--command${i === selectedIndex ? ' oc-cmd-item--selected' : ''}`}
                 onClick={() => handleSelect(item)}
-                onMouseMove={() => setSelectedIndex(i)}
+                onMouseMove={() => selectIndex(i)}
               >
                 <i
                   className={`bi ${item.kind === 'nav' ? 'bi-arrow-right' : item.kind === 'scoped' ? 'bi-gear' : 'bi-terminal'} oc-cmd-item-icon`}

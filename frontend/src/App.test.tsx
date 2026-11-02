@@ -2,8 +2,8 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
-import { MainNav } from './App';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { LegacyUsageRedirect, MainNav } from './App';
 import { useInbox, useSubscriptionUsage } from './lib/queries';
 import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
@@ -23,6 +23,20 @@ beforeEach(() => {
   useBetaFeatures.setState({ factory: true });
   vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as never);
   vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
+});
+
+it('preserves the legacy usage view, period and hash when redirecting', async () => {
+  function UsageLocation() {
+    const location = useLocation();
+    return <output>{location.pathname + location.search + location.hash}</output>;
+  }
+  render(<MemoryRouter initialEntries={['/subscription-usage?view=history&days=30#chart']}>
+    <Routes>
+      <Route path="/subscription-usage" element={<LegacyUsageRedirect />} />
+      <Route path="/provider-usage" element={<UsageLocation />} />
+    </Routes>
+  </MemoryRouter>);
+  expect(await screen.findByText('/provider-usage?view=history&days=30#chart')).toBeInTheDocument();
 });
 
 describe('routeTitle', () => {

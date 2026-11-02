@@ -353,6 +353,11 @@ function AuthenticatedShell() {
   );
 }
 
+export function LegacyUsageRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname: '/provider-usage', search, hash }} replace />;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -362,7 +367,7 @@ export function AppRoutes() {
         <Route element={<DashboardLayout />}>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/sessions" element={<SessionsTab />} />
-          <Route path="/subscription-usage" element={<Navigate to="/provider-usage" replace />} />
+          <Route path="/subscription-usage" element={<LegacyUsageRedirect />} />
           <Route path="/provider-usage" element={<SubscriptionUsage />} />
           <Route path="/projects" element={<ProjectsTab />} />
           <Route path="/analytics/:section?" element={<AnalyticsTab />} />

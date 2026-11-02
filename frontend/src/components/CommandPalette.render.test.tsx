@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -362,11 +362,98 @@ describe('CommandPalette project mode', () => {
     await waitFor(() => expect(requested.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true'));
 
     fireEvent.keyDown(screen.getByPlaceholderText('Select a project to start a session...'), { key: 'ArrowDown' });
-    const selected = screen.getAllByRole('option').findIndex((option) => option.getAttribute('aria-selected') === 'true');
+    const selected = screen.getByText('workspace/banana-frontend').closest('[role="option"]');
+    mocks.apiState.getProjects.mockResolvedValue([
+      { directory: '/Users/peter/workspace/banana-frontend', lastUsed: 9000 } as Project,
+      { directory: '/Users/peter/workspace/research', lastUsed: 2000 } as Project,
+    ]);
     await queryClient.refetchQueries({ queryKey: ['projects'] });
 
-    expect(screen.getAllByRole('option')[selected]).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(screen.getAllByRole('option')[0]).toHaveTextContent('workspace/banana-frontend'));
+    await waitFor(() => expect(selected).toHaveAttribute('aria-selected', 'true'));
     expect(mocks.apiState.getProjects).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not activate another project when the selected project disappears', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/Users/peter/workspace/research';
+    const { queryClient } = renderPalette();
+    const requested = await screen.findByText('workspace/research');
+    await waitFor(() => expect(requested.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true'));
+    mocks.apiState.getProjects.mockResolvedValue([{ directory: '/other', projectKey: 'other', lastUsed: 1 } as Project]);
+    await queryClient.refetchQueries({ queryKey: ['projects'] });
+    await waitFor(() => expect(screen.queryByText('workspace/research')).not.toBeInTheDocument());
+    expect(screen.queryByRole('option', { selected: true })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    expect(screen.queryByRole('option', { selected: true })).not.toBeInTheDocument();
+  });
+
+  it('tracks the default projectKey across owner reordering and checkout changes', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    const local = { projectKey: 'local', directory: '/repo', lastUsed: 2 } as Project;
+    const remote = { projectKey: 'remote', directory: '/repo', remoteId: 'box', remoteName: 'Box', lastUsed: 1 } as Project;
+    mocks.apiState.getProjects.mockResolvedValue([local, remote]);
+    const { queryClient } = renderPalette();
+    await screen.findByRole('option', { name: /Box/ });
+    mocks.apiState.getProjects.mockResolvedValue([
+      { ...remote, lastUsed: 3 },
+      { ...local, directory: '/renamed/repo' },
+    ]);
+    await queryClient.refetchQueries({ queryKey: ['projects'] });
+    const selected = await screen.findByRole('option', { name: /renamed\/repo/ });
+    expect(selected).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Frenamed%2Frepo'));
+  });
+
+  it('does not override an explicit selection when initial resolution completes later', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/merged/checkout';
+    let resolve!: (identities: unknown[]) => void;
+    mocks.apiState.resolveProjectIdentities.mockReturnValue(new Promise((done) => { resolve = done; }));
+    mocks.apiState.getProjects.mockResolvedValue([
+      { projectKey: 'first', directory: '/first', lastUsed: 2 } as Project,
+      { projectKey: 'second', directory: '/second', lastUsed: 1 } as Project,
+    ]);
+    renderPalette();
+    const first = await screen.findByRole('option', { name: /first/ });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
+    await act(async () => resolve([{ key: 'second' }]));
+    await waitFor(() => expect(first).toHaveAttribute('aria-selected', 'true'));
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Ffirst'));
+  });
+
+  it('reports a resolved identity missing from the project list without selecting a fallback', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/missing';
+    mocks.apiState.resolveProjectIdentities.mockResolvedValue([{ key: 'missing' }]);
+    renderPalette();
+    expect(await screen.findByText('Could not resolve the requested project. Select a project to continue.')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    fireEvent.click(screen.getByText('workspace/research'));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter%2Fworkspace%2Fresearch'));
+  });
+
+  it('surfaces resolution failures and requires an explicit target before Enter', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/merged/checkout';
+    let reject!: (error: Error) => void;
+    mocks.apiState.resolveProjectIdentities.mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+    renderPalette();
+    await screen.findByText('workspace/ocman');
+    const input = screen.getByRole('combobox');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    reject(new Error('Identity service unavailable'));
+    expect(await screen.findByText('Identity service unavailable')).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter%2Fworkspace%2Focman'));
   });
 
   it('focuses the project picker when it opens', () => {
