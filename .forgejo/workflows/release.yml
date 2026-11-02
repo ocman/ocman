@@ -14,11 +14,14 @@ jobs:
     runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
+      - name: Read pinned tool versions
+        id: versions
+        run: ./scripts/ci-tool-versions.sh
       - uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: ${{ steps.versions.outputs.node }}
       - name: Install pnpm
-        run: npm install -g pnpm@10.11.1
+        run: npm install -g "pnpm@${{ steps.versions.outputs.pnpm }}"
       - run: make build-frontend
       - uses: actions/upload-artifact@v3
         with:
@@ -68,11 +71,14 @@ jobs:
     runs-on: macos-arm64
     steps:
       - uses: actions/checkout@v4
+      - name: Read pinned tool versions
+        id: versions
+        run: ./scripts/ci-tool-versions.sh
       - uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: ${{ steps.versions.outputs.node }}
       - name: Install pnpm
-        run: npm install -g pnpm@10.11.1
+        run: npm install -g "pnpm@${{ steps.versions.outputs.pnpm }}"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -82,9 +88,6 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
       - name: Build macOS DMG installer
         env:
           VERSION: ${{ github.ref_name }}

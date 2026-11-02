@@ -15,14 +15,17 @@ jobs:
     runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
+      - name: Read pinned tool versions
+        id: versions
+        run: ./scripts/ci-tool-versions.sh
       - uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: ${{ steps.versions.outputs.node }}
       # Forgejo Actions can't fetch pnpm/action-setup from GitHub, and
       # Node 25 no longer ships Corepack. Install pnpm directly to
-      # match the version pinned via packageManager / mise.toml.
+      # match the version pinned via packageManager.
       - name: Install pnpm
-        run: npm install -g pnpm@10.11.1
+        run: npm install -g "pnpm@${{ steps.versions.outputs.pnpm }}"
       - name: Cache pnpm store
         uses: actions/cache@v4
         with:
@@ -41,9 +44,15 @@ jobs:
       - name: Install script test dependencies
         run: apt-get update && apt-get install -y ripgrep jq python3
       - name: CSS token guard
+        run: make lint-css-tokens
+      - name: CI script self-tests
+        run: make lint-ci-scripts
+      # The catalog example plugin's UI builds against the published
+      # @ocman/plugin-ui types, so an SDK type change that breaks it fails here.
+      - name: Typecheck and build example plugin UI
         run: |
-          ./scripts/check_css_tokens_test.sh
-          ./scripts/check-css-tokens.sh
+          pnpm --dir examples/ocman-plugin-catalog/ui install --frozen-lockfile
+          pnpm --dir examples/ocman-plugin-catalog/ui build
       - name: Dev script self-tests
         run: make test-dev-scripts
       - name: Test with coverage
@@ -264,11 +273,14 @@ jobs:
     runs-on: [ubuntu-latest, amd64]
     steps:
       - uses: actions/checkout@v4
+      - name: Read pinned tool versions
+        id: versions
+        run: ./scripts/ci-tool-versions.sh
       - uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: ${{ steps.versions.outputs.node }}
       - name: Install pnpm
-        run: npm install -g pnpm@10.11.1
+        run: npm install -g "pnpm@${{ steps.versions.outputs.pnpm }}"
       - name: Cache pnpm store
         uses: actions/cache@v4
         with:
