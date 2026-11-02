@@ -1,7 +1,7 @@
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { DashboardLayout, LegacyAnalyticsRedirect } from './pages/Dashboard';
@@ -362,7 +362,7 @@ export function AppRoutes() {
         <Route element={<DashboardLayout />}>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/sessions" element={<SessionsTab />} />
-          <Route path="/subscription-usage" element={<SubscriptionUsage />} />
+          <Route path="/subscription-usage" element={<Navigate to="/provider-usage" replace />} />
           <Route path="/provider-usage" element={<SubscriptionUsage />} />
           <Route path="/projects" element={<ProjectsTab />} />
           <Route path="/analytics/:section?" element={<AnalyticsTab />} />

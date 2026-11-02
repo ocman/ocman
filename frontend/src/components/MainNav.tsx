@@ -95,7 +95,7 @@ export function MainNav({
             <button
               ref={usageTrigger}
               type="button"
-              className={usageOpen || ['/provider-usage', '/subscription-usage'].includes(location.pathname) ? 'main-nav-usage active' : 'main-nav-usage'}
+              className={usageOpen || location.pathname === '/provider-usage' ? 'main-nav-usage active' : 'main-nav-usage'}
               aria-label="Provider usage"
               aria-expanded={usageOpen}
               aria-haspopup="dialog"

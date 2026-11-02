@@ -30,7 +30,6 @@ describe('routeTitle', () => {
     ['/', 'Home'],
     ['/sessions', 'Sessions'],
     ['/inbox', 'Inbox'],
-    ['/subscription-usage', 'Provider usage'],
     ['/provider-usage', 'Provider usage'],
     ['/analytics/overview', 'Analytics'],
     ['/analytics/performance', 'Analytics'],
@@ -167,7 +166,6 @@ describe('MainNav', () => {
     ['/analytics/overview', 'Analytics'],
     ['/analytics/logs', 'Analytics'],
     ['/inbox', 'Inbox'],
-    ['/subscription-usage', 'Provider usage'],
     ['/provider-usage', 'Provider usage'],
     ['/settings', 'Settings'],
   ])('marks only the owning destination active on %s', (path, label) => {

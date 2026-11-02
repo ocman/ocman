@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from './App';
 import { useBetaFeatures } from './lib/betaFeatures';
@@ -35,13 +35,18 @@ vi.mock('./lib/queries', () => ({
   useFactoryFormulas: vi.fn(),
   useProjects: vi.fn(),
   useCreateWorkEpic: vi.fn(),
+  useSubscriptionUsage: () => ({ data: { providers: [] } }),
   useClaimFactoryPlan: vi.fn(),
   useMaterializeFactoryPlan: vi.fn(),
 }));
 
+function LocationProbe() {
+  return <span data-testid="location">{useLocation().pathname}</span>;
+}
+
 // Factory pages are lazy route chunks: wait for the Suspense fallback to go.
 async function renderRoute(path: string) {
-  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><AppRoutes /><LocationProbe /></MemoryRouter></QueryClientProvider>);
   await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 }
 
@@ -75,6 +80,13 @@ beforeEach(() => {
   vi.mocked(useCreateWorkEpic).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as never);
   vi.mocked(useClaimFactoryPlan).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
   vi.mocked(useMaterializeFactoryPlan).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
+});
+
+describe('legacy routes', () => {
+  it('redirects subscription usage to provider usage', async () => {
+    await renderRoute('/subscription-usage');
+    expect(screen.getByTestId('location')).toHaveTextContent('/provider-usage');
+  });
 });
 
 describe('Factory routes', () => {
