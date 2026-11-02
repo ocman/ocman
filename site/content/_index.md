@@ -26,6 +26,10 @@ description: "One dashboard for every coding-agent session: browse and drive Ope
 
 <div class="hx:mt-6"></div>
 
+![Current ocman conversation view with fictional projects and a keyboard-navigation task](/sessions.png)
+
+*Demo conversation. All projects, sessions and messages shown are fictional.*
+
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
     title="Session browser"
@@ -82,4 +86,20 @@ Download a binary from the [releases page](https://forgejo.nousefreak.be/dries/o
 or build from source with `make build`. Full flag and environment reference in
 [Configuration](docs/configuration/).
 
-![ocman dashboard](/sessions.png)
+## Sessions across projects
+
+![Current ocman session browser with fictional projects and agent sessions](/screenshots/session-browser.png)
+
+*Demo session browser. All data shown is fictional.*
+
+## Review changes and follow pull requests
+
+![Ocman conversation with a fictional code patch, changed files and a linked pull request](/screenshots/changes.png)
+
+*Demo review workflow. All code, repositories and pull requests shown are fictional.*
+
+## Track usage and costs
+
+![Ocman analytics with synthetic request counts, token usage and cost metrics](/screenshots/analytics.png)
+
+*Demo analytics. All metrics shown are synthetic, not measured usage or pricing claims.*
