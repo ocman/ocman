@@ -71,7 +71,7 @@
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-.platform-badge.platform-claude-code {
+.platform-badge.platform-claudecode {
   /* Claude's wordmark colour -- warm amber that reads well against
      both light and dark surfaces. */
   background: color-mix(in srgb, var(--brand-opencode) 15%, transparent);
@@ -87,7 +87,7 @@
  * is the signal on its own.
  */
 .platform-badge.plain.platform-opencode,
-.platform-badge.plain.platform-claude-code {
+.platform-badge.plain.platform-claudecode {
   background: transparent;
   border: none;
   color: inherit;

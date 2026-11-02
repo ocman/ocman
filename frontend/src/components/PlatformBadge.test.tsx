@@ -22,6 +22,24 @@ it('keeps platform icon images at zero vertical offset', () => {
 	}
 });
 
+it('applies a platform accent to each known platform pill', () => {
+	const style = document.createElement('style');
+	style.textContent = readFileSync('src/components/PlatformBadge.css', 'utf8');
+	document.head.appendChild(style);
+	try {
+		const rules = Array.from(style.sheet!.cssRules) as CSSStyleRule[];
+		for (const [platform, label] of [['opencode', 'OpenCode'], ['claudecode', 'Claude Code']]) {
+			const { unmount } = render(<PlatformBadge platform={platform} />);
+			const badge = screen.getByLabelText(label);
+			const accent = rules.find((rule) => rule.selectorText?.includes(`.platform-${platform}`) && badge.matches(rule.selectorText));
+			expect(accent?.style.getPropertyValue('color') || '', platform).toContain('var(');
+			unmount();
+		}
+	} finally {
+		style.remove();
+	}
+});
+
 it('renders decorative platform logos, including remote platforms, without broken unknown icons', () => {
 	const { container, rerender } = render(<PlatformLogo platform="r-owner:claudecode" />);
 	expect(container.querySelector('img')).toHaveAttribute('src', '/platform-claudecode.svg');
