@@ -9,15 +9,17 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 6px;
+  padding: 2px 6px;
   border-radius: 999px;
+  font-family: var(--font-conversation-mono);
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.03em;
   background: color-mix(in srgb, var(--text-dim) 12%, transparent);
   color: var(--text-dim);
   border: 1px solid var(--border);
-  line-height: 1;
+  line-height: 1.2;
+  vertical-align: middle;
   white-space: nowrap;
 }
 
@@ -44,7 +46,16 @@
 }
 
 .host-badge--icon > .bi {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Bootstrap's baseline offset is for inline text, not a centered flex icon. */
+.host-badge--icon > .bi::before {
+  display: block;
+  vertical-align: 0;
 }
 
 .host-badge-label {
