@@ -631,6 +631,21 @@ describe('useSession — bounded stream work (#722)', () => {
     unmount();
   });
 
+  it('keeps the streamed completion when the turn-end read still holds the open reply', async () => {
+    const { result, sse, fetchSession, unmount } = await setup();
+    const reply = (data: Record<string, unknown>) => ({ id: 'reply', sessionId: SID, timeCreated: 3, data: { role: 'assistant', ...data } }) as SessionDetail['messages'][number];
+    const final = { finish: 'stop', cost: 0.5, tokens: { input: 10, output: 20 }, time: { created: 3, completed: 9 } };
+    fetchSession.mockResolvedValue(makeDetail({ messages: [reply({ time: { created: 3 } })] }));
+    act(() => {
+      sse.emitOce(busy);
+      sse.emitOce({ type: 'message.upserted', message: reply(final) });
+    });
+    await act(async () => { sse.emitOce(idleEdge); sse.emitOce(turnEnded()); });
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    expect(result.current.messages.find((m) => m.id === 'reply')?.data).toMatchObject(final);
+    unmount();
+  });
+
   describe('composed reads and their stream cursor', () => {
     const msg = (data: Record<string, unknown>) => ({ id: 'm', sessionId: SID, timeCreated: 2, data: { role: 'assistant', ...data } }) as SessionDetail['messages'][number];
     const composed = (cursor: string) => makeDetail({

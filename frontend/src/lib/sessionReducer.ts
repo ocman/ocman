@@ -21,6 +21,20 @@ export { initialSessionView } from './sessionViewTypes';
 export { seedDeltaOwnedFields } from './sessionViewParts';
 
 /**
+ * Whether `stored` still lacks an ending (finish reason, completion time or
+ * error) that `streamed` already carries. A turn-end read can trail the
+ * stream; replacing the finished reply with it would drop the turn's final
+ * stats until a later read.
+ */
+function endedBefore(streamed: Message, stored: Message): boolean {
+  const a = streamed.data;
+  const b = stored.data;
+  if (!a || !b) return false;
+  return (!!(a.finish || a.error) && !(b.finish || b.error))
+    || (a.time?.completed !== undefined && b.time?.completed === undefined);
+}
+
+/**
  * Reconcile-mode load: merge `incoming` into `state` such that
  * messages and parts the server returns supersede their in-memory
  * counterparts (by id), but in-memory entries the server doesn't
@@ -48,11 +62,15 @@ function reconcileLoad(state: SessionView, incoming: SessionView, statusRevision
     return state;
   }
 
-  // Messages: server's data wins per-id; in-memory-only entries
-  // survive. Sort by timeCreated to keep order stable.
+  // Messages: server's data wins per-id unless it predates an ending the
+  // stream already delivered; in-memory-only entries survive. Sort by
+  // timeCreated to keep order stable.
   const messageById = new Map<string, Message>();
   for (const m of state.messages) messageById.set(m.id, m);
-  for (const m of incoming.messages) messageById.set(m.id, m);
+  for (const m of incoming.messages) {
+    const known = messageById.get(m.id);
+    if (!known || !endedBefore(known, m)) messageById.set(m.id, m);
+  }
   const mergedMessages = Array.from(messageById.values()).sort(
     (a, b) => a.timeCreated - b.timeCreated,
   );
