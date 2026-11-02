@@ -4,6 +4,13 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { api } from '../../lib/api';
 import type { ResolveTargetsResponse } from '../../lib/api.types';
 import { ComposerMachineSelector } from './ComposerMachineSelector';
+import { useShortcut, useShortcutDispatcher } from '../../lib/shortcutRegistry';
+
+function Shortcuts({ onHistory = vi.fn() }: { onHistory?: () => void }) {
+  useShortcutDispatcher();
+  useShortcut({ id: 'test.history', scope: 'session', keys: { code: 'KeyH', alt: true }, description: 'Previous message', handler: onHistory });
+  return <textarea aria-label="Draft prompt" />;
+}
 
 vi.mock('../../lib/api', () => ({ api: { resolveTargets: vi.fn() } }));
 const local = { remoteId: 'local', remoteName: 'This machine', platform: 'opencode', dir: '/local/repo' };
@@ -28,6 +35,30 @@ it('defaults to the current owner and passes the matched remote directory', asyn
   fireEvent.click(screen.getByRole('option', { name: 'Build box' }));
   await waitFor(() => expect(onSelect).toHaveBeenCalledWith(remote));
   expect(api.resolveTargets).toHaveBeenCalledWith('/local/repo', 'local');
+});
+
+it('opens the host picker with Option+H while typing instead of navigating history', async () => {
+  const onSelect = vi.fn().mockResolvedValue(undefined);
+  const onHistory = vi.fn();
+  render(<><Shortcuts onHistory={onHistory} /><ComposerMachineSelector directory="/local/repo" onSelect={onSelect} /></>);
+  await screen.findByRole('combobox');
+  const input = screen.getByRole('textbox', { name: 'Draft prompt' });
+  input.focus();
+  expect(fireEvent.keyDown(input, { code: 'KeyH', key: '˙', altKey: true })).toBe(false);
+  expect(screen.getByRole('textbox', { name: 'Search machines' })).toHaveFocus();
+  expect(onHistory).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('option', { name: 'Build box' }));
+  await waitFor(() => expect(onSelect).toHaveBeenCalledWith(remote));
+});
+
+it('does not open the host picker while controls are locked', async () => {
+  const { rerender } = render(<><Shortcuts /><ComposerMachineSelector directory="/local/repo" disabled onSelect={vi.fn()} /></>);
+  await screen.findByRole('combobox');
+  fireEvent.keyDown(window, { code: 'KeyH', altKey: true });
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  rerender(<><Shortcuts /><ComposerMachineSelector directory="/local/repo" onSelect={vi.fn()} /></>);
+  fireEvent.keyDown(window, { code: 'KeyH', altKey: true });
+  expect(screen.getByRole('listbox')).toBeInTheDocument();
 });
 
 it('supports remote-to-local selection without assuming matching paths', async () => {

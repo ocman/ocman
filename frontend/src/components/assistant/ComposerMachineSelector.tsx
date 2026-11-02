@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import type { ResolveTargetsResponse, TargetCandidate } from '../../lib/api.types';
 import { SearchSelect } from '../SearchSelect';
+import { useShortcut } from '../../lib/shortcutRegistry';
 
 export function ComposerMachineSelector({ directory, remoteId = 'local', disabled, onSelect }: {
   directory: string;
@@ -11,6 +12,16 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
 }) {
   const [targets, setTargets] = useState<ResolveTargetsResponse | null>(null);
   const [error, setError] = useState('');
+  const selectorRef = useRef<HTMLSpanElement>(null);
+  const hostShortcut = useMemo(() => ({
+    id: 'composer.select-host',
+    scope: 'composer' as const,
+    keys: { code: 'KeyH', alt: true },
+    description: 'Select host for new conversation',
+    enabled: () => !disabled && !!targets && targets.remotes.length > 0,
+    handler: () => selectorRef.current?.querySelector<HTMLButtonElement>('[role="combobox"]')?.click(),
+  }), [disabled, targets]);
+  useShortcut(hostShortcut);
   useEffect(() => {
     let ignore = false;
     const refresh = () => {
@@ -34,7 +45,7 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
   }
   return <span className="oc-composer-selectors oc-composer-selectors-left" data-testid="composer-machine-selector">
     <span className="oc-selector-icon" aria-hidden="true"><i className="bi bi-pc-display" /></span>
-    <span onClick={(event) => event.stopPropagation()}>
+    <span ref={selectorRef} onClick={(event) => event.stopPropagation()}>
       <SearchSelect
         className="oc-bar-search"
         ariaLabel="Session machine"
