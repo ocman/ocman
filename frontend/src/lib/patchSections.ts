@@ -40,7 +40,7 @@ export function splitPatchSections(diff: string): string[] {
   // separator line inserted between concatenated edits) so each
   // section starts at a real file-diff header.
   const cleaned = sections
-    .map((s) => s.trim())
+    .map((s) => s.replace(/^\n+|\n+$/g, ''))
     .filter((s) => s.length > 0 && boundary.test(s));
 
   // Fall back to the raw input when we couldn't identify any
