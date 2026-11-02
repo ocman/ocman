@@ -27,18 +27,6 @@ export const uiStorePersistence: PersistOptions<UiStore, Partial<UiStore>> = {
   migrate: (persisted, version) => {
     if (!persisted || typeof persisted !== 'object') return persisted as Partial<UiStore>;
     const next = persisted as Record<string, unknown>;
-    if (version < 1) {
-      if (Array.isArray(next.changesSidebarOpenTabs)) {
-        next.changesSidebarOpenTabs = next.changesSidebarOpenTabs.map((t) => t === 'thread' ? 'session' : t);
-      }
-      if (next.changesSidebarTabSizes && typeof next.changesSidebarTabSizes === 'object') {
-        const sizes = next.changesSidebarTabSizes as Record<string, unknown>;
-        if ('thread' in sizes) {
-          sizes.session = sizes.thread;
-          delete sizes.thread;
-        }
-      }
-    }
     if (version < 4) next.changesSidebarTabOrder = ['info', 'session', 'working-tree', 'bookmarks', 'upstream'];
     return next as Partial<UiStore>;
   },

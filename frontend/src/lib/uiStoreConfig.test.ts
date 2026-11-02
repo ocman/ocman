@@ -43,13 +43,12 @@ describe('plugin pane layout', () => {
     expect(normaliseSizes(['session', pluginTab], { session: 1.2, [pluginTab]: 0.8 })).toEqual([0.6, 0.4]);
     expect(normaliseSizes(['session', pluginTab], { session: 0.01, [pluginTab]: 0.04 })).toEqual([0.5, 0.5]);
   });
-  it('retains the older thread-layout migration after splitting the store', () => {
-    expect(uiStorePersistence.migrate?.({
-      changesSidebarOpenTabs: ['thread'], changesSidebarTabSizes: { thread: 0.7, info: 0.3 },
-    }, 0)).toEqual({
-      changesSidebarOpenTabs: ['session'], changesSidebarTabSizes: { session: 0.7, info: 0.3 },
+  it('resets the sidebar tab order of stores older than version 4', () => {
+    expect(uiStorePersistence.migrate?.({ changesSidebarOpenTabs: ['session'] }, 3)).toEqual({
+      changesSidebarOpenTabs: ['session'],
       changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'],
     });
+    expect(uiStorePersistence.migrate?.({ changesSidebarTabOrder: ['session'] }, 4)).toEqual({ changesSidebarTabOrder: ['session'] });
     expect(uiStorePersistence.migrate?.(null, 0)).toBeNull();
     expect(uiStorePersistence.migrate?.({}, 0)).toEqual({ changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream'] });
   });
