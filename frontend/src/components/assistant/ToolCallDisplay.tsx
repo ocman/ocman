@@ -17,13 +17,13 @@ import {
   extractPatchPayload,
   splitToolArgs,
   summarizeToolArgs,
-  summarizePatch,
   parseQuestionAnswers,
   parseToolTime,
   parseShellDescription,
   type ToolApproval,
 } from '../../lib/threadHelpers';
 import { parseQuestions } from '../../lib/questions';
+import { summarizePatch } from '../../lib/applyPatch';
 import type { FC } from 'react';
 import { ArtifactToolCard } from './ArtifactToolCard';
 import { parseCreatedArtifact } from '../../lib/artifactsApi';

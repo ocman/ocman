@@ -6,7 +6,7 @@ import {
   shortenPatchPath,
   applyPatchToUnifiedFileDiffs,
   type ApplyPatchFileDiff,
-} from '../../lib/threadHelpers';
+} from '../../lib/applyPatch';
 
 // @pierre/diffs is heavy; load it only when a thread shows a patch.
 const RawDiffView = lazyComponent(() => import('../RawDiffView').then((m) => m.RawDiffView), 'Loading diff…');

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { extractPatchPayload, parseJsonObject, parsePatchSections, splitToolArgs, type parseToolTime } from '../../lib/threadHelpers';
+import { extractPatchPayload, parseJsonObject, splitToolArgs, type parseToolTime } from '../../lib/threadHelpers';
+import { parsePatchSections } from '../../lib/applyPatch';
 import { relativizePath } from '../../lib/convertMessages';
 import { BashPrompt, ToolDuration } from './toolRenderers';
 import { Button } from '../Control';
