@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { WorktreeFormModal } from './WorktreeFormModal';
+import { renderWithQuery } from '../test/renderWithQuery';
 
 // The modal's inherit hint (#101) reads the setting + the parent's
 // approved-permissions count. Mock the API and force the capability on.
@@ -50,7 +51,7 @@ function openWith(parentSessionId?: string) {
     worktreeFormParentSessionId: parentSessionId,
     closeWorktreeForm: vi.fn(),
   };
-  return render(
+  return renderWithQuery(
     <MemoryRouter>
       <WorktreeFormModal />
     </MemoryRouter>,

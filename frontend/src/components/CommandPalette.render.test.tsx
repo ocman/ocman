@@ -344,6 +344,31 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.resolveProjectIdentities).not.toHaveBeenCalled();
   });
 
+  it('shows a project load failure instead of the picker', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.apiState.getProjects.mockRejectedValue(new Error('projects unavailable'));
+
+    renderPalette();
+
+    expect(await screen.findByText('projects unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Create new project')).not.toBeInTheDocument();
+  });
+
+  it('keeps the user selection when the project list refreshes', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/Users/peter/workspace/research';
+    const { queryClient } = renderPalette();
+    const requested = await screen.findByText('workspace/research');
+    await waitFor(() => expect(requested.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true'));
+
+    fireEvent.keyDown(screen.getByPlaceholderText('Select a project to start a session...'), { key: 'ArrowDown' });
+    const selected = screen.getAllByRole('option').findIndex((option) => option.getAttribute('aria-selected') === 'true');
+    await queryClient.refetchQueries({ queryKey: ['projects'] });
+
+    expect(screen.getAllByRole('option')[selected]).toHaveAttribute('aria-selected', 'true');
+    expect(mocks.apiState.getProjects).toHaveBeenCalledTimes(2);
+  });
+
   it('focuses the project picker when it opens', () => {
     mocks.uiState.paletteOpen = false;
     mocks.uiState.paletteMode = 'project-session';

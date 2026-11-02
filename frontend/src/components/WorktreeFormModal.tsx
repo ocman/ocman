@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './WorktreeFormModal.module.css';
 import { api } from '../lib/api';
-import type { Project } from '../lib/api';
+import { useProjects } from '../lib/queries';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
@@ -107,14 +107,13 @@ interface WorktreeFormProps {
 }
 
 function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId, close }: WorktreeFormProps) {
-  const projectsLoader = api.projects;
   const seedNewSession = useApiStore((s) => s.seedNewSession);
   const navigate = useNavigate();
 
   // Fresh defaults on every mount (which happens on every open
   // transition thanks to the `key` prop on this component).
   const [projectDir, setProjectDir] = useState<string>(initialProject ?? '');
-  const [projectList, setProjectList] = useState<Project[]>([]);
+  const projectList = useProjects().data ?? [];
   const [branch, setBranch] = useState(initialBranch ?? '');
   const [newBranch, setNewBranch] = useState(true);
   const [baseRef, setBaseRef] = useState('');
@@ -136,11 +135,9 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
     ...projectList.filter((project) => (project.remoteId || 'local') === owner).map((project) => project.directory),
   ].filter(Boolean))].map((value) => ({ value, label: value }));
 
-  // Focus the branch input and load the project list on mount.
   useEffect(() => {
     requestAnimationFrame(() => branchInputRef.current?.focus());
-    projectsLoader().then(setProjectList).catch(() => setProjectList([]));
-  }, [projectsLoader]);
+  }, []);
 
   // Once we know which project we're working with, fetch its default
   // base ref to pre-fill the input. setState inside `.then()` is fine

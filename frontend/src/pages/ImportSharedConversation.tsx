@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api, type Project, type SharedConversation } from '../lib/api';
+import { api, type SharedConversation } from '../lib/api';
+import { useProjects } from '../lib/queries';
 import { mergeRelayChunks, parseRelayShareURL, readRelayShare } from '../lib/relayShare';
 import { saveDraft } from '../lib/composerDraft';
 import { usePageTitle } from '../lib/headerContext';
@@ -28,31 +29,27 @@ export function ImportSharedConversation() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const shareURL = params.get('url') ?? '';
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [directory, setDirectory] = useState('');
-  const [conversation, setConversation] = useState<SharedConversation | null>(null);
+  // A cross-machine fork is deliberately local. Remote projects would
+  // write the imported prompt onto yet another machine and make the
+  // safety boundary unclear.
+  const projectsQuery = useProjects();
+  const projects = useMemo(() => (projectsQuery.data ?? []).filter((project) => !project.remoteId), [projectsQuery.data]);
+  const [chosenDirectory, setDirectory] = useState<string | null>(null);
+  const directory = chosenDirectory ?? projects[0]?.directory ?? '';
+  const [shared, setShared] = useState<SharedConversation | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const conversation = projectsQuery.data ? shared : null;
+  const loadError = error || (projectsQuery.error ? projectsQuery.error.message || 'Failed to import share' : '');
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      api.projects(controller.signal),
-      (async () => {
-        const parsed = parseRelayShareURL(shareURL);
-        const result = await readRelayShare(parsed.id, parsed.key, 0, controller.signal, parsed.origin);
-        if (result.artifact) throw new Error('This link shares an artifact, not a conversation.');
-        return mergeRelayChunks(null, result.chunks);
-      })(),
-    ]).then(([list, data]) => {
-      // A cross-machine fork is deliberately local. Remote projects
-      // would write the imported prompt onto yet another machine and
-      // make the safety boundary unclear.
-      const local = list.filter((project) => !project.remoteId);
-      setProjects(local);
-      setDirectory(local[0]?.directory ?? '');
-      setConversation(data);
-    }).catch((err) => {
+    (async () => {
+      const parsed = parseRelayShareURL(shareURL);
+      const result = await readRelayShare(parsed.id, parsed.key, 0, controller.signal, parsed.origin);
+      if (result.artifact) throw new Error('This link shares an artifact, not a conversation.');
+      return mergeRelayChunks(null, result.chunks);
+    })().then(setShared).catch((err) => {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Failed to import share');
     });
@@ -81,8 +78,8 @@ export function ImportSharedConversation() {
     <main className={styles.page} data-testid="import-shared-conversation">
       <h1>Fork shared conversation</h1>
       <p>Choose a local project. The conversation will be placed in the composer for review and will not be sent automatically.</p>
-      {error && <div role="alert">{error}</div>}
-      {!error && !conversation && <div>Loading shared conversation…</div>}
+      {loadError && <div role="alert">{loadError}</div>}
+      {!loadError && !conversation && <div>Loading shared conversation…</div>}
       {conversation && (
         <>
           <label>

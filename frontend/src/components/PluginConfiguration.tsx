@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type Project } from '../lib/api';
+import { useProjects } from '../lib/queries';
 import { useMachinePlatforms } from '../lib/useCapabilities';
 import type { PluginInput, PluginRegistration } from '../lib/plugins';
 import { plugins } from '../lib/plugins';
@@ -21,7 +21,6 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
     return initial;
   });
   const [secrets, setSecrets] = useState<Record<string, string>>({});
-  const [projects, setProjects] = useState<Project[]>([]);
   const [catalog, setCatalog] = useState({ project: '', agents: [] as string[], models: [] as string[] });
   const slack = plugin.description.id === 'org.ocman.slack';
   // The catalog is tagged with the project it was fetched for, so options are
@@ -32,15 +31,9 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
   // owner resolves them against its own platforms.
   const platform = slack ? String(values.platform ?? '') : '';
   const platformOptions = useMachinePlatforms(plugin.ownerId).map((p) => ({ value: p.id.slice(p.id.indexOf(':') + 1), label: p.displayName }));
+  const projects = (useProjects({ enabled: slack }).data ?? []).filter((item) => (item.remoteId || 'local') === plugin.ownerId && !item.archived);
   const catalogKey = `${platform}\0${project}`;
   const options = project && catalog.project === catalogKey ? catalog : emptyCatalog;
-
-  useEffect(() => {
-    if (!slack) return;
-    const controller = new AbortController();
-    api.projects(controller.signal).then((items) => setProjects(items.filter((project) => (project.remoteId || 'local') === plugin.ownerId && !project.archived))).catch(() => {});
-    return () => controller.abort();
-  }, [plugin.ownerId, slack]);
 
   useEffect(() => {
     if (!project) return;

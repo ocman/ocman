@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { WorktreeFormModal } from './WorktreeFormModal';
+import { renderWithQuery } from '../test/renderWithQuery';
 
 // A worktree form opened for a remote-owned project must create, look up
 // the base ref, gate, seed, and link on that owner — never on whichever
@@ -68,7 +69,7 @@ function openFor(remoteId: string | undefined) {
     worktreeFormRemoteId: remoteId,
     closeWorktreeForm: vi.fn(),
   };
-  return render(
+  return renderWithQuery(
     <MemoryRouter initialEntries={['/']}>
       <WorktreeFormModal />
       <Routes>

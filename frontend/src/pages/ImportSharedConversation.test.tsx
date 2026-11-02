@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithQuery } from '../test/renderWithQuery';
 import { MemoryRouter } from 'react-router-dom';
 import { ImportSharedConversation } from './ImportSharedConversation';
 import { api } from '../lib/api';
@@ -37,7 +38,7 @@ const conversation: SharedConversation = {
 };
 
 function renderPage() {
-  return render(
+  return renderWithQuery(
     <MemoryRouter>
       <ImportSharedConversation />
     </MemoryRouter>,
@@ -102,6 +103,14 @@ describe('ImportSharedConversation', () => {
     renderPage();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('relay share: 404');
+    expect(screen.queryByRole('button', { name: /create local fork/i })).toBeNull();
+  });
+
+  it('reports projects that cannot be loaded instead of rendering a fork form', async () => {
+    vi.spyOn(api, 'projects').mockRejectedValue(new Error('projects unavailable'));
+    renderPage();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('projects unavailable');
     expect(screen.queryByRole('button', { name: /create local fork/i })).toBeNull();
   });
 

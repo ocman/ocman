@@ -6,10 +6,10 @@ import { Button, SearchField, SelectField } from '../components/Control';
 import { PageState } from '../components/PageState';
 import { SkeletonTable } from '../components/Skeleton';
 import { InlineAlert } from '../components/InlineAlert';
-import { api, type Project } from '../lib/api';
 import { artifactsApi, formatBytes } from '../lib/artifactsApi';
 import { shortPath } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
+import { useProjects } from '../lib/queries';
 import { onArtifactCreated } from '../lib/useGlobalEvents';
 import styles from './Artifacts.module.css';
 
@@ -21,7 +21,6 @@ export function Artifacts() {
   const directory = params.get('directory') ?? '';
   const search = params.get('q') ?? '';
   const [q, setQ] = useState(search.trim());
-  const [projects, setProjects] = useState<Project[]>([]);
   const queryClient = useQueryClient();
   const stats = useQuery({ queryKey: ['artifact-stats'], queryFn: ({ signal }) => artifactsApi.stats(signal) });
   const list = useInfiniteQuery({
@@ -39,7 +38,6 @@ export function Artifacts() {
   }, [search]);
 
   useEffect(() => {
-    api.projects().then(setProjects, () => setProjects([]));
     return onArtifactCreated(() => {
       void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
       void queryClient.invalidateQueries({ queryKey: ['artifact-stats'] });
@@ -57,6 +55,7 @@ export function Artifacts() {
     return next;
   });
   const retry = () => { void (list.isFetchNextPageError ? list.fetchNextPage() : list.refetch()); };
+  const projects = useProjects().data ?? [];
   const dirs = [...new Set(projects.filter((p) => !p.archived).map((p) => p.directory))].sort();
 
   return <main className={styles.page}>

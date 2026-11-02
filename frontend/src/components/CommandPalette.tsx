@@ -1,7 +1,7 @@
 import { useState, useEffect, useId, useRef, useMemo, useCallback } from 'react';
 import './CommandPalette.css';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useSessions } from '../lib/queries';
+import { useProjects, useSessions } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
@@ -154,7 +154,6 @@ export function CommandPalette() {
   });
   const navigate = useNavigate();
   const location = useLocation();
-  const projects = api.projects;
   const browseDirectories = api.browseDirectories;
   const searchDirectories = api.searchDirectories;
   const launchAllowed = useOpencodeLaunch();
@@ -176,10 +175,11 @@ export function CommandPalette() {
   const worktreeLookup = useRef<AbortController | null>(null);
   useEffect(() => () => { worktreeLookup.current?.abort(); }, [location.key, paletteOpen]);
 
-  const [projectList, setProjectList] = useState<Project[]>([]);
-  const [projectListLoading, setProjectListLoading] = useState(false);
-  const [projectListLoaded, setProjectListLoaded] = useState(false);
-  const [projectListError, setProjectListError] = useState<string | null>(null);
+  const projectQuery = useProjects({ enabled: paletteOpen && mode === 'project-session' });
+  const projectList = projectQuery.data;
+  const projectListError = projectList ? null : projectQuery.error ? projectQuery.error.message || 'Failed to load projects' : null;
+  // The requested project is preselected once per open; later refetches keep the user's selection.
+  const preselectedFor = useRef<string | null>(null);
   const [projectBrowser, setProjectBrowser] = useState<ProjectBrowserState>(CLOSED_PROJECT_BROWSER);
   const projectBrowserAbortRef = useRef<AbortController | null>(null);
   const projectSearchAbortRef = useRef<AbortController | null>(null);
@@ -193,10 +193,6 @@ export function CommandPalette() {
   }, []);
 
   const closePalette = useCallback(() => {
-    setProjectList([]);
-    setProjectListLoading(false);
-    setProjectListLoaded(false);
-    setProjectListError(null);
     setWorktreeError(null);
     resetProjectBrowser();
     rawClosePalette();
@@ -327,36 +323,27 @@ export function CommandPalette() {
   }, [paletteOpen, mode, projectBrowser.open, projectBrowser.loading, openProjectBrowser]);
 
   useEffect(() => {
-    if (!paletteOpen || mode !== 'project-session') return;
+    if (!paletteOpen) preselectedFor.current = null;
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    const directory = projectSessionInitialDirectory;
+    const owner = projectSessionInitialRemoteId || 'local';
+    const key = `${directory}\0${owner}`;
+    if (!paletteOpen || mode !== 'project-session' || !directory || !projectList || preselectedFor.current === key) return;
     const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setProjectListLoading(true);
-    setProjectListLoaded(false);
-    setProjectListError(null);
-    projects(controller.signal)
-      .then(async (list) => {
-        const initial = projectSessionInitialDirectory && !list.some((project) => project.directory === projectSessionInitialDirectory && (project.remoteId || 'local') === (projectSessionInitialRemoteId || 'local'))
-          ? (await api.resolveProjectIdentities([{ directory: projectSessionInitialDirectory, remoteId: projectSessionInitialRemoteId }], controller.signal))[0] : undefined;
-        if (controller.signal.aborted) return;
-        setProjectList(list);
-        if (projectSessionInitialDirectory) {
-          const sorted = [...list].sort((a, b) => b.lastUsed - a.lastUsed);
-          const index = sorted.findIndex((project) => initial ? project.projectKey === initial.key : project.directory === projectSessionInitialDirectory && (project.remoteId || 'local') === (projectSessionInitialRemoteId || 'local'));
-          setSelectedIndex(index < 0 ? 0 : index);
-        }
-        setProjectListLoading(false);
-        setProjectListLoaded(true);
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        const message = err instanceof Error ? err.message : 'Failed to load projects';
-        setProjectList([]);
-        setProjectListLoading(false);
-        setProjectListLoaded(true);
-        setProjectListError(message);
-      });
+    const requested = (project: Project) => project.directory === directory && (project.remoteId || 'local') === owner;
+    (async () => {
+      const initial = projectList.some(requested) ? undefined
+        : (await api.resolveProjectIdentities([{ directory, remoteId: projectSessionInitialRemoteId }], controller.signal))[0];
+      if (controller.signal.aborted) return;
+      const sorted = [...projectList].sort((a, b) => b.lastUsed - a.lastUsed);
+      const index = sorted.findIndex((project) => initial ? project.projectKey === initial.key : requested(project));
+      preselectedFor.current = key;
+      setSelectedIndex(index < 0 ? 0 : index);
+    })().catch(() => {});
     return () => controller.abort();
-  }, [paletteOpen, mode, projectSessionInitialDirectory, projectSessionInitialRemoteId, projects]);
+  }, [paletteOpen, mode, projectSessionInitialDirectory, projectSessionInitialRemoteId, projectList]);
 
   useEffect(() => () => {
     projectBrowserAbortRef.current?.abort();
@@ -457,7 +444,7 @@ export function CommandPalette() {
     }
 
     if (mode === 'project-session') {
-      if (!projectListLoaded || projectListLoading || projectListError) return [];
+      if (!projectList) return [];
       const q = query.trim().toLowerCase();
       // Recency first so it breaks ties between equally good matches.
       const byRecency = projectList.slice().sort((a, b) => b.lastUsed - a.lastUsed);
@@ -505,7 +492,7 @@ export function CommandPalette() {
     }
 
     return uniqueResults;
-  }, [mode, query, sessions, staticCommands, projectBrowser, projectList, projectListLoading, projectListLoaded, projectListError]);
+  }, [mode, query, sessions, staticCommands, projectBrowser, projectList]);
 
   useEffect(() => {
     if (!listRef.current) return;
@@ -701,10 +688,10 @@ export function CommandPalette() {
                 ? 'Loading sessions...'
                 : mode === 'project'
                 ? 'Loading directories...'
-                : mode === 'project-session' && (!projectListLoaded || projectListLoading)
-                ? 'Loading projects...'
                 : mode === 'project-session' && projectListError
                 ? projectListError
+                : mode === 'project-session' && !projectList
+                ? 'Loading projects...'
                 : mode === 'project-session'
                 ? 'No projects found'
                 : 'No results'}
