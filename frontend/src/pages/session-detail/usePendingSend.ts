@@ -6,7 +6,7 @@
 //   sends. The runtime renders that slot without changing server messages.
 //   The hook clears it when the server message and its parts arrive.
 //
-// Why this is simpler than the legacy `temp-*` id system:
+// Keeping the slot outside `messages[]`:
 //
 //   - The pending bubble is never inside `messages[]`, so there's
 //     nothing to filter / reparent / dedupe on the server-message
@@ -67,8 +67,7 @@ export interface UsePendingSendResult {
   observeMessages: (messages: Message[], parts?: Part[]) => void;
 }
 
-/** Crypto-strong-ish unique id. Avoids the `temp-` prefix legacy
- *  helpers used to recognise. We don't strictly need randomness —
+/** Crypto-strong-ish unique id. We don't strictly need randomness —
  *  the id is only used to key the optimistic bubble until the
  *  server's id replaces it via `observeMessages` — but a 16-char
  *  alphabet keeps debug-log lines readable. */
@@ -95,9 +94,8 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
   // needed; tests use it to verify lifecycle.
   const lastMessagesRef = useRef<Message[]>([]);
 
-  // Session change resets state. Drop any in-flight pending from
-  // the previous session — matching the legacy behaviour where
-  // navigation aborted optimistic work. The setState-in-effect is
+  // Session change resets state: navigation drops any in-flight pending
+  // from the previous session. The setState-in-effect is
   // intentional: this is the canonical way to reset a hook's state
   // on a key change without forcing the component to use `key=` to
   // remount.

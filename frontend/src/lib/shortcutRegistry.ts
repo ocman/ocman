@@ -213,9 +213,6 @@ export function useShortcutDispatcher(): void {
     const onKeyDown = (e: KeyboardEvent) => {
       const { shortcuts } = useShortcutRegistry.getState();
       const { match, preventDefault } = matchShortcut(shortcuts.values(), e);
-      // Temporary diagnostic logging (remove once the keybinding regression
-      // is resolved). Only logs events that look like they might be meant
-      // for a shortcut — avoids spamming the server log on every keystroke.
       if (preventDefault) {
         e.preventDefault();
         e.stopPropagation();

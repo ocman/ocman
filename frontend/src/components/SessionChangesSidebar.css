@@ -200,11 +200,6 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
  * headers ("Changed", "Untracked"); the session sidebar uses a
  * single ungrouped list. The .oc-changes-list-* classes below
  * cover both.
- *
- * Legacy .oc-change-group / .oc-change-group-header rules above are
- * still used by the per-edit disclosure inside the session-changes
- * row body and by older callers. They're not used for top-level
- * file rows anymore.
  */
 
 .oc-changes-sidebar-body.oc-changes-list-body {

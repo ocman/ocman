@@ -114,8 +114,7 @@ export interface UseSessionActionsResult {
  * Encapsulates the session-level send/command/shell/abort actions plus the
  * failed-send list.
  *
- * Compared to the legacy hook, this version is much smaller because the
- * optimistic-user-message dance moved into `usePendingSend`. The flow is:
+ * The optimistic user message lives in `usePendingSend`. The flow is:
  *
  *   1. `handleSend` calls `pending.begin(text, images, opts)`. The bubble
  *      is materialised at render time from that slot.
