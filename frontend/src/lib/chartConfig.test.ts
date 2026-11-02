@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi } from 'vitest';
+// @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
+import { readFileSync } from 'node:fs';
 import {
-  CHART_COLORS,
-  STOP_REASON_COLORS,
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
   BAR_OPTIONS_WAIT_TIME,
@@ -20,11 +21,30 @@ describe('chartConfig', () => {
     expect(options).toHaveProperty('interaction', { mode: 'nearest', axis: 'x', intersect: false });
   });
 
-  it('exposes a populated colour palette and stop-reason palette', () => {
-    expect(CHART_COLORS.length).toBeGreaterThan(0);
-    expect(STOP_REASON_COLORS.length).toBeGreaterThan(0);
-    for (const c of [...CHART_COLORS, ...STOP_REASON_COLORS]) {
-      expect(c).toMatch(/^#[0-9a-f]{6}$/i);
+  it('reads its palettes and legend colour from the theme tokens', async () => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync('src/tokens.css', 'utf8');
+    document.head.appendChild(style);
+    try {
+      vi.resetModules();
+      const themed = await import('./chartConfig');
+      expect(themed.CHART_COLORS).toEqual(['#89b4fa', '#a6e3a1', '#cba6f7', '#fab387', '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af']);
+      expect(themed.STOP_REASON_COLORS).toHaveLength(7);
+      expect(themed.DOUGHNUT_OPTIONS.plugins.legend.labels.color).toBe('#bac2de');
+      expect(themed.BAR_OPTIONS_SESSIONS.plugins.legend.labels.color).toBe('#bac2de');
+    } finally {
+      style.remove();
+    }
+  });
+
+  it('leaves colours unset outside a document', async () => {
+    vi.stubGlobal('document', undefined);
+    try {
+      vi.resetModules();
+      const bare = await import('./chartConfig');
+      expect(bare.CHART_COLORS.every((color) => color === '')).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 

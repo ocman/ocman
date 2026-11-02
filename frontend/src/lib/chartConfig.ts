@@ -11,22 +11,31 @@ import { formatCompactNumber, formatCurrency, formatSeconds } from './format';
 const TIME_X = { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45, minRotation: 45 } } as const;
 
 /**
+ * Canvas charts cannot resolve var(), so colours are read from tokens.css
+ * once. main.tsx loads the stylesheet before any chart module.
+ */
+function token(name: string): string {
+  return typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/**
  * Categorical palette used by the doughnut and stacked charts. Hand-
  * picked to read well on the dark theme; colours alternate so
  * adjacent slices in a doughnut don't blur together.
  */
 export const CHART_COLORS = [
-  '#89b4fa', '#a6e3a1', '#cba6f7', '#fab387',
-  '#f38ba8', '#74c7ec', '#94e2d5', '#f9e2af',
-];
+  '--blue', '--green', '--mauve', '--peach',
+  '--red', '--sapphire', '--teal', '--yellow',
+].map(token);
 
 /** Palette used for the stacked stop-reason breakdown. */
 export const STOP_REASON_COLORS = [
-  '#f38ba8', '#a6e3a1', '#f9e2af', '#89b4fa',
-  '#cba6f7', '#fab387', '#94e2d5',
-];
+  '--red', '--green', '--yellow', '--blue',
+  '--mauve', '--peach', '--teal',
+].map(token);
 
-const baseLegendLabels = { color: '#bac2de', boxWidth: 12, padding: 12 } as const;
+const LEGEND_COLOR = token('--subtext1');
+const baseLegendLabels = { color: LEGEND_COLOR, boxWidth: 12, padding: 12 } as const;
 const stackedInteraction = { mode: 'index' as const, intersect: false } as const;
 export const LINE_INTERACTION = { mode: 'nearest', axis: 'x', intersect: false } as const;
 type TooltipTotalItem = { parsed: { x?: number | null; y?: number | null } };
@@ -164,7 +173,7 @@ export const BAR_OPTIONS_SESSIONS = {
   plugins: {
     legend: {
       position: 'bottom' as const,
-      labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } },
+      labels: { color: LEGEND_COLOR, boxWidth: 12, padding: 8, font: { size: 11 } },
     },
   },
   scales: {
@@ -198,7 +207,7 @@ export const BAR_OPTIONS_TOKENS_BY_MODEL = {
   plugins: {
     legend: {
       position: 'bottom' as const,
-      labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } },
+      labels: { color: LEGEND_COLOR, boxWidth: 12, padding: 8, font: { size: 11 } },
     },
     tooltip: { callbacks: { footer: tooltipTotal } },
   },
@@ -218,7 +227,7 @@ export const BAR_OPTIONS_HOURLY_TOKENS = {
   plugins: {
     legend: {
       position: 'bottom' as const,
-      labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } },
+      labels: { color: LEGEND_COLOR, boxWidth: 12, padding: 8, font: { size: 11 } },
     },
     tooltip: { callbacks: { footer: tooltipTotal } },
   },
