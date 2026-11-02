@@ -45,3 +45,47 @@ func TestSessionHaltReceipts(t *testing.T) {
 		t.Fatalf("halts = %v, %v", halts, err)
 	}
 }
+
+func TestSessionHaltReceiptsArePruned(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	day := int64(24 * 60 * 60 * 1000)
+	record := func(session, request string, at int64) int64 {
+		t.Helper()
+		got, err := d.RecordSessionHalt(t.Context(), session, "permission", request, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	receipts := func() int {
+		t.Helper()
+		var n int
+		if err := d.db.QueryRow(`SELECT count(*) FROM setting WHERE key LIKE 'session.halt.receipt.%'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	record("old", "expired", day)
+	record("old", "kept", 2*day)
+	if got := record("new", "fresh", 31*day+1); got != 31*day+1 {
+		t.Fatalf("new receipt = %d", got)
+	}
+	if n := receipts(); n != 2 {
+		t.Fatalf("receipts after prune = %d, want 2", n)
+	}
+	// A replay of a pruned prompt counts as a new halt; a retained one does not.
+	if got := record("old", "kept", 31*day+2); got != 2*day {
+		t.Fatalf("retained receipt = %d, want %d", got, 2*day)
+	}
+	if got := record("old", "expired", 31*day+3); got != 31*day+3 {
+		t.Fatalf("pruned receipt = %d, want %d", got, 31*day+3)
+	}
+	halts, err := d.SessionHalts(t.Context())
+	if err != nil || halts["old"] != 31*day+3 || halts["new"] != 31*day+1 {
+		t.Fatalf("halts = %v, %v", halts, err)
+	}
+}
