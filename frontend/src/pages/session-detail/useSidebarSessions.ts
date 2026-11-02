@@ -175,7 +175,7 @@ export function useSidebarSessions({
         });
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         openSessionFallbackRef.current = resolved.cache;
-        const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.snoozedUntil || s.pinned || !s.archived || hasPendingPrompt(s));
+        const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.status === 'busy' || s.snoozedUntil || s.pinned || !s.archived || hasPendingPrompt(s));
         const current = resolved.session;
         const candidates = current && !visible.some((s) => s.id === current.id)
           ? [current, ...visible]
@@ -282,7 +282,7 @@ export function useSidebarSessions({
             timeUpdated: target.timeUpdated,
           });
           setSidebarSessions(getSidebarSessions().flatMap((session) => session.id !== target.id ? [session]
-            : showArchivedRecentRef.current || session.pinned || hasPendingPrompt(session) ? [{ ...session, archived: true }] : []));
+            : showArchivedRecentRef.current || session.status === 'busy' || session.pinned || hasPendingPrompt(session) ? [{ ...session, archived: true }] : []));
           if (isCurrent) {
             // No session left: stay on the detail page with the `new`
             // sentinel so the sidebar + empty-detail hint show instead

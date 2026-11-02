@@ -164,7 +164,7 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 		if q.Since > 0 {
 			kept := rows[:0]
 			for _, row := range rows {
-				if row.TimeUpdated >= q.Since || row.Pinned || row.SnoozedUntil > 0 || row.PendingPermission || row.PendingQuestion {
+				if row.TimeUpdated >= q.Since || row.Status == db.StatusBusy || row.Pinned || row.SnoozedUntil > 0 || row.PendingPermission || row.PendingQuestion {
 					kept = append(kept, row)
 				}
 			}

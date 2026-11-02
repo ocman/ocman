@@ -17,7 +17,10 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import type { Session } from '../../lib/api';
-import { cleanTitle, fuzzyMatch } from '../../lib/format';
+import { fuzzyMatch } from '../../lib/format';
+import { matchesSessionSearch } from './sidebarSessionSearch';
+import { useSidebarDrawers } from './useSidebarDrawers';
+import { SidebarDrawers } from './SidebarDrawers';
 import { BackendStats } from '../../components/BackendStats';
 import { Resizer } from '../../components/Resizer';
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useUiStore } from '../../lib/uiStore';
@@ -175,7 +178,7 @@ export function SessionSidebar({
   // Share live status, archive and navigation across every session view.
   const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => phone && archivingSessionIds.has(sib.id) ? null : (
     <SidebarSessionRow
-      key={sib.id}
+      key={`${sib.platform}:${sib.id}`}
       session={sib}
       inGroup={inGroup}
       flat={flat}
@@ -213,8 +216,12 @@ export function SessionSidebar({
     matchesSessionListFilters(session, listFilters,
       hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
   );
+  const runningDrawers = useSidebarDrawers(
+    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)],
+    query, siblingGitInfos, activeId, activeDisplayStatus,
+  );
 
-  const sections = useMemo(() => sidebarView === 'recent'
+  const mainSections = useMemo(() => sidebarView === 'recent'
     ? [filteredPinnedSessions, flatUnpinned]
     : [
       filteredPinnedSessions,
@@ -222,7 +229,9 @@ export function SessionSidebar({
         .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory) || alwaysShowPrompts && group.sessions.some(hasPendingPrompt))
         .map((group) => group.sessions),
     ], [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet, alwaysShowPrompts]);
-  const visibleKeys = new Set(sections.flatMap((rows) => nestSessions(rows).map(({ session }) => sessionAttentionKey(session))));
+  const sections = useMemo(() => [...mainSections.map((rows) => nestSessions(rows).map(({ session }) => session)),
+    ...runningDrawers.sections], [mainSections, runningDrawers.sections]);
+  const visibleKeys = new Set(sections.flat().map(sessionAttentionKey));
   const attention = attentionSessionEntries(notify?.entries ?? []).filter((entry) => !visibleKeys.has(sessionAttentionKey(entry)));
 
   // Publish what is on screen, in order, so archiving picks the next
@@ -230,7 +239,7 @@ export function SessionSidebar({
   useEffect(() => {
     const seen = new Set<string>();
     setVisibleSidebarSessions(sections
-      .flatMap((rows) => nestSessions(rows).map(({ session }) => session))
+      .flat()
       .filter((session) => {
         const key = `${session.platform}\0${session.id}`;
         if (seen.has(key)) return false;
@@ -372,12 +381,9 @@ export function SessionSidebar({
           renderProjectsView()
         )}
       </div>
+      {!loadingRecentSessions && <SidebarDrawers drawers={runningDrawers.drawers} expanded={runningDrawers.expanded}
+        onToggle={runningDrawers.toggle} renderRow={renderRow} />}
       <BackendStats enabled={visible} />
     </div>
   );
-}
-
-function matchesSessionSearch(query: string, session: Session, gitInfo?: GitInfo): boolean {
-  return [cleanTitle(session.title), session.directory, gitInfo?.branch ?? session.branch]
-    .some((value) => !!value && fuzzyMatch(query, value));
 }

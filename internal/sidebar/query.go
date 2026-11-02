@@ -59,6 +59,6 @@ const selectSessions = `WITH RECURSIVE runtime AS (
  AND (s.is_subagent=0 OR s.source_child=1 OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested)
  AND (s.source_child=0 OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested OR (o.status='busy' AND COALESCE(f.permission,0)=0 AND COALESCE(f.question,0)=0))
  AND (?='' OR s.directory=?)
- AND (?=0 OR s.updated_at>=? OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested OR COALESCE(f.permission,0)=1 OR COALESCE(f.question,0)=1)
+  AND (?=0 OR s.updated_at>=? OR o.status='busy' OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested OR COALESCE(f.permission,0)=1 OR COALESCE(f.question,0)=1)
  AND (?='' OR c.origin=?) AND (?='' OR c.origin_id=?)
  ORDER BY s.updated_at DESC,s.id LIMIT ? OFFSET ?`

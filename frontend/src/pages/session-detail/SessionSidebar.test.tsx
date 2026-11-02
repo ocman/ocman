@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { DndContext } from '@dnd-kit/core';
 import { useUiStore } from '../../lib/uiStore';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
@@ -102,6 +102,75 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it.each(['recent', 'projects'] as const)('shows muted running drawers without changing the %s main list', (view) => {
+    const rows = [
+      session({ id: 'normal', title: 'Normal session' }),
+      session({ id: 'archive', title: 'Archived run', status: 'busy', archived: true }),
+      session({ id: 'routine', title: 'Routine run', status: 'busy', routineId: 'nightly' }),
+      session({ id: 'plugin', title: 'Plugin run', status: 'busy', origin: 'plugin' }),
+      session({ id: 'done', title: 'Completed archive', archived: true }),
+    ];
+    renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'busy', count: 3 } }, {}, undefined, undefined, undefined, view);
+    expect(screen.getByText('Normal session')).toBeInTheDocument();
+    const drawers = screen.getByRole('group', { name: 'Session drawers' });
+    for (const label of ['Archived', 'Routines', 'Plugins']) {
+      const toggle = within(drawers).getByRole('button', { name: `${label} 1` });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    }
+    for (const title of ['Archived run', 'Routine run', 'Plugin run']) {
+      const row = within(drawers).getByText(title).closest('.session-sidebar-item')!;
+      expect(row).toHaveClass('flat');
+      expect(row).not.toHaveClass('in-group', 'session-sidebar-item-child');
+    }
+    expect(screen.queryByText('Completed archive')).not.toBeInTheDocument();
+    expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['normal', 'archive', 'routine', 'plugin']);
+    fireEvent.click(within(drawers).getByRole('button', { name: 'Archived 1' }));
+    expect(screen.queryByText('Archived run')).not.toBeInTheDocument();
+    expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['normal', 'routine', 'plugin']);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'Plugin run' } });
+    expect(screen.queryByRole('button', { name: 'Archived 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Routines 1' })).not.toBeInTheDocument();
+    expect(within(drawers).getByText('Plugin run')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no matches at all' } });
+    expect(screen.queryByRole('group', { name: 'Session drawers' })).not.toBeInTheDocument();
+  });
+
+  it('applies the project picker to running drawers without changing category filters', () => {
+    const a = session({ id: 'a', title: 'First archived run', status: 'busy', archived: true, directory: '/first' });
+    const b = session({ id: 'b', title: 'Second archived run', status: 'busy', archived: true, directory: '/second' });
+    const groups: SidebarProjectGroup[] = [
+      { directory: '/first', sessions: [a], lastUpdated: 1, aggregate: { kind: 'none' } },
+      { directory: '/second', sessions: [b], lastUpdated: 1, aggregate: { kind: 'none' } },
+    ];
+    renderSidebar({ ...groups[0], sessions: [a, b] }, {}, undefined, undefined, undefined, 'recent', undefined, undefined, groups);
+    fireEvent.click(screen.getByRole('button', { name: 'Archived 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Project' }));
+    fireEvent.click(screen.getByRole('option', { name: '/second' }));
+    expect(screen.getByRole('button', { name: 'Archived 1' })).toBeInTheDocument();
+    expect(screen.queryByText('First archived run')).not.toBeInTheDocument();
+    expect(screen.getByText('Second archived run')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Show archived' })).not.toBeChecked();
+  });
+
+  it('shows settled snoozed sessions in their drawer while the main snoozed filter stays off', () => {
+    const rows = [session({ id: 'nap', title: 'Sleeping session', status: 'done', archived: true, snoozedUntil: 9999999999999 })];
+    renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, 'recent');
+    const toggle = screen.getByRole('button', { name: 'Snoozed 1' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Sleeping session')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const drawers = screen.getByRole('group', { name: 'Session drawers' });
+    expect(within(drawers).getByText('Sleeping session')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Archived 1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    expect(screen.getByRole('checkbox', { name: 'Show snoozed' })).not.toBeChecked();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no matches' } });
+    expect(screen.queryByRole('button', { name: 'Snoozed 1' })).not.toBeInTheDocument();
+  });
+
   it.each(['recent', 'projects'] as const)('hides snoozed pins and reveals snoozed rows independently of archives in %s', (view) => {
     const rows = [
       session({ id: 'pin', title: 'Snoozed pin', pinned: true, archived: true, snoozedUntil: Date.now() + 60_000 }),

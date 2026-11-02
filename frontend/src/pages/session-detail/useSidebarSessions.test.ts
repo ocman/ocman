@@ -69,6 +69,22 @@ import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists } from '../
 import { queryClient } from '../../lib/queryClient';
 
 describe('useSidebarSessions project visibility', () => {
+  it('retains running archives across refreshes, but drops completed archives', async () => {
+    const row = { id: 'archived-run', platform: 'opencode', archived: true, status: 'busy', timeUpdated: Date.now() } as Session;
+    const getSessions = vi.fn().mockResolvedValue([row]);
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({ getSessions });
+    const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    await act(async () => { await view.result.current.loadRecentSessions(); });
+    expect(view.result.current.showArchivedRecent).toBe(false);
+    expect(view.result.current.recentSessions).toEqual([row]);
+    getSessions.mockResolvedValue([{ ...row, status: 'done' }]);
+    await act(async () => { await view.result.current.loadRecentSessions(); });
+    expect(view.result.current.recentSessions).toEqual([]);
+    view.unmount();
+  });
+
   it('reconciles pending permissions when the inbox learns about a prompt', async () => {
     vi.useFakeTimers();
     const row = { id: 'background', platform: 'opencode', status: 'busy',
@@ -93,8 +109,8 @@ describe('useSidebarSessions project visibility', () => {
       expect(inboxChanged).toBeUndefined();
     } finally { view.unmount(); vi.useRealTimers(); }
   });
-  it('retains unpinned snoozed rows for the default-off display filter', async () => {
-    const row = { id: 'nap', platform: 'opencode', archived: true, snoozedUntil: Date.now() + 60_000, timeUpdated: Date.now() } as Session;
+  it.each([undefined, 'parent'])('retains unpinned snoozed rows with parent=%s for the default-off display filter', async (parentId) => {
+    const row = { id: 'nap', platform: 'opencode', archived: true, parentId, status: 'done', snoozedUntil: Date.now() + 60_000, timeUpdated: Date.now() } as Session;
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
     useApiStore.setState({getSessions: vi.fn().mockResolvedValue([row]) });
     const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
@@ -730,7 +746,7 @@ describe('useSidebarSessions live refresh', () => {
     expect(getSidebarSessions()).toEqual([]);
   });
 
-  it('keeps a busy archived session hidden on activity', async () => {
+  it('admits a busy archived session through activity for the Archived drawer', async () => {
     const peekSession = vi.fn().mockResolvedValue({ session: {
       id: 'archived', timeUpdated: Date.now(), directory: '/repo', status: 'busy', archived: true,
     } as Session });
@@ -742,7 +758,7 @@ describe('useSidebarSessions live refresh', () => {
     }));
     await act(async () => { sessionActivity?.('archived', Date.now()); });
     expect(peekSession).toHaveBeenCalledWith('archived', expect.anything());
-    expect(getSidebarSessions()).toEqual([]);
+    expect(getSidebarSessions()).toEqual([expect.objectContaining({ id: 'archived', archived: true, status: 'busy' })]);
   });
 
   it('refreshes on session changes and SSE reconnects', async () => {
@@ -957,9 +973,9 @@ describe('useSidebarSessions archive navigation', () => {
     } finally { view.unmount(); vi.unstubAllGlobals(); }
   });
 
-  it('retains a pinned session after archiving and reloading with archived hidden', async () => {
+  it.each(['pinned', 'busy'] as const)('retains a %s session after archiving and reloading with archived hidden', async (kind) => {
     vi.useFakeTimers();
-    const pinned = { id: 'pin', platform: 'opencode', pinned: true, archived: false,
+    const pinned = { id: 'pin', platform: 'opencode', pinned: kind === 'pinned', status: kind === 'busy' ? 'busy' : 'done', archived: false,
       timeUpdated: 1, seen: false, seenTimeUpdated: 0, unreadCount: 0 } as Session;
     const archived = { ...pinned, archived: true };
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [pinned]);

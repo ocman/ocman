@@ -117,3 +117,19 @@ func TestSidebarKeepsHubRemotePinsAndOriginTags(t *testing.T) {
 		t.Fatalf("owner query lost hub preferences: %+v", p.query)
 	}
 }
+
+func TestSidebarKeepsRemoteRunningSessionsOutsideRecentWindow(t *testing.T) {
+	s, reg := newSessionsTestServer(t)
+	platform := "r-remote:test"
+	p := &remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: platform}, rows: []db.Session{
+		{ID: "running", Platform: platform, TimeUpdated: 1, Status: db.StatusBusy},
+		{ID: "done", Platform: platform, TimeUpdated: 2, Status: db.StatusDone},
+	}}
+	reg.Register(p)
+	w := httptest.NewRecorder()
+	s.handleSessions(w, httptest.NewRequest(http.MethodGet, "/api/sessions?view=sidebar&since=100&limit=0", nil))
+	var rows []db.Session
+	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil || w.Code != 200 || len(rows) != 1 || rows[0].ID != "running" {
+		t.Fatalf("running rows=%+v err=%v status=%d", rows, err, w.Code)
+	}
+}

@@ -1,0 +1,41 @@
+.session-sidebar-drawers {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 45%;
+  overflow-y: auto;
+}
+
+.session-sidebar-drawer {
+  border-top: 1px solid color-mix(in srgb, var(--border) 35%, transparent);
+}
+
+.session-sidebar-drawer-toggle.oc-button {
+  width: 100%;
+  height: 30px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.session-sidebar-drawer-toggle > .bi {
+  font-size: 10px;
+}
+
+.session-sidebar-drawer-toggle.oc-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-hover) 25%, transparent);
+  color: var(--subtext0);
+}
+
+.session-sidebar-drawer-toggle.oc-button:focus-visible {
+  outline-offset: -2px;
+}
+
+.session-sidebar-drawer-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}

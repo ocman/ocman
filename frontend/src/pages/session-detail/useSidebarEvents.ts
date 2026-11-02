@@ -81,7 +81,7 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
         peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
           if (!subscribed) return;
           const candidates = filterInactiveChildren([row], id);
-          if (!candidates.length || (!row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
+          if (!candidates.length || (row.status !== 'busy' && !row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
             hiddenSessions.add(sessionID);
             return;
           }
