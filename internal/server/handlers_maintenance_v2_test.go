@@ -8,7 +8,8 @@ import (
 	"github.com/ocman/ocman/internal/forge/forgejo"
 	"github.com/ocman/ocman/internal/forge/github"
 	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	"github.com/ocman/ocman/internal/sourcecontrol"
 )
 
 // TestMain pins the installed-OpenCode check so no test runs the real
@@ -21,8 +22,8 @@ func TestMain(m *testing.M) {
 	os.Exit(claudetest.Run(m))
 }
 
-func hermeticForgeClients() *forgeClients {
-	return &forgeClients{
+func hermeticForgeClients() *sourcecontrol.Clients {
+	return &sourcecontrol.Clients{
 		GitHub:  github.NewWithCredentials(github.DefaultAPIBase, "", forgehttp.InstrumentClient(nil)),
 		Forgejo: forgejo.NewRegistryForTest(map[string]*forgejo.Client{}),
 	}

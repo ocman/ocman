@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/hostsvc"
@@ -17,39 +16,8 @@ import (
 
 func (s *Server) sourceControlModule() *sourcecontrol.Module {
 	return s.sourceControlMod.get(func() *sourcecontrol.Module {
-		return sourcecontrol.New(sourcecontrol.Deps{DB: s.stateDB, Discover: func() []sourcecontrol.Discovered { return forgeConnections(s.integrations) }, Rediscover: func() []sourcecontrol.Discovered { return forgeConnections(discoverForgeClients()) }})
+		return sourcecontrol.New(sourcecontrol.Deps{DB: s.stateDB, Discover: func() []sourcecontrol.Discovered { return s.integrations.Connections() }, Rediscover: func() []sourcecontrol.Discovered { return discoverForgeClients().Connections() }})
 	})
-}
-
-func forgeConnections(integrations *forgeClients) []sourcecontrol.Discovered {
-	connections := []sourcecontrol.Discovered{}
-	if integrations == nil {
-		return connections
-	}
-	if c := integrations.GitHub; c != nil {
-		source := "anonymous"
-		if c.Token() != "" {
-			source = "GitHub CLI"
-		}
-		if os.Getenv("GITHUB_TOKEN") != "" {
-			source = "GITHUB_TOKEN"
-		} else if os.Getenv("GH_TOKEN") != "" {
-			source = "GH_TOKEN"
-		}
-		connections = append(connections, sourcecontrol.Discovered{Connection: sourcecontrol.Connection{Host: "github.com", Provider: forge.RemoteTypeGitHub, Source: source}, Client: c})
-	}
-	if reg := integrations.Forgejo; reg != nil {
-		for _, host := range reg.Hosts() {
-			source := "tea login"
-			if os.Getenv("FORGEJO_TOKEN") != "" {
-				source = "FORGEJO_TOKEN"
-			} else if os.Getenv("GITEA_TOKEN") != "" {
-				source = "GITEA_TOKEN"
-			}
-			connections = append(connections, sourcecontrol.Discovered{Connection: sourcecontrol.Connection{Host: host, Provider: forge.RemoteTypeForgejo, Source: source}, Client: reg.ForHost(host)})
-		}
-	}
-	return connections
 }
 
 func (s *Server) prWorkflowModule() *prworkflow.Module {

@@ -9,6 +9,7 @@ import (
 	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/forge/github"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sourcecontrol"
 )
 
 // recordedRead is an owner read's context state at the moment of the call.
@@ -115,7 +116,7 @@ func TestForgeCredentialLoadUsesServerLifetime(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, _ := newSessionsTestServer(t)
-			srv.integrations = &forgeClients{GitHub: github.NewWithCredentials("https://api.github.com", "tok", nil)}
+			srv.integrations = &sourcecontrol.Clients{GitHub: github.NewWithCredentials("https://api.github.com", "tok", nil)}
 			stopped, cancel := context.WithCancel(t.Context())
 			cancel()
 			srv.lifetimeCtx = stopped

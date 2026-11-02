@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
-	"github.com/ocman/ocman/internal/forge/forgejo"
-	"github.com/ocman/ocman/internal/forge/github"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/prworkflow"
 )
@@ -95,32 +93,5 @@ func TestPRWatchAdmission(t *testing.T) {
 	}
 	if s.prWatchReady(t.Context(), target) {
 		t.Fatal("archived session admitted")
-	}
-}
-
-func TestForgeConnectionSources(t *testing.T) {
-	if len(forgeConnections(nil)) != 0 {
-		t.Fatal("nil integrations")
-	}
-	in := &forgeClients{GitHub: github.NewWithCredentials("http://unused", "token", nil), Forgejo: forgejo.NewRegistryForTest(map[string]*forgejo.Client{"code.example.com": forgejo.NewWithCredentials("code.example.com", "http://unused", "token", nil)})}
-	for _, vars := range [][2]string{{"GITHUB_TOKEN", "FORGEJO_TOKEN"}, {"GH_TOKEN", "GITEA_TOKEN"}, {"", ""}} {
-		for _, key := range []string{"GITHUB_TOKEN", "GH_TOKEN", "FORGEJO_TOKEN", "GITEA_TOKEN"} {
-			t.Setenv(key, "")
-		}
-		for _, key := range vars {
-			if key != "" {
-				t.Setenv(key, "test")
-			}
-		}
-		connections := forgeConnections(in)
-		if len(connections) != 2 {
-			t.Fatal(connections)
-		}
-		if vars[0] != "" && connections[0].Source != vars[0] {
-			t.Fatal(connections)
-		}
-		if vars[1] != "" && connections[1].Source != vars[1] {
-			t.Fatal(connections)
-		}
 	}
 }

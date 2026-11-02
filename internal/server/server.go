@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/analytics"
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/previews"
 
 	"github.com/ocman/ocman/internal/artifacts"
@@ -27,7 +28,6 @@ import (
 	"github.com/ocman/ocman/internal/ocmaint"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/platformsettings"
 	"github.com/ocman/ocman/internal/pluginsmod"
 	"github.com/ocman/ocman/internal/projectforge"
@@ -65,7 +65,7 @@ type Server struct {
 	registry           *platforms.Registry
 	sessions           *sessionsvc.Service
 	auth               *Auth
-	integrations       *forgeClients
+	integrations       *sourcecontrol.Clients
 	startTime          time.Time
 	projects           projectsIndexState
 	autoApproveDefault bool

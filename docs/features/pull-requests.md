@@ -147,6 +147,9 @@ flowchart LR
 - `sourcecontrol` owns privileged setup routes, verified per-host tokens and
   live credential resolution for project PR operations, Factory and watches.
   Saved tokens override CLI/environment discovery without altering Git auth.
+  Discovery itself (`sourcecontrol.DiscoverClients`: `GITHUB_TOKEN`/`GH_TOKEN`,
+  `gh`, `FORGEJO_TOKEN`/`GITEA_TOKEN`, tea logins) and its credential-source
+  labels live there too; the server only resolves remotes through it.
 - `prworkflow` owns session-qualified links, feedback-task drafts and its joined
   two-minute watch worker. It persists snapshots and pending notices separately
   from conversations. The hub reads forge metadata; owner disconnection never

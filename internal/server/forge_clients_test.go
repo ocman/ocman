@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ocman/ocman/internal/sourcecontrol"
 )
 
 // machineForgeCredentials gives the process a tea login and a GitHub token,
@@ -25,7 +27,7 @@ func machineForgeCredentials(t *testing.T) {
 
 func TestNewForgeClientsReadsMachineCredentials(t *testing.T) {
 	machineForgeCredentials(t)
-	clients := newForgeClients()
+	clients := sourcecontrol.DiscoverClients()
 	if !clients.Forgejo.Knows("code.example.com") || clients.GitHub.Token() != "machine-token" {
 		t.Fatalf("production discovery ignored machine credentials: forgejo hosts %v, github token %q", clients.Forgejo.Hosts(), clients.GitHub.Token())
 	}
