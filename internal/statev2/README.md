@@ -110,8 +110,8 @@ will need separate idempotent application receipts.
 Source deletion marks a record `SourceDeleted`; it never removes Ocman's
 history. Readers include source-deleted records. Disabled or disconnected
 platform instances must not be removed by cascading database deletion.
-statev2 has no purge operation; the `purged_session` table is retained for
-schema compatibility only.
+statev2 has no purge operation. Schema v20 dropped the never-written
+`purged_session` table.
 
 ## Application integration
 

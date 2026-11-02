@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Dashboard results are cached per history reader. Every content change and
-// purge appends a change_outbox row, so a snapshot's maximum sequence names
+// Dashboard results are cached per history reader. Every content change
+// appends a change_outbox row, so a snapshot's maximum sequence names
 // the exact history it reads. Entries hold only unpriced, identity-free data;
 // pricing, session identity and the time-dependent series are applied per
 // request.

@@ -15,7 +15,7 @@ import (
 var sessionKeyColumns = []struct{ table, column, prefix string }{
 	{"session", "id", ""}, {"session", "parent_id", ""},
 	{"message", "session_id", ""}, {"part", "session_id", ""},
-	{"purged_session", "session_id", ""}, {"change_outbox", "session_id", ""},
+	{"change_outbox", "session_id", ""},
 	{"analytics_message", "session_id", ""}, {"analytics_part", "session_id", ""},
 	{"analytics_session", "id", ""}, {"analytics_session", "parent_id", ""},
 	{"analytics_fact", "session_id", ""}, {"analytics_hour", "session_id", ""},

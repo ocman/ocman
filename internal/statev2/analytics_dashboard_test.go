@@ -83,7 +83,7 @@ func TestAnalyticsHourDashboardColumnsMatchFactsAcrossUpgrade(t *testing.T) {
 		 FOREIGN KEY(instance_id,session_id) REFERENCES session(instance_id,id) ON DELETE CASCADE
 		) WITHOUT ROWID;
 		CREATE INDEX analytics_hour_window ON analytics_hour(instance_id,role,bucket);
-		PRAGMA user_version=` + fmt.Sprint(len(migrations)-1)); err != nil {
+		PRAGMA user_version=` + fmt.Sprint(migrationIndex(t, analyticsDashboardSchema))); err != nil {
 		t.Fatal(err)
 	}
 	d.Close()
