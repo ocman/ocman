@@ -10,7 +10,7 @@
 // `useSession`; the page is mostly props plumbing from there to the
 // individual UI surfaces.
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
@@ -29,7 +29,7 @@ import { ShareLinkModal } from '../../components/ShareExportMenu';
 import type { ComposerHandle } from '../../components/assistant/Composer';
 import { RightPanel } from '../../components/RightPanel';
 import { SessionTerminalDock } from '../../components/SessionTerminalDock';
-import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { RateLimitBanner } from '../../components/RateLimitBanner';
 import './ComposerNotices.css';
 import { SessionBackgroundTasksNotice } from './SessionBackgroundTasksNotice';
@@ -69,10 +69,9 @@ import { usePaletteCommands } from './usePaletteCommands';
 import { SseStatusIndicator } from './SseStatusIndicator';
 import { SessionSyncIndicator } from './SessionSyncIndicator';
 import { remoteLog } from '../../lib/remoteLog';
-import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
 import { useUnreadMarker } from './useUnreadMarker';
 import { sessionWarningKey, useSessionWarnings } from './useSessionWarnings';
-import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
+import { useThreadBoundaryRecovery } from './useThreadBoundaryRecovery';
 import { SessionToasts } from './SessionToasts';
 import { useSessionToasts } from './useSessionToasts';
 import { SessionActionsMenu } from './SessionActionsMenu';
@@ -106,7 +105,6 @@ import { PerfProfiler } from '../../components/PerfProfiler';
 const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
 const ALL_MESSAGES_LIMIT = 2_147_483_647;
-const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
 
 /**
  * Props for the inner SessionDetail component.
@@ -429,7 +427,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [openModal, setOpenModal] = useState<SessionModal | null>(null);
   const closeModal = () => setOpenModal(null);
   const [messageJumpHistory, setMessageJumpHistory] = useState<MessageJumpHistory | null>(null);
-  const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
 
   const archiveSession = api.archiveSession;
 
@@ -440,8 +437,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     return shortcut ? shortcutLabel(shortcut) : 'Alt+Space';
   });
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
-
-  const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
 
   // Per-session-change side effects: rehydrate failed sends and reset
   // model/agent selection.
@@ -597,48 +592,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     refreshMessageQueue,
   });
 
-  const handleThreadBoundaryRetry = useCallback((error: Error, force = false) => {
-    const now = Date.now();
-    const previous = threadBoundaryRecoveryRef.current;
-    if (
-      !force
-      && previous
-      && previous.sessionId === id
-      && previous.message === error.message
-      && now - previous.at < THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS
-    ) {
-      return false;
-    }
-
-    threadBoundaryRecoveryRef.current = { sessionId: id, message: error.message, at: now };
-    remoteLog.warn('SessionDetail auto-recovering thread boundary', {
-      sessionId: id,
-      message: error.message,
-    });
-    setThreadBoundaryResetNonce((value) => value + 1);
-    void reload();
-    return true;
-  }, [id, reload]);
-
-  const renderThreadBoundaryFallback = useCallback<FallbackRender>(({ error, reset }) => {
-    const previous = threadBoundaryRecoveryRef.current;
-    const autoRecover = isRecoverableThreadBoundaryError(error)
-      && (!previous
-        || previous.sessionId !== id
-        || previous.message !== error.message
-        || Date.now() - previous.at >= THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS);
-
-    return (
-      <ThreadBoundaryFallback
-        error={error}
-        reset={reset}
-        autoRecover={autoRecover}
-        onReload={() => {
-          handleThreadBoundaryRetry(error, !autoRecover);
-        }}
-      />
-    );
-  }, [handleThreadBoundaryRetry, id]);
+  const { threadBoundaryResetNonce, renderThreadBoundaryFallback } = useThreadBoundaryRecovery(id, reload);
 
   // Alt+J / Alt+K: follow the sidebar's displayed order and filters.
   const navigationSessionRef = useSyncRef(session);
