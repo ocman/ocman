@@ -11,8 +11,6 @@ local setup, commands, tests and the pull request checklist. Coding agents and
 repository contributors should also read [AGENTS.md](AGENTS.md). The
 [Makefile](Makefile) is the authoritative command reference.
 
-Before starting `make dev`, configure disposable databases isolated to this
-checkout and branch. Set `OCMAN_STATE_DB` to an absolute disposable path and
-set `-conversations-db` alongside it. Native platform homes and managed agent
-databases must also be isolated before backend development startup.
-See the [database isolation prerequisite](docs/other/contributing.md#database-isolation-before-startup).
+`make dev` keeps ocman's databases in this checkout (`.dev/state.db` and
+`state_conv.db`). Native platform data, such as OpenCode's database, is not
+isolated; see [database isolation](docs/other/contributing.md#database-isolation-before-startup).

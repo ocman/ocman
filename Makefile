@@ -31,9 +31,13 @@ export OTEL_SERVICE_NAME ?= ocman-dev
 #   make dev OCMAN_RELAY_URL=https://share.example.com # a deployed relay
 export OCMAN_RELAY_URL ?= http://localhost:$(RELAY_PORT)
 
-# --- Conversation history -------------------------------------------------
-# Keep history checkout-local, outside Air's disposable build directory.
+# --- Development databases ------------------------------------------------
+# Keep application state and conversation history checkout-local, outside
+# Air's disposable build directory. The state database's directory also holds
+# provider runtime state and artifacts. History keeps its established path so
+# existing development history is not orphaned.
 DEV_TARGETS := dev dev-prod dev-prod-watch dev-backend dev-remote
+$(DEV_TARGETS): export OCMAN_STATE_DB ?= $(CURDIR)/.dev/state.db
 $(DEV_TARGETS): export OCMAN_CONVERSATIONS_DB ?= $(if $(OCMAN_STATEV2_DB),$(OCMAN_STATEV2_DB),$(CURDIR)/state_conv.db)
 
 # --- dev targets ----------------------------------------------------------

@@ -35,6 +35,33 @@ class DevDataConfigTest(unittest.TestCase):
         self.assertTrue("$(CURDIR)/tmp/state_conv.db)" not in makefile,
                         "dev history must not default to Air's build directory")
 
+    def test_dev_backend_isolates_state_and_keeps_history_path(self):
+        # Run the real Makefile recipe in a scratch checkout with a fake air
+        # that reports its environment, so no ocman process or database starts.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            shutil.copy(Path(__file__).resolve().parent.parent / "Makefile", root)
+            (root / "bin").mkdir()
+            air = root / "bin/air"
+            air.write_text('#!/bin/sh\necho "STATE=$OCMAN_STATE_DB"\n'
+                           'echo "HISTORY=$OCMAN_CONVERSATIONS_DB"\n')
+            air.chmod(0o755)
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("OCMAN_STATE_DB", "OCMAN_CONVERSATIONS_DB",
+                                "OCMAN_STATEV2_DB", "MAKEFLAGS", "MFLAGS")}
+            env["PATH"] = f'{root / "bin"}:{env["PATH"]}'
+            result = subprocess.run(["make", "--no-print-directory", "dev-backend"],
+                                    cwd=root, env=env, capture_output=True,
+                                    text=True, check=True)
+            self.assertIn(f"STATE={root}/.dev/state.db", result.stdout)
+            self.assertIn(f"HISTORY={root}/state_conv.db", result.stdout)
+
+            env["OCMAN_STATE_DB"] = str(root / "custom/state.db")
+            result = subprocess.run(["make", "--no-print-directory", "dev-backend"],
+                                    cwd=root, env=env, capture_output=True,
+                                    text=True, check=True)
+            self.assertIn(f"STATE={root}/custom/state.db", result.stdout)
+
     def test_air_preserves_conversation_checkpoints_on_exit(self):
         root = Path(__file__).resolve().parent.parent
         with (root / ".air.toml").open("rb") as handle:

@@ -1,6 +1,7 @@
 /ocman
 node_modules/
 tmp/
+.dev/
 dist/
 # Build cache and artifacts
 .cache/

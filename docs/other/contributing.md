@@ -89,18 +89,15 @@ pnpm --dir frontend install --frozen-lockfile
 Development must use disposable databases isolated to this checkout and branch.
 A different port does not isolate data. Tests already use temporary stores.
 
-`make dev*` selects a checkout-local `state_conv.db`, but application state
-defaults to `~/.local/share/ocman/state.db`. Set `OCMAN_STATE_DB` to an absolute,
-disposable checkout-local path before starting the backend, and set
-`-conversations-db` to an isolated path beside it. The state database's parent
-also holds provider runtime state and artifacts.
-The OpenCode source and any managed agent's writable databases must also be
-isolated. See `.agents/development.md` for the repository's isolation rules.
+Backend `make dev*` targets default `OCMAN_STATE_DB` to `.dev/state.db` and
+`OCMAN_CONVERSATIONS_DB` to `state_conv.db` in the checkout; set either to
+override. Native platform data is not isolated: point `-db` or `OPENCODE_DB` at
+a disposable OpenCode database when the run may write to it. See
+`.agents/development.md` for the repository's isolation rules.
 
 ### Commands
 
-The Makefile and `make help` are authoritative. Development startup targets
-below require the isolation prerequisite above.
+The Makefile and `make help` are authoritative.
 
 | Command | Description |
 | --- | --- |

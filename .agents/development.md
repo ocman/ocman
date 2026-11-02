@@ -51,16 +51,13 @@ make otel-logs
 make otel-reset       # also wipes persisted telemetry data
 ```
 
-Conversation storage and ingestion are always enabled. Dev targets keep
-`state_conv.db` in this checkout's root. Tests use temporary stores; builds do
-not start ingestion.
-This isolates only conversation history: `internal/app/run.go` still opens
-application state through `state.DefaultDBPath()`, which defaults to the user's
-normal `~/.local/share/ocman/state.db`. Set `OCMAN_STATE_DB` to an absolute,
-disposable checkout-local path before starting backend dev targets. Its parent
-also isolates provider runtime state and artifacts. Set `-conversations-db`
-explicitly alongside it. Verify native platform paths too; `-db` alone does not isolate v1 managed
-OpenCode writes. Do not change `HOME` to work around the missing override.
+Conversation storage and ingestion are always enabled. Backend dev targets
+default `OCMAN_STATE_DB` to `.dev/state.db` (its directory also holds provider
+runtime state and artifacts) and `OCMAN_CONVERSATIONS_DB` to `state_conv.db`,
+both in this checkout. Set either variable to override. Tests use temporary
+stores; builds do not start ingestion. Native platform data is not covered:
+OpenCode's database still comes from `-db`/`OPENCODE_DB`, and `-db` alone does
+not isolate v1 managed OpenCode writes. Do not change `HOME` as a workaround.
 Air must keep `clean_on_exit = false` in `.air.toml` (`make dev-remote` reuses
 it): deleting `tmp/` also deletes history from older dev runs still using that
 location. Preserve an existing `tmp/state_conv.db` with a SQLite-consistent
