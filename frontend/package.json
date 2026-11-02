@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.11.1",
   "scripts": {
     "dev": "vite",
-    "build": "pnpm generate:a2ui && tsc -b && vite build",
+    "build": "pnpm generate:a2ui && tsrs -b && vite build",
     "generate:a2ui": "node scripts/generate-a2ui.mjs",
     "lint": "node scripts/generate-a2ui.mjs --check && eslint . && pnpm lint:css",
     "lint:css": "stylelint \"src/**/*.css\"",
@@ -75,6 +75,7 @@
     "jsdom": "^29.1.1",
     "stylelint": "^17.16.0",
     "stylelint-config-standard": "^40.0.0",
+    "tsrs": "0.20.1-ts7.1.0-beta",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.2",
     "vite": "^8.3.4",

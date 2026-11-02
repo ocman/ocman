@@ -368,7 +368,7 @@ lint-backend:
 	cd sdk && golangci-lint run --config ../.golangci.yml ./...
 
 lint-frontend:
-	cd frontend && pnpm exec tsc -b && pnpm lint
+	cd frontend && pnpm exec tsrs -b && pnpm lint
 
 # Guard against var(--x) naming a custom property defined nowhere, which
 # silently falls back to inherited styles (off-theme UI).

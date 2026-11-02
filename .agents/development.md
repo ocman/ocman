@@ -31,6 +31,10 @@ Frontend dev targets install locked dependencies before starting. Direct
 `pnpm build` or watcher-script runs require `pnpm install --frozen-lockfile`
 in `frontend/` first after pulling dependency changes.
 
+Frontend builds, lint and production watching use the pinned `tsrs` compiler
+in its default compatibility mode. Keep `typescript` installed for tooling such
+as TypeScript ESLint and for comparison checks with `pnpm exec tsc -b --force`.
+
 ```sh
 make dev              # Air backend :8229 and Vite frontend :8228, with HMR
 make dev-prod         # Air and Vite preview, manual frontend rebuild

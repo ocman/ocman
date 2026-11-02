@@ -37,7 +37,7 @@ jobs:
         run: pnpm lint
       - name: Typecheck
         working-directory: frontend
-        run: pnpm exec tsc -b
+        run: pnpm exec tsrs -b
       - name: Install script test dependencies
         run: apt-get update && apt-get install -y ripgrep jq python3
       - name: CSS token guard
@@ -288,7 +288,7 @@ jobs:
       - name: Install Playwright browsers
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
-      # `pnpm build` is `tsc -b && vite build`; the Frontend job already
+      # `pnpm build` generates A2UI, runs `tsrs -b`, then Vite; the Frontend job already
       # typechecks, so only the bundle is needed here.
       - name: Build frontend
         working-directory: frontend

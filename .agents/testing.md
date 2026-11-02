@@ -57,7 +57,7 @@ The authoritative workflow is `.forgejo/workflows/ci.yml`. Keep workflows there,
 not in `.github/workflows/`, so the GitHub mirror does not run them. Preserve
 Forgejo-aware setup and `FORGEJO_API_URL` handling.
 
-- Frontend checks ESLint, `pnpm exec tsc -b`, guard scripts,
+- Frontend checks ESLint, `pnpm exec tsrs -b`, guard scripts,
   Vitest coverage and the coverage baseline.
 - Backend checks golangci-lint, production linking with `go build -o /dev/null
   .`, root tests, internal package coverage and the coverage baseline.
