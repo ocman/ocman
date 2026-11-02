@@ -74,7 +74,7 @@ func TestACPUpdateNeverWaitsForNativeUserIdentity(t *testing.T) {
 			return nil, &codexappserver.RPCError{Code: -32600, Message: "no rollout"}
 		}
 		return map[string]any{"data": []codexappserver.ItemEntry{
-			{TurnID: "t1", StartedAtMs: 1000, Item: codexappserver.Item{ID: "u1", Type: "userMessage", Content: []codexappserver.UserInput{codexappserver.TextInput("hi")}}},
+			{TurnID: "t1", StartedAtMs: 1000, Item: codexappserver.Item{ID: "u1", Type: "userMessage", Content: []codexappserver.UserInput{{Type: "text", Text: "hi"}}}},
 			{TurnID: "t1", StartedAtMs: 1000, Item: codexappserver.Item{ID: "a1", Type: "agentMessage"}},
 		}}, nil
 	})
@@ -244,7 +244,7 @@ func TestACPReaderErrorsDoNotBecomeExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.fake().Handle(codexappserver.MethodThreadRead, func(json.RawMessage) (any, error) {
-		return &codexappserver.ThreadResponse{Thread: codexappserver.Thread{ID: "other"}}, nil
+		return &codexappserver.ThreadReadResponse{Thread: codexappserver.Thread{ID: "other"}}, nil
 	})
 	c, err := h.b.acp.conn(t.Context())
 	if err != nil {

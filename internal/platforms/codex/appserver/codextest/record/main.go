@@ -127,39 +127,6 @@ func splitLines(p []byte) [][]byte {
 // scenario selects what run drives once connected.
 var scenario string
 
-type handler struct {
-	conn  func() *codexappserver.Client
-	turns chan codexappserver.TurnNotification
-	seen  chan string // every notification method, dropped when full
-}
-
-func (h *handler) Notification(method string, params json.RawMessage) {
-	select {
-	case h.seen <- method:
-	default:
-	}
-	if method == codexappserver.NotifyTurnCompleted {
-		var n codexappserver.TurnNotification
-		_ = json.Unmarshal(params, &n)
-		h.turns <- n
-	}
-}
-
-func (h *handler) Request(id json.RawMessage, method string, params json.RawMessage) {
-	go func() {
-		switch method {
-		case codexappserver.RequestCommandApproval, codexappserver.RequestFileChangeApproval:
-			decision := codexappserver.DecisionAccept
-			if strings.Contains(string(params), "sleep") {
-				decision = codexappserver.DecisionCancel
-			}
-			_ = h.conn().Reply(id, codexappserver.ApprovalResponse{Decision: decision})
-		default:
-			_ = h.conn().ReplyError(id, -32601, "recorder does not answer "+method)
-		}
-	}()
-}
-
 func run(cli, out, keep string) error {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
@@ -219,49 +186,39 @@ func run(cli, out, keep string) error {
 		return err
 	}
 	defer func() { _ = stdin.Close(); _ = cmd.Wait() }()
-	pr, pw := io.Pipe()
-	go func() {
-		sc := bufio.NewScanner(stdout)
-		sc.Buffer(nil, 64<<20)
-		for sc.Scan() {
-			rec.line("recv", sc.Bytes())
-			_, _ = pw.Write(append(append([]byte(nil), sc.Bytes()...), '\n'))
-		}
-		_ = pw.Close()
-	}()
+	client := newRPC(tapWriter{w: stdin, rec: rec})
+	go client.read(stdout, rec)
 
-	var client *codexappserver.Client
-	h := &handler{conn: func() *codexappserver.Client { return client }, turns: make(chan codexappserver.TurnNotification, 4), seen: make(chan string, 1024)}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	client, err = codexappserver.Attach(ctx, pr, tapWriter{w: stdin, rec: rec},
-		codexappserver.Options{Client: codexappserver.ClientInfo{Name: "ocman", Version: "record"}, ExperimentalAPI: true}, h)
-	if err != nil {
+	if err := client.initialize(ctx); err != nil {
 		return err
 	}
-	if _, err := client.ListModels(ctx, false); err != nil {
+	if err := client.call(ctx, codexappserver.MethodModelList, codexappserver.ModelListParams{}, nil); err != nil {
 		return err
 	}
-	var start codexappserver.ThreadResponse
-	if err := client.Call(ctx, codexappserver.MethodThreadStart, codexappserver.ThreadStartParams{Cwd: repo, Sandbox: "workspace-write", ApprovalPolicy: "untrusted"}, &start); err != nil {
+	var start struct {
+		Thread codexappserver.Thread `json:"thread"`
+	}
+	if err := client.call(ctx, "thread/start", map[string]any{"cwd": repo, "sandbox": "workspace-write", "approvalPolicy": "untrusted"}, &start); err != nil {
 		return err
 	}
 	id := start.Thread.ID
 	if scenario == "extras" {
-		return extras(ctx, client, h, id, home, out, rec)
+		return extras(ctx, client, id, out, rec)
 	}
 	for _, text := range prompts {
-		if err := client.Call(ctx, codexappserver.MethodTurnStart, codexappserver.TurnStartParams{ThreadID: id, Input: []codexappserver.UserInput{codexappserver.TextInput(text)}}, nil); err != nil {
+		if err := client.startTurn(ctx, id, text); err != nil {
 			return err
 		}
 		select {
-		case done := <-h.turns:
-			fmt.Fprintln(os.Stderr, "turn", done.Turn.ID, done.Turn.Status)
+		case done := <-client.turns:
+			fmt.Fprintln(os.Stderr, "turn", done.ID, done.Status)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
-	if err := client.SetThreadName(ctx, id, "Recorded fixture"); err != nil {
+	if err := client.call(ctx, codexappserver.MethodThreadNameSet, codexappserver.ThreadNameSetParams{ThreadID: id, Name: "Recorded fixture"}, nil); err != nil {
 		return err
 	}
 	// Each read is saved raw, so fixtures keep every field the server sent.
@@ -276,7 +233,7 @@ func run(cli, out, keep string) error {
 	}
 	for _, r := range reads {
 		var raw json.RawMessage
-		if err := client.Call(ctx, r.method, r.params, &raw); err != nil {
+		if err := client.call(ctx, r.method, r.params, &raw); err != nil {
 			return fmt.Errorf("%s: %w", r.method, err)
 		}
 		if err := writeJSON(filepath.Join(out, r.file), raw, rec.scrub); err != nil {

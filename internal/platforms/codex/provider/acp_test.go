@@ -15,7 +15,6 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 	acpexec "github.com/ocman/ocman/internal/platforms/acp"
 	"github.com/ocman/ocman/internal/platforms/codex/acptest"
-	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 )
 
@@ -65,9 +64,8 @@ func TestACPExecutionKeepsNativeIdentities(t *testing.T) {
 	}
 	h.next("message.part.updated", func(p map[string]any) bool { return part(p)["id"] == "prt_a1" && part(p)["text"] == "Hello from ACP" })
 	h.next("session.idle", nil)
-	var detail platforms.SessionDetail
-	if code := h.call("GET", "/sessions/thr", nil, &detail); code != http.StatusOK || len(detail.Messages) != 2 || detail.Messages[1].ID != "msg_r1" {
-		t.Fatalf("native detail = %d %+v", code, detail)
+	if snap, err := h.b.history(t.Context(), "thr"); err != nil || len(snap.Messages) != 2 || snap.Messages[1].ID != "msg_r1" {
+		t.Fatalf("native history = %+v %v", snap, err)
 	}
 	state := acptest.ReadState(path)
 	if state.CLI != h.b.opts.CLI || state.Home != h.b.opts.Home {
@@ -77,7 +75,7 @@ func TestACPExecutionKeepsNativeIdentities(t *testing.T) {
 		t.Fatal(state.Calls)
 	}
 	for _, call := range h.fake().Calls() {
-		if slices.Contains([]string{codexappserver.MethodThreadResume, codexappserver.MethodThreadStart, codexappserver.MethodTurnStart}, call.Method) {
+		if slices.Contains([]string{"thread/resume", "thread/start", "turn/start"}, call.Method) {
 			t.Fatalf("native reader became an execution owner: %s", call.Method)
 		}
 	}
@@ -168,7 +166,7 @@ func TestACPDisconnectNeverFallsBack(t *testing.T) {
 		t.Fatalf("prompt replayed %d times", count)
 	}
 	for _, call := range h.fake().Calls() {
-		if call.Method == codexappserver.MethodTurnStart || call.Method == codexappserver.MethodThreadResume {
+		if call.Method == "turn/start" || call.Method == "thread/resume" {
 			t.Fatal("native fallback", call.Method)
 		}
 	}

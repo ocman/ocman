@@ -164,7 +164,7 @@ func (a *agent) prompt(ctx context.Context, req acp.PromptRequest) (any, *acp.Re
 	ts := time.Now().UnixMilli()
 	turn := codexappserver.Turn{ID: id, Status: codexappserver.TurnInProgress, StartedAt: ts / 1000}
 	items := []codexappserver.Item{
-		{ID: user, Type: "userMessage", Content: []codexappserver.UserInput{codexappserver.TextInput("hello")}, StartedAtMs: ts},
+		{ID: user, Type: "userMessage", Content: []codexappserver.UserInput{{Type: "text", Text: "hello"}}, StartedAtMs: ts},
 		{ID: reasoning, Type: "reasoning", Summary: []string{""}, StartedAtMs: ts},
 		{ID: reply, Type: "agentMessage", Text: "", StartedAtMs: ts},
 	}

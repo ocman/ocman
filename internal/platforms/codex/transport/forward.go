@@ -83,8 +83,10 @@ func (p *Platform) ExecuteCommand(ctx context.Context, req platforms.ExecuteComm
 	return p.do(ctx, func(a *provider.Adapter) error { return a.ExecuteCommand(ctx, req) })
 }
 
-func (p *Platform) RunShell(ctx context.Context, req platforms.RunShellRequest) error {
-	return p.do(ctx, func(a *provider.Adapter) error { return a.RunShell(ctx, req) })
+// RunShell is unsupported: ACP has no raw shell input. Answering here keeps
+// the request from launching a supervisor only to refuse it.
+func (p *Platform) RunShell(context.Context, platforms.RunShellRequest) error {
+	return platforms.ErrUnsupported
 }
 
 func (p *Platform) RespondPermission(ctx context.Context, req platforms.RespondPermissionRequest) error {

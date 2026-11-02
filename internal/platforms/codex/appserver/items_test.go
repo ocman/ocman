@@ -5,25 +5,6 @@ import (
 	"testing"
 )
 
-func TestUserInputEncoding(t *testing.T) {
-	cases := []struct {
-		in   UserInput
-		want string
-	}{
-		{TextInput("hi"), `{"type":"text","text":"hi","text_elements":[]}`},
-		{UserInput{Type: "text", Text: "x", TextElements: []json.RawMessage{json.RawMessage(`{"placeholder":null}`)}},
-			`{"type":"text","text":"x","text_elements":[{"placeholder":null}]}`},
-		{UserInput{Type: "localImage", Path: "/a.png"}, `{"type":"localImage","path":"/a.png"}`},
-		{UserInput{Type: "image", URL: "data:image/png;base64,AA"}, `{"type":"image","url":"data:image/png;base64,AA"}`},
-	}
-	for _, tc := range cases {
-		got, err := json.Marshal(tc.in)
-		if err != nil || string(got) != tc.want {
-			t.Errorf("Marshal(%+v) = %s, %v; want %s", tc.in, got, err, tc.want)
-		}
-	}
-}
-
 func TestItemDecoding(t *testing.T) {
 	raw := `[
 	{"type":"userMessage","id":"u1","content":[{"type":"text","text":"hello","text_elements":[]}],"startedAtMs":1,"completedAtMs":2},

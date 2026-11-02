@@ -10,16 +10,35 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ocman/ocman/internal/platforms"
-	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
+
+// question is one field of an ACP elicitation, as the question UI shows it.
+type question struct {
+	ID       string
+	Header   string
+	Question string
+	IsOther  bool
+	Options  []option
+}
+
+type option struct {
+	Label       string
+	Description string
+}
+
+// approval and questionAnswers are the decisions handed to an ACP callback.
+// questionAnswers maps question IDs to their answers; empty cancels.
+type approval struct{ accept bool }
+
+type questionAnswers map[string][]string
 
 // prompt is an unanswered ACP interaction. The supervisor only relays it:
 // ocman's rules, judge or user decide (AD-7a).
 type prompt struct {
 	session   string
 	question  bool
-	questions []codexappserver.InputQuestion
+	questions []question
 	props     map[string]any // the v1 permission.asked / question.asked properties
 	answering bool
 	reply     *providerprotocol.Event // delivered to Codex, not yet spooled
@@ -30,12 +49,12 @@ type prompt struct {
 // refusal is the answer that lets Codex continue without the prompt.
 func (pr *prompt) refusal() any {
 	if pr.question {
-		return codexappserver.UserInputResponse{Answers: map[string]codexappserver.InputAnswer{}}
+		return questionAnswers{}
 	}
-	return codexappserver.ApprovalResponse{Decision: codexappserver.DecisionDecline}
+	return approval{}
 }
 
-func v1Questions(qs []codexappserver.InputQuestion) []map[string]any {
+func v1Questions(qs []question) []map[string]any {
 	out := make([]map[string]any, 0, len(qs))
 	for _, q := range qs {
 		options := make([]map[string]any, 0, len(q.Options))
@@ -111,28 +130,28 @@ func (b *backend) record(id string, pr *prompt, event providerprotocol.Event) er
 }
 
 func (b *backend) replyPermission(id string, reply string) error {
-	decision := codexappserver.DecisionAccept
+	var decision approval
 	switch reply {
 	case "once", "always": // ocman remembers "always" itself
+		decision.accept = true
 	case "reject":
-		decision = codexappserver.DecisionDecline
 	default:
 		return statusError{http.StatusBadRequest, errors.New("reply must be once, always or reject")}
 	}
-	return b.answer(id, false, func(*prompt) any { return codexappserver.ApprovalResponse{Decision: decision} },
+	return b.answer(id, false, func(*prompt) any { return decision },
 		"permission.replied", map[string]any{"reply": reply})
 }
 
 // replyQuestion answers questions in order; Codex keys answers by question id.
 func (b *backend) replyQuestion(id string, answers [][]string) error {
 	return b.answer(id, true, func(pr *prompt) any {
-		out := map[string]codexappserver.InputAnswer{}
+		out := questionAnswers{}
 		for i, q := range pr.questions {
 			if i < len(answers) {
-				out[q.ID] = codexappserver.InputAnswer{Answers: answers[i]}
+				out[q.ID] = answers[i]
 			}
 		}
-		return codexappserver.UserInputResponse{Answers: out}
+		return out
 	}, "question.replied", map[string]any{"answers": answers})
 }
 

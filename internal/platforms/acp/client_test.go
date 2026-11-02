@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -50,27 +49,6 @@ func startTestClient(t *testing.T, mode string, handlers Handlers) *Client {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	return c
-}
-
-func TestDefaultCommand(t *testing.T) {
-	for _, tt := range []struct {
-		id   platforms.ID
-		want Command
-	}{
-		{"opencode", Command{"opencode", []string{"acp"}}},
-		{"codex", Command{"codex-acp", nil}},
-		{"claudecode", Command{"claude-agent-acp", nil}},
-	} {
-		t.Run(string(tt.id), func(t *testing.T) {
-			got, err := DefaultCommand(tt.id)
-			if err != nil || !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("got %#v, %v; want %#v", got, err, tt.want)
-			}
-		})
-	}
-	if _, err := DefaultCommand("unknown"); !errors.Is(err, platforms.ErrUnsupported) {
-		t.Fatal(err)
-	}
 }
 
 func TestExecutionLifecycle(t *testing.T) {

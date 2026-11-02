@@ -11,12 +11,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/ocman/ocman/internal/platforms"
 	acpexec "github.com/ocman/ocman/internal/platforms/acp"
-	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 type acpQuestionField struct {
-	question codexappserver.InputQuestion
+	question question
 	values   map[string]any
 }
 
@@ -30,7 +29,7 @@ func (a *acpExecution) question(ctx context.Context, req acpexec.ElicitationRequ
 	if err != nil {
 		return cancelled, err
 	}
-	questions := make([]codexappserver.InputQuestion, len(fields))
+	questions := make([]question, len(fields))
 	for i, field := range fields {
 		questions[i] = field.question
 	}
@@ -40,15 +39,15 @@ func (a *acpExecution) question(ctx context.Context, req acpexec.ElicitationRequ
 	responses := make(chan acp.UnstableCreateElicitationResponse, 1)
 	pr := &prompt{session: sessionID, question: true, questions: questions, props: props, recorded: make(chan struct{})}
 	pr.deliver = func(value any) error {
-		input, ok := value.(codexappserver.UserInputResponse)
+		input, ok := value.(questionAnswers)
 		if !ok {
 			return errors.New("invalid ACP question response")
 		}
 		result := cancelled
-		if len(input.Answers) > 0 {
+		if len(input) > 0 {
 			content := map[string]any{}
 			for _, field := range fields {
-				answers := input.Answers[field.question.ID].Answers
+				answers := input[field.question.ID]
 				if len(answers) == 0 {
 					continue
 				}
@@ -141,13 +140,13 @@ func acpQuestionFields(schema acp.UnstableElicitationSchema) ([]acpQuestionField
 		if property.Meta.Codex.IsSecret || (property.Type != "string" && property.Type != "boolean") {
 			return nil, fmt.Errorf("ACP form field %q: %w", key, platforms.ErrUnsupported)
 		}
-		field := acpQuestionField{question: codexappserver.InputQuestion{ID: key, Question: property.Title, Header: property.Description, IsOther: property.Meta.Codex.IsOther}, values: map[string]any{}}
+		field := acpQuestionField{question: question{ID: key, Question: property.Title, Header: property.Description, IsOther: property.Meta.Codex.IsOther}, values: map[string]any{}}
 		if field.question.Question == "" {
 			field.question.Question = key
 		}
 		add := func(label, description string, value any) {
 			field.values[label] = value
-			field.question.Options = append(field.question.Options, codexappserver.InputOption{Label: label, Description: description})
+			field.question.Options = append(field.question.Options, option{Label: label, Description: description})
 		}
 		for _, option := range property.OneOf {
 			label := option.Title

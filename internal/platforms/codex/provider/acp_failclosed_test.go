@@ -196,11 +196,6 @@ func TestACPReaderFailuresAndNativeHistoryLag(t *testing.T) {
 	if code := h.call("POST", "/questions/x/unknown", nil, nil); code != http.StatusNotImplemented {
 		t.Fatal(code)
 	}
-	native.Handle(codexappserver.MethodModelList, func(json.RawMessage) (any, error) { return map[string]any{"data": []any{}}, nil })
-	native.Handle(codexappserver.MethodSkillsList, func(json.RawMessage) (any, error) { return nil, errors.New("skills unavailable") })
-	if code := h.call("GET", "/catalog?directory=/repo", nil, nil); code != 500 {
-		t.Fatal(code)
-	}
 }
 
 func TestACPAdmissionAndConfigurationFailures(t *testing.T) {

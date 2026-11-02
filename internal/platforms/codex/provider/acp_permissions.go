@@ -9,7 +9,6 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/google/uuid"
 	"github.com/ocman/ocman/internal/platforms"
-	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
@@ -42,13 +41,13 @@ func (a *acpExecution) permission(ctx context.Context, req acp.RequestPermission
 	responses := make(chan acp.RequestPermissionResponse, 1)
 	pr := &prompt{session: sessionID, props: props, recorded: make(chan struct{})}
 	pr.deliver = func(value any) error {
-		decision, ok := value.(codexappserver.ApprovalResponse)
+		decision, ok := value.(approval)
 		if !ok {
 			return errors.New("invalid ACP approval response")
 		}
 		outcome := acp.NewRequestPermissionOutcomeCancelled()
 		want := acp.PermissionOptionKindRejectOnce
-		if decision.Decision == codexappserver.DecisionAccept {
+		if decision.accept {
 			want = acp.PermissionOptionKindAllowOnce
 		}
 		found := false

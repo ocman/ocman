@@ -17,8 +17,7 @@ type Options struct {
 	Env    []string // full child environment; nil inherits this process's
 	Dir    string   // working directory of the server process
 	Client ClientInfo
-	// ExperimentalAPI enables gated methods and fields, such as
-	// item/tool/requestUserInput.
+	// ExperimentalAPI enables gated methods and fields.
 	ExperimentalAPI bool
 	// OptOut suppresses these notification methods on the connection.
 	OptOut []string
@@ -40,7 +39,7 @@ type Client struct {
 // Start spawns `codex app-server`, performs the initialize handshake and
 // returns the ready client. ctx bounds only the handshake; Close stops the
 // process.
-func Start(ctx context.Context, opts Options, handler Handler) (*Client, error) {
+func Start(ctx context.Context, opts Options) (*Client, error) {
 	if opts.CLI == "" {
 		opts.CLI = "codex"
 	}
@@ -59,7 +58,7 @@ func Start(ctx context.Context, opts Options, handler Handler) (*Client, error) 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting codex app-server: %w", err)
 	}
-	c := &Client{Conn: NewConn(stdout, stdin, handler), cmd: cmd, stdin: stdin}
+	c := &Client{Conn: newConn(stdout, stdin), cmd: cmd, stdin: stdin}
 	if err := c.initialize(ctx, opts); err != nil {
 		_ = c.stop(failedStartGrace)
 		return nil, err
@@ -67,10 +66,10 @@ func Start(ctx context.Context, opts Options, handler Handler) (*Client, error) 
 	return c, nil
 }
 
-// Attach wraps an existing pipe pair, such as an in-process fake, and
-// performs the handshake.
-func Attach(ctx context.Context, r io.Reader, w io.WriteCloser, opts Options, handler Handler) (*Client, error) {
-	c := &Client{Conn: NewConn(r, w, handler), stdin: w}
+// Attach wraps an existing pipe pair and performs the handshake. Tests use it
+// to connect to an in-process codextest fake.
+func Attach(ctx context.Context, r io.Reader, w io.WriteCloser, opts Options) (*Client, error) {
+	c := &Client{Conn: newConn(r, w), stdin: w}
 	if err := c.initialize(ctx, opts); err != nil {
 		_ = c.Close()
 		return nil, err
@@ -87,7 +86,7 @@ func (c *Client) initialize(ctx context.Context, opts Options) error {
 	if err := c.Call(ctx, MethodInitialize, params, &c.Info); err != nil {
 		return fmt.Errorf("codex app-server initialize: %w", err)
 	}
-	return c.Notify(MethodInitialized, nil)
+	return c.notify(MethodInitialized, nil)
 }
 
 // How long a closed server may take to exit on stdin EOF before it is killed.
@@ -205,10 +204,6 @@ func (c *Client) ReadRateLimits(ctx context.Context) (*RateLimitSnapshot, error)
 		return nil, err
 	}
 	return &out.RateLimits, nil
-}
-
-func (c *Client) ArchiveThread(ctx context.Context, id string) error {
-	return c.Call(ctx, MethodThreadArchive, ThreadIDParams{ThreadID: id}, nil)
 }
 
 func (c *Client) SetThreadName(ctx context.Context, id, name string) error {

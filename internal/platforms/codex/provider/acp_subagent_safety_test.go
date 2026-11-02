@@ -163,7 +163,7 @@ func TestACPSubagentCannotBeResumedAfterReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, call := range h.fake().Calls() {
-		if call.Method == codexappserver.MethodThreadResume {
+		if call.Method == "thread/resume" {
 			t.Fatal("native reader resumed a child")
 		}
 	}

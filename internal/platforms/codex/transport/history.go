@@ -46,9 +46,8 @@ func (c cached[T]) fresh() bool { return !c.at.IsZero() && time.Since(c.at) < ca
 
 func newHistory(cli, version, home string) *history {
 	return &history{start: func(ctx context.Context) (*codexappserver.Client, error) {
-		// No handler: server requests are refused, notifications ignored.
 		return codexappserver.Start(ctx, codexappserver.Options{CLI: cli, Env: append(os.Environ(), "CODEX_HOME="+home),
-			Client: codexappserver.ClientInfo{Name: "ocman", Title: "ocman history", Version: version}}, nil)
+			Client: codexappserver.ClientInfo{Name: "ocman", Title: "ocman history", Version: version}})
 	}}
 }
 

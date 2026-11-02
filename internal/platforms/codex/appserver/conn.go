@@ -20,9 +20,8 @@ import (
 // file diffs can be large, so this is generous.
 const maxLine = 64 << 20
 
-// replyTimeout bounds answering a server-initiated request. Replies can be
-// written from the reader goroutine, which a peer that stops draining stdin
-// must not wedge forever.
+// replyTimeout bounds refusing a server-initiated request, so a peer that
+// stops draining stdin cannot wedge the refusal forever.
 var replyTimeout = 10 * time.Second
 
 // ErrClosed reports a call on a connection whose peer has gone away.
@@ -44,15 +43,6 @@ func (e *RPCError) Error() string {
 	return fmt.Sprintf("codex app-server error %d: %s", e.Code, e.Message)
 }
 
-// Handler receives server-initiated traffic. Both methods are called from the
-// connection's single reader goroutine in arrival order, so they must not
-// block or make calls on the same connection. A request is answered later
-// with Conn.Reply or Conn.ReplyError, using the ID it was delivered with.
-type Handler interface {
-	Notification(method string, params json.RawMessage)
-	Request(id json.RawMessage, method string, params json.RawMessage)
-}
-
 type message struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method,omitempty"`
@@ -72,10 +62,11 @@ type frame struct {
 	result chan error
 }
 
-// Conn is one client connection. Calls are safe for concurrent use.
+// Conn is one client connection. Calls are safe for concurrent use. ocman
+// only reads through it: server requests are refused and notifications are
+// ignored.
 type Conn struct {
-	w       io.Writer
-	handler Handler
+	w io.Writer
 
 	// writes feeds the single writer goroutine. Only it touches w, so a frame
 	// is always written whole and a stuck write never holds a lock that a
@@ -89,11 +80,11 @@ type Conn struct {
 	done    chan struct{}
 }
 
-// NewConn starts reading r and writes requests to w. The connection ends when
+// newConn starts reading r and writes requests to w. The connection ends when
 // r reaches EOF or fails, or a write to w fails; Done is closed and pending
 // calls fail with ErrClosed.
-func NewConn(r io.Reader, w io.Writer, handler Handler) *Conn {
-	c := &Conn{w: w, handler: handler, writes: make(chan frame), pending: map[string]chan response{}, done: make(chan struct{})}
+func newConn(r io.Reader, w io.Writer) *Conn {
+	c := &Conn{w: w, writes: make(chan frame), pending: map[string]chan response{}, done: make(chan struct{})}
 	go c.read(r)
 	go c.write()
 	return c
@@ -147,8 +138,8 @@ func (c *Conn) Call(ctx context.Context, method string, params, out any) error {
 	}
 }
 
-// Notify sends a notification, which has no response.
-func (c *Conn) Notify(method string, params any) error {
+// notify sends a notification, which has no response.
+func (c *Conn) notify(method string, params any) error {
 	raw, err := encode(params)
 	if err != nil {
 		return err
@@ -156,22 +147,8 @@ func (c *Conn) Notify(method string, params any) error {
 	return c.send(context.Background(), message{Method: method, Params: raw})
 }
 
-// Reply answers a server-initiated request.
-func (c *Conn) Reply(id json.RawMessage, result any) error {
-	raw, err := encode(result)
-	if err != nil {
-		return err
-	}
-	if raw == nil {
-		raw = json.RawMessage("{}")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), replyTimeout)
-	defer cancel()
-	return c.send(ctx, message{ID: id, Result: raw})
-}
-
-// ReplyError rejects a server-initiated request.
-func (c *Conn) ReplyError(id json.RawMessage, code int, msg string) error {
+// replyError rejects a server-initiated request.
+func (c *Conn) replyError(id json.RawMessage, code int, msg string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), replyTimeout)
 	defer cancel()
 	return c.send(ctx, message{ID: id, Error: &RPCError{Code: code, Message: msg}})
@@ -252,15 +229,7 @@ func (c *Conn) read(r io.Reader) {
 func (c *Conn) dispatch(m message) {
 	switch {
 	case m.Method != "" && hasID(m.ID):
-		if c.handler == nil {
-			go func() { _ = c.ReplyError(m.ID, -32601, "method not found") }() // never write from the reader
-			return
-		}
-		c.handler.Request(m.ID, m.Method, m.Params)
-	case m.Method != "":
-		if c.handler != nil {
-			c.handler.Notification(m.Method, m.Params)
-		}
+		go func() { _ = c.replyError(m.ID, -32601, "method not found") }() // never write from the reader
 	case hasID(m.ID):
 		c.mu.Lock()
 		ch := c.pending[idKey(m.ID)]

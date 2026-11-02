@@ -10,19 +10,11 @@ import (
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
 
-type requests chan json.RawMessage
-
-func (requests) Notification(string, json.RawMessage) {}
-func (r requests) Request(id json.RawMessage, _ string, _ json.RawMessage) {
-	r <- id
-}
-
 func TestServer(t *testing.T) {
 	s, pipes := New(t)
-	got := make(requests, 4)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, err := codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{}, got)
+	c, err := codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,26 +46,20 @@ func TestServer(t *testing.T) {
 	if _, err := s.Request("r", make(chan int)); err == nil {
 		t.Fatal("unencodable request sent")
 	}
+	// The client refuses every server request, whatever its ID.
 	reply, err := s.Request("r", map[string]int{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := <-got
-	if err := c.Reply(id, map[string]string{"decision": "accept"}); err != nil {
-		t.Fatal(err)
-	}
-	if r := <-reply; string(r.Result) != `{"decision":"accept"}` {
+	if r := <-reply; r.Error == nil || r.Error.Code != -32601 {
 		t.Fatalf("reply = %+v", r)
 	}
 	reply, err = s.RequestID(json.RawMessage(`"s1"`), "r", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ReplyError(<-got, 5, "no"); err != nil {
-		t.Fatal(err)
-	}
-	if r := <-reply; r.Error == nil || r.Error.Message != "no" {
-		t.Fatalf("error reply = %+v", r)
+	if r := <-reply; r.Error == nil || r.Error.Code != -32601 {
+		t.Fatalf("string-ID reply = %+v", r)
 	}
 
 	_ = c.Close()

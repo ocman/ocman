@@ -50,14 +50,6 @@ func Tokens(u codexappserver.TokenUsage) map[string]any {
 		"reasoning": u.ReasoningOutputTokens, "cache": map[string]any{"read": u.CachedInputTokens, "write": u.CacheWriteInputTokens}}
 }
 
-// Sub subtracts base from u, the thread totals at a turn's start, giving
-// the turn's own usage.
-func Sub(u, base codexappserver.TokenUsage) codexappserver.TokenUsage {
-	return codexappserver.TokenUsage{TotalTokens: u.TotalTokens - base.TotalTokens, InputTokens: u.InputTokens - base.InputTokens,
-		CachedInputTokens: u.CachedInputTokens - base.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens - base.CacheWriteInputTokens,
-		OutputTokens: u.OutputTokens - base.OutputTokens, ReasoningOutputTokens: u.ReasoningOutputTokens - base.ReasoningOutputTokens}
-}
-
 // openInfo is an assistant message as published while its turn runs: the
 // converter stamps completion per item, but the UI reads a completed message
 // as a settled turn, so the completion is withheld until Settle.

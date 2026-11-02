@@ -43,7 +43,7 @@ func newHarness(t *testing.T, setup func(*codextest.Server), options ...Options)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &harness{t: t, setup: setup, events: make(chan providerprotocol.Event, 1024), spool: filepath.Join(dir, "spool")}
-	start := func(ctx context.Context, handler codexappserver.Handler) (*codexappserver.Client, error) {
+	start := func(ctx context.Context) (*codexappserver.Client, error) {
 		h.mu.Lock()
 		if err := h.fail; err != nil {
 			h.fail = nil
@@ -56,7 +56,7 @@ func newHarness(t *testing.T, setup func(*codextest.Server), options ...Options)
 		if h.setup != nil {
 			h.setup(s)
 		}
-		return codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{}, handler)
+		return codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{})
 	}
 	opts := Options{Start: start}
 	if len(options) > 0 {

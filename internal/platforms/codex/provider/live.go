@@ -28,7 +28,7 @@ type Options struct {
 	// each session so a regenerated token is picked up.
 	MCPTokenFile string
 	// Start connects the native reader. Nil spawns CLI; tests attach a fake.
-	Start func(context.Context, codexappserver.Handler) (*codexappserver.Client, error)
+	Start func(context.Context) (*codexappserver.Client, error)
 }
 
 // Capabilities are what a Codex supervisor offers. Rulesets live in ocman
@@ -142,7 +142,7 @@ func (b *backend) conn(ctx context.Context) (*codexappserver.Client, uint64, err
 	if start == nil {
 		start = b.spawn
 	}
-	c, err := start(ctx, nil)
+	c, err := start(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("starting codex app-server: %w", err)
 	}
@@ -157,9 +157,9 @@ func (b *backend) conn(ctx context.Context) (*codexappserver.Client, uint64, err
 	return c, gen, nil
 }
 
-func (b *backend) spawn(ctx context.Context, h codexappserver.Handler) (*codexappserver.Client, error) {
+func (b *backend) spawn(ctx context.Context) (*codexappserver.Client, error) {
 	return codexappserver.Start(ctx, codexappserver.Options{CLI: b.opts.CLI, Env: b.opts.Env, Dir: b.opts.Dir,
-		Client: codexappserver.ClientInfo{Name: "ocman", Title: "ocman", Version: b.opts.Version}, ExperimentalAPI: true, Stderr: os.Stderr}, h)
+		Client: codexappserver.ClientInfo{Name: "ocman", Title: "ocman", Version: b.opts.Version}, ExperimentalAPI: true, Stderr: os.Stderr})
 }
 
 func (b *backend) closeClient() {

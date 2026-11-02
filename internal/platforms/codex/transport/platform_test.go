@@ -338,7 +338,7 @@ func TestHistoryCallsTimeOutAndReplaceWedgedAppServer(t *testing.T) {
 			}
 			s.Handle(method, func(json.RawMessage) (any, error) { <-release; return nil, errors.New("released") })
 		}
-		return codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{}, nil)
+		return codexappserver.Attach(ctx, pipes.Reader, pipes.Writer, codexappserver.Options{})
 	}}}
 	t.Cleanup(p.history.close)
 	ops := map[string]func(context.Context) error{

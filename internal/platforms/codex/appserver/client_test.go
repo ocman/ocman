@@ -52,7 +52,7 @@ func ctx(t *testing.T) context.Context {
 func attach(t *testing.T, opts codexappserver.Options) (*codexappserver.Client, *codextest.Server) {
 	t.Helper()
 	s, pipes := codextest.New(t)
-	c, err := codexappserver.Attach(ctx(t), pipes.Reader, pipes.Writer, opts, nil)
+	c, err := codexappserver.Attach(ctx(t), pipes.Reader, pipes.Writer, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestHandshakeFailure(t *testing.T) {
 	s.Handle("initialize", func(json.RawMessage) (any, error) {
 		return nil, &codexappserver.RPCError{Code: -32600, Message: "nope"}
 	})
-	_, err := codexappserver.Attach(ctx(t), pipes.Reader, pipes.Writer, codexappserver.Options{}, nil)
+	_, err := codexappserver.Attach(ctx(t), pipes.Reader, pipes.Writer, codexappserver.Options{})
 	if err == nil || !strings.Contains(err.Error(), "initialize") {
 		t.Fatalf("err = %v", err)
 	}
@@ -113,15 +113,9 @@ func TestThreadMetadataMethods(t *testing.T) {
 	c, s := attach(t, codexappserver.Options{})
 	thread := map[string]any{"id": "thr_1", "cwd": "/repo", "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
 	s.Handle("thread/read", func(json.RawMessage) (any, error) { return map[string]any{"thread": thread}, nil })
-	empty := func(json.RawMessage) (any, error) { return map[string]any{}, nil }
-	for _, m := range []string{"thread/archive", "thread/name/set"} {
-		s.Handle(m, empty)
-	}
+	s.Handle("thread/name/set", func(json.RawMessage) (any, error) { return map[string]any{}, nil })
 	if th, err := c.ReadThread(ctx(t), "thr_1", true); err != nil || th.Cwd != "/repo" || th.Status.Type != "idle" {
 		t.Fatalf("ReadThread = %+v, %v", th, err)
-	}
-	if err := c.ArchiveThread(ctx(t), "thr_1"); err != nil {
-		t.Fatal(err)
 	}
 	if err := c.SetThreadName(ctx(t), "thr_1", "title"); err != nil {
 		t.Fatal(err)
@@ -132,7 +126,7 @@ func TestThreadMetadataMethods(t *testing.T) {
 	for _, call := range calls {
 		methods = append(methods, call.Method)
 	}
-	want := []string{"initialize", "thread/read", "thread/archive", "thread/name/set"}
+	want := []string{"initialize", "thread/read", "thread/name/set"}
 	if !slices.Equal(methods, want) {
 		t.Fatalf("methods = %q", methods)
 	}
@@ -245,7 +239,7 @@ func TestStartProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=serve")}
-	c, err := codexappserver.Start(ctx(t), opts, nil)
+	c, err := codexappserver.Start(ctx(t), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,12 +256,12 @@ func TestStartProcess(t *testing.T) {
 }
 
 func TestStartProcessFailures(t *testing.T) {
-	if _, err := codexappserver.Start(ctx(t), codexappserver.Options{CLI: "/nonexistent/codex"}, nil); err == nil || !strings.Contains(err.Error(), "starting codex app-server") {
+	if _, err := codexappserver.Start(ctx(t), codexappserver.Options{CLI: "/nonexistent/codex"}); err == nil || !strings.Contains(err.Error(), "starting codex app-server") {
 		t.Fatalf("missing binary err = %v", err)
 	}
 	exe, _ := os.Executable()
 	// The child exits before answering initialize.
-	_, err := codexappserver.Start(ctx(t), codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=fail")}, nil)
+	_, err := codexappserver.Start(ctx(t), codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=fail")})
 	if err == nil || !errors.Is(err, codexappserver.ErrClosed) {
 		t.Fatalf("early exit err = %v", err)
 	}
@@ -284,7 +278,7 @@ func TestStartUnresponsiveChild(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := codexappserver.Start(hctx, codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=hang")}, nil)
+		_, err := codexappserver.Start(hctx, codexappserver.Options{CLI: exe, Env: testutil.IsolatedEnv("FAKE_CODEX=hang")})
 		done <- err
 	}()
 	select {

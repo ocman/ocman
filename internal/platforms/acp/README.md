@@ -6,19 +6,10 @@ OpenCode and Claude execution paths are unchanged.
 
 ## Commands
 
-`DefaultCommand` selects an already-installed executable:
-
-| Platform ID | Executable | Arguments |
-| --- | --- | --- |
-| `opencode` | `opencode` | `acp` |
-| `codex` | `codex-acp` | none |
-| `claudecode` | `claude-agent-acp` | none |
-
-Codex and Claude adapters are separate ecosystem packages,
-`@agentclientprotocol/codex-acp` and
-`@agentclientprotocol/claude-agent-acp`. This package installs nothing and never
-runs an on-demand package manager. Callers can override the command with an
-explicit path and arguments. Credentials and the effective native configuration
+`Command` names an already-installed executable and its arguments. Codex
+launches the separately installed `codex-acp` adapter from the
+`@agentclientprotocol/codex-acp` package. This package installs nothing and
+never runs an on-demand package manager. Credentials and the effective native configuration
 must be supplied on the owning machine through the child environment.
 
 ## Contract

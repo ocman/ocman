@@ -18,14 +18,14 @@ import (
 // skills list and account reads. Each step waits for its turn/completed, if
 // any, and the stored history and rollout file are saved afterwards so tests
 // see how each operation is stored.
-func extras(ctx context.Context, c *codexappserver.Client, h *handler, id, home, out string, rec *recorder) error {
+func extras(ctx context.Context, c *rpc, id, out string, rec *recorder) error {
 	step := func(name string) { fmt.Fprintln(os.Stderr, "step", name) }
 	// waitTurn reports whether a turn completed within d.
 	waitTurn := func(d time.Duration) (*codexappserver.Turn, bool) {
 		select {
-		case n := <-h.turns:
-			fmt.Fprintln(os.Stderr, "  turn", n.Turn.ID, n.Turn.Status)
-			return &n.Turn, true
+		case turn := <-c.turns:
+			fmt.Fprintln(os.Stderr, "  turn", turn.ID, turn.Status)
+			return &turn, true
 		case <-time.After(d):
 			fmt.Fprintln(os.Stderr, "  no turn/completed within", d)
 			return nil, false
@@ -33,7 +33,7 @@ func extras(ctx context.Context, c *codexappserver.Client, h *handler, id, home,
 	}
 	call := func(method string, params any) (json.RawMessage, error) {
 		var raw json.RawMessage
-		err := c.Call(ctx, method, params, &raw)
+		err := c.call(ctx, method, params, &raw)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  ", method, "error:", err)
 		}
@@ -41,7 +41,7 @@ func extras(ctx context.Context, c *codexappserver.Client, h *handler, id, home,
 	}
 
 	step("turn")
-	if err := c.Call(ctx, codexappserver.MethodTurnStart, codexappserver.TurnStartParams{ThreadID: id, Input: []codexappserver.UserInput{codexappserver.TextInput("Reply with the word ready.")}}, nil); err != nil {
+	if err := c.startTurn(ctx, id, "Reply with the word ready."); err != nil {
 		return err
 	}
 	first, ok := waitTurn(3 * time.Minute)
@@ -55,7 +55,7 @@ func extras(ctx context.Context, c *codexappserver.Client, h *handler, id, home,
 	}
 
 	step("compact")
-	if _, err := call(codexappserver.MethodThreadCompact, codexappserver.ThreadIDParams{ThreadID: id}); err == nil {
+	if _, err := call("thread/compact/start", map[string]any{"threadId": id}); err == nil {
 		waitTurn(3 * time.Minute)
 	}
 
@@ -66,8 +66,8 @@ func extras(ctx context.Context, c *codexappserver.Client, h *handler, id, home,
 	}
 
 	step("fork")
-	_, _ = call(codexappserver.MethodThreadFork, codexappserver.ThreadForkParams{ThreadID: id})
-	_, _ = call(codexappserver.MethodThreadFork, codexappserver.ThreadForkParams{ThreadID: id, LastTurnID: first.ID})
+	_, _ = call("thread/fork", map[string]any{"threadId": id})
+	_, _ = call("thread/fork", map[string]any{"threadId": id, "lastTurnId": first.ID})
 
 	step("skills and account")
 	_, _ = call("skills/list", map[string]any{})
@@ -106,6 +106,5 @@ func extras(ctx context.Context, c *codexappserver.Client, h *handler, id, home,
 	if err != nil {
 		return err
 	}
-	_ = home
 	return os.WriteFile(filepath.Join(out, "rollout.jsonl"), rec.scrub(data), 0o644)
 }

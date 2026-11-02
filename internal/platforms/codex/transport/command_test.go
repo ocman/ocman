@@ -101,9 +101,13 @@ func TestForwarding(t *testing.T) {
 	if prompts, err := p.ListQuestions(ctx, "thr"); err != nil || prompts != nil {
 		t.Fatalf("questions before launch = %v %v", prompts, err)
 	}
+	// Raw shell has no ACP primitive: it is refused without a supervisor.
+	if err := p.RunShell(ctx, platforms.RunShellRequest{SessionID: "thr", Command: "ls"}); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatalf("raw shell = %v", err)
+	}
 	p.SetEventHandler(func(providerprotocol.Event) {})
 	if p.current() != nil {
-		t.Fatal("a read launched the supervisor")
+		t.Fatal("a read or refused operation launched the supervisor")
 	}
 
 	if _, err := p.EnsureRuntime(ctx, "/repo"); err != nil {
@@ -138,10 +142,6 @@ func TestForwarding(t *testing.T) {
 	ev := &idles{ch: make(chan string, 8)}
 	p.SetSessionEventSink(ev.sink())
 	go func() { _ = p.WatchEvents(ctx) }()
-	// Raw shell has no ACP primitive and must never fall through to an LLM.
-	if err := p.RunShell(ctx, platforms.RunShellRequest{SessionID: "thr", Command: "ls"}); !errors.Is(err, platforms.ErrUnsupported) {
-		t.Fatalf("raw shell = %v", err)
-	}
 	// Compaction and a slash command each run a turn that settles.
 	for _, op := range []struct {
 		name string

@@ -66,7 +66,7 @@ func ConfigureNative(server *codextest.Server, path string, withStored ...bool) 
 	server.Handle(codexappserver.MethodThreadItems, func(raw json.RawMessage) (any, error) {
 		if stored && threadID(raw) == codextest.StoredThread {
 			return map[string]any{"data": []codexappserver.ItemEntry{
-				{TurnID: "turn-stored", StartedAtMs: 1790000000000, CompletedAtMs: 1790000000000, Item: codexappserver.Item{ID: "item-user", Type: "userMessage", Content: []codexappserver.UserInput{codexappserver.TextInput("stored question")}}},
+				{TurnID: "turn-stored", StartedAtMs: 1790000000000, CompletedAtMs: 1790000000000, Item: codexappserver.Item{ID: "item-user", Type: "userMessage", Content: []codexappserver.UserInput{{Type: "text", Text: "stored question"}}}},
 				{TurnID: "turn-stored", StartedAtMs: 1790000001000, CompletedAtMs: 1790000002000, Item: codexappserver.Item{ID: "item-reply", Type: "agentMessage", Text: codextest.StoredReply}},
 			}}, nil
 		}

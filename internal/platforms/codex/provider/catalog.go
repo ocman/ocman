@@ -1,8 +1,6 @@
 package codexprovider
 
 import (
-	"context"
-
 	"github.com/ocman/ocman/internal/platforms"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 )
@@ -34,26 +32,4 @@ func Catalog(models []codexappserver.Model) *platforms.DirectoryCatalog {
 		}
 	}
 	return &platforms.DirectoryCatalog{Models: out, Agents: []platforms.AgentCatalogEntry{}, Commands: []platforms.SlashCommandEntry{}, LiveConnection: true}
-}
-
-// catalog serves GET /catalog from the supervisor's app-server: models and
-// the directory's commands.
-func (b *backend) catalog(ctx context.Context, dir string) (*platforms.DirectoryCatalog, error) {
-	c, _, err := b.conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	models, err := c.ListModels(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-	out := Catalog(models)
-	if dir != "" {
-		skills, err := c.ListSkills(ctx, dir)
-		if err != nil {
-			return nil, err
-		}
-		out.Commands = Commands(skills)
-	}
-	return out, nil
 }

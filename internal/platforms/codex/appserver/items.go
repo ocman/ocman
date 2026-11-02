@@ -205,56 +205,8 @@ type ToolError struct {
 	Message string `json:"message"`
 }
 
-// Notification payloads.
-
-type ThreadNotification struct {
-	Thread Thread `json:"thread"`
-}
-
-type ThreadStatusNotification struct {
-	ThreadID string       `json:"threadId"`
-	Status   ThreadStatus `json:"status"`
-}
-
-type ThreadNameNotification struct {
-	ThreadID   string `json:"threadId"`
-	ThreadName string `json:"threadName,omitempty"`
-}
-
-type TurnNotification struct {
-	ThreadID string `json:"threadId"`
-	Turn     Turn   `json:"turn"`
-}
-
-type ItemNotification struct {
-	ThreadID string `json:"threadId"`
-	TurnID   string `json:"turnId"`
-	Item     Item   `json:"item"`
-}
-
-// DeltaNotification carries streamed text for agent messages, reasoning and
-// command output.
-type DeltaNotification struct {
-	ThreadID     string `json:"threadId"`
-	TurnID       string `json:"turnId"`
-	ItemID       string `json:"itemId"`
-	Delta        string `json:"delta"`
-	SummaryIndex *int   `json:"summaryIndex,omitempty"`
-	ContentIndex *int   `json:"contentIndex,omitempty"`
-}
-
-type TokenUsageNotification struct {
-	ThreadID   string           `json:"threadId"`
-	TurnID     string           `json:"turnId"`
-	TokenUsage ThreadTokenUsage `json:"tokenUsage"`
-}
-
-type ThreadTokenUsage struct {
-	Total              TokenUsage `json:"total"`
-	Last               TokenUsage `json:"last"`
-	ModelContextWindow *int64     `json:"modelContextWindow,omitempty"`
-}
-
+// TokenUsage is one rollout token count. Codex counts cached input inside
+// input and reasoning inside output.
 type TokenUsage struct {
 	TotalTokens           int64 `json:"totalTokens"`
 	InputTokens           int64 `json:"inputTokens"`
@@ -262,79 +214,4 @@ type TokenUsage struct {
 	CacheWriteInputTokens int64 `json:"cacheWriteInputTokens"`
 	OutputTokens          int64 `json:"outputTokens"`
 	ReasoningOutputTokens int64 `json:"reasoningOutputTokens"`
-}
-
-type ErrorNotification struct {
-	ThreadID  string    `json:"threadId"`
-	TurnID    string    `json:"turnId"`
-	Error     TurnError `json:"error"`
-	WillRetry bool      `json:"willRetry"`
-}
-
-type ServerRequestResolved struct {
-	ThreadID  string          `json:"threadId"`
-	RequestID json.RawMessage `json:"requestId"`
-}
-
-// Approval requests and replies.
-
-// Approval decisions accepted by both approval requests.
-const (
-	DecisionAccept           = "accept"
-	DecisionAcceptForSession = "acceptForSession"
-	DecisionDecline          = "decline"
-	DecisionCancel           = "cancel"
-)
-
-type CommandApprovalRequest struct {
-	ThreadID string `json:"threadId"`
-	TurnID   string `json:"turnId"`
-	ItemID   string `json:"itemId"`
-	Reason   string `json:"reason,omitempty"`
-	Command  string `json:"command,omitempty"`
-	Cwd      string `json:"cwd,omitempty"`
-}
-
-type FileChangeApprovalRequest struct {
-	ThreadID  string `json:"threadId"`
-	TurnID    string `json:"turnId"`
-	ItemID    string `json:"itemId"`
-	Reason    string `json:"reason,omitempty"`
-	GrantRoot string `json:"grantRoot,omitempty"`
-}
-
-// ApprovalResponse answers either approval request with a plain decision.
-type ApprovalResponse struct {
-	Decision string `json:"decision"`
-}
-
-type UserInputRequest struct {
-	ThreadID   string          `json:"threadId"`
-	TurnID     string          `json:"turnId"`
-	ItemID     string          `json:"itemId"`
-	Questions  []InputQuestion `json:"questions"`
-	IsBlocking bool            `json:"isBlocking"`
-}
-
-type InputQuestion struct {
-	ID       string        `json:"id"`
-	Header   string        `json:"header"`
-	Question string        `json:"question"`
-	IsOther  bool          `json:"isOther"`
-	IsSecret bool          `json:"isSecret"`
-	Options  []InputOption `json:"options,omitempty"`
-}
-
-type InputOption struct {
-	Label       string `json:"label"`
-	Description string `json:"description"`
-}
-
-// UserInputResponse maps question IDs to their answers.
-type UserInputResponse struct {
-	Answers map[string]InputAnswer `json:"answers"`
-}
-
-type InputAnswer struct {
-	Answers []string `json:"answers"`
 }

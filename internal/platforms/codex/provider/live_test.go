@@ -2,7 +2,6 @@ package codexprovider
 
 import (
 	"encoding/json"
-	"errors"
 	"slices"
 	"testing"
 
@@ -37,59 +36,31 @@ func TestNativeReadRoutes(t *testing.T) {
 	h.b.sessionLocked("thr").dir = "/repo"
 	h.b.sessions["thr"].title = "New"
 	h.b.mu.Unlock()
-	var detail platforms.SessionDetail
-	if code := h.call("GET", "/sessions/thr", nil, &detail); code != 200 || detail.Session.Title != "New" || len(detail.Messages) != 0 {
-		t.Fatalf("%d %+v", code, detail)
-	}
-	for _, path := range []string{"/sessions/unknown", "/sessions/unknown/lifecycle"} {
-		if code := h.call("GET", path, nil, nil); code != 404 {
-			t.Fatal(path, code)
-		}
+	if code := h.call("GET", "/sessions/unknown/lifecycle", nil, nil); code != 404 {
+		t.Fatal(code)
 	}
 	var life platforms.SessionLifecycle
 	if code := h.call("GET", "/sessions/thr/lifecycle", nil, &life); code != 200 || life.Status != db.StatusDone {
 		t.Fatalf("%d %+v", code, life)
 	}
-	var list []db.Session
-	h.call("GET", "/sessions?directory=/repo&since=1000", nil, &list)
-	if len(list) != 2 || list[1].Status != db.StatusInterrupted {
-		t.Fatal(list)
-	}
-	h.call("GET", "/sessions?since=3000", nil, &list)
-	if len(list) != 0 {
-		t.Fatal(list)
-	}
-	if code := h.call("GET", "/unknown", nil, nil); code != 501 {
-		t.Fatal(code)
-	}
-	h.fake().Handle(codexappserver.MethodThreadList, func(json.RawMessage) (any, error) { return nil, errors.New("down") })
-	if code := h.call("GET", "/sessions", nil, nil); code != 500 {
-		t.Fatal(code)
+	// Browsing reads come from the history app-server, never the supervisor.
+	for _, path := range []string{"/sessions", "/sessions?directory=/repo", "/sessions/thr", "/catalog", "/unknown"} {
+		if code := h.call("GET", path, nil, nil); code != 501 {
+			t.Fatal(path, code)
+		}
 	}
 }
 
-func TestNativeCatalogRoutes(t *testing.T) {
-	h := newHarness(t, scripted)
-	_, _, err := h.b.conn(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.fake().Handle(codexappserver.MethodModelList, func(json.RawMessage) (any, error) {
-		return map[string]any{"data": []any{
-			map[string]any{"id": "a", "model": "gpt-a", "displayName": "GPT A", "isDefault": true, "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "high"}}},
-			map[string]any{"id": "b", "model": "hidden", "hidden": true}, map[string]any{"id": "c", "model": "gpt-c"},
-		}}, nil
+func TestCatalogAndCommands(t *testing.T) {
+	effort := []codexappserver.ReasoningEffort{{ReasoningEffort: "high"}}
+	catalog := Catalog([]codexappserver.Model{
+		{ID: "a", Model: "gpt-a", DisplayName: "GPT A", IsDefault: true, SupportedReasoningEfforts: effort},
+		{ID: "b", Model: "hidden", Hidden: true}, {ID: "c", Model: "gpt-c"},
 	})
-	h.fake().Handle(codexappserver.MethodSkillsList, func(json.RawMessage) (any, error) {
-		return map[string]any{"data": []any{map[string]any{"cwd": "/repo", "skills": []any{
-			map[string]any{"name": "pdf", "description": "long", "shortDescription": "PDF tools", "enabled": true},
-			map[string]any{"name": "off", "enabled": false}, map[string]any{"name": "review", "enabled": true}, map[string]any{"name": "plain", "description": "fallback", "enabled": true},
-		}}}}, nil
-	})
-	var catalog platforms.DirectoryCatalog
-	if code := h.call("GET", "/catalog?directory=/repo", nil, &catalog); code != 200 {
-		t.Fatal(code)
-	}
+	catalog.Commands = Commands([]codexappserver.SkillsEntry{{Cwd: "/repo", Skills: []codexappserver.Skill{
+		{Name: "pdf", Description: "long", ShortDescription: "PDF tools", Enabled: true},
+		{Name: "off"}, {Name: "review", Enabled: true}, {Name: "plain", Description: "fallback", Enabled: true},
+	}}})
 	var names []string
 	for _, cmd := range catalog.Commands {
 		names = append(names, cmd.Name)
@@ -100,9 +71,5 @@ func TestNativeCatalogRoutes(t *testing.T) {
 	m := catalog.Models
 	if len(m.Models) != 2 || m.Models[0].ModelName != "GPT A" || m.Models[0].Reasoning[0] != "high" || m.Models[1].ModelName != "gpt-c" || m.ProviderDefaults["openai"] != "gpt-a" {
 		t.Fatalf("%+v", m)
-	}
-	h.fake().Handle(codexappserver.MethodModelList, func(json.RawMessage) (any, error) { return nil, errors.New("down") })
-	if code := h.call("GET", "/catalog", nil, nil); code != 500 {
-		t.Fatal(code)
 	}
 }

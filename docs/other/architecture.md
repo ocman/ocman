@@ -445,7 +445,8 @@ flowchart TD
   target. Both platforms retain the owner/source-scoped Ocman-to-native mapping
   in `platforms/owned`; a project change never allocates another identity.
 - **platforms/codex.** `platforms/codex/appserver` is a JSON-RPC client for
-  `codex app-server` over stdio, with an in-process fake in
+  `codex app-server` over stdio. It reads history, catalogs and the account,
+  sets titles and refuses server requests. An in-process fake lives in
   `appserver/codextest`. `platforms/codex/provider` converts Codex thread items
   into v1 messages and parts through one converter shared by stored and live
   items. Its supervisor drives a shared installed `codex-acp` process through

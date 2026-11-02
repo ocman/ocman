@@ -109,7 +109,7 @@ func TestNativeFixture(t *testing.T) {
 	}
 	s, pipes := codextest.New(t)
 	ConfigureNative(s, path, true)
-	c, err := codexappserver.Attach(t.Context(), pipes.Reader, pipes.Writer, codexappserver.Options{}, nil)
+	c, err := codexappserver.Attach(t.Context(), pipes.Reader, pipes.Writer, codexappserver.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

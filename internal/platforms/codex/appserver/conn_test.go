@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -22,36 +21,11 @@ type peer struct {
 	close func()
 }
 
-type recorder struct {
-	mu       sync.Mutex
-	notes    []string
-	requests []string
-	ids      []json.RawMessage
-	got      chan struct{}
-}
-
-func newRecorder() *recorder { return &recorder{got: make(chan struct{}, 16)} }
-
-func (r *recorder) Notification(method string, params json.RawMessage) {
-	r.mu.Lock()
-	r.notes = append(r.notes, method+" "+string(params))
-	r.mu.Unlock()
-	r.got <- struct{}{}
-}
-
-func (r *recorder) Request(id json.RawMessage, method string, params json.RawMessage) {
-	r.mu.Lock()
-	r.requests = append(r.requests, method+" "+string(params))
-	r.ids = append(r.ids, id)
-	r.mu.Unlock()
-	r.got <- struct{}{}
-}
-
-func newPeer(t *testing.T, h Handler) *peer {
+func newPeer(t *testing.T) *peer {
 	t.Helper()
 	clientR, serverW := io.Pipe()
 	serverR, clientW := io.Pipe()
-	conn := NewConn(clientR, clientW, h)
+	conn := newConn(clientR, clientW)
 	p := &peer{t: t, in: make(chan []byte, 64), out: serverW, conn: conn}
 	go func() {
 		scanner := bufio.NewScanner(serverR)
@@ -101,7 +75,7 @@ func wait(t *testing.T, ch <-chan struct{}) {
 }
 
 func TestCallRoundTrip(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	type result struct {
 		Name string `json:"name"`
 	}
@@ -130,7 +104,7 @@ func jsonNumber(v any) string {
 }
 
 func TestCallErrorResponse(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	done := make(chan error, 1)
 	go func() { done <- p.conn.Call(context.Background(), "turn/start", nil, nil) }()
 	req := p.read()
@@ -149,7 +123,7 @@ func TestCallErrorResponse(t *testing.T) {
 }
 
 func TestCallBadResult(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	done := make(chan error, 1)
 	var out struct{ N int }
 	go func() { done <- p.conn.Call(context.Background(), "m", struct{}{}, &out) }()
@@ -161,7 +135,7 @@ func TestCallBadResult(t *testing.T) {
 }
 
 func TestCallContextCancel(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- p.conn.Call(ctx, "m", nil, nil) }()
@@ -179,7 +153,7 @@ func TestCallContextCancel(t *testing.T) {
 func TestCallUnreadPeerHonoursContext(t *testing.T) {
 	clientR, serverW := io.Pipe()
 	serverR, clientW := io.Pipe()
-	conn := NewConn(clientR, clientW, nil)
+	conn := newConn(clientR, clientW)
 	t.Cleanup(func() { _ = serverW.Close(); _ = serverR.Close() })
 	call := func(ctx context.Context) error {
 		t.Helper()
@@ -224,12 +198,12 @@ func TestCallUnreadPeerHonoursContext(t *testing.T) {
 func TestWriteFailureReleasesQueuedSenders(t *testing.T) {
 	clientR, serverW := io.Pipe()
 	serverR, clientW := io.Pipe()
-	conn := NewConn(clientR, clientW, nil)
+	conn := newConn(clientR, clientW)
 	t.Cleanup(func() { _ = serverW.Close() })
 	stuck := make(chan error, 1)
-	go func() { stuck <- conn.Notify("first", nil) }()
+	go func() { stuck <- conn.notify("first", nil) }()
 	queued := make(chan error, 1)
-	go func() { queued <- conn.Notify("second", nil) }()
+	go func() { queued <- conn.notify("second", nil) }()
 	time.Sleep(20 * time.Millisecond) // let one frame reach the wire and the other queue
 	_ = serverR.Close()
 	for _, ch := range []chan error{stuck, queued} {
@@ -249,10 +223,10 @@ func TestWriteFailureReleasesQueuedSenders(t *testing.T) {
 func TestPeerHangUpReleasesStuckSender(t *testing.T) {
 	clientR, serverW := io.Pipe()
 	serverR, clientW := io.Pipe()
-	conn := NewConn(clientR, clientW, nil)
+	conn := newConn(clientR, clientW)
 	t.Cleanup(func() { _ = serverR.Close() })
 	stuck := make(chan error, 1)
-	go func() { stuck <- conn.Notify("m", nil) }()
+	go func() { stuck <- conn.notify("m", nil) }()
 	time.Sleep(20 * time.Millisecond) // let the frame reach the wire
 	_ = serverW.Close()
 	select {
@@ -266,58 +240,34 @@ func TestPeerHangUpReleasesStuckSender(t *testing.T) {
 }
 
 func TestCallUnencodableParams(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	if err := p.conn.Call(context.Background(), "m", make(chan int), nil); err == nil {
 		t.Fatal("expected an encoding error")
 	}
-	if err := p.conn.Notify("m", make(chan int)); err == nil {
-		t.Fatal("expected an encoding error")
-	}
-	if err := p.conn.Reply(json.RawMessage("1"), make(chan int)); err == nil {
+	if err := p.conn.notify("m", make(chan int)); err == nil {
 		t.Fatal("expected an encoding error")
 	}
 }
 
-func TestNotificationsAndRequestsInOrder(t *testing.T) {
-	rec := newRecorder()
-	p := newPeer(t, rec)
+// Server requests are refused whatever their ID; notifications and stray
+// output are ignored.
+func TestServerTrafficIsIgnoredOrRefused(t *testing.T) {
+	p := newPeer(t)
 	p.write(`not json`)
 	p.write(``)
 	p.write(`{"method":"turn/started","params":{"n":1}}`)
 	p.write(`{"id":7,"method":"item/commandExecution/requestApproval","params":{"n":2}}`)
 	p.write(`{"method":"item/completed","params":{"n":3},"id":null}`)
-	for range 3 {
-		wait(t, rec.got)
+	p.write(`{"id":"s","method":"item/tool/requestUserInput","params":{}}`)
+	got := map[any]any{}
+	for range 2 {
+		reply := p.read()
+		got[reply["id"]] = reply["error"].(map[string]any)["code"]
 	}
-	rec.mu.Lock()
-	notes, requests, ids := rec.notes, rec.requests, rec.ids
-	rec.mu.Unlock()
-	if len(notes) != 2 || notes[0] != `turn/started {"n":1}` || notes[1] != `item/completed {"n":3}` {
-		t.Fatalf("notes = %q", notes)
+	if len(got) != 2 || got[float64(7)] != float64(-32601) || got["s"] != float64(-32601) {
+		t.Fatalf("refusals = %v", got)
 	}
-	if len(requests) != 1 || requests[0] != `item/commandExecution/requestApproval {"n":2}` || string(ids[0]) != "7" {
-		t.Fatalf("requests = %q ids = %q", requests, ids)
-	}
-	if err := p.conn.Reply(ids[0], map[string]string{"decision": "accept"}); err != nil {
-		t.Fatal(err)
-	}
-	reply := p.read()
-	if reply["id"] != float64(7) || reply["result"].(map[string]any)["decision"] != "accept" {
-		t.Fatalf("reply = %v", reply)
-	}
-	if err := p.conn.Reply(json.RawMessage("8"), nil); err != nil {
-		t.Fatal(err)
-	}
-	if reply := p.read(); reply["id"] != float64(8) || len(reply["result"].(map[string]any)) != 0 {
-		t.Fatalf("empty reply = %v", reply)
-	}
-	if err := p.conn.ReplyError(json.RawMessage(`"s"`), -32000, "denied"); err != nil {
-		t.Fatal(err)
-	}
-	if reply := p.read(); reply["id"] != "s" || reply["error"].(map[string]any)["message"] != "denied" {
-		t.Fatalf("error reply = %v", reply)
-	}
-	if err := p.conn.Notify("initialized", nil); err != nil {
+	if err := p.conn.notify("initialized", nil); err != nil {
 		t.Fatal(err)
 	}
 	if note := p.read(); note["method"] != "initialized" || note["id"] != nil {
@@ -325,18 +275,8 @@ func TestNotificationsAndRequestsInOrder(t *testing.T) {
 	}
 }
 
-func TestRequestWithoutHandlerIsRejected(t *testing.T) {
-	p := newPeer(t, nil)
-	p.write(`{"id":3,"method":"item/tool/requestUserInput","params":{}}`)
-	p.write(`{"method":"ignored"}`)
-	reply := p.read()
-	if reply["id"] != float64(3) || reply["error"].(map[string]any)["code"] != float64(-32601) {
-		t.Fatalf("reply = %v", reply)
-	}
-}
-
 func TestCloseFailsPendingAndLaterCalls(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	done := make(chan error, 1)
 	go func() { done <- p.conn.Call(context.Background(), "m", nil, nil) }()
 	p.read()
@@ -351,7 +291,7 @@ func TestCloseFailsPendingAndLaterCalls(t *testing.T) {
 	if err := p.conn.Call(context.Background(), "m", nil, nil); !errors.Is(err, ErrClosed) {
 		t.Fatalf("later call err = %v", err)
 	}
-	if err := p.conn.Notify("m", nil); !errors.Is(err, ErrClosed) {
+	if err := p.conn.notify("m", nil); !errors.Is(err, ErrClosed) {
 		t.Fatalf("later notify err = %v", err)
 	}
 	p.conn.close(errors.New("second close is ignored"))
@@ -363,16 +303,16 @@ func TestCloseFailsPendingAndLaterCalls(t *testing.T) {
 func TestWriteFailure(t *testing.T) {
 	clientR, serverW := io.Pipe()
 	serverR, clientW := io.Pipe()
-	conn := NewConn(clientR, clientW, nil)
+	conn := newConn(clientR, clientW)
 	t.Cleanup(func() { _ = serverW.Close() })
 	_ = serverR.Close()
-	if err := conn.Notify("m", nil); !errors.Is(err, ErrClosed) {
+	if err := conn.notify("m", nil); !errors.Is(err, ErrClosed) {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestOversizedLineEndsConnection(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	go func() { _, _ = io.WriteString(p.out, strings.Repeat("x", maxLine+1)) }()
 	wait(t, p.conn.Done())
 	if err := p.conn.Err(); !errors.Is(err, ErrClosed) || !strings.Contains(err.Error(), "too long") {
@@ -383,21 +323,22 @@ func TestOversizedLineEndsConnection(t *testing.T) {
 // A duplicate response for a call that has not consumed its first one must
 // never block the single reader goroutine.
 func TestDuplicateResponseDoesNotStallReader(t *testing.T) {
-	rec := newRecorder()
-	p := newPeer(t, rec)
+	p := newPeer(t)
 	p.conn.mu.Lock()
 	p.conn.pending["7"] = make(chan response, 1)
 	p.conn.mu.Unlock()
 	go func() {
-		_, _ = io.WriteString(p.out, "{\"id\":7,\"result\":{}}\n{\"id\":7,\"result\":{}}\n{\"method\":\"after\"}\n")
+		_, _ = io.WriteString(p.out, "{\"id\":7,\"result\":{}}\n{\"id\":7,\"result\":{}}\n{\"id\":8,\"method\":\"after\"}\n")
 	}()
-	wait(t, rec.got)
+	if reply := p.read(); reply["id"] != float64(8) {
+		t.Fatalf("reader stalled before %v", reply)
+	}
 }
 
 // A response the caller never consumed must not block close, or Done never
 // closes and every later caller hangs.
 func TestUnconsumedResponseDoesNotBlockClose(t *testing.T) {
-	p := newPeer(t, nil)
+	p := newPeer(t)
 	ch := make(chan response, 1)
 	ch <- response{result: json.RawMessage(`{}`)}
 	p.conn.mu.Lock()
@@ -407,29 +348,23 @@ func TestUnconsumedResponseDoesNotBlockClose(t *testing.T) {
 	wait(t, p.conn.Done())
 }
 
-// Replies are written from the reader goroutine; a peer that stops draining
-// stdin must not wedge them forever.
+// A peer that stops draining stdin must not wedge a refusal forever.
 func TestReplyToStalledPeerIsBounded(t *testing.T) {
 	restore := replyTimeout
 	replyTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { replyTimeout = restore })
 	clientR, serverW := io.Pipe()
 	serverR, clientW := io.Pipe()
-	conn := NewConn(clientR, clientW, nil)
+	conn := newConn(clientR, clientW)
 	t.Cleanup(func() { _ = serverW.Close(); _ = serverR.Close() })
-	for name, reply := range map[string]func() error{
-		"reply": func() error { return conn.Reply(json.RawMessage("1"), nil) },
-		"error": func() error { return conn.ReplyError(json.RawMessage("2"), -32601, "no") },
-	} {
-		done := make(chan error, 1)
-		go func() { done <- reply() }()
-		select {
-		case err := <-done:
-			if !errors.Is(err, context.DeadlineExceeded) {
-				t.Fatalf("%s err = %v", name, err)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatalf("%s to a stalled peer never returned", name)
+	done := make(chan error, 1)
+	go func() { done <- conn.replyError(json.RawMessage("2"), -32601, "no") }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err = %v", err)
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("refusal to a stalled peer never returned")
 	}
 }

@@ -1,9 +1,7 @@
 package codexprovider
 
 import (
-	"encoding/json"
 	"errors"
-	"math"
 	"os"
 	"strings"
 	"testing"
@@ -11,8 +9,6 @@ import (
 	acp "github.com/coder/acp-go-sdk"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
-	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
-	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 )
 
 func breakSpool(t *testing.T, h *harness) func() {
@@ -44,24 +40,6 @@ func (h *harness) start(id string) {
 		s.accepted++
 	}); err != nil {
 		h.t.Fatal(err)
-	}
-}
-
-func TestRemarksPagination(t *testing.T) {
-	h := newHarness(t, func(s *codextest.Server) {
-		for _, f := range []struct{ method, file string }{{codexappserver.MethodThreadRead, "thread-read.json"}, {codexappserver.MethodThreadTurns, "turns.json"}, {codexappserver.MethodThreadItems, "items.json"}} {
-			data, err := os.ReadFile("testdata/0.164.0/" + f.file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.Handle(f.method, func(json.RawMessage) (any, error) { return json.RawMessage(data), nil })
-		}
-	})
-	for _, p := range [][3]int{{2, -10, 2}, {math.MaxInt, math.MaxInt, 0}, {math.MaxInt, 0, 4}, {0, 0, 4}, {2, 1, 2}, {2, 4, 0}} {
-		detail, err := h.b.detail(t.Context(), "thr", p[0], p[1])
-		if err != nil || len(detail.Messages) != p[2] {
-			t.Fatalf("page %v: %v %v", p, detail, err)
-		}
 	}
 }
 
