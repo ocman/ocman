@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { markHandledByPrompt, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
+import { markHandledByPrompt, numberKeyIndex, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
 import '../PermissionPrompt.css';
 
 export interface PendingPermission {
@@ -14,18 +14,6 @@ export interface PendingPermission {
 }
 
 type Reply = 'once' | 'always' | 'reject';
-
-function numberKeyIndex(e: KeyEvent, max: number): number {
-  const codeMatch = /^Digit([1-9])$/.exec(e.code) ?? /^Numpad([1-9])$/.exec(e.code);
-  if (codeMatch) {
-    const idx = Number(codeMatch[1]) - 1;
-    return idx < max ? idx : -1;
-  }
-  if (e.key >= '1' && e.key <= String(max)) {
-    return Number(e.key) - 1;
-  }
-  return -1;
-}
 
 function choiceHotkeyIndex(e: KeyEvent): number {
   if (e.code === 'KeyA') return e.shiftKey ? 1 : 0;

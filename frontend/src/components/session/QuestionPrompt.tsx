@@ -1,20 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { markHandledByPrompt, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
+import { markHandledByPrompt, numberKeyIndex, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
 import type { QuestionItem } from '../../lib/questions';
 import './QuestionPrompt.css';
-
-function optionIndexFromNumberKey(e: KeyEvent, max: number): number {
-  const codeMatch = /^Digit([1-9])$/.exec(e.code) ?? /^Numpad([1-9])$/.exec(e.code);
-  if (codeMatch) {
-    const idx = Number(codeMatch[1]) - 1;
-    return idx < max ? idx : -1;
-  }
-  if (e.key >= '1' && e.key <= '9') {
-    const idx = Number(e.key) - 1;
-    return idx < max ? idx : -1;
-  }
-  return -1;
-}
 
 export interface PendingQuestion {
   requestId: string;
@@ -252,7 +239,7 @@ export function QuestionPrompt({
     }
 
     // Number keys 1-9 directly select the matching option.
-    const idx = optionIndexFromNumberKey(e, currentQ.options.length);
+    const idx = numberKeyIndex(e, currentQ.options.length);
     if (idx >= 0 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       selectOption(currentStep, idx);
