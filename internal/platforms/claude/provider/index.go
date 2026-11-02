@@ -53,8 +53,9 @@ type Index struct {
 	mu       sync.Mutex // serializes writers
 	watch    func(dir string)
 
-	parsed    atomic.Int64 // files parsed, for the warm-start test
-	bytesRead atomic.Int64 // transcript bytes read by paging, for its test
+	parsed       atomic.Int64 // files parsed, for the warm-start test
+	bytesRead    atomic.Int64 // transcript bytes read by paging, for its test
+	indexedBytes atomic.Int64 // transcript bytes parsed by indexing
 }
 
 // OpenIndex opens or rebuilds the index for configDir (~/.claude or
@@ -72,7 +73,7 @@ func OpenIndex(path, configDir string) (*Index, error) {
 	_ = conn.QueryRow(`PRAGMA user_version`).Scan(&version)
 	_ = conn.QueryRow(`SELECT value FROM meta WHERE key = 'config_dir'`).Scan(&have)
 	if version != schemaVersion || have != configDir {
-		_, err = conn.Exec(`DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS session; DROP TABLE IF EXISTS message; DROP TABLE IF EXISTS task_call; DROP TABLE IF EXISTS usage;` +
+		_, err = conn.Exec(`DROP TABLE IF EXISTS index_cursor; DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS session; DROP TABLE IF EXISTS message; DROP TABLE IF EXISTS task_call; DROP TABLE IF EXISTS usage;` +
 			schema + fmt.Sprintf(`PRAGMA user_version = %d;`, schemaVersion))
 		if err == nil {
 			_, err = conn.Exec(`INSERT INTO meta (key, value) VALUES ('config_dir', ?)`, configDir)
@@ -81,6 +82,11 @@ func OpenIndex(path, configDir string) (*Index, error) {
 			conn.Close()
 			return nil, fmt.Errorf("rebuilding claude index: %w", err)
 		}
+	}
+	if _, err := conn.Exec(`CREATE TABLE IF NOT EXISTS index_cursor (path TEXT PRIMARY KEY, data TEXT NOT NULL);
+		CREATE INDEX IF NOT EXISTS session_parent ON session(parent_id)`); err != nil {
+		conn.Close()
+		return nil, err
 	}
 	return &Index{db: conn, projects: filepath.Join(configDir, "projects"), watch: func(string) {}}, nil
 }
@@ -121,7 +127,7 @@ func (x *Index) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	changed := false
+	roots := map[string]bool{}
 	for _, path := range paths {
 		st, err := os.Stat(path)
 		if err != nil {
@@ -138,7 +144,8 @@ func (x *Index) sync(ctx context.Context) error {
 		if err := x.index(ctx, path); err != nil {
 			return err
 		}
-		changed = true
+		_, root := identify(path, x.projects)
+		roots[root] = true
 	}
 	for path := range known {
 		if _, err := os.Stat(path); err == nil {
@@ -149,16 +156,28 @@ func (x *Index) sync(ctx context.Context) error {
 		if err := x.remove(ctx, path); err != nil {
 			return err
 		}
-		changed = true
+		_, root := identify(path, x.projects)
+		roots[root] = true
 	}
-	if !changed {
-		return nil
+	for root := range roots {
+		if err := x.link(ctx, root); err != nil {
+			return err
+		}
 	}
-	return x.link(ctx)
+	return nil
 }
 
 func (x *Index) index(ctx context.Context, path string) error {
-	e, err := scanFile(path, x.projects)
+	var raw string
+	var saved indexCursor
+	err := x.db.QueryRowContext(ctx, `SELECT data FROM index_cursor WHERE path=?`, path).Scan(&raw)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if json.Unmarshal([]byte(raw), &saved) != nil {
+		saved = indexCursor{}
+	}
+	e, cursor, delta, err := x.scanForIndex(ctx, path, &saved)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return x.remove(ctx, path)
@@ -166,23 +185,30 @@ func (x *Index) index(ctx context.Context, path string) error {
 		return err
 	}
 	x.parsed.Add(1)
+	x.indexedBytes.Add(e.readBytes)
 	tx, err := x.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := clearRows(ctx, tx, path, e.ID); err != nil {
-		return err
+	if !delta {
+		if err := clearRows(ctx, tx, path, e.ID); err != nil {
+			return err
+		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO session (`+entryColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO session (`+entryColumns+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		e.Path, e.ID, e.RootID, e.ParentID, e.ParentToolUseID, e.Mtime, e.Size, e.End,
 		e.Title, e.Directory, e.Model, e.Inferred, e.Created, e.Updated, e.Input, e.Output,
 		e.LatestID, e.LatestRole, e.LatestCreated, e.Messages)
 	if err != nil {
 		return err
 	}
+	position := 0
+	if delta {
+		position = saved.State.Entry.Messages
+	}
 	for i, off := range e.offsets {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO message (session_id, idx, offset) VALUES (?, ?, ?)`, e.ID, i, off); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message (session_id, idx, offset) VALUES (?, ?, ?)`, e.ID, position+i, off); err != nil {
 			return err
 		}
 	}
@@ -199,12 +225,20 @@ func (x *Index) index(ctx context.Context, path string) error {
 			return err
 		}
 	}
+	data, err := json.Marshal(cursor)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO index_cursor (path, data) VALUES (?,?)`, path, string(data)); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
 // clearRows drops a path's rows and any other path claiming the same session id.
 func clearRows(ctx context.Context, tx *sql.Tx, path, id string) error {
 	for _, q := range []string{
+		`DELETE FROM index_cursor WHERE path = ? OR path IN (SELECT path FROM session WHERE id = ?)`,
 		`DELETE FROM message WHERE session_id IN (SELECT id FROM session WHERE path = ? OR id = ?)`,
 		`DELETE FROM task_call WHERE session_id IN (SELECT id FROM session WHERE path = ? OR id = ?)`,
 		`DELETE FROM usage WHERE session_id IN (SELECT id FROM session WHERE path = ? OR id = ?)`,
@@ -232,11 +266,20 @@ func (x *Index) remove(ctx context.Context, path string) error {
 // link resolves subagent parents: the session that made the Task/Agent call
 // named in the subagent's meta file (nested subagents), else the top-level
 // session the subagent directory belongs to.
-func (x *Index) link(ctx context.Context) error {
-	_, err := x.db.ExecContext(ctx, `UPDATE session SET parent_id = COALESCE(
+func (x *Index) link(ctx context.Context, roots ...string) error {
+	query := `UPDATE session SET parent_id = COALESCE(
 		(SELECT t.session_id FROM task_call t WHERE t.tool_use_id = session.parent_tool_use_id AND t.session_id != session.id),
-		root_id) WHERE id != root_id`)
-	return err
+		root_id) WHERE id != root_id`
+	if len(roots) == 0 {
+		_, err := x.db.ExecContext(ctx, query)
+		return err
+	}
+	for _, root := range roots {
+		if _, err := x.db.ExecContext(ctx, query+` AND root_id=?`, root); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // refresh reindexes one transcript if it changed since it was indexed, so a
@@ -249,7 +292,7 @@ func (x *Index) refresh(ctx context.Context, e *entry) (*entry, error) {
 	x.mu.Lock()
 	err = x.index(ctx, e.Path)
 	if err == nil {
-		err = x.link(ctx)
+		err = x.link(ctx, e.RootID)
 	}
 	x.mu.Unlock()
 	if err != nil {

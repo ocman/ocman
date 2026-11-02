@@ -146,13 +146,21 @@ func (e *journalTranslationError) Unwrap() error { return e.error }
 // subagent transcripts. The source transcript remains the durable content.
 func (w *sourceWorker) refreshJournal(ctx context.Context, records []historyjournal.Record) error {
 	dirty := map[string]bool{}
+	discover := false
 	for _, rec := range records {
-		dirty[rec.Session] = rec.Session == ""
-		if rec.Type == "SubagentStop" {
-			dirty[""] = true
+		dirty[rec.Session] = false
+		if rec.Type == "SubagentStop" || rec.Session == "" {
+			discover = true
 		}
 	}
-	err := w.runJournalPass(ctx, dirty)
+	var err error
+	if discover {
+		// Discover newly created children through inventory hints without
+		// forcing a full repair of every unrelated transcript.
+		err = w.discoverJournal(ctx, dirty)
+	} else {
+		err = w.runTargetedPass(ctx, dirty)
+	}
 	if err == nil && w.last.Counters["deferred"] > 0 {
 		err = errDeferred
 	}

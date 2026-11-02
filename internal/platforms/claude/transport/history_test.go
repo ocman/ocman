@@ -37,11 +37,17 @@ func TestHistoryAdapterUsesBrowsingSourceWithoutLaunchingSession(t *testing.T) {
 	if _, err := p.HistorySnapshot(t.Context(), "missing"); err == nil {
 		t.Fatal("accepted nonexistent history")
 	}
+	if _, err := p.HistoryFamilyInventory(t.Context(), "missing"); err == nil {
+		t.Fatal("accepted nonexistent family")
+	}
 	p.configDir = filepath.Join(root, "unavailable")
 	if identity, err := p.HistoryIdentity(t.Context()); err != nil || identity.SourceKey == "" {
 		t.Fatalf("fresh configuration has no stable identity: %+v %v", identity, err)
 	}
 	p.history = nil
+	if _, err := p.HistoryFamilyInventory(t.Context(), "missing"); err == nil {
+		t.Fatal("accepted missing family source")
+	}
 	if _, err := p.HistoryIdentity(t.Context()); err == nil {
 		t.Fatal("accepted missing identity source")
 	}

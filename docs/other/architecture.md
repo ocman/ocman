@@ -484,7 +484,7 @@ platform-owned.
 ```mermaid
 flowchart LR
     Import[conversationingest module<br/>source workers + paced backfill]
-    Adapters[Local platform adapters<br/>snapshots, runtime children + tails] --> Import
+    Adapters[Local platform adapters<br/>scoped family discovery + resumable tails] --> Import
     Events[UI session invalidations<br/>internal helpers excluded] --> Import
     Import -->|health + task progress APIs| UI[Settings application health<br/>and Background tasks]
     Import -->|snapshots, deltas or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
@@ -538,8 +538,10 @@ flowchart LR
   supervisor. Settled child views are reclaimed only when every retained content
   entry has a matching receipt; partial or stale receipts cannot drop newer text.
   Runtime metadata and terminal status survive this memory reclamation.
-  Subagent completion hooks request inventory discovery for newly created child
-  files before targeted reads. A transcript removed during refresh is unavailable,
+  Subagent completion hooks use `HistoryFamilyReader` to discover newly created
+  child files beneath their native root, then read only new, changed or directly
+  invalidated sessions. Unknown hook identities request version-hint discovery,
+  not full repairs of unchanged history. A transcript removed during refresh is unavailable,
   not an ingestion-worker panic.
   Analytics keeps reading atomic committed projections from initialized local
   sources even when another session fails. Responses identify partial scope in
@@ -577,12 +579,17 @@ flowchart LR
   record pointing at the changed transcript in every session, including
   terminal sessions and while ocman is stopped. At startup the worker compares
   transcript version hints once; afterwards each journal record targets its
-  session and retained descendants without a source-wide inventory.
+  session without rereading completed descendants or a source-wide inventory.
   `platforms.HistoryDeltaReader` resumes conversion at the last message group's
   byte offset, replaying that group to capture appended tool results. The
   transcript cursor and tail upserts commit atomically; detected replacements
-  and truncations request full snapshots. The shared Claude index can still
-  reindex the changed transcript for metadata. The journal offset advances only
+  and truncations request full snapshots. The shared Claude index persists its
+  own last-group scan state and updates only tail message offsets, usage and
+  tool-call rows on append, including after restart. Filesystem events refresh
+  only their named file or directory subtree. A five-minute recovery sweep
+  covers missed hooks and unhooked external appends; directory watches on macOS
+  cannot detect appends to existing files. Parent relinking stays within the
+  changed native root. The journal offset advances only
   after ingestion succeeds. Checking for records costs one directory read; there is
   no periodic polling or automatic full verification. The journal is
   machine-wide under the XDG data directory; each statev2 store keeps its own
@@ -591,12 +598,19 @@ flowchart LR
   hook. Journal read errors revoke readiness rather than appearing as no work.
   Writers lock each segment and terminate interrupted tails before appending.
   Translation failures have one task receipt, separate from journal I/O errors.
-- Sources with neither (OpenCode v1) still poll change hints every 30 seconds
-  and coalesce event-triggered repairs for one second. A pass reads only invalidated, new or re-hinted
+- Sources with neither (OpenCode v1 and Codex) still poll change hints every 30 seconds
+  and coalesce event-triggered repairs for one second. Known-session events bypass
+  full inventories unless verification is due; unknown sessions still trigger discovery.
+  A polling pass reads only invalidated, new or re-hinted
   sessions. Version hints, content fingerprints and the last verification time
   persist in statev2, so a restart skips unchanged snapshots unless their
   conversation read-format metadata needs upgrading.
   The server joins all source workers before the application closes the database.
+- Codex history and live settlement each own a bounded rollout-usage cache.
+  Unchanged files are reused; uncompressed appends parse only new records and
+  replay any unterminated tail. Explicit verification bypasses the cache.
+  Replacements, truncations and changed compressed rollouts rebuild that file's
+  accounting. Native turns and items still come from complete app-server snapshots.
 - Messages carry their accounting (agent, provider, cost, token counts, finish,
   error name) as indexed columns, and sessions carry parent and project IDs, so
   analytics can filter and sum without parsing stored JSON. Indexes cover

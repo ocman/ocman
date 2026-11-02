@@ -102,8 +102,9 @@ func (w *sourceWorker) sweepChecked(ctx context.Context) error {
 	w.dirty = map[string]bool{}
 	w.mu.Unlock()
 	var err error
-	if w.journaled && w.loaded && len(dirty) > 0 {
-		err = w.runJournalPass(ctx, dirty)
+	_, sourceWide := dirty[""]
+	if w.loaded && len(dirty) > 0 && !sourceWide && (w.journaled || time.Since(w.verifiedAt) < w.module.deps.VerifyInterval) {
+		err = w.runTargetedPass(ctx, dirty)
 	} else {
 		err = w.runPass(ctx, dirty)
 	}

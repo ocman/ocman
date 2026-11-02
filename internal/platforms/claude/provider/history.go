@@ -76,7 +76,7 @@ func (h *HistoryReader) snapshot(ctx context.Context, id string, resume *transcr
 			if err := x.index(ctx, e.Path); err != nil {
 				return nil, err
 			}
-			if err := x.link(ctx); err != nil {
+			if err := x.link(ctx, e.RootID); err != nil {
 				return nil, err
 			}
 			e, err = x.get(ctx, id)

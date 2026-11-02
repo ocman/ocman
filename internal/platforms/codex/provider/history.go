@@ -26,6 +26,7 @@ type HistoryClient interface {
 // HistoryReader serves Codex threads to history ingestion.
 type HistoryReader struct {
 	Client HistoryClient
+	usage  rolloutUsageCache
 }
 
 // Inventory lists every stored thread, archived ones and subagent threads
@@ -54,6 +55,16 @@ func (h *HistoryReader) Inventory(ctx context.Context) ([]db.HistoryEntry, error
 // fails with db.ErrHistoryChanged so ingestion retries rather than storing a
 // mix.
 func (h *HistoryReader) Snapshot(ctx context.Context, id string) (*db.HistorySnapshot, error) {
+	return h.snapshot(ctx, id, true)
+}
+
+// CachedSnapshot still reads complete native turns/items; only rollout accounting
+// can resume. Explicit verification uses Snapshot to bypass every cached byte.
+func (h *HistoryReader) CachedSnapshot(ctx context.Context, id string) (*db.HistorySnapshot, error) {
+	return h.snapshot(ctx, id, false)
+}
+
+func (h *HistoryReader) snapshot(ctx context.Context, id string, verify bool) (*db.HistorySnapshot, error) {
 	before, err := h.read(ctx, id)
 	if err != nil {
 		return nil, err
@@ -77,8 +88,10 @@ func (h *HistoryReader) Snapshot(ctx context.Context, id string) (*db.HistorySna
 	c := &Converter{Messages: []db.Message{}, Parts: []db.Part{}}
 	if after.Path != "" {
 		// Usage is best effort: history without it is still history.
-		if usage, err := ReadRolloutUsage(after.Path); err == nil {
+		if usage, err := h.usage.readMode(after.Path, verify); err == nil {
 			c.Usage = usage
+		} else if errors.Is(err, db.ErrHistoryChanged) {
+			return nil, err
 		}
 	}
 	c.AddHistory(after, turns, items)

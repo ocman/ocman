@@ -332,7 +332,7 @@ func (a *acpExecution) reconcile(parent context.Context, id string, turn *acpTur
 	conv := &Converter{SessionID: id, ProviderID: turn.conv.ProviderID, ModelID: turn.conv.ModelID}
 	if thread, err := native.ReadThread(ctx, id, false); err == nil {
 		conv.defaults(thread)
-		conv.Usage, _ = ReadRolloutUsage(thread.Path)
+		conv.Usage, _ = a.usage.read(thread.Path)
 	}
 	if turn.title != "" {
 		if err := native.SetThreadName(ctx, id, turn.title); err != nil {

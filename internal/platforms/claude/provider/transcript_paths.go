@@ -10,7 +10,6 @@ import (
 // transcripts lists every transcript and registers directory watches.
 // An unreadable directory is not evidence that its sessions were deleted.
 func (x *Index) transcripts() ([]string, error) {
-	x.watch(filepath.Dir(x.projects))
 	x.watch(x.projects)
 	projects, err := os.ReadDir(x.projects)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

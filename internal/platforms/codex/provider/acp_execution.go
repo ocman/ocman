@@ -20,6 +20,7 @@ import (
 // separate native reader; it must never load these threads for execution.
 type acpExecution struct {
 	b            *backend
+	usage        rolloutUsageCache
 	startMu      sync.Mutex
 	mu           sync.Mutex
 	client       *acpexec.Client

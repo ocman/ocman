@@ -66,6 +66,12 @@ type HistoryReader interface {
 	HistorySnapshot(context.Context, string) (*db.HistorySnapshot, error)
 }
 
+// HistoryFamilyReader discovers a session and its native descendants without
+// inventorying unrelated sessions. It is not an authoritative deletion inventory.
+type HistoryFamilyReader interface {
+	HistoryFamilyInventory(context.Context, string) ([]db.HistoryEntry, error)
+}
+
 // HistoryDeltaReader resumes an append-only transcript at an opaque cursor.
 // An empty cursor requests a full snapshot. A replaced/truncated source must
 // return a full snapshot instead of silently skipping history.

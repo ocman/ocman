@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms"
@@ -69,7 +67,7 @@ const (
 // config directory.
 func DefaultOptions(dataDir string) Options {
 	config := ConfigDir(os.Getenv("CLAUDE_CONFIG_DIR"))
-	return Options{IndexPath: filepath.Join(dataDir, "claude-index.db"), ConfigDir: config, CLI: "claude", Sweep: 5 * time.Second,
+	return Options{IndexPath: filepath.Join(dataDir, "claude-index.db"), ConfigDir: config, CLI: "claude", Sweep: indexRecoveryInterval,
 		StatePath: filepath.Join(dataDir, "claude-sessions.json"), UsagePath: filepath.Join(dataDir, "claude-usage.json"), LaunchPath: filepath.Join(dataDir, "claude-launch.json"), MCPTokenPath: mcpauth.TokenPath(dataDir), MaxProcs: DefaultMaxProcs, IdleTimeout: DefaultIdleTimeout,
 		SlotDir: filepath.Join(dataDir, "claude-slots")}
 }
@@ -154,40 +152,7 @@ func cliVersion(ctx context.Context, cli string) string {
 
 // Run syncs on start, on directory events and on every sweep tick.
 func (x *Index) Run(ctx context.Context, sweep time.Duration) {
-	if sweep <= 0 {
-		sweep = 5 * time.Second
-	}
-	wake := make(chan struct{}, 1)
-	if w, err := newDirWatcher(func() {
-		select {
-		case wake <- struct{}{}:
-		default:
-		}
-	}); err == nil {
-		x.mu.Lock()
-		x.watch = w.Add
-		x.mu.Unlock()
-		defer w.Close()
-	}
-	ticker := time.NewTicker(sweep)
-	defer ticker.Stop()
-	for {
-		if err := x.Sync(ctx); err != nil && ctx.Err() == nil {
-			log.WithError(err).Warn("syncing claude transcript index")
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		case <-wake:
-			// Coalesce a burst of writes into one sync.
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(200 * time.Millisecond):
-			}
-		}
-	}
+	x.runIndex(ctx, sweep)
 }
 
 type handler struct {

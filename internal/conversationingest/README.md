@@ -59,16 +59,23 @@ Each worker picks one mode for its source:
   per-session event sequences with those already applied; live events read only
   the messages they name. It does not poll content.
 - **Journal** (Claude, `journal_mode.go`) compares version hints once at
-  startup, then targets the sessions named by hook journal records and their
-  retained descendants, without inventorying unrelated transcripts. Claude
+  startup, then targets only the sessions named by hook journal records.
+  A subagent completion uses the optional `HistoryFamilyReader` to discover new
+  children under that root, without inventorying unrelated projects. Sources
+  without scoped discovery fall back to inventory hints, not forced rereads.
+  Unassociated hooks also request hint discovery instead of full repairs. Claude
   resumes conversion at the last message group's byte offset, replaying that
   group for appended tool results and upserting only the transcript tail.
-  Transcript progress and content commit atomically. Invalid cursors or
+  Its shared index likewise persists last-group scan state and updates tail rows
+  on append. Directory events are path-scoped; a five-minute recovery sweep
+  covers missed events and unhooked external appends. Transcript progress and
+  content commit atomically. Invalid cursors or
   detected replacements/truncations fall back to a full snapshot. The shared
   Claude index may still reindex the changed file to refresh its metadata.
 - **Polling** (OpenCode v1 and Codex, `worker.go`) compares inventory version hints every
   30 seconds and reads only invalidated, new or re-hinted sessions. A full
   verification rereads every session every six hours (`VerifyInterval`).
+  Known-session event updates skip inventory unless verification is due.
 
 Full verification is manual-only for feed and journal sources. In every mode,
 `ocman.session.*` change/activity/idle/status invalidations request repairs,

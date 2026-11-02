@@ -86,6 +86,10 @@ func (a *Adapter) HistoryInventory(ctx context.Context) ([]db.HistoryEntry, erro
 		return nil, err
 	}
 	rows, err := reader.HistoryInventory(ctx)
+	return a.historyEntries(ctx, rows, err)
+}
+
+func (a *Adapter) historyEntries(ctx context.Context, rows []db.HistoryEntry, err error) ([]db.HistoryEntry, error) {
 	var incomplete *platforms.HistoryDeferred
 	if err != nil && !errors.As(err, &incomplete) {
 		return nil, err

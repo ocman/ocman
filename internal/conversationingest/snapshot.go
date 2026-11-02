@@ -40,10 +40,11 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 	}
 	var saved snapshotCursor
 	_ = json.Unmarshal([]byte(cursor), &saved) // legacy fingerprints have no source cursor
-	if stored.ReadFormat != statev2.ConversationReadFormat || len(full) > 0 && full[0] {
+	fullRead := stored.ReadFormat != statev2.ConversationReadFormat || len(full) > 0 && full[0]
+	if fullRead {
 		saved.Source = ""
 	}
-	snapshot, err := w.sourceSnapshot(ctx, entry.ID, saved.Source)
+	snapshot, err := w.sourceSnapshot(ctx, entry.ID, saved.Source, fullRead)
 	if errors.Is(err, db.ErrHistoryChanged) {
 		w.withdraw(ctx, entry.ID)
 		return importResult{outcome: "deferred"}, nil
@@ -126,8 +127,8 @@ func (w *sourceWorker) confirmSnapshot(ctx context.Context, id string, snapshot 
 	return observer.HistoryCommitted(confirm, id, snapshot)
 }
 
-func (w *sourceWorker) sourceSnapshot(ctx context.Context, id, cursor string) (*db.HistorySnapshot, error) {
-	if w.journaled {
+func (w *sourceWorker) sourceSnapshot(ctx context.Context, id, cursor string, full bool) (*db.HistorySnapshot, error) {
+	if w.journaled || !full {
 		if reader, ok := w.source.Reader.(platforms.HistoryDeltaReader); ok {
 			readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)
 			defer cancel()

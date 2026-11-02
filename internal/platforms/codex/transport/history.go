@@ -23,10 +23,12 @@ import (
 type history struct {
 	start func(context.Context) (*codexappserver.Client, error)
 
-	mu       sync.Mutex
-	client   *codexappserver.Client
-	models   cached[*platforms.DirectoryCatalog]
-	commands map[string]cached[[]platforms.SlashCommandEntry] // by directory
+	mu           sync.Mutex
+	client       *codexappserver.Client
+	readerClient *codexappserver.Client
+	readerCache  *codexprovider.HistoryReader
+	models       cached[*platforms.DirectoryCatalog]
+	commands     map[string]cached[[]platforms.SlashCommandEntry] // by directory
 }
 
 // cached is a value read at a time, served until catalogTTL has passed.
@@ -75,6 +77,7 @@ func (h *history) conn(ctx context.Context) (*codexappserver.Client, error) {
 func (h *history) close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.readerCache, h.readerClient = nil, nil
 	if h.client != nil {
 		_ = h.client.Close()
 		h.client = nil
@@ -129,7 +132,12 @@ func (h *history) reader(ctx context.Context) (*codexprovider.HistoryReader, err
 	if err != nil {
 		return nil, err
 	}
-	return &codexprovider.HistoryReader{Client: timedClient{h, c}}, nil
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.readerCache == nil || h.readerClient != c {
+		h.readerClient, h.readerCache = c, &codexprovider.HistoryReader{Client: timedClient{h, c}}
+	}
+	return h.readerCache, nil
 }
 
 // sessions lists stored threads, archived ones included.
