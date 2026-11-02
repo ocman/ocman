@@ -718,11 +718,12 @@ describe('SessionDetail — composer send', () => {
 });
 
 // ---------------------------------------------------------------
-// Regression tests for the five user-visible behaviours called out
-// in spec/sse-rewrite/requirements.md §User-visible behaviour.
-// Each test maps to one bullet there; the tests above cover the
-// other three (tool blocks live, streaming text never rewinds,
-// question round-trip).
+// Regression tests for the five user-visible live-session behaviours
+// (docs/adr/0010): tool blocks appear live, streaming text never
+// rewinds, user messages appear immediately and stay, reconnects
+// recover cleanly, and questions round-trip live. The tests below
+// cover the user-message and reconnect cases; the tests above cover
+// the other three.
 // ---------------------------------------------------------------
 
 describe('SessionDetail — regression: user message appears immediately and stays', () => {

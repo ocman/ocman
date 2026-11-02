@@ -1,5 +1,10 @@
 # Multi-Agent Support - Conformance review
 
+> The Factory run reports this review cites (`deviations.md`,
+> `delivery-report.md`, `integration-report.md` and the recovery reports) and
+> the per-task acceptance and check-run sections were removed once the work
+> shipped. Recover them with `git show ee69a1980:spec/multi-agent-support/<file>`.
+
 Re-audit of `factory/claude-code-provider` (`ee5e33264..HEAD`) against
 `requirements.md`, `architecture.md` and every Factory acceptance criterion,
 after the recovery tasks claude-code-provider.1.3.53-1.3.60 (Factory task
@@ -183,107 +188,6 @@ manual real-CLI smoke test.
 | AD-12 Analytics | implemented, departs | See FR-8 analytics row | *Analytics run from a platform-neutral store*; *Claude cost is labelled API-equivalent* |
 | AD-13 Platform choice | implemented, departs | See FR-2 | *Factory platform is set when the Epic is created*; *Plugin conversation platform is a plugin-declared setting* |
 
-## Factory acceptance criteria
-
-Recovery: restore platform defaults and runtime availability after main integration
-(claude-code-provider.1.3.136) restores the additional B1/B2/C1 gaps found at
-`e4d4d25`. `TestRESTCreateResolvesDefaultBeforeRuntime`,
-`TestRESTCreateAuthoritativeOwner`, the real-composer rendered switch regressions,
-custom-selection controls, `TestHostCapsNativeProviderPrerequisites` and
-`TestClaudeNativeRuntimeAvailability` are its acceptance evidence. The optional
-`RuntimeAvailability` seam and approved catalog split are recorded in
-`deviations.md`. Fresh local gates and separate official coverage comparisons are
-in `defaults-recovery-report.md`. R1-R6 stay partial and unresolved. Repository CI
-on the new pushed checkpoint and fresh verify (claude-code-provider.1.5) remain
-required before deliver (claude-code-provider.1.2).
-
-Criteria in each task's order. Recovery tasks 1.3.53-1.3.60 carry their own
-evidence in their `deviations.md` entries; their outcomes are folded in here.
-
-| Task | # | Evidence |
-|---|---|---|
-| 1.3.1 Spike | 1 | `spike-findings.md` §§1-7 |
-| | 2 | §1: cap 4, 600 s idle |
-| | 3 | `plain.jsonl`, `permission.jsonl`, `subagent.jsonl` under `testdata/claudecode/2.1.220/`; `TestFakeClaudeReplaysFixture` |
-| | 4 | "Design effects" table and its `deviations.md` entries |
-| 1.3.2 Runtime seam | 1 | `make test` passes (check run below) |
-| | 2 | Every create path takes the platform or the enabled default (FR-2 row); directory-bearing REST creation regressed at main integration and is restored by `TestRESTCreateResolvesDefaultBeforeRuntime` and `TestRESTCreateAuthoritativeOwner`. Remaining `opencode` literals are OpenCode adapter, OpenCode-only runtime controls and the legacy RPC alias |
-| | 3 | `TestStartupWithoutOpenCode`, `TestClaudeOnlyStartup` |
-| | 4 | `TestEnsureRuntimeAndLegacyRPC`, `TestEnsureRuntimeFallsBackOnlyForOpenCode` |
-| 1.3.3 Status sinks | 1-2 | `TestPlatformIdleSinkDrainsQueue`, existing queue tests |
-| | 3 | `TestLimitedSessionDoesNotDrainSweep`, `TestLimitedRunRemainsRunning` |
-| | 4 | `StatusBadge.test.tsx` |
-| 1.3.4 Judge seam | 1-3 | `TestOpenCodeJudgeThroughInterface`, `TestJudgeWithoutBackendNeedsUser`, `TestSafeCommandCachePrecedesBackendSelection` |
-| 1.3.5 Remote advertisement | 1-2 | `TestManagerAdvertisedPlatforms`, `TestManagerLegacyHelloDefaultsToOpenCode` |
-| | 3 | `TestPublishAdapters_RejectsDuplicateRemoteIdentity` |
-| 1.3.6 Protocol | 1 | `TestSessionContract`, `TestMutationContract`, `TestEventContractAndReplay` |
-| | 2 | `TestProviderInstancesAreIsolated` |
-| | 3 | `TestCapabilitiesGateEveryOptionalMethod` |
-| | 4 | Partial, deferred (R4): mismatch errors tested by `TestVersionsAndHandshakeErrors`, `TestHandshakeRequiresExplicitVersionAndCLI`; no previous version is spoken |
-| 1.3.7 Supervisor runtime | 1 | `TestKilledDashboardProcessReplaysAfterItsLastCursor`; for Claude, `TestClaudeSupervisorSurvivesOcmanRestart` |
-| | 2 | `TestDashboardRestartReplaysEveryEventAndPendingPermission`, `TestClaudeSupervisorSurvivesOcmanRestart` |
-| | 3 | `TestProviderDeadPersistedRowIsReprobedAndRelaunched`, `TestProviderRecover` |
-| | 4 | `TestProviderVersionSkewDrainsWithoutInterruptingTurn`, `TestDrainWaitsForTrulyIdleSessions`; pending and later prompts while draining `TestOutOfRangeSupervisorDeliversPromptsWhileDraining` |
-| 1.3.8 Read-only browsing | 1 | `TestClaudeOnlyStartup` |
-| | 2 | `TestWarmStartParsesNoFiles` |
-| | 3 | `TestPagingReadsOnlyRequestedRange` |
-| | 4 | `TestSubagentRendersUnderTaskCall`, live: `TestLiveSubagentStaysUnderTask` |
-| | 5 | `TestDualPlatformKeepsOpenCodeListing` (NFR-1 row) |
-| 1.3.9 Hooks | 1-4 | `TestHookPluginInstallUninstallKeepsSettings`, `TestRunHookReturnsWithinTimeoutWhenOcmanIsDown`, `TestTerminalSessionHooksDriveStatus`, `TestOwnedSessionIgnoresHooks` |
-| 1.3.10 Interactive | 1 | `TestClaudeComposerStart`; session-page follow-ups enabled by the live-connection overlay (1.3.56). Incompatible implicit model/agent defaults found at `e4d4d25` are corrected with real-composer rendered platform/machine regressions in `NewConversation.lifecycle.test.tsx`; explicit supported custom selections remain usable |
-| | 2 | `TestIdleTimeoutResumesSession` |
-| | 3 | `TestUsageLimitHoldsUntilReset` (synthetic rejection) |
-| | 4 | `TestUnsupportedCLIVersion` |
-| | 5 | `scripts/check-platform-branching.sh` in `make lint` |
-| 1.3.11 Permissions | 1 | `TestYOLOParentChildIsNotPrompted` |
-| | 2 | `TestAllowAlwaysIsRecordedAndInherited` |
-| | 3 | `TestAskUserQuestionAnsweredFromOcman` |
-| | 4 | `TestClaudeJudgeDecidesWithoutOpenCode` |
-| | 5 | `TestRuleAllowedPromptNeverReachesBrowser`, `TestRuleReplyFailureRetriesWithoutLeaking`, `TestPermissionInboxReconciliationNeverPollsPushOnlyPlatforms` |
-| | 6 | `TestPendingPromptAnsweredAfterReconnect`, `TestClaudeSupervisorSurvivesOcmanRestart` |
-| 1.3.12 Entrypoints | 1-4 | `TestClaudeWorktreeCreateAndLaunch`, `TestClaudeRoutineSettlesOnIdle`, `TestClaudeMCPCreate`, `TestClaudePRLaunchWorktree` |
-| 1.3.13 Factory and plugins | 1-2 | `TestClaudeFactoryEpicDispatchesToClaude`, `TestClaudePluginConversationCreatesAndResumes` |
-| | 3 | Existing Factory and plugin suites pass in `make test` |
-| 1.3.14 Analytics | 1 | `TestUsageViewsCountClaudeTranscriptTokens`, `TestClaudeOnlyStartup` (Claude-only `/api/stats`, `/api/metrics`) |
-| | 2 | `StatsLogTables.test.tsx` |
-| | 3 | `ProviderAccountSettings.test.tsx`, `TestDrivenSessionRecordsRateLimit`, `TestAccountNeverReadsCredentials` (approved contract, gate 1.3.68) |
-| 1.3.15 Remote Claude | 1-3 | `TestHubDrivesRemoteClaudeSession`, `TestHubAnswersRemoteClaudePermission`, `TestClaudeRemoteFailsClosedWhenDisconnected` |
-| 1.3.16 Docs | 1-4 | `docs/features/claude-code.md`; `AGENTS.md`; `docs/other/architecture.md`; `make docs-build` |
-| 1.3.97 Verification 1.5 fixes | 1-9 | *Verification 1.5 blockers fixed (1.3.97)*; criteria 1, 2, 4 and 6 were incomplete at `bf1548e2` and are completed by 1.3.99 |
-| 1.3.99 Verification 1.5 recovery | 1 | `TestResultBeforeTicketRemovalSettles` |
-| | 2 | `TestUnrecordedReplyIsRetriedNotRedelivered`; incomplete at `f279f45c` (conflicting retry, cancellation, outage through exit), completed by 1.3.105 |
-| | 3 | `TestOutOfRangeSupervisorDeliversPromptsWhileDraining`, `TestDrainingAdapterUsesOnlyVersionIndependentRoutes`; browser-first ordering completed by 1.3.105 |
-| | 4 | `TestSnapshotCarriesTerminalState` |
-| | 5 | `TestStartedPersistenceFailureFailsTurn` |
-| | 6 | `TestProjectSupervisorFollowsDashboardConfiguration` (fake `--resume` validation); partial, deferred: rename is not configuration-scoped (R3) |
-| | 7 | `TestHelperSlotsAreBoundedAndSeparate`, `TestClaudeJudge`, `TestBrokenSlotStoreFailsVisibly`; separate budget approved at gate 1.3.107 |
-| | 8 | `TestFakeCLIRejectsMalformedInput`, `TestAbortInterruptsTurn`, `TestClaudeComposerStart`, `TestDashboardKillRestartComposition` |
-| | 9 | *Intermittent check failures at verification 1.5 (1.3.99)* |
-| | 10 | This file, `deviations.md`, PR 834 inventory; check run below; corrected by 1.3.105 |
-| 1.3.105 Verification 1.5 recovery at `f279f45c` | 1 | `TestAllowAlwaysWithWildcardCharactersIsExact`, `TestExactPatternsDoNotGlob`, `TestExactPatternRoundTrip`, `TestFlatKeysAreExactOnClaude` |
-| | 2 | `TestSpoolOutageAcrossContinuationAndExitSettles` (continue and exit) |
-| | 3 | `TestCancellationDuringOutageIsRecorded` (interrupt and exit), `TestCancelDuringReplyWriteResolvesOnce` |
-| | 4 | `TestBrowserConnectedBeforeDrainDiscoveryReceivesPrompts` |
-| | 5 | `TestConflictingReplyRetryIsRefused` (session service, hooks, rules, provenance), `TestConflictingQuestionRetryIsRefused`, `TestTentativeAllowAlways` |
-| | 6 | Gate 1.3.107: both departures approved by the human |
-| | 7 | This file, `deviations.md`, PR 834 inventory; check run below; criteria 1-5 and 7 corrected by 1.3.108 |
-| 1.3.108 Verification 1.5 recovery at `251290f6` | 1 | `TestLegacySupervisorPatternsAreExact`, `TestLegacyRulesStoreApprovalsBecomeExact`, `TestLegacyClaudeApprovalsInheritExact`, `TestVersionsAndHandshakeErrors` |
-| | 2 | `TestSettlementRetryOwnsEveryGeneration` |
-| | 3 | `TestLateResolutionKeepsAskAndDoesNotReopenTurn`, `TestLateResolutionAfterIdleAndReconnect` |
-| | 4 | `TestDecisionDeliveredBeforeExitStands` |
-| | 5 | `TestBrowserConnectedBeforeDrainDiscoveryReceivesPrompts` (`browsing` and `routed`) |
-| | 6 | `TestAllowAlwaysOutcomeSurvivesStoreFailure` |
-| | 7 | `TestDelayedAIApprovalKeepsProvenance` (judge and cache), `TestAIApprovalIsNotOverwrittenByUser`; partial, deferred: lost response, restart before recording and unreadable rows (R2) |
-| | 8 | This file, `deviations.md`, PR 834 inventory; check run below; criteria 1-3 and 7 corrected by 1.3.120 |
-| 1.3.120 Verification 1.5 recovery at `fdcda97c` | 1 | `TestLegacyInheritedRulesBecomeExact` |
-| | 2 | `TestStaleTurnFailureSparesNextTurn` (the `settle` path only); partial, deferred: a failed terminal message still kills the newer turn (R1) |
-| | 3 | `TestRetainedIdleDoesNotDrainQueueIntoNextTurn` |
-| | 4 | `TestLegacySupervisorLeavesApprovalToUser`, `TestLegacySupervisorPatternsAreExact`, `TestVersionsAndHandshakeErrors` |
-| | 5 | Partial, deferred (R2): `TestDelayedAIApprovalKeepsProvenance` (emitted events, lifecycle), reducer *shows a replayed AI approval as the AI before or after the persisted notice* |
-| | 6 | This file, `deviations.md`, PR 834 inventory; check run below; R1-R6 found afterwards at `b03e27cc` and deferred (1.3.124) |
-| 1.3.124 Delivery report | 1-5 | `delivery-report.md`; *Delivery deferrals at `b03e27cc` (1.3.124)*; PR 834 links both; *Delivery report check run (1.3.124)* |
-| 1.3.17 Review | 1-4 | Superseded by this re-audit: `deviations.md` (every entry checked, the protocolVersion claim corrected, EnsureRuntime shapes logged); this file; PR 834's description lists the current deviation titles |
-
 ## Testing section
 
 | Item | Status | Evidence |
@@ -292,54 +196,3 @@ evidence in their `deviations.md` entries; their outcomes are folded in here.
 | Contract tests on both sides | implemented | `pa/*_test.go`, `ps/providertest`, `cp/*_test.go` |
 | Restart test mid-turn and mid-prompt | implemented | Fake provider `pa/replay_test.go`; Claude `TestClaudeSupervisorSurvivesOcmanRestart` (real `ocman provider claudecode` process, fake CLI); whole dashboard process killed with SIGKILL and restarted `TestDashboardKillRestartComposition` |
 | Optional manual real-CLI smoke test | optional, not done | *No real-CLI smoke test and no Claude restart test* |
-
-## Check run (1.3.61)
-
-*Re-audit check run (1.3.61)* in `deviations.md`: lint, tests, build, proto,
-docs and Chromium E2E pass; Go coverage passes the current gh-pages baseline;
-frontend coverage (86.26) fails the current baseline (88.81) and is deferred to
-delivery's main merge by gate 1.3.67, with the branch above its merge-base
-(85.25).
-
-## Check run (1.3.97)
-
-*Fix check run (1.3.97)* in `deviations.md`: lint, Go and frontend tests,
-race tests on the changed packages, builds, proto, docs and Chromium E2E pass;
-Go coverage passes the current gh-pages baseline; frontend coverage (86.27)
-fails the current baseline (89.23), above the previous checkpoint (86.26), and
-is repeated at delivery after the main merge (gate 1.3.67).
-
-## Check run (1.3.99)
-
-*Recovery check run (1.3.99)* in `deviations.md`: lint, Go and frontend tests,
-race tests on the changed packages, builds, tidy, proto, docs and isolated
-Chromium E2E pass; Go coverage passes the current gh-pages baseline (86.6 vs
-86.7, -0.10); frontend coverage (86.27) still fails the current baseline
-(89.23), unchanged from `bf1548e2`, and is repeated at delivery after the main
-merge (gate 1.3.67).
-
-## Check run (1.3.105)
-
-*Recovery check run (1.3.105)* in `deviations.md`.
-
-## Check run (1.3.108)
-
-*Recovery check run (1.3.108)* in `deviations.md`.
-
-## Check run (1.3.120)
-
-*Recovery check run (1.3.120)* in `deviations.md`.
-
-## Check run (1.3.124)
-
-*Delivery report check run (1.3.124)* in `deviations.md`.
-
-## Main integration check run (1.3.134)
-
-`integration-report.md` and *Main-integrated check run and official coverage
-comparison (1.3.134)* in `deviations.md`. Required checks pass after the recorded
-integration failures were corrected. `TestProviderMainMigrationReconcilesBothHistories`
-failed without migration reconciliation and passes with it. New MCP creation
-tests cover both Claude targets; platform-switch tests retain draft identity and
-use main's project-default agent. `TestProviderIdleResolvesOwnerWaits` checks the
-common idle sink without resolving another platform's wait. R1-R6 remain deferred.

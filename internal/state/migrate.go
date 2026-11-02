@@ -75,8 +75,7 @@ import (
 //	        reported hostname/protocol version. See AD-10 / AD-10b.
 //	15 - agent loops. Adds two tables and one column:
 //	      * `loops` holding one row per self-driving loop (trigger,
-//	        action, stop conditions, state, budget counters). See
-//	        spec/agent-loops/architecture.md AD-9 / Data Model.
+//	        action, stop conditions, state, budget counters).
 //	      * `loop_iterations` holding the per-loop audit trail (one row
 //	        per fired action, idempotency outbox via outcome='pending').
 //	      * `child_sessions.loop_id` (nullable) linking a spawned child
@@ -85,8 +84,7 @@ import (
 //	      (nullable) holding the loop's own session (separate from the
 //	      creator/owner session), and `loops.session_mode` controlling
 //	      whether each iteration spawns a fresh session ('fresh',
-//	      default) or reuses the loop session ('reuse'). See
-//	      spec/agent-loops Open Question 5.
+//	      default) or reuses the loop session ('reuse').
 //	17 - agent loops: model selection. Adds `loops.model`, an optional
 //	      platform model reference passed to loop prompts/spawned sessions.
 //	18 - agent loops: budget baseline. Adds `loops.usage_baseline_at`.
@@ -867,7 +865,7 @@ func migrateToV14(tx *sql.Tx) error {
 }
 
 // migrateToV15 creates the agent-loops tables and links child sessions
-// to loops. See spec/agent-loops/architecture.md (Migration v15).
+// to loops.
 //
 // `loops` holds one row per self-driving loop. trigger_config and
 // stop_conditions are JSON blobs (the engine owns their shape so the
@@ -941,8 +939,7 @@ func migrateToV15(tx *sql.Tx) error {
 // loop's own session (separate from the creator/owner session in
 // root_session_id), populated lazily on first fire. session_mode controls
 // per-iteration behavior: 'fresh' (default) spawns a new session each
-// iteration; 'reuse' re-prompts the dedicated session. See
-// spec/agent-loops Open Question 5.
+// iteration; 'reuse' re-prompts the dedicated session.
 func migrateToV16(tx *sql.Tx) error {
 	stmts := []string{
 		`ALTER TABLE loops ADD COLUMN loop_session_id TEXT`,

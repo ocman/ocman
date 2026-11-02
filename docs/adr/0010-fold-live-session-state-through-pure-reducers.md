@@ -1,0 +1,9 @@
+# Fold live session state through pure reducers with delta-owned fields
+
+The session page used to keep messages, parts, prompts and status in several pieces of state, each patched by its own SSE handler, with temporary message IDs, module-level caches and length-based heuristics to decide whether a snapshot or a streamed delta was newer. Every one of those was an invalidation surface, and the visible failures were tool blocks that appeared only after a refresh, streamed text that rewound or blanked, optimistic user messages that vanished, and reconnects that left gaps.
+
+The page now owns one `SessionView`. Pure reducers fold every input into it: `frontend/src/lib/sessionReducer.ts` handles REST loads and client actions, and `frontend/src/lib/conversation/conversationReducer.ts` handles conversation stream batches. Both are tested without React and return the same state reference for no-op actions. A load merges server messages and parts over in-memory ones by ID instead of replacing the view, because OpenCode's database write can lag its stream and a wholesale replace would briefly erase live content.
+
+Snapshot and delta ownership is a deterministic rule, not a heuristic. Snapshots own every field except those for which a streaming delta has been observed for that `(partId, field)` pair; once a delta arrives, ordinary snapshots no longer overwrite the locally accumulated value. Only a final, authoritative upsert of the part replaces it. Optimistic sends live outside the view in `usePendingSend`, so the view never holds temporary IDs that later need reconciling.
+
+Consequences: streamed text only grows, and reconnects heal through a merge rather than a reset. New live behavior is added as a reducer case with a direct test, not as another handler with its own state. A non-final snapshot can no longer correct a delta-owned field, so corrections to streamed content must arrive as further deltas or as the part's final upsert.

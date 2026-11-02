@@ -40,8 +40,7 @@ export function isTaskTool(toolName: string | undefined | null): boolean {
  * a resume, the input id becomes stale. Pre-refactor the
  * `OcmanRuntimeProvider` already implemented this priority order
  * (regex on output overrode any prior `inp.task_id`); the original
- * Phase 1 extraction accidentally inverted it. See
- * `spec/frontend-refactor/review.md` (B4) for the audit trail.
+ * Phase 1 extraction accidentally inverted it.
  *
  * Returns the empty string when no strategy yields a non-empty id —
  * callers treat the empty string as "not yet known".

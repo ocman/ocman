@@ -9,8 +9,6 @@ import { queryClient } from './queryClient';
  * OS-notification and toast hooks. React Query dedupes the consumers into
  * one request per cycle, polls only while the tab is visible and refetches
  * when it becomes visible again. Requests are never aborted.
- *
- * See spec/ui-responsiveness P2.
  */
 
 const POLL_INTERVAL_MS = 10_000;

@@ -93,7 +93,7 @@ describe('parsePart', () => {
     expect(result).toEqual({ type: 'text', text: 'hi' });
     // The previous version cached results in a module-level
     // WeakMap, but that cache was one of the invalidation surfaces
-    // the SSE rewrite removed (spec/sse-rewrite). No identity
+    // the SSE rewrite removed (docs/adr/0010). No identity
     // guarantee for repeat calls.
   });
 

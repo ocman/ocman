@@ -8,8 +8,6 @@
  *
  * The `apiStore` Zustand store remains for mutations, command palette
  * state, sidebar layout, and other non-GET concerns.
- *
- * See spec/ui-responsiveness Wave 3 (P4, P5).
  */
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 export * from './factoryQueries';

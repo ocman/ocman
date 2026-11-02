@@ -165,7 +165,7 @@ type LaunchTmuxResult struct {
 
 // EnsureProjectOpencodeRequest asks the owning host to guarantee exactly
 // one running opencode instance for the project containing ProjectDir
-// (any path inside the repo). See spec/one-opencode-per-project D-1/D-4.
+// (any path inside the repo).
 type EnsureProjectOpencodeRequest struct {
 	ProjectDir string `json:"projectDir"`
 }

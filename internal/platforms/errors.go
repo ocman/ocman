@@ -21,8 +21,7 @@ var ErrHistoryUnavailable = errors.New("platforms: conversation history unavaila
 
 // ErrBusy is returned by interactive operations (SendMessage on
 // platforms that can't interleave) when the target session is mid-turn and
-// accepting another prompt would corrupt the conversation tree. See
-// AD-13 and spec/multi-agent-support/phase7/findings.md. Handlers
+// accepting another prompt would corrupt the conversation tree. Handlers
 // translate this into HTTP 409 Conflict.
 var ErrBusy = errors.New("platforms: session is currently processing a prompt")
 

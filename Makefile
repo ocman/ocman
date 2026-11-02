@@ -327,8 +327,7 @@ export FUZZTIME
 test-fuzz: ## Run all Fuzz* targets for FUZZTIME (default 10s) each
 	./scripts/fuzz.sh
 
-# Print per-package coverage for internal/. Used to verify the NFR-3
-# coverage targets in spec/backend-hardening.
+# Print per-package coverage for internal/.
 test-coverage: ## Print per-package Go coverage for internal/
 	go test -cover ./internal/...
 	cd sdk && go test -cover ./...

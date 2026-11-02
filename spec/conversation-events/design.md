@@ -1013,7 +1013,7 @@ sequenceDiagram
 Today every reconnect triggers `doFetch('reconcile')` and bumps
 `changesDirtyTick` (`evtSource.onopen`). With OCE those happen only when
 `resumed:false`. Switching back to a cached session
-(`useApiStore.getCachedSession`, `spec/session-switch-cache`) reuses the
+(`useApiStore.getCachedSession`) reuses the
 stored cursor. A resumed stream brings the view current without a fetch.
 
 ### 7.3 Gap detection and healing

@@ -2,7 +2,7 @@
 //
 // Rewritten on top of `useSession` (single reducer, one SSE stream)
 // and `usePendingSend` (optimistic user bubble outside the view).
-// See spec/sse-rewrite/architecture.md for the design rationale.
+// See docs/adr/0010-fold-live-session-state-through-pure-reducers.md.
 //
 // The page is large because it owns orchestration: sidebar, header,
 // palette commands, shortcuts, tmux, capabilities, prompt handling,

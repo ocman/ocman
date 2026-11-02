@@ -1,0 +1,9 @@
+# Order the session sidebar by completed turns
+
+With several agents running at once, ordering sidebar rows by the session's last update made them jump while they streamed: every token, tool step or title change moved a row to the top, so the list never settled while the user was trying to pick a session. We looked at how other clients handle this. Open WebUI sorts by a broad `updated_at` and keeps unread state separate, Slack separates ordering from its unread workflow, and Codex distinguishes completion from required input in notifications without documenting its sidebar order. None of them proves completion-only ordering, so the choice rests on ocman's concurrent-agent workflow.
+
+Ordinary rows sort by the time of their last completed top-level assistant turn, newest first, with errors counting as completed turns. Tool steps and compaction summaries are not completed turns. Sessions without a completed turn use their creation time, and pinned sessions keep their pin order. Sending a prompt, streaming output, viewing a session and marking it read do not change its key. The key comes from durable message metadata (`internal/db/session_completion.go`), not from when the browser saw an event, so polling, reconnect replay and restarts do not make an old completion look new.
+
+Unread and needs-input state stay independent of order. A completed, unseen reply marks the row unread, and reading clears that without moving it. Permission and question prompts show their indicators as soon as they are asked, before the turn completes.
+
+Consequences: a busy session keeps its place until it finishes, and rows move only when a turn completes. A session that is running for a long time can sink below others that complete in the meantime; its status indicator, not its position, signals activity.

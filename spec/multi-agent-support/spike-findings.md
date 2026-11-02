@@ -395,12 +395,12 @@ hook status as AD-11 already requires.
 The direct-pipe supervisor design can work. The literal AD-6 launch command
 cannot work without `--verbose`, and native `!cmd` forwarding cannot implement
 shell semantics. These corrections and unresolved protocol assumptions are
-recorded in [deviations.md](deviations.md). No provider code was changed here.
+recorded in the delivery's `deviations.md` log, now in Git history. No provider code was changed here.
 
 ## Where the findings landed (1.3.61 re-audit)
 
 The measurements above are unchanged; this maps each design-effects row to
-the implementation after recovery. Details are in `deviations.md`.
+the implementation after recovery.
 
 | Row | Outcome |
 |---|---|

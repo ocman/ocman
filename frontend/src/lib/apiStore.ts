@@ -30,7 +30,7 @@ export const CLOSED_SESSION_STACK_MAX = 10;
  * cache. Entries are evicted in LRU order when this limit is exceeded.
  * useSession stores only the newest page of each session (`latestPage`), so
  * an entry stays small; 10 covers recent navigation plus sessions warmed by
- * a sidebar hover. See spec/session-switch-cache/architecture.md.
+ * a sidebar hover.
  */
 export const SESSION_CACHE_MAX = 10;
 
@@ -51,7 +51,7 @@ type ApiStore = {
   pushClosedSession: (session: ClosedSession) => void;
   popClosedSession: () => ClosedSession | null;
   // LRU cache of session detail responses, used to render recently-viewed
-  // sessions instantly on return. See spec/session-switch-cache.
+  // sessions instantly on return, then revalidate in the background.
   sessionCache: Map<string, SessionDetail>;
   sessionCacheOrder: string[];
   getCachedSession: (id: string) => SessionDetail | null;

@@ -277,11 +277,9 @@ utilisation.
 
 - The spec lives in `spec/multi-agent-support/` on the Epic's shared branch
   `factory/claude-code-provider`.
-- Any departure from `requirements.md` or `architecture.md` is recorded in
-  `deviations.md` in the same commit as the change, using its entry format.
-- A final conformance review audits the combined change against every FR,
-  NFR and AD, records anything missing in `deviations.md`, and links the
-  log from the pull request description.
+- Departures from `requirements.md` or `architecture.md` were recorded in a
+  `deviations.md` log during delivery. The final audit is in
+  `conformance.md`; the log itself is in Git history.
 
 ## Phases
 
@@ -294,7 +292,7 @@ utilisation.
 | 4 | Claude interactive: composer, queue, permissions + judge, worktrees, PR launch, routines, MCP create, `limited` status | yes |
 | 5 | Factory, plugin conversations, analytics for Claude | yes |
 | 6 | Remotes, user docs (`docs/features/`), architecture diagrams | yes |
-| 7 | Spec conformance review; complete `deviations.md` | yes |
+| 7 | Spec conformance review (`conformance.md`) | yes |
 
 ## Risks
 
