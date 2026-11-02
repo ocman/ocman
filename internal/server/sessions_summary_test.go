@@ -32,7 +32,7 @@ func (p *summaryPlatform) Session(context.Context, string, int, int) (*platforms
 func TestPinnedSessionsUseSummaryWithoutTranscript(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
 	for _, owner := range []string{"opencode", "r-box:opencode"} {
-		p := &summaryPlatform{fakePlatform: fakePlatform{id: owner}, row: mkSession(owner, "old", owner, 1)}
+		p := &summaryPlatform{fakePlatform: fakePlatform{PlatformID: owner}, row: mkSession(owner, "old", owner, 1)}
 		reg.Register(p)
 		for _, id := range []string{"old", "deleted"} {
 			if err := s.stateDB.PinSession(t.Context(), owner, id); err != nil {

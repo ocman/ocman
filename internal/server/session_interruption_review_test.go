@@ -13,8 +13,9 @@ import (
 	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type replacementReviewRuntime struct {
@@ -43,7 +44,7 @@ func TestReplacementReviewSettledBaseline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 				return &platforms.SessionLifecycle{Status: status, LatestMessageID: "m"}, nil
 			}})
 			if err := recordStoppedReplacement(t, srv, "/repo", "requested restart"); err != nil {
@@ -80,7 +81,7 @@ func TestReplacementReviewFailedStopRefreshesTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, message := db.StatusBusy, "old"
-	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: status, LatestMessageID: message}, nil
 	}})
 	stopErr := errors.New("stop failed")
@@ -115,7 +116,7 @@ func TestReplacementReviewAbortDuringStopAndRecovery(t *testing.T) {
 		t.Run(fmt.Sprintf("recovery=%t", recovery), func(t *testing.T) {
 			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
-			path := testStateAt(t, filepath.Join(t.TempDir(), "replacement-state.db"))
+			path := statetest.At(t, filepath.Join(t.TempDir(), "replacement-state.db"), ModuleSchemas()...)
 			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)
@@ -129,7 +130,7 @@ func TestReplacementReviewAbortDuringStopAndRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			status := db.StatusBusy
-			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 				return &platforms.SessionLifecycle{Status: status, LatestMessageID: "m"}, nil
 			}})
 			aborted := ""

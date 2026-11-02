@@ -19,11 +19,11 @@ func (p *failedNotificationSidebar) SidebarSessions(context.Context, platforms.S
 
 func TestBrowserNotificationsKeepHealthyCompactRowsWhenRemoteFails(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
-	reg.Register(&compactTestPlatform{fakePlatform: &fakePlatform{id: "local", sessionsHook: func(context.Context, string, int64) ([]db.Session, error) {
+	reg.Register(&compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "local", SessionsFn: func(context.Context, string, int64) ([]db.Session, error) {
 		t.Fatal("notification reader fell back to the native session list")
 		return nil, nil
 	}}, rows: []db.Session{{ID: "healthy", Platform: "local", Status: db.StatusWaiting, UnreadCount: 1, TimeUpdated: 100}}})
-	reg.Register(&failedNotificationSidebar{remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: "r-failed:local"}}})
+	reg.Register(&failedNotificationSidebar{remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-failed:local"}}})
 	rows, err := s.notificationSessionRows(t.Context(), 0, 500)
 	if err != nil || len(rows) != 1 || rows[0].ID != "healthy" {
 		t.Fatalf("one failed remote suppressed healthy browser notifications: %+v %v", rows, err)

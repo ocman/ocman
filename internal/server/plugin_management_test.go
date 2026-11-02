@@ -14,6 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/pluginsmod"
 	"github.com/ocman/ocman/internal/remote"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/testutil"
 	plugins "github.com/ocman/ocman/sdk/protocol"
 )
@@ -35,11 +36,7 @@ func newPluginManagementTestWithTimeout(t *testing.T, readyTimeout time.Duration
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, ModuleSchemas()...)
 	s := &Server{stateDB: db, auth: newTestAuth(t, "password")}
 	if readyTimeout > 0 {
 		s.pluginsMod.set(pluginsmod.NewModule(pluginsmod.Deps{

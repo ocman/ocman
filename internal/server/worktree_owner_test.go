@@ -197,9 +197,9 @@ func TestRelaunchOpencodeForSession_UsesAdapterOwner(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
 			reg.Register(&fakePlatform{
-				id:       tc.platform,
-				sessions: []db.Session{mkSession(tc.platform, "s1", "t", 1)},
-				sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+				PlatformID:  tc.platform,
+				SessionList: []db.Session{mkSession(tc.platform, "s1", "t", 1)},
+				SessionFn: func(id string) (*platforms.SessionDetail, error) {
 					return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/home/u/.worktrees/repo/feat"}}, nil
 				},
 			})

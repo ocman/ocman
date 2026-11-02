@@ -29,7 +29,7 @@ type hookHost struct {
 func TestHookPluginChangesUseLocalHost(t *testing.T) {
 	srv := testServer(t)
 	var events []providerprotocol.HookEvent
-	platform := hookPlatform{fakePlatform: &fakePlatform{id: "claudecode"}, events: &events, installed: new(bool)}
+	platform := hookPlatform{fakePlatform: &fakePlatform{PlatformID: "claudecode"}, events: &events, installed: new(bool)}
 	host := &hookHost{hookPlatform: hookPlatform{installed: new(bool)}}
 	srv.registry.Register(platform)
 	srv.hostRouter = hostsvc.NewRouter(host)
@@ -58,7 +58,7 @@ func TestHookReachesPlatformOnMCPListener(t *testing.T) {
 	srv := testServer(t)
 	srv.auth = newTestAuth(t, "hunter2")
 	var events []providerprotocol.HookEvent
-	srv.registry.Register(hookPlatform{fakePlatform: &fakePlatform{id: "claudecode"}, events: &events, installed: new(bool), err: errors.New("down")})
+	srv.registry.Register(hookPlatform{fakePlatform: &fakePlatform{PlatformID: "claudecode"}, events: &events, installed: new(bool), err: errors.New("down")})
 	srv.mcpAddr = "127.0.0.1:0"
 	defer srv.startMCPListener()()
 
@@ -118,7 +118,7 @@ func TestHookPluginInstallAndUninstall(t *testing.T) {
 	}
 
 	var events []providerprotocol.HookEvent
-	p := hookPlatform{fakePlatform: &fakePlatform{id: "claudecode"}, events: &events, installed: new(bool)}
+	p := hookPlatform{fakePlatform: &fakePlatform{PlatformID: "claudecode"}, events: &events, installed: new(bool)}
 	srv.registry.Register(p)
 	if code, got := call(http.MethodPost, "/api/hook-plugin/install"); code != http.StatusOK || !got["available"] || !got["installed"] {
 		t.Fatalf("install: %d %v", code, got)
@@ -140,7 +140,7 @@ func TestHookPluginInstallAndUninstall(t *testing.T) {
 func TestHookPluginInstallFailure(t *testing.T) {
 	srv := testServer(t)
 	var events []providerprotocol.HookEvent
-	srv.registry.Register(hookPlatform{fakePlatform: &fakePlatform{id: "claudecode"}, events: &events, installed: new(bool), err: errors.New("claude plugin install: exit 1")})
+	srv.registry.Register(hookPlatform{fakePlatform: &fakePlatform{PlatformID: "claudecode"}, events: &events, installed: new(bool), err: errors.New("claude plugin install: exit 1")})
 	rec := httptest.NewRecorder()
 	srv.handleHookPlugin(rec, httptest.NewRequest(http.MethodPost, "/api/hook-plugin/install", nil))
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "exit 1") {

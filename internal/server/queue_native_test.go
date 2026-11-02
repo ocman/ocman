@@ -32,9 +32,9 @@ var _ platforms.NativeQueue = (*nativeQueuePlatform)(nil)
 func newNativeQueuePlatform() *nativeQueuePlatform {
 	p := &nativeQueuePlatform{}
 	p.fakePlatform = &fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		PlatformID:  "fake",
+		SessionList: []db.Session{mkSession("fake", "s1", "t", 1)},
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			p.sends = append(p.sends, req)
@@ -48,7 +48,7 @@ func newNativeQueuePlatform() *nativeQueuePlatform {
 			return nil
 		},
 		// Mid-turn throughout, so ocman's queue holds instead of sending.
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusBusy}}, nil
 		},
 	}
@@ -113,13 +113,13 @@ func TestEnqueueFollowUp_WithoutNativeQueueUsesOcmanQueue(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	var sends []platforms.SendMessageRequest
 	reg.Register(&fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		PlatformID:  "fake",
+		SessionList: []db.Session{mkSession("fake", "s1", "t", 1)},
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			sends = append(sends, req)
 			return nil
 		},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusBusy}}, nil
 		},
 	})
@@ -277,7 +277,7 @@ func TestSessionQueueDelete_Native(t *testing.T) {
 // best-effort queuesvc delete.
 func TestSessionQueueDelete_MsgIDWithoutNativeQueue(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{mkSession("fake", "s1", "t", 1)}})
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{mkSession("fake", "s1", "t", 1)}})
 	if code := deleteQueued(t, srv, "msg_x"); code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204", code)
 	}
@@ -315,7 +315,7 @@ func TestEnqueueFollowUp_UncertainNativeSendIsNotReplayed(t *testing.T) {
 	p := newNativeQueuePlatform()
 	// Simulate the remote durably accepting the input, then losing the
 	// gRPC response. The hub cannot tell whether admission happened.
-	p.sendMessageFn = func(req platforms.SendMessageRequest) error {
+	p.SendMessageFn = func(req platforms.SendMessageRequest) error {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		p.sends = append(p.sends, req)

@@ -18,7 +18,7 @@ func (p *eventPlatform) SetSessionEventSink(sink platforms.SessionEventSink) { p
 func TestPlatformIdleSinkDrainsQueue(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	sent := 0
-	p := &eventPlatform{fakePlatform: &fakePlatform{id: "fake", sendMessageFn: func(platforms.SendMessageRequest) error { sent++; return nil }}}
+	p := &eventPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SendMessageFn: func(platforms.SendMessageRequest) error { sent++; return nil }}}
 	reg.Register(p)
 	postQueuedMessage(t, srv, "fake", "s1", "held")
 	p.sink.OnSessionIdle("fake", "s1")
@@ -32,7 +32,7 @@ func TestPlatformIdleSinkDrainsQueue(t *testing.T) {
 
 func TestPlatformStatusSink(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	p := &eventPlatform{fakePlatform: &fakePlatform{id: "fake"}}
+	p := &eventPlatform{fakePlatform: &fakePlatform{PlatformID: "fake"}}
 	reg.Register(p)
 	// Installing a sink also wires sources registered before the server.
 	reg.SetSessionEventSink(srv.sessionEventSink())
@@ -85,8 +85,8 @@ func TestLimitedSessionDoesNotDrainSweep(t *testing.T) {
 		t.Run(map[bool]string{false: "detail", true: "lifecycle"}[bounded], func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
 			sent := 0
-			p := &fakePlatform{id: "fake", sendMessageFn: func(platforms.SendMessageRequest) error { sent++; return nil },
-				sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			p := &fakePlatform{PlatformID: "fake", SendMessageFn: func(platforms.SendMessageRequest) error { sent++; return nil },
+				SessionFn: func(id string) (*platforms.SessionDetail, error) {
 					return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusLimited}}, nil
 				}}
 			if bounded {

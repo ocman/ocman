@@ -49,7 +49,7 @@ func TestQueueShutdownCancelsRealSenderPreparation(t *testing.T) {
 			s, reg := newSessionsTestServer(t)
 			sent := make(chan struct{}, 1)
 			p := &coldQueueOwner{
-				fakePlatform: &fakePlatform{id: "r-cold:opencode", sendMessageFn: func(platforms.SendMessageRequest) error { sent <- struct{}{}; return nil }},
+				fakePlatform: &fakePlatform{PlatformID: "r-cold:opencode", SendMessageFn: func(platforms.SendMessageRequest) error { sent <- struct{}{}; return nil }},
 				blockAt:      blockAt, entered: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{}), t: t,
 			}
 			reg.Register(p)

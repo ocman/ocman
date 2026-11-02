@@ -36,7 +36,7 @@ func TestPrepareSessionReturnsCatalogWithoutLaunching(t *testing.T) {
 		return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 	}})
 	var asked platforms.DirectoryCatalogRequest
-	reg.Register(&fakePlatform{id: "opencode", directoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	reg.Register(&fakePlatform{PlatformID: "opencode", DirectoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
 		asked = req
 		return &platforms.DirectoryCatalog{
 			Agents:       []platforms.AgentCatalogEntry{{Name: "build"}},
@@ -72,7 +72,7 @@ func TestPrepareSessionReturnsCatalogWithoutLaunching(t *testing.T) {
 
 func TestPrepareSessionRejectsBadInput(t *testing.T) {
 	srv, reg := startTestServer(t, nil)
-	reg.Register(&fakePlatform{id: "opencode"})
+	reg.Register(&fakePlatform{PlatformID: "opencode"})
 	for name, body := range map[string]string{
 		"relative":         `{"platform":"opencode","directory":"repo"}`,
 		"missing":          `{"platform":"opencode"}`,
@@ -98,13 +98,13 @@ func TestStartSessionCurrentCheckoutSendsFirstMessage(t *testing.T) {
 			var created platforms.CreateSessionRequest
 			var sent platforms.SendMessageRequest
 			reg.Register(&fakePlatform{
-				id:       "opencode",
-				sessions: []db.Session{mkSession("opencode", "s1", "t", 1)},
-				createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				PlatformID:  "opencode",
+				SessionList: []db.Session{mkSession("opencode", "s1", "t", 1)},
+				CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					created = req
 					return &platforms.CreateSessionResponse{ID: "s1"}, nil
 				},
-				sendMessageFn: func(req platforms.SendMessageRequest) error {
+				SendMessageFn: func(req platforms.SendMessageRequest) error {
 					sent = req
 					if fail {
 						return errors.New("boom")
@@ -155,9 +155,9 @@ func TestStartSessionWorktreeRoutesToOwner(t *testing.T) {
 	srv.hostRouter.RegisterRemote("machine", owner)
 	var sent platforms.SendMessageRequest
 	reg.Register(&fakePlatform{
-		id:            "r-machine:opencode",
-		sessions:      []db.Session{mkSession("r-machine:opencode", "child", "t", 1)},
-		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+		PlatformID:    "r-machine:opencode",
+		SessionList:   []db.Session{mkSession("r-machine:opencode", "child", "t", 1)},
+		SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
 	body := `{"platform":"r-machine:opencode","directory":"/remote/repo","worktree":true,"prompt":"/review main","send":{"message":"/review main"}}`
 	w := httptest.NewRecorder()
@@ -216,7 +216,7 @@ func TestSessionLaunchRoutesRejectUntrustedClients(t *testing.T) {
 					calls++
 					return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 				}})
-				reg.Register(&fakePlatform{id: "opencode"})
+				reg.Register(&fakePlatform{PlatformID: "opencode"})
 				mux, err := srv.routes()
 				if err != nil {
 					t.Fatal(err)
@@ -240,10 +240,10 @@ func TestLocalSessionLaunchWithConnectedRemote(t *testing.T) {
 	for _, prepare := range []bool{true, false} {
 		t.Run(map[bool]string{true: "prepare", false: "start"}[prepare], func(t *testing.T) {
 			srv, reg := startTestServer(t, nil)
-			reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			reg.Register(&fakePlatform{PlatformID: "opencode", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 				return &platforms.CreateSessionResponse{ID: "local-created"}, nil
 			}})
-			reg.Register(&fakePlatform{id: "r-box:opencode", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			reg.Register(&fakePlatform{PlatformID: "r-box:opencode", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 				t.Fatal("local draft must never create on the remote")
 				return nil, nil
 			}})
@@ -290,12 +290,12 @@ func TestClaudeRemoteFailsClosedWhenDisconnected(t *testing.T) {
 func TestStartSessionBroadcastsProgress(t *testing.T) {
 	srv, reg := startTestServer(t, nil)
 	reg.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{mkSession("opencode", "s1", "t", 1)},
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{mkSession("opencode", "s1", "t", 1)},
+		CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "s1"}, nil
 		},
-		sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
+		SendMessageFn: func(platforms.SendMessageRequest) error { return nil },
 	})
 	sub, unsub := srv.broadcastHub.subscribe()
 	defer unsub()
@@ -334,10 +334,10 @@ func TestPrepareSessionMergesPlatformModels(t *testing.T) {
 		}
 	}
 	composer := platforms.Capabilities{Composer: true}
-	reg.Register(&fakePlatform{id: "opencode", caps: composer, directoryCatalogFn: catalog("anthropic", "claude-sonnet")})
-	reg.Register(&fakePlatform{id: "claudecode", caps: composer, directoryCatalogFn: catalog("anthropic", "sonnet")})
-	reg.Register(&fakePlatform{id: "r-box:claudecode", caps: composer, directoryCatalogFn: catalog("anthropic", "remote")})
-	reg.Register(&fakePlatform{id: "browse-only", directoryCatalogFn: catalog("x", "y")})
+	reg.Register(&fakePlatform{PlatformID: "opencode", Caps: composer, DirectoryCatalogFn: catalog("anthropic", "claude-sonnet")})
+	reg.Register(&fakePlatform{PlatformID: "claudecode", Caps: composer, DirectoryCatalogFn: catalog("anthropic", "sonnet")})
+	reg.Register(&fakePlatform{PlatformID: "r-box:claudecode", Caps: composer, DirectoryCatalogFn: catalog("anthropic", "remote")})
+	reg.Register(&fakePlatform{PlatformID: "browse-only", DirectoryCatalogFn: catalog("x", "y")})
 	w := httptest.NewRecorder()
 	srv.sessionLifecycleModule().HandlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare",
 		strings.NewReader(`{"platform":"opencode","directory":"/repo"}`)))

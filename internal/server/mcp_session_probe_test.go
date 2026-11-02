@@ -22,7 +22,7 @@ func TestMCPCreateSessionProductionProbeFailure(t *testing.T) {
 		return hostsvc.HostCaps{OpencodeLaunch: true}
 	}}))
 	created := false
-	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	reg.Register(&fakePlatform{PlatformID: "opencode", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		created = true
 		return &platforms.CreateSessionResponse{ID: "unexpected"}, nil
 	}})

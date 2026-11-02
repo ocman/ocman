@@ -14,7 +14,7 @@ import (
 func newForkMoveTestServer(t *testing.T, fake *fakePlatform) *Server {
 	t.Helper()
 	srv, reg := newSessionsTestServer(t)
-	fake.sessions = []db.Session{mkSession(string(fake.ID()), "sess-1", "t", 1000)}
+	fake.SessionList = []db.Session{mkSession(string(fake.ID()), "sess-1", "t", 1000)}
 	reg.Register(fake)
 	return srv
 }
@@ -22,8 +22,8 @@ func newForkMoveTestServer(t *testing.T, fake *fakePlatform) *Server {
 func TestSessionFork_Post(t *testing.T) {
 	var got *platforms.ForkSessionRequest
 	fake := &fakePlatform{
-		id: "fake",
-		forkSessionFn: func(req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "fake",
+		ForkSessionFn: func(req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
 			got = &req
 			return &platforms.CreateSessionResponse{ID: "sess-forked"}, nil
 		},
@@ -54,8 +54,8 @@ func TestSessionFork_Post(t *testing.T) {
 func TestSessionMove_Post(t *testing.T) {
 	var got *platforms.MoveSessionRequest
 	fake := &fakePlatform{
-		id: "fake",
-		moveSessionFn: func(req platforms.MoveSessionRequest) error {
+		PlatformID: "fake",
+		MoveSessionFn: func(req platforms.MoveSessionRequest) error {
 			got = &req
 			return nil
 		},
@@ -77,8 +77,8 @@ func TestSessionMove_Post(t *testing.T) {
 func TestSessionMove_MissingDirectoryIsValidationError(t *testing.T) {
 	called := false
 	fake := &fakePlatform{
-		id: "fake",
-		moveSessionFn: func(platforms.MoveSessionRequest) error {
+		PlatformID: "fake",
+		MoveSessionFn: func(platforms.MoveSessionRequest) error {
 			called = true
 			return nil
 		},

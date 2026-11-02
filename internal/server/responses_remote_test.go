@@ -20,7 +20,7 @@ func TestCanceledRPCResponses(t *testing.T) {
 	host := local.New(local.Deps{})
 	hub.hostRouter = hostsvc.NewRouter(host)
 	ownerRegistry := platforms.NewRegistry()
-	ownerRegistry.Register(&fakePlatform{id: "opencode"})
+	ownerRegistry.Register(&fakePlatform{PlatformID: "opencode"})
 	listener, err := remote.NewListener(remote.ListenConfig{Addr: "127.0.0.1:0", Token: "token", TrustedOverlay: true}, remote.NewServer(ownerRegistry, host, "machine", "test"))
 	if err != nil {
 		t.Fatal(err)

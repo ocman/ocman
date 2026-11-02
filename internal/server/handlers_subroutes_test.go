@@ -27,10 +27,10 @@ func TestDispatchSessionSubpath_GETSubroutes_ReachHandlers(t *testing.T) {
 	const sid = "sess-1"
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{mkSession("fake", sid, "t", 1000)},
+		PlatformID:  "fake",
+		SessionList: []db.Session{mkSession("fake", sid, "t", 1000)},
 		// A non-nil session detail keeps handleSession happy.
-		info: &platforms.SessionInfo{},
+		Info: &platforms.SessionInfo{},
 	})
 
 	cases := []struct {

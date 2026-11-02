@@ -20,6 +20,7 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type controlFixture struct {
@@ -37,14 +38,14 @@ func newControlFixture(t *testing.T) *controlFixture {
 	t.Helper()
 	f := &controlFixture{}
 	endpoint := connectedPlanningMCP(t)
-	f.platform = &fakePlatform{id: "local-agent", caps: platforms.Capabilities{PermissionRules: true}}
-	f.platform.createSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	f.platform = &fakePlatform{PlatformID: "local-agent", Caps: platforms.Capabilities{PermissionRules: true}}
+	f.platform.CreateSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		f.creates++
-		f.platform.sessions = append(f.platform.sessions, db.Session{ID: "control-1"})
+		f.platform.SessionList = append(f.platform.SessionList, db.Session{ID: "control-1"})
 		return &platforms.CreateSessionResponse{ID: "control-1"}, nil
 	}
-	f.platform.setPermissionRulesFn = func(req platforms.SetPermissionRulesRequest) error { f.rules = req; return nil }
-	f.platform.sendMessageFn = func(req platforms.SendMessageRequest) error {
+	f.platform.SetPermissionRulesFn = func(req platforms.SetPermissionRulesRequest) error { f.rules = req; return nil }
+	f.platform.SendMessageFn = func(req platforms.SendMessageRequest) error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.sent = append(f.sent, req)
@@ -52,7 +53,7 @@ func newControlFixture(t *testing.T) *controlFixture {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(f.platform)
-	f.srv = New(nil, openTestStateDB(t), "", registry, nil)
+	f.srv = New(nil, statetest.Open(t, ModuleSchemas()...), "", registry, nil)
 	tracer := factory.BuiltInTracerFormula()
 	if _, err := f.srv.stateDB.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "epic-1", "Ship", "", "/repo", "", model.NativeFormula{ID: tracer.ID, Version: tracer.Version, Source: tracer.Source, Hash: tracer.Hash,
 		Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}, nil, nil); err != nil {
@@ -143,7 +144,7 @@ func TestFactoryControlSessionIsOnePerEpic(t *testing.T) {
 	}
 
 	// A control session that no longer exists is replaced.
-	f.platform.sessions = nil
+	f.platform.SessionList = nil
 	if got := f.call(http.MethodPost, "/api/factory/epics/epic-1/control"); got.Code != http.StatusOK || f.creates != 2 {
 		t.Fatalf("replace = %d, creates %d", got.Code, f.creates)
 	}
@@ -160,7 +161,7 @@ func TestFactoryControlMessagesRespectEpicPlanningModel(t *testing.T) {
 		t.Run("model="+selected, func(t *testing.T) {
 			f := newControlFixture(t)
 			f.svc.epics[0].Models = model.EpicModels{Plan: selected, Implementation: "test/implementer", Verification: "test/verifier"}
-			f.platform.sessionModelsFn = func() *platforms.SessionModelsResponse {
+			f.platform.SessionModelsFn = func() *platforms.SessionModelsResponse {
 				return &platforms.SessionModelsResponse{Models: []platforms.SessionModel{{Provider: "test", Model: "astra", IsAvailable: true}}}
 			}
 			if _, err := f.srv.factoryModule().PostControl(t.Context(), "epic-1", "First update"); err != nil {
@@ -235,8 +236,8 @@ func TestFactoryDiscussIssueWithManyInstalledSkills(t *testing.T) {
 func TestFactoryControlSessionIsNotAdoptedWithoutItsProtocol(t *testing.T) {
 	f := newControlFixture(t)
 	aborted := false
-	f.platform.abortFn = func(req platforms.AbortRequest) error { aborted = req.SessionID == "control-1"; return nil }
-	f.platform.sendMessageFn = func(platforms.SendMessageRequest) error { return errors.New("response lost") }
+	f.platform.AbortFn = func(req platforms.AbortRequest) error { aborted = req.SessionID == "control-1"; return nil }
+	f.platform.SendMessageFn = func(platforms.SendMessageRequest) error { return errors.New("response lost") }
 	if got := f.call(http.MethodPost, "/api/factory/epics/epic-1/control"); got.Code == http.StatusOK || !aborted {
 		t.Fatalf("failed start = %d, aborted %v", got.Code, aborted)
 	}
@@ -350,7 +351,7 @@ func TestFactoryControlSessionSurvivesOwnsMisses(t *testing.T) {
 	if got := f.call(http.MethodPost, "/api/factory/epics/epic-1/control"); got.Code != http.StatusOK {
 		t.Fatalf("start = %d", got.Code)
 	}
-	f.platform.sessions = nil
+	f.platform.SessionList = nil
 	wrapped := &lifecyclePlatform{fakePlatform: f.platform}
 	registry := platforms.NewRegistry()
 	registry.Register(wrapped)
@@ -372,9 +373,9 @@ func TestFactoryControlSessionSurvivesOwnsMisses(t *testing.T) {
 func TestFactoryControlSessionIsNotAdoptedByAClosingEpic(t *testing.T) {
 	f := newControlFixture(t)
 	aborted := false
-	f.platform.abortFn = func(platforms.AbortRequest) error { aborted = true; return nil }
+	f.platform.AbortFn = func(platforms.AbortRequest) error { aborted = true; return nil }
 	// The Epic closes after the open check, while the session launches.
-	f.platform.sendMessageFn = func(platforms.SendMessageRequest) error {
+	f.platform.SendMessageFn = func(platforms.SendMessageRequest) error {
 		return f.srv.stateDB.CloseFactoryEpic(t.Context(), "epic-1", true)
 	}
 	if _, _, err := f.srv.factoryModule().EnsureControlSession(t.Context(), "epic-1"); err == nil || !aborted {

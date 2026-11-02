@@ -20,7 +20,7 @@ func (p *ownedPushPlatform) HistoryIdentity(context.Context) (platforms.HistoryI
 
 func TestPushNotificationLinksAndDedupKeysUseCanonicalIDs(t *testing.T) {
 	s, base, ownedID := identityHTTPFixture(t)
-	base.sessions = []db.Session{{ID: ownedID, Platform: "test", Status: db.StatusDone, TimeUpdated: time.Now().UnixMilli()}}
+	base.SessionList = []db.Session{{ID: ownedID, Platform: "test", Status: db.StatusDone, TimeUpdated: time.Now().UnixMilli()}}
 	s.registry.Register(&ownedPushPlatform{pushTestPlatform: &pushTestPlatform{fakePlatform: base,
 		life: &platforms.SessionLifecycle{Status: db.StatusDone, LatestMessageID: "message", LatestMessageRole: "assistant"},
 	}})

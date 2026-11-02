@@ -24,7 +24,7 @@ func TestRevokeShareRouteScopesTokenAndDeletesRelayCopy(t *testing.T) {
 			relay := newTestRelay(t)
 			srv, registry := newSessionsTestServer(t)
 			registerShareFake(registry, "session")
-			registry.Register(&fakePlatform{id: "other"})
+			registry.Register(&fakePlatform{PlatformID: "other"})
 			srv.WithRelay(relay.URL, "flag")
 			mux, err := srv.routes()
 			if err != nil {

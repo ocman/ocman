@@ -7,7 +7,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestRecoveryHooksResolveCurrentServerDependencies(t *testing.T) {
@@ -16,15 +16,11 @@ func TestRecoveryHooksResolveCurrentServerDependencies(t *testing.T) {
 	// server. Their service must resolve the database and adapter on invocation.
 	record, confirm := srv.recordOpencodeReplacement, srv.confirmOpencodeReplacement
 	original := srv.stateDB
-	store, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
+	store := statetest.Open(t, ModuleSchemas()...)
 	srv.stateDB = store
 	srv.registry = platforms.NewRegistry()
 	srv.registry.Register(&interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "fresh", Directory: "/checkout"}}},
+		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "fresh", Directory: "/checkout"}}},
 		lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 			return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "turn"}, nil
 		},

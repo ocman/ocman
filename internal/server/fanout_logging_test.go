@@ -27,7 +27,7 @@ func TestSessionListFailureLogging(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := &Server{registry: platforms.NewRegistry()}
-			srv.registry.Register(&fakePlatform{id: "fake", sessionsHook: func(context.Context, string, int64) ([]db.Session, error) {
+			srv.registry.Register(&fakePlatform{PlatformID: "fake", SessionsFn: func(context.Context, string, int64) ([]db.Session, error) {
 				return nil, tc.err
 			}})
 			logger := log.StandardLogger()
@@ -61,7 +61,7 @@ func TestSessionListFailureLogging(t *testing.T) {
 func TestSessionListCancellationDoesNotHideOtherPlatformFailure(t *testing.T) {
 	srv := &Server{registry: platforms.NewRegistry()}
 	for id, failure := range map[string]error{"canceled": context.Canceled, "failed": errors.New("upstream unavailable")} {
-		srv.registry.Register(&fakePlatform{id: id, sessionsHook: func(context.Context, string, int64) ([]db.Session, error) {
+		srv.registry.Register(&fakePlatform{PlatformID: id, SessionsFn: func(context.Context, string, int64) ([]db.Session, error) {
 			return nil, failure
 		}})
 	}
@@ -77,8 +77,8 @@ func TestSessionListCancellationDoesNotHideOtherPlatformFailure(t *testing.T) {
 
 func TestSessionListUnavailableAndStaleAdaptersStayQuiet(t *testing.T) {
 	srv := &Server{registry: platforms.NewRegistry()}
-	srv.registry.Register(&fakePlatform{id: "offline", available: new(false)})
-	srv.registry.Register(&fakePlatform{id: "stale", sessions: []db.Session{{ID: "old", Stale: true}}})
+	srv.registry.Register(&fakePlatform{PlatformID: "offline", Availability: new(false)})
+	srv.registry.Register(&fakePlatform{PlatformID: "stale", SessionList: []db.Session{{ID: "old", Stale: true}}})
 	logger := log.StandardLogger()
 	oldHooks := logger.ReplaceHooks(make(log.LevelHooks))
 	t.Cleanup(func() { logger.ReplaceHooks(oldHooks) })

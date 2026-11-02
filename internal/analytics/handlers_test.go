@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/module/moduletest"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -27,7 +28,7 @@ func TestSessionConcurrencyRoute(t *testing.T) {
 	if rec := f.serve(http.MethodGet, "/api/analytics/session-concurrency", ""); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("closed database = %d", rec.Code)
 	}
-	if rec := serve(routes(newTestModule(Deps{})), http.MethodGet, "/api/analytics/session-concurrency", ""); rec.Code == http.StatusOK {
+	if rec := moduletest.Do(routes(newTestModule(Deps{})), http.MethodGet, "/api/analytics/session-concurrency", "", ""); rec.Code == http.StatusOK {
 		t.Fatal("expected missing database error")
 	}
 }
@@ -105,7 +106,7 @@ func TestDatabaseSizesRouteFiltersByDays(t *testing.T) {
 }
 
 func TestDatabaseSizesWithoutStateDB(t *testing.T) {
-	rec := serve(routes(newTestModule(Deps{})), http.MethodGet, "/api/analytics/database-sizes", "")
+	rec := moduletest.Do(routes(newTestModule(Deps{})), http.MethodGet, "/api/analytics/database-sizes", "", "")
 	if rec.Code != http.StatusOK || rec.Body.String() != "[]\n" {
 		t.Fatalf("response = %d %q", rec.Code, rec.Body.String())
 	}

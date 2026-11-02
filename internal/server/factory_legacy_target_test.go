@@ -24,7 +24,7 @@ func TestFactoryLegacyDetachedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := platforms.NewRegistry()
-	registry.Register(&fakePlatform{id: "test", sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+	registry.Register(&fakePlatform{PlatformID: "test", SessionFn: func(string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &db.Session{Directory: filepath.Clean(created.Path)}}, nil
 	}})
 	srv := New(nil, nil, "", registry, nil)

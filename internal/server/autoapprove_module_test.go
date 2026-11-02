@@ -14,9 +14,9 @@ import (
 // server-wide default at request time.
 func TestAutoApproveModuleRoutesThroughServer(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "ses-1", Platform: "opencode"}}}
+	fp := &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "ses-1", Platform: "opencode"}}}
 	reg.Register(fp)
-	reg.RememberSessions("opencode", fp.sessions)
+	reg.RememberSessions("opencode", fp.SessionList)
 	get := func(path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)

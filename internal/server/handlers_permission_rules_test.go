@@ -13,10 +13,10 @@ import (
 func newPermissionRulesTestServer(t *testing.T, fake *fakePlatform) *Server {
 	t.Helper()
 	srv, reg := newSessionsTestServer(t)
-	fake.sessions = []db.Session{mkSession(string(fake.ID()), "sess-1", "t", 1000)}
-	if fake.sessionDetailFn == nil {
-		fake.sessionDetailFn = func(string) (*platforms.SessionDetail, error) {
-			return &platforms.SessionDetail{Session: &fake.sessions[0]}, nil
+	fake.SessionList = []db.Session{mkSession(string(fake.ID()), "sess-1", "t", 1000)}
+	if fake.SessionFn == nil {
+		fake.SessionFn = func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &fake.SessionList[0]}, nil
 		}
 	}
 	reg.Register(fake)
@@ -50,7 +50,7 @@ func TestSessionPermissionRules_Get(t *testing.T) {
 		{name: "unsupported", want: http.StatusNotImplemented},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := newPermissionRulesTestServer(t, &fakePlatform{id: "fake", permissionRulesFn: tc.rulesFn})
+			srv := newPermissionRulesTestServer(t, &fakePlatform{PlatformID: "fake", PermissionRulesFn: tc.rulesFn})
 			rr := httptest.NewRecorder()
 			serveRoutes(t, srv, rr, httptest.NewRequest(http.MethodGet, "/api/session/sess-1/permission-rules", nil))
 			if rr.Code != tc.want || !strings.Contains(rr.Body.String(), tc.wantBody) {
@@ -77,8 +77,8 @@ func TestSessionPermissionRules_Put(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got *platforms.SetPermissionRulesRequest
 			srv := newPermissionRulesTestServer(t, &fakePlatform{
-				id: "fake",
-				setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+				PlatformID: "fake",
+				SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
 					got = &req
 					return nil
 				},
@@ -107,25 +107,25 @@ func TestSessionPermissionRules_PutYoloAnswersPendingPrompts(t *testing.T) {
 	var rules []platforms.PermissionRule
 	var replied []platforms.RespondPermissionRequest
 	fake := &fakePlatform{
-		id:   "fake",
-		caps: platforms.Capabilities{PermissionRules: true},
-		setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+		PlatformID: "fake",
+		Caps:       platforms.Capabilities{PermissionRules: true},
+		SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
 			rules = req.Rules
 			return nil
 		},
-		permissionRulesFn: func(sessionID string) ([]platforms.PermissionRule, error) {
+		PermissionRulesFn: func(sessionID string) ([]platforms.PermissionRule, error) {
 			if sessionID != "sess-1" {
 				return nil, nil
 			}
 			return rules, nil
 		},
-		listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+		ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
 			return []platforms.LivePrompt{
 				{"id": "p1", "sessionID": "sess-1", "permission": "bash", "patterns": []any{"rm -rf build"}},
 				{"id": "p2", "sessionID": "sess-1", "permission": "edit", "patterns": []any{"main.go"}},
 			}, nil
 		},
-		respondPermissionFn: func(req platforms.RespondPermissionRequest) error {
+		RespondPermissionFn: func(req platforms.RespondPermissionRequest) error {
 			replied = append(replied, req)
 			return nil
 		},
@@ -164,8 +164,8 @@ func TestSessionPermissionRules_PutValidation(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			called := false
 			fake := &fakePlatform{
-				id: "fake",
-				setPermissionRulesFn: func(platforms.SetPermissionRulesRequest) error {
+				PlatformID: "fake",
+				SetPermissionRulesFn: func(platforms.SetPermissionRulesRequest) error {
 					called = true
 					return nil
 				},

@@ -23,7 +23,7 @@ func TestRestartSkipsDeletedHistoricalCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
 		{ID: "current", Directory: main}, {ID: "historical", Directory: deleted},
 	}}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "turn"}, nil
@@ -76,12 +76,12 @@ func TestReplacementCanonicalMembership(t *testing.T) {
 					t.Fatal(err)
 				}
 				srv, reg := newSessionsTestServer(t)
-				fp := &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+				fp := &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 					return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "turn"}, nil
 				}}
 				reg.Register(fp)
 				if !createdDuringPreparation {
-					fp.sessions = []db.Session{{ID: "s", Directory: dir}}
+					fp.SessionList = []db.Session{{ID: "s", Directory: dir}}
 				}
 				if err := srv.recordOpencodeReplacement(t.Context(), main, "requested restart"); err != nil {
 					t.Fatal(err)
@@ -95,7 +95,7 @@ func TestReplacementCanonicalMembership(t *testing.T) {
 				if sampled != (want && !createdDuringPreparation) {
 					t.Errorf("canonical baseline membership=%t want=%t", sampled, want && !createdDuringPreparation)
 				}
-				fp.sessions = []db.Session{{ID: "s", Directory: dir}}
+				fp.SessionList = []db.Session{{ID: "s", Directory: dir}}
 				if err := srv.confirmOpencodeReplacement(t.Context(), main); err != nil {
 					t.Fatal(err)
 				}

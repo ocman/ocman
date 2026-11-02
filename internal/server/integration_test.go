@@ -21,6 +21,7 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 	opencodeplatform "github.com/ocman/ocman/internal/platforms/opencode/provider"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/statev2"
 )
 
@@ -142,8 +143,8 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	}
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{
-		id: "fake",
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "fake",
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			_, err := rawDB.Exec(
 				`INSERT INTO session (id, title, directory, time_created, time_updated)
 				 VALUES ('new-session', 'new', ?, 3000, 3000)`,
@@ -276,7 +277,7 @@ func TestHandleCreateSession_EnsuresBeforeCreate(t *testing.T) {
 
 			var created *platforms.CreateSessionRequest
 			reg := platforms.NewRegistry()
-			reg.Register(&fakePlatform{id: tc.platform, createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			reg.Register(&fakePlatform{PlatformID: tc.platform, CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 				created = &req
 				return &platforms.CreateSessionResponse{ID: "new-session"}, nil
 			}})
@@ -411,7 +412,7 @@ func TestHandleArchiveSession_StaleClientTimestamp(t *testing.T) {
 func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	srv := testServer(t)
 	const remotePlatform = "r-abc:opencode"
-	srv.registry.Register(&fakePlatform{id: remotePlatform})
+	srv.registry.Register(&fakePlatform{PlatformID: remotePlatform})
 
 	// The remote's clock runs far ahead of the hub: its session's
 	// time_updated is 5,000,000,000,000 (year ~2128) while the hub's
@@ -460,7 +461,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	// activity below hubNow could never resurface it, and a remote
 	// slightly ahead of hub resurfaces immediately. Verbatim storage
 	// keeps the comparison on one clock.
-	srv.registry.Register(&fakePlatform{id: "r-def:opencode"})
+	srv.registry.Register(&fakePlatform{PlatformID: "r-def:opencode"})
 	body2 := strings.NewReader(`{"platform":"r-def:opencode","sessionId":"s2","timeUpdated":2000,"archived":true}`)
 	req2 := httptest.NewRequest(http.MethodPost, "/api/session/archive", body2)
 	rr2 := httptest.NewRecorder()
@@ -825,7 +826,7 @@ func TestServerRetainedStartupWiring(t *testing.T) {
 	if managedStoreOrNil(nil) != nil {
 		t.Fatal("nil state database produced a managed store")
 	}
-	closedState := openTestStateDB(t)
+	closedState := statetest.Open(t, ModuleSchemas()...)
 	_ = closedState.Close()
 	if _, err := managedStoreOrNil(closedState).List(t.Context()); err == nil {
 		t.Fatal("managed store listing hid a database failure")
@@ -1088,7 +1089,7 @@ func newOpenCodeTestServer(t *testing.T) (*Server, *sql.DB) {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	stateDB, err := state.Open(testStateAt(t, tmpDir+"/state.db"), ModuleSchemas()...)
+	stateDB, err := state.Open(statetest.At(t, tmpDir+"/state.db", ModuleSchemas()...), ModuleSchemas()...)
 	if err != nil {
 		setupDB.Close()
 		t.Fatalf("opening state db: %v", err)
@@ -1145,8 +1146,8 @@ func TestHandleSessions_MergesByTimeUpdatedDesc(t *testing.T) {
 	// 5-minute bucket, which is the primary sort key.
 	const minute = int64(60 * 1000)
 	srv.registry.Register(&fakePlatform{
-		id: "other-platform",
-		sessions: []db.Session{
+		PlatformID: "other-platform",
+		SessionList: []db.Session{
 			{ID: "cc-newest", Platform: "other-platform", TimeUpdated: 40 * minute, Directory: "/tmp"},
 			{ID: "cc-oldest", Platform: "other-platform", TimeUpdated: 5 * minute, Directory: "/tmp"},
 		},
@@ -1301,7 +1302,7 @@ func TestHandleSessionChanges_UnsupportedReturns200(t *testing.T) {
 	fakeSessions := []db.Session{
 		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
 	}
-	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions})
+	srv.registry.Register(&fakePlatform{PlatformID: "fake", SessionList: fakeSessions})
 	// Pre-populate the reverse-lookup cache so resolvePlatformForSession
 	// finds the fake adapter without falling back to Session() (the fake
 	// returns ErrNotFound there).
@@ -1358,7 +1359,7 @@ func TestHandleSessionInfo_PlatformPayload(t *testing.T) {
 			{ID: "gopls", Name: "gopls", Status: "connected"},
 		},
 	}
-	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions, info: want})
+	srv.registry.Register(&fakePlatform{PlatformID: "fake", SessionList: fakeSessions, Info: want})
 	srv.registry.RememberSessions("fake", fakeSessions)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/info", nil)
@@ -1397,7 +1398,7 @@ func TestHandleSessionInfo_EnrichesPersistedCommits(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
 	fakeSessions := []db.Session{{ID: "fk-commit", Platform: "fake", Directory: "/x", TimeUpdated: 1}}
-	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions, info: &platforms.SessionInfo{SessionID: "fk-commit"}})
+	srv.registry.Register(&fakePlatform{PlatformID: "fake", SessionList: fakeSessions, Info: &platforms.SessionInfo{SessionID: "fk-commit"}})
 	srv.registry.RememberSessions("fake", fakeSessions)
 	branch := "old-name"
 	if _, err := srv.stateDB.RecordSessionCommit(t.Context(), state.SessionCommit{
@@ -1432,9 +1433,9 @@ func TestHandleSessionInfo_DoesNotEnrichRemoteFromHubState(t *testing.T) {
 	const platformID = "r-owner:opencode"
 	const sessionID = "same-session"
 	srv.registry.Register(&fakePlatform{
-		id:       platformID,
-		sessions: []db.Session{{ID: sessionID, Platform: platformID}},
-		info: &platforms.SessionInfo{
+		PlatformID:  platformID,
+		SessionList: []db.Session{{ID: sessionID, Platform: platformID}},
+		Info: &platforms.SessionInfo{
 			SessionID: sessionID, CommitCaptureSupported: true,
 			Commits: []platforms.SessionCommit{{Order: 1, SHA: "owner123", Subject: "owner"}},
 		},
@@ -1473,7 +1474,7 @@ func TestHandleSessionInfo_UnsupportedReturns200(t *testing.T) {
 	fakeSessions := []db.Session{
 		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
 	}
-	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions})
+	srv.registry.Register(&fakePlatform{PlatformID: "fake", SessionList: fakeSessions})
 	srv.registry.RememberSessions("fake", fakeSessions)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-1/info", nil)
@@ -1513,8 +1514,8 @@ func TestHandleSessionsNotify_IncludesTitleAndDirectory(t *testing.T) {
 	srv := testServer(t)
 
 	srv.registry.Register(&fakePlatform{
-		id: "fake",
-		sessions: []db.Session{
+		PlatformID: "fake",
+		SessionList: []db.Session{
 			{
 				ID:              "fk-prompt",
 				Platform:        "fake",

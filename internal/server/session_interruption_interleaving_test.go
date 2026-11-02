@@ -11,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestStopSnapshotRefreshesAdvancedIdentityAndLiveStatusTogether(t *testing.T) {
@@ -20,7 +21,7 @@ func TestStopSnapshotRefreshesAdvancedIdentityAndLiveStatusTogether(t *testing.T
 		t.Fatal(err)
 	}
 	calls := 0
-	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		calls++
 		if calls == 2 {
 			// Arrives after the authoritative read but before the raw abort check.
@@ -68,7 +69,7 @@ func TestStopSnapshotContinuousAdvanceFailsBeforeStop(t *testing.T) {
 	}
 	calls := 0
 	advance := false
-	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		id := fmt.Sprintf("m%d", calls)
 		if advance {
 			calls++
@@ -97,7 +98,7 @@ func TestStopSnapshotContinuousAdvanceFailsBeforeStop(t *testing.T) {
 func TestStoppingCrashRecoversOriginalRuntimeAndAbortEvidence(t *testing.T) {
 	srv, raw := newInterruptionRawServer(t)
 	defer raw.Close()
-	path := testStateAt(t, filepath.Join(t.TempDir(), "crash-state.db"))
+	path := statetest.At(t, filepath.Join(t.TempDir(), "crash-state.db"), ModuleSchemas()...)
 	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)

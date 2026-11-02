@@ -29,7 +29,7 @@ func TestSnoozeStaticRouteBypassesSessionPathIdentityLookup(t *testing.T) {
 				t.Fatal(err)
 			}
 			s.sessions.WithSessionCatalogue(catalogue, "owner")
-			registry.Register(&canonicalSnoozePlatform{fakePlatform: &fakePlatform{id: platform}})
+			registry.Register(&canonicalSnoozePlatform{fakePlatform: &fakePlatform{PlatformID: platform}})
 			if err := registry.EnableCanonicalSessions(); err != nil {
 				t.Fatal(err)
 			}

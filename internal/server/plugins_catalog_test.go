@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
@@ -38,11 +38,7 @@ func TestPluginLaunchCatalog(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, ModuleSchemas()...)
 	s := bindPlugins(&Server{stateDB: db}, ctx)
 	t.Cleanup(s.stopPluginProcesses)
 
@@ -53,7 +49,7 @@ func TestPluginLaunchCatalog(t *testing.T) {
 	}
 	var asked []platforms.DirectoryCatalogRequest
 	registry := platforms.NewRegistry()
-	registry.Register(&fakePlatform{id: "opencode", directoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	registry.Register(&fakePlatform{PlatformID: "opencode", DirectoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
 		asked = append(asked, req)
 		switch req.Directory {
 		case "/unreachable":

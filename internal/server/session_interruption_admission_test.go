@@ -25,7 +25,7 @@ func TestStopScanAdmissionWindow(t *testing.T) {
 				if newSession {
 					id = "new"
 				}
-				registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(session string) (*platforms.SessionLifecycle, error) {
+				registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(session string) (*platforms.SessionLifecycle, error) {
 					if scanning && session == "z" {
 						admittedAt = time.Now().UnixMilli()
 						if newSession {

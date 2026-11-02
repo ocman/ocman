@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/remote"
-	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/testutil"
 	plugins "github.com/ocman/ocman/sdk/protocol"
 )
@@ -44,11 +44,7 @@ case "$*" in
 esac
 `
 	testutil.WriteScript(t, bd, script)
-	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, ModuleSchemas()...)
 	s := bindPlugins(&Server{stateDB: db, auth: newTestAuth(t, "password")}, context.Background())
 	t.Cleanup(s.stopPluginProcesses)
 	mux, err := s.routes()

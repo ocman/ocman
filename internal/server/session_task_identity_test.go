@@ -28,13 +28,13 @@ func (p *taskIdentityPlatform) SessionIdentities(context.Context, []string) ([]p
 
 func TestCanonicalTaskReadIgnoresOppositeOwnerNativeCache(t *testing.T) {
 	s, local, _ := identityHTTPFixture(t)
-	local.sessionDetailFn = func(string) (*platforms.SessionDetail, error) {
+	local.SessionFn = func(string) (*platforms.SessionDetail, error) {
 		t.Fatal("remote task was read from colliding local native ID")
 		return nil, nil
 	}
 	remoteID := "ocm_" + uuid.NewString()
-	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{id: "r-remote:test"}, info: platforms.SessionIdentity{ID: remoteID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}}
-	remote.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{PlatformID: "r-remote:test"}, info: platforms.SessionIdentity{ID: remoteID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}}
+	remote.SessionFn = func(id string) (*platforms.SessionDetail, error) {
 		if id != remoteID {
 			t.Fatalf("remote adapter received noncanonical ID %s", id)
 		}

@@ -102,33 +102,33 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 			name: "tmux launch opencode",
 			invoke: func(s *Server, w http.ResponseWriter) {
 				body := `{"directory":"` + dir + `","remoteId":"gone"}`
-				serveTmux(s, w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
+				serveModule(s, s.tmuxModule(), w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
 			},
 		},
 		{
 			name: "terminal websocket attach",
 			invoke: func(s *Server, w http.ResponseWriter) {
-				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId=gone", nil))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId=gone", nil))
 			},
 		},
 		{
 			name: "terminal windows list",
 			invoke: func(s *Server, w http.ResponseWriter) {
-				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId=gone", nil))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId=gone", nil))
 			},
 		},
 		{
 			name: "terminal window create",
 			invoke: func(s *Server, w http.ResponseWriter) {
 				body := `{"dir":"` + dir + `","remoteId":"gone"}`
-				serveTerm(s, w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{
 			name: "terminal window delete",
 			invoke: func(s *Server, w http.ResponseWriter) {
 				body := `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"gone"}`
-				serveTerm(s, w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{
@@ -220,20 +220,20 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				body := `{"directory":"` + dir + `","remoteId":"` + rid + `"}`
-				serveTmux(s, w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
+				serveModule(s, s.tmuxModule(), w, httptest.NewRequest(http.MethodPost, "/api/tmux/launch-opencode", strings.NewReader(body)))
 			},
 		},
 		{
 			name: "terminal websocket attach",
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
-				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId="+rid, nil))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodGet, "/api/term/ws?dir="+dir+"&remoteId="+rid, nil))
 			},
 		},
 		{
 			name:         "terminal windows list",
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
-				serveTerm(s, w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId="+rid, nil))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodGet, "/api/term/windows?dir="+dir+"&remoteId="+rid, nil))
 			},
 		},
 		{
@@ -241,7 +241,7 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				body := `{"dir":"` + dir + `","remoteId":"` + rid + `"}`
-				serveTerm(s, w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodPost, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{
@@ -249,7 +249,7 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				body := `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1","remoteId":"` + rid + `"}`
-				serveTerm(s, w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
+				serveModule(s, s.termModule(), w, httptest.NewRequest(http.MethodDelete, "/api/term/windows", strings.NewReader(body)))
 			},
 		},
 		{
@@ -294,7 +294,7 @@ func TestCreateSessionValidatesPlatformBeforeEnsure(t *testing.T) {
 	s := newOwnerTestServer(local)
 	s.hostRouter.RegisterRemote("build-box", remoteSpy)
 	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "r-build-box:opencode"})
+	reg.Register(&fakePlatform{PlatformID: "r-build-box:opencode"})
 	s.registry = reg
 	s.sessions = sessionsvc.New(reg, sessionsvc.Hooks{})
 

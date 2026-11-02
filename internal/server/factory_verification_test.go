@@ -67,10 +67,10 @@ func TestFactoryScratchRules(t *testing.T) {
 func TestFactoryVerificationLauncherSeams(t *testing.T) {
 	var sent platforms.SendMessageRequest
 	now := time.Now()
-	platform := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s", TimeUpdated: now.Add(-time.Hour).UnixMilli()}, {ID: "child", ParentID: "s", TimeUpdated: now.UnixMilli()}, {ID: "unrelated", TimeUpdated: now.Add(time.Hour).UnixMilli()}}}
-	platform.sendMessageFn = func(request platforms.SendMessageRequest) error { sent = request; return nil }
-	platform.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return []platforms.LivePrompt{{"id": "p"}}, nil }
-	platform.sessionModelsFn = func() *platforms.SessionModelsResponse {
+	platform := &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "s", TimeUpdated: now.Add(-time.Hour).UnixMilli()}, {ID: "child", ParentID: "s", TimeUpdated: now.UnixMilli()}, {ID: "unrelated", TimeUpdated: now.Add(time.Hour).UnixMilli()}}}
+	platform.SendMessageFn = func(request platforms.SendMessageRequest) error { sent = request; return nil }
+	platform.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return []platforms.LivePrompt{{"id": "p"}}, nil }
+	platform.SessionModelsFn = func() *platforms.SessionModelsResponse {
 		return &platforms.SessionModelsResponse{Models: []platforms.SessionModel{{Provider: "p", Model: "fable-1", IsAvailable: true}}}
 	}
 	registry := platforms.NewRegistry()
@@ -98,18 +98,18 @@ func TestFactoryVerificationLauncherSeams(t *testing.T) {
 	if err != nil || !waiting || last.UnixMilli() != now.UnixMilli() {
 		t.Fatalf("activity = %v %v %v", last, waiting, err)
 	}
-	platform.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return nil, nil }
+	platform.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return nil, nil }
 	if _, waiting, err := launcher.ImplementationActivity(t.Context(), session); err != nil || waiting {
 		t.Fatalf("no prompts = %v, %v", waiting, err)
 	}
-	platform.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return nil, errors.New("down") }
+	platform.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return nil, errors.New("down") }
 	if _, _, err := launcher.ImplementationActivity(t.Context(), session); err == nil {
 		t.Fatal("permission lookup failure was ignored")
 	}
 	if _, _, err := launcher.ImplementationActivity(t.Context(), factory.PlanningSession{Platform: "opencode", ID: "gone"}); err == nil {
 		t.Fatal("missing session was accepted")
 	}
-	platform.sessionsErr = errors.New("db down")
+	platform.SessionsErr = errors.New("db down")
 	if _, _, err := launcher.ImplementationActivity(t.Context(), session); err == nil {
 		t.Fatal("session listing error was ignored")
 	}
@@ -132,8 +132,8 @@ func (p *promptingPlatform) RefreshPermissions(context.Context, string) ([]platf
 }
 
 func TestFactoryImplementationActivityCountsQuestionsAndRefreshedPermissions(t *testing.T) {
-	platform := &promptingPlatform{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s"}}}}
-	platform.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
+	platform := &promptingPlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "s"}}}}
+	platform.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
 		return []platforms.LivePrompt{{"id": "stale-cache"}}, nil
 	}
 	registry := platforms.NewRegistry()

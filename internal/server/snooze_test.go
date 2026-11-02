@@ -12,12 +12,13 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestSnoozeSessionAndWakeBroadcast(t *testing.T) {
 	registry := platforms.NewRegistry()
-	registry.Register(&fakePlatform{id: "r-box:opencode"})
-	srv := &Server{stateDB: openTestStateDB(t), registry: registry, broadcastHub: newBroadcastHub()}
+	registry.Register(&fakePlatform{PlatformID: "r-box:opencode"})
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: registry, broadcastHub: newBroadcastHub()}
 	sub, stop := srv.broadcastHub.subscribe()
 	defer stop()
 	until := time.Now().Add(time.Hour).UnixMilli()
@@ -83,8 +84,8 @@ func assertSnoozeEvent(t *testing.T, sub *broadcastSub, archived bool) {
 
 func TestSnoozeSessionValidation(t *testing.T) {
 	registry := platforms.NewRegistry()
-	registry.Register(&fakePlatform{id: "opencode"})
-	srv := &Server{stateDB: openTestStateDB(t), registry: registry}
+	registry.Register(&fakePlatform{PlatformID: "opencode"})
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: registry}
 	mux := http.NewServeMux()
 	srv.snoozeModule().Routes(moduleRouter{s: srv, mux: mux})
 	for _, body := range []string{
@@ -107,7 +108,7 @@ func TestSnoozedSessionsOutsideWindow(t *testing.T) {
 	for _, owner := range []string{"opencode", "r-box:opencode"} {
 		row := mkSession(owner, "old", owner, 1)
 		row.Directory = map[string]string{"opencode": "/a", "r-box:opencode": "/b"}[owner]
-		registry.Register(&summaryPlatform{fakePlatform: fakePlatform{id: owner}, row: row})
+		registry.Register(&summaryPlatform{fakePlatform: fakePlatform{PlatformID: owner}, row: row})
 		if err := srv.stateDB.SnoozeSession(t.Context(), owner, "old", until); err != nil {
 			t.Fatal(err)
 		}
@@ -140,7 +141,7 @@ func TestSnoozedSessionsOutsideWindow(t *testing.T) {
 }
 
 func TestSnoozeActivityDoesNotResurface(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: platforms.NewRegistry()}
 	if err := srv.stateDB.SetSetting(t.Context(), archiveResurfaceKey, "activity"); err != nil {
 		t.Fatal(err)
 	}

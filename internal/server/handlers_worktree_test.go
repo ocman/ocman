@@ -479,9 +479,9 @@ func worktreeInheritTestServer(t *testing.T, capture *[]platforms.SetPermissionR
 
 	srv, reg := newSessionsTestServer(t)
 	fake := &fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{mkSession("opencode", "ses_wt_inh", "t", 1000)},
-		setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{mkSession("opencode", "ses_wt_inh", "t", 1000)},
+		SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
 			*capture = append(*capture, req)
 			return nil
 		},
@@ -568,17 +568,17 @@ func TestHandleCreateSession_InheritsParentPermissions(t *testing.T) {
 			var captured []platforms.SetPermissionRulesRequest
 			deny := platforms.PermissionRule{Permission: "bash", Pattern: "*", Action: "deny"}
 			reg.Register(&fakePlatform{
-				id: "opencode",
-				createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				PlatformID: "opencode",
+				CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					return &platforms.CreateSessionResponse{ID: "ses_child"}, nil
 				},
-				permissionRulesFn: func(id string) ([]platforms.PermissionRule, error) {
+				PermissionRulesFn: func(id string) ([]platforms.PermissionRule, error) {
 					if id != "parent-wt" {
 						t.Errorf("live rules read for %q; want parent-wt", id)
 					}
 					return []platforms.PermissionRule{deny}, nil
 				},
-				setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+				SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
 					captured = append(captured, req)
 					return nil
 				},

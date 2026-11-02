@@ -30,12 +30,12 @@ func TestSessionPermissionOnlyInspectsPromptsForFactoryApprovals(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			lists := 0
 			var replied platforms.RespondPermissionRequest
-			platform := &fakePlatform{id: "fake"}
-			platform.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
+			platform := &fakePlatform{PlatformID: "fake"}
+			platform.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
 				lists++
 				return []platforms.LivePrompt{{"id": "permission-1", "permission": "external_directory", "patterns": []any{"/outside"}}}, nil
 			}
-			platform.respondPermissionFn = func(req platforms.RespondPermissionRequest) error { replied = req; return nil }
+			platform.RespondPermissionFn = func(req platforms.RespondPermissionRequest) error { replied = req; return nil }
 			srv := newPermissionRulesTestServer(t, platform)
 			factorySvc := &fakeFactoryService{implementationSession: tt.factorySession, authorityErr: tt.resolveErr}
 			useFactory(srv, factorySvc)

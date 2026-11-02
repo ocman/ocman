@@ -236,7 +236,7 @@ func TestClaudeMCPCreate(t *testing.T) {
 				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 				"params": map[string]any{"name": "sessions", "arguments": map[string]any{
 					"action": "create", "platform": "claudecode", "directory": repo,
-					"model": "anthropic/sonnet",
+					"model":    "anthropic/sonnet",
 					"worktree": worktree, "prompt": "Reply with exactly SPIKE_OK.",
 				}},
 			})
@@ -337,7 +337,7 @@ func TestHostCapsProviderRuntime(t *testing.T) {
 	if caps := srv.hostCaps(); caps.OpencodeLaunch || caps.Worktrees {
 		t.Fatalf("caps without a runtime = %+v", caps)
 	}
-	reg.Register(runtimeAdapter{&fakePlatform{id: "fake-provider"}})
+	reg.Register(runtimeAdapter{&fakePlatform{PlatformID: "fake-provider"}})
 	if !srv.hostCaps().OpencodeLaunch {
 		t.Fatal("provider runtime did not enable managed launch")
 	}

@@ -18,12 +18,12 @@ func TestMCPSendSessionMessage(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
 			var sent platforms.SendMessageRequest
 			sendErr := error(nil)
-			reg.Register(&fakePlatform{id: platform, sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			reg.Register(&fakePlatform{PlatformID: platform, SessionFn: func(id string) (*platforms.SessionDetail, error) {
 				if id != "recipient" {
 					return nil, platforms.ErrNotFound
 				}
 				return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/repo", Status: "busy"}, TotalMessages: 1, DefaultModel: "p/current"}, nil
-			}, sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return sendErr }})
+			}, SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return sendErr }})
 			svc := sessionMCPService{srv}
 			postQueuedMessage(t, srv, platform, "recipient", "held message")
 			for _, scope := range []string{platform, ""} {
@@ -59,9 +59,9 @@ func TestMCPSendSessionMessage(t *testing.T) {
 func TestMCPSendSessionToolDelivery(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	var sent platforms.SendMessageRequest
-	reg.Register(&fakePlatform{id: "test", sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "test", SessionFn: func(id string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &db.Session{ID: id}, TotalMessages: 1}, nil
-	}, sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil }})
+	}, SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil }})
 	mcpServer, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{SessionService: sessionMCPService{srv}})...)
 	if err != nil {
 		t.Fatal(err)
@@ -75,17 +75,17 @@ func TestMCPSendSessionToolDelivery(t *testing.T) {
 
 func TestMCPSendSessionCanonicalReference(t *testing.T) {
 	srv, local, _ := identityHTTPFixture(t)
-	local.sendMessageFn = func(platforms.SendMessageRequest) error {
+	local.SendMessageFn = func(platforms.SendMessageRequest) error {
 		t.Fatal("canonical remote send reached local adapter")
 		return nil
 	}
 	id := "ocm_" + uuid.NewString()
-	native := &taskIdentityPlatform{fakePlatform: &fakePlatform{id: "r-remote:test"}, info: platforms.SessionIdentity{ID: id, OwnerID: "remote", Platform: "test", SourceKey: "source", Origin: "external", CreationState: "ready"}}
+	native := &taskIdentityPlatform{fakePlatform: &fakePlatform{PlatformID: "r-remote:test"}, info: platforms.SessionIdentity{ID: id, OwnerID: "remote", Platform: "test", SourceKey: "source", Origin: "external", CreationState: "ready"}}
 	var sent platforms.SendMessageRequest
-	native.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+	native.SessionFn = func(id string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/repo"}, TotalMessages: 1}, nil
 	}
-	native.sendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
+	native.SendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
 	srv.registry.Register(native)
 	srv.registry.RememberSessions("r-remote:test", []db.Session{{ID: id}})
 	got, err := (sessionMCPService{srv}).SendSessionMessage(t.Context(), "", id, "go")
@@ -101,9 +101,9 @@ func TestMCPSendSessionCanonicalReference(t *testing.T) {
 func TestMCPSendSessionAmbiguous(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	for _, id := range []string{"a", "b"} {
-		reg.Register(&fakePlatform{id: id, sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		reg.Register(&fakePlatform{PlatformID: id, SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id}}, nil
-		}, sendMessageFn: func(platforms.SendMessageRequest) error {
+		}, SendMessageFn: func(platforms.SendMessageRequest) error {
 			t.Fatal("ambiguous send reached an adapter")
 			return nil
 		}})
@@ -118,7 +118,7 @@ func TestMCPSendSessionLookupFailure(t *testing.T) {
 	for _, detail := range []*platforms.SessionDetail{nil, {}} {
 		srv, reg := newSessionsTestServer(t)
 		lookupErr := error(nil)
-		reg.Register(&fakePlatform{id: "p", sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, lookupErr }})
+		reg.Register(&fakePlatform{PlatformID: "p", SessionFn: func(string) (*platforms.SessionDetail, error) { return detail, lookupErr }})
 		svc := sessionMCPService{srv}
 		if _, err := svc.SendSessionMessage(t.Context(), "p", "x", "go"); !errors.Is(err, platforms.ErrNotFound) {
 			t.Fatalf("nil session = %v", err)

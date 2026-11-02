@@ -24,6 +24,7 @@ import (
 	"github.com/ocman/ocman/internal/remote"
 	"github.com/ocman/ocman/internal/sessionsvc"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/testutil"
 	plugin "github.com/ocman/ocman/sdk/plugin"
 	plugins "github.com/ocman/ocman/sdk/protocol"
@@ -165,11 +166,7 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 	t.Helper()
 	pluginDir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", pluginDir)
-	stateDB, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = stateDB.Close() })
+	stateDB := statetest.Open(t, ModuleSchemas()...)
 
 	f := &conversationFixture{
 		record:    filepath.Join(t.TempDir(), "replies"),
@@ -178,9 +175,9 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{{ID: "ses-chat"}},
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: "ses-chat"}},
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			if f.createErr != nil {
@@ -192,14 +189,14 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 			}
 			return &platforms.CreateSessionResponse{ID: conversationSessionID(f.sessions)}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			f.prompts = append(f.prompts, req.Message)
 			f.targets = append(f.targets, req.SessionID)
 			return nil
 		},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			f.mu.Lock()
 			status := db.StatusDone
 			if f.busy {

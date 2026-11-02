@@ -28,12 +28,12 @@ func TestStartProjectPermissionDefault(t *testing.T) {
 				t.Fatal(err)
 			}
 			var rules []platforms.PermissionRule
-			reg.Register(&fakePlatform{id: platform, sessions: []db.Session{mkSession(platform, "child", "t", 1)},
-				createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			reg.Register(&fakePlatform{PlatformID: platform, SessionList: []db.Session{mkSession(platform, "child", "t", 1)},
+				CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					return &platforms.CreateSessionResponse{ID: "child"}, nil
 				},
-				setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error { rules = req.Rules; return nil },
-				sendMessageFn: func(platforms.SendMessageRequest) error {
+				SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error { rules = req.Rules; return nil },
+				SendMessageFn: func(platforms.SendMessageRequest) error {
 					if worktree {
 						rules = remoteOwner.request.PermissionRules
 					}
@@ -80,7 +80,7 @@ func TestProjectPermissionPresets(t *testing.T) {
 func TestStartProjectPermissionUnreadableDefaults(t *testing.T) {
 	for _, raw := range []string{`{broken`, `{"permissionMode":"unknown"}`} {
 		srv, reg := startTestServer(t, nil)
-		reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		reg.Register(&fakePlatform{PlatformID: "opencode", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			t.Fatal("created a session with unreadable permissions")
 			return nil, nil
 		}})

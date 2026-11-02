@@ -12,7 +12,7 @@ import (
 
 func TestProjectsAndPluginDirectoryReadStoredHistoryNotNativeAdapters(t *testing.T) {
 	s, native, id := identityHTTPFixture(t)
-	native.sessions = []db.Session{{ID: "native-only", Directory: "/native", MessageCount: 99}}
+	native.SessionList = []db.Session{{ID: "native-only", Directory: "/native", MessageCount: 99}}
 	history := s.historyAnalytics.Store
 	if err := history.RegisterInstance(t.Context(), statev2.Instance{ID: "stored", OwnerID: "owner", Platform: "test", SourceKey: "stored-source"}); err != nil {
 		t.Fatal(err)

@@ -1,8 +1,16 @@
 # Testing and verification
 
 Tests live alongside code as `*_test.go` and `*.test.ts(x)`. Prefer table-driven
-Go tests. The server package has a shared `fakePlatform` for integration tests.
-Use temporary databases. Never launch a real agent binary in platform tests.
+Go tests. Use temporary databases. Never launch a real agent binary in platform
+tests. Reuse the shared helpers instead of writing new ones:
+
+- `internal/platforms/platformtest.Fake` is a configurable `platforms.Platform`;
+  the server's `fakePlatform` aliases it.
+- `internal/module/moduletest` mounts a module (`Mount`, `Router`) and serves
+  one request (`Do`). Server tests mount one module with the real guards
+  through `serveModule`, or the full table through `mustRoutes`/`serveRoutes`.
+- `internal/state/statetest` opens migrated state databases; server tests pass
+  `ModuleSchemas()...`.
 
 ## Required behavior coverage
 

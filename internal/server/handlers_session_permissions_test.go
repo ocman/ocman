@@ -22,10 +22,10 @@ func TestHandleSessionPermissionsRefresh(t *testing.T) {
 		wantCode int
 		wantBody string
 	}{
-		{"cached list by default", &refreshingInboxPlatform{fakePlatform: fakePlatform{id: "fake", sessions: sessions}, prompts: []platforms.LivePrompt{{"id": "live"}}}, "", http.StatusOK, "[]"},
-		{"live list on refresh", &refreshingInboxPlatform{fakePlatform: fakePlatform{id: "fake", sessions: sessions}, prompts: []platforms.LivePrompt{{"id": "live"}}}, "?refresh=1", http.StatusOK, `"live"`},
-		{"refresh failure is an error", &refreshingInboxPlatform{fakePlatform: fakePlatform{id: "fake", sessions: sessions}, err: platforms.ErrPlatformUnreachable}, "?refresh=1", http.StatusServiceUnavailable, ""},
-		{"no authoritative list", &fakePlatform{id: "fake", sessions: sessions}, "?refresh=1", http.StatusNotImplemented, ""},
+		{"cached list by default", &refreshingInboxPlatform{fakePlatform: fakePlatform{PlatformID: "fake", SessionList: sessions}, prompts: []platforms.LivePrompt{{"id": "live"}}}, "", http.StatusOK, "[]"},
+		{"live list on refresh", &refreshingInboxPlatform{fakePlatform: fakePlatform{PlatformID: "fake", SessionList: sessions}, prompts: []platforms.LivePrompt{{"id": "live"}}}, "?refresh=1", http.StatusOK, `"live"`},
+		{"refresh failure is an error", &refreshingInboxPlatform{fakePlatform: fakePlatform{PlatformID: "fake", SessionList: sessions}, err: platforms.ErrPlatformUnreachable}, "?refresh=1", http.StatusServiceUnavailable, ""},
+		{"no authoritative list", &fakePlatform{PlatformID: "fake", SessionList: sessions}, "?refresh=1", http.StatusNotImplemented, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

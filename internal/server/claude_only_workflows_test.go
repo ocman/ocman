@@ -36,7 +36,7 @@ func TestClaudeMCPCreateDefaultsAndCallingSession(t *testing.T) {
 	}
 	// With OpenCode enabled the default moves to it, but a child of the
 	// Claude session stays on Claude.
-	srv.registry.Register(&fakePlatform{id: "opencode"})
+	srv.registry.Register(&fakePlatform{PlatformID: "opencode"})
 	child, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{SessionID: first.SessionID, Directory: repo, Prompt: "again"})
 	if err != nil || child.Platform != "claudecode" {
 		t.Fatalf("calling-session create = %+v, %v", child, err)
@@ -72,7 +72,7 @@ func (readOnlyPlatform) SessionLifecycle(context.Context, string) (*platforms.Se
 
 func TestQueueRefusesReadOnlySession(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(readOnlyPlatform{&fakePlatform{id: "claudecode"}})
+	reg.Register(readOnlyPlatform{&fakePlatform{PlatformID: "claudecode"}})
 	err := srv.enqueueFollowUp(t.Context(), "claudecode", platforms.SendMessageRequest{SessionID: "terminal", Message: "hi"})
 	var upstream *platforms.UpstreamError
 	if !errors.As(err, &upstream) || upstream.Status != http.StatusForbidden {
@@ -97,14 +97,14 @@ func TestProjectsIndexMergesPlatformDirectories(t *testing.T) {
 	if _, err := history.Commit(t.Context(), statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: "fixture", SessionID: "b"}, Directory: "/work/repo", UpdatedAt: 30}, Messages: []statev2.Message{{ID: "3", Role: "user", Extensions: json.RawMessage(`{"role":"user"}`)}}}); err != nil {
 		t.Fatal(err)
 	}
-	reg.Register(&fakePlatform{id: "claudecode", sessions: []db.Session{
+	reg.Register(&fakePlatform{PlatformID: "claudecode", SessionList: []db.Session{
 		{ID: "a", Directory: "/work/repo", TimeUpdated: 10, MessageCount: 2, TotalInputTokens: 5, TotalOutputTokens: 3, TotalCost: 0.5},
 		{ID: "b", Directory: "/work/repo", TimeUpdated: 30, MessageCount: 1},
 		{ID: "c", Directory: "/work/repo", ParentID: "a", MessageCount: 9},
 		{ID: "d"},
 	}})
-	reg.Register(&fakePlatform{id: "broken", sessionsErr: errors.New("down")})
-	reg.Register(&fakePlatform{id: "r-box:claudecode", sessions: []db.Session{{ID: "r", Directory: "/remote"}}})
+	reg.Register(&fakePlatform{PlatformID: "broken", SessionsErr: errors.New("down")})
+	reg.Register(&fakePlatform{PlatformID: "r-box:claudecode", SessionList: []db.Session{{ID: "r", Directory: "/remote"}}})
 	srv.projects.enrich = func(context.Context, []db.ProjectStats) error { return nil }
 	if err := srv.refreshProjectsIndex(t.Context()); err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestPluginProjectCatalogUsesInstallationPlatform(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	host := &createPathHost{}
 	srv.hostRouter = hostsvc.NewRouter(host)
-	reg.Register(&fakePlatform{id: "claudecode", directoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	reg.Register(&fakePlatform{PlatformID: "claudecode", DirectoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
 		if req.Directory != "/repo" {
 			t.Fatalf("catalog directory = %q", req.Directory)
 		}
@@ -161,7 +161,7 @@ func TestPluginProjectCatalogUsesInstallationPlatform(t *testing.T) {
 // Without OpenCode, its settings answer without discovering an instance.
 func TestOpenCodeSettingsWithoutOpenCode(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "claudecode"})
+	reg.Register(&fakePlatform{PlatformID: "claudecode"})
 	if reason := srv.mcpUnavailableReason(); reason == "" {
 		t.Fatal("MCP config offered without OpenCode")
 	}
@@ -178,8 +178,8 @@ func TestOpenCodeSettingsWithoutOpenCode(t *testing.T) {
 // A remote target's default is one of the platforms that remote runs.
 func TestCreatePlatformDefaultFollowsRemote(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "opencode"})
-	reg.Register(&fakePlatform{id: "r-box:claudecode"})
+	reg.Register(&fakePlatform{PlatformID: "opencode"})
+	reg.Register(&fakePlatform{PlatformID: "r-box:claudecode"})
 	id, base, err := srv.createPlatform(t.Context(), &createPathHost{owner: "box"}, "", "")
 	if err != nil || id != "r-box:claudecode" || base != "claudecode" {
 		t.Fatalf("remote default = %q %q %v", id, base, err)

@@ -1,120 +1,20 @@
-package platforms
+package platforms_test
 
 import (
 	"context"
 	"errors"
-	"io"
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/platforms/platformtest"
 )
 
-// fakePlatform is a minimal Platform used for registry tests. All
-// capability-gated methods return ErrUnsupported so tests don't
-// accidentally rely on them succeeding.
-type fakePlatform struct {
-	id          ID
-	displayName string
-	available   bool
-	caps        Capabilities
-	sessions    []db.Session
-}
-
-func (f *fakePlatform) ID() ID                         { return f.id }
-func (f *fakePlatform) DisplayName() string            { return f.displayName }
-func (f *fakePlatform) Available(context.Context) bool { return f.available }
-func (f *fakePlatform) Capabilities() Capabilities     { return f.caps }
-
-func (f *fakePlatform) Sessions(context.Context, string, int64) ([]db.Session, error) {
-	return f.sessions, nil
-}
-
-func (f *fakePlatform) Session(context.Context, string, int, int) (*SessionDetail, error) {
-	return nil, ErrUnsupported
-}
-
-func (f *fakePlatform) Owns(_ context.Context, sessionID string) bool {
-	for _, s := range f.sessions {
-		if s.ID == sessionID {
-			return true
-		}
-	}
-	return false
-}
-
-func (f *fakePlatform) SessionsInactiveBefore(context.Context, int64) ([]db.SessionArchiveCandidate, error) {
-	return nil, nil
-}
-
-func (f *fakePlatform) SessionChanges(context.Context, string) (*SessionChanges, error) {
-	return nil, ErrUnsupported
-}
-
-func (f *fakePlatform) SessionInfo(context.Context, string) (*SessionInfo, error) {
-	return nil, ErrUnsupported
-}
-
-func (f *fakePlatform) LiveStatus(string) *LiveState { return nil }
-
-func (f *fakePlatform) AgentCatalog(context.Context, string) ([]AgentCatalogEntry, error) {
-	return nil, nil
-}
-func (f *fakePlatform) SlashCommands(context.Context, string) ([]SlashCommandEntry, error) {
-	return nil, nil
-}
-func (f *fakePlatform) SessionModels(context.Context, string) (*SessionModelsResponse, error) {
-	return nil, ErrUnsupported
-}
-func (f *fakePlatform) DirectoryCatalog(context.Context, DirectoryCatalogRequest) (*DirectoryCatalog, error) {
-	return nil, ErrUnsupported
-}
-func (f *fakePlatform) ListPermissions(context.Context, string) ([]LivePrompt, error) {
-	return nil, nil
-}
-func (f *fakePlatform) ListQuestions(context.Context, string) ([]LivePrompt, error) {
-	return nil, nil
-}
-func (f *fakePlatform) SendMessage(context.Context, SendMessageRequest) error { return ErrUnsupported }
-func (f *fakePlatform) ExecuteCommand(context.Context, ExecuteCommandRequest) error {
-	return ErrUnsupported
-}
-func (f *fakePlatform) RunShell(context.Context, RunShellRequest) error {
-	return ErrUnsupported
-}
-func (f *fakePlatform) RespondPermission(context.Context, RespondPermissionRequest) error {
-	return ErrUnsupported
-}
-func (f *fakePlatform) RespondQuestion(context.Context, RespondQuestionRequest) error {
-	return ErrUnsupported
-}
-func (f *fakePlatform) RejectQuestion(context.Context, RejectQuestionRequest) error {
-	return ErrUnsupported
-}
-func (f *fakePlatform) Abort(context.Context, AbortRequest) error { return ErrUnsupported }
-func (f *fakePlatform) RenameSession(context.Context, RenameSessionRequest) error {
-	return ErrUnsupported
-}
-func (f *fakePlatform) PermissionRules(context.Context, string) ([]PermissionRule, error) {
-	return nil, ErrUnsupported
-}
-func (f *fakePlatform) SetPermissionRules(context.Context, SetPermissionRulesRequest) error {
-	return ErrUnsupported
-}
-func (f *fakePlatform) Compact(context.Context, CompactRequest) error { return ErrUnsupported }
-func (f *fakePlatform) ForkSession(context.Context, ForkSessionRequest) (*CreateSessionResponse, error) {
-	return nil, ErrUnsupported
-}
-func (f *fakePlatform) MoveSession(context.Context, MoveSessionRequest) error { return ErrUnsupported }
-func (f *fakePlatform) CreateSession(context.Context, CreateSessionRequest) (*CreateSessionResponse, error) {
-	return nil, ErrUnsupported
-}
-func (f *fakePlatform) ProxyEvents(context.Context, string, io.Writer, func()) error {
-	return ErrUnsupported
-}
+type fakePlatform = platformtest.Fake
 
 func TestRegistry_RegisterAndGet(t *testing.T) {
-	reg := NewRegistry()
-	p := &fakePlatform{id: "opencode", displayName: "OpenCode", available: true}
+	reg := platforms.NewRegistry()
+	p := &fakePlatform{PlatformID: "opencode", Name: "OpenCode"}
 	reg.Register(p)
 
 	got, ok := reg.Get("opencode")
@@ -127,24 +27,24 @@ func TestRegistry_RegisterAndGet(t *testing.T) {
 }
 
 func TestRegistry_GetUnknown(t *testing.T) {
-	reg := NewRegistry()
+	reg := platforms.NewRegistry()
 	if _, ok := reg.Get("nope"); ok {
 		t.Errorf("Get on unknown id should return ok=false")
 	}
 }
 
 func TestRegistry_Platforms_StableOrder(t *testing.T) {
-	reg := NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode"})
-	reg.Register(&fakePlatform{id: "other-platform"})
-	reg.Register(&fakePlatform{id: "codex"})
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{PlatformID: "opencode"})
+	reg.Register(&fakePlatform{PlatformID: "other-platform"})
+	reg.Register(&fakePlatform{PlatformID: "codex"})
 
 	got := reg.Platforms()
 	if len(got) != 3 {
 		t.Fatalf("expected 3 platforms, got %d", len(got))
 	}
 	// Registration order is preserved.
-	want := []ID{"opencode", "other-platform", "codex"}
+	want := []platforms.ID{"opencode", "other-platform", "codex"}
 	for i, p := range got {
 		if p.ID() != want[i] {
 			t.Errorf("platform %d: expected %q, got %q", i, want[i], p.ID())
@@ -153,11 +53,10 @@ func TestRegistry_Platforms_StableOrder(t *testing.T) {
 }
 
 func TestRegistry_PlatformForSession_FromCache(t *testing.T) {
-	reg := NewRegistry()
+	reg := platforms.NewRegistry()
 	p := &fakePlatform{
-		id:        "opencode",
-		available: true,
-		sessions:  []db.Session{{ID: "s1", Platform: "opencode"}},
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: "s1", Platform: "opencode"}},
 	}
 	reg.Register(p)
 
@@ -178,8 +77,8 @@ func TestRegistry_PlatformForSession_FromCache(t *testing.T) {
 }
 
 func TestRegistry_PlatformForSession_Unknown(t *testing.T) {
-	reg := NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode"})
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{PlatformID: "opencode"})
 
 	if _, ok := reg.PlatformForSession(context.Background(), "unknown"); ok {
 		t.Errorf("PlatformForSession on unknown id should return ok=false")
@@ -192,16 +91,14 @@ func TestRegistry_PlatformForSession_Unknown(t *testing.T) {
 // fast cold-path that avoids the heavy HTTP round-trip OpenCode's
 // Session method makes.
 func TestRegistry_PlatformForSession_OwnsFanout(t *testing.T) {
-	reg := NewRegistry()
+	reg := platforms.NewRegistry()
 	a := &fakePlatform{
-		id:        "a",
-		available: true,
-		sessions:  []db.Session{{ID: "owned-by-a"}},
+		PlatformID:  "a",
+		SessionList: []db.Session{{ID: "owned-by-a"}},
 	}
 	b := &fakePlatform{
-		id:        "b",
-		available: true,
-		sessions:  []db.Session{{ID: "owned-by-b"}},
+		PlatformID:  "b",
+		SessionList: []db.Session{{ID: "owned-by-b"}},
 	}
 	reg.Register(a)
 	reg.Register(b)
@@ -222,7 +119,7 @@ func TestRegistry_PlatformForSession_OwnsFanout(t *testing.T) {
 }
 
 func TestErrUnsupported(t *testing.T) {
-	if !errors.Is(ErrUnsupported, ErrUnsupported) {
+	if !errors.Is(platforms.ErrUnsupported, platforms.ErrUnsupported) {
 		t.Fatal("ErrUnsupported should match itself")
 	}
 }

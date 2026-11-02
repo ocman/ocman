@@ -16,7 +16,7 @@ import (
 
 func TestNotificationBadgeExcludesOwnerLocalRemoteRoutines(t *testing.T) {
 	owner := testServer(t)
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
 		{ID: "normal", Platform: "opencode", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()},
 		{ID: "routine", Platform: "opencode", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()},
 	}}}
@@ -32,7 +32,7 @@ func TestNotificationBadgeExcludesOwnerLocalRemoteRoutines(t *testing.T) {
 	}
 	rpc := remote.NewServer(owner.registry, nil, "owner", "test").UseInboxStore(owner.stateDB).UseSessions(owner.SessionService())
 	for _, prompt := range []bool{false, true} {
-		p.sessions[1].PendingQuestion = prompt
+		p.SessionList[1].PendingQuestion = prompt
 		response, err := rpc.Sessions(t.Context(), &pb.SessionsReq{Platform: "opencode"})
 		if err != nil {
 			t.Fatal(err)
@@ -41,7 +41,7 @@ func TestNotificationBadgeExcludesOwnerLocalRemoteRoutines(t *testing.T) {
 		if err := json.Unmarshal(response.Payload, &sessions); err != nil {
 			t.Fatal(err)
 		}
-		if sessions[1].RoutineID != "rt" || p.sessions[1].RoutineID != "" {
+		if sessions[1].RoutineID != "rt" || p.SessionList[1].RoutineID != "" {
 			t.Fatalf("owner RPC must tag routines without mutating the platform cache: %+v", sessions)
 		}
 		for i := range sessions {
@@ -49,7 +49,7 @@ func TestNotificationBadgeExcludesOwnerLocalRemoteRoutines(t *testing.T) {
 			sessions[i].RemoteID = "owner"
 		}
 		hub := testServer(t)
-		hub.registry.Register(&pushTestPlatform{fakePlatform: &fakePlatform{id: "r-owner:opencode", sessions: sessions}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}})
+		hub.registry.Register(&pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-owner:opencode", SessionList: sessions}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}})
 		listed := append([]db.Session(nil), sessions...)
 		if err := hub.applySessionState(t.Context(), listed); err != nil || listed[1].RoutineID != "rt" {
 			t.Fatalf("hub erased the owner's routine association: %+v, %v", listed, err)

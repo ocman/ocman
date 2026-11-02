@@ -19,14 +19,14 @@ func (*canonicalMetadataNative) HistoryIdentity(context.Context) (platforms.Hist
 	return platforms.HistoryIdentity{Platform: "opencode", SourceKey: "source"}, nil
 }
 func (p *canonicalMetadataNative) HistoryInventory(context.Context) ([]db.HistoryEntry, error) {
-	out := make([]db.HistoryEntry, len(p.sessions))
-	for i, row := range p.sessions {
+	out := make([]db.HistoryEntry, len(p.SessionList))
+	for i, row := range p.SessionList {
 		out[i] = db.HistoryEntry{ID: row.ID, Version: "v1"}
 	}
 	return out, nil
 }
 func (p *canonicalMetadataNative) HistorySnapshot(_ context.Context, id string) (*db.HistorySnapshot, error) {
-	for _, row := range p.sessions {
+	for _, row := range p.SessionList {
 		if row.ID == id {
 			return &db.HistorySnapshot{Session: row, Version: "v1", Messages: []db.Message{}, Parts: []db.Part{}}, nil
 		}
@@ -50,8 +50,8 @@ func TestCanonicalMetadataUsesIngestedReadModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	transcriptReads := 0
-	native := &canonicalMetadataNative{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "root", Directory: "/repo", Title: "root title"}, {ID: "child", ParentID: "root", Directory: "/repo/sub", Title: "child title"}}}}
-	native.sessionDetailFn = func(string) (*platforms.SessionDetail, error) {
+	native := &canonicalMetadataNative{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "root", Directory: "/repo", Title: "root title"}, {ID: "child", ParentID: "root", Directory: "/repo/sub", Title: "child title"}}}}
+	native.SessionFn = func(string) (*platforms.SessionDetail, error) {
 		transcriptReads++
 		return nil, platforms.ErrNotFound
 	}

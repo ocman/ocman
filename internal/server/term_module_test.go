@@ -10,15 +10,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// serveTerm sends req through the terminal module's routes as a loopback,
-// origin-less client, so the server's real guards and owner resolution run.
-func serveTerm(s *Server, w http.ResponseWriter, req *http.Request) {
-	mux := http.NewServeMux()
-	s.termModule().Routes(moduleRouter{s: s, mux: mux})
-	req.RemoteAddr = "127.0.0.1:12345"
-	mux.ServeHTTP(w, req)
-}
-
 // The terminal routes are mounted from the module registry behind the
 // localhost guard: a non-loopback peer or a cross-origin browser never
 // reaches validation, owner resolution or the upgrade.

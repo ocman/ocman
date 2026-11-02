@@ -26,7 +26,7 @@ func (p *emptyCachedNotifyPlatform) NotificationPrompts(context.Context, string)
 func TestNotifyDropsBusyRowResolvedBeforeIdentityRead(t *testing.T) {
 	s := testServer(t)
 	s.registry.Register(&emptyCachedNotifyPlatform{fakePlatform{
-		id: "fake", sessions: []db.Session{{ID: "parent", Platform: "fake", Status: db.StatusBusy, PendingPermission: true}},
+		PlatformID: "fake", SessionList: []db.Session{{ID: "parent", Platform: "fake", Status: db.StatusBusy, PendingPermission: true}},
 	}})
 	w := httptest.NewRecorder()
 	s.handleSessionsNotify(w, httptest.NewRequest(http.MethodGet, "/api/sessions/notify", nil))
@@ -48,7 +48,7 @@ func (p *failedCachedNotifyPlatform) NotificationPrompts(context.Context, string
 
 func TestNotifyCachedLookupFailurePreservesFlags(t *testing.T) {
 	s := testServer(t)
-	s.registry.Register(&failedCachedNotifyPlatform{fakePlatform{id: "fake"}})
+	s.registry.Register(&failedCachedNotifyPlatform{fakePlatform{PlatformID: "fake"}})
 	entry := notifyEntry{ID: "parent", PendingPermission: true, PendingQuestion: true}
 	if err := s.notifyPromptIdentities(t.Context(), &db.Session{ID: "parent", Platform: "fake"}, &entry); err == nil {
 		t.Fatal("lookup failure was not reported")
@@ -64,9 +64,9 @@ func TestNotifyDeferredPermissionDoesNotTurnResolvedQuestionIntoCompletion(t *te
 		DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil },
 	}))
 	adapter := &emptyCachedNotifyPlatform{fakePlatform{
-		id: "fake", caps: platforms.Capabilities{AutoApprove: true},
-		sessions: []db.Session{{ID: "parent", Platform: "fake", Status: db.StatusWaiting, PendingPermission: true, PendingQuestion: true}},
-		listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+		PlatformID: "fake", Caps: platforms.Capabilities{AutoApprove: true},
+		SessionList: []db.Session{{ID: "parent", Platform: "fake", Status: db.StatusWaiting, PendingPermission: true, PendingQuestion: true}},
+		ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
 			return []platforms.LivePrompt{{"id": "p1", "sessionID": "parent"}}, nil
 		},
 	}}
@@ -103,7 +103,7 @@ func (p *remoteNotifyPlatform) ListQuestions(ctx context.Context, _ string) ([]p
 
 func TestNotifyIdentitiesEmptySnapshotClearsEarlierFlags(t *testing.T) {
 	s := testServer(t)
-	s.registry.Register(&remoteNotifyPlatform{fakePlatform: fakePlatform{id: "r-box:opencode"}})
+	s.registry.Register(&remoteNotifyPlatform{fakePlatform: fakePlatform{PlatformID: "r-box:opencode"}})
 	row := db.Session{ID: "parent", Platform: "r-box:opencode"}
 	entry := notifyEntry{ID: "parent", PendingPermission: true, PendingQuestion: true}
 	// Fan-out captured pending=true, then the child prompt resolved before
@@ -119,8 +119,8 @@ func TestNotifyIdentitiesEmptySnapshotClearsEarlierFlags(t *testing.T) {
 
 func TestNotifyIdentitiesStalledRemoteDoesNotBlockHealthyOwner(t *testing.T) {
 	s := testServer(t)
-	s.registry.Register(&remoteNotifyPlatform{fakePlatform: fakePlatform{id: "r-box:opencode"}, stall: true})
-	s.registry.Register(&cachedNotifyPlatform{fakePlatform{id: "local"}})
+	s.registry.Register(&remoteNotifyPlatform{fakePlatform: fakePlatform{PlatformID: "r-box:opencode"}, stall: true})
+	s.registry.Register(&cachedNotifyPlatform{fakePlatform{PlatformID: "local"}})
 	rows := []db.Session{{ID: "same", Platform: "r-box:opencode"}, {ID: "same", Platform: "local"}}
 	entries := []notifyEntry{
 		{ID: "same", platform: "r-box:opencode", PendingPermission: true, PendingQuestion: true},
@@ -146,7 +146,7 @@ func TestNotifyIdentitiesStalledRemoteDoesNotBlockHealthyOwner(t *testing.T) {
 
 func TestNotifyPromptIdentities(t *testing.T) {
 	s := testServer(t)
-	s.registry.Register(&cachedNotifyPlatform{fakePlatform{id: "r-laptop:opencode"}})
+	s.registry.Register(&cachedNotifyPlatform{fakePlatform{PlatformID: "r-laptop:opencode"}})
 	row := db.Session{ID: "parent", Platform: "r-laptop:opencode"}
 	entry := notifyEntry{ID: "parent", PendingPermission: true, PendingQuestion: true}
 	if err := s.notifyPromptIdentities(t.Context(), &row, &entry); err == nil {

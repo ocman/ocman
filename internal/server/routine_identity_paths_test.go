@@ -18,7 +18,7 @@ func TestRoutineTrailingSlashRequestsPersistResolvedSessionOwner(t *testing.T) {
 				platform := "test"
 				if owner == "remote" {
 					ownedID, platform = "ocm_"+uuid.NewString(), "r-remote:test"
-					s.registry.Register(&taskIdentityPlatform{fakePlatform: &fakePlatform{id: platform}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}})
+					s.registry.Register(&taskIdentityPlatform{fakePlatform: &fakePlatform{PlatformID: platform}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}})
 				}
 				mux, err := s.routes()
 				if err != nil {

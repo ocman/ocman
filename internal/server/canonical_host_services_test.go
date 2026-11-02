@@ -34,7 +34,7 @@ func (p canonicalHostFacade) HostServices() hostsvc.PlatformServices {
 func (p canonicalHostFacade) RuntimeAvailable() bool { return p.provider.RuntimeAvailable() }
 
 func TestCanonicalHostServicesKeepLaunchCapabilitiesAndIdleCulling(t *testing.T) {
-	p := &canonicalHostProvider{fakePlatform: &fakePlatform{id: "claudecode"}}
+	p := &canonicalHostProvider{fakePlatform: &fakePlatform{PlatformID: "claudecode"}}
 	registry := platforms.NewRegistry()
 	registry.Register(canonicalHostFacade{Platform: p.fakePlatform, provider: p})
 	s := &Server{registry: registry}

@@ -8,14 +8,15 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestArchiveSessionNotifiesAllClients(t *testing.T) {
 	for _, archived := range []bool{true, false} {
 		t.Run(map[bool]string{true: "archive", false: "reopen"}[archived], func(t *testing.T) {
 			registry := platforms.NewRegistry()
-			registry.Register(&fakePlatform{id: "r-box:opencode"})
-			srv := &Server{stateDB: openTestStateDB(t), registry: registry, broadcastHub: newBroadcastHub()}
+			registry.Register(&fakePlatform{PlatformID: "r-box:opencode"})
+			srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: registry, broadcastHub: newBroadcastHub()}
 			first, stopFirst := srv.broadcastHub.subscribe()
 			defer stopFirst()
 			second, stopSecond := srv.broadcastHub.subscribe()

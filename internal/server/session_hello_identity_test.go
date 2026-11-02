@@ -14,14 +14,14 @@ import (
 
 func TestRemoteHelloPromptReplyKeepsOwnerAfterReconnect(t *testing.T) {
 	s, local, _ := identityHTTPFixture(t)
-	local.respondPermissionFn = func(platforms.RespondPermissionRequest) error {
+	local.RespondPermissionFn = func(platforms.RespondPermissionRequest) error {
 		t.Fatal("remote hello prompt reply reached local native collision")
 		return nil
 	}
 	ownedID := "ocm_" + uuid.NewString()
-	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{id: "r-remote:test"}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}}
+	remote := &taskIdentityPlatform{fakePlatform: &fakePlatform{PlatformID: "r-remote:test"}, info: platforms.SessionIdentity{ID: ownedID, OwnerID: "remote", Platform: "test", SourceKey: "remote-source", Origin: "external", CreationState: "ready"}}
 	replies := 0
-	remote.respondPermissionFn = func(req platforms.RespondPermissionRequest) error {
+	remote.RespondPermissionFn = func(req platforms.RespondPermissionRequest) error {
 		if req.SessionID != ownedID || req.PermissionID != "permission" {
 			t.Fatalf("wrong canonical prompt reply: %+v", req)
 		}

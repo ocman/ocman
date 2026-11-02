@@ -1,23 +1,16 @@
 package server
 
 import (
-	"net/http"
 	"testing"
 
 	"github.com/ocman/ocman/internal/factorymod"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 // useFactory mounts Factory over svc. Build the mux after calling it: one
 // built earlier keeps the previous module's handlers.
 func useFactory(s *Server, svc factorymod.Service) { s.factoryMod.set(s.newFactoryModule(svc)) }
-
-// serveFactory serves one request through Factory's mounted routes.
-func serveFactory(s *Server, w http.ResponseWriter, r *http.Request) {
-	mux := http.NewServeMux()
-	s.factoryModule().Routes(moduleRouter{s: s, mux: mux})
-	mux.ServeHTTP(w, r)
-}
 
 type factoryIdleNotifier struct {
 	factorymod.Service
@@ -32,7 +25,7 @@ func (f *factoryIdleNotifier) NotifySessionIdle(platform, session string) {
 // subscription, owner-qualified, not a duck-typed server call.
 func TestSessionIdleNotifiesFactoryWithOwner(t *testing.T) {
 	f := &factoryIdleNotifier{}
-	s := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
+	s := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: platforms.NewRegistry()}
 	useFactory(s, f)
 	s.onSessionIdle("r-owner:opencode", "session")
 	if f.platform != "r-owner:opencode" || f.session != "session" {

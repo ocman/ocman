@@ -31,8 +31,8 @@ func TestProxyRemoteSessionEventsEmitsManualApproval(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 	approved := make(chan struct{})
 	fp := &fakePlatform{
-		id: "opencode",
-		proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+		PlatformID: "opencode",
+		ProxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
 			for _, event := range []string{
 				"data: {\"type\":\"permission.asked\",\"properties\":{\"id\":\"perm-1\",\"sessionID\":\"ses-1\",\"permission\":\"bash\",\"patterns\":[\"git status\"]}}\n\n",
 				"data: {\"type\":\"permission.replied\",\"properties\":{\"sessionID\":\"ses-1\",\"requestID\":\"perm-1\",\"reply\":\"always\"}}\n\n",
@@ -65,8 +65,8 @@ func TestProxyRemoteSessionEventsEmitsManualApproval(t *testing.T) {
 func TestProxyRemoteSessionEventsResurrectsPendingPermission(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 	fp := &fakePlatform{
-		id: "opencode",
-		listPermissionsFn: func(sessionID string) ([]platforms.LivePrompt, error) {
+		PlatformID: "opencode",
+		ListPermissionsFn: func(sessionID string) ([]platforms.LivePrompt, error) {
 			if sessionID != "ses-1" {
 				t.Fatalf("ListPermissions session = %q", sessionID)
 			}
@@ -75,7 +75,7 @@ func TestProxyRemoteSessionEventsResurrectsPendingPermission(t *testing.T) {
 				"patterns": []any{"git status"}, "metadata": map[string]any{"command": "git status"},
 			}}, nil
 		},
-		proxyEventsFn: func(_ context.Context, _ string, _ io.Writer, _ func()) error { return nil },
+		ProxyEventsFn: func(_ context.Context, _ string, _ io.Writer, _ func()) error { return nil },
 	}
 	var raw, synthetic bytes.Buffer
 

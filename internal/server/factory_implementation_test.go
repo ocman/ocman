@@ -88,7 +88,7 @@ func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
 			}
 			registry := platforms.NewRegistry()
 			if name != "missing platform" {
-				registry.Register(&fakePlatform{id: "test", sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, sessionErr }})
+				registry.Register(&fakePlatform{PlatformID: "test", SessionFn: func(string) (*platforms.SessionDetail, error) { return detail, sessionErr }})
 			}
 			srv := New(nil, nil, "", registry, nil)
 			srv.hostRouter = hostsvc.NewRouter(host)
@@ -249,9 +249,9 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 
 	t.Run("creates an owned bounded worktree session", func(t *testing.T) {
 		host := &factoryImplementationHost{result: &hostsvc.WorktreeSessionResult{SessionID: "worktree-session"}, endpoint: endpoint}
-		platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
+		platform := &fakePlatform{PlatformID: "opencode", Caps: platforms.Capabilities{PermissionRules: true}}
 		var sent platforms.SendMessageRequest
-		platform.sendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
+		platform.SendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
 		registry := platforms.NewRegistry()
 		registry.Register(platform)
 		srv := New(nil, nil, "", registry, nil)
@@ -477,7 +477,7 @@ func TestFactoryImplementationLauncherProbe(t *testing.T) {
 		t.Fatal("missing platform probe succeeded")
 	}
 
-	registry.Register(&fakePlatform{id: "opencode", sessions: []db.Session{{ID: "session"}}})
+	registry.Register(&fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "session"}}})
 	owned, err := launcher.ProbeImplementationSession(context.Background(), factory.PlanningSession{Platform: "opencode", ID: "session"})
 	if err != nil || !owned {
 		t.Fatalf("ProbeImplementationSession = %v, %v", owned, err)
@@ -490,12 +490,12 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 	var sent platforms.SendMessageRequest
 	sends := 0
 	detail := &platforms.SessionDetail{}
-	platform := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "session"}}}
-	platform.abortFn = func(request platforms.AbortRequest) error { aborted = request; return nil }
-	platform.respondPermissionFn = func(request platforms.RespondPermissionRequest) error { replied = request; return nil }
-	platform.sendMessageFn = func(request platforms.SendMessageRequest) error { sent = request; sends++; return nil }
-	platform.sessionDetailFn = func(string) (*platforms.SessionDetail, error) { return detail, nil }
-	platform.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
+	platform := &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "session"}}}
+	platform.AbortFn = func(request platforms.AbortRequest) error { aborted = request; return nil }
+	platform.RespondPermissionFn = func(request platforms.RespondPermissionRequest) error { replied = request; return nil }
+	platform.SendMessageFn = func(request platforms.SendMessageRequest) error { sent = request; sends++; return nil }
+	platform.SessionFn = func(string) (*platforms.SessionDetail, error) { return detail, nil }
+	platform.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
 		return []platforms.LivePrompt{{"id": "permission"}}, nil
 	}
 	registry := platforms.NewRegistry()
@@ -517,7 +517,7 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 		t.Fatalf("idempotent ResumeImplementationSession = %v, sends %d", err, sends)
 	}
 	detail.Parts = nil
-	platform.sendMessageFn = func(request platforms.SendMessageRequest) error {
+	platform.SendMessageFn = func(request platforms.SendMessageRequest) error {
 		sends++
 		detail.Parts = []db.Part{{Data: []byte(request.Message)}}
 		return errors.New("response lost after acceptance")

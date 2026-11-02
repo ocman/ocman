@@ -28,7 +28,7 @@ func TestRESTCreateResolvesDefaultBeforeRuntime(t *testing.T) {
 			srv.hostRouter = hostsvc.NewRouter(host)
 			created := ""
 			for _, id := range tc.enabled {
-				reg.Register(&fakePlatform{id: id, createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				reg.Register(&fakePlatform{PlatformID: id, CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					created = id
 					if req.Directory != "/repo" {
 						t.Fatalf("directory = %q", req.Directory)
@@ -68,7 +68,7 @@ func TestRESTCreateAuthoritativeOwner(t *testing.T) {
 			srv.hostRouter.RegisterRemote("box", box)
 			created := ""
 			for _, id := range []string{"claudecode", "r-box:claudecode"} {
-				reg.Register(&fakePlatform{id: id, createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				reg.Register(&fakePlatform{PlatformID: id, CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					created = id
 					return &platforms.CreateSessionResponse{ID: "child"}, nil
 				}})

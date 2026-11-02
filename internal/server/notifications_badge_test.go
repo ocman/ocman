@@ -17,7 +17,7 @@ import (
 func TestNotificationBadgeExcludesRoutineSessions(t *testing.T) {
 	s := testServer(t)
 	now := time.Now().UnixMilli()
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SessionList: []db.Session{
 		{ID: "normal", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: now},
 		{ID: "routine", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: now},
 	}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
@@ -32,7 +32,7 @@ func TestNotificationBadgeExcludesRoutineSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, prompt := range []bool{false, true} {
-		p.sessions[1].PendingPermission = prompt
+		p.SessionList[1].PendingPermission = prompt
 		p.prompts = []platforms.LivePrompt{{"id": "request", "sessionID": "routine"}}
 		w := httptest.NewRecorder()
 		s.handleSessionsNotify(w, httptest.NewRequest(http.MethodGet, "/api/sessions/notify?includeDone=1", nil))
@@ -49,7 +49,7 @@ func TestNotificationBadgeExcludesRoutineSessions(t *testing.T) {
 
 func TestPushBadgeIncludesSelectedInboxCategories(t *testing.T) {
 	s := testServer(t)
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{{ID: "normal", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SessionList: []db.Session{{ID: "normal", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
 	s.registry.Register(p)
 	useInboxRemotes(s, []string{"local", "remote"}, func(_ context.Context, source string) ([]state.InboxItem, error) {
 		if source == "remote" {
@@ -86,7 +86,7 @@ func TestPushBadgeRejectsFailedSettingsAndLocalInboxReads(t *testing.T) {
 	for _, failure := range []string{"settings", "inbox"} {
 		t.Run(failure, func(t *testing.T) {
 			s := testServer(t)
-			p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{{ID: "normal", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
+			p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SessionList: []db.Session{{ID: "normal", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
 			s.registry.Register(p)
 			if failure == "settings" {
 				if err := s.stateDB.SetSetting(t.Context(), "notifications.badge", "invalid"); err != nil {

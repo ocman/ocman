@@ -66,11 +66,11 @@ func TestProjectRoutes_ListAndLaunchThroughPublicMux(t *testing.T) {
 	srv.integrations.GitHub = ghc
 	var sent platforms.SendMessageRequest
 	srv.registry.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "child"}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+		SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
 	mux, err := srv.routes()
 	if err != nil {
@@ -140,7 +140,7 @@ func TestHandleProjectHandle_WorktreePRFetchesMetadataOnce(t *testing.T) {
 	}))
 	defer gh.Close()
 	srv.integrations.GitHub = newGitHubTestClient(gh)
-	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode", sendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
+	srv.registry.Register(&fakePlatform{PlatformID: "r-rem1:opencode", SendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir), worktree: &hostsvc.WorktreeSessionResult{SessionID: "child", WorktreePath: "/remote/wt", Branch: "patch"}}
 	withRemoteOwner(srv, host)
 
@@ -182,11 +182,11 @@ func TestHandleProjectHandle_SessionMode(t *testing.T) {
 
 	var capturedPrompt string
 	fp := &fakePlatform{
-		id: "opencode",
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "child-123"}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			capturedPrompt = req.Message
 			return nil
 		},
@@ -246,12 +246,12 @@ func TestHandleProjectHandle_SessionModeUsesOwningRemotePlatform(t *testing.T) {
 	var created platforms.CreateSessionRequest
 	var sent platforms.SendMessageRequest
 	srv.registry.Register(&fakePlatform{
-		id: "r-rem1:opencode",
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "r-rem1:opencode",
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			created = req
 			return &platforms.CreateSessionResponse{ID: "remote-session"}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+		SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir)}
 	withRemoteOwner(srv, host)
@@ -288,11 +288,11 @@ func TestHandleProjectHandle_SendFailureReturnsCreatedSession(t *testing.T) {
 	defer gh.Close()
 	srv.integrations.GitHub = ghc
 	srv.registry.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "child"}, nil
 		},
-		sendMessageFn: func(platforms.SendMessageRequest) error { return errors.New("send failed") },
+		SendMessageFn: func(platforms.SendMessageRequest) error { return errors.New("send failed") },
 	})
 
 	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"issue","number":7,"mode":"session"}`
@@ -313,11 +313,11 @@ func TestHandleProjectHandle_FallsBackWhenMetadataIsUnavailable(t *testing.T) {
 	srv.integrations.GitHub = newGitHubTestClient(gh)
 	var prompt string
 	srv.registry.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "child"}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error { prompt = req.Message; return nil },
+		SendMessageFn: func(req platforms.SendMessageRequest) error { prompt = req.Message; return nil },
 	})
 	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"issue","number":7,"mode":"session","intent":"check logs"}`
 	rr := httptest.NewRecorder()
@@ -345,11 +345,11 @@ func TestHandleProjectHandle_LooksUpSelectedPRDirectly(t *testing.T) {
 	srv.integrations.GitHub = newGitHubTestClient(gh)
 	var prompt string
 	srv.registry.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "child"}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error { prompt = req.Message; return nil },
+		SendMessageFn: func(req platforms.SendMessageRequest) error { prompt = req.Message; return nil },
 	})
 	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"pr","number":101,"mode":"session"}`
 	rr := httptest.NewRecorder()
@@ -373,8 +373,8 @@ func TestHandleProjectHandle_ReportsLaunchErrors(t *testing.T) {
 			}
 			withRemoteOwner(srv, host)
 			srv.registry.Register(&fakePlatform{
-				id: "r-rem1:opencode",
-				createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				PlatformID: "r-rem1:opencode",
+				CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					return nil, errors.New("create failed")
 				},
 			})
@@ -400,7 +400,7 @@ func TestHandleProjectHandle_RejectsInvalidWorktreeResult(t *testing.T) {
 	srv.integrations.GitHub = ghc
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir)}
 	withRemoteOwner(srv, host)
-	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode"})
+	srv.registry.Register(&fakePlatform{PlatformID: "r-rem1:opencode"})
 	body := `{"dir":"/remote/repo","remoteId":"rem1","remote":"origin","type":"issue","number":7,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
 	serveProjectForge(srv, rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
@@ -472,7 +472,7 @@ func TestHandleProjectHandle_CrossForkFetchRunsOnOwner(t *testing.T) {
 	}))
 	defer gh.Close()
 	srv.integrations.GitHub = newGitHubTestClient(gh)
-	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode", sendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
+	srv.registry.Register(&fakePlatform{PlatformID: "r-rem1:opencode", SendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
 	host := &projectHandleRemoteHost{
 		upstreams: githubProjectUpstreams(dir),
 		worktree:  &hostsvc.WorktreeSessionResult{SessionID: "child", WorktreePath: "/remote/wt", Branch: "ocman/pr-42"},
@@ -501,7 +501,7 @@ func TestHandleProjectHandle_CrossForkFetchFailureIsSanitized(t *testing.T) {
 	}))
 	defer gh.Close()
 	srv.integrations.GitHub = newGitHubTestClient(gh)
-	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode"})
+	srv.registry.Register(&fakePlatform{PlatformID: "r-rem1:opencode"})
 	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir), fetchErr: errors.New("credential-secret")}
 	withRemoteOwner(srv, host)
 
@@ -533,8 +533,8 @@ func TestHandleProjectHandle_WorktreeModeUsesOwningRemotePlatform(t *testing.T) 
 
 	var sent platforms.SendMessageRequest
 	srv.registry.Register(&fakePlatform{
-		id:            "r-rem1:opencode",
-		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+		PlatformID:    "r-rem1:opencode",
+		SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
 	host := &projectHandleRemoteHost{worktree: &hostsvc.WorktreeSessionResult{
 		SessionID: "remote-worktree-session", WorktreePath: "/remote/worktree", Branch: "issue/7-bug-report",
@@ -612,8 +612,8 @@ func TestHandleProjectHandle_CrossForkRequiresConfirmation(t *testing.T) {
 	// Even with a fake platform, the request should fail BEFORE the
 	// launch step with the 409 requires_fetch.
 	srv.registry.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			t.Fatal("CreateSession should not be called on cross-fork without fetchHead")
 			return nil, nil
 		},

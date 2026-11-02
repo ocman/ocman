@@ -11,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type injectedDeadlineContext struct{ context.Context }
@@ -30,7 +31,7 @@ func TestConfirmationDrainsAllPagesWithoutCountCutoff(t *testing.T) {
 	}
 	reads := 0
 	confirming := false
-	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode", sessions: sessions}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: sessions}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 		if confirming {
 			reads++
 		}
@@ -56,7 +57,7 @@ func TestConfirmationDrainsAllPagesWithoutCountCutoff(t *testing.T) {
 
 func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
-	path := testStateAt(t, filepath.Join(t.TempDir(), "membership-progress.db"))
+	path := statetest.At(t, filepath.Join(t.TempDir(), "membership-progress.db"), ModuleSchemas()...)
 	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +68,7 @@ func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	srv.hostRouter = hostsvc.NewRouter(&interruptionMembershipHost{resolve: func(_ context.Context, dir string) (string, error) { lookups[dir]++; return "/repo", nil }})
 	sessions := []db.Session{{ID: "a", Directory: "/repo"}}
 	var cancelRead context.CancelFunc
-	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode", sessionsHook: func(context.Context, string, int64) ([]db.Session, error) { return sessions, nil }}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionsFn: func(context.Context, string, int64) ([]db.Session, error) { return sessions, nil }}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 		if id == "b" && cancelRead != nil {
 			cancelRead()
 			return nil, context.DeadlineExceeded
@@ -114,7 +115,7 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cancellation", true: "deadline"}[deadline], func(t *testing.T) {
 			srv, reg := newInterruptionTestServer(t)
-			path := testStateAt(t, filepath.Join(t.TempDir(), "progress-state.db"))
+			path := statetest.At(t, filepath.Join(t.TempDir(), "progress-state.db"), ModuleSchemas()...)
 			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)
@@ -126,7 +127,7 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 			calls := make(map[string]int)
 			var cancelRead context.CancelFunc
 			sessions := []db.Session{{ID: "a", Directory: "/repo"}, {ID: "b", Directory: "/repo"}, {ID: "c", Directory: "/repo"}}
-			reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode", sessionsHook: func(context.Context, string, int64) ([]db.Session, error) { lists++; return sessions, nil }}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
+			reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionsFn: func(context.Context, string, int64) ([]db.Session, error) { lists++; return sessions, nil }}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 				if cancelRead != nil {
 					calls[id]++
 					if id == "b" {

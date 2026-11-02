@@ -30,10 +30,10 @@ func TestHostCapsNativeProviderPrerequisites(t *testing.T) {
 				t.Setenv("PATH", dir)
 				srv, reg := newSessionsTestServer(t)
 				storedProjectFixture(t, srv)
-				adapter := nativeRuntimeAdapter{runtimeAdapter{&fakePlatform{id: "claudecode"}}}
+				adapter := nativeRuntimeAdapter{runtimeAdapter{&fakePlatform{PlatformID: "claudecode"}}}
 				reg.Register(adapter)
 				if mixed {
-					reg.Register(&fakePlatform{id: string(platforms.OpenCodeID)})
+					reg.Register(&fakePlatform{PlatformID: string(platforms.OpenCodeID)})
 				}
 				want := adapter.RuntimeAvailable() || mixed && lookPathOK("tmux") && lookPathOK("opencode")
 				caps := srv.hostCaps()

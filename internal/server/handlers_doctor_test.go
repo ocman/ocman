@@ -88,7 +88,7 @@ func TestDoctorChecksHealthy(t *testing.T) {
 // panel never blocks on it (FR-1).
 func TestDoctorWithoutOpenCodeSkipsItsDatabase(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "claudecode"})
+	reg.Register(&fakePlatform{PlatformID: "claudecode"})
 	srv.hostRouter = hostsvc.NewRouter(doctorHost{})
 	rr := httptest.NewRecorder()
 	srv.handleDoctor(rr, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
@@ -107,7 +107,7 @@ func TestDoctorWithoutOpenCodeSkipsItsDatabase(t *testing.T) {
 
 func TestDoctorMissingOpenCodeDatabaseWithClaudeIsOptional(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "claudecode"})
+	reg.Register(&fakePlatform{PlatformID: "claudecode"})
 	srv.WithStartupIssues(StartupIssue{ID: "opencode-db-missing", Message: "OpenCode database not found"})
 	srv.hostRouter = hostsvc.NewRouter(doctorHost{})
 	rr := httptest.NewRecorder()

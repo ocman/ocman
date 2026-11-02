@@ -27,9 +27,9 @@ const gitPushFrame = "data: " + `{"type":"message.part.updated","properties":{"p
 func TestGitHintDoesNotLookUpTranscriptOrBlockRemoteStream(t *testing.T) {
 	blocked := make(chan struct{})
 	defer close(blocked)
-	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{id: "r-box:opencode",
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { <-blocked; return nil, nil },
-		proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{PlatformID: "r-box:opencode",
+		SessionFn: func(string) (*platforms.SessionDetail, error) { <-blocked; return nil, nil },
+		ProxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
 			_, err := io.WriteString(w, gitPushFrame)
 			return err
 		},
@@ -52,7 +52,7 @@ func TestGitHintDoesNotLookUpTranscriptOrBlockRemoteStream(t *testing.T) {
 
 func TestRemoteConversationSourceBroadcastsGitHintAndPreservesRawEvent(t *testing.T) {
 	reg := platforms.NewRegistry()
-	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{id: "r-box:opencode", proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{PlatformID: "r-box:opencode", ProxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
 		_, err := io.WriteString(w, gitPushFrame)
 		return err
 	}}, identity: db.Session{RemoteID: "box", ProjectID: "p", Directory: "/repo"}, found: true}
@@ -89,7 +89,7 @@ func TestLocalConversationSourceLeavesGitHintToWatcher(t *testing.T) {
 	srv.broadcastHub = newBroadcastHub()
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
-	adapter := &fakePlatform{id: "opencode", proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+	adapter := &fakePlatform{PlatformID: "opencode", ProxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
 		_, err := io.WriteString(w, gitPushFrame)
 		return err
 	}}
@@ -130,9 +130,9 @@ func TestBroadcastGitCommand(t *testing.T) {
 				id = "r-" + tc.owner + ":opencode"
 			}
 			if tc.fail {
-				reg.Register(&fakePlatform{id: id})
+				reg.Register(&fakePlatform{PlatformID: id})
 			} else {
-				reg.Register(&gitIdentityPlatform{fakePlatform: &fakePlatform{id: id}, found: !tc.missing,
+				reg.Register(&gitIdentityPlatform{fakePlatform: &fakePlatform{PlatformID: id}, found: !tc.missing,
 					identity: db.Session{ID: "s1", Directory: "/repo", ProjectID: "project", RemoteID: tc.owner}})
 			}
 			srv := &Server{registry: reg, broadcastHub: newBroadcastHub()}

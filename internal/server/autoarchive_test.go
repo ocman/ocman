@@ -10,6 +10,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 type timeoutArchivePlatform struct {
@@ -88,9 +89,9 @@ func (p *snoozeDuringArchivePlatform) SessionsInactiveBefore(ctx context.Context
 }
 
 func TestAutoArchivePreservesConcurrentSnooze(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: platforms.NewRegistry()}
 	until := time.Now().Add(time.Hour).UnixMilli()
-	srv.registry.Register(&snoozeDuringArchivePlatform{fakePlatform: fakePlatform{id: "fake"}, store: srv.stateDB, until: until})
+	srv.registry.Register(&snoozeDuringArchivePlatform{fakePlatform: fakePlatform{PlatformID: "fake"}, store: srv.stateDB, until: until})
 	srv.autoArchiveInactiveSessions(t.Context())
 	keys, err := srv.stateDB.WakeSnoozedSessions(t.Context(), until)
 	if err != nil || len(keys) != 1 || keys[0] != (state.Key{Platform: "fake", SessionID: "s1"}) {
@@ -109,8 +110,8 @@ func (p *scannedArchivePlatform) SessionsInactiveBefore(context.Context, int64) 
 }
 
 func TestAutoArchiveScansWhenUnarchiveLookupFails(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
-	p := &scannedArchivePlatform{fakePlatform: fakePlatform{id: "fake"}}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: platforms.NewRegistry()}
+	p := &scannedArchivePlatform{fakePlatform: fakePlatform{PlatformID: "fake"}}
 	srv.registry.Register(p)
 	if _, err := srv.stateDB.SQL().Exec(`DROP TABLE unarchived_entity`); err != nil {
 		t.Fatal(err)
@@ -122,8 +123,8 @@ func TestAutoArchiveScansWhenUnarchiveLookupFails(t *testing.T) {
 }
 
 func TestAutoArchivePreservesSnoozeThatWakesDuringScan(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
-	srv.registry.Register(&snoozeDuringArchivePlatform{fakePlatform: fakePlatform{id: "fake"}, store: srv.stateDB, until: time.Now().Add(time.Hour).UnixMilli(), wake: true})
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: platforms.NewRegistry()}
+	srv.registry.Register(&snoozeDuringArchivePlatform{fakePlatform: fakePlatform{PlatformID: "fake"}, store: srv.stateDB, until: time.Now().Add(time.Hour).UnixMilli(), wake: true})
 	srv.autoArchiveInactiveSessions(t.Context())
 	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
 	_, archived := archivedSessions[state.Key{Platform: "fake", SessionID: "s1"}]

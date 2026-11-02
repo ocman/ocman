@@ -30,8 +30,8 @@ func TestConversationStream_FailsBeforeFirstByte(t *testing.T) {
 		{fmt.Errorf("login: %w", ocapi.ErrAuthentication), http.StatusBadGateway},
 	} {
 		srv, reg := newSessionsTestServer(t)
-		reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{{ID: "s1", Platform: "fake"}},
-			proxyEventsFn: func(context.Context, string, io.Writer, func()) error { return tc.err }})
+		reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{{ID: "s1", Platform: "fake"}},
+			ProxyEventsFn: func(context.Context, string, io.Writer, func()) error { return tc.err }})
 		t.Cleanup(srv.convStreamModule().Close)
 		mux, err := srv.routes()
 		if err != nil {
@@ -62,9 +62,9 @@ func TestConversationStream_LocalOwnerFramesAreMapped(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	live := make(chan string, 4)
 	pending := platforms.LivePrompt{"id": "per_1", "sessionID": "s1", "permission": "bash", "patterns": []any{"ls"}}
-	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{{ID: "s1", Platform: "fake"}},
-		listPermissionsFn: func(string) ([]platforms.LivePrompt, error) { return []platforms.LivePrompt{pending}, nil },
-		proxyEventsFn: func(ctx context.Context, _ string, w io.Writer, _ func()) error {
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{{ID: "s1", Platform: "fake"}},
+		ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) { return []platforms.LivePrompt{pending}, nil },
+		ProxyEventsFn: func(ctx context.Context, _ string, w io.Writer, _ func()) error {
 			_, _ = io.WriteString(w, "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n")
 			for {
 				select {
@@ -126,9 +126,9 @@ func TestConversationStream_LocalOwnerFramesAreMapped(t *testing.T) {
 func TestConversationSource_RemoteBridgeForwardsBytes(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 	var listed bool
-	remote := &fakePlatform{id: "r-box:opencode",
-		listPermissionsFn: func(string) ([]platforms.LivePrompt, error) { listed = true; return nil, nil },
-		proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+	remote := &fakePlatform{PlatformID: "r-box:opencode",
+		ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) { listed = true; return nil, nil },
+		ProxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
 			_, err := io.WriteString(w, "data: {}\n\n")
 			return err
 		}}

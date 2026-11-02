@@ -26,7 +26,7 @@ func (p prLifecyclePlatform) SessionLifecycle(context.Context, string) (*platfor
 
 func TestPRTargetAndOwnership(t *testing.T) {
 	s := testServer(t)
-	p := &fakePlatform{id: "fake", sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	p := &fakePlatform{PlatformID: "fake", SessionFn: func(id string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/repo"}}, nil
 	}}
 	s.registry.Register(p)
@@ -49,7 +49,7 @@ func TestPRTargetAndOwnership(t *testing.T) {
 	if _, ok := s.prTarget(w, remoteReq, "s1"); ok || w.Code != 503 {
 		t.Fatal(w.Code)
 	}
-	p.sessionDetailFn = func(string) (*platforms.SessionDetail, error) { return nil, errors.New("missing") }
+	p.SessionFn = func(string) (*platforms.SessionDetail, error) { return nil, errors.New("missing") }
 	if _, ok := s.prTarget(httptest.NewRecorder(), req, "s1"); ok {
 		t.Fatal("missing session accepted")
 	}
@@ -67,7 +67,7 @@ func TestPRWatchAdmission(t *testing.T) {
 	if s.prWatchReady(t.Context(), target) {
 		t.Fatal("missing platform admitted")
 	}
-	p := &fakePlatform{id: "fake"}
+	p := &fakePlatform{PlatformID: "fake"}
 	s.registry.Register(p)
 	if s.prWatchReady(t.Context(), target) {
 		t.Fatal("missing lifecycle admitted")

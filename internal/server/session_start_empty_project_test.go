@@ -34,8 +34,8 @@ func TestStartSessionEmptyProjectLaunchesInstance(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	srv.hostRouter = hostsvc.NewRouter(local.New(local.Deps{Runtime: rt}))
 	reg.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			if req.Port == "" {
 				return nil, platforms.ErrPlatformUnreachable
 			}

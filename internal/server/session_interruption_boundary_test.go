@@ -13,6 +13,7 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/sessionrecovery"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestStopBoundaryAdvancingAborts(t *testing.T) {
@@ -112,7 +113,7 @@ func TestStopBoundaryRevalidationFailurePreventsPartialEvidence(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
 	readErr := errors.New("pre-stop lifecycle unavailable")
 	fail := false
-	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s", Directory: "/repo"}}}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "s", Directory: "/repo"}}}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		if fail {
 			return nil, readErr
 		}
@@ -139,7 +140,7 @@ func TestStopBoundaryRevalidationFailurePreventsPartialEvidence(t *testing.T) {
 func TestStopBoundaryAdvancingAbortRecovery(t *testing.T) {
 	srv, raw := newInterruptionRawServer(t)
 	defer raw.Close()
-	path := testStateAt(t, filepath.Join(t.TempDir(), "boundary-state.db"))
+	path := statetest.At(t, filepath.Join(t.TempDir(), "boundary-state.db"), ModuleSchemas()...)
 	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +224,7 @@ func TestStopBoundaryAbortEvidence(t *testing.T) {
 }
 
 func registerBoundaryLifecycle(srv *Server, raw *sql.DB, statuses map[string]db.SessionStatus) {
-	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
+	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 		var message string
 		var created int64
 		err := raw.QueryRow(`SELECT id,time_created FROM message WHERE session_id=? ORDER BY time_created DESC,id DESC LIMIT 1`, id).Scan(&message, &created)

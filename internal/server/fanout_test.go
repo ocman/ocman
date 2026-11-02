@@ -15,12 +15,12 @@ func TestFanOutSessions_SlowRemoteDoesNotBlock(t *testing.T) {
 	// remote sleeps well past the fan-out timeout; the aggregate must
 	// still return promptly with the fast adapter's sessions.
 	srv.registry.Register(&fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{{ID: "local1", Platform: "fake"}},
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: "local1", Platform: "fake"}},
 	})
 	srv.registry.Register(&fakePlatform{
-		id: "r-slow:opencode",
-		sessionsHook: func(ctx context.Context, _ string, _ int64) ([]db.Session, error) {
+		PlatformID: "r-slow:opencode",
+		SessionsFn: func(ctx context.Context, _ string, _ int64) ([]db.Session, error) {
 			select {
 			case <-time.After(10 * time.Second):
 				return []db.Session{{ID: "slow1", Platform: "r-slow:opencode"}}, nil
@@ -56,10 +56,10 @@ func TestFanOutSessions_SlowRemoteDoesNotBlock(t *testing.T) {
 }
 
 func TestIsLocalAdapter(t *testing.T) {
-	if !isLocalAdapter(&fakePlatform{id: "opencode"}) {
+	if !isLocalAdapter(&fakePlatform{PlatformID: "opencode"}) {
 		t.Error("bare id should be local")
 	}
-	if isLocalAdapter(&fakePlatform{id: "r-abc:opencode"}) {
+	if isLocalAdapter(&fakePlatform{PlatformID: "r-abc:opencode"}) {
 		t.Error("compound id should be remote")
 	}
 }

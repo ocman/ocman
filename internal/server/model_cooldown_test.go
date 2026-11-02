@@ -40,22 +40,22 @@ func newCooldownRigWith(t *testing.T, ps state.ProjectSettings) *cooldownRig {
 	}
 	r := &cooldownRig{srv: srv}
 	reg.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{mkSession("opencode", "s1", "t", 1)},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{mkSession("opencode", "s1", "t", 1)},
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			r.sent = append(r.sent, req.Model)
 			r.msgs = append(r.msgs, req.Message)
 			return nil
 		},
-		abortFn: func(platforms.AbortRequest) error {
+		AbortFn: func(platforms.AbortRequest) error {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			r.aborts++
 			return nil
 		},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			status := db.StatusDone
@@ -179,9 +179,9 @@ func TestQueuedMessageSkipsProviderThatJustHitQuota(t *testing.T) {
 func TestSessionModelsCarryCooldown(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{mkSession("opencode", "s1", "t", 1)},
-		sessionModelsFn: func() *platforms.SessionModelsResponse {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{mkSession("opencode", "s1", "t", 1)},
+		SessionModelsFn: func() *platforms.SessionModelsResponse {
 			return &platforms.SessionModelsResponse{Models: []platforms.SessionModel{
 				{Provider: "a", Model: "x"}, {Provider: "b", Model: "y"},
 			}}

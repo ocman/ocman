@@ -51,8 +51,8 @@ func TestReloadOpencodeEndpoint(t *testing.T) {
 				srv.hostRouter.RegisterRemote("remote-1", remote)
 			}
 			reg.Register(&fakePlatform{
-				id: "opencode", sessions: []db.Session{{ID: "s1"}},
-				sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+				PlatformID: "opencode", SessionList: []db.Session{{ID: "s1"}},
+				SessionFn: func(string) (*platforms.SessionDetail, error) {
 					if tc.missing {
 						return nil, nil
 					}

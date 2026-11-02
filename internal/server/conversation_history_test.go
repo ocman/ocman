@@ -49,14 +49,14 @@ func TestConversationHistoryModuleWiringAndInvalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	p := &historyTestPlatform{fakePlatform: &fakePlatform{id: "test"}, text: "initial"}
-	p.sessionDetailFn = func(string) (*platforms.SessionDetail, error) {
+	p := &historyTestPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}, text: "initial"}
+	p.SessionFn = func(string) (*platforms.SessionDetail, error) {
 		t.Error("shadow importer called UI session reader")
 		return nil, nil
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	registry.Register(&fakePlatform{id: "non-history"})
+	registry.Register(&fakePlatform{PlatformID: "non-history"})
 	s := New(nil, nil, "127.0.0.1:0", registry, nil).WithConversationHistory(store, "owner")
 	if _, ready := s.historyAnalytics.Instances(); ready {
 		t.Fatal("enabled reads with a platform missing a history adapter")
@@ -125,7 +125,7 @@ func TestConversationHistoryLogsRepairFailures(t *testing.T) {
 	}
 	defer store.Close()
 	registry := platforms.NewRegistry()
-	registry.Register(failingHistoryPlatform{&historyTestPlatform{fakePlatform: &fakePlatform{id: "test"}}})
+	registry.Register(failingHistoryPlatform{&historyTestPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}}})
 	s := New(nil, nil, "127.0.0.1:0", registry, nil).WithConversationHistory(store, "owner")
 	if err := s.historyIngest.Start(t.Context()); err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestConversationHistoryDoesNotRegisterNativeAnalyticsParity(t *testing.T) {
 
 func TestConversationHistoryWithoutStoreIsDisabled(t *testing.T) {
 	registry := platforms.NewRegistry()
-	registry.Register(&historyTestPlatform{fakePlatform: &fakePlatform{id: "test"}})
+	registry.Register(&historyTestPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}})
 	s := New(nil, nil, "127.0.0.1:0", registry, nil).WithConversationHistory(nil, "owner")
 	if s.historyAnalytics != nil {
 		t.Fatal("missing history unexpectedly configured analytics")

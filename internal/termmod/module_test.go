@@ -68,12 +68,6 @@ func newMux(host *fakeHost, privileged func(*http.Request) bool) *http.ServeMux 
 
 func allow(*http.Request) bool { return true }
 
-func serve(mux *http.ServeMux, method, target, body string) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(method, target, strings.NewReader(body)))
-	return rec
-}
-
 func TestWindowsValidation(t *testing.T) {
 	dir := "/home/u/proj"
 	foreign := "ocman-deadbeef00-1" // valid shape, wrong hash for dir
@@ -97,7 +91,7 @@ func TestWindowsValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			host := &fakeHost{}
-			if rec := serve(newMux(host, allow), tt.method, tt.target, tt.body); rec.Code != tt.want {
+			if rec := moduletest.Do(newMux(host, allow), tt.method, tt.target, tt.body, ""); rec.Code != tt.want {
 				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
 			}
 			if host.calls != 0 {
@@ -112,14 +106,14 @@ func TestWindowsCRUD(t *testing.T) {
 	host := &fakeHost{createAs: term.WindowPrefix(dir) + "2"}
 	mux := newMux(host, allow)
 
-	if rec := serve(mux, http.MethodGet, "/api/term/windows?dir="+dir, ""); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"windows":[]}` {
+	if rec := moduletest.Do(mux, http.MethodGet, "/api/term/windows?dir="+dir, "", ""); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"windows":[]}` {
 		t.Fatalf("list = %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := serve(mux, http.MethodPost, "/api/term/windows", `{"dir":"`+dir+`"}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"window":"`+host.createAs+`"`) {
+	if rec := moduletest.Do(mux, http.MethodPost, "/api/term/windows", `{"dir":"`+dir+`"}`, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"window":"`+host.createAs+`"`) {
 		t.Fatalf("create = %d %s", rec.Code, rec.Body.String())
 	}
 	win := term.WindowPrefix(dir) + "1"
-	if rec := serve(mux, http.MethodDelete, "/api/term/windows", `{"dir":"`+dir+`","window":"`+win+`"}`); rec.Code != http.StatusNoContent || host.killed != win {
+	if rec := moduletest.Do(mux, http.MethodDelete, "/api/term/windows", `{"dir":"`+dir+`","window":"`+win+`"}`, ""); rec.Code != http.StatusNoContent || host.killed != win {
 		t.Fatalf("delete = %d, killed %q", rec.Code, host.killed)
 	}
 }
@@ -132,7 +126,7 @@ func TestWindowsHostErrors(t *testing.T) {
 		{http.MethodPost, "/api/term/windows", `{"dir":"` + dir + `"}`},
 		{http.MethodDelete, "/api/term/windows", `{"dir":"` + dir + `","window":"` + term.WindowPrefix(dir) + `1"}`},
 	} {
-		if rec := serve(mux, c.method, c.target, c.body); rec.Code != http.StatusInternalServerError {
+		if rec := moduletest.Do(mux, c.method, c.target, c.body, ""); rec.Code != http.StatusInternalServerError {
 			t.Errorf("%s %s = %d, want 500", c.method, c.target, rec.Code)
 		}
 	}

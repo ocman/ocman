@@ -29,7 +29,7 @@ func permissionProfileHTTPServer(t *testing.T, fake *fakePlatform) (*Server, htt
 }
 
 func TestPermissionProfileHTTPLifecycle(t *testing.T) {
-	_, handler := permissionProfileHTTPServer(t, &fakePlatform{id: "opencode"})
+	_, handler := permissionProfileHTTPServer(t, &fakePlatform{PlatformID: "opencode"})
 
 	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/permission-profiles", ""); rec.Code != http.StatusOK || rec.Body.String() != "[]\n" {
 		t.Fatalf("empty list: %d %s", rec.Code, rec.Body.String())
@@ -77,7 +77,7 @@ func TestPermissionProfileHTTPLifecycle(t *testing.T) {
 }
 
 func TestPermissionProfileHTTPValidation(t *testing.T) {
-	_, handler := permissionProfileHTTPServer(t, &fakePlatform{id: "opencode"})
+	_, handler := permissionProfileHTTPServer(t, &fakePlatform{PlatformID: "opencode"})
 	for _, body := range []string{
 		`{`,
 		`{"name":"","rules":[{"permission":"bash","pattern":"*","action":"deny"}]}`,
@@ -103,17 +103,17 @@ func TestPermissionProfileHTTPValidation(t *testing.T) {
 // A resolved profile hands sessionsvc.CreateConfigured exactly the pinned
 // rules: the fake adapter must see the resolved set verbatim.
 func TestResolvedProfileReachesCreateConfigured(t *testing.T) {
-	srv, handler := permissionProfileHTTPServer(t, &fakePlatform{id: "opencode"})
+	srv, handler := permissionProfileHTTPServer(t, &fakePlatform{PlatformID: "opencode"})
 	ctx := t.Context()
 
 	var applied []platforms.PermissionRule
 	var appliedSession string
 	srv.registry.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID: "opencode",
+		CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "session-1"}, nil
 		},
-		setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+		SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
 			applied, appliedSession = req.Rules, req.SessionID
 			return nil
 		},
@@ -148,7 +148,7 @@ func TestResolvedProfileReachesCreateConfigured(t *testing.T) {
 // session cookie manages them, an unauthenticated one gets 401, and a
 // cross-site write is refused even with the cookie.
 func TestPermissionProfileHTTPNormalAuth(t *testing.T) {
-	srv, _ := permissionProfileHTTPServer(t, &fakePlatform{id: "opencode"})
+	srv, _ := permissionProfileHTTPServer(t, &fakePlatform{PlatformID: "opencode"})
 	srv.auth = newTestAuth(t, "hunter2")
 	mux := mustRoutes(t, srv)
 	cookies := httptest.NewRecorder()

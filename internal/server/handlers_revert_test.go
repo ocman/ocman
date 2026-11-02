@@ -13,12 +13,12 @@ func TestSessionRevertAndUnrevert_Post(t *testing.T) {
 	var reverted *platforms.RevertSessionRequest
 	var unreverted *platforms.UnrevertSessionRequest
 	fake := &fakePlatform{
-		id: "fake",
-		revertFn: func(req platforms.RevertSessionRequest) error {
+		PlatformID: "fake",
+		RevertFn: func(req platforms.RevertSessionRequest) error {
 			reverted = &req
 			return nil
 		},
-		unrevertFn: func(req platforms.UnrevertSessionRequest) error {
+		UnrevertFn: func(req platforms.UnrevertSessionRequest) error {
 			unreverted = &req
 			return nil
 		},

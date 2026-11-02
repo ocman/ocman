@@ -58,7 +58,7 @@ func (p *lifetimeRecordingPlatform) CancelNativeQueued(context.Context, platform
 // bounded nor stopped with the server.
 func TestAutoApproveCallbacksUseServerLifetime(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	p := &lifetimeRecordingPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{mkSession("fake", "s1", "t", 1)}}}
+	p := &lifetimeRecordingPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SessionList: []db.Session{mkSession("fake", "s1", "t", 1)}}}
 	reg.Register(p)
 	deps := srv.autoapproveEngineDeps()
 

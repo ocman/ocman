@@ -22,7 +22,7 @@ func (authoritativeReloadPlatform) ReloadIdle(context.Context) (bool, error) {
 func TestConfigReloadUsesAuthoritativeStatusDespiteSuccessfulBrowsing(t *testing.T) {
 	srv, _ := startTestServer(t, nil)
 	srv.registry = platforms.NewRegistry()
-	srv.registry.Register(authoritativeReloadPlatform{&fakePlatform{id: "claudecode", sessions: []db.Session{{Status: db.StatusDone}}}})
+	srv.registry.Register(authoritativeReloadPlatform{&fakePlatform{PlatformID: "claudecode", SessionList: []db.Session{{Status: db.StatusDone}}}})
 	if idle, err := srv.configIdle(t.Context()); idle || err == nil {
 		t.Fatalf("browsing hid project-status error: idle=%v err=%v", idle, err)
 	}
@@ -32,13 +32,13 @@ func TestConfigReloadAllowsFinishedWaitingConversationsWithoutPrompts(t *testing
 	srv, _ := startTestServer(t, nil)
 	srv.registry = platforms.NewRegistry()
 	status := db.SettleSessionStatus(db.TurnSettled, true, db.InferSessionStatus("assistant", "stop", "", false))
-	p := &fakePlatform{id: "opencode", sessions: []db.Session{{Status: status}}}
+	p := &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{Status: status}}}
 	srv.registry.Register(p)
 	if idle, err := srv.configIdle(t.Context()); !idle || err != nil {
 		t.Fatalf("finished assistant turn blocks reload: %v %v", idle, err)
 	}
 	for _, pending := range []db.Session{{Status: status, PendingPermission: true}, {Status: status, PendingQuestion: true}} {
-		p.sessions = []db.Session{pending}
+		p.SessionList = []db.Session{pending}
 		if idle, err := srv.configIdle(t.Context()); idle || err != nil {
 			t.Fatalf("pending prompt ignored: %v %v", idle, err)
 		}
@@ -99,24 +99,24 @@ func TestPlatformSetupRejectsUntrustedInstallRequests(t *testing.T) {
 func TestConfigReloadWaitsForLocalTurnsPromptsAndQueue(t *testing.T) {
 	srv, _ := startTestServer(t, nil)
 	srv.registry = platforms.NewRegistry()
-	local := &fakePlatform{id: "opencode"}
+	local := &fakePlatform{PlatformID: "opencode"}
 	srv.registry.Register(local)
-	srv.registry.Register(&fakePlatform{id: "r-other:opencode", sessions: []db.Session{{Status: db.StatusBusy}}})
+	srv.registry.Register(&fakePlatform{PlatformID: "r-other:opencode", SessionList: []db.Session{{Status: db.StatusBusy}}})
 	for _, session := range []db.Session{
 		{Status: db.StatusBusy}, {Status: db.StatusLimited},
 		{Status: db.StatusDone, PendingPermission: true}, {Status: db.StatusDone, PendingQuestion: true},
 	} {
-		local.sessions = []db.Session{session}
+		local.SessionList = []db.Session{session}
 		if idle, err := srv.configIdle(t.Context()); err != nil || idle {
 			t.Fatalf("active session: %v %v", idle, err)
 		}
 	}
-	local.sessions = []db.Session{{Status: db.StatusDone}}
-	local.sessionsErr = errors.New("read failed")
+	local.SessionList = []db.Session{{Status: db.StatusDone}}
+	local.SessionsErr = errors.New("read failed")
 	if idle, err := srv.configIdle(t.Context()); idle || err == nil {
 		t.Fatalf("uncertain: %v %v", idle, err)
 	}
-	local.sessionsErr = nil
+	local.SessionsErr = nil
 	if idle, err := srv.configIdle(t.Context()); !idle || err != nil {
 		t.Fatalf("settled: %v %v", idle, err)
 	}
@@ -150,11 +150,11 @@ func TestRebasedQueueDrainsDuringPlatformReload(t *testing.T) {
 	srv, _ := startTestServer(t, nil)
 	srv.registry = platforms.NewRegistry()
 	sent := 0
-	p := &fakePlatform{id: "opencode",
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	p := &fakePlatform{PlatformID: "opencode",
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/repo", Status: db.StatusDone}}, nil
 		},
-		sendMessageFn: func(platforms.SendMessageRequest) error { sent++; return nil },
+		SendMessageFn: func(platforms.SendMessageRequest) error { sent++; return nil },
 	}
 	srv.registry.Register(p)
 	srv.WithConfigReload(func() {}, "opencode,claudecode", false)

@@ -34,7 +34,7 @@ func (p *interruptionLifecyclePlatform) SessionLifecycle(_ context.Context, id s
 func TestReplacementUsesFreshBoundedLifecycleRead(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{
+		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
 			{ID: "active", Directory: "/repo", Status: db.StatusBusy},
 			{ID: "settled", Directory: "/repo", Status: db.StatusBusy},
 			{ID: "missing", Directory: "/repo", Status: db.StatusInterrupted},
@@ -71,7 +71,7 @@ func TestReplacementUsesFreshBoundedLifecycleRead(t *testing.T) {
 func TestReplacementDoesNotFilterCandidatesByCachedTerminalStatus(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "waiting", Directory: "/repo", Status: db.StatusWaiting}, {ID: "done", Directory: "/repo", Status: db.StatusDone}}},
+		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "waiting", Directory: "/repo", Status: db.StatusWaiting}, {ID: "done", Directory: "/repo", Status: db.StatusDone}}},
 		lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 			return &platforms.SessionLifecycle{Status: db.StatusInterrupted, LatestMessageID: "latest-" + id}, nil
 		},
@@ -89,7 +89,7 @@ func TestReplacementDoesNotFilterCandidatesByCachedTerminalStatus(t *testing.T) 
 
 func TestInterruptedTurnGetsDurableHistoryNotice(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
-	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: db.StatusInterrupted, LatestMessageID: "m1"}, nil
 	}})
 	detail := &platforms.SessionDetail{
@@ -113,7 +113,7 @@ func TestInterruptedTurnGetsDurableHistoryNotice(t *testing.T) {
 
 func TestOlderHistoryPagesDoNotCreateInterruptionIdentities(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
-	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: db.StatusInterrupted, LatestMessageID: "current-turn"}, nil
 	}})
 	for _, id := range []string{"current-turn", "completed-turn", "older-completed-turn"} {
@@ -133,7 +133,7 @@ func TestReplacementReadFailureDoesNotPersistPartialHistory(t *testing.T) {
 	defer unsubscribe()
 	readErr := errors.New("second lifecycle read failed")
 	reg.Register(&interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "first", Directory: "/repo", Status: db.StatusBusy}, {ID: "second", Directory: "/repo", Status: db.StatusBusy}}},
+		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "first", Directory: "/repo", Status: db.StatusBusy}, {ID: "second", Directory: "/repo", Status: db.StatusBusy}}},
 		lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 			if id == "second" {
 				return nil, readErr
@@ -158,7 +158,7 @@ func TestReplacementReadFailureDoesNotPersistPartialHistory(t *testing.T) {
 func TestReplacementSkipsCandidatesDeletedDuringEnumeration(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "deleted-judge", Directory: "/repo"}, {ID: "active", Directory: "/repo"}}},
+		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "deleted-judge", Directory: "/repo"}, {ID: "active", Directory: "/repo"}}},
 		lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 			if id == "deleted-judge" {
 				return nil, platforms.ErrNotFound
@@ -182,7 +182,7 @@ func TestReplacementSkipsCandidatesDeletedDuringEnumeration(t *testing.T) {
 func TestReplacementPreparationDoesNotClaimConfirmedInterruption(t *testing.T) {
 	srv, reg := newInterruptionTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "active", Directory: "/repo"}}},
+		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "active", Directory: "/repo"}}},
 		lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 			return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "turn"}, nil
 		},
@@ -202,11 +202,11 @@ func TestReplacementHistoryIsOwnerScopedAndSurvivesAbort(t *testing.T) {
 			ocv2.SetInstalledV2(machine)
 			t.Cleanup(func() { ocv2.SetInstalledV2(false) })
 			srv, reg := newInterruptionTestServer(t)
-			reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{
+			reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
 				{ID: "active", Directory: "/projects/.worktrees/repo/a", Status: db.StatusBusy},
 				{ID: "other", Directory: "/projects/other", Status: db.StatusBusy},
 				{ID: "idle", Directory: "/projects/repo", Status: db.StatusWaiting},
-			}, sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			}, SessionFn: func(id string) (*platforms.SessionDetail, error) {
 				return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusWaiting}, Messages: []db.Message{{ID: "m-" + id, Data: json.RawMessage(`{"role":"assistant","error":{"name":"MessageAbortedError"}}`)}}}, nil
 			}}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 				if id == "idle" {
@@ -259,7 +259,7 @@ func TestReplacementFindsFreshChildrenOmittedByDisplayList(t *testing.T) {
 		t.Fatal(err)
 	}
 	registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{
-		fakePlatform: &fakePlatform{id: "opencode", sessions: nil},
+		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: nil},
 		lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
 			if id == "parent" {
 				return &platforms.SessionLifecycle{Status: db.StatusDone}, nil

@@ -23,8 +23,8 @@ func TestRoutineUpstreamCreationCannotPublishUntaggedList(t *testing.T) {
 			defer once.Do(func() { close(release) })
 			block := func() { close(blocked); <-release }
 			srv.registry.Register(&fakePlatform{
-				id: "opencode",
-				createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				PlatformID: "opencode",
+				CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					// OpenCode announces the row before returning its creation response.
 					srv.broadcastSessionChanged("opencode", "session-1")
 					if blockedPhase == "creation" {
@@ -32,13 +32,13 @@ func TestRoutineUpstreamCreationCannotPublishUntaggedList(t *testing.T) {
 					}
 					return &platforms.CreateSessionResponse{ID: "session-1"}, nil
 				},
-				setPermissionRulesFn: func(platforms.SetPermissionRulesRequest) error {
+				SetPermissionRulesFn: func(platforms.SetPermissionRulesRequest) error {
 					if blockedPhase == "permissions" {
 						block()
 					}
 					return nil
 				},
-				sessionsHook: func(context.Context, string, int64) ([]db.Session, error) {
+				SessionsFn: func(context.Context, string, int64) ([]db.Session, error) {
 					close(listed)
 					return []db.Session{{ID: "session-1", Platform: "opencode", Directory: "/repo"}}, nil
 				},

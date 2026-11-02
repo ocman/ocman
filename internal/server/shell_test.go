@@ -24,9 +24,9 @@ func TestHandleSessionShell_DispatchesToAdapter(t *testing.T) {
 		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
 	}
 	fp := &fakePlatform{
-		id:       "fake",
-		sessions: fakeSessions,
-		runShell: func() error { called = true; return nil },
+		PlatformID:  "fake",
+		SessionList: fakeSessions,
+		RunShellFn:  func() error { called = true; return nil },
 	}
 	srv.registry.Register(fp)
 	srv.registry.RememberSessions("fake", fakeSessions)
@@ -57,9 +57,9 @@ func TestHandleSessionShell_RejectsEmptyCommand(t *testing.T) {
 		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
 	}
 	fp := &fakePlatform{
-		id:       "fake",
-		sessions: fakeSessions,
-		runShell: func() error { called = true; return nil },
+		PlatformID:  "fake",
+		SessionList: fakeSessions,
+		RunShellFn:  func() error { called = true; return nil },
 	}
 	srv.registry.Register(fp)
 	srv.registry.RememberSessions("fake", fakeSessions)
@@ -91,7 +91,7 @@ func TestHandleSessionShell_UnsupportedReturns501(t *testing.T) {
 		{ID: "fk-1", Platform: "fake", Directory: "/x", TimeUpdated: 1},
 	}
 	// runShell left nil → fakePlatform returns ErrUnsupported.
-	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions})
+	srv.registry.Register(&fakePlatform{PlatformID: "fake", SessionList: fakeSessions})
 	srv.registry.RememberSessions("fake", fakeSessions)
 
 	body := strings.NewReader(`{"command":"echo hi"}`)

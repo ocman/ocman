@@ -154,16 +154,16 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	var created platforms.CreateSessionRequest
 	var sent platforms.SendMessageRequest
 	var rules platforms.SetPermissionRulesRequest
-	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
-	platform.createSessionFn = func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	platform := &fakePlatform{PlatformID: "opencode", Caps: platforms.Capabilities{PermissionRules: true}}
+	platform.CreateSessionFn = func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		created = req
 		return &platforms.CreateSessionResponse{ID: "session-1"}, nil
 	}
-	platform.setPermissionRulesFn = func(req platforms.SetPermissionRulesRequest) error {
+	platform.SetPermissionRulesFn = func(req platforms.SetPermissionRulesRequest) error {
 		rules = req
 		return nil
 	}
-	platform.sendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
+	platform.SendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
 	registry := platforms.NewRegistry()
 	registry.Register(platform)
 	srv := New(nil, nil, "", registry, nil)
@@ -233,12 +233,12 @@ func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *test
 	// exceed the 100-rule cap, making the outcome depend on the developer.
 	factorySkillRulesFixture(t)
 	endpoint := connectedPlanningMCP(t)
-	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
-	platform.createSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	platform := &fakePlatform{PlatformID: "opencode", Caps: platforms.Capabilities{PermissionRules: true}}
+	platform.CreateSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		return &platforms.CreateSessionResponse{ID: "restricted-session"}, nil
 	}
-	platform.setPermissionRulesFn = func(platforms.SetPermissionRulesRequest) error { return errors.New("rules failed") }
-	platform.disposeFn = func(platforms.DisposeSessionRequest) error { return errors.New("dispose failed") }
+	platform.SetPermissionRulesFn = func(platforms.SetPermissionRulesRequest) error { return errors.New("rules failed") }
+	platform.DisposeFn = func(platforms.DisposeSessionRequest) error { return errors.New("dispose failed") }
 	registry := platforms.NewRegistry()
 	registry.Register(platform)
 	srv := New(nil, nil, "", registry, nil)
@@ -265,12 +265,12 @@ func TestFactoryPlanningLauncherRejectsStaleMCPConfigWithoutRestart(t *testing.T
 		ensured: &hostsvc.EnsureRuntimeResult{Endpoint: stale.URL, RepoRoot: "/repo"},
 	}
 	var created platforms.CreateSessionRequest
-	platform := &fakePlatform{id: "opencode", caps: platforms.Capabilities{PermissionRules: true}}
-	platform.createSessionFn = func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	platform := &fakePlatform{PlatformID: "opencode", Caps: platforms.Capabilities{PermissionRules: true}}
+	platform.CreateSessionFn = func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		created = req
 		return &platforms.CreateSessionResponse{ID: "session-1"}, nil
 	}
-	platform.setPermissionRulesFn = func(platforms.SetPermissionRulesRequest) error { return nil }
+	platform.SetPermissionRulesFn = func(platforms.SetPermissionRulesRequest) error { return nil }
 	registry := platforms.NewRegistry()
 	registry.Register(platform)
 	srv := New(nil, nil, "", registry, nil)

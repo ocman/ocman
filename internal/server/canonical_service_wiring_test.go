@@ -28,15 +28,15 @@ func TestServerSessionServiceUsesCanonicalOwnerAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	var localAborts, remoteAborts []string
-	native := &canonicalMetadataNative{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "root", Directory: "/repo", Title: "root"}}}}
-	native.abortFn = func(req platforms.AbortRequest) error { localAborts = append(localAborts, req.SessionID); return nil }
+	native := &canonicalMetadataNative{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "root", Directory: "/repo", Title: "root"}}}}
+	native.AbortFn = func(req platforms.AbortRequest) error { localAborts = append(localAborts, req.SessionID); return nil }
 	history := statev2test.Open(t)
 	adapter, err := owned.New(t.Context(), native, catalogue, history, "owner")
 	if err != nil {
 		t.Fatal(err)
 	}
-	remote := &canonicalRemotePlatform{fakePlatform: &fakePlatform{id: "r-other:opencode"}}
-	remote.abortFn = func(req platforms.AbortRequest) error { remoteAborts = append(remoteAborts, req.SessionID); return nil }
+	remote := &canonicalRemotePlatform{fakePlatform: &fakePlatform{PlatformID: "r-other:opencode"}}
+	remote.AbortFn = func(req platforms.AbortRequest) error { remoteAborts = append(remoteAborts, req.SessionID); return nil }
 	registry := platforms.NewRegistry()
 	registry.Register(adapter)
 	registry.Register(remote)

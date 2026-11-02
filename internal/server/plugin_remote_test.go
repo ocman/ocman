@@ -58,7 +58,7 @@ func connectPluginOwner(t *testing.T, hub, owner *Server) func() {
 func connectPluginOwnerHandler(t *testing.T, hub *Server, handler remote.PluginHandler) func() {
 	t.Helper()
 	registry := platforms.NewRegistry()
-	registry.Register(&fakePlatform{id: "opencode"})
+	registry.Register(&fakePlatform{PlatformID: "opencode"})
 	host := local.New(local.Deps{})
 	service := remote.NewServer(registry, host, "machine", "test").UsePlugins(handler)
 	listener, err := remote.NewListener(remote.ListenConfig{Addr: "127.0.0.1:0", Token: "token", TrustedOverlay: true}, service)

@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestProjectSettingsDefaultAgent(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	rec := httptest.NewRecorder()
 	srv.getProjectSettings(rec, httptest.NewRequest(http.MethodGet, "/api/project/settings?dir=/repo", nil))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"defaultAgent":"build"`) {
@@ -67,7 +68,7 @@ func TestDefaultAgentSetting(t *testing.T) {
 	defaultAgentOptions = func(context.Context, []platforms.Platform, []string) []string {
 		return []string{"build", "plan", "custom-agent"}
 	}
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	for _, tc := range []struct {
 		method, body, want string
 		status             int
@@ -103,7 +104,7 @@ func TestDefaultAgentSetting(t *testing.T) {
 }
 
 func TestSettingsSaveInvalidation(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t), broadcastHub: newBroadcastHub()}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), broadcastHub: newBroadcastHub()}
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 	for _, tc := range []struct {

@@ -34,11 +34,11 @@ func (p *compactTestPlatform) SidebarSessions(context.Context, platforms.Sidebar
 
 func TestSidebarEndpointCombinesPlatformsWithoutSummaryOrStateFanout(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
-	p := &compactTestPlatform{fakePlatform: &fakePlatform{id: "first", sessionsHook: func(context.Context, string, int64) ([]db.Session, error) {
+	p := &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "first", SessionsFn: func(context.Context, string, int64) ([]db.Session, error) {
 		t.Fatal("legacy list used")
 		return nil, nil
 	}}, rows: []db.Session{{ID: "one", Platform: "first", TimeUpdated: 30, Status: db.StatusBusy, Origin: "routine", RoutineID: "routine-1", Pinned: true}, {ID: "two", Platform: "second", TimeUpdated: 20, Status: db.StatusDone, Seen: true}}}
-	other := &compactTestPlatform{fakePlatform: &fakePlatform{id: "second"}}
+	other := &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "second"}}
 	other.rows = p.rows
 	reg.Register(p)
 	reg.Register(other)
@@ -68,7 +68,7 @@ func TestSidebarEndpointCombinesPlatformsWithoutSummaryOrStateFanout(t *testing.
 
 func TestSidebarEndpointCountsRunningAndRejectsBadPages(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
-	p := &compactTestPlatform{fakePlatform: &fakePlatform{id: "test"}, rows: []db.Session{{ID: "one", Status: db.StatusBusy}, {ID: "two", Status: db.StatusDone}}}
+	p := &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}, rows: []db.Session{{ID: "one", Status: db.StatusBusy}, {ID: "two", Status: db.StatusDone}}}
 	reg.Register(p)
 	w := httptest.NewRecorder()
 	s.handleSessions(w, httptest.NewRequest(http.MethodGet, "/api/sessions?view=running-count", nil))
@@ -99,7 +99,7 @@ func (p *remoteCompactTestPlatform) SidebarSessions(_ context.Context, q platfor
 func TestSidebarKeepsHubRemotePinsAndOriginTags(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
 	platform := "r-remote:test"
-	p := &remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: platform}, rows: []db.Session{{ID: "old", Platform: platform, RemoteID: "remote", Directory: "/repo", TimeUpdated: 2, SeenTimeUpdated: 1, UnreadCount: 1, Status: db.StatusDone, Origin: "factory", FactoryAttemptID: "attempt"}}}
+	p := &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: platform}, rows: []db.Session{{ID: "old", Platform: platform, RemoteID: "remote", Directory: "/repo", TimeUpdated: 2, SeenTimeUpdated: 1, UnreadCount: 1, Status: db.StatusDone, Origin: "factory", FactoryAttemptID: "attempt"}}}
 	reg.Register(p)
 	if err := s.stateDB.PinSession(t.Context(), platform, "old"); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestSidebarKeepsHubRemotePinsAndOriginTags(t *testing.T) {
 func TestSidebarKeepsRemoteRunningSessionsOutsideRecentWindow(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
 	platform := "r-remote:test"
-	p := &remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: platform}, rows: []db.Session{
+	p := &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: platform}, rows: []db.Session{
 		{ID: "running", Platform: platform, TimeUpdated: 1, Status: db.StatusBusy},
 		{ID: "done", Platform: platform, TimeUpdated: 2, Status: db.StatusDone},
 	}}

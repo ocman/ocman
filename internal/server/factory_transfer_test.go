@@ -61,7 +61,7 @@ func TestFactoryIssueTransfer(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic/issues/epic.1.3.4/transfer", nil)
 		req.RemoteAddr = "127.0.0.1:1"
 		rec := httptest.NewRecorder()
-		serveFactory(srv, rec, req)
+		serveModule(srv, srv.factoryModule(), rec, req)
 		return rec
 	}
 
@@ -88,7 +88,7 @@ func TestFactoryIssueTransfer(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic/issues/epic.1.3.4/transfer/cancel", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	cancel := httptest.NewRecorder()
-	serveFactory(srv, cancel, req)
+	serveModule(srv, srv.factoryModule(), cancel, req)
 	if cancel.Code != http.StatusNoContent || svc.cancelled != "epic.1.3.4" {
 		t.Fatalf("cancel = %d, %q", cancel.Code, svc.cancelled)
 	}

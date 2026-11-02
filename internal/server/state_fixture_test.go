@@ -3,10 +3,12 @@ package server
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestOpenTestStateDBAlreadyMigrated(t *testing.T) {
-	first := openTestStateDB(t)
+	first := statetest.Open(t, ModuleSchemas()...)
 	for _, schema := range ModuleSchemas() {
 		var version int
 		if err := first.SQL().QueryRow(`SELECT max(version) FROM module_schema_version WHERE module = ?`, schema.Module).Scan(&version); err != nil {
@@ -27,7 +29,7 @@ func TestOpenTestStateDBAlreadyMigrated(t *testing.T) {
 	if _, err := first.SQL().Exec(`INSERT INTO setting (key, value, updated_at) VALUES ('fixture-isolation', 'first', 1)`); err != nil {
 		t.Fatal(err)
 	}
-	second := openTestStateDB(t)
+	second := statetest.Open(t, ModuleSchemas()...)
 	var count int
 	if err := second.SQL().QueryRow(`SELECT count(*) FROM setting WHERE key = 'fixture-isolation'`).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -39,7 +41,7 @@ func TestOpenTestStateDBAlreadyMigrated(t *testing.T) {
 
 func BenchmarkOpenTestStateDB(b *testing.B) {
 	for b.Loop() {
-		if err := openTestStateDB(b).Close(); err != nil {
+		if err := statetest.Open(b, ModuleSchemas()...).Close(); err != nil {
 			b.Fatal(err)
 		}
 	}

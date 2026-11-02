@@ -37,16 +37,16 @@ func TestQueueIdentity_IdleEdgeAndBroadcastAreHostScoped(t *testing.T) {
 	for _, platformID := range []string{"fake", "r-A:fake"} {
 		id := platformID
 		reg.Register(&fakePlatform{
-			id:       id,
-			sessions: []db.Session{mkSession(id, "s1", "t", 1)},
-			sendMessageFn: func(req platforms.SendMessageRequest) error {
+			PlatformID:  id,
+			SessionList: []db.Session{mkSession(id, "s1", "t", 1)},
+			SendMessageFn: func(req platforms.SendMessageRequest) error {
 				mu.Lock()
 				sent[id] = append(sent[id], req.Message)
 				mu.Unlock()
 				return nil
 			},
 			// Both sessions stay mid-turn: only an idle edge may drain.
-			sessionDetailFn: func(sessionID string) (*platforms.SessionDetail, error) {
+			SessionFn: func(sessionID string) (*platforms.SessionDetail, error) {
 				return &platforms.SessionDetail{Session: &db.Session{ID: sessionID, Status: db.StatusBusy}}, nil
 			},
 		})

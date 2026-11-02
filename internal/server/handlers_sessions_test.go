@@ -25,6 +25,7 @@ import (
 	pb "github.com/ocman/ocman/internal/remote/proto"
 	"github.com/ocman/ocman/internal/sessionlifecycle"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/testutil"
 )
 
@@ -51,11 +52,7 @@ type stateRow struct {
 // state.db. Tests register a fakePlatform via the returned registry.
 func newSessionsTestServer(t *testing.T) (*Server, *platforms.Registry) {
 	t.Helper()
-	stDB, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatalf("state.Open: %v", err)
-	}
-	t.Cleanup(func() { stDB.Close() })
+	stDB := statetest.Open(t, ModuleSchemas()...)
 
 	reg := platforms.NewRegistry()
 	srv := New(nil, stDB, "127.0.0.1:0", reg, nil)
@@ -128,7 +125,7 @@ func TestHandleSessions_ZeroLimitIncludesAllProjects(t *testing.T) {
 	for i := range sessions {
 		sessions[i] = mkSession("fake", fmt.Sprintf("session-%03d", i), "Work", int64(1_000_000-i))
 	}
-	reg.Register(&fakePlatform{id: "fake", sessions: sessions})
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: sessions})
 	for _, tt := range []struct {
 		query string
 		want  int
@@ -158,8 +155,8 @@ func TestHandleSessions_SinglePlatform_SortedByBucketDesc(t *testing.T) {
 	// 300000) and one earlier. The two in the same bucket sort by
 	// projectID then title (stable secondary keys).
 	reg.Register(&fakePlatform{
-		id: "fake",
-		sessions: []db.Session{
+		PlatformID: "fake",
+		SessionList: []db.Session{
 			mkSession("fake", "a", "alpha", 600000), // bucket 2
 			mkSession("fake", "b", "beta", 700000),  // bucket 2
 			mkSession("fake", "c", "gamma", 100000), // bucket 0
@@ -187,12 +184,12 @@ func TestHandleSessions_SinglePlatform_SortedByBucketDesc(t *testing.T) {
 func TestHandleSessions_TwoPlatforms_Merged(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id:       "p1",
-		sessions: []db.Session{mkSession("p1", "x", "alpha", 1_000_000)},
+		PlatformID:  "p1",
+		SessionList: []db.Session{mkSession("p1", "x", "alpha", 1_000_000)},
 	})
 	reg.Register(&fakePlatform{
-		id:       "p2",
-		sessions: []db.Session{mkSession("p2", "y", "alpha", 1_000_500)},
+		PlatformID:  "p2",
+		SessionList: []db.Session{mkSession("p2", "y", "alpha", 1_000_500)},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
@@ -212,8 +209,8 @@ func TestHandleSessions_TwoPlatforms_Merged(t *testing.T) {
 func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id: "fake",
-		sessions: []db.Session{
+		PlatformID: "fake",
+		SessionList: []db.Session{
 			mkSession("fake", "arch", "a", 1000),
 			mkSession("fake", "seen", "b", 1000),
 			mkSession("fake", "pin", "c", 1000),
@@ -270,7 +267,7 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 
 func TestHandleSessions_StateOverlay_TagsFactorySessions(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{
 		mkSession("fake", "factory", "a", 1000),
 		mkSession("fake", "plain", "b", 1000),
 		{ID: "child", Platform: "fake", ParentID: "factory", TimeUpdated: 1000},
@@ -311,7 +308,7 @@ func TestHandleSessions_NegativeLimitFallsBackToDefault(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		sessions = append(sessions, mkSession("fake", fmt.Sprintf("s%d", i), "t", int64(1000+i*1000)))
 	}
-	reg.Register(&fakePlatform{id: "fake", sessions: sessions})
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: sessions})
 
 	tests := []struct {
 		name     string
@@ -345,8 +342,8 @@ func TestHandleSessions_SinceParameterIsForwardedToAdapter(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	var seenSince int64
 	reg.Register(&fakePlatform{
-		id: "fake",
-		sessionsHook: func(_ context.Context, dir string, since int64) ([]db.Session, error) {
+		PlatformID: "fake",
+		SessionsFn: func(_ context.Context, dir string, since int64) ([]db.Session, error) {
 			seenSince = since
 			return nil, nil
 		},
@@ -368,8 +365,8 @@ func TestHandleSessions_PinnedOutsideWindow_IsForceIncluded(t *testing.T) {
 	pinnedSess := mkSession("fake", "pinme", "old session", 50)
 	reg.Register(&fakePlatformWithDetail{
 		fakePlatform: fakePlatform{
-			id:       "fake",
-			sessions: nil, // empty within window
+			PlatformID:  "fake",
+			SessionList: nil, // empty within window
 		},
 		detailSession: &pinnedSess,
 	})
@@ -394,12 +391,12 @@ func TestHandleSessions_PinnedOutsideWindow_IsForceIncluded(t *testing.T) {
 func TestHandleSessions_PlatformErrorDoesNotAbortRequest(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id:          "broken",
-		sessionsErr: errors.New("upstream down"),
+		PlatformID:  "broken",
+		SessionsErr: errors.New("upstream down"),
 	})
 	reg.Register(&fakePlatform{
-		id:       "ok",
-		sessions: []db.Session{mkSession("ok", "z", "z", 1000)},
+		PlatformID:  "ok",
+		SessionList: []db.Session{mkSession("ok", "z", "z", 1000)},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
@@ -421,7 +418,7 @@ func TestHandleSessionAttachment_SavesFileToCache(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	projectDir := t.TempDir()
 	reg.Register(&fakePlatformWithDetail{
-		fakePlatform: fakePlatform{id: "opencode"},
+		fakePlatform: fakePlatform{PlatformID: "opencode"},
 		detailSession: &db.Session{
 			ID:        "s1",
 			Platform:  "opencode",
@@ -581,7 +578,7 @@ func TestHandleSessions_NoticeDerivedFromLastError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
-			reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{
+			reg.Register(&fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
 				{ID: "s1", Platform: "opencode", Title: "Errored", Status: "error", TimeUpdated: at, TimeCreated: at - 1000, LastErrorMessage: tc.errMsg, LastErrorAt: at},
 				{ID: "s2", Platform: "opencode", Title: "Normal", Status: "done", TimeUpdated: at, TimeCreated: at - 1000},
 			}})
@@ -632,9 +629,9 @@ func TestHandleSession_NoticeAppearsForProviderOverload(t *testing.T) {
 		LastErrorAt:      1700000000000,
 	}
 	fp := &fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{*sess},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{*sess},
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			if id != sess.ID {
 				return nil, platforms.ErrNotFound
 			}
@@ -674,9 +671,9 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 		TimeCreated: 500,
 	}
 	fp := &fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{*sess},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{*sess},
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: sess}, nil
 		},
 	}
@@ -764,9 +761,9 @@ func newPeekTestServer(t *testing.T, platform string, status db.SessionStatus) (
 	srv, reg := newSessionsTestServer(t)
 	sess := db.Session{ID: "s1", Platform: platform, Directory: "/src/foo", TimeUpdated: 2000, Status: status}
 	reg.Register(&fakePlatform{
-		id:       platform,
-		sessions: []db.Session{sess},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		PlatformID:  platform,
+		SessionList: []db.Session{sess},
+		SessionFn: func(string) (*platforms.SessionDetail, error) {
 			cp := sess
 			return &platforms.SessionDetail{Session: &cp}, nil
 		},
@@ -777,7 +774,7 @@ func newPeekTestServer(t *testing.T, platform string, status db.SessionStatus) (
 func TestHandleSession_SurfacesProjectDefaultModel(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	sess := &db.Session{ID: "s1", Platform: "opencode", Directory: "/src/foo"}
-	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{*sess}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "opencode", SessionList: []db.Session{*sess}, SessionFn: func(string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: sess}, nil
 	}})
 	if err := srv.stateDB.SetProjectSettings(t.Context(), "/src/foo", state.ProjectSettings{Models: []string{"prov/a", "prov/b"}}); err != nil {
@@ -793,7 +790,7 @@ func TestHandleSession_SurfacesProjectDefaultModel(t *testing.T) {
 func TestHandleSession_TagsFactoryAttempt(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	sess := &db.Session{ID: "s1", Platform: "opencode", Directory: "/src/foo"}
-	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{*sess}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "opencode", SessionList: []db.Session{*sess}, SessionFn: func(string) (*platforms.SessionDetail, error) {
 		cp := *sess
 		return &platforms.SessionDetail{Session: &cp}, nil
 	}})
@@ -822,7 +819,7 @@ func TestHandleSession_TagsFactoryChildDetailsAndPeeks(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
 			child := db.Session{ID: "child", ParentID: "parent-outside-window", Platform: platform, Directory: "/repo"}
-			reg.Register(&fakePlatform{id: platform, sessions: []db.Session{child}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			reg.Register(&fakePlatform{PlatformID: platform, SessionList: []db.Session{child}, SessionFn: func(string) (*platforms.SessionDetail, error) {
 				cp := child
 				return &platforms.SessionDetail{Session: &cp}, nil
 			}})
@@ -847,7 +844,7 @@ func TestHandleSession_TagsFactoryChildDetailsAndPeeks(t *testing.T) {
 func TestHandleSession_FactoryTagLookupFailure(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	row := db.Session{ID: "session", Platform: "opencode", Directory: "/repo"}
-	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{row}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "opencode", SessionList: []db.Session{row}, SessionFn: func(string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &row}, nil
 	}})
 	if err := srv.stateDB.Close(); err != nil {
@@ -909,9 +906,9 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 
 	listCalls := 0
 	fp := &fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{{ID: sessionID, Platform: "opencode", Directory: "/x"}},
-		listPermissionsFn: func(sid string) ([]platforms.LivePrompt, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: sessionID, Platform: "opencode", Directory: "/x"}},
+		ListPermissionsFn: func(sid string) ([]platforms.LivePrompt, error) {
 			listCalls++
 			if sid != sessionID {
 				t.Errorf("ListPermissions session = %q, want %q", sid, sessionID)
@@ -928,7 +925,7 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 	// Pre-populate the reverse-lookup cache so resolvePlatformForSession
 	// finds the fake adapter without falling back to Session() (the fake
 	// returns ErrNotFound there).
-	reg.RememberSessions("opencode", fp.sessions)
+	reg.RememberSessions("opencode", fp.SessionList)
 
 	// Toggle ON.
 	body := strings.NewReader(`{"enabled":true}`)
@@ -968,15 +965,15 @@ func TestHandleSessionAutoApproveSet_DisablingDoesNotResume(t *testing.T) {
 
 	listCalls := 0
 	fp := &fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{{ID: sessionID, Platform: "opencode", Directory: "/x"}},
-		listPermissionsFn: func(_ string) ([]platforms.LivePrompt, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: sessionID, Platform: "opencode", Directory: "/x"}},
+		ListPermissionsFn: func(_ string) ([]platforms.LivePrompt, error) {
 			listCalls++
 			return nil, nil
 		},
 	}
 	reg.Register(fp)
-	reg.RememberSessions("opencode", fp.sessions)
+	reg.RememberSessions("opencode", fp.SessionList)
 
 	body := strings.NewReader(`{"enabled":false}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/session/"+sessionID+"/auto-approve", body)
@@ -1044,8 +1041,8 @@ func TestInjectApprovalNotices_IncludesApprovalActor(t *testing.T) {
 func TestRemoteSessionInjectsOwnerApprovalNotices(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id: "opencode",
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		PlatformID: "opencode",
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Platform: "opencode"}}, nil
 		},
 	})
@@ -1075,9 +1072,9 @@ func TestRemoteSessionInjectsOwnerApprovalNotices(t *testing.T) {
 
 func TestHandleSessionApprovedPermissionsExcludesUserOnce(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "ses-1", Platform: "opencode"}}}
+	fp := &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "ses-1", Platform: "opencode"}}}
 	reg.Register(fp)
-	reg.RememberSessions("opencode", fp.sessions)
+	reg.RememberSessions("opencode", fp.SessionList)
 	for _, approval := range []state.ApprovedPermission{
 		{PermissionID: "user-once", PermissionText: "bash", ApprovedBy: "user", Reply: "once", ApprovedAt: 1},
 		{PermissionID: "user-always", PermissionText: "bash", ApprovedBy: "user", Reply: "always", ApprovedAt: 2},
@@ -1155,9 +1152,9 @@ func TestHandleSessionRestartOpencode_DefersUntilSessionsIdle(t *testing.T) {
 	srv.hostRouter = hostsvc.NewRouter(host)
 	checks := 0
 	reg.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{{ID: "s1"}},
-		sessionsHook: func(context.Context, string, int64) ([]db.Session, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: "s1"}},
+		SessionsFn: func(context.Context, string, int64) ([]db.Session, error) {
 			checks++
 			status := db.StatusBusy
 			if checks > 1 {
@@ -1165,7 +1162,7 @@ func TestHandleSessionRestartOpencode_DefersUntilSessionsIdle(t *testing.T) {
 			}
 			return []db.Session{{ID: "s1", Directory: "/repo", Status: status}}, nil
 		},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		SessionFn: func(string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/repo"}}, nil
 		},
 	})
@@ -1186,9 +1183,9 @@ func TestHandleSessionRestartOpencode_ForceNeedsConfirmationWhenBusy(t *testing.
 	host := &restartTestHost{managed: []hostsvc.ManagedOpencode{{RepoRoot: "/repo"}}}
 	srv.hostRouter = hostsvc.NewRouter(host)
 	reg.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{{ID: "s1", Directory: "/repo", RemoteID: "local", Status: db.StatusBusy}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: "s1", Directory: "/repo", RemoteID: "local", Status: db.StatusBusy}},
+		SessionFn: func(string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/repo"}}, nil
 		},
 	})
@@ -1211,9 +1208,9 @@ func TestHandleSessionRestartOpencode_AllIncludesConnectedRemoteHosts(t *testing
 	srv.hostRouter = hostsvc.NewRouter(local)
 	srv.hostRouter.RegisterRemote("remote-1", remote)
 	reg.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{{ID: "s1"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: "s1"}},
+		SessionFn: func(string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/remote", RemoteID: "remote-1"}}, nil
 		},
 	})
@@ -1306,8 +1303,8 @@ func newNotifyFixtureServer(t *testing.T) *Server {
 		}
 		fake = append(fake, s)
 	}
-	reg.Register(&fakePlatform{id: "fake", sessions: fake})
-	reg.Register(&fakePlatform{id: "other", sessions: other})
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: fake})
+	reg.Register(&fakePlatform{PlatformID: "other", SessionList: other})
 	applyStateSetup(t, srv.stateDB, notifyFixtureState)
 	return srv
 }
@@ -1403,7 +1400,7 @@ func TestHandleSessionsNotify_JSONShape(t *testing.T) {
 	full.PendingQuestion = true
 	bare := mkSession("fake", "bare", "", 5_000)
 	bare.Status = db.StatusWaiting
-	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{full, bare}})
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{full, bare}})
 
 	got := getNotifyJSON(t, srv, "")
 	// Both land in the same 5-minute recency bucket, so the sort falls
@@ -1489,10 +1486,10 @@ func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T
 			pending.PendingPermission = true
 			pending.PendingQuestion = tc.pendingQuestion
 			adapter := &fakePlatform{
-				id:       "fake",
-				caps:     platforms.Capabilities{AutoApprove: true},
-				sessions: []db.Session{pending},
-				listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+				PlatformID:  "fake",
+				Caps:        platforms.Capabilities{AutoApprove: true},
+				SessionList: []db.Session{pending},
+				ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
 					return []platforms.LivePrompt{{"id": "permission-1", "sessionID": pending.ID}}, nil
 				},
 			}
@@ -1570,7 +1567,7 @@ func TestHandleSessionsNotify_SkipsUnreadCounts(t *testing.T) {
 	waiting := mkSession("fake", "unseen-waiting", "waiting", 10_000)
 	waiting.Status = db.StatusWaiting
 	counter := &countingUnreadPlatform{
-		fakePlatform: fakePlatform{id: "fake", sessions: []db.Session{waiting}},
+		fakePlatform: fakePlatform{PlatformID: "fake", SessionList: []db.Session{waiting}},
 	}
 	reg.Register(counter)
 
@@ -1596,12 +1593,12 @@ func TestHandleSessionRestartOpencode_MachineScopedServer(t *testing.T) {
 			host := &restartTestHost{managed: []hostsvc.ManagedOpencode{{RepoRoot: "/home/u/.local/share/ocman/opencode-v2", Machine: true}}}
 			srv.hostRouter = hostsvc.NewRouter(host)
 			reg.Register(&fakePlatform{
-				id: "opencode",
-				sessions: []db.Session{
+				PlatformID: "opencode",
+				SessionList: []db.Session{
 					{ID: "s1", Directory: "/src/repo", RemoteID: "local", Status: db.StatusDone},
 					{ID: "other", Directory: "/src/other", RemoteID: "local", Status: db.StatusBusy},
 				},
-				sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+				SessionFn: func(string) (*platforms.SessionDetail, error) {
 					return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/src/repo"}}, nil
 				},
 			})

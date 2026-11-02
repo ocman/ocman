@@ -6,12 +6,13 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestArchivedBackgroundWorkDoesNotResurface(t *testing.T) {
 	for _, path := range []string{"list", "notify", "read-only"} {
 		t.Run(path, func(t *testing.T) {
-			srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
+			srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: platforms.NewRegistry()}
 			if err := srv.stateDB.ArchiveSession(t.Context(), "fake", "s1", 100); err != nil {
 				t.Fatal(err)
 			}

@@ -42,11 +42,11 @@ func TestDraftLaunchExplicitOwner(t *testing.T) {
 				local, owner := &draftOwnerHost{id: "local"}, &draftOwnerHost{id: "box"}
 				srv.hostRouter = hostsvc.NewRouter(local)
 				srv.hostRouter.RegisterRemote("box", owner)
-				reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				reg.Register(&fakePlatform{PlatformID: "opencode", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					t.Fatal("an explicit remote draft must never create locally")
 					return nil, nil
 				}})
-				reg.Register(&fakePlatform{id: "r-box:opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				reg.Register(&fakePlatform{PlatformID: "r-box:opencode", CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					if req.Directory != "/repo" {
 						t.Fatalf("wrong checkout: %q", req.Directory)
 					}

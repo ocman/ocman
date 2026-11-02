@@ -34,7 +34,7 @@ func (runtimeAdapter) EnsureRuntime(_ context.Context, dir string) (*hostsvc.Ens
 
 func TestLocalHostUsesAdapterRuntime(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(runtimeAdapter{&fakePlatform{id: "fake-provider"}})
+	reg.Register(runtimeAdapter{&fakePlatform{PlatformID: "fake-provider"}})
 	host := srv.newLocalHost()
 	result, err := host.EnsureRuntime(t.Context(), "fake-provider", "/repo")
 	if err != nil || result.RepoRoot != "/repo" || result.Port() != "" {
@@ -66,7 +66,7 @@ func TestProviderEnsureFailureStopsCreate(t *testing.T) {
 			host := &createPathHost{ensureErr: errors.New("provider launch failed")}
 			srv.hostRouter = hostsvc.NewRouter(host)
 			creates := 0
-			reg.Register(&fakePlatform{id: "fake-provider", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			reg.Register(&fakePlatform{PlatformID: "fake-provider", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 				creates++
 				return &platforms.CreateSessionResponse{ID: "child"}, nil
 			}})
@@ -102,13 +102,13 @@ func TestCreatePathsCarryPlatform(t *testing.T) {
 			host := &createPathHost{}
 			srv.hostRouter = hostsvc.NewRouter(host)
 			var created platforms.CreateSessionRequest
-			reg.Register(&fakePlatform{id: "fake-provider", caps: platforms.Capabilities{PermissionRules: true},
-				sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
-				createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			reg.Register(&fakePlatform{PlatformID: "fake-provider", Caps: platforms.Capabilities{PermissionRules: true},
+				SendMessageFn: func(platforms.SendMessageRequest) error { return nil },
+				CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					created = req
 					return &platforms.CreateSessionResponse{ID: "child"}, nil
 				},
-				setPermissionRulesFn: func(platforms.SetPermissionRulesRequest) error { return nil },
+				SetPermissionRulesFn: func(platforms.SetPermissionRulesRequest) error { return nil },
 			})
 			if err := srv.stateDB.SetSetting(t.Context(), state.DefaultPlatformSetting, "fake-provider"); err != nil {
 				t.Fatal(err)
@@ -160,9 +160,9 @@ func TestCreatePathsCarryPlatform(t *testing.T) {
 
 func TestCreateDefaultAndOwner(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "fake-provider", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	reg.Register(&fakePlatform{PlatformID: "fake-provider", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 		return &platforms.CreateSessionResponse{ID: "child"}, nil
-	}, sendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
+	}, SendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
 	if err := srv.stateDB.SetSetting(t.Context(), state.DefaultPlatformSetting, "fake-provider"); err != nil {
 		t.Fatal(err)
 	}
@@ -196,11 +196,11 @@ func TestStartPlatformFollowsModel(t *testing.T) {
 	host := &createPathHost{}
 	srv.hostRouter = hostsvc.NewRouter(host)
 	var sent platforms.SendMessageRequest
-	reg.Register(&fakePlatform{id: "fake-provider",
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	reg.Register(&fakePlatform{PlatformID: "fake-provider",
+		CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "child"}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+		SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
 	w := httptest.NewRecorder()
 	srv.sessionLifecycleModule().HandleStartSession(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo","send":{"message":"hi","model":"fake-provider:acme/m"}}`)))

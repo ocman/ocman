@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ocman/ocman/internal/module/moduletest"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -83,7 +84,7 @@ func TestProviderUsageRouteWithNoOAuth(t *testing.T) {
 	m := spendModule(t)
 	ctx := t.Context()
 	input := int64(1_000_000)
-	rec := serve(routes(m), http.MethodGet, "/api/provider-usage", "")
+	rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"TypeSafe"`) || !strings.Contains(rec.Body.String(), `"estimatedUSD":null`) {
 		t.Fatalf("empty spend = %d %s", rec.Code, rec.Body.String())
 	}
@@ -92,17 +93,17 @@ func TestProviderUsageRouteWithNoOAuth(t *testing.T) {
 	}
 	// The cached platform response must not cache or accumulate the local ledger.
 	for range 2 {
-		rec := serve(routes(m), http.MethodGet, "/api/provider-usage", "")
+		rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", "")
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"estimatedUSD":0.042`) || strings.Count(rec.Body.String(), `"id":"typesafe"`) != 1 {
 			t.Fatalf("spend = %d %s", rec.Code, rec.Body.String())
 		}
 	}
 	m.deps.TypeSafeConfigured = func(context.Context) (bool, error) { return false, nil }
-	if rec := serve(routes(m), http.MethodGet, "/api/provider-usage", ""); !strings.Contains(rec.Body.String(), `"providers":[]`) {
+	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); !strings.Contains(rec.Body.String(), `"providers":[]`) {
 		t.Fatalf("disabled = %s", rec.Body.String())
 	}
 	m.deps.TypeSafeConfigured = func(context.Context) (bool, error) { return false, errors.New("settings unavailable") }
-	if rec := serve(routes(m), http.MethodGet, "/api/provider-usage", ""); rec.Code != http.StatusInternalServerError {
+	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusInternalServerError {
 		t.Fatalf("settings error = %d", rec.Code)
 	}
 }
@@ -154,12 +155,12 @@ func TestTypeSafeSpendDatabaseFailures(t *testing.T) {
 	if err := m.RecordTypeSafeUsage(ctx, "jev-1.13.0", &input, nil); err == nil {
 		t.Fatal("expected retention delete error")
 	}
-	if rec := serve(routes(m), http.MethodGet, "/api/provider-usage", ""); rec.Code != http.StatusInternalServerError {
+	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusInternalServerError {
 		t.Fatalf("read error = %d", rec.Code)
 	}
 	// No configuration reader means the ledger is not accessed.
 	m.deps.TypeSafeConfigured = nil
-	if rec := serve(routes(m), http.MethodGet, "/api/provider-usage", ""); rec.Code != http.StatusOK {
+	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusOK {
 		t.Fatalf("no configuration = %d", rec.Code)
 	}
 }

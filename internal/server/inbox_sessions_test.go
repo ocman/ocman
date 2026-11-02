@@ -30,7 +30,7 @@ func (p *inboxSessionPlatform) Sessions(context.Context, string, int64) ([]db.Se
 
 func TestInboxSessionContextOwnerRouting(t *testing.T) {
 	s := testServer(t)
-	adapter := &inboxSessionPlatform{fakePlatform: fakePlatform{id: "r-laptop:opencode"}}
+	adapter := &inboxSessionPlatform{fakePlatform: fakePlatform{PlatformID: "r-laptop:opencode"}}
 	s.registry.Register(adapter)
 	permission := &state.InboxPermission{Platform: "opencode", SessionID: "ses-child", Permission: "bash"}
 	origin := &state.InboxSession{Platform: "opencode", SessionID: "ses-child", Title: "Owner title"}

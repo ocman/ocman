@@ -28,7 +28,7 @@ func TestAaSvcOpencodeAdapter(t *testing.T) {
 
 	// Registry with a fake "opencode" adapter: it must be returned.
 	reg := platforms.NewRegistry()
-	fp := &fakePlatform{id: "opencode"}
+	fp := &fakePlatform{PlatformID: "opencode"}
 	reg.Register(fp)
 	srv := &Server{registry: reg}
 	if a := srv.aaSvc().OpencodeAdapter(); a == nil {

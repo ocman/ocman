@@ -7,10 +7,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestHandleProjectSettings(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	do := func(method, dir, body string) *httptest.ResponseRecorder {
 		target := "/api/project/settings"
 		if dir != "" {
@@ -59,7 +61,7 @@ func TestHandleProjectSettings(t *testing.T) {
 }
 
 func TestHandleModelFallthroughSettings(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	do := func(method, body string) *httptest.ResponseRecorder {
 		rr := httptest.NewRecorder()
 		srv.handleModelFallthroughSettings(rr, httptest.NewRequest(method, "/api/settings/model-fallthrough", strings.NewReader(body)))

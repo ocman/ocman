@@ -42,7 +42,7 @@ func TestPeekReturnsInterruptionReadState(t *testing.T) {
 func TestInterruptedSessionBecomesUnreadWithoutNewActivity(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	row := &db.Session{ID: "crashed", Platform: "fake", TimeUpdated: 100, Status: db.StatusBusy}
-	p := &fakePlatformWithDetail{fakePlatform: fakePlatform{id: "fake", sessions: []db.Session{*row}}, detailSession: row}
+	p := &fakePlatformWithDetail{fakePlatform: fakePlatform{PlatformID: "fake", SessionList: []db.Session{*row}}, detailSession: row}
 	reg.Register(p)
 	mark := func() {
 		t.Helper()
@@ -77,7 +77,7 @@ func TestInterruptedSessionBecomesUnreadWithoutNewActivity(t *testing.T) {
 	check(true)
 	row.Status = db.StatusInterrupted
 	check(false)
-	p.sessions = []db.Session{*row}
+	p.SessionList = []db.Session{*row}
 	w := httptest.NewRecorder()
 	srv.handleSessionsNotify(w, httptest.NewRequest(http.MethodGet, "/api/sessions/notify", nil))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"id":"crashed"`) {

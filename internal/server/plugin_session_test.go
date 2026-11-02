@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/ocman/ocman/internal/pluginsmod"
+	"github.com/ocman/ocman/internal/state/statetest"
 
 	"bufio"
 	"bytes"
@@ -147,7 +148,7 @@ func newSessionFixture(t *testing.T) *sessionFixture {
 	t.Helper()
 	pluginDir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", pluginDir)
-	statePath := testStatePath(t)
+	statePath := statetest.Path(t, ModuleSchemas()...)
 	stateDB, err := state.Open(statePath, ModuleSchemas()...)
 	if err != nil {
 		t.Fatal(err)
@@ -162,9 +163,9 @@ func newSessionFixture(t *testing.T) *sessionFixture {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(&fakePlatform{
-		id:       "opencode",
-		sessions: []db.Session{{ID: "ses-run-1"}, {ID: "ses-run-2"}},
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		PlatformID:  "opencode",
+		SessionList: []db.Session{{ID: "ses-run-1"}, {ID: "ses-run-2"}},
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			if f.createErr != nil {
@@ -174,7 +175,7 @@ func newSessionFixture(t *testing.T) *sessionFixture {
 			f.created = append(f.created, req)
 			return &platforms.CreateSessionResponse{ID: fmt.Sprintf("ses-run-%d", f.sessions)}, nil
 		},
-		setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+		SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			if f.setRulesErr != nil {
@@ -183,13 +184,13 @@ func newSessionFixture(t *testing.T) *sessionFixture {
 			f.rules = append(f.rules, req)
 			return nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			f.prompts = append(f.prompts, req)
 			return nil
 		},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{
 				Session: &db.Session{ID: id, Directory: f.project, Status: db.StatusDone},
 				Messages: []db.Message{

@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestProjectDefaults(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	if err := srv.stateDB.SetProjectSettings(t.Context(), "/src/foo", state.ProjectSettings{Models: []string{"p/fallback"}, Off: true}); err != nil {
 		t.Fatal(err)
 	}

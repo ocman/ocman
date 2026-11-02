@@ -29,13 +29,13 @@ func (p *promptSource) WatchEvents(ctx context.Context) error {
 // starts, and non-OpenCode sessions resolve their directory for the judge.
 func TestWatchProviderPrompts(t *testing.T) {
 	session := db.Session{ID: "c1", Directory: "/proj"}
-	src := &promptSource{watched: make(chan struct{}), fakePlatform: &fakePlatform{id: "claudecode", sessions: []db.Session{session},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	src := &promptSource{watched: make(chan struct{}), fakePlatform: &fakePlatform{PlatformID: "claudecode", SessionList: []db.Session{session},
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &session}, nil
 		}}}
 	reg := platforms.NewRegistry()
 	reg.Register(src)
-	reg.Register(&fakePlatform{id: "opencode"})
+	reg.Register(&fakePlatform{PlatformID: "opencode"})
 	s := &Server{registry: reg}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -62,12 +62,12 @@ func (judgePlatform) PermissionJudge() autoapprove.Judge { return autoapprove.Cl
 // A platform's own judge is the fallback only when such a platform is enabled.
 func TestPlatformFallbackJudgeWiring(t *testing.T) {
 	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode"})
+	reg.Register(&fakePlatform{PlatformID: "opencode"})
 	if deps := (&Server{registry: reg}).autoapproveEngineDeps(); deps.FallbackJudge != nil || deps.OpenCodeDisabled {
 		t.Fatalf("OpenCode only: %+v", deps.FallbackJudge)
 	}
 	reg = platforms.NewRegistry()
-	reg.Register(judgePlatform{&fakePlatform{id: "claudecode"}})
+	reg.Register(judgePlatform{&fakePlatform{PlatformID: "claudecode"}})
 	if deps := (&Server{registry: reg}).autoapproveEngineDeps(); deps.FallbackJudge == nil || !deps.OpenCodeDisabled {
 		t.Fatal("platform judge not wired")
 	}

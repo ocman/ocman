@@ -9,10 +9,11 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestArchiveResurfaceSettings(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	for _, tc := range []struct {
 		method, body, want string
 		status             int
@@ -43,7 +44,7 @@ func TestArchiveResurfaceOverlay(t *testing.T) {
 		for _, status := range []db.SessionStatus{db.StatusBusy, db.StatusDone, db.StatusError, db.StatusWaiting, db.StatusInterrupted} {
 			for _, path := range []string{"list", "notify", "read-only"} {
 				t.Run(mode+"/"+string(status)+"/"+path, func(t *testing.T) {
-					srv := &Server{stateDB: openTestStateDB(t), registry: platforms.NewRegistry()}
+					srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...), registry: platforms.NewRegistry()}
 					ctx := t.Context()
 					if mode == "activity" {
 						if err := srv.stateDB.SetSetting(ctx, archiveResurfaceKey, mode); err != nil {

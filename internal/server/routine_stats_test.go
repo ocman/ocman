@@ -34,7 +34,7 @@ func TestRoutineStatsHTTP(t *testing.T) {
 		}
 	}
 	path := "/api/routines/" + routine.ID + "/stats"
-	for _, adapter := range []platforms.Platform{&fakePlatform{id: "opencode"}, &routineUsagePlatform{&fakePlatform{id: "opencode"}}} {
+	for _, adapter := range []platforms.Platform{&fakePlatform{PlatformID: "opencode"}, &routineUsagePlatform{&fakePlatform{PlatformID: "opencode"}}} {
 		srv.registry.Register(adapter)
 		rec = doRoutineRequest(t, handler, http.MethodGet, path, "")
 		var stats routines.Stats

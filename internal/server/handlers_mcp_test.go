@@ -14,6 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/statev2"
 )
 
@@ -119,7 +120,7 @@ func TestMainMuxMCPInboxSendAndRecall(t *testing.T) {
 
 func TestSessionMCPListDoesNotUnarchiveSessions(t *testing.T) {
 	srv := testServer(t)
-	srv.registry.Register(&fakePlatform{id: "mcp-test", sessions: []db.Session{{ID: "session-1", Platform: "mcp-test", Directory: "/repo", TimeUpdated: 200}}})
+	srv.registry.Register(&fakePlatform{PlatformID: "mcp-test", SessionList: []db.Session{{ID: "session-1", Platform: "mcp-test", Directory: "/repo", TimeUpdated: 200}}})
 	if err := srv.stateDB.ArchiveSession(t.Context(), "mcp-test", "session-1", 100); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +140,7 @@ func TestSessionMCPListDoesNotUnarchiveSessions(t *testing.T) {
 
 func TestSessionMCPGetEnrichesDetailWithoutMutatingState(t *testing.T) {
 	srv := testServer(t)
-	srv.registry.Register(&fakePlatform{id: "mcp-test", sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	srv.registry.Register(&fakePlatform{PlatformID: "mcp-test", SessionFn: func(id string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &db.Session{ID: id, Platform: "mcp-test", Directory: "/repo"}}, nil
 	}})
 	detail, err := (sessionMCPService{srv}).GetSession(t.Context(), "mcp-test", "session-1", 20)
@@ -180,8 +181,8 @@ func TestSessionMCPGetWithoutPlatformSearchesAllPlatforms(t *testing.T) {
 			return nil, platforms.ErrNotFound
 		}
 	}
-	srv.registry.Register(&fakePlatform{id: "p-a", sessionDetailFn: detailFor("p-a", "only-a", "dup")})
-	srv.registry.Register(&fakePlatform{id: "p-b", sessionDetailFn: detailFor("p-b", "dup")})
+	srv.registry.Register(&fakePlatform{PlatformID: "p-a", SessionFn: detailFor("p-a", "only-a", "dup")})
+	srv.registry.Register(&fakePlatform{PlatformID: "p-b", SessionFn: detailFor("p-b", "dup")})
 	svc := sessionMCPService{srv}
 
 	detail, err := svc.GetSession(t.Context(), "", "only-a", 0)
@@ -198,7 +199,7 @@ func TestSessionMCPGetWithoutPlatformSearchesAllPlatforms(t *testing.T) {
 	if _, err := svc.GetSession(t.Context(), "", "missing", 0); !errors.Is(err, platforms.ErrNotFound) {
 		t.Fatalf("missing lookup error = %v", err)
 	}
-	srv.registry.Register(&fakePlatform{id: "p-down", sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return nil, errors.New("remote down") }})
+	srv.registry.Register(&fakePlatform{PlatformID: "p-down", SessionFn: func(string) (*platforms.SessionDetail, error) { return nil, errors.New("remote down") }})
 	if _, err := svc.GetSession(t.Context(), "", "missing", 0); err == nil || errors.Is(err, platforms.ErrNotFound) {
 		t.Fatalf("adapter failure was reported as not found: %v", err)
 	}
@@ -231,7 +232,7 @@ func TestMCPServerURL(t *testing.T) {
 
 func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv := New(nil, openTestStateDB(t), "", nil, nil)
+	srv := New(nil, statetest.Open(t, ModuleSchemas()...), "", nil, nil)
 	enableFactoryBeta(t, srv)
 	useFactory(srv, svc)
 	mux := mustRoutes(t, srv)
@@ -255,7 +256,7 @@ func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 
 func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}
-	srv := New(nil, openTestStateDB(t), "", nil, nil)
+	srv := New(nil, statetest.Open(t, ModuleSchemas()...), "", nil, nil)
 	enableFactoryBeta(t, srv)
 	useFactory(srv, svc)
 	mux := mustRoutes(t, srv)
@@ -276,7 +277,7 @@ func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
 
 func TestMainMuxMCPProposesExecutableIssueCreation(t *testing.T) {
 	svc := &fakeFactoryService{}
-	srv := New(nil, openTestStateDB(t), "", nil, nil)
+	srv := New(nil, statetest.Open(t, ModuleSchemas()...), "", nil, nil)
 	enableFactoryBeta(t, srv)
 	useFactory(srv, svc)
 	mux := mustRoutes(t, srv)
@@ -309,7 +310,7 @@ func (p *mcpAddrPlatform) SetMCPAddr(addr string) { p.addr = addr }
 // configured ":0".
 func TestMCPListenerTellsPlatformsBoundAddress(t *testing.T) {
 	srv := testServer(t)
-	p := &mcpAddrPlatform{fakePlatform: &fakePlatform{id: "launcher"}}
+	p := &mcpAddrPlatform{fakePlatform: &fakePlatform{PlatformID: "launcher"}}
 	srv.registry.Register(p)
 	srv.mcpAddr = "127.0.0.1:0"
 	defer srv.startMCPListener()()

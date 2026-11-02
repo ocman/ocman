@@ -8,7 +8,7 @@ import (
 )
 
 func TestPermissionProfileNamesMatchSessionContract(t *testing.T) {
-	_, handler := permissionProfileHTTPServer(t, &fakePlatform{id: "opencode"})
+	_, handler := permissionProfileHTTPServer(t, &fakePlatform{PlatformID: "opencode"})
 	created := doRoutineRequest(t, handler, http.MethodPost, "/api/permission-profiles", readOnlyProfileBody)
 	var profile struct {
 		ID string `json:"id"`

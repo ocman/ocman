@@ -22,7 +22,7 @@ func TestPermissionPolicyParentFailsClosed(t *testing.T) {
 		{name: "unreachable summary", err: platforms.ErrPlatformUnreachable, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adapter := &fakePlatform{sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return tc.detail, tc.err }}
+			adapter := &fakePlatform{SessionFn: func(string) (*platforms.SessionDetail, error) { return tc.detail, tc.err }}
 			parent, err := permissionPolicyParent(t.Context(), adapter, "s")
 			if parent != tc.wantParent || (err != nil) != tc.wantErr {
 				t.Fatalf("parent = %q, error = %v", parent, err)

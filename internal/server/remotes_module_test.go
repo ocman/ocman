@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 
 	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module/moduletest"
 	opencodeplatform "github.com/ocman/ocman/internal/platforms/opencode/provider"
 	"github.com/ocman/ocman/internal/remote"
 )
@@ -22,29 +22,15 @@ func withManager(t *testing.T, srv *Server) *remote.Manager {
 	return mgr
 }
 
-func serveMux(t *testing.T, mux http.Handler, method, path, body, peer string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if peer != "" {
-		req.RemoteAddr = peer
-	}
-	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, req)
-	return rr
-}
-
 func TestRevealRemoteTokenRouteRejectsNonLoopback(t *testing.T) {
 	mux, err := testServer(t).routes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rr := serveMux(t, mux, http.MethodPost, "/api/settings/remote-access/reveal-token", "", "192.0.2.1:1234"); rr.Code != http.StatusForbidden {
+	if rr := moduletest.Do(mux, http.MethodPost, "/api/settings/remote-access/reveal-token", "", "192.0.2.1:1234"); rr.Code != http.StatusForbidden {
 		t.Fatalf("status %d, want 403", rr.Code)
 	}
-	if rr := serveMux(t, mux, http.MethodGet, "/api/settings/remote-access/reveal-token", "", ""); rr.Code != http.StatusMethodNotAllowed {
+	if rr := moduletest.Do(mux, http.MethodGet, "/api/settings/remote-access/reveal-token", "", ""); rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET status %d, want 405", rr.Code)
 	}
 }
@@ -57,17 +43,17 @@ func TestRemotesModuleReadsServerStateAtCallTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rr := serveMux(t, mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"t"}`, "127.0.0.1:1234"); rr.Code != http.StatusServiceUnavailable {
+	if rr := moduletest.Do(mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"t"}`, "127.0.0.1:1234"); rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("no manager = %d, want 503", rr.Code)
 	}
-	if rr := serveMux(t, mux, http.MethodGet, "/api/remotes", "", "127.0.0.1:1234"); rr.Code != 200 || rr.Body.String() != "[]\n" {
+	if rr := moduletest.Do(mux, http.MethodGet, "/api/remotes", "", "127.0.0.1:1234"); rr.Code != 200 || rr.Body.String() != "[]\n" {
 		t.Fatalf("no manager list = %d %q", rr.Code, rr.Body)
 	}
 
 	srv.WithRemoteAccess("inst123", "0.0.0.0:8230", true, true)
 	withManager(t, srv)
 
-	rr := serveMux(t, mux, http.MethodGet, "/api/settings/remote-access", "", "")
+	rr := moduletest.Do(mux, http.MethodGet, "/api/settings/remote-access", "", "")
 	var access map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &access); err != nil {
 		t.Fatal(err)
@@ -80,11 +66,11 @@ func TestRemotesModuleReadsServerStateAtCallTime(t *testing.T) {
 		t.Fatal("remote-access status leaked the token")
 	}
 
-	rr = serveMux(t, mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"hub-secret","displayName":"Box"}`, "127.0.0.1:1234")
+	rr = moduletest.Do(mux, http.MethodPost, "/api/remotes", `{"address":"127.0.0.1:59999","token":"hub-secret","displayName":"Box"}`, "127.0.0.1:1234")
 	if rr.Code != 200 || bytes.Contains(rr.Body.Bytes(), []byte("hub-secret")) {
 		t.Fatalf("add = %d %s", rr.Code, rr.Body)
 	}
-	rr = serveMux(t, mux, http.MethodGet, "/api/remotes", "", "127.0.0.1:1234")
+	rr = moduletest.Do(mux, http.MethodGet, "/api/remotes", "", "127.0.0.1:1234")
 	if !bytes.Contains(rr.Body.Bytes(), []byte(`"displayName":"Box"`)) || bytes.Contains(rr.Body.Bytes(), []byte("hub-secret")) {
 		t.Fatalf("list %s", rr.Body)
 	}
@@ -104,7 +90,7 @@ func TestRemotesRoutesRequireAuth(t *testing.T) {
 		{http.MethodGet, "/api/remotes"},
 		{http.MethodPost, "/api/remotes/1/reconnect"},
 	} {
-		if rr := serveMux(t, mux, c.method, c.path, "", ""); rr.Code != http.StatusUnauthorized {
+		if rr := moduletest.Do(mux, c.method, c.path, "", ""); rr.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s = %d, want 401", c.method, c.path, rr.Code)
 		}
 	}

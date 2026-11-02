@@ -35,7 +35,7 @@ func (p *pushTestPlatform) SessionLifecycle(context.Context, string) (*platforms
 
 func TestPushSnapshotIncludesDoneWithoutChangingBrowserProjection(t *testing.T) {
 	s := testServer(t)
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{{ID: "shell", Platform: "fake", Status: db.StatusDone, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusDone, LatestMessageID: "assistant-shell", LatestMessageRole: "assistant"}}
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SessionList: []db.Session{{ID: "shell", Platform: "fake", Status: db.StatusDone, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusDone, LatestMessageID: "assistant-shell", LatestMessageRole: "assistant"}}
 	s.registry.Register(p)
 	rows, err := s.pushSnapshot(t.Context())
 	if err != nil || len(rows) != 1 {
@@ -58,11 +58,11 @@ func TestPushSnapshotIncludesDoneWithoutChangingBrowserProjection(t *testing.T) 
 
 func TestPushSnapshotUsesRemoteOwnersPermissionDecision(t *testing.T) {
 	s := testServer(t)
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "r-owner:opencode", sessions: []db.Session{{ID: "session", Platform: "r-owner:opencode", PendingPermission: true, Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}},
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-owner:opencode", SessionList: []db.Session{{ID: "session", Platform: "r-owner:opencode", PendingPermission: true, Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}},
 		prompts: []platforms.LivePrompt{{"id": "request", "sessionID": "child", "ocmanNotificationDeferred": true}},
 		life:    &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "old"}}
 	s.registry.Register(p)
-	p.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return p.prompts, nil }
+	p.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return p.prompts, nil }
 	rows, err := s.pushSnapshot(t.Context())
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("judge-owned permission alerted: %+v %v", rows, err)
@@ -96,7 +96,7 @@ func TestPushSnapshotUsesRemoteOwnersPermissionDecision(t *testing.T) {
 func TestOwnerRPCDefersPermissionsDuringJudgeDelay(t *testing.T) {
 	s := testServer(t).WithAutoApproveDefault(true)
 	s.autoapproveMod.set(s.newAutoapproveModule(autoapprove.Deps{DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil }}))
-	p := &fakePlatform{id: "owner", caps: platforms.Capabilities{AutoApprove: true}, listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+	p := &fakePlatform{PlatformID: "owner", Caps: platforms.Capabilities{AutoApprove: true}, ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
 		return []platforms.LivePrompt{{"id": "request", "sessionID": "child"}}, nil
 	}}
 	s.registry.Register(p)
@@ -128,25 +128,25 @@ func TestPushSnapshotRejectsPartialReads(t *testing.T) {
 	for _, kind := range []string{"sessions", "lifecycle", "nil-lifecycle", "prompts", "invalid-prompts", "stale", "unavailable"} {
 		t.Run(kind, func(t *testing.T) {
 			s := testServer(t)
-			p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "r-owner:opencode", sessions: []db.Session{{ID: "old", Platform: "r-owner:opencode", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageID: "old-message", LatestMessageRole: "assistant"}}
+			p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-owner:opencode", SessionList: []db.Session{{ID: "old", Platform: "r-owner:opencode", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageID: "old-message", LatestMessageRole: "assistant"}}
 			switch kind {
 			case "sessions":
-				p.sessionsErr = errors.New("sessions failed")
+				p.SessionsErr = errors.New("sessions failed")
 			case "lifecycle":
 				p.lifeErr = errors.New("lifecycle failed")
 			case "nil-lifecycle":
 				p.life = nil
 			case "prompts":
-				p.sessions[0].PendingPermission = true
+				p.SessionList[0].PendingPermission = true
 				p.promptErr = errors.New("prompts failed")
 			case "invalid-prompts":
-				p.sessions[0].PendingPermission = true
+				p.SessionList[0].PendingPermission = true
 				p.prompts = []platforms.LivePrompt{{"id": "missing-session"}}
 			case "stale":
-				p.sessions[0].Stale = true
+				p.SessionList[0].Stale = true
 			case "unavailable":
 				available := false
-				p.available = &available
+				p.Availability = &available
 			}
 			s.registry.Register(p)
 			if _, err := s.pushSnapshot(t.Context()); err == nil {
@@ -158,7 +158,7 @@ func TestPushSnapshotRejectsPartialReads(t *testing.T) {
 
 func TestPushSnapshotOwnerIdentityAndSessionContext(t *testing.T) {
 	s := testServer(t)
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "r-laptop:opencode", sessions: []db.Session{{
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-laptop:opencode", SessionList: []db.Session{{
 		ID: "session", Platform: "r-laptop:opencode", Title: "Fix billing", Directory: "/repo/billing", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli(),
 	}}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "msg"}}
 	s.registry.Register(p)
@@ -172,9 +172,9 @@ func TestPushSnapshotOwnerIdentityAndSessionContext(t *testing.T) {
 	if rows[0].Notification.URL != "/session/session?platform=r-laptop%3Aopencode&notification=1" || rows[0].Notification.Title != "Fix billing" || rows[0].Notification.Body != "Finished · billing" {
 		t.Fatal("wrong owner or missing session context")
 	}
-	p.sessions[0].PendingPermission = true
+	p.SessionList[0].PendingPermission = true
 	p.prompts = []platforms.LivePrompt{{"id": "request", "sessionID": "child", "permission": "secret command", platforms.NotificationDeferredField: false}}
-	p.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return p.prompts, nil }
+	p.ListPermissionsFn = func(string) ([]platforms.LivePrompt, error) { return p.prompts, nil }
 	rows, err = s.pushSnapshot(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestPushSnapshotOwnerIdentityAndSessionContext(t *testing.T) {
 	if strings.Contains(rows[0].Notification.Body, "secret command") || rows[0].Notification.Body != "Permission needed · billing" {
 		t.Fatal("permission details leaked")
 	}
-	p.sessions[0].PendingPermission = false
+	p.SessionList[0].PendingPermission = false
 	p.life.Status = db.StatusBusy
 	rows, err = s.pushSnapshot(t.Context())
 	if err != nil || len(rows) != 0 {
@@ -219,7 +219,7 @@ func TestNotificationText(t *testing.T) {
 
 func TestPushBadgeCountsInterruptedAttentionSessions(t *testing.T) {
 	s := testServer(t)
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SessionList: []db.Session{
 		{ID: "interrupted", Platform: "fake", Status: db.StatusInterrupted, TimeUpdated: time.Now().UnixMilli()},
 		{ID: "finished", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: time.Now().UnixMilli()},
 		{ID: "shell", Platform: "fake", Status: db.StatusDone, TimeUpdated: time.Now().UnixMilli()},
@@ -235,7 +235,7 @@ func TestPushBadgeCountsInterruptedAttentionSessions(t *testing.T) {
 func TestNotificationBadgeExcludesArchivedSessions(t *testing.T) {
 	s := testServer(t)
 	now := time.Now().UnixMilli()
-	p := &pushTestPlatform{fakePlatform: &fakePlatform{id: "fake", sessions: []db.Session{
+	p := &pushTestPlatform{fakePlatform: &fakePlatform{PlatformID: "fake", SessionList: []db.Session{
 		{ID: "unread", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: now},
 		{ID: "prompt", Platform: "fake", Status: db.StatusBusy, Seen: true, PendingPermission: true, TimeUpdated: now},
 		{ID: "archived", Platform: "fake", Status: db.StatusWaiting, TimeUpdated: now},

@@ -26,9 +26,9 @@ func shareTestDetail(id string) *platforms.SessionDetail {
 
 func registerShareFake(reg *platforms.Registry, id string) {
 	reg.Register(&fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{{ID: id, Platform: "fake"}},
-		sessionDetailFn: func(sid string) (*platforms.SessionDetail, error) {
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: id, Platform: "fake"}},
+		SessionFn: func(sid string) (*platforms.SessionDetail, error) {
 			return shareTestDetail(sid), nil
 		},
 	})
@@ -245,23 +245,6 @@ func TestAllSharesGlobalList(t *testing.T) {
 			t.Errorf("incomplete global view: %+v", v)
 		}
 	}
-}
-
-// serveRoutes serves req through the server's full route table, where the
-// sharing module mounts its routes.
-func serveRoutes(t *testing.T, srv *Server, w http.ResponseWriter, req *http.Request) {
-	t.Helper()
-	mustRoutes(t, srv).ServeHTTP(w, req)
-}
-
-// mustRoutes builds the server's full route table, failing the test on error.
-func mustRoutes(t *testing.T, srv *Server) http.Handler {
-	t.Helper()
-	mux, err := srv.routes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return mux
 }
 
 // sharedChunk and sharedLink decode the relay chunk and share link wire

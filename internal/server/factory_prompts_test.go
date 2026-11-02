@@ -12,7 +12,7 @@ func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
 	for _, stage := range []string{"planning", "scope_expansion", "implementation", "verification", "delivery"} {
 		t.Run(stage, func(t *testing.T) {
 			var sent platforms.SendMessageRequest
-			platform := &fakePlatform{id: "opencode", sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil }}
+			platform := &fakePlatform{PlatformID: "opencode", SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil }}
 			registry := platforms.NewRegistry()
 			registry.Register(platform)
 			srv := New(nil, nil, "", registry, nil)

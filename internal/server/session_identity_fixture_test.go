@@ -15,7 +15,7 @@ func identityHTTPFixture(t *testing.T) (*Server, *fakePlatform, string) {
 	t.Helper()
 	core := statetest.Open(t, ModuleSchemas()...)
 	history := statev2test.Open(t)
-	p := &fakePlatform{id: "test"}
+	p := &fakePlatform{PlatformID: "test"}
 	registry := platforms.NewRegistry()
 	registry.Register(&historyTestPlatform{fakePlatform: p})
 	s := New(nil, core, "", registry, nil).WithConversationHistory(history, "owner")

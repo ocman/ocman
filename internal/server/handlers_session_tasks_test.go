@@ -37,8 +37,8 @@ func getSessionTasks(t *testing.T, s *Server, path string) sessionTasksResponse 
 func TestHandleSessionTasks_ReturnsTaskDataWithoutStateDB(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{
-		sessions: []db.Session{{ID: "task-1"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		SessionList: []db.Session{{ID: "task-1"}},
+		SessionFn: func(string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{Status: db.StatusBusy}}, nil
 		},
 	})
@@ -64,8 +64,8 @@ func TestHandleSessionTasks_ReturnsTaskDataWithoutStateDB(t *testing.T) {
 func TestHandleSessionTasks_AllowsMissingSessionHeader(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{
-		sessions: []db.Session{{ID: "task-1"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		SessionList: []db.Session{{ID: "task-1"}},
+		SessionFn: func(string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{}, nil
 		},
 	})

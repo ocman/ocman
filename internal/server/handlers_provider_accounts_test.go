@@ -24,13 +24,13 @@ func (p accountPlatform) Account(context.Context) (*providerprotocol.Account, er
 
 func TestProviderAccountsListsAccountPlatforms(t *testing.T) {
 	srv := testServer(t)
-	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{id: "claudecode", displayName: "Claude Code"}, account: &providerprotocol.Account{
+	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{PlatformID: "claudecode", Name: "Claude Code"}, account: &providerprotocol.Account{
 		SubscriptionType: "max",
 		RateLimits:       []providerprotocol.RateLimit{{Name: "five_hour", Utilization: 0.28, ResetsAt: 1}, {Name: "weekly", Utilization: 0.76, ResetsAt: 2}},
 	}})
-	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{id: "p-out"}, err: platforms.ErrNotFound})
-	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{id: "p-down"}, err: errors.New("dial")})
-	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{id: "p-none"}, err: platforms.ErrUnsupported})
+	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{PlatformID: "p-out"}, err: platforms.ErrNotFound})
+	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{PlatformID: "p-down"}, err: errors.New("dial")})
+	srv.registry.Register(accountPlatform{fakePlatform: &fakePlatform{PlatformID: "p-none"}, err: platforms.ErrUnsupported})
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)

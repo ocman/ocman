@@ -31,7 +31,7 @@ func TestFactoryRecoveryResumeErrorsAreActionable(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/factory/recovery-gates/"+tc.gate+"/resume", strings.NewReader(`{"response":"Continue"}`))
 			req.RemoteAddr = "127.0.0.1:1"
 			rec := httptest.NewRecorder()
-			serveFactory(srv, rec, req)
+			serveModule(srv, srv.factoryModule(), rec, req)
 			if rec.Code != tc.want || !strings.Contains(rec.Body.String(), tc.wantBody) {
 				t.Fatalf("resume = %d: %s", rec.Code, rec.Body.String())
 			}
@@ -53,9 +53,9 @@ func TestFactoryRecoveryConfirmsDeliveryAfterTimeout(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			detail := &platforms.SessionDetail{}
-			platform := &fakePlatform{id: "opencode"}
+			platform := &fakePlatform{PlatformID: "opencode"}
 			sends := 0
-			platform.sessionDetailFn = func(string) (*platforms.SessionDetail, error) {
+			platform.SessionFn = func(string) (*platforms.SessionDetail, error) {
 				if sends > 0 && tc.readError {
 					return nil, errors.New("read failed")
 				}
@@ -64,7 +64,7 @@ func TestFactoryRecoveryConfirmsDeliveryAfterTimeout(t *testing.T) {
 				}
 				return detail, nil
 			}
-			platform.sendMessageFn = func(req platforms.SendMessageRequest) error {
+			platform.SendMessageFn = func(req platforms.SendMessageRequest) error {
 				sends++
 				if tc.accepted {
 					detail.Parts = []db.Part{{Data: []byte(req.Message)}}

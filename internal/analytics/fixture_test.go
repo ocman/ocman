@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -107,7 +106,7 @@ func (f *fixture) serve(method, target, body string) *httptest.ResponseRecorder 
 	if f.legacy != nil && f.deps.HistoryAnalytics != nil && f.deps.HistoryAnalytics() == f.seedHistory {
 		f.importFixture()
 	}
-	return serve(f.mux, method, target, body)
+	return moduletest.Do(f.mux, method, target, body, "")
 }
 
 // Seed old-style test rows through ingestion, then exercise production routes.
@@ -135,10 +134,4 @@ func (f *fixture) importFixture() {
 			f.t.Fatal(err)
 		}
 	}
-}
-
-func serve(mux *http.ServeMux, method, target, body string) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(method, target, strings.NewReader(body)))
-	return rec
 }

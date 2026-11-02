@@ -42,9 +42,9 @@ func TestPRWatchCountsAsUnfinishedBackgroundWork(t *testing.T) {
 				switch path {
 				case "sidebar", "remote-sidebar":
 					if path == "sidebar" {
-						reg.Register(&compactTestPlatform{fakePlatform: &fakePlatform{id: platform}, rows: rows})
+						reg.Register(&compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: platform}, rows: rows})
 					} else {
-						reg.Register(&remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: platform}, rows: rows})
+						reg.Register(&remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: platform}, rows: rows})
 					}
 					rows, err = s.sidebarSessionRows(t.Context(), platforms.SidebarQuery{}, false)
 				default:

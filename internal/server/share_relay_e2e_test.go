@@ -61,9 +61,9 @@ func TestCreateShareHandlesConversationLargerThanChunkLimit(t *testing.T) {
 
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id:              "fake",
-		sessions:        []db.Session{{ID: "ses_big", Platform: "fake"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, nil },
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: "ses_big", Platform: "fake"}},
+		SessionFn:   func(string) (*platforms.SessionDetail, error) { return detail, nil },
 	})
 	srv.WithRelay(ts.URL, "flag")
 
@@ -129,9 +129,9 @@ func TestCreateShareTruncatesToolOutput(t *testing.T) {
 
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id:              "fake",
-		sessions:        []db.Session{{ID: "ses_secret", Platform: "fake"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, nil },
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: "ses_secret", Platform: "fake"}},
+		SessionFn:   func(string) (*platforms.SessionDetail, error) { return detail, nil },
 	})
 	srv.WithRelay(ts.URL, "flag")
 

@@ -17,11 +17,11 @@ func TestHandleSessionsRunningCount(t *testing.T) {
 	child := mkSession("fake", "child", "busy", 2)
 	child.Status = db.StatusBusy
 	child.ParentID = "archived-busy"
-	counter := &countingUnreadPlatform{fakePlatform: fakePlatform{id: "fake", sessions: []db.Session{busy, child, mkSession("fake", "done", "done", 3)}}}
+	counter := &countingUnreadPlatform{fakePlatform: fakePlatform{PlatformID: "fake", SessionList: []db.Session{busy, child, mkSession("fake", "done", "done", 3)}}}
 	reg.Register(counter)
 	remote := mkSession("remote", "busy", "busy", 4)
 	remote.Status = db.StatusBusy
-	reg.Register(&fakePlatform{id: "remote", sessions: []db.Session{remote}})
+	reg.Register(&fakePlatform{PlatformID: "remote", SessionList: []db.Session{remote}})
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions?view=running-count", nil))
 	var result struct {
@@ -36,7 +36,7 @@ func TestHandleSessionsRunningCount(t *testing.T) {
 	if counter.callCount() != 0 {
 		t.Fatal("running count invoked unread enrichment")
 	}
-	counter.sessions = nil
+	counter.SessionList = nil
 	reg.Unregister("remote")
 	rr = httptest.NewRecorder()
 	srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions?view=running-count", nil))

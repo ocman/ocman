@@ -19,8 +19,8 @@ func TestConnectedRemoteDoesNotBlockLocalHistoryAnalytics(t *testing.T) {
 	}
 	defer store.Close()
 	registry := platforms.NewRegistry()
-	registry.Register(&historyTestPlatform{fakePlatform: &fakePlatform{id: "local"}, text: "retained"})
-	registry.Register(&historyTestPlatform{fakePlatform: &fakePlatform{id: "r-existing:opencode"}, text: "remote"})
+	registry.Register(&historyTestPlatform{fakePlatform: &fakePlatform{PlatformID: "local"}, text: "retained"})
+	registry.Register(&historyTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-existing:opencode"}, text: "remote"})
 	s := New(nil, nil, "127.0.0.1:0", registry, nil).WithConversationHistory(store, "owner")
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -43,7 +43,7 @@ func TestConnectedRemoteDoesNotBlockLocalHistoryAnalytics(t *testing.T) {
 	}
 	// Remote discovery adds adapters later than WithConversationHistory. They
 	// are not local ingestion sources and must not change local readiness.
-	registry.Register(&fakePlatform{id: "r-box:opencode"})
+	registry.Register(&fakePlatform{PlatformID: "r-box:opencode"})
 	mux, err := s.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestConnectedRemoteDoesNotBlockLocalHistoryAnalytics(t *testing.T) {
 		t.Fatal(w.Header())
 	}
 	// A newly enabled local platform makes analytics partial, not unavailable.
-	registry.Register(&fakePlatform{id: "missing-local"})
+	registry.Register(&fakePlatform{PlatformID: "missing-local"})
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/models", nil))
 	if w.Code != http.StatusOK || w.Header().Get("X-Ocman-Analytics-Partial") != "true" {

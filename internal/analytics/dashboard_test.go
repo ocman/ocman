@@ -13,6 +13,7 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module/moduletest"
 	"github.com/ocman/ocman/internal/pricing"
 )
 
@@ -23,7 +24,7 @@ func TestConversationAnalyticsRoutesRequireHistory(t *testing.T) {
 		"/api/activity", "/api/models", "/api/hourly", "/api/hourly-tokens",
 		"/api/analytics/overview", "/api/analytics/session-concurrency", "/api/analytics/agent-run-hours",
 	} {
-		if rec := serve(mux, http.MethodGet, path, ""); rec.Code != http.StatusServiceUnavailable {
+		if rec := moduletest.Do(mux, http.MethodGet, path, "", ""); rec.Code != http.StatusServiceUnavailable {
 			t.Errorf("%s: got %d, want 503: %s", path, rec.Code, rec.Body.String())
 		}
 	}
@@ -103,7 +104,7 @@ func TestCalcCost(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := serve(mux, http.MethodPost, "/api/cost/calc", tt.body)
+			rec := moduletest.Do(mux, http.MethodPost, "/api/cost/calc", tt.body, "")
 			if rec.Code != tt.wantCode {
 				t.Fatalf("got %d, want %d: %s", rec.Code, tt.wantCode, rec.Body.String())
 			}
@@ -123,7 +124,7 @@ func TestCalcCost(t *testing.T) {
 			}
 		})
 	}
-	if rec := serve(mux, http.MethodGet, "/api/cost/calc", ""); rec.Code != http.StatusMethodNotAllowed {
+	if rec := moduletest.Do(mux, http.MethodGet, "/api/cost/calc", "", ""); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET = %d, want 405", rec.Code)
 	}
 }
@@ -142,21 +143,21 @@ func TestRoutesUseServerGuards(t *testing.T) {
 	}
 	mux := routesWith(NewModule(Deps{}), module.Guards{Auth: deny(&auth), Localhost: deny(&local)})
 	for _, path := range []string{"/api/stats", "/api/analytics/overview", "/api/metrics", "/api/permission-stats", "/api/analytics/ui-usage"} {
-		if rec := serve(mux, http.MethodGet, path, ""); rec.Code != http.StatusUnauthorized {
+		if rec := moduletest.Do(mux, http.MethodGet, path, "", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s = %d, want the auth guard's 401", path, rec.Code)
 		}
 	}
 	for _, path := range []string{"/api/ui-usage", "/api/cost/calc"} {
-		if rec := serve(mux, http.MethodPost, path, "{}"); rec.Code != http.StatusUnauthorized {
+		if rec := moduletest.Do(mux, http.MethodPost, path, "{}", ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("POST %s = %d, want the auth guard's 401", path, rec.Code)
 		}
 	}
-	if rec := serve(mux, http.MethodGet, "/api/provider-usage", ""); rec.Code != http.StatusUnauthorized || local.Load() != 1 {
+	if rec := moduletest.Do(mux, http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusUnauthorized || local.Load() != 1 {
 		t.Fatalf("provider usage = %d (localhost guard calls %d)", rec.Code, local.Load())
 	}
 	// A wrong method answers 405 before any guard runs.
 	before := auth.Load()
-	if rec := serve(mux, http.MethodPost, "/api/stats", ""); rec.Code != http.StatusMethodNotAllowed || auth.Load() != before {
+	if rec := moduletest.Do(mux, http.MethodPost, "/api/stats", "", ""); rec.Code != http.StatusMethodNotAllowed || auth.Load() != before {
 		t.Fatalf("POST /api/stats = %d, auth guard calls %d → %d", rec.Code, before, auth.Load())
 	}
 }

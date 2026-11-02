@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module/moduletest"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
 	"github.com/ocman/ocman/internal/state"
@@ -181,23 +182,23 @@ func TestSubscriptionSamplerRunsImmediatelyAndStops(t *testing.T) {
 func TestSubscriptionHistoryRoute(t *testing.T) {
 	m := historyModule(t)
 	for _, days := range []string{"", "0", "1", "7", "30", "90", "365"} {
-		rec := serve(routes(m), http.MethodGet, "/api/provider-usage/history?days="+days, "")
+		rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage/history?days="+days, "", "")
 		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"samples":[]`) {
 			t.Fatalf("empty history=%d %s", rec.Code, rec.Body.String())
 		}
 	}
 	for _, days := range []string{"-1", "366", "invalid"} {
-		if rec := serve(routes(m), http.MethodGet, "/api/provider-usage/history?days="+days, ""); rec.Code != 400 {
+		if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage/history?days="+days, "", ""); rec.Code != 400 {
 			t.Fatalf("days=%s status=%d", days, rec.Code)
 		}
 	}
-	if rec := serve(routes(NewModule(Deps{})), http.MethodGet, "/api/provider-usage/history", ""); rec.Code != 503 {
+	if rec := moduletest.Do(routes(NewModule(Deps{})), http.MethodGet, "/api/provider-usage/history", "", ""); rec.Code != 503 {
 		t.Fatalf("no store=%d", rec.Code)
 	}
-	if rec := serve(routes(m), http.MethodPost, "/api/provider-usage/history", ""); rec.Code != 405 {
+	if rec := moduletest.Do(routes(m), http.MethodPost, "/api/provider-usage/history", "", ""); rec.Code != 405 {
 		t.Fatalf("wrong method=%d", rec.Code)
 	}
-	if rec := serve(routesWith(m, module.Guards{Localhost: loopbackOnly}), http.MethodGet, "/api/provider-usage/history", ""); rec.Code != 403 {
+	if rec := moduletest.Do(routesWith(m, module.Guards{Localhost: loopbackOnly}), http.MethodGet, "/api/provider-usage/history", "", ""); rec.Code != 403 {
 		t.Fatalf("nonlocal=%d", rec.Code)
 	}
 }
@@ -230,7 +231,7 @@ func TestSubscriptionHistoryFailuresRollbackAndStayPrivate(t *testing.T) {
 	if err := recordSubscriptionUsage(t.Context(), m.deps.Store.SQL(), now, nil); err == nil {
 		t.Fatal("failed retention accepted")
 	}
-	rec := serve(routes(m), http.MethodGet, "/api/provider-usage/history", "")
+	rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage/history", "", "")
 	if rec.Code != 500 || strings.Contains(rec.Body.String(), "subscription_usage_samples") {
 		t.Fatalf("private history error=%d %s", rec.Code, rec.Body.String())
 	}

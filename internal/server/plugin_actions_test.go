@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 	"github.com/ocman/ocman/internal/statev2"
 	"github.com/ocman/ocman/internal/testutil"
 	plugins "github.com/ocman/ocman/sdk/protocol"
@@ -19,11 +19,7 @@ import (
 func TestPluginActionEndpoints(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := statetest.Open(t, ModuleSchemas()...)
 	s := bindPlugins(&Server{stateDB: db, auth: newTestAuth(t, "secret")}, t.Context())
 	t.Cleanup(s.stopPluginProcesses)
 	d := plugins.Description{ID: "org.example.actions", Name: "Actions", Version: "1", Protocol: plugins.Version{Major: 1}, Scope: plugins.ScopeOwner, MaxConcurrency: 1,
@@ -216,11 +212,7 @@ func TestPluginActionEndpoints(t *testing.T) {
 func TestPluginActionProjectPathGrant(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	sdb, err := state.Open(testStatePath(t), ModuleSchemas()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sdb.Close() })
+	sdb := statetest.Open(t, ModuleSchemas()...)
 	s := &Server{stateDB: sdb, auth: newTestAuth(t, "secret")}
 	history := storedProjectFixture(t, s)
 	for _, directory := range []string{"/home/dev/.worktrees/project-a/b", "/home/dev/project-a"} {

@@ -51,18 +51,18 @@ func TestMCPCreateSession(t *testing.T) {
 	callerModel := ""
 	sendErr := error(nil)
 	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{id: "opencode",
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "opencode",
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			if id != "ses-caller" {
 				return nil, platforms.ErrNotFound
 			}
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/src/.worktrees/ocman/feat-x"}, Messages: []db.Message{{Data: []byte(`{"role":"assistant","providerID":"p","modelID":"` + callerModel + `"}`)}}}, nil
 		},
-		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			created = req
 			return &platforms.CreateSessionResponse{ID: "ses-new"}, nil
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return sendErr },
+		SendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return sendErr },
 	})
 	srv.registry = reg
 	svc := sessionMCPService{srv}
@@ -147,9 +147,9 @@ func TestMCPCreateSessionRemote(t *testing.T) {
 	srv.hostRouter = hostsvc.NewRouter(nil)
 	srv.hostRouter.RegisterRemote("machine", owner)
 	var sent platforms.SendMessageRequest
-	reg.Register(&fakePlatform{id: "r-machine:opencode", sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "r-machine:opencode", SessionFn: func(id string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/remote/repo"}, DefaultModel: "p/remote-current"}, nil
-	}, sendMessageFn: func(req platforms.SendMessageRequest) error {
+	}, SendMessageFn: func(req platforms.SendMessageRequest) error {
 		sent = req
 		return nil
 	}})

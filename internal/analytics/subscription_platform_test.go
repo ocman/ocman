@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/module/moduletest"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
@@ -36,7 +37,7 @@ func TestProviderUsageDoesNotReadCredentials(t *testing.T) {
 			t.Fatal(err)
 		}
 		m := newTestModule(Deps{})
-		rec := serve(routes(m), http.MethodGet, "/api/provider-usage", "")
+		rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", "")
 		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"providers":[]}` {
 			t.Fatalf("unexpected credentials fallback: %d %s", rec.Code, rec.Body.String())
 		}
@@ -168,7 +169,7 @@ func TestProviderUsageReadsPlatformAccount(t *testing.T) {
 		SubscriptionType: "pro", RateLimits: []providerprotocol.RateLimit{{Name: "weekly", Utilization: .25, ResetsAt: 1793602742000}},
 	}}
 	m := newTestModule(Deps{Platforms: func() []platforms.Platform { return []platforms.Platform{p} }})
-	rec := serve(routes(m), http.MethodGet, "/api/provider-usage", "")
+	rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", "")
 	var got subscriptionUsageResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)

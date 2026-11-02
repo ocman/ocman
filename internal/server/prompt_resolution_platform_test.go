@@ -31,7 +31,7 @@ func openWaits(t *testing.T, s *Server, platform string, since, until int64) int
 // answers it must resolve it under claudecode too, not under opencode.
 func TestProviderReplyResolvesClaudeAgentWaits(t *testing.T) {
 	s := testServer(t)
-	adapter := &fakePlatform{id: "claudecode"}
+	adapter := &fakePlatform{PlatformID: "claudecode"}
 	s.registry.Register(adapter)
 	start := time.Now().UnixMilli() - 1000
 	s.onPromptNeedsUser("claudecode", "s", "permission", "p")
@@ -64,7 +64,7 @@ func TestProviderReplyResolvesClaudeAgentWaits(t *testing.T) {
 // wait for the session's idle edge.
 func TestProviderCancelledPermissionIsNotAReply(t *testing.T) {
 	s := testServer(t)
-	adapter := &fakePlatform{id: "claudecode"}
+	adapter := &fakePlatform{PlatformID: "claudecode"}
 	s.registry.Register(adapter)
 	start := time.Now().UnixMilli() - 1000
 	s.onPromptNeedsUser("claudecode", "s", "permission", "p")
@@ -79,17 +79,17 @@ func TestProviderCancelledPermissionIsNotAReply(t *testing.T) {
 // user wait under claudecode.
 func TestRulesApprovalResolvesClaudeInboxAndWait(t *testing.T) {
 	adapter := &fakePlatform{
-		id:   "claudecode",
-		caps: platforms.Capabilities{PermissionRules: true},
-		permissionRulesFn: func(string) ([]platforms.PermissionRule, error) {
+		PlatformID: "claudecode",
+		Caps:       platforms.Capabilities{PermissionRules: true},
+		PermissionRulesFn: func(string) ([]platforms.PermissionRule, error) {
 			return []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}, nil
 		},
-		listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+		ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
 			return []platforms.LivePrompt{{"id": "p1", "sessionID": "sess-1", "permission": "bash", "patterns": []any{"ls"}}}, nil
 		},
-		respondPermissionFn: func(platforms.RespondPermissionRequest) error { return nil },
+		RespondPermissionFn: func(platforms.RespondPermissionRequest) error { return nil },
 		// Session rules read the session's ancestry before any rule applies.
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id}}, nil
 		},
 	}

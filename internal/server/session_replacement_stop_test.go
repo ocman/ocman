@@ -37,7 +37,7 @@ func TestFailedNativeStopLeavesHistoryUnconfirmedAndServerRetained(t *testing.T)
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
 	defer api.Close()
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "active", Directory: "/repo"}}}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "active", Directory: "/repo"}}}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "turn"}, nil
 	}})
 	runtime := &untrackedTestRuntime{NativeRuntime: ocruntime.NewNativeRuntimeWithAuth(ocapi.Auth{}), endpoint: api.URL}

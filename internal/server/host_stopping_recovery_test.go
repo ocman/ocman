@@ -10,8 +10,9 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
@@ -22,7 +23,7 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			t.Setenv("OPENCODE_DB", "")
 			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
-			path := testStateAt(t, filepath.Join(t.TempDir(), "stopping-state.db"))
+			path := statetest.At(t, filepath.Join(t.TempDir(), "stopping-state.db"), ModuleSchemas()...)
 			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {
 				t.Fatal(err)
@@ -32,7 +33,7 @@ func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 			if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo'); INSERT INTO message(id,session_id,time_created,data) VALUES ('user','s',1,'{"role":"user"}')`); err != nil {
 				t.Fatal(err)
 			}
-			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{id: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
+			registerRuntimeLifecycle(srv, &interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 				return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "user", LatestMessageCreated: 1}, nil
 			}})
 			rt := &recoveryWiringRuntime{}

@@ -98,9 +98,9 @@ func TestWorktreeCreateAndLaunchSendsFirstMessage(t *testing.T) {
 			srv.hostRouter.RegisterRemote("machine", &autoWorktreeOwner{})
 			var got platforms.SendMessageRequest
 			reg.Register(&fakePlatform{
-				id:       "r-machine:opencode",
-				sessions: []db.Session{mkSession("r-machine:opencode", "child", "t", 1)},
-				sendMessageFn: func(req platforms.SendMessageRequest) error {
+				PlatformID:  "r-machine:opencode",
+				SessionList: []db.Session{mkSession("r-machine:opencode", "child", "t", 1)},
+				SendMessageFn: func(req platforms.SendMessageRequest) error {
 					got = req
 					if fail {
 						return errors.New("boom")

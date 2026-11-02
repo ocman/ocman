@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/ocman/ocman/internal/state/statetest"
 )
 
 func decodeEnabled(t *testing.T, body []byte) bool {
@@ -20,7 +22,7 @@ func decodeEnabled(t *testing.T, body []byte) bool {
 }
 
 func TestHandleWorktreeInheritPermissions(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 
 	// Default (unset) → enabled true.
 	rec := httptest.NewRecorder()
@@ -44,7 +46,7 @@ func TestHandleWorktreeInheritPermissions(t *testing.T) {
 }
 
 func TestHandleWorktreeInheritPermissionsMethodNotAllowed(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	rec := httptest.NewRecorder()
 	serveSetting(srv.worktreeInheritSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/settings/worktree-inherit-permissions", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -62,7 +64,7 @@ func decodeAutoArchiveSettings(t *testing.T, body []byte) autoArchiveSettingsVie
 }
 
 func TestHandleAutoArchiveSettings(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 
 	rec := httptest.NewRecorder()
 	serveSetting(srv.autoArchiveSetting()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/settings/auto-archive", nil))
@@ -85,7 +87,7 @@ func TestHandleAutoArchiveSettings(t *testing.T) {
 }
 
 func TestHandleAutoArchiveSettingsRejectsInvalidRequest(t *testing.T) {
-	srv := &Server{stateDB: openTestStateDB(t)}
+	srv := &Server{stateDB: statetest.Open(t, ModuleSchemas()...)}
 	for _, tc := range []struct {
 		method, body string
 		want         int

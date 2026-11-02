@@ -143,9 +143,9 @@ func TestPublishCompletedTurnAppendsNewTurn(t *testing.T) {
 
 	srv, reg := newSessionsTestServer(t)
 	fake := &fakePlatform{
-		id:              "fake",
-		sessions:        []db.Session{{ID: "ses_live", Platform: "fake"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, nil },
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: "ses_live", Platform: "fake"}},
+		SessionFn:   func(string) (*platforms.SessionDetail, error) { return detail, nil },
 	}
 	reg.Register(fake)
 	srv.WithRelay(ts.URL, "flag")
@@ -222,9 +222,9 @@ func TestPublishCompletedTurnSplitsOversizedTurn(t *testing.T) {
 
 	srv, reg := newSessionsTestServer(t)
 	fake := &fakePlatform{
-		id:              "fake",
-		sessions:        []db.Session{{ID: "ses_big_turn", Platform: "fake"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, nil },
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: "ses_big_turn", Platform: "fake"}},
+		SessionFn:   func(string) (*platforms.SessionDetail, error) { return detail, nil },
 	}
 	reg.Register(fake)
 	srv.WithRelay(ts.URL, "flag")
@@ -272,9 +272,9 @@ func TestPublishCompletedTurnIgnoresSharesWithoutRelay(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	detail := shareTestDetail("ses_norelay")
 	fake := &fakePlatform{
-		id:              "fake",
-		sessions:        []db.Session{{ID: "ses_norelay", Platform: "fake"}},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, nil },
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: "ses_norelay", Platform: "fake"}},
+		SessionFn:   func(string) (*platforms.SessionDetail, error) { return detail, nil },
 	}
 	reg.Register(fake)
 
@@ -299,9 +299,9 @@ func TestPublishCompletedTurnSkipsFetchWithoutShareLinks(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	fetched := make(chan string, 1)
 	fake := &fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{{ID: "ses-gone", Platform: "fake"}},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		PlatformID:  "fake",
+		SessionList: []db.Session{{ID: "ses-gone", Platform: "fake"}},
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			fetched <- id
 			return nil, errors.New("platforms: session not found")
 		},

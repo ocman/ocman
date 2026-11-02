@@ -12,7 +12,7 @@ import (
 func TestMCPModelsRoutesToTargetPlatform(t *testing.T) {
 	srv := testServer(t)
 	called := false
-	srv.registry.Register(&fakePlatform{id: "r-owner:opencode", directoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	srv.registry.Register(&fakePlatform{PlatformID: "r-owner:opencode", DirectoryCatalogFn: func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
 		called = true
 		if req.Directory != "/remote/repo" || req.Port != "" {
 			t.Fatalf("request = %#v", req)

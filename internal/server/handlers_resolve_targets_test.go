@@ -149,7 +149,7 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 	srv.projects.loaded = true
 	srv.projects.mu.Unlock()
 	registry := platforms.NewRegistry()
-	registry.Register(&fakePlatform{id: "opencode"})
+	registry.Register(&fakePlatform{PlatformID: "opencode"})
 	service := remote.NewServer(registry, hostlocal.New(hostlocal.Deps{
 		ProjectUpstreams: srv.hostProjectUpstreams,
 		Projects: func(context.Context) ([]db.ProjectStats, error) {

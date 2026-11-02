@@ -3,7 +3,6 @@ package factorymod
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -44,12 +43,6 @@ func routeMux(t *testing.T, svc Service) (*http.ServeMux, *int) {
 	return mux, &local
 }
 
-func serve(mux *http.ServeMux, method, path string) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
-	return rec
-}
-
 func TestFactoryRoutesAnswerWrongMethodWith405DespiteCatchAll(t *testing.T) {
 	mux, _ := routeMux(t, &routeService{})
 	for _, tt := range []struct{ method, path, allow string }{
@@ -59,7 +52,7 @@ func TestFactoryRoutesAnswerWrongMethodWith405DespiteCatchAll(t *testing.T) {
 		{http.MethodGet, "/api/factory/recovery-gates/g/resume", "POST"},
 		{http.MethodDelete, "/api/factory/configuration", "GET, HEAD, POST"},
 	} {
-		rec := serve(mux, tt.method, tt.path)
+		rec := moduletest.Do(mux, tt.method, tt.path, "", "")
 		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != tt.allow {
 			t.Errorf("%s %s = %d, Allow %q; want 405, %q", tt.method, tt.path, rec.Code, rec.Header().Get("Allow"), tt.allow)
 		}
@@ -69,7 +62,7 @@ func TestFactoryRoutesAnswerWrongMethodWith405DespiteCatchAll(t *testing.T) {
 func TestFactoryRoutesUnknownSubpathIs404(t *testing.T) {
 	mux, _ := routeMux(t, &routeService{})
 	for _, path := range []string{"/api/factory/epics/e/unknown", "/api/factory/epics/e/pause/extra", "/api/factory/nothing"} {
-		if rec := serve(mux, http.MethodPost, path); rec.Code != http.StatusNotFound {
+		if rec := moduletest.Do(mux, http.MethodPost, path, "", ""); rec.Code != http.StatusNotFound {
 			t.Errorf("POST %s = %d, want 404", path, rec.Code)
 		}
 	}
@@ -78,7 +71,7 @@ func TestFactoryRoutesUnknownSubpathIs404(t *testing.T) {
 func TestFactoryRoutesDecodePathValues(t *testing.T) {
 	svc := &routeService{}
 	mux, local := routeMux(t, svc)
-	if rec := serve(mux, http.MethodGet, "/api/factory/epics/a%2Fb"); rec.Code != http.StatusOK || svc.epicID != "a/b" {
+	if rec := moduletest.Do(mux, http.MethodGet, "/api/factory/epics/a%2Fb", "", ""); rec.Code != http.StatusOK || svc.epicID != "a/b" {
 		t.Fatalf("GET epic = %d, id %q", rec.Code, svc.epicID)
 	}
 	if *local != 0 {
@@ -88,7 +81,7 @@ func TestFactoryRoutesDecodePathValues(t *testing.T) {
 		verb   string
 		paused bool
 	}{{"pause", true}, {"resume", false}} {
-		if rec := serve(mux, http.MethodPost, "/api/factory/epics/x%2Fy/"+tt.verb); rec.Code != http.StatusNoContent || svc.epicID != "x/y" || svc.paused != tt.paused {
+		if rec := moduletest.Do(mux, http.MethodPost, "/api/factory/epics/x%2Fy/"+tt.verb, "", ""); rec.Code != http.StatusNoContent || svc.epicID != "x/y" || svc.paused != tt.paused {
 			t.Fatalf("%s = %d, id %q, paused %v", tt.verb, rec.Code, svc.epicID, svc.paused)
 		}
 	}
@@ -100,7 +93,7 @@ func TestFactoryRoutesDecodePathValues(t *testing.T) {
 func TestFactoryRoutesFormulaListAcceptsTrailingSlash(t *testing.T) {
 	mux, _ := routeMux(t, &routeService{})
 	for _, path := range []string{"/api/factory/formulas", "/api/factory/formulas/"} {
-		if rec := serve(mux, http.MethodGet, path); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		if rec := moduletest.Do(mux, http.MethodGet, path, "", ""); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
 			t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body.String())
 		}
 	}
@@ -110,7 +103,7 @@ func TestFactoryRoutesFormulaListAcceptsTrailingSlash(t *testing.T) {
 func TestFactoryRoutesRejectInvalidActions(t *testing.T) {
 	mux, local := routeMux(t, &routeService{})
 	for _, path := range []string{"/api/factory/recovery-gates/g/bogus", "/api/factory/authority-gates/g/bogus", "/api/factory/project-gates/g/bogus"} {
-		if rec := serve(mux, http.MethodPost, path); rec.Code != http.StatusBadRequest {
+		if rec := moduletest.Do(mux, http.MethodPost, path, "", ""); rec.Code != http.StatusBadRequest {
 			t.Errorf("POST %s = %d, want 400", path, rec.Code)
 		}
 	}

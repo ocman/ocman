@@ -30,7 +30,7 @@ func (p *descendantPlatform) SessionSummary(_ context.Context, id string) (*db.S
 
 func TestConversationDescendantUsesRemoteOwner(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&descendantPlatform{fakePlatform: fakePlatform{id: "r-box:opencode"}, rows: map[string]db.Session{
+	reg.Register(&descendantPlatform{fakePlatform: fakePlatform{PlatformID: "r-box:opencode"}, rows: map[string]db.Session{
 		"child": {ID: "child", ParentID: "middle"}, "middle": {ID: "middle", ParentID: "root"},
 	}})
 	if !srv.isDescendantSession(t.Context(), convstream.Key{Platform: "r-box:opencode", SessionID: "root"}, "child") {
@@ -46,11 +46,11 @@ func TestConversationDescendantUsesRemoteOwner(t *testing.T) {
 func TestRemoteDescendantPromptsReachParentStream(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	live := make(chan string, 1)
-	p := &descendantPlatform{fakePlatform: fakePlatform{id: "r-box:opencode", sessions: []db.Session{{ID: "root"}},
-		listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+	p := &descendantPlatform{fakePlatform: fakePlatform{PlatformID: "r-box:opencode", SessionList: []db.Session{{ID: "root"}},
+		ListPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
 			return []platforms.LivePrompt{{"id": "permission", "sessionID": "child", "permission": "bash"}}, nil
 		},
-		proxyEventsFn: func(ctx context.Context, _ string, w io.Writer, _ func()) error {
+		ProxyEventsFn: func(ctx context.Context, _ string, w io.Writer, _ func()) error {
 			_, _ = io.WriteString(w, "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n")
 			for {
 				select {

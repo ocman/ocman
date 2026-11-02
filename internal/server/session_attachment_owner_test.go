@@ -39,7 +39,7 @@ func TestSessionAttachmentSavesOnExplicitOwner(t *testing.T) {
 	srv.hostRouter.RegisterRemote("box", owner)
 	// Both machines have the same path and session id; the platform chooses one.
 	for _, platform := range []string{"opencode", "r-box:opencode"} {
-		reg.Register(&fakePlatformWithDetail{fakePlatform: fakePlatform{id: platform}, detailSession: &db.Session{ID: "s1", Platform: platform, Directory: "/repo"}})
+		reg.Register(&fakePlatformWithDetail{fakePlatform: fakePlatform{PlatformID: platform}, detailSession: &db.Session{ID: "s1", Platform: platform, Directory: "/repo"}})
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

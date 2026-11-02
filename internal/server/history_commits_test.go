@@ -26,12 +26,12 @@ func TestConversationReadComposesStreamedContentHistoryHasNotStored(t *testing.T
 	srv, reg := newSessionsTestServer(t)
 	srv.historyCommits = newHistoryCommits()
 	live := make(chan string, 8)
-	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{{ID: "s1", Platform: "fake"}},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{{ID: "s1", Platform: "fake"}},
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Platform: "fake"},
 				Messages: []db.Message{{ID: "prompt", SessionID: id, TimeCreated: 1, Data: json.RawMessage(`{"role":"user"}`)}}}, nil
 		},
-		proxyEventsFn: func(ctx context.Context, _ string, w io.Writer, _ func()) error {
+		ProxyEventsFn: func(ctx context.Context, _ string, w io.Writer, _ func()) error {
 			_, _ = io.WriteString(w, "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n")
 			for {
 				select {

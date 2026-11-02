@@ -40,15 +40,15 @@ func newQueueFake(t *testing.T, busy bool) (*Server, *queueFake) {
 	srv, reg := newSessionsTestServer(t)
 	q := &queueFake{busy: busy}
 	reg.Register(&fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		PlatformID:  "fake",
+		SessionList: []db.Session{mkSession("fake", "s1", "t", 1)},
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			q.mu.Lock()
 			defer q.mu.Unlock()
 			q.sent = append(q.sent, req.Message)
 			return nil
 		},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			q.mu.Lock()
 			defer q.mu.Unlock()
 			status := db.StatusDone
@@ -144,12 +144,12 @@ func TestQueueFlush_BlockedSessionDoesNotBlockIndependentSession(t *testing.T) {
 	started := make(chan struct{})
 	independent := make(chan struct{})
 	reg.Register(&fakePlatform{
-		id: "fake",
-		sessions: []db.Session{
+		PlatformID: "fake",
+		SessionList: []db.Session{
 			mkSession("fake", "blocked", "blocked", 1),
 			mkSession("fake", "independent", "independent", 1),
 		},
-		sendMessageFn: func(req platforms.SendMessageRequest) error {
+		SendMessageFn: func(req platforms.SendMessageRequest) error {
 			if req.SessionID == "blocked" {
 				close(started)
 				<-blocked
@@ -158,7 +158,7 @@ func TestQueueFlush_BlockedSessionDoesNotBlockIndependentSession(t *testing.T) {
 			}
 			return nil
 		},
-		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusDone}}, nil
 		},
 	})
@@ -187,9 +187,9 @@ func TestSessionStatusReaderLatestMessageState(t *testing.T) {
 	status := db.StatusWaiting
 	messages := []db.Message{{ID: "assistant-1", TimeCreated: 200, Data: json.RawMessage(`{"role":"assistant","finish":"stop"}`)}}
 	reg.Register(&fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		PlatformID:  "fake",
+		SessionList: []db.Session{mkSession("fake", "s1", "t", 1)},
+		SessionFn: func(string) (*platforms.SessionDetail, error) {
 			return &platforms.SessionDetail{
 				Session:  &db.Session{ID: "s1", Status: status},
 				Messages: messages,
@@ -493,7 +493,7 @@ func (r *signalingRecorder) Write(p []byte) (int, error) {
 
 func TestSessionQueueMove_RejectsBadDirection(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{mkSession("fake", "s1", "t", 1)}})
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{mkSession("fake", "s1", "t", 1)}})
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/session/s1/queue/q_x/move?platform=fake",
 		strings.NewReader(`{"direction":5}`))
@@ -506,7 +506,7 @@ func TestSessionQueueMove_RejectsBadDirection(t *testing.T) {
 
 func TestSessionQueueDelete_BestEffortOnMissing(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
-	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{mkSession("fake", "s1", "t", 1)}})
+	reg.Register(&fakePlatform{PlatformID: "fake", SessionList: []db.Session{mkSession("fake", "s1", "t", 1)}})
 	// Deleting an id that isn't queued is a satisfied no-op → 204, not 404.
 	req := httptest.NewRequest(http.MethodDelete,
 		"/api/session/s1/queue/q_gone?platform=fake", nil)
@@ -545,9 +545,9 @@ func TestSessionMessage_UnreachableRelaunchesOpencode(t *testing.T) {
 			var sent, ensuredDirs []string
 			attempts := 0
 			reg.Register(&fakePlatform{
-				id:       "fake",
-				sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
-				sendMessageFn: func(req platforms.SendMessageRequest) error {
+				PlatformID:  "fake",
+				SessionList: []db.Session{mkSession("fake", "s1", "t", 1)},
+				SendMessageFn: func(req platforms.SendMessageRequest) error {
 					mu.Lock()
 					defer mu.Unlock()
 					attempts++
@@ -557,7 +557,7 @@ func TestSessionMessage_UnreachableRelaunchesOpencode(t *testing.T) {
 					sent = append(sent, req.Message)
 					return nil
 				},
-				sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+				SessionFn: func(id string) (*platforms.SessionDetail, error) {
 					return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: "done", Directory: tc.dir}}, nil
 				},
 			})
@@ -605,8 +605,8 @@ func TestSessionMessage_UnreachableRelaunchesOpencode(t *testing.T) {
 func TestSessionMessage_EmptyRejected(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	reg.Register(&fakePlatform{
-		id:       "fake",
-		sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+		PlatformID:  "fake",
+		SessionList: []db.Session{mkSession("fake", "s1", "t", 1)},
 	})
 	rr := postMessage(t, srv, "s1", `{"message":""}`)
 	if rr.Code != http.StatusBadRequest {
@@ -629,8 +629,8 @@ func TestQueueBusyEmptyLifecycle(t *testing.T) {
 			sends := 0
 			reg.Register(&lifecycleFake{
 				fakePlatform: &fakePlatform{
-					id: "fake",
-					sendMessageFn: func(platforms.SendMessageRequest) error {
+					PlatformID: "fake",
+					SendMessageFn: func(platforms.SendMessageRequest) error {
 						sends++
 						return nil
 					},
@@ -666,9 +666,9 @@ func TestSessionStatusReaderUsesBoundedLifecycle(t *testing.T) {
 	detailReads := 0
 	fake := &lifecycleFake{
 		fakePlatform: &fakePlatform{
-			id:       "fake",
-			sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
-			sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			PlatformID:  "fake",
+			SessionList: []db.Session{mkSession("fake", "s1", "t", 1)},
+			SessionFn: func(string) (*platforms.SessionDetail, error) {
 				detailReads++
 				return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Status: db.StatusBusy}}, nil
 			},

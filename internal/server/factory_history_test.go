@@ -12,12 +12,12 @@ func TestFactoryStopsSessionsWithoutDeletingHistory(t *testing.T) {
 	for _, kind := range []string{"planning", "implementation"} {
 		t.Run(kind, func(t *testing.T) {
 			aborted := false
-			platform := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "session"}}}
-			platform.disposeFn = func(platforms.DisposeSessionRequest) error {
+			platform := &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "session"}}}
+			platform.DisposeFn = func(platforms.DisposeSessionRequest) error {
 				t.Fatal("Factory deleted session history")
 				return nil
 			}
-			platform.abortFn = func(req platforms.AbortRequest) error {
+			platform.AbortFn = func(req platforms.AbortRequest) error {
 				aborted = req.SessionID == "session"
 				return nil
 			}
