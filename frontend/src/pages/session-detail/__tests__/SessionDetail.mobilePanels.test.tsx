@@ -45,6 +45,25 @@ afterEach(() => {
 });
 
 describe('SessionDetail — phone overlay panels', () => {
+  it.each(['recent', 'projects'] as const)('uses the %s sidebar order for Option+J/K', async (sidebarView) => {
+    useUiStore.setState({ sidebarView });
+    const previous = makeSession({ id: 'previous', title: 'Previous pinned', pinned: true, pinnedAt: 20, timeUpdated: 100 });
+    const current = makeSession({ id: 'sess_1', title: 'Current pinned', pinned: true, pinnedAt: 10, timeUpdated: 200 });
+    const next = makeSession({ id: 'next', title: 'Next unpinned', timeUpdated: 300 });
+    const page = renderSessionPage({ sessionId: current.id, detail: makeSessionDetail(current), sessions: [next, current, previous] });
+    const dispatcher = renderHook(() => useShortcutDispatcher());
+    try {
+      const input = await screen.findByRole('textbox');
+      await waitFor(() => expect(visibleSidebarSessions.current?.map(row => row.id)).toEqual([previous.id, current.id, next.id]));
+      input.blur();
+      fireEvent.keyDown(window, { code: 'KeyJ', altKey: true });
+      await waitFor(() => expect(vi.mocked(page.api.session).mock.calls.some(([id]) => id === next.id)).toBe(true));
+      await act(async () => { page.navigate(`/session/${current.id}`); await flushPromises(); });
+      fireEvent.keyDown(window, { code: 'KeyK', altKey: true });
+      await waitFor(() => expect(vi.mocked(page.api.session).mock.calls.some(([id]) => id === previous.id)).toBe(true));
+    } finally { dispatcher.unmount(); page.result.unmount(); }
+  });
+
   it('dismisses the phone drawer when its active session is selected', async () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     const current = makeSession({ id: 'phone-active-review', title: 'Active conversation' });

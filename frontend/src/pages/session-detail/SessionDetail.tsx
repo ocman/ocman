@@ -15,6 +15,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import { useSyncRef } from '../../lib/useSyncRef';
+import { sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api } from '../../lib/api';
@@ -715,7 +716,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     );
   }, [handleThreadBoundaryRetry, id]);
 
-  // Alt+J / Alt+K: navigate between recent sessions.
+  // Alt+J / Alt+K: follow the sidebar's displayed order and filters.
   const navigationSessionRef = useSyncRef(session);
   const reportNavigationError = toasts.setters.setRestartToastMessage;
   const jumpToSession = async (direction: 1 | -1) => {
@@ -726,7 +727,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       return;
     }
     if (signal?.aborted || navigationSessionRef.current?.id !== id) return;
-    const sessions = recentSessionsRef.current;
+    const sessions = sidebarNavigableSessions(recentSessionsRef.current);
     const currentIndex = sessions.findIndex((s) => s.id === id);
     if (currentIndex === -1) return;
     const target = sessions[currentIndex + direction];
