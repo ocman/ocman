@@ -3,7 +3,7 @@ import goDtos from './go-dtos.json';
 import type {
   HostCapabilities, Message, Part, PartData, PlatformCapabilities, QueuedMessage, Session, SessionNotice, SessionStatus,
 } from '../api.types';
-import type { QuestionItem } from '../../components/session/QuestionPrompt';
+import type { QuestionItem } from '../questions';
 import type { BackgroundTask } from '../sessionBackgroundTasks';
 import type * as Oce from '../conversation/events';
 

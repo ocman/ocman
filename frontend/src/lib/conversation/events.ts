@@ -3,7 +3,7 @@
 // types against the Go structs.
 
 import type { Message, Part, PartData, QueuedMessage, Session, SessionNotice, SessionStatus } from '../api.types';
-import type { QuestionItem } from '../../components/session/QuestionPrompt';
+import type { QuestionItem } from '../questions';
 import type { BackgroundTask } from '../sessionBackgroundTasks';
 
 export const OCE_VERSION = 1;

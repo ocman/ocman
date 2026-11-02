@@ -3,7 +3,6 @@ import type { Part } from './api';
 import {
   permissionFromRequest,
   questionFromRequest,
-  normalizeQuestionItems,
   hasQuestionOutput,
   extractPendingQuestionFromPart,
   extractPendingQuestionFromParts,
@@ -78,39 +77,6 @@ describe('questionFromRequest', () => {
     expect(out?.requestId).toBe('q1');
     expect(out?.sessionID).toBe('sub_1');
     expect(out?.questions).toHaveLength(1);
-  });
-});
-
-describe('normalizeQuestionItems', () => {
-  it('parses JSON strings', () => {
-    const out = normalizeQuestionItems(JSON.stringify([{ question: 'q', options: [] }]));
-    expect(out).toHaveLength(1);
-  });
-
-  it('returns [] for unparsable strings', () => {
-    expect(normalizeQuestionItems('{not json')).toEqual([]);
-  });
-
-  it('unwraps `{ questions: [...] }` envelopes', () => {
-    expect(normalizeQuestionItems({ questions: [{ question: 'q', options: [] }] })).toHaveLength(1);
-  });
-
-  it('drops malformed entries', () => {
-    const out = normalizeQuestionItems([
-      { question: 'ok', options: [] },
-      { question: 123, options: [] }, // bad question type
-      { question: 'no options' }, // missing options
-      null,
-      { options: [] }, // missing question
-    ]);
-    expect(out).toHaveLength(1);
-    expect(out[0].question).toBe('ok');
-  });
-
-  it('returns [] for empty/non-array values', () => {
-    expect(normalizeQuestionItems([])).toEqual([]);
-    expect(normalizeQuestionItems(undefined)).toEqual([]);
-    expect(normalizeQuestionItems(null)).toEqual([]);
   });
 });
 

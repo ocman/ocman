@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { markHandledByPrompt, wasHandledByPrompt, type PromptKeyEvent as KeyEvent } from './promptKeyboard';
+import type { QuestionItem } from '../../lib/questions';
 import './QuestionPrompt.css';
 
 function optionIndexFromNumberKey(e: KeyEvent, max: number): number {
@@ -13,19 +14,6 @@ function optionIndexFromNumberKey(e: KeyEvent, max: number): number {
     return idx < max ? idx : -1;
   }
   return -1;
-}
-
-interface QuestionOption {
-  label: string;
-  description: string;
-}
-
-export interface QuestionItem {
-  question: string;
-  header: string;
-  options: QuestionOption[];
-  multiple?: boolean;
-  custom?: boolean;
 }
 
 export interface PendingQuestion {

@@ -18,7 +18,6 @@ import {
   shortenPatchPath,
   summarizePatch,
   parseQuestionAnswers,
-  parseQuestions,
 } from './threadHelpers';
 
 describe('escapeHtml', () => {
@@ -547,37 +546,3 @@ describe('parseQuestionAnswers', () => {
   });
 });
 
-describe('parseQuestions', () => {
-  it('parses a `{ questions: [...] }` envelope', () => {
-    const argsText = `pending\n${JSON.stringify({
-      questions: [
-        { header: 'h', question: 'q1', options: [] },
-      ],
-    })}`;
-    expect(parseQuestions(argsText)).toEqual([
-      { header: 'h', question: 'q1', options: [] },
-    ]);
-  });
-
-  it('parses a bare array', () => {
-    const argsText = `running\n${JSON.stringify([
-      { header: 'h', question: 'q', options: [] },
-    ])}`;
-    expect(parseQuestions(argsText)).toEqual([
-      { header: 'h', question: 'q', options: [] },
-    ]);
-  });
-
-  it('returns null when there is no payload after the status line', () => {
-    expect(parseQuestions('only one line')).toBeNull();
-  });
-
-  it('returns null for malformed JSON', () => {
-    expect(parseQuestions('status\n{not json')).toBeNull();
-  });
-
-  it('returns null when the payload does not look like questions', () => {
-    expect(parseQuestions('status\n[]')).toBeNull();
-    expect(parseQuestions('status\n[{}]')).toBeNull();
-  });
-});

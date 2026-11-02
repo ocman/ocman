@@ -1,5 +1,6 @@
 import type { Part, PermissionRequest, QuestionRequest } from './api';
-import type { PendingQuestion, QuestionItem } from '../components/session/QuestionPrompt';
+import type { PendingQuestion } from '../components/session/QuestionPrompt';
+import { normalizeQuestionItems } from './questions';
 
 /**
  * Permission prompt awaiting a user reply. Mirrors the
@@ -105,39 +106,6 @@ export function questionFromRequest(request: QuestionRequest): PendingQuestion |
   if (questions.length === 0) return null;
 
   return { requestId: id, sessionID, questions };
-}
-
-/**
- * Coerce a question payload (string / object / array) into a flat
- * `QuestionItem[]`. Strings are JSON-parsed first; wrapper objects
- * with a `questions` field are unwrapped; entries lacking a string
- * `question` or array `options` are dropped.
- */
-export function normalizeQuestionItems(raw: unknown): QuestionItem[] {
-  let value = raw;
-
-  if (typeof value === 'string') {
-    try {
-      value = JSON.parse(value) as unknown;
-    } catch {
-      return [];
-    }
-  }
-
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const obj = value as Record<string, unknown>;
-    if (Array.isArray(obj.questions)) value = obj.questions;
-  }
-
-  if (!Array.isArray(value) || value.length === 0) return [];
-
-  return value.filter(
-    (q): q is QuestionItem =>
-      !!q &&
-      typeof q === 'object' &&
-      typeof (q as QuestionItem).question === 'string' &&
-      Array.isArray((q as QuestionItem).options),
-  );
 }
 
 /**

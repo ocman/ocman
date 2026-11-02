@@ -12,7 +12,7 @@
 import type { Message, Part } from './api';
 import type { SessionAction, SessionView } from './sessionViewTypes';
 import { upsertMessage, upsertSnapshotPart } from './sessionViewParts';
-import { normalizeQuestionItems } from './sseHelpers';
+import { normalizeQuestionItems } from './questions';
 
 export type {
   AutoApprovedNoticePayload, AutoRejectedNoticePayload, SessionAction, SessionMetadata, SessionView,

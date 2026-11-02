@@ -2,7 +2,8 @@
 // questions, and durations. Inline diffs live in LazyInlineDiff.tsx.
 import React, { useState, useEffect, type FC } from 'react';
 import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../../lib/ansi';
-import { formatToolDuration, type QuestionData } from '../../lib/threadHelpers';
+import { formatToolDuration } from '../../lib/threadHelpers';
+import type { QuestionItem } from '../../lib/questions';
 
 export const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean; label?: string }> = ({
   startedAt,
@@ -43,7 +44,7 @@ export const BashPrompt: FC<{ running: boolean }> = ({ running }) => {
   return <span className="oc-shell-prompt" data-testid={running ? 'bash-spinner' : undefined} title={running ? 'Running' : undefined}>{running ? bashSpinnerFrames[frame] : '$'}</span>;
 };
 
-export function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData[]; answers: string[] }) {
+export function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionItem[]; answers: string[] }) {
   return (
     <div className="oc-question-list">
       {questions.map((q, index) => (

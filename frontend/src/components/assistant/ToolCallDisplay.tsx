@@ -19,11 +19,11 @@ import {
   summarizeToolArgs,
   summarizePatch,
   parseQuestionAnswers,
-  parseQuestions,
   parseToolTime,
   parseShellDescription,
   type ToolApproval,
 } from '../../lib/threadHelpers';
+import { parseQuestions } from '../../lib/questions';
 import type { FC } from 'react';
 import { ArtifactToolCard } from './ArtifactToolCard';
 import { parseCreatedArtifact } from '../../lib/artifactsApi';

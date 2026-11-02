@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { Message, Part, SessionDetail } from './api';
-import type { QuestionItem } from '../components/session/QuestionPrompt';
+import type { QuestionItem } from './questions';
 
 type SessionRow = SessionDetail['session'];
 import {

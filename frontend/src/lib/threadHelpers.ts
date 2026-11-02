@@ -60,18 +60,6 @@ export interface PatchPayload {
   preamble: string;
 }
 
-/** A single MCP-style question with its prompt header and option list. */
-export interface QuestionOption {
-  label: string;
-  description: string;
-}
-
-export interface QuestionData {
-  header: string;
-  question: string;
-  options: QuestionOption[];
-}
-
 /**
  * Escape the five HTML-significant characters so a string can be
  * safely interpolated into `dangerouslySetInnerHTML` markup.
@@ -638,27 +626,6 @@ export function parseQuestionAnswers(result: unknown): string[] | null {
     if (prose) return prose;
     const raw = normalizeAnswer(result);
     if (raw && raw !== '""' && raw !== '[]') return [raw];
-  }
-  return null;
-}
-
-/**
- * Parse the JSON body of a `question` tool argument blob. The first
- * line is a status marker; the rest is JSON that may either be a
- * bare array of question objects or `{ questions: [...] }`.
- */
-export function parseQuestions(argsText: string): QuestionData[] | null {
-  const lines = argsText.split('\n');
-  const jsonStr = lines.slice(1).join('\n').trim();
-  if (!jsonStr) return null;
-  try {
-    const parsed = JSON.parse(jsonStr);
-    const questions = parsed?.questions || parsed;
-    if (Array.isArray(questions) && questions.length > 0 && questions[0]?.question) {
-      return questions as QuestionData[];
-    }
-  } catch {
-    /* not JSON */
   }
   return null;
 }
