@@ -19,6 +19,7 @@ import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinComman
 import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
 import type { ComposerProps } from './composerTypes';
 import { ComposerMachineSelector } from './ComposerMachineSelector';
+import { HostBadge } from '../HostBadge';
 import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import { InlineAlert } from '../InlineAlert';
 
@@ -35,7 +36,7 @@ export function Composer({
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
   worktreesSupported, worktrees, permissionControl, footerStatus, composerRef, target, onTargetChange,
-  remoteId, onMachineChange,
+  remoteId, remoteName, remoteStale, onMachineChange,
 }: ComposerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -352,7 +353,7 @@ export function Composer({
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}
           status={footerStatus}
-          machineControl={newConversation && directory && onMachineChange && (<>
+          machineControl={newConversation && directory && onMachineChange ? (<>
             <ComposerMachineSelector
               key={`${sessionId}:${directory}:${remoteId}`}
               directory={directory}
@@ -367,7 +368,8 @@ export function Composer({
                 }
               }}
             />
-          </>)}
+          </>) : <HostBadge showIcon alwaysShow={!!remoteId && remoteId !== 'local'}
+            remoteId={remoteId} remoteName={remoteName} stale={remoteStale} />}
           sessionId={sessionId} disabled={disabled} targetDisabled={uiDisabled} target={target} onTargetChange={onTargetChange} isRunning={isRunning} effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded}
           agents={agents} tokensPerSecond={tokensPerSecond} onAbort={onAbort} tokenStats={tokenStats} estimatedCost={estimatedCost}
           sessionTreeStats={sessionTreeStats} contextTokens={contextTokens} effectiveModel={effectiveModel}

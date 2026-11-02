@@ -8,6 +8,7 @@ import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { remoteLog } from '../../lib/remoteLog';
 import { ArchiveButton } from '../../components/ArchiveButton';
 import { SnoozeButton } from '../../components/SnoozeButton';
+import { HostBadge } from '../../components/HostBadge';
 import { useHoverPrefetch } from './sessionPrefetch';
 import { SidebarRow } from './SidebarRow';
 import { useSessionSwipe } from '../../lib/useSessionSwipe';
@@ -34,7 +35,7 @@ export interface SidebarSessionRowProps {
   onPinSession: (e: React.MouseEvent, session: Session) => void;
 }
 
-/** One session row in the sidebar (pinned or grouped view). */
+/** One session row in the sidebar (flat, pinned or grouped view). */
 export function SidebarSessionRow({
   session: sib,
   inGroup,
@@ -143,6 +144,8 @@ export function SidebarSessionRow({
             <span className="session-sidebar-project-path">
               <ShortPath path={isWorktree ? projectRoot : sib.directory} />
             </span>
+            <HostBadge showIcon alwaysShow={!!sib.remoteId && sib.remoteId !== 'local'}
+              remoteId={sib.remoteId} remoteName={sib.remoteName} stale={sib.stale} />
             <span className="session-sidebar-time" title={new Date(activityAt).toLocaleString()}>
               {relativeTime(activityAt).replace('just now', 'now').replace(' ago', '')}
             </span>

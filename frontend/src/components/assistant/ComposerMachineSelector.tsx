@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import type { ResolveTargetsResponse, TargetCandidate } from '../../lib/api.types';
 import { SearchSelect } from '../SearchSelect';
 import { useShortcut } from '../../lib/shortcutRegistry';
+import { HostBadge } from '../HostBadge';
 
 export function ComposerMachineSelector({ directory, remoteId = 'local', disabled, onSelect }: {
   directory: string;
@@ -44,7 +45,6 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
     machines.push({ remoteId, remoteName: 'Current machine' });
   }
   return <span className="oc-composer-selectors oc-composer-selectors-left" data-testid="composer-machine-selector">
-    <span className="oc-selector-icon" aria-hidden="true"><i className="bi bi-pc-display" /></span>
     <span ref={selectorRef} onClick={(event) => event.stopPropagation()}>
       <SearchSelect
         className="oc-bar-search"
@@ -60,6 +60,10 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
           return {
             value: machine.remoteId,
             label: `${machine.remoteName}${!current && !matched ? ' · no matching project' : ''}`,
+            displayLabel: <>
+              <HostBadge alwaysShow showIcon remoteId={machine.remoteId} remoteName={machine.remoteName} />
+              {!current && !matched ? ' · no matching project' : ''}
+            </>,
             disabled: !current && !matched,
           };
         })}

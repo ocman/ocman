@@ -26,6 +26,7 @@ import { newSessionPath, parseNewSessionParams } from '../../lib/newSessionPath'
 vi.mock('../../lib/useCapabilities', () => ({
   useCapabilities: () => ({ platforms: [] }),
   useMultiPlatform: () => false,
+  useMultiHost: () => false,
   useOpencodeLaunch: () => true,
   usePlatformCapabilities: () => ({ shellExec: true }),
   useMachinePlatforms: () => [],

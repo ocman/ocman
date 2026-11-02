@@ -941,6 +941,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         launching: launchingOpencode,
                         directory: session.directory,
                         remoteId: session.remoteId,
+                        remoteName: session.remoteName,
+                        remoteStale: session.stale,
                         permissionControl,
                       } : null}
                     />

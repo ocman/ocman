@@ -51,6 +51,9 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
     breadcrumb = (
       <>
         {sessionInfo.sessionTitle}
+        <HostBadge showIcon alwaysShow={!!sessionInfo.sessionRemoteId && sessionInfo.sessionRemoteId !== 'local'}
+          remoteName={sessionInfo.sessionRemoteName} remoteId={sessionInfo.sessionRemoteId}
+          stale={sessionInfo.sessionRemoteStale} />
         {sessionInfo.sessionPlatform && (
           <>
             <PlatformBadge platform={sessionInfo.sessionPlatform} variant="icon" />
@@ -97,11 +100,6 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
             className="header-project"
             title={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
           >
-            <HostBadge
-              remoteName={sessionInfo.sessionRemoteName}
-              remoteId={sessionInfo.sessionRemoteId}
-              stale={sessionInfo.sessionRemoteStale}
-            />
             {sessionInfo.sessionProject}
           </ProjectQuickSettings>
         )}

@@ -14,6 +14,19 @@ vi.mock('../lib/queries', () => ({ useProjects: () => ({ data: inventory.project
 vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: () => true, useMultiHost: () => false }));
 beforeEach(() => { inventory.projects = []; plugins.pages = []; });
 
+it('shows the remote host pill beside the session title even before host detection resolves', () => {
+  const info: HeaderInfo = { sessionId: 'remote', sessionTitle: 'Remote work',
+    sessionRemoteId: 'box', sessionRemoteName: 'Build host', sessionRemoteStale: true };
+  render(<MemoryRouter initialEntries={['/session/remote']}>
+    <HeaderContext.Provider value={{ info, setInfo: vi.fn() }}>
+      <AppHeader onOpenNav={vi.fn()} />
+    </HeaderContext.Provider>
+  </MemoryRouter>);
+  const pill = within(screen.getByRole('heading', { level: 1 })).getByLabelText('Build host (offline — last known)');
+  expect(pill).toHaveClass('host-badge', 'host-badge--icon', 'stale');
+  expect(pill.querySelector('.bi-hdd-network')).toHaveAttribute('aria-hidden', 'true');
+});
+
 it('uses the plugin-declared title for the matching owner and page', () => {
   plugins.pages = [
     { ownerId: 'local', pluginId: 'org.example.pentest', page: { id: 'targets', label: 'Local targets' } },

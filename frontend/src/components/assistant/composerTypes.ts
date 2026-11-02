@@ -88,5 +88,7 @@ export interface ComposerProps {
   footerStatus?: ReactNode;
   composerRef?: Ref<ComposerHandle>;
   remoteId?: string;
+  remoteName?: string;
+  remoteStale?: boolean;
   onMachineChange?: (target: TargetCandidate) => Promise<void>;
 }

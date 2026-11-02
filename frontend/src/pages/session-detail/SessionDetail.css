@@ -377,6 +377,12 @@ button.session-sidebar-group-header.collapsed::before {
 .session-sidebar-item.flat .session-sidebar-project {
   justify-content: space-between;
 }
+.session-sidebar-item.flat .session-sidebar-project > .host-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  align-self: center;
+}
 .session-sidebar-item.flat .git-status {
   display: flex;
   min-width: 0;

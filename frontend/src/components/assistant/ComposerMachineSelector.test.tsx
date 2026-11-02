@@ -13,6 +13,7 @@ function Shortcuts({ onHistory = vi.fn() }: { onHistory?: () => void }) {
 }
 
 vi.mock('../../lib/api', () => ({ api: { resolveTargets: vi.fn() } }));
+vi.mock('../../lib/useCapabilities', () => ({ useMultiHost: () => false }));
 const local = { remoteId: 'local', remoteName: 'This machine', platform: 'opencode', dir: '/local/repo' };
 const remote = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/remote/checkout' };
 const unmatched = { remoteId: 'other', remoteName: 'Other box', platform: 'r-other:opencode', dir: '' };
@@ -66,6 +67,8 @@ it('supports remote-to-local selection without assuming matching paths', async (
   render(<ComposerMachineSelector directory="/remote/checkout" remoteId="box" onSelect={onSelect} />);
   const select = await screen.findByRole('combobox');
   expect(select).toHaveTextContent('Build box');
+  expect(select.querySelector('.host-badge')).toHaveAttribute('aria-label', 'Build box');
+  expect(select.querySelector('.bi-hdd-network')).toHaveAttribute('aria-hidden', 'true');
   pick(select, 'This machine');
   await waitFor(() => expect(onSelect).toHaveBeenCalledWith(local));
   expect(api.resolveTargets).toHaveBeenCalledWith('/remote/checkout', 'box');

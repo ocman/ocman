@@ -3,6 +3,7 @@
 .app-header h1 > a { color: var(--text); font-weight: 600; }
 .app-header h1 span { color: inherit; font-weight: 400; }
 .header-breadcrumb { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.header-breadcrumb > .host-badge { max-width: 120px; margin-left: 8px; vertical-align: middle; }
 .header-navigation-slot,
 .header-mobile-title-slot { display: none; }
 .header-navigation-slot:empty,

@@ -6,6 +6,7 @@ import { Composer } from './Composer';
 const caps = vi.hoisted(() => ({ agentCatalog: true }));
 vi.mock('../../lib/useCapabilities', () => ({
   useMultiPlatform: () => false,
+  useMultiHost: () => false,
   usePlatformCapabilities: () => caps,
 }));
 beforeEach(() => { caps.agentCatalog = true; });

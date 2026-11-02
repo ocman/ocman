@@ -41,7 +41,13 @@ it('renders the machine selector with an icon after the worktree selector', asyn
   const machine = await screen.findByTestId('composer-machine-selector');
   const worktree = screen.getByTestId('composer-target-selector');
   expect(worktree.compareDocumentPosition(machine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(machine.querySelector('.bi-pc-display')).not.toBeNull();
+  expect(machine.querySelector('.host-badge .bi-hdd-network')).not.toBeNull();
+});
+
+it('shows a display-only host pill for an existing remote conversation', () => {
+  render(<Composer isRunning={false} directory="/remote/project" remoteId="box" remoteName="Build box" remoteStale />);
+  expect(screen.getByLabelText('Build box (offline — last known)')).toHaveClass('host-badge', 'stale');
+  expect(screen.queryByRole('combobox', { name: 'Session machine' })).not.toBeInTheDocument();
 });
 
 it('does not offer to move a conversation that already has messages', () => {
