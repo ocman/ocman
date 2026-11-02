@@ -118,14 +118,12 @@ function relativeFileURL(href: string | undefined): string | undefined {
   return href;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownImage({ node: _node, alt = '', src, ...props }: ComponentProps<'img'> & { node?: unknown }) {
   return <PreviewImage buttonClassName="oc-md-image" alt={alt} src={useFreshFileURL(relativeFileURL(src))} {...props} />;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CodeBlockPre(props: any) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { children, node: _node, ...rest } = props;
   const code = Array.isArray(children) ? children[0] : children;
   if (isValidElement<{ className?: string; children?: ReactNode }>(code) && code.props.className?.split(' ').includes('language-mermaid')) {
@@ -141,7 +139,6 @@ function CodeBlockPre(props: any) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MarkdownLink(props: any) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { node: _node, href: originalHref, children, factoryCards = true, ...rest } = props;
   const href = useFreshFileURL(relativeFileURL(originalHref));
   const routed = useInRouterContext();
@@ -162,7 +159,6 @@ function MarkdownLink(props: any) {
   return <a {...rest} href={href} target={local ? undefined : '_blank'} rel={local ? undefined : 'noopener noreferrer'}>{children}</a>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownTable({ node: _node, ...props }: ComponentProps<'table'> & { node?: unknown }) {
   return (
     <div role="region" aria-label="Scrollable table" tabIndex={0} style={{ maxWidth: '100%', overflowX: 'auto' }}>
@@ -216,7 +212,6 @@ function containsReasoningImage(node: ReactNode): boolean {
   ));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownQuote({ children, node: _node, ...props }: ComponentProps<'blockquote'> & ExtraProps) {
   const blocks: ReactNode[] = Children.toArray(children);
   const firstIndex = blocks.findIndex(child => isValidElement(child));
@@ -260,7 +255,6 @@ function containsFactoryCard(children: ReactNode): boolean {
 }
 
 // Factory approval cards include block Markdown; a paragraph cannot contain them.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarkdownParagraph({ children, node: _node, ...props }: ComponentProps<'p'> & ExtraProps) {
   return containsFactoryCard(children) ? <div {...props}>{children}</div> : <p {...props}>{children}</p>;
 }

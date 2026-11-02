@@ -53,14 +53,12 @@ const rawControlAllowlist = [
   'src/components/MessageBookmarksPane.tsx',
   'src/components/PermissionModeLock.tsx',
   'src/components/PermissionRulesEditor.tsx',
-  'src/components/PluginActionDialog.tsx',
   'src/components/RightPanel.tsx',
   'src/components/RightPanelPane.tsx',
   'src/components/SearchSelect.tsx',
   'src/components/session/PermissionPrompt.tsx',
   'src/components/session/QuestionPrompt.tsx',
   'src/components/SessionInfoSections.tsx',
-  'src/components/SessionTable.tsx',
   'src/components/SessionTerminalDock.tsx',
   'src/components/SettingsSearch.tsx',
   'src/components/TerminalPane.tsx',
@@ -74,7 +72,6 @@ const rawControlAllowlist = [
   'src/pages/FactoryOverview.tsx',
   'src/pages/ImportSharedConversation.tsx',
   'src/pages/Inbox.tsx',
-  'src/pages/session-detail/MobileHeaderControls.tsx',
   'src/pages/session-detail/MovePicker.tsx',
   'src/pages/session-detail/RenameModal.tsx',
   'src/pages/session-detail/SessionToasts.tsx',
@@ -121,6 +118,9 @@ export default defineConfig([
     rules: {
       'react/no-unstable-nested-components': 'warn',
       'react/jsx-no-constructed-context-values': 'warn',
+      // A leading underscore marks a deliberately unused binding, such as a
+      // prop destructured only to keep it out of a rest spread.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       // Complexity guardrails: warn-only so existing large components
       // surface as pressure without breaking CI. Thresholds sit above
       // the p90 of the codebase so only genuine outliers flag.
