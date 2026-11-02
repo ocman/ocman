@@ -4,7 +4,8 @@ import { useNearViewport } from '../../lib/useNearViewport';
 import { lazyComponent } from '../lazyComponent';
 import type { DiffPayload } from './toolOutputFormat';
 
-const InlineDiff = lazyComponent(() => import('./InlineDiff').then((m) => m.InlineDiff), 'Loading diff…');
+// @pierre/diffs and its Shiki highlighter are heavy; load them with the first diff.
+const DiffView = lazyComponent(() => import('../DiffView').then((m) => m.DiffView), 'Loading diff…');
 
 /**
  * An inline edit diff that skips syntax highlighting until it scrolls near
@@ -19,7 +20,7 @@ export function LazyInlineDiff({ payload }: { payload: DiffPayload }) {
   const printing = useIsPrinting();
   return (
     <div ref={ref} className="oc-tool-output">
-      <InlineDiff payload={payload} plain={!near && !printing} />
+      <DiffView before={payload.before} after={payload.after} filePath={payload.filePath} plain={!near && !printing} />
     </div>
   );
 }

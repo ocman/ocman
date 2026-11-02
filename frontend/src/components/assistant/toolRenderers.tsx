@@ -1,5 +1,5 @@
 // Small components shared by ToolCallDisplay: ANSI shell output, answered
-// questions, and durations. Inline diffs live in InlineDiff.tsx.
+// questions, and durations. Inline diffs live in LazyInlineDiff.tsx.
 import React, { useState, useEffect, type FC } from 'react';
 import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../../lib/ansi';
 import { formatToolDuration, type QuestionData } from '../../lib/threadHelpers';

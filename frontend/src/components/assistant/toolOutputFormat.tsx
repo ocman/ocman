@@ -8,7 +8,8 @@ import {
   type ApplyPatchFileDiff,
 } from '../../lib/threadHelpers';
 
-const PatchFileDiff = lazyComponent(() => import('./PatchFileDiff').then((m) => m.PatchFileDiff), 'Loading diff…');
+// @pierre/diffs is heavy; load it only when a thread shows a patch.
+const RawDiffView = lazyComponent(() => import('../RawDiffView').then((m) => m.RawDiffView), 'Loading diff…');
 
 // Structured diff payload emitted by convertMessages.ts for edit/write tools.
 export interface DiffPayload {
@@ -110,7 +111,7 @@ export function renderPatch(patchText: string) {
                   {file.oldPath ? `${shortenPatchPath(file.oldPath)} -> ${shortenPatchPath(file.path)}` : shortenPatchPath(file.path)}
                 </span>
               </div>
-              <PatchFileDiff patch={file.patch} />
+              <RawDiffView diff={file.patch} />
             </div>
           );
         })}
