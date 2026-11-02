@@ -132,6 +132,15 @@ func (h *HistoryReader) snapshot(ctx context.Context, id string, resume *transcr
 		}
 	}
 	c.Finish()
+	// Compute the cursor inside the same before/after consistency window.
+	snapshot := &db.HistorySnapshot{Session: e.session(time.Time{}), InferredStatus: db.SessionStatus(e.Inferred), Messages: c.Messages, Parts: c.Parts, Version: historyVersion(e),
+		Subagent: e.ID != e.RootID, Partial: partial, MessageOffset: position}
+	if resume != nil {
+		snapshot.SourceCursor, err = h.nextCursor(ctx, f, before, e, children)
+		if err != nil {
+			return nil, err
+		}
+	}
 	after, err := os.Stat(e.Path)
 	if err != nil {
 		return nil, err
@@ -139,13 +148,7 @@ func (h *HistoryReader) snapshot(ctx context.Context, id string, resume *transcr
 	if !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
 		return nil, db.ErrHistoryChanged
 	}
-	// Claude subagents are transcripts under a root session's subagents/ directory.
-	snapshot := &db.HistorySnapshot{Session: e.session(time.Time{}), InferredStatus: db.SessionStatus(e.Inferred), Messages: c.Messages, Parts: c.Parts, Version: historyVersion(e),
-		Subagent: e.ID != e.RootID, Partial: partial, MessageOffset: position}
-	if resume != nil {
-		snapshot.SourceCursor, err = h.nextCursor(ctx, f, before, e, children)
-	}
-	return snapshot, err
+	return snapshot, nil
 }
 
 func lockHistory(ctx context.Context, index *Index) error {

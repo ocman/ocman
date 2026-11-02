@@ -589,7 +589,11 @@ flowchart LR
   only their named file or directory subtree. A five-minute recovery sweep
   covers missed hooks and unhooked external appends; directory watches on macOS
   cannot detect appends to existing files. Parent relinking stays within the
-  changed native root. The journal offset advances only
+  changed native root. Append continuity checks a hash of the entire retained
+  prefix, so a historical edit followed by growth forces a rebuild. JSON parsing
+  and row updates stay tail-only; validation still reads older bytes sequentially.
+  Cursor hashes are computed inside the snapshot's before/after consistency
+  window. The journal offset advances only
   after ingestion succeeds. Checking for records costs one directory read; there is
   no periodic polling or automatic full verification. The journal is
   machine-wide under the XDG data directory; each statev2 store keeps its own
@@ -601,14 +605,17 @@ flowchart LR
 - Sources with neither (OpenCode v1 and Codex) still poll change hints every 30 seconds
   and coalesce event-triggered repairs for one second. Known-session events bypass
   full inventories unless verification is due; unknown sessions still trigger discovery.
+  Timer-triggered polls always inventory independently of pending activity, so
+  busy sessions cannot starve unrelated discovery or removal detection.
   A polling pass reads only invalidated, new or re-hinted
   sessions. Version hints, content fingerprints and the last verification time
   persist in statev2, so a restart skips unchanged snapshots unless their
   conversation read-format metadata needs upgrading.
   The server joins all source workers before the application closes the database.
 - Codex history and live settlement each own a bounded rollout-usage cache.
-  Unchanged files are reused; uncompressed appends parse only new records and
-  replay any unterminated tail. Explicit verification bypasses the cache.
+  Unchanged files are reused; ordinary uncompressed appends validate the complete
+  old prefix and parse only new records. Unterminated records force a rebuild on
+  growth instead of retaining tentative accounting. Explicit verification bypasses the cache.
   Replacements, truncations and changed compressed rollouts rebuild that file's
   accounting. Native turns and items still come from complete app-server snapshots.
 - Messages carry their accounting (agent, provider, cost, token counts, finish,

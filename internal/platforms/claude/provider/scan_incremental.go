@@ -22,7 +22,7 @@ type scanState struct {
 type indexCursor struct {
 	State            scanState
 	End, Size, Mtime int64
-	Prefix, Boundary string
+	Prefix           string
 	LastID           string
 	DuplicateReplay  bool
 }
@@ -30,9 +30,7 @@ type indexCursor struct {
 func (c *indexCursor) valid(f *os.File, st os.FileInfo, path string) bool {
 	return c != nil && !c.DuplicateReplay && c.State.Entry.Path == path && c.End > 0 && c.End <= st.Size() &&
 		c.State.Entry.End >= 0 && c.State.Entry.End <= c.End && c.State.Entry.Messages >= 0 && c.Size < st.Size() &&
-		c.Prefix != "" && c.Boundary != "" &&
-		c.Prefix == transcriptHash(f, 0, min(c.End, 4096)) &&
-		c.Boundary == transcriptHash(f, max(0, c.End-4096), min(c.End, 4096))
+		c.Prefix != "" && c.Prefix == transcriptHash(f, 0, c.End)
 }
 
 func scanIndex(path, projects string, saved *indexCursor) (*entry, *indexCursor, bool, error) {
@@ -155,6 +153,11 @@ func scanIndex(path, projects string, saved *indexCursor) (*entry, *indexCursor,
 		e.Created = e.Updated
 	}
 	e.Inferred = string(inferStatus(e.LatestRole, s.LastFinish, s.LastErr, s.LastClosed))
+	// Hash continuity before the final stat, so concurrent edits invalidate
+	// both the converted tail and the checkpoint instead of blessing a mixed view.
+	prefix.Entry.offsets, prefix.Entry.tasks, prefix.Entry.usage = nil, nil, nil
+	cursor := &indexCursor{State: prefix, End: e.End, Size: e.Size, Mtime: e.Mtime,
+		LastID: e.LatestID, DuplicateReplay: duplicateReplay, Prefix: transcriptHash(f, 0, e.End)}
 	after, err := os.Stat(path)
 	if err != nil {
 		return nil, nil, false, err
@@ -162,10 +165,5 @@ func scanIndex(path, projects string, saved *indexCursor) (*entry, *indexCursor,
 	if !os.SameFile(st, after) || st.Size() != after.Size() || !st.ModTime().Equal(after.ModTime()) {
 		return nil, nil, false, db.ErrHistoryChanged
 	}
-	// Private slices and parse counters are deliberately not persisted.
-	prefix.Entry.offsets, prefix.Entry.tasks, prefix.Entry.usage = nil, nil, nil
-	cursor := &indexCursor{State: prefix, End: e.End, Size: e.Size, Mtime: e.Mtime,
-		LastID: e.LatestID, DuplicateReplay: duplicateReplay,
-		Prefix: transcriptHash(f, 0, min(e.End, 4096)), Boundary: transcriptHash(f, max(0, e.End-4096), min(e.End, 4096))}
 	return e, cursor, delta, nil
 }

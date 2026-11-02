@@ -16,7 +16,7 @@ import (
 type transcriptCursor struct {
 	Path                               string
 	Offset, Position, End, Mtime, Size int64
-	Prefix, Boundary, Children         string
+	Prefix, Children                   string
 }
 
 func (h *HistoryReader) Delta(ctx context.Context, id, cursor string) (*db.HistorySnapshot, string, error) {
@@ -30,22 +30,21 @@ func (h *HistoryReader) Delta(ctx context.Context, id, cursor string) (*db.Histo
 }
 
 func (c transcriptCursor) valid(f *os.File, st os.FileInfo, e *entry, children map[string]string) bool {
-	if c.Path != e.Path || c.Prefix == "" || c.Boundary == "" || c.Offset < 0 || c.Position < 0 || c.End <= 0 || c.End > e.End || c.Offset > c.End || c.Size > st.Size() {
+	if c.Path != e.Path || c.Prefix == "" || c.Offset < 0 || c.Position < 0 || c.End <= 0 || c.End > e.End || c.Offset > c.End || c.Size > st.Size() {
 		return false
 	}
-	// A same-sized rewrite is not an append. Prefix and boundary fingerprints
-	// also detect replacement/truncation followed by growth before the next read.
+	// A same-sized rewrite is not an append. Validate the entire old prefix:
+	// sampled windows cannot detect an older-message edit followed by growth.
 	if c.Size == st.Size() && c.Mtime != st.ModTime().UnixNano() {
 		return false
 	}
-	return c.Prefix == transcriptHash(f, 0, min(c.End, 4096)) &&
-		c.Boundary == transcriptHash(f, max(0, c.End-4096), min(c.End, 4096)) &&
+	return c.Prefix == transcriptHash(f, 0, c.End) &&
 		c.Children == childrenHash(children)
 }
 
 func (h *HistoryReader) nextCursor(ctx context.Context, f *os.File, st os.FileInfo, e *entry, children map[string]string) (string, error) {
 	c := transcriptCursor{Path: e.Path, End: e.End, Mtime: st.ModTime().UnixNano(), Size: st.Size(), Children: childrenHash(children),
-		Prefix: transcriptHash(f, 0, min(e.End, 4096)), Boundary: transcriptHash(f, max(0, e.End-4096), min(e.End, 4096))}
+		Prefix: transcriptHash(f, 0, e.End)}
 	if e.Messages > 0 {
 		if err := h.index.db.QueryRowContext(ctx, `SELECT offset,idx FROM message WHERE session_id=? ORDER BY idx DESC LIMIT 1`, e.ID).
 			Scan(&c.Offset, &c.Position); err != nil {

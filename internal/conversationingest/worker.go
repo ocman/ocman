@@ -79,6 +79,8 @@ func (w *sourceWorker) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			_ = w.sweepInventory(ctx)
+			continue
 		case <-w.wake:
 			timer := time.NewTimer(w.module.deps.Debounce)
 			select {
@@ -95,6 +97,14 @@ func (w *sourceWorker) run(ctx context.Context) {
 func (w *sourceWorker) sweep(ctx context.Context) { _ = w.sweepChecked(ctx) }
 
 func (w *sourceWorker) sweepChecked(ctx context.Context) error {
+	return w.sweepWithInventory(ctx, false)
+}
+
+func (w *sourceWorker) sweepInventory(ctx context.Context) error {
+	return w.sweepWithInventory(ctx, true)
+}
+
+func (w *sourceWorker) sweepWithInventory(ctx context.Context, inventory bool) error {
 	w.readiness(false)
 	w.last = tasksvc.Progress{}
 	w.mu.Lock()
@@ -103,7 +113,7 @@ func (w *sourceWorker) sweepChecked(ctx context.Context) error {
 	w.mu.Unlock()
 	var err error
 	_, sourceWide := dirty[""]
-	if w.loaded && len(dirty) > 0 && !sourceWide && (w.journaled || time.Since(w.verifiedAt) < w.module.deps.VerifyInterval) {
+	if !inventory && w.loaded && len(dirty) > 0 && !sourceWide && (w.journaled || time.Since(w.verifiedAt) < w.module.deps.VerifyInterval) {
 		err = w.runTargetedPass(ctx, dirty)
 	} else {
 		err = w.runPass(ctx, dirty)

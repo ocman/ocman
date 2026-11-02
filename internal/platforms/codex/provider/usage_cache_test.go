@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestRolloutUsageCacheDoesNotRereadPrefix(t *testing.T) {
+func TestRolloutUsageCacheDoesNotReparsePrefix(t *testing.T) {
 	data, err := os.ReadFile(extras + "rollout.jsonl")
 	if err != nil {
 		t.Fatal(err)

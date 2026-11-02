@@ -266,20 +266,11 @@ func (x *Index) remove(ctx context.Context, path string) error {
 // link resolves subagent parents: the session that made the Task/Agent call
 // named in the subagent's meta file (nested subagents), else the top-level
 // session the subagent directory belongs to.
-func (x *Index) link(ctx context.Context, roots ...string) error {
-	query := `UPDATE session SET parent_id = COALESCE(
+func (x *Index) link(ctx context.Context, root string) error {
+	_, err := x.db.ExecContext(ctx, `UPDATE session SET parent_id = COALESCE(
 		(SELECT t.session_id FROM task_call t WHERE t.tool_use_id = session.parent_tool_use_id AND t.session_id != session.id),
-		root_id) WHERE id != root_id`
-	if len(roots) == 0 {
-		_, err := x.db.ExecContext(ctx, query)
-		return err
-	}
-	for _, root := range roots {
-		if _, err := x.db.ExecContext(ctx, query+` AND root_id=?`, root); err != nil {
-			return err
-		}
-	}
-	return nil
+		root_id) WHERE id != root_id AND root_id=?`, root)
+	return err
 }
 
 // refresh reindexes one transcript if it changed since it was indexed, so a

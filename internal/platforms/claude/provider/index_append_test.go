@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIndexAppendResumesAfterRestart(t *testing.T) {
@@ -92,8 +93,14 @@ func TestIncrementalIndexMatchesFullAtEveryAppend(t *testing.T) {
 		assertIndexMatchesFull(t, x, path)
 	}
 	// Same-sized edits, truncation, and replacement must abandon old offsets.
-	for _, data := range [][]byte{bytes.ReplaceAll(content, []byte("Marker"), []byte("Edited")), raw[:len(raw)/2], raw} {
+	for i, data := range [][]byte{bytes.ReplaceAll(content, []byte("Marker"), []byte("Edited")), raw[:len(raw)/2], raw} {
 		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		// Some filesystems coalesce rapid writes to the same mtime. Model an
+		// observable rewrite deterministically instead of depending on wall time.
+		stamp := past.Add(time.Duration(i+1) * time.Second)
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
 			t.Fatal(err)
 		}
 		if err := x.Sync(t.Context()); err != nil {

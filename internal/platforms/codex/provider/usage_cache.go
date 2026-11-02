@@ -20,11 +20,11 @@ type rolloutUsageCache struct {
 }
 
 type cachedRollout struct {
-	info             os.FileInfo
-	offset           int64
-	prefix, boundary [32]byte
-	usage            map[string]TurnUsage
-	used             uint64
+	info   os.FileInfo
+	offset int64
+	prefix [32]byte
+	usage  map[string]TurnUsage
+	used   uint64
 }
 
 func (c *rolloutUsageCache) read(path string) (map[string]TurnUsage, error) {
@@ -56,9 +56,8 @@ func (c *rolloutUsageCache) readMode(path string, force bool) (map[string]TurnUs
 		next.usage, err = ReadRolloutUsage(path)
 		c.bytes += st.Size()
 	} else {
-		if !force && known && os.SameFile(old.info, st) && old.info.Size() < st.Size() && old.offset > 0 &&
-			old.prefix == rolloutFingerprint(f, 0, min(old.offset, 4096)) &&
-			old.boundary == rolloutFingerprint(f, max(0, old.offset-4096), min(old.offset, 4096)) {
+		if !force && known && os.SameFile(old.info, st) && old.info.Size() < st.Size() && old.offset > 0 && old.offset == old.info.Size() &&
+			old.prefix != [32]byte{} && old.prefix == rolloutFingerprint(f, 0, old.offset) {
 			next.usage, next.offset = maps.Clone(old.usage), old.offset
 		}
 		r := bufio.NewReaderSize(io.NewSectionReader(f, next.offset, st.Size()-next.offset), 64<<10)
@@ -78,8 +77,7 @@ func (c *rolloutUsageCache) readMode(path string, force bool) (map[string]TurnUs
 			addUsageLine(next.usage, line)
 			next.offset += int64(len(line))
 		}
-		next.prefix = rolloutFingerprint(f, 0, min(next.offset, 4096))
-		next.boundary = rolloutFingerprint(f, max(0, next.offset-4096), min(next.offset, 4096))
+		next.prefix = rolloutFingerprint(f, 0, next.offset)
 	}
 	if err != nil {
 		return nil, err

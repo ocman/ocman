@@ -76,6 +76,7 @@ Each worker picks one mode for its source:
   30 seconds and reads only invalidated, new or re-hinted sessions. A full
   verification rereads every session every six hours (`VerifyInterval`).
   Known-session event updates skip inventory unless verification is due.
+  Scheduled polls still inventory even when such updates are queued.
 
 Full verification is manual-only for feed and journal sources. In every mode,
 `ocman.session.*` change/activity/idle/status invalidations request repairs,
