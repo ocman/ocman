@@ -47,7 +47,7 @@ func TestMigrateV49CreatesIndependentFactorySchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := migrate(db); err != nil {
+	if err := migrateTo(db, beforeRetiredTables); err != nil {
 		t.Fatal(err)
 	}
 	var workflowName string
@@ -133,7 +133,7 @@ func TestMigrateV66ArchivesRetiredYAMLFormulaLibrary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := migrate(db); err != nil {
+	if err := migrateTo(db, beforeRetiredTables); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"factory_formula", "factory_formula_revision"} {
@@ -185,7 +185,7 @@ func TestMigrateV67RepairsPreviouslyStampedV66(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(db); err != nil {
+	if err := migrateTo(db, beforeRetiredTables); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"legacy_factory_formula", "legacy_factory_formula_revision"} {

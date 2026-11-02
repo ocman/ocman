@@ -70,13 +70,13 @@ func TestForeignKeysStayOffOnDirtyDatabase(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	// Enforcement is on after a clean open, so turn it off to plant a
-	// row that violates workflow_run -> workflow_version.
+	// row that violates webhook_delivery -> webhook_inbox.
 	if _, err := seed.db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := seed.db.Exec(`INSERT INTO workflow_run
-		(id, workflow_id, version_id, state, created_at, updated_at)
-		VALUES ('orphan', 'nope', 'missing-version', 'active', 1, 1)`); err != nil {
+	if _, err := seed.db.Exec(`INSERT INTO webhook_delivery
+		(inbox_id, delivery_id, item_id, accepted_at)
+		VALUES ('missing-inbox', 'orphan', '', 1)`); err != nil {
 		t.Fatalf("seeding violation: %v", err)
 	}
 	if err := seed.Close(); err != nil {

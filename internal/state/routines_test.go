@@ -411,7 +411,7 @@ func TestRoutineMigrationPreservesWorkflowHistory(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(raw); err != nil {
+	if err := migrateTo(raw, beforeRetiredTables); err != nil {
 		t.Fatal(err)
 	}
 	var name string

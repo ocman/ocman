@@ -255,16 +255,22 @@ instead of starting a duplicate session.
 ## Recover legacy Workflow data
 
 Older ocman versions stored DAG definitions and runs in `workflow_*` tables.
-Those tables and rows remain inert in `state.db`. Routines do not read,
-execute, migrate, or delete them. A DAG cannot be converted losslessly to one
-prompt because its nodes, dependencies, approvals, commands, outputs, and
-branching have no equivalent in a routine.
+Routines never read, executed or migrated them. A DAG cannot be converted
+losslessly to one prompt because its nodes, dependencies, approvals, commands,
+outputs, and branching have no equivalent in a routine.
+
+Schema v128 removes these tables from `state.db`, together with the agent loop
+and prompt schedule tables that preceded them. The upgrade first saves a
+pre-migration backup beside `state.db`, named
+`state.db.backup-v<old>-to-v128-<unique>.db`; see
+[Configuration](../../configuration/#running-ocman). The old data remains in that
+backup and in any database that has not been upgraded to v128.
 
 There are no compatibility APIs. Use SQLite in read-only mode to inspect or
-export the old data. Stop ocman first if you plan to copy the database.
+export the old data from the backup.
 
 ```sh
-DB="$HOME/.local/share/ocman/state.db"
+DB="$(ls -t "$HOME"/.local/share/ocman/state.db.backup-v*-to-v128-*.db | head -n 1)"
 sqlite3 -readonly "$DB" ".tables 'workflow_*'"
 sqlite3 -readonly "$DB" ".dump 'workflow_*'" > legacy-workflows.sql
 sqlite3 -readonly -json "$DB" "SELECT * FROM workflow_definition ORDER BY created_at;" > workflow-definitions.json

@@ -606,7 +606,7 @@ func TestMigrate_SingleFeatureV26ForwardMigrates(t *testing.T) {
 			db := seedThroughV25(t)
 			tc.install(t, db)
 
-			if err := migrate(db); err != nil {
+			if err := migrateTo(db, beforeRetiredTables); err != nil {
 				t.Fatalf("forward migrate: %v", err)
 			}
 
@@ -614,8 +614,8 @@ func TestMigrate_SingleFeatureV26ForwardMigrates(t *testing.T) {
 			if err := db.QueryRow(`SELECT max(version) FROM schema_version`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			if version != latestSchemaVersion {
-				t.Fatalf("after forward migrate at v%d, want v%d", version, latestSchemaVersion)
+			if version != beforeRetiredTables {
+				t.Fatalf("after forward migrate at v%d, want v%d", version, beforeRetiredTables)
 			}
 			// All three features' objects must coexist regardless of which
 			// single-feature v26 the DB started from.
@@ -641,7 +641,7 @@ func TestMigrate_SingleFeatureV26ForwardMigrates(t *testing.T) {
 				t.Fatalf("expected workflow_version.retention_days column, found %d", retentionCols)
 			}
 			// migrate() again is a no-op.
-			if err := migrate(db); err != nil {
+			if err := migrateTo(db, beforeRetiredTables); err != nil {
 				t.Fatalf("second migrate: %v", err)
 			}
 		})
@@ -708,15 +708,15 @@ func TestMigrate_RecoveryV30ComponentDBUpgrades(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := migrate(db); err != nil {
+	if err := migrateTo(db, beforeRetiredTables); err != nil {
 		t.Fatalf("upgrade recovery v30 component DB: %v", err)
 	}
 	var version int
 	if err := db.QueryRow(`SELECT max(version) FROM schema_version`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != latestSchemaVersion {
-		t.Fatalf("schema version = %d, want %d", version, latestSchemaVersion)
+	if version != beforeRetiredTables {
+		t.Fatalf("schema version = %d, want %d", version, beforeRetiredTables)
 	}
 	for _, column := range []string{"resolved_at", "resolved_by"} {
 		var count int

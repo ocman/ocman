@@ -16,15 +16,13 @@ var sessionReferenceColumns = []struct{ table, column, owner string }{
 	{"agent_user_wait", "session_id", "platform"}, {"archived_session", "session_id", "platform"},
 	{"artifact", "session_id", "platform"}, {"auto_approved_permission", "session_id", "platform"},
 	{"factory_attempt", "session_id", "session_platform"},
-	{"loops", "root_session_id", "platform"}, {"loops", "loop_session_id", "platform"},
 	{"permission_lifecycle", "session_id", "platform"}, {"pinned_session", "session_id", "platform"},
 	{"plugin_conversation", "session_id", "platform_id"},
-	{"prompt_schedule", "session_id", "platform"}, {"queued_message", "session_id", "platform"},
+	{"queued_message", "session_id", "platform"},
 	{"routine", "session_id", "platform"}, {"routine_run", "session_id", "platform"}, {"routine_run", "target_session_id", "platform"},
 	{"seen_session", "session_id", "platform"}, {"session_auto_approve", "session_id", "platform"},
 	{"session_commit", "session_id", "platform"}, {"session_interruption", "session_id", "platform"},
 	{"session_replacement_candidate", "session_id", "platform"}, {"share_link", "session_id", "platform"},
-	{"workflow_node_attempt", "session_id", "platform"},
 }
 
 // SessionReferences inventories declared core references for one exact routing
@@ -65,11 +63,6 @@ func (d *DB) sessionReferences(ctx context.Context, platform string) ([]string, 
 	}
 	for _, ref := range sessionReferenceColumns {
 		if err := collect("SELECT "+ref.column+" FROM "+ref.table+" WHERE "+ref.owner+"=?", platform); err != nil {
-			return nil, err
-		}
-	}
-	for _, column := range []string{"target_session_id", "child_session_id"} {
-		if err := collect("SELECT "+column+" FROM loop_iterations WHERE loop_id IN (SELECT id FROM loops WHERE platform=?)", platform); err != nil {
 			return nil, err
 		}
 	}

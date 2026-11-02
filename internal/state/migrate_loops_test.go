@@ -239,7 +239,7 @@ func TestMigrateV28_AvoidsExistingWorkflowRunID(t *testing.T) {
 		t.Fatalf("insert colliding run: %v", err)
 	}
 
-	if err := migrate(db); err != nil {
+	if err := migrateTo(db, beforeRetiredTables); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -288,7 +288,7 @@ func TestMigrateV28_Idempotent(t *testing.T) {
 }
 
 // TestMigrateV28_FreshDB verifies a fresh database (no loops) migrates
-// cleanly to the latest version and the copy is a no-op.
+// cleanly to the latest version, which no longer has the loop tables.
 func TestMigrateV28_FreshDB(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -305,12 +305,9 @@ func TestMigrateV28_FreshDB(t *testing.T) {
 	if version != latestSchemaVersion {
 		t.Errorf("fresh DB at v%d, want v%d", version, latestSchemaVersion)
 	}
-	var mappings int
-	if err := db.QueryRow(`SELECT count(*) FROM loop_workflow_map`).Scan(&mappings); err != nil {
-		t.Fatalf("loop_workflow_map not created on fresh DB: %v", err)
-	}
-	if mappings != 0 {
-		t.Errorf("fresh DB has %d mappings, want 0", mappings)
+	var tables int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name='loop_workflow_map'`).Scan(&tables); err != nil || tables != 0 {
+		t.Errorf("fresh DB keeps retired loop_workflow_map: %d, %v", tables, err)
 	}
 }
 
@@ -322,7 +319,7 @@ func TestMigrateV28_EndToEndOldDB(t *testing.T) {
 	insertLoopRow(t, db, "loop_e2e", "cron", `{"cron_expr":"*/5 * * * *"}`, "prompt_root", "active", 1)
 	insertLoopIterationRow(t, db, "loop_e2e", 1, "ok", "child-1")
 
-	if err := migrate(db); err != nil {
+	if err := migrateTo(db, beforeRetiredTables); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	var versionID string
@@ -330,7 +327,7 @@ func TestMigrateV28_EndToEndOldDB(t *testing.T) {
 		t.Fatalf("loop not migrated end to end: %v", err)
 	}
 	// Re-running migrate on an already-current DB is a no-op.
-	if err := migrate(db); err != nil {
+	if err := migrateTo(db, beforeRetiredTables); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
 }

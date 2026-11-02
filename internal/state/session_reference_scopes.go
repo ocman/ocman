@@ -44,9 +44,6 @@ func (d *DB) SessionReferenceScopes(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 	}
-	if err := collect(`SELECT DISTINCT l.platform FROM loop_iterations i JOIN loops l ON l.id=i.loop_id WHERE i.target_session_id<>'' OR i.child_session_id<>''`); err != nil {
-		return nil, err
-	}
 	for _, ref := range sessionJSONReferences {
 		if err := collect("SELECT DISTINCT COALESCE(json_extract(" + ref.column + ",'$.platform'),'') FROM " + ref.table + " WHERE " + ref.scope + " AND json_valid(" + ref.column + ") AND COALESCE(json_extract(" + ref.column + ",'$.sessionId'),'')<>''"); err != nil {
 			return nil, err

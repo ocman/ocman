@@ -8,7 +8,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Schema versions:
+// History of schema versions 1-109. This list is closed: later versions are
+// documented at their migration, and the migrations slice in
+// migrate_dispatch.go is the authoritative sequence.
 //
 //	1 - initial schema (archived_session, seen_session keyed by session_id).
 //	2 - multi-platform: add `platform TEXT NOT NULL DEFAULT 'opencode'`
@@ -243,6 +245,11 @@ import (
 // us wrap DDL in a transaction; the whole operation either commits or
 // rolls back.
 func migrate(db *sql.DB) error {
+	return migrateTo(db, latestSchemaVersion)
+}
+
+// migrateTo stops at target; tests use it to inspect an intermediate schema.
+func migrateTo(db *sql.DB, target int) error {
 	if err := ensureSchemaVersionTable(db); err != nil {
 		return err
 	}
@@ -257,7 +264,7 @@ func migrate(db *sql.DB) error {
 			current, latestSchemaVersion)
 		return nil
 	}
-	if current > 0 && current < latestSchemaVersion {
+	if current > 0 && current < target {
 		if err := backupBeforeMigration(db, current); err != nil {
 			return fmt.Errorf("pre-migration backup: %w", err)
 		}
@@ -273,7 +280,7 @@ func migrate(db *sql.DB) error {
 		_ = tx.Rollback()
 	}()
 
-	for v := current + 1; v <= latestSchemaVersion; v++ {
+	for v := current + 1; v <= target; v++ {
 		if err := applyMigration(tx, v); err != nil {
 			return fmt.Errorf("migrate to v%d: %w", v, err)
 		}

@@ -29,7 +29,7 @@ func rekeyReferenceTables(ctx context.Context, tx *sql.Tx, platform string, keys
 		}
 		startup.Report(ctx, "Preparing session reference mapping", i+1, len(keys))
 	}
-	total, completed := len(sessionReferenceColumns)+len(sessionJSONReferences)+3, 0
+	total, completed := len(sessionReferenceColumns)+len(sessionJSONReferences)+1, 0
 	report := func() {
 		startup.Report(ctx, "Rekeying reference tables", completed, total)
 		completed++
@@ -39,12 +39,6 @@ func rekeyReferenceTables(ctx context.Context, tx *sql.Tx, platform string, keys
 		query := "UPDATE " + ref.table + " SET " + ref.column + "=(SELECT new_id FROM session_rekey_map WHERE old_id=" + ref.table + "." + ref.column + ") WHERE " + ref.owner + "=? AND " + ref.column + " IN (SELECT old_id FROM session_rekey_map)"
 		if _, err := tx.ExecContext(ctx, query, platform); err != nil {
 			return fmt.Errorf("rekeying %s.%s: %w", ref.table, ref.column, err)
-		}
-	}
-	for _, column := range []string{"target_session_id", "child_session_id"} {
-		report()
-		if _, err := tx.ExecContext(ctx, "UPDATE loop_iterations SET "+column+"=(SELECT new_id FROM session_rekey_map WHERE old_id=loop_iterations."+column+") WHERE "+column+" IN (SELECT old_id FROM session_rekey_map) AND loop_id IN (SELECT id FROM loops WHERE platform=?)", platform); err != nil {
-			return err
 		}
 	}
 	for _, ref := range sessionJSONReferences {
