@@ -39,9 +39,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	api.HandleFunc("GET /api/hook-plugin", s.requireLocalhost(s.handleHookPlugin))
 	api.HandleFunc("POST /api/hook-plugin/install", s.requireLocalhost(s.handleHookPlugin))
 	api.HandleFunc("POST /api/hook-plugin/uninstall", s.requireLocalhost(s.handleHookPlugin))
-	api.HandleFunc("GET /api/favorites", auth(s.handleListFavorites))
-	api.HandleFunc("POST /api/favorites", auth(s.handleAddFavorite))
-	api.HandleFunc("DELETE /api/favorites", auth(s.handleRemoveFavorite))
 	// Git and worktree endpoints belong to the git module.
 
 	// PR/Issue sidebar endpoints (upstreams, lists, checks, handle) and the

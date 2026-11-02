@@ -65,7 +65,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule())
+	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule(), s.favoritesModule())
 	if recovery := s.sessionRecoveryModule(); recovery != nil {
 		mods = append(mods, recovery)
 	}
@@ -122,15 +122,9 @@ func (s *Server) projectForgeModule() *projectforge.Module {
 			ResolveForge:   s.resolveForge,
 			KnowsForgejo:   s.knowsForgejo,
 			CreatePlatform: s.createPlatform,
-			Registered: func(id string) bool {
-				if s.registry == nil {
-					return false
-				}
-				_, ok := s.registry.Get(platforms.ID(id))
-				return ok
-			},
-			Sessions: s.sessions,
-			LinkPR:   s.linkLaunchedPR,
+			Registered:     s.platformRegistered,
+			Sessions:       s.sessions,
+			LinkPR:         s.linkLaunchedPR,
 		}
 		if s.stateDB != nil {
 			d.Store = s.stateDB // untyped nil otherwise
