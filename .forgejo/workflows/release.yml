@@ -54,7 +54,8 @@ jobs:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build -o ocman-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-s -w" .
+          VERSION: ${{ github.ref_name }}
+        run: go build -o ocman-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-s -w -X main.version=${VERSION}" .
       - name: Package binary
         run: tar -czf ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ocman-${{ matrix.goos }}-${{ matrix.goarch }}
       - uses: actions/upload-artifact@v3
@@ -85,7 +86,9 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
       - name: Build macOS DMG installer
-        run: make installer-mac
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: make installer-mac VERSION="${VERSION}"
       - name: Rename DMG for release
         run: mv dist/ocman.dmg dist/ocman-darwin-arm64.dmg
       - uses: actions/upload-artifact@v3
