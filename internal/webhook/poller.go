@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"filippo.io/age"
-	"github.com/ocman/ocman/internal/relay"
 	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
 )
@@ -103,8 +102,8 @@ func (p *Poller) Poll(ctx context.Context) error {
 			}
 			ciphertext, err := client.FetchInboxDelivery(ctx, p.Inbox.ID, delivery.ID, p.Inbox.FetchToken)
 			if err == nil {
-				var envelope relay.InboxEnvelope
-				envelope, err = relay.DecryptInboxEnvelope(identity, p.Inbox.ID, delivery.ID, ciphertext)
+				var envelope share.InboxEnvelope
+				envelope, err = share.DecryptInboxEnvelope(identity, p.Inbox.ID, delivery.ID, ciphertext)
 				if err == nil {
 					headers, _ := json.Marshal(envelope.Request.Header) // relay already dropped credential headers
 					query, _ := json.Marshal(envelope.Request.Query)

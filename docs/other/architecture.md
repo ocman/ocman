@@ -264,7 +264,9 @@ The hub retains checkout membership for merges and archive operations. Neither
 project response requires the browser to reconstruct upstream or manual merges.
 
 - **Encrypted webhooks.** Providers submit plaintext to the relay's ingestion
-  URL, where ocman encrypts a versioned age X25519 envelope. The relay
+  URL, where ocman encrypts a versioned age X25519 envelope. The envelope
+  format lives in `internal/share`, which both the relay server and the
+  `webhook` poller use; the poller never imports the relay server. The relay
   persists ciphertext plus visible size/timing metadata; the owning local or
   remote ocman decrypts it, durably accepts it in `state.db`, claims routine
   dispatches, then acknowledges the relay. A lost acknowledgment is retried

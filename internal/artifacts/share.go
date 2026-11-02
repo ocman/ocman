@@ -132,14 +132,8 @@ func (m *Module) uploadShare(ctx context.Context, client share.RelayClient, allo
 		return state.ArtifactShare{}, err
 	}
 	key := share.NewKey()
-	put := func(seq uint64, plain []byte) error {
-		sealed, err := share.Seal(key, alloc.ID, seq, plain)
-		if err != nil {
-			return err
-		}
-		return client.Put(ctx, alloc, seq, sealed)
-	}
-	if err := m.eachShareChunk(p, put); err != nil {
+	upload := share.ChunkUploader{Client: client, Alloc: alloc, Key: key}
+	if err := m.eachShareChunk(p, func(seq uint64, plain []byte) error { return upload.Put(ctx, seq, plain) }); err != nil {
 		return state.ArtifactShare{}, err
 	}
 	return m.Store.CreateArtifactShare(ctx, state.ArtifactShare{

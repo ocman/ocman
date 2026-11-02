@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/ocman/ocman/internal/share"
 )
 
 func TestInboxSuccessfulPollingRenewsRetention(t *testing.T) {
@@ -132,7 +133,7 @@ func TestInboxLegacyMessageGetsFullRetentionWindow(t *testing.T) {
 	if r.Code != http.StatusOK {
 		t.Fatalf("legacy message lost on upgrade: %d", r.Code)
 	}
-	if envelope, err := DecryptInboxEnvelope(identity, inbox.ID, id, r.Body.Bytes()); err != nil || string(envelope.Body) != "legacy" {
+	if envelope, err := share.DecryptInboxEnvelope(identity, inbox.ID, id, r.Body.Bytes()); err != nil || string(envelope.Body) != "legacy" {
 		t.Fatalf("legacy ciphertext changed: %v", err)
 	}
 	h.now = h.now.Add(time.Hour)

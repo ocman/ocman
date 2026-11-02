@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -39,7 +39,7 @@ type DispatchPayload struct {
 	BodyBytes   int        `json:"bodyBytes"`
 }
 
-func dispatchText(e relay.InboxEnvelope, headersPath, bodyPath string) (string, error) {
+func dispatchText(e share.InboxEnvelope, headersPath, bodyPath string) (string, error) {
 	b, err := json.Marshal(DispatchPayload{e.InboxID, e.DeliveryID, e.Request.Method, e.Request.Query, e.Request.ReceivedAt, headersPath, bodyPath, len(e.Body)})
 	if err != nil {
 		return "", err
@@ -50,7 +50,7 @@ func dispatchText(e relay.InboxEnvelope, headersPath, bodyPath string) (string, 
 // Dispatch runs the delivery's matching subscriptions under ctx. A
 // cancelled ctx stops before the next claim; a claimed dispatch still
 // records its outcome, so it is never left claimed without a result.
-func Dispatch(ctx context.Context, store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string, e relay.InboxEnvelope, now time.Time) error {
+func Dispatch(ctx context.Context, store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string, e share.InboxEnvelope, now time.Time) error {
 	subs, err := store.ListWebhookSubscriptions(ctx, inboxID)
 	if err != nil {
 		return err
@@ -134,7 +134,7 @@ func Dispatch(ctx context.Context, store *state.DB, svc RoutineDispatcher, inbox
 
 // writeDeliveryFiles stores the headers (a JSON object of canonical header name
 // to values, e.g. {"X-Forgejo-Event":["pull_request"]}) and the raw body.
-func writeDeliveryFiles(store *state.DB, inboxID, deliveryID string, e relay.InboxEnvelope) (string, string, error) {
+func writeDeliveryFiles(store *state.DB, inboxID, deliveryID string, e share.InboxEnvelope) (string, string, error) {
 	headers := http.Header{}
 	for name, values := range e.Request.Header {
 		key := http.CanonicalHeaderKey(name)
@@ -186,7 +186,7 @@ func ValidPredicates(raw string) bool {
 	return true
 }
 
-func matches(e relay.InboxEnvelope, sub state.WebhookSubscription) (bool, error) {
+func matches(e share.InboxEnvelope, sub state.WebhookSubscription) (bool, error) {
 	var headers map[string]predicate
 	headerJSON := sub.HeaderPredicatesJSON
 	if headerJSON == "" {
@@ -504,7 +504,7 @@ func Redeliver(ctx context.Context, store *state.DB, svc RoutineDispatcher, inbo
 	if _, err := store.AcceptWebhookDelivery(ctx, inboxID, newID, title, body, headersJSON, queryJSON, now.UnixMilli()); err != nil {
 		return "", err
 	}
-	envelope := relay.InboxEnvelope{InboxID: inboxID, DeliveryID: newID, Body: []byte(body), Request: relay.InboxRequest{
+	envelope := share.InboxEnvelope{InboxID: inboxID, DeliveryID: newID, Body: []byte(body), Request: share.InboxRequest{
 		Method: strings.TrimSuffix(title, " webhook"), Header: header, Query: query, ReceivedAt: now.UnixMilli(),
 	}}
 	return newID, Dispatch(ctx, store, svc, inboxID, newID, envelope, now)

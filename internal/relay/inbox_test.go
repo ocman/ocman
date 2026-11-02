@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/ocman/ocman/internal/share"
 )
 
 const testEnrollmentToken = "enroll-secret"
@@ -91,7 +92,7 @@ func TestInboxSecretValidationStripsSensitiveHeaders(t *testing.T) {
 	var accepted inboxIngestResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &accepted)
 	fetched := h.do(http.MethodGet, "/inboxes/"+registered.ID+"/deliveries/"+accepted.DeliveryID, nil, registered.FetchToken)
-	envelope, err := DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, fetched.Body.Bytes())
+	envelope, err := share.DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, fetched.Body.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +179,7 @@ func TestInboxRotationRevocationAndExpiry(t *testing.T) {
 	var accepted inboxIngestResponse
 	_ = json.Unmarshal(newDelivery.Body.Bytes(), &accepted)
 	fetched := h.do(http.MethodGet, "/inboxes/"+registered.ID+"/deliveries/"+accepted.DeliveryID, nil, registered.FetchToken)
-	if envelope, err := DecryptInboxEnvelope(next, registered.ID, accepted.DeliveryID, fetched.Body.Bytes()); err != nil || envelope.KeyVersion != 2 {
+	if envelope, err := share.DecryptInboxEnvelope(next, registered.ID, accepted.DeliveryID, fetched.Body.Bytes()); err != nil || envelope.KeyVersion != 2 {
 		t.Fatalf("rotated delivery = %+v, err %v", envelope, err)
 	}
 	if rec := h.do(http.MethodDelete, "/inboxes/"+registered.ID, nil, registered.ManagementToken); rec.Code != http.StatusNoContent {
@@ -246,7 +247,7 @@ func TestInboxRoundTrip(t *testing.T) {
 	if bytes.Contains(fetched.Body.Bytes(), body) {
 		t.Fatal("stored delivery contains plaintext body")
 	}
-	envelope, err := DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, fetched.Body.Bytes())
+	envelope, err := share.DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, fetched.Body.Bytes())
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
@@ -486,16 +487,16 @@ func TestDecryptInboxEnvelopeRejectsWrongIdentityTamperingAndVersions(t *testing
 	_ = json.Unmarshal(rec.Body.Bytes(), &accepted)
 	fetched := h.do(http.MethodGet, "/inboxes/"+registered.ID+"/deliveries/"+accepted.DeliveryID, nil, registered.FetchToken)
 
-	if _, err := DecryptInboxEnvelope(wrong, registered.ID, accepted.DeliveryID, fetched.Body.Bytes()); err == nil {
+	if _, err := share.DecryptInboxEnvelope(wrong, registered.ID, accepted.DeliveryID, fetched.Body.Bytes()); err == nil {
 		t.Fatal("wrong identity decrypted delivery")
 	}
 	tampered := append([]byte(nil), fetched.Body.Bytes()...)
 	tampered[len(tampered)-1] ^= 1
-	if _, err := DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, tampered); err == nil {
+	if _, err := share.DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, tampered); err == nil {
 		t.Fatal("tampered delivery decrypted")
 	}
 
-	for _, unsupported := range []InboxEnvelope{
+	for _, unsupported := range []share.InboxEnvelope{
 		{FormatVersion: 2, KeyVersion: 1, InboxID: registered.ID, DeliveryID: accepted.DeliveryID},
 		{FormatVersion: 0, KeyVersion: 1, InboxID: registered.ID, DeliveryID: accepted.DeliveryID},
 	} {
@@ -507,7 +508,7 @@ func TestDecryptInboxEnvelopeRejectsWrongIdentityTamperingAndVersions(t *testing
 		}
 		_, _ = w.Write(plain)
 		_ = w.Close()
-		if _, err := DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, encrypted.Bytes()); err == nil {
+		if _, err := share.DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, encrypted.Bytes()); err == nil {
 			t.Fatalf("unsupported envelope version decrypted: %+v", unsupported)
 		}
 	}

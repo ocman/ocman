@@ -10,7 +10,7 @@ import (
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
-	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/webhook"
 )
@@ -91,7 +91,7 @@ func TestWebhookMCPLifecycle(t *testing.T) {
 		{"closed", "pull_request", "aspect-analytics", "NoUseFreak", "closed", false, false},
 		{"other-event", "issues", "aspect-analytics", "NoUseFreak", "opened", false, false},
 	} {
-		e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: tc.name}
+		e := share.InboxEnvelope{InboxID: "inbox", DeliveryID: tc.name}
 		e.Request.Header = http.Header{"X-GitHub-Event": {tc.event}}
 		e.Body, err = json.Marshal(map[string]any{
 			"repository":   map[string]any{"owner": map[string]string{"login": tc.owner}},

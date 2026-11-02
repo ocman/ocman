@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/webhook"
 )
@@ -31,7 +31,7 @@ func TestWebhookLaunchFailureIsLoggedAsFailure(t *testing.T) {
 	if _, err := h.db.AcceptWebhookDelivery(ctx, "inbox", "d1", "POST webhook", "{}", "{}", "", 1); err != nil {
 		t.Fatal(err)
 	}
-	e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "d1", Body: []byte("{}")}
+	e := share.InboxEnvelope{InboxID: "inbox", DeliveryID: "d1", Body: []byte("{}")}
 	if err := webhook.Dispatch(t.Context(), h.db, h.svc, "inbox", "d1", e, time.UnixMilli(h.now.Load())); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestWebhookDispatchCancelledDuringLaunchSettlesRun(t *testing.T) {
 		if _, err := h.db.AcceptWebhookDelivery(t.Context(), "inbox", id, "POST webhook", "{}", "{}", "", 1); err != nil {
 			t.Fatal(err)
 		}
-		e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: id, Body: []byte("{}")}
+		e := share.InboxEnvelope{InboxID: "inbox", DeliveryID: id, Body: []byte("{}")}
 		if err := webhook.Dispatch(ctx, h.db, h.svc, "inbox", id, e, time.UnixMilli(h.now.Load())); err != nil {
 			t.Fatal(err)
 		}

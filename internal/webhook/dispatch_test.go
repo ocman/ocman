@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
 )
 
 func TestMatchesHeaderAndJSONPointerPredicates(t *testing.T) {
-	e := relay.InboxEnvelope{Body: []byte(`{"event":{"kind":"push"},"items":["a","b"]}`), Request: relay.InboxRequest{Header: http.Header{"X-Event": {"PUSH"}}}}
+	e := share.InboxEnvelope{Body: []byte(`{"event":{"kind":"push"},"items":["a","b"]}`), Request: share.InboxRequest{Header: http.Header{"X-Event": {"PUSH"}}}}
 	trueValue := true
 	sub := state.WebhookSubscription{HeaderPredicatesJSON: `{"x-event":{"oneOf":["push","merge"]}}`, JSONPredicatesJSON: `{"/event/kind":{"equals":"push"},"/items/1":{"exists":true}}`}
 	if ok, err := matches(e, sub); err != nil || !ok {
@@ -168,7 +168,7 @@ func TestPredicateNumbersCompareExactly(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e := relay.InboxEnvelope{Body: []byte(`{"v":` + test.body + `}`)}
+			e := share.InboxEnvelope{Body: []byte(`{"v":` + test.body + `}`)}
 			sub := state.WebhookSubscription{JSONPredicatesJSON: `{"/v":{"equals":` + test.want + `}}`}
 			if ok, err := matches(e, sub); err != nil || ok != test.ok {
 				t.Fatalf("matches(%s, %s) = %v, %v, want %v", test.body, test.want, ok, err, test.ok)
@@ -202,7 +202,7 @@ func TestHeaderPredicateNumbersCompareExactly(t *testing.T) {
 		{"05", `5`, false},
 	}
 	for _, test := range tests {
-		e := relay.InboxEnvelope{Body: []byte(`{}`), Request: relay.InboxRequest{Header: http.Header{"X-N": {test.header}}}}
+		e := share.InboxEnvelope{Body: []byte(`{}`), Request: share.InboxRequest{Header: http.Header{"X-N": {test.header}}}}
 		sub := state.WebhookSubscription{HeaderPredicatesJSON: `{"x-n":{"equals":` + test.want + `}}`}
 		if ok, err := matches(e, sub); err != nil || ok != test.ok {
 			t.Errorf("header %q vs %s = %v, %v, want %v", test.header, test.want, ok, err, test.ok)
@@ -234,7 +234,7 @@ func TestHeaderPredicateValueText(t *testing.T) {
 }
 
 func TestMatchesInvalidJSONIsIgnored(t *testing.T) {
-	e := relay.InboxEnvelope{Body: []byte("not json")}
+	e := share.InboxEnvelope{Body: []byte("not json")}
 	if ok, err := matches(e, state.WebhookSubscription{JSONPredicatesJSON: `{"/x":{"exists":true}}`}); err != nil || ok {
 		t.Fatalf("invalid JSON = %v, %v", ok, err)
 	}
@@ -312,7 +312,7 @@ func TestDispatchReferencesBodyFile(t *testing.T) {
 	}
 	body := `{"action":"opened","number":7}`
 	svc := &sessionDispatcher{db: db}
-	if err := Dispatch(t.Context(), db, svc, "inbox", "../d1", relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "../d1", Body: []byte(body), Request: relay.InboxRequest{Header: http.Header{"x-forgejo-event": {"pull_request"}}}}, time.UnixMilli(5)); err != nil {
+	if err := Dispatch(t.Context(), db, svc, "inbox", "../d1", share.InboxEnvelope{InboxID: "inbox", DeliveryID: "../d1", Body: []byte(body), Request: share.InboxRequest{Header: http.Header{"x-forgejo-event": {"pull_request"}}}}, time.UnixMilli(5)); err != nil {
 		t.Fatal(err)
 	}
 	if len(svc.labels) != 1 || svc.labels[0] != "#7 opened" {
@@ -373,7 +373,7 @@ func dispatchFixture(t *testing.T) *state.DB {
 		t.Fatal(err)
 	}
 	svc := &sessionDispatcher{db: db}
-	e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "d1", Body: []byte(`{"action":"opened"}`)}
+	e := share.InboxEnvelope{InboxID: "inbox", DeliveryID: "d1", Body: []byte(`{"action":"opened"}`)}
 	if err := Dispatch(t.Context(), db, svc, "inbox", "d1", e, time.UnixMilli(5)); err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +434,7 @@ func TestDispatchPropagatesCallerContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	svc := &cancellingDispatcher{cancel: cancel}
-	e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "d2", Body: []byte(`{"action":"opened"}`)}
+	e := share.InboxEnvelope{InboxID: "inbox", DeliveryID: "d2", Body: []byte(`{"action":"opened"}`)}
 	if err := Dispatch(ctx, db, svc, "inbox", "d2", e, time.UnixMilli(6)); err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func valueMatch(value any, p predicate) bool {
 }
 
 func TestMatchesPresenceRules(t *testing.T) {
-	e := relay.InboxEnvelope{Body: []byte(`{"a":1}`), Request: relay.InboxRequest{Header: http.Header{"X-A": {"1"}}}}
+	e := share.InboxEnvelope{Body: []byte(`{"a":1}`), Request: share.InboxRequest{Header: http.Header{"X-A": {"1"}}}}
 	for _, test := range []struct {
 		headers, pointers string
 		ok                bool

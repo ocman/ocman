@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ocman/ocman/internal/relay"
+	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -117,9 +117,9 @@ func FuzzEqualsPredicate(f *testing.F) {
 		if err != nil || !ValidPredicates(string(predicates)) {
 			t.Fatalf("predicates %s rejected: %v", predicates, err)
 		}
-		e := relay.InboxEnvelope{
+		e := share.InboxEnvelope{
 			Body:    []byte(`{"v":` + have + `}`),
-			Request: relay.InboxRequest{Header: http.Header{"X-V": {have}}},
+			Request: share.InboxRequest{Header: http.Header{"X-V": {have}}},
 		}
 		sub := state.WebhookSubscription{
 			HeaderPredicatesJSON: strings.Replace(string(predicates), `"/v"`, `"x-v"`, 1),

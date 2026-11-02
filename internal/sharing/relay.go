@@ -81,25 +81,14 @@ func (m *Module) uploadChunks(
 	}
 
 	lastSeq := int64(firstSeq) - 1
-	var totalBytes int64
+	upload := share.ChunkUploader{Client: client, Alloc: allocation, Key: key}
 	for i, chunk := range chunks {
 		payload, err := json.Marshal(chunk)
 		if err != nil {
 			return lastSeq, fmt.Errorf("encoding relay chunk: %w", err)
 		}
 		seq := firstSeq + uint64(i)
-		sealed, err := share.Seal(key, allocation.ID, seq, payload)
-		if err != nil {
-			return lastSeq, err
-		}
-		if allocation.MaxChunkBytes > 0 && int64(len(sealed)) > allocation.MaxChunkBytes {
-			return lastSeq, share.TooLarge("chunk is too large after encryption")
-		}
-		totalBytes += int64(len(sealed))
-		if allocation.MaxShareBytes > 0 && totalBytes > allocation.MaxShareBytes {
-			return lastSeq, share.TooLarge("share is too large")
-		}
-		if err := client.Put(ctx, allocation, seq, sealed); err != nil {
+		if err := upload.Put(ctx, seq, payload); err != nil {
 			return lastSeq, err
 		}
 		lastSeq = int64(seq)
