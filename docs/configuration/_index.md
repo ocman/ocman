@@ -279,22 +279,23 @@ not trust the client-supplied `X-Forwarded-Proto` header for this decision.
 
 ## OpenCode: enabling interactive features
 
-Sessions launched from ocman (command palette, Worktrees view, PR/Issue sidebar) are interactive
-out of the box: ocman manages one OpenCode instance per project on a port it allocates itself.
-
-Ocman connects only to its managed OpenCode instances, using its persisted
-runtime inventory and API identity probes. It does not discover or adopt
-instances you start yourself. Their saved sessions remain readable from the
-database. OpenCode v2 uses one managed server per machine; see
-[OpenCode v2](#opencode-v2).
-
-### OpenCode v2
-
-Ocman supports OpenCode v1 and v2. Each ocman checks `opencode --version` at startup, so one ocman
-can run v1 locally while a remote runs v2. Nothing needs configuring. After upgrading or downgrading
+Ocman requires OpenCode v2 or later. At startup it runs `opencode --version`. If that reports
+v1, ocman logs an error, starts without the OpenCode platform, and the setup check shows
+"OpenCode version" with an upgrade hint. Other enabled platforms keep working. Upgrade
+OpenCode and restart ocman to enable it. A missing `opencode` binary is reported by the
+setup check instead, and saved history stays readable. Each machine checks its own
+OpenCode, so a remote is refused or accepted independently of the hub. After upgrading
 OpenCode, restart ocman (it logs a warning when it notices the change).
 
-On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
+Sessions launched from ocman (command palette, Worktrees view, PR/Issue sidebar) are
+interactive out of the box. Ocman connects only to the OpenCode server it manages, or to
+OpenCode's registered background service, using its persisted runtime inventory and API
+identity probes. It does not discover or adopt instances you start yourself. Their saved
+sessions remain readable from the database.
+
+### Managed OpenCode server
+
+OpenCode runs one server for every project on a machine. Ocman follows that:
 
 - **One server per machine.** When OpenCode's own background service is running (the
   `opencode serve --service` that `opencode` starts, registered in
@@ -311,62 +312,62 @@ On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
 - **Only on the default database.** Ocman uses the background service only when it reads
   OpenCode's default database. With `-db` or `OPENCODE_DB` pointing elsewhere it always runs
   its own server.
-- **Always authenticated.** v2 requires a password. When none is configured (see below), ocman
-  uses the background service's password from `~/.config/opencode/service.json` on the default
-  database. Otherwise it generates one, stores it encrypted in `state.db`, and reuses it across
-  restarts. This keeps the server running across an ocman restart.
-- **Native follow-up queue.** Ctrl/Cmd+Enter hands the message to v2's own session inbox, which
-  delivers it when the turn ends. The composer lists these messages with ocman's own queued
-  messages. You can delete them but not reorder them. If ocman's own queue already holds
-  messages for the session, a new one joins that queue instead, so the order stays the same.
-- **History.** v2 stores conversations in new tables (`session_v2`, `session_message`). Ocman
-  reads them through read-only views with the v1 names, so the session list, transcripts,
-  search and analytics work unchanged.
-- **MCP.** On a v2 machine ocman writes its MCP entry in v2's own layout,
-  `mcp.servers.ocman`, with `"codemode": false`, so the agent calls ocman's tools directly
-  instead of through v2's Code Mode `execute` tool. v2 still reads v1-style `mcp.ocman`
-  entries but drops `codemode` from them. At startup ocman moves an existing ocman entry
-  to the v2 layout, keeping its URL and enabled state, after backing up the config. It
-  never adds an entry you haven't installed, and it leaves a JSONC config alone.
-- **Settings → Maintenance** is not available on v2; it only knows the v1 storage layout.
+- **Always authenticated.** OpenCode requires a password. When none is configured (see below),
+  ocman uses the background service's password from `~/.config/opencode/service.json` on the
+  default database. Otherwise it generates one, stores it encrypted in `state.db`, and reuses
+  it across restarts. This keeps the server running across an ocman restart.
+- **Native follow-up queue.** Ctrl/Cmd+Enter hands the message to OpenCode's own session inbox,
+  which delivers it when the turn ends. The composer lists these messages with ocman's own
+  queued messages. You can delete them but not reorder them. If ocman's own queue already
+  holds messages for the session, a new one joins that queue instead, so the order stays the
+  same.
+- **History.** OpenCode stores conversations in `session_v2` and `session_message`. Ocman
+  reads them through read-only views, so the session list, transcripts, search and analytics
+  work on the same rows the server writes.
+- **MCP.** Ocman writes its MCP entry in OpenCode's `mcp.servers.ocman` layout, with
+  `"codemode": false`, so the agent calls ocman's tools directly instead of through OpenCode's
+  Code Mode `execute` tool. OpenCode still reads older `mcp.ocman` entries but drops
+  `codemode` from them. At startup ocman moves an existing ocman entry to the new layout,
+  keeping its URL and enabled state, after backing up the config. It never adds an entry you
+  haven't installed, and it leaves a JSONC config alone.
+- **Settings → Maintenance** is not available; it only knows the OpenCode v1 storage layout.
 
 Use `/reload-opencode` in an existing conversation to refresh the owning machine's
-OpenCode v2 skills and configuration without restarting its server. Running turns
+OpenCode skills and configuration without restarting its server. Running turns
 continue with fresh services at the next step boundary. Pending permission and
 question prompts are cancelled during the reload. The command refreshes the
 composer's agent, model, command and skill catalogs after completion. It does not
-launch a server if none is managed, and is unavailable on v1.
+launch a server if none is managed.
 
 Keep `/restart-opencode` for an unhealthy server, a binary upgrade, changed process
-environment or launch settings, or unwatched plugin dependencies. On v2 it
-restarts the machine-wide server, affecting every project on that machine.
+environment or launch settings, or unwatched plugin dependencies. It restarts the
+machine-wide server, affecting every project on that machine.
 
-On v2, ocman resolves one absolute database path and exports it as `OPENCODE_DB` for the server,
-so both read and write the same file. An explicit `-db` wins (including the default path); otherwise
-`OPENCODE_DB` wins, then the default. Relative paths are resolved from ocman's working directory
-before launching the server. On v1, `-db` alone selects the reader's database as before.
+Ocman resolves one absolute database path and exports it as `OPENCODE_DB` for the server,
+so both read and write the same file. An explicit `-db` wins (including the default path);
+otherwise `OPENCODE_DB` wins, then the default. Relative paths are resolved from ocman's
+working directory before launching the server.
 
 ### OpenCode server authentication
 
-For OpenCode v1, managed-server authentication is off by default. To protect
-managed instances, configure one source in this precedence order:
+To choose the managed server's password yourself, configure one source in this
+precedence order:
 
 1. `OPENCODE_SERVER_PASSWORD` environment variable
 2. `-opencode-server-password-file /path/to/file`
 3. `-opencode-server-generate-password`
 
 Ocman injects the selected password as `OPENCODE_SERVER_PASSWORD` when it launches OpenCode and
-uses OpenCode's default `opencode` HTTP Basic Auth username for every API and SSE request. On v1, the
-password stays in backend memory and the managed process environment; it is not stored in
-`state.db`, returned to the browser, or included in runtime diagnostics.
+uses OpenCode's default `opencode` HTTP Basic Auth username for every API and SSE request. A
+configured password stays in backend memory and the managed process environment. Ocman does not
+store it in `state.db`, return it to the browser, or include it in runtime diagnostics.
 
 To rotate a supplied password, update the environment variable or file and restart ocman, then
-restart each managed OpenCode instance from its session action. You can also let the next
-managed launch replace an instance whose credential no longer matches. Generated passwords are
-deliberately short-lived on v1: every ocman restart creates a new value, and recovered managed
-instances are stopped and relaunched on first use. V2 always authenticates and
-persists its automatically generated password, as described above. Authentication
-configuration does not enable adoption of unmanaged instances.
+run `/restart-opencode`. You can also let the next managed launch replace a server whose
+credential no longer matches. `-opencode-server-generate-password` creates a new value on every
+ocman restart, so a recovered managed server is stopped and relaunched on first use. Without any
+of these, ocman uses the stored password described above. Authentication configuration does not
+enable adoption of unmanaged instances.
 
 ## Claude Code
 

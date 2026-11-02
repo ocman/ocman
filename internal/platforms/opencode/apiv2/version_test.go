@@ -81,6 +81,30 @@ func TestInstalledV2(t *testing.T) {
 	}
 }
 
+func TestInstalledMajor(t *testing.T) {
+	tests := []struct {
+		name      string
+		out       string
+		err       error
+		wantMajor int
+		wantOK    bool
+	}{
+		{"v2", "opencode v2.0.22\n", nil, 2, true},
+		{"v1", "1.18.32\n", nil, 1, true},
+		{"missing", "", errors.New("not found"), 0, false},
+		{"garbage", "???", nil, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			convResetInstalled(t, tt.out, tt.err)
+			major, ok := InstalledMajor()
+			if major != tt.wantMajor || ok != tt.wantOK {
+				t.Errorf("InstalledMajor() = %d, %v; want %d, %v", major, ok, tt.wantMajor, tt.wantOK)
+			}
+		})
+	}
+}
+
 // The version is read once: a later upgrade must not flip the answer
 // mid-run (the password, DB views and managed server were chosen for it).
 func TestInstalledV2IsFixedForTheProcess(t *testing.T) {

@@ -207,6 +207,11 @@ func run() {
 		if len(enabledPlatforms) == 0 {
 			fatal("No platforms enabled. Use -platforms with at least one of: %s", knownPlatformNames)
 		}
+		var startupIssues []server.StartupIssue
+		if issue := requireOpenCodeV2(enabledPlatforms); issue != nil {
+			startupIssues = append(startupIssues, *issue)
+		}
+
 		// OpenCode's skill directory is touched only when OpenCode is enabled (FR-1).
 		if enabledPlatforms[string(opencodeplatform.PlatformID)] {
 			if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
@@ -223,7 +228,6 @@ func run() {
 		// Open the OpenCode database only when the opencode platform is enabled.
 		var database *db.DB
 		openCodeDBPath := "" // maintenance is offered only for an opened database
-		var startupIssues []server.StartupIssue
 		dbExplicit := false
 		flag.Visit(func(f *flag.Flag) { dbExplicit = dbExplicit || f.Name == "db" })
 		if enabledPlatforms[string(opencodeplatform.PlatformID)] {

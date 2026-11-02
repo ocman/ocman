@@ -24,8 +24,8 @@ read-only source access: it modifies the source database only when you start it.
 For OpenCode, interactive features need a reachable managed HTTP API. Launch
 sessions from ocman to get the composer, permission replies and abort. Ocman
 does not discover or adopt instances you start yourself, regardless of their
-port. OpenCode v2’s registered background service is a supported exception;
-see [Configuration](../configuration/#opencode-v2).
+port. OpenCode's registered background service is a supported exception;
+see [Configuration](../configuration/#managed-opencode-server).
 
 Claude Code and Codex use their own managed supervisors. Availability also
 depends on the owning machine being connected and the platform’s capabilities.

@@ -19,9 +19,11 @@ func (s *Server) WithToolPathError(err error) *Server {
 // from the local Host; process-scoped ones are added around them.
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	var checks []hostsvc.DoctorCheck
-	// OpenCode's database is a prerequisite only when OpenCode was asked for:
-	// a Claude-only ocman must not be blocked on it (FR-1).
-	if db := s.openCodeDBCheck(); s.openCodeEnabled() || db.Hint != "" {
+	if c, ok := s.openCodeVersionCheck(); ok {
+		checks = append(checks, c)
+	} else if db := s.openCodeDBCheck(); s.openCodeEnabled() || db.Hint != "" {
+		// OpenCode's database is a prerequisite only when OpenCode was asked
+		// for: a Claude-only ocman must not be blocked on it (FR-1).
 		checks = append(checks, db)
 	}
 	checks = append(checks, s.router().Local().Doctor(r.Context())...)
@@ -32,11 +34,9 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 func (s *Server) openCodeDBCheck() hostsvc.DoctorCheck {
 	// A registered platform lets the app run even when OpenCode was skipped.
 	c := hostsvc.DoctorCheck{ID: "opencode-db", Label: "OpenCode database", Required: s.openCodeEnabled() || len(s.registry.Platforms()) == 0}
-	for _, issue := range s.startupIssues {
-		if issue.ID == "opencode-db-missing" {
-			c.Detail, c.Hint = issue.Message, "Run OpenCode once so it creates its database, then restart ocman"
-			return c
-		}
+	if issue, ok := s.startupIssue(IssueOpenCodeDBMissing); ok {
+		c.Detail, c.Hint = issue.Message, "Run OpenCode once so it creates its database, then restart ocman"
+		return c
 	}
 	if s.db == nil {
 		c.Detail = "OpenCode platform is disabled (-platforms)"
@@ -44,6 +44,20 @@ func (s *Server) openCodeDBCheck() hostsvc.DoctorCheck {
 	}
 	c.OK, c.Detail = true, "opened"
 	return c
+}
+
+// openCodeVersionCheck reports an installed OpenCode older than v2, which
+// disabled the OpenCode platform at startup. It blocks setup only when no
+// other platform is available.
+func (s *Server) openCodeVersionCheck() (hostsvc.DoctorCheck, bool) {
+	issue, ok := s.startupIssue(IssueOpenCodeUnsupported)
+	if !ok {
+		return hostsvc.DoctorCheck{}, false
+	}
+	return hostsvc.DoctorCheck{
+		ID: "opencode-version", Label: "OpenCode version", Required: len(s.registry.Platforms()) == 0,
+		Detail: issue.Message, Hint: issue.Hint,
+	}, true
 }
 
 func (s *Server) mcpListenerCheck() hostsvc.DoctorCheck {

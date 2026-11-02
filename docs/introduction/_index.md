@@ -76,13 +76,11 @@ abort), let ocman launch it:
 2. Run `/wt` to create a git worktree session, or use the project's
    **Worktrees** view.
 
-Ocman keeps one managed OpenCode instance per project and connects to it
-automatically, so parallel worktree sessions get isolated files and staging
-areas without a process per worktree.
-
-With OpenCode v2, ocman instead runs one server for the whole machine (see
-[Configuration](../configuration#opencode-v2)). Start conversations through
-ocman to use its managed instances. Instances you start yourself are never
+Ocman requires OpenCode v2 or later. It runs one managed OpenCode server for
+the whole machine and connects to it automatically, so parallel worktree
+sessions get isolated files and staging areas without a process per worktree
+(see [Configuration](../configuration#managed-opencode-server)). Start
+conversations through ocman to use its managed server. Instances you start yourself are never
 discovered or adopted. Saved sessions remain visible from the database;
 interactive controls require a connection to an ocman-managed instance.
 

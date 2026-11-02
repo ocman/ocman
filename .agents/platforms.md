@@ -106,6 +106,9 @@ are unsupported and capability-gated. Tests use
 
 ## OpenCode v1 and v2
 
+Ocman requires OpenCode v2. At startup `requireOpenCodeV2` in `internal/app` disables
+the OpenCode platform with an `opencode-unsupported-version` startup issue when the
+installed binary reports v1; the doctor shows it. A missing binary is not refused.
 `internal/platforms/opencode/apiv2` reads `opencode --version` once. A later version change logs a
 restart requirement. Each machine speaks only to its local OpenCode, allowing
 mixed hub/remote versions. Tests pin `ocv2.SetInstalledV2` in package `TestMain`

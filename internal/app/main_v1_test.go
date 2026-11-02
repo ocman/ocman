@@ -46,5 +46,6 @@ func TestMain(m *testing.M) {
 	if os.Getenv("OCMAN_TEST_NO_OPENCODE") == "" {
 		ocv2.SetInstalledV2(false)
 	}
+	installedOpenCodeMajor = func() (int, bool) { return 0, false }
 	os.Exit(claudetest.Run(m))
 }

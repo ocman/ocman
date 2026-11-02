@@ -128,3 +128,42 @@ func TestDoctorMissingOpenCodeDatabaseWithClaudeIsOptional(t *testing.T) {
 	}
 	t.Fatal("missing OpenCode setup notice disappeared")
 }
+
+// An OpenCode older than v2 disabled the platform at startup: the doctor
+// says why and blocks setup only when nothing else can run.
+func TestDoctorReportsUnsupportedOpenCodeVersion(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		other    bool
+		required bool
+	}{{"only OpenCode", false, true}, {"with Claude", true, false}} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			if tt.other {
+				reg.Register(&fakePlatform{id: "claudecode"})
+			}
+			srv.WithStartupIssues(StartupIssue{ID: IssueOpenCodeUnsupported, Message: "OpenCode v1 is installed", Hint: "Upgrade"})
+			srv.hostRouter = hostsvc.NewRouter(doctorHost{})
+			rr := httptest.NewRecorder()
+			srv.handleDoctor(rr, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
+			var got struct {
+				Checks []hostsvc.DoctorCheck `json:"checks"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Checks) == 0 {
+				t.Fatal("no checks")
+			}
+			c := got.Checks[0]
+			if c.ID != "opencode-version" || c.OK || c.Required != tt.required || c.Detail != "OpenCode v1 is installed" || c.Hint != "Upgrade" {
+				t.Fatalf("version check = %+v", c)
+			}
+			for _, c := range got.Checks {
+				if c.ID == "opencode-db" {
+					t.Fatalf("database check shown for a refused OpenCode: %+v", c)
+				}
+			}
+		})
+	}
+}

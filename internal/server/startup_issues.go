@@ -8,6 +8,12 @@ type StartupIssue struct {
 	Hint    string `json:"hint,omitempty"`
 }
 
+// Startup issue IDs the doctor turns into checks.
+const (
+	IssueOpenCodeDBMissing   = "opencode-db-missing"
+	IssueOpenCodeUnsupported = "opencode-unsupported-version"
+)
+
 // WithStartupIssues records the non-fatal issues found at startup.
 func (s *Server) WithStartupIssues(issues ...StartupIssue) *Server {
 	s.startupIssues = append(s.startupIssues, issues...)
@@ -16,3 +22,12 @@ func (s *Server) WithStartupIssues(issues ...StartupIssue) *Server {
 
 // StartupIssues returns the non-fatal issues recorded at startup.
 func (s *Server) StartupIssues() []StartupIssue { return s.startupIssues }
+
+func (s *Server) startupIssue(id string) (StartupIssue, bool) {
+	for _, issue := range s.startupIssues {
+		if issue.ID == id {
+			return issue, true
+		}
+	}
+	return StartupIssue{}, false
+}

@@ -16,7 +16,7 @@ import (
 func openOpenCodeDB(path string) (*db.DB, *server.StartupIssue, error) {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return nil, &server.StartupIssue{
-			ID:      "opencode-db-missing",
+			ID:      server.IssueOpenCodeDBMissing,
 			Message: fmt.Sprintf("OpenCode database not found at %s", path),
 			Hint:    "Install OpenCode and run it at least once, then restart ocman.",
 		}, nil

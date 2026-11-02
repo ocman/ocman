@@ -74,11 +74,11 @@ xattr -dr com.apple.quarantine /Applications/ocman.app
 
 The easiest way to get interactive sessions (composer, permission replies, abort) is to launch
 them from ocman itself, using the command palette (`/wt` for worktrees) or the per-project
-Worktrees view. OpenCode v1 uses one managed instance per project; v2 uses one
-server per machine and can reuse OpenCode’s registered background service.
+Worktrees view. Ocman requires OpenCode v2 or later; it runs one server per
+machine and can reuse OpenCode’s registered background service.
 Ocman does not discover or adopt other OpenCode instances, even with an explicit
 port. Their saved sessions remain readable through ocman’s retained history.
-See [Configuration](docs/configuration/_index.md#opencode-v2).
+See [Configuration](docs/configuration/_index.md#managed-opencode-server).
 
 ## Configuration
 

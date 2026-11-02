@@ -34,15 +34,23 @@ var versionCommand = func(ctx context.Context) ([]byte, error) {
 	return exec.CommandContext(ctx, "opencode", "--version").Output()
 }
 
-// readInstalledV2 runs `opencode --version`; ok is false when it failed.
-func readInstalledV2() (v2, ok bool) {
+// InstalledMajor runs `opencode --version` and returns its major version.
+// ok is false when the binary is missing, fails or prints no version.
+func InstalledMajor() (major int, ok bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := versionCommand(ctx)
 	if err != nil {
-		return false, false
+		return 0, false
 	}
-	return Major(string(out)) >= 2, true
+	major = Major(string(out))
+	return major, major > 0
+}
+
+// readInstalledV2 runs `opencode --version`; ok is false when it failed.
+func readInstalledV2() (v2, ok bool) {
+	major, ok := InstalledMajor()
+	return major >= 2, ok
 }
 
 // InstalledV2 reports whether the opencode binary on PATH is v2 or
