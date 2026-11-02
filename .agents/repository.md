@@ -2,8 +2,9 @@
 
 Use this map to find owners, then read the relevant topic guide. It is not an
 exhaustive file inventory. Architecture diagrams live in
-`docs/other/architecture.md`; update them with changes to packages, dependencies,
-adapter boundaries or browser/backend data flows.
+`docs/other/architecture.md` and the companion and feature pages it links to;
+update them with changes to packages, dependencies, adapter boundaries or
+browser/backend data flows.
 
 ## Entry points and application composition
 

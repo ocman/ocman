@@ -123,3 +123,56 @@ Launches and watches require user authorization because they can consume model
 credits. Draft actions do not send messages or post comments. No action merges,
 force-pushes, archives sessions or changes credentials. Disconnected explicit
 owners fail closed, just as in the dashboard.
+
+## How the PR workflow works
+
+
+```mermaid
+flowchart LR
+    UI[Setup and session PR pane] --> Setup[sourcecontrol]
+    UI --> Workflow[prworkflow]
+    MCP[Agent pull_requests tool] -->|session and optional explicit repository| Workflow
+    MCP --> Launch
+    Launch[projectforge launches] --> Workflow
+    Setup --> Credentials[(Private credential overrides)]
+    Workflow --> Links[(PR links and watch snapshots)]
+    Links -->|unfinished task counts| UI
+    Workflow -->|owner check; checkout upstream when needed| Host[Owning Host]
+    Workflow -->|cached metadata and checks; selective feedback| Forge[GitHub or Forgejo API]
+    Setup --> Forge
+    Workflow -->|changed checks or feedback| Queue[Shared session queue]
+    Queue --> Platform[Owning Platform]
+```
+
+- `sourcecontrol` owns privileged setup routes, verified per-host tokens and
+  live credential resolution for project PR operations, Factory and watches.
+  Saved tokens override CLI/environment discovery without altering Git auth.
+- `prworkflow` owns session-qualified links, feedback-task drafts and its joined
+  two-minute watch worker. It persists snapshots and pending notices separately
+  from conversations. The hub reads forge metadata; owner disconnection never
+  routes checkout or session work to another machine.
+- Explicit `host` and `repo` links resolve through configured hub forge clients
+  without consulting the session checkout's upstreams. The session retains its
+  owning project and directory; links can refer to multiple other repositories.
+  The linked-PR badge reads checks through a session-qualified endpoint using
+  the saved repository identity, including for links created from an upstream.
+- Watch reads reuse GitHub's credential-scoped one-minute transport cache with
+  sidebar and preview reads. Head/metadata timestamps gate feedback pagination,
+  with a ten-minute safety reread. Quiet settled PRs slow to five-minute due
+  times on the two-minute worker. Provider rate limits pause the host without
+  exhausting a watch's read-failure allowance. Terminal PRs skip checks/feedback.
+- Its `pull_requests` MCP tool reuses fixed session HTTP handlers and an injected
+  `projectforge` PR-only handler. MCP authentication precedes dispatch; existing
+  owner checks and validation still apply. Draft actions return prompts without
+  sending them, and cross-fork fetch confirmation remains dashboard-only.
+- Watches are opt-in, deduplicate changes and queue follow-ups rather than
+  running an agent polling loop. Polling continues while a session cannot accept
+  follow-ups, so merged or closed PRs stop their watches. Notification delivery
+  waits until the session is ready. Stop/unlink serializes with delivery. Merging
+  and session archival remain explicit user decisions.
+- Session lists add durable watches to native background-task counts, keyed by
+  the full platform and session identity. Active watches and pending nonterminal
+  updates keep the background indicator visible and delay completion-based
+  archive resurfacing without holding foreground execution busy. Stop, unlink,
+  or detecting a merged or closed PR removes that watch's contribution, even
+  when its final notice still awaits delivery.

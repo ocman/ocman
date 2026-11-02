@@ -73,6 +73,7 @@ do not load the whole folder. Markdown links do not automatically load files.
 - Use explicit paths and runnable commands. Remove stale guidance when behavior
   changes. Do not add a wildcard instruction import that loads every guide.
 - When architecture changes, update the affected diagram and bullet list in
-  `docs/other/architecture.md` in the same PR. This includes new or merged
+  `docs/other/architecture.md`, or the companion or feature page it links to,
+  in the same PR. This includes new or merged
   packages, external dependencies, adapter boundaries and browser/backend flows.
   Keep diagrams near ten blocks and put detail in the accompanying prose.
