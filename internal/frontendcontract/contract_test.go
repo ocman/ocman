@@ -25,6 +25,8 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/remote"
+	"github.com/ocman/ocman/internal/state"
 )
 
 type field struct {
@@ -46,6 +48,25 @@ var dtos = map[string]any{
 	"PlatformCapabilities": platforms.Capabilities{},
 	"HostCapabilities":     hostsvc.HostCaps{},
 	"QueuedMessage":        convevents.QueuedMessage{},
+
+	// REST responses (frontend/src/lib/api.types.ts).
+	"DoctorCheck":         hostsvc.DoctorCheck{},
+	"TermWindow":          hostsvc.TermWindow{},
+	"FileChange":          platforms.FileChange{},
+	"SessionChanges":      platforms.SessionChanges{},
+	"MCPServer":           platforms.MCPServer{},
+	"LSPServer":           platforms.LSPServer{},
+	"SessionWarning":      platforms.SessionWarning{},
+	"MetricsSummary":      db.MetricsSummary{},
+	"MetricsPoint":        db.MetricsPoint{},
+	"StopReasonCount":     db.StopReasonCount{},
+	"ModelUsage":          db.ModelUsage{},
+	"HourlyTokensByModel": db.HourlyTokensByModel{},
+	"MetricsCostByModel":  db.MetricsCostByModel{},
+	"ModelCostPoint":      db.ModelCostPoint{},
+	"DatabaseSizeSample":  state.DatabaseSizeSample{},
+	"RemoteStatus":        remote.RemoteStatus{},
+	"TargetCandidate":     remote.TargetCandidate{},
 
 	// Conversation events (frontend/src/lib/conversation/events.ts).
 	"OceEnvelope":           convevents.Envelope{},

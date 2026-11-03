@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import goDtos from './go-dtos.json';
+import apiTypesSource from '../api.types.ts?raw';
 import type {
-  HostCapabilities, Message, Part, PartData, PlatformCapabilities, QueuedMessage, Session, SessionNotice, SessionStatus,
+  DatabaseSizeSample, DoctorCheck, FileChange, HostCapabilities, HourlyTokensByModel, LSPServer, MCPServer, Message,
+  MetricsCostByModel, MetricsPoint, MetricsSummary, ModelCostPoint, ModelUsage, Part, PartData, PlatformCapabilities,
+  QueuedMessage, RemoteStatus, Session, SessionChanges, SessionNotice, SessionStatus, SessionWarning, StopReasonCount,
+  TargetCandidate, TermWindow,
 } from '../api.types';
 import type { QuestionItem } from '../questions';
 import type { BackgroundTask } from '../sessionBackgroundTasks';
@@ -51,6 +55,25 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   QueuedMessage: flags<QueuedMessage>()({
     id: false, text: false, hasImages: false, model: true, agent: true, reasoning: true, createdAt: false,
   }),
+
+  // REST responses.
+  DoctorCheck: flags<DoctorCheck>()({ id: false, label: false, required: false, ok: false, detail: false, hint: false }),
+  TermWindow: flags<TermWindow>()({ name: false, title: false }),
+  FileChange: flags<FileChange>()({ path: false, displayPath: false, additions: false, deletions: false, editCount: false, firstEditAt: false, lastEditAt: false, patch: true, before: true, after: true, edits: false }),
+  SessionChanges: flags<SessionChanges>()({ sessionId: false, supported: false, totalAdditions: false, totalDeletions: false, filesChanged: false, files: false }),
+  MCPServer: flags<MCPServer>()({ name: false, status: false, error: true, authHint: true }),
+  LSPServer: flags<LSPServer>()({ id: false, name: false, status: false }),
+  SessionWarning: flags<SessionWarning>()({ kind: false, message: false, ports: true }),
+  MetricsSummary: flags<MetricsSummary>()({ requests: false, completedRequests: false, successfulRequests: false, errorRequests: false, errorRate: false, totalTokens: false, inputTokens: false, outputTokens: false, cacheReadTokens: false, cacheWriteTokens: false, avgTokensPerSec: false, avgDurationMs: false, p50DurationMs: false, p95DurationMs: false, totalDurationMs: false, cacheHitRate: false, totalCost: false, totalCalcCost: false, estimatedCostByType: false, totalEffectiveCost: false, costPerSuccessfulRequest: false }),
+  MetricsPoint: flags<MetricsPoint>()({ label: false, avgOutputTokensSec: false, cumulativeCost: false, cumulativeCalcCost: false, cumulativeEffectiveCost: false, inputTokens: false, cacheReadTokens: false, outputTokens: false, avgDurationMs: false, p50DurationMs: false, p95DurationMs: false, avgCacheEfficiency: false, count: false, completedRequests: false, successfulRequests: false, errorRequests: false, errorRate: false }),
+  StopReasonCount: flags<StopReasonCount>()({ reason: false, count: false }),
+  ModelUsage: flags<ModelUsage>()({ provider: false, model: false, count: false, tokensIn: false, tokensOut: false, cacheRead: false, cacheWrite: false }),
+  HourlyTokensByModel: flags<HourlyTokensByModel>()({ datetime: false, provider: false, model: false, tokensIn: false, tokensOut: false }),
+  MetricsCostByModel: flags<MetricsCostByModel>()({ models: false, series: false }),
+  ModelCostPoint: flags<ModelCostPoint>()({ label: false, costs: false }),
+  DatabaseSizeSample: flags<DatabaseSizeSample>()({ database: false, sampledAt: false, sizeBytes: false }),
+  RemoteStatus: flags<RemoteStatus>()({ localId: false, remoteId: true, displayName: false, address: false, enabled: false, health: false, hostname: false, protocolVersion: false, lastSeen: false, sessionCount: false }),
+  TargetCandidate: flags<TargetCandidate>()({ remoteId: false, remoteName: false, platform: false, dir: false }),
 
   // Conversation events (lib/conversation/events.ts).
   OceEnvelope: flags<Oce.OceEnvelope>()({
@@ -128,7 +151,41 @@ const statuses = keysOf<Record<SessionStatus, true>>()({
   busy: true, limited: true, waiting: true, done: true, error: true, interrupted: true,
 });
 
+// Interfaces in api.types.ts that are not yet checked against a Go DTO,
+// usually because the Go side is an unexported struct or an ad-hoc map.
+// Shrink this list by exporting the Go type and adding it to
+// internal/frontendcontract; never add a new interface here.
+const unchecked = new Set([
+  'NotifyEntry', 'NotifyPrompt', 'ClientActivity', 'WebhookSubscription', 'WebhookRelaySettings',
+  'WebhookDispatchResult', 'WebhookDelivery', 'WebhookInbox', 'FactoryEpic', 'FactoryAttempt', 'FactoryClaimedPlan',
+  'FactoryMaterialization', 'FactoryPlanGate', 'FactoryPlanGateDecisionRequest', 'CreateWorkEpicRequest',
+  'FactoryIssue', 'FactoryIssueComment', 'FactoryRecoveryGate', 'FactoryAuthorityEscalationGate',
+  'FactoryProjectRequestGate', 'FactoryGraphMutation', 'FactoryQueueItem', 'FactoryCapacityPolicy',
+  'FactoryFormula', 'FactoryWorkflowStep', 'FactoryFormulaSaveRequest', 'FactoryFormulaValidationRequest',
+  'GitInfo', 'RepoFileList', 'RepoFileContent', 'FilePart', 'SessionDetail', 'SharingSettings', 'ShareLink',
+  'GlobalShareLink', 'SharedConversation', 'TaskSessionData', 'SessionEdit', 'WorkingTreeFile', 'WorkingTreeDiff',
+  'DoctorReport', 'McpConfigStatus', 'HookPluginStatus', 'ProviderAccount', 'McpConfigInstallResult',
+  'SessionInfoContext', 'SessionInfoTokens', 'SessionInfoTodo', 'SessionInfoMessages', 'SessionInfoCommit',
+  'SessionInfo', 'Stats', 'SubscriptionUsageWindow', 'SubscriptionProviderUsage', 'SubscriptionUsageResponse',
+  'RequestMetricsRow', 'SessionLogEntry', 'ProjectLogEntry', 'MetricsDashboard', 'AnalyticsOverview', 'MetricsLog',
+  'PermissionStatsDay', 'PermissionStats', 'ProjectIdentity', 'Project', 'DirectoryBrowseEntry',
+  'DirectoryBrowseResponse', 'DirectorySearchEntry', 'DirectorySearchResponse', 'ActivityDay', 'HourlyData',
+  'PermissionRule', 'PlatformCapabilityEntry', 'HostCapabilityEntry', 'CapabilitiesResponse',
+  'ResolveTargetsResponse', 'NewSessionTarget', 'PrepareSessionResponse', 'StartSessionRequest',
+  'StartSessionResponse', 'RemoteAccessStatus', 'WorktreeEntry', 'WorktreeCreateRequest', 'WorktreeRemoveRequest',
+  'WorktreeCreateResponse', 'SlashCommand', 'SessionModelEntry', 'FavoriteEntry', 'SessionModelsResponse',
+  'AgentInfo', 'TmuxClient', 'TmuxSession', 'AuthMe', 'SystemStats', 'ModelFallthroughSettings',
+]);
+
 describe('frontend API types match the Go DTOs (go-dtos.json)', () => {
+  it('checks every new api.types.ts interface against Go', () => {
+    const declared = [...apiTypesSource.matchAll(/^export interface (\w+)/gm)].map((m) => m[1]);
+    const checked = new Set(Object.keys(goDtos.dtos));
+    expect(declared.filter((name) => !checked.has(name) && !unchecked.has(name))).toEqual([]);
+    // A checked or removed interface must leave the allowlist.
+    expect([...unchecked].filter((name) => checked.has(name) || !declared.includes(name))).toEqual([]);
+  });
+
   it('checks every OCE event type', () => {
     const checked = Object.keys(goDtos.dtos).filter((name) => (goDtos.dtos[name as keyof typeof goDtos.dtos])
       .some((f) => f.name === 'type') && name !== 'PartData');
