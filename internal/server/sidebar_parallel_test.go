@@ -38,7 +38,7 @@ func TestSidebarLocalAndRemoteReadsOverlap(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
 			reg.Register(&parallelSidebarLocal{
-				compactTestPlatform: &compactTestPlatform{fakePlatform: &fakePlatform{id: "local"}},
+				compactTestPlatform: &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "local"}},
 				read: func(ctx context.Context) ([]db.Session, error) {
 					close(localStarted)
 					select {
@@ -53,7 +53,7 @@ func TestSidebarLocalAndRemoteReadsOverlap(t *testing.T) {
 				},
 			})
 			reg.Register(&parallelSidebarRemote{
-				remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: "r-box:test"}},
+				remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-box:test"}},
 				read: func(ctx context.Context) ([]db.Session, error) {
 					close(remoteStarted)
 					select {
@@ -84,7 +84,7 @@ func TestSidebarCancelsAndJoinsRemoteOnLocalFailure(t *testing.T) {
 	started, stopped := make(chan struct{}), make(chan struct{})
 	localErr := errors.New("local read failed")
 	reg.Register(&parallelSidebarLocal{
-		compactTestPlatform: &compactTestPlatform{fakePlatform: &fakePlatform{id: "local"}},
+		compactTestPlatform: &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "local"}},
 		read: func(ctx context.Context) ([]db.Session, error) {
 			select {
 			case <-started:
@@ -95,7 +95,7 @@ func TestSidebarCancelsAndJoinsRemoteOnLocalFailure(t *testing.T) {
 		},
 	})
 	reg.Register(&parallelSidebarRemote{
-		remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: "r-box:test"}},
+		remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-box:test"}},
 		read: func(ctx context.Context) ([]db.Session, error) {
 			close(started)
 			<-ctx.Done()
@@ -120,9 +120,9 @@ func TestSidebarRemoteFailureHandling(t *testing.T) {
 		t.Run(map[bool]string{false: "partial results", true: "strict failure"}[strict], func(t *testing.T) {
 			s, reg := newSessionsTestServer(t)
 			remoteErr := errors.New("remote unavailable")
-			reg.Register(&compactTestPlatform{fakePlatform: &fakePlatform{id: "local"}, rows: []db.Session{{ID: "local", Platform: "local"}}})
+			reg.Register(&compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "local"}, rows: []db.Session{{ID: "local", Platform: "local"}}})
 			reg.Register(&parallelSidebarRemote{
-				remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{id: "r-box:test"}},
+				remoteCompactTestPlatform: &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-box:test"}},
 				read: func(ctx context.Context) ([]db.Session, error) {
 					deadline, ok := ctx.Deadline()
 					if !ok || time.Until(deadline) > 2*time.Second {

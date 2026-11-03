@@ -45,7 +45,7 @@ func (p *ownerWatchPlatform) PullRequestOperation(_ context.Context, req platfor
 
 func TestHubReadsOwnerWatchCountsOncePerPlatformAndClearsSettledWatches(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
-	p := &ownerWatchPlatform{fakePlatform: &fakePlatform{id: "r-box:fake"}, counts: map[string]int{"s1": 1, "s2": 2}}
+	p := &ownerWatchPlatform{fakePlatform: &fakePlatform{PlatformID: "r-box:fake"}, counts: map[string]int{"s1": 1, "s2": 2}}
 	reg.Register(p)
 	rows := []db.Session{{ID: "s1", Platform: string(p.ID()), BackgroundTaskCount: 2}, {ID: "s2", Platform: string(p.ID())}}
 	for range 2 {
@@ -83,7 +83,7 @@ func TestPRWorkflowOwnerResolutionIsStrict(t *testing.T) {
 	if _, err := s.remotePRWorkflow(prworkflow.Target{Platform: "r-box:fake"}); !errors.Is(err, platforms.ErrRemoteOffline) {
 		t.Fatal(err)
 	}
-	reg.Register(&fakePlatform{id: "r-box:fake"})
+	reg.Register(&fakePlatform{PlatformID: "r-box:fake"})
 	if _, err := s.remotePRWorkflow(prworkflow.Target{Platform: "r-box:fake"}); !errors.Is(err, platforms.ErrUnsupported) {
 		t.Fatal(err)
 	}
