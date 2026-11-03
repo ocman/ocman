@@ -63,7 +63,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   SessionChanges: flags<SessionChanges>()({ sessionId: false, supported: false, totalAdditions: false, totalDeletions: false, filesChanged: false, files: false }),
   MCPServer: flags<MCPServer>()({ name: false, status: false, error: true, authHint: true }),
   LSPServer: flags<LSPServer>()({ id: false, name: false, status: false }),
-  SessionWarning: flags<SessionWarning>()({ kind: false, message: false, ports: true }),
+  SessionWarning: flags<SessionWarning>()({ kind: false, message: false }),
   MetricsSummary: flags<MetricsSummary>()({ requests: false, completedRequests: false, successfulRequests: false, errorRequests: false, errorRate: false, totalTokens: false, inputTokens: false, outputTokens: false, cacheReadTokens: false, cacheWriteTokens: false, avgTokensPerSec: false, avgDurationMs: false, p50DurationMs: false, p95DurationMs: false, totalDurationMs: false, cacheHitRate: false, totalCost: false, totalCalcCost: false, estimatedCostByType: false, totalEffectiveCost: false, costPerSuccessfulRequest: false }),
   MetricsPoint: flags<MetricsPoint>()({ label: false, avgOutputTokensSec: false, cumulativeCost: false, cumulativeCalcCost: false, cumulativeEffectiveCost: false, inputTokens: false, cacheReadTokens: false, outputTokens: false, avgDurationMs: false, p50DurationMs: false, p95DurationMs: false, avgCacheEfficiency: false, count: false, completedRequests: false, successfulRequests: false, errorRequests: false, errorRate: false }),
   StopReasonCount: flags<StopReasonCount>()({ reason: false, count: false }),

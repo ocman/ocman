@@ -1564,10 +1564,6 @@
       {
         "name": "message",
         "omitempty": false
-      },
-      {
-        "name": "ports",
-        "omitempty": true
       }
     ],
     "StopReasonCount": [
