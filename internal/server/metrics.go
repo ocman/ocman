@@ -9,8 +9,9 @@ import (
 
 // Server-side custom OTel instruments. These complement otelhttp's
 // auto-collected http.server.* metrics and otelsql's db.client.*
-// metrics with ocman-specific business signals: archive throughput,
-// projects-index refresh latency, and the live SSE connection count.
+// metrics with ocman-specific business signals: projects-index refresh
+// latency and the live SSE connection count. Auto-archive instruments
+// live in internal/autoarchive.
 //
 // Instruments are package-level globals and lazily created on first
 // reference (each metric.Meter call returns the same handle for the
@@ -21,8 +22,6 @@ import (
 // the call sites can record unconditionally.
 
 var (
-	autoArchiveSessions          metric.Int64Counter
-	autoArchiveRuns              metric.Int64Counter
 	projectsIndexRefreshDuration metric.Float64Histogram
 	projectsIndexRefreshErrors   metric.Int64Counter
 	sseActiveConnections         metric.Int64UpDownCounter
@@ -32,22 +31,6 @@ func init() {
 	meter := telemetry.Meter()
 
 	var err error
-	if autoArchiveSessions, err = meter.Int64Counter(
-		"ocman.auto_archive.sessions",
-		metric.WithDescription("Sessions archived by the auto-archive background loop."),
-		metric.WithUnit("{session}"),
-	); err != nil {
-		log.WithError(err).Warn("creating auto_archive.sessions counter")
-	}
-
-	if autoArchiveRuns, err = meter.Int64Counter(
-		"ocman.auto_archive.runs",
-		metric.WithDescription("Auto-archive loop iterations."),
-		metric.WithUnit("{run}"),
-	); err != nil {
-		log.WithError(err).Warn("creating auto_archive.runs counter")
-	}
-
 	if projectsIndexRefreshDuration, err = meter.Float64Histogram(
 		"ocman.projects_index.refresh.duration",
 		metric.WithDescription("Time spent refreshing the projects index."),

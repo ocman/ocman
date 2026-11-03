@@ -47,7 +47,6 @@ import (
 )
 
 const (
-	autoArchiveInterval  = 24 * time.Hour
 	projectsScanInterval = 5 * time.Minute
 )
 

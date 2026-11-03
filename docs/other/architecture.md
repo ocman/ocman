@@ -368,7 +368,7 @@ flowchart TD
     Server --> AutoApprove[internal/autoapprove<br/>session rules, safe-command cache + Judge seam]
     Browser -->|/permissions: session policy + request history| AutoApprove
     AutoApprove -->|per-permission backend selection| Judge[OpenCode judge, else<br/>claude -p haiku judge]
-    Server -->|"modules(): routes, Start, Launch, Run, Close, Finalize, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, favorites, projectsmod, tmuxmod, filesystem, projectforge, previews, analytics, termmod, gitmod, remotesmod, platformsettings]
+    Server -->|"modules(): routes, Start, Launch, Run, Close, Finalize, tools, Bus"| Modules[feature modules<br/>autoapprove, queuemod, factorymod, pluginsmod, routines, sessiontitles, webhook, artifacts, inbox, sharing, notifications, snooze, favorites, projectsmod, autoarchive, tmuxmod, filesystem, projectforge, previews, analytics, termmod, gitmod, remotesmod, platformsettings]
     Modules --> Lifecycle[internal/sessionlifecycle<br/>prepare, start + direct actions]
     Lifecycle -->|mutations + first delivery callback| Sessions[internal/sessionsvc<br/>shared agent mutations]
     Modules -->|"queuemod: bounded preparation, then admitted delivery"| Sessions
@@ -565,6 +565,12 @@ flowchart TD
 - **Favorites** (`internal/favorites`). Owns `/api/favorites`, the per-platform
   favorite models. The platform registry check is injected from core; the
   `model_favorite` rows remain in `internal/state`.
+- **Auto-archive** (`internal/autoarchive`). Owns `/api/settings/auto-archive`
+  and a joined daily worker, started with the other session consumers, that
+  archives sessions and local projects inactive beyond the configured TTL. A
+  slow platform read is cut off after ten seconds so the project pass still
+  runs; recent unarchives and concurrent snoozes are preserved. Composer upload
+  cleanup is its own joined daily worker (`composerattachments.Sweeper`).
 - **Project forge** (`internal/projectforge`). The PRs & Issues pane:
   `/api/project/{upstreams,prs,issues,pr-checks,pr-mergeability,forge-user,
   handle}` and `/api/settings/prompt-templates`. Every `/api/project/*` route

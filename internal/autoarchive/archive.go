@@ -1,4 +1,4 @@
-package server
+package autoarchive
 
 import (
 	"context"
@@ -9,40 +9,46 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/ocman/ocman/internal/hostsvc"
-	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/telemetry"
 )
 
-// autoArchivePlatformTimeout bounds one platform's inactive-session read so a
-// slow remote cannot starve local maintenance; a variable for tests.
-var autoArchivePlatformTimeout = 10 * time.Second
+// Instruments degrade to no-ops when telemetry is disabled.
+var archivedSessions, runs metric.Int64Counter
 
-// autoArchiveTickFn is the per-tick body of runAutoArchiveLoop, lifted
-// to a package-level variable so tests can inject a panicking
-// implementation (FR-11) and assert the loop survives.
-var autoArchiveTickFn = func(ctx context.Context, s *Server) {
-	s.autoArchiveInactiveSessions(ctx)
-	s.autoArchiveInactiveProjects(ctx)
-	if ctx.Err() != nil {
-		return
+func init() {
+	meter := telemetry.Meter()
+	var err error
+	if archivedSessions, err = meter.Int64Counter(
+		"ocman.auto_archive.sessions",
+		metric.WithDescription("Sessions archived by the auto-archive background loop."),
+		metric.WithUnit("{session}"),
+	); err != nil {
+		log.WithError(err).Warn("creating auto_archive.sessions counter")
 	}
-	if removed := sweepComposerAttachments(composerAttachmentRoot(), composerAttachmentTTL); removed > 0 {
-		log.WithField("removed", removed).Info("swept expired composer attachments")
+	if runs, err = meter.Int64Counter(
+		"ocman.auto_archive.runs",
+		metric.WithDescription("Auto-archive loop iterations."),
+		metric.WithUnit("{run}"),
+	); err != nil {
+		log.WithError(err).Warn("creating auto_archive.runs counter")
 	}
 }
 
-func (s *Server) runAutoArchiveLoop(ctx context.Context) {
-	module.Every(ctx, "auto-archive", autoArchiveInterval, func(ctx context.Context) { autoArchiveTickFn(ctx, s) })
+func cutoffFor(settings Settings) int64 {
+	return time.Now().Add(-time.Duration(settings.TTLDays) * 24 * time.Hour).UnixMilli()
 }
 
-func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+// ArchiveSessions archives every available platform's sessions inactive
+// for longer than the configured TTL, sparing sessions the user unarchived
+// since the cutoff.
+func (m *Module) ArchiveSessions(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, passTimeout)
 	defer cancel()
 	// Each tick has an independent span while retaining server cancellation.
 	ctx, span := telemetry.Tracer().Start(ctx, "ocman.auto_archive.tick")
 	defer span.End()
-	settings, err := s.getAutoArchiveSettings(ctx)
+	settings, err := m.Settings(ctx)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("reading auto-archive settings")
@@ -51,14 +57,14 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 	if !settings.Enabled {
 		return
 	}
-	cutoff := time.Now().Add(-time.Duration(settings.TTLDays) * 24 * time.Hour).UnixMilli()
+	cutoff := cutoffFor(settings)
 
-	if autoArchiveRuns != nil {
-		autoArchiveRuns.Add(ctx, 1)
+	if runs != nil {
+		runs.Add(ctx, 1)
 	}
 
 	archivedCount := 0
-	archived, err := s.stateDB.ArchivedSessions(ctx)
+	archived, err := m.d.Store.ArchivedSessions(ctx)
 	if err != nil {
 		log.WithError(err).Error("listing archived sessions")
 		return
@@ -68,18 +74,18 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 	// inactivity cutoff. Without this the loop — which runs at boot and
 	// re-derives archive state purely from inactivity — silently re-hid
 	// anything unarchived just to look at it.
-	keep, err := s.stateDB.SessionsUnarchivedSince(ctx, cutoff)
+	keep, err := m.d.Store.SessionsUnarchivedSince(ctx, cutoff)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("listing recently unarchived sessions")
 		keep = nil
 	}
 
-	for _, adapter := range s.registry.Platforms() {
+	for _, adapter := range m.d.Platforms() {
 		if !adapter.Available(ctx) {
 			continue
 		}
-		rpcCtx, cancelRPC := context.WithTimeout(ctx, autoArchivePlatformTimeout)
+		rpcCtx, cancelRPC := context.WithTimeout(ctx, m.platformTimeout)
 		sessions, err := adapter.SessionsInactiveBefore(rpcCtx, cutoff)
 		cancelRPC()
 		if err != nil {
@@ -93,7 +99,7 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 			if _, ok := archived[key]; ok || keep[key] {
 				continue
 			}
-			inserted, err := s.stateDB.AutoArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated, cutoff)
+			inserted, err := m.d.Store.AutoArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated, cutoff)
 			if err != nil {
 				span.RecordError(err)
 				log.WithFields(log.Fields{
@@ -107,8 +113,8 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 				continue
 			}
 			archivedCount++
-			if autoArchiveSessions != nil {
-				autoArchiveSessions.Add(ctx, 1, metric.WithAttributes(
+			if archivedSessions != nil {
+				archivedSessions.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("platform", string(adapter.ID())),
 				))
 			}
@@ -126,20 +132,20 @@ func (s *Server) autoArchiveInactiveSessions(ctx context.Context) {
 	}).Info("auto-archive pass completed")
 }
 
-// autoArchiveInactiveProjects archives local projects whose most recent
-// session activity is older than the configured auto-archive TTL. Archive state
-// is keyed by folded project root; already-archived roots are skipped.
-// A project auto-unarchives later (in applyProjectArchiveState) once it
-// sees fresh activity, so this is safe to re-run.
-func (s *Server) autoArchiveInactiveProjects(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+// ArchiveProjects archives local projects whose most recent session
+// activity is older than the configured TTL. Archive state is keyed by
+// folded project root; already-archived roots are skipped. A project
+// auto-unarchives later once it sees fresh activity, so this is safe to
+// re-run.
+func (m *Module) ArchiveProjects(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, passTimeout)
 	defer cancel()
-	if s.stateDB == nil || !s.hasStoredHistory() {
+	if m.d.Store == nil || !m.d.StoredHistory() {
 		return
 	}
 	ctx, span := telemetry.Tracer().Start(ctx, "ocman.auto_archive_projects.tick")
 	defer span.End()
-	settings, err := s.getAutoArchiveSettings(ctx)
+	settings, err := m.Settings(ctx)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("reading auto-archive settings")
@@ -148,34 +154,35 @@ func (s *Server) autoArchiveInactiveProjects(ctx context.Context) {
 	if !settings.Enabled {
 		return
 	}
-	cutoff := time.Now().Add(-time.Duration(settings.TTLDays) * 24 * time.Hour).UnixMilli()
+	cutoff := cutoffFor(settings)
 
-	projects, err := s.router().Local().Projects(ctx)
+	local := m.d.Local()
+	projects, err := local.Projects(ctx)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("listing projects for auto-archive")
 		return
 	}
 
-	archived, err := s.stateDB.ArchivedProjects(ctx)
+	archived, err := m.d.Store.ArchivedProjects(ctx)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("listing archived projects for auto-archive")
 		return
 	}
 
-	// Newest activity per folded root. This loop only sees the hub's own
-	// projects (router().Local()), so every key is the local host.
+	// Newest activity per folded root. This pass only sees this machine's
+	// own projects, so every key is the local host.
 	newest := map[string]int64{}
 	for _, p := range projects {
-		root := projectRootForDirectory(p.Directory)
+		root := state.ProjectRootForDirectory(p.Directory)
 		if p.LastUsed > newest[root] {
 			newest[root] = p.LastUsed
 		}
 	}
 
 	// Same guard as sessions: don't undo a deliberate unarchive.
-	keep, err := s.stateDB.ProjectsUnarchivedSince(ctx, cutoff)
+	keep, err := m.d.Store.ProjectsUnarchivedSince(ctx, cutoff)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("listing recently unarchived projects")
@@ -196,12 +203,12 @@ func (s *Server) autoArchiveInactiveProjects(ctx context.Context) {
 		}
 		// Best-effort, same as the manual archive handler: a dead tmux
 		// session or missing directory must not block auto-archiving.
-		if err := s.router().Local().StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
+		if err := local.StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
 			span.RecordError(err)
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
 				Warn("stopping opencode for auto-archived project")
 		}
-		if err := s.stateDB.ArchiveProject(ctx, state.LocalRemoteID, root); err != nil {
+		if err := m.d.Store.ArchiveProject(ctx, state.LocalRemoteID, root); err != nil {
 			span.RecordError(err)
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
 				Error("auto-archiving inactive project")

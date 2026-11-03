@@ -15,6 +15,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/ocman/ocman/internal/autoarchive"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
@@ -868,7 +869,7 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	}
 	ingestRaw(t, srv, 2)
 
-	srv.autoArchiveInactiveSessions(t.Context())
+	srv.autoArchiveModule().ArchiveSessions(t.Context())
 
 	archived, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
@@ -895,11 +896,11 @@ func TestAutoArchiveUsesConfiguredTTL(t *testing.T) {
 		t.Fatalf("seeding session: %v", err)
 	}
 	ingestRaw(t, srv, 1)
-	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: true, TTLDays: 3}); err != nil {
+	if err := srv.autoArchiveModule().SetSettings(t.Context(), autoarchive.Settings{Enabled: true, TTLDays: 3}); err != nil {
 		t.Fatal(err)
 	}
 
-	srv.autoArchiveInactiveSessions(t.Context())
+	srv.autoArchiveModule().ArchiveSessions(t.Context())
 
 	archived, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
@@ -920,13 +921,13 @@ func TestAutoArchiveCanBeDisabled(t *testing.T) {
 	); err != nil {
 		t.Fatalf("seeding session: %v", err)
 	}
-	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: false, TTLDays: 7}); err != nil {
+	if err := srv.autoArchiveModule().SetSettings(t.Context(), autoarchive.Settings{Enabled: false, TTLDays: 7}); err != nil {
 		t.Fatal(err)
 	}
 	opencodeplatform.ResetCaches()
 
-	srv.autoArchiveInactiveSessions(t.Context())
-	srv.autoArchiveInactiveProjects(t.Context())
+	srv.autoArchiveModule().ArchiveSessions(t.Context())
+	srv.autoArchiveModule().ArchiveProjects(t.Context())
 
 	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
@@ -960,12 +961,12 @@ func TestAutoArchiveProjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seeding sessions: %v", err)
 	}
-	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: true, TTLDays: 3}); err != nil {
+	if err := srv.autoArchiveModule().SetSettings(t.Context(), autoarchive.Settings{Enabled: true, TTLDays: 3}); err != nil {
 		t.Fatal(err)
 	}
 	opencodeplatform.ResetCaches()
 
-	srv.autoArchiveInactiveProjects(t.Context())
+	srv.autoArchiveModule().ArchiveProjects(t.Context())
 
 	archived, err := srv.stateDB.ArchivedProjects(t.Context())
 	if err != nil {
@@ -1005,8 +1006,8 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 	}
 
 	// ocman restarts for an unrelated reason; both loops run at boot.
-	srv.autoArchiveInactiveSessions(t.Context())
-	srv.autoArchiveInactiveProjects(t.Context())
+	srv.autoArchiveModule().ArchiveSessions(t.Context())
+	srv.autoArchiveModule().ArchiveProjects(t.Context())
 
 	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {

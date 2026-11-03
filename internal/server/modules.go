@@ -9,6 +9,7 @@ import (
 	"github.com/ocman/ocman/internal/agentui"
 	"github.com/ocman/ocman/internal/analytics"
 	"github.com/ocman/ocman/internal/artifacts"
+	"github.com/ocman/ocman/internal/composerattachments"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/factorymod"
 	"github.com/ocman/ocman/internal/hostsvc"
@@ -65,7 +66,7 @@ func (s *Server) modules() []module.Module {
 	if m := s.sharingModule(); m != nil {
 		mods = append(mods, m)
 	}
-	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.platformSettingsModule(), s.favoritesModule(), s.projectsModule())
+	mods = append(mods, s.notificationsModule(), s.snoozeModule(), s.autoArchiveModule(), composerattachments.NewSweeper(), s.platformSettingsModule(), s.favoritesModule(), s.projectsModule())
 	if recovery := s.sessionRecoveryModule(); recovery != nil {
 		mods = append(mods, recovery)
 	}

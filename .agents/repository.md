@@ -44,6 +44,7 @@ Read [remotes-and-forges.md](remotes-and-forges.md) for ownership rules.
 | `internal/permissions`, `internal/autoapprove` | Inherited rules, judging, provenance and pending-prompt/watch lifetime. |
 | `internal/snooze` | Snooze route and joined wake worker, checked on startup and every minute independently of auto-archive. Archive persistence stays in state. |
 | `internal/favorites` | Per-platform model favorites routes. Rows stay in state. |
+| `internal/autoarchive`, `internal/composerattachments` | Auto-archive settings route and joined daily session/project worker; upload storage and its daily sweep worker. Archive rows stay in state. |
 | `internal/db`, `internal/state`, `internal/sqliteutil` | Read-only OpenCode queries, writable ocman state and shared SQLite file hardening and pool setup. |
 | `internal/statev2`, `internal/conversationingest` | Durable owner/instance-scoped session reads, conversation history, indexed accounting, ingestion readiness and read-your-writes acknowledgements. Canonical adapters never fall back to native history for persisted reads. |
 | `internal/sidebar` | Compact session-list queries over the history projection, read-only catalogue/user-state joins and generation-scoped event-cache observations. No request-time accounting or platform RPCs. |

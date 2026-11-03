@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ocman/ocman/internal/composerattachments"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 )
@@ -59,7 +60,7 @@ func TestSessionAttachmentSavesOnExplicitOwner(t *testing.T) {
 	if owner.request.Directory != "/repo" || owner.request.SessionID != "s1" || local.data != nil {
 		t.Fatalf("wrong owner: %+v local bytes=%q", owner.request, local.data)
 	}
-	if _, err := os.Stat(composerAttachmentRoot()); !os.IsNotExist(err) {
+	if _, err := os.Stat(composerattachments.Root()); !os.IsNotExist(err) {
 		t.Fatalf("hub must not save attachment bytes: %v", err)
 	}
 }

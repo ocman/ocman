@@ -65,7 +65,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
 	s.worktreeInheritSetting().Mount(setting, "/api/settings/worktree-inherit-permissions")
-	s.autoArchiveSetting().Mount(setting, "/api/settings/auto-archive")
 	s.archiveResurfaceSetting().Mount(setting, "/api/settings/archive-resurface")
 	// New-session machine picker resolver (multi-remote support).
 	api.HandleFunc("POST /api/sessions/resolve-targets", auth(s.handleResolveTargets))
