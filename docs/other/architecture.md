@@ -897,8 +897,8 @@ flowchart TD
   password unless credentials were explicitly configured. Authentication rejection
   returns an error without launching a competing server; a busy service is awaited.
   The service is never persisted, stopped or restarted by ocman.
-  The local Host probes at startup and every minute, with four concurrent
-  probes and a two-second deadline per instance. Inventory reads use the validated
+  The local Host probes the machine runtime at startup and every minute, with
+  a two-second deadline. Inventory reads use the validated
   in-memory routing map without network probes. Definite failures revoke routing
   but retain cleanup handles; inconclusive probes preserve warm authorization.
   Launches and routing changes invalidate discovery immediately through the
@@ -907,10 +907,9 @@ flowchart TD
   Discovery state is an `opencode.Discovery` owned by each OpenCode adapter,
   so a backend reload's new adapter starts with no stale ports or affinity. The server joins the health worker
   before closing databases. `RestartProjectOpencode` stops and relaunches the tracked
-  instance. Owner-local replacement callbacks use the read-only
-  `ManagedRootReader.ManagedOpencodeRoot` view of that same main-checkout
-  identity, so external linked worktrees share membership and nested independent
-  repositories do not. This view neither launches a server nor requires a new RPC.
+  instance. Owner-local replacement callbacks use machine-wide membership:
+  replacing the shared OpenCode server affects sessions in every project and
+  worktree, without launching a server or requiring a new RPC.
   `ReloadOpencode` requires a readable, matching server-default v2
   location directory for managed servers. The registered service uses its
   registration and credentials instead, since ocman did not choose its launch
@@ -930,8 +929,8 @@ flowchart TD
   path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides how a project's
   opencode is hosted; the native-tmux implementation runs headless
   `opencode serve --port N` on `tmux -L ocman-agents -f /dev/null`,
-  isolated from the user's tmux server and configuration. V1 runs one server
-  per project; v2 uses one per machine, kept up by `RunMachineSupervisor`,
+  isolated from the user's tmux server and configuration. One server runs
+  per machine, kept up by `RunMachineSupervisor`,
   preferring the registered service on the default database. A managed launch
   whose health probe stays inconclusive is retained and probed again, not killed.
   The runtime uses an ocman-allocated loopback port and
@@ -1542,8 +1541,9 @@ flowchart TD
   creation is never automatically replayed, and a late completion cannot
   override a newer route or clear its draft. Prepare/start preserve the
   localhost host-control guard. Afterwards the host has the
-  `title` agent (its `small_model` or Haiku, in a temporary tool-denied
-  session) name the delimited task under branch-naming instructions and
+  `title` agent (its configured `small_model`, otherwise the agent's selected
+  model, in a temporary tool-denied session) name the delimited task under
+  branch-naming instructions and
   renames the branch to that slug in place; the session title is left to
   OpenCode's own first-message titling.
   Naming failures keep `session-<suffix>`. Non-repository directories and

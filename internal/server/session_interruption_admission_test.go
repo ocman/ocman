@@ -14,7 +14,7 @@ func TestStopScanAdmissionWindow(t *testing.T) {
 	for _, newSession := range []bool{false, true} {
 		for _, manual := range []bool{false, true} {
 			t.Run(fmt.Sprintf("new-session=%t/manual=%t", newSession, manual), func(t *testing.T) {
-				srv, raw := newInterruptionRawServer(t)
+				srv, raw := testServerWithRawDB(t)
 				defer raw.Close()
 				if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('a','/repo'),('z','/repo'); INSERT INTO message(id,session_id,time_created,data) VALUES ('a-old','a',1,'{"role":"assistant","finish":"stop"}'),('z-old','z',1,'{"role":"assistant","finish":"stop"}')`); err != nil {
 					t.Fatal(err)

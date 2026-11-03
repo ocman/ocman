@@ -31,7 +31,7 @@ func (p *interruptionLifecyclePlatform) SessionLifecycle(_ context.Context, id s
 }
 
 func TestReplacementUsesFreshBoundedLifecycleRead(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
 		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
 			{ID: "active", Directory: "/repo", Status: db.StatusBusy},
@@ -68,7 +68,7 @@ func TestReplacementUsesFreshBoundedLifecycleRead(t *testing.T) {
 }
 
 func TestReplacementDoesNotFilterCandidatesByCachedTerminalStatus(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
 		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "waiting", Directory: "/repo", Status: db.StatusWaiting}, {ID: "done", Directory: "/repo", Status: db.StatusDone}}},
 		lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
@@ -87,7 +87,7 @@ func TestReplacementDoesNotFilterCandidatesByCachedTerminalStatus(t *testing.T) 
 }
 
 func TestInterruptedTurnGetsDurableHistoryNotice(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: db.StatusInterrupted, LatestMessageID: "m1"}, nil
 	}})
@@ -111,7 +111,7 @@ func TestInterruptedTurnGetsDurableHistoryNotice(t *testing.T) {
 }
 
 func TestOlderHistoryPagesDoNotCreateInterruptionIdentities(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode"}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
 		return &platforms.SessionLifecycle{Status: db.StatusInterrupted, LatestMessageID: "current-turn"}, nil
 	}})
@@ -126,7 +126,7 @@ func TestOlderHistoryPagesDoNotCreateInterruptionIdentities(t *testing.T) {
 }
 
 func TestReplacementReadFailureDoesNotPersistPartialHistory(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	srv.broadcastHub = newBroadcastHub()
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
@@ -155,7 +155,7 @@ func TestReplacementReadFailureDoesNotPersistPartialHistory(t *testing.T) {
 }
 
 func TestReplacementSkipsCandidatesDeletedDuringEnumeration(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
 		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "deleted-judge", Directory: "/repo"}, {ID: "active", Directory: "/repo"}}},
 		lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
@@ -179,7 +179,7 @@ func TestReplacementSkipsCandidatesDeletedDuringEnumeration(t *testing.T) {
 }
 
 func TestReplacementPreparationDoesNotClaimConfirmedInterruption(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{
 		fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "active", Directory: "/repo"}}},
 		lifecycle: func(string) (*platforms.SessionLifecycle, error) {
@@ -196,7 +196,7 @@ func TestReplacementPreparationDoesNotClaimConfirmedInterruption(t *testing.T) {
 }
 
 func TestReplacementHistoryIsOwnerScopedAndSurvivesAbort(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
 		{ID: "active", Directory: "/projects/.worktrees/repo/a", Status: db.StatusBusy},
 		{ID: "other", Directory: "/projects/other", Status: db.StatusBusy},
@@ -244,7 +244,7 @@ func TestReplacementHistoryIsOwnerScopedAndSurvivesAbort(t *testing.T) {
 }
 
 func TestReplacementFindsFreshChildrenOmittedByDisplayList(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	if _, err := raw.Exec(`INSERT INTO session(id,directory,parent_id) VALUES ('parent','/repo',NULL), ('hidden-child','/repo','parent');
 		INSERT INTO message(id,session_id,data) VALUES ('child-turn','hidden-child','{"role":"assistant"}');
@@ -270,7 +270,7 @@ func TestReplacementFindsFreshChildrenOmittedByDisplayList(t *testing.T) {
 }
 
 func TestCompletedShellEnvelopeDoesNotGetInterruptionHistory(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	if _, err := raw.Exec(`
 		INSERT INTO session(id,directory) VALUES ('shell','/repo'), ('open-turn','/repo'), ('running-shell','/repo');
@@ -303,7 +303,7 @@ func TestCompletedShellEnvelopeDoesNotGetInterruptionHistory(t *testing.T) {
 }
 
 func TestConfirmationDropsCompletedTurnAndCapturesNewTurn(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo');
 		INSERT INTO message(id,session_id,time_created,data) VALUES ('old','s',100,'{"role":"assistant"}');
@@ -334,7 +334,7 @@ func TestConfirmationDropsCompletedTurnAndCapturesNewTurn(t *testing.T) {
 }
 
 func TestConfirmationDoesNotMarkTurnThatFinishedBeforeStop(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo');
 		INSERT INTO message(id,session_id,data) VALUES ('m','s','{"role":"assistant"}');

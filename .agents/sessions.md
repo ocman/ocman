@@ -74,7 +74,8 @@ Do not create a per-worktree tmux instance. See [platforms.md](platforms.md) for
 runtime sharing and `spec/worktree-sessions/` for design history.
 
 - Name a new worktree in the background through OpenCode's `title` agent using
-  `small_model` or Haiku and delimited branch-naming instructions. Slug the title
+  `small_model` when configured, otherwise the title agent's selected model,
+  and delimited branch-naming instructions. Slug the title
   into `git branch -m`; keep the path. Failure preserves the provisional name.
   Keep the session's default title for native first-message naming, not the
   branch name. Hide the helper session titled `(worktree-name subagent)`.
@@ -88,9 +89,6 @@ runtime sharing and `spec/worktree-sessions/` for design history.
   YOLO/custom modes that are not stored as approvals. Apply the child rules
   before first send. Inheritance snapshots at split, defaults on through
   `worktree.inherit_permissions`, and soft-fails without blocking launch.
-- Launch seeds `external_directory` in `OPENCODE_PERMISSION` for the project's
-  worktree root. Already-running instances lack that seed; runtime auto-approval
-  covers them.
 - Nested permission/question prompts resolve to the top-level ancestor through
   recursive `db.GetSessionParentIDs`, including native or deeply nested subagents,
   so the visible session row remains actionable.

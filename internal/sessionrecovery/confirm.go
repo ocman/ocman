@@ -122,10 +122,7 @@ func (s *Service) confirmReplacementBatch(ctx context.Context, root string, adap
 			member, known = *candidate.Member, true
 		}
 		if !known {
-			resolved, err := s.ReplacementMembership(ctx, root, []db.Session{{Directory: candidate.Directory}})
-			if err != nil {
-				return err
-			}
+			resolved := s.ReplacementMembership([]db.Session{{Directory: candidate.Directory}})
 			member = resolved[candidate.Directory]
 			membershipCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 			err = s.deps.State.CheckpointReplacementMembership(membershipCtx, "opencode", root, candidate.Directory, member)

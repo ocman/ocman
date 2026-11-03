@@ -23,7 +23,7 @@ func (c injectedDeadlineContext) Err() error {
 }
 
 func TestConfirmationDrainsAllPagesWithoutCountCutoff(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	sessions := make([]db.Session, 1025)
 	for i := range sessions {
 		sessions[i] = db.Session{ID: fmt.Sprintf("s%04d", i), Directory: "/repo"}
@@ -55,7 +55,7 @@ func TestConfirmationDrainsAllPagesWithoutCountCutoff(t *testing.T) {
 }
 
 func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	path := statetest.At(t, filepath.Join(t.TempDir(), "membership-progress.db"), ModuleSchemas()...)
 	durable, err := state.Open(path, ModuleSchemas()...)
 	if err != nil {
@@ -108,7 +108,7 @@ func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cancellation", true: "deadline"}[deadline], func(t *testing.T) {
-			srv, reg := newInterruptionTestServer(t)
+			srv, reg := newSessionsTestServer(t)
 			path := statetest.At(t, filepath.Join(t.TempDir(), "progress-state.db"), ModuleSchemas()...)
 			durable, err := state.Open(path, ModuleSchemas()...)
 			if err != nil {

@@ -90,9 +90,9 @@ func TestHistoryUsesPlatformAndInjectionSeams(t *testing.T) {
 func TestMembershipIsMachineWide(t *testing.T) {
 	s := New(Deps{})
 	sessions := []db.Session{{Directory: "/checkout"}, {Directory: "/other"}}
-	members, err := s.ReplacementMembership(t.Context(), "machine", sessions)
-	if err != nil || len(members) != 2 || !members["/checkout"] || !members["/other"] {
-		t.Fatalf("membership=%v err=%v", members, err)
+	members := s.ReplacementMembership(sessions)
+	if len(members) != 2 || !members["/checkout"] || !members["/other"] {
+		t.Fatalf("membership=%v", members)
 	}
 }
 

@@ -40,10 +40,7 @@ func (s *Service) RecordOpencodeReplacement(ctx context.Context, root, reason st
 	if err != nil {
 		return err
 	}
-	members, err := s.ReplacementMembership(ctx, root, sessions)
-	if err != nil {
-		return err
-	}
+	members := s.ReplacementMembership(sessions)
 	pending := make(map[string]state.SessionInterruption)
 	at := time.Now().UnixMilli()
 	for _, session := range sessions {

@@ -15,7 +15,7 @@ import (
 )
 
 func TestStopSnapshotRefreshesAdvancedIdentityAndLiveStatusTogether(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo'); INSERT INTO message(id,session_id,time_created,data) VALUES ('old','s',1,'{"role":"assistant","finish":"stop"}')`); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestStopSnapshotRefreshesAdvancedIdentityAndLiveStatusTogether(t *testing.T
 }
 
 func TestStopSnapshotContinuousAdvanceFailsBeforeStop(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo'); INSERT INTO message(id,session_id,time_created,data) VALUES ('m0','s',0,'{"role":"user"}')`); err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestStopSnapshotContinuousAdvanceFailsBeforeStop(t *testing.T) {
 }
 
 func TestStoppingCrashRecoversOriginalRuntimeAndAbortEvidence(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	path := statetest.At(t, filepath.Join(t.TempDir(), "crash-state.db"), ModuleSchemas()...)
 	durable, err := state.Open(path, ModuleSchemas()...)
@@ -167,7 +167,7 @@ func TestStoppingCallbacksNilAndValidatedAliveRelease(t *testing.T) {
 	if err := (&Server{}).cancelOpencodeReplacementStop(t.Context(), "/repo"); err != nil {
 		t.Fatal(err)
 	}
-	srv, _ := newInterruptionTestServer(t)
+	srv, _ := newSessionsTestServer(t)
 	if err := srv.stateDB.PrepareSessionInterruptions(t.Context(), "opencode", "/repo", nil); err != nil {
 		t.Fatal(err)
 	}

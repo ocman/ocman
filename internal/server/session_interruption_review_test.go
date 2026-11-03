@@ -34,7 +34,7 @@ func replacementReviewHost(t *testing.T, srv *Server, rt *replacementReviewRunti
 func TestReplacementReviewSettledBaseline(t *testing.T) {
 	for _, status := range []db.SessionStatus{db.StatusDone, db.StatusWaiting} {
 		t.Run(string(status), func(t *testing.T) {
-			srv, raw := newInterruptionRawServer(t)
+			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
 			_, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo');
 				INSERT INTO message(id,session_id,data) VALUES ('m','s','{"role":"assistant"}');

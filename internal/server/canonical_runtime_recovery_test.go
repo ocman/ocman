@@ -13,7 +13,7 @@ import (
 )
 
 func TestRuntimeReplacementPersistsOnlyCanonicalRecoveryCandidates(t *testing.T) {
-	s, raw := newInterruptionRawServer(t)
+	s, raw := testServerWithRawDB(t)
 	if _, err := raw.Exec(`INSERT INTO session(id,project_id,title,directory,time_created,time_updated) VALUES('runtime-native','project','Runtime','/repo',1,1)`); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestRuntimeReplacementPersistsOnlyCanonicalRecoveryCandidates(t *testing.T)
 }
 
 func TestRuntimeRecoveryAdoptsUncataloguedHiddenOpenCodeHelper(t *testing.T) {
-	s, raw := newInterruptionRawServer(t)
+	s, raw := testServerWithRawDB(t)
 	if _, err := raw.Exec(`INSERT INTO session(id,project_id,title,directory,time_created,time_updated) VALUES('hidden-runtime','project','(title subagent)','/repo',1,1)`); err != nil {
 		t.Fatal(err)
 	}

@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
-	"testing"
 
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
@@ -16,14 +14,6 @@ type runtimeLifecyclePlatform struct {
 
 func registerRuntimeLifecycle(srv *Server, p *interruptionLifecyclePlatform) {
 	srv.registry.Register(&runtimeLifecyclePlatform{p, srv.db})
-}
-
-func newInterruptionTestServer(t *testing.T) (*Server, *platforms.Registry) {
-	return newSessionsTestServer(t)
-}
-
-func newInterruptionRawServer(t *testing.T) (*Server, *sql.DB) {
-	return testServerWithRawDB(t)
 }
 
 // beginStoredReplacementStop runs the BeforeStop hook with the cleanup handle

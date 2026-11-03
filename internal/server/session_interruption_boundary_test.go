@@ -19,7 +19,7 @@ import (
 func TestStopBoundaryAdvancingAborts(t *testing.T) {
 	for _, kind := range []string{"user-to-assistant", "assistant-to-assistant", "new-turn-during-preparation", "new-session-during-preparation", "new-session-during-stop"} {
 		t.Run(kind, func(t *testing.T) {
-			srv, raw := newInterruptionRawServer(t)
+			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
 			statuses := map[string]db.SessionStatus{"s": db.StatusBusy}
 			role := "assistant"
@@ -78,7 +78,7 @@ func TestStopBoundaryAdvancingAborts(t *testing.T) {
 func TestStopBoundaryExcludesManualAbortDuringPreparation(t *testing.T) {
 	for _, laggingLive := range []bool{false, true} {
 		t.Run(fmt.Sprintf("lagging-live=%t", laggingLive), func(t *testing.T) {
-			srv, raw := newInterruptionRawServer(t)
+			srv, raw := testServerWithRawDB(t)
 			defer raw.Close()
 			statuses := map[string]db.SessionStatus{"s": db.StatusBusy}
 			if _, err := raw.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo'); INSERT INTO message(id,session_id,data) VALUES ('old','s','{"role":"assistant","finish":"tool-calls"}')`); err != nil {
@@ -110,7 +110,7 @@ func TestStopBoundaryExcludesManualAbortDuringPreparation(t *testing.T) {
 }
 
 func TestStopBoundaryRevalidationFailurePreventsPartialEvidence(t *testing.T) {
-	srv, reg := newInterruptionTestServer(t)
+	srv, reg := newSessionsTestServer(t)
 	readErr := errors.New("pre-stop lifecycle unavailable")
 	fail := false
 	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{{ID: "s", Directory: "/repo"}}}, lifecycle: func(string) (*platforms.SessionLifecycle, error) {
@@ -138,7 +138,7 @@ func TestStopBoundaryRevalidationFailurePreventsPartialEvidence(t *testing.T) {
 }
 
 func TestStopBoundaryAdvancingAbortRecovery(t *testing.T) {
-	srv, raw := newInterruptionRawServer(t)
+	srv, raw := testServerWithRawDB(t)
 	defer raw.Close()
 	path := statetest.At(t, filepath.Join(t.TempDir(), "boundary-state.db"), ModuleSchemas()...)
 	durable, err := state.Open(path, ModuleSchemas()...)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,6 +28,9 @@ func (*emptyProjectRuntime) Probe(context.Context, *ocruntime.Instance) error { 
 func (*emptyProjectRuntime) Stop(context.Context, *ocruntime.Instance) error  { return nil }
 
 func TestStartSessionEmptyProjectLaunchesInstance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OPENCODE_DB", "")
 	dir := t.TempDir()
 	rt := &emptyProjectRuntime{}
 	srv, reg := newSessionsTestServer(t)
@@ -54,5 +58,8 @@ func TestStartSessionEmptyProjectLaunchesInstance(t *testing.T) {
 	}
 	if rt.root == "" {
 		t.Fatal("empty project did not launch an instance")
+	}
+	if !strings.HasPrefix(rt.root, home+string(filepath.Separator)) {
+		t.Fatalf("runtime root %q escapes isolated HOME %q", rt.root, home)
 	}
 }

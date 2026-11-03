@@ -12,17 +12,10 @@ import (
 
 var _ platforms.NativeQueue = (*Adapter)(nil)
 
-// v2Port resolves the server holding the session's native follow-up queue
-// (its inbox).
-func (a *Adapter) v2Port(ctx context.Context, sessionID string) (string, error) {
-	port, _, err := a.resolvePortCtx(ctx, sessionID)
-	return port, err
-}
-
 // NativeQueued lists the prompts OpenCode v2 holds for the session's
 // next idle boundary (inbox items with delivery "queue").
 func (a *Adapter) NativeQueued(ctx context.Context, sessionID string) ([]platforms.NativeQueuedMessage, error) {
-	port, err := a.v2Port(ctx, sessionID)
+	port, _, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +54,7 @@ func (a *Adapter) NativeQueued(ctx context.Context, sessionID string) ([]platfor
 
 // CancelNativeQueued drops a held prompt from the session's inbox.
 func (a *Adapter) CancelNativeQueued(ctx context.Context, req platforms.CancelNativeQueuedRequest) error {
-	port, err := a.v2Port(ctx, req.SessionID)
+	port, _, err := a.resolvePortCtx(ctx, req.SessionID)
 	if err != nil {
 		return err
 	}

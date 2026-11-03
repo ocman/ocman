@@ -9,7 +9,7 @@ import (
 )
 
 func TestRecoveryHooksResolveCurrentServerDependencies(t *testing.T) {
-	srv, _ := newInterruptionTestServer(t)
+	srv, _ := newSessionsTestServer(t)
 	// Host callbacks capture these methods before startup finishes wiring the
 	// server. Their service must resolve the database and adapter on invocation.
 	record, confirm := srv.recordOpencodeReplacement, srv.confirmOpencodeReplacement

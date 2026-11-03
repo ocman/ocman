@@ -4,7 +4,6 @@ import (
 	"context"
 	"maps"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ocman/ocman/internal/hostsvc"
@@ -44,29 +43,13 @@ func (h *Host) RefreshManagedOpenCodePorts(ctx context.Context) map[string]strin
 			}
 		}
 	}
-	var probes sync.WaitGroup
-	var failed atomic.Bool
-	// ponytail: four concurrent probes; no per-runtime scheduling state.
-	slots := make(chan struct{}, 4)
-scan:
-	for root, candidate := range candidates {
-		if root != machineRoot() {
-			continue
+	root := machineRoot()
+	if candidate, ok := candidates[root]; ok {
+		if ctx.Err() != nil || !h.refreshInventoryCandidate(ctx, root, candidate) {
+			return nil
 		}
-		select {
-		case slots <- struct{}{}:
-		case <-ctx.Done():
-			break scan
-		}
-		probes.Go(func() {
-			defer func() { <-slots }()
-			if !h.refreshInventoryCandidate(ctx, root, candidate) {
-				failed.Store(true)
-			}
-		})
 	}
-	probes.Wait()
-	if ctx.Err() != nil || failed.Load() {
+	if ctx.Err() != nil {
 		return nil
 	}
 	return h.ManagedOpenCodePorts(ctx)
