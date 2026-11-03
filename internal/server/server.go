@@ -30,6 +30,7 @@ import (
 	"github.com/ocman/ocman/internal/platformsettings"
 	"github.com/ocman/ocman/internal/pluginsmod"
 	"github.com/ocman/ocman/internal/projectforge"
+	"github.com/ocman/ocman/internal/projectsmod"
 	"github.com/ocman/ocman/internal/prworkflow"
 	"github.com/ocman/ocman/internal/queuemod"
 	"github.com/ocman/ocman/internal/remote"
@@ -180,6 +181,7 @@ type Server struct {
 	analyticsMod       lazy[*analytics.Module]
 
 	projectForgeMod     lazy[*projectforge.Module]
+	projectsMod         lazy[*projectsmod.Module]
 	prWorkflowMod       lazy[*prworkflow.Module]
 	sourceControlMod    lazy[*sourcecontrol.Module]
 	previewsMod         lazy[*previews.Module]

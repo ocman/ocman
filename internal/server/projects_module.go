@@ -10,27 +10,29 @@ import (
 	"github.com/ocman/ocman/internal/state"
 )
 
-// projectsModule is stateless, so it is rebuilt on each call. The remote
-// inventory, owner resolution and queue are read at call time.
+// projectsModule shares one module across registry and listing callers. The
+// remote inventory, owner resolution and queue are read at call time.
 func (s *Server) projectsModule() *projectsmod.Module {
-	return projectsmod.NewModule(projectsmod.Deps{
-		Store: s.stateDB,
-		Local: func() hostsvc.Host { return s.router().Local() },
-		ResolveOwner: func(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool) {
-			return s.resolveOwner(w, dir, remoteID)
-		},
-		RemoteProjects: func() []db.ProjectStats {
-			if s.remoteProjectsFn != nil {
-				return s.remoteProjectsFn()
-			}
-			if s.remotes != nil {
-				return s.remotes.RemoteProjects()
-			}
-			return nil
-		},
-		Broadcast:           s.broadcastGlobalEvent,
-		DefaultAgent:        s.defaultAgent,
-		ForgetProjectModels: func(dir string) { s.queueModule().ForgetProjectModels(dir) },
+	return s.projectsMod.get(func() *projectsmod.Module {
+		return projectsmod.NewModule(projectsmod.Deps{
+			Store: s.stateDB,
+			Local: func() hostsvc.Host { return s.router().Local() },
+			ResolveOwner: func(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool) {
+				return s.resolveOwner(w, dir, remoteID)
+			},
+			RemoteProjects: func() []db.ProjectStats {
+				if s.remoteProjectsFn != nil {
+					return s.remoteProjectsFn()
+				}
+				if s.remotes != nil {
+					return s.remotes.RemoteProjects()
+				}
+				return nil
+			},
+			Broadcast:           s.broadcastGlobalEvent,
+			DefaultAgent:        s.defaultAgent,
+			ForgetProjectModels: func(dir string) { s.queueModule().ForgetProjectModels(dir) },
+		})
 	})
 }
 

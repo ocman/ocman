@@ -96,8 +96,5 @@ func (m *Module) List(ctx context.Context) ([]db.ProjectStats, error) {
 	sort.SliceStable(projects, func(i, j int) bool {
 		return projects[i].LastUsed > projects[j].LastUsed
 	})
-	if projects == nil {
-		projects = []db.ProjectStats{} // [] not null for the frontend
-	}
 	return projects, nil
 }

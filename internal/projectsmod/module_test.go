@@ -72,6 +72,18 @@ func (f *fixture) list(t *testing.T) []db.ProjectStats {
 	return out
 }
 
+func TestListEmptyReturnsArray(t *testing.T) {
+	f := newFixture(t)
+	projects, err := f.m.List(context.Background())
+	if err != nil || projects == nil || len(projects) != 0 {
+		t.Fatalf("List = %#v, %v; want non-nil empty slice", projects, err)
+	}
+	rec := f.call(http.MethodGet, "/api/projects", "")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("GET /api/projects = %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestListFoldsWorktreesAndAppliesArchive(t *testing.T) {
 	f := newFixture(t,
 		db.ProjectStats{Directory: "/src/repo", SessionCount: 1, LastUsed: 100},
