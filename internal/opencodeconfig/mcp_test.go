@@ -93,18 +93,17 @@ func TestCheck(t *testing.T) {
 		{
 			name:           "configured and current",
 			file:           "opencode.json",
-			body:           `{"mcp":{"ocman":{"type":"remote","url":"` + want + `","enabled":true}}}`,
+			body:           `{"mcp":{"servers":{"ocman":{"type":"remote","url":"` + want + `","codemode":false}}}}`,
 			wantConfigured: true,
 			wantCurrent:    want,
 			wantEditable:   true,
 		},
 		{
-			name:           "enabled omitted counts as enabled",
-			file:           "opencode.json",
-			body:           `{"mcp":{"ocman":{"type":"remote","url":"` + want + `"}}}`,
-			wantConfigured: true,
-			wantCurrent:    want,
-			wantEditable:   true,
+			name:         "legacy flat entry needs migrating",
+			file:         "opencode.json",
+			body:         `{"mcp":{"ocman":{"type":"remote","url":"` + want + `"}}}`,
+			wantCurrent:  want,
+			wantEditable: true,
 		},
 		{
 			name:         "explicitly disabled",
@@ -185,18 +184,12 @@ func TestInstallCreatesConfig(t *testing.T) {
 	if !strings.Contains(string(raw), "https://opencode.ai/config.json") {
 		t.Errorf("fresh config should carry $schema: %s", raw)
 	}
-	// Without OpenCode v2 the entry is the flat mcp.<name> layout, with no
-	// codemode and no mcp.servers section.
 	doc, servers := readDoc(t, filepath.Join(dir, "opencode.json"))
-	var entry map[string]any
-	if err := json.Unmarshal(doc.MCP[ServerName], &entry); err != nil {
-		t.Fatalf("flat entry: %v", err)
+	if _, has := doc.MCP[ServerName]; has {
+		t.Errorf("install wrote a flat mcp.ocman entry: %s", doc.MCP[ServerName])
 	}
-	if _, has := entry["codemode"]; has {
-		t.Errorf("v1 entry carries codemode: %v", entry)
-	}
-	if len(servers) != 0 {
-		t.Errorf("v1 install wrote mcp.servers: %v", servers)
+	if entry := servers[ServerName]; entry["url"] != want || entry["codemode"] != false {
+		t.Errorf("mcp.servers.ocman = %v", entry)
 	}
 }
 
@@ -227,14 +220,18 @@ func TestInstallPreservesOtherKeysAndBacksUp(t *testing.T) {
 		t.Errorf("backup = %s, want the original bytes", backedUp)
 	}
 
+	type server struct {
+		Type     string   `json:"type"`
+		URL      string   `json:"url"`
+		Command  []string `json:"command"`
+		Disabled bool     `json:"disabled"`
+	}
 	var doc struct {
 		Schema string `json:"$schema"`
 		Theme  string `json:"theme"`
-		MCP    map[string]struct {
-			Type    string   `json:"type"`
-			URL     string   `json:"url"`
-			Command []string `json:"command"`
-			Enabled bool     `json:"enabled"`
+		MCP    struct {
+			Other   server            `json:"other"`
+			Servers map[string]server `json:"servers"`
 		} `json:"mcp"`
 	}
 	raw, err := os.ReadFile(path)
@@ -247,10 +244,10 @@ func TestInstallPreservesOtherKeysAndBacksUp(t *testing.T) {
 	if doc.Theme != "catppuccin" || doc.Schema == "" {
 		t.Errorf("unrelated keys lost: %+v", doc)
 	}
-	if other := doc.MCP["other"]; other.Type != "local" || len(other.Command) != 1 {
+	if other := doc.MCP.Other; other.Type != "local" || len(other.Command) != 1 {
 		t.Errorf("other MCP server mangled: %+v", other)
 	}
-	if ours := doc.MCP[ServerName]; ours.URL != want || ours.Type != "remote" || !ours.Enabled {
+	if ours := doc.MCP.Servers[ServerName]; ours.URL != want || ours.Type != "remote" || ours.Disabled {
 		t.Errorf("ocman entry = %+v", ours)
 	}
 }

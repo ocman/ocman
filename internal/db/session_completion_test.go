@@ -4,12 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"testing"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestV2SyntheticMessageDoesNotAdvanceUserPromptTimestamp(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	path := writeV2DB(t)
 	w, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -119,7 +116,6 @@ func TestSessionMetadataLookupDoesNotParseMessages(t *testing.T) {
 }
 
 func TestSessionCompletionTimestampV2(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	d, err := Open(writeV2DB(t))
 	if err != nil {
 		t.Fatal(err)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/ocman/ocman/internal/db"
-	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
 )
@@ -15,8 +14,6 @@ type Deps struct {
 	// Live status still comes from the platform's lifecycle reader.
 	Sessions                platforms.RuntimeSessionReader
 	Platform                func(platforms.ID) (platforms.Platform, bool)
-	ManagedRootReader       func() hostsvc.ManagedRootReader
-	MachineWide             func() bool
 	BroadcastSessionChanged func(string)
 	InjectHistoryNotice     func(string, string, int64, json.RawMessage, *[]db.Message, *[]db.Part)
 }

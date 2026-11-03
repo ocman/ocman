@@ -43,7 +43,6 @@ func TestV2ServerPasswordGeneratesOnceAndPersists(t *testing.T) {
 }
 
 func TestPinOpenCodeDB(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	absRel, _ := filepath.Abs("rel/oc.db")
 	for _, tc := range []struct {
 		name, env, path string
@@ -57,6 +56,7 @@ func TestPinOpenCodeDB(t *testing.T) {
 		{"custom path is exported absolute", "", "rel/oc.db", true, absRel, absRel},
 		{"user OPENCODE_DB is read when -db is not given", "/set/oc.db", db.DefaultDBPath(), false, "/set/oc.db", "/set/oc.db"},
 		{"explicit -db overrides OPENCODE_DB", "/set/oc.db", "/other.db", true, "/other.db", "/other.db"},
+		{"empty path falls back to the default", "", "", true, db.DefaultDBPath(), db.DefaultDBPath()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("OPENCODE_DB", tc.env)
@@ -73,19 +73,10 @@ func TestPinOpenCodeDB(t *testing.T) {
 	}
 }
 
-func TestPinOpenCodeDBKeepsV1ReaderSelection(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
-	t.Setenv("OPENCODE_DB", "/other.db")
-	if got := pinOpenCodeDB(db.DefaultDBPath(), false); got != db.DefaultDBPath() {
-		t.Fatalf("v1 reader = %q, want its -db selection", got)
-	}
-}
-
 func TestSharesServiceDB(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	def := db.DefaultDBPath()
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	if !sharesServiceDB(def) {
 		t.Error("default database does not share the service")
 	}
@@ -107,10 +98,6 @@ func TestSharesServiceDB(t *testing.T) {
 	}
 	if !sharesServiceDB(link) {
 		t.Error("a symlink to the default database does not share the service")
-	}
-	ocv2.SetInstalledV2(false)
-	if sharesServiceDB(def) {
-		t.Error("v1 shares the v2 service")
 	}
 }
 

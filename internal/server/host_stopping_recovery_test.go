@@ -10,7 +10,6 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -18,7 +17,6 @@ import (
 func TestProductionHostRecoversStoppingCrashWithoutInventory(t *testing.T) {
 	for _, restart := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ensure", true: "restart"}[restart], func(t *testing.T) {
-			t.Cleanup(ocv2.SetInstalledV2(true))
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv("OPENCODE_DB", "")
 			srv, raw := testServerWithRawDB(t)

@@ -6,13 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 
 	_ "modernc.org/sqlite"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // v2SchemaDDL is a minimal OpenCode v2 schema: the session_v2 columns the
@@ -35,13 +32,6 @@ CREATE TABLE session_message (
 
 // writeV2DB creates a v2 database file through a separate writable
 // connection and returns its path.
-
-// TestMain pins the installed-OpenCode check so no test runs the real
-// `opencode --version`.
-func TestMain(m *testing.M) {
-	ocv2.SetInstalledV2(false)
-	os.Exit(m.Run())
-}
 
 func writeV2DB(t *testing.T) string {
 	t.Helper()
@@ -100,7 +90,6 @@ func keys(m map[string]map[string]any) []string {
 }
 
 func TestOpenV2ViewsReadV2Schema(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	d, err := Open(writeV2DB(t))
 	if err != nil {
 		t.Fatal(err)
@@ -183,22 +172,7 @@ func TestOpenV2ViewsReadV2Schema(t *testing.T) {
 	}
 }
 
-func TestOpenV1InstalledSkipsV2Views(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
-	d, err := Open(writeV2DB(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	if d.V2() {
-		t.Fatal("V2() = true, want false")
-	}
-	if _, err := d.GetSessions(t.Context(), "", 0); err == nil {
-		t.Fatal("GetSessions succeeded without views on a v2-only schema; want an error")
-	}
-}
-
-func TestOpenV2InstalledOnV1SchemaDoesNotError(t *testing.T) {
+func TestOpenUnmigratedV1SchemaDoesNotError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode.db")
 	w, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -220,7 +194,6 @@ func TestOpenV2InstalledOnV1SchemaDoesNotError(t *testing.T) {
 	}
 	_ = w.Close()
 
-	defer ocv2.SetInstalledV2(true)()
 	d, err := Open(path)
 	if err != nil {
 		t.Fatal(err)

@@ -2,8 +2,6 @@ package local
 
 import (
 	"context"
-	"errors"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,7 +9,6 @@ import (
 
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/gitexec"
-	"github.com/ocman/ocman/internal/hostsvc"
 )
 
 func TestProjectOpencodeRootPlainDirectorySymlink(t *testing.T) {
@@ -30,40 +27,8 @@ func TestProjectOpencodeRootPlainDirectorySymlink(t *testing.T) {
 	}
 }
 
-func TestEnsureProjectOpencodeInvalidDirectoryDoesNotLaunch(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(file, nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, dir := range []string{"", file, filepath.Join(t.TempDir(), "missing")} {
-		t.Run(dir, func(t *testing.T) {
-			rt := &fakeRuntime{}
-			h := New(Deps{Runtime: rt})
-			if _, err := h.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir}); err == nil {
-				t.Fatal("invalid directory accepted")
-			}
-			if rt.launchCount() != 0 {
-				t.Fatal("invalid directory launched an instance")
-			}
-		})
-	}
-}
-
-func TestManagedOpencodeRootMissingDirectoryAndCancellation(t *testing.T) {
-	h := New(Deps{Runtime: &fakeRuntime{}})
-	dir := filepath.Join(t.TempDir(), "removed")
-	if _, err := h.ManagedOpencodeRoot(t.Context(), dir); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("missing directory was not classified: %v", err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, err := h.ManagedOpencodeRoot(ctx, dir); !errors.Is(err, context.Canceled) {
-		t.Fatalf("missing directory masked cancellation: %v", err)
-	}
-}
-
 // A bare repository has no main checkout: its linked worktree keys the
-// instance by its own root rather than the bare directory's parent.
+// project by its own root rather than the bare directory's parent.
 func TestProjectOpencodeRoot_BareRepoKeepsWorktreeRoot(t *testing.T) {
 	repo := initRepo(t)
 	base := t.TempDir()
@@ -82,13 +47,8 @@ func TestProjectOpencodeRoot_BareRepoKeepsWorktreeRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt := &fakeRuntime{}
-	h := New(Deps{Runtime: rt})
-	got, err := h.ManagedOpencodeRoot(context.Background(), wt)
+	got, err := projectOpencodeRoot(context.Background(), wt)
 	if err != nil || got != want {
 		t.Fatalf("projectOpencodeRoot = %q, %v; want %q", got, err, want)
-	}
-	if rt.launchCount() != 0 || rt.stopCount() != 0 {
-		t.Fatal("membership lookup mutated runtime")
 	}
 }

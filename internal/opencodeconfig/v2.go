@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // OpenCode v2 keeps MCP servers under mcp.servers.<name>. It still reads
@@ -128,9 +126,9 @@ func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool, token
 	return err
 }
 
-// EnsureEntry keeps an existing ocman entry usable. Under OpenCode v2 it
-// moves the entry to the v2 layout with Code Mode off, keeping its URL and
-// enabled state. Under either version it adds the bearer-token reference
+// EnsureEntry keeps an existing ocman entry usable. It moves the entry to
+// the v2 layout with Code Mode off, keeping its URL and enabled state. It
+// adds the bearer-token reference
 // (AuthHeader) when tokenFile is set and the entry lacks it, but only when
 // the entry's URL is listenerURL, the finalized URL of ocman's own MCP
 // listener: an entry pointing anywhere else never receives the credential.
@@ -138,10 +136,6 @@ func setV2Entry(doc map[string]json.RawMessage, url string, disabled bool, token
 // nothing when the entry is current. It returns the backup path when it
 // rewrote the file.
 func EnsureEntry(listenerURL, tokenFile string) (string, error) {
-	v2 := ocv2.InstalledV2()
-	if !v2 && tokenFile == "" {
-		return "", nil
-	}
 	path, err := Path()
 	if err != nil {
 		return "", err
@@ -161,16 +155,6 @@ func EnsureEntry(listenerURL, tokenFile string) (string, error) {
 		return "", fmt.Errorf("%w: %w", ErrNotEditable, err)
 	}
 	legacy, hasLegacy := mcpEntry(doc)
-	if !v2 {
-		token := tokenFor(legacy.URL, listenerURL, tokenFile)
-		if !hasLegacy || authCurrent(legacy.Headers, token) {
-			return "", nil
-		}
-		if err := setV1AuthHeader(doc, token); err != nil {
-			return "", err
-		}
-		return writeDoc(path, raw, doc)
-	}
 	entry, ok := v2Entry(doc)
 	switch {
 	case ok:

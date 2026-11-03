@@ -6,13 +6,11 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // OpenCode v2 lists skills apart from commands and rejects them on its
 // command route; the adapter still offers them as skills and runs them.
 func TestSkillsListAndRunOnV2(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	const sid, dir = "sess-v2-skills", "/tmp/proj-v2-skills"
 	t.Cleanup(func() { catalogCache.invalidatePort("") })
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {

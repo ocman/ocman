@@ -18,15 +18,16 @@ func TestManagedPortReadDoesNotProbe(t *testing.T) {
 		return ctx.Err()
 	}}
 	h := New(Deps{Runtime: rt})
-	h.authorizeInstance("/repo", &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001"})
+	root := machineRoot()
+	h.authorizeInstance(root, &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001"})
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	if ports := h.ManagedOpenCodePorts(ctx); ports["/repo"] != "1001" || ctx.Err() != nil {
+	if ports := h.ManagedOpenCodePorts(ctx); ports[root] != "1001" || ctx.Err() != nil {
 		t.Fatalf("healthy runtime lookup blocked on probe: ports=%v error=%v", ports, ctx.Err())
 	}
 }
 
-func TestHealthScanBoundedConcurrentAndJoined(t *testing.T) {
+func TestHealthScanProbesMachineRootAndJoins(t *testing.T) {
 	started := make(chan struct{}, 8)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -43,21 +44,21 @@ func TestHealthScanBoundedConcurrentAndJoined(t *testing.T) {
 		return ctx.Err()
 	}}
 	h := New(Deps{Runtime: rt})
-	for i := range 8 {
+	h.authorizeInstance(machineRoot(), &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001"})
+	// Instances under any other root are never probed.
+	for i := range 7 {
 		h.authorizeInstance(fmt.Sprintf("/repo%d", i), &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001"})
 	}
 	done := make(chan struct{})
 	go func() { h.RefreshManagedOpenCodePorts(ctx); close(done) }()
-	for range 4 {
-		select {
-		case <-started:
-		case <-time.After(time.Second):
-			t.Fatal("probes did not run concurrently")
-		}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("machine server was not probed")
 	}
 	select {
 	case <-started:
-		t.Fatal("scan exceeded four concurrent probes")
+		t.Fatal("scan probed a non-machine root")
 	case <-time.After(20 * time.Millisecond):
 	}
 	cancel()
@@ -76,7 +77,8 @@ func TestHealthScanBoundedConcurrentAndJoined(t *testing.T) {
 
 func TestHealthWorkerStartupAndPeriodicRecovery(t *testing.T) {
 	store := newFakeStore()
-	store.rows["/repo"] = ManagedInstance{Endpoint: "http://127.0.0.1:1001"}
+	root := machineRoot()
+	store.rows[root] = ManagedInstance{Endpoint: "http://127.0.0.1:1001"}
 	var dead atomic.Bool
 	changed := make(chan struct{}, 4)
 	rt := inventoryRuntime{fakeRuntime: &fakeRuntime{}, probeFn: func(context.Context, *ocruntime.Instance) error {
@@ -103,19 +105,19 @@ func TestHealthWorkerStartupAndPeriodicRecovery(t *testing.T) {
 		}
 	}
 	waitChange()
-	if ports := h.ManagedOpenCodePorts(t.Context()); ports["/repo"] != "1001" {
+	if ports := h.ManagedOpenCodePorts(t.Context()); ports[root] != "1001" {
 		t.Fatal("startup did not recover healthy persisted runtime", ports)
 	}
 	dead.Store(true)
 	ticks <- time.Now()
 	waitChange()
-	if ports := h.ManagedOpenCodePorts(t.Context()); len(ports) != 0 || h.currentInstance("/repo") == nil {
+	if ports := h.ManagedOpenCodePorts(t.Context()); len(ports) != 0 || h.currentInstance(root) == nil {
 		t.Fatal("dead runtime remained routable or lost cleanup handle", ports)
 	}
 	dead.Store(false)
 	ticks <- time.Now()
 	waitChange()
-	if ports := h.ManagedOpenCodePorts(t.Context()); ports["/repo"] != "1001" {
+	if ports := h.ManagedOpenCodePorts(t.Context()); ports[root] != "1001" {
 		t.Fatal("recovered runtime stayed hidden", ports)
 	}
 	cancel()
@@ -161,8 +163,7 @@ func TestHealthScanPublishesOnlyV2MachineServer(t *testing.T) {
 
 func TestLaunchImmediatelyVisibleToCachedDiscovery(t *testing.T) {
 	disc := opencode.NewDiscovery()
-	h := New(Deps{Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:1002"}, RuntimeInventoryChanged: disc.InvalidateOpenCodePortCache})
-	disc.SetManagedPortSource(h.ManagedOpenCodePorts)
+	h := New(Deps{Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:1002"}, RuntimeInventoryChanged: disc.InvalidateOpenCodePortCache, SetMachineServer: disc.SetMachineServer})
 	if ports := disc.DiscoverOpenCodePortsContext(t.Context()); len(ports) != 0 {
 		t.Fatal(ports)
 	}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 type probeErrorRuntime struct {
@@ -21,7 +20,6 @@ type probeErrorRuntime struct {
 }
 
 func TestV2InconclusiveProbeKeepsPublishedServer(t *testing.T) {
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OPENCODE_DB", "")
 	for _, probeErr := range []error{context.DeadlineExceeded, context.Canceled, ocruntime.ErrProbeNotReady} {
@@ -40,14 +38,16 @@ func TestV2InconclusiveProbeKeepsPublishedServer(t *testing.T) {
 	}
 }
 
-func TestV2InconclusiveDiscoveredProbeRetainsCleanupOnly(t *testing.T) {
-	t.Cleanup(ocv2.SetInstalledV2(true))
+// An inconclusive probe of a tracked but never authorized server keeps it
+// as a cleanup handle without publishing it for routing.
+func TestV2InconclusiveUnauthorizedProbeRetainsCleanupOnly(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OPENCODE_DB", "")
 	rt := &probeErrorRuntime{err: ocruntime.ErrProbeNotReady}
 	rec := &portRecorder{}
 	rec.set("6666")
-	h := New(Deps{Runtime: rt, SetMachineServer: rec.set, DiscoverPort: func(string) string { return "6666" }})
+	h := New(Deps{Runtime: rt, SetMachineServer: rec.set})
+	h.setInstance(machineRoot(), &ocruntime.Instance{Endpoint: "http://127.0.0.1:6666", ID: "unauthorized"})
 	_, err := h.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
 	if !errors.Is(err, ocruntime.ErrProbeNotReady) || rec.last() != "" || h.currentInstance(machineRoot()) == nil || rt.launchCount() != 0 {
 		t.Fatalf("discovered v2 server lost: %v port=%s launches=%d", err, rec.last(), rt.launchCount())
@@ -129,7 +129,6 @@ func TestExplicitRestartDoesNotRepublishPreviouslyRejectedCandidate(t *testing.T
 }
 
 func TestV2AbortedReplacementKeepsPublishedServer(t *testing.T) {
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OPENCODE_DB", "")
 	rt := &probeErrorRuntime{}
@@ -239,10 +238,11 @@ func TestEnsureDoesNotKillServerOnAmbiguousProbeFailure(t *testing.T) {
 			h := New(Deps{Runtime: rt})
 			h.portWaitTimeout = time.Millisecond
 			inst := &ocruntime.Instance{Endpoint: "http://127.0.0.1:6666", ID: "shared"}
-			h.setInstance(repo, inst)
+			root := machineRoot()
+			h.setInstance(root, inst)
 			_, err = h.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
-			if !errors.Is(err, probeErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || h.currentInstance(repo) != inst {
-				t.Fatalf("ambiguous probe must preserve server: err=%v stops=%d launches=%d retained=%v", err, rt.stopCount(), rt.launchCount(), h.currentInstance(repo) == inst)
+			if !errors.Is(err, probeErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || h.currentInstance(root) != inst {
+				t.Fatalf("ambiguous probe must preserve server: err=%v stops=%d launches=%d retained=%v", err, rt.stopCount(), rt.launchCount(), h.currentInstance(root) == inst)
 			}
 		})
 	}
@@ -251,7 +251,7 @@ func TestEnsureDoesNotKillServerOnAmbiguousProbeFailure(t *testing.T) {
 func TestReplacementPersistsBeforeStoppingSharedServer(t *testing.T) {
 	for _, requested := range []bool{false, true} {
 		t.Run(map[bool]string{false: "health failure", true: "requested restart"}[requested], func(t *testing.T) {
-			repo := initRepo(t)
+			repo := machineRoot()
 			rt := &fakeRuntime{}
 			called := 0
 			confirmed := 0
@@ -289,9 +289,9 @@ func TestStopFailureDoesNotConfirmOrLaunchReplacement(t *testing.T) {
 	confirmed := 0
 	h := New(Deps{Runtime: rt, AfterStop: func(context.Context, string) error { confirmed++; return nil }})
 	inst := &ocruntime.Instance{ID: "owned", Endpoint: "old"}
-	h.setInstance("repo", inst)
-	_, err := h.restartLocked(t.Context(), "repo")
-	if !errors.Is(err, rt.stopErr) || confirmed != 0 || rt.launchCount() != 0 || h.currentInstance("repo") != inst {
+	h.setInstance(machineRoot(), inst)
+	_, err := h.restartLocked(t.Context(), machineRoot())
+	if !errors.Is(err, rt.stopErr) || confirmed != 0 || rt.launchCount() != 0 || h.currentInstance(machineRoot()) != inst {
 		t.Fatalf("failed Stop lost live instance or confirmed history: %v confirmed=%d launches=%d", err, confirmed, rt.launchCount())
 	}
 }
@@ -301,17 +301,17 @@ func TestFailedConfirmationPreservesDurableRecoveryHandle(t *testing.T) {
 	rt := &fakeRuntime{probe: func(inst *ocruntime.Instance) bool { return inst.Endpoint != "old" }}
 	confirmErr := errors.New("confirmation unavailable")
 	h := New(Deps{Runtime: rt, ManagedStore: store, AfterStop: func(context.Context, string) error { return confirmErr }})
-	if err := store.Upsert(t.Context(), "repo", ManagedInstance{Endpoint: "old", RuntimeID: "owned", Kind: ocruntime.KindNativeTmux}); err != nil {
+	if err := store.Upsert(t.Context(), machineRoot(), ManagedInstance{Endpoint: "old", RuntimeID: "owned", Kind: ocruntime.KindNativeTmux}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := h.restartLocked(t.Context(), "repo")
-	if !errors.Is(err, confirmErr) || !store.has("repo") || h.currentInstance("repo") != nil || rt.launchCount() != 0 {
-		t.Fatalf("stopped-but-unconfirmed recovery lost: err=%v durable=%v launches=%d", err, store.has("repo"), rt.launchCount())
+	_, err := h.restartLocked(t.Context(), machineRoot())
+	if !errors.Is(err, confirmErr) || !store.has(machineRoot()) || h.currentInstance(machineRoot()) != nil || rt.launchCount() != 0 {
+		t.Fatalf("stopped-but-unconfirmed recovery lost: err=%v durable=%v launches=%d", err, store.has(machineRoot()), rt.launchCount())
 	}
 	// A fresh owner can repeat the idempotent stop and retry confirmation
 	// before deleting the recovery handle or launching another server.
 	recovered := New(Deps{Runtime: rt, ManagedStore: store, AfterStop: func(context.Context, string) error { return nil }})
-	if _, err := recovered.ensureLocked(t.Context(), "repo"); err != nil {
+	if _, err := recovered.ensureLocked(t.Context(), machineRoot()); err != nil {
 		t.Fatal(err)
 	}
 	if rt.launchCount() != 1 || rt.stopCount() != 2 {
@@ -325,23 +325,24 @@ func TestFailedInterruptionWritePreventsReplacement(t *testing.T) {
 		writeErr := errors.New("state database unavailable")
 		h := New(Deps{Runtime: rt, BeforeReplace: func(context.Context, string, string) error { return writeErr }})
 		inst := &ocruntime.Instance{Endpoint: "old", ID: "shared"}
-		h.setInstance("repo", inst)
+		h.setInstance(machineRoot(), inst)
 		var err error
 		if requested {
-			_, err = h.restartLocked(t.Context(), "repo")
+			_, err = h.restartLocked(t.Context(), machineRoot())
 		} else {
-			_, err = h.ensureLocked(t.Context(), "repo")
+			_, err = h.ensureLocked(t.Context(), machineRoot())
 		}
-		if !errors.Is(err, writeErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || h.currentInstance("repo") != inst {
+		if !errors.Is(err, writeErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || h.currentInstance(machineRoot()) != inst {
 			t.Fatalf("lost server after failed notice: err=%v stops=%d launches=%d", err, rt.stopCount(), rt.launchCount())
 		}
 	}
 }
 
-func TestDiscoveredSlowServerIsNotReplaced(t *testing.T) {
+func TestTrackedSlowServerIsNotReplaced(t *testing.T) {
 	rt := &probeErrorRuntime{err: context.DeadlineExceeded}
-	h := New(Deps{Runtime: rt, DiscoverPort: func(string) string { return "6666" }})
-	_, err := h.ensureLocked(t.Context(), "repo")
+	h := New(Deps{Runtime: rt})
+	h.setInstance(machineRoot(), &ocruntime.Instance{Endpoint: "http://127.0.0.1:6666", ID: "slow"})
+	_, err := h.ensureLocked(t.Context(), machineRoot())
 	if !errors.Is(err, context.DeadlineExceeded) || rt.launchCount() != 0 {
 		t.Fatalf("launched over slow discovered server: %v launches=%d", err, rt.launchCount())
 	}

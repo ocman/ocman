@@ -12,7 +12,6 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
-	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
 
@@ -53,8 +52,7 @@ func TestStoredPanelsAndCataloguesDoNotNeedNativeDatabase(t *testing.T) {
 }
 
 func TestStoredPanelsEnrichOnlyLiveConfiguration(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(v1Shaped(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/mcp":
@@ -77,7 +75,7 @@ func TestStoredPanelsEnrichOnlyLiveConfiguration(t *testing.T) {
 	a := New(nil, nil, nil, ocapi.Auth{})
 	a.rt = NewDiscovery()
 	a.turns.disc = a.rt
-	a.rt.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/stored-live-config": port} })
+	a.rt.SetMachineServer(port)
 	a.rt.rememberSessionPort("stored", port)
 	info, err := a.InfoFromStored(t.Context(), &platforms.SessionDetail{Session: &db.Session{ID: "stored", Directory: "/stored-live-config", LiveConnection: true}, DefaultModel: "p/model"})
 	if err != nil || !info.Supported || info.Context.Limit != 1000 || len(info.MCPServers) != 1 || len(info.LSPServers) != 1 {
@@ -122,11 +120,10 @@ func TestStoredHaltsUseCanonicalReceiptsAndStoredNativeHierarchy(t *testing.T) {
 }
 
 func TestStoredSessionOverlayUsesOnlySSEObservationsAndIngestedParents(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
 	a := New(nil, nil, nil, ocapi.Auth{})
 	a.rt = NewDiscovery()
 	a.turns.disc = a.rt
-	a.rt.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "7777"} })
+	a.rt.SetMachineServer("7777")
 	a.ObserveSessionStatus("7777", 0, "root", "busy")
 	a.ObservePromptAsked("7777", "/repo", "permission", platforms.LivePrompt{"sessionID": "child", "id": "permission"})
 	rows := []db.Session{{ID: "root", Directory: "/repo", Title: "stored", Status: db.StatusDone}}

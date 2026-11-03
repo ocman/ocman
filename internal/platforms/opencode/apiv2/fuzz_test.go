@@ -123,7 +123,6 @@ func FuzzTranslatorReplay(f *testing.F) {
 	f.Add([]byte{4, 1, 11, 0, 0, 0, 3, 0, 4, 1}, true)
 	f.Add([]byte{0, 0, 9, 0, 9, 0, 10, 0}, false)
 	f.Add([]byte{0, 0, 9, 0, 9, 2, 12, 2, 13, 0, 1, 0x40}, false)
-	defer SetInstalledV2(true)()
 	f.Fuzz(func(t *testing.T, ops []byte, withSnapshot bool) {
 		if len(ops) > 400 {
 			return

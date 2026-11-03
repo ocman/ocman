@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // withMachineServer publishes port as the v2 machine server for one test.
@@ -116,7 +115,6 @@ func TestMachineServers(t *testing.T) {
 }
 
 func TestDiscoverServersUncached_V2UsesMachineServer(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if got := td.discoverOpenCodeServersUncached(); len(got) != 0 {
@@ -132,7 +130,6 @@ func TestDiscoverServersUncached_V2UsesMachineServer(t *testing.T) {
 // A session in a directory no instance was discovered for resolves to the
 // machine server end to end (resolvePort → NativeQueued).
 func TestResolvePort_UnknownDirectoryUsesMachineServer(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	const sid, dir = "sess-machine-port", "/tmp/proj-machine-port"
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/api/session/"+sid {

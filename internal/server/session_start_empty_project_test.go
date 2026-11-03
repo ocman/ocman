@@ -12,7 +12,6 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 type emptyProjectRuntime struct {
@@ -28,7 +27,6 @@ func (*emptyProjectRuntime) Probe(context.Context, *ocruntime.Instance) error { 
 func (*emptyProjectRuntime) Stop(context.Context, *ocruntime.Instance) error  { return nil }
 
 func TestStartSessionEmptyProjectLaunchesInstance(t *testing.T) {
-	t.Cleanup(ocv2.SetInstalledV2(false))
 	dir := t.TempDir()
 	rt := &emptyProjectRuntime{}
 	srv, reg := newSessionsTestServer(t)

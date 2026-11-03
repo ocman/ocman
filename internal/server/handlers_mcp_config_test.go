@@ -51,7 +51,7 @@ func TestHandleMCPConfigStatus(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := `{"mcp":{"ocman":{"type":"remote","url":"http://127.0.0.1:8227/mcp","enabled":true}}}`
+	body := `{"mcp":{"servers":{"ocman":{"type":"remote","url":"http://127.0.0.1:8227/mcp","codemode":false}}}}`
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

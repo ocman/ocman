@@ -93,39 +93,7 @@ const inboxBody = `{"data":[
  {"id":"msg_q2","type":"user","delivery":"queue","time":{"created":444},"payload":{"text":"queued two"}}
 ]}`
 
-func TestNativeQueued_Unsupported(t *testing.T) {
-	const sid, dir = "sess-nq-unsupported", "/tmp/proj-nq-unsupported"
-	for _, tc := range []struct {
-		name      string
-		installed bool
-		v2Server  bool
-	}{
-		{"v1 server", true, false},
-		{"v1 installed", false, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			defer ocv2.SetInstalledV2(tc.installed)()
-			f := newV2Fake(t, tc.v2Server, func(w http.ResponseWriter, r *http.Request) bool {
-				writeJSONBody(w, inboxBody)
-				return true
-			})
-			a := nativeQueueAdapter(t, sid, dir, f)
-			if _, err := a.NativeQueued(context.Background(), sid); !errors.Is(err, platforms.ErrUnsupported) {
-				t.Fatalf("NativeQueued err = %v, want ErrUnsupported", err)
-			}
-			err := a.CancelNativeQueued(context.Background(), platforms.CancelNativeQueuedRequest{SessionID: sid, ID: "msg_q1"})
-			if !errors.Is(err, platforms.ErrUnsupported) {
-				t.Fatalf("CancelNativeQueued err = %v, want ErrUnsupported", err)
-			}
-			if _, hit := f.find(http.MethodGet, "/api/session/"+sid+"/inbox"); hit {
-				t.Fatal("inbox must not be read on a non-v2 server")
-			}
-		})
-	}
-}
-
 func TestNativeQueued_UnknownSession(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	f := newV2Fake(t, true, nil)
 	a := nativeQueueAdapter(t, "sess-nq-known", "/tmp/proj-nq-known", f)
 	if _, err := a.NativeQueued(context.Background(), "missing"); !errors.Is(err, platforms.ErrNotFound) {
@@ -134,7 +102,6 @@ func TestNativeQueued_UnknownSession(t *testing.T) {
 }
 
 func TestNativeQueued_ListsOnlyQueuedUserItems(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	const sid, dir = "sess-nq-list", "/tmp/proj-nq-list"
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/session/"+sid+"/inbox" {
@@ -158,7 +125,6 @@ func TestNativeQueued_ListsOnlyQueuedUserItems(t *testing.T) {
 }
 
 func TestNativeQueued_EmptyAndErrors(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	for _, tc := range []struct {
 		name, body string
 		status     int
@@ -189,7 +155,6 @@ func TestNativeQueued_EmptyAndErrors(t *testing.T) {
 }
 
 func TestCancelNativeQueued(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	for _, tc := range []struct {
 		name    string
 		status  int
@@ -223,36 +188,7 @@ func TestCancelNativeQueued(t *testing.T) {
 	}
 }
 
-func TestSendMessageQueueDelivery_V1Unsupported(t *testing.T) {
-	for _, installed := range []bool{true, false} {
-		t.Run(map[bool]string{true: "v2 installed, v1 server", false: "v1 installed"}[installed], func(t *testing.T) {
-			defer ocv2.SetInstalledV2(installed)()
-			const sid, dir = "sess-send-queue-v1", "/tmp/proj-send-queue-v1"
-			f := newV2Fake(t, false, func(w http.ResponseWriter, r *http.Request) bool {
-				w.WriteHeader(http.StatusNoContent)
-				return true
-			})
-			a := nativeQueueAdapter(t, sid, dir, f)
-			err := a.SendMessage(context.Background(), platforms.SendMessageRequest{SessionID: sid, Message: "later", Delivery: "queue"})
-			if !errors.Is(err, platforms.ErrUnsupported) {
-				t.Fatalf("SendMessage err = %v, want ErrUnsupported", err)
-			}
-			if got := td.preferredSessionPort(sid); got != f.Port() {
-				t.Fatalf("session port after ErrUnsupported = %q, want %q (must not be forgotten)", got, f.Port())
-			}
-			f.mu.Lock()
-			defer f.mu.Unlock()
-			for _, h := range f.hits {
-				if h.method == http.MethodPost {
-					t.Fatalf("unexpected send %s %s on a v1 server", h.method, h.path)
-				}
-			}
-		})
-	}
-}
-
 func TestSendMessageQueueDelivery_V2(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	const sid, dir = "sess-send-queue-v2", "/tmp/proj-send-queue-v2"
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/session/"+sid+"/prompt" {
@@ -281,7 +217,6 @@ func TestSendMessageQueueDelivery_V2(t *testing.T) {
 // or model switch) was never admitted, so it reports ErrUnsupported and
 // ocman's own queue takes it.
 func TestSendMessage_QueuedSelectionRefusalIsUnsupported(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	const sid, dir = "sess-nq-412", "/tmp/proj-nq-412"
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/api/session/"+sid {

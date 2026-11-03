@@ -12,7 +12,7 @@ import (
 	"github.com/ocman/ocman/internal/tmux"
 )
 
-func TestNativeLaunchV2(t *testing.T) {
+func TestNativeLaunchForwardsOpencodeDB(t *testing.T) {
 	for _, tc := range []struct {
 		name, db string
 	}{{"no OPENCODE_DB", ""}, {"forwards OPENCODE_DB", "/tmp/oc-v2.db"}} {
@@ -21,7 +21,7 @@ func TestNativeLaunchV2(t *testing.T) {
 			f := &fakeLaunch{}
 			rt := &NativeRuntime{launch: f.fn, auth: ocapi.New("pw")}
 			if _, err := rt.Launch(t.Context(), LaunchSpec{
-				RepoRoot: "/r", Port: 4242, PermissionJSON: `{"x":"allow"}`, V2: true,
+				RepoRoot: "/r", Port: 4242,
 			}); err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
@@ -29,7 +29,7 @@ func TestNativeLaunchV2(t *testing.T) {
 				t.Errorf("command = %q, want %q", f.command, want)
 			}
 			if _, ok := f.env["OPENCODE_PERMISSION"]; ok {
-				t.Errorf("OPENCODE_PERMISSION set for v2: %v", f.env)
+				t.Errorf("OPENCODE_PERMISSION set: %v", f.env)
 			}
 			if f.env["OPENCODE_PASSWORD"] != "pw" {
 				t.Errorf("OPENCODE_PASSWORD = %q, want pw", f.env["OPENCODE_PASSWORD"])
@@ -94,23 +94,5 @@ func TestProbeV2IdentityRequestErrors(t *testing.T) {
 	client := &http.Client{Transport: ocapi.New("pw").Transport(nil)}
 	if err := ProbeV2Identity(t.Context(), client, server.URL, "/root"); !errors.Is(err, ocapi.ErrAuthentication) {
 		t.Fatal(err)
-	}
-}
-
-func TestNativeLaunchV1IgnoresOpencodeDB(t *testing.T) {
-	t.Setenv("OPENCODE_DB", "/tmp/oc.db")
-	f := &fakeLaunch{}
-	rt := &NativeRuntime{launch: f.fn}
-	if _, err := rt.Launch(t.Context(), LaunchSpec{RepoRoot: "/r", Port: 4242, PermissionJSON: "{}"}); err != nil {
-		t.Fatal(err)
-	}
-	if f.command != tmux.OpencodeServeCommandForPort(4242) {
-		t.Errorf("command = %q", f.command)
-	}
-	if f.env["OPENCODE_PERMISSION"] != "{}" {
-		t.Errorf("v1 lost OPENCODE_PERMISSION: %v", f.env)
-	}
-	if _, ok := f.env["OPENCODE_DB"]; ok {
-		t.Errorf("v1 forwarded OPENCODE_DB: %v", f.env)
 	}
 }

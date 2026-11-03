@@ -1,11 +1,9 @@
 package server
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
-	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -25,7 +23,6 @@ func TestRecoveryHooksResolveCurrentServerDependencies(t *testing.T) {
 			return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "turn"}, nil
 		},
 	})
-	srv.hostRouter = hostsvc.NewRouter(&interruptionMembershipHost{resolve: func(context.Context, string) (string, error) { return "/repo", nil }})
 	if err := record(t.Context(), "/repo", "restart"); err != nil {
 		t.Fatal(err)
 	}

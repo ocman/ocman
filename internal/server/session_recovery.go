@@ -3,10 +3,8 @@ package server
 import (
 	"context"
 
-	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 	"github.com/ocman/ocman/internal/sessionrecovery"
 )
@@ -23,13 +21,9 @@ func (s *Server) sessionRecovery() *sessionrecovery.Service {
 	return sessionrecovery.New(sessionrecovery.Deps{
 		State: s.stateDB, Sessions: sessions,
 		Platform: func(id platforms.ID) (platforms.Platform, bool) { return s.registry.Get(id) },
-		ManagedRootReader: func() hostsvc.ManagedRootReader {
-			reader, _ := s.router().Local().(hostsvc.ManagedRootReader)
-			return reader
-		},
 		// Runtime replacement fences OpenCode instances only.
-		MachineWide: ocv2.InstalledV2, BroadcastSessionChanged: func(id string) { s.broadcastSessionChanged(string(opencode.PlatformID), id) },
-		InjectHistoryNotice: injectHistoryNotice,
+		BroadcastSessionChanged: func(id string) { s.broadcastSessionChanged(string(opencode.PlatformID), id) },
+		InjectHistoryNotice:     injectHistoryNotice,
 	})
 }
 

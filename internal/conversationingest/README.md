@@ -72,7 +72,7 @@ Each worker picks one mode for its source:
   content commit atomically. Invalid cursors or
   detected replacements/truncations fall back to a full snapshot. The shared
   Claude index may still reindex the changed file to refresh its metadata.
-- **Polling** (OpenCode v1 and Codex, `worker.go`) compares inventory version hints every
+- **Polling** (Codex, and OpenCode before its database is migrated to the v2 schema, `worker.go`) compares inventory version hints every
   30 seconds and reads only invalidated, new or re-hinted sessions. A full
   verification rereads every session every six hours (`VerifyInterval`).
   Known-session event updates skip inventory unless verification is due.

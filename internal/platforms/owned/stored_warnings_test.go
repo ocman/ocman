@@ -16,7 +16,7 @@ func (p *warningNative) StoredReadConfig(directory string) *platforms.Conversati
 	p.directories = append(p.directories, directory)
 	head := &platforms.ConversationHead{DirectoryDefaults: true}
 	if directory != "" {
-		head.Warnings = []platforms.SessionWarning{{Kind: "duplicate_opencode_servers", Ports: []string{"1", "2"}}}
+		head.Warnings = []platforms.SessionWarning{{Kind: "directory-warning"}}
 	}
 	return head
 }
@@ -31,7 +31,7 @@ func TestStoredConversationCarriesCurrentDirectoryWarnings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Warnings) != 1 || detail.Warnings[0].Kind != "duplicate_opencode_servers" {
+	if len(detail.Warnings) != 1 || detail.Warnings[0].Kind != "directory-warning" {
 		t.Fatalf("live directory warning lost: %+v (asked %q)", detail.Warnings, native.directories)
 	}
 	if native.directories[len(native.directories)-1] != "/stored" {

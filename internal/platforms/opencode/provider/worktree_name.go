@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/git"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // WorktreeName uses the owner's small model in a temporary, tool-denied session.
@@ -29,12 +28,9 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return "", err
 	}
+	// Without small_model, OpenCode's title agent picks a small model of
+	// the session's provider itself.
 	model := cfg.SmallModel
-	// OpenCode v2's title agent picks a small model of the session's
-	// provider itself; only v1 needs a fallback.
-	if model == "" && !ocv2.IsV2(ctx, port) {
-		model = "anthropic/claude-haiku-4-5"
-	}
 	var modelRef map[string]string
 	if model != "" {
 		provider, modelID, ok := strings.Cut(model, "/")

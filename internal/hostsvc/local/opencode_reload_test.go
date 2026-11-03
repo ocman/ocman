@@ -11,8 +11,8 @@ import (
 
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestReloadOpencodeRefreshesExistingMachineServer(t *testing.T) {
@@ -191,7 +191,7 @@ func TestReloadOpencodePreservesBoundedRejectionDiagnostic(t *testing.T) {
 	}
 }
 
-func TestReloadOpencodeMissingUnsupportedAndCancelled(t *testing.T) {
+func TestReloadOpencodeMissingAndCancelled(t *testing.T) {
 	h, rt, _, _, root := v2Host(t)
 	if err := h.ReloadOpencode(t.Context()); err == nil || !strings.Contains(err.Error(), "no managed") {
 		t.Fatalf("missing server error = %v", err)
@@ -203,11 +203,6 @@ func TestReloadOpencodeMissingUnsupportedAndCancelled(t *testing.T) {
 	cancel()
 	if err := h.ReloadOpencode(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled error = %v", err)
-	}
-	undo := ocv2.SetInstalledV2(false)
-	defer undo()
-	if err := h.ReloadOpencode(t.Context()); !errors.Is(err, platforms.ErrUnsupported) {
-		t.Fatalf("v1 error = %v", err)
 	}
 	if rt.launchCount() != 0 || rt.stopCount() != 0 {
 		t.Fatal("reload changed server lifecycle")

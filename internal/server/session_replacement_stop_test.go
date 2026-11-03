@@ -14,7 +14,6 @@ import (
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // Models an adopted API server that has no managed tmux handle. Native Stop
@@ -31,7 +30,6 @@ func (r *untrackedTestRuntime) Launch(context.Context, ocruntime.LaunchSpec) (*o
 }
 
 func TestFailedNativeStopLeavesHistoryUnconfirmedAndServerRetained(t *testing.T) {
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OPENCODE_DB", "")
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }))

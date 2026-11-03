@@ -10,7 +10,6 @@ import (
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
-	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 )
 
 type inventoryRuntime struct {
@@ -25,10 +24,7 @@ func (r inventoryRuntime) Probe(ctx context.Context, inst *ocruntime.Instance) e
 func TestInventoryCannotJoinOrSuppressRuntimeMutations(t *testing.T) {
 	for _, operation := range []string{"restart", "stop", "ensure"} {
 		t.Run(operation, func(t *testing.T) {
-			root, err := projectOpencodeRoot(t.Context(), initRepo(t))
-			if err != nil {
-				t.Fatal(err)
-			}
+			root := machineRoot()
 			started, release := make(chan struct{}), make(chan struct{})
 			var once sync.Once
 			unblock := func() { once.Do(func() { close(release) }) }
@@ -109,22 +105,23 @@ func TestInventoryCannotRestoreClearedOrRevokedAuthorization(t *testing.T) {
 					return ctx.Err()
 				}
 			}}
+			root := machineRoot()
 			store := newFakeStore()
-			store.rows["/repo"] = ManagedInstance{Endpoint: "http://127.0.0.1:1001", RuntimeID: "old"}
+			store.rows[root] = ManagedInstance{Endpoint: "http://127.0.0.1:1001", RuntimeID: "old"}
 			h := New(Deps{Runtime: rt, ManagedStore: store})
 			if change != "clear cold" {
-				h.authorizeInstance("/repo", &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", ID: "old"})
+				h.authorizeInstance(root, &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", ID: "old"})
 			}
 			result := make(chan map[string]string, 1)
 			go func() { result <- h.RefreshManagedOpenCodePorts(t.Context()) }()
 			<-started
 			if change == "revoke warm" {
-				h.revokeInstanceAuthorization("/repo")
+				h.revokeInstanceAuthorization(root)
 			} else {
-				h.clearInstance("/repo")
+				h.clearInstance(root)
 			}
 			close(release)
-			if ports := <-result; len(ports) != 0 || h.authorizedEndpoint("/repo") != "" {
+			if ports := <-result; len(ports) != 0 || h.authorizedEndpoint(root) != "" {
 				t.Fatalf("stale probe restored authorization: %v", ports)
 			}
 		})
@@ -132,10 +129,7 @@ func TestInventoryCannotRestoreClearedOrRevokedAuthorization(t *testing.T) {
 }
 
 func TestExpiredDiscoveryInsideReplacementDoesNotReenterMutationFlight(t *testing.T) {
-	root, err := projectOpencodeRoot(t.Context(), initRepo(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := machineRoot()
 	rt := inventoryRuntime{fakeRuntime: &fakeRuntime{endpoint: "http://127.0.0.1:1002"}, probeFn: func(_ context.Context, inst *ocruntime.Instance) error {
 		if inst.Endpoint == "http://127.0.0.1:1001" {
 			return ocruntime.ErrProbeUnreachable
@@ -144,13 +138,11 @@ func TestExpiredDiscoveryInsideReplacementDoesNotReenterMutationFlight(t *testin
 	}}
 	h := New(Deps{Runtime: rt})
 	h.authorizeInstance(root, &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", RepoRoot: root, ID: "old"})
-	disc := opencode.NewDiscovery()
-	disc.SetManagedPortSource(h.ManagedOpenCodePorts)
 	h.deps.BeforeReplace = func(ctx context.Context, _, _ string) error {
 		readCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
-		disc.InvalidateOpenCodePortCache()
-		_ = disc.DiscoverOpenCodePortsContext(readCtx)
+		_ = h.ManagedOpenCodePorts(readCtx)
+		_ = h.RefreshManagedOpenCodePorts(readCtx)
 		return readCtx.Err()
 	}
 	if _, err := h.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
@@ -164,9 +156,10 @@ func TestExpiredDiscoveryInsideReplacementDoesNotReenterMutationFlight(t *testin
 func TestInventoryHonorsDurableStopFencesWithoutRunningMutations(t *testing.T) {
 	for _, scenario := range []string{"stopped", "cold pending", "warm pending", "different pending", "stopped query error", "pending query error"} {
 		t.Run(scenario, func(t *testing.T) {
+			root := machineRoot()
 			store := newFakeStore()
-			inst := &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", RepoRoot: "/repo", ID: "owned"}
-			store.rows["/repo"] = ManagedInstance{Endpoint: inst.Endpoint, RuntimeID: inst.ID}
+			inst := &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", RepoRoot: root, ID: "owned"}
+			store.rows[root] = ManagedInstance{Endpoint: inst.Endpoint, RuntimeID: inst.ID}
 			rt := &probeErrorRuntime{err: context.DeadlineExceeded}
 			h := New(Deps{Runtime: rt, ManagedStore: store,
 				BeforeReplace: func(context.Context, string, string) error { t.Fatal("inventory ran replacement"); return nil },
@@ -188,10 +181,10 @@ func TestInventoryHonorsDurableStopFencesWithoutRunningMutations(t *testing.T) {
 				},
 			})
 			if scenario == "warm pending" || scenario == "different pending" {
-				h.authorizeInstance("/repo", inst)
+				h.authorizeInstance(root, inst)
 			}
 			ports := h.RefreshManagedOpenCodePorts(t.Context())
-			if (ports["/repo"] == "1001") != (scenario == "warm pending") {
+			if (ports[root] == "1001") != (scenario == "warm pending") {
 				t.Fatal(ports)
 			}
 			if (ports == nil) != (scenario == "stopped query error" || scenario == "pending query error") {

@@ -14,7 +14,6 @@ import (
 
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/platforms/opencode/apiv1"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // openCodeClient is an HTTP client with a reasonable timeout for API
@@ -134,7 +133,7 @@ type OpenCodeProvidersResponse struct {
 }
 
 // fetchOpenCodeProviders calls GET /provider on the running OpenCode
-// instance, scoped to directory on an OpenCode v2 server.
+// instance, scoped to directory.
 func fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCodeProvidersResponse, bool) {
 	var empty OpenCodeProvidersResponse
 	body, err := getJSONCached(ctx, port, scopedPath(ctx, port, "/provider", directory))
@@ -150,13 +149,12 @@ func fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCo
 	return parsed, true
 }
 
-// scopedPath adds the directory scope to a catalog path on an OpenCode v2
-// server: one v2 server serves every project, and agents, commands and
-// models are per-project configuration. The path is also the cache key,
-// so projects never share an entry. v1 instances serve one project and
-// keep the bare path.
+// scopedPath adds the directory scope to a catalog path: one OpenCode server
+// serves every project, and agents, commands and models are per-project
+// configuration. The path is also the cache key, so projects never share an
+// entry.
 func scopedPath(ctx context.Context, port, path, directory string) string {
-	if directory == "" || !ocv2.IsV2(ctx, port) {
+	if directory == "" {
 		return path
 	}
 	return path + "?directory=" + url.QueryEscape(directory)

@@ -92,9 +92,6 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		TermAttach:       term.AttachLocalPTY,
 		StateDir:         stateDirOrEmpty(s.stateDB),
 	})
-	if d := s.openCodeDiscovery(); d != nil {
-		d.SetManagedPortSource(host.ManagedOpenCodePorts)
-	}
 	return host
 }
 

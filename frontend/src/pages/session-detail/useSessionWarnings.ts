@@ -3,7 +3,8 @@ import type { SessionWarning } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 
 export function sessionWarningKey(sessionId: string, warning: SessionWarning): string {
-  return `${sessionId}:${warning.kind}:${warning.message}:${(warning.ports ?? []).join(',')}`;
+  // The trailing colon keeps keys of warnings dismissed before ports were dropped.
+  return `${sessionId}:${warning.kind}:${warning.message}:`;
 }
 
 /** Session warnings minus the ones the user dismissed this page lifetime. */

@@ -45,10 +45,12 @@ func TestProviderAccountsListsAccountPlatforms(t *testing.T) {
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
-	if len(got.Accounts) != 3 {
+	// The registered OpenCode adapter has no machine server, so it reports
+	// unavailable alongside the fakes.
+	if len(got.Accounts) != 4 || got.Accounts[1].Platform != "opencode" || got.Accounts[1].Status != "unavailable" {
 		t.Fatalf("accounts = %+v", got.Accounts)
 	}
-	claude, down, out := got.Accounts[0], got.Accounts[1], got.Accounts[2]
+	claude, down, out := got.Accounts[0], got.Accounts[2], got.Accounts[3]
 	if claude.Platform != "claudecode" || claude.DisplayName != "Claude Code" || claude.Status != "ok" || claude.SubscriptionType != "max" ||
 		len(claude.RateLimits) != 2 || claude.RateLimits[1].Name != "weekly" || claude.RateLimits[1].Utilization != 0.76 {
 		t.Fatalf("claude = %+v", claude)

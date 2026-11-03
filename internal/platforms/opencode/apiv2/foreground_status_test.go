@@ -6,7 +6,6 @@ import (
 )
 
 func TestForegroundCompletionIgnoresBackgroundWork(t *testing.T) {
-	defer SetInstalledV2(true)()
 	for _, terminal := range []string{"succeeded", "failed", "interrupted"} {
 		t.Run(terminal, func(t *testing.T) {
 			f := agentFamily(t)
@@ -28,7 +27,6 @@ func TestForegroundCompletionIgnoresBackgroundWork(t *testing.T) {
 }
 
 func TestForegroundStatusSnapshotIgnoresBackgroundWork(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := agentFamily(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":{"type":"running"}}}`)
 	f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"}]`)

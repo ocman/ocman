@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/ocman/ocman/internal/ocruntime"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -31,9 +30,7 @@ func (h *Host) markStopped(root string) {
 	h.stopped[root] = true
 	h.generations[root]++
 	h.mu.Unlock()
-	if ocv2.InstalledV2() {
-		h.publishMachineServer("")
-	}
+	h.publishMachineServer("")
 }
 
 // Called under the root's singleflight before discovery, probing or launching.

@@ -85,9 +85,9 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 }
 
 // ensureOpenCodeMCPLayout runs at startup so an installed ocman entry keeps
-// working: an entry installed for OpenCode v1 survives an upgrade to v2 (v2
-// drops codemode from v1-style entries and would hide ocman's tools behind
-// Code Mode), and an entry installed before the listener required a bearer
+// working: a flat mcp.ocman entry written by older ocman moves to the
+// mcp.servers layout (OpenCode drops codemode from flat entries and would
+// hide ocman's tools behind Code Mode), and an entry installed before the listener required a bearer
 // token gains the token-file reference. url and tokenFile are the MCP
 // listener's finalized URL and client token file (see StartOnListener).
 func ensureOpenCodeMCPLayout(url, tokenFile string) {

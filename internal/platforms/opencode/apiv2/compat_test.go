@@ -253,21 +253,7 @@ func cmpLoc(t *testing.T, c fakeCall, dir string) {
 // detection / passthrough
 // ---------------------------------------------------------------------
 
-func TestCompatPassthroughWhenInstalledV1(t *testing.T) {
-	defer SetInstalledV2(false)()
-	f := fakeServer(t)
-	f.json("GET /config", http.StatusOK, `{"v1":true}`)
-	got := cmpOK(t, http.MethodGet, f.URL+"/config?directory=/d", "")
-	cmpJSON(t, "body", got, `{"v1":true}`)
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.calls) != 1 || f.calls[0].Path != "/config" {
-		t.Fatalf("calls = %+v, want only the untouched /config", f.calls)
-	}
-}
-
 func TestCompatPassthroughWhenServerNotV2(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.notV2 = true
 	f.json("GET /session/s1", http.StatusOK, `{"id":"s1"}`)
@@ -289,7 +275,6 @@ func TestCompatPassthroughWhenServerNotV2(t *testing.T) {
 }
 
 func TestCompatPassthroughAPIPaths(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{}}`)
 	cmpJSON(t, "body", cmpOK(t, http.MethodGet, f.URL+"/api/session/active", ""), `{"data":{}}`)
@@ -301,7 +286,6 @@ func TestCompatPassthroughAPIPaths(t *testing.T) {
 }
 
 func TestCompatUnknownRouteNotFound(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	status, b := cmpDo(t, http.MethodGet, f.URL+"/nope", nil, "")
 	if status != http.StatusNotFound {
@@ -316,7 +300,6 @@ func TestCompatUnknownRouteNotFound(t *testing.T) {
 }
 
 func TestCompatUpstreamErrorRelayed(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1", http.StatusConflict, `{"name":"Conflict","data":{"message":"busy"}}`)
 	status, b := cmpDo(t, http.MethodGet, f.URL+"/session/s1", nil, "")
@@ -330,7 +313,6 @@ func TestCompatUpstreamErrorRelayed(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestCompatConfig(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/config", http.StatusOK, `[
 		{"type":"document","info":{"model":"a/b","agents":{"title":{"model":"x/small"}}}},
@@ -342,7 +324,6 @@ func TestCompatConfig(t *testing.T) {
 }
 
 func TestCompatProjectCurrent(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/location", http.StatusOK, `{"directory":"/repo/wt","project":{"id":"p1","directory":"/repo","canonical":"/repo"}}`)
 	got := cmpOK(t, http.MethodGet, f.URL+"/project/current?directory=/repo/wt", "")
@@ -351,7 +332,6 @@ func TestCompatProjectCurrent(t *testing.T) {
 }
 
 func TestCompatAgentsAndCommands(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/agent", http.StatusOK, `{"data":[{"id":"build","description":"B","mode":"primary"},{"id":"mine","mode":"subagent","hidden":true,"model":{"providerID":"p","id":"m"}}]}`)
 	f.json("GET /api/command", http.StatusOK, `{"data":[{"name":"review","description":"R"}]}`)
@@ -368,7 +348,6 @@ func TestCompatAgentsAndCommands(t *testing.T) {
 // from /command with source "skill", addressed by skill id. A command
 // keeps its name when a skill shares it.
 func TestCompatCommandsIncludeSkills(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/command", http.StatusOK, `{"data":[{"name":"review","description":"R"}]}`)
 	f.json("GET /api/skill", http.StatusOK, `{"data":[
@@ -381,7 +360,6 @@ func TestCompatCommandsIncludeSkills(t *testing.T) {
 }
 
 func TestCompatCommandsWithoutSkills(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/command", http.StatusOK, `{"data":[{"name":"review","description":"R"}]}`)
 	f.json("GET /api/skill", http.StatusInternalServerError, `{"_tag":"Boom"}`)
@@ -398,7 +376,6 @@ func TestCompatCommandsWithoutSkills(t *testing.T) {
 }
 
 func TestCompatProviders(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/provider", http.StatusOK, `{"data":[{"id":"openai","name":"OpenAI"},{"id":"empty","name":"Empty"}]}`)
 	f.json("GET /api/model", http.StatusOK, `{"data":[
@@ -418,7 +395,6 @@ func TestCompatProviders(t *testing.T) {
 }
 
 func TestCompatProvidersUpstreamError(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/provider", http.StatusOK, `{"data":[]}`)
 	f.json("GET /api/model", http.StatusInternalServerError, `{"name":"Boom"}`)
@@ -434,7 +410,6 @@ func TestCompatProvidersUpstreamError(t *testing.T) {
 }
 
 func TestCompatMCPAndLSP(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/mcp", http.StatusOK, `{"data":[{"name":"ocman","status":{"status":"connected"}},{"name":"bad","status":{"status":"failed","error":"nope"}}]}`)
 	f.json("POST /api/experimental/mcp/my srv/connect", http.StatusOK, `{}`)
@@ -451,7 +426,6 @@ func TestCompatMCPAndLSP(t *testing.T) {
 }
 
 func TestCompatSessionStatus(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"s1":{"since":1},"s2":{}}}`)
 	cmpJSON(t, "status", cmpOK(t, http.MethodGet, f.URL+"/session/status", ""), `{"s1":{"type":"busy"},"s2":{"type":"busy"}}`)
@@ -468,7 +442,6 @@ const cmpV1Session = `{"id":"s1","projectID":"p1","directory":"/tmp/my dir","tit
 	"time":{"created":1,"updated":2},"permission":[{"permission":"bash","pattern":"*","action":"ask"}]}`
 
 func TestCompatCreateSession(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session", http.StatusOK, fakeSessionJSON)
 	status, b := cmpDo(t, http.MethodPost, f.URL+"/session",
@@ -491,7 +464,6 @@ func TestCompatCreateSession(t *testing.T) {
 }
 
 func TestCompatCreateSessionBadBody(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -505,7 +477,6 @@ func TestCompatCreateSessionBadBody(t *testing.T) {
 }
 
 func TestCompatGetPatchDeleteSession(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1", http.StatusOK, fakeSessionJSON)
 	f.json("PATCH /api/session/s1", http.StatusOK, `{}`)
@@ -521,7 +492,6 @@ func TestCompatGetPatchDeleteSession(t *testing.T) {
 }
 
 func TestCompatPatchSessionUpstreamError(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("PATCH /api/session/s1", http.StatusNotFound, `{"name":"NotFoundError"}`)
 	status, _ := cmpDo(t, http.MethodPatch, f.URL+"/session/s1", nil, `{"title":"x"}`)
@@ -532,7 +502,6 @@ func TestCompatPatchSessionUpstreamError(t *testing.T) {
 }
 
 func TestCompatMessagesPaginate(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.on("GET /api/session/s1/message", func(c fakeCall) (int, any) {
 		if c.Query.Get("cursor") == "c2" {
@@ -562,7 +531,6 @@ func TestCompatMessagesPaginate(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestCompatPromptAsyncSwitchesAgentAndModel(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","agent":"build","model":{"providerID":"anthropic","id":"claude"}}}`)
 	for _, k := range []string{"POST /api/session/s1/agent", "POST /api/session/s1/model", "POST /api/session/s1/prompt"} {
@@ -585,7 +553,6 @@ func TestCompatPromptAsyncSwitchesAgentAndModel(t *testing.T) {
 // running turn. It is refused (412) so ocman's own queue holds it; a held
 // prompt that matches the session is queued natively.
 func TestCompatQueuedPromptNeverSwitchesSelection(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","agent":"build","model":{"providerID":"anthropic","id":"claude"}}}`)
 	f.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
@@ -604,7 +571,6 @@ func TestCompatQueuedPromptNeverSwitchesSelection(t *testing.T) {
 }
 
 func TestCompatPromptAsyncNoSwitchWhenCurrent(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","agent":"plan","model":{"providerID":"openai","id":"gpt"}}}`)
 	f.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
@@ -625,7 +591,6 @@ func TestCompatPromptAsyncNoSwitchWhenCurrent(t *testing.T) {
 }
 
 func TestCompatPromptAsyncSessionLookupFails(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1", http.StatusNotFound, `{"name":"NotFoundError"}`)
 	status, b := cmpDo(t, http.MethodPost, f.URL+"/session/s1/prompt_async", nil, `{"agent":"plan"}`)
@@ -641,7 +606,6 @@ const fakeHistory = `{"data":[
 	{"id":"msg3","type":"agent-switched"}]}`
 
 func TestCompatMessageSyncWaits(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/prompt", http.StatusOK, `{"data":{"id":"msg1"}}`)
 	f.json("POST /api/experimental/session/s1/wait", http.StatusOK, `{}`)
@@ -657,7 +621,6 @@ func TestCompatMessageSyncWaits(t *testing.T) {
 // Idle before the prompt's turn produced a reply (v2 had not scheduled it
 // yet) must keep waiting, not return an older or empty answer.
 func TestCompatMessageSyncWaitsForItsOwnReply(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/prompt", http.StatusOK, `{"data":{"id":"msg5"}}`)
 	f.json("POST /api/experimental/session/s1/wait", http.StatusNotFound, `{}`)
@@ -682,7 +645,6 @@ func TestCompatMessageSyncWaitsForItsOwnReply(t *testing.T) {
 }
 
 func TestCompatMessageSyncErrors(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/prompt", http.StatusBadRequest, `{"name":"Bad"}`)
 	if status, _ := cmpDo(t, http.MethodPost, f.URL+"/session/s1/message", nil, `{}`); status != http.StatusBadRequest {
@@ -708,7 +670,6 @@ func TestCompatMessageSyncErrors(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestCompatShellAndCommand(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/shell", http.StatusOK, `{}`)
 	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","agent":"build","model":{"providerID":"openai","id":"gpt"}}}`)
@@ -728,7 +689,6 @@ func TestCompatShellAndCommand(t *testing.T) {
 // v2's command route rejects skills; a v1 command naming a skill loads
 // it the way OpenCode documents, an @<id> mention in a prompt.
 func TestCompatCommandRunsSkill(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"CommandNotFoundError","command":"review-pr","message":"nope"}`)
 	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","location":{"directory":"/repo"}}}`)
@@ -747,7 +707,6 @@ func TestCompatCommandRunsSkill(t *testing.T) {
 
 // Mention offsets are UTF-16 code units, as in the v2 TypeScript client.
 func TestCompatCommandSkillMentionOffsets(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"CommandNotFoundError"}`)
 	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1"}}`)
@@ -759,7 +718,6 @@ func TestCompatCommandSkillMentionOffsets(t *testing.T) {
 }
 
 func TestCompatCommandSkillLookupFails(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"CommandNotFoundError"}`)
 	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1"}}`)
@@ -771,7 +729,6 @@ func TestCompatCommandSkillLookupFails(t *testing.T) {
 }
 
 func TestCompatCommandUnknownKeepsError(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	notFound := `{"_tag":"CommandNotFoundError","command":"nope","message":"Command not found: nope"}`
 	f.json("POST /api/session/s1/command", http.StatusNotFound, notFound)
@@ -789,7 +746,6 @@ func TestCompatCommandUnknownKeepsError(t *testing.T) {
 
 // Other failures are not mistaken for a missing command.
 func TestCompatCommandFailureSkipsSkills(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/command", http.StatusNotFound, `{"_tag":"SessionNotFoundError","sessionID":"s1","message":"gone"}`)
 	if status, _ := cmpDo(t, http.MethodPost, f.URL+"/session/s1/command", nil, `{"command":"review-pr"}`); status != http.StatusNotFound {
@@ -799,7 +755,6 @@ func TestCompatCommandFailureSkipsSkills(t *testing.T) {
 }
 
 func TestCompatSessionActions(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1", http.StatusOK, fakeSessionJSON)
 	for _, k := range []string{
@@ -833,7 +788,6 @@ func TestCompatSessionActions(t *testing.T) {
 }
 
 func TestCompatForkWithoutMessage(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/fork", http.StatusOK, `{"data":{"id":"s2"}}`)
 	cmpOK(t, http.MethodPost, f.URL+"/session/s1/fork", "")
@@ -841,7 +795,6 @@ func TestCompatForkWithoutMessage(t *testing.T) {
 }
 
 func TestCompatRevertUpstreamError(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/revert/stage", http.StatusConflict, `{"name":"Busy"}`)
 	f.json("DELETE /api/session/s1/revert", http.StatusConflict, `{"name":"Busy"}`)
@@ -860,7 +813,6 @@ func TestCompatRevertUpstreamError(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestCompatPermissionListAndReply(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/permission/request", http.StatusOK, `{"data":[{"id":"per_cmp_list","sessionID":"s9","action":"shell",
 		"resources":["ls"],"save":["ls *"],"metadata":{},"source":{"messageID":"msg1","id":"call1"}}]}`)
@@ -878,7 +830,6 @@ func TestCompatPermissionListAndReply(t *testing.T) {
 }
 
 func TestCompatPermissionReplyCacheMiss(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/permission/request", http.StatusOK, `{"data":[{"id":"per_cmp_miss","sessionID":"s8","action":"read"}]}`)
 	f.json("POST /api/session/s8/permission/per_cmp_miss/reply", http.StatusOK, `{}`)
@@ -889,7 +840,6 @@ func TestCompatPermissionReplyCacheMiss(t *testing.T) {
 }
 
 func TestCompatPermissionReplyUnknown(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/permission/request", http.StatusOK, `{"data":[]}`)
 	status, b := cmpDo(t, http.MethodPost, f.URL+"/permission/per_cmp_unknown/reply", nil, `{"reply":"once"}`)
@@ -906,7 +856,6 @@ const fakeQuestionForms = `{"data":[
 	{"id":"frm_cmp_other","sessionID":"s7","metadata":{"kind":"mcp"}}]}`
 
 func TestCompatQuestions(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/form", http.StatusOK, fakeQuestionForms)
 	f.json("GET /api/session/s7/form/que_cmp_1", http.StatusOK, `{"data":{"id":"que_cmp_1","fields":[
@@ -929,7 +878,6 @@ func TestCompatQuestions(t *testing.T) {
 }
 
 func TestCompatQuestionUnknownOrGone(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/form", http.StatusOK, `{"data":[{"id":"que_cmp_gone","sessionID":"s6","metadata":{"kind":"question"}}]}`)
 	// Listed, but the form fetch fails: treated as gone.
@@ -997,7 +945,6 @@ func (b *fakeBody) Close() error { b.closed = true; return nil }
 // http.RoundTripper: "RoundTrip must always close the body, including
 // on errors". Routes that never read the v1 body leave it open.
 func TestCompatRoundTripClosesRequestBody(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("POST /api/session/s1/interrupt", http.StatusOK, `{}`)
 	for _, p := range []string{"/session/s1/abort", "/nope"} {
@@ -1019,7 +966,6 @@ func TestCompatRoundTripClosesRequestBody(t *testing.T) {
 // A failed lookup is not proof the prompt is gone: relaying a 404 would
 // make the adapter forget a prompt the agent is still waiting on.
 func TestCompatPromptLookupErrorsAreRelayed(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/form", http.StatusOK, `{"data":[{"id":"que_cmp_err","sessionID":"s9","metadata":{"kind":"question"}}]}`)
 	f.json("GET /api/session/s9/form/que_cmp_err", http.StatusInternalServerError, `{"message":"boom"}`)

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
-	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
@@ -64,8 +63,6 @@ func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	}
 	srv.stateDB = durable
 	defer func() { _ = srv.stateDB.Close() }()
-	lookups := make(map[string]int)
-	srv.hostRouter = hostsvc.NewRouter(&interruptionMembershipHost{resolve: func(_ context.Context, dir string) (string, error) { lookups[dir]++; return "/repo", nil }})
 	sessions := []db.Session{{ID: "a", Directory: "/repo"}}
 	var cancelRead context.CancelFunc
 	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionsFn: func(context.Context, string, int64) ([]db.Session, error) { return sessions, nil }}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
@@ -103,9 +100,6 @@ func TestConfirmationNewMembershipSurvivesFailedReadAndReopen(t *testing.T) {
 	if err := srv.confirmOpencodeReplacement(t.Context(), "/repo"); err != nil {
 		t.Fatal(err)
 	}
-	if lookups["/new-dir"] != 1 {
-		t.Fatalf("retry repeated completed project resolution: %v", lookups)
-	}
 	if got, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", "b"); err != nil || len(got) != 1 {
 		t.Fatalf("new member history lost: %v %v", got, err)
 	}
@@ -122,8 +116,7 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 			}
 			srv.stateDB = durable
 			defer func() { _ = srv.stateDB.Close() }()
-			resolutions, lists := 0, 0
-			srv.hostRouter = hostsvc.NewRouter(&interruptionMembershipHost{resolve: func(context.Context, string) (string, error) { resolutions++; return "/repo", nil }})
+			lists := 0
 			calls := make(map[string]int)
 			var cancelRead context.CancelFunc
 			sessions := []db.Session{{ID: "a", Directory: "/repo"}, {ID: "b", Directory: "/repo"}, {ID: "c", Directory: "/repo"}}
@@ -146,7 +139,6 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			beforeResolutions := resolutions
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			cancelRead = cancel
@@ -188,8 +180,8 @@ func TestConfirmationCheckpointResumesAfterReopen(t *testing.T) {
 					t.Fatalf("missing reconciled history: %v %v", notices, err)
 				}
 			}
-			if resolutions != beforeResolutions || lists != firstLists {
-				t.Errorf("retry repeated historical work: resolutions=%d want=%d lists=%d want=%d", resolutions, beforeResolutions, lists, firstLists)
+			if lists != firstLists {
+				t.Errorf("retry repeated historical work: lists=%d want=%d", lists, firstLists)
 			}
 			if stopAt == 0 || original["a"].MessageID != "m-a" {
 				t.Fatal("missing original stop evidence")

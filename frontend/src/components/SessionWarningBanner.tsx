@@ -7,9 +7,6 @@ interface SessionWarningBannerProps {
 }
 
 function warningTitle(kind: string): string {
-  if (kind === 'duplicate_opencode_servers') {
-    return 'Multiple OpenCode servers';
-  }
   if (kind === 'external-session-owner') return 'Also open in another Claude instance';
   return 'Session warning';
 }
@@ -19,8 +16,6 @@ function warningTitle(kind: string): string {
 // (auto-hide, swipe, or the dismiss button) calls onDismiss, which the
 // parent persists so the same warning doesn't re-surface.
 export function SessionWarningBanner({ warning, onDismiss }: SessionWarningBannerProps) {
-  const ports = warning.ports?.filter(Boolean) ?? [];
-
   return (
     <Toast.Root
       className="oc-toast-root warning"
@@ -34,11 +29,6 @@ export function SessionWarningBanner({ warning, onDismiss }: SessionWarningBanne
         <strong>{warningTitle(warning.kind)}</strong>
         {' — '}
         {warning.message}
-        {ports.length > 0 && (
-          <span className="oc-session-warning-detail">
-            {' · '}ports {ports.join(', ')}
-          </span>
-        )}
       </Toast.Description>
       <Toast.Close className="oc-toast-close" aria-label="Dismiss session warning">
         <i className="bi bi-x-lg" aria-hidden="true" />

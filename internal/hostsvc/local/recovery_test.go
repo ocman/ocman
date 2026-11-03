@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 )
@@ -107,12 +106,9 @@ func TestEnsureProjectOpencode_RecoversFromStore(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := initRepo(t)
 			ctx := context.Background()
-			// The store is keyed by the canonical (resolved) repo root,
-			// which is what ensureLocked looks up.
-			repoRoot, err := git.ResolveRepoRoot(ctx, repo)
-			if err != nil {
-				t.Fatalf("resolve repo root: %v", err)
-			}
+			// The store is keyed by the machine root, which is what
+			// ensureLocked looks up.
+			repoRoot := machineRoot()
 
 			const persistedEndpoint = "http://127.0.0.1:41235"
 			store := newFakeStore()
@@ -166,16 +162,13 @@ func TestEnsureProjectOpencode_RecoversFromStore(t *testing.T) {
 }
 
 // TestEnsureProjectOpencode_PersistedRowCarriesRepoRoot pins that the
-// recovered instance tells the runtime which project it must be serving.
+// recovered instance tells the runtime which root it must be serving.
 // Loopback ports are recycled, so without this the probe cannot tell our
-// dead instance's port from another project's live one.
+// dead instance's port from another server's live one.
 func TestEnsureProjectOpencode_PersistedRowCarriesRepoRoot(t *testing.T) {
 	repo := initRepo(t)
 	ctx := context.Background()
-	repoRoot, err := git.ResolveRepoRoot(ctx, repo)
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
+	repoRoot := machineRoot()
 
 	const persistedEndpoint = "http://127.0.0.1:41235"
 	store := newFakeStore()

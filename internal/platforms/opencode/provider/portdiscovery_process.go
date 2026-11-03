@@ -3,19 +3,11 @@ package opencode
 import (
 	"context"
 	"time"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 type openCodeServer struct {
 	directory string
 	port      string
-}
-
-// SetManagedPortSource wires the owner's verified managed runtime inventory.
-func (d *Discovery) SetManagedPortSource(source func(context.Context) map[string]string) {
-	d.managedPortSource.Store(&source)
-	d.resetPortCache()
 }
 
 func copyOpenCodeServers(servers []openCodeServer) []openCodeServer {
@@ -44,20 +36,7 @@ func (d *Discovery) discoverOpenCodeServersUncachedContext(ctx context.Context) 
 	if ctx.Err() != nil {
 		return nil
 	}
-	if ocv2.InstalledV2() {
-		return append([]openCodeServer{}, d.machineServers()...)
-	}
-	servers := []openCodeServer{}
-	if source := d.managedPortSource.Load(); source != nil {
-		ports := (*source)(ctx)
-		if ports == nil {
-			return nil
-		}
-		for directory, port := range ports {
-			servers = append(servers, openCodeServer{directory: normalizePortDirectory(directory), port: port})
-		}
-	}
-	return servers
+	return append([]openCodeServer{}, d.machineServers()...)
 }
 
 func (d *Discovery) discoverOpenCodeServers() []openCodeServer {

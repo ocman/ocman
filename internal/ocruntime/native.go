@@ -54,9 +54,8 @@ func NewNativeRuntimeWithAuth(auth ocapi.Auth) *NativeRuntime {
 	}
 }
 
-// Launch threads spec.Port into `opencode serve --port N`, seeds
-// OPENCODE_PERMISSION, and returns the loopback endpoint + tmux session
-// name as the instance ID.
+// Launch threads spec.Port into `opencode serve --port N` and returns the
+// loopback endpoint + tmux session name as the instance ID.
 func (r *NativeRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance, error) {
 	if spec.RepoRoot == "" {
 		return nil, fmt.Errorf("ocruntime: LaunchSpec.RepoRoot is required")
@@ -70,20 +69,14 @@ func (r *NativeRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance,
 	}
 
 	env := map[string]string{}
-	if spec.PermissionJSON != "" && !spec.V2 { // v2 has no OPENCODE_PERMISSION
-		env["OPENCODE_PERMISSION"] = spec.PermissionJSON
-	}
 	r.auth.AddServerEnv(env)
-
-	command := tmux.OpencodeServeCommandForPort(spec.Port)
-	if spec.V2 {
-		// tmux panes inherit the tmux server's environment, not ocman's:
-		// carry an OPENCODE_DB override so ocman reads the database the
-		// server it launched writes.
-		if db := os.Getenv("OPENCODE_DB"); db != "" {
-			env["OPENCODE_DB"] = db
-		}
+	// tmux panes inherit the tmux server's environment, not ocman's: carry
+	// an OPENCODE_DB override so ocman reads the database the server it
+	// launched writes.
+	if db := os.Getenv("OPENCODE_DB"); db != "" {
+		env["OPENCODE_DB"] = db
 	}
+	command := tmux.OpencodeServeCommandForPort(spec.Port)
 	session, err := r.launch(ctx, spec.RepoRoot, command, env)
 	if err != nil {
 		return nil, fmt.Errorf("ocruntime: launch native tmux opencode: %w", err)

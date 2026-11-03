@@ -14,7 +14,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	_ "modernc.org/sqlite"
 
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/sqliteutil"
 	"github.com/ocman/ocman/internal/telemetry"
 )
@@ -33,8 +32,9 @@ type DB struct {
 	// denormalised cost/tokens_input/tokens_output columns, letting the
 	// session list skip re-aggregating every message blob.
 	sessionTotals bool
-	// v2 is true when OpenCode v2 is installed and reads go through the
-	// v1 views over its schema (v2views.go).
+	// v2 is true when connections get the v1-named views over OpenCode
+	// v2's schema (v2views.go). Only Open sets it; OpenReadWrite test
+	// fixtures read their own tables.
 	v2 bool
 	// schemaV2 latches once the physical database is seen migrated to the
 	// v2 schema; OpenCode never migrates back. Shared by snapshot copies.
@@ -42,8 +42,8 @@ type DB struct {
 }
 
 // historyV2 reports whether the physical database uses the OpenCode v2
-// schema. An installed v2 can still face a v1 database it has not migrated,
-// so readers of native v2 tables check the file, not the installed version.
+// schema. OpenCode migrates an older database when its server first starts,
+// so readers of native v2 tables check the file until it has.
 func (d *DB) historyV2(ctx context.Context) (bool, error) {
 	if !d.v2 || d.schemaV2 == nil {
 		return false, nil
@@ -168,10 +168,7 @@ func DefaultDBPath() string {
 // WAL.
 func Open(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?mode=ro&_busy_timeout=5000", path)
-	v2 := ocv2.InstalledV2()
-	if v2 {
-		useV2Views(dsn)
-	}
+	useV2Views(dsn)
 	// otelsql.Open wraps the underlying sqlite3 driver so every
 	// database/sql operation produces a span and increments the
 	// latency histogram with query fingerprints. When telemetry is
@@ -189,13 +186,13 @@ func Open(path string) (*DB, error) {
 			attribute.String("db.name", "opencode"),
 		),
 	)
-	d := &DB{db: db, v2: v2, schemaV2: new(atomic.Bool)}
+	d := &DB{db: db, v2: true, schemaV2: new(atomic.Bool)}
 	d.detectSessionTotals()
 	return d, nil
 }
 
 // V2 reports whether the database is read through the OpenCode v2 views:
-// v2 is installed and the physical database uses its schema.
+// it was opened with Open and the physical database uses the v2 schema.
 func (d *DB) V2() bool {
 	ok, _ := d.historyV2(context.Background())
 	return ok

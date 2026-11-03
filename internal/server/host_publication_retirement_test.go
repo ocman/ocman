@@ -11,7 +11,6 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -19,7 +18,6 @@ import (
 func TestProductionPublicationRetiresRuntimeBeforeColdRecovery(t *testing.T) {
 	for _, deletionFailure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "crash-after-publication", true: "post-publication-delete-failure"}[deletionFailure], func(t *testing.T) {
-			t.Cleanup(ocv2.SetInstalledV2(true))
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv("OPENCODE_DB", "")
 			srv, raw := testServerWithRawDB(t)
@@ -129,7 +127,6 @@ func TestProductionPublicationRetiresRuntimeBeforeColdRecovery(t *testing.T) {
 func TestProductionRestartDrainsHistoricalSessionsInFirstRequest(t *testing.T) {
 	for _, count := range []int{1024, 1025} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
-			t.Cleanup(ocv2.SetInstalledV2(true))
 			t.Setenv("HOME", t.TempDir())
 			t.Setenv("OPENCODE_DB", "")
 			srv, reg := newSessionsTestServer(t)

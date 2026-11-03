@@ -10,7 +10,6 @@ import (
 )
 
 func TestBackgroundShellDoesNotKeepSessionBusy(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("session.execution.started", 1, "/repo", `{"sessionID":"s1"}`),
@@ -30,7 +29,6 @@ func TestBackgroundShellDoesNotKeepSessionBusy(t *testing.T) {
 }
 
 func TestBackgroundShellStatusSnapshot(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"foreground":{"type":"running"}}}`)
 	f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"},{"directory":"/repo/worktree"}]`)
@@ -80,7 +78,6 @@ func TestBackgroundShellTransitions(t *testing.T) {
 		}, `[]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			defer SetInstalledV2(true)()
 			f := fakeServer(t)
 			f.events = tc.events
 			statuses := []string{}
@@ -102,7 +99,6 @@ func TestBackgroundShellTransitions(t *testing.T) {
 }
 
 func TestBackgroundShellReconnect(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"s1":{"type":"running"}}}`)
 	f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"},{"directory":"/repo"},{}]`)
@@ -118,7 +114,6 @@ func TestBackgroundShellReconnect(t *testing.T) {
 }
 
 func TestActivityDirectoryScope(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"},{"directory":"/other"}]`)
 	f.on("GET /api/shell", func(c fakeCall) (int, any) {
@@ -140,7 +135,6 @@ func TestActivityDirectoryScope(t *testing.T) {
 func TestActivitySnapshotErrors(t *testing.T) {
 	for _, path := range []string{"/api/session/active", "/api/debug/location", "/api/shell"} {
 		t.Run(path, func(t *testing.T) {
-			defer SetInstalledV2(true)()
 			f := fakeServer(t)
 			f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"}]`)
 			f.json("GET "+path, http.StatusBadGateway, `{"error":"unavailable"}`)
@@ -165,7 +159,6 @@ func TestActivitySnapshotErrors(t *testing.T) {
 }
 
 func TestActivityEmptyForeground(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":null}`)
 	f.events = []string{fakeEv("session.execution.started", 1, "", `{"sessionID":"s1"}`)}

@@ -1,7 +1,6 @@
 package opencode
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,11 +8,9 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestAdapterConfigurationCataloguesUseOwnDiscovery(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
 	for _, healthy := range []bool{true, false} {
 		t.Run(map[bool]string{true: "healthy", false: "unavailable"}[healthy], func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +32,7 @@ func TestAdapterConfigurationCataloguesUseOwnDiscovery(t *testing.T) {
 			t.Cleanup(func() { catalogCache.invalidatePort(u.Port()) })
 			a := New(nil, nil, nil, ocapi.Auth{})
 			a.rt = NewDiscovery()
-			a.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": u.Port()} })
+			a.Discovery().SetMachineServer(u.Port())
 			models := a.ModelOptions(t.Context())
 			if healthy && !reflect.DeepEqual(models, []string{"p/model"}) || !healthy && len(models) != 0 {
 				t.Fatal(models)

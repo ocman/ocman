@@ -13,21 +13,20 @@ import (
 	"strings"
 )
 
-// Wrap returns a RoundTripper that serves v1 OpenCode routes against a
-// v2 server and passes everything else to inner unchanged. inner must
-// already authenticate (it is also used for the v2 calls).
+// Wrap returns a RoundTripper that serves ocman's v1-shaped OpenCode routes
+// against a v2 server and passes everything else to inner unchanged. inner
+// must already authenticate (it is also used for the v2 calls).
 func Wrap(inner http.RoundTripper) http.RoundTripper {
 	if inner == nil {
 		inner = http.DefaultTransport
 	}
-	probeRT.Store(&inner)
 	return &transport{inner: inner}
 }
 
 type transport struct{ inner http.RoundTripper }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if !InstalledV2() || strings.HasPrefix(req.URL.Path, "/api/") || req.URL.Path == "/openapi.json" {
+	if strings.HasPrefix(req.URL.Path, "/api/") || req.URL.Path == "/openapi.json" {
 		return t.inner.RoundTrip(req)
 	}
 	v2, err := detect(req.Context(), t.inner, req.URL.Scheme, req.URL.Host)

@@ -14,8 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // ServerName is the key ocman owns under the config's "mcp" object.
@@ -152,16 +150,7 @@ func Check(wantURL, tokenFile string) (Status, error) {
 		}
 		return st, nil
 	}
-	if ocv2.InstalledV2() {
-		checkV2(doc, &st, tokenFile)
-		return st, nil
-	}
-	entry, ok := mcpEntry(doc)
-	if !ok {
-		return st, nil
-	}
-	st.CurrentURL = entry.URL
-	st.Configured = entry.URL == wantURL && enabled(entry) && authCurrent(entry.Headers, tokenFile)
+	checkV2(doc, &st, tokenFile)
 	return st, nil
 }
 
@@ -194,12 +183,7 @@ func Install(wantURL, tokenFile string) (string, error) {
 		return "", err
 	}
 
-	if ocv2.InstalledV2() {
-		err = setV2Entry(doc, wantURL, false, tokenFile)
-	} else {
-		err = setMCPEntry(doc, wantURL, tokenFile)
-	}
-	if err != nil {
+	if err := setV2Entry(doc, wantURL, false, tokenFile); err != nil {
 		return "", err
 	}
 	return writeDoc(st.Path, raw, doc)
@@ -240,7 +224,7 @@ func backupPath(path string, now time.Time) string {
 	return filepath.Join(dir, fmt.Sprintf("%s.%s-backup.json", base, now.Format(backupStamp)))
 }
 
-// mcpServer is the subset of a v1 (flat) MCP entry ocman cares about.
+// mcpServer is the subset of a legacy flat mcp.<name> entry ocman migrates.
 type mcpServer struct {
 	Type    string            `json:"type"`
 	URL     string            `json:"url"`
@@ -263,60 +247,6 @@ func mcpEntry(doc map[string]json.RawMessage) (mcpServer, bool) {
 	}
 	entry, ok := servers[ServerName]
 	return entry, ok
-}
-
-// setMCPEntry replaces doc["mcp"]["ocman"] in the v1 layout, leaving any
-// other server definitions (and their unknown fields) untouched.
-func setMCPEntry(doc map[string]json.RawMessage, url, tokenFile string) error {
-	servers := map[string]json.RawMessage{}
-	if rawMCP, ok := doc["mcp"]; ok {
-		if err := json.Unmarshal(rawMCP, &servers); err != nil {
-			return fmt.Errorf("%w: \"mcp\" is not an object: %w", ErrNotEditable, err)
-		}
-	}
-	fields := map[string]json.RawMessage{
-		"type":    json.RawMessage(`"remote"`),
-		"enabled": json.RawMessage("true"),
-	}
-	var err error
-	if fields["url"], err = json.Marshal(url); err != nil {
-		return err
-	}
-	if err := setAuthHeader(fields, tokenFile); err != nil {
-		return err
-	}
-	return putV1Entry(doc, servers, fields)
-}
-
-// setV1AuthHeader adds the token reference to an existing flat entry,
-// keeping all its other fields.
-func setV1AuthHeader(doc map[string]json.RawMessage, tokenFile string) error {
-	servers, err := object(doc["mcp"], `"mcp"`)
-	if err != nil {
-		return err
-	}
-	fields, err := object(servers[ServerName], `"mcp ocman entry"`)
-	if err != nil {
-		return err
-	}
-	if err := setAuthHeader(fields, tokenFile); err != nil {
-		return err
-	}
-	return putV1Entry(doc, servers, fields)
-}
-
-func putV1Entry(doc, servers, fields map[string]json.RawMessage) error {
-	entry, err := json.Marshal(fields)
-	if err != nil {
-		return err
-	}
-	servers[ServerName] = entry
-	merged, err := json.Marshal(servers)
-	if err != nil {
-		return err
-	}
-	doc["mcp"] = merged
-	return nil
 }
 
 // writeFileAtomic writes via a temp file in the same directory and

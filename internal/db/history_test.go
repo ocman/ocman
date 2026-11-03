@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestHistoryInventoryIsNewestFirst(t *testing.T) {
@@ -97,7 +95,6 @@ func TestIsSubagentTitle(t *testing.T) {
 }
 
 func TestV2HistoryRetainsNativeAndUnsupportedMessages(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	d, err := Open(writeV2DB(t))
 	if err != nil {
 		t.Fatal(err)

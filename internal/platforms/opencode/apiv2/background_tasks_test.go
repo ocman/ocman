@@ -7,7 +7,6 @@ import (
 )
 
 func TestBackgroundTaskCounts(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("shell.created", 1, "/repo", `{"info":{"id":"one","status":"running","metadata":{"sessionID":"s1"}}}`),
@@ -48,7 +47,6 @@ func TestBackgroundTaskCountWriteFailure(t *testing.T) {
 }
 
 func TestBackgroundTaskReconnectSnapshot(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"}]`)
 	f.json("GET /api/shell", http.StatusOK, `{"data":[{"id":"one","status":"running","metadata":{"sessionID":"s1"}},{"id":"two","status":"running","metadata":{"sessionID":"s1"}},{"id":"unowned","status":"running"}]}`)
@@ -58,7 +56,6 @@ func TestBackgroundTaskReconnectSnapshot(t *testing.T) {
 }
 
 func TestStopBackgroundTaskOwnership(t *testing.T) {
-	defer SetInstalledV2(true)()
 	for _, tc := range []struct {
 		name, owner, status string
 		want                int
@@ -94,7 +91,6 @@ func TestStopBackgroundTaskOwnership(t *testing.T) {
 }
 
 func TestStopBackgroundTaskUpstreamFailure(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/shell", http.StatusServiceUnavailable, `{}`)
 	status, _ := cmpDo(t, "POST", f.URL+"/session/s1/background/one/stop", nil, "")

@@ -36,7 +36,6 @@ func parentActivity(events []map[string]any) ([]string, []any) {
 }
 
 func TestAsyncSubagentDoesNotKeepParentWorking(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/child", http.StatusOK, `{"data":{"id":"child","parentID":"parent","title":"Review changes","location":{"directory":"/repo"}}}`)
 	f.json("GET /api/session/parent", http.StatusOK, `{"data":{"id":"parent","location":{"directory":"/repo"}}}`)
@@ -52,7 +51,6 @@ func TestAsyncSubagentDoesNotKeepParentWorking(t *testing.T) {
 }
 
 func TestAsyncSubagentTerminalTransitions(t *testing.T) {
-	defer SetInstalledV2(true)()
 	for _, terminal := range []string{"succeeded", "failed", "interrupted", "deleted"} {
 		t.Run(terminal, func(t *testing.T) {
 			f := agentFamily(t)
@@ -73,7 +71,6 @@ func TestAsyncSubagentTerminalTransitions(t *testing.T) {
 }
 
 func TestAsyncSubagentNestedAndUnrelated(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := agentFamily(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":true,"nested":true,"unrelated":true}}`)
 	f.events = []string{
@@ -86,7 +83,6 @@ func TestAsyncSubagentNestedAndUnrelated(t *testing.T) {
 }
 
 func TestAsyncSubagentParentResumesBeforeChildExits(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := agentFamily(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":true}}`)
 	f.events = []string{
@@ -99,7 +95,6 @@ func TestAsyncSubagentParentResumesBeforeChildExits(t *testing.T) {
 }
 
 func TestAsyncSubagentShellOutlivesChildExecution(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := agentFamily(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":true}}`)
 	f.events = []string{
@@ -113,7 +108,6 @@ func TestAsyncSubagentShellOutlivesChildExecution(t *testing.T) {
 }
 
 func TestAsyncSubagentOwnershipReadFailure(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := agentFamily(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":true}}`)
 	f.json("GET /api/session/child", http.StatusServiceUnavailable, `{}`)
@@ -175,7 +169,6 @@ func TestAsyncSubagentAncestorWriteFailure(t *testing.T) {
 }
 
 func TestAsyncSubagentCreationSuppliesOwnership(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := agentFamily(t)
 	f.events = []string{
 		fakeEv("session.created", 1, "/repo", `{"sessionID":"child"}`),
@@ -189,7 +182,6 @@ func TestAsyncSubagentCreationSuppliesOwnership(t *testing.T) {
 }
 
 func TestAsyncSubagentStatusSnapshot(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/active", http.StatusOK, `{"data":{"child":{"type":"running"}}}`)
 	f.json("GET /api/session/child", http.StatusOK, `{"data":{"id":"child","parentID":"parent","title":"Review changes","location":{"directory":"/repo"}}}`)

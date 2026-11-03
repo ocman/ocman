@@ -10,16 +10,12 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
 
 // Account asks the running OpenCode service for its own Console usage only.
 // It never reads credentials or resolves another provider's subscription.
 func (a *Adapter) Account(ctx context.Context) (*providerprotocol.Account, error) {
-	if !ocv2.InstalledV2() {
-		return nil, platforms.ErrUnsupported
-	}
 	port := a.rt.MachineServerPort()
 	if port == "" {
 		return nil, platforms.ErrPlatformUnreachable

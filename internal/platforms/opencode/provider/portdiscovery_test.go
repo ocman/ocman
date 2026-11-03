@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -164,76 +163,25 @@ func TestDiscoverOpenCodePortFresh_NormalizesSymlinkDirectory(t *testing.T) {
 	}
 }
 
-func TestDuplicateOpenCodeServerPortsForDirectory(t *testing.T) {
-	root := t.TempDir()
-	realDir := filepath.Join(root, "real")
-	linkDir := filepath.Join(root, "link")
-	otherDir := filepath.Join(root, "other")
-	if err := os.Mkdir(realDir, 0o755); err != nil {
-		t.Fatalf("mkdir real dir: %v", err)
-	}
-	if err := os.Mkdir(otherDir, 0o755); err != nil {
-		t.Fatalf("mkdir other dir: %v", err)
-	}
-	if err := os.Symlink(realDir, linkDir); err != nil {
-		t.Fatalf("symlink dir: %v", err)
-	}
-
-	servers := []openCodeServer{
-		{directory: normalizePortDirectory(realDir), port: "55001"},
-		{directory: normalizePortDirectory(linkDir), port: "55002"},
-		{directory: normalizePortDirectory(realDir), port: "55002"},
-		{directory: normalizePortDirectory(otherDir), port: "55003"},
-	}
-
-	got := duplicateOpenCodeServerPortsForDirectory(linkDir, servers)
-	want := []string{"55001", "55002"}
-	if len(got) != len(want) {
-		t.Fatalf("duplicate ports = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("duplicate ports = %v, want %v", got, want)
-		}
-	}
-
-	if got := duplicateOpenCodeServerPortsForDirectory(otherDir, servers); got != nil {
-		t.Fatalf("single server duplicate ports = %v, want nil", got)
-	}
-}
-
-func TestDiscoverDuplicateOpenCodeServerPorts_CachesServerDiscovery(t *testing.T) {
+func TestDiscoverOpenCodeServers_CachesServerDiscovery(t *testing.T) {
 	const dir = "/repo/a"
 
 	var calls int32
 	restore := setDiscoverServersImplForTests(func() []openCodeServer {
-		call := atomic.AddInt32(&calls, 1)
-		if call == 1 {
-			return []openCodeServer{
-				{directory: normalizePortDirectory(dir), port: "1111"},
-				{directory: normalizePortDirectory(dir), port: "2222"},
-			}
+		port := "1111"
+		if atomic.AddInt32(&calls, 1) > 1 {
+			port = "2222"
 		}
-		return []openCodeServer{
-			{directory: normalizePortDirectory(dir), port: "3333"},
-			{directory: normalizePortDirectory(dir), port: "4444"},
-		}
+		return []openCodeServer{{directory: normalizePortDirectory(dir), port: port}}
 	})
 	defer restore()
 	resetPortCacheForTests()
 	defer resetPortCacheForTests()
 
-	if got := td.discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
-		t.Fatalf("first duplicate ports = %v, want [1111 2222]", got)
-	}
-	if got := td.discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"1111", "2222"}) {
-		t.Fatalf("cached duplicate ports = %v, want [1111 2222]", got)
-	}
-	if warnings := td.sessionWarningsForDirectory(dir); len(warnings) != 1 || warnings[0].Kind != duplicateOpenCodeServersWarningKind || !slices.Equal(warnings[0].Ports, []string{"1111", "2222"}) {
-		t.Fatalf("duplicate server warning = %+v", warnings)
-	}
-	if warnings := td.sessionWarningsForDirectory("/repo/other"); warnings != nil {
-		t.Fatalf("single-server directory warned: %+v", warnings)
+	for range 2 {
+		if got := td.discoverOpenCodeServers(); len(got) != 1 || got[0].port != "1111" {
+			t.Fatalf("servers = %+v, want port 1111", got)
+		}
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Fatalf("server discovery calls before invalidation = %d, want 1", got)
@@ -241,8 +189,8 @@ func TestDiscoverDuplicateOpenCodeServerPorts_CachesServerDiscovery(t *testing.T
 
 	td.InvalidateOpenCodePortCache()
 
-	if got := td.discoverDuplicateOpenCodeServerPorts(dir); !slices.Equal(got, []string{"3333", "4444"}) {
-		t.Fatalf("post-invalidation duplicate ports = %v, want [3333 4444]", got)
+	if got := td.discoverOpenCodeServers(); len(got) != 1 || got[0].port != "2222" {
+		t.Fatalf("post-invalidation servers = %+v, want port 2222", got)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Fatalf("server discovery calls after invalidation = %d, want 2", got)

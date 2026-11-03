@@ -6,13 +6,13 @@ import type { SessionWarning } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { sessionWarningKey, useSessionWarnings } from './useSessionWarnings';
 
-const w1 = { kind: 'port', message: 'busy', ports: [1, 2] } as unknown as SessionWarning;
-const w2 = { kind: 'other', message: 'hmm' } as unknown as SessionWarning;
+const w1 = { kind: 'port', message: 'busy' } as SessionWarning;
+const w2 = { kind: 'other', message: 'hmm' } as SessionWarning;
 const session = { id: 's1', warnings: [w1, w2] } as SessionMetadata;
 
 describe('useSessionWarnings', () => {
   it('keys warnings and hides dismissed ones', () => {
-    expect(sessionWarningKey('s1', w1)).toBe('s1:port:busy:1,2');
+    expect(sessionWarningKey('s1', w1)).toBe('s1:port:busy:');
     const { result, rerender } = renderHook(
       ({ s }: { s: SessionMetadata | null }) => useSessionWarnings(s),
       { initialProps: { s: session as SessionMetadata | null } },

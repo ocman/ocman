@@ -142,7 +142,7 @@ func TestPromptReconciliationHydratesAndReplacesDirectorySnapshot(t *testing.T) 
 	const dir = "/repo/worktree with space"
 	var mu sync.Mutex
 	pending := true
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(v1Shaped(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("directory"); got != dir {
 			t.Errorf("directory query = %q, want %q", got, dir)
 		}

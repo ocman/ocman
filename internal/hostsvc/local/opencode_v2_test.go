@@ -9,20 +9,12 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/hostsvc"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // portRecorder captures Deps.SetMachineServer publications.
 type portRecorder struct {
 	mu    sync.Mutex
 	ports []string
-}
-
-// TestMain pins the installed-OpenCode check so no test runs the real
-// `opencode --version`.
-func TestMain(m *testing.M) {
-	ocv2.SetInstalledV2(false)
-	os.Exit(m.Run())
 }
 
 func (p *portRecorder) set(port string) {
@@ -42,7 +34,6 @@ func (p *portRecorder) last() string {
 
 func v2Host(t *testing.T) (*Host, *fakeRuntime, *fakeStore, *portRecorder, string) {
 	t.Helper()
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("OPENCODE_DB", "")
@@ -66,9 +57,6 @@ func TestV2EnsureLaunchesOneMachineServer(t *testing.T) {
 		t.Fatalf("machine root %s not created: %v", root, err)
 	}
 	spec := rt.spec()
-	if !spec.V2 {
-		t.Error("LaunchSpec.V2 = false; want true")
-	}
 	if spec.RepoRoot != root {
 		t.Errorf("launched RepoRoot = %q; want machine root %q", spec.RepoRoot, root)
 	}
@@ -169,7 +157,7 @@ func runSupervisorBriefly(t *testing.T, h *Host, rt *fakeRuntime) {
 	}
 }
 
-func TestRunMachineSupervisorEnsuresWhenV2(t *testing.T) {
+func TestRunMachineSupervisorEnsuresMachineServer(t *testing.T) {
 	h, rt, _, _, root := v2Host(t)
 	runSupervisorBriefly(t, h, rt)
 	if rt.launchCount() != 1 {
@@ -177,17 +165,6 @@ func TestRunMachineSupervisorEnsuresWhenV2(t *testing.T) {
 	}
 	if rt.spec().RepoRoot != root {
 		t.Errorf("supervisor launched %q; want %q", rt.spec().RepoRoot, root)
-	}
-}
-
-func TestRunMachineSupervisorNoopWhenV1(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
-	t.Setenv("HOME", t.TempDir())
-	rt := &fakeRuntime{}
-	h := New(Deps{Runtime: rt})
-	runSupervisorBriefly(t, h, rt)
-	if rt.launchCount() != 0 {
-		t.Fatalf("launches = %d; want 0 on v1", rt.launchCount())
 	}
 }
 

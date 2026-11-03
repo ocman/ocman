@@ -5,13 +5,11 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/gitexec"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
@@ -102,10 +100,10 @@ func (f *fakeRuntime) spec() ocruntime.LaunchSpec {
 	return f.lastSpec
 }
 
-// TestEnsureProjectOpencode_LaunchesAndSeeds: no instance -> launches once,
-// seeds OPENCODE_PERMISSION with a scoped external_directory rule, waits
-// for the instance to serve, returns a reachable endpoint + instance.
-func TestEnsureProjectOpencode_LaunchesAndSeeds(t *testing.T) {
+// TestEnsureProjectOpencode_Launches: no instance -> launches the machine
+// server once, waits for it to serve, returns a reachable endpoint +
+// instance reported under the project's root.
+func TestEnsureProjectOpencode_Launches(t *testing.T) {
 	repo := initRepo(t)
 	rt := &fakeRuntime{endpoint: "http://127.0.0.1:6666"}
 	h := New(Deps{Runtime: rt})
@@ -129,49 +127,19 @@ func TestEnsureProjectOpencode_LaunchesAndSeeds(t *testing.T) {
 	if res.Runtime.ID != "sess-name" {
 		t.Errorf("Runtime.ID = %q; want sess-name (tmux session for observability)", res.Runtime.ID)
 	}
-	if res.RepoRoot == "" {
-		t.Error("RepoRoot should be resolved for observability")
+	wantRoot, err := projectOpencodeRoot(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RepoRoot != wantRoot {
+		t.Errorf("RepoRoot = %q; want project root %q", res.RepoRoot, wantRoot)
 	}
 	spec := rt.spec()
-	if spec.RepoRoot != res.RepoRoot {
-		t.Errorf("launched RepoRoot %q != resolved repo root %q", spec.RepoRoot, res.RepoRoot)
+	if spec.RepoRoot != machineRoot() {
+		t.Errorf("launched RepoRoot %q; want machine root %q", spec.RepoRoot, machineRoot())
 	}
 	if spec.Port <= 0 {
 		t.Errorf("LaunchSpec.Port = %d; want a positive allocated port", spec.Port)
-	}
-	// The permission JSON must carry a scoped external_directory rule for
-	// this project's .worktrees/<repo> root, not a blanket allow.
-	if !strings.Contains(spec.PermissionJSON, "external_directory") {
-		t.Errorf("permission JSON missing external_directory: %q", spec.PermissionJSON)
-	}
-	if !strings.Contains(spec.PermissionJSON, ".worktrees") {
-		t.Errorf("permission JSON not scoped to .worktrees: %q", spec.PermissionJSON)
-	}
-	if strings.Contains(spec.PermissionJSON, `"*":"allow"`) {
-		t.Errorf("permission JSON must not blanket-allow: %q", spec.PermissionJSON)
-	}
-}
-
-func TestEnsureProjectOpencode_AdoptsDiscoveredServer(t *testing.T) {
-	repo := initRepo(t)
-	rt := &fakeRuntime{}
-	h := New(Deps{
-		Runtime:      rt,
-		DiscoverPort: func(string) string { return "4096" },
-	})
-
-	res, err := h.EnsureProjectOpencode(context.Background(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
-	if err != nil {
-		t.Fatalf("EnsureProjectOpencode: %v", err)
-	}
-	if rt.launchCount() != 0 {
-		t.Fatalf("launched %d times; want existing server reused", rt.launchCount())
-	}
-	if res.Endpoint != "http://127.0.0.1:4096" {
-		t.Fatalf("Endpoint = %q, want discovered endpoint", res.Endpoint)
-	}
-	if res.Launched {
-		t.Fatal("Launched should be false for a discovered server")
 	}
 }
 
@@ -370,10 +338,7 @@ func TestEnsureProjectOpencode_HealthTimeout(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := initRepo(t)
-			repoRoot, err := git.ResolveRepoRoot(context.Background(), repo)
-			if err != nil {
-				t.Fatalf("resolve repo root: %v", err)
-			}
+			repoRoot := machineRoot()
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 			store := newFakeStore()
@@ -394,7 +359,7 @@ func TestEnsureProjectOpencode_HealthTimeout(t *testing.T) {
 			h.portWaitTimeout = time.Second
 			h.portWaitInterval = 5 * time.Millisecond
 
-			_, err = h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
+			_, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
 			if err == nil {
 				t.Fatal("expected an error when the instance never becomes healthy")
 			}

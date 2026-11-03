@@ -8,16 +8,13 @@ import (
 	"github.com/ocman/ocman/internal/forge/forgejo"
 	"github.com/ocman/ocman/internal/forge/github"
 	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
-	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/sourcecontrol"
 )
 
-// TestMain pins the installed-OpenCode check so no test runs the real
-// `opencode --version`, and gives every Server the forge clients of a
+// TestMain gives every Server the forge clients of a
 // machine without credentials instead of running `gh auth token` and
 // reading the developer's tea logins.
 func TestMain(m *testing.M) {
-	ocv2.SetInstalledV2(false)
 	discoverForgeClients = hermeticForgeClients
 	os.Exit(claudetest.Run(m))
 }

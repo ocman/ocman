@@ -38,7 +38,7 @@ func (s failedUpsertStore) Upsert(context.Context, string, ManagedInstance) erro
 }
 
 func TestStoppedRecoveryBlocksReplacementUntilConfirmed(t *testing.T) {
-	for _, source := range []string{"no store", "adopted", "failed upsert", "durable"} {
+	for _, source := range []string{"no store", "failed upsert", "durable"} {
 		for _, restart := range []bool{false, true} {
 			t.Run(source+"/"+map[bool]string{false: "ensure", true: "restart"}[restart], func(t *testing.T) {
 				h, rt, store, rec, root := v2Host(t)
@@ -47,9 +47,6 @@ func TestStoppedRecoveryBlocksReplacementUntilConfirmed(t *testing.T) {
 					h.store = nil
 				case "failed upsert":
 					h.store = failedUpsertStore{store}
-				}
-				if source == "adopted" {
-					h.deps.DiscoverPort = func(string) string { return "7777" }
 				}
 				req := hostsvc.EnsureProjectOpencodeRequest{}
 				initial, err := h.EnsureProjectOpencode(t.Context(), req)
@@ -117,7 +114,7 @@ func TestBeforeStopFailurePreservesInstance(t *testing.T) {
 				BeforeReplace: func(context.Context, string, string) error { prepared++; return nil },
 				BeforeStop: func(_ context.Context, root string, inst *ocruntime.Instance) error {
 					boundaries++
-					if root != "repo" || prepared != boundaries || rt.stopCount() != 0 || inst.ID != "owned" {
+					if root != machineRoot() || prepared != boundaries || rt.stopCount() != 0 || inst.ID != "owned" {
 						t.Error("stop boundary out of order")
 						return errors.New("stop boundary out of order")
 					}
@@ -126,14 +123,14 @@ func TestBeforeStopFailurePreservesInstance(t *testing.T) {
 				AfterStop: func(context.Context, string) error { confirmed++; return nil },
 			})
 			inst := &ocruntime.Instance{ID: "owned", Endpoint: "old"}
-			h.authorizeInstance("repo", inst)
+			h.authorizeInstance(machineRoot(), inst)
 			replace := h.ensureLocked
 			if restart {
 				replace = h.restartLocked
 			}
 			for attempt := 0; attempt < 2; attempt++ {
-				_, err := replace(t.Context(), "repo")
-				if !errors.Is(err, boundaryErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || confirmed != 0 || h.currentInstance("repo") != inst || h.authorizedEndpoint("repo") != "old" {
+				_, err := replace(t.Context(), machineRoot())
+				if !errors.Is(err, boundaryErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || confirmed != 0 || h.currentInstance(machineRoot()) != inst || h.authorizedEndpoint(machineRoot()) != "old" {
 					t.Fatalf("failed boundary stopped or lost instance: err=%v stops=%d launches=%d confirmed=%d", err, rt.stopCount(), rt.launchCount(), confirmed)
 				}
 			}
@@ -154,10 +151,10 @@ func TestStopBoundaryOrdering(t *testing.T) {
 			inst := &ocruntime.Instance{Endpoint: "old", ID: "owned"}
 			prepared, boundary, confirmed := false, false, false
 			h := New(Deps{Runtime: rt})
-			h.authorizeInstance("repo", inst)
+			h.authorizeInstance(machineRoot(), inst)
 			h.deps.BeforeReplace = func(context.Context, string, string) error { prepared = true; return nil }
 			h.deps.BeforeStop = func(ctx context.Context, root string, got *ocruntime.Instance) error {
-				if ctx.Err() != nil || root != "repo" || !prepared || rt.stopCount() != 0 || h.currentInstance(root) != inst || got != inst {
+				if ctx.Err() != nil || root != machineRoot() || !prepared || rt.stopCount() != 0 || h.currentInstance(root) != inst || got != inst {
 					t.Error("boundary must run after preparation and before Stop")
 					return errors.New("stop boundary out of order")
 				}
@@ -165,19 +162,19 @@ func TestStopBoundaryOrdering(t *testing.T) {
 				return nil
 			}
 			h.deps.AfterStop = func(context.Context, string) error {
-				if !boundary || rt.stopCount() != 1 || h.currentInstance("repo") != nil || h.authorizedEndpoint("repo") != "" {
+				if !boundary || rt.stopCount() != 1 || h.currentInstance(machineRoot()) != nil || h.authorizedEndpoint(machineRoot()) != "" {
 					t.Error("confirmation must follow successful Stop and routing withdrawal")
 					return errors.New("confirmation out of order")
 				}
 				confirmed = true
 				return nil
 			}
-			_, err := h.restartLocked(t.Context(), "repo")
+			_, err := h.restartLocked(t.Context(), machineRoot())
 			if !boundary || rt.stopCount() != 1 {
 				t.Fatal("stop boundary skipped")
 			}
 			if stopFails {
-				if !errors.Is(err, rt.stopErr) || confirmed || h.currentInstance("repo") != inst || rt.launchCount() != 0 {
+				if !errors.Is(err, rt.stopErr) || confirmed || h.currentInstance(machineRoot()) != inst || rt.launchCount() != 0 {
 					t.Fatalf("failed Stop was reconciled: %v", err)
 				}
 			} else if err != nil || !confirmed || rt.launchCount() != 1 {
@@ -203,19 +200,19 @@ func TestStoppedRecoveryRetainedOnDeleteFailure(t *testing.T) {
 	store := &failedDeleteStore{fakeStore: newFakeStore(), err: errors.New("delete unavailable")}
 	rt := &fakeRuntime{}
 	h := New(Deps{Runtime: rt, ManagedStore: store})
-	if _, err := h.ensureLocked(t.Context(), "repo"); err != nil {
+	if _, err := h.ensureLocked(t.Context(), machineRoot()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.restartLocked(t.Context(), "repo"); !errors.Is(err, store.err) {
+	if _, err := h.restartLocked(t.Context(), machineRoot()); !errors.Is(err, store.err) {
 		t.Fatalf("delete error = %v", err)
 	}
 	rt.probe = func(*ocruntime.Instance) bool { t.Error("probed stopped instance"); return false }
-	if _, err := h.ensureLocked(t.Context(), "repo"); !errors.Is(err, store.err) || rt.stopCount() != 1 || rt.launchCount() != 1 || h.authorizedEndpoint("repo") != "" {
+	if _, err := h.ensureLocked(t.Context(), machineRoot()); !errors.Is(err, store.err) || rt.stopCount() != 1 || rt.launchCount() != 1 || h.authorizedEndpoint(machineRoot()) != "" {
 		t.Fatalf("failed deletion bypassed recovery: %v", err)
 	}
 	store.err = nil
 	rt.probe = nil
-	if res, err := h.ensureLocked(t.Context(), "repo"); err != nil || res == nil || !res.Launched || rt.stopCount() != 1 || rt.launchCount() != 2 {
+	if res, err := h.ensureLocked(t.Context(), machineRoot()); err != nil || res == nil || !res.Launched || rt.stopCount() != 1 || rt.launchCount() != 2 {
 		t.Fatalf("delete recovery failed: result=%+v err=%v", res, err)
 	}
 }
@@ -224,16 +221,16 @@ func TestFailedProbeReplacementRetriesOnlyConfirmation(t *testing.T) {
 	rt := &fakeRuntime{probe: func(inst *ocruntime.Instance) bool { return inst.Endpoint != "old" }}
 	confirmErr := errors.New("confirmation failed")
 	h := New(Deps{Runtime: rt, AfterStop: func(context.Context, string) error { return confirmErr }})
-	h.authorizeInstance("repo", &ocruntime.Instance{Endpoint: "old", ID: "owned"})
+	h.authorizeInstance(machineRoot(), &ocruntime.Instance{Endpoint: "old", ID: "owned"})
 	for attempt := 0; attempt < 3; attempt++ {
-		if _, err := h.ensureLocked(t.Context(), "repo"); !errors.Is(err, confirmErr) || rt.stopCount() != 1 || rt.launchCount() != 0 || h.authorizedEndpoint("repo") != "" {
+		if _, err := h.ensureLocked(t.Context(), machineRoot()); !errors.Is(err, confirmErr) || rt.stopCount() != 1 || rt.launchCount() != 0 || h.authorizedEndpoint(machineRoot()) != "" {
 			t.Fatalf("failed probe bypassed recovery: %v stops=%d launches=%d", err, rt.stopCount(), rt.launchCount())
 		}
 		rt.probe = func(*ocruntime.Instance) bool { t.Error("probed stopped instance"); return false }
 	}
 	h.deps.AfterStop = nil
 	rt.probe = nil
-	if _, err := h.ensureLocked(t.Context(), "repo"); err != nil || rt.stopCount() != 1 || rt.launchCount() != 1 {
+	if _, err := h.ensureLocked(t.Context(), machineRoot()); err != nil || rt.stopCount() != 1 || rt.launchCount() != 1 {
 		t.Fatalf("recovery failed: %v", err)
 	}
 }
@@ -258,14 +255,14 @@ func TestExplicitStopRetriesPendingConfirmation(t *testing.T) {
 	}
 }
 
-func TestConfirmedFailedProbeSkipsStoppedDiscovery(t *testing.T) {
+func TestConfirmedFailedProbeReplacesAuthorizedInstance(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OPENCODE_DB", "")
 	rt := &fakeRuntime{probe: func(inst *ocruntime.Instance) bool { return inst.Endpoint != "old" }}
-	h := New(Deps{Runtime: rt, DiscoverPort: func(string) string {
-		t.Error("discovery can return the already stopped endpoint")
-		return "7777"
-	}})
-	h.authorizeInstance("repo", &ocruntime.Instance{Endpoint: "old", ID: "owned"})
-	if res, err := h.ensureLocked(t.Context(), "repo"); err != nil || res == nil || !res.Launched || rt.stopCount() != 1 || rt.launchCount() != 1 {
+	h := New(Deps{Runtime: rt})
+	root := machineRoot()
+	h.authorizeInstance(root, &ocruntime.Instance{Endpoint: "old", ID: "owned"})
+	if res, err := h.ensureLocked(t.Context(), root); err != nil || res == nil || !res.Launched || rt.stopCount() != 1 || rt.launchCount() != 1 {
 		t.Fatalf("replacement failed: result=%+v err=%v", res, err)
 	}
 }
@@ -293,7 +290,6 @@ func TestNewHostRecoversDurableStoppedWithoutManagedRow(t *testing.T) {
 				}
 				confirmErr := errors.New("confirmation unavailable")
 				h.deps.AfterStop = func(context.Context, string) error { confirmations++; return confirmErr }
-				h.deps.DiscoverPort = func(string) string { t.Error("discovered stopped instance"); return "7777" }
 				rt.probe = func(*ocruntime.Instance) bool { t.Error("probed stopped instance"); return true }
 				replace := h.EnsureProjectOpencode
 				if restart {
@@ -334,7 +330,6 @@ func TestDurableStoppedLookupErrorFailsClosed(t *testing.T) {
 				return false, lookupErr
 			}
 			h.deps.AfterStop = func(context.Context, string) error { t.Error("confirmed after failed lookup"); return nil }
-			h.deps.DiscoverPort = func(string) string { t.Error("discovered after failed lookup"); return "7777" }
 			rt.probe = func(*ocruntime.Instance) bool { t.Error("probed after failed lookup"); return true }
 			replace := h.EnsureProjectOpencode
 			if restart {

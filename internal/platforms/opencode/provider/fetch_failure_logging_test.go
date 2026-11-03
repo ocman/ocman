@@ -18,7 +18,7 @@ import (
 
 func TestCatalogFailureWarningsCoalesceWithoutStoppingRetries(t *testing.T) {
 	var requests atomic.Int32
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewServer(v1Shaped(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

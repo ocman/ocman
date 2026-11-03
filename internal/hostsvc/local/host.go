@@ -42,7 +42,6 @@ type Deps struct {
 	ReplacementStopped    func(context.Context, string) (bool, error)
 	ReplacementStopping   func(context.Context, string) (*ocruntime.Instance, error)
 	CancelReplacementStop func(context.Context, string) error
-	DiscoverPort          func(string) string
 	SetMachineServer      func(string)
 	// OpenCodeService reads OpenCode v2's registered background service;
 	// nil never uses one (ocman on another database, tests).
@@ -96,10 +95,10 @@ type Host struct {
 	detached       context.Context
 	cancelDetached context.CancelFunc
 	finalized      bool
-	instances   map[string]*ocruntime.Instance
-	authorized  map[string]string
-	generations map[string]uint64
-	mutating    map[string]bool
+	instances      map[string]*ocruntime.Instance
+	authorized     map[string]string
+	generations    map[string]uint64
+	mutating       map[string]bool
 	// stopped retains non-routable recovery until reconciliation commits.
 	stopped          map[string]bool
 	portWaitTimeout  time.Duration

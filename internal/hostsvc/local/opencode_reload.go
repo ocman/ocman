@@ -12,13 +12,9 @@ import (
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func (h *Host) ReloadOpencode(ctx context.Context) error {
-	if !ocv2.InstalledV2() {
-		return fmt.Errorf("configuration reload requires OpenCode v2: %w", platforms.ErrUnsupported)
-	}
 	root := machineRoot()
 	candidate := h.currentInstance(root)
 	if candidate == nil && h.store != nil {

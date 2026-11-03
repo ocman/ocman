@@ -9,8 +9,8 @@ import (
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
-	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 const serviceURL = "http://127.0.0.1:49374"
@@ -52,7 +52,6 @@ func (s *serviceHost) setService(svc *ocv2.Service) {
 
 func newServiceHost(t *testing.T) *serviceHost {
 	t.Helper()
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OPENCODE_DB", "")
 	s := &serviceHost{
@@ -210,14 +209,10 @@ func TestV2RestartedServiceIsRediscovered(t *testing.T) {
 	}
 }
 
-func TestV2ServiceIgnoredOutsideMachineRootOrV1(t *testing.T) {
+func TestV2ServiceIgnoredOutsideMachineRoot(t *testing.T) {
 	s := newServiceHost(t)
 	if res, handled, err := s.useService(t.Context(), "/some/repo"); handled || res != nil || err != nil {
 		t.Fatalf("project root used the service: %+v %v %v", res, handled, err)
-	}
-	ocv2.SetInstalledV2(false)
-	if _, handled, _ := s.useService(t.Context(), machineRoot()); handled {
-		t.Fatal("v1 used the v2 service")
 	}
 }
 

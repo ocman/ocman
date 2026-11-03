@@ -8,11 +8,7 @@ import (
 )
 
 func (a *Adapter) StoredReadConfig(directory string) *platforms.ConversationHead {
-	head := &platforms.ConversationHead{Pricing: a.pricing, DirectoryDefaults: true}
-	if directory != "" {
-		head.Warnings = a.rt.sessionWarningsForDirectory(directory)
-	}
-	return head
+	return &platforms.ConversationHead{Pricing: a.pricing, DirectoryDefaults: true}
 }
 
 // EnrichStoredSessions reads only managed-port and SSE observation caches, not

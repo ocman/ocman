@@ -7,7 +7,6 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // OpenCode v2 serves every project from one server, so the catalogs of
@@ -15,7 +14,6 @@ import (
 // (and cached separately) to pick up project-local agents, commands
 // and model configuration.
 func TestStoredDirectoryCatalogScopesV2RequestsByDirectory(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	t.Cleanup(func() { catalogCache.invalidatePort("") })
 	agents := map[string]string{"/src/alpha": "alpha-agent", "/src/beta": "beta-agent"}
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {

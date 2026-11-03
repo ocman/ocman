@@ -1118,8 +1118,7 @@
 /* Rate-limit / session-warning toast details. The toasts themselves
    use the shared .oc-toast-root styles (SessionDetail.css). */
 .oc-rate-limit-retry,
-.oc-rate-limit-attempt,
-.oc-session-warning-detail {
+.oc-rate-limit-attempt {
   font-style: italic;
   opacity: 0.75;
 }

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 )
@@ -118,10 +117,7 @@ func TestRestartProjectOpencode_PreservesInstanceOnStopError(t *testing.T) {
 func TestRestartProjectOpencode_ClearsStoreRow(t *testing.T) {
 	repo := initRepo(t)
 	ctx := context.Background()
-	repoRoot, err := git.ResolveRepoRoot(ctx, repo)
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
+	repoRoot := machineRoot()
 
 	var launched int32
 	rt := &fakeRuntime{}
@@ -164,7 +160,7 @@ func TestRestartProjectOpencode_ClearsStoreRow(t *testing.T) {
 }
 
 func TestStopProjectOpencode_StopsAndForgetsInstance(t *testing.T) {
-	repo := initRepo(t)
+	repo := machineRoot()
 	rt := &fakeRuntime{endpoint: "http://127.0.0.1:8111"}
 	store := newFakeStore()
 	h := New(Deps{Runtime: rt, ManagedStore: store})

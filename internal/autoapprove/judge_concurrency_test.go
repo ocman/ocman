@@ -20,6 +20,8 @@ func TestOpenCodeJudgeConcurrencyIsBounded(t *testing.T) {
 	var active, peak, created atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/api/info":
+			http.NotFound(w, r)
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			n := created.Add(1)
 			now := active.Add(1)

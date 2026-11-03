@@ -9,7 +9,6 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/remote"
 	pb "github.com/ocman/ocman/internal/remote/proto"
 )
@@ -197,56 +196,50 @@ func TestReplacementPreparationDoesNotClaimConfirmedInterruption(t *testing.T) {
 }
 
 func TestReplacementHistoryIsOwnerScopedAndSurvivesAbort(t *testing.T) {
-	for _, machine := range []bool{false, true} {
-		t.Run(map[bool]string{false: "project", true: "machine"}[machine], func(t *testing.T) {
-			ocv2.SetInstalledV2(machine)
-			t.Cleanup(func() { ocv2.SetInstalledV2(false) })
-			srv, reg := newInterruptionTestServer(t)
-			reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
-				{ID: "active", Directory: "/projects/.worktrees/repo/a", Status: db.StatusBusy},
-				{ID: "other", Directory: "/projects/other", Status: db.StatusBusy},
-				{ID: "idle", Directory: "/projects/repo", Status: db.StatusWaiting},
-			}, SessionFn: func(id string) (*platforms.SessionDetail, error) {
-				return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusWaiting}, Messages: []db.Message{{ID: "m-" + id, Data: json.RawMessage(`{"role":"assistant","error":{"name":"MessageAbortedError"}}`)}}}, nil
-			}}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
-				if id == "idle" {
-					return &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageID: "m-idle"}, nil
-				}
-				return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "m-" + id}, nil
-			}})
-			if err := recordStoppedReplacement(t, srv, "/projects/repo", "requested restart"); err != nil {
-				t.Fatal(err)
-			}
-			if err := recordStoppedReplacement(t, srv, "/projects/repo", "failed health probe"); err != nil {
-				t.Fatal(err)
-			}
-			for _, id := range []string{"active", "other", "idle"} {
-				notices, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", id)
-				want := id == "active" || machine && id == "other"
-				wantCount := 0
-				if want {
-					wantCount = 1
-				}
-				if err != nil || len(notices) != wantCount {
-					t.Fatalf("%s notices=%v err=%v", id, notices, err)
-				}
-				if want && !strings.Contains(notices[0].Message, "requested restart") {
-					t.Fatal("first cause overwritten")
-				}
-			}
-			owner := remote.NewServer(reg, nil, "owner", "test").UseSessionEnricher(srv.EnrichRemoteSessionDetail)
-			resp, err := owner.Session(t.Context(), &pb.SessionReq{Platform: "opencode", SessionId: "active"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var detail platforms.SessionDetail
-			if err := json.Unmarshal(resp.Payload, &detail); err != nil {
-				t.Fatal(err)
-			}
-			if len(detail.Messages) != 2 || len(detail.Parts) != 1 {
-				t.Fatalf("owner RPC lost restart notice: %+v", detail)
-			}
-		})
+	srv, reg := newInterruptionTestServer(t)
+	reg.Register(&interruptionLifecyclePlatform{fakePlatform: &fakePlatform{PlatformID: "opencode", SessionList: []db.Session{
+		{ID: "active", Directory: "/projects/.worktrees/repo/a", Status: db.StatusBusy},
+		{ID: "other", Directory: "/projects/other", Status: db.StatusBusy},
+		{ID: "idle", Directory: "/projects/repo", Status: db.StatusWaiting},
+	}, SessionFn: func(id string) (*platforms.SessionDetail, error) {
+		return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusWaiting}, Messages: []db.Message{{ID: "m-" + id, Data: json.RawMessage(`{"role":"assistant","error":{"name":"MessageAbortedError"}}`)}}}, nil
+	}}, lifecycle: func(id string) (*platforms.SessionLifecycle, error) {
+		if id == "idle" {
+			return &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageID: "m-idle"}, nil
+		}
+		return &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "m-" + id}, nil
+	}})
+	if err := recordStoppedReplacement(t, srv, "/projects/repo", "requested restart"); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordStoppedReplacement(t, srv, "/projects/repo", "failed health probe"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"active", "other", "idle"} {
+		notices, err := srv.stateDB.SessionInterruptions(t.Context(), "opencode", id)
+		want := id == "active" || id == "other"
+		wantCount := 0
+		if want {
+			wantCount = 1
+		}
+		if err != nil || len(notices) != wantCount {
+			t.Fatalf("%s notices=%v err=%v", id, notices, err)
+		}
+		if want && !strings.Contains(notices[0].Message, "requested restart") {
+			t.Fatal("first cause overwritten")
+		}
+	}
+	owner := remote.NewServer(reg, nil, "owner", "test").UseSessionEnricher(srv.EnrichRemoteSessionDetail)
+	resp, err := owner.Session(t.Context(), &pb.SessionReq{Platform: "opencode", SessionId: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail platforms.SessionDetail
+	if err := json.Unmarshal(resp.Payload, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Messages) != 2 || len(detail.Parts) != 1 {
+		t.Fatalf("owner RPC lost restart notice: %+v", detail)
 	}
 }
 

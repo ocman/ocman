@@ -17,7 +17,6 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // Frames captured from OpenCode v2.0.32's /api/event, trimmed to their keys.
@@ -58,8 +57,6 @@ func TestHistoryChangeKeepsOnlyDurableSessionEvents(t *testing.T) {
 
 func v2HistoryDB(t *testing.T) *db.DB {
 	t.Helper()
-	restore := ocv2.SetInstalledV2(true)
-	t.Cleanup(restore)
 	path := filepath.Join(t.TempDir(), "opencode.db")
 	w, err := sql.Open("sqlite", path)
 	if err != nil {

@@ -94,9 +94,10 @@ flowchart LR
   erase their history. Five minutes without interaction stops counting; long
   timer gaps do not count sleep. This is installation-wide, not named-user data.
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes it.
-  On an OpenCode v2 machine each connection gets TEMP views named `session`,
+  Ocman requires OpenCode v2. Each connection gets TEMP views named `session`,
   `message` and `part` over v2's `session_v2`/`session_message` tables, so
-  every query keeps its v1 SQL (`internal/db/v2views.go`).
+  every query keeps its v1-shaped SQL (`internal/db/v2views.go`). A database
+  OpenCode has not migrated yet is read through its physical v1 tables.
 - **state.db.** Ocman's own state: archive flags, routines and run history,
   permission approval provenance, live session commit observations, settings,
   Factory records, Inbox items, artifact metadata, remote tokens, and canonical
@@ -429,6 +430,7 @@ flowchart TD
 
 - **internal/app.** Application startup owns flags, database selection,
   authentication, logging, platform registration and HTTP/desktop composition.
+  It disables the OpenCode platform when the installed binary is older than v2.
   The root entrypoint only supplies embedded skills and the build version.
 - **platforms/claude/transport.** The Claude adapter composes the browsing and
   per-project supervisors, routes session operations by native session ID, and
@@ -549,8 +551,8 @@ flowchart TD
   Deleted session directories use historical identity in the existing
   `claude-sessions.json` ownership snapshot; unmanaged retained transcripts
   cannot disable cleanup for unrelated projects.
-  Only Claude supervisors are stopped. OpenCode v1 lacks atomic idle draining;
-  v2 is machine-wide, so both are excluded. Claude fences new turns with
+  Only Claude supervisors are stopped. OpenCode's server is machine-wide, so it
+  is excluded. Claude fences new turns with
   `/drain-idle` before stopping its supervisor. Token-scoped rollback and
   recovery preserve replacement drains if cleanup is cancelled.
   Routine dispatch already ensures its runtime before creating or reusing a
@@ -665,8 +667,8 @@ flowchart TD
   interruption history, replacement membership, admission and stop fences, and
   confirmed-stop reconciliation. Runtime hooks and history reads call it through
   thin server adapters. Persistence stays in `internal/state`; callbacks resolve
-  the current local host and platform. OpenCode v1/v2 replacement uses this
-  service; Claude supervisor recovery stays in `platforms/claude/transport`.
+  the current local host and platform. OpenCode machine-server replacement uses
+  this service, and every OpenCode session is a member of a replacement; Claude supervisor recovery stays in `platforms/claude/transport`.
 - **autoapprove.Judge.** The safe-command cache runs before backend selection.
   Each uncached permission selects a judge through `Deps.SelectJudge`, defaulting
   to the registered OpenCode adapter's port discovery. When no OpenCode instance is reachable and

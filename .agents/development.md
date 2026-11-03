@@ -60,8 +60,9 @@ default `OCMAN_STATE_DB` to `.dev/state.db` (its directory also holds provider
 runtime state and artifacts) and `OCMAN_CONVERSATIONS_DB` to `state_conv.db`,
 both in this checkout. Set either variable to override. Tests use temporary
 stores; builds do not start ingestion. Native platform data is not covered:
-OpenCode's database still comes from `-db`/`OPENCODE_DB`, and `-db` alone does
-not isolate v1 managed OpenCode writes. Do not change `HOME` as a workaround.
+`-db` pins the managed
+OpenCode server's database through `OPENCODE_DB`, but OpenCode's other state is
+still shared. Do not change `HOME` as a workaround.
 Air must keep `clean_on_exit = false` in `.air.toml` (`make dev-remote` reuses
 it): deleting `tmp/` also deletes history from older dev runs still using that
 location. Preserve an existing `tmp/state_conv.db` with a SQLite-consistent

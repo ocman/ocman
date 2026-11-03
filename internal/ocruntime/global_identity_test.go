@@ -34,6 +34,8 @@ func TestNativeProbe_GlobalProjectDirectory(t *testing.T) {
 					t.Errorf("identity probe must not override the server directory: %s", r.URL)
 				}
 				switch r.URL.Path {
+				case "/api/info": // dialect probe: a v1-shaped fake is not v2
+					http.NotFound(w, r)
 				case "/config":
 					w.WriteHeader(http.StatusOK)
 				case "/project/current":

@@ -10,7 +10,6 @@ import (
 // A fast reply can already be projected when a remote consumes step.started.
 // Its streamed text must keep the same part ID as the stored reply.
 func TestEventsStartedSnapshotDoesNotDuplicateReply(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1/message/msg01", http.StatusOK, `{"data":{"id":"msg01","type":"assistant",
 		"time":{"created":100,"completed":104},"finish":"stop","content":[{"type":"text","text":"Hello!"}]}}`)
@@ -39,7 +38,6 @@ func TestEventsStartedSnapshotDoesNotDuplicateReply(t *testing.T) {
 
 // OpenCode updates time.created on retry without clearing the old content.
 func TestEventsAheadRetrySnapshotKeepsEarlierParts(t *testing.T) {
-	defer SetInstalledV2(true)()
 	for _, tc := range []struct{ completed, refreshFails, olderStart bool }{{}, {completed: true}, {refreshFails: true}, {completed: true, olderStart: true}} {
 		t.Run(fmt.Sprintf("completed=%v/refreshFails=%v/olderStart=%v", tc.completed, tc.refreshFails, tc.olderStart), func(t *testing.T) {
 			f := fakeServer(t)
@@ -86,7 +84,6 @@ func TestEventsAheadRetrySnapshotKeepsEarlierParts(t *testing.T) {
 }
 
 func TestEventsLaterAttemptStreamsAfterAheadSnapshot(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1/message/msg01", http.StatusOK, `{"data":{"id":"msg01","type":"assistant",
 		"time":{"created":5,"completed":9},"finish":"error","content":[{"type":"text","text":"first attempt"}]}}`)
@@ -116,7 +113,6 @@ func TestEventsLaterAttemptStreamsAfterAheadSnapshot(t *testing.T) {
 }
 
 func TestEventsAheadSnapshotPreservesLiveToolProgress(t *testing.T) {
-	defer SetInstalledV2(true)()
 	for _, status := range []string{"running", "completed"} {
 		t.Run(status, func(t *testing.T) {
 			f := fakeServer(t)
@@ -146,7 +142,6 @@ func TestEventsAheadSnapshotPreservesLiveToolProgress(t *testing.T) {
 }
 
 func TestEventsSnapshotRefreshRetainsProgressUntilToolCompletes(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	calls := 0
 	f.on("GET /api/session/s1/message/msg01", func(fakeCall) (int, any) {
@@ -187,7 +182,6 @@ func TestEventsSnapshotRefreshRetainsProgressUntilToolCompletes(t *testing.T) {
 }
 
 func TestEventsSnapshotRefreshAcceptsStoredMetadataWithoutLiveProgress(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	calls := 0
 	f.on("GET /api/session/s1/message/msg01", func(fakeCall) (int, any) {

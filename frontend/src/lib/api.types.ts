@@ -308,9 +308,8 @@ export type { PermissionRequest, QuestionRequest, Session, SessionNotice } from 
  * normal session reads and composer actions available.
  */
 export interface SessionWarning {
-  kind: 'duplicate_opencode_servers' | string;
+  kind: string;
   message: string;
-  ports?: string[];
 }
 
 /**

@@ -29,9 +29,8 @@ func TestMajor(t *testing.T) {
 	}
 }
 
-// convResetInstalled clears the InstalledV2 cache and stubs the version
-// command, restoring both on cleanup.
-func convResetInstalled(t *testing.T, out string, err error) *atomic.Int32 {
+// convStubVersion stubs the version command, restoring it on cleanup.
+func convStubVersion(t *testing.T, out string, err error) *atomic.Int32 {
 	t.Helper()
 	var calls atomic.Int32
 	prev := versionCommand
@@ -39,46 +38,8 @@ func convResetInstalled(t *testing.T, out string, err error) *atomic.Int32 {
 		calls.Add(1)
 		return []byte(out), err
 	}
-	reset := func() {
-		installed.mu.Lock()
-		installed.done = false
-		installed.v2 = false
-		installed.mu.Unlock()
-	}
-	reset()
-	t.Cleanup(func() {
-		versionCommand = prev
-		reset()
-	})
+	t.Cleanup(func() { versionCommand = prev })
 	return &calls
-}
-
-func TestInstalledV2(t *testing.T) {
-	tests := []struct {
-		name string
-		out  string
-		err  error
-		want bool
-	}{
-		{"v2", "opencode v2.0.22\n", nil, true},
-		{"v1", "1.18.32\n", nil, false},
-		{"error", "opencode v2.0.22", errors.New("not found"), false},
-		{"garbage", "???", nil, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			calls := convResetInstalled(t, tt.out, tt.err)
-			if got := InstalledV2(); got != tt.want {
-				t.Errorf("InstalledV2() = %v, want %v", got, tt.want)
-			}
-			if got := InstalledV2(); got != tt.want {
-				t.Errorf("cached InstalledV2() = %v, want %v", got, tt.want)
-			}
-			if n := calls.Load(); n != 1 {
-				t.Errorf("version command ran %d times, want 1 (cached)", n)
-			}
-		})
-	}
 }
 
 func TestInstalledMajor(t *testing.T) {
@@ -96,7 +57,7 @@ func TestInstalledMajor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			convResetInstalled(t, tt.out, tt.err)
+			convStubVersion(t, tt.out, tt.err)
 			major, ok := InstalledMajor()
 			if major != tt.wantMajor || ok != tt.wantOK {
 				t.Errorf("InstalledMajor() = %d, %v; want %d, %v", major, ok, tt.wantMajor, tt.wantOK)
@@ -105,43 +66,43 @@ func TestInstalledMajor(t *testing.T) {
 	}
 }
 
-// The version is read once: a later upgrade must not flip the answer
-// mid-run (the password, DB views and managed server were chosen for it).
-func TestInstalledV2IsFixedForTheProcess(t *testing.T) {
-	calls := convResetInstalled(t, "1.18.0", nil)
-	if InstalledV2() {
-		t.Fatal("want v1")
-	}
-	versionCommand = func(context.Context) ([]byte, error) { calls.Add(1); return []byte("opencode v2.0.22"), nil }
-	if InstalledV2() || calls.Load() != 1 {
-		t.Fatalf("InstalledV2 changed mid-run (calls=%d)", calls.Load())
-	}
-	if v2, ok := readInstalledV2(); !ok || !v2 {
-		t.Fatalf("readInstalledV2 = %v %v, want the new version for the watcher", v2, ok)
-	}
-}
+// The watcher keeps polling while v2 stays installed and stops after
+// reporting a downgrade below v2.
+func TestWatchInstalledVersion(t *testing.T) {
+	prev := versionCheckInterval
+	versionCheckInterval = time.Millisecond
+	t.Cleanup(func() { versionCheckInterval = prev })
 
-func TestSetInstalledV2(t *testing.T) {
-	calls := convResetInstalled(t, "1.0.0", nil)
-	restore := SetInstalledV2(true)
-	if !InstalledV2() {
-		t.Error("override true ignored")
-	}
-	inner := SetInstalledV2(false)
-	if InstalledV2() {
-		t.Error("nested override false ignored")
-	}
-	inner()
-	if !InstalledV2() {
-		t.Error("inner restore did not return to true")
-	}
-	restore()
-	if calls.Load() != 0 {
-		t.Error("version command ran while overridden")
-	}
-	if InstalledV2() {
-		t.Error("after restore, want detected v1 = false")
-	}
+	t.Run("v2 keeps watching", func(t *testing.T) {
+		calls := convStubVersion(t, "opencode v2.0.22", nil)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan struct{})
+		go func() { WatchInstalledVersion(ctx); close(done) }()
+		for calls.Load() < 3 {
+			time.Sleep(time.Millisecond)
+		}
+		select {
+		case <-done:
+			t.Fatal("watcher stopped while v2 stayed installed")
+		default:
+		}
+		cancel()
+		<-done
+	})
+
+	t.Run("downgrade stops", func(t *testing.T) {
+		calls := convStubVersion(t, "1.18.32", nil)
+		done := make(chan struct{})
+		go func() { WatchInstalledVersion(t.Context()); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("watcher kept running after a downgrade")
+		}
+		if calls.Load() != 1 {
+			t.Fatalf("version read %d times, want 1", calls.Load())
+		}
+	})
 }
 
 // convInfoServer starts a server whose GET /api/info is answered by h,
@@ -244,72 +205,6 @@ func TestDetectExpires(t *testing.T) {
 	if n := hits.Load(); n != 2 {
 		t.Errorf("server hit %d times, want 2", n)
 	}
-}
-
-func TestIsV2(t *testing.T) {
-	prevRT := probeRT.Load()
-	t.Cleanup(func() { probeRT.Store(prevRT) })
-
-	v2Host, v2Port, v2Hits := convInfoServer(t, convV2Info)
-	_, v1Port, _ := convInfoServer(t, http.NotFound)
-	_, htmlPort, _ := convInfoServer(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte("<html></html>"))
-	})
-	ctx := context.Background()
-
-	t.Run("installed v1 never probes", func(t *testing.T) {
-		defer SetInstalledV2(false)()
-		Wrap(http.DefaultTransport)
-		if IsV2(ctx, v2Port) {
-			t.Error("IsV2 = true with v1 installed")
-		}
-		if n := v2Hits.Load(); n != 0 {
-			t.Errorf("server probed %d times, want 0", n)
-		}
-	})
-
-	t.Run("no transport", func(t *testing.T) {
-		defer SetInstalledV2(true)()
-		saved := probeRT.Load()
-		probeRT.Store(nil)
-		defer probeRT.Store(saved)
-		if IsV2(ctx, v2Port) {
-			t.Error("IsV2 = true without a recorded transport")
-		}
-	})
-
-	t.Run("detects", func(t *testing.T) {
-		defer SetInstalledV2(true)()
-		Wrap(http.DefaultTransport)
-		for port, want := range map[string]bool{v2Port: true, v1Port: false, htmlPort: false} {
-			if got := IsV2(ctx, port); got != want {
-				t.Errorf("IsV2(%s) = %v, want %v", port, got, want)
-			}
-		}
-		before := v2Hits.Load()
-		if !IsV2(ctx, v2Port) {
-			t.Error("cached IsV2 = false")
-		}
-		if v2Hits.Load() != before {
-			t.Error("cached IsV2 hit the server")
-		}
-		ForgetHost(v2Host)
-		if !IsV2(ctx, v2Port) || v2Hits.Load() != before+1 {
-			t.Error("ForgetHost did not force a re-probe")
-		}
-	})
-
-	t.Run("unreachable", func(t *testing.T) {
-		defer SetInstalledV2(true)()
-		Wrap(http.DefaultTransport)
-		srv := httptest.NewServer(http.NotFoundHandler())
-		u, _ := url.Parse(srv.URL)
-		srv.Close()
-		if IsV2(ctx, u.Port()) {
-			t.Error("IsV2 = true for closed port")
-		}
-	})
 }
 
 func TestResetHostCacheForgetsDialects(t *testing.T) {

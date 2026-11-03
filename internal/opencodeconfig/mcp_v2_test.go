@@ -6,16 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
-
-// TestMain pins the installed-OpenCode check so no test runs the real
-// `opencode --version`.
-func TestMain(m *testing.M) {
-	ocv2.SetInstalledV2(false)
-	os.Exit(m.Run())
-}
 
 const testURL = "http://127.0.0.1:8227/mcp"
 
@@ -47,7 +38,6 @@ func readDoc(t *testing.T, path string) (configDoc, map[string]map[string]any) {
 // drops codemode, so the entry must live in v2's own mcp.servers layout
 // for Code Mode to stay off.
 func TestInstallV2WritesServersLayout(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	dir := configHome(t)
 	path := filepath.Join(dir, "opencode.json")
 	writeConfig(t, path, `{"mcp":{
@@ -106,7 +96,6 @@ func TestCheckV2(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer ocv2.SetInstalledV2(true)()
 			dir := configHome(t)
 			writeConfig(t, filepath.Join(dir, "opencode.json"), `{"mcp":`+tc.mcp+`}`)
 			st, err := Check(testURL, "")
@@ -124,35 +113,32 @@ func TestEnsureV2Layout(t *testing.T) {
 	const stale = "http://127.0.0.1:1/mcp"
 	cases := []struct {
 		name      string
-		v2        bool
 		body      string // config file contents; "" means no file
 		rewritten bool
 		wantURL   string
 		disabled  bool
 	}{
-		{name: "v1 installed", body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `"}}}`},
-		{name: "no config file", v2: true},
-		{name: "no ocman entry", v2: true, body: `{"mcp":{"other":{"type":"local","command":["x"]}}}`},
-		{name: "already current", v2: true,
+		{name: "no config file"},
+		{name: "no ocman entry", body: `{"mcp":{"other":{"type":"local","command":["x"]}}}`},
+		{name: "already current",
 			body: `{"mcp":{"servers":{"ocman":{"type":"remote","url":"` + testURL + `","disabled":false,"codemode":false}}}}`},
-		{name: "flat entry without codemode", v2: true, rewritten: true, wantURL: testURL,
+		{name: "flat entry without codemode", rewritten: true, wantURL: testURL,
 			body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `","enabled":true}}}`},
-		{name: "flat entry with codemode false", v2: true, rewritten: true, wantURL: testURL,
+		{name: "flat entry with codemode false", rewritten: true, wantURL: testURL,
 			body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `","enabled":true,"codemode":false}}}`},
-		{name: "keeps stale URL", v2: true, rewritten: true, wantURL: stale,
+		{name: "keeps stale URL", rewritten: true, wantURL: stale,
 			body: `{"mcp":{"ocman":{"type":"remote","url":"` + stale + `"}}}`},
-		{name: "keeps disabled flat entry disabled", v2: true, rewritten: true, wantURL: testURL, disabled: true,
+		{name: "keeps disabled flat entry disabled", rewritten: true, wantURL: testURL, disabled: true,
 			body: `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `","enabled":false}}}`},
-		{name: "servers entry without codemode", v2: true, rewritten: true, wantURL: testURL,
+		{name: "servers entry without codemode", rewritten: true, wantURL: testURL,
 			body: `{"mcp":{"servers":{"ocman":{"type":"remote","url":"` + testURL + `"}}}}`},
-		{name: "keeps disabled servers entry disabled", v2: true, rewritten: true, wantURL: testURL, disabled: true,
+		{name: "keeps disabled servers entry disabled", rewritten: true, wantURL: testURL, disabled: true,
 			body: `{"mcp":{"servers":{"ocman":{"type":"remote","url":"` + testURL + `","disabled":true,"codemode":true}}}}`},
-		{name: "drops leftover flat entry", v2: true, rewritten: true, wantURL: testURL,
+		{name: "drops leftover flat entry", rewritten: true, wantURL: testURL,
 			body: `{"mcp":{"ocman":{"type":"remote","url":"` + stale + `"},"servers":{"ocman":{"type":"remote","url":"` + testURL + `","codemode":false}}}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer ocv2.SetInstalledV2(tc.v2)()
 			dir := configHome(t)
 			path := filepath.Join(dir, "opencode.json")
 			if tc.body != "" {
@@ -203,7 +189,6 @@ func containsTheme(raw []byte) bool {
 }
 
 func TestEnsureV2LayoutRefusesUneditable(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	cases := map[string]struct{ file, body string }{
 		"jsonc":          {"opencode.jsonc", `{"mcp":{"ocman":{"type":"remote","url":"` + testURL + `"}}}`},
 		"comments":       {"opencode.json", "{\n// note\n\"mcp\":{}}"},

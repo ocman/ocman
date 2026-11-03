@@ -14,7 +14,6 @@ import (
 // Exercise the actual HTTP stream/status boundary used by the watcher: it
 // gets stream headers, seeds status independently, then reads buffered events.
 func TestBackgroundExitBetweenReconnectSnapshots(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"}]`)
 	f.events = []string{fakeEv("shell.exited", 1, "/repo", `{"id":"sh_1","status":"exited"}`)}

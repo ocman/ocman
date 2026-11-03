@@ -1295,14 +1295,10 @@ describe('SessionDetail — session warnings', () => {
     expect(screen.getByRole('textbox')).not.toBeDisabled();
   });
 
-  it('renders and dismisses duplicate OpenCode server warnings', async () => {
+  it('renders and dismisses session warnings', async () => {
     const sess = makeSession({ id: 'sess_dupes', status: 'done' });
     const detail = makeSessionDetail(sess, {
-      warnings: [{
-        kind: 'duplicate_opencode_servers',
-        message: 'Multiple OpenCode servers are running for this project. Live updates may be unreliable for activity started outside this tab.',
-        ports: ['55001', '55002'],
-      }],
+      warnings: [{ kind: 'advisory', message: 'Live updates may be unreliable.' }],
     });
 
     renderSessionPage({
@@ -1313,12 +1309,11 @@ describe('SessionDetail — session warnings', () => {
 
     await flushPromises();
 
-    const warning = await screen.findByTestId('session-warning-duplicate_opencode_servers');
-    expect(warning).toHaveTextContent('Multiple OpenCode servers');
-    expect(warning).toHaveTextContent('ports 55001, 55002');
+    const warning = await screen.findByTestId('session-warning-advisory');
+    expect(warning).toHaveTextContent('Live updates may be unreliable.');
 
     fireEvent.click(screen.getByRole('button', { name: /dismiss session warning/i }));
 
-    expect(screen.queryByTestId('session-warning-duplicate_opencode_servers')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-warning-advisory')).not.toBeInTheDocument();
   });
 });

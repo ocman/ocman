@@ -9,7 +9,6 @@ import (
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 type inventoryCandidate struct {
@@ -51,7 +50,7 @@ func (h *Host) RefreshManagedOpenCodePorts(ctx context.Context) map[string]strin
 	slots := make(chan struct{}, 4)
 scan:
 	for root, candidate := range candidates {
-		if ocv2.InstalledV2() && root != machineRoot() {
+		if root != machineRoot() {
 			continue
 		}
 		select {
@@ -98,7 +97,7 @@ func (h *Host) refreshInventoryCandidate(ctx context.Context, root string, candi
 		case err == nil:
 			h.authorizeInstanceLocked(root, &candidate.instance)
 		}
-		if ocv2.InstalledV2() && root == machineRoot() {
+		if root == machineRoot() {
 			h.publishMachineServer(h.authorized[root])
 		}
 	}

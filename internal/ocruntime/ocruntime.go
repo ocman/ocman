@@ -25,13 +25,9 @@ import (
 // through so the runtime launches on a known endpoint instead of
 // letting opencode pick one.
 type LaunchSpec struct {
-	RepoRoot       string // project checkout the instance is rooted at
-	Host           string // host to bind/reach (e.g. "127.0.0.1")
-	Port           int    // ocman-allocated port
-	PermissionJSON string // seeded as OPENCODE_PERMISSION (empty = none)
-	// V2 launches OpenCode v2's headless `opencode serve` (one server for
-	// the whole machine) instead of the v1 TUI.
-	V2 bool
+	RepoRoot string // working directory the instance is rooted at
+	Host     string // host to bind/reach (e.g. "127.0.0.1")
+	Port     int    // ocman-allocated port
 }
 
 // Instance is a launched OpenCode instance.

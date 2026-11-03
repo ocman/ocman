@@ -18,9 +18,9 @@ func TestTransportFailuresPreserveManagedRuntime(t *testing.T) {
 			rt := &probeErrorRuntime{err: probeErr}
 			h := New(Deps{Runtime: rt})
 			inst := &ocruntime.Instance{Endpoint: "old", ID: "owned"}
-			h.authorizeInstance("repo", inst)
+			h.authorizeInstance(machineRoot(), inst)
 			h.deps.BeforeReplace = func(context.Context, string, string) error { t.Error("prepared after inconclusive probe"); return nil }
-			if _, err := h.ensureLocked(t.Context(), "repo"); !errors.Is(err, probeErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || h.currentInstance("repo") != inst || h.authorizedEndpoint("repo") != "old" {
+			if _, err := h.ensureLocked(t.Context(), machineRoot()); !errors.Is(err, probeErr) || rt.stopCount() != 0 || rt.launchCount() != 0 || h.currentInstance(machineRoot()) != inst || h.authorizedEndpoint(machineRoot()) != "old" {
 				t.Fatalf("transport failure replaced live runtime: err=%v stops=%d launches=%d", err, rt.stopCount(), rt.launchCount())
 			}
 		})

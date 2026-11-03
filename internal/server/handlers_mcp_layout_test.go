@@ -5,26 +5,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestEnsureOpenCodeMCPLayout(t *testing.T) {
 	const flat = `{"mcp":{"ocman":{"type":"remote","url":"http://127.0.0.1:8227/mcp","enabled":true}}}`
 	cases := []struct {
 		name     string
-		v2       bool
 		file     string
 		moved    bool
 		modified bool
 	}{
-		{name: "v2 moves the flat entry", v2: true, file: "opencode.json", moved: true, modified: true},
-		{name: "v1 leaves it", file: "opencode.json"},
-		{name: "v2 refuses JSONC", v2: true, file: "opencode.jsonc"},
+		{name: "moves the flat entry", file: "opencode.json", moved: true, modified: true},
+		{name: "refuses JSONC", file: "opencode.jsonc"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Cleanup(ocv2.SetInstalledV2(tc.v2))
 			dir := t.TempDir()
 			t.Setenv("XDG_CONFIG_HOME", dir)
 			t.Setenv("OPENCODE_CONFIG", "")
@@ -53,7 +48,6 @@ func TestEnsureOpenCodeMCPLayout(t *testing.T) {
 }
 
 func TestEnsureOpenCodeMCPLayoutReportsUnreadableConfig(t *testing.T) {
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	// A directory where the config file should be makes the read fail

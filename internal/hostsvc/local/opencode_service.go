@@ -30,7 +30,7 @@ func isService(inst *ocruntime.Instance) bool {
 // inconclusive (busy, e.g. migrating) is handled: it is tracked unauthorized
 // and the probe error returned, so nothing is launched next to it.
 func (h *Host) useService(ctx context.Context, root string) (res *hostsvc.EnsureRuntimeResult, handled bool, err error) {
-	if h.deps.OpenCodeService == nil || !ocv2.InstalledV2() || root != machineRoot() {
+	if h.deps.OpenCodeService == nil || root != machineRoot() {
 		return nil, false, nil
 	}
 	svc, err := h.deps.OpenCodeService()
@@ -74,7 +74,5 @@ func (h *Host) launchOrUseService(ctx context.Context, root string) (*hostsvc.En
 func (h *Host) forgetService(root string) {
 	h.clearInstance(root)
 	h.runtimeInventoryChanged()
-	if ocv2.InstalledV2() {
-		h.publishMachineServer("")
-	}
+	h.publishMachineServer("")
 }

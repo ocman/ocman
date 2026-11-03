@@ -8,26 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
-// versionCheckInterval is how often the installed version is re-read
-// to warn about an upgrade or downgrade. The answer ocman acts on is
-// fixed at the first read: the server password, the database views and
-// the managed server are all chosen for one version at startup, so
-// switching mid-run would leave them inconsistent.
-const versionCheckInterval = time.Minute
-
-var installed struct {
-	mu   sync.Mutex
-	v2   bool
-	done bool
-}
-
-var installedOverride atomic.Pointer[bool]
+// versionCheckInterval is how often the installed version is re-read to
+// warn about a downgrade below v2 while ocman runs; a variable for tests.
+var versionCheckInterval = time.Minute
 
 // versionCommand is a seam for tests.
 var versionCommand = func(ctx context.Context) ([]byte, error) {
@@ -47,36 +35,10 @@ func InstalledMajor() (major int, ok bool) {
 	return major, major > 0
 }
 
-// readInstalledV2 runs `opencode --version`; ok is false when it failed.
-func readInstalledV2() (v2, ok bool) {
-	major, ok := InstalledMajor()
-	return major >= 2, ok
-}
-
-// InstalledV2 reports whether the opencode binary on PATH is v2 or
-// later. v1 and v2 are not installed side by side, so this decides how
-// this machine launches and reads OpenCode. It is read once per process
-// (a missing binary reads as v1); a later change only logs a warning
-// asking for a restart (see WatchInstalledVersion).
-func InstalledV2() bool {
-	if v := installedOverride.Load(); v != nil {
-		return *v
-	}
-	installed.mu.Lock()
-	defer installed.mu.Unlock()
-	if !installed.done {
-		installed.v2, _ = readInstalledV2()
-		installed.done = true
-	}
-	return installed.v2
-}
-
-// WatchInstalledVersion re-reads the installed version until ctx ends
-// and warns when it no longer matches the one ocman runs with. A failed
-// read (slow or missing binary) is ignored rather than taken as a change.
+// WatchInstalledVersion re-reads the installed version until ctx ends and
+// warns once when it drops below v2, which ocman no longer supports. A
+// failed read (slow or missing binary) is ignored.
 func WatchInstalledVersion(ctx context.Context) {
-	current := InstalledV2()
-	warned := false
 	tick := time.NewTicker(versionCheckInterval)
 	defer tick.Stop()
 	for {
@@ -85,19 +47,12 @@ func WatchInstalledVersion(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		if v2, ok := readInstalledV2(); ok && v2 != current && !warned {
-			warned = true
-			log.WithFields(log.Fields{"runningAsV2": current, "installedV2": v2}).
-				Warn("the installed OpenCode major version changed; restart ocman to switch")
+		if major, ok := InstalledMajor(); ok && major < 2 {
+			log.WithField("installedMajor", major).
+				Error("OpenCode was downgraded below v2, which ocman does not support; upgrade OpenCode and restart ocman")
+			return
 		}
 	}
-}
-
-// SetInstalledV2 pins InstalledV2 for tests.
-// It returns a restore func.
-func SetInstalledV2(v bool) func() {
-	prev := installedOverride.Swap(&v)
-	return func() { installedOverride.Store(prev) }
 }
 
 // Major parses the major version from "opencode v2.0.22" (v2's
@@ -131,11 +86,11 @@ var hosts sync.Map // "host:port" -> hostEntry
 // re-probes instead of trusting a previous backend's answers.
 func ResetHostCache() { hosts.Clear() }
 
-// probeRT is the authenticated transport used by IsV2; Wrap records it.
-var probeRT atomic.Pointer[http.RoundTripper]
-
 // detect reports whether the server at scheme://host speaks v2, using
-// GET /api/info (v2 answers JSON with its version; v1 has no such route).
+// GET /api/info, which answers JSON with its version. Startup refuses an
+// installed v1, so in production every managed server is v2; a server
+// without the route (a test fake serving the v1-shaped routes directly)
+// gets requests unchanged.
 func detect(ctx context.Context, rt http.RoundTripper, scheme, host string) (bool, error) {
 	if v, ok := hosts.Load(host); ok {
 		if e := v.(hostEntry); time.Since(e.at) < hostTTL {
@@ -161,20 +116,6 @@ func detect(ctx context.Context, rt http.RoundTripper, scheme, host string) (boo
 		json.NewDecoder(resp.Body).Decode(&info) == nil && Major(info.Version) >= 2
 	hosts.Store(host, hostEntry{v2: v2, at: time.Now()})
 	return v2, nil
-}
-
-// IsV2 reports whether the OpenCode server on loopback port speaks v2.
-// Always false on a machine whose installed opencode is v1.
-func IsV2(ctx context.Context, port string) bool {
-	if !InstalledV2() {
-		return false
-	}
-	rt := probeRT.Load()
-	if rt == nil {
-		return false
-	}
-	v2, err := detect(ctx, *rt, "http", "127.0.0.1:"+port)
-	return err == nil && v2
 }
 
 // ForgetHost drops the cached dialect for a host (tests, relaunches).

@@ -7,13 +7,9 @@ import (
 	"net/url"
 
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func (a *Adapter) stopBackgroundTask(ctx context.Context, req platforms.AbortRequest) error {
-	if !ocv2.InstalledV2() {
-		return platforms.ErrUnsupported
-	}
 	port, session, err := a.resolvePortCtx(ctx, req.SessionID)
 	if err != nil {
 		return err

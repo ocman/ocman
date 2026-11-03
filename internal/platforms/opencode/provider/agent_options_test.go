@@ -12,13 +12,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestAgentOptionsDoNotDependOnProviders(t *testing.T) {
 	providerCalls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(v1Shaped(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/agent" {
 			writeJSONBody(w, `[{"name":"custom-agent","mode":"primary"},{"name":"shared-agent","mode":"all"},{"name":"helper","mode":"subagent"},{"name":"title","hidden":true},{"name":""}]`)
 			return
@@ -36,7 +34,6 @@ func TestAgentOptionsDoNotDependOnProviders(t *testing.T) {
 }
 
 func TestAgentNamesScopesV2ProjectsOnSharedServer(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path != "/api/agent" {
 			return false
@@ -84,7 +81,7 @@ func TestAgentNamesCancellationWhileCacheFetchIsInFlight(t *testing.T) {
 
 func TestAgentNamesCanceledLeaderPreservesComposerCatalog(t *testing.T) {
 	started, release, canceled := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(v1Shaped(func(w http.ResponseWriter, r *http.Request) {
 		close(started)
 		select {
 		case <-release:
@@ -125,7 +122,6 @@ func TestAgentNamesCanceledLeaderPreservesComposerCatalog(t *testing.T) {
 }
 
 func TestAgentNamesBoundsUnderlyingReadsAfterCallersCancel(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	const callers = 24
 	var active, peak atomic.Int32
 	release := make(chan struct{})
@@ -177,7 +173,6 @@ func TestAgentNamesBoundsUnderlyingReadsAfterCallersCancel(t *testing.T) {
 }
 
 func TestAgentNamesReadsHealthyScopeAfterFullStalledFetchBatch(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	started := make(chan struct{}, 8)
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path != "/api/agent" {
@@ -229,7 +224,7 @@ func TestAgentCatalogAdmissionTimeoutDoesNotCacheFailure(t *testing.T) {
 
 func TestDirectAgentCatalogCallerHonorsDeadline(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(v1Shaped(func(w http.ResponseWriter, _ *http.Request) {
 		close(started)
 		<-release
 		writeJSONBody(w, `[{"name":"custom-agent","mode":"primary"}]`)

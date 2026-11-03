@@ -104,22 +104,23 @@ are unsupported and capability-gated. Tests use
 `codex/provider/testdata/<version>` plus `codex/acptest`, never real agents; re-record with the
 `codexrecord`-tagged recorder. Codex is opt-in: `-platforms` defaults exclude it.
 
-## OpenCode v1 and v2
+## OpenCode v2
 
-Ocman requires OpenCode v2. At startup `requireOpenCodeV2` in `internal/app` disables
-the OpenCode platform with an `opencode-unsupported-version` startup issue when the
-installed binary reports v1; the doctor shows it. A missing binary is not refused.
-`internal/platforms/opencode/apiv2` reads `opencode --version` once. A later version change logs a
-restart requirement. Each machine speaks only to its local OpenCode, allowing
-mixed hub/remote versions. Tests pin `ocv2.SetInstalledV2` in package `TestMain`
-and never run the real binary.
+Ocman requires OpenCode v2; there is no v1 code path. At startup
+`requireOpenCodeV2` in `internal/app` disables the OpenCode platform with an
+`opencode-unsupported-version` startup issue when the installed binary reports
+v1; the doctor shows it. A missing binary is not refused.
+`ocv2.WatchInstalledVersion` logs a downgrade below v2. Each machine checks its
+own OpenCode. Tests stub `installedOpenCodeMajor` and never run the real binary.
 
-- The rest of ocman speaks v1. `ocapi.Auth.Transport` wraps clients with
-  `ocv2.Wrap`, translating v1 routes/events into v2 `/api/*` calls.
+- The rest of ocman speaks v1-shaped routes, events and rows.
+  `ocapi.Auth.Transport` wraps clients with `ocv2.Wrap`, translating them into
+  v2 `/api/*` calls. A server that does not answer `GET /api/info` as v2 gets
+  requests unchanged; only test fakes rely on that.
 - `ocv2.ConvertMessage` is the only v2-to-v1 message converter. HTTP, SSE and DB
   TEMP views in `internal/db/v2views.go` all use it. Preserve matching synthetic
   part IDs, `prt<msg suffix><index>`. Never introduce another converter.
-- V2 uses one `opencode serve` per machine, keyed by effective `OPENCODE_DB`,
+- Ocman uses one `opencode serve` per machine, keyed by effective `OPENCODE_DB`,
   under `~/.local/share/ocman/opencode-v2[-<db hash>]`. Discovery resolves all
   directories to that machine port.
 - When `app.sharesServiceDB`, use OpenCode's registered background service via
@@ -131,16 +132,15 @@ and never run the real binary.
   Re-read registration after failed probes. Keep an inconclusively probed
   launched server instead of killing and relaunching it.
 - Otherwise generate the required password once and store it in state.db when
-  none is configured. V2 follow-ups use the native inbox unless ocman's queue
+  none is configured. Follow-ups use the native inbox unless ocman's queue
   already contains messages. See [sessions.md](sessions.md).
 
 ## Runtime lifecycle
 
-`EnsureProjectOpencode` on the owner's Host is the only project launch path.
+`EnsureProjectOpencode` on the owner's Host is the only launch path; every
+project resolves to the machine-wide server described above.
 `ocruntime.Runtime` abstracts `Launch`, `Probe` and `Stop`. Native hosting uses
 `tmux -L ocman-agents -f /dev/null`, isolated from user tmux configuration.
-V1 shares one project-rooted instance across worktrees with per-session working
-directories; v2 uses the machine-wide instance described above.
 
 - Allocate a free loopback port with `ocruntime.AllocateLoopbackPort`, then
   launch `opencode serve --port N`. Do not discover managed ports with `lsof`.
@@ -151,7 +151,8 @@ directories; v2 uses the machine-wide instance described above.
   Always re-probe on recovery. Discard dead rows; restart stops and relaunches
   under the same singleflight key, owner-routed locally or over gRPC.
 - Gate managed launch UI on `HostCaps.OpencodeLaunch`, not `Tmux`.
-- Runtime lookup uses only managed inventory, except v2's registered service.
+- Runtime lookup uses only the published machine server, which may be
+  OpenCode's registered service.
   Never adopt external instances. Cache for ten seconds. Reserve `lsof` for
   development port cleanup.
 - `opencode.Discovery` is owned by each adapter, not globally. The server wires

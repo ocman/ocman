@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func v2FeedDB(t *testing.T) *DB {
@@ -21,8 +19,6 @@ func v2FeedDB(t *testing.T) *DB {
 		t.Fatal(err)
 	}
 	w.Close()
-	restore := ocv2.SetInstalledV2(true)
-	t.Cleanup(restore)
 	d, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +99,6 @@ func TestHistoryMessagesMarksSubagentTitles(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.Close()
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	d, err := Open(path)
 	if err != nil {
 		t.Fatal(err)

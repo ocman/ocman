@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
-	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -86,29 +85,14 @@ func TestHistoryUsesPlatformAndInjectionSeams(t *testing.T) {
 	}
 }
 
-type rootReader struct{ root string }
-
-func (r rootReader) ManagedOpencodeRoot(context.Context, string) (string, error) { return r.root, nil }
-
-func TestMembershipReadsDependenciesAtCallTime(t *testing.T) {
-	var reader hostsvc.ManagedRootReader = rootReader{root: "/repo"}
-	machine := false
-	s := New(Deps{
-		MachineWide:       func() bool { return machine },
-		ManagedRootReader: func() hostsvc.ManagedRootReader { return reader },
-	})
-	sessions := []db.Session{{Directory: "/checkout"}}
-	members, err := s.ReplacementMembership(t.Context(), "/repo", sessions)
-	if err != nil || !members["/checkout"] {
+// One OpenCode server serves the machine, so a replacement affects every
+// session regardless of its directory.
+func TestMembershipIsMachineWide(t *testing.T) {
+	s := New(Deps{})
+	sessions := []db.Session{{Directory: "/checkout"}, {Directory: "/other"}}
+	members, err := s.ReplacementMembership(t.Context(), "machine", sessions)
+	if err != nil || len(members) != 2 || !members["/checkout"] || !members["/other"] {
 		t.Fatalf("membership=%v err=%v", members, err)
-	}
-	reader = nil
-	if _, err := s.ReplacementMembership(t.Context(), "/repo", sessions); err == nil {
-		t.Fatal("stale host reader used")
-	}
-	machine = true
-	if members, err := s.ReplacementMembership(t.Context(), "machine", sessions); err != nil || !members["/checkout"] {
-		t.Fatalf("machine-wide membership=%v err=%v", members, err)
 	}
 }
 

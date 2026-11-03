@@ -52,17 +52,13 @@ func (f *fakeLaunch) fn(ctx context.Context, dir, command string, env map[string
 	return f.session, f.err
 }
 
-func TestNativeLaunch_ThreadsPortPermissionAndPassword(t *testing.T) {
+func TestNativeLaunch_ThreadsPortAndPassword(t *testing.T) {
 	f := &fakeLaunch{}
 	rt := &NativeRuntime{launch: f.fn, auth: ocapi.New("managed-secret")}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	inst, err := rt.Launch(ctx, LaunchSpec{
-		RepoRoot:       "/home/u/src/repo",
-		Port:           41235,
-		PermissionJSON: `{"external_directory":{}}`,
-	})
+	inst, err := rt.Launch(ctx, LaunchSpec{RepoRoot: "/home/u/src/repo", Port: 41235})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
@@ -82,10 +78,6 @@ func TestNativeLaunch_ThreadsPortPermissionAndPassword(t *testing.T) {
 	}
 	if strings.Contains(f.command, "--port 0") {
 		t.Errorf("command %q still uses --port 0", f.command)
-	}
-	// OPENCODE_PERMISSION seeded.
-	if got := f.env["OPENCODE_PERMISSION"]; got != `{"external_directory":{}}` {
-		t.Errorf("OPENCODE_PERMISSION = %q, want seeded JSON", got)
 	}
 	if got := f.env["OPENCODE_SERVER_PASSWORD"]; got != "managed-secret" {
 		t.Error("OPENCODE_SERVER_PASSWORD was not injected")
@@ -115,7 +107,7 @@ func TestNativeLaunch_ThreadsPortPermissionAndPassword(t *testing.T) {
 	}
 }
 
-func TestNativeLaunch_DefaultsHostAndOmitsEmptyPermission(t *testing.T) {
+func TestNativeLaunch_DefaultsHostAndOmitsDisabledAuth(t *testing.T) {
 	f := &fakeLaunch{session: "sess"}
 	rt := &NativeRuntime{launch: f.fn}
 
@@ -125,9 +117,6 @@ func TestNativeLaunch_DefaultsHostAndOmitsEmptyPermission(t *testing.T) {
 	}
 	if inst.Endpoint != "http://127.0.0.1:9" {
 		t.Errorf("Endpoint = %q, want default host", inst.Endpoint)
-	}
-	if _, ok := f.env["OPENCODE_PERMISSION"]; ok {
-		t.Error("OPENCODE_PERMISSION should be absent when PermissionJSON empty")
 	}
 	if _, ok := f.env["OPENCODE_SERVER_PASSWORD"]; ok {
 		t.Error("OPENCODE_SERVER_PASSWORD should be absent when auth disabled")
@@ -159,6 +148,10 @@ func TestNativeLaunch_Validation(t *testing.T) {
 func TestNativeProbe(t *testing.T) {
 	const password = "probe-secret"
 	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/info" { // dialect probe: a v1-shaped fake is not v2
+			http.NotFound(w, r)
+			return
+		}
 		if r.URL.Path != "/config" {
 			t.Errorf("probed path = %q, want /config", r.URL.Path)
 		}

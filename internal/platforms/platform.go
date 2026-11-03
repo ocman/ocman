@@ -57,9 +57,8 @@ type SessionDetail struct {
 // SessionWarning carries a non-blocking, platform-normalized condition that
 // may affect the active session but should not prevent normal use.
 type SessionWarning struct {
-	Kind    string   `json:"kind"`
-	Message string   `json:"message"`
-	Ports   []string `json:"ports,omitempty"`
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
 }
 
 // Capabilities describes what a platform supports. The frontend uses

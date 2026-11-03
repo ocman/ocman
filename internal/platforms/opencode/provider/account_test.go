@@ -11,12 +11,9 @@ import (
 
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestAccountReadsOpenCodeUsage(t *testing.T) {
-	ocv2.SetInstalledV2(true)
-	t.Cleanup(func() { ocv2.SetInstalledV2(false) })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/experimental/usage/limits" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -60,8 +57,6 @@ func TestAccountUsageUnavailable(t *testing.T) {
 		{"redirect", 302, ``, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ocv2.SetInstalledV2(true)
-			t.Cleanup(func() { ocv2.SetInstalledV2(false) })
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if tc.status == 302 {
 					w.Header().Set("Location", "/must-not-follow")
@@ -86,12 +81,6 @@ func TestAccountUsageUnavailable(t *testing.T) {
 
 func TestAccountRequiresOpenCodeService(t *testing.T) {
 	a := New(nil, nil, nil, ocapi.Auth{})
-	ocv2.SetInstalledV2(false)
-	if _, err := a.Account(t.Context()); !errors.Is(err, platforms.ErrUnsupported) {
-		t.Fatalf("v1=%v", err)
-	}
-	ocv2.SetInstalledV2(true)
-	t.Cleanup(func() { ocv2.SetInstalledV2(false) })
 	if _, err := a.Account(t.Context()); !errors.Is(err, platforms.ErrPlatformUnreachable) {
 		t.Fatalf("no service=%v", err)
 	}

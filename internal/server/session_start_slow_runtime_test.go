@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,10 +33,18 @@ func (r *slowStartRuntime) Launch(_ context.Context, spec ocruntime.LaunchSpec) 
 func TestStartSessionWaitsForSlowOpenCodeAndSucceedsFirstTime(t *testing.T) {
 	srv, raw := testServerWithRawDB(t)
 	dir := t.TempDir()
+	// The machine server is rooted under HOME; isolate it from the real one.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OPENCODE_DB", "")
+	machine := filepath.Join(home, ".local", "share", "ocman", "opencode-v2")
 	var ready atomic.Bool
 	var creates, prompts atomic.Int32
 	probeSeen := make(chan struct{})
 	var once sync.Once
+	// OpenCode takes the planned native ID from the create request.
+	var nativeID atomic.Value
+	nativeID.Store("")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -47,9 +56,9 @@ func TestStartSessionWaitsForSlowOpenCodeAndSucceedsFirstTime(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/project/current":
-			_ = json.NewEncoder(w).Encode(map[string]string{"id": "global", "worktree": dir})
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "global", "worktree": "/"})
 		case r.URL.Path == "/path":
-			_ = json.NewEncoder(w).Encode(map[string]string{"directory": dir})
+			_ = json.NewEncoder(w).Encode(map[string]string{"directory": machine})
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			if !ready.Load() {
 				t.Error("session creation overtook readiness")
@@ -58,17 +67,24 @@ func TestStartSessionWaitsForSlowOpenCodeAndSucceedsFirstTime(t *testing.T) {
 				t.Errorf("session directory = %q", directory)
 			}
 			creates.Add(1)
-			if _, err := raw.ExecContext(r.Context(), `INSERT INTO session(id,directory,time_created,time_updated) VALUES ('slow-start-session',?,1,1)`, dir); err != nil {
+			var create struct {
+				ID string `json:"id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&create); err != nil || create.ID == "" {
+				t.Errorf("create without a planned native ID: %v", err)
+			}
+			nativeID.Store(create.ID)
+			if _, err := raw.ExecContext(r.Context(), `INSERT INTO session(id,directory,time_created,time_updated) VALUES (?,?,1,1)`, create.ID, dir); err != nil {
 				t.Error(err)
 				http.Error(w, "persisting mock session", http.StatusInternalServerError)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"id": "slow-start-session", "directory": dir})
-		case r.Method == http.MethodGet && r.URL.Path == "/session/slow-start-session":
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": "slow-start-session", "directory": dir, "time": map[string]int64{"created": 1, "updated": 1}})
-		case r.Method == http.MethodGet && r.URL.Path == "/session/slow-start-session/message":
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": create.ID, "directory": dir})
+		case r.Method == http.MethodGet && r.URL.Path == "/session/"+nativeID.Load().(string):
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": nativeID.Load(), "directory": dir, "time": map[string]int64{"created": 1, "updated": 1}})
+		case r.Method == http.MethodGet && r.URL.Path == "/session/"+nativeID.Load().(string)+"/message":
 			_, _ = w.Write([]byte(`[]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/session/slow-start-session/prompt_async":
+		case r.Method == http.MethodPost && r.URL.Path == "/session/"+nativeID.Load().(string)+"/prompt_async":
 			prompts.Add(1)
 			w.WriteHeader(http.StatusNoContent)
 		default:

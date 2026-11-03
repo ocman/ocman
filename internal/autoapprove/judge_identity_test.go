@@ -30,6 +30,8 @@ func TestJudgeSessionCallbackUsesCanonicalIdentityButCleanupRemainsNative(t *tes
 	var deleted, prompted atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/api/info":
+			http.NotFound(w, r)
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			_, _ = w.Write([]byte(`{"id":"native-judge"}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/session/native-judge":

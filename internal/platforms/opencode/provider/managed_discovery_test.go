@@ -6,12 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func TestManagedDiscoveryDoesNotRunExternalScanner(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "called")
 	script := fmt.Sprintf("#!/bin/sh\n: > %q\nprintf 'opencode %d user 1u IPv4 0t0 TCP 127.0.0.1:1001 (LISTEN)\\n'\n", marker, os.Getpid())
@@ -28,18 +25,8 @@ func TestManagedDiscoveryDoesNotRunExternalScanner(t *testing.T) {
 	}
 }
 
-func TestManagedDiscoveryReadsOwnerInventory(t *testing.T) {
-	defer ocv2.SetInstalledV2(false)()
-	previous := td.managedPortSource.Load()
-	t.Cleanup(func() { td.managedPortSource.Store(previous); td.resetPortCache() })
-	td.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "1001"} })
-	if ports := td.DiscoverOpenCodePortsContext(t.Context()); ports["/repo"] != "1001" {
-		t.Fatal(ports)
-	}
-	td.SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{} })
-	if ports := td.DiscoverOpenCodePortsContext(t.Context()); len(ports) != 0 {
-		t.Fatalf("stopped managed instance is still listed: %v", ports)
-	}
+func TestDiscoveryStopsOnCanceledContext(t *testing.T) {
+	withMachineServer(t, "1001")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if servers := td.discoverOpenCodeServersUncachedContext(ctx); servers != nil {

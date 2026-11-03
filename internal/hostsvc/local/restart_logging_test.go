@@ -16,7 +16,7 @@ func TestFailedCheckAndRestartHaveSeparateWarnings(t *testing.T) {
 	hook := logtest.NewGlobal()
 	rt := &fakeRuntime{probe: func(inst *ocruntime.Instance) bool { return inst.Endpoint != "http://127.0.0.1:6000" }}
 	h := New(Deps{Runtime: rt})
-	repo := initRepo(t)
+	repo := machineRoot()
 	h.setInstance(repo, &ocruntime.Instance{ID: "shared-instance", Endpoint: "http://127.0.0.1:6000"})
 	if _, err := h.ensureLocked(t.Context(), repo); err != nil {
 		t.Fatal(err)
@@ -53,13 +53,14 @@ func TestFailedCheckAndRestartHaveSeparateWarnings(t *testing.T) {
 	t.Fatal("explicit restart lacks warning")
 }
 
-func TestInconclusiveDiscoveredCheckWarnsWithoutRestart(t *testing.T) {
+func TestInconclusiveTrackedCheckWarnsWithoutRestart(t *testing.T) {
 	logger := log.StandardLogger()
 	oldHooks := logger.ReplaceHooks(make(log.LevelHooks))
 	t.Cleanup(func() { logger.ReplaceHooks(oldHooks) })
 	hook := logtest.NewGlobal()
-	h := New(Deps{Runtime: &probeErrorRuntime{err: context.DeadlineExceeded}, DiscoverPort: func(string) string { return "6000" }})
-	_, _ = h.ensureLocked(t.Context(), "repo")
+	h := New(Deps{Runtime: &probeErrorRuntime{err: context.DeadlineExceeded}})
+	h.setInstance(machineRoot(), &ocruntime.Instance{ID: "slow", Endpoint: "http://127.0.0.1:6000"})
+	_, _ = h.ensureLocked(t.Context(), machineRoot())
 	entries := hook.AllEntries()
 	if len(entries) != 1 || entries[0].Level != log.WarnLevel || entries[0].Data["error"] == nil || entries[0].Data["endpoint"] != "http://127.0.0.1:6000" {
 		t.Fatalf("missing failed-check warning: %v", entries)

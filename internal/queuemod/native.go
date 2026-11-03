@@ -14,9 +14,9 @@ import (
 )
 
 // Follow-ups (Ctrl/Cmd+Enter) prefer the platform's own queue when it
-// has one: OpenCode v2 holds them in the session inbox and delivers one
-// per idle boundary itself. Platforms without one (OpenCode v1, an
-// unreachable instance) go to ocman's queue (#58) instead. Both kinds
+// has one: OpenCode holds them in the session inbox and delivers one per
+// idle boundary itself. Platforms without one (or an unreachable
+// instance) go to ocman's queue (#58) instead. Both kinds
 // are listed together, so the composer shows one queue.
 
 // nativeQueueTimeout bounds a native queue lookup on the queue paths.

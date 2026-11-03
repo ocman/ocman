@@ -5,7 +5,6 @@ import (
 	"errors"
 	"maps"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,10 +48,9 @@ type Discovery struct {
 	// full server list rather than the directory -> port map.
 	serverFlight singleflight.Group
 
-	// machineServer is the port of the OpenCode v2 server that serves
-	// every directory on this machine ("" on v1 machines).
-	machineServer     atomic.Value // string
-	managedPortSource atomic.Pointer[func(context.Context) map[string]string]
+	// machineServer is the port of the OpenCode server that serves every
+	// directory on this machine ("" until one is published).
+	machineServer atomic.Value // string
 }
 
 // NewDiscovery returns an empty discovery with no inventory source.
@@ -269,25 +267,6 @@ func foldWorktreeToProjectRoot(directory string) string {
 		return directory
 	}
 	return prefix + "/" + parts[idx+1]
-}
-
-func duplicateOpenCodeServerPortsForDirectory(directory string, servers []openCodeServer) []string {
-	key := normalizePortDirectory(directory)
-	seen := make(map[string]struct{})
-	for _, server := range servers {
-		if server.directory != key || server.port == "" {
-			continue
-		}
-		seen[server.port] = struct{}{}
-	}
-	if len(seen) < 2 {
-		return nil
-	}
-	return slices.Sorted(maps.Keys(seen))
-}
-
-func (d *Discovery) discoverDuplicateOpenCodeServerPorts(directory string) []string {
-	return duplicateOpenCodeServerPortsForDirectory(directory, d.discoverOpenCodeServers())
 }
 
 // discoverOpenCodePort finds the HTTP port of a running OpenCode instance

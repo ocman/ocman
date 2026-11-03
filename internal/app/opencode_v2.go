@@ -17,7 +17,7 @@ const v2PasswordSetting = "opencode.v2_server_password"
 // startupOpenCodePassword keeps explicit credentials authoritative. A shared
 // service rejecting them must fail closed rather than launch another writer.
 func startupOpenCodePassword(ctx context.Context, st *state.DB, configured string, enabled, useService bool) (string, error) {
-	if !enabled || configured != "" || !ocv2.InstalledV2() {
+	if !enabled || configured != "" {
 		return configured, nil
 	}
 	if useService {
@@ -50,7 +50,7 @@ func v2ServerPassword(ctx context.Context, st *state.DB) (string, error) {
 // with -db or OPENCODE_DB pointing elsewhere (development isolation)
 // ocman must keep its own server.
 func sharesServiceDB(path string) bool {
-	if !ocv2.InstalledV2() || path == "" {
+	if path == "" {
 		return false
 	}
 	return sameFile(path, db.DefaultDBPath())
@@ -81,15 +81,12 @@ func sharedV2Password(ctx context.Context, st *state.DB) (string, error) {
 	return v2ServerPassword(ctx, st)
 }
 
-// pinOpenCodeDB makes ocman read the database the OpenCode v2 server it
+// pinOpenCodeDB makes ocman read the database the OpenCode server it
 // launches writes. An explicit -db wins and is exported as OPENCODE_DB
-// (v2's override, forwarded by the launcher). Otherwise an OPENCODE_DB
-// the user set is read too, instead of the default path. It returns the
-// database path ocman opens. v1 ignores OPENCODE_DB.
+// (OpenCode's override, forwarded by the launcher). Otherwise an
+// OPENCODE_DB the user set is read too, instead of the default path. It
+// returns the database path ocman opens.
 func pinOpenCodeDB(path string, explicit bool) string {
-	if !ocv2.InstalledV2() {
-		return path // v1's reader remains selected solely by -db
-	}
 	if env := os.Getenv("OPENCODE_DB"); env != "" && !explicit {
 		path = env
 	}

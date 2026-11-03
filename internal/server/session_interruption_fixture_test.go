@@ -5,16 +5,9 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/ocman/ocman/internal/git"
-	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
 )
-
-type interruptionMembershipHost struct {
-	hostsvc.Host
-	resolve func(context.Context, string) (string, error)
-}
 
 type runtimeLifecyclePlatform struct {
 	*interruptionLifecyclePlatform
@@ -25,37 +18,12 @@ func registerRuntimeLifecycle(srv *Server, p *interruptionLifecyclePlatform) {
 	srv.registry.Register(&runtimeLifecyclePlatform{p, srv.db})
 }
 
-func (h *interruptionMembershipHost) ManagedOpencodeRoot(ctx context.Context, dir string) (string, error) {
-	return h.resolve(ctx, dir)
-}
-
-// Lifecycle-only fixtures declare their synthetic repository identities rather
-// than relying on real paths existing or on directory-containment heuristics.
-func useInterruptionMembershipFixture(srv *Server) {
-	srv.hostRouter = hostsvc.NewRouter(&interruptionMembershipHost{resolve: func(_ context.Context, dir string) (string, error) {
-		switch dir {
-		case "/repo":
-			return "/repo", nil
-		case "/projects/repo", "/projects/.worktrees/repo/a":
-			return "/projects/repo", nil
-		case "/projects/other":
-			return "/projects/other", nil
-		default:
-			return "", git.ErrNotARepo
-		}
-	}})
-}
-
 func newInterruptionTestServer(t *testing.T) (*Server, *platforms.Registry) {
-	srv, reg := newSessionsTestServer(t)
-	useInterruptionMembershipFixture(srv)
-	return srv, reg
+	return newSessionsTestServer(t)
 }
 
 func newInterruptionRawServer(t *testing.T) (*Server, *sql.DB) {
-	srv, raw := testServerWithRawDB(t)
-	useInterruptionMembershipFixture(srv)
-	return srv, raw
+	return testServerWithRawDB(t)
 }
 
 // beginStoredReplacementStop runs the BeforeStop hook with the cleanup handle

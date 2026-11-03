@@ -9,18 +9,29 @@ import (
 )
 
 func TestManagedPortsRecoverOnlyHealthyOwnedInstances(t *testing.T) {
-	store := newFakeStore()
-	for _, root := range []string{"/healthy", "/stopped"} {
-		store.rows[root] = ManagedInstance{Endpoint: "http://127.0.0.1:1001", RuntimeID: root}
-	}
-	rt := &fakeRuntime{probe: func(inst *ocruntime.Instance) bool { return inst.RepoRoot == "/healthy" }}
-	h := New(Deps{Runtime: rt, ManagedStore: store})
-	ports := h.RefreshManagedOpenCodePorts(t.Context())
-	if len(ports) != 1 || ports["/healthy"] != "1001" || rt.launchCount() != 0 {
-		t.Fatalf("ports = %v; launches = %d", ports, rt.launchCount())
-	}
-	if h.authorizedEndpoint("/healthy") == "" || h.authorizedEndpoint("/stopped") != "" {
-		t.Fatal("inventory bypassed identity authorization")
+	for _, healthy := range []bool{true, false} {
+		t.Run(map[bool]string{true: "healthy", false: "stopped"}[healthy], func(t *testing.T) {
+			root := machineRoot()
+			store := newFakeStore()
+			store.rows[root] = ManagedInstance{Endpoint: "http://127.0.0.1:1001", RuntimeID: "machine"}
+			// Rows for any other root (a server for another database) are
+			// never probed or published.
+			store.rows["/other"] = ManagedInstance{Endpoint: "http://127.0.0.1:1002", RuntimeID: "other"}
+			rt := &fakeRuntime{probe: func(inst *ocruntime.Instance) bool {
+				if inst.RepoRoot != root {
+					t.Errorf("probed non-machine root %q", inst.RepoRoot)
+				}
+				return healthy
+			}}
+			h := New(Deps{Runtime: rt, ManagedStore: store})
+			ports := h.RefreshManagedOpenCodePorts(t.Context())
+			if (ports[root] == "1001") != healthy || len(ports) > 1 || rt.launchCount() != 0 {
+				t.Fatalf("ports = %v; launches = %d", ports, rt.launchCount())
+			}
+			if (h.authorizedEndpoint(root) != "") != healthy || h.authorizedEndpoint("/other") != "" {
+				t.Fatal("inventory bypassed identity authorization")
+			}
+		})
 	}
 }
 
@@ -37,16 +48,17 @@ func TestManagedPortsRespectRoutingAndStopState(t *testing.T) {
 		{"stopped", nil, true, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			root := machineRoot()
 			h := New(Deps{Runtime: &probeErrorRuntime{err: tc.err}})
-			inst := &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", RepoRoot: "/repo"}
+			inst := &ocruntime.Instance{Endpoint: "http://127.0.0.1:1001", RepoRoot: root}
 			if tc.warm {
-				h.authorizeInstance("/repo", inst)
+				h.authorizeInstance(root, inst)
 			} else {
-				h.setInstance("/repo", inst)
+				h.setInstance(root, inst)
 			}
-			h.stopped["/repo"] = tc.stopped
+			h.stopped[root] = tc.stopped
 			ports := h.RefreshManagedOpenCodePorts(t.Context())
-			if (ports["/repo"] == "1001") != tc.want {
+			if (ports[root] == "1001") != tc.want {
 				t.Fatalf("ports = %v", ports)
 			}
 		})
@@ -69,7 +81,7 @@ func TestManagedPortsDisabledCanceledAndStoreFailure(t *testing.T) {
 		t.Fatal(ports)
 	}
 	h = New(Deps{})
-	h.setInstance("/repo", &ocruntime.Instance{})
+	h.setInstance(machineRoot(), &ocruntime.Instance{})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if ports := h.RefreshManagedOpenCodePorts(ctx); ports != nil {

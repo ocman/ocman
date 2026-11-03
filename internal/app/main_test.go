@@ -6,16 +6,13 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms/claude/provider/claudetest"
-	"github.com/ocman/ocman/internal/platforms/claude/transport"
+	claudecode "github.com/ocman/ocman/internal/platforms/claude/transport"
 	"github.com/ocman/ocman/internal/platforms/codex/acptest"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 	codextransport "github.com/ocman/ocman/internal/platforms/codex/transport"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
-// TestMain pins the installed OpenCode to v1 so tests never run the real
-// opencode binary; v2 cases opt in with ocv2.SetInstalledV2(true).
-// It also serves `ocman provider <id>` when a test's provider runtime
+// TestMain keeps tests from running the real opencode binary. It also serves `ocman provider <id>` when a test's provider runtime
 // launches the test binary as the supervisor executable.
 func TestMain(m *testing.M) {
 	if codextransport.RunProviderCommand(os.Args[1:]) || claudecode.RunProviderCommand(os.Args[1:]) {
@@ -42,9 +39,6 @@ func TestMain(m *testing.M) {
 			panic(err)
 		}
 		skillCatalog[name] = data
-	}
-	if os.Getenv("OCMAN_TEST_NO_OPENCODE") == "" {
-		ocv2.SetInstalledV2(false)
 	}
 	installedOpenCodeMajor = func() (int, bool) { return 0, false }
 	os.Exit(claudetest.Run(m))

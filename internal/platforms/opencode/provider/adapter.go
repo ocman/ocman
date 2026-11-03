@@ -14,7 +14,6 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -99,7 +98,7 @@ func (a *Adapter) Capabilities() platforms.Capabilities {
 		RespondPermission:  true,
 		RespondQuestion:    true,
 		Abort:              true,
-		BackgroundTaskStop: ocv2.InstalledV2(),
+		BackgroundTaskStop: true,
 		Compact:            true,
 		Fork:               true,
 		ForkAtMessage:      true,

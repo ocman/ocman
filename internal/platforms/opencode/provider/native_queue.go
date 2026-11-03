@@ -8,26 +8,15 @@ import (
 	"net/url"
 
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 var _ platforms.NativeQueue = (*Adapter)(nil)
 
-// v2Port resolves the session's server and requires it to be OpenCode
-// v2, the only version with a native follow-up queue (its inbox).
+// v2Port resolves the server holding the session's native follow-up queue
+// (its inbox).
 func (a *Adapter) v2Port(ctx context.Context, sessionID string) (string, error) {
-	// Cheap check first: on a v1 machine this runs on every queue change.
-	if !ocv2.InstalledV2() {
-		return "", platforms.ErrUnsupported
-	}
 	port, _, err := a.resolvePortCtx(ctx, sessionID)
-	if err != nil {
-		return "", err
-	}
-	if !ocv2.IsV2(ctx, port) {
-		return "", platforms.ErrUnsupported
-	}
-	return port, nil
+	return port, err
 }
 
 // NativeQueued lists the prompts OpenCode v2 holds for the session's

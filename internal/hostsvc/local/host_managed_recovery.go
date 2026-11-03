@@ -8,12 +8,11 @@ import (
 
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 func validateReplacementRoot(root string) error {
-	if ocv2.InstalledV2() && filepath.Clean(root) != machineRoot() {
-		return fmt.Errorf("OpenCode v2 replacement requires machine root, got %q", root)
+	if filepath.Clean(root) != machineRoot() {
+		return fmt.Errorf("OpenCode replacement requires machine root, got %q", root)
 	}
 	return nil
 }
@@ -39,9 +38,7 @@ func (h *Host) recoverStopping(ctx context.Context, root string, explicitRestart
 	h.mu.Unlock()
 	if !matching {
 		h.clearInstance(root)
-		if ocv2.InstalledV2() {
-			h.publishMachineServer("")
-		}
+		h.publishMachineServer("")
 	}
 	probeErr := h.runtime.Probe(ctx, inst)
 	if probeErr == nil {
@@ -58,9 +55,7 @@ func (h *Host) recoverStopping(ctx context.Context, root string, explicitRestart
 	unauthenticated := errors.Is(probeErr, ocapi.ErrAuthentication)
 	if rejected || unauthenticated {
 		h.revokeInstanceAuthorization(root)
-		if ocv2.InstalledV2() {
-			h.publishMachineServer("")
-		}
+		h.publishMachineServer("")
 	}
 	retryOwnedStop := false
 	if explicitRestart && unauthenticated && inst.ID != "" && inst.RepoRoot == root {

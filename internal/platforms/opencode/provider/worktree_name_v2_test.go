@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // On OpenCode v2 an empty small_model sends no model: the title agent picks
@@ -19,7 +17,6 @@ func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
 	previous := openCodeClient.Timeout
 	openCodeClient.Timeout = time.Second
 	t.Cleanup(func() { openCodeClient.Timeout = previous })
-	defer ocv2.SetInstalledV2(true)()
 	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/config":
@@ -65,37 +62,5 @@ func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
 	}
 	if _, hit := f.find(http.MethodDelete, "/api/session/naming"); !hit {
 		t.Fatal("temporary naming session leaked")
-	}
-}
-
-// A v1 server keeps the haiku fallback even when v2 is installed.
-func TestWorktreeName_V1ServerKeepsHaikuFallback(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
-	f := newV2Fake(t, false, func(w http.ResponseWriter, r *http.Request) bool {
-		switch r.Method + " " + r.URL.Path {
-		case "GET /config":
-			writeJSONBody(w, `{}`)
-		case "POST /session":
-			writeJSONBody(w, `{"id":"naming"}`)
-		case "POST /session/naming/message":
-			writeJSONBody(w, `{"parts":[{"type":"text","text":"Add Tests"}]}`)
-		case "POST /session/naming/abort", "DELETE /session/naming":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			return false
-		}
-		return true
-	})
-	got, err := WorktreeName(context.Background(), f.Port(), "/repo", "add tests")
-	if err != nil || got != "add-tests" {
-		t.Fatalf("WorktreeName = %q, %v; want add-tests", got, err)
-	}
-	msg, ok := f.find(http.MethodPost, "/session/naming/message")
-	if !ok {
-		t.Fatal("naming prompt not sent")
-	}
-	model, _ := msg.body["model"].(map[string]any)
-	if model["providerID"] != "anthropic" || model["modelID"] != "claude-haiku-4-5" {
-		t.Fatalf("model = %#v, want haiku fallback", msg.body["model"])
 	}
 }

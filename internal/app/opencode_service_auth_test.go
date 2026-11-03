@@ -37,7 +37,6 @@ func (r *serviceAuthRuntime) Stop(context.Context, *ocruntime.Instance) error {
 }
 
 func TestStartupServiceCredentialsNeverLaunchCompetingServer(t *testing.T) {
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	for _, tc := range []struct {
 		name, env, file string
 		wantAuthError   bool
@@ -123,16 +122,14 @@ func TestStartupServiceCredentialsNeverLaunchCompetingServer(t *testing.T) {
 
 func TestStartupOpenCodePasswordSelection(t *testing.T) {
 	for _, tc := range []struct {
-		name                 string
-		v2, enabled, service bool
-		configured           string
+		name             string
+		enabled, service bool
+		configured       string
 	}{
-		{"disabled", true, false, true, ""},
-		{"v1", false, true, true, ""},
-		{"explicit", true, true, true, "configured-pw"},
+		{"disabled", false, true, ""},
+		{"explicit", true, true, "configured-pw"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Cleanup(ocv2.SetInstalledV2(tc.v2))
 			got, err := startupOpenCodePassword(t.Context(), nil, tc.configured, tc.enabled, tc.service)
 			if err != nil || got != tc.configured {
 				t.Fatalf("got=%q err=%v; want unchanged configuration", got, err)
@@ -140,7 +137,6 @@ func TestStartupOpenCodePasswordSelection(t *testing.T) {
 		})
 	}
 	t.Run("isolated database", func(t *testing.T) {
-		t.Cleanup(ocv2.SetInstalledV2(true))
 		t.Setenv(opencodeServerPasswordEnv, "")
 		st, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 		if err != nil {

@@ -100,13 +100,19 @@ func TestServiceDiscoversThroughOpenCodeAdapter(t *testing.T) {
 		t.Fatal("no adapter must mean no ports")
 	}
 	adapter := opencode.New(nil, nil, nil, ocapi.Auth{})
-	adapter.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "4500"} })
+	adapter.Discovery().SetMachineServer("4500")
 	svc := NewService(Deps{OpenCodeAuth: ocapi.New(""), OpencodePlatform: func() platforms.Platform { return openCodePlatform{Adapter: adapter} }})
 	if got := svc.openCodePort("/repo"); got != "4500" {
 		t.Fatalf("openCodePort = %q, want 4500", got)
 	}
-	if got := svc.discoverOpenCodePorts()["/repo"]; got != "4500" {
-		t.Fatalf("discoverOpenCodePorts = %q, want 4500", got)
+	ports := svc.discoverOpenCodePorts()
+	if len(ports) != 1 {
+		t.Fatalf("discoverOpenCodePorts = %v, want only the machine server", ports)
+	}
+	for _, port := range ports {
+		if port != "4500" {
+			t.Fatalf("discoverOpenCodePorts = %v, want the machine server on 4500", ports)
+		}
 	}
 }
 

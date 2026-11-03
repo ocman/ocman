@@ -164,5 +164,5 @@ func hasTable(c sqlite.ExecQuerierContext, name string) (bool, error) {
 }
 
 // useV2Views marks dsn so its connections get the v1 views over the v2
-// schema. Called by Open when the installed OpenCode is v2.
+// schema. Called by Open.
 func useV2Views(dsn string) { v2DSNs.Store(dsn, true) }

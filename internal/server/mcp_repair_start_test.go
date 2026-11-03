@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/opencodeconfig"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // Startup repair must see the MCP listener's finalized address and auth
@@ -28,7 +27,6 @@ func TestStartupRepairUsesFinalizedMCPListener(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("OCMAN_PLUGIN_DIR", t.TempDir())
-			t.Cleanup(ocv2.SetInstalledV2(true))
 			dir := t.TempDir()
 			t.Setenv("XDG_CONFIG_HOME", dir)
 			t.Setenv("OPENCODE_CONFIG", "")

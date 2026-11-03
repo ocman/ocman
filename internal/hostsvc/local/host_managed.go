@@ -10,27 +10,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	log "github.com/sirupsen/logrus"
 )
 
-// EnsureProjectOpencode shares one managed instance across a project's worktrees.
+// EnsureProjectOpencode ensures the machine's OpenCode server, which serves
+// every project.
 func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	if !h.opencodeEnabled() {
 		return nil, fmt.Errorf("OpenCode is disabled")
 	}
-	if ocv2.InstalledV2() {
-		return h.ensureMachine(ctx, req.ProjectDir, h.ensureLocked, "ensure")
-	}
-	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
-	if err != nil {
-		return nil, err
-	}
-	return h.sfDoDetached(ctx, repoRoot, h.ensureLocked, "ensure")
+	return h.ensureMachine(ctx, req.ProjectDir, h.ensureLocked, "ensure")
 }
 
 const sfLaunchTimeout = 2 * time.Minute
@@ -114,9 +106,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 		if errors.Is(probeErr, ocruntime.ErrProbeIdentityMismatch) {
 			// Retain the local cleanup handle, never authorize the rejected URL.
 			h.revokeInstanceAuthorization(repoRoot)
-			if ocv2.InstalledV2() {
-				h.publishMachineServer("")
-			}
+			h.publishMachineServer("")
 		}
 		// A slow or overloaded API is not proof that its active turns are dead.
 		if ambiguousProbe(probeErr) {
@@ -134,23 +124,6 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 	}
 	if res, handled, err := h.useService(ctx, repoRoot); handled {
 		return res, err
-	}
-	if h.deps.DiscoverPort != nil {
-		if port := h.deps.DiscoverPort(repoRoot); port != "" {
-			inst := &ocruntime.Instance{Endpoint: "http://127.0.0.1:" + port, Kind: ocruntime.KindNativeTmux}
-			probeErr := h.runtime.Probe(ctx, inst)
-			if probeErr == nil {
-				h.authorizeInstance(repoRoot, inst)
-				return &hostsvc.EnsureRuntimeResult{Endpoint: inst.Endpoint, RepoRoot: repoRoot, Runtime: *inst}, nil
-			}
-			if ambiguousProbe(probeErr) {
-				h.setInstance(repoRoot, inst)
-				log.WithError(probeErr).WithFields(log.Fields{"repoRoot": repoRoot, "endpoint": inst.Endpoint}).Warn("host: discovered opencode probe inconclusive; preserving server")
-				return nil, probeErr
-			}
-			log.WithError(probeErr).WithFields(log.Fields{"repoRoot": repoRoot, "endpoint": inst.Endpoint}).Warn("host: discovered opencode probe failed; launching replacement")
-			log.WithFields(log.Fields{"repoRoot": repoRoot, "endpoint": inst.Endpoint, "reason": "failed discovered health probe"}).Warn("host: launching replacement opencode")
-		}
 	}
 	return h.launchAndTrack(ctx, repoRoot)
 }
@@ -173,9 +146,7 @@ func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.Ens
 		h.setInstance(repoRoot, inst)
 		if probeErr := h.runtime.Probe(ctx, inst); errors.Is(probeErr, ocruntime.ErrProbeIdentityMismatch) {
 			h.revokeInstanceAuthorization(repoRoot)
-			if ocv2.InstalledV2() {
-				h.publishMachineServer("")
-			}
+			h.publishMachineServer("")
 		} else if probeErr == nil {
 			h.authorizeInstance(repoRoot, inst)
 		}
@@ -198,17 +169,13 @@ func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.Ens
 }
 
 func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
-	permJSON, err := buildExternalDirectoryPermission(worktreesRoot(repoRoot))
-	if err != nil {
-		return nil, fmt.Errorf("building OPENCODE_PERMISSION: %w", err)
-	}
 	port, err := ocruntime.AllocateLoopbackPort()
 	if err != nil {
 		return nil, err
 	}
 	log.WithFields(log.Fields{"repoRoot": repoRoot, "port": port}).Info("host: launching project opencode")
 	inst, err := h.runtime.Launch(ctx, ocruntime.LaunchSpec{
-		RepoRoot: repoRoot, Host: "127.0.0.1", Port: port, PermissionJSON: permJSON, V2: ocv2.InstalledV2(),
+		RepoRoot: repoRoot, Host: "127.0.0.1", Port: port,
 	})
 	if err != nil {
 		log.WithError(err).WithField("repoRoot", repoRoot).Error("host: failed to launch project opencode")
@@ -312,31 +279,17 @@ func (h *Host) waitForProbe(ctx context.Context, inst *ocruntime.Instance) error
 	}
 }
 
-func worktreesRoot(repoRoot string) string {
-	clean := filepath.Clean(repoRoot)
-	return filepath.Join(filepath.Dir(clean), ".worktrees", filepath.Base(clean))
-}
-
 func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
 	if !h.opencodeEnabled() {
 		return nil
 	}
-	if ocv2.InstalledV2() {
-		if filepath.Clean(req.ProjectDir) != machineRoot() {
-			return nil
-		}
+	// Only the machine server itself is stopped; a project stop leaves the
+	// server shared by every other project running.
+	repoRoot := machineRoot()
+	if filepath.Clean(req.ProjectDir) != repoRoot {
+		return nil
 	}
-	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
-	if ocv2.InstalledV2() {
-		repoRoot, err = machineRoot(), nil
-	}
-	if err != nil {
-		if errors.Is(err, git.ErrNotARepo) {
-			return nil
-		}
-		return err
-	}
-	_, err, _ = h.sf.Do("stop\x00"+repoRoot, func() (any, error) {
+	_, err, _ := h.sf.Do("stop\x00"+repoRoot, func() (any, error) {
 		finish := h.beginRuntimeMutation(repoRoot)
 		defer finish()
 		if stopped, err := h.reconcileStopped(ctx, repoRoot, false); stopped || err != nil {
@@ -352,9 +305,7 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 			}
 		}
 		h.clearInstance(repoRoot)
-		if ocv2.InstalledV2() {
-			h.publishMachineServer("")
-		}
+		h.publishMachineServer("")
 		if h.store != nil {
 			if err := h.store.Delete(ctx, repoRoot); err != nil {
 				return nil, err
@@ -369,14 +320,7 @@ func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsurePro
 	if !h.opencodeEnabled() {
 		return nil, fmt.Errorf("OpenCode is disabled")
 	}
-	if ocv2.InstalledV2() {
-		return h.ensureMachine(ctx, req.ProjectDir, h.restartLocked, "restart")
-	}
-	root, err := projectOpencodeRoot(ctx, req.ProjectDir)
-	if err != nil {
-		return nil, err
-	}
-	return h.sfDoDetached(ctx, root, h.restartLocked, "restart")
+	return h.ensureMachine(ctx, req.ProjectDir, h.restartLocked, "restart")
 }
 
 func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode, error) {
@@ -390,13 +334,9 @@ func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode,
 	if err != nil {
 		return nil, err
 	}
-	v2, machine := ocv2.InstalledV2(), machineRoot()
-	var out []hostsvc.ManagedOpencode
-	for root := range instances {
-		if v2 && root != machine {
-			continue
-		}
-		out = append(out, hostsvc.ManagedOpencode{RepoRoot: root, Machine: root == machine})
+	machine := machineRoot()
+	if _, ok := instances[machine]; !ok {
+		return nil, nil
 	}
-	return out, nil
+	return []hostsvc.ManagedOpencode{{RepoRoot: machine, Machine: true}}, nil
 }

@@ -1,7 +1,6 @@
 package opencode
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
@@ -16,10 +15,9 @@ func TestAdaptersOwnTheirDiscovery(t *testing.T) {
 
 	old, fresh := New(nil, nil, nil, ocapi.Auth{}), New(nil, nil, nil, ocapi.Auth{})
 	old.Discovery().SetMachineServer("4100")
-	old.Discovery().SetManagedPortSource(func(context.Context) map[string]string { return map[string]string{"/repo": "4200"} })
-	old.Discovery().rememberSessionPort("ses_1", "4200")
-	if got := old.Discovery().DiscoverOpenCodePorts()["/repo"]; got != "4200" {
-		t.Fatalf("old adapter ports = %q", got)
+	old.Discovery().rememberSessionPort("ses_1", "4100")
+	if got := old.Discovery().DiscoverOpenCodePortContext(t.Context(), "/repo"); got != "4100" {
+		t.Fatalf("old adapter port = %q", got)
 	}
 
 	if got := fresh.Discovery().MachineServerPort(); got != "" {

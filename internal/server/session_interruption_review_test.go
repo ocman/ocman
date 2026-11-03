@@ -13,7 +13,6 @@ import (
 	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
-	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -27,7 +26,6 @@ func (r *replacementReviewRuntime) Stop(context.Context, *ocruntime.Instance) er
 
 func replacementReviewHost(t *testing.T, srv *Server, rt *replacementReviewRuntime) *hostlocal.Host {
 	t.Helper()
-	t.Cleanup(ocv2.SetInstalledV2(true))
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OPENCODE_DB", "")
 	return hostlocal.New(hostlocal.Deps{Runtime: rt, ManagedStore: managedStoreOrNil(srv.stateDB), BeforeReplace: srv.recordOpencodeReplacement, BeforeStop: srv.beginOpencodeReplacementStopWithInstance, AfterStop: srv.confirmOpencodeReplacement, ReplacementStopped: srv.opencodeReplacementStopped, ReplacementStopping: srv.opencodeReplacementStopping, CancelReplacementStop: srv.cancelOpencodeReplacementStop})

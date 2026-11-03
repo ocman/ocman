@@ -138,7 +138,7 @@ flowchart LR
   hook. Journal read errors revoke readiness rather than appearing as no work.
   Writers lock each segment and terminate interrupted tails before appending.
   Translation failures have one task receipt, separate from journal I/O errors.
-- Sources with neither (OpenCode v1 and Codex) still poll change hints every 30 seconds
+- Sources with neither (Codex, and OpenCode before its database is migrated) still poll change hints every 30 seconds
   and coalesce event-triggered repairs for one second. Known-session events bypass
   full inventories unless verification is due; unknown sessions still trigger discovery.
   Timer-triggered polls always inventory independently of pending activity, so
@@ -202,8 +202,8 @@ snapshots. No opt-in or legacy opt-out is available.
 - Running, limited and approval-waiting sessions also read their transcript
   from statev2; live turns reach the browser through platform SSE, and the
   event cache overlays only live fields (status, prompts, connection, notices).
-  Directory warnings, such as duplicate OpenCode servers, come from the live
-  integration and only for its current physical source.
+  Directory warnings come from the live integration and only for its current
+  physical source.
 - A session without a stored snapshot waits, bounded, for ingestion's first
   read of that session, then returns HTTP 503 with
   `X-Ocman-Conversation-Error: history-unavailable`, never a native transcript.

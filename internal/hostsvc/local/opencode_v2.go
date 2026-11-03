@@ -16,7 +16,6 @@ import (
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // OpenCode v2 serves every project from one server: each request names
@@ -104,18 +103,14 @@ const machineSupervisorInterval = 30 * time.Second
 
 // RunMachineSupervisor keeps the v2 machine server online: it ensures
 // the server at startup and then periodically, relaunching it when the
-// probe fails. A no-op loop while the installed OpenCode is v1.
+// probe fails.
 func (h *Host) RunMachineSupervisor(ctx context.Context) {
-	if ocv2.InstalledV2() {
-		h.reapNonMachineInstances(ctx)
-	}
+	h.reapNonMachineInstances(ctx)
 	tick := time.NewTicker(machineSupervisorInterval)
 	defer tick.Stop()
 	for {
-		if ocv2.InstalledV2() {
-			if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: machineRoot()}); err != nil && ctx.Err() == nil {
-				log.WithError(err).Warn("host: OpenCode v2 server unavailable")
-			}
+		if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: machineRoot()}); err != nil && ctx.Err() == nil {
+			log.WithError(err).Warn("host: OpenCode server unavailable")
 		}
 		select {
 		case <-ctx.Done():

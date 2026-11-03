@@ -36,7 +36,6 @@ func cmpTypeSeq(t *testing.T, evs []map[string]any, want ...string) {
 func cmpPart(ev map[string]any) map[string]any { return obj(obj(ev, "properties"), "part") }
 
 func TestEventsLifecycle(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("server.connected", 1, "", `{}`),
@@ -61,7 +60,6 @@ func TestEventsLifecycle(t *testing.T) {
 }
 
 func TestEventsAssistantFlow(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	const d = `"sessionID":"s1","assistantMessageID":"msg01"`
 	f.events = []string{
@@ -155,7 +153,6 @@ func TestEventsAssistantFlow(t *testing.T) {
 // leave two tool items with the same call id. Tool events belong to the
 // latest one, and the streamed part must be the one history shows.
 func TestEventsDuplicateToolCallID(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	const d = `"sessionID":"s1","assistantMessageID":"msg01"`
 	f.events = []string{
@@ -190,7 +187,6 @@ func TestEventsDuplicateToolCallID(t *testing.T) {
 }
 
 func TestEventsSeedUnknownAssistant(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s2/message/msg09", http.StatusOK, `{"data":{"id":"msg09","type":"assistant","agent":"build",
 		"model":{"providerID":"p","id":"m"},"time":{"created":1},"content":[{"type":"text","text":"Hi"}]}}`)
@@ -236,7 +232,6 @@ func TestEventsSeedUnknownAssistant(t *testing.T) {
 }
 
 func TestEventsExecutionEndForgetsMessages(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("session.step.started", 1, "", `{"sessionID":"s1","assistantMessageID":"msg01","started":1}`),
@@ -255,7 +250,6 @@ func TestEventsExecutionEndForgetsMessages(t *testing.T) {
 // attempt's content: a stream that missed the first attempt must load it
 // so the retry's parts get the stored indexes.
 func TestEventsRetriedStepKeepsStoredIndexes(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s1/message/msg01", http.StatusOK, `{"data":{"id":"msg01","type":"assistant","agent":"build",
 		"model":{"providerID":"p","id":"m"},"time":{"created":1},"content":[{"type":"text","text":"first attempt"}]}}`)
@@ -275,7 +269,6 @@ func TestEventsRetriedStepKeepsStoredIndexes(t *testing.T) {
 
 // A message whose fetch failed is not refetched for every later delta.
 func TestEventsFailedSeedIsNotRetriedPerDelta(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("session.text.delta", 1, "", `{"sessionID":"s1","assistantMessageID":"msgX","delta":"a"}`),
@@ -290,7 +283,6 @@ func TestEventsFailedSeedIsNotRetriedPerDelta(t *testing.T) {
 
 // Events from other directories cost nothing on a directory stream.
 func TestEventsOtherDirectoryDoesNoWork(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("session.created", 1, "/other", `{"sessionID":"s9"}`),
@@ -303,7 +295,6 @@ func TestEventsOtherDirectoryDoesNoWork(t *testing.T) {
 }
 
 func TestEventsSessionEvents(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/session/s3", http.StatusOK, `{"data":{"id":"s3","title":"T","location":{"directory":"/d"},"time":{"created":1,"updated":2}}}`)
 	f.json("GET /api/session/s3/message", http.StatusOK, `{"data":[
@@ -334,7 +325,6 @@ func TestEventsSessionEvents(t *testing.T) {
 }
 
 func TestEventsPermissionsAndQuestions(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("permission.asked", 1, "", `{"id":"per_ev_1","sessionID":"s4","action":"shell","resources":["ls"],"save":["ls *"],"metadata":{}}`),
@@ -362,7 +352,6 @@ func TestEventsPermissionsAndQuestions(t *testing.T) {
 }
 
 func TestEventsDirectoryFilter(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		fakeEv("session.execution.started", 1, "/a", `{"sessionID":"keep"}`),
@@ -388,7 +377,6 @@ func TestEventsDirectoryFilter(t *testing.T) {
 }
 
 func TestEventsGlobal(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.events = []string{
 		": heartbeat",
@@ -402,7 +390,6 @@ func TestEventsGlobal(t *testing.T) {
 }
 
 func TestEventsUpstreamErrorRelayed(t *testing.T) {
-	defer SetInstalledV2(true)()
 	f := fakeServer(t)
 	f.json("GET /api/event", http.StatusServiceUnavailable, `{"name":"Unavailable"}`)
 	status, b := cmpDo(t, http.MethodGet, f.URL+"/event", nil, "")

@@ -160,7 +160,6 @@ func TestReopenedHostRecoversUnacknowledgedStop(t *testing.T) {
 			confirmErr := errors.New("confirmation unavailable")
 			confirmations := 0
 			deps.AfterStop = func(context.Context, string) error { confirmations++; return confirmErr }
-			deps.DiscoverPort = func(string) string { t.Error("discovered instead of recovering original"); return "9999" }
 			h = New(deps)
 			replace := h.EnsureProjectOpencode
 			if restart {

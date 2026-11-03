@@ -391,6 +391,10 @@ func TestAutoApproveWatcherConnectsBeforePromptReconciliation(t *testing.T) {
 	var mu sync.Mutex
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/info" {
+			http.NotFound(w, r)
+			return
+		}
 		mu.Lock()
 		paths = append(paths, r.URL.Path)
 		mu.Unlock()

@@ -203,11 +203,24 @@ func (f *opencodeFake) AddMessage(id string, raw json.RawMessage) {
 	f.messages[id] = append(f.messages[id], raw)
 }
 
+// v1Shaped answers ocv2.Wrap's GET /api/info dialect probe with 404, so a
+// fake serving ocman's v1-shaped routes directly receives only those
+// requests and gets them unchanged.
+func v1Shaped(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/info" {
+			http.NotFound(w, r)
+			return
+		}
+		handler(w, r)
+	}
+}
+
 // fakePort serves handler on a loopback httptest server, closed at test
 // cleanup, and returns its port.
 func fakePort(t *testing.T, handler http.HandlerFunc) string {
 	t.Helper()
-	srv := httptest.NewServer(handler)
+	srv := httptest.NewServer(v1Shaped(handler))
 	t.Cleanup(srv.Close)
 	return strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 }

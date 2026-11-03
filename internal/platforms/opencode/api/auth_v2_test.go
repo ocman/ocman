@@ -4,19 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"testing"
 
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
-
-// TestMain pins the installed-OpenCode check so no test runs the real
-// `opencode --version`.
-func TestMain(m *testing.M) {
-	ocv2.SetInstalledV2(false)
-	os.Exit(m.Run())
-}
 
 func TestAddServerEnvAndEnabled(t *testing.T) {
 	env := map[string]string{}
@@ -44,7 +36,6 @@ func TestAddServerEnvAndEnabled(t *testing.T) {
 // With v2 installed, a v1 route against a v2 server is translated and
 // every upstream call, the dialect probe included, carries Basic Auth.
 func TestTransportV2TranslatesWithBasicAuth(t *testing.T) {
-	defer ocv2.SetInstalledV2(true)()
 	var mu sync.Mutex
 	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

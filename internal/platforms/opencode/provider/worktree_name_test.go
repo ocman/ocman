@@ -26,7 +26,7 @@ func TestWorktreeName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			created, removed := false, false
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := httptest.NewServer(v1Shaped(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Query().Get("directory") != "/repo" {
 					t.Errorf("missing owner directory: %s", r.URL)
@@ -55,11 +55,16 @@ func TestWorktreeName(t *testing.T) {
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 						t.Fatal(err)
 					}
-					wantModel := "anthropic/claude-haiku-4-5"
+					// Without small_model no model is sent: OpenCode's title agent picks one.
+					wantModel := ""
 					if tc.name == "configured" {
 						wantModel = "test/fast"
 					}
-					if body.Model.ProviderID+"/"+body.Model.ModelID != wantModel || body.Agent != "title" {
+					gotModel := body.Model.ProviderID + "/" + body.Model.ModelID
+					if gotModel == "/" {
+						gotModel = ""
+					}
+					if gotModel != wantModel || body.Agent != "title" {
 						t.Errorf("wrong model/agent: %+v", body)
 					}
 					if len(body.Parts) != 1 || len(body.Parts[0].Text) > 3200 {

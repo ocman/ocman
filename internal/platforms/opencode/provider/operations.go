@@ -19,7 +19,6 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/apiv1"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 	"github.com/ocman/ocman/internal/srvtiming"
 )
 
@@ -81,7 +80,7 @@ func (d *Discovery) resolveOpenCodePortBySession(ctx context.Context, sessionID 
 // --- Catalogs ---
 
 // ProjectCatalog reads catalogs from a managed project before it has a session.
-// directory scopes the read on an OpenCode v2 server, which serves every
+// directory scopes the read on the OpenCode server, which serves every
 // project; "" reads the server's default location.
 func ProjectCatalog(ctx context.Context, endpoint, directory string) (agents, models []string, err error) {
 	u, err := url.Parse(endpoint)
@@ -195,8 +194,8 @@ func marshalRequest(v any) ([]byte, error) {
 }
 
 // SendMessage submits a composer message via POST /session/{id}/prompt_async.
-// On an OpenCode v2 server the ocv2 transport translates it to v2's prompt
-// API (agent/model switches, delivery).
+// The ocv2 transport translates it to OpenCode's prompt API (agent/model
+// switches, delivery).
 func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
 	lockIndex := crc32.ChecksumIEEE([]byte(req.SessionID)) % uint32(len(a.sendLock))
 	sendMu := &a.sendLock[lockIndex]
@@ -229,11 +228,6 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 }
 
 func sendMessageOnPort(ctx context.Context, port string, req platforms.SendMessageRequest) error {
-	// Only an OpenCode v2 server holds follow-ups itself (its session
-	// inbox); everything else uses ocman's queue.
-	if req.Delivery != "" && !ocv2.IsV2(ctx, port) {
-		return platforms.ErrUnsupported
-	}
 	err := sendMessageLegacy(ctx, port, req)
 	// The v2 translation refuses (412) a held prompt that needs an agent
 	// or model switch: nothing was admitted, so ocman's queue may take it.
