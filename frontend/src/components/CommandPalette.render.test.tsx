@@ -340,7 +340,7 @@ describe('CommandPalette project mode', () => {
     ]);
     renderPalette();
     const box = await screen.findByRole('option', { name: /Box/ });
-    expect(box).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(box).toHaveAttribute('aria-selected', 'true'));
     expect(mocks.apiState.resolveProjectIdentities).not.toHaveBeenCalled();
   });
 
