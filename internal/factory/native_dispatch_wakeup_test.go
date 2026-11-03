@@ -77,7 +77,7 @@ func TestFactoryDispatchRecoveryAndWake(t *testing.T) {
 	store := &dispatchCountingStore{DB: d}
 	svc := NewNativeWithExecution(store, nil, &fakePlanningLauncher{}, &fakeImplementationLauncher{})
 	done := make(chan struct{})
-	go func() { defer close(done); svc.runDispatch(100 * time.Millisecond) }()
+	go func() { defer close(done); svc.runDispatch(nil, 100*time.Millisecond) }()
 	t.Cleanup(func() { svc.Close(); <-done })
 	await := func(want int32) {
 		t.Helper()
@@ -118,5 +118,144 @@ func TestFactoryNextDispatchDelay(t *testing.T) {
 	}
 	if got := NewNativeWithExecution(&nativeStoreFake{}, nil, nil, nil).nextDispatchDelay(t.Context(), time.Minute); got != time.Minute {
 		t.Fatalf("fallback delay = %v", got)
+	}
+}
+
+func TestFactoryDispatchStopsAndResumes(t *testing.T) {
+	store := &dispatchCountingStore{DB: statetest.Open(t), deadline: time.Now().Add(time.Hour)}
+	svc := NewNativeWithExecution(store, nil, &fakePlanningLauncher{}, &fakeImplementationLauncher{})
+	t.Cleanup(svc.Close)
+	await := func(want int32) {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for store.scans.Load() < want {
+			if time.Now().After(deadline) {
+				t.Fatalf("only %d scans, want %d", store.scans.Load(), want)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if err := svc.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	await(1)
+	svc.StopDispatch()
+	stopped := store.scans.Load()
+	svc.wakeDispatch()
+	time.Sleep(20 * time.Millisecond)
+	if store.scans.Load() != stopped {
+		t.Fatal("stopped dispatch still scanned")
+	}
+	svc.StopDispatch() // idempotent
+	svc.ResumeDispatch()
+	svc.ResumeDispatch() // one loop only
+	await(stopped + 1)
+	svc.Close()
+	svc.ResumeDispatch()
+	closed := store.scans.Load()
+	svc.wakeDispatch()
+	time.Sleep(20 * time.Millisecond)
+	if store.scans.Load() != closed {
+		t.Fatal("closed service resumed dispatch")
+	}
+}
+
+type blockedPromptLauncher struct {
+	*fakeImplementationLauncher
+	entered chan context.Context
+	release chan struct{}
+}
+
+func (l *blockedPromptLauncher) PromptImplementationSession(ctx context.Context, _ PlanningSession, _ ImplementationSessionRequest) error {
+	l.entered <- ctx
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-l.release:
+		return nil
+	}
+}
+
+func TestFactoryStopDispatchPreservesAdmittedLaunch(t *testing.T) {
+	for _, mode := range []string{"disable", "shutdown", "shutdown during disable"} {
+		t.Run(mode, func(t *testing.T) {
+			shutdown := mode != "disable"
+			db := statetest.Open(t)
+			launcher := &blockedPromptLauncher{
+				fakeImplementationLauncher: &fakeImplementationLauncher{store: db},
+				entered:                    make(chan context.Context, 2), release: make(chan struct{}),
+			}
+			// Approve two independent Epics without dispatching either yet.
+			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, nil)
+			approvedEpic(t, svc, "First admission")
+			approvedEpic(t, svc, "Second admission")
+			if _, err := svc.SetCapacityPolicy(t.Context(), CapacityPolicy{GlobalCapacity: 2, ProjectCapacity: 2}); err != nil {
+				t.Fatal(err)
+			}
+			svc.implementation = launcher
+			t.Cleanup(svc.Close)
+			// Release a blocked prompt before cleanup even if an assertion fails.
+			t.Cleanup(func() { close(launcher.release) })
+			if err := svc.Start(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			var promptCtx context.Context
+			select {
+			case promptCtx = <-launcher.entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("initial prompt did not start")
+			}
+			done := make(chan struct{})
+			halt := svc.dispatchHalt
+			go func() {
+				defer close(done)
+				if mode == "shutdown during disable" {
+					stopped := make(chan struct{})
+					go func() { svc.StopDispatch(); close(stopped) }()
+					<-halt
+					svc.Close()
+					<-stopped
+					return
+				}
+				if shutdown {
+					svc.Close()
+				} else {
+					svc.StopDispatch()
+				}
+			}()
+			if shutdown {
+				select {
+				case <-promptCtx.Done():
+				case <-time.After(5 * time.Second):
+					t.Fatal("shutdown did not cancel the admitted launch")
+				}
+			} else {
+				select {
+				case <-halt:
+				case <-time.After(5 * time.Second):
+					t.Fatal("dispatch stop was not signaled")
+				}
+				select {
+				case <-promptCtx.Done():
+					t.Fatal("disabling Factory canceled the admitted initial prompt")
+				case <-done:
+					t.Fatal("StopDispatch did not join the admitted launch")
+				case <-time.After(50 * time.Millisecond):
+				}
+				launcher.release <- struct{}{}
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("dispatch did not stop")
+			}
+			attempts, err := db.ListFactoryAttempts(t.Context(), "")
+			if err != nil || len(attempts) != 1 {
+				t.Fatalf("attempts after stop = %#v, %v; want only the admitted launch", attempts, err)
+			}
+			if !shutdown && (len(launcher.stops) != 0 || attempts[0].Phase != model.FactoryAttemptActive || attempts[0].Failure.Type != "") {
+				t.Fatalf("disable aborted or failed the admitted launch: stops=%v, attempt=%#v", launcher.stops, attempts[0])
+			}
+		})
 	}
 }

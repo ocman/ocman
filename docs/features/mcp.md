@@ -125,7 +125,8 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 Factory tools are available only when the instance-wide Factory beta toggle
 is enabled under Settings → App → Beta features. Disabling it removes them
 from discovery and rejects calls, including from clients with a cached tool
-list. Other MCP tools remain available.
+list. Other MCP tools remain available. Factory also dispatches new work only
+while the toggle is on; sessions already running are not stopped.
 
 Agents should include a short, goal-focused `intent` string on every tool call,
 including help and read-only calls, for example

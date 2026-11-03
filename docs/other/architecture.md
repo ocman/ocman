@@ -1323,10 +1323,13 @@ flowchart TD
   analytics cards, session filters, Inbox category and messages, badge setting,
   notifications and interactive conversation cards. Settings events, focus and
   periodic reads synchronize browsers. Direct links show a generic unavailable
-  page. The MCP handler reads the flag for discovery and invocation, hiding and
-  rejecting disabled tools without a restart. The Inbox tool also omits its
-  disabled category. Disabling does not stop backend jobs, restrict REST access
-  or delete stored data.
+  page. The MCP handler applies each module's `ToolFilter` for discovery and
+  invocation, so Factory hides and rejects its tools and the Inbox omits its
+  disabled category without a restart. Factory dispatch starts only while the
+  flag is on: saving it starts or stops the dispatch loop, and startup recovery
+  runs once, when dispatch first starts. REST mutations wake this same gated
+  worker instead of dispatching synchronously. Disabling leaves running sessions alone
+  and does not restrict REST access or delete stored data.
 - **Background task notice.** OpenCode v2's session-owned running shells and active
   native child agents, plus managed Claude Code's tracked background tasks,
   publish absolute counts through

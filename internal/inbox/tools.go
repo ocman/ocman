@@ -17,6 +17,8 @@ type inboxStore interface {
 	RecallInboxItem(context.Context, string) error
 }
 
+const inboxToolName = "inbox"
+
 type inboxTools struct {
 	store          inboxStore
 	factoryEnabled func(context.Context) bool
@@ -26,9 +28,9 @@ func inboxServerTools(tools *inboxTools) []server.ServerTool {
 	if tools == nil || tools.store == nil {
 		return nil
 	}
-	return []server.ServerTool{{Tool: mcplib.NewTool("inbox",
+	return []server.ServerTool{{Tool: mcplib.NewTool(inboxToolName,
 		mcplib.WithDescription("Send and recall owner-local Inbox items. Use action help for schemas and examples."),
-		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("title"), mcplib.WithString("body"), mcplib.WithString("category", mcplib.Enum("general", "factory", "routine")), mcplib.WithString("item_id"),
+		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("title"), mcplib.WithString("body"), mcplib.WithString("category", mcplib.Enum(state.InboxGeneral, state.InboxFactory, state.InboxRoutine)), mcplib.WithString("item_id"),
 		mcplib.WithString("session_id", mcplib.Description("Originating coding-agent session ID. Supply with platform when sending from a session.")), mcplib.WithString("platform")), Handler: tools.handle}}
 }
 

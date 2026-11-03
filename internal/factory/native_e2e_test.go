@@ -44,6 +44,9 @@ func TestApprovalRetriesAfterMaterializationFailure(t *testing.T) {
 			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", request); err != nil {
 				t.Fatal(err)
 			}
+			if err := svc.Dispatch(t.Context()); err != nil {
+				t.Fatal(err)
+			}
 			if len(launcher.calls) != 1 {
 				t.Fatalf("retry must start work once: %#v", launcher.calls)
 			}
@@ -89,6 +92,9 @@ func TestNativeFactoryFlowPersistsAndDispatchesOnlyApprovedWork(t *testing.T) {
 			t.Fatal("approved proposal with stale hash")
 		}
 		if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.Dispatch(t.Context()); err != nil {
 			t.Fatal(err)
 		}
 		if len(implementation.calls) != 1 {

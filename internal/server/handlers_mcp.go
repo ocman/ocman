@@ -11,6 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
 	internalmcp "github.com/ocman/ocman/internal/mcp"
@@ -150,19 +151,34 @@ func (s *Server) buildMCPHandler() http.Handler {
 
 func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handler {
 	deps := internalmcp.Deps{
-		ToolFilter:     s.filterBetaTools,
 		SignFile:       s.FileURL,
 		SessionService: sessionService,
 	}
 	if s.sessions != nil {
 		deps.ModelCatalog = s.sessions.DirectoryCatalog
 	}
+	var filters []module.ToolFilter
 	for _, m := range s.modules() {
 		if p, ok := m.(module.ToolProvider); ok {
 			deps.Tools = append(deps.Tools, p.Tools()...)
 		}
+		if f, ok := m.(module.ToolFilter); ok {
+			filters = append(filters, f)
+		}
 	}
+	deps.ToolFilter = moduleToolFilter(filters)
 	return internalmcp.New(deps).Handler()
+}
+
+// moduleToolFilter applies every module's filter at request time, so the
+// shared MCP handler follows setting changes without a restart.
+func moduleToolFilter(filters []module.ToolFilter) func(context.Context, []mcplib.Tool) []mcplib.Tool {
+	return func(ctx context.Context, tools []mcplib.Tool) []mcplib.Tool {
+		for _, f := range filters {
+			tools = f.FilterTools(ctx, tools)
+		}
+		return tools
+	}
 }
 
 type sessionMCPService struct{ server *Server }

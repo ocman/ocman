@@ -2,10 +2,9 @@ package server
 
 import (
 	"context"
-	"maps"
 
-	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/ocman/ocman/internal/httpx"
+	log "github.com/sirupsen/logrus"
 )
 
 const factoryBetaKey = "beta.factory"
@@ -34,26 +33,15 @@ func (s *Server) betaFeaturesSetting() httpx.SettingRoute[betaFeaturesView] {
 			if body.Factory {
 				value = "true"
 			}
-			return s.stateDB.SetSetting(ctx, factoryBetaKey, value)
+			if err := s.stateDB.SetSetting(ctx, factoryBetaKey, value); err != nil {
+				return err
+			}
+			// The setting is saved; a dispatch start failure is retried on
+			// the next save rather than reported as a failed save.
+			if err := s.factoryModule().SyncEnabled(context.WithoutCancel(ctx)); err != nil {
+				log.WithError(err).Error("starting Factory dispatch")
+			}
+			return nil
 		},
 	}
-}
-
-// Read at request time so the shared MCP handler follows saves without restart.
-func (s *Server) filterBetaTools(ctx context.Context, tools []mcplib.Tool) []mcplib.Tool {
-	if s.factoryBetaEnabled(ctx) {
-		return tools
-	}
-	visible := make([]mcplib.Tool, 0, len(tools))
-	for _, tool := range tools {
-		if tool.Name == "factory" || tool.Name == "factory_control" {
-			continue
-		}
-		if tool.Name == "inbox" {
-			tool.InputSchema.Properties = maps.Clone(tool.InputSchema.Properties)
-			tool.InputSchema.Properties["category"] = map[string]any{"type": "string", "enum": []string{"general", "routine"}}
-		}
-		visible = append(visible, tool)
-	}
-	return visible
 }

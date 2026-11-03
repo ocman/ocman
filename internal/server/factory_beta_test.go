@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	"github.com/ocman/ocman/internal/factorymod"
 )
 
 func enableFactoryBeta(t *testing.T, s *Server) {
@@ -18,7 +20,7 @@ func enableFactoryBeta(t *testing.T, s *Server) {
 
 func TestFactoryBetaFailsClosedWithoutState(t *testing.T) {
 	s := &Server{}
-	tools := s.filterBetaTools(t.Context(), []mcplib.Tool{{Name: "factory"}, {Name: "sessions"}})
+	tools := s.factoryModule().FilterTools(t.Context(), []mcplib.Tool{{Name: "factory"}, {Name: "sessions"}})
 	if len(tools) != 1 || tools[0].Name != "sessions" {
 		t.Fatalf("tools without state = %#v", tools)
 	}
@@ -114,5 +116,64 @@ func TestFactoryBetaSetting(t *testing.T) {
 	handler = mustRoutes(t, s)
 	if rec := request(http.MethodPost, `{"factory":true}`); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated save = %d", rec.Code)
+	}
+}
+
+// betaDispatchFactory records Factory's dispatch lifecycle.
+type betaDispatchFactory struct {
+	factorymod.Service
+	starts, stops, resumes, closes int
+	running                        bool
+}
+
+func (f *betaDispatchFactory) OnAttention(func(context.Context, string, []string)) {}
+func (f *betaDispatchFactory) Start(context.Context) error                         { f.starts++; f.running = true; return nil }
+func (f *betaDispatchFactory) StopDispatch()                                       { f.stops++; f.running = false }
+func (f *betaDispatchFactory) ResumeDispatch()                                     { f.resumes++; f.running = true }
+func (f *betaDispatchFactory) Close()                                              { f.closes++; f.running = false }
+
+func TestFactoryDispatchFollowsBetaSetting(t *testing.T) {
+	s := testServer(t)
+	f := &betaDispatchFactory{}
+	useFactory(s, f)
+	handler := mustRoutes(t, s)
+	save := func(enabled string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/settings/beta-features", strings.NewReader(`{"factory":`+enabled+`}`))
+		req.RemoteAddr = "127.0.0.1:1"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("save = %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	save("true")
+	if f.running {
+		t.Fatal("dispatch started before launch")
+	}
+	save("false")
+	stop, err := s.launchFactory(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.starts != 0 || f.running {
+		t.Fatalf("disabled Factory started dispatch: %+v", f)
+	}
+	save("true")
+	if f.starts != 1 || !f.running {
+		t.Fatalf("enabling did not start dispatch: %+v", f)
+	}
+	save("false")
+	if f.running {
+		t.Fatalf("disabling did not stop dispatch: %+v", f)
+	}
+	save("true")
+	if f.starts != 1 || f.resumes != 1 || !f.running {
+		t.Fatalf("re-enabling reran recovery or did not resume: %+v", f)
+	}
+	stop()
+	save("true")
+	if f.closes != 1 || f.running {
+		t.Fatalf("closed Factory resumed: %+v", f)
 	}
 }

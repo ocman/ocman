@@ -146,15 +146,7 @@ func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused
 	if err := s.store.SetFactoryEpicPaused(ctx, epicID, paused); err != nil {
 		return err
 	}
-	defer s.wakeDispatch()
-	if !paused {
-		if err := s.Dispatch(ctx); err != nil {
-			select {
-			case s.dispatchWake <- struct{}{}:
-			default:
-			}
-		}
-	}
+	s.wakeDispatch()
 	return nil
 }
 
@@ -163,13 +155,7 @@ func (s *NativeService) ReopenIssue(ctx context.Context, epicID, issueID string)
 	if err := s.store.ReopenFactoryIssue(ctx, epicID, issueID); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
-	defer s.wakeDispatch()
-	if err := s.Dispatch(ctx); err != nil {
-		select {
-		case s.dispatchWake <- struct{}{}:
-		default:
-		}
-	}
+	s.wakeDispatch()
 	return nil
 }
 

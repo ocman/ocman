@@ -280,7 +280,10 @@ type NativeService struct {
 	idleNudgedAt      map[string]time.Time // in memory: a restart costs one extra nudge
 	nudged            map[string]bool
 	handoffBlocked    map[string]string // recovery gate -> last reason; writer already stopped (recoveryMu)
-	startOnce         sync.Once
+	dispatchMu        sync.Mutex
+	dispatchHalt      chan struct{} // closed to halt the running dispatch loop; nil when none runs
+	dispatchDone      chan struct{} // closed when that loop has returned
+	manualDispatch    bool          // tests drive Dispatch themselves
 	closeOnce         sync.Once
 	dispatchWG        sync.WaitGroup
 	dispatchWake      chan struct{}

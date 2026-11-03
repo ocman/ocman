@@ -67,6 +67,7 @@ func startFactoryLifecycle(t *testing.T, startErr error) (*lifecycleFactory, con
 	if err != nil {
 		t.Fatal(err)
 	}
+	enableFactoryBeta(t, srv)
 	f := &lifecycleFactory{srv: srv, main: ln.Addr().String(), startErr: startErr}
 	useFactory(srv, f)
 	ctx, cancel := context.WithCancel(t.Context())

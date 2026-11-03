@@ -482,6 +482,9 @@ func TestProjectDeliveryValidatesItsRecordedIdentity(t *testing.T) {
 	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
 		t.Fatal(err)
 	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if len(launcher.calls) != 1 || launcher.calls[0].Repository != "/other" || launcher.calls[0].Delivery {
 		t.Fatalf("implementation launch = %#v", launcher.calls)
 	}
@@ -836,7 +839,10 @@ func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
 	if err != nil || len(queue) != 1 || queue[0].State != DispatchPaused {
 		t.Fatalf("paused queue = %#v, %v", queue, err)
 	}
-	if err := svc.SetEpicPaused(t.Context(), epic.ID, false); err != nil || len(launcher.calls) != 1 {
+	if err := svc.SetEpicPaused(t.Context(), epic.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil || len(launcher.calls) != 1 {
 		t.Fatalf("resume = %v, launches = %#v", err, launcher.calls)
 	}
 	if err := svc.SetEpicPaused(t.Context(), epic.ID, true); err != nil {
@@ -904,7 +910,7 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
 	// Recovery is driven by explicit Dispatch below, not a competing background
 	// pass that may leave a claimed attempt prepared while these assertions run.
-	svc.startOnce.Do(func() {})
+	svc.manualDispatch = true
 	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", FormulaID: "ocman/tracer", FormulaRevision: 2, AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
 	if err != nil {
 		t.Fatal(err)
@@ -987,7 +993,7 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 	launcher := &fakeImplementationLauncher{result: PlanningSession{Platform: "opencode", ID: "partial"}, err: errors.New("unavailable")}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	// Explicit Dispatch calls drive this test; background retries would repeat the partial launch.
-	svc.startOnce.Do(func() {})
+	svc.manualDispatch = true
 	t.Cleanup(svc.Close)
 	approvedEpic(t, svc, "Ship")
 	if err := svc.Dispatch(context.Background()); err != nil {
@@ -1035,7 +1041,7 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	// Drive dispatch synchronously: startup's background dispatcher can claim
 	// the second Issue before this test's explicit Dispatch finishes launching it.
-	svc.startOnce.Do(func() {})
+	svc.manualDispatch = true
 	t.Cleanup(svc.Close)
 	first := createPouredWorkEpic(t, svc, "First")
 	second := createPouredWorkEpic(t, svc, "Second")
@@ -1068,7 +1074,7 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 	launcher.deadSession = attempts[0].Session.ID
 	launcher.result = PlanningSession{Platform: "opencode", ID: "implementation-2"}
 	// Dispatch is driven explicitly below; startup's worker would race these assertions.
-	svc.startOnce.Do(func() {})
+	svc.manualDispatch = true
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -1434,6 +1440,9 @@ func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {
 			resolved, err := svc.ResolveRecoveryGate(context.Background(), gate.IssueID, action, "Answer")
 			if err != nil || resolved.Resolution != action {
 				t.Fatalf("ResolveRecoveryGate = %#v, %v", resolved, err)
+			}
+			if err := svc.Dispatch(t.Context()); err != nil {
+				t.Fatal(err)
 			}
 			attempts, _ = db.ListFactoryAttempts(context.Background(), epic.ID)
 			if action == "retry" && (len(attempts) != 2 || attempts[0].Outcome != model.FactoryAttemptCancelled || attempts[1].Phase != model.FactoryAttemptActive || len(launcher.stops) != 1) {

@@ -5,7 +5,11 @@ package inbox
 
 import (
 	"context"
+	"maps"
+
 	"time"
+
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -53,6 +57,7 @@ var (
 	_ module.Module       = (*Module)(nil)
 	_ module.Runner       = (*Module)(nil)
 	_ module.ToolProvider = (*Module)(nil)
+	_ module.ToolFilter   = (*Module)(nil)
 )
 
 func NewModule(deps Deps) *Module { return &Module{deps} }
@@ -83,6 +88,23 @@ func (m *Module) Run(ctx context.Context) {
 
 func (m *Module) Tools() []mcpserver.ServerTool {
 	return inboxServerTools(&inboxTools{store: m.Store, factoryEnabled: m.FactoryEnabled})
+}
+
+// FilterTools drops the factory category from the inbox schema while
+// Factory is disabled; send refuses it too.
+func (m *Module) FilterTools(ctx context.Context, tools []mcplib.Tool) []mcplib.Tool {
+	if m.FactoryEnabled == nil || m.FactoryEnabled(ctx) {
+		return tools
+	}
+	visible := make([]mcplib.Tool, len(tools))
+	for i, tool := range tools {
+		if tool.Name == inboxToolName {
+			tool.InputSchema.Properties = maps.Clone(tool.InputSchema.Properties)
+			tool.InputSchema.Properties["category"] = map[string]any{"type": "string", "enum": []string{state.InboxGeneral, state.InboxRoutine}}
+		}
+		visible[i] = tool
+	}
+	return visible
 }
 
 func (m *Module) changed() { m.Broadcast("ocman.inbox.changed", []byte(`{}`)) }

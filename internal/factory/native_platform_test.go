@@ -38,6 +38,9 @@ func TestEpicPlatformIsPersistedAndFrozen(t *testing.T) {
 	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash, ImplementationModel: "openai/test"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if len(implementation.calls) != 1 || implementation.calls[0].Platform != "fake-provider" {
 		t.Fatalf("implementation = %+v", implementation.calls)
 	}

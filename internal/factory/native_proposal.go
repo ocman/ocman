@@ -151,7 +151,6 @@ func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalR
 	if err != nil {
 		return ProposalRevision{}, err
 	}
-	_ = s.Dispatch(ctx)
 	s.wakeDispatch()
 	return nativeProposal(saved)
 }

@@ -100,22 +100,55 @@ func (s *NativeService) Start(ctx context.Context) error {
 			return fmt.Errorf("recover Planning attempt: %w", err)
 		}
 	}
-	if s.implementation != nil {
-		s.startOnce.Do(func() {
-			s.dispatchWG.Add(1)
-			go func() {
-				defer s.dispatchWG.Done()
-				s.runDispatch(factoryDispatchRecoveryInterval)
-			}()
-		})
-	}
+	s.ResumeDispatch()
 	return nil
 }
-func (s *NativeService) runDispatch(recoveryInterval time.Duration) {
+
+// ResumeDispatch restarts a dispatch loop halted by StopDispatch without
+// rerunning Start's recovery, which must not race live attempts.
+func (s *NativeService) ResumeDispatch() {
+	if s.implementation == nil {
+		return
+	}
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
+	if s.dispatchHalt != nil || s.manualDispatch {
+		return
+	}
+	select {
+	case <-s.stop:
+		return // closed
+	default:
+	}
+	halt, done := make(chan struct{}), make(chan struct{})
+	s.dispatchHalt, s.dispatchDone = halt, done
+	go func() {
+		defer close(done)
+		s.runDispatch(halt, factoryDispatchRecoveryInterval)
+	}()
+}
+
+// StopDispatch halts the dispatch loop and waits for an in-flight pass, so
+// no new work starts after it returns. Running sessions are left alone.
+func (s *NativeService) StopDispatch() {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
+	halt, done := s.dispatchHalt, s.dispatchDone
+	if halt != nil {
+		close(halt)
+		<-done
+		s.dispatchHalt, s.dispatchDone = nil, nil
+	}
+}
+
+func (s *NativeService) runDispatch(halt <-chan struct{}, recoveryInterval time.Duration) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		<-s.stop
+		select {
+		case <-s.stop:
+		case <-ctx.Done():
+		}
 		cancel()
 	}()
 	timer := time.NewTimer(0) // Reconcile persisted work immediately after startup.
@@ -124,11 +157,13 @@ func (s *NativeService) runDispatch(recoveryInterval time.Duration) {
 		select {
 		case <-timer.C:
 		case <-s.dispatchWake:
+		case <-halt:
+			return
 		case <-s.stop:
 			return
 		}
 		var delay time.Duration
-		if err := s.Dispatch(ctx); err != nil {
+		if err := s.dispatch(ctx, halt); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -142,7 +177,10 @@ func (s *NativeService) runDispatch(recoveryInterval time.Duration) {
 }
 func (s *NativeService) Close() {
 	s.closeOnce.Do(func() {
+		// Cancel admitted work before joining a concurrent StopDispatch, which
+		// holds dispatchMu until that work finishes.
 		close(s.stop)
+		s.StopDispatch()
 		s.dispatchWG.Wait()
 	})
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"net/http"
 
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
@@ -71,4 +72,12 @@ type Finalizer interface {
 // ToolProvider contributes MCP tools to the server's MCP endpoint.
 type ToolProvider interface {
 	Tools() []mcpserver.ServerTool
+}
+
+// ToolFilter hides or reshapes a provider's own tools per request, for
+// example behind a beta setting. Hidden tools cannot be called either. It
+// receives every tool and must return the others unchanged; it must not
+// modify a tool in place.
+type ToolFilter interface {
+	FilterTools(ctx context.Context, tools []mcplib.Tool) []mcplib.Tool
 }

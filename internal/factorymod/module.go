@@ -8,6 +8,9 @@ package factorymod
 
 import (
 	"context"
+	"sync"
+
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"golang.org/x/sync/singleflight"
@@ -18,7 +21,7 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -27,6 +30,8 @@ import (
 // which embed it so unexercised methods panic.
 type Service interface {
 	Start(context.Context) error
+	StopDispatch()
+	ResumeDispatch()
 	Close()
 	Status(context.Context) factory.Status
 	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
@@ -113,6 +118,8 @@ type Deps struct {
 	// CreatePlatform resolves a requested platform, else the model
 	// reference's, else the owner's default, into its compound ID and base.
 	CreatePlatform func(ctx context.Context, host hostsvc.Host, requested, model string) (id, base string, err error)
+	// Enabled reports the Factory beta setting at call time; nil means on.
+	Enabled func(context.Context) bool
 }
 
 // Module is the mounted Factory feature.
@@ -120,11 +127,15 @@ type Module struct {
 	deps          Deps
 	svc           Service
 	controlFlight singleflight.Group // one control session launch per Epic at a time
+
+	lifeMu                    sync.Mutex // orders Launch, SyncEnabled and Close
+	launched, started, closed bool       // started: Start's recovery has run
 }
 
 var (
 	_ module.Module       = (*Module)(nil)
 	_ module.ToolProvider = (*Module)(nil)
+	_ module.ToolFilter   = (*Module)(nil)
 	_ module.Subscriber   = (*Module)(nil)
 )
 
@@ -153,16 +164,58 @@ func (m *Module) ImplementationLauncher() ImplementationLauncher { return Implem
 
 func (m *Module) Name() string { return "Factory" }
 
-// Launch recovers persisted attempts and starts dispatch. It runs after
-// the MCP listener is up: dispatch immediately launches sessions whose
-// ocman MCP connection is verified before they are prompted.
+// Launch recovers persisted attempts and starts dispatch when Factory is
+// enabled. It runs after the MCP listener is up: dispatch immediately
+// launches sessions whose ocman MCP connection is verified before they are
+// prompted.
 func (m *Module) Launch(ctx context.Context) error {
-	m.svc.OnAttention(m.AttentionToControl)
-	return m.svc.Start(ctx)
+	m.lifeMu.Lock()
+	defer m.lifeMu.Unlock()
+	m.launched = true
+	return m.sync(ctx)
+}
+
+// SyncEnabled follows a change of the Factory setting: enabling starts
+// dispatch, disabling stops it. Before Launch or after Close it does
+// nothing.
+func (m *Module) SyncEnabled(ctx context.Context) error {
+	m.lifeMu.Lock()
+	defer m.lifeMu.Unlock()
+	return m.sync(ctx)
+}
+
+func (m *Module) sync(ctx context.Context) error {
+	if !m.launched || m.closed {
+		return nil
+	}
+	switch enabled := m.enabled(ctx); {
+	case !enabled:
+		m.svc.StopDispatch()
+	case m.started:
+		m.svc.ResumeDispatch()
+	default:
+		m.svc.OnAttention(m.AttentionToControl)
+		if err := m.svc.Start(ctx); err != nil {
+			return err
+		}
+		m.started = true
+	}
+	return nil
+}
+
+func (m *Module) enabled(ctx context.Context) bool {
+	return m.deps.Enabled == nil || m.deps.Enabled(ctx)
 }
 
 // Close stops dispatch and joins its workers and verification checks.
-func (m *Module) Close() { m.svc.Close() }
+func (m *Module) Close() {
+	// Cancel admitted work before waiting for SyncEnabled to join it.
+	// The service rejects any concurrent resume after closing.
+	m.svc.Close()
+	m.lifeMu.Lock()
+	m.closed = true
+	m.lifeMu.Unlock()
+}
 
 // Subscribe wakes dispatch when a tracked implementation session goes idle.
 // The wake is a non-blocking signal, so it cannot delay later subscribers.
@@ -178,4 +231,22 @@ func (m *Module) Subscribe(b *module.Bus) {
 func (m *Module) Tools() []mcpserver.ServerTool {
 	svc := factoryMCPService{Service: m.svc, proposeControl: m.ProposeControl}
 	return append(factoryServerTools(&factoryTools{svc: svc}), factoryControlServerTools(svc)...)
+}
+
+// FilterTools hides Factory's tools while Factory is disabled.
+func (m *Module) FilterTools(ctx context.Context, tools []mcplib.Tool) []mcplib.Tool {
+	if m.enabled(ctx) {
+		return tools
+	}
+	own := map[string]bool{}
+	for _, tool := range m.Tools() {
+		own[tool.Tool.Name] = true
+	}
+	visible := make([]mcplib.Tool, 0, len(tools))
+	for _, tool := range tools {
+		if !own[tool.Name] {
+			visible = append(visible, tool)
+		}
+	}
+	return visible
 }

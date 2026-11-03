@@ -95,6 +95,9 @@ func approveProposal(t *testing.T, svc *NativeService, req SubmitProposalRequest
 	if _, err := svc.DecidePlanGate(t.Context(), req.EpicID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
 		t.Fatal(err)
 	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	return proposal
 }
 

@@ -172,6 +172,7 @@ func (s *Server) newFactoryModule(svc factorymod.Service) *factorymod.Module {
 		OpenCodeAuth:   func() ocapi.Auth { return s.openCodeAuth },
 		MCPURL:         s.mcpServerURL,
 		CreatePlatform: s.createPlatform,
+		Enabled:        s.factoryBetaEnabled,
 	})
 }
 
@@ -314,8 +315,9 @@ func startModules(ctx context.Context, mods []module.Module, workers *sync.WaitG
 }
 
 // launchFactory starts Factory dispatch once the MCP listener is up, because
-// its sessions verify their ocman MCP connection. The returned func stops it
-// after the listeners shut down; a failed launch is not closed.
+// its sessions verify their ocman MCP connection; while the beta setting is
+// off, dispatch waits until it is enabled. The returned func stops it after
+// the listeners shut down; a failed launch is not closed.
 func (s *Server) launchFactory(ctx context.Context) (func(), error) {
 	f := s.factoryModule()
 	if err := f.Launch(ctx); err != nil {

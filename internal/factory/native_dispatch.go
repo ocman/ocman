@@ -13,9 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Dispatch admits ready executable Issues in deterministic order until
-// configured capacity is full. Plan and Materialization never enter this path.
-func (s *NativeService) Dispatch(ctx context.Context) error {
+// halt stops admission only. The context cancels admitted launches on shutdown.
+func (s *NativeService) dispatch(ctx context.Context, halt <-chan struct{}) error {
 	defer s.reconcileAttention(ctx)
 	if s.implementation == nil {
 		return nil
@@ -63,11 +62,25 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		return ready[i].issue.ID < ready[j].issue.ID
 	})
 	for _, next := range ready {
+		select {
+		case <-halt:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err := s.handoffRecoveryWorkspace(ctx, next.epic.ID); err != nil {
 			if !errors.Is(err, errHandoffBlocked) {
 				logrus.WithError(err).WithField("epic", next.epic.ID).Warn("Factory recovery workspace handoff blocked")
 			}
 			continue
+		}
+		select {
+		case <-halt:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
 		epic, attempt, err := s.store.ClaimFactoryImplementation(ctx, next.epic.ID, next.issue.ID, "factory-implement/v1", time.Now())
 		if err != nil {

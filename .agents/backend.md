@@ -21,7 +21,10 @@ module under `internal/module`, not a collection of `*Server` methods.
   fails before `Run`; cleanup must tolerate unopened resources.
 - The server launches Factory directly once the MCP listener is up, because its
   sessions verify their MCP connection, and closes it after HTTP/MCP listeners
-  stop and before workers are joined.
+  stop and before workers are joined. Dispatch runs only while `beta.factory`
+  is on; saving the setting calls `SyncEnabled`.
+- A module hiding tools per request, such as behind a beta setting, implements
+  `ToolFilter` for its own tools; the server does not filter by tool name.
   Auto-approve comes first to seed judge delay and run the headless watcher.
   Plugins come next, binding their lifetime and discovering in `Start`, then
   pumping replies and reconciling in `Run`. Preserve the server's deferred plugin

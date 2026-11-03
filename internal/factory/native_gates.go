@@ -167,7 +167,7 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 	gate, err := s.resolveRecoveryGate(ctx, gateID, action, response)
 	s.recoveryMu.Unlock()
 	if err == nil && action == "retry" {
-		_ = s.Dispatch(ctx)
+		s.wakeDispatch()
 	}
 	return gate, err
 }

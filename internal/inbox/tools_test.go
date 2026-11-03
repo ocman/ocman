@@ -121,3 +121,24 @@ func TestInboxToolDiscoveryAndActions(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxFilterHidesFactoryCategoryWhileDisabled(t *testing.T) {
+	enabled := false
+	m := NewModule(Deps{FactoryEnabled: func(context.Context) bool { return enabled }})
+	tool := mcplib.NewTool("inbox", mcplib.WithString("category", mcplib.Enum("general", "factory", "routine")))
+	tools := []mcplib.Tool{tool, {Name: "sessions"}}
+	filtered := m.FilterTools(t.Context(), tools)
+	if enum := filtered[0].InputSchema.Properties["category"].(map[string]any)["enum"]; strings.Contains(strings.Join(enum.([]string), ","), "factory") {
+		t.Fatalf("disabled category listed: %v", enum)
+	}
+	if filtered[1].Name != "sessions" {
+		t.Fatalf("other tools changed: %#v", filtered)
+	}
+	if enum := tools[0].InputSchema.Properties["category"].(map[string]any)["enum"]; len(enum.([]string)) != 3 {
+		t.Fatalf("filter modified the shared tool: %v", enum)
+	}
+	enabled = true
+	if got := m.FilterTools(t.Context(), tools); len(got[0].InputSchema.Properties["category"].(map[string]any)["enum"].([]string)) != 3 {
+		t.Fatal("enabled category hidden")
+	}
+}

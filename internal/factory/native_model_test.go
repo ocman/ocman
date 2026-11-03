@@ -35,6 +35,9 @@ func TestApprovalFreezesImplementationModel(t *testing.T) {
 	if err != nil || gate.ImplementationModel != req.ImplementationModel {
 		t.Fatalf("gate = %#v, %v", gate, err)
 	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if len(launcher.calls) != 1 || launcher.calls[0].Model != req.ImplementationModel {
 		t.Fatalf("launches = %#v", launcher.calls)
 	}

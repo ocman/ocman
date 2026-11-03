@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ocman/ocman/internal/factory"
 	"github.com/ocman/ocman/internal/factory/model"
@@ -38,6 +39,10 @@ func TestClaudeFactoryEpicDispatchesToClaude(t *testing.T) {
 	}
 	svc := factory.NewNativeWithExecution(srv.stateDB, factoryProjectResolver{server: srv}, srv.factoryModule().PlanningLauncher(),
 		claudeFactoryLauncher{srv.factoryModule().ImplementationLauncher()})
+	if err := svc.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
 	epic, err := svc.CreateWorkEpic(t.Context(), factory.CreateWorkEpicRequest{Goal: "Claude Epic", InitialProject: repo, Platform: "claudecode",
 		AcknowledgeLocalExecution: true, FormulaID: "ocman/tracer", FormulaRevision: 2})
 	if err != nil || epic.Platform != "claudecode" {
@@ -71,18 +76,27 @@ func TestClaudeFactoryEpicDispatchesToClaude(t *testing.T) {
 	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", factory.PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash, ImplementationModel: "anthropic/claude-sonnet-4-5"}); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := svc.GetWorkEpic(t.Context(), epic.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var impl *model.FactoryAttempt
-	for i, attempt := range saved.Attempts {
-		if attempt.ID != plan.Attempt.ID {
-			impl = &saved.Attempts[i]
+	deadline := time.Now().Add(5 * time.Second)
+	for impl == nil {
+		saved, err := svc.GetWorkEpic(t.Context(), epic.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, attempt := range saved.Attempts {
+			if attempt.ID != plan.Attempt.ID && attempt.Phase == model.FactoryAttemptActive {
+				impl = &saved.Attempts[i]
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("implementation did not start: %+v", saved.Attempts)
+		}
+		if impl == nil {
+			time.Sleep(5 * time.Millisecond)
 		}
 	}
-	if impl == nil || impl.Phase != model.FactoryAttemptActive || impl.Session.Platform != "claudecode" {
-		t.Fatalf("attempts = %+v", saved.Attempts)
+	if impl.Session.Platform != "claudecode" {
+		t.Fatalf("implementation = %+v", impl)
 	}
 	if dir := claudeSessionDir(t, adapter, impl.Session.ID); !strings.Contains(dir, ".worktrees") {
 		t.Fatalf("implementation session directory = %q", dir)
