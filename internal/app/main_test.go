@@ -10,6 +10,7 @@ import (
 	"github.com/ocman/ocman/internal/platforms/codex/acptest"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 	codextransport "github.com/ocman/ocman/internal/platforms/codex/transport"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // TestMain keeps tests from running the real opencode binary. It also serves `ocman provider <id>` when a test's provider runtime
@@ -41,5 +42,8 @@ func TestMain(m *testing.M) {
 		skillCatalog[name] = data
 	}
 	installedOpenCodeMajor = func() (int, bool) { return 0, false }
-	os.Exit(claudetest.Run(m))
+	isolated := testutil.IsolateHost()
+	code := claudetest.Run(m)
+	isolated()
+	os.Exit(code)
 }

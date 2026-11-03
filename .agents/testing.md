@@ -12,6 +12,18 @@ tests. Reuse the shared helpers instead of writing new ones:
 - `internal/state/statetest` opens migrated state databases; server tests pass
   `ModuleSchemas()...`.
 
+## Host isolation
+
+`server.New`, `local.New` and `ocruntime.NewNativeRuntime` default to the real
+tmux runtime on the `ocman-agents` server. An agent shell inside ocman inherits
+`TMUX`, `OPENCODE_DB` and the real `HOME`, which name the live OpenCode
+session, so an unisolated test's stop kills the user's server. Every package
+whose tests build a real server, host or runtime must call
+`testutil.IsolateHost()` first in `TestMain`. It points `HOME` and
+`TMUX_TMPDIR` at a temporary directory and unsets `XDG_*`, `TMUX*` and
+`OPENCODE_*`. Add it to any new package that does this.
+`internal/server/tmux_isolation_test.go` is the regression test.
+
 ## Required behavior coverage
 
 - Test new functions, branches, loops, parsers and money/security paths in the
