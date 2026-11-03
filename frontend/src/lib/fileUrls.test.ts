@@ -46,6 +46,17 @@ describe('useFreshFileURL', () => {
     expect(postJSON).toHaveBeenCalledWith('/api/files/refresh', { url: '/api/file/L3g.sig' });
   });
 
+  it('refreshes on the owner and keeps caches isolated between owners', async () => {
+    postJSON.mockResolvedValue({ url: '/api/file/L3g.99.new' });
+    for (const owner of ['one', 'two']) {
+      const prefix = `/api/remote-resources/${owner}`;
+      await expect(refreshFileURL(`${prefix}/api/file/L3g.sig`)).resolves.toBe(`${prefix}/api/file/L3g.99.new`);
+      expect(postJSON).toHaveBeenCalledWith(`${prefix}/api/files/refresh`, { url: '/api/file/L3g.sig' });
+      expect(fileURLNeedsRefresh(`${prefix}/api/file/L3g.sig`)).toBe(true);
+    }
+    expect(postJSON).toHaveBeenCalledTimes(2);
+  });
+
   it('shares one refresh per URL and retries after a failure', async () => {
     postJSON.mockRejectedValueOnce(new Error('403'));
     const { result } = renderHook(() => useFreshFileURL('/api/file/L3g.sig'));

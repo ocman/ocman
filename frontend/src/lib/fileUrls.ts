@@ -4,7 +4,7 @@ import { postJSON } from './api.requests';
 // Embedded-file URLs are /api/file/<path>.<unix expiry>.<mac>. Transcripts keep
 // them forever, but the server serves each for about a week, so the dashboard
 // re-mints stale ones when it renders them.
-const FILE_URL = /^\/api\/file\/([^/?#]+)$/;
+const FILE_URL = /^(?:\/api\/remote-resources\/[^/]+)?\/api\/file\/([^/?#]+)$/;
 const REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
 // Per stale URL: the in-flight or settled refresh, and its replacement once
 // known so the entry can be evicted when that replacement nears expiry too.
@@ -27,10 +27,11 @@ export function fileURLNeedsRefresh(href: string, now = Date.now()): boolean {
 export function refreshFileURL(href: string): Promise<string> {
   const cached = refreshed.get(href);
   if (cached && !(cached.url && fileURLNeedsRefresh(cached.url))) return cached.pending;
+  const prefix = href.match(/^\/api\/remote-resources\/[^/]+/)?.[0] ?? '';
   const entry: { pending: Promise<string>; url?: string } = {
-    pending: postJSON<{ url: string }>('/api/files/refresh', { url: href }).then(resp => {
-      entry.url = resp.url;
-      return resp.url;
+    pending: postJSON<{ url: string }>(`${prefix}/api/files/refresh`, { url: href.slice(prefix.length) }).then(resp => {
+      entry.url = prefix + resp.url;
+      return entry.url;
     }),
   };
   refreshed.set(href, entry);

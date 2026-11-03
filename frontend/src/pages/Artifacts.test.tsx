@@ -47,6 +47,17 @@ describe('Artifacts page', () => {
     vi.mocked(artifactsApi.stats).mockResolvedValue({ count: 3, totalBytes: 5 * 1024 * 1024 });
   });
 
+  it('keeps remote list reads, stats, filters and detail navigation on the owner', async () => {
+    vi.mocked(api.projects).mockResolvedValue([{ directory: '/local', remoteId: 'local' }, { directory: '/remote', remoteId: 'box' }] as never);
+    vi.mocked(artifactsApi.list).mockResolvedValue({ artifacts: [artifact('a', { remoteId: 'box' })], nextCursor: '' });
+    renderPage('/artifacts?remoteId=box');
+    expect(await screen.findByRole('link', { name: 'Report a' })).toHaveAttribute('href', '/artifacts/a?remoteId=box');
+    expect(artifactsApi.list).toHaveBeenCalledWith({ directory: '', q: '', remoteId: 'box' }, expect.anything());
+    expect(artifactsApi.stats).toHaveBeenCalledWith(expect.anything(), 'box');
+    expect(await screen.findByRole('option', { name: '/remote' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '/local' })).not.toBeInTheDocument();
+  });
+
   it('lists artifacts with session state, sizes and total storage, and pages with Load more', async () => {
     vi.mocked(artifactsApi.list)
       .mockResolvedValueOnce({ artifacts: [artifact('a1'), artifact('a2', { sessionId: 'ses-gone' })], nextCursor: 'c1' })

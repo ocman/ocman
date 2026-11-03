@@ -13,6 +13,8 @@ import { SegmentedControl } from './SegmentedControl';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 import { withDeadline } from '../lib/coalescedRefresh';
 import styles from './ArtifactsPane.module.css';
+import { artifactPageURL } from '../lib/publishedResources';
+import { PreviewOwnerContext } from '../lib/previews';
 
 const SCOPES = [
   { value: 'session', label: 'This session' },
@@ -24,10 +26,11 @@ interface ArtifactsPaneProps {
   sessionId: string;
   platformId: string | undefined;
   directory: string | undefined;
+  remoteId?: string;
 }
 
 /** Right-panel Artifacts pane: this session (with subagents) or the whole project. */
-export function ArtifactsPane({ sessionId, platformId, directory }: ArtifactsPaneProps) {
+export function ArtifactsPane({ sessionId, platformId, directory, remoteId = 'local' }: ArtifactsPaneProps) {
   const visible = useDocumentVisible();
   const scope = useUiStore((s) => s.artifactsSidebarScope);
   const setScope = useUiStore((s) => s.setArtifactsSidebarScope);
@@ -42,6 +45,9 @@ export function ArtifactsPane({ sessionId, platformId, directory }: ArtifactsPan
   const params: ArtifactListParams | null = scope === 'session'
     ? (platformId ? { platform: platformId, sessionId, includeDescendants: true } : null)
     : (root ? { directory: root } : null);
+  if (params && remoteId !== 'local') {
+    params.remoteId = remoteId;
+  }
   const key = JSON.stringify(params);
   const lastKey = useRef(key);
   const loadedPages = useRef(1);
@@ -126,14 +132,16 @@ export function ArtifactsPane({ sessionId, platformId, directory }: ArtifactsPan
   }, [key]);
 
   return (
-    <div className={styles.pane} data-testid="artifacts-pane">
-      <SegmentedControl<ArtifactsSidebarScope> label="Artifact scope" options={SCOPES} value={scope} onChange={setScope} />
-      {error && <InlineAlert onRetry={() => setTick((n) => n + 1)} retrying={loading || busy}>{error}</InlineAlert>}
-      {loading && artifacts.length === 0 ? <LoadingState>Loading artifacts…</LoadingState>
-        : artifacts.length > 0 ? <ul className={styles.list} aria-label="Artifacts">{artifacts.map((a) => <ArtifactRow key={a.id} artifact={a} />)}</ul>
-        : !error && <EmptyState>No artifacts yet.</EmptyState>}
-      {cursor && <Button type="button" disabled={busy || loading} aria-busy={busy} onClick={() => void loadMore()}>Load more</Button>}
-    </div>
+    <PreviewOwnerContext.Provider value={remoteId}>
+      <div className={styles.pane} data-testid="artifacts-pane">
+        <SegmentedControl<ArtifactsSidebarScope> label="Artifact scope" options={SCOPES} value={scope} onChange={setScope} />
+        {error && <InlineAlert onRetry={() => setTick((n) => n + 1)} retrying={loading || busy}>{error}</InlineAlert>}
+        {loading && artifacts.length === 0 ? <LoadingState>Loading artifacts…</LoadingState>
+          : artifacts.length > 0 ? <ul className={styles.list} aria-label="Artifacts">{artifacts.map((a) => <ArtifactRow key={a.id} artifact={a} />)}</ul>
+          : !error && <EmptyState>No artifacts yet.</EmptyState>}
+        {cursor && <Button type="button" disabled={busy || loading} aria-busy={busy} onClick={() => void loadMore()}>Load more</Button>}
+      </div>
+    </PreviewOwnerContext.Provider>
   );
 }
 
@@ -148,7 +156,7 @@ function ArtifactRow({ artifact }: { artifact: Artifact }) {
       </Button>
       {open && (
         <div className={styles.body}>
-          <RouteButton to={`/artifacts/${encodeURIComponent(artifact.id)}`} size="small">Open artifact</RouteButton>
+          <RouteButton to={artifactPageURL(artifact.id, artifact.remoteId)} size="small">Open artifact</RouteButton>
           {artifact.items.map((it, i) => it.kind === 'link'
             ? <a key={i} href={it.url} target="_blank" rel="noopener noreferrer">{it.label || it.url}</a>
             : <div key={i}><strong>{it.name}</strong><ArtifactPreview item={it} /></div>)}

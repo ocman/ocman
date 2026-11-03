@@ -69,6 +69,16 @@ describe('ArtifactDetail', () => {
     await waitFor(() => expect(screen.getByText('missing')).toBeInTheDocument());
   });
 
+  it('loads owner-qualified metadata and does not offer remote mutations', async () => {
+    renderPage('/artifacts/a1?remoteId=box');
+    expect(await screen.findByRole('heading', { name: 'Release notes' })).toBeInTheDocument();
+    expect(artifactsApi.get).toHaveBeenCalledWith('a1', expect.any(AbortSignal), 'box');
+    expect(screen.queryByRole('button', { name: 'Share' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Back to artifacts' }));
+    expect(screen.getByTestId('list-search')).toHaveTextContent('?remoteId=box');
+  });
+
   it('runs HTML scripts only after opting in, and stops them again', async () => {
     let view = renderPage();
     const run = await screen.findByRole('button', { name: 'Run scripts' });

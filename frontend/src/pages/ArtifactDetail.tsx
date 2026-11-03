@@ -11,10 +11,16 @@ import { ProjectLabel } from '../components/ProjectLabel';
 import { artifactsApi, useKnownSessionIds, type Artifact } from '../lib/artifactsApi';
 import { formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
+import { PreviewOwnerContext } from '../lib/previews';
 import styles from './ArtifactDetail.module.css';
 
 export function ArtifactDetail() {
   const { id = '' } = useParams();
+  const remoteId = new URLSearchParams(useLocation().search).get('remoteId') || 'local';
+  return <PreviewOwnerContext.Provider value={remoteId}><ArtifactDetailContent key={`${remoteId}/${id}`} id={id} remoteId={remoteId} /></PreviewOwnerContext.Provider>;
+}
+
+function ArtifactDetailContent({ id, remoteId }: { id: string; remoteId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const listURL = `/artifacts${useLocation().search}`;
@@ -27,11 +33,11 @@ export function ArtifactDetail() {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    artifactsApi.get(id, ctrl.signal).then(setArtifact, (err) => {
+    artifactsApi.get(id, ctrl.signal, remoteId).then(setArtifact, (err) => {
       if (!ctrl.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load artifact.');
     });
     return () => ctrl.abort();
-  }, [id]);
+  }, [id, remoteId]);
 
   const remove = async () => {
     if (!artifact || !window.confirm(`Delete "${artifact.title}"?`)) return;
@@ -61,10 +67,10 @@ export function ArtifactDetail() {
           <h2>{artifact.title}</h2>
           <p><ProjectLabel path={artifact.directory} /> · <ArtifactSessionLink artifact={artifact} known={known} /> · {formatDateTimeShort(Date.parse(artifact.createdAt))}</p>
         </div>
-        <ButtonGroup label="Artifact actions">
+        {remoteId === 'local' && <ButtonGroup label="Artifact actions">
           <Button type="button" onClick={() => setSharing(true)}><i className="bi bi-share" aria-hidden="true" />Share</Button>
           <Button type="button" variant="danger" disabled={busy} onClick={() => void remove()}><i className="bi bi-trash" aria-hidden="true" />Delete</Button>
-        </ButtonGroup>
+        </ButtonGroup>}
       </header>
       {error && <InlineAlert>{error}</InlineAlert>}
       {sharing && <ArtifactShareModal artifact={artifact} onClose={() => setSharing(false)} />}

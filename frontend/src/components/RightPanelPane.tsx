@@ -228,7 +228,7 @@ export function Pane({
             />
           )}
           {tab === 'artifacts' && (
-            <ArtifactsPane sessionId={sessionId} platformId={platformId} directory={directory} />
+            <ArtifactsPane sessionId={sessionId} platformId={platformId} directory={directory} remoteId={session?.remoteId || upstreamTarget.remoteId} />
           )}
         </ErrorBoundary>
       </div>

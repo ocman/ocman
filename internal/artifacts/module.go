@@ -86,3 +86,19 @@ func (m *Module) Routes(r module.Router) {
 func (m *Module) Tools() []mcpserver.ServerTool {
 	return artifactServerTools(&artifactTools{svc: mcpService{m}})
 }
+
+// ServePublishedResource serves read-only owner-local resources after gRPC auth.
+func (m *Module) ServePublishedResource(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/artifacts", m.handleList)
+	mux.HandleFunc("GET /api/artifacts/stats", m.handleStats)
+	mux.HandleFunc("GET /api/artifacts/{$}", m.handleList)
+	mux.HandleFunc("GET /api/artifacts/{id}", func(w http.ResponseWriter, r *http.Request) { m.handleGet(w, r, r.PathValue("id")) })
+	mux.HandleFunc("GET /api/artifacts/{id}/files/{ordinal}", func(w http.ResponseWriter, r *http.Request) {
+		m.serveFile(w, r, r.PathValue("id"), r.PathValue("ordinal"), false)
+	})
+	mux.HandleFunc("GET /api/artifacts/{id}/files/{ordinal}/interactive", func(w http.ResponseWriter, r *http.Request) {
+		m.serveFile(w, r, r.PathValue("id"), r.PathValue("ordinal"), true)
+	})
+	mux.ServeHTTP(w, r)
+}

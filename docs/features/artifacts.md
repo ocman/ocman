@@ -89,6 +89,17 @@ time.
 
 Deleting an artifact from its page first revokes all of its live shares.
 
+### Remote sessions
+
+Artifacts remain stored on the machine that published them. A remote session's
+artifact cards, sidebar, file previews and downloads resolve through the hub to
+that owner over authenticated gRPC, as do files embedded with `embed_file`.
+Expired embedded-file links are refreshed by their owner, not by the hub.
+Disconnected owners show an error; the hub never substitutes a local file or
+artifact. Remote artifact pages are read-only: sharing and deletion must be done
+on the owning instance. The main Artifacts page defaults to this machine; links
+from remote artifact pages retain their `remoteId` filter.
+
 ### HTML previews
 
 Artifact HTML is treated as untrusted, even when an agent wrote it.

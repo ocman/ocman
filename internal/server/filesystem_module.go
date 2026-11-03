@@ -12,8 +12,9 @@ import (
 func (s *Server) filesystemModule() *filesystem.Module {
 	return s.filesystemMod.get(func() *filesystem.Module {
 		return filesystem.NewModule(filesystem.Deps{
-			Store: s.stateDB,
-			Owner: s.repoFilesOwner,
+			Store:             s.stateDB,
+			Owner:             s.repoFilesOwner,
+			PublishedResource: s.proxyPublishedResource,
 		})
 	})
 }

@@ -1,7 +1,7 @@
 // Markdown rendering for assistant text parts and tool output:
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
-import { Children, cloneElement, Fragment, isValidElement, memo, useEffect, useId, useState } from 'react';
+import { Children, cloneElement, Fragment, isValidElement, memo, useContext, useEffect, useId, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -19,6 +19,8 @@ import { FactoryIssueReference } from '../FactoryIssueReference';
 import { useBetaFeatures } from '../../lib/betaFeatures';
 import { lazyComponent } from '../lazyComponent';
 import { useFreshFileURL } from '../../lib/fileUrls';
+import { PreviewOwnerContext } from '../../lib/previews';
+import { publishedResourceURL } from '../../lib/publishedResources';
 import { PreviewImage } from '../ImagePreview';
 import { CopyButton } from '../CopyButton';
 import { splitMarkdownBlocks } from './markdownBlocks';
@@ -108,18 +110,28 @@ function MermaidDiagram({ source }: { source: string }) {
 }
 
 // Older transcripts contain absolute ocman file URLs from before proxy-safe embeds.
-function relativeFileURL(href: string | undefined): string | undefined {
+function relativeFileURL(href: string | undefined, owner: string): string | undefined {
   if (!href || href.startsWith('#') || !URL.canParse(href, window.location.href)) return href;
   const url = new URL(href, window.location.href);
   if (!['http:', 'https:'].includes(url.protocol)) return href;
-  if (url.origin === window.location.origin || /^\/api\/(?:file\/[^/]+$|artifacts\/[^/]+\/files\/\d+$)/.test(url.pathname)) {
+  if (/^\/api\/(?:file\/[^/]+$|artifacts\/[^/]+\/files\/\d+(?:\/interactive)?$)/.test(url.pathname)) {
+    return publishedResourceURL(url.pathname + url.search + url.hash, owner);
+  }
+  // Only the legacy loopback app origin is recognizable without an origin registry.
+  const legacyOrigin = ['localhost', '127.0.0.1'].includes(url.hostname) && url.port === '8228';
+  if (owner !== 'local' && (url.origin === window.location.origin || legacyOrigin) && /^\/artifacts\/[^/]+$/.test(url.pathname)) {
+    if (!url.searchParams.has('remoteId')) url.searchParams.set('remoteId', owner);
+    return url.pathname + url.search + url.hash;
+  }
+  if (url.origin === window.location.origin) {
     return url.pathname + url.search + url.hash;
   }
   return href;
 }
 
 function MarkdownImage({ node: _node, alt = '', src, ...props }: ComponentProps<'img'> & { node?: unknown }) {
-  return <PreviewImage buttonClassName="oc-md-image" alt={alt} src={useFreshFileURL(relativeFileURL(src))} {...props} />;
+  const owner = useContext(PreviewOwnerContext);
+  return <PreviewImage buttonClassName="oc-md-image" alt={alt} src={useFreshFileURL(relativeFileURL(src, owner))} {...props} />;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,7 +152,8 @@ function CodeBlockPre(props: any) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MarkdownLink(props: any) {
   const { node: _node, href: originalHref, children, factoryCards = true, ...rest } = props;
-  const href = useFreshFileURL(relativeFileURL(originalHref));
+  const owner = useContext(PreviewOwnerContext);
+  const href = useFreshFileURL(relativeFileURL(originalHref, owner));
   const routed = useInRouterContext();
   const factoryEnabled = useBetaFeatures((s) => s.factory);
   if (!factoryEnabled && (props['data-ocman-card'] || href?.startsWith('/factory/'))) return <>{children}</>;

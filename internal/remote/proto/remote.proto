@@ -31,6 +31,9 @@ service Ocman {
   // --- Streaming events (tunneled to hub SSE) ---
   rpc StreamEvents(SessionRef) returns (stream EventChunk);
 
+  // First chunk is HTTP response metadata JSON; remaining chunks are file bytes.
+  rpc PublishedResource(JsonReq) returns (stream EventChunk);
+
   // First payload is attachment metadata JSON; subsequent payloads are bytes.
   rpc SaveComposerAttachment(stream JsonReq) returns (JsonResp);
 

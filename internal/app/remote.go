@@ -33,7 +33,8 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 		UseInboxStore(stateDB).UsePlugins(srv.RemotePluginOperation).UseSessions(srv.SessionService()).
 		UsePullRequests(srv.RemotePullRequestOperation).UseBackgroundTasks(srv.BackgroundTaskReader()).
 		UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseEventProxy(srv.ProxyRemoteSessionEvents).
-		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred).UsePermissionPolicy(srv.SessionPermissionPolicy)
+		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred).UsePermissionPolicy(srv.SessionPermissionPolicy).
+		UsePublishedResources(srv.ServePublishedResource)
 	ln, err := remote.NewListener(remote.ListenConfig{Context: ctx, Ready: srv.SessionsReady, Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
 	if err != nil {
 		log.WithError(err).Error("remote: failed to start gRPC server; continuing without it")

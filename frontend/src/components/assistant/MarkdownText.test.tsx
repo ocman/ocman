@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PreviewOwnerContext } from '../../lib/previews';
 
 class ResizeObserver {
   observe() {}
@@ -102,6 +103,23 @@ describe('MarkdownText', () => {
     await waitFor(() => expect(screen.queryByText('100%')).not.toBeInTheDocument());
   });
 
+  it('routes remote embeds and artifact pages through their owner', () => {
+    render(<MemoryRouter><PreviewOwnerContext.Provider value="box"><MarkdownContent text="![Remote](http://localhost:8228/api/file/token) [Report](http://localhost:8228/artifacts/report) [Download](/api/artifacts/report/files/0)" /></PreviewOwnerContext.Provider></MemoryRouter>);
+    expect(screen.getByRole('img', { name: 'Remote' })).toHaveAttribute('src', '/api/remote-resources/box/api/file/token');
+    expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', '/artifacts/report?remoteId=box');
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/api/remote-resources/box/api/artifacts/report/files/0');
+  });
+
+  it.each(['other', 'local'])('preserves explicit artifact owner %s in a remote preview', (owner) => {
+    render(<MemoryRouter><PreviewOwnerContext.Provider value="box"><MarkdownContent text={`[Report](/artifacts/report?remoteId=${owner}&file=1#preview)`} /></PreviewOwnerContext.Provider></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', `/artifacts/report?remoteId=${owner}&file=1#preview`);
+  });
+
+  it.each(['', window.location.origin, 'http://localhost:8228', 'http://127.0.0.1:8228'])('routes owner-qualified artifact pages from app origin %s', (origin) => {
+    render(<MemoryRouter><PreviewOwnerContext.Provider value="box"><MarkdownContent text={`[Report](${origin}/artifacts/report?file=1#preview)`} /></PreviewOwnerContext.Provider></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', '/artifacts/report?file=1&remoteId=box#preview');
+  });
+
   it.each([
     ['http://127.0.0.1:8228/api/file/token', '/api/file/token'],
     ['https://old.ocman.example/api/artifacts/report/files/0?download=1#preview', '/api/artifacts/report/files/0?download=1#preview'],
@@ -199,11 +217,15 @@ describe('MarkdownText', () => {
     expect(await screen.findByText('/artifacts/report?file=0#preview')).toBeInTheDocument();
   });
 
-  it('keeps artifacts on other origins external, including protocol-relative links', () => {
+  it.each(['local', 'box'])('keeps artifacts on other origins external for owner %s, including protocol-relative links', (owner) => {
     render(<MemoryRouter>
-      <MarkdownText text="[Other report](https://example.com/artifacts/report) [Protocol relative](//example.com/artifacts/report) [Section](#section)" />
+      <PreviewOwnerContext.Provider value={owner}>
+        <MarkdownText text="[Other report](https://example.com/artifacts/report) [Protocol relative](//example.com/artifacts/report) [Section](#section)" />
+      </PreviewOwnerContext.Provider>
     </MemoryRouter>);
 
+    expect(screen.getByRole('link', { name: 'Other report' })).toHaveAttribute('href', 'https://example.com/artifacts/report');
+    expect(screen.getByRole('link', { name: 'Protocol relative' })).toHaveAttribute('href', '//example.com/artifacts/report');
     expect(screen.getByRole('link', { name: 'Other report' })).toHaveAttribute('target', '_blank');
     expect(screen.getByRole('link', { name: 'Protocol relative' })).toHaveAttribute('target', '_blank');
     expect(screen.getByRole('link', { name: 'Section' })).not.toHaveAttribute('target');

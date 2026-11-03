@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 
@@ -35,6 +36,12 @@ type Server struct {
 	permissionPolicy               PermissionPolicyHandler
 	pullRequests                   PullRequestHandler
 	backgroundTasks                tasksvc.Reader
+	publishedResources             http.HandlerFunc
+}
+
+func (s *Server) UsePublishedResources(h http.HandlerFunc) *Server {
+	s.publishedResources = h
+	return s
 }
 
 func (s *Server) UseInboxStore(store *state.DB) *Server { s.inboxStore = store; return s }

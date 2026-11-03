@@ -19,14 +19,15 @@ export function Artifacts() {
   usePageTitle('Artifacts');
   const [params, setParams] = useSearchParams();
   const directory = params.get('directory') ?? '';
+  const remoteId = params.get('remoteId') || 'local';
   const search = params.get('q') ?? '';
   const [q, setQ] = useState(search.trim());
   const queryClient = useQueryClient();
-  const stats = useQuery({ queryKey: ['artifact-stats'], queryFn: ({ signal }) => artifactsApi.stats(signal) });
+  const stats = useQuery({ queryKey: ['artifact-stats', remoteId], queryFn: ({ signal }) => artifactsApi.stats(signal, remoteId) });
   const list = useInfiniteQuery({
-    queryKey: ['artifacts', directory, q],
+    queryKey: ['artifacts', remoteId, directory, q],
     initialPageParam: '',
-    queryFn: ({ pageParam, signal }) => artifactsApi.list({ directory, q, ...(pageParam ? { cursor: pageParam } : {}) }, signal),
+    queryFn: ({ pageParam, signal }) => artifactsApi.list({ directory, q, ...(remoteId !== 'local' ? { remoteId } : {}), ...(pageParam ? { cursor: pageParam } : {}) }, signal),
     getNextPageParam: (page) => page.nextCursor || undefined,
   });
   const artifacts = list.data?.pages.flatMap((page) => page.artifacts ?? []) ?? [];
@@ -56,7 +57,7 @@ export function Artifacts() {
   });
   const retry = () => { void (list.isFetchNextPageError ? list.fetchNextPage() : list.refetch()); };
   const projects = useProjects().data ?? [];
-  const dirs = [...new Set(projects.filter((p) => !p.archived).map((p) => p.directory))].sort();
+  const dirs = [...new Set(projects.filter((p) => !p.archived && (p.remoteId || 'local') === remoteId).map((p) => p.directory))].sort();
 
   return <main className={styles.page}>
     <header className={styles.header}>

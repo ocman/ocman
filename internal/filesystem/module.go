@@ -30,7 +30,8 @@ type Deps struct {
 	// Owner parses the required absolute ?dir= and ?remoteId= and resolves
 	// the owning machine, writing the error response itself (400, or 503
 	// for an explicit remote that is not connected).
-	Owner func(w http.ResponseWriter, r *http.Request) (dir string, files RepoFiles, ok bool)
+	Owner             func(w http.ResponseWriter, r *http.Request) (dir string, files RepoFiles, ok bool)
+	PublishedResource http.HandlerFunc
 }
 
 type Module struct {
@@ -51,10 +52,23 @@ func (m *Module) Name() string { return "filesystem" }
 // Routes: the directory picker walks the hub's disk, so it is
 // localhost-only; signed files and repository reads need a login.
 func (m *Module) Routes(r module.Router) {
+	if m.PublishedResource != nil {
+		r.Handle("/api/remote-resources/{remoteId}/{resource...}", m.PublishedResource)
+	}
 	r.Local("GET /api/filesystem/directories", m.handleDirectories)
 	r.Local("GET /api/filesystem/directory-search", m.handleDirectorySearch)
 	r.Handle("GET "+filePathPrefix, m.handleFileProxy)
 	r.Handle("POST "+fileRefreshPath, m.handleFileURLRefresh)
 	r.Handle("GET /api/git/files", m.handleRepoFiles)
 	r.Handle("GET /api/git/file", m.handleRepoFile)
+}
+
+// ServePublishedResource is called only after the authenticated remote transport
+// has checked its closed route allowlist.
+func (m *Module) ServePublishedResource(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == fileRefreshPath {
+		m.handleFileURLRefresh(w, r)
+	} else {
+		m.handleFileProxy(w, r)
+	}
 }

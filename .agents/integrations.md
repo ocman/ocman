@@ -63,7 +63,9 @@ tool inventory in instructions. Feature modules register through `Deps.Tools`.
   filters. See `docs/features/routines.md`.
 - Artifacts are immutable project/session files or links. Metadata is in state.db;
   content-addressed SHA-256 blobs live under `<state dir>/artifacts/blobs/`, capped
-  at 50 MB per file. Artifacts are local to one instance, never remote-routed.
+  at 50 MB per file. Storage and publishing stay owner-local. Dashboard reads
+  route through the owning Host's optional published-resource stream; mutation
+  and sharing routes are not exposed through that tunnel.
   Live browsing uses `ocman.artifact.created`. See `docs/features/artifacts.md`.
 - Sharing uploads write-once encrypted manifests and chunks. Check relay limits
   before upload. Revoke and artifact deletion remove relay copies. HTML previews

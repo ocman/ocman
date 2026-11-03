@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Artifact } from '../lib/artifactsApi';
+import type { Session } from '../lib/api';
 import { useUiStore } from '../lib/uiStore';
 import { RightPanel } from './RightPanel';
+import { ArtifactsPane } from './ArtifactsPane';
 
 const created: Array<() => void> = [];
 vi.mock('../lib/useGlobalEvents', () => ({ onArtifactCreated: (cb: () => void) => { created.push(cb); return () => undefined; } }));
@@ -46,6 +48,37 @@ const renderPanel = () => render(
 );
 
 const listParams = () => urls.filter((u) => u.startsWith('/api/artifacts?')).map((u) => Object.fromEntries(new URL(u, 'http://x').searchParams));
+
+it('retains the remote owner across session and project scope, previews and page links', async () => {
+  pages[''] = { artifacts: [artifact('remote')], nextCursor: '' };
+  render(<MemoryRouter><ArtifactsPane sessionId="s1" platformId="r-box:opencode" directory="/repo" remoteId="box" /></MemoryRouter>);
+  expect(await screen.findByText('Report remote')).toBeInTheDocument();
+  expect(urls[0]).toContain('/api/remote-resources/box/api/artifacts?');
+  await userEvent.click(screen.getByRole('button', { name: /Report remote/ }));
+  expect(screen.getByRole('link', { name: 'Open artifact' })).toHaveAttribute('href', '/artifacts/remote?remoteId=box');
+  await waitFor(() => expect(urls).toContain('/api/remote-resources/box/api/artifacts/remote/files/0'));
+  await userEvent.click(screen.getByRole('radio', { name: 'This project' }));
+  await waitFor(() => expect(urls.some(url => url.startsWith('/api/remote-resources/box/api/artifacts?directory='))).toBe(true));
+});
+
+it('retains the owner in expanded remote Markdown sidebar embeds and links', async () => {
+  const report = artifact('remote');
+  report.items = [{ kind: 'file', name: 'report.md', mime: 'text/markdown', size: 100, url: '/api/artifacts/remote/files/0' }];
+  pages[''] = { artifacts: [report], nextCursor: '' };
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    urls.push(String(input));
+    return String(input).includes('/files/')
+      ? new Response('![Chart](/api/file/token) [Related report](/artifacts/related)')
+      : new Response(JSON.stringify(pages['']));
+  });
+  render(<MemoryRouter><RightPanel sessionId="s1" platformId="r-box:opencode" directory="/repo"
+    session={{ id: 's1', remoteId: 'box' } as Session} messageBookmarkGroups={[]}
+    selectedMessageBookmarkKey={null} onRemoveMessageBookmark={vi.fn()} onScrollToMessageBookmark={vi.fn()} /></MemoryRouter>);
+  await userEvent.click(await screen.findByRole('button', { name: /Report remote/ }));
+  expect(await screen.findByRole('img', { name: 'Chart' })).toHaveAttribute('src', '/api/remote-resources/box/api/file/token');
+  expect(screen.getByRole('link', { name: 'Related report' })).toHaveAttribute('href', '/artifacts/related?remoteId=box');
+  expect(urls).toContain('/api/remote-resources/box/api/artifacts/remote/files/0');
+});
 
 it('renders the Artifacts tab and queries this session with descendants', async () => {
   pages[''] = { artifacts: [artifact('a1')], nextCursor: '' };

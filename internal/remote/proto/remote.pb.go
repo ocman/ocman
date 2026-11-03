@@ -865,14 +865,15 @@ const file_internal_remote_proto_remote_proto_rawDesc = "" +
 	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
 	"\x04rows\x18\x02 \x01(\rR\x04rows\"#\n" +
 	"\rTermServerMsg\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data2\xd0\x04\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data2\x9e\x05\n" +
 	"\x05Ocman\x12>\n" +
 	"\x05Hello\x12\x19.ocman.remote.v1.HelloReq\x1a\x1a.ocman.remote.v1.HelloResp\x12;\n" +
 	"\x04Call\x12\x18.ocman.remote.v1.CallReq\x1a\x19.ocman.remote.v1.JsonResp\x12C\n" +
 	"\bSessions\x12\x1c.ocman.remote.v1.SessionsReq\x1a\x19.ocman.remote.v1.JsonResp\x12A\n" +
 	"\aSession\x12\x1b.ocman.remote.v1.SessionReq\x1a\x19.ocman.remote.v1.JsonResp\x12O\n" +
 	"\x16SessionsInactiveBefore\x12\x1a.ocman.remote.v1.CutoffReq\x1a\x19.ocman.remote.v1.JsonResp\x12J\n" +
-	"\fStreamEvents\x12\x1b.ocman.remote.v1.SessionRef\x1a\x1b.ocman.remote.v1.EventChunk0\x01\x12O\n" +
+	"\fStreamEvents\x12\x1b.ocman.remote.v1.SessionRef\x1a\x1b.ocman.remote.v1.EventChunk0\x01\x12L\n" +
+	"\x11PublishedResource\x12\x18.ocman.remote.v1.JsonReq\x1a\x1b.ocman.remote.v1.EventChunk0\x01\x12O\n" +
 	"\x16SaveComposerAttachment\x12\x18.ocman.remote.v1.JsonReq\x1a\x19.ocman.remote.v1.JsonResp(\x01\x12T\n" +
 	"\x0eTerminalStream\x12\x1e.ocman.remote.v1.TermClientMsg\x1a\x1e.ocman.remote.v1.TermServerMsg(\x010\x01B7Z5github.com/ocman/ocman/internal/remote/proto;remotepbb\x06proto3"
 
@@ -914,18 +915,20 @@ var file_internal_remote_proto_remote_proto_depIdxs = []int32{
 	4,  // 5: ocman.remote.v1.Ocman.Session:input_type -> ocman.remote.v1.SessionReq
 	5,  // 6: ocman.remote.v1.Ocman.SessionsInactiveBefore:input_type -> ocman.remote.v1.CutoffReq
 	2,  // 7: ocman.remote.v1.Ocman.StreamEvents:input_type -> ocman.remote.v1.SessionRef
-	7,  // 8: ocman.remote.v1.Ocman.SaveComposerAttachment:input_type -> ocman.remote.v1.JsonReq
-	10, // 9: ocman.remote.v1.Ocman.TerminalStream:input_type -> ocman.remote.v1.TermClientMsg
-	1,  // 10: ocman.remote.v1.Ocman.Hello:output_type -> ocman.remote.v1.HelloResp
-	6,  // 11: ocman.remote.v1.Ocman.Call:output_type -> ocman.remote.v1.JsonResp
-	6,  // 12: ocman.remote.v1.Ocman.Sessions:output_type -> ocman.remote.v1.JsonResp
-	6,  // 13: ocman.remote.v1.Ocman.Session:output_type -> ocman.remote.v1.JsonResp
-	6,  // 14: ocman.remote.v1.Ocman.SessionsInactiveBefore:output_type -> ocman.remote.v1.JsonResp
-	9,  // 15: ocman.remote.v1.Ocman.StreamEvents:output_type -> ocman.remote.v1.EventChunk
-	6,  // 16: ocman.remote.v1.Ocman.SaveComposerAttachment:output_type -> ocman.remote.v1.JsonResp
-	13, // 17: ocman.remote.v1.Ocman.TerminalStream:output_type -> ocman.remote.v1.TermServerMsg
-	10, // [10:18] is the sub-list for method output_type
-	2,  // [2:10] is the sub-list for method input_type
+	7,  // 8: ocman.remote.v1.Ocman.PublishedResource:input_type -> ocman.remote.v1.JsonReq
+	7,  // 9: ocman.remote.v1.Ocman.SaveComposerAttachment:input_type -> ocman.remote.v1.JsonReq
+	10, // 10: ocman.remote.v1.Ocman.TerminalStream:input_type -> ocman.remote.v1.TermClientMsg
+	1,  // 11: ocman.remote.v1.Ocman.Hello:output_type -> ocman.remote.v1.HelloResp
+	6,  // 12: ocman.remote.v1.Ocman.Call:output_type -> ocman.remote.v1.JsonResp
+	6,  // 13: ocman.remote.v1.Ocman.Sessions:output_type -> ocman.remote.v1.JsonResp
+	6,  // 14: ocman.remote.v1.Ocman.Session:output_type -> ocman.remote.v1.JsonResp
+	6,  // 15: ocman.remote.v1.Ocman.SessionsInactiveBefore:output_type -> ocman.remote.v1.JsonResp
+	9,  // 16: ocman.remote.v1.Ocman.StreamEvents:output_type -> ocman.remote.v1.EventChunk
+	9,  // 17: ocman.remote.v1.Ocman.PublishedResource:output_type -> ocman.remote.v1.EventChunk
+	6,  // 18: ocman.remote.v1.Ocman.SaveComposerAttachment:output_type -> ocman.remote.v1.JsonResp
+	13, // 19: ocman.remote.v1.Ocman.TerminalStream:output_type -> ocman.remote.v1.TermServerMsg
+	11, // [11:20] is the sub-list for method output_type
+	2,  // [2:11] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name

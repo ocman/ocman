@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api, fetchJSON, postJSON } from './api';
+import { publishedResourceURL } from './publishedResources';
 
 export type ArtifactItem = {
   kind: 'file' | 'link';
@@ -25,7 +26,12 @@ export type Artifact = {
 
 export type ArtifactPage = { artifacts: Artifact[]; nextCursor: string };
 export type ArtifactStats = { count: number; totalBytes: number };
-export type ArtifactListParams = { directory?: string; q?: string; cursor?: string; limit?: number; sessionId?: string; platform?: string; includeDescendants?: boolean };
+export type ArtifactListParams = { remoteId?: string; directory?: string; q?: string; cursor?: string; limit?: number; sessionId?: string; platform?: string; includeDescendants?: boolean };
+
+function ownerArtifact(a: Artifact, remoteId = 'local'): Artifact {
+  if (remoteId === 'local') return a;
+  return { ...a, remoteId, platform: a.platform ? `r-${remoteId}:${a.platform}` : undefined, items: a.items.map(item => item.kind === 'file' && item.url ? { ...item, url: publishedResourceURL(item.url, remoteId) } : item) };
+}
 
 const path = (id: string) => `/api/artifacts/${encodeURIComponent(id)}`;
 
@@ -34,15 +40,17 @@ export const artifactsApi = {
   list: (params: ArtifactListParams = {}, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
+      if (k === 'remoteId') continue;
       if (v === undefined || v === '' || v === false) continue;
       q.set(k, v === true ? '1' : String(v));
     }
     const qs = q.toString();
-    return fetchJSON<ArtifactPage>(`/api/artifacts${qs ? `?${qs}` : ''}`, signal);
+    return fetchJSON<ArtifactPage>(publishedResourceURL(`/api/artifacts${qs ? `?${qs}` : ''}`, params.remoteId), signal)
+      .then(page => ({ ...page, artifacts: (page.artifacts ?? []).map(a => ownerArtifact(a, params.remoteId)) }));
   },
-  get: (id: string, signal?: AbortSignal) => fetchJSON<Artifact>(path(id), signal),
+  get: (id: string, signal?: AbortSignal, remoteId = 'local') => fetchJSON<Artifact>(publishedResourceURL(path(id), remoteId), signal).then(a => ownerArtifact(a, remoteId)),
   remove: (id: string) => postJSON<void, undefined>(path(id), undefined, { method: 'DELETE', parseJSON: false }),
-  stats: (signal?: AbortSignal) => fetchJSON<ArtifactStats>('/api/artifacts/stats', signal),
+  stats: (signal?: AbortSignal, remoteId = 'local') => fetchJSON<ArtifactStats>(publishedResourceURL('/api/artifacts/stats', remoteId), signal),
   share: (id: string) => postJSON<ArtifactShareLink, undefined>(`${path(id)}/share`, undefined),
   shares: (id: string, signal?: AbortSignal) => fetchJSON<ArtifactShareList>(`${path(id)}/shares`, signal),
   revokeShare: (id: string, shareId: string) =>

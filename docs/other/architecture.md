@@ -29,7 +29,7 @@ flowchart LR
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
     Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
-    Ocman <-->|authenticated gRPC:<br/>sessions, owner PR workflows and task reads| Remotes[Remote ocman instances]
+    Ocman <-->|authenticated gRPC:<br/>sessions, PR workflows, tasks and resource streams| Remotes[Remote ocman instances]
     Ocman -->|encrypted shares + webhook poll| Relay[ocman-relay]
     Ocman -.->|optional OTLP| Otel[Telemetry collector]
 ```
@@ -68,6 +68,13 @@ flowchart LR
   owning Host's optional `BackgroundTaskHost` interface. Remote RPCs expose
   only closed PR operations and task reads, never arbitrary HTTP forwarding or
   task submission. See [multi-remote](../features/multi-remote.md).
+- **Remote published resources.** Transcript embeds and artifact links retain
+  their session owner. Authenticated `/api/remote-resources/<owner>/…` reads
+  resolve the owning Host's optional published-resource seam and stream over
+  gRPC. A closed route allowlist permits artifact metadata/files and signed-file
+  refresh only; remote cookies and arbitrary HTTP routes never cross it. File
+  signatures are checked on the owner, with inert/interactive CSP and range
+  semantics preserved. Disconnected owners fail closed.
 - **Conversation PR previews.** Showing a card or switching sessions revalidates
   PR metadata, checks and review status. The browser bundles simultaneous lookups
   by owner, deduplicates identical requests, and cancels a shared request only
