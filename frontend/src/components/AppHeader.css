@@ -3,7 +3,10 @@
 .app-header h1 > a { color: var(--text); font-weight: 600; }
 .app-header h1 > span { color: inherit; font-weight: 400; }
 .header-breadcrumb { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.header-breadcrumb > .host-badge { max-width: 120px; margin-left: 8px; vertical-align: middle; }
+.session-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.session-heading-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.session-heading > .host-badge { max-width: 120px; flex-shrink: 0; }
+.session-heading > .platform-badge { flex-shrink: 0; }
 .header-navigation-slot,
 .header-mobile-title-slot { display: none; }
 .header-navigation-slot:empty,

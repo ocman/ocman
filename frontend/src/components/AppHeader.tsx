@@ -49,8 +49,8 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
     );
   } else if (routeSessionId && sessionInfo.sessionTitle) {
     breadcrumb = (
-      <>
-        {sessionInfo.sessionTitle}
+      <span className="session-heading">
+        <span className="session-heading-title">{sessionInfo.sessionTitle}</span>
         <HostBadge showIcon alwaysShow={!!sessionInfo.sessionRemoteId && sessionInfo.sessionRemoteId !== 'local'}
           remoteName={sessionInfo.sessionRemoteName} remoteId={sessionInfo.sessionRemoteId}
           stale={sessionInfo.sessionRemoteStale} />
@@ -59,7 +59,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
             <PlatformBadge platform={sessionInfo.sessionPlatform} variant="icon" />
           </>
         )}
-      </>
+      </span>
     );
   }
 

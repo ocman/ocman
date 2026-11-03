@@ -1,5 +1,25 @@
 import { test, expect, MOCK_SESSION, MOCK_PROJECT } from './fixtures';
 
+test('keeps offline ownership visible beside a long title in a constrained header', async ({ mockedPage: page }) => {
+  const remote = { remoteId: 'build-host', remoteName: 'Build host', stale: true };
+  const session = { ...MOCK_SESSION, ...remote, title: 'A very long session title '.repeat(30) };
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await page.route('/api/sessions*', route => route.fulfill({ json: [session] }));
+  await page.route('/api/projects*', route => route.fulfill({ json: [{ ...MOCK_PROJECT, ...remote }] }));
+  await page.route(new RegExp(`/api/session/${session.id}(\\?.*)?$`), route => route.fulfill({ json: {
+    session, messages: [], parts: [], totalMessages: 0, defaultAgent: '', defaultModel: '',
+  } }));
+  await page.goto(`/session/${session.id}`);
+  const heading = page.getByTestId('header-breadcrumb');
+  const pill = heading.getByLabel('Build host (offline — last known)', { exact: true });
+  await expect(pill).toBeVisible();
+  await expect.poll(async () => {
+    const header = await heading.boundingBox();
+    const badge = await pill.boundingBox();
+    return !!header && !!badge && badge.x >= header.x && badge.x + badge.width <= header.x + header.width + 1;
+  }).toBe(true);
+});
+
 test('shows the remote host pill in the flat sidebar, session title and composer', async ({ mockedPage: page }, testInfo) => {
   const remote = { remoteId: 'build-host', remoteName: 'Build host' };
   const session = { ...MOCK_SESSION, ...remote };
