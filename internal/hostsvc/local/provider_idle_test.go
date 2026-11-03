@@ -119,6 +119,10 @@ func TestIdleCullFencesConcurrentEnsure(t *testing.T) {
 			raced.Store(true)
 		}
 		sup.ServeHTTP(w, r)
+		if r.URL.Path == "/resume" {
+			// End the observation before rollback returns and releases the root lock.
+			culling.Store(false)
+		}
 		if r.URL.Path == "/drain-idle" {
 			culling.Store(true)
 			go func() {
@@ -140,7 +144,6 @@ func TestIdleCullFencesConcurrentEnsure(t *testing.T) {
 	if _, err := manager.CullIdle(t.Context(), "/repo", func(context.Context) (bool, error) { return true, nil }, func() {}); err == nil {
 		t.Fatal("expected the invalid handle to fail Stop")
 	}
-	culling.Store(false)
 	if err := <-ensured; err != nil {
 		t.Fatal(err)
 	}
