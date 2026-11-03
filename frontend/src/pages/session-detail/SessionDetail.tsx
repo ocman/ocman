@@ -44,7 +44,7 @@ import { checkoutKey } from '../../lib/projectIdentity';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
-import { usePlatformCapabilities } from '../../lib/useCapabilities';
+import { usePlatformCapabilities, usePlatformName } from '../../lib/useCapabilities';
 import {
   isSessionRunning,
   computeLiveTokens,
@@ -250,6 +250,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Capability flags for the owning platform.
   const caps = usePlatformCapabilities(session?.platform);
+  const platformName = usePlatformName(session?.platform);
 
   // Per-session capability state — port availability, agent
   // catalog, model picker, selected model/agent/reasoning.
@@ -781,10 +782,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
               tmuxAvailable={tmux.available}
               portAvailable={portAvailable}
               liveConnectionHint={caps.liveConnectionHint}
-              launchingOpencode={launchingOpencode}
+              platformName={platformName}
+              launching={launchingOpencode}
               onNewSession={() => { void handleNewSession(); }}
               onShare={() => setOpenModal('share')}
-              onLaunchOpencode={() => { void handleLaunchOpencode(); }}
+              onLaunch={() => { void handleLaunchOpencode(); }}
             />
           </HeaderPortal>}
           {session && openModal === 'share' && (
@@ -1072,7 +1074,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
           tmuxAvailable={tmux.available}
           liveConnectionHint={!!caps.liveConnectionHint}
           hasDirectory={!!session?.directory}
-          launchingOpencode={launchingOpencode}
+          platformName={platformName}
+          launching={launchingOpencode}
           onLaunch={handleLaunchOpencode}
         />
       </div>

@@ -25,7 +25,7 @@ type mcpCreateHost struct {
 }
 
 func (h *mcpCreateHost) Capabilities() hostsvc.HostCaps {
-	return hostsvc.HostCaps{OpencodeLaunch: h.capable}
+	return hostsvc.HostCaps{SessionLaunch: h.capable}
 }
 func (h *mcpCreateHost) ListWorktrees(context.Context, string) ([]git.Worktree, error) {
 	return h.trees, h.treesErr

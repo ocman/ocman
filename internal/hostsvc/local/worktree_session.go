@@ -79,10 +79,10 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		err error
 	}
 	ensuredCh := make(chan ensureResult, 1)
-	hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
+	hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepActive)
 	go func() {
 		res, err := h.EnsureRuntime(ctx, req.Platform, repoRoot)
-		hostsvc.FinishStep(ctx, hostsvc.StepOpencode, err)
+		hostsvc.FinishStep(ctx, hostsvc.StepPlatform, err)
 		ensuredCh <- ensureResult{res, err}
 	}()
 

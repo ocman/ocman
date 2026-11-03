@@ -61,7 +61,7 @@ vi.mock('../lib/api', async () => {
 });
 
 vi.mock('../lib/useCapabilities', () => ({
-  useOpencodeLaunch: () => false,
+  useWorktreeLaunch: () => false,
 }));
 
 

@@ -3,7 +3,7 @@ import './CommandPalette.css';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProjects, useSessions } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
-import { useOpencodeLaunch } from '../lib/useCapabilities';
+import { useWorktreeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
@@ -79,7 +79,7 @@ const STATIC_COMMANDS: CommandItem[] = [
 ];
 
 // `cmd.worktree` is the /wt palette entry. Listed separately so it can
-// be filtered out by useOpencodeLaunch() without mutating
+// be filtered out by useWorktreeLaunch() without mutating
 // STATIC_COMMANDS in place.
 const WORKTREE_COMMAND: CommandItem = {
   kind: 'command',
@@ -167,7 +167,7 @@ export function CommandPalette() {
   const location = useLocation();
   const browseDirectories = api.browseDirectories;
   const searchDirectories = api.searchDirectories;
-  const launchAllowed = useOpencodeLaunch();
+  const launchAllowed = useWorktreeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const paletteOpen = useUiStore((s) => s.paletteOpen);
   const paletteMode = useUiStore((s) => s.paletteMode);

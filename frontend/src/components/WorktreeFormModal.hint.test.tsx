@@ -23,7 +23,7 @@ vi.mock('../lib/api', () => ({
   },
 }));
 vi.mock('../lib/useCapabilities', () => ({
-  useOpencodeLaunch: () => true,
+  useWorktreeLaunch: () => true,
   useMachinePlatforms: () => [],
 }));
 const projectsLoader = vi.hoisted(() => vi.fn().mockResolvedValue([]));

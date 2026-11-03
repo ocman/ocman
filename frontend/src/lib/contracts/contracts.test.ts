@@ -50,7 +50,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
     permissionRules: false, nativeAutoPermission: true, exactPatterns: true, revert: true, runtimeRestart: true, pushPrompts: true, autoTitle: true,
   }),
   HostCapabilities: flags<HostCapabilities>()({
-    gitDiff: false, worktrees: false, tmux: false, projects: false, opencodeLaunch: false, opencode: true,
+    gitDiff: false, worktrees: false, tmux: false, projects: false, sessionLaunch: false, judgeModel: false, mcpConfig: false,
   }),
   QueuedMessage: flags<QueuedMessage>()({
     id: false, text: false, hasImages: false, model: true, agent: true, reasoning: true, createdAt: false,
@@ -71,7 +71,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   HourlyTokensByModel: flags<HourlyTokensByModel>()({ datetime: false, provider: false, model: false, tokensIn: false, tokensOut: false }),
   MetricsCostByModel: flags<MetricsCostByModel>()({ models: false, series: false }),
   ModelCostPoint: flags<ModelCostPoint>()({ label: false, costs: false }),
-  DatabaseSizeSample: flags<DatabaseSizeSample>()({ database: false, sampledAt: false, sizeBytes: false }),
+  DatabaseSizeSample: flags<DatabaseSizeSample>()({ database: false, label: false, sampledAt: false, sizeBytes: false }),
   RemoteStatus: flags<RemoteStatus>()({ localId: false, remoteId: true, displayName: false, address: false, enabled: false, health: false, hostname: false, protocolVersion: false, lastSeen: false, sessionCount: false }),
   TargetCandidate: flags<TargetCandidate>()({ remoteId: false, remoteName: false, platform: false, dir: false }),
 

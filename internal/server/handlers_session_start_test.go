@@ -317,7 +317,7 @@ func TestStartSessionBroadcastsProgress(t *testing.T) {
 		}
 		got = append(got, p.Step+":"+p.State)
 	}
-	want := "opencode:active opencode:done session:active session:done prompt:active prompt:done"
+	want := "platform:active platform:done session:active session:done prompt:active prompt:done"
 	if strings.Join(got, " ") != want {
 		t.Fatalf("progress = %v, want %s", got, want)
 	}

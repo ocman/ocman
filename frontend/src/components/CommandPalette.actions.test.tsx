@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   launchAllowed: false,
 }));
 vi.mock('../lib/apiStore', () => ({ useApiStore: (selector: (state: typeof mocks) => unknown) => selector(mocks) }));
-vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => mocks.launchAllowed }));
+vi.mock('../lib/useCapabilities', () => ({ useWorktreeLaunch: () => mocks.launchAllowed }));
 vi.mock('../lib/useTmux', () => ({ useTmux: () => ({ available: false }) }));
 
 const contribution = (placement: PluginAction['action']['placement'] = 'global', pluginId = 'org.example.report'): PluginAction => ({

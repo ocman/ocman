@@ -12,8 +12,13 @@ async function restrictions(code: string, filePath = 'src/lint-probe.tsx') {
 describe('architecture restrictions', () => {
   it.each([
     "export const show = session.platform === 'claude';",
-    "export const show = session.platform !== 'opencode';",
     "export const show = session?.platform === 'claude';",
+    "export const show = 'claude' === session.platform;",
+    "export function f(s: { platform: string }) { switch (s.platform) { case 'claude': return 1; } return 0; }",
+    "export const id = 'codex';",
+    "export const id = 'claudecode:raw';",
+    "export type Step = 'opencode' | 'session';",
+    "export const labels = { claudecode: 'Claude' };",
     "export const View = () => <div className='settings-row' />;",
     "export const View = () => <div className='settings-row extra' />;",
     "export const View = () => <button />;",
@@ -21,8 +26,14 @@ describe('architecture restrictions', () => {
     expect(await restrictions(code)).toHaveLength(1);
   });
 
+  it('reports both the identity check and the platform id', async () => {
+    expect(await restrictions("export const show = session.platform !== 'opencode';")).toHaveLength(2);
+  });
+
   it.each([
     "export const show = typeof session.platform === 'string';",
+    "export const id = 'opencoder';",
+    "export const labels = { platform: 'x' };",
     "export const show = session.platform === selectedPlatform;",
     "export const show = session.platform === other.platform;",
     "export const View = () => <div className='settings-row-label' />;",
@@ -34,6 +45,8 @@ describe('architecture restrictions', () => {
   it('exempts tests and the shared SettingRow implementation', async () => {
     expect(await restrictions("export const show = session.platform === 'claude';", 'src/probe.test.tsx')).toHaveLength(0);
     expect(await restrictions("export const View = () => <div className='settings-row' />;", 'src/components/SettingRow.tsx')).toHaveLength(0);
+    expect(await restrictions("export const id = 'opencode';", 'src/test/fixture.ts')).toHaveLength(0);
+    expect(await restrictions("export const id = 'opencode';", 'src/pages/x/__tests__/harness.tsx')).toHaveLength(0);
   });
 
   it('honors standard ESLint suppression comments', async () => {

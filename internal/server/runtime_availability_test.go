@@ -37,8 +37,11 @@ func TestHostCapsNativeProviderPrerequisites(t *testing.T) {
 				}
 				want := adapter.RuntimeAvailable() || mixed && lookPathOK("tmux") && lookPathOK("opencode")
 				caps := srv.hostCaps()
-				if caps.OpencodeLaunch != want || caps.Worktrees != want || caps.Tmux != lookPathOK("tmux") {
+				if caps.SessionLaunch != want || caps.Worktrees != want || caps.Tmux != lookPathOK("tmux") {
 					t.Fatalf("caps = %+v, want launch %v", caps, want)
+				}
+				if caps.JudgeModel != mixed || caps.McpConfig != mixed {
+					t.Fatalf("OpenCode settings caps = %+v, want %v", caps, mixed)
 				}
 				if !caps.Projects || !adapter.Available(t.Context()) {
 					t.Fatal("missing launch prerequisite disabled browsing")

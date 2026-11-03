@@ -5,7 +5,7 @@ import "context"
 // Session start steps reported while a new conversation is created. Steps
 // may run in parallel (the instance and the worktree checkout do).
 const (
-	StepOpencode = "opencode"
+	StepPlatform = "platform"
 	StepWorktree = "worktree"
 	StepSession  = "session"
 	StepPrompt   = "prompt"

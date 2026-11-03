@@ -8,7 +8,7 @@ import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../c
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { api } from '../../lib/api';
-import { useLocalOpenCode } from '../../lib/useCapabilities';
+import { useHostCapability } from '../../lib/useCapabilities';
 import { Button } from '../../components/Control';
 import { ReviewerPromptSectionEditor, type PromptSection } from './ReviewerPromptSectionEditor';
 import { JudgeEndpointSettings } from './JudgeEndpointSettings';
@@ -34,7 +34,7 @@ export function AutoApproveSection() {
   const modelSave = useSettingSave();
   const [judgeModel, setJudgeModel] = useState('');
   // The reviewer model picks an OpenCode model; the Claude judge is fixed.
-  const openCode = useLocalOpenCode();
+  const judgeModelSelectable = useHostCapability('judgeModel');
   const [modelCatalog, setModelCatalog] = useState({ models: [] as string[], default: '' });
   const { getPromptSections, getJudgeDelay } = api;
 
@@ -98,7 +98,7 @@ export function AutoApproveSection() {
       </SettingsSection>
       <SettingsSection title="AI reviewer">
       <JudgeEndpointSettings />
-      {openCode && <SettingRow setting="reviewer-model" desc="Model used when Reviewer API is OpenCode. Custom endpoints use their own model ID.">
+      {judgeModelSelectable && <SettingRow setting="reviewer-model" desc="Model used when Reviewer API is OpenCode. Custom endpoints use their own model ID.">
         <SettingSelect
           ariaLabel="Auto-approve reviewer model"
           placeholder="Default"

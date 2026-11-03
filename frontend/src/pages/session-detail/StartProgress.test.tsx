@@ -17,12 +17,12 @@ describe('StartProgress platform labels', () => {
     ['r-machine:claudecode', 'Launching Claude Code', 'Claude Code ready', 'Claude Code failed to launch'],
     ['unknown', 'Launching platform', 'Platform ready', 'Platform failed to launch'],
   ])('names the runtime for %s without conflating session creation', (platform, active, done, error) => {
-    const view = render(<StartProgress platform={platform} prompt="Hello" steps={{ opencode: 'active', session: 'active' }} />);
-    expect(screen.getByTestId('start-step-opencode')).toHaveTextContent(active);
+    const view = render(<StartProgress platform={platform} prompt="Hello" steps={{ platform: 'active', session: 'active' }} />);
+    expect(screen.getByTestId('start-step-platform')).toHaveTextContent(active);
     expect(screen.getByTestId('start-step-session')).toHaveTextContent('Creating session');
-    view.rerender(<StartProgress platform={platform} prompt="Hello" steps={{ opencode: 'done' }} />);
-    expect(screen.getByTestId('start-step-opencode')).toHaveTextContent(done);
-    view.rerender(<StartProgress platform={platform} prompt="Hello" steps={{ opencode: 'error' }} />);
-    expect(screen.getByTestId('start-step-opencode')).toHaveTextContent(error);
+    view.rerender(<StartProgress platform={platform} prompt="Hello" steps={{ platform: 'done' }} />);
+    expect(screen.getByTestId('start-step-platform')).toHaveTextContent(done);
+    view.rerender(<StartProgress platform={platform} prompt="Hello" steps={{ platform: 'error' }} />);
+    expect(screen.getByTestId('start-step-platform')).toHaveTextContent(error);
   });
 });

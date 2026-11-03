@@ -238,9 +238,10 @@ vi.mock('../../../lib/useCapabilities', () => ({
     }],
   }),
   usePlatformCapabilities: () => mockState.caps,
+  usePlatformName: () => 'OpenCode',
   useMultiPlatform: () => false,
   useMultiHost: () => false,
-  useOpencodeLaunch: () => false,
+  useWorktreeLaunch: () => false,
 }));
 
 vi.mock('../../../lib/useTmux', () => ({

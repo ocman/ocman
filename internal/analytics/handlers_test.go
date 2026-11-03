@@ -91,17 +91,28 @@ func TestDatabaseSizesRouteFiltersByDays(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d: %s", rec.Code, rec.Body.String())
 	}
-	var got []state.DatabaseSizeSample
+	var got []DatabaseSizeSample
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].SizeBytes != 50 || got[1].SizeBytes != 200 {
+	if len(got) != 2 || got[0].SizeBytes != 50 || got[1].SizeBytes != 200 || got[0].Label != "ocman" || got[1].Label != "OpenCode" {
 		t.Fatalf("samples = %+v", got)
 	}
 
 	rec = f.serve(http.MethodPost, "/api/analytics/database-sizes", "")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestDatabaseLabel(t *testing.T) {
+	for name, want := range map[string]string{
+		"ocman": "ocman", "statev2": "Conversation history", "opencode": "OpenCode",
+		"claudecode:raw": "Claude Code raw", "other": "other",
+	} {
+		if got := databaseLabel(name); got != want {
+			t.Errorf("databaseLabel(%q) = %q, want %q", name, got, want)
+		}
 	}
 }
 

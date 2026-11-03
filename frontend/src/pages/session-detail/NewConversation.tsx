@@ -20,7 +20,7 @@ import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSetti
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
-import { useMachinePlatforms, useOpencodeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
+import { useMachinePlatforms, useWorktreeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
 import { basePlatform, modelRefPlatform, qualifyModelRef } from '../../lib/modelRef';
 import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
@@ -86,7 +86,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const savedSelections = saved?.remoteId === remoteId ? saved : undefined;
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
-  const worktreesCapable = useOpencodeLaunch(remoteId);
+  const worktreesCapable = useWorktreeLaunch(remoteId);
   const eligibility = useWorktreeEligibility(directory, remoteId);
 
   const catalogKey = JSON.stringify([remoteId, directory, params.platform]);

@@ -25,7 +25,7 @@ vi.mock('../lib/api', () => ({
 }));
 const askedFor: (string | undefined)[] = [];
 vi.mock('../lib/useCapabilities', () => ({
-  useOpencodeLaunch: (remoteId?: string) => {
+  useWorktreeLaunch: (remoteId?: string) => {
     askedFor.push(remoteId);
     return remoteId !== 'gone';
   },

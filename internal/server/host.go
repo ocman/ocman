@@ -157,8 +157,9 @@ func (s *Server) hostCaps() hostsvc.HostCaps {
 		// tmux dependency. Gated separately from Tmux (#390 / AD-8).
 		// The frontend gates every managed-launch affordance (/wt, worktrees
 		// view) on this flag, so a provider runtime sets it too.
-		OpencodeLaunch: launch,
-		OpenCode:       enabled,
+		SessionLaunch: launch,
+		JudgeModel:    enabled,
+		McpConfig:     enabled,
 	}
 }
 

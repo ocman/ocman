@@ -80,10 +80,10 @@ describe('analytics sections', () => {
     useMetrics.mockReturnValue(query(metrics));
     useAnalyticsOverview.mockReturnValue(query({ inventoryScope: 'local', totalSessions: 10, subagentSessions: 2, totalProjects: 2, totalRoutines: 1, routineRunsByStatus: { done: 3 }, factoryEpicsByStatus: { active: 1 }, factoryIssuesByStatus: { done: 4 }, factoryAttemptsByPhase: { terminal: 5 }, factoryAttemptsByTerminalOutcome: { successful: 4 } }));
     useDatabaseSizes.mockReturnValue(query([
-      { database: 'ocman', sampledAt: 1_757_500_000_000, sizeBytes: 10 * 1024 * 1024 },
-      { database: 'opencode', sampledAt: 1_757_500_000_000, sizeBytes: 100 * 1024 * 1024 },
-      { database: 'opencode', sampledAt: 1_757_503_600_000, sizeBytes: 120 * 1024 * 1024 },
-      { database: 'statev2', sampledAt: 1_757_500_000_000, sizeBytes: 30 * 1024 * 1024 },
+      { database: 'ocman', label: 'ocman', sampledAt: 1_757_500_000_000, sizeBytes: 10 * 1024 * 1024 },
+      { database: 'opencode', label: 'OpenCode', sampledAt: 1_757_500_000_000, sizeBytes: 100 * 1024 * 1024 },
+      { database: 'opencode', label: 'OpenCode', sampledAt: 1_757_503_600_000, sizeBytes: 120 * 1024 * 1024 },
+      { database: 'statev2', label: 'Conversation history', sampledAt: 1_757_500_000_000, sizeBytes: 30 * 1024 * 1024 },
     ]));
     usePermissionStats.mockReturnValue(query({ eligibleRequests: 1, autoApprovedRate: 1, manualPreemptions: 0, manualPreemptionRate: 0, medianJudgmentDurationMs: 10, medianManualResponseDurationMs: 20, userDecisionCount: 1, userDecisionRate: 1, affectedSessions: 1, unresolvedEligibleRequests: 0, observedUserWaitMs: 5000, p50UserWaitMs: 5000, p95UserWaitMs: 5000, daily: [] }));
     useMetricLogs.mockImplementation(({ kind }: { kind: string }) => query({ kind, total: 0, availableAgents: [], availableModels: [], [`${kind}s`]: [] }));
@@ -104,9 +104,10 @@ describe('analytics sections', () => {
     expect(useDatabaseSizes).toHaveBeenCalledWith({ days: 30 });
     const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
     const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
-    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['OpenCode (MiB)', 'ocman (MiB)', 'Conversation history (MiB)']);
+    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['Conversation history (MiB)', 'ocman (MiB)', 'OpenCode (MiB)']);
+    expect(chart.datasets[0].data).toEqual([30, null]);
     expect(chart.datasets[1].data).toEqual([10, null]);
-    expect(chart.datasets[2].data).toEqual([30, null]);
+    expect(chart.datasets[2].data).toEqual([100, 120]);
     expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1, 1]);
     const options = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-options') ?? '{}');
     expect(Object.keys(options.scales)).toEqual(['x', 'y']);
@@ -139,16 +140,16 @@ describe('analytics sections', () => {
 
   it('plots Claude raw storage and additional platform items with chronological gaps', () => {
     useDatabaseSizes.mockReturnValue(query([
-      { database: 'claudecode:raw', sampledAt: 2000, sizeBytes: 2 * 1024 * 1024 },
-      { database: 'claudecode:index', sampledAt: 1000, sizeBytes: 1024 * 1024 },
-      { database: 'claudecode:raw', sampledAt: 1000, sizeBytes: 1024 * 1024 },
+      { database: 'claudecode:raw', label: 'Claude Code raw', sampledAt: 2000, sizeBytes: 2 * 1024 * 1024 },
+      { database: 'claudecode:index', label: 'Claude Code index', sampledAt: 1000, sizeBytes: 1024 * 1024 },
+      { database: 'claudecode:raw', label: 'Claude Code raw', sampledAt: 1000, sizeBytes: 1024 * 1024 },
     ]));
     renderTab(<OverviewTab />);
     const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
     const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
-    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['Claude raw (MiB)', 'claudecode:index (MiB)']);
-    expect(chart.datasets[0].data).toEqual([1, 2]);
-    expect(chart.datasets[1].data).toEqual([1, null]);
+    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['Claude Code index (MiB)', 'Claude Code raw (MiB)']);
+    expect(chart.datasets[0].data).toEqual([1, null]);
+    expect(chart.datasets[1].data).toEqual([1, 2]);
   });
 
   it('plots installation-wide daily hours and project-scoped chronological agent minutes', () => {
@@ -356,7 +357,7 @@ describe('analytics sections', () => {
   });
 
   it('shows a point for the first database size sample', () => {
-    useDatabaseSizes.mockReturnValue(query([{ database: 'ocman', sampledAt: 1_757_500_000_000, sizeBytes: 10 * 1024 * 1024 }]));
+    useDatabaseSizes.mockReturnValue(query([{ database: 'ocman', label: 'ocman', sampledAt: 1_757_500_000_000, sizeBytes: 10 * 1024 * 1024 }]));
     renderTab(<OverviewTab />);
     const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
     const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');

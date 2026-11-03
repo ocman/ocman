@@ -19,7 +19,7 @@ vi.mock('./lib/shortcutRegistry', () => ({
 vi.mock('./components/CommandPalette', () => ({ CommandPalette: () => null }));
 vi.mock('./components/WorktreeFormModal', () => ({ WorktreeFormModal: () => null }));
 vi.mock('./components/KeyboardShortcutsDialog', () => ({ KeyboardShortcutsDialog: () => null }));
-vi.mock('./lib/useCapabilities', () => ({ useOpencodeLaunch: () => false }));
+vi.mock('./lib/useCapabilities', () => ({ useWorktreeLaunch: () => false }));
 vi.mock('./lib/usePluginActions', () => ({
   usePluginActions: () => {
     renders.palette += 1;

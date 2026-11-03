@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import type { McpConfigStatus } from '../lib/api.types';
 import { remoteLog } from '../lib/remoteLog';
 import { readStorage, writeStorage } from '../lib/storage';
-import { useLocalOpenCode } from '../lib/useCapabilities';
+import { useHostCapability } from '../lib/useCapabilities';
 import { SubmitButton } from './Control';
 import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
 
@@ -28,19 +28,19 @@ export function McpConfigPrompt() {
   const [installing, setInstalling] = useState(false);
   const [installed, setInstalled] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The prompt writes OpenCode's config: offer it only when OpenCode runs here.
-  const openCode = useLocalOpenCode();
+  // Offer it only when this machine has an agent MCP config to write.
+  const mcpConfig = useHostCapability('mcpConfig');
 
   useEffect(() => {
-    if (!openCode) return;
+    if (!mcpConfig) return;
     let cancelled = false;
     api.getMcpConfig()
       .then((s) => { if (!cancelled) setStatus(s); })
       .catch((err) => remoteLog.error('mcp config status failed', err));
     return () => { cancelled = true; };
-  }, [openCode]);
+  }, [mcpConfig]);
 
-  if (!openCode || !status || status.configured) return null;
+  if (!mcpConfig || !status || status.configured) return null;
   // A newly required header re-prompts even where this URL was dismissed.
   const dismissKey = status.wantAuthHeader ? `${status.wantUrl} ${status.wantAuthHeader}` : status.wantUrl;
   if (installed === null && dismissedUrl === dismissKey) return null;

@@ -27,6 +27,13 @@ export type { Page };
 // Synthetic data
 // ---------------------------------------------------------------------------
 
+/** GET /api/settings/platforms' selectable platforms. */
+export const MOCK_PLATFORM_OPTIONS = [
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'claudecode', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex', setup: true },
+];
+
 export const MOCK_SESSION = {
   id: 'sess-abc123',
   platform: 'opencode',
@@ -143,8 +150,9 @@ export async function installDefaultRoutes(page: Page, factoryBeta = false) {
               worktrees: true,
               tmux: true,
               projects: true,
-              opencodeLaunch: true,
-              opencode: true,
+              sessionLaunch: true,
+              judgeModel: true,
+              mcpConfig: true,
             },
           },
         ],
@@ -575,8 +583,9 @@ export function makeCapabilitiesWithPort() {
           worktrees: true,
           tmux: true,
           projects: true,
-          opencodeLaunch: true,
-          opencode: true,
+          sessionLaunch: true,
+          judgeModel: true,
+          mcpConfig: true,
         },
       },
     ],

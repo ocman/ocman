@@ -72,7 +72,7 @@ func promptHarness(t *testing.T, fixturePath string, handler func(*liveHarness, 
 		}
 	})
 	if len(watch) == 0 || watch[0] {
-		go func() { _ = h.adapter.WatchEvents(t.Context()) }()
+		h.startWatching(t)
 	}
 	return h, got
 }

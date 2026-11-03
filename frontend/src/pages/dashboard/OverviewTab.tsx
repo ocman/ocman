@@ -20,11 +20,8 @@ const formatDatabaseSizeTime = (timestamp: number) => new Date(timestamp).toLoca
 function DatabaseSizeChart({ samples, isLoading }: { samples?: DatabaseSizeSample[]; isLoading: boolean }) {
   const timestamps = [...new Set(samples?.map((sample) => sample.sampledAt) ?? [])].sort((a, b) => a - b);
   const sizeByKey = new Map(samples?.map((sample) => [`${sample.database}:${sample.sampledAt}`, sample.sizeBytes / 1024 / 1024]) ?? []);
-  const labels: Record<string, string> = { opencode: 'OpenCode', ocman: 'ocman', statev2: 'Conversation history', 'claudecode:raw': 'Claude raw' };
-  const series = [...new Set(samples?.map((sample) => sample.database) ?? [])].sort((a, b) => {
-    const order = Object.keys(labels);
-    return (order.indexOf(a) < 0 ? order.length : order.indexOf(a)) - (order.indexOf(b) < 0 ? order.length : order.indexOf(b)) || a.localeCompare(b);
-  });
+  const labels = new Map(samples?.map((sample) => [sample.database, sample.label]) ?? []);
+  const series = [...labels.keys()].sort((a, b) => labels.get(a)!.localeCompare(labels.get(b)!) || a.localeCompare(b));
   return <>
     <div className="metrics-chart-grid">
       {isLoading && !samples ? <ChartSkeleton label="Loading database sizes" /> : (
@@ -32,7 +29,7 @@ function DatabaseSizeChart({ samples, isLoading }: { samples?: DatabaseSizeSampl
           {timestamps.length ? <Line data={{
             labels: timestamps.map(formatDatabaseSizeTime),
             datasets: series.map((name, index) => ({
-              label: `${labels[name] ?? name} (MiB)`,
+              label: `${labels.get(name)} (MiB)`,
               data: timestamps.map((timestamp) => sizeByKey.get(`${name}:${timestamp}`) ?? null),
               borderColor: CHART_COLORS[index % CHART_COLORS.length],
               backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}26`,

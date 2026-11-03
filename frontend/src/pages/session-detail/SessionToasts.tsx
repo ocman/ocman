@@ -17,7 +17,9 @@ export interface SessionToastsProps {
   tmuxAvailable: boolean;
   liveConnectionHint: boolean;
   hasDirectory: boolean;
-  launchingOpencode: boolean;
+  /** Display name of the session's platform, for the disconnected toast. */
+  platformName: string;
+  launching: boolean;
   onLaunch: () => void;
 }
 
@@ -45,7 +47,8 @@ export const SessionToasts = memo(function SessionToasts({
   tmuxAvailable,
   liveConnectionHint,
   hasDirectory,
-  launchingOpencode,
+  platformName,
+  launching,
   onLaunch,
 }: SessionToastsProps) {
   return (
@@ -105,17 +108,17 @@ export const SessionToasts = memo(function SessionToasts({
       >
         <Toast.Description className="oc-toast-description">
           <div className="oc-toast-body">
-            <span>OpenCode is not running for this session.</span>
+            <span>{platformName || 'The agent'} is not running for this session.</span>
             {tmuxAvailable && liveConnectionHint && hasDirectory && (
               <button
                 type="button"
                 className="oc-toast-action"
-                disabled={launchingOpencode}
+                disabled={launching}
                 onClick={() => {
                   setShowDisconnectedToast(false);
                   onLaunch();
                 }}
-              >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</button>
+              >{launching ? 'Launching…' : `Launch ${platformName || 'agent'}`}</button>
             )}
           </div>
         </Toast.Description>

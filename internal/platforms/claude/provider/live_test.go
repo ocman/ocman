@@ -34,11 +34,13 @@ func (c *lifecycle) get(id string) (db.SessionStatus, int64, int) {
 }
 
 type liveHarness struct {
-	adapter *provider.Adapter
-	live    *live
-	events  *lifecycle
-	args    string
-	dir     string
+	adapter      *provider.Adapter
+	live         *live
+	events       *lifecycle
+	args         string
+	dir          string
+	watchDone    chan struct{}
+	stopWatching context.CancelFunc
 }
 
 // startLive serves the provider with the fake claude replaying fixture and
@@ -46,8 +48,20 @@ type liveHarness struct {
 func startLive(t *testing.T, fixturePath string, tweak func(*Options)) *liveHarness {
 	t.Helper()
 	h := serveLive(t, fixturePath, tweak)
-	go func() { _ = h.adapter.WatchEvents(t.Context()) }()
+	h.startWatching(t)
 	return h
+}
+
+func (h *liveHarness) startWatching(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	h.stopWatching = cancel
+	h.watchDone = make(chan struct{})
+	t.Cleanup(func() { cancel(); <-h.watchDone })
+	go func() {
+		defer close(h.watchDone)
+		_ = h.adapter.WatchEvents(ctx)
+	}()
 }
 
 // serveLive is startLive without the headless stream.

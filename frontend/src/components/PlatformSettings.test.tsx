@@ -7,12 +7,20 @@ import { PlatformSettings } from './PlatformSettings';
 
 vi.mock('../lib/api.requests', () => ({ fetchJSON: vi.fn(), postJSON: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
+
+const platforms = [
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'claudecode', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex', setup: true },
+];
+const command = 'pnpm add -g @agentclientprotocol/codex-acp@2.5.0';
+const notes = ['Codex requires Node.js 22 or newer.', 'Ensure PNPM_HOME is on PATH.'];
 afterEach(() => vi.useRealTimers());
 
 it('shows adapter installation help when enabling Codex without installing anything automatically', async () => {
-  vi.mocked(fetchJSON).mockResolvedValueOnce({ enabled: ['opencode'] }).mockResolvedValue({ ready: false, installable: true, checks: [] });
+  vi.mocked(fetchJSON).mockResolvedValueOnce({ platforms, enabled: ['opencode'] }).mockResolvedValue({ ready: false, installable: true, command, notes, checks: [] });
   render(<PlatformSettings />);
-  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  const codex = await screen.findByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(codex).toBeEnabled());
   expect(screen.queryByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0')).toBeNull();
   fireEvent.click(codex);
@@ -29,12 +37,12 @@ it('shows adapter installation help when enabling Codex without installing anyth
 });
 
 it('loads saved platforms and applies a desktop selection', async () => {
-  vi.mocked(fetchJSON).mockResolvedValue({ enabled: ['opencode', 'claudecode'] });
-  vi.mocked(postJSON).mockResolvedValue({ enabled: ['claudecode'] });
+  vi.mocked(fetchJSON).mockResolvedValue({ platforms, enabled: ['opencode', 'claudecode'] });
+  vi.mocked(postJSON).mockResolvedValue({ platforms, enabled: ['claudecode'] });
   render(<PlatformSettings />);
-  const openCode = screen.getByRole('checkbox', { name: 'OpenCode' });
-  const claude = screen.getByRole('checkbox', { name: 'Claude Code' });
-  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  const openCode = await screen.findByRole('checkbox', { name: 'OpenCode' });
+  const claude = await screen.findByRole('checkbox', { name: 'Claude Code' });
+  const codex = await screen.findByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(openCode).toBeEnabled());
   expect(openCode).toBeChecked();
   expect(claude).toBeChecked();
@@ -52,9 +60,9 @@ it('loads saved platforms and applies a desktop selection', async () => {
 });
 
 it('enables Codex immediately when dependencies are already available', async () => {
-  vi.mocked(fetchJSON).mockResolvedValueOnce({ enabled: ['opencode'] }).mockResolvedValue({ ready: true });
+  vi.mocked(fetchJSON).mockResolvedValueOnce({ platforms, enabled: ['opencode'] }).mockResolvedValue({ ready: true });
   render(<PlatformSettings />);
-  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  const codex = await screen.findByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(codex).toBeEnabled());
   fireEvent.click(codex);
   await waitFor(() => expect(codex).toBeChecked());
@@ -65,10 +73,10 @@ it('enables Codex immediately when dependencies are already available', async ()
 });
 
 it('installs explicitly, checks again and revalidates on close before selecting Codex', async () => {
-  vi.mocked(fetchJSON).mockResolvedValueOnce({ enabled: ['opencode'] }).mockResolvedValue({ ready: false, installable: true, checks: [{ id: 'adapter', label: 'Adapter', ok: false, detail: 'Missing', hint: 'Install it' }] });
+  vi.mocked(fetchJSON).mockResolvedValueOnce({ platforms, enabled: ['opencode'] }).mockResolvedValue({ ready: false, installable: true, checks: [{ id: 'adapter', label: 'Adapter', ok: false, detail: 'Missing', hint: 'Install it' }] });
   vi.mocked(postJSON).mockResolvedValue({ ready: true, installable: true, checks: [] });
   render(<PlatformSettings />);
-  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  const codex = await screen.findByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(codex).toBeEnabled());
   fireEvent.click(codex);
   fireEvent.click(await screen.findByRole('button', { name: 'Install' }));
@@ -84,9 +92,9 @@ it('installs explicitly, checks again and revalidates on close before selecting 
 });
 
 it('fails closed on check and installation errors, including Escape dismissal', async () => {
-  vi.mocked(fetchJSON).mockResolvedValueOnce({ enabled: ['opencode'] }).mockRejectedValue(new Error('check offline'));
+  vi.mocked(fetchJSON).mockResolvedValueOnce({ platforms, enabled: ['opencode'] }).mockRejectedValue(new Error('check offline'));
   render(<PlatformSettings />);
-  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  const codex = await screen.findByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(codex).toBeEnabled());
   fireEvent.click(codex);
   expect(await screen.findByRole('alert')).toHaveTextContent('check offline');
@@ -108,11 +116,11 @@ it('fails closed on check and installation errors, including Escape dismissal', 
 });
 
 it('does not trust an earlier successful check when dependencies disappear before close', async () => {
-  vi.mocked(fetchJSON).mockResolvedValueOnce({ enabled: ['opencode'] }).mockRejectedValueOnce('offline')
+  vi.mocked(fetchJSON).mockResolvedValueOnce({ platforms, enabled: ['opencode'] }).mockRejectedValueOnce('offline')
     .mockResolvedValueOnce({ ready: true, installable: false, checks: [] })
     .mockResolvedValue({ ready: false, installable: false, checks: [] });
   render(<PlatformSettings />);
-  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  const codex = await screen.findByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(codex).toBeEnabled());
   fireEvent.click(codex);
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not check Codex dependencies');
@@ -124,11 +132,11 @@ it('does not trust an earlier successful check when dependencies disappear befor
 });
 
 it('blocks saving, closing and duplicate installs while an installation is pending', async () => {
-  vi.mocked(fetchJSON).mockResolvedValueOnce({ enabled: ['opencode'] }).mockResolvedValue({ ready: false, installable: true, checks: [] });
+  vi.mocked(fetchJSON).mockResolvedValueOnce({ platforms, enabled: ['opencode'] }).mockResolvedValue({ ready: false, installable: true, checks: [] });
   let finish!: (value: unknown) => void;
   vi.mocked(postJSON).mockReturnValue(new Promise(resolve => { finish = resolve; }));
   render(<PlatformSettings />);
-  const codex = screen.getByRole('checkbox', { name: 'Codex' });
+  const codex = await screen.findByRole('checkbox', { name: 'Codex' });
   await waitFor(() => expect(codex).toBeEnabled());
   fireEvent.click(codex);
   const install = await screen.findByRole('button', { name: 'Install' });
@@ -145,8 +153,8 @@ it('blocks saving, closing and duplicate installs while an installation is pendi
 
 it('waits for backend reload and tolerates its brief reconnect gap', async () => {
   vi.useFakeTimers();
-  vi.mocked(fetchJSON).mockResolvedValue({ enabled: ['opencode', 'claudecode'] });
-  vi.mocked(postJSON).mockResolvedValue({ enabled: ['claudecode'], reloadPending: true });
+  vi.mocked(fetchJSON).mockResolvedValue({ platforms, enabled: ['opencode', 'claudecode'] });
+  vi.mocked(postJSON).mockResolvedValue({ platforms, enabled: ['claudecode'], reloadPending: true });
   render(<PlatformSettings />);
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   fireEvent.click(screen.getByRole('checkbox', { name: 'OpenCode' }));
@@ -156,13 +164,13 @@ it('waits for backend reload and tolerates its brief reconnect gap', async () =>
   vi.mocked(fetchJSON).mockRejectedValueOnce(new Error('reconnecting'));
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(screen.getByRole('status')).toHaveTextContent('Applying after active turns');
-  vi.mocked(fetchJSON).mockResolvedValue({ enabled: ['claudecode'], reloadPending: false });
+  vi.mocked(fetchJSON).mockResolvedValue({ platforms, enabled: ['claudecode'], reloadPending: false });
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(screen.getByRole('status')).toHaveTextContent('Platform changes applied');
 });
 
 it('explains an explicit CLI override and disables the toggles', async () => {
-  vi.mocked(fetchJSON).mockResolvedValue({ enabled: ['opencode'], overridden: true });
+  vi.mocked(fetchJSON).mockResolvedValue({ platforms, enabled: ['opencode'], overridden: true });
   render(<PlatformSettings />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Remove the explicit -platforms flag');
   expect(screen.getByRole('checkbox', { name: 'OpenCode' })).toBeDisabled();
@@ -177,10 +185,10 @@ it.each([new Error('load failed'), 'offline'])('reports load failures without en
 });
 
 it.each([new Error('save failed'), 'offline'])('preserves the selection when saving fails: %s', async (error) => {
-  vi.mocked(fetchJSON).mockResolvedValue({ enabled: ['opencode', 'claudecode'] });
+  vi.mocked(fetchJSON).mockResolvedValue({ platforms, enabled: ['opencode', 'claudecode'] });
   vi.mocked(postJSON).mockRejectedValue(error);
   render(<PlatformSettings />);
-  const openCode = screen.getByRole('checkbox', { name: 'OpenCode' });
+  const openCode = await screen.findByRole('checkbox', { name: 'OpenCode' });
   await waitFor(() => expect(openCode).toBeEnabled());
   fireEvent.click(openCode);
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));

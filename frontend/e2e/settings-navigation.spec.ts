@@ -1,7 +1,7 @@
-import { test, expect } from './fixtures';
+import { test, expect, MOCK_PLATFORM_OPTIONS } from './fixtures';
 
 test('seven settings categories contain named sections and keep legacy links working', async ({ mockedPage: page }) => {
-  await page.route('/api/settings/platforms', (route) => route.fulfill({ json: { enabled: ['opencode', 'claudecode'] } }));
+  await page.route('/api/settings/platforms', (route) => route.fulfill({ json: { platforms: MOCK_PLATFORM_OPTIONS, enabled: ['opencode', 'claudecode'] } }));
   await page.route('/api/settings/model-fallthrough', (route) => route.fulfill({ json: { patienceMinutes: 15, fallbackMinutes: 60 } }));
   await page.route('/api/settings/judge-endpoint', (route) => route.fulfill({ json: { format: '', endpoint: '', model: '', minSafeProbability: .99, apiKeySet: false } }));
   await page.setViewportSize({ width: 1280, height: 1200 });
@@ -51,7 +51,7 @@ for (const width of [1280, 390]) {
     let enabled = ['opencode', 'claudecode'];
     await page.route('/api/settings/platforms', (route) => {
       if (route.request().method() === 'POST') enabled = route.request().postDataJSON().enabled;
-      return route.fulfill({ json: { enabled } });
+      return route.fulfill({ json: { platforms: MOCK_PLATFORM_OPTIONS, enabled } });
     });
     const openPlatforms = async () => {
       await page.goto('/settings');

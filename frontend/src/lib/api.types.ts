@@ -953,6 +953,8 @@ export interface AnalyticsOverview {
 
 export interface DatabaseSizeSample {
   database: string;
+  /** Display name of the sampled database. */
+  label: string;
   sampledAt: number;
   sizeBytes: number;
 }
@@ -1198,12 +1200,14 @@ export interface HostCapabilities {
   tmux: boolean;
   projects: boolean;
   /**
-   * Host can launch a managed OpenCode instance (its runtime is usable).
-   * Distinct from `tmux`: a future container runtime launches without
-   * tmux. Launch affordances gate on this, not on `tmux` (AD-8, #393).
+   * Host can launch a managed agent runtime for a new session. Distinct
+   * from `tmux`: a future container runtime launches without tmux (AD-8,
+   * #393). `worktrees` already includes it for worktree launches.
    */
-  opencodeLaunch: boolean;
-  opencode?: boolean;
+  sessionLaunch: boolean;
+  /** Host-local settings that exist only while a platform provides them (FR-1). */
+  judgeModel: boolean;
+  mcpConfig: boolean;
 }
 
 /** One machine's host capabilities, grouped under its host identity. */

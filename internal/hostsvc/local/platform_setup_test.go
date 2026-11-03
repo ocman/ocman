@@ -35,6 +35,9 @@ func TestPlatformSetup(t *testing.T) {
 			if err != nil || status.Ready || status.Installable != valid {
 				t.Fatalf("status=%+v err=%v", status, err)
 			}
+			if status.Command != "pnpm add -g "+adapterPackage || len(status.Notes) == 0 {
+				t.Fatalf("setup instructions missing: %+v", status)
+			}
 			writeSetupBin(t, dir, "codex-acp", "exit 0")
 			status, err = h.CheckPlatformSetup(t.Context(), "codex")
 			if err != nil || status.Ready != valid {

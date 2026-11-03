@@ -272,7 +272,7 @@ func TestLocalHost_CreateWorktreeSession(t *testing.T) {
 	if gotPort != "4242" {
 		t.Errorf("CreateSession port = %q; want ensured port 4242", gotPort)
 	}
-	for _, step := range []string{hostsvc.StepOpencode, hostsvc.StepWorktree, hostsvc.StepSession} {
+	for _, step := range []string{hostsvc.StepPlatform, hostsvc.StepWorktree, hostsvc.StepSession} {
 		if strings.Join(got[step], ",") != "active,done" {
 			t.Errorf("%s = %v, want active,done", step, got[step])
 		}

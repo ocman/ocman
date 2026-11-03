@@ -44,6 +44,7 @@ func TestSettings(t *testing.T) {
 		}
 	}
 	request("GET", "", 200, `"enabled":["opencode","claudecode"]`)
+	request("GET", "", 200, `"platforms":[{"id":"opencode","label":"OpenCode"},{"id":"claudecode","label":"Claude Code"},{"id":"codex","label":"Codex","setup":true}]`)
 	for _, body := range []string{`{}`, `{"enabled":[]}`, `{"enabled":["unknown"]}`, `{"enabled":["opencode","opencode"]}`, `invalid`} {
 		request("POST", body, 400, "")
 	}

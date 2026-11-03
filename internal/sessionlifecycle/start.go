@@ -80,7 +80,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Progress does not cross gRPC; the hub reports the remote call's steps.
 		remoteHost := remoteID != "local"
 		if remoteHost {
-			hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
+			hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepActive)
 			hostsvc.ReportProgress(ctx, hostsvc.StepWorktree, hostsvc.StepActive)
 		}
 		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
@@ -89,7 +89,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 			PermissionRules: permissionRules,
 		})
 		if remoteHost {
-			hostsvc.FinishStep(ctx, hostsvc.StepOpencode, err)
+			hostsvc.FinishStep(ctx, hostsvc.StepPlatform, err)
 			hostsvc.FinishStep(ctx, hostsvc.StepWorktree, err)
 		}
 		if err != nil {
@@ -103,13 +103,13 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 			writeSessionError(w, "creating session", err)
 			return
 		}
-		hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
+		hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepActive)
 		_, port, ok := m.EnsureProjectForCreate(w, r, resolved, req.Directory)
 		if !ok {
-			hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepError)
+			hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepError)
 			return
 		}
-		hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepDone)
+		hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepDone)
 		hostsvc.ReportProgress(ctx, hostsvc.StepSession, hostsvc.StepActive)
 		resp, err := m.d.Sessions().CreateConfigured(ctx, resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port}, permissionRules)
 		hostsvc.FinishStep(ctx, hostsvc.StepSession, err)

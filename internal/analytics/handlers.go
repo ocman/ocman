@@ -2,10 +2,12 @@ package analytics
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 	"github.com/ocman/ocman/internal/state"
 )
@@ -79,7 +81,7 @@ func (m *Module) handleAnalyticsOverview(w http.ResponseWriter, r *http.Request)
 
 func (m *Module) handleDatabaseSizes(w http.ResponseWriter, r *http.Request) {
 	if m.deps.Store == nil {
-		httpx.WriteJSON(w, []state.DatabaseSizeSample{})
+		httpx.WriteJSON(w, []DatabaseSizeSample{})
 		return
 	}
 	samples, err := m.deps.Store.DatabaseSizeSamples(r.Context(), sinceParam(r))
@@ -87,8 +89,32 @@ func (m *Module) handleDatabaseSizes(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "fetching database size samples", err)
 		return
 	}
-	if samples == nil {
-		samples = []state.DatabaseSizeSample{}
+	out := make([]DatabaseSizeSample, 0, len(samples))
+	for _, sample := range samples {
+		out = append(out, DatabaseSizeSample{DatabaseSizeSample: sample, Label: databaseLabel(sample.Database)})
 	}
-	httpx.WriteJSON(w, samples)
+	httpx.WriteJSON(w, out)
+}
+
+// DatabaseSizeSample is a size sample with its chart label.
+type DatabaseSizeSample struct {
+	state.DatabaseSizeSample
+	Label string `json:"label"`
+}
+
+// databaseLabel names a sampled database: ocman's own stores, or a
+// platform's storage item ("<platform>[:<kind>]").
+func databaseLabel(name string) string {
+	switch name {
+	case "ocman":
+		return "ocman"
+	case "statev2":
+		return "Conversation history"
+	}
+	base, kind, _ := strings.Cut(name, ":")
+	label := platforms.DisplayName(platforms.ID(base))
+	if kind != "" {
+		label += " " + kind
+	}
+	return label
 }

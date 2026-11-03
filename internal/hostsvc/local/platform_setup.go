@@ -44,7 +44,14 @@ func (h *Host) CheckPlatformSetup(ctx context.Context, id string) (hostsvc.Platf
 	}
 	return hostsvc.PlatformSetup{Ready: checks[0].OK && checks[1].OK && checks[2].OK,
 		Installable: checks[0].OK && checks[1].OK && checks[3].OK,
-		Command:     "pnpm add -g " + adapterPackage, Checks: checks}, nil
+		Command:     "pnpm add -g " + adapterPackage, Notes: codexSetupNotes, Checks: checks}, nil
+}
+
+var codexSetupNotes = []string{
+	"Codex requires the Codex CLI, Node.js 22 or newer and the Codex ACP adapter on the machine running Ocman.",
+	"Install runs the command below as Ocman's user on that machine. It does not install Node.js, pnpm or the Codex CLI.",
+	"If pnpm has no global bin directory, run pnpm setup and reopen your terminal. Ensure PNPM_HOME is on Ocman's PATH. Restart Ocman if its PATH changed.",
+	"Sign in separately with codex login. This check verifies dependencies, not your login.",
 }
 
 func (h *Host) InstallPlatformSetup(ctx context.Context, id string) (hostsvc.PlatformSetup, error) {

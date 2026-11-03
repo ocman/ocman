@@ -19,7 +19,7 @@ func TestMCPCreateSessionProductionProbeFailure(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	srv, reg := newSessionsTestServer(t)
 	srv.hostRouter = hostsvc.NewRouter(local.New(local.Deps{Caps: func() hostsvc.HostCaps {
-		return hostsvc.HostCaps{OpencodeLaunch: true}
+		return hostsvc.HostCaps{SessionLaunch: true}
 	}}))
 	created := false
 	reg.Register(&fakePlatform{PlatformID: "opencode", CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {

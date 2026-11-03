@@ -134,7 +134,7 @@ func mcpCallerModel(detail *platforms.SessionDetail) string {
 
 // Match the composer's eligibility rules, including manually created worktrees.
 func mcpWorktreeEligible(ctx context.Context, host hostsvc.Host, dir string) (bool, error) {
-	if !host.Capabilities().OpencodeLaunch {
+	if !host.Capabilities().SessionLaunch {
 		return false, nil
 	}
 	trees, err := host.ListWorktrees(ctx, dir)

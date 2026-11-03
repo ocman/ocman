@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect, MOCK_PLATFORM_OPTIONS } from './fixtures';
 
 for (const width of [1280, 390]) {
   test(`setup controls dismiss optional warnings and recover from required failures at ${width}px`, async ({ mockedPage: page }) => {
@@ -31,7 +31,7 @@ for (const width of [1280, 390]) {
     let checks = 0;
     await page.route('/api/settings/platforms/codex/setup', route => {
       checks++;
-      return route.fulfill({ json: { ready, installable: true, checks: [{ id: 'codex-acp', label: 'Codex ACP adapter', ok: ready, detail: 'Not installed', hint: 'Install the adapter.' }] } });
+      return route.fulfill({ json: { ready, installable: true, command: 'pnpm add -g @agentclientprotocol/codex-acp@2.5.0', notes: ['Codex requires the Codex CLI, Node.js 22 or newer and the Codex ACP adapter.'], checks: [{ id: 'codex-acp', label: 'Codex ACP adapter', ok: ready, detail: 'Not installed', hint: 'Install the adapter.' }] } });
     });
     await page.route('/api/settings/platforms/codex/install', route => {
       ready = true;
@@ -39,7 +39,7 @@ for (const width of [1280, 390]) {
     });
     await page.route('/api/settings/platforms', async route => {
       if (route.request().method() === 'POST') enabled = route.request().postDataJSON().enabled;
-      await route.fulfill({ json: { enabled } });
+      await route.fulfill({ json: { platforms: MOCK_PLATFORM_OPTIONS, enabled } });
     });
     await page.goto('/settings?tab=platforms');
     const codex = page.getByRole('checkbox', { name: 'Codex', exact: true });
@@ -48,7 +48,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('dialog', { name: 'Set up Codex' })).toBeVisible();
     await expect(codex).not.toBeChecked();
     await expect(page.getByText('pnpm add -g @agentclientprotocol/codex-acp@2.5.0', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Copy adapter install command' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy install command' })).toBeVisible();
     await expect(page.getByText(/Node.js 22/)).toBeVisible();
     await page.getByRole('button', { name: 'Check again', exact: true }).click();
     await page.getByRole('button', { name: 'Close', exact: true }).click();

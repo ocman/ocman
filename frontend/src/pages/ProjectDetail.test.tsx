@@ -40,7 +40,7 @@ beforeEach(() => {
   merging.missingTarget = false;
   history.sessions = history.sessions.filter(s => !s.id.startsWith('unrelated-'));
 });
-vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => true }));
+vi.mock('../lib/useCapabilities', () => ({ useWorktreeLaunch: () => true }));
 vi.mock('../components/SessionTable', () => ({
   SessionTable: ({ sessions }: { sessions: { id: string; title: string }[] }) => (
     <ul>{sessions.map((s) => <li key={s.id}>{s.title}</li>)}</ul>

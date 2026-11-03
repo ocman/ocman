@@ -17,7 +17,7 @@ const store = vi.hoisted(() => ({
   setPromptSectionsApi: vi.fn().mockResolvedValue(undefined),
 }));
 const openCode = vi.hoisted(() => ({ value: true }));
-vi.mock('../../lib/useCapabilities', () => ({ useLocalOpenCode: () => openCode.value }));
+vi.mock('../../lib/useCapabilities', () => ({ useHostCapability: () => openCode.value }));
 
 vi.mock('../../lib/uiStore', () => ({
   useUiStore: (selector: (state: Record<string, unknown>) => unknown) => selector({

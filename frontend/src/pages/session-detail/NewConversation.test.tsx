@@ -45,7 +45,7 @@ vi.mock('../../lib/uiStore', () => ({
 }));
 vi.mock('../../lib/useCapabilities', () => ({
   useCapabilities: () => ({ platforms: [{ id: 'r-machine:opencode', displayName: 'OpenCode' }] }),
-  useOpencodeLaunch: () => true,
+  useWorktreeLaunch: () => true,
   usePlatformCapabilities: () => mocks.caps,
   useMachinePlatforms: (remoteId: string) => ['opencode', 'claudecode'].map((base) => ({ id: remoteId === 'local' ? base : `r-${remoteId}:${base}` })),
 }));
@@ -572,20 +572,20 @@ describe('NewConversation', () => {
     act(() => {
       for (const cb of mocks.progress) {
         cb('someone-else', 'session', 'active');
-        cb(startId, 'opencode', 'active');
+        cb(startId, 'platform', 'active');
         cb(startId, 'worktree', 'active');
         cb(startId, 'worktree', 'done');
       }
     });
     // Parallel steps render together, in a fixed order.
-    expect(screen.getByTestId('start-step-opencode')).toHaveTextContent('Launching OpenCode');
+    expect(screen.getByTestId('start-step-platform')).toHaveTextContent('Launching OpenCode');
     expect(screen.getByTestId('start-step-worktree')).toHaveTextContent('Worktree ready');
     expect(screen.queryByTestId('start-step-session')).not.toBeInTheDocument();
     await act(async () => { finish({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/wt', firstMessageSent: true }); await sent; });
     expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
     expect(mocks.progress.size).toBe(0);
     // The session view keeps showing them until the first message arrives.
-    expect(startHandoffs.get('child')).toEqual({ prompt: 'Fix login', steps: { opencode: 'active', worktree: 'done' } });
+    expect(startHandoffs.get('child')).toEqual({ prompt: 'Fix login', steps: { platform: 'active', worktree: 'done' } });
   });
 
   it.each([false, true])('closes a draft with /archive without starting a session, another draft: %s', async (another) => {

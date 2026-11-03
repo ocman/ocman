@@ -116,7 +116,7 @@ func validate(enabled []string) error {
 		return fmt.Errorf("enable at least one platform")
 	}
 	for i, id := range enabled {
-		if id != "opencode" && id != "claudecode" && id != "codex" {
+		if _, ok := option(id); !ok {
 			return fmt.Errorf("unknown platform %q", id)
 		}
 		if slices.Contains(enabled[:i], id) {
@@ -184,5 +184,5 @@ func (m *Module) settings(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "reading platform settings", err)
 		return
 	}
-	httpx.WriteJSON(w, map[string]any{"enabled": enabled, "reloadPending": m.pending || m.recoveryPending, "overridden": m.overridden})
+	httpx.WriteJSON(w, map[string]any{"enabled": enabled, "reloadPending": m.pending || m.recoveryPending, "overridden": m.overridden, "platforms": Options()})
 }

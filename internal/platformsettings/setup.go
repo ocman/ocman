@@ -10,7 +10,7 @@ func (m *Module) checkSetup(w http.ResponseWriter, r *http.Request)   { m.platfo
 func (m *Module) installSetup(w http.ResponseWriter, r *http.Request) { m.platformSetup(w, r, true) }
 
 func (m *Module) platformSetup(w http.ResponseWriter, r *http.Request, install bool) {
-	if r.PathValue("platform") != "codex" {
+	if o, ok := option(r.PathValue("platform")); !ok || !o.Setup {
 		http.Error(w, "unsupported platform setup", http.StatusBadRequest)
 		return
 	}

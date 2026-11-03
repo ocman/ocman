@@ -13,7 +13,7 @@ describe('new-session handoff', () => {
     useApiStore.getState().seedNewSession('child', '/repo', 'opencode');
     const cached = useApiStore.getState().sessionCache.get('child')!;
     const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
-    startHandoffs.set('child', { prompt: 'Fix login', images, steps: { opencode: 'done', session: 'done', prompt: 'done' } });
+    startHandoffs.set('child', { prompt: 'Fix login', images, steps: { platform: 'done', session: 'done', prompt: 'done' } });
     renderSessionPage({
       sessionId: 'child',
       realAssistantThread: true,

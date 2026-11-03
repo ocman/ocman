@@ -6,10 +6,27 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
+// Platform identity stays in the backend: the frontend reads capabilities
+// and per-platform metadata (display names, setup flags) instead.
+const platformIds = '/^(opencode|claudecode|codex)(:|$)/'
 const platformRestrictions = [{
   selector: 'BinaryExpression[operator=/^(===|!==)$/]:matches([left.property.name="platform"], [left.expression.property.name="platform"])[right.type="Literal"][right.raw=/^[\x27\x22]/]',
   message: 'Gate behavior through capabilities, not platform identity.',
+}, {
+  selector: 'BinaryExpression[operator=/^(===|!==)$/]:matches([right.property.name="platform"], [right.expression.property.name="platform"])[left.type="Literal"][left.raw=/^[\x27\x22]/]',
+  message: 'Gate behavior through capabilities, not platform identity.',
+}, {
+  selector: 'SwitchStatement:matches([discriminant.property.name="platform"], [discriminant.name="platform"]) > SwitchCase[test.type="Literal"]',
+  message: 'Gate behavior through capabilities, not platform identity.',
+}, {
+  selector: `Literal[value=${platformIds}]`,
+  message: 'Do not name platforms in the frontend; use capabilities or backend platform metadata.',
+}, {
+  selector: `Property[key.name=${platformIds}]`,
+  message: 'Do not key data by platform id in the frontend; use capabilities or backend platform metadata.',
 }]
+// Shared test scaffolding outside *.test files.
+const testHelpers = ['src/test/**', 'src/**/__tests__/**']
 const settingsRestrictions = [{
   selector: 'JSXAttribute[name.name="className"][value.type="Literal"][value.value=/^settings-row(\\s|$)/]',
   message: 'Use SettingRow, SettingToggle or SettingNumber so settings retain save feedback.',
@@ -89,12 +106,12 @@ export default defineConfig([
   ]),
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['**/*.{test,spec}.{ts,tsx}'],
+    ignores: ['**/*.{test,spec}.{ts,tsx}', ...testHelpers],
     rules: { 'no-restricted-syntax': ['error', ...platformRestrictions] },
   },
   {
     files: ['src/**/*.tsx'],
-    ignores: ['**/*.{test,spec}.tsx', 'src/components/SettingRow.tsx'],
+    ignores: ['**/*.{test,spec}.tsx', ...testHelpers, 'src/components/SettingRow.tsx'],
     rules: { 'no-restricted-syntax': ['error', ...platformRestrictions, ...settingsRestrictions] },
   },
   {
@@ -139,6 +156,7 @@ export default defineConfig([
     files: ['src/**/*.tsx'],
     ignores: [
       '**/*.{test,spec}.tsx',
+      ...testHelpers,
       ...sharedControlFiles,
       ...rawControlAllowlist,
     ],

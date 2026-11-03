@@ -117,7 +117,7 @@ func TestProjectsIndexMergesPlatformDirectories(t *testing.T) {
 		p.TotalTokensIn != 5 || p.TotalTokensOut != 3 || p.TotalCost != 0.5 {
 		t.Fatalf("project = %+v", p)
 	}
-	if caps := srv.hostCaps(); !caps.Projects || caps.OpenCode {
+	if caps := srv.hostCaps(); !caps.Projects || caps.JudgeModel || caps.McpConfig {
 		t.Fatalf("host caps = %+v", caps)
 	}
 }

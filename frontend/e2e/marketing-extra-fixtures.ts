@@ -73,7 +73,7 @@ export async function installAnalyticsDemo(page: Page) {
     factoryAttemptsByPhase: {}, factoryAttemptsByTerminalOutcome: {},
   } }));
   await page.route('/api/analytics/database-sizes*', route => route.fulfill({ json: Array.from({ length: 14 }, (_, index) => [
-    { database: 'ocman', sampledAt: Date.UTC(2026, 9, index + 7), sizeBytes: (8 + index * 0.3) * 1024 * 1024 },
-    { database: 'statev2', sampledAt: Date.UTC(2026, 9, index + 7), sizeBytes: (24 + index * 2) * 1024 * 1024 },
+    { database: 'ocman', label: 'ocman', sampledAt: Date.UTC(2026, 9, index + 7), sizeBytes: (8 + index * 0.3) * 1024 * 1024 },
+    { database: 'statev2', label: 'Conversation history', sampledAt: Date.UTC(2026, 9, index + 7), sizeBytes: (24 + index * 2) * 1024 * 1024 },
   ]).flat() }));
 }

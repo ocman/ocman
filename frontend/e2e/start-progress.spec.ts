@@ -11,7 +11,7 @@ test('new-session launch checklist keeps its rows close together', async ({ mock
     Object.assign(window, {
       emitStartProgress: (startId: string) => {
         for (const source of MockEventSource.sources) {
-          for (const [step, state] of [['opencode', 'done'], ['worktree', 'done'], ['session', 'done'], ['prompt', 'active']]) {
+          for (const [step, state] of [['platform', 'done'], ['worktree', 'done'], ['session', 'done'], ['prompt', 'active']]) {
             source.dispatchEvent(new MessageEvent('ocman.session.start.progress', {
               data: JSON.stringify({ startId, step, state }),
             }));

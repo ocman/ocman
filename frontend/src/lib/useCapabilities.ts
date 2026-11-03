@@ -7,7 +7,7 @@ import { onSseConnect } from './useGlobalEvents';
 // How often a mounted consumer waiting on an absent host re-asks the
 // backend, so a remote that connects later appears without a reload.
 const HOST_MISS_RETRY_MS = 10_000;
-import { api, type CapabilitiesResponse, type PlatformCapabilities, type PlatformCapabilityEntry } from './api';
+import { api, type CapabilitiesResponse, type HostCapabilities, type PlatformCapabilities, type PlatformCapabilityEntry } from './api';
 
 /**
  * Empty capabilities used as a safe default before /api/capabilities
@@ -109,6 +109,11 @@ export function usePlatformCapabilities(platformID: string | undefined): Platfor
   return entry?.capabilities ?? EMPTY_CAPS;
 }
 
+/** The display name of a registered platform, or '' while unknown. */
+export function usePlatformName(platformID: string | undefined): string {
+  return useCapabilities()?.platforms.find((entry) => entry.id === platformID)?.displayName ?? '';
+}
+
 /**
  * Returns true when more than one platform is registered. Components
  * that display platform badges can use this to hide themselves when
@@ -128,22 +133,18 @@ export function useMultiPlatform(): boolean {
   return bases.size > 1;
 }
 
+/** Boolean host capability flags (see HostCapabilities). */
+export type HostCapabilityFlag = { [K in keyof HostCapabilities]-?: HostCapabilities[K] extends boolean ? K : never }[keyof HostCapabilities];
+
 /**
- * Returns true when the local host can launch a managed OpenCode
- * instance (opencode + a usable runtime). Distinct from the tmux
- * capability so a future tmux-less (container) host still offers
- * launch. Launch affordances (/wt, worktree launch, new-session-into-
- * project) gate on this; the tmux-session UI keeps gating on tmux
- * (AD-8, #393).
- *
- * Reads the local host entry ("local"); falls back to the first host
- * when that id isn't present (defensive). Pass `remoteId` to ask about a
- * specific owner instead: a remote that isn't connected reports false
- * (fail closed) rather than borrowing the local host's answer. False
- * during the initial load — same conservative default as every other
- * capability flag.
+ * Returns one host capability flag. Reads the local host entry ("local");
+ * falls back to the first host when that id isn't present (defensive).
+ * Pass `remoteId` to ask about a specific owner instead: a remote that
+ * isn't connected reports false (fail closed) rather than borrowing the
+ * local host's answer. False during the initial load — same conservative
+ * default as every other capability flag.
  */
-export function useOpencodeLaunch(remoteId?: string): boolean {
+export function useHostCapability(flag: HostCapabilityFlag, remoteId?: string): boolean {
   const all = useCapabilitiesQuery(remoteId).data;
   const hosts = all?.hosts ?? [];
   const named = !!remoteId && remoteId !== 'local';
@@ -158,13 +159,17 @@ export function useOpencodeLaunch(remoteId?: string): boolean {
     if (!missing) return;
     invalidateAndReload();
   }, [missing, remoteId]);
-  return host?.capabilities.opencodeLaunch === true;
+  return host?.capabilities[flag] === true;
 }
 
-/** Whether this machine runs OpenCode; gates OpenCode-only settings (FR-1). */
-export function useLocalOpenCode(): boolean {
-  const hosts = useCapabilities()?.hosts ?? [];
-  return (hosts.find((h) => h.remoteId === 'local') ?? hosts[0])?.capabilities.opencode === true;
+/**
+ * Returns true when the host can launch a session into a new worktree
+ * (git plus a usable managed runtime). Launch affordances (/wt, worktree
+ * launch, the worktrees view) gate on this; the tmux-session UI keeps
+ * gating on tmux (AD-8, #393).
+ */
+export function useWorktreeLaunch(remoteId?: string): boolean {
+  return useHostCapability('worktrees', remoteId);
 }
 
 /**

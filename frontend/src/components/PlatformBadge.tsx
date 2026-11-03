@@ -9,11 +9,13 @@ import { Tooltip } from './Tooltip';
  * itself — new adapters just need to register in the backend, and the
  * frontend renders something sensible automatically.
  */
+/* eslint-disable no-restricted-syntax -- icons are bundled frontend assets keyed by platform id */
 const META: Record<string, { label: string; short: string; icon: string }> = {
   opencode: { label: 'OpenCode', short: 'OC', icon: '/platform-opencode.svg' },
   claudecode: { label: 'Claude Code', short: 'CC', icon: '/platform-claudecode.svg' },
   codex: { label: 'Codex', short: 'CX', icon: '/platform-codex.svg' },
 };
+/* eslint-enable no-restricted-syntax */
 
 export function PlatformLogo({ platform }: { platform: string }) {
   const meta = META[basePlatform(platform)];

@@ -11,10 +11,11 @@ function renderMenu(over: Partial<SessionActionsMenuProps> = {}) {
     tmuxAvailable: true,
     portAvailable: false,
     liveConnectionHint: 'Start opencode',
-    launchingOpencode: false,
+    platformName: 'OpenCode',
+    launching: false,
     onNewSession: vi.fn(),
     onShare: vi.fn(),
-    onLaunchOpencode: vi.fn(),
+    onLaunch: vi.fn(),
     ...over,
   };
   render(<SessionActionsMenu {...props} />);
@@ -37,7 +38,7 @@ describe('SessionActionsMenu', () => {
     for (const [name, callback] of [
       ['New session', props.onNewSession],
       ['Share link…', props.onShare],
-      ['Launch opencode', props.onLaunchOpencode],
+      ['Launch OpenCode', props.onLaunch],
     ] as const) {
       openMenu();
       fireEvent.click(screen.getByRole('menuitem', { name }));
@@ -63,16 +64,22 @@ describe('SessionActionsMenu', () => {
   ])('hides unavailable launch action: %j', (over) => {
     renderMenu(over);
     openMenu();
-    expect(screen.queryByRole('menuitem', { name: 'Launch opencode' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Launch OpenCode' })).toBeNull();
+  });
+
+  it('names a generic agent before the platform name is known', () => {
+    renderMenu({ platformName: '' });
+    openMenu();
+    expect(screen.getByRole('menuitem', { name: 'Launch agent' })).toHaveAttribute('title', 'Start the managed agent server');
   });
 
   it('does not dispatch the disabled launching item', () => {
-    const props = renderMenu({ launchingOpencode: true });
+    const props = renderMenu({ launching: true });
     openMenu();
     const item = screen.getByRole('menuitem', { name: 'Launching…' });
     expect(item).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(item);
-    expect(props.onLaunchOpencode).not.toHaveBeenCalled();
+    expect(props.onLaunch).not.toHaveBeenCalled();
     expect(screen.getByRole('menu')).toBeInTheDocument();
   });
 

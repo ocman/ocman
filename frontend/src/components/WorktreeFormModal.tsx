@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { useProjects } from '../lib/queries';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
-import { useOpencodeLaunch } from '../lib/useCapabilities';
+import { useWorktreeLaunch } from '../lib/useCapabilities';
 import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
 import { ModalFooter } from './ModalFooter';
@@ -52,7 +52,7 @@ export function WorktreeFormModal() {
   const parentSessionId = useUiStore((s) => s.worktreeFormParentSessionId);
   const remoteId = useUiStore((s) => s.worktreeFormRemoteId);
   const close = useUiStore((s) => s.closeWorktreeForm);
-  const allowed = useOpencodeLaunch(remoteId);
+  const allowed = useWorktreeLaunch(remoteId);
 
   if (!open) return null;
 

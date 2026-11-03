@@ -6,13 +6,15 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 export interface SessionActionsMenuProps {
   sessionId: string;
   tmuxAvailable: boolean;
-  /** Composer is live; hides the "Launch opencode" item. */
+  /** Composer is live; hides the launch item. */
   portAvailable: boolean;
   liveConnectionHint: string | undefined;
-  launchingOpencode: boolean;
+  /** Display name of the session's platform, for the launch item. */
+  platformName: string;
+  launching: boolean;
   onNewSession: () => void;
   onShare: () => void;
-  onLaunchOpencode: () => void;
+  onLaunch: () => void;
 }
 
 /** The "⋯" session actions menu mounted into the header slot. */
@@ -21,12 +23,14 @@ export function SessionActionsMenu({
   tmuxAvailable,
   portAvailable,
   liveConnectionHint,
-  launchingOpencode,
+  platformName,
+  launching,
   onNewSession,
   onShare,
-  onLaunchOpencode,
+  onLaunch,
 }: SessionActionsMenuProps) {
   const afterClose = useRef<(() => void) | undefined>(undefined);
+  const name = platformName || 'agent';
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -63,10 +67,10 @@ export function SessionActionsMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={onLaunchOpencode}
-              disabled={launchingOpencode}
-              title="Start the managed OpenCode server"
-            >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</DropdownMenuItem>
+              onSelect={onLaunch}
+              disabled={launching}
+              title={`Start the managed ${name} server`}
+            >{launching ? 'Launching…' : `Launch ${name}`}</DropdownMenuItem>
           </>
         )}
       </DropdownMenuContent>

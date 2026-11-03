@@ -334,11 +334,11 @@ func TestClaudeRoutineSettlesOnIdle(t *testing.T) {
 func TestHostCapsProviderRuntime(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	t.Setenv("PATH", "")
-	if caps := srv.hostCaps(); caps.OpencodeLaunch || caps.Worktrees {
+	if caps := srv.hostCaps(); caps.SessionLaunch || caps.Worktrees {
 		t.Fatalf("caps without a runtime = %+v", caps)
 	}
 	reg.Register(runtimeAdapter{&fakePlatform{PlatformID: "fake-provider"}})
-	if !srv.hostCaps().OpencodeLaunch {
+	if !srv.hostCaps().SessionLaunch {
 		t.Fatal("provider runtime did not enable managed launch")
 	}
 }

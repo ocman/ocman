@@ -12,7 +12,7 @@ const connections = vi.hoisted(() => new Set<() => void>());
 vi.mock('./useGlobalEvents', () => ({ onSseConnect: (cb: () => void) => { connections.add(cb); return () => connections.delete(cb); } }));
 vi.mock('./api', () => ({ api: { capabilities: () => capabilities() } }));
 
-const hostCaps = { gitDiff: true, worktrees: true, tmux: true, projects: true, opencodeLaunch: true };
+const hostCaps = { gitDiff: true, worktrees: true, tmux: true, projects: true, sessionLaunch: true, judgeModel: false, mcpConfig: false };
 const resp = (...remotes: string[]): CapabilitiesResponse => ({
   platforms: [],
   worktreeSessions: true,
@@ -24,7 +24,7 @@ const resp = (...remotes: string[]): CapabilitiesResponse => ({
 
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(1); });
 
-describe('useOpencodeLaunch with a late-connecting owner', () => {
+describe('useWorktreeLaunch with a late-connecting owner', () => {
   beforeEach(async () => {
     vi.resetModules();
     const { notifyManager } = await import('@tanstack/react-query');
@@ -42,7 +42,7 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
     capabilities.mockResolvedValueOnce(resp()).mockResolvedValueOnce(resp()).mockResolvedValue(resp('B'));
     const mod = await import('./useCapabilities');
 
-    const early = renderHook(() => mod.useOpencodeLaunch('B'));
+    const early = renderHook(() => mod.useWorktreeLaunch('B'));
     await flush();
     expect(early.result.current).toBe(false);
     expect(capabilities).toHaveBeenCalledTimes(2);
@@ -65,7 +65,7 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
   it('stops re-asking once no consumer waits on the absent owner', async () => {
     capabilities.mockResolvedValue(resp());
     const mod = await import('./useCapabilities');
-    const view = renderHook(() => mod.useOpencodeLaunch('gone'));
+    const view = renderHook(() => mod.useWorktreeLaunch('gone'));
     await flush();
     expect(view.result.current).toBe(false);
     view.unmount();
@@ -77,7 +77,7 @@ describe('useOpencodeLaunch with a late-connecting owner', () => {
   it('never polls for this machine', async () => {
     capabilities.mockResolvedValue(resp());
     const mod = await import('./useCapabilities');
-    const view = renderHook(() => mod.useOpencodeLaunch('local'));
+    const view = renderHook(() => mod.useWorktreeLaunch('local'));
     await flush();
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(view.result.current).toBe(true);

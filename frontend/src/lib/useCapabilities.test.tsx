@@ -5,7 +5,7 @@ import { api, type CapabilitiesResponse } from './api';
 import { queryClient } from './queryClient';
 import {
   useCapabilities, usePlatformCapabilities, useMultiPlatform,
-  useOpencodeLaunch, useLocalOpenCode, useMultiHost, useMachinePlatforms,
+  useWorktreeLaunch, useHostCapability, usePlatformName, useMultiHost, useMachinePlatforms,
 } from './useCapabilities';
 
 vi.mock('./useGlobalEvents', () => ({ onSseConnect: () => () => {} }));
@@ -17,7 +17,7 @@ const platformCaps = {
   fileChanges: true, sessionInfo: true, liveConnectionHint: 'launch the agent',
   autoApprove: true, permissionRules: true, revert: true, runtimeRestart: true,
 };
-const hostCaps = { gitDiff: true, worktrees: true, tmux: false, projects: true, opencodeLaunch: true, opencode: true };
+const hostCaps = { gitDiff: true, worktrees: true, tmux: false, projects: true, sessionLaunch: true, judgeModel: true, mcpConfig: true };
 function response(): CapabilitiesResponse {
   return {
     platforms: [{ id: 'opencode', displayName: 'OpenCode', available: true, capabilities: platformCaps }],
@@ -91,28 +91,35 @@ describe('capability queries', () => {
 
   it('uses the named owner and never borrows local launch capabilities', async () => {
     queryClient.setQueryData(['capabilities'], {
-      ...response(), hosts: [...response().hosts!, { remoteId: 'remote', remoteName: 'Remote', capabilities: { ...hostCaps, opencodeLaunch: false } }],
+      ...response(), hosts: [...response().hosts!, { remoteId: 'remote', remoteName: 'Remote', capabilities: { ...hostCaps, worktrees: false } }],
     });
-    expect(renderHook(() => useOpencodeLaunch('local')).result.current).toBe(true);
-    expect(renderHook(() => useOpencodeLaunch('remote')).result.current).toBe(false);
-    expect(renderHook(() => useOpencodeLaunch('missing-owner')).result.current).toBe(false);
+    expect(renderHook(() => useWorktreeLaunch('local')).result.current).toBe(true);
+    expect(renderHook(() => useWorktreeLaunch('remote')).result.current).toBe(false);
+    expect(renderHook(() => useWorktreeLaunch('missing-owner')).result.current).toBe(false);
   });
 
-  it('reads local OpenCode availability independently of other owners', () => {
+  it('reads a local host flag independently of other owners', () => {
     queryClient.setQueryData(['capabilities'], { ...response(), hosts: [
       { remoteId: 'remote', remoteName: 'Remote', capabilities: hostCaps },
-      { remoteId: 'local', remoteName: 'Local', capabilities: { ...hostCaps, opencode: false } },
+      { remoteId: 'local', remoteName: 'Local', capabilities: { ...hostCaps, mcpConfig: false } },
     ] });
-    expect(renderHook(() => useLocalOpenCode()).result.current).toBe(false);
+    expect(renderHook(() => useHostCapability('mcpConfig')).result.current).toBe(false);
+  });
+
+  it('names registered platforms and nothing else', () => {
+    queryClient.setQueryData(['capabilities'], response());
+    expect(renderHook(() => usePlatformName('opencode')).result.current).toBe('OpenCode');
+    expect(renderHook(() => usePlatformName('missing')).result.current).toBe('');
+    expect(renderHook(() => usePlatformName(undefined)).result.current).toBe('');
   });
 
   it('supports the first-host fallback and empty host lists', () => {
     queryClient.setQueryData(['capabilities'], { ...response(), hosts: [{ remoteId: 'remote', remoteName: 'Remote', capabilities: hostCaps }] });
-    expect(renderHook(() => useOpencodeLaunch()).result.current).toBe(true);
-    expect(renderHook(() => useLocalOpenCode()).result.current).toBe(true);
+    expect(renderHook(() => useWorktreeLaunch()).result.current).toBe(true);
+    expect(renderHook(() => useHostCapability('mcpConfig')).result.current).toBe(true);
     queryClient.setQueryData(['capabilities'], { ...response(), hosts: [] });
-    expect(renderHook(() => useOpencodeLaunch()).result.current).toBe(false);
-    expect(renderHook(() => useLocalOpenCode()).result.current).toBe(false);
+    expect(renderHook(() => useWorktreeLaunch()).result.current).toBe(false);
+    expect(renderHook(() => useHostCapability('mcpConfig')).result.current).toBe(false);
   });
 
   it('counts hosts and filters platforms by their owner', () => {

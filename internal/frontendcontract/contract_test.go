@@ -21,12 +21,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ocman/ocman/internal/analytics"
 	"github.com/ocman/ocman/internal/convevents"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/remote"
-	"github.com/ocman/ocman/internal/state"
 )
 
 type field struct {
@@ -64,7 +64,7 @@ var dtos = map[string]any{
 	"HourlyTokensByModel": db.HourlyTokensByModel{},
 	"MetricsCostByModel":  db.MetricsCostByModel{},
 	"ModelCostPoint":      db.ModelCostPoint{},
-	"DatabaseSizeSample":  state.DatabaseSizeSample{},
+	"DatabaseSizeSample":  analytics.DatabaseSizeSample{},
 	"RemoteStatus":        remote.RemoteStatus{},
 	"TargetCandidate":     remote.TargetCandidate{},
 

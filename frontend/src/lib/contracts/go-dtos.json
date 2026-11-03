@@ -66,6 +66,10 @@
         "omitempty": false
       },
       {
+        "name": "label",
+        "omitempty": false
+      },
+      {
         "name": "sampledAt",
         "omitempty": false
       },
@@ -176,15 +180,19 @@
         "omitempty": false
       },
       {
-        "name": "opencode",
+        "name": "judgeModel",
         "omitempty": false
       },
       {
-        "name": "opencodeLaunch",
+        "name": "mcpConfig",
         "omitempty": false
       },
       {
         "name": "projects",
+        "omitempty": false
+      },
+      {
+        "name": "sessionLaunch",
         "omitempty": false
       },
       {

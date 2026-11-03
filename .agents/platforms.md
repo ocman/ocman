@@ -150,7 +150,7 @@ project resolves to the machine-wide server described above.
   `Launched`. Persist managed instances by canonical root in `managed_opencode`.
   Always re-probe on recovery. Discard dead rows; restart stops and relaunches
   under the same singleflight key, owner-routed locally or over gRPC.
-- Gate managed launch UI on `HostCaps.OpencodeLaunch`, not `Tmux`.
+- Gate managed launch UI on `HostCaps.Worktrees` (git plus `SessionLaunch`), not `Tmux`. `SessionLaunch` travels to older peers also as `opencodeLaunch`; keep that alias until the remote protocol version changes.
 - Runtime lookup uses only the published machine server, which may be
   OpenCode's registered service.
   Never adopt external instances. Cache for ten seconds. Reserve `lsof` for

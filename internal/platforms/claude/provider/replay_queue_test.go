@@ -68,6 +68,14 @@ func TestRetainedIdleDoesNotDrainQueueIntoNextTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Runtime management cancels and joins its watcher before replacing the
+	// adapter. Close alone only stops adapter-owned work, not WatchEvents.
+	h.stopWatching()
+	select {
+	case <-h.watchDone:
+	case <-time.After(time.Second):
+		t.Fatal("the old dashboard watcher survived its restart")
+	}
 	h.adapter.Close() // the dashboard restarts; B and its supervisor survive
 	restarted, err := provider.New(t.Context(), filepath.Join(h.dir, "s"))
 	if err != nil {

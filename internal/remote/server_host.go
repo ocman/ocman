@@ -208,5 +208,5 @@ func (s *Server) TmuxSessions(ctx context.Context, _ *pb.CallReq) (*pb.JsonResp,
 	return jsonResp(s.host.TmuxSessions(ctx))
 }
 func (s *Server) HostCapabilities(_ context.Context, _ *pb.CallReq) (*pb.JsonResp, error) {
-	return jsonResp(s.host.Capabilities(), nil)
+	return jsonResp(s.host.Capabilities().WithLegacyFields(), nil)
 }

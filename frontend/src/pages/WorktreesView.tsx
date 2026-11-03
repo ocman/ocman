@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { useSessions } from '../lib/queries';
 import { relativeTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
-import { useOpencodeLaunch } from '../lib/useCapabilities';
+import { useWorktreeLaunch } from '../lib/useCapabilities';
 import { sessionsForWorktree } from '../lib/worktrees';
 import { SkeletonTable } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
@@ -34,7 +34,7 @@ export function WorktreesView() {
 function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remoteId: string }) {
 
   const navigate = useNavigate();
-  const allowed = useOpencodeLaunch(remoteId);
+  const allowed = useWorktreeLaunch(remoteId);
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const { data: cachedSessions = null, refetch: refetchSessions } = useSessions({ limit: 100 }, { enabled: false });
 

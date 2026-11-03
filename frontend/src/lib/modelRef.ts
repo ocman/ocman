@@ -3,6 +3,7 @@
 // their meaning. Only a colon before the first slash is a prefix: model ids
 // may contain colons (openrouter/meta-llama/llama-3:free).
 
+// eslint-disable-next-line no-restricted-syntax -- stored references predate platform prefixes
 const OPENCODE = 'opencode';
 
 export function splitModelRef(ref: string): { platform: string; model: string } {

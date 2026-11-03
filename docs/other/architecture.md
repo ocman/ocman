@@ -419,6 +419,8 @@ flowchart TD
     Modules -->|"analytics: Stats/Usage reads, size samples, OTel gauges"| OC
     Registry -->|session detail, summary, lifecycle + usage reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations, canonical roots + attachments]
+    Browser -->|semantic host capabilities| Server
+    Browser -->|platform settings catalog + setup notes| Modules
     Modules -->|platform setup: local-only check/install| Router
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
@@ -535,7 +537,13 @@ flowchart TD
   `Run`. Accounting reads use statev2 projections through `internal/db`.
   The session snapshot, client-activity demand leases, `/api/system/stats` and the
   server's own OTel instruments stay in core.
-- **Platform settings** (`internal/platformsettings`). Selecting Codex in Settings
+- **Platform settings** (`internal/platformsettings`). The backend catalog supplies
+  selectable platform IDs, labels and setup eligibility. Setup notes and install
+  commands come from `hostsvc.PlatformSetup`; the browser renders these without
+  platform identity checks. Host flags gate worktree launches, judge model
+  selection and MCP configuration. Remote capability exchange retains the
+  `opencodeLaunch` alias for `sessionLaunch` on the current protocol.
+  Selecting Codex in Settings
   first checks prerequisites through the local host's optional
   `hostsvc.PlatformSetupManager`. Localhost-guarded setup/install routes delegate
   to `hostsvc/local`; only an explicit install POST runs the fixed pinned adapter

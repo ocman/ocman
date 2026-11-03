@@ -16,7 +16,7 @@ vi.mock('../lib/api', () => ({
     installMcpConfig: mocks.installMcpConfig,
   },
 }));
-vi.mock('../lib/useCapabilities', () => ({ useLocalOpenCode: () => mocks.openCode }));
+vi.mock('../lib/useCapabilities', () => ({ useHostCapability: () => mocks.openCode }));
 vi.mock('../lib/remoteLog', () => ({ remoteLog: { error: vi.fn(), info: vi.fn() } }));
 
 const WANT = 'http://127.0.0.1:8227/mcp';

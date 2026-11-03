@@ -37,16 +37,21 @@ type HostCaps struct {
 	Worktrees bool `json:"worktrees"`
 	Tmux      bool `json:"tmux"`
 	Projects  bool `json:"projects"`
-	// OpencodeLaunch reports whether the host can launch a managed
-	// OpenCode instance (its ocruntime.Runtime is usable). Distinct from
-	// Tmux: a future container runtime can launch without tmux, and the
-	// tmux binary can be present without opencode on PATH. The frontend
-	// gates managed-launch UI on this flag (#390 / AD-8).
-	OpencodeLaunch bool `json:"opencodeLaunch"`
-	// OpenCode reports that the OpenCode platform is enabled on the host.
-	// OpenCode-only settings (its MCP config, the judge
-	// model) are shown only when it is (FR-1).
-	OpenCode bool `json:"opencode"`
+	// SessionLaunch reports whether the host can launch a managed agent
+	// runtime for a new session (a platform's runtime is usable).
+	// Distinct from Tmux: a future container runtime can launch without
+	// tmux, and the tmux binary can be present without the agent CLI on
+	// PATH (#390 / AD-8). Older hosts send it as "opencodeLaunch"; see
+	// UnmarshalJSON and LegacyHostCaps.
+	SessionLaunch bool `json:"sessionLaunch"`
+	// The settings below exist only while a platform providing them is
+	// enabled on the host (today OpenCode, FR-1). They are named by
+	// feature so the frontend never checks platform identity.
+	//
+	// JudgeModel: the auto-approve reviewer model is selectable.
+	JudgeModel bool `json:"judgeModel"`
+	// McpConfig: ocman can register itself in the agent's MCP config.
+	McpConfig bool `json:"mcpConfig"`
 }
 
 // TermWindow is one in-app terminal window with a display title. Mirrors

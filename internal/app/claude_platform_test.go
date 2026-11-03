@@ -149,12 +149,12 @@ func assertClaudeOnlyWorkflows(t *testing.T, base string, terminal platforms.Ses
 			Capabilities platforms.Capabilities
 		}
 		Hosts []struct {
-			Capabilities struct{ OpenCode, Projects bool }
+			Capabilities struct{ JudgeModel, Maintenance, McpConfig, Projects bool }
 		}
 	}
 	getJSON(t, base+"/api/capabilities", &caps)
 	if len(caps.Platforms) != 1 || !caps.Platforms[0].Capabilities.AutoApprove || caps.Platforms[0].Capabilities.Revert ||
-		caps.Platforms[0].Capabilities.RuntimeRestart || caps.Hosts[0].Capabilities.OpenCode || !caps.Hosts[0].Capabilities.Projects {
+		caps.Platforms[0].Capabilities.RuntimeRestart || caps.Hosts[0].Capabilities.JudgeModel || caps.Hosts[0].Capabilities.Maintenance || caps.Hosts[0].Capabilities.McpConfig || !caps.Hosts[0].Capabilities.Projects {
 		t.Fatalf("capabilities = %+v", caps)
 	}
 	// Nothing OpenCode-only blocks the app behind the setup panel.

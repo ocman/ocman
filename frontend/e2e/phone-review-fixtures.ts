@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { MOCK_PROJECT, MOCK_SESSION, makeCapabilitiesWithPort } from './fixtures.ts';
+import { MOCK_PLATFORM_OPTIONS, MOCK_PROJECT, MOCK_SESSION, makeCapabilitiesWithPort } from './fixtures.ts';
 
 export const phoneReviewPages = [
   ['sessions', '/sessions'], ['projects', '/projects'], ['inbox', '/inbox'],
@@ -54,7 +54,7 @@ export async function installPhoneReviewRoutes(page: Page) {
   await page.route('/api/factory/formulas/ocman%2Ftracer/3', r => r.fulfill({ json: {
     id: 'ocman/tracer', version: 3, name: 'Tracer', source: 'version: 2\nname: Tracer\nsteps: {}\n', hash: 'review-formula', inputs: ['goal', 'initial_project'], nodes: [{ key: 'plan', kind: 'planning' }], edges: [], valid: true,
   } }));
-  await page.route('/api/settings/platforms', r => r.fulfill({ json: { enabled: ['opencode', 'claudecode'] } }));
+  await page.route('/api/settings/platforms', r => r.fulfill({ json: { platforms: MOCK_PLATFORM_OPTIONS, enabled: ['opencode', 'claudecode'] } }));
   await page.route('/api/settings/idle-project-timeout', r => r.fulfill({ json: { minutes: 30 } }));
   await page.route('/api/provider-accounts', r => r.fulfill({ json: { accounts: [] } }));
 }

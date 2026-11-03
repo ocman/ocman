@@ -43,6 +43,7 @@ func TestSetupRoutes(t *testing.T) {
 		{"GET", "/api/settings/platforms/codex/setup", 200},
 		{"POST", "/api/settings/platforms/codex/install", 200},
 		{"GET", "/api/settings/platforms/other/setup", 400},
+		{"GET", "/api/settings/platforms/claudecode/setup", 400},
 		{"GET", "/api/settings/platforms/codex/install", 405},
 		{"POST", "/api/settings/platforms/codex/setup", 405},
 	} {
