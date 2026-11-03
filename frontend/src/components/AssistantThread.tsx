@@ -3,13 +3,9 @@ import './AssistantThread.css';
 import {
   ThreadPrimitive,
   MessagePrimitive,
-  useAuiState,
-  type MessageState,
 } from '@assistant-ui/react';
 
-// assistant-ui 0.15 dropped `useMessage`; same selector shape over the aui store.
-const useMessage = <T,>(selector: (m: MessageState) => T): T => useAuiState((s) => selector(s.message));
-import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency, formatFullDateTime } from '../lib/format';
+import { formatFullDateTime } from '../lib/format';
 import { Tooltip } from './Tooltip';
 import { useModelLabel, useTurnStats } from '../lib/turnStats';
 import { shouldRenderAssistantMessage } from './assistantMessageVisibility';
@@ -38,6 +34,9 @@ import { V2Notification } from './assistant/V2Notification';
 import { parsePRWatchNotification } from '../lib/prWatchNotification';
 import { PRWatchNotification } from './assistant/PRWatchNotification';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
+import { AssistantMeta } from './assistant/AssistantMeta';
+import { TurnSummaryBar } from './assistant/TurnSummaryBar';
+import { useMessage } from './assistant/useMessage';
 import { ExplorationContent } from './assistant/ExplorationContent';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
@@ -270,7 +269,7 @@ const AssistantMessage: FC = () => {
         {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
         <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
           <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
-          <TurnSummaryBar messageId={messageId} />
+          <TurnSummaryBar messageId={messageId} actions={<TurnActions messageId={messageId} />} />
         </MessagePrimitive.Root>
       </>
     );
@@ -285,7 +284,7 @@ const AssistantMessage: FC = () => {
           <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
         </div>
         <AssistantMeta />
-        <TurnSummaryBar messageId={messageId} />
+        <TurnSummaryBar messageId={messageId} actions={<TurnActions messageId={messageId} />} />
       </MessagePrimitive.Root>
     </>
   );
@@ -309,217 +308,22 @@ const ModelChangeDivider: FC<{ model: string }> = ({ model }) => {
   );
 };
 
-function AssistantMeta() {
-  const showMessageMetadata = useUiStore((s) => s.showMessageMetadata);
-  const createdAt = useMessage((m) => m.createdAt);
-  const status = useMessage((m) => m.status);
-  const content = useMessage((m) => m.content);
-  const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
-  const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
-  const model = typeof custom?.model === 'string' ? (custom.model as string) : '';
-  const modelLabel = useModelLabel(model);
-  if (!createdAt || createdAt.getTime() === 0) return null;
-  if (status?.type === 'running') return null;
-  // Hide timestamp when message only contains file reads
-  const onlyReads = content.every(
-    (p) => {
-      if (p.type === 'text' && 'text' in p && !(p as { text: string }).text.trim()) return true;
-      if (p.type !== 'tool-call' || !('toolName' in p)) return false;
-      return isMutedTool((p as { toolName: string }).toolName);
-    }
-  );
-  if (onlyReads) return null;
-  const time = createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  const isError = status?.type === 'incomplete' && 'reason' in status && status.reason === 'error';
-  const errorName = custom?.errorName as string | undefined;
-  const isAbort = errorName === 'MessageAbortedError' || errorName === 'AbortError';
-
-  // Duration is elapsed time; TPS comes from the tool-adjusted sample.
-  const msgTime = custom?.time as { created?: number; completed?: number } | undefined;
-  let durationSec: number | null = null;
-  const tps = typeof custom?.tokensPerSecond === 'number' ? custom.tokensPerSecond : null;
-  if (msgTime?.created && msgTime?.completed) {
-    const d = (msgTime.completed - msgTime.created) / 1000;
-    if (d > 0) {
-      durationSec = d;
-    }
-  }
-
+/** Read-aloud and bookmark controls shown on a finished turn's summary bar. */
+function TurnActions({ messageId }: { messageId: string }) {
+  const speech = React.useContext(TurnSpeechContext);
   return (
     <>
-      {isError && (
-        <div className={`oc-thread-error-note${isAbort ? ' oc-thread-error-note-abort' : ''}`}>
-          {isAbort
-            ? <><i className="bi bi-slash-circle" aria-hidden="true" /> Interrupted</>
-            : <><i className="bi bi-exclamation-triangle-fill" aria-hidden="true" /> Session ended with an error</>
-          }
-        </div>
-      )}
-      {showMessageMetadata && <div className="oc-msg-meta">
-        <span
-          className="oc-meta-dot"
-          style={isError ? { background: 'var(--danger)' } : undefined}
-          title={isError ? 'Error' : agent ? `agent: ${agent}` : 'Message group'}
-        />
-        <Tooltip content={formatFullDateTime(createdAt.getTime())}>
-          <time dateTime={createdAt.toISOString()}>{time}</time>
-        </Tooltip>
-        {durationSec !== null && (
-          <>
-            <span className="oc-meta-sep">·</span>
-            <span className="oc-meta-tps">{formatSeconds(durationSec)}</span>
-          </>
-        )}
-        {tps !== null && (
-          <>
-            <span className="oc-meta-sep">·</span>
-            <span className="oc-meta-tps" title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">{formatTokensPerSecond(tps)} tok/s</span>
-          </>
-        )}
-        {model && (
-          <>
-            <span className="oc-meta-sep">·</span>
-            <span className="oc-meta-model" title={model}>
-              <ModelLabel model={model} muted>{modelLabel}</ModelLabel>
-            </span>
-          </>
-        )}
-      </div>}
+      {speech.answers.has(messageId) && <button
+        type="button"
+        className="oc-turn-speech-btn"
+        aria-label={speech.speakingId === messageId ? 'Stop reading' : 'Read aloud'}
+        title={speech.speakingId === messageId ? 'Stop reading' : 'Read aloud'}
+        onClick={() => speech.toggle(messageId)}
+      >
+        <i className={`bi ${speech.speakingId === messageId ? 'bi-stop-fill' : 'bi-volume-up'}`} aria-hidden="true" />
+      </button>}
+      <MessageBookmarkButton messageId={messageId} />
     </>
-  );
-}
-
-/**
- * Always-visible summary bar rendered after the last assistant message of
- * each turn. Shows wall-clock duration, total tokens in+out, tool-call
- * count, and average tok/s. While the turn is still in progress the bar
- * shows whatever data is available so far.
- */
-function TurnSummaryBar({ messageId }: { messageId: string }) {
-  const stats = useTurnStats(messageId);
-  const speech = React.useContext(TurnSpeechContext);
-  const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
-  const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
-  const agentColor = useAgentColor(agent);
-  const modelLabel = useModelLabel(stats?.model || '');
-  const [now, setNow] = useState(Date.now);
-
-  // Tick every second so the live wall-clock increments visibly.
-  useEffect(() => {
-    if (!stats?.isLive) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [stats?.isLive]);
-
-  // Only the turn's anchor message renders the bar. Non-anchor messages
-  // still carry the aggregate (so the line never blanks out while
-  // ownership moves between messages mid-turn) but must not draw it.
-  if (!stats || !stats.isSummaryAnchor) return null;
-
-  const { wallClockMs, tokensOut, tokensIn, cost, toolCalls, tps, isLive, promptCacheRebuilt, startedAt, model } = stats;
-
-  // For a live turn, compute elapsed wall-clock from startedAt → now.
-  const displayMs = isLive ? now - startedAt : wallClockMs;
-  const wallSec = displayMs !== null && displayMs > 0 ? displayMs / 1000 : null;
-
-  const totalTokens = tokensIn + tokensOut;
-
-  // Stamp a finished turn with when it ended, not when it was sent.
-  const endedAt = startedAt + (wallClockMs ?? 0);
-  const time = new Date(endedAt).toLocaleTimeString('en-US', {
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  });
-
-  const items: React.ReactNode[] = [];
-  if (!isLive) {
-    items.push(
-      <Tooltip key="time" content={formatFullDateTime(endedAt)}>
-        <span className="oc-turn-stat">{time}</span>
-      </Tooltip>
-    );
-  }
-  if (wallSec !== null) {
-    items.push(
-      <span key="wall" className="oc-turn-stat">
-        <i className="bi bi-clock" aria-hidden="true" />
-        {formatSeconds(wallSec)}
-      </span>
-    );
-  }
-  if (totalTokens > 0) {
-    items.push(
-      <span key="tok" className="oc-turn-stat">
-        <i className="bi bi-stars" aria-hidden="true" />
-        {formatCompactNumber(totalTokens)} tok
-      </span>
-    );
-  }
-  if (toolCalls > 0) {
-    items.push(
-      <span key="tools" className="oc-turn-stat">
-        <i className="bi bi-tools" aria-hidden="true" />
-        {toolCalls} {toolCalls === 1 ? 'tool' : 'tools'}
-      </span>
-    );
-  }
-  if (tps !== null) {
-    items.push(
-      <span key="tps" className="oc-turn-stat" title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">
-        {formatTokensPerSecond(tps)} tok/s
-      </span>
-    );
-  }
-  if (cost > 0) {
-    items.push(
-      <span key="cost" className="oc-turn-stat">
-        {formatCurrency(cost, cost < 0.001 ? 4 : 2)}
-      </span>
-    );
-  }
-  if (promptCacheRebuilt) {
-    items.push(
-      <span key="cache" className="oc-turn-stat oc-turn-cache-warning">
-        <i className="bi bi-arrow-clockwise" aria-hidden="true" />
-        Prompt cache rebuilt
-      </span>
-    );
-  }
-  if (model) {
-    items.push(
-      <span key="model" className="oc-turn-stat oc-turn-model" title={model}>
-        <ModelLabel model={model} muted>{modelLabel}</ModelLabel>
-      </span>
-    );
-  }
-
-  if (items.length === 0 && !isLive) return null;
-
-  return (
-    <div className="oc-turn-stats">
-      <span
-        className={`oc-turn-dot${isLive ? ' oc-turn-dot--live' : ''}`}
-        style={agent ? { background: agentColor } : undefined}
-        title={isLive ? 'Turn in progress' : undefined}
-      />
-      {items.map((item, i) => (
-        <React.Fragment key={i}>
-          {item}
-          {i < items.length - 1 && <span className="oc-turn-sep">·</span>}
-        </React.Fragment>
-      ))}
-      {!isLive && <span className="oc-turn-actions" role="group" aria-label="Turn actions">
-        {speech.answers.has(messageId) && <button
-          type="button"
-          className="oc-turn-speech-btn"
-          aria-label={speech.speakingId === messageId ? 'Stop reading' : 'Read aloud'}
-          title={speech.speakingId === messageId ? 'Stop reading' : 'Read aloud'}
-          onClick={() => speech.toggle(messageId)}
-        >
-          <i className={`bi ${speech.speakingId === messageId ? 'bi-stop-fill' : 'bi-volume-up'}`} aria-hidden="true" />
-        </button>}
-        <MessageBookmarkButton messageId={messageId} />
-      </span>}
-    </div>
   );
 }
 
