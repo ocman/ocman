@@ -6,12 +6,11 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	hostlocal "github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
-	"github.com/ocman/ocman/internal/platforms/opencode/provider"
+	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
+	ocv2 "github.com/ocman/ocman/internal/platforms/opencode/apiv2"
+	opencode "github.com/ocman/ocman/internal/platforms/opencode/provider"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/term"
-	"github.com/ocman/ocman/internal/tmux"
 )
 
 // newLocalHost builds the in-process hostsvc.Host, wiring the tmux,
@@ -57,7 +56,6 @@ func (s *Server) newLocalHost() hostsvc.Host {
 			_, ok := s.registry.Get(platforms.ID(id))
 			return ok
 		},
-		LaunchTmux:            tmux.LaunchOpencode,
 		Runtime:               s.runtime,
 		BeforeReplace:         s.recordOpencodeReplacement,
 		BeforeStop:            s.beginOpencodeReplacementStopWithInstance,

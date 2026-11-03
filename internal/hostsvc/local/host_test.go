@@ -107,18 +107,10 @@ func TestLocalHost_GitMethods(t *testing.T) {
 }
 
 func TestLocalHost_InjectedDeps(t *testing.T) {
-	var launchedDir string
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	var gotContexts []context.Context
-	inventoryChanges := 0
 	h := New(Deps{
-		RuntimeInventoryChanged: func() { inventoryChanges++ },
-		LaunchTmux: func(got context.Context, dir string) (string, error) {
-			gotContexts = append(gotContexts, got)
-			launchedDir = dir
-			return "sess-name", nil
-		},
 		TmuxSessions: func(got context.Context) ([]hostsvc.TmuxSession, error) {
 			gotContexts = append(gotContexts, got)
 			return []hostsvc.TmuxSession{{Name: "s"}}, nil
@@ -147,14 +139,6 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 		},
 	})
 
-	res, err := h.LaunchTmux(ctx, hostsvc.LaunchTmuxRequest{Directory: "/d"})
-	if err != nil || res.Session != "sess-name" || launchedDir != "/d" {
-		t.Fatalf("LaunchTmux: res=%+v dir=%q err=%v", res, launchedDir, err)
-	}
-	if inventoryChanges != 1 {
-		t.Fatalf("LaunchTmux inventory changes = %d, want 1", inventoryChanges)
-	}
-
 	sessions, err := h.TmuxSessions(ctx)
 	if err != nil || len(sessions) != 1 {
 		t.Fatalf("TmuxSessions: %+v %v", sessions, err)
@@ -179,8 +163,8 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 	if err := h.TermAttach(ctx, hostsvc.TermAttachRequest{Dir: "/d"}, nil); err != nil {
 		t.Fatalf("TermAttach: %v", err)
 	}
-	if len(gotContexts) != 6 {
-		t.Fatalf("context-bearing dependency calls = %d, want 6", len(gotContexts))
+	if len(gotContexts) != 5 {
+		t.Fatalf("context-bearing dependency calls = %d, want 5", len(gotContexts))
 	}
 	for i, got := range gotContexts {
 		if got != ctx {

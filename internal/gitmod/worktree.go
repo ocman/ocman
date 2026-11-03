@@ -184,10 +184,9 @@ func (m *Module) handleWorktreeRemove(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleWorktreeCreateAndLaunch creates a worktree (or reuses an
-// existing one) and launches `opencode --port 0` inside a tmux session
-// rooted at the worktree path. Idempotent: re-running with the same
-// branch on the same project lands the user back in their existing
-// tmux session without spawning a second opencode (AD-4).
+// existing one) and starts a session for it on the owner's managed
+// OpenCode server, ensuring that server first. Idempotent: re-running with
+// the same branch on the same project reuses the worktree (AD-4).
 //
 // Localhost-only — same security posture as the existing tmux launch
 // endpoint, since this spawns processes on the host.

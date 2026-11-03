@@ -212,9 +212,6 @@ func (localStubHost) CreateWorktreeSession(context.Context, hostsvc.WorktreeSess
 	return &hostsvc.WorktreeSessionResult{WorktreePath: "/wt", Branch: "b"}, nil
 }
 func (localStubHost) RemoveWorktree(context.Context, hostsvc.RemoveWorktreeRequest) error { return nil }
-func (localStubHost) LaunchTmux(context.Context, hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
-	return &hostsvc.LaunchTmuxResult{Session: "sess"}, nil
-}
 func (localStubHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "sess"}}, nil
 }
@@ -335,7 +332,6 @@ func TestRemoteHostRemainingMutationsRoundTrip(t *testing.T) {
 			_, err := offline.CreateWorktreeSession(t.Context(), hostsvc.WorktreeSessionRequest{})
 			return err
 		},
-		"launch tmux": func() error { _, err := offline.LaunchTmux(t.Context(), hostsvc.LaunchTmuxRequest{}); return err },
 		"ensure opencode": func() error {
 			_, err := offline.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
 			return err

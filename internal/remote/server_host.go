@@ -165,14 +165,6 @@ func (s *Server) RemoveWorktree(ctx context.Context, req *pb.CallReq) (*pb.JsonR
 	}
 	return &pb.JsonResp{}, s.host.RemoveWorktree(ctx, wr)
 }
-func (s *Server) LaunchTmux(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
-	var lr hostsvc.LaunchTmuxRequest
-	if err := unmarshalJSON(req.Payload, &lr); err != nil {
-		return nil, err
-	}
-	log.WithField("directory", lr.Directory).Info("remote: launch-tmux request from hub")
-	return jsonResp(s.host.LaunchTmux(ctx, lr))
-}
 func (s *Server) EnsureProjectOpencode(ctx context.Context, req *pb.CallReq) (*pb.JsonResp, error) {
 	var er hostsvc.EnsureProjectOpencodeRequest
 	if err := unmarshalJSON(req.Payload, &er); err != nil {

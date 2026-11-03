@@ -365,21 +365,13 @@ func envArgs(env map[string]string) []string {
 // reading in the pane.
 const opencodeNoWarnings = "env NODE_NO_WARNINGS=1"
 
-// OpencodeCommand is the shell command tmux runs in the worktree
-// window. We invoke it via `sh -lc` so the user's PATH is initialised
-// (opencode is installed via a mise/asdf/homebrew shim that depends on
-// shell init), but pass the command as a single literal argument so
-// nothing in the rc file (mise, starship, …) can race for keystrokes.
-//
-// The env var goes in the command rather than tmux's `-e` because the
-// command string is the single choke point every launch path passes
-// through. `exec env` still replaces the shell, so no extra process
+// OpencodeServeCommandForPort is the shell command tmux runs for the
+// managed server: `opencode serve` runs the headless server that serves
+// every project on the machine. It runs via `sh -lc` so the user's PATH is
+// initialised (opencode is often a mise/asdf/homebrew shim), with the
+// command as a single literal argument so nothing in the rc file can race
+// for keystrokes. `exec env` replaces the shell, so no extra process
 // lingers in the pane.
-const OpencodeCommand = "exec " + opencodeNoWarnings + " opencode --port 0"
-
-// OpencodeServeCommandForPort is the OpenCode v2 equivalent: v2 dropped
-// `--port` from the TUI, and `opencode serve` runs the headless server
-// that serves every project on the machine.
 func OpencodeServeCommandForPort(port int) string {
 	return fmt.Sprintf("exec %s opencode serve --port %d", opencodeNoWarnings, port)
 }
@@ -455,15 +447,4 @@ func sessionForDirectory(existing []Session, derived, dir string) (string, bool,
 		}
 	}
 	return distinct, false, nil
-}
-
-// LaunchOpencode finds or creates a tmux session named after the given
-// directory, opens a new window in it, and runs `opencode --port 0` there.
-// It returns the name of the tmux session that was used/created.
-//
-// This is the original (non-idempotent) launcher kept for callers that
-// explicitly want a fresh window every time.
-func LaunchOpencode(ctx context.Context, directory string) (string, error) {
-	name, _, err := LaunchOpencodeCmdEnvWith(ctx, DefaultRunner, directory, OpencodeCommand, false, nil)
-	return name, err
 }

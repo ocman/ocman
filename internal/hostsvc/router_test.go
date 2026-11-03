@@ -47,9 +47,6 @@ func (h stubHost) CreateWorktreeSession(context.Context, WorktreeSessionRequest)
 	return nil, nil
 }
 func (h stubHost) RemoveWorktree(context.Context, RemoveWorktreeRequest) error { return nil }
-func (h stubHost) LaunchTmux(context.Context, LaunchTmuxRequest) (*LaunchTmuxResult, error) {
-	return nil, nil
-}
 func (h stubHost) EnsureProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureRuntimeResult, error) {
 	return nil, nil
 }

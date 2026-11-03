@@ -38,7 +38,7 @@ export interface UseTmuxActionsResult {
   /** Picker callback that finalises the switch with the chosen client. */
   handleClientSelect: (clientTTY: string) => void;
   /**
-   * Run `opencode --port 0` inside the tmux session for the page's
+   * Ensure the managed OpenCode server for the page's
    * directory. Idempotent for the lifetime of one click — the
    * wrapped state guards against double-launch.
    */

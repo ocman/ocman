@@ -18,8 +18,8 @@ export interface TmuxState {
   /** Find the tmux session whose resolved path matches the given directory. */
   findSession: (directory: string) => TmuxSession | undefined;
   /**
-   * Find or create a tmux session for the given directory and run
-   * `opencode --port 0` in a new window. Returns the tmux session name.
+   * Ensure the owner's managed OpenCode server for the given directory.
+   * Returns the tmux session that hosts it.
    */
   launchOpencode: (directory: string) => Promise<{ session: string }>;
 }

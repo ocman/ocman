@@ -52,9 +52,9 @@ func (f *fakeTmuxRunner) toRunner() Runner {
 	}
 }
 
-// launchWith runs the launcher LaunchOpencode uses, with a fake runner.
+// launchWith runs the managed-server launcher with a fake runner.
 func launchWith(ctx context.Context, r Runner, directory string, idempotent bool) (string, bool, error) {
-	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeCommand, idempotent, nil)
+	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeServeCommandForPort(1234), idempotent, nil)
 }
 
 // TestLaunchOpencodeInTmuxWith_MatchesDottedPathAgainstUnderscoreName

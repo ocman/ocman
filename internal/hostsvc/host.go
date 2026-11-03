@@ -152,17 +152,6 @@ type RemoveWorktreeRequest struct {
 	Force bool
 }
 
-// LaunchTmuxRequest launches `opencode --port 0` in a tmux session
-// rooted at Directory.
-type LaunchTmuxRequest struct {
-	Directory string
-}
-
-// LaunchTmuxResult reports the tmux session that was used/created.
-type LaunchTmuxResult struct {
-	Session string `json:"session"`
-}
-
 // EnsureProjectOpencodeRequest asks the owning host to guarantee exactly
 // one running opencode instance for the project containing ProjectDir
 // (any path inside the repo).
@@ -299,9 +288,6 @@ type Host interface {
 	// containing dir. With force, discards uncommitted changes. Runs on
 	// the owning host (R-C).
 	RemoveWorktree(ctx context.Context, req RemoveWorktreeRequest) error
-
-	// LaunchTmux launches opencode in a tmux session for a directory.
-	LaunchTmux(ctx context.Context, req LaunchTmuxRequest) (*LaunchTmuxResult, error)
 
 	// EnsureRuntime guarantees a reachable runtime for the owner-local
 	// platform and directory. OpenCode keeps its singleflight project/machine

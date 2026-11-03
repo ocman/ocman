@@ -148,10 +148,6 @@ func (h *remoteHost) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorkt
 	return hostExec(ctx, h.conn, "RemoveWorktree", req)
 }
 
-func (h *remoteHost) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
-	return ptr(hostCall[hostsvc.LaunchTmuxResult](ctx, h.conn, "LaunchTmux", req))
-}
-
 func (h *remoteHost) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	return ptr(hostCall[hostsvc.EnsureRuntimeResult](ctx, h.conn, "EnsureProjectOpencode", req))
 }

@@ -65,7 +65,7 @@ export function SessionActionsMenu({
             <DropdownMenuItem
               onSelect={onLaunchOpencode}
               disabled={launchingOpencode}
-              title="Launch opencode --port 0 in a new tmux window"
+              title="Start the managed OpenCode server"
             >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</DropdownMenuItem>
           </>
         )}

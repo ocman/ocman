@@ -253,9 +253,6 @@ func TestRemoteHost_AllMethods(t *testing.T) {
 	if ref, err := rh.WorktreeDefaultBaseRef(ctx, "/x"); err != nil || ref != "main" {
 		t.Errorf("WorktreeDefaultBaseRef = %q, %v", ref, err)
 	}
-	if _, err := rh.LaunchTmux(ctx, hostsvc.LaunchTmuxRequest{Directory: "/x"}); err != nil {
-		t.Errorf("LaunchTmux: %v", err)
-	}
 	if res, err := rh.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: "/x"}); err != nil || res.Port() != "1234" {
 		t.Errorf("EnsureProjectOpencode = %+v, %v", res, err)
 	}

@@ -65,7 +65,6 @@ var callHandlers = map[string]callHandler{
 	"WorktreeDefaultBaseRef":  (*Server).WorktreeDefaultBaseRef,
 	"CreateWorktreeSession":   (*Server).CreateWorktreeSession,
 	"RemoveWorktree":          (*Server).RemoveWorktree,
-	"LaunchTmux":              (*Server).LaunchTmux,
 	"EnsureProjectOpencode":   (*Server).EnsureProjectOpencode,
 	"EnsureRuntime":           (*Server).EnsureRuntime,
 	"StopProjectOpencode":     (*Server).StopProjectOpencode,

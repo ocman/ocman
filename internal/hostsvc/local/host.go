@@ -30,7 +30,6 @@ type Deps struct {
 	WorktreeNamers          map[string]func(context.Context, string, string) (string, error)
 	HookPlugin              func() hostsvc.HookPluginManager
 	CreatePlatformSession   func(context.Context, string, platforms.CreateSessionRequest, []platforms.PermissionRule) (*platforms.CreateSessionResponse, error)
-	LaunchTmux              func(context.Context, string) (string, error)
 	CreateSession           func(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	CreateConfiguredSession func(context.Context, platforms.CreateSessionRequest, []platforms.PermissionRule) (*platforms.CreateSessionResponse, error)
 	Runtime                 ocruntime.Runtime
@@ -257,17 +256,6 @@ func (h *Host) RemoveWorktree(ctx context.Context, req hostsvc.RemoveWorktreeReq
 		return err
 	}
 	return git.RemoveWorktree(ctx, repoRoot, req.Path, req.Force)
-}
-func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*hostsvc.LaunchTmuxResult, error) {
-	log.WithField("directory", req.Directory).Info("host: launching opencode in tmux")
-	name, err := h.deps.LaunchTmux(ctx, req.Directory)
-	if err != nil {
-		log.WithError(err).WithField("directory", req.Directory).Error("host: failed to launch opencode in tmux")
-		return nil, err
-	}
-	log.WithFields(log.Fields{"directory": req.Directory, "tmuxSession": name}).Info("host: launched opencode in tmux")
-	h.runtimeInventoryChanged()
-	return &hostsvc.LaunchTmuxResult{Session: name}, nil
 }
 func (h *Host) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {
 	if h.deps.TmuxSessions == nil {

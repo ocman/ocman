@@ -245,28 +245,19 @@ func TestLaunchOpencodeDefaultRunner(t *testing.T) {
 	existingBody := "if [ \"$1\" = list-sessions ]; then\ncat <<'EOF'\n~/src/repo	1\nEOF\nfi\nexit 0"
 
 	tests := []struct {
-		name string
-		body string
-		dir  string // used verbatim when set; defaults to $HOME/src/repo
-		// legacy calls LaunchOpencode instead of the env-aware launcher.
-		legacy       bool
+		name         string
+		body         string
+		dir          string // used verbatim when set; defaults to $HOME/src/repo
 		wantLaunched bool
 		wantErr      string
 		wantArgs     []string
 		wantNoTmux   bool
 	}{
 		{
-			name:         "LaunchOpencode creates session and runs opencode",
-			body:         "exit 0",
-			legacy:       true,
-			wantLaunched: true,
-			wantArgs:     []string{"new-session -d -s ~/src/repo", OpencodeCommand},
-		},
-		{
-			name:         "creates session with env seeded",
+			name:         "creates session with command and env seeded",
 			body:         "exit 0",
 			wantLaunched: true,
-			wantArgs:     []string{"-e OPENCODE_PERMISSION={}"},
+			wantArgs:     []string{"new-session -d -s ~/src/repo", OpencodeServeCommandForPort(1234), "-e OPENCODE_DB=/db"},
 		},
 		{
 			name:         "existing session short circuits",
@@ -281,7 +272,6 @@ func TestLaunchOpencodeDefaultRunner(t *testing.T) {
 		{
 			name:       "invalid derived name is rejected before tmux runs",
 			body:       "exit 0",
-			legacy:     true,
 			dir:        "/var/projects/has:colon",
 			wantErr:    "invalid characters",
 			wantNoTmux: true,
@@ -304,12 +294,7 @@ func TestLaunchOpencodeDefaultRunner(t *testing.T) {
 				launched bool
 				err      error
 			)
-			if tt.legacy {
-				name, err = LaunchOpencode(t.Context(), dir)
-				launched = err == nil
-			} else {
-				name, launched, err = LaunchOpencodeCmdEnvWith(t.Context(), DefaultRunner, dir, OpencodeCommand, true, map[string]string{"OPENCODE_PERMISSION": "{}"})
-			}
+			name, launched, err = LaunchOpencodeCmdEnvWith(t.Context(), DefaultRunner, dir, OpencodeServeCommandForPort(1234), true, map[string]string{"OPENCODE_DB": "/db"})
 			log := readLog()
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {

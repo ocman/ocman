@@ -200,7 +200,6 @@ func TestEnvArgs(t *testing.T) {
 // choke point.
 func TestOpencodeCommandSuppressesNodeWarnings(t *testing.T) {
 	for name, command := range map[string]string{
-		"OpencodeCommand":             OpencodeCommand,
 		"OpencodeServeCommandForPort": OpencodeServeCommandForPort(1234),
 	} {
 		if !strings.Contains(command, "NODE_NO_WARNINGS=1") {
