@@ -3,6 +3,7 @@ import { useClickOutside } from '../../lib/useClickOutside';
 import { ArchiveFilterIcon } from './SidebarIcons';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import { SessionFilterControls } from '../../components/SessionFilterControls';
+import { SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
 import type { SidebarProjectGroup } from './SessionSidebar';
 import './SidebarHeader.css';
 
@@ -15,15 +16,7 @@ export interface SidebarHeaderProps {
   showArchivedRecent: boolean;
   setShowArchivedRecent: (updater: (current: boolean) => boolean) => void;
   showChildren: boolean;
-  showSnoozed: boolean;
-  setShowSnoozed: (show: boolean) => void;
   setShowChildren: (show: boolean) => void;
-  showFactory: boolean;
-  setShowFactory: (show: boolean) => void;
-  showRoutines: boolean;
-  setShowRoutines: (show: boolean) => void;
-  showPlugins: boolean;
-  setShowPlugins: (show: boolean) => void;
   alwaysShowPrompts: boolean;
   setAlwaysShowPrompts: (show: boolean) => void;
   sidebarView: 'recent' | 'projects';
@@ -40,16 +33,8 @@ export function SidebarHeader({
   setSearchQuery,
   showArchivedRecent,
   setShowArchivedRecent,
-  showSnoozed,
-  setShowSnoozed,
   showChildren,
   setShowChildren,
-  showFactory,
-  setShowFactory,
-  showRoutines,
-  setShowRoutines,
-  showPlugins,
-  setShowPlugins,
   alwaysShowPrompts,
   setAlwaysShowPrompts,
   sidebarView,
@@ -108,13 +93,16 @@ export function SidebarHeader({
         {filtersOpen && (
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
             <ProjectScopePicker projects={projects} value={projectFilter} onChange={setProjectFilter} label="Project" scopePrefix="scope:" />
-            <SessionFilterControls value={{ alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines, showPlugins }}
-              onChange={(key, checked) => ({
-                alwaysShowPrompts: setAlwaysShowPrompts,
-                showArchived: (value: boolean) => setShowArchivedRecent(() => value),
-                showSnoozed: setShowSnoozed, showChildren: setShowChildren,
-                showFactory: setShowFactory, showRoutines: setShowRoutines, showPlugins: setShowPlugins,
-              })[key](checked)} />
+            <SessionFilterControls fields={['alwaysShowPrompts', 'showArchived', 'showChildren']}
+              value={{ ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren }}
+              onChange={(key, checked) => {
+                const setters = {
+                  alwaysShowPrompts: setAlwaysShowPrompts,
+                  showArchived: (value: boolean) => setShowArchivedRecent(() => value),
+                  showChildren: setShowChildren,
+                };
+                if (key in setters) setters[key as keyof typeof setters](checked);
+              }} />
           </div>
         )}
       </div>

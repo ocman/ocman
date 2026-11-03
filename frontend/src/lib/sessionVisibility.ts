@@ -6,6 +6,10 @@ export function hasPendingPrompt(session: { pendingPermission?: boolean; pending
   return !!(session.pendingPermission || session.pendingQuestion);
 }
 
+export function hasBackgroundWork(session: { backgroundTaskCount?: number; backgroundServiceCount?: number }): boolean {
+  return (session.backgroundTaskCount ?? 0) > 0 || (session.backgroundServiceCount ?? 0) > 0;
+}
+
 // filterVisibleSessions drops archived rows. Accepts null/undefined
 // because /api/sessions occasionally serializes a Go nil slice as JSON
 // `null` instead of `[]`, which used to crash the dashboard with

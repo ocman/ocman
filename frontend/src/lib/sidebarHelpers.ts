@@ -1,5 +1,6 @@
 import type { Session } from './api';
 import { projectRootForDirectory } from './worktrees';
+import { hasBackgroundWork } from './sessionVisibility';
 
 // Throttle streaming activity updates to the relative-time label's precision.
 export function compareSidebarActivity(a: Pick<Session, 'timeUpdated'>, b: Pick<Session, 'timeUpdated'>): number {
@@ -47,7 +48,7 @@ export function filterInactiveChildren(
   currentId?: string,
 ): Session[] {
   const isActive = (s: Session) =>
-    s.status === 'busy' || s.pendingPermission || s.pendingQuestion;
+    s.status === 'busy' || hasBackgroundWork(s) || s.pendingPermission || s.pendingQuestion;
   return sessions.filter((s) => {
     if (s.id === currentId || s.pinned || s.snoozedUntil) return true;
     // Match the backend list's internal-session exclusion. SSE can fetch

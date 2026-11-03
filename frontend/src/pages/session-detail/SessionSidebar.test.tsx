@@ -103,9 +103,10 @@ function renderSidebar(
 
 describe('SessionSidebar', () => {
   it.each(['recent', 'projects'] as const)('shows muted running drawers without changing the %s main list', (view) => {
+    for (const filter of ['routines', 'plugins']) localStorage.setItem(`ocman:sidebar-filter:${filter}`, 'true');
     const rows = [
       session({ id: 'normal', title: 'Normal session' }),
-      session({ id: 'archive', title: 'Archived run', status: 'busy', archived: true }),
+      session({ id: 'archive', title: 'Archived run', status: 'done', backgroundTaskCount: 1, archived: true }),
       session({ id: 'routine', title: 'Routine run', status: 'busy', routineId: 'nightly' }),
       session({ id: 'plugin', title: 'Plugin run', status: 'busy', origin: 'plugin' }),
       session({ id: 'done', title: 'Completed archive', archived: true }),
@@ -166,12 +167,13 @@ describe('SessionSidebar', () => {
     expect(within(drawers).getByText('Sleeping session')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Archived 1' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    expect(screen.getByRole('checkbox', { name: 'Show snoozed' })).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Show snoozed' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no matches' } });
     expect(screen.queryByRole('button', { name: 'Snoozed 1' })).not.toBeInTheDocument();
   });
 
-  it.each(['recent', 'projects'] as const)('hides snoozed pins and reveals snoozed rows independently of archives in %s', (view) => {
+  it.each(['recent', 'projects'] as const)('keeps snoozed pins and rows in their drawer despite saved filters in %s', (view) => {
+    localStorage.setItem('ocman:sidebar-filter:snoozed', 'true');
     const rows = [
       session({ id: 'pin', title: 'Snoozed pin', pinned: true, archived: true, snoozedUntil: Date.now() + 60_000 }),
       session({ id: 'nap', title: 'Snoozed row', archived: true, snoozedUntil: Date.now() + 60_000 }),
@@ -181,13 +183,12 @@ describe('SessionSidebar', () => {
     expect(screen.queryByText('Snoozed pin')).not.toBeInTheDocument();
     expect(screen.queryByText('Snoozed row')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    const toggle = screen.getByRole('checkbox', { name: 'Show snoozed' });
-    expect(toggle).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Show snoozed' })).not.toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: 'Snoozed 2' });
     fireEvent.click(toggle);
     expect(screen.getAllByText('Snoozed pin').length).toBeGreaterThan(0);
     expect(screen.getByText('Snoozed row')).toBeInTheDocument();
     expect(screen.queryByText('Archived row')).not.toBeInTheDocument();
-    expect(localStorage.getItem('ocman:sidebar-filter:snoozed')).toBe('true');
     fireEvent.click(toggle);
     expect(screen.queryByText('Snoozed pin')).not.toBeInTheDocument();
   });
@@ -351,15 +352,15 @@ describe('SessionSidebar', () => {
     };
     const first = renderSidebar(group, {});
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    for (const name of ['Show children', 'Show factory', 'Show routines', 'Always show prompts']) {
+    for (const name of ['Show children', 'Always show prompts']) {
       fireEvent.click(screen.getByRole('checkbox', { name }));
     }
     first.unmount();
     renderSidebar(group, {});
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
     expect(screen.getByRole('checkbox', { name: 'Show children' })).not.toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Show factory' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Show routines' })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Show factory' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Show routines' })).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Always show prompts' })).not.toBeChecked();
   });
 
@@ -706,14 +707,15 @@ describe('SessionSidebar', () => {
     });
   });
 
-  it.each(['projects', 'recent'] as const)('hides Factory sessions until enabled in the %s view without fetching Epics', (sidebarView) => {
+  it.each(['projects', 'recent'] as const)('shows running Factory sessions in their drawer in the %s view without fetching Epics', (sidebarView) => {
+    localStorage.setItem('ocman:sidebar-filter:factory', 'true');
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [
         session(),
-        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child' }),
-        session({ id: 'child', title: 'Factory child', parentId: 'factory' }),
-        session({ id: 'factory', title: 'Factory task', factoryAttemptId: 'attempt' }),
+        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child', status: 'busy' }),
+        session({ id: 'child', title: 'Factory child', parentId: 'factory', status: 'busy' }),
+        session({ id: 'factory', title: 'Factory task', factoryAttemptId: 'attempt', status: 'busy' }),
         session({ id: 'normal-child', title: 'Normal child', parentId: 's' }),
         session({ id: 'remote-child', title: 'Remote child', parentId: 'factory', platform: 'r-box:opencode' }),
       ],
@@ -729,8 +731,8 @@ describe('SessionSidebar', () => {
     expect(screen.getByText('Normal child')).toBeInTheDocument();
     expect(screen.getByText('Remote child')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    const showFactory = screen.getByRole('checkbox', { name: 'Show factory' });
-    expect(showFactory).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Show factory' })).not.toBeInTheDocument();
+    const showFactory = screen.getByRole('button', { name: 'Factory 3' });
 
     fireEvent.click(showFactory);
     expect(screen.getByText('Factory task')).toBeInTheDocument();
@@ -744,13 +746,13 @@ describe('SessionSidebar', () => {
     expect(useWorkEpics).not.toHaveBeenCalled();
   });
 
-  it.each(['projects', 'recent'] as const)('hides routine sessions until enabled in the %s view', (sidebarView) => {
+  it.each(['projects', 'recent'] as const)('reveals running routine sessions in their drawer in the %s view', (sidebarView) => {
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [
         session(),
-        session({ id: 'routine', title: 'Nightly check', routineId: 'rt' }),
-        session({ id: 'routine-child', title: 'Routine child', parentId: 'routine' }),
+        session({ id: 'routine', title: 'Nightly check', routineId: 'rt', status: 'busy' }),
+        session({ id: 'routine-child', title: 'Routine child', parentId: 'routine', status: 'busy' }),
       ],
       lastUpdated: 1,
       aggregate: { kind: 'none' },
@@ -762,7 +764,8 @@ describe('SessionSidebar', () => {
     expect(screen.queryByText('Routine child')).not.toBeInTheDocument();
     expect(screen.getByText('Fix thing')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show routines' }));
+    expect(screen.queryByRole('checkbox', { name: 'Show routines' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Routines 2' }));
     expect(screen.getByText('Nightly check')).toBeInTheDocument();
     expect(screen.getByText('Routine child')).toBeInTheDocument();
   });
@@ -772,7 +775,7 @@ describe('SessionSidebar', () => {
       directory: '/repo',
       sessions: [
         session({ id: 'a', title: 'Alpha' }),
-        session({ id: 'routine', title: 'Nightly check', routineId: 'rt' }),
+        session({ id: 'routine', title: 'Nightly check', routineId: 'rt', status: 'busy' }),
         session({ id: 'b', title: 'Beta' }),
       ],
       lastUpdated: 1,
@@ -783,8 +786,8 @@ describe('SessionSidebar', () => {
     expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'b']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show routines' }));
-    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'routine', 'b']);
+    fireEvent.click(screen.getByRole('button', { name: 'Routines 1' }));
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'b', 'routine']);
 
     unmount();
     expect(visibleSidebarSessions.current).toBeNull();

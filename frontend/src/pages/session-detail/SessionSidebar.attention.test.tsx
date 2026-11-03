@@ -63,7 +63,7 @@ it.each(['recent', 'projects'] as const)('reveals a badge-counted Factory interr
   expect(within(attention).getByText(entry.title!)).toBeInTheDocument();
   expect(within(attention).getByLabelText(/Session status: Interrupted/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-  expect(screen.getByRole('checkbox', { name: 'Show factory' })).not.toBeChecked();
+  expect(screen.queryByRole('checkbox', { name: 'Show factory' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no match' } });
   expect(within(attention).getByText(entry.title!)).toBeInTheDocument();
 });
@@ -132,15 +132,15 @@ it('keeps hidden Factory descendants hidden when their parent moves to attention
   expect(screen.queryByText('Hidden Factory child')).not.toBeInTheDocument();
 });
 
-it('returns acknowledged sessions to ordinary history filters', () => {
+it('hides acknowledged settled Factory sessions outside attention', () => {
   const row = { ...seedView(entry.id).session!, ...entry, status: 'interrupted' as const, factoryAttemptId: 'attempt' };
   const page = renderSidebar('recent', [row]);
   snapshot([]);
   page.refresh();
   expect(screen.queryByText(entry.title!)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Show factory' }));
-  expect(screen.getByText(entry.title!)).toBeInTheDocument();
+  expect(screen.queryByRole('checkbox', { name: 'Show factory' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Factory \d/ })).not.toBeInTheDocument();
 });
 
 it('renders missing metadata safely and supports a legacy ownerless entry', () => {

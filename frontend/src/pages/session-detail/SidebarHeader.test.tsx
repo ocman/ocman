@@ -8,17 +8,16 @@ it('keeps the filter button neutral with every filter changed and the menu open'
     projects={[]} projectFilter="" setProjectFilter={vi.fn()}
     searchQuery="" setSearchQuery={vi.fn()}
     showArchivedRecent setShowArchivedRecent={vi.fn()}
-    showSnoozed={false} setShowSnoozed={vi.fn()}
     showChildren={false} setShowChildren={vi.fn()}
-    showFactory setShowFactory={vi.fn()}
-    showRoutines setShowRoutines={vi.fn()}
-    showPlugins setShowPlugins={vi.fn()}
     alwaysShowPrompts setAlwaysShowPrompts={vi.fn()}
     sidebarView="recent" setSidebarView={vi.fn()} onNewSession={vi.fn()}
   />);
   const button = screen.getByRole('button', { name: 'Filter sessions' });
   expect(button).not.toHaveClass('active');
   fireEvent.click(button);
+  for (const name of ['Show snoozed', 'Show factory', 'Show routines', 'Show plugins']) {
+    expect(screen.queryByRole('checkbox', { name })).not.toBeInTheDocument();
+  }
   expect(button).toHaveAttribute('aria-expanded', 'true');
   expect(button).not.toHaveClass('active');
 });
@@ -29,11 +28,7 @@ it('represents a removed project selection and lets the user clear it', () => {
     projectFilter: '/repo', setProjectFilter: vi.fn(),
     searchQuery: '', setSearchQuery: vi.fn(),
     showArchivedRecent: false, setShowArchivedRecent: vi.fn(),
-    showSnoozed: false, setShowSnoozed: vi.fn(),
     showChildren: true, setShowChildren: vi.fn(),
-    showFactory: false, setShowFactory: vi.fn(),
-    showRoutines: false, setShowRoutines: vi.fn(),
-    showPlugins: false, setShowPlugins: vi.fn(),
     alwaysShowPrompts: true, setAlwaysShowPrompts: vi.fn(),
     sidebarView: 'recent', setSidebarView: vi.fn(), onNewSession: vi.fn(),
   };
@@ -59,11 +54,7 @@ it('searches projects and selects an organization prefix', () => {
     projectFilter="" setProjectFilter={setProjectFilter}
     searchQuery="" setSearchQuery={vi.fn()}
     showArchivedRecent={false} setShowArchivedRecent={vi.fn()}
-    showSnoozed={false} setShowSnoozed={vi.fn()}
     showChildren setShowChildren={vi.fn()}
-    showFactory={false} setShowFactory={vi.fn()}
-    showRoutines={false} setShowRoutines={vi.fn()}
-    showPlugins={false} setShowPlugins={vi.fn()}
     alwaysShowPrompts setAlwaysShowPrompts={vi.fn()}
     sidebarView="recent" setSidebarView={vi.fn()} onNewSession={vi.fn()}
   />);

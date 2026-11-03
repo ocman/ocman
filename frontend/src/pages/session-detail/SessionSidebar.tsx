@@ -34,7 +34,7 @@ import { SidebarSessionRow } from './SidebarSessionRow';
 import { useSidebarReorder } from './useSidebarReorder';
 import { SidebarHeader } from './SidebarHeader';
 import { useSessionListFilters } from '../../lib/useSessionListFilters';
-import { hiddenSessionOrigins, matchesSessionListFilters } from '../../lib/sessionListFilters';
+import { hiddenSessionOrigins, matchesSessionListFilters, SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
 import { useSidebarProjectFilter } from './useSidebarProjectFilter';
 import { TmuxClientPopover } from '../../components/TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
@@ -141,9 +141,8 @@ export function SessionSidebar({
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const [searchQuery, setSearchQuery] = useState('');
   const draftGroups = useSidebarDraftGroups(allProjectGroups, searchQuery);
-  const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
-    showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed } = useSessionListFilters();
-  const listFilters = { alwaysShowPrompts, showArchived: showArchivedRecent, showSnoozed, showChildren, showFactory, showRoutines, showPlugins };
+  const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren } = useSessionListFilters();
+  const listFilters = { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren };
   const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, draftGroups, alwaysShowPrompts);
   const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
@@ -208,7 +207,7 @@ export function SessionSidebar({
   });
 
   const filteredPinnedSessions = recentSessions
-    .filter((session) => session.pinned && (!session.snoozedUntil || showSnoozed))
+    .filter((session) => session.pinned && !session.snoozedUntil)
     .sort((a, b) => b.pinnedAt - a.pinnedAt);
   const sortableGroups = filteredProjectGroups.filter((g) => !g.isPinned);
   const flatUnpinned = recentSessions.filter((session) =>
@@ -348,15 +347,8 @@ export function SessionSidebar({
         setSearchQuery={setSearchQuery}
         showArchivedRecent={showArchivedRecent}
         setShowArchivedRecent={setShowArchivedRecent}
-        showSnoozed={showSnoozed} setShowSnoozed={setShowSnoozed}
         showChildren={showChildren}
         setShowChildren={setShowChildren}
-        showFactory={showFactory}
-        setShowFactory={setShowFactory}
-        showRoutines={showRoutines}
-        setShowRoutines={setShowRoutines}
-        showPlugins={showPlugins}
-        setShowPlugins={setShowPlugins}
         alwaysShowPrompts={alwaysShowPrompts}
         setAlwaysShowPrompts={setAlwaysShowPrompts}
         sidebarView={sidebarView}

@@ -505,8 +505,9 @@ session answers now and a mid-turn message waits for the next idle edge. A
 retried `operationId` replays the session on the platform it was created on.
 
 Plugin sessions are tagged with the `plugin` origin and the plugin ID. The
-session sidebar hides them and their children until you check **Show plugins**
-under **Filter sessions**. With session 1.3 (`ArchivedSessionCapability`), set
+session sidebar keeps them and their children out of the main list. Expand the
+**Plugins** drawer to see sessions running foreground or background work.
+With session 1.3 (`ArchivedSessionCapability`), set
 `"archived": true` for background runs: the session is created already archived
 and its own turns do not bring it back. Older negotiated versions reject the
 field rather than create a visible session.

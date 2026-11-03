@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { MutableRefObject } from 'react';
 import { useApiStore } from '../../lib/apiStore';
 import { compareSidebarActivity, filterInactiveChildren, mergeSidebarSessions } from '../../lib/sidebarHelpers';
-import { filterVisibleSessions, hasPendingPrompt } from '../../lib/sessionVisibility';
+import { filterVisibleSessions, hasBackgroundWork, hasPendingPrompt } from '../../lib/sessionVisibility';
 import { onInboxChanged, onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
 import { eventRefresh } from '../../lib/eventRefresh';
@@ -81,14 +81,14 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
         peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
           if (!subscribed) return;
           const candidates = filterInactiveChildren([row], id);
-          if (!candidates.length || (row.status !== 'busy' && !row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
+          if (!candidates.length || (row.status !== 'busy' && !hasBackgroundWork(row) && !row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
             hiddenSessions.add(sessionID);
             return;
           }
           // Replayed events get receipt times. Trust activity only on live rows.
           const live = row.status === 'busy';
           const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
-          if (!row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !live && row.timeUpdated < since) {
+          if (!hasBackgroundWork(row) && !row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !live && row.timeUpdated < since) {
             hiddenSessions.add(sessionID);
             return;
           }

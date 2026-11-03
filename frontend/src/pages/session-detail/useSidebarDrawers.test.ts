@@ -10,7 +10,7 @@ const session = (id: string, patch: Partial<Session> = {}) => ({
 }) as Session;
 
 describe('running sidebar drawers', () => {
-  it('keeps only busy sessions and assigns overlapping categories once, with origin first', () => {
+  it('keeps busy sessions and background work and assigns overlapping categories once, with origin first', () => {
     const archive = session('archive', { archived: true });
     const result = runningSidebarDrawers([
       archive, archive, session('plain'), session('done', { status: 'done', archived: true, backgroundTaskCount: 1 }),
@@ -18,8 +18,19 @@ describe('running sidebar drawers', () => {
       session('routine', { archived: true, routineId: 'r' }), session('plugin', { archived: true, origin: 'plugin' }),
     ], '', {});
     expect(result.map((drawer) => [drawer.id, drawer.sessions.map((row) => row.id)])).toEqual([
-      ['archived', ['archive']], ['routines', ['routine']], ['plugins', ['plugin']],
+      ['archived', ['archive', 'done']], ['routines', ['routine']], ['plugins', ['plugin']],
     ]);
+  });
+
+  it('includes background services and tasks until they finish, including Factory descendants', () => {
+    const rows = [session('task', { status: 'done', archived: true, backgroundTaskCount: 1 }),
+      session('service', { status: 'waiting', archived: true, backgroundServiceCount: 1 }),
+      session('factory', { factoryAttemptId: 'attempt', routineId: 'r', origin: 'plugin' }),
+      session('child', { parentId: 'factory', status: 'done', backgroundTaskCount: 1 })];
+    expect(runningSidebarDrawers(rows, '', {}).map(d => [d.id, d.sessions.map(s => s.id)])).toEqual([
+      ['archived', ['service', 'task']], ['factory', ['child', 'factory']],
+    ]);
+    expect(runningSidebarDrawers(rows.slice(0, 2).map(s => ({ ...s, backgroundTaskCount: 0, backgroundServiceCount: 0 })), '', {})).toEqual([]);
   });
 
   it('inherits origins across descendants and keeps identities separate by owner', () => {
