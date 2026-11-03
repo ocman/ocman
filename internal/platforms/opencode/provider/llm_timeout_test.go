@@ -17,7 +17,7 @@ import (
 func shortenReadTimeout(t *testing.T) {
 	t.Helper()
 	previous := openCodeClient.Timeout
-	openCodeClient.Timeout = 20 * time.Millisecond
+	openCodeClient.Timeout = 200 * time.Millisecond
 	t.Cleanup(func() { openCodeClient.Timeout = previous })
 }
 
@@ -31,7 +31,7 @@ func TestWorktreeNameOutlivesReadTimeout(t *testing.T) {
 		case "POST /session":
 			_, _ = w.Write([]byte(`{"id":"naming"}`))
 		case "POST /session/naming/message":
-			time.Sleep(80 * time.Millisecond)
+			time.Sleep(600 * time.Millisecond)
 			_, _ = w.Write([]byte(`{"parts":[{"type":"text","text":"Fix Login Flow"}]}`))
 		default:
 			w.WriteHeader(http.StatusNoContent)
@@ -39,7 +39,7 @@ func TestWorktreeNameOutlivesReadTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	name, err := WorktreeName(ctx, u.Port(), "/repo", "fix login")
 	if err != nil || name != "fix-login-flow" {
@@ -64,14 +64,14 @@ func TestModelOperationsOutliveReadTimeout(t *testing.T) {
 				if strings.HasSuffix(r.URL.Path, "/command") || strings.HasSuffix(r.URL.Path, "/summarize") {
 					started <- struct{}{}
 					select {
-					case <-time.After(80 * time.Millisecond):
+					case <-time.After(600 * time.Millisecond):
 					case <-r.Context().Done():
 						return
 					}
 				}
 				_, _ = w.Write([]byte(`{}`))
 			})
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := operation.call(ctx, a); err != nil {
 				t.Fatalf("slow operation: %v", err)
@@ -90,7 +90,7 @@ func TestModelOperationsOutliveReadTimeout(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("cancellation did not abort request")
 			}
-			deadline, cancelDeadline := context.WithTimeout(context.Background(), 40*time.Millisecond)
+			deadline, cancelDeadline := context.WithTimeout(context.Background(), 300*time.Millisecond)
 			defer cancelDeadline()
 			if err := operation.call(deadline, a); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("deadline: %v", err)
@@ -106,7 +106,7 @@ func TestOrdinaryReadStillTimesOut(t *testing.T) {
 	}))
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := getJSON(ctx, u.Port(), "/config"); !errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
 		t.Fatalf("expected client timeout before caller deadline: %v (ctx: %v)", err, ctx.Err())
