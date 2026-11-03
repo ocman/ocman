@@ -11,6 +11,7 @@ local setup, commands, tests and the pull request checklist. Coding agents and
 repository contributors should also read [AGENTS.md](AGENTS.md). The
 [Makefile](Makefile) is the authoritative command reference.
 
-`make dev` keeps ocman's databases in this checkout (`.dev/state.db` and
-`state_conv.db`). Native platform data, such as OpenCode's database, is not
+In a linked worktree, `make dev` keeps ocman's databases in that checkout
+(`.dev/state.db` and `state_conv.db`). The main checkout keeps conversation
+history in `state_conv.db` but uses the live `~/.local/share/ocman/state.db`. Native platform data, such as OpenCode's database, is not
 isolated; see [database isolation](docs/other/contributing.md#database-isolation-before-startup).

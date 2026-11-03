@@ -62,6 +62,39 @@ class DevDataConfigTest(unittest.TestCase):
                                     text=True, check=True)
             self.assertIn(f"STATE={root}/custom/state.db", result.stdout)
 
+    def test_main_checkout_keeps_real_state_and_worktrees_isolate_it(self):
+        # The main checkout is the daily driver; only linked worktrees (agent
+        # sessions) get a checkout-local state database.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            main = base / "main"
+            main.mkdir()
+            shutil.copy(Path(__file__).resolve().parent.parent / "Makefile", main)
+            (base / "bin").mkdir()
+            air = base / "bin/air"
+            air.write_text('#!/bin/sh\necho "STATE=[$OCMAN_STATE_DB]"\n')
+            air.chmod(0o755)
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("OCMAN_STATE_DB", "OCMAN_CONVERSATIONS_DB",
+                                "OCMAN_STATEV2_DB", "MAKEFLAGS", "MFLAGS")
+                   and not k.startswith("GIT_")}
+            env["PATH"] = f'{base / "bin"}:{env["PATH"]}'
+            git = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+            subprocess.run(git + ["init", "-q", str(main)], check=True, env=env)
+            subprocess.run(git + ["-C", str(main), "add", "Makefile"], check=True, env=env)
+            subprocess.run(git + ["-C", str(main), "commit", "-qm", "init"], check=True, env=env)
+            worktree = base / "wt"
+            subprocess.run(git + ["-C", str(main), "worktree", "add", "-q", str(worktree)],
+                           check=True, env=env)
+
+            def state(cwd):
+                return subprocess.run(["make", "--no-print-directory", "dev-backend"],
+                                      cwd=cwd, env=env, capture_output=True,
+                                      text=True, check=True).stdout
+
+            self.assertIn("STATE=[]", state(main))
+            self.assertIn(f"STATE=[{worktree}/.dev/state.db]", state(worktree))
+
     def test_air_preserves_conversation_checkpoints_on_exit(self):
         root = Path(__file__).resolve().parent.parent
         with (root / ".air.toml").open("rb") as handle:

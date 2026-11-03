@@ -32,12 +32,15 @@ export OTEL_SERVICE_NAME ?= ocman-dev
 export OCMAN_RELAY_URL ?= http://localhost:$(RELAY_PORT)
 
 # --- Development databases ------------------------------------------------
-# Keep application state and conversation history checkout-local, outside
-# Air's disposable build directory. The state database's directory also holds
-# provider runtime state and artifacts. History keeps its established path so
-# existing development history is not orphaned.
+# The main checkout is the daily driver and keeps the real application state
+# (~/.local/share/ocman/state.db). Linked worktrees and non-Git copies keep it
+# checkout-local in .dev/, whose directory also holds provider runtime state
+# and artifacts. Conversation history stays checkout-local, outside Air's
+# disposable build directory, at its established path so existing development
+# history is not orphaned.
 DEV_TARGETS := dev dev-prod dev-prod-watch dev-backend dev-remote
-$(DEV_TARGETS): export OCMAN_STATE_DB ?= $(CURDIR)/.dev/state.db
+DEV_MAIN_CHECKOUT := $(shell d=$$(git -C '$(CURDIR)' rev-parse --absolute-git-dir 2>/dev/null) && c=$$(git -C '$(CURDIR)' rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && [ "$$d" = "$$c" ] && echo 1)
+$(DEV_TARGETS): export OCMAN_STATE_DB ?= $(if $(DEV_MAIN_CHECKOUT),,$(CURDIR)/.dev/state.db)
 $(DEV_TARGETS): export OCMAN_CONVERSATIONS_DB ?= $(if $(OCMAN_STATEV2_DB),$(OCMAN_STATEV2_DB),$(CURDIR)/state_conv.db)
 
 # --- dev targets ----------------------------------------------------------

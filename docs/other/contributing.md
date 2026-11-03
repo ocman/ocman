@@ -89,7 +89,9 @@ pnpm --dir frontend install --frozen-lockfile
 Development must use disposable databases isolated to this checkout and branch.
 A different port does not isolate data. Tests already use temporary stores.
 
-Backend `make dev*` targets default `OCMAN_STATE_DB` to `.dev/state.db` and
+In a linked Git worktree, backend `make dev*` targets default `OCMAN_STATE_DB`
+to `.dev/state.db`; the main checkout leaves it unset and uses the live
+`~/.local/share/ocman/state.db`, so develop in a worktree. Both default
 `OCMAN_CONVERSATIONS_DB` to `state_conv.db` in the checkout; set either to
 override. Native platform data is not isolated: point `-db` or `OPENCODE_DB` at
 a disposable OpenCode database when the run may write to it. See

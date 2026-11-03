@@ -9,6 +9,9 @@ tests. Startup may migrate automatically, so inspect resolved paths first.
 
 - Never use the user's live database, a shared development database or another
   checkout's database. A different HTTP port does not isolate a database.
+- The main checkout is the user's daily driver: its `make dev*` targets use the
+  live application state on purpose. Never start dev targets there; work in a
+  linked worktree, where they default to `.dev/state.db`.
 - Prefer existing database-path overrides. Use an ignored checkout-local path
   such as `.dev/<branch-key>/state.db`, with a collision-resistant branch key.
   Server databases need a separate database or schema for project, checkout and
@@ -55,10 +58,12 @@ make otel-logs
 make otel-reset       # also wipes persisted telemetry data
 ```
 
-Conversation storage and ingestion are always enabled. Backend dev targets
-default `OCMAN_STATE_DB` to `.dev/state.db` (its directory also holds provider
-runtime state and artifacts) and `OCMAN_CONVERSATIONS_DB` to `state_conv.db`,
-both in this checkout. Set either variable to override. Tests use temporary
+Conversation storage and ingestion are always enabled. In a linked worktree or
+non-Git copy, backend dev targets default `OCMAN_STATE_DB` to `.dev/state.db`
+(its directory also holds provider runtime state and artifacts); in the main
+checkout they leave it unset, so ocman uses `~/.local/share/ocman/state.db`.
+`OCMAN_CONVERSATIONS_DB` defaults to `state_conv.db` in the checkout. Set either
+variable to override. Tests use temporary
 stores; builds do not start ingestion. Native platform data is not covered:
 `-db` pins the managed OpenCode server's database through `OPENCODE_DB`, but its other state is
 still shared. Do not change `HOME` as a workaround.
