@@ -12,8 +12,8 @@ test('badge-counted old Factory session remains discoverable outside recent hist
   const attention = sidebar.getByRole('region', { name: 'Needs attention' });
   await expect(attention.getByText(old.title)).toBeVisible();
   await sidebar.getByRole('button', { name: 'Filter sessions', exact: true }).click();
-  await expect(sidebar.getByRole('checkbox', { name: 'Show factory' })).not.toBeChecked();
-  await sidebar.getByRole('checkbox', { name: 'Show factory' }).check();
+  await expect(sidebar.getByRole('checkbox', { name: 'Show factory' })).toHaveCount(0);
+  await sidebar.getByRole('checkbox', { name: 'Show children' }).uncheck();
   await expect(attention.getByText(old.title)).toBeVisible();
   await sidebar.getByRole('button', { name: 'Filter sessions', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('sidebar-needs-attention.png') });

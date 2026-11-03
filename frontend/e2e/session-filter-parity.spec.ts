@@ -13,7 +13,7 @@ const rows = [
   { ...MOCK_SESSION, id: 'prompt', title: 'Pending prompt work', routineId: 'routine-1', archived: true, pendingQuestion: true },
 ];
 
-test('phone filters use desktop options, defaults and saved preferences', async ({ mockedPage: page }) => {
+test('session list retains category preferences while sidebar shares only history and prompt filters', async ({ mockedPage: page }) => {
   await page.route('/api/sessions*', route => route.fulfill({ json: rows }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/sessions');
@@ -50,17 +50,27 @@ test('phone filters use desktop options, defaults and saved preferences', async 
   await expect(page.getByRole('link', { name: /Pending prompt work/ })).toHaveCount(0);
   await mobileMenu.getByRole('checkbox', { name: 'Show archived' }).check();
   await expect(page.getByRole('link', { name: /Archived work/ })).toBeVisible();
-  const selected = await mobileMenu.getByRole('checkbox').evaluateAll(elements => elements.map(element => (element as HTMLInputElement).checked));
+  const selected = await mobileMenu.getByRole('checkbox').evaluateAll(elements => elements.map(element => ({
+    label: element.closest('label')!.textContent!.trim(), checked: (element as HTMLInputElement).checked,
+  })));
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/session/${MOCK_SESSION.id}`);
   await page.getByRole('button', { name: 'Filter sessions' }).click();
   const desktopMenu = page.getByRole('group', { name: 'Session filters' });
-  expect(await desktopMenu.getByRole('checkbox').evaluateAll(elements => elements.map(element => (element as HTMLInputElement).checked))).toEqual(selected);
-  await desktopMenu.getByRole('checkbox', { name: 'Show routines' }).uncheck();
+  const shared = ['Always show prompts', 'Show archived', 'Show children'];
+  expect(await desktopMenu.getByRole('checkbox').evaluateAll(elements => elements.map(element => ({
+    label: element.closest('label')!.textContent!.trim(), checked: (element as HTMLInputElement).checked,
+  })))).toEqual(selected.filter(option => shared.includes(option.label)));
+  for (const name of ['Show factory', 'Show routines', 'Show plugins', 'Show snoozed']) {
+    await expect(desktopMenu.getByRole('checkbox', { name })).toHaveCount(0);
+  }
+  await desktopMenu.getByRole('checkbox', { name: 'Show children' }).check();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/sessions');
-  await expect(page.getByRole('link', { name: /Routine work/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Routine work/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Routine child/ })).toBeVisible();
   await page.getByRole('button', { name: 'Filter sessions' }).click();
-  await expect(page.getByRole('checkbox', { name: 'Show routines' })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Show routines' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Show children' })).toBeChecked();
 });
