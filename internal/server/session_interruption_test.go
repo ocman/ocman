@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -28,6 +29,33 @@ func recordStoppedReplacement(t *testing.T, srv *Server, root, reason string) er
 
 func (p *interruptionLifecyclePlatform) SessionLifecycle(_ context.Context, id string) (*platforms.SessionLifecycle, error) {
 	return p.lifecycle(id)
+}
+
+// GetSessionLifecycle is the persisted row consistent with the live
+// lifecycle: an interrupted turn ends on an unanswered prompt, a settled one
+// on a finished assistant message.
+func (p *interruptionLifecyclePlatform) GetSessionLifecycle(_ context.Context, id string) (db.SessionLifecycle, error) {
+	l, err := p.lifecycle(id)
+	if errors.Is(err, platforms.ErrNotFound) {
+		return db.SessionLifecycle{}, sql.ErrNoRows
+	}
+	if err != nil {
+		return db.SessionLifecycle{}, err
+	}
+	if l == nil {
+		return db.SessionLifecycle{}, sql.ErrNoRows
+	}
+	persisted := db.SessionLifecycle{Status: l.Status, LatestMessageID: l.LatestMessageID, LatestMessageCreated: l.LatestMessageCreated, LatestMessageRole: l.LatestMessageRole}
+	switch l.Status {
+	case db.StatusInterrupted:
+		persisted.LatestMessageRole = "user"
+	case db.StatusBusy:
+	default:
+		if persisted.LatestMessageRole == "" {
+			persisted.LatestMessageRole, persisted.LatestMessageFinish = "assistant", "stop"
+		}
+	}
+	return persisted, nil
 }
 
 func TestReplacementUsesFreshBoundedLifecycleRead(t *testing.T) {

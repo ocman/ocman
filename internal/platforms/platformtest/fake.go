@@ -4,6 +4,7 @@ package platformtest
 
 import (
 	"context"
+	"database/sql"
 	"io"
 
 	"github.com/ocman/ocman/internal/db"
@@ -55,9 +56,18 @@ type Fake struct {
 	CreateSessionFn      func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	DisposeFn            func(req platforms.DisposeSessionRequest) error
 	ProxyEventsFn        func(ctx context.Context, sessionID string, w io.Writer, flush func()) error
+
+	// SessionIdentitiesFn and SessionLifecycleFn replace the owner-local
+	// runtime reads. By default identities are every listed session and a
+	// lifecycle is the matching SessionList row's directory and status.
+	SessionIdentitiesFn func(ctx context.Context) ([]db.Session, error)
+	SessionLifecycleFn  func(sessionID string) (db.SessionLifecycle, error)
 }
 
-var _ platforms.Platform = (*Fake)(nil)
+var (
+	_ platforms.Platform             = (*Fake)(nil)
+	_ platforms.RuntimeSessionReader = (*Fake)(nil)
+)
 
 func (f *Fake) ID() platforms.ID {
 	if f.PlatformID == "" {
@@ -258,4 +268,23 @@ func call[R any](fn func(R) error, req R) error {
 		return fn(req)
 	}
 	return platforms.ErrUnsupported
+}
+
+func (f *Fake) GetSessionIdentities(ctx context.Context) ([]db.Session, error) {
+	if f.SessionIdentitiesFn != nil {
+		return f.SessionIdentitiesFn(ctx)
+	}
+	return f.Sessions(ctx, "", 0)
+}
+
+func (f *Fake) GetSessionLifecycle(_ context.Context, sessionID string) (db.SessionLifecycle, error) {
+	if f.SessionLifecycleFn != nil {
+		return f.SessionLifecycleFn(sessionID)
+	}
+	for _, s := range f.SessionList {
+		if s.ID == sessionID {
+			return db.SessionLifecycle{Directory: s.Directory, Status: s.Status}, nil
+		}
+	}
+	return db.SessionLifecycle{}, sql.ErrNoRows
 }

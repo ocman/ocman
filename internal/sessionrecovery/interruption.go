@@ -30,13 +30,7 @@ func (s *Service) RecordOpencodeReplacement(ctx context.Context, root, reason st
 	} else if pending != nil {
 		return state.ErrReplacementStopping
 	}
-	var sessions []db.Session
-	if s.deps.Sessions != nil {
-		// The display list can omit inactive children or newly-created sessions.
-		sessions, err = s.deps.Sessions.GetSessionIdentities(ctx)
-	} else {
-		sessions, err = adapter.Sessions(ctx, "", 0)
-	}
+	sessions, err := s.sessionIdentities(ctx)
 	if err != nil {
 		return err
 	}

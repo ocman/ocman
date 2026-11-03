@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/ocruntime"
 	"github.com/ocman/ocman/internal/platforms"
 )
@@ -10,6 +11,16 @@ import (
 type runtimeLifecyclePlatform struct {
 	*interruptionLifecyclePlatform
 	platforms.RuntimeSessionReader
+}
+
+// The raw database is the persisted source; it wins over the fixture's
+// lifecycle-derived rows.
+func (p *runtimeLifecyclePlatform) GetSessionIdentities(ctx context.Context) ([]db.Session, error) {
+	return p.RuntimeSessionReader.GetSessionIdentities(ctx)
+}
+
+func (p *runtimeLifecyclePlatform) GetSessionLifecycle(ctx context.Context, id string) (db.SessionLifecycle, error) {
+	return p.RuntimeSessionReader.GetSessionLifecycle(ctx, id)
 }
 
 func registerRuntimeLifecycle(srv *Server, p *interruptionLifecyclePlatform) {

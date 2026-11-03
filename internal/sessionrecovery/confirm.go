@@ -48,12 +48,7 @@ func (s *Service) ConfirmOpencodeReplacement(ctx context.Context, root string) e
 		return err
 	}
 	if !progress.Initialized {
-		var sessions []db.Session
-		if s.deps.Sessions != nil {
-			sessions, err = s.deps.Sessions.GetSessionIdentities(ctx)
-		} else {
-			sessions, err = adapter.Sessions(ctx, "", 0)
-		}
+		sessions, err := s.sessionIdentities(ctx)
 		if err != nil {
 			return err
 		}
@@ -150,36 +145,24 @@ func (s *Service) confirmReplacementBatch(ctx context.Context, root string, adap
 
 func (s *Service) replacementCandidateNotice(ctx context.Context, adapter platforms.Platform, id string, prior state.SessionInterruption, sampled bool, stopAt, admissionAt int64) (state.SessionInterruption, error) {
 	active := prior.BaselineStatus == string(db.StatusBusy) || prior.BaselineStatus == string(db.StatusInterrupted)
-	var messageID string
-	if s.deps.Sessions != nil {
-		l, err := s.deps.Sessions.GetSessionLifecycle(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return state.SessionInterruption{}, nil
-		}
-		if err != nil {
-			return state.SessionInterruption{}, err
-		}
-		if sampled && l.LatestMessageID == prior.MessageID && (replacementAbort(prior.BaselineErrorName) || !active) {
-			return state.SessionInterruption{}, nil
-		}
-		unfinished := l.Status == db.StatusBusy || l.LatestMessageRole == "user" || l.LatestMessageFinish == "tool-calls" || l.LatestMessageFinish == "unknown"
-		if !unfinished && !ReplacementAbortDuringStop(l, prior, sampled, stopAt, admissionAt) {
-			return state.SessionInterruption{}, nil
-		}
-		messageID = l.LatestMessageID
-	} else {
-		l, err := interruptionLifecycle(ctx, adapter, id)
-		if errors.Is(err, platforms.ErrNotFound) {
-			return state.SessionInterruption{}, nil
-		}
-		if err != nil {
-			return state.SessionInterruption{}, err
-		}
-		if l == nil || (l.Status != db.StatusBusy && l.Status != db.StatusInterrupted) || (sampled && l.LatestMessageID == prior.MessageID && !active) {
-			return state.SessionInterruption{}, nil
-		}
-		messageID = l.LatestMessageID
+	if s.deps.Sessions == nil {
+		return state.SessionInterruption{}, ErrNoSessionReader
 	}
+	l, err := s.deps.Sessions.GetSessionLifecycle(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return state.SessionInterruption{}, nil
+	}
+	if err != nil {
+		return state.SessionInterruption{}, err
+	}
+	if sampled && l.LatestMessageID == prior.MessageID && (replacementAbort(prior.BaselineErrorName) || !active) {
+		return state.SessionInterruption{}, nil
+	}
+	unfinished := l.Status == db.StatusBusy || l.LatestMessageRole == "user" || l.LatestMessageFinish == "tool-calls" || l.LatestMessageFinish == "unknown"
+	if !unfinished && !ReplacementAbortDuringStop(l, prior, sampled, stopAt, admissionAt) {
+		return state.SessionInterruption{}, nil
+	}
+	messageID := l.LatestMessageID
 	if messageID == "" {
 		return state.SessionInterruption{}, nil
 	}

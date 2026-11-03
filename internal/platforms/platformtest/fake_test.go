@@ -2,6 +2,7 @@ package platformtest
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"testing"
@@ -177,3 +178,26 @@ func operations(ctx context.Context, f *Fake) map[string]error {
 }
 
 func second[T any](_ T, err error) error { return err }
+
+func TestFakeRuntimeSessionReader(t *testing.T) {
+	ctx := context.Background()
+	f := &Fake{SessionList: []db.Session{{ID: "s", Directory: "/repo", Status: db.StatusBusy}}}
+	if got, err := f.GetSessionIdentities(ctx); err != nil || len(got) != 1 {
+		t.Fatalf("identities = %v, %v", got, err)
+	}
+	if l, err := f.GetSessionLifecycle(ctx, "s"); err != nil || l.Directory != "/repo" || l.Status != db.StatusBusy {
+		t.Fatalf("lifecycle = %+v, %v", l, err)
+	}
+	if _, err := f.GetSessionLifecycle(ctx, "gone"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing lifecycle err = %v", err)
+	}
+	hook := errors.New("hook")
+	f.SessionIdentitiesFn = func(context.Context) ([]db.Session, error) { return nil, hook }
+	f.SessionLifecycleFn = func(string) (db.SessionLifecycle, error) { return db.SessionLifecycle{}, hook }
+	if _, err := f.GetSessionIdentities(ctx); !errors.Is(err, hook) {
+		t.Fatalf("identities hook err = %v", err)
+	}
+	if _, err := f.GetSessionLifecycle(ctx, "s"); !errors.Is(err, hook) {
+		t.Fatalf("lifecycle hook err = %v", err)
+	}
+}

@@ -113,3 +113,18 @@ func TestMissingStateRecoveryHooks(t *testing.T) {
 		t.Fatalf("stopping=%v err=%v", inst, err)
 	}
 }
+
+// Replacement fails closed without an owner-local session reader: the
+// display list can omit inactive children and newly created sessions.
+func TestReplacementRequiresSessionReader(t *testing.T) {
+	s := New(Deps{
+		State:    statetest.Open(t),
+		Platform: func(platforms.ID) (platforms.Platform, bool) { return &recoveryPlatform{}, true },
+	})
+	if err := s.RecordOpencodeReplacement(t.Context(), "/repo", "restart"); !errors.Is(err, ErrNoSessionReader) {
+		t.Fatalf("record err = %v", err)
+	}
+	if err := s.BeginOpencodeReplacementStopWithInstance(t.Context(), "/repo", nil); !errors.Is(err, ErrNoSessionReader) {
+		t.Fatalf("stop err = %v", err)
+	}
+}

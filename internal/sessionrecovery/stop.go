@@ -37,12 +37,7 @@ func (s *Service) BeginOpencodeReplacementStopWithInstance(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	var sessions []db.Session
-	if s.deps.Sessions != nil {
-		sessions, err = s.deps.Sessions.GetSessionIdentities(ctx)
-	} else {
-		sessions, err = adapter.Sessions(ctx, "", 0)
-	}
+	sessions, err := s.sessionIdentities(ctx)
 	if err != nil {
 		return err
 	}
@@ -64,11 +59,8 @@ func (s *Service) BeginOpencodeReplacementStopWithInstance(ctx context.Context, 
 		}
 		prior := prepared[session.ID]
 		prior.MessageID, prior.BaselineStatus = l.LatestMessageID, string(l.Status)
-		prior.BaselineMessageCreated = l.LatestMessageCreated
-		if s.deps.Sessions != nil {
-			prior.BaselineMessageCreated = persisted.LatestMessageCreated
-			prior.BaselineErrorName = persisted.LatestErrorName
-		}
+		prior.BaselineMessageCreated = persisted.LatestMessageCreated
+		prior.BaselineErrorName = persisted.LatestErrorName
 		baseline[session.ID] = prior
 	}
 	// Take this after revalidation, not at the start of a potentially slow scan.
@@ -91,8 +83,11 @@ func (s *Service) BeginOpencodeReplacementStopWithInstance(ctx context.Context, 
 func (s *Service) stopLifecycleSnapshot(ctx context.Context, adapter platforms.Platform, sessionID string) (*platforms.SessionLifecycle, db.SessionLifecycle, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		l, err := interruptionLifecycle(ctx, adapter, sessionID)
-		if err != nil || l == nil || s.deps.Sessions == nil {
+		if err != nil || l == nil {
 			return l, db.SessionLifecycle{}, err
+		}
+		if s.deps.Sessions == nil {
+			return nil, db.SessionLifecycle{}, ErrNoSessionReader
 		}
 		persisted, err := s.deps.Sessions.GetSessionLifecycle(ctx, sessionID)
 		if err != nil {
