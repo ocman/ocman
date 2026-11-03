@@ -156,7 +156,7 @@ jobs:
           make proto
           git diff --exit-code -- internal/remote/proto
       - name: Desktop build tags compile
-        run: go build -tags desktop,exclude_graphdriver_devicemapper ./...
+        run: go build -tags gui,desktop,exclude_graphdriver_devicemapper ./...
       # The e2e job used to build this after its frontend build; the
       # binary is not needed there (specs mock /api), so the production
       # link check lives here where the Go cache is already warm.

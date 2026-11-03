@@ -13,7 +13,7 @@ browser/backend data flows.
 | `main.go`, `internal/app` | Embedded skills, build version, startup, flags, DB selection, auth and composition. `internal/app/run.go` and `ocman -h` define flags. |
 | `internal/server` | HTTP/static serving, platform/Host wiring and feature registry in `modules.go`. |
 | `internal/module`, `internal/httpx` | Module lifetime and typed bus; shared HTTP helpers. Read [backend.md](backend.md). |
-| `internal/gui` | Wails window around the same HTTP server with `-gui`/`-gui-addr`. |
+| `internal/gui` | Wails window around the same HTTP server with `-gui`/`-gui-addr`; Wails links only with `-tags gui`. |
 | `internal/toolpath` | Merge login-shell PATH at startup for launchd and tool shims. |
 | `internal/webui/static` | Generated embedded frontend; keep tracked `robots.txt`. |
 

@@ -189,7 +189,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `-addr` | `127.0.0.1:8228` | Listen address. |
 | `-db` | `~/.local/share/opencode/opencode.db` | Path to OpenCode's SQLite DB. Opened read-only. |
 | `-conversations-db` | `state_conv.db` beside `state.db` | Retained conversation store. Also `OCMAN_CONVERSATIONS_DB`; deprecated alias `-statev2-db`. |
-| `-gui` | Auto-enabled in an app bundle, otherwise `false` | Open a native Wails desktop window. |
+| `-gui` | Auto-enabled in an app bundle, otherwise `false` | Open a native Wails desktop window. Only the desktop build (`make build-desktop`) includes it; headless builds exit with an error. |
 | `-gui-addr` | `127.0.0.1:0` | Backend listen address in desktop mode; the default picks an ephemeral port. |
 | `-log-file` | _(platform default)_ | Also write the log to this file (plain text, dir `0700`, file `0600`). Default `~/Library/Logs/ocman/ocman.log` on macOS, otherwise `$XDG_STATE_HOME/ocman/ocman.log` (`~/.local/state/ocman/ocman.log`). A file over 10 MB at startup moves to `ocman.log.1`. `-` or `off` logs to stderr only. Check this file when the desktop app fails to start. |
 | `-gui-boot-timeout` | `10s` | With `-gui`, how long to wait for the backend to answer before showing an error dialog instead of opening the window. In `-gui` mode every startup failure shows a native alert (macOS `osascript`, Linux `zenity` when installed) naming the log file. |

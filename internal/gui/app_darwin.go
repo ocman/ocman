@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build gui && darwin
 
 package gui
 

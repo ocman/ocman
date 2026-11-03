@@ -192,10 +192,11 @@ install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|beads|wo
 # All assets are therefore served from the Go `//go:embed static/*` FS in
 # internal/webui/static — NOT from Wails's own asset server. So the frontend
 # must be built into internal/webui/static (the `pnpm build` output).
+# The window links Wails only with the gui tag; headless builds leave it out.
 build-desktop: build-frontend ## Build the Wails desktop app (outputs to build/bin/)
 	@mkdir -p build
 	rsvg-convert -w 1024 -h 1024 frontend/public/favicon.svg -o build/appicon.png
-	wails build -skipbindings -s -o ocman-desktop -ldflags "-X main.version=$(VERSION)"
+	wails build -tags gui -skipbindings -s -o ocman-desktop -ldflags "-X main.version=$(VERSION)"
 	@# wails.json's productVersion is static; stamp the real version into the bundle.
 	@if [ -f build/bin/ocman.app/Contents/Info.plist ]; then \
 		plutil -replace CFBundleShortVersionString -string "$(VERSION)" build/bin/ocman.app/Contents/Info.plist && \

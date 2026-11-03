@@ -441,6 +441,8 @@ flowchart TD
   authentication, logging, platform registration and HTTP/desktop composition.
   It disables the OpenCode platform when the installed binary is older than v2.
   The root entrypoint only supplies embedded skills and the build version.
+  `internal/gui` links Wails only under the `gui` build tag, which
+  `make build-desktop` and `wails.json` pass; headless builds reject `-gui`.
 - **platforms/claude/transport.** The Claude adapter composes the browsing and
   per-project supervisors, routes session operations by native session ID, and
   recovers/drains project runtimes. Creation chooses a project runtime; after
