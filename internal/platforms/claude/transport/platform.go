@@ -13,7 +13,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/historyjournal"
 	"github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/ocruntime"
@@ -26,13 +25,13 @@ import (
 )
 
 // New serves the machine's Claude transcripts to history ingestion and drives the sessions ocman launches through per-project supervisors.
-func New(ctx context.Context, database *db.DB, stateDB *state.DB, skills map[string][]byte, mcpAddr string, pricing CostCalculator) platforms.Integration {
+func New(ctx context.Context, stateDB *state.DB, skills map[string][]byte, mcpAddr string, pricing CostCalculator) platforms.Integration {
 	exe, err := os.Executable()
 	if err != nil {
 		log.WithError(err).Warn("Claude Code sessions unavailable")
 		return nil
 	}
-	p := newClaudePlatformAt(ctx, database, stateDB, state.DefaultDataDir(), exe, skills, mcpAddr)
+	p := newClaudePlatformAt(ctx, stateDB, state.DefaultDataDir(), exe, skills, mcpAddr)
 	if p == nil {
 		return nil // a typed nil would register a broken platform
 	}
@@ -45,7 +44,7 @@ func New(ctx context.Context, database *db.DB, stateDB *state.DB, skills map[str
 // in-process; ocman still reaches it only through the provider protocol on a
 // private socket, like a project supervisor. A failure leaves the platform
 // unregistered rather than failing startup.
-func newClaudePlatformAt(ctx context.Context, database *db.DB, stateDB *state.DB, dataDir, exe string, skills map[string][]byte, mcpAddr string) *claudePlatform {
+func newClaudePlatformAt(ctx context.Context, stateDB *state.DB, dataDir, exe string, skills map[string][]byte, mcpAddr string) *claudePlatform {
 	opts := claudeprovider.DefaultOptions(dataDir)
 	// Project supervisors run under tmux, whose server environment may
 	// predate this process: they get the resolved CLI and the active

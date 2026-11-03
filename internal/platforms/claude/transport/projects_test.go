@@ -152,7 +152,7 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 	// start is one ocman lifetime: platform, prompt pipeline and streams.
 	start := func() (*claudePlatform, *recorded, context.CancelFunc) {
 		ctx, cancel := context.WithCancel(t.Context())
-		p := newClaudePlatformAt(ctx, nil, stateDB, data, exe, nil, "")
+		p := newClaudePlatformAt(ctx, stateDB, data, exe, nil, "")
 		if p == nil {
 			t.Fatal("Claude platform did not start")
 		}
@@ -343,7 +343,7 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 
 	// Before its supervisor is attached, a launched session streams from
 	// the browsing supervisor until the attach, then ends to reconnect.
-	detached := newClaudePlatformAt(ctx, nil, nil, data, exe, nil, "")
+	detached := newClaudePlatformAt(ctx, nil, data, exe, nil, "")
 	browsing := make(chan struct{})
 	hook := claudeTestHook
 	claudeTestHook = func(point, key string) {

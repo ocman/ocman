@@ -14,8 +14,7 @@ func TestHistoryAnalyticsNeverReadsPayloadProjections(t *testing.T) {
 	}
 	defer reader.Close()
 	reader.db.SetMaxOpenConns(1)
-	if _, err := reader.db.Exec(`DROP VIEW message; DROP VIEW part;
-		CREATE TEMP VIEW message AS SELECT json('invalid') AS data;
+	if _, err := reader.db.Exec(`CREATE TEMP VIEW message AS SELECT json('invalid') AS data;
 		CREATE TEMP VIEW part AS SELECT json('invalid') AS data`); err != nil {
 		t.Fatal(err)
 	}

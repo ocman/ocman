@@ -317,11 +317,11 @@ func noiseSkip(path string) bool {
 // normal `logrus` configuration) and slow requests log at INFO so they
 // appear in default production logs without operator action.
 //
-// Also attaches a per-request timingCollector to the request context
+// Also attaches a per-request srvtiming.Collector to the request context
 // and emits the accumulated entries as a Server-Timing response
 // header so they appear in browser devtools' Timing panel without
 // requiring any client-side changes. Adapter / helper code records
-// phases via recordTiming(ctx, ...) — see timing.go.
+// phases via srvtiming.Record or srvtiming.Begin.
 //
 // Fields written:
 //   - method      — HTTP method ("GET", "POST", ...)

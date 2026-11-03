@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/projectsmod"
+	"github.com/ocman/ocman/internal/sidebar"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -17,17 +18,10 @@ func applyRemoteSidebarFlags(rows []db.Session, flags state.SidebarFlags) {
 			row.UnreadCount = 0
 		}
 		row.SeenTimeUpdated = seen.TimeUpdated
-		row.Seen = known && seen.TimeUpdated >= row.TimeUpdated && (row.Status != db.StatusInterrupted || seen.Interrupted)
-		if row.Seen {
-			row.UnreadCount = 0
-		}
 		row.PinnedAt = flags.Pinned[key]
-		row.Pinned = row.PinnedAt > 0
 		row.SnoozedUntil = flags.Snoozed[key]
 		at, archived := flags.Archived[key]
-		row.Archived = archived && !db.ShouldResurfaceSession(*row, at, flags.Mode)
-		if at := flags.Projects[projectsmod.ArchiveKey(row.RemoteID, row.Directory)]; at > 0 && row.TimeUpdated <= at {
-			row.Archived = true
-		}
+		sidebar.ApplyFlags(row, sidebar.Flags{Seen: known, SeenInterrupted: seen.Interrupted, Archived: archived, ArchivedAt: at, Mode: flags.Mode,
+			ProjectArchivedAt: flags.Projects[projectsmod.ArchiveKey(row.RemoteID, row.Directory)]})
 	}
 }

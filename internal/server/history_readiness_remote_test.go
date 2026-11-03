@@ -53,7 +53,7 @@ func TestConnectedRemoteDoesNotBlockLocalHistoryAnalytics(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("completed local history blocked by remote: %d %s", w.Code, w.Body)
 	}
-	if w.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+	if w.Header().Get("X-Ocman-Analytics-Partial") == "" {
 		t.Fatal(w.Header())
 	}
 	// A newly enabled local platform makes analytics partial, not unavailable.

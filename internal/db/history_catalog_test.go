@@ -41,7 +41,7 @@ func TestHistoryCatalogDefaultsStayOnReservedSnapshot(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
-	defaults, err := reader.GetSessionDefaults(ctx, "", "/project")
+	defaults, err := reader.getSessionDefaults(ctx, "", "/project")
 	if err != nil || defaults.Agent != "build" || defaults.Model != "provider/old" {
 		t.Fatalf("draft defaults left the reserved snapshot or blocked: %+v %v", defaults, err)
 	}
@@ -64,7 +64,7 @@ func TestHistoryCatalogDoesNotReadMessagePayloads(t *testing.T) {
 	defer base.Close()
 	base.db.SetMaxOpenConns(1)
 	// Fail deterministically if catalog preferences depend on retained JSON.
-	if _, err := base.db.Exec(`DROP VIEW message; CREATE TEMP VIEW message AS SELECT instance_id,id,session_id,time_created,settled,'not-json' AS data FROM main.analytics_message`); err != nil {
+	if _, err := base.db.Exec(`CREATE TEMP VIEW message AS SELECT instance_id,id,session_id,time_created,settled,'not-json' AS data FROM main.analytics_message`); err != nil {
 		t.Fatal(err)
 	}
 	reader, release, err := base.ScopedHistoryReader(t.Context())
@@ -72,11 +72,11 @@ func TestHistoryCatalogDoesNotReadMessagePayloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer release()
-	recents, err := reader.GetRecentModels(t.Context(), 50, 10)
+	recents, err := reader.getRecentModels(t.Context(), 50, 10)
 	if err != nil || len(recents) != 1 || recents[0].Model != "model" {
 		t.Fatalf("draft recents read message payloads: %+v %v", recents, err)
 	}
-	defaults, err := reader.GetSessionDefaults(t.Context(), "", "/project")
+	defaults, err := reader.getSessionDefaults(t.Context(), "", "/project")
 	if err != nil || defaults.Agent != "build" || defaults.Model != "provider/model" {
 		t.Fatalf("draft defaults read message payloads: %+v %v", defaults, err)
 	}
@@ -121,16 +121,16 @@ func TestHistoryCatalogDefaultsKeepDirectoryAndGlobalFallbacks(t *testing.T) {
 		{"", "/new", "plan", "global"},
 		{"global", "/new", "build", "provider/local"},
 	} {
-		got, err := reader.GetSessionDefaults(t.Context(), row.exclude, row.directory)
+		got, err := reader.getSessionDefaults(t.Context(), row.exclude, row.directory)
 		if err != nil || got.Agent != row.agent || got.Model != row.model {
 			t.Fatalf("defaults for %+v: %+v %v", row, got, err)
 		}
 	}
-	recents, err := reader.GetRecentModels(t.Context(), 0, 0)
+	recents, err := reader.getRecentModels(t.Context(), 0, 0)
 	if err != nil || len(recents) != 3 {
 		t.Fatalf("recents: %+v %v", recents, err)
 	}
-	recents, err = reader.GetRecentModels(t.Context(), 1, 1)
+	recents, err = reader.getRecentModels(t.Context(), 1, 1)
 	if err != nil || len(recents) != 0 {
 		t.Fatalf("sampling should not reach older sessions: %+v %v", recents, err)
 	}

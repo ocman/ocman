@@ -1,7 +1,9 @@
 package statev2
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestSearchTextUsesOwnerLocalRetainedProse(t *testing.T) {
@@ -50,5 +52,21 @@ func TestSearchTextUsesOwnerLocalRetainedProse(t *testing.T) {
 	_ = d.Close()
 	if _, err := d.SearchText(t.Context(), "owner", "search", "", 0, 1); err == nil {
 		t.Fatal("closed DB accepted")
+	}
+}
+
+func TestSnippetAndASCIIOnlyCaseFolding(t *testing.T) {
+	if got := asciiLower("CAFÉ Test"); got != "cafÉ test" {
+		t.Fatal(got)
+	}
+	for _, tc := range []struct{ text, needle, want string }{
+		{"a\n b needle c", "needle", "a b needle c"},
+		{"abc", "missing", "abc"},
+		{strings.Repeat("é", 90) + "NEEDLE" + strings.Repeat("é", 90), "needle", "…" + strings.Repeat("é", 40) + "NEEDLE" + strings.Repeat("é", 40) + "…"},
+	} {
+		got := searchSnippet(tc.text, tc.needle)
+		if got != tc.want || !utf8.ValidString(got) {
+			t.Fatalf("%q want %q", got, tc.want)
+		}
 	}
 }

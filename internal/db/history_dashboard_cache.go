@@ -95,12 +95,6 @@ func (c *dashboardCache) store(key dashboardCacheKey, e *dashboardEntry) {
 	c.entries[key] = e
 }
 
-func (c *dashboardCache) len() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.entries)
-}
-
 // loadDashboard returns the window summaries and filtered groups, from the
 // reader's cache when this snapshot's history revision was already read.
 func (d *DB) loadDashboard(ctx context.Context, opts MetricsDashboardOptions) (*dashboardEntry, error) {

@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/ocman/ocman/internal/textsearch"
+	"unicode/utf8"
 )
 
 type TextMatch struct {
@@ -19,7 +18,7 @@ func (d *DB) SearchText(ctx context.Context, owner, query, directory string, sin
 	if owner == "" || limit < 1 || limit > 500 {
 		return nil, fmt.Errorf("statev2: invalid text search scope")
 	}
-	needle := textsearch.Lower(strings.TrimSpace(query))
+	needle := asciiLower(strings.TrimSpace(query))
 	if needle == "" {
 		return []TextMatch{}, nil
 	}
@@ -42,8 +41,39 @@ func (d *DB) SearchText(ctx context.Context, owner, query, directory string, sin
 		if err := rows.Scan(&match.InstanceID, &match.Platform, &match.SessionID, &match.PartID, &match.MessageID, &match.Role, &text); err != nil {
 			return nil, err
 		}
-		match.Snippet = textsearch.Snippet(text, needle)
+		match.Snippet = searchSnippet(text, needle)
 		out = append(out, match)
 	}
 	return out, rows.Err()
+}
+
+// asciiLower mirrors SQLite lower: ASCII only, preserving byte offsets.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+// searchSnippet bounds surrounding prose without splitting UTF-8 runes.
+func searchSnippet(text, needle string) string {
+	i := max(strings.Index(asciiLower(text), needle), 0)
+	start, end := max(i-80, 0), min(i+len(needle)+80, len(text))
+	for start > 0 && !utf8.RuneStart(text[start]) {
+		start--
+	}
+	for end < len(text) && !utf8.RuneStart(text[end]) {
+		end++
+	}
+	out := strings.Join(strings.Fields(text[start:end]), " ")
+	if start > 0 {
+		out = "…" + out
+	}
+	if end < len(text) {
+		out += "…"
+	}
+	return out
 }

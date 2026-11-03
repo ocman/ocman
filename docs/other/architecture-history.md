@@ -173,8 +173,8 @@ flowchart LR
   exclude helpers only from visible session counts. Plugin directory grants
   require ingested project-root evidence; conflicting roots fail closed. Local
   text search reads retained user/assistant text blocks, excluding tool payloads
-  and other owners. `internal/textsearch` shares literal matching and UTF-8
-  snippet rules with integration diagnostics.
+  and other owners, matching literally with ASCII-only case folding and
+  returning UTF-8-safe snippets.
   Project refreshes use committed history while ingestion catches up and use the owner's
   durable history-change watermark to invalidate cached statistics after stored
   commits, even when no native event reaches the application.
@@ -303,13 +303,11 @@ the cache. The mark and collision checks share one read transaction.
 
 Inspect the response headers in the browser's Network panel:
 
-- `X-Ocman-Analytics-Source: statev2` means the cutover is active.
 - `X-Ocman-Analytics-Checked-At` gives the oldest successful local source scan.
   Recent/live figures can lag ingestion; the default poll interval is 30 seconds.
 - `X-Ocman-Analytics-Error` explains a statev2 availability failure:
   `history-unavailable`, `import-incomplete`, `history-error` or
   `history-scope-error`. These responses are HTTP 503, not legacy results.
-  `X-Ocman-Activity-Source` remains an alias for the source header.
 
 The cutover waits for a clean scan of every enabled local history source after
 each startup. Remote adapters are excluded from both local ingestion and its

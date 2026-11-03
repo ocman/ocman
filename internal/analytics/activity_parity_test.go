@@ -107,7 +107,7 @@ func TestActivityReadsStoredHistoryWithFiltersAndHeaders(t *testing.T) {
 			if messages != want || len(got) != 366 {
 				t.Fatalf("%s: messages=%d want=%d days=%d", q, messages, want, len(got))
 			}
-			if rec.Header().Get("X-Ocman-Activity-Source") != "statev2" || rec.Header().Get("X-Ocman-Activity-Fallback") != "" {
+			if rec.Header().Get("X-Ocman-Analytics-Partial") == "" || rec.Header().Get("X-Ocman-Activity-Fallback") != "" {
 				t.Fatal(rec.Header())
 			}
 		})

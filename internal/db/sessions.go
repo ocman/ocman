@@ -199,11 +199,11 @@ func (d *DB) GetSessionParentIDs(ctx context.Context, childIDs []string) (map[st
 	return out, rows.Err()
 }
 
-// GetSessionDefaults returns the most recent agent/model pair to seed a new or
+// getSessionDefaults returns the most recent agent/model pair to seed a new or
 // empty session's composer. It prefers another session in the same directory and
 // falls back to the most recent session overall. Only history readers carry the
 // compact facts it reads.
-func (d *DB) GetSessionDefaults(ctx context.Context, sessionID, directory string) (SessionDefaults, error) {
+func (d *DB) getSessionDefaults(ctx context.Context, sessionID, directory string) (SessionDefaults, error) {
 	if defaults, ok, err := d.historySessionDefaults(ctx, sessionID, directory); err != nil || ok {
 		return defaults, err
 	}

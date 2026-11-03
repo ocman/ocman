@@ -12,7 +12,7 @@ func TestMissingHistoryNeverSelectsLegacyAnalytics(t *testing.T) {
 	f.deps.HistoryAnalytics = nil
 	for _, route := range conversationAnalyticsRoutes {
 		rec := moduletest.Do(routes(f.Module), http.MethodGet, route, "", "")
-		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("X-Ocman-Analytics-Error") == "" {
 			t.Fatalf("%s selected legacy without history: %d %s", route, rec.Code, rec.Body)
 		}
 	}

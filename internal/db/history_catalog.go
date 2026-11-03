@@ -19,20 +19,20 @@ func (d *DB) CatalogPreferences(ctx context.Context, exclude, directory string) 
 	}
 	defer func() { _ = tx.Rollback() }()
 	reader := &DB{db: d.db, historyScope: d.historyScope, snapshot: tx}
-	recents, err := reader.GetRecentModels(ctx, 50, 10)
+	recents, err := reader.getRecentModels(ctx, 50, 10)
 	if err != nil {
 		return nil, SessionDefaults{}, err
 	}
-	defaults, err := reader.GetSessionDefaults(ctx, exclude, directory)
+	defaults, err := reader.getSessionDefaults(ctx, exclude, directory)
 	return recents, defaults, err
 }
 
-// GetRecentModels samples the latest sessions in retained history.
+// getRecentModels samples the latest sessions in retained history.
 //
 // Catalog preferences use compact scalar facts, not retained message JSON.
 // Both queries stay on the scope's read transaction and join full source
 // identities so matching native IDs cannot borrow another source's defaults.
-func (d *DB) GetRecentModels(ctx context.Context, sessionLimit, maxResults int) ([]RecentModel, error) {
+func (d *DB) getRecentModels(ctx context.Context, sessionLimit, maxResults int) ([]RecentModel, error) {
 	if sessionLimit <= 0 {
 		sessionLimit = 50
 	}

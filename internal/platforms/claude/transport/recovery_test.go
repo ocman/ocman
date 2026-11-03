@@ -56,7 +56,7 @@ func newRecoveryEnv(t *testing.T) *recoveryEnv {
 func (e *recoveryEnv) start(t *testing.T, mcp string) (*claudePlatform, context.CancelFunc) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	p := newClaudePlatformAt(ctx, nil, e.state, e.data, e.exe, nil, "")
+	p := newClaudePlatformAt(ctx, e.state, e.data, e.exe, nil, "")
 	if p == nil {
 		cancel()
 		t.Fatal("Claude platform did not start")

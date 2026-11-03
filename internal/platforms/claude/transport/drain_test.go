@@ -155,7 +155,7 @@ func TestOutOfRangeSupervisorDeliversPromptsWhileDraining(t *testing.T) {
 	// The dashboard: its prompt pipeline and an open browser stream.
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	p := newClaudePlatformAt(ctx, nil, e.state, e.data, e.exe, nil, "")
+	p := newClaudePlatformAt(ctx, e.state, e.data, e.exe, nil, "")
 	if p == nil {
 		t.Fatal("Claude platform did not start")
 	}
@@ -276,7 +276,7 @@ func TestLateWatchReachesAttachedAndDrainingSupervisors(t *testing.T) {
 		t.Setenv("FAKE_CLAUDE_FIXTURE", claudetest.Fixture("plain.jsonl"))
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		p := newClaudePlatformAt(ctx, nil, e.state, e.data, e.exe, nil, "")
+		p := newClaudePlatformAt(ctx, e.state, e.data, e.exe, nil, "")
 		if p == nil {
 			t.Fatal("Claude platform did not start")
 		}
@@ -295,7 +295,7 @@ func TestLateWatchReachesAttachedAndDrainingSupervisors(t *testing.T) {
 		d := newDrainEnv(t)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		p := newClaudePlatformAt(ctx, nil, d.state, d.data, d.exe, nil, "")
+		p := newClaudePlatformAt(ctx, d.state, d.data, d.exe, nil, "")
 		if p == nil {
 			t.Fatal("Claude platform did not start")
 		}
@@ -366,7 +366,7 @@ func browserBeforeDrain(t *testing.T, point string) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	p := newClaudePlatformAt(ctx, nil, d.state, d.data, d.exe, nil, "")
+	p := newClaudePlatformAt(ctx, d.state, d.data, d.exe, nil, "")
 	if p == nil {
 		t.Fatal("Claude platform did not start")
 	}

@@ -402,3 +402,9 @@ func TestDashboardCacheServesUnchangedHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func (c *dashboardCache) len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.entries)
+}

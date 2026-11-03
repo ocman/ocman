@@ -200,7 +200,7 @@ func TestPluginStartupRecoversInterruptedConfiguration(t *testing.T) {
 	}
 	restarted := bindPlugins(&Server{stateDB: f.s.stateDB}, context.Background())
 	t.Cleanup(restarted.stopPluginProcesses)
-	if _, err := restarted.RescanPlugins(t.Context()); err != nil {
+	if _, err := restarted.pluginsModule().RescanPlugins(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	p, err := f.s.stateDB.GetPlugin(t.Context(), f.description.ID)

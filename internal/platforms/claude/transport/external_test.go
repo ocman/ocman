@@ -49,7 +49,7 @@ func TestContinueExternalSessionOnProjectSupervisor(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	p := newClaudePlatformAt(ctx, nil, db, data, exe, nil, "")
+	p := newClaudePlatformAt(ctx, db, data, exe, nil, "")
 	t.Cleanup(func() { cancel(); p.Close() })
 	rec := &recorded{idles: map[string]int{}}
 	p.SetEventHandler(func(e providerprotocol.Event) { rec.mu.Lock(); rec.events = append(rec.events, e); rec.mu.Unlock() })

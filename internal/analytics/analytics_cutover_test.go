@@ -32,7 +32,7 @@ func TestAllConversationAnalyticsUseStatev2WithFiltersAndPagination(t *testing.T
 				rec := f.serve(http.MethodGet, target, "")
 				var got any
 				decode(t, rec, &got)
-				if rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+				if rec.Header().Get("X-Ocman-Analytics-Partial") == "" {
 					t.Fatalf("did not cut over: %v", rec.Header())
 				}
 				if rec.Header().Get("X-Ocman-Analytics-Checked-At") == "" {
@@ -46,7 +46,7 @@ func TestAllConversationAnalyticsUseStatev2WithFiltersAndPagination(t *testing.T
 	f.legacy = nil
 	for _, route := range conversationAnalyticsRoutes {
 		rec := f.serve(http.MethodGet, route, "")
-		if rec.Code != http.StatusOK || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+		if rec.Code != http.StatusOK || rec.Header().Get("X-Ocman-Analytics-Partial") == "" {
 			t.Fatalf("%s still used legacy: %d %s %v", route, rec.Code, rec.Body, rec.Header())
 		}
 	}
@@ -73,7 +73,7 @@ func TestAnalyticsUnavailableAndQueryErrorsNeverUseLegacy(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 	handler(w, httptest.NewRequest(http.MethodGet, "/api/models", nil))
-	if w.Code != http.StatusInternalServerError || calls != 1 || !strings.Contains(w.Body.String(), "projection failed") || w.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+	if w.Code != http.StatusInternalServerError || calls != 1 || !strings.Contains(w.Body.String(), "projection failed") || w.Header().Get("X-Ocman-Analytics-Partial") == "" {
 		t.Fatalf("query error retried legacy: %d %s %v calls=%d", w.Code, w.Body, w.Header(), calls)
 	}
 	f.Finalize()
@@ -83,7 +83,7 @@ func TestUnrelatedAnalyticsKeepTheirSources(t *testing.T) {
 	f, _, _ := analyticsParityFixture(t)
 	for _, route := range []string{"/api/permission-stats", "/api/analytics/ui-usage", "/api/analytics/database-sizes"} {
 		rec := f.serve(http.MethodGet, route, "")
-		if rec.Code != http.StatusOK || rec.Header().Get("X-Ocman-Analytics-Source") != "" {
+		if rec.Code != http.StatusOK || rec.Header().Get("X-Ocman-Analytics-Partial") != "" {
 			t.Fatalf("%s incorrectly cut over: %d %v", route, rec.Code, rec.Header())
 		}
 	}
@@ -122,7 +122,7 @@ func TestAnalyticsStrictSourceErrorsAndMissingLegacyRuntime(t *testing.T) {
 	f.legacy = nil
 	for _, route := range []string{"/api/analytics/session-concurrency", "/api/analytics/agent-run-hours"} {
 		rec := f.serve(http.MethodGet, route, "")
-		if rec.Code != 200 || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+		if rec.Code != 200 || rec.Header().Get("X-Ocman-Analytics-Partial") == "" {
 			t.Fatalf("%s: %d %s", route, rec.Code, rec.Body)
 		}
 	}
@@ -135,7 +135,7 @@ func TestEveryAnalyticsRouteRejectsIncompleteHistory(t *testing.T) {
 	f.legacy.Close() // legacy must not be queried, even as a retry
 	for _, route := range conversationAnalyticsRoutes {
 		rec := f.serve(http.MethodGet, route, "")
-		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+		if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("X-Ocman-Analytics-Error") == "" {
 			t.Fatalf("%s: %d %s %v", route, rec.Code, rec.Body, rec.Header())
 		}
 		if rec.Header().Get("X-Ocman-Analytics-Fallback") != "" {

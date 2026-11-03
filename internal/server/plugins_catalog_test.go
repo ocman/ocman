@@ -65,7 +65,7 @@ func TestPluginLaunchCatalog(t *testing.T) {
 	for _, id := range []string{"org.example.live", "org.example.noproject", "org.example.optedout", "org.example.unreachable", "org.example.history", "org.example.nearlimit"} {
 		writeLaunchCatalogPlugin(t, dir, "ocman-plugin-"+id, id, id != "org.example.optedout")
 	}
-	if _, err := s.RescanPlugins(ctx); err != nil {
+	if _, err := s.pluginsModule().RescanPlugins(ctx); err != nil {
 		t.Fatal(err)
 	}
 	projects := map[string]string{
@@ -93,7 +93,7 @@ func TestPluginLaunchCatalog(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.SyncPluginProcesses(ctx); err != nil {
+	if err := s.pluginsModule().SyncPluginProcesses(ctx); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(15 * time.Second)

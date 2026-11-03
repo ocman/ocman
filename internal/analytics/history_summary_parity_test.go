@@ -95,7 +95,7 @@ func testSummaryCutoffsInZone(t *testing.T, zone string) {
 			after := f.serve(http.MethodGet, route, "")
 			var got any
 			decode(t, after, &got)
-			if after.Header().Get("X-Ocman-Analytics-Source") != "statev2" {
+			if after.Header().Get("X-Ocman-Analytics-Partial") == "" {
 				t.Fatalf("route bypassed history: %s %v", route, after.Header())
 			}
 		})

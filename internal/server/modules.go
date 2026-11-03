@@ -33,7 +33,6 @@ import (
 	"github.com/ocman/ocman/internal/termmod"
 	"github.com/ocman/ocman/internal/tmuxmod"
 	"github.com/ocman/ocman/internal/webhook"
-	plugins "github.com/ocman/ocman/sdk/protocol"
 )
 
 // modules lists the feature modules this server mounts. Routes, startup,
@@ -356,16 +355,6 @@ func (s *Server) pluginsModule() *pluginsmod.Module {
 			LiveCatalog:      s.liveCatalog,
 		})
 	})
-}
-
-// RescanPlugins and SyncPluginProcesses are the plugin lifecycle's entry
-// points for callers outside the module.
-func (s *Server) RescanPlugins(ctx context.Context) ([]plugins.Discovery, error) {
-	return s.pluginsModule().RescanPlugins(ctx)
-}
-
-func (s *Server) SyncPluginProcesses(ctx context.Context) error {
-	return s.pluginsModule().SyncPluginProcesses(ctx)
 }
 
 func (s *Server) stopPluginProcesses() { s.pluginsModule().Stop() }

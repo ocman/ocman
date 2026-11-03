@@ -77,7 +77,7 @@ func (m *Module) analyticsRoute(next http.HandlerFunc) http.HandlerFunc {
 		}
 		reader, release, reason := history.projection(r.Context())
 		if reader == nil {
-			setAnalyticsSource(w.Header(), "statev2", reason)
+			w.Header().Set("X-Ocman-Analytics-Error", reason)
 			http.Error(w, "Conversation analytics unavailable ("+reason+"). Check history ingestion in Background tasks.", http.StatusServiceUnavailable)
 			return
 		}
@@ -85,7 +85,6 @@ func (m *Module) analyticsRoute(next http.HandlerFunc) http.HandlerFunc {
 		if history.validated != nil {
 			history.validated()
 		}
-		setAnalyticsSource(w.Header(), "statev2", "")
 		w.Header().Set("X-Ocman-Analytics-Partial", strconv.FormatBool(reason != ""))
 		if history.CheckedAt != nil {
 			if at := history.CheckedAt(); !at.IsZero() {
@@ -93,15 +92,6 @@ func (m *Module) analyticsRoute(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), analyticsSourceKey{}, reader)))
-	}
-}
-
-func setAnalyticsSource(header http.Header, source, reason string) {
-	header.Set("X-Ocman-Analytics-Source", source)
-	// Preserve the daily-activity experiment's diagnostic header.
-	header.Set("X-Ocman-Activity-Source", source)
-	if reason != "" {
-		header.Set("X-Ocman-Analytics-Error", reason)
 	}
 }
 

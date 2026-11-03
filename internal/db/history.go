@@ -40,9 +40,9 @@ type HistorySnapshot struct {
 	Subagent bool
 }
 
-// IsSubagentTitle reports OpenCode's "(<name> subagent)" title convention,
+// isSubagentTitle reports OpenCode's "(<name> subagent)" title convention,
 // the Go form of the analytics filter title LIKE '%(% subagent)'.
-func IsSubagentTitle(title string) bool {
+func isSubagentTitle(title string) bool {
 	const suffix = " subagent)"
 	if len(title) < len(suffix) {
 		return false
@@ -104,7 +104,7 @@ func (d *DB) HistorySnapshot(ctx context.Context, id string) (*HistorySnapshot, 
 		return nil, err
 	}
 	out.Version = fmt.Sprint(s.TimeUpdated)
-	out.Subagent = IsSubagentTitle(s.Title)
+	out.Subagent = isSubagentTitle(s.Title)
 	if v2 {
 		return readV2History(ctx, tx, out)
 	}

@@ -25,9 +25,6 @@ func (s *Server) WithVersion(v string) *Server {
 	return s
 }
 
-// LogPath returns the resolved log file path, "" when logging to stderr only.
-func (s *Server) LogPath() string { return s.logPath }
-
 func (s *Server) handleDebugLog(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Level   string          `json:"level"`

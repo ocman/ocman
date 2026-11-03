@@ -21,12 +21,12 @@ var knownPlatforms = map[string]func(context.Context, *db.DB, *state.DB, ocapi.A
 	string(opencodeplatform.PlatformID): func(_ context.Context, database *db.DB, stateDB *state.DB, auth ocapi.Auth) platforms.Integration {
 		return opencodeplatform.New(database, stateDB, pricing.Load(), auth)
 	},
-	claudeprovider.PlatformID: func(ctx context.Context, database *db.DB, stateDB *state.DB, _ ocapi.Auth) platforms.Integration {
+	claudeprovider.PlatformID: func(ctx context.Context, _ *db.DB, stateDB *state.DB, _ ocapi.Auth) platforms.Integration {
 		addr := ""
 		if f := flag.Lookup("mcp-addr"); f != nil {
 			addr = f.Value.String()
 		}
-		return claudecode.New(ctx, database, stateDB, skillCatalog, addr, pricing.Load())
+		return claudecode.New(ctx, stateDB, skillCatalog, addr, pricing.Load())
 	},
 	codexprovider.PlatformID: func(ctx context.Context, _ *db.DB, stateDB *state.DB, _ ocapi.Auth) platforms.Integration {
 		return codextransport.New(ctx, codextransport.Config{State: stateDB, DataDir: state.DefaultDataDir(), Version: version})

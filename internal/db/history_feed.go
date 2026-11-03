@@ -88,7 +88,7 @@ func (d *DB) HistoryMessages(ctx context.Context, sessionID string, messageIDs [
 		return nil, err
 	}
 	out.Version = fmt.Sprint(s.TimeUpdated)
-	out.Subagent = IsSubagentTitle(s.Title)
+	out.Subagent = isSubagentTitle(s.Title)
 	if messageIDs == nil {
 		messageIDs = []string{}
 	}

@@ -126,13 +126,7 @@ func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		}
 		row.Status = status
 		platforms.OverlaySessionObservation(&row, &platforms.LiveState{Status: liveStatus, PendingPermission: row.PendingPermission, PendingQuestion: row.PendingQuestion, BackgroundTaskCount: row.BackgroundTaskCount, BackgroundServiceCount: row.BackgroundServiceCount}, row.LiveConnection)
-		row.Pinned = row.PinnedAt > 0
-		row.Seen = hasSeen && row.SeenTimeUpdated >= row.TimeUpdated && (row.Status != db.StatusInterrupted || seenInterrupted)
-		if row.Seen {
-			row.UnreadCount = 0
-		}
-		row.Archived = hasArchive && !db.ShouldResurfaceSession(row, archiveAt, mode)
-		row.Archived = row.Archived || (projectArchiveAt > 0 && row.TimeUpdated <= projectArchiveAt)
+		ApplyFlags(&row, Flags{Seen: hasSeen, SeenInterrupted: seenInterrupted, Archived: hasArchive, ArchivedAt: archiveAt, Mode: mode, ProjectArchivedAt: projectArchiveAt})
 		row.RemoteID, row.RemoteName = "local", "This machine"
 		out = append(out, row)
 	}

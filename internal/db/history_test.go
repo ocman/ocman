@@ -88,8 +88,8 @@ func TestIsSubagentTitle(t *testing.T) {
 		"Explore (@explore subagent":  false,
 		"":                            false,
 	} {
-		if got := IsSubagentTitle(title); got != want {
-			t.Errorf("IsSubagentTitle(%q) = %v, want %v", title, got, want)
+		if got := isSubagentTitle(title); got != want {
+			t.Errorf("isSubagentTitle(%q) = %v, want %v", title, got, want)
 		}
 	}
 }

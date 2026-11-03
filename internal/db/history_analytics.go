@@ -23,22 +23,10 @@ func init() {
 			return nil
 		}
 		filter := " IN (SELECT value FROM json_each(" + scope.(string) + "))"
-		for _, ddl := range []string{
-			`CREATE TEMP VIEW session AS SELECT * FROM main.analytics_session WHERE source_deleted=0 AND instance_id` + filter,
-			`CREATE TEMP VIEW message AS SELECT a.instance_id,a.id,a.session_id,a.time_created,a.settled,a.data
-			FROM main.analytics_message a JOIN main.session s ON s.instance_id=a.instance_id AND s.id=a.session_id
-			WHERE s.source_deleted=0 AND a.instance_id` + filter,
-			`CREATE TEMP VIEW part AS SELECT a.id,a.message_id,a.session_id,a.data
-			FROM main.analytics_part a JOIN main.analytics_message m ON m.instance_id=a.instance_id AND m.session_id=a.session_id AND m.id=a.message_id
-			JOIN main.session s ON s.instance_id=a.instance_id AND s.id=a.session_id
-			WHERE s.source_deleted=0 AND a.instance_id` + filter,
-		} {
-			if _, err := c.ExecContext(context.Background(), ddl, nil); err != nil {
-				return err
-			}
+		if _, err := c.ExecContext(context.Background(), `CREATE TEMP VIEW session AS SELECT * FROM main.analytics_session WHERE source_deleted=0 AND instance_id`+filter, nil); err != nil {
+			return err
 		}
-		// Summary-backed reads never join retained payload tables. Keep the old
-		// message/part views only for explicit diagnostic comparisons.
+		// Summary-backed reads never join retained payload tables.
 		for _, table := range []string{"fact", "hour", "question"} {
 			if _, err := c.ExecContext(context.Background(), `CREATE TEMP VIEW history_`+table+` AS SELECT * FROM main.analytics_`+table+` WHERE instance_id`+filter, nil); err != nil {
 				return err

@@ -19,10 +19,6 @@ func (s *Server) WithStartupIssues(issues ...StartupIssue) *Server {
 	s.startupIssues = append(s.startupIssues, issues...)
 	return s
 }
-
-// StartupIssues returns the non-fatal issues recorded at startup.
-func (s *Server) StartupIssues() []StartupIssue { return s.startupIssues }
-
 func (s *Server) startupIssue(id string) (StartupIssue, bool) {
 	for _, issue := range s.startupIssues {
 		if issue.ID == id {

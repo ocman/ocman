@@ -96,7 +96,7 @@ func (f *sessionFixture) reopen(t *testing.T) {
 	f.s.sessions = sessionsvc.New(f.s.registry, sessionsvc.Hooks{})
 	bindPlugins(f.s, context.Background())
 	t.Cleanup(f.s.stopPluginProcesses)
-	if _, err := f.s.RescanPlugins(t.Context()); err != nil {
+	if _, err := f.s.pluginsModule().RescanPlugins(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	f.awaitReady(t)

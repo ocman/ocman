@@ -36,8 +36,8 @@ func TestHistoryAnalyticsReadOnlyLatency(t *testing.T) {
 	}{
 		{"scope", reader.checkHistoryScope},
 		{"scope-unchanged", reader.checkHistoryScope},
-		{"catalog-recents", func(ctx context.Context) error { _, err := reader.GetRecentModels(ctx, 50, 10); return err }},
-		{"catalog-defaults", func(ctx context.Context) error { _, err := reader.GetSessionDefaults(ctx, "", ""); return err }},
+		{"catalog-recents", func(ctx context.Context) error { _, err := reader.getRecentModels(ctx, 50, 10); return err }},
+		{"catalog-defaults", func(ctx context.Context) error { _, err := reader.getSessionDefaults(ctx, "", ""); return err }},
 		{"models-7d", func(ctx context.Context) error { _, err := reader.GetModelUsage(ctx, since, ""); return err }},
 		{"activity-7d", func(ctx context.Context) error { _, err := reader.GetDailyActivity(ctx, since, "", ""); return err }},
 		{"metrics-7d", func(ctx context.Context) error {
