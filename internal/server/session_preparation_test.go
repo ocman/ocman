@@ -222,6 +222,33 @@ func TestPreparationFailureKeepsSessionAdmissionClosed(t *testing.T) {
 	}
 }
 
+// Persisted lists stay readable during preparation so the UI shows what it
+// already has; anything that can reach native adapters or mutate stays fenced.
+func TestPreparationAdmitsPersistedReads(t *testing.T) {
+	srv := &Server{}
+	srv.WithSessionPreparation(func(context.Context) error { return nil })
+	h := srv.withSessionReadiness(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	for _, tc := range []struct {
+		method, target string
+		want           int
+	}{
+		{http.MethodGet, "/api/sessions?view=sidebar&limit=0", http.StatusNoContent},
+		{http.MethodGet, "/api/projects", http.StatusNoContent},
+		{http.MethodGet, "/api/sessions", http.StatusServiceUnavailable},
+		{http.MethodGet, "/api/sessions?view=running-count", http.StatusServiceUnavailable},
+		{http.MethodGet, "/api/session/abc", http.StatusServiceUnavailable},
+		{http.MethodGet, "/api/events", http.StatusServiceUnavailable},
+		{http.MethodPost, "/api/sessions?view=sidebar", http.StatusServiceUnavailable},
+		{http.MethodPost, "/api/projects", http.StatusServiceUnavailable},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(tc.method, tc.target, nil))
+		if w.Code != tc.want {
+			t.Errorf("%s %s: got %d, want %d", tc.method, tc.target, w.Code, tc.want)
+		}
+	}
+}
+
 func TestDedicatedMCPFailsClosedUntilPrepared(t *testing.T) {
 	srv := &Server{}
 	srv.WithSessionPreparation(func(context.Context) error { return nil })

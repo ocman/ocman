@@ -76,10 +76,19 @@ func preparationSafeRequest(r *http.Request) bool {
 	switch path {
 	case "/api/auth/me", "/api/auth/login", "/api/auth/logout":
 		return true
-	case "/api/capabilities", "/api/system/stats":
-		return r.Method == http.MethodGet
 	}
-	return r.Method == http.MethodGet && (path == "/api/background-tasks" || strings.HasPrefix(path, "/api/background-tasks/"))
+	if r.Method != http.MethodGet {
+		return false
+	}
+	switch path {
+	case "/api/capabilities", "/api/system/stats", "/api/projects":
+		return true
+	case "/api/sessions":
+		// The sidebar view reads only the persisted projection, so the UI can
+		// show existing rows; it refreshes when the event stream opens.
+		return r.URL.Query().Get("view") == "sidebar"
+	}
+	return path == "/api/background-tasks" || strings.HasPrefix(path, "/api/background-tasks/")
 }
 
 // Dedicated MCP calls must use the same fence. Once modules have started, their

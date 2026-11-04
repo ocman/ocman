@@ -496,7 +496,9 @@ During database opening and schema migrations normal API calls return 503 with
 a retry hint. Once essential setup completes, the same listener dispatches to
 the guarded application handler. Authentication, embedded routes, capabilities,
 system statistics and authenticated background-task status are available even
-while historical identity preparation is unfinished. Session-dependent APIs
+while historical identity preparation is unfinished. The persisted sidebar
+session list and the project list stay readable so the UI shows existing data;
+the sidebar refreshes when the event stream opens. Other session-dependent APIs
 return `session_preparing` with a retry hint until cutover and module startup
 succeed. The progress endpoint stays available for reloads and contains no
 paths, session identifiers or raw errors. Shutdown joins the HTTP server and
