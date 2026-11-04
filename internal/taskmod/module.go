@@ -24,7 +24,7 @@ func New(manager *tasksvc.Manager) *Module {
 }
 
 // UseOwners supplies currently connected owner readers at call time. With no
-// explicit owner the list/count includes local and connected remote work.
+// explicit owner the list/count includes local and available remote work.
 func (m *Module) UseOwners(owners func() map[string]tasksvc.Reader) *Module {
 	m.owners = owners
 	return m
@@ -77,6 +77,9 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 		for owner, reader := range readers {
 			value, err := reader.ActiveCount(r.Context())
 			if err != nil {
+				if owner != "local" && r.URL.Query().Get("remoteId") == "" {
+					continue
+				}
 				ownerTaskError(w, owner, err)
 				return
 			}
@@ -105,6 +108,9 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 	for owner, reader := range readers {
 		rows, err := reader.List(r.Context(), status, r.URL.Query().Get("kind"), limit)
 		if err != nil {
+			if owner != "local" && r.URL.Query().Get("remoteId") == "" {
+				continue
+			}
 			ownerTaskError(w, owner, err)
 			return
 		}

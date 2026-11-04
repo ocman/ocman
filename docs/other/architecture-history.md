@@ -740,6 +740,7 @@ flowchart LR
     Manager -->|module-owned schema| State[(state.db<br/>task records)]
     Browser[Sidebar task counter<br/>and Background tasks page] -->|authenticated GET| API[taskmod]
     API --> State
+    API -->|authenticated gRPC| Remote[Remote owner task readers]
     Manager -->|snapshots and repairs| History[(state_conv.db)]
 ```
 
@@ -753,8 +754,10 @@ flowchart LR
   Polls with nothing to read are not recorded, and a repeated inventory failure
   is recorded once until it changes or recovers.
 - Active keys deduplicate work within a task kind. At most 1,000 terminal records
-  are retained. Reads return at most 200 records, active work first. Remote task
-  queries fail closed; hub aggregation is not implemented.
+  are retained. Reads return at most 200 records, active work first. The hub
+  aggregates owner-local tasks over authenticated gRPC, omitting remote readers
+  that fail. Explicit owner queries fail closed, and local read failures remain
+  errors even during aggregation.
 - History ingestion and initial session identity preparation use the manager.
   Producers own durable resume checkpoints; task records do not replay closures.
   Other candidates are

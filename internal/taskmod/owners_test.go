@@ -99,9 +99,9 @@ func TestBackgroundTasksAggregateOwnersAndRouteExplicitReads(t *testing.T) {
 	get("?remoteId=gone", 503)
 	remote.err = errors.New("offline")
 	get("?remoteId=box", 503)
-	get("?view=active-count", 503)
+	get("?view=active-count", 200)
 	get("/running?remoteId=box", 503)
-	get("", 503)
+	get("", 200)
 	get("?remoteId=local", 200)
 }
 

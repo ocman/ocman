@@ -135,7 +135,9 @@ list with its host badge.
   Progress and history stay on the machine doing the work; the hub reads them
   over authenticated gRPC. The task API accepts `remoteId` to scope list,
   count and detail reads; an explicit disconnected owner returns unavailable,
-  never another machine's tasks. Remote task support requires an updated remote.
+  never another machine's tasks. Unscoped list and count reads omit remotes
+  whose task service is unavailable, so an older or failing remote cannot block
+  work from the other machines. Remote task support requires an updated remote.
 - **Worktrees.** The project Worktrees page (`/project/<dir>/worktrees`)
   belongs to one machine, named by `?remoteId=<id>`; without it the page is
   this machine's. Listing, creating, deleting, session counts and *Open
