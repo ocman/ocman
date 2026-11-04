@@ -15,7 +15,7 @@ test('muted drawers share search, open independently and keep rows unindented', 
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const sidebar = page.getByTestId('session-sidebar');
   const drawers = sidebar.getByRole('group', { name: 'Session drawers' });
-  const archive = drawers.getByRole('button', { name: 'Archived 2', exact: true });
+  const archive = drawers.getByRole('button', { name: 'Background 2', exact: true });
   const routines = drawers.getByRole('button', { name: 'Routines 1', exact: true });
   const plugins = drawers.getByRole('button', { name: 'Plugins 1', exact: true });
   const snoozed = drawers.getByRole('button', { name: 'Snoozed 1', exact: true });
@@ -37,7 +37,7 @@ test('muted drawers share search, open independently and keep rows unindented', 
   await expect(drawers.getByText('Resume tomorrow')).toBeVisible();
   await sidebar.getByRole('searchbox', { name: 'Search sessions' }).fill('Deploy hotfix');
   await expect(archive).toHaveCount(0);
-  await expect(drawers.getByRole('button', { name: 'Archived 1', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(drawers.getByRole('button', { name: 'Background 1', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await expect(routines).toHaveCount(0);
   await expect(plugins).toHaveCount(0);
   await expect(snoozed).toHaveCount(0);
@@ -58,7 +58,7 @@ test('expanded drawers stay scrollable and within the phone sidebar', async ({ m
   await page.getByRole('button', { name: 'Open session list', exact: true }).click();
   const sidebar = page.getByTestId('session-sidebar');
   const drawers = sidebar.getByRole('group', { name: 'Session drawers' });
-  await drawers.getByRole('button', { name: 'Archived 25', exact: true }).click();
+  await drawers.getByRole('button', { name: 'Background 25', exact: true }).click();
   await drawers.getByRole('button', { name: 'Plugins 1', exact: true }).scrollIntoViewIfNeeded();
   await expect(drawers.getByRole('button', { name: 'Plugins 1', exact: true })).toBeVisible();
   const dimensions = await sidebar.evaluate(element => ({ width: element.clientWidth, content: element.scrollWidth }));
