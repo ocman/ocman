@@ -30,11 +30,12 @@ type sourceWorker struct {
 	priority map[string]bool // requested conversation reads, served before backfill
 	// versions holds the source version hint of each stored session. It is
 	// persisted, so a restart reads only sessions that changed meanwhile.
-	versions    map[string]string
-	last        tasksvc.Progress // progress of the most recent pass, for failure receipts
-	loaded      bool
-	verifiedAt  time.Time
-	lastFailure string
+	versions      map[string]string
+	last          tasksvc.Progress // progress of the most recent pass, for failure receipts
+	loaded        bool
+	initialImport string
+	verifiedAt    time.Time
+	lastFailure   string
 	// failing maps each session whose last read failed to its error. It is
 	// independent of version hints, which a failure clears to force a retry,
 	// so retries of known failures do not record a new task each poll.
@@ -113,12 +114,16 @@ func (w *sourceWorker) sweepWithInventory(ctx context.Context, inventory bool) e
 	w.mu.Unlock()
 	var err error
 	_, sourceWide := dirty[""]
-	if !inventory && w.loaded && len(dirty) > 0 && !sourceWide && (w.journaled || time.Since(w.verifiedAt) < w.module.deps.VerifyInterval) {
+	if !inventory && w.loaded && w.initialImport != "pending" && len(dirty) > 0 && !sourceWide && (w.journaled || time.Since(w.verifiedAt) < w.module.deps.VerifyInterval) {
 		err = w.runTargetedPass(ctx, dirty)
 	} else {
 		err = w.runPass(ctx, dirty)
 	}
-	w.readiness(err == nil && ctx.Err() == nil && w.last.Counters["deferred"] == 0 && w.last.Counters["usage-mismatch"] == 0)
+	complete := err == nil && ctx.Err() == nil && w.last.Counters["deferred"] == 0 && w.last.Counters["usage-mismatch"] == 0
+	if complete {
+		err = w.completeInitialImport(ctx)
+	}
+	w.readiness(complete && err == nil)
 	if ctx.Err() == nil {
 		w.module.report(w.instance.ID, "", err)
 	}
@@ -236,6 +241,9 @@ func (w *sourceWorker) load(ctx context.Context) error {
 	}
 	saved, err := w.module.deps.Store.SourceState(ctx, w.instance.ID)
 	if err != nil {
+		return err
+	}
+	if err := w.prepareInitialImport(ctx, saved); err != nil {
 		return err
 	}
 	for key, value := range saved {

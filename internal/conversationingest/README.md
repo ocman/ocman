@@ -52,6 +52,14 @@ Current startup binds the local adapters already configured for this owner.
 
 ## Import and repair
 
+Fresh sources persist `initial-import=pending` before importing content. After
+the first complete successful pass, the optional `OnInitialImport` callback
+performs owner-local first-import cleanup. Failures remain pending for retry,
+including across restarts; existing source bookkeeping or content opts out.
+The server injects `autoarchive.InitialImport`, which archives only Ocman rows
+once per host/platform and never mutates native history. Feed, journal and
+polling workers all use the same completion check.
+
 Each worker picks one mode for its source:
 
 - **Feed** (OpenCode v2, `feed.go`) follows the machine server's `/api/event`

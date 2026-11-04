@@ -38,6 +38,8 @@ type Deps struct {
 	// StoredHistory reports whether project activity is persisted, which
 	// the project pass needs.
 	StoredHistory func() bool
+	// SessionReady prevents maintenance on an incomplete local import.
+	SessionReady func(platform string) bool
 }
 
 // Settings is the stored auto-archive configuration.

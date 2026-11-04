@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/telemetry"
 )
@@ -82,6 +83,9 @@ func (m *Module) ArchiveSessions(ctx context.Context) {
 	}
 
 	for _, adapter := range m.d.Platforms() {
+		if m.deferMaintenance(ctx, string(adapter.ID())) {
+			continue
+		}
 		if !adapter.Available(ctx) {
 			continue
 		}
@@ -156,6 +160,13 @@ func (m *Module) ArchiveProjects(ctx context.Context) {
 	}
 	cutoff := cutoffFor(settings)
 
+	// Otherwise the project sweep could hide the sessions retained by the
+	// initial selection, even when the session sweep correctly waits.
+	for _, adapter := range m.d.Platforms() {
+		if remoteID, _ := platforms.SplitPlatformID(string(adapter.ID())); remoteID == "" && m.deferMaintenance(ctx, string(adapter.ID())) {
+			return
+		}
+	}
 	local := m.d.Local()
 	projects, err := local.Projects(ctx)
 	if err != nil {
@@ -225,4 +236,16 @@ func (m *Module) ArchiveProjects(ctx context.Context) {
 		"cutoff":   cutoff,
 		"archived": archivedCount,
 	}).Info("project auto-archive pass completed")
+}
+
+func (m *Module) deferMaintenance(ctx context.Context, platform string) bool {
+	if m.d.SessionReady != nil && !m.d.SessionReady(platform) {
+		return true
+	}
+	recent, err := m.d.Store.InitialImportArchiveRecent(ctx, platform, time.Now().Add(-24*time.Hour).UnixMilli())
+	if err != nil {
+		log.WithError(err).Error("reading first-import archive marker")
+		return true
+	}
+	return recent
 }

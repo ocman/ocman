@@ -23,6 +23,14 @@ type readySource struct {
 	at       time.Time
 }
 
+// InitialImportReady reports whether an adapter has completed its initial clean
+// pass this lifetime. Later refreshes do not pause ordinary maintenance.
+func (m *Module) InitialImportReady(adapterID string) bool {
+	m.readyMu.Lock()
+	defer m.readyMu.Unlock()
+	return m.imported[adapterID]
+}
+
 // ReadyInstances returns a complete, recently scanned set of sources. It is
 // deliberately empty after restart until every source completes a clean pass.
 // A failed or deferred read disqualifies the entire set, not just that source.
@@ -53,5 +61,9 @@ func (w *sourceWorker) readiness(ok bool) {
 	delete(m.ready, w.source.AdapterID)
 	if ok && w.instance.ID != "" {
 		m.ready[w.source.AdapterID] = readySource{instance: w.instance.ID, at: time.Now()}
+		if m.imported == nil {
+			m.imported = map[string]bool{}
+		}
+		m.imported[w.source.AdapterID] = true
 	}
 }

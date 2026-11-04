@@ -869,6 +869,10 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	}
 	ingestRaw(t, srv, 2)
 
+	// Exercise the daily policy after the first-import grace period.
+	if err := srv.stateDB.SetSetting(t.Context(), "initial_import_archive/opencode", "1"); err != nil {
+		t.Fatal(err)
+	}
 	srv.autoArchiveModule().ArchiveSessions(t.Context())
 
 	archived, err := srv.stateDB.ArchivedSessions(t.Context())
@@ -896,6 +900,10 @@ func TestAutoArchiveUsesConfiguredTTL(t *testing.T) {
 		t.Fatalf("seeding session: %v", err)
 	}
 	ingestRaw(t, srv, 1)
+	// Exercise the configured TTL after the first-import grace period.
+	if err := srv.stateDB.SetSetting(t.Context(), "initial_import_archive/opencode", "1"); err != nil {
+		t.Fatal(err)
+	}
 	if err := srv.autoArchiveModule().SetSettings(t.Context(), autoarchive.Settings{Enabled: true, TTLDays: 3}); err != nil {
 		t.Fatal(err)
 	}

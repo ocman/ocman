@@ -14,5 +14,9 @@ func (s *Server) autoArchiveModule() *autoarchive.Module {
 		Platforms:     func() []platforms.Platform { return s.registry.Platforms() },
 		Local:         func() hostsvc.Host { return s.router().Local() },
 		StoredHistory: s.hasStoredHistory,
+		SessionReady: func(id string) bool {
+			remoteID, _ := platforms.SplitPlatformID(id)
+			return remoteID != "" || s.historyIngest == nil || s.historyIngest.InitialImportReady(id)
+		},
 	})
 }

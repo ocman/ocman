@@ -24,6 +24,8 @@ flowchart LR
     Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox)]
     Commit -->|post-commit content receipts| Adapters
     Import -->|confirmed-absence refresh results| Adapters
+    Import -->|first complete fresh import callback| Archive[autoarchive<br/>one-time session selection]
+    Archive -->|archive rows + host/platform receipt atomically| State[(state.db)]
     History --> Reader[conversationread<br/>read-only WAL snapshots]
     Adapters -->|bounded lifecycle and version only| Reader
     Reader -->|bounded wait for initial import or stale snapshot| Import
@@ -55,6 +57,15 @@ flowchart LR
   preserving deletion flags and sequences. Ocman's temporary naming and judge
   helpers do not produce UI activity callbacks; the history feed still imports
   their content independently.
+- A fresh source records first-import eligibility before writing content. Only
+  a complete successful import invokes the server-injected archive callback.
+  Existing histories opt out; interrupted imports retain their eligibility.
+  The callback keeps sessions active in the last 24 hours and the latest 20
+  visible sessions, plus pinned and live sessions. Archive rows and a once-per-
+  host/platform receipt commit together in `state.db`. Native data is unchanged.
+  Inactivity maintenance waits for a clean import and does not override the
+  first-import selection during its first 24 hours. The normal configured
+  inactivity policy applies afterward.
 - Unresolved creation reservations defer affected identities, not the entire
   import. Partial inventories never authorize deletion or complete verification.
   Claude supervisor discovery failures return available transcript/runtime rows

@@ -33,6 +33,9 @@ type Deps struct {
 	// defaults to 20; 100 disables pauses but still serializes backfill sources.
 	BackfillDutyPercent int
 	OnError             func(instanceID, sessionID string, err error)
+	// OnInitialImport runs after a fresh source's first complete import. Errors
+	// keep the import pending for retry; existing histories never invoke it.
+	OnInitialImport func(context.Context, string, []statev2.Session) error
 }
 
 // Module maintains the authoritative history store. It never broadcasts historical idle events or
@@ -44,6 +47,7 @@ type Module struct {
 	backfill *backfillLimiter
 	readyMu  sync.Mutex
 	ready    map[string]readySource
+	imported map[string]bool // first complete pass this lifetime; never expires
 	// receiptMu guards the read-approval broadcast and adapter instances.
 	receiptMu     sync.Mutex
 	receiptCh     chan struct{}

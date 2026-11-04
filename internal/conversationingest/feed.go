@@ -196,6 +196,9 @@ func (w *sourceWorker) drainFeed(ctx context.Context) {
 	if err == nil && w.last.Counters["deferred"] > 0 {
 		err = errDeferred
 	}
+	if err == nil && (catchUp || dirty[""]) {
+		err = w.completeInitialImport(ctx)
+	}
 	if ctx.Err() != nil {
 		return
 	}

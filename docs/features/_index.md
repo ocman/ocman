@@ -11,6 +11,13 @@ sidebar:
 are grouped by project with status indicators and a `+` button to start new
 ones. Sessions and projects with no activity for seven days are archived by
 default. The delay and auto-archive toggle are available in Settings.
+On a platform's first import on each machine, Ocman keeps sessions active in
+the last 24 hours and the 20 most recently active sessions, even if older.
+Older sessions go to the archive without changing the source tool's history.
+Pinned sessions, running sessions and sessions awaiting input stay visible.
+This cleanup does not run again or affect histories already imported before
+the feature was added. Disabling auto-archive also disables this cleanup.
+The regular inactivity policy resumes after the first 24 hours.
 Under Settings → Sessions → **Show archived sessions again**, choose when
 new activity restores an archived session to the sidebar: **Session halts**
 is the default and waits for done, waiting, error, or interrupted status;

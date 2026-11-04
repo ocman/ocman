@@ -84,7 +84,7 @@ func ingestHistory(t *testing.T, s *Server, history *statev2.DB, want int) {
 				got = len(rows)
 			}
 		}
-		if got >= want {
+		if got >= want && s.historyIngest.InitialImportReady(string(opencodeplatform.PlatformID)) {
 			return
 		}
 		if time.Now().After(deadline) {

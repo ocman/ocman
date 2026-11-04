@@ -28,6 +28,7 @@ func (s *Server) WithConversationHistory(store *statev2.DB, ownerID string) *Ser
 			log.WithError(err).WithFields(log.Fields{"instance_id": instanceID, "session_id": sessionID}).Warn("conversation history repair failed; will retry")
 		}}
 	if s.stateDB != nil {
+		deps.OnInitialImport = s.autoArchiveModule().InitialImport
 		deps.Tasks = s.taskManager()
 		catalogue, _ := sessioncatalog.New(s.stateDB)
 		s.sessions.WithSessionCatalogue(catalogue, ownerID)
