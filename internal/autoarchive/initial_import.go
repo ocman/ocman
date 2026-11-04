@@ -48,12 +48,24 @@ func (m *Module) InitialImport(ctx context.Context, platform string, sessions []
 		return rows[i].UpdatedAt > rows[j].UpdatedAt
 	})
 	cutoff := time.Now().Add(-24 * time.Hour).UnixMilli()
+	liveState := adapter.LiveStatus
+	if reader, ok := adapter.(platforms.SessionObservationReader); ok {
+		ids := make([]string, 0, len(rows))
+		for _, s := range rows {
+			ids = append(ids, s.SessionID)
+		}
+		observations, err := reader.SessionObservations(ctx, ids)
+		if err != nil {
+			return err
+		}
+		liveState = func(id string) *platforms.LiveState { v := observations[id]; return &v }
+	}
 	var candidates []state.InitialArchiveSession
 	for i, s := range rows {
 		if i < 20 || s.UpdatedAt <= 0 || s.UpdatedAt >= cutoff {
 			continue
 		}
-		if live := adapter.LiveStatus(s.SessionID); live != nil && (live.Status == "busy" || live.Status == "waiting" || live.PendingPermission || live.PendingQuestion || live.BackgroundTaskCount > 0 || live.BackgroundServiceCount > 0) {
+		if live := liveState(s.SessionID); live != nil && (live.Status == "busy" || live.Status == "waiting" || live.PendingPermission || live.PendingQuestion || live.BackgroundTaskCount > 0 || live.BackgroundServiceCount > 0) {
 			continue
 		}
 		candidates = append(candidates, state.InitialArchiveSession{ID: s.SessionID, TimeUpdated: s.UpdatedAt})

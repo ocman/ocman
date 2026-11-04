@@ -16,6 +16,7 @@ import (
 type backgroundState struct {
 	mu       sync.RWMutex
 	sessions map[string]platforms.BackgroundSnapshot
+	ready    bool
 }
 
 func (a *Adapter) observeBackground(raw []byte, kind string) {
@@ -53,6 +54,7 @@ func (a *Adapter) observeBackground(raw []byte, kind string) {
 			return
 		}
 		clear(a.background.sessions)
+		a.background.ready = true
 		for id, count := range snapshot.Counts {
 			if count >= 0 {
 				a.background.sessions[id] = platforms.BackgroundSnapshot{Count: count, Tasks: decodeBackgroundTasks(snapshot.Details[id])}

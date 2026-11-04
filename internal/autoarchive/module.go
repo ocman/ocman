@@ -53,13 +53,16 @@ type Module struct {
 	// platformTimeout bounds one platform's inactive-session read so a
 	// slow remote cannot starve local maintenance.
 	platformTimeout time.Duration
+	readinessRetry  time.Duration
 }
 
 var _ module.Module = (*Module)(nil)
 var _ module.Runner = (*Module)(nil)
 
-func NewModule(d Deps) *Module { return &Module{d: d, platformTimeout: defaultRPCTimeout} }
-func (*Module) Name() string   { return "autoarchive" }
+func NewModule(d Deps) *Module {
+	return &Module{d: d, platformTimeout: defaultRPCTimeout, readinessRetry: time.Minute}
+}
+func (*Module) Name() string { return "autoarchive" }
 
 func (m *Module) Routes(r module.Router) {
 	m.setting().Mount(r.Setting, "/api/settings/auto-archive")
@@ -70,10 +73,27 @@ func (m *Module) Run(ctx context.Context) {
 	if m.d.Store == nil {
 		return
 	}
-	module.Every(ctx, "auto-archive", interval, func(ctx context.Context) {
-		m.ArchiveSessions(ctx)
-		m.ArchiveProjects(ctx)
-	})
+	for ctx.Err() == nil {
+		next := interval
+		module.RunWithRecover("auto-archive", func() {
+			if m.d.SessionReady != nil {
+				for _, adapter := range m.d.Platforms() {
+					if remote, _ := platforms.SplitPlatformID(string(adapter.ID())); remote == "" && !m.d.SessionReady(string(adapter.ID())) {
+						next = m.readinessRetry
+					}
+				}
+			}
+			m.ArchiveSessions(ctx)
+			m.ArchiveProjects(ctx)
+		})
+		timer := time.NewTimer(next)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
 }
 
 func (m *Module) setting() httpx.SettingRoute[Settings] {

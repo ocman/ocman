@@ -34,6 +34,19 @@ type CachedSessionObserver interface {
 	CachedSessionObservations() map[string]LiveState
 }
 
+// SessionObservationReader returns an owner-ID-keyed snapshot for maintenance.
+// An incomplete live bootstrap returns an error rather than an empty snapshot.
+type SessionObservationReader interface {
+	SessionObservations(context.Context, []string) (map[string]LiveState, error)
+}
+
+// SessionObservationReadiness fences destructive selection until native status
+// and prompt caches have been seeded. The bool reports a live source whose
+// canonical background snapshot must also be bootstrapped. It never launches.
+type SessionObservationReadiness interface {
+	SessionObservationsReady(context.Context) (bool, error)
+}
+
 // CachedSessionAvailability reports whether this source can accept a new turn.
 // It is separate from the event stream's authority to establish busy status.
 type CachedSessionAvailability interface{ CachedSessionAvailable() bool }

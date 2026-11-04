@@ -25,6 +25,7 @@ flowchart LR
     Commit -->|post-commit content receipts| Adapters
     Import -->|confirmed-absence refresh results| Adapters
     Import -->|first complete fresh import callback| Archive[autoarchive<br/>one-time session selection]
+    Adapters -->|canonical observation snapshot<br/>after status, prompt and background bootstrap| Archive
     Archive -->|archive rows + host/platform receipt atomically| State[(state.db)]
     History --> Reader[conversationread<br/>read-only WAL snapshots]
     Adapters -->|bounded lifecycle and version only| Reader
@@ -66,6 +67,11 @@ flowchart LR
   Inactivity maintenance waits for a clean import and does not override the
   first-import selection during its first 24 hours. The normal configured
   inactivity policy applies afterward.
+  Readiness-deferred startup sweeps retry after one minute instead of losing
+  the startup pass until the next day. First-import selection uses the owning
+  adapter's canonical observation snapshot, including cached native prompts,
+  bubbled child prompts and canonical background tasks. An incomplete live
+  bootstrap leaves the one-time cleanup pending.
 - Unresolved creation reservations defer affected identities, not the entire
   import. Partial inventories never authorize deletion or complete verification.
   Claude supervisor discovery failures return available transcript/runtime rows
