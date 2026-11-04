@@ -72,6 +72,9 @@ flowchart LR
   adapter's canonical observation snapshot, including cached native prompts,
   bubbled child prompts and canonical background tasks. An incomplete live
   bootstrap leaves the one-time cleanup pending.
+  Prompt bootstrap receipts name the port and its current generation. Clearing
+  a port invalidates those receipts; re-registering a scope or failing its
+  replacement fetch cannot reuse an older successful snapshot.
 - Unresolved creation reservations defer affected identities, not the entire
   import. Partial inventories never authorize deletion or complete verification.
   Claude supervisor discovery failures return available transcript/runtime rows

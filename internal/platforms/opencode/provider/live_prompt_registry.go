@@ -13,6 +13,11 @@ type livePromptEntry struct {
 	prompt    platforms.LivePrompt
 }
 
+type promptSource struct {
+	port       string
+	generation uint64
+}
+
 type livePromptRegistry struct {
 	mu           sync.RWMutex
 	entries      map[string]livePromptEntry
@@ -20,6 +25,7 @@ type livePromptRegistry struct {
 	changed      map[string]uint64
 	changeScope  map[string]string
 	applied      map[string]uint64
+	seeded       map[string]promptSource
 	scopePort    map[string]string
 	portGen      map[string]uint64
 	haltStore    *state.DB
@@ -36,6 +42,7 @@ func newLivePromptRegistry() *livePromptRegistry {
 		changed:     make(map[string]uint64),
 		changeScope: make(map[string]string),
 		applied:     make(map[string]uint64),
+		seeded:      make(map[string]promptSource),
 		scopePort:   make(map[string]string),
 		portGen:     make(map[string]uint64),
 	}

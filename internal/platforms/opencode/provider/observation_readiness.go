@@ -26,15 +26,22 @@ func (a *Adapter) SessionObservationsReady(ctx context.Context) (bool, error) {
 		// starts. Require both the root scopes and every registered scope.
 		for _, kind := range []string{"permission", "question"} {
 			scope := promptScope(directory, kind)
-			if a.prompts.scopePort[scope] != port || a.prompts.applied[scope] == 0 {
+			if a.prompts.scopePort[scope] != port || !a.prompts.scopeReady(scope, port) {
 				return true, platforms.ErrHistoryUnavailable
 			}
 		}
 		for scope, owner := range a.prompts.scopePort {
-			if owner == port && a.prompts.applied[scope] == 0 {
+			if owner == port && !a.prompts.scopeReady(scope, port) {
 				return true, platforms.ErrHistoryUnavailable
 			}
 		}
 	}
 	return len(ports) > 0, nil
+}
+
+// Caller holds prompts.mu. Applied counters also fence stale reads on clear;
+// only a successful snapshot from this port generation establishes readiness.
+func (r *livePromptRegistry) scopeReady(scope, port string) bool {
+	seed := r.seeded[scope]
+	return seed.port == port && seed.generation == r.portGen[port]
 }

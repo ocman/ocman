@@ -95,6 +95,7 @@ func (a *Adapter) startPromptReconciliation(ctx context.Context, port string, di
 	}
 	tokens := make(map[string]uint64, len(directories)*len(kinds))
 	a.prompts.mu.Lock()
+	source := promptSource{port: port, generation: a.prompts.portGen[port]}
 	for _, directory := range directories {
 		for _, kind := range kinds {
 			scope := promptScope(directory, kind)
@@ -131,7 +132,7 @@ func (a *Adapter) startPromptReconciliation(ctx context.Context, port string, di
 					callback = onPermission[0]
 				}
 				if ok {
-					a.prompts.applySnapshot(directory, kind, token, prompts, callback)
+					a.prompts.applySnapshot(directory, kind, token, prompts, callback, source)
 				} else {
 					allOK.Store(false)
 				}
@@ -162,6 +163,7 @@ func (a *Adapter) ClearPromptsForPort(port string) {
 		directory, _, _ := strings.Cut(scope, "\x00")
 		directories[directory] = true
 		delete(a.prompts.scopePort, scope)
+		delete(a.prompts.seeded, scope)
 		a.prompts.version[scope]++
 		a.prompts.applied[scope] = a.prompts.version[scope]
 	}
@@ -282,14 +284,21 @@ func fetchPromptSnapshot(ctx context.Context, port, directory, kind string) ([]p
 	return prompts, true
 }
 
-func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64, prompts []platforms.LivePrompt, onPrompt func(platforms.LivePrompt)) bool {
+func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64, prompts []platforms.LivePrompt, onPrompt func(platforms.LivePrompt), sources ...promptSource) bool {
 	r.mu.Lock()
 	scope := promptScope(directory, kind)
-	if token < r.applied[scope] {
+	source := promptSource{port: r.scopePort[scope], generation: r.portGen[r.scopePort[scope]]}
+	if len(sources) > 0 {
+		source = sources[0]
+	}
+	if token < r.applied[scope] || source.port != r.scopePort[scope] || source.generation != r.portGen[source.port] {
 		r.mu.Unlock()
 		return false
 	}
 	r.applied[scope] = token
+	if source.port != "" {
+		r.seeded[scope] = source
+	}
 	for key, entry := range r.entries {
 		if entry.directory == directory && strings.HasPrefix(key, kind+"\x00") && r.changed[key] <= token {
 			delete(r.entries, key)
