@@ -126,6 +126,29 @@ func TestCloneProjectFailureCleansOnlyReservedDirectory(t *testing.T) {
 	}
 }
 
+func TestCloneProjectRetryWithOwnerURLRewrite(t *testing.T) {
+	log := fakeCloneGit(t, false)
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "url.ssh://git@example.com/.insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_0", "https://example.com/")
+	h := New(Deps{})
+	req := hostsvc.ProjectClone{URL: "https://example.com/Org/Repo.git", Directory: filepath.Join(t.TempDir(), "repo")}
+	if err := h.CloneProject(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	expanded, err := gitexec.Output(t.Context(), req.Directory, "remote", "get-url", "origin")
+	if err != nil || expanded != "ssh://git@example.com/Org/Repo.git" {
+		t.Fatalf("rewrite not active: %q, %v", expanded, err)
+	}
+	if err := h.CloneProject(t.Context(), req); err != nil {
+		t.Fatalf("retry rejected a completed clone with an owner-local rewrite: %v", err)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil || strings.Count(string(data), " clone ") != 1 {
+		t.Fatalf("retry cloned again: %s, %v", data, err)
+	}
+}
+
 func TestCloneProjectRejectsSymlinkAndProtocolRewrite(t *testing.T) {
 	testutil.RequireGit(t)
 	h := New(Deps{})

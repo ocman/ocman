@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { useDraftMachine } from './useDraftMachine';
 import { getConversationDraft, hydrateDrafts, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { transact } from '../../lib/draftDb';
+import type { NewSessionParams } from '../../lib/newSessionPath';
 
 const params = { directory: '/source', remoteId: 'local', platform: 'opencode', draftId: 'clone-draft' };
 const machine = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/target/repo', cloneUrl: 'https://example.com/Org/Repo.git' };
@@ -33,6 +34,21 @@ it('clears clone consent when switching to an existing checkout and resets a sel
   const hook = renderHook(() => useDraftMachine(params, { target: 'dir:/source/worktree' }, () => false, navigate));
   await act(() => hook.result.current.onMachineChange({ ...machine, cloneUrl: undefined }));
   expect(getConversationDraft('clone-draft')).toMatchObject({ target: 'current', clone: undefined });
+});
+
+it('clears destination-specific consent on browser Back but retains it for platform changes', async () => {
+  const navigate = vi.fn();
+  const hook = renderHook(({ route }: { route: NewSessionParams }) => useDraftMachine(route, {}, () => false, navigate), { initialProps: { route: params } });
+  await act(() => hook.result.current.onMachineChange(machine));
+  const destination = { ...params, directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform };
+  hook.rerender({ route: destination });
+  expect(hook.result.current.cloneURL).toBe(machine.cloneUrl);
+  hook.rerender({ route: { ...destination, platform: 'r-box:claudecode' } });
+  expect(hook.result.current.cloneURL).toBe(machine.cloneUrl);
+  hook.rerender({ route: params });
+  await waitFor(() => expect(getConversationDraft(params.draftId)?.directory).toBe(params.directory));
+  expect(hook.result.current.cloneURL).toBeUndefined();
+  expect(getConversationDraft(params.draftId)?.clone).toBeUndefined();
 });
 
 it('keeps worktree selection for existing projects and refuses a locked or claimed draft', async () => {

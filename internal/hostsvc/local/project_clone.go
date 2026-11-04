@@ -107,6 +107,7 @@ func completedClone(ctx context.Context, req hostsvc.ProjectClone) bool {
 	if err != nil || string(marker) != req.URL {
 		return false
 	}
-	origin, err := gitexec.Output(ctx, req.Directory, "remote", "get-url", "origin")
+	// Compare the stored URL, not `remote get-url`, which expands owner-local rewrites.
+	origin, err := gitexec.Output(ctx, req.Directory, "config", "--get", "remote.origin.url")
 	return err == nil && origin == req.URL
 }

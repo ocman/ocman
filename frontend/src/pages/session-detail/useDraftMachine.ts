@@ -3,7 +3,7 @@ import type { TargetCandidate } from '../../lib/api.types';
 import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { newSessionPath, NEW_SESSION_ID, type NewSessionParams } from '../../lib/newSessionPath';
-import { rememberConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
+import { getConversationDraft, rememberConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import { projectRootForDirectory } from '../../lib/worktrees';
 
 export function useDraftMachine(params: NewSessionParams, selections: Pick<ConversationDraft, 'model' | 'agent' | 'reasoning' | 'target'>,
@@ -17,7 +17,10 @@ export function useDraftMachine(params: NewSessionParams, selections: Pick<Conve
   });
   const { model, agent, reasoning, target } = selections;
   useEffect(() => {
-    rememberConversationDraft({ directory, remoteId, platform, title, draftId, model, agent, reasoning, target });
+    const saved = getConversationDraft(draftId);
+    const sameLocation = saved?.directory === directory && saved.remoteId === remoteId;
+    rememberConversationDraft({ directory, remoteId, platform, title, draftId, model, agent, reasoning, target,
+      clone: sameLocation ? saved.clone : undefined });
   }, [directory, remoteId, platform, title, draftId, model, agent, reasoning, target]);
   const { setInfo } = useHeaderInfo();
   useEffect(() => {
