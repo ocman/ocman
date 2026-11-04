@@ -44,10 +44,22 @@ func (f *lifecycleFactory) Start(context.Context) error {
 }
 
 func (f *lifecycleFactory) Close() {
-	mcpDown, httpDown := !dials(f.srv.mcpAddr), !dials(f.main)
+	// A TCP handshake can still complete from the kernel's accept backlog
+	// after Close. Verify that neither listener can serve a request instead.
+	mcpDown, httpDown := !servesHTTP(f.srv.mcpAddr), !servesHTTP(f.main)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mcpDown, f.httpDown, f.closed = mcpDown, httpDown, true
+}
+
+func servesHTTP(addr string) bool {
+	client := &http.Client{Timeout: time.Second}
+	resp, err := client.Get("http://" + addr + "/")
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
 }
 
 func dials(addr string) bool {
