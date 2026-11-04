@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
@@ -119,7 +120,9 @@ func (s *Server) prWatchReady(ctx context.Context, t prworkflow.Target) bool {
 		return false
 	}
 	life, err := reader.SessionLifecycle(ctx, t.SessionID)
-	return err == nil && life != nil && !life.ReadOnly && life.Status != "busy" && life.Status != "waiting"
+	// Waiting is a normally completed assistant turn, not a running turn.
+	// Match the held queue's running gate, including quota-limited turns.
+	return err == nil && life != nil && !life.ReadOnly && life.Status != db.StatusBusy && life.Status != db.StatusLimited
 }
 
 func (s *Server) linkLaunchedPR(ctx context.Context, platform, id, dir, owner, remote string, number int, pr *forge.PR) {

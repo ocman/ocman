@@ -76,13 +76,32 @@ func TestPRWatchAdmission(t *testing.T) {
 	if !s.prWatchReady(t.Context(), target) {
 		t.Fatal("idle session not admitted")
 	}
-	for _, status := range []db.SessionStatus{"busy", "waiting"} {
+	for _, status := range []db.SessionStatus{db.StatusWaiting, db.StatusDone, db.StatusError, db.StatusInterrupted} {
+		life.Status = status
+		if !s.prWatchReady(t.Context(), target) {
+			t.Fatalf("settled session %q not admitted", status)
+		}
+	}
+	for _, status := range []db.SessionStatus{db.StatusBusy, db.StatusLimited} {
 		life.Status = status
 		if s.prWatchReady(t.Context(), target) {
 			t.Fatal(status)
 		}
 	}
-	life.Status = "done"
+	life.Status = db.StatusWaiting
+	adapter.err = errors.New("lifecycle unavailable")
+	s.registry.Register(adapter)
+	if s.prWatchReady(t.Context(), target) {
+		t.Fatal("unavailable lifecycle admitted")
+	}
+	adapter.err = nil
+	adapter.life = nil
+	s.registry.Register(adapter)
+	if s.prWatchReady(t.Context(), target) {
+		t.Fatal("nil lifecycle admitted")
+	}
+	adapter.life = life
+	s.registry.Register(adapter)
 	life.ReadOnly = true
 	if s.prWatchReady(t.Context(), target) {
 		t.Fatal("read-only admitted")
