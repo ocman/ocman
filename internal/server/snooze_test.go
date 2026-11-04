@@ -160,3 +160,32 @@ func TestSnoozeActivityDoesNotResurface(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenPreservesSnooze(t *testing.T) {
+	for _, owner := range []string{"opencode", "r-box:opencode"} {
+		t.Run(owner, func(t *testing.T) {
+			srv, registry := newSessionsTestServer(t)
+			registry.Register(&fakePlatform{PlatformID: owner, SessionFn: func(string) (*platforms.SessionDetail, error) {
+				return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Platform: owner, Directory: "/src/foo"}}, nil
+			}})
+			until := time.Now().Add(time.Hour).UnixMilli()
+			if err := srv.stateDB.SnoozeSession(t.Context(), owner, "s1", until); err != nil {
+				t.Fatal(err)
+			}
+			rr := httptest.NewRecorder()
+			serveSessionRoute(srv.handleSession, rr, httptest.NewRequest(http.MethodGet, "/api/session/s1?platform="+owner, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("open: %d %s", rr.Code, rr.Body)
+			}
+			var detail platforms.SessionDetail
+			mustUnmarshal(t, rr.Body.Bytes(), &detail)
+			if !detail.Session.Archived || detail.Session.SnoozedUntil != until {
+				t.Fatalf("open lost snooze metadata: %+v", detail.Session)
+			}
+			snoozed, err := srv.stateDB.SnoozedSessions(t.Context())
+			if err != nil || snoozed[state.Key{Platform: owner, SessionID: "s1"}] != until {
+				t.Fatalf("open cancelled snooze: %v %v", snoozed, err)
+			}
+		})
+	}
+}

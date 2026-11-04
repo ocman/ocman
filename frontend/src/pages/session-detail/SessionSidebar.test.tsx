@@ -114,7 +114,7 @@ describe('SessionSidebar', () => {
     renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'busy', count: 3 } }, {}, undefined, undefined, undefined, view);
     expect(screen.getByText('Normal session')).toBeInTheDocument();
     const drawers = screen.getByRole('group', { name: 'Session drawers' });
-    for (const label of ['Archived', 'Routines', 'Plugins']) {
+    for (const label of ['Background', 'Routines', 'Plugins']) {
       const toggle = within(drawers).getByRole('button', { name: `${label} 1` });
       expect(toggle).toHaveAttribute('aria-expanded', 'false');
       fireEvent.click(toggle);
@@ -127,11 +127,11 @@ describe('SessionSidebar', () => {
     }
     expect(screen.queryByText('Completed archive')).not.toBeInTheDocument();
     expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['normal', 'archive', 'routine', 'plugin']);
-    fireEvent.click(within(drawers).getByRole('button', { name: 'Archived 1' }));
+    fireEvent.click(within(drawers).getByRole('button', { name: 'Background 1' }));
     expect(screen.queryByText('Archived run')).not.toBeInTheDocument();
     expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['normal', 'routine', 'plugin']);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'Plugin run' } });
-    expect(screen.queryByRole('button', { name: 'Archived 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Background 1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Routines 1' })).not.toBeInTheDocument();
     expect(within(drawers).getByText('Plugin run')).toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no matches at all' } });
@@ -146,11 +146,11 @@ describe('SessionSidebar', () => {
       { directory: '/second', sessions: [b], lastUpdated: 1, aggregate: { kind: 'none' } },
     ];
     renderSidebar({ ...groups[0], sessions: [a, b] }, {}, undefined, undefined, undefined, 'recent', undefined, undefined, groups);
-    fireEvent.click(screen.getByRole('button', { name: 'Archived 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Background 2' }));
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
     fireEvent.click(screen.getByRole('combobox', { name: 'Project' }));
     fireEvent.click(screen.getByRole('option', { name: '/second' }));
-    expect(screen.getByRole('button', { name: 'Archived 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Background 1' })).toBeInTheDocument();
     expect(screen.queryByText('First archived run')).not.toBeInTheDocument();
     expect(screen.getByText('Second archived run')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Show archived' })).not.toBeChecked();
@@ -165,7 +165,7 @@ describe('SessionSidebar', () => {
     fireEvent.click(toggle);
     const drawers = screen.getByRole('group', { name: 'Session drawers' });
     expect(within(drawers).getByText('Sleeping session')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Archived 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Background 1' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
     expect(screen.queryByRole('checkbox', { name: 'Show snoozed' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no matches' } });

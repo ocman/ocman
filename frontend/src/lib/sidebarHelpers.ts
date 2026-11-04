@@ -113,7 +113,7 @@ export async function resolveOpenSession(opts: {
  * The optimistic write still lights the badge instantly; the next poll
  * (≤3 s) is what turns it off.
  *
- * `activeId` is forced unarchived: opening a session unarchives it
+ * `activeId` is forced unarchived unless snoozed: opening a session unarchives it
  * server-side, so a poll that raced that write must not show it
  * archived.
  */
@@ -126,7 +126,7 @@ export function mergeSidebarSessions(
   statusRevisions?: { started: Readonly<Record<string, number>>; current: Readonly<Record<string, number>> },
 ): Session[] {
   return next.map((s) => {
-    const unarchived = s.id === activeId ? { ...s, archived: false } : s;
+    const unarchived = s.id === activeId && !s.snoozedUntil ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id && ls.platform === s.platform);
     const pending = pendingReads?.[`${s.platform}:${s.id}`];
     if (!live) return s.status === 'interrupted' && pending && pending.timeUpdated >= s.timeUpdated

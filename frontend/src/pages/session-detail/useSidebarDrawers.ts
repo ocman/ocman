@@ -7,7 +7,7 @@ import { matchesSessionSearch } from './sidebarSessionSearch';
 import { hasBackgroundWork } from '../../lib/sessionVisibility';
 
 const DRAWERS = [
-  { id: 'archived', label: 'Archived', icon: 'bi-archive' },
+  { id: 'archived', label: 'Background', icon: 'bi-archive' },
   { id: 'factory', label: 'Factory', icon: 'bi-kanban' },
   { id: 'routines', label: 'Routines', icon: 'bi-clock' },
   { id: 'plugins', label: 'Plugins', icon: 'bi-puzzle' },

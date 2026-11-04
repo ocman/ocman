@@ -17,7 +17,7 @@ func migrateSnooze(tx *sql.Tx) error {
 }
 
 // SnoozeSession hides a conversation until the hub-clock deadline. Activity
-// cannot resurface it early; opening or explicitly archiving it cancels snooze.
+// and opening cannot resurface it early; explicitly archiving it cancels snooze.
 func (d *DB) SnoozeSession(ctx context.Context, platform, sessionID string, until int64) error {
 	if until <= time.Now().UnixMilli() {
 		return fmt.Errorf("snooze time must be in the future")

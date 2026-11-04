@@ -240,8 +240,8 @@ describe('useSessionSeen', () => {
     const patchSession = vi.fn();
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
 
-    expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false, snoozedUntil: 0 });
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false, snoozedUntil: 0 }, 'opencode');
+    expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false });
+    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false }, 'opencode');
     expect(markSessionSeen).toHaveBeenCalledWith('opencode', 's1', 42);
     await waitFor(() => expect(recheckNotifyData).toHaveBeenCalled());
     expect(useUiStore.getState().lastOpenedSessionId).toBe('s1');
@@ -252,6 +252,42 @@ describe('useSessionSeen', () => {
 
     unmount();
     expect(setInfo).toHaveBeenLastCalledWith({});
+  });
+
+  it.each(['opencode', 'r-box:opencode'])('keeps a snoozed conversation snoozed when opened on %s', (platform) => {
+    const snoozed = { ...session, platform, archived: true, snoozedUntil: Date.now() + 60_000 };
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [snoozed]);
+    cacheMock.spy = false;
+    const patchSession = vi.fn();
+    renderHook(() => useSessionSeen({ session: snoozed, patchSession }), { wrapper });
+    expect(patchSession).toHaveBeenCalledWith({ seen: true });
+    expect(getSidebarSessions()[0]).toMatchObject({ archived: true, snoozedUntil: snoozed.snoozedUntil, seen: true });
+    expect(markSessionSeen).toHaveBeenCalledWith(platform, 's1', 42);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('preserves snooze on page restore and reconnect', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: vi.fn(() => [{ type: 'reload' }]) });
+    const snoozed = { ...session, archived: true, snoozedUntil: Date.now() + 60_000 };
+    const patchSession = vi.fn();
+    useApiStore.setState({ peekSession: vi.fn(async () => ({ session: snoozed, messages: [], parts: [] })) });
+    const { unmount } = renderHook(() => useSessionSeen({ session: snoozed, patchSession }), { wrapper });
+    expect(patchSession).toHaveBeenCalledWith({ seen: true });
+    act(() => { for (const cb of connectListeners) cb(); });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(navigate).not.toHaveBeenCalled();
+    unmount();
+    Reflect.deleteProperty(performance, 'getEntriesByType');
+  });
+
+  it('applies snooze events without navigating away', () => {
+    const patchSession = vi.fn();
+    renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
+    const patch = { archived: true, snoozedUntil: Date.now() + 60_000 };
+    act(() => { for (const cb of changedListeners) cb('s1', undefined, patch, 'opencode'); });
+    expect(patchSession).toHaveBeenLastCalledWith(patch);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('labels a worktree session with its project, not the worktree', () => {

@@ -420,6 +420,10 @@ describe('resolveOpenSession', () => {
 });
 
 describe('mergeSidebarSessions', () => {
+  it('preserves the active session snooze during sidebar refreshes', () => {
+    const snoozed = makeSession({ id: 'a', archived: true, snoozedUntil: 123 });
+    expect(mergeSidebarSessions([snoozed], [], 'a')[0]).toMatchObject({ archived: true, snoozedUntil: 123 });
+  });
   it('restores unread status for a session completed while away, even after live activity', () => {
     const current = [makeSession({ id: 'a', status: 'busy', seen: true, seenTimeUpdated: 100, timeUpdated: 200 })];
     const next = [makeSession({ id: 'a', status: 'done', seen: false, seenTimeUpdated: 100, timeUpdated: 200, unreadCount: 1 })];

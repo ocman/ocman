@@ -158,6 +158,14 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 	peek := r.URL.Query().Get("peek") == "1"
+	var snoozed map[state.Key]int64
+	if s.stateDB != nil && !peek {
+		snoozed, err = s.stateDB.SnoozedSessions(r.Context())
+		if err != nil {
+			httpx.ServerError(w, "fetching snoozed sessions on open", err)
+			return
+		}
+	}
 	if detail.Session != nil {
 		detail.Session.ProjectDefaultModel = s.projectDefaultModel(r.Context(), detail.Session.Directory)
 		if !peek || s.stateDB == nil {
@@ -169,7 +177,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Opening a session unarchives it (and its project) so the sidebar
+	// Opening an unsnoozed session unarchives it (and its project) so the sidebar
 	// shows the project + session tile again and navigation stays
 	// consistent. The user can re-archive from the sidebar. Skipped for
 	// remote sessions (AD-14b): their archive state lives in the remote's
@@ -178,7 +186,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// and resurface policy as the session list (remote sessions included,
 	// keyed by their compound platform), so an archived session stays
 	// archived while it is still working.
-	if s.stateDB != nil && detail.Session != nil && peek {
+	if s.stateDB != nil && detail.Session != nil && (peek || snoozed[state.Key{Platform: string(adapter.ID()), SessionID: sessionID}] > 0) {
 		row := []db.Session{*detail.Session}
 		if err := s.applySessionState(r.Context(), row); err != nil {
 			httpx.ServerError(w, "applying session state on peek", err)

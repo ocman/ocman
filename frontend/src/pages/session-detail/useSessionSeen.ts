@@ -59,7 +59,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
     if (document.hidden) return;
     lastMarked.current = updated;
-    patchSessionLists(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false, snoozedUntil: 0 } : {}) }, platform);
+    patchSessionLists(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false } : {}) }, platform);
     const request = sessionSeenInterrupted
       ? markSessionSeen(platform, id, updated, true)
       : markSessionSeen(platform, id, updated);
@@ -74,11 +74,11 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     if (!visible || !sessionSeenId || !sessionSeenPlatform) return;
     const identity = `${sessionSeenPlatform}\0${sessionSeenId}`;
     const restoring = openedIdentity.current === '' && isSessionPageRestore(sessionSeenId);
-    const opening = openedIdentity.current !== identity && !restoring;
+    const opening = openedIdentity.current !== identity && !restoring && !session?.snoozedUntil;
     openedIdentity.current = identity;
-    if (restoring && session?.archived) { closeArchivedSession(); return; }
+    if (restoring && session?.archived && !session.snoozedUntil) { closeArchivedSession(); return; }
     recordOpenedSession(sessionSeenId);
-    patchSession({ seen: true, ...(opening ? { archived: false, snoozedUntil: 0 } : {}) });
+    patchSession({ seen: true, ...(opening ? { archived: false } : {}) });
     markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated, opening);
     return () => {
       // A quick departure still acknowledges the latest content actually shown.
@@ -126,7 +126,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
         peekSession(sessionSeenId, controller.signal, sessionSeenPlatform)
           .then(({ session: row }) => {
             if (requested !== revision) return;
-            if (row.archived) closeArchivedSession();
+            if (row.archived && !row.snoozedUntil) closeArchivedSession();
             else if (row.title) patchSession({ title: row.title });
           })
           .catch((err) => { if (!controller.signal.aborted) remoteLog.error('Failed to refresh session metadata', err); });
@@ -138,7 +138,8 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
       if (platform && patch?.status) patchSession({ status: patch.status, resetsAt: patch.resetsAt ?? 0 });
       if (patch?.archived !== undefined) {
         revision++;
-        if (patch.archived) closeArchivedSession();
+        if (patch.archived && !patch.snoozedUntil) closeArchivedSession();
+        else if (patch.snoozedUntil) patchSession({ archived: patch.archived, snoozedUntil: patch.snoozedUntil });
         else patchSession({ archived: false });
         return;
       }
