@@ -105,6 +105,21 @@ describe('NewConversation', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
   });
 
+  it('restores pending clone consent and clones only on first submission without probing the missing checkout', async () => {
+    rememberConversationDraft({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', draftId: 'new',
+      clone: { url: 'https://example.com/Org/Repo.git', source: { directory: '/source', remoteId: 'local' } } });
+    mount();
+    await ready();
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.info).not.toHaveBeenCalled();
+    expect(mocks.worktrees).not.toHaveBeenCalled();
+    expect(composer.machineSource).toEqual({ directory: '/source', remoteId: 'local' });
+    expect(composer.target).toBe('current');
+    expect(screen.getByRole('status')).toHaveTextContent('Local changes will not transfer');
+    await act(() => composer.onSend!('Start on the new machine'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ directory: '/repo', remoteId: 'machine', cloneUrl: 'https://example.com/Org/Repo.git', worktree: false }));
+  });
+
   it('uses project startup defaults and respects explicit composer choices', async () => {
     mocks.settings.mockResolvedValue({ models: ['prov/fallback'], off: false, defaultAgent: 'plan',
       defaults: { model: 'prov/start', agent: 'plan', worktree: 'current' } });

@@ -58,6 +58,9 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
+	if !m.cloneForStart(w, r, req.Target) {
+		return
+	}
 	var platform, sessionID, directory, worktreePath, branch string
 	if req.Worktree {
 		remoteID, base := platforms.SplitPlatformID(req.Platform)

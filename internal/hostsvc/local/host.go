@@ -231,7 +231,11 @@ func (h *Host) GitCheckout(ctx context.Context, dir, branch string) error {
 	return git.Checkout(ctx, dir, branch)
 }
 func (h *Host) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
-	return h.deps.ProjectUpstreams(ctx, dir)
+	out, err := h.deps.ProjectUpstreams(ctx, dir)
+	if err == nil && out != nil {
+		out.CloneURL = projectCloneURL(ctx, out.RepoRoot)
+	}
+	return out, err
 }
 func (h *Host) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
 	return h.deps.FetchPRHead(ctx, req)

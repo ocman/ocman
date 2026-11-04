@@ -45,6 +45,41 @@ own Claude account. Codex likewise runs with the remote's own installation,
 `CODEX_HOME` and login; enabling it only on the hub does not enable it remotely.
 See [Claude Code](claude-code.md) and [Codex](codex.md).
 
+## Clone a project onto another machine
+
+In a new conversation, the machine picker also lists connected machines with
+**no matching project**. Select one to review the repository URL and destination.
+Ocman suggests `~/src/<host>/<repository>` on that machine. HTTPS and SSH URLs
+are supported; embedded HTTPS credentials are removed. The destination must not
+already exist, even if it is empty.
+
+Confirming only saves the choice in the conversation draft. The first prompt
+clones the repository on the selected machine, then starts the session in that
+checkout. Clone progress and errors appear below the prompt. Reloading keeps
+the choice, and a failed clone leaves the prompt available for an explicit retry.
+If cloning succeeds but launching fails, retry reuses that completed clone.
+
+The destination machine needs Git, repository access, and its own credentials.
+Local uncommitted changes and unpushed commits do not transfer. Nothing is copied
+from the source checkout. Older remotes without clone support report an error
+without creating a session.
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Hub
+    participant Owner as Selected machine
+    Browser->>Hub: Plan clone URL and destination
+    Hub->>Owner: Host.PlanProjectClone over gRPC
+    Owner-->>Hub: Validated URL and absolute destination
+    Hub-->>Browser: Clone plan
+    Note over Browser: Confirm and save in shared draft storage
+    Browser->>Hub: First prompt with clone consent
+    Hub->>Owner: Host.CloneProject over gRPC
+    Owner->>Owner: Clone using owner-local Git credentials
+    Hub->>Owner: Start session and deliver prompt
+```
+
 ## Prerequisites
 
 - ocman running on each machine you want to manage. The same version is

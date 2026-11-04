@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { api } from '../../lib/api';
+import { api, postJSON } from '../../lib/api';
 import type { ResolveTargetsResponse } from '../../lib/api.types';
 import { ComposerMachineSelector } from './ComposerMachineSelector';
 import { useShortcut, useShortcutDispatcher } from '../../lib/shortcutRegistry';
@@ -12,7 +12,7 @@ function Shortcuts({ onHistory = vi.fn() }: { onHistory?: () => void }) {
   return <textarea aria-label="Draft prompt" />;
 }
 
-vi.mock('../../lib/api', () => ({ api: { resolveTargets: vi.fn() } }));
+vi.mock('../../lib/api', () => ({ api: { resolveTargets: vi.fn() }, postJSON: vi.fn() }));
 vi.mock('../../lib/useCapabilities', () => ({ useMultiHost: () => false }));
 const local = { remoteId: 'local', remoteName: 'This machine', platform: 'opencode', dir: '/local/repo' };
 const remote = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/remote/checkout' };
@@ -23,6 +23,7 @@ function pick(combobox: HTMLElement, name: string | RegExp) {
 }
 beforeEach(() => {
   vi.mocked(api.resolveTargets).mockReset();
+  vi.mocked(postJSON).mockReset();
   vi.mocked(api.resolveTargets).mockResolvedValue({ candidates: [local, remote], remotes: [remote, unmatched] });
 });
 
@@ -32,7 +33,7 @@ it('defaults to the current owner and passes the matched remote directory', asyn
   const select = await screen.findByRole('combobox', { name: 'Session machine' });
   expect(select).toHaveTextContent('This machine');
   fireEvent.click(select);
-  expect(screen.getByRole('option', { name: 'Other box · no matching project' })).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Other box · no matching project' })).not.toBeDisabled();
   fireEvent.click(screen.getByRole('option', { name: 'Build box' }));
   await waitFor(() => expect(onSelect).toHaveBeenCalledWith(remote));
   expect(api.resolveTargets).toHaveBeenCalledWith('/local/repo', 'local');
@@ -87,9 +88,44 @@ it('shows unmatched machines without launching and ignores the current choice', 
   render(<ComposerMachineSelector directory="/local/repo" onSelect={onSelect} />);
   const select = await screen.findByRole('combobox');
   pick(select, /Other box/);
-  // The disabled option leaves the menu open.
-  fireEvent.click(screen.getByRole('option', { name: 'This machine' }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('Local uncommitted changes and unpushed commits will not transfer');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  pick(select, 'This machine');
   expect(onSelect).not.toHaveBeenCalled();
+});
+
+it('checks a destination and confirms cloning on submit without starting a session', async () => {
+  vi.mocked(api.resolveTargets).mockResolvedValue({ candidates: [local], remotes: [unmatched], cloneUrl: 'https://example.com/Org/Repo.git' });
+  vi.mocked(postJSON).mockResolvedValue({ url: 'https://example.com/Org/Repo.git', directory: '/owner/src/repo' });
+  const onSelect = vi.fn().mockResolvedValue(undefined);
+  render(<ComposerMachineSelector directory="/local/repo" onSelect={onSelect} />);
+  pick(await screen.findByRole('combobox'), /Other box/);
+  await waitFor(() => expect(screen.getByLabelText('Destination directory')).toHaveValue('/owner/src/repo'));
+  expect(onSelect).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Destination directory'), { target: { value: '/chosen/repo' } });
+  vi.mocked(postJSON).mockResolvedValueOnce({ url: 'https://example.com/Org/Repo.git', directory: '/chosen/repo' });
+  fireEvent.click(screen.getByRole('button', { name: 'Use machine and clone on submit' }));
+  await waitFor(() => expect(onSelect).toHaveBeenCalledWith({ ...unmatched, dir: '/chosen/repo', cloneUrl: 'https://example.com/Org/Repo.git' }));
+  expect(postJSON).toHaveBeenLastCalledWith('/api/sessions/plan-clone', { remoteId: 'other', url: 'https://example.com/Org/Repo.git', directory: '/chosen/repo' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+it('keeps planning failures retryable and cancellation does not select a machine', async () => {
+  vi.mocked(api.resolveTargets).mockResolvedValue({ candidates: [local], remotes: [unmatched], cloneUrl: 'https://example.com/repo' });
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('Destination already exists'));
+  const onSelect = vi.fn();
+  render(<ComposerMachineSelector directory="/local/repo" onSelect={onSelect} />);
+  pick(await screen.findByRole('combobox'), /Other box/);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Destination already exists');
+  expect(screen.getByRole('button', { name: 'Use machine and clone on submit' })).not.toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(onSelect).not.toHaveBeenCalled();
+});
+
+it('resolves choices from the original project while a clone is pending', async () => {
+  render(<ComposerMachineSelector directory="/new/destination" remoteId="other" source={{ directory: '/local/repo', remoteId: 'local' }} onSelect={vi.fn()} />);
+  await screen.findByRole('combobox');
+  expect(api.resolveTargets).toHaveBeenCalledWith('/local/repo', 'local');
 });
 
 it('reports resolution and launch failures, and can retry on focus', async () => {

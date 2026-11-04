@@ -59,7 +59,7 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var origin string
+	var origin, cloneURL string
 	var keys []string
 	project, err := owner.ProjectUpstreams(r.Context(), req.Dir)
 	if err != nil && req.RemoteID != "" && req.RemoteID != "local" {
@@ -67,6 +67,7 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err == nil && project != nil {
+		cloneURL = project.CloneURL
 		// Older owners send only the credential-free origin identity.
 		origin = project.Identity
 		keys = project.UpstreamKeys
@@ -90,5 +91,6 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, map[string]any{
 		"candidates": candidates,
 		"remotes":    s.remotes.EnabledRemotes(),
+		"cloneUrl":   cloneURL,
 	})
 }

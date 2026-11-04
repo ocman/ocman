@@ -91,4 +91,5 @@ export interface ComposerProps {
   remoteName?: string;
   remoteStale?: boolean;
   onMachineChange?: (target: TargetCandidate) => Promise<void>;
+  machineSource?: { directory: string; remoteId: string };
 }

@@ -13,7 +13,7 @@ export interface WorktreeEligibility {
  * the directory has a usable base commit and is not already a linked
  * worktree. All reads go to the selected owner.
  */
-export function useWorktreeEligibility(directory: string, remoteId: string) {
+export function useWorktreeEligibility(directory: string, remoteId: string, pendingClone = false) {
   const [resolved, setResolved] = useState<WorktreeEligibility>();
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -23,6 +23,10 @@ export function useWorktreeEligibility(directory: string, remoteId: string) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a directory/owner change restarts the lookup.
     setResolved(undefined);
     setError('');
+    if (pendingClone) {
+      setResolved({ canCreate: false, worktrees: [] });
+      return () => controller.abort();
+    }
     void (async () => {
       try {
         const query = new URLSearchParams({ dir: directory, remoteId });
@@ -53,7 +57,7 @@ export function useWorktreeEligibility(directory: string, remoteId: string) {
       }
     })();
     return () => controller.abort();
-  }, [directory, remoteId, attempt]);
+  }, [directory, remoteId, attempt, pendingClone]);
 
   return { resolved, error, retry: () => { setError(''); setAttempt((value) => value + 1); } };
 }

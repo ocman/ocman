@@ -21,6 +21,7 @@ export interface ConversationDraft extends NewSessionParams {
   reasoning?: string;
   target?: string;
   createdAt?: number;
+  clone?: { url: string; source: { directory: string; remoteId: string } };
 }
 /** A retired identity stays as a tombstone so a late autosave cannot resurrect it. */
 type StoredDraft = ConversationDraft & { deleted?: boolean };

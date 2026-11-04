@@ -14,7 +14,10 @@ func (h stubHost) EnsureRuntime(ctx context.Context, _ string, dir string) (*Ens
 }
 
 // stubHost is a minimal Host that records its identity for routing tests.
-type stubHost struct{ id string }
+type stubHost struct {
+	ProjectCloner
+	id string
+}
 
 func (h stubHost) SaveComposerAttachment(context.Context, ComposerAttachmentRequest, io.Reader) (*ComposerAttachment, error) {
 	return nil, nil

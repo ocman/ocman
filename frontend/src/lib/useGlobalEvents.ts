@@ -159,7 +159,7 @@ function handleSessionActivity(raw: string): void {
 }
 const inboxChangedListeners = new Set<() => void>();
 
-export type StartStep = 'platform' | 'worktree' | 'session' | 'prompt';
+export type StartStep = 'clone' | 'platform' | 'worktree' | 'session' | 'prompt';
 export type StartStepState = 'active' | 'done' | 'error';
 const startProgressListeners = new Set<(startId: string, step: StartStep, state: StartStepState) => void>();
 

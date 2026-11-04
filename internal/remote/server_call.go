@@ -60,6 +60,8 @@ var callHandlers = map[string]callHandler{
 	"ListRepoFiles":           (*Server).ListRepoFiles,
 	"ReadRepoFile":            (*Server).ReadRepoFile,
 	"ProjectUpstreams":        (*Server).ProjectUpstreams,
+	"PlanProjectClone":        (*Server).PlanProjectClone,
+	"CloneProject":            (*Server).CloneProject,
 	"FetchPRHead":             (*Server).FetchPRHead,
 	"ListWorktrees":           (*Server).ListWorktrees,
 	"WorktreeDefaultBaseRef":  (*Server).WorktreeDefaultBaseRef,

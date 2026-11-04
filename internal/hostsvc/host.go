@@ -102,6 +102,7 @@ type GitDiffOptions struct {
 
 // ProjectUpstreams is owner-local repository identity and forge remote data.
 type ProjectUpstreams struct {
+	CloneURL string         `json:"cloneUrl,omitempty"`
 	RepoRoot string         `json:"repoRoot"`
 	Remotes  []forge.Remote `json:"remotes"`
 	// Identity is the origin's credential-free project identity key
@@ -231,6 +232,7 @@ type TmuxSession struct {
 // returned verbatim; handlers translate sentinel errors (git.ErrNotRepo,
 // git.ErrNotARepo, ...) into HTTP status codes as before.
 type Host interface {
+	ProjectCloner
 	// RemoteID returns "local" for the in-process host, else the
 	// remote's instance ID. Display/routing only.
 	RemoteID() string

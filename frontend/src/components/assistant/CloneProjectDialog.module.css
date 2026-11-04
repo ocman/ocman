@@ -1,0 +1,5 @@
+.body { display: grid; gap: 16px; min-width: 0; }
+.body p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.field { display: grid; gap: 8px; min-width: 0; }
+.field input { width: 100%; }
+.error { color: var(--danger); }

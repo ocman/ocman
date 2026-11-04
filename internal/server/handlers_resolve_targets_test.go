@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -284,6 +285,23 @@ func TestHandleResolveTargets_WithManagerLocalMatch(t *testing.T) {
 		if !bytes.Contains(rr.Body.Bytes(), []byte("candidates")) {
 			t.Fatal("response missing candidates key")
 		}
+	}
+}
+
+func TestResolveTargetsOffersCredentialFreeCloneURL(t *testing.T) {
+	repo := initOriginRepoURL(t, "https://user:secret@example.com/Org/Repo.git")
+	srv := testServer(t)
+	withManager(t, srv)
+	rr := httptest.NewRecorder()
+	srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", strings.NewReader(`{"dir":"`+repo+`","remoteId":"local"}`)))
+	var response struct {
+		CloneURL string `json:"cloneUrl"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Code != http.StatusOK || response.CloneURL != "https://example.com/Org/Repo.git" || strings.Contains(rr.Body.String(), "secret") {
+		t.Fatalf("clone offer = %d %s", rr.Code, rr.Body.String())
 	}
 }
 

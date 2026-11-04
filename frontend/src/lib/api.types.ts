@@ -1261,6 +1261,7 @@ export interface RemoteStatus {
  * to createSession), or 'opencode' for the local machine.
  */
 export interface TargetCandidate {
+  cloneUrl?: string;
   remoteId: string;
   remoteName: string;
   platform: string;
@@ -1269,12 +1270,14 @@ export interface TargetCandidate {
 
 /** Response of POST /api/sessions/resolve-targets. */
 export interface ResolveTargetsResponse {
+  cloneUrl?: string;
   candidates: TargetCandidate[];
   remotes: TargetCandidate[];
 }
 
 /** Where a new conversation will live once its first prompt is sent. */
 export interface NewSessionTarget {
+  cloneUrl?: string;
   directory: string;
   /** Explicit owning machine; omitted = infer from platform, otherwise local. */
   remoteId?: string;

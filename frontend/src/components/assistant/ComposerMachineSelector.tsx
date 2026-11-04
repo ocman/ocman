@@ -4,15 +4,20 @@ import type { ResolveTargetsResponse, TargetCandidate } from '../../lib/api.type
 import { SearchSelect } from '../SearchSelect';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { HostBadge } from '../HostBadge';
+import { CloneProjectDialog } from './CloneProjectDialog';
 
-export function ComposerMachineSelector({ directory, remoteId = 'local', disabled, onSelect }: {
+export function ComposerMachineSelector({ directory, remoteId = 'local', source, disabled, onSelect }: {
   directory: string;
   remoteId?: string;
+  source?: { directory: string; remoteId: string };
   disabled?: boolean;
   onSelect: (target: TargetCandidate) => Promise<void>;
 }) {
   const [targets, setTargets] = useState<ResolveTargetsResponse | null>(null);
   const [error, setError] = useState('');
+  const [cloneMachine, setCloneMachine] = useState<TargetCandidate>();
+  const sourceDirectory = source?.directory || directory;
+  const sourceRemote = source?.remoteId || remoteId;
   const selectorRef = useRef<HTMLSpanElement>(null);
   const hostShortcut = useMemo(() => ({
     id: 'composer.select-host',
@@ -26,7 +31,7 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
   useEffect(() => {
     let ignore = false;
     const refresh = () => {
-      api.resolveTargets(directory, remoteId).then((result) => {
+      api.resolveTargets(sourceDirectory, sourceRemote).then((result) => {
         if (!ignore) { setTargets(result); setError(''); }
       }).catch(() => {
         if (!ignore) setError('Could not load machines');
@@ -35,7 +40,7 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
     refresh();
     window.addEventListener('focus', refresh);
     return () => { ignore = true; window.removeEventListener('focus', refresh); };
-  }, [directory, remoteId]);
+  }, [sourceDirectory, sourceRemote]);
 
   const remotes = targets?.remotes ?? [];
   if (remotes.length === 0 && !error) return null;
@@ -64,17 +69,23 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
               <HostBadge alwaysShow showIcon remoteId={machine.remoteId} remoteName={machine.remoteName} />
               {!current && !matched ? ' · no matching project' : ''}
             </>,
-            disabled: !current && !matched,
+            disabled: disabled,
           };
         })}
         onChange={(value) => {
           const target = candidates.find((c) => c.remoteId === value);
-          if (!target || target.remoteId === remoteId) return;
+          if (value === remoteId || disabled) return;
+          if (!target) {
+            const machine = machines.find((m) => m.remoteId === value);
+            if (machine) setCloneMachine({ ...machine, platform: remotes.find((m) => m.remoteId === value)?.platform || '', dir: '' });
+            return;
+          }
           setError('');
           void onSelect(target).catch(() => setError('Could not start a session on that machine'));
         }}
       />
     </span>
     {error && <span role="alert">{error}</span>}
+    {cloneMachine && <CloneProjectDialog machine={cloneMachine} suggestedURL={targets?.cloneUrl} onClose={() => setCloneMachine(undefined)} onSelect={onSelect} />}
   </span>;
 }

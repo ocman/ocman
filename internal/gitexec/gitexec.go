@@ -127,6 +127,12 @@ func (c *Cmd) Output() ([]byte, error) {
 	return withSlot(c.ctx, c.cmd.Output)
 }
 
+// WithEnv adds operation-specific environment overrides after the hardened defaults.
+func (c *Cmd) WithEnv(entries ...string) *Cmd {
+	c.cmd.Env = append(c.cmd.Env, entries...)
+	return c
+}
+
 func (c *Cmd) CombinedOutput() ([]byte, error) {
 	return withSlot(c.ctx, c.cmd.CombinedOutput)
 }

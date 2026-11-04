@@ -10,8 +10,9 @@ import '../../components/LaunchProgressCard.css';
 
 export type StartSteps = Partial<Record<StartStep, StartStepState>>;
 
-const ORDER: StartStep[] = ['platform', 'worktree', 'session', 'prompt'];
+const ORDER: StartStep[] = ['clone', 'platform', 'worktree', 'session', 'prompt'];
 const LABELS: Record<StartStep, Record<StartStepState, string>> = {
+  clone: { active: 'Cloning project', done: 'Project cloned', error: 'Project clone failed' },
   platform: { active: 'Launching platform', done: 'Platform ready', error: 'Platform failed to launch' },
   worktree: { active: 'Setting up worktree', done: 'Worktree ready', error: 'Worktree setup failed' },
   session: { active: 'Creating session', done: 'Session created', error: 'Creating session failed' },

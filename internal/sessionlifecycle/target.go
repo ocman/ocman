@@ -13,6 +13,7 @@ import (
 )
 
 type Target struct {
+	CloneURL  string `json:"cloneUrl,omitempty"`
 	Platform  string `json:"platform"`
 	Directory string `json:"directory"`
 	RemoteID  string `json:"remoteId"`

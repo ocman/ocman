@@ -42,7 +42,7 @@ test('machine selection re-points the new conversation and the first prompt crea
     }
   }
   await machine.click();
-  await expect(page.getByRole('option', { name: 'Other · no matching project' })).toBeDisabled();
+  await expect(page.getByRole('option', { name: 'Other · no matching project' })).toBeEnabled();
   await machine.click();
   const composer = page.getByRole('textbox');
   await composer.fill('Continue on the build box');

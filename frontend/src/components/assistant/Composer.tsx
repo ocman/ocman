@@ -36,7 +36,7 @@ export function Composer({
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
   worktreesSupported, worktrees, permissionControl, footerStatus, composerRef, target, onTargetChange,
-  remoteId, remoteName, remoteStale, onMachineChange,
+  remoteId, remoteName, remoteStale, onMachineChange, machineSource,
 }: ComposerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -346,6 +346,7 @@ export function Composer({
               <ComposerMachineSelector
                 key={`${sessionId}:${directory}:${remoteId}`}
                 directory={directory}
+                source={machineSource}
                 remoteId={remoteId}
                 disabled={disabled || selectorDisabled}
                 onSelect={async (machine) => {

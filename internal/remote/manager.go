@@ -708,6 +708,7 @@ func (m *Manager) disconnect(localID int64) {
 // TargetCandidate is one machine that has a given project checked out,
 // returned by ResolveProjectTargets for the new-session machine picker (AD-15).
 type TargetCandidate struct {
+	CloneURL   string `json:"cloneUrl,omitempty"`
 	RemoteID   string `json:"remoteId"`
 	RemoteName string `json:"remoteName"`
 	Platform   string `json:"platform"`

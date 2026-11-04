@@ -5,12 +5,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, postJSON, type StartSessionRequest } from '../../lib/api';
-import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft, getConversationDraft, rememberConversationDraft, retryConversationDraftSave, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
-import { shortPath } from '../../lib/format';
-import { useHeaderInfo } from '../../lib/headerContext';
+import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft, getConversationDraft, retryConversationDraftSave, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
@@ -37,6 +34,7 @@ import { StartProgress, type StartSteps } from './StartProgress';
 import { startHandoffs, startModels } from './startHandoffs';
 import { PreparedDraftLifecycle } from './PreparedDraftLifecycle';
 import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
+import { useDraftMachine } from './useDraftMachine';
 import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
 
 export interface NewConversationProps {
@@ -87,7 +85,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
   const worktreesCapable = useWorktreeLaunch(remoteId);
-  const eligibility = useWorktreeEligibility(directory, remoteId);
+  const eligibility = useWorktreeEligibility(directory, remoteId, !!savedSelections?.clone);
 
   const catalogKey = JSON.stringify([remoteId, directory, params.platform]);
   const cachedCatalog = useMemo(() => getNewSessionCatalog(catalogKey), [catalogKey]);
@@ -102,18 +100,6 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const catalogError = catalogFailure?.request === catalogRequest ? catalogFailure.message : '';
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
-
-  // Header shows the project (worktrees fold to their main checkout).
-  const { setInfo } = useHeaderInfo();
-  useEffect(() => {
-    setInfo({
-      sessionId: NEW_SESSION_ID,
-      sessionProject: shortPath(projectRootForDirectory(directory)),
-      sessionProjectFull: directory,
-      sessionRemoteId: remoteId,
-    });
-    return () => setInfo({});
-  }, [directory, remoteId, setInfo]);
 
   // Prepare only reads catalogs (a running instance's, else history); it
   // never launches OpenCode, so picking a machine starts nothing there.
@@ -146,16 +132,14 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   }
   const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
   const target = targetPick || catalog?.defaults?.worktree || 'worktree';
-  useEffect(() => {
-    rememberConversationDraft({ directory, remoteId, platform: params.platform, title, draftId,
-      model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick });
-  }, [directory, remoteId, params.platform, title, draftId, selectedModel, selectedAgent, selectedReasoning, targetPick]);
   const [error, setError] = useState('');
   // The submitted prompt, shown as the conversation's first message while
   // the session starts. Keyed by route so a machine switch mid-start hides it.
   const routeKey = routeKeyOf({ remoteId, directory, platform: params.platform, title });
   const [pending, setPending] = useState<{ key: string; text: string; images?: AttachedImage[]; startId: string; steps: StartSteps }>();
   const inFlight = useRef<number | undefined>(undefined);
+  const { cloneURL, machineSource, onMachineChange } = useDraftMachine(params,
+    { model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick }, () => inFlight.current !== undefined, navigate);
   const active = useRef(false);
   const generation = useRef(0);
   const readyWaiters = useRef<{ resolve: (value: Ready) => void; reject: (err: Error) => void }[]>([]);
@@ -282,7 +266,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,
         // The model picks the platform; a pick racing its route change still lands there.
         platform: (model && platformForModel(model)) || ready.platform, remoteId, title, prompt: text, send, startId,
-        worktree: startTarget === 'worktree',
+        worktree: startTarget === 'worktree', cloneUrl: cloneURL,
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
       if (model) startModels.set(res.sessionId, model);
@@ -317,7 +301,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel]);
+  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel, cloneURL]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     rememberPendingDraftPayload(draftId, images, files);
@@ -354,17 +338,6 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     postJSON<void>(`/api/session/${encodeURIComponent(id)}/shell?platform=${encodeURIComponent(sessionPlatform)}`,
       { command, agent: pick(r).agent }, { parseJSON: false }) }));
 
-  // Switching machines re-points this draft, without touching other drafts.
-  const onMachineChange = async (machine: TargetCandidate) => {
-    const start = useNewConversationDrafts.getState().starts[draftId];
-    if (inFlight.current !== undefined || start && !start.error && !start.sessionId) throw new Error('Session creation is already in progress');
-    if (target.startsWith('dir:')) {
-      rememberConversationDraft({ ...params, draftId, target: 'current' });
-      setTarget('current');
-    }
-    navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title, draftId }));
-  };
-
   return (
     // Same shell as AssistantThread: an empty viewport pushes the composer
     // to the bottom with the thread's padding.
@@ -374,6 +347,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress platform={platform} prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
       </div>
       <div className="oc-viewport-footer" data-testid="conversation-composer">
+        {cloneURL && <p role="status">On first submission, clone {cloneURL} into {directory} on the selected machine. Local changes will not transfer.</p>}
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {saveError && <InlineAlert onRetry={() => retryConversationDraftSave(draftId)}>Draft selections not saved: {saveError}</InlineAlert>}
@@ -413,6 +387,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
           onTargetChange={setTarget}
           remoteId={remoteId}
           onMachineChange={onMachineChange}
+          machineSource={machineSource}
           draftKey={draftId}
         />
       </div>

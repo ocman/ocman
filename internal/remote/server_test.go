@@ -166,7 +166,7 @@ func (f *fakePlatform) ProxyEvents(_ context.Context, _ string, w io.Writer, flu
 
 // localStubHost is a minimal hostsvc.Host for server tests. It returns
 // empty results for everything except Projects/Capabilities.
-type localStubHost struct{}
+type localStubHost struct{ hostsvc.ProjectCloner }
 
 func (localStubHost) SaveComposerAttachment(context.Context, hostsvc.ComposerAttachmentRequest, io.Reader) (*hostsvc.ComposerAttachment, error) {
 	return nil, nil
