@@ -48,6 +48,10 @@
 .host-badge--icon > .bi {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  font-size: 1.2em;
   flex-shrink: 0;
   line-height: 1;
 }

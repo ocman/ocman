@@ -63,12 +63,6 @@ export function PlatformBadge({ platform, variant, alwaysShow }: PlatformBadgePr
     <Tooltip content={`This session runs on ${label}${remote ? ' on a remote machine' : ''}.`}>
       <span className="platform-icon" tabIndex={0} aria-label={remote ? `${label} (remote machine)` : label}>
         <span className="platform-icon-separator" aria-hidden="true"> · </span>
-        {remote && (
-          <svg className="platform-icon-remote" data-testid="platform-remote-icon" width={14} height={14} viewBox="0 0 24 24"
-            fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
-          </svg>
-        )}
         {meta ? <img src={meta.icon} width={16} height={16} alt="" /> : short}
       </span>
     </Tooltip>

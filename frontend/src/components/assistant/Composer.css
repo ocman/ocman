@@ -327,6 +327,7 @@
   color: var(--overlay0);
 }
 .oc-composer-bar .platform-icon-separator { display: none; }
+.oc-composer-bar .host-badge { max-width: 120px; }
 
 .oc-composer-bar-left {
   display: flex;

@@ -35,18 +35,27 @@ it('switches a new conversation, keeping its typed draft, and locks sending duri
   await waitFor(() => expect(input).not.toBeDisabled());
 });
 
-it('renders the machine selector with an icon after the worktree selector', async () => {
+it('renders the machine selector in the toolbar before the platform icon', async () => {
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
-  render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="order-test" onMachineChange={vi.fn()} />);
+  render(<Composer isRunning={false} platform="r-box:opencode" newConversation directory="/local/project" sessionId="order-test" onMachineChange={vi.fn()} />);
   const machine = await screen.findByTestId('composer-machine-selector');
   const worktree = screen.getByTestId('composer-target-selector');
-  expect(worktree.compareDocumentPosition(machine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const platform = screen.getByLabelText('OpenCode (remote machine)');
+  expect(machine.closest('.oc-composer-bar-left')).toBe(platform.closest('.oc-composer-bar-left'));
+  expect(machine.compareDocumentPosition(platform) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(worktree.closest('.oc-composer-footer')).not.toBeNull();
   expect(machine.querySelector('.host-badge .bi-hdd-network')).not.toBeNull();
 });
 
 it('shows a display-only host pill for an existing remote conversation', () => {
-  render(<Composer isRunning={false} directory="/remote/project" remoteId="box" remoteName="Build box" remoteStale />);
-  expect(screen.getByLabelText('Build box (offline — last known)')).toHaveClass('host-badge', 'stale');
+  render(<Composer isRunning={false} platform="r-box:opencode" directory="/remote/project" remoteId="box" remoteName="Build box" remoteStale />);
+  const badge = screen.getByLabelText('Build box (offline — last known)');
+  const platform = screen.getByLabelText('OpenCode (remote machine)');
+  expect(badge).toHaveClass('host-badge', 'stale');
+  expect(badge.closest('.oc-composer-bar-left')).toBe(platform.closest('.oc-composer-bar-left'));
+  expect(badge.compareDocumentPosition(platform) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(badge.closest('.oc-composer-footer')).toBeNull();
+  expect(screen.queryByTestId('platform-remote-icon')).not.toBeInTheDocument();
   expect(screen.queryByRole('combobox', { name: 'Session machine' })).not.toBeInTheDocument();
 });
 

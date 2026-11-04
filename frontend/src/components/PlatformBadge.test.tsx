@@ -76,10 +76,10 @@ it('renders known, remote, and unknown platform labels', () => {
 it('shows accessible icon-only indicators with a platform explanation', async () => {
 	const { rerender } = render(<PlatformBadge platform="opencode" />);
 	expect(screen.getByLabelText('OpenCode').querySelector('img')).toBeNull();
-	for (const [platform, label, tip, remote] of [
-		['r-owner:opencode', 'OpenCode (remote machine)', 'This session runs on OpenCode on a remote machine.', true],
-		['claudecode', 'Claude Code', 'This session runs on Claude Code.', false],
-		['r-owner:codex', 'Codex (remote machine)', 'This session runs on Codex on a remote machine.', true],
+	for (const [platform, label, tip] of [
+		['r-owner:opencode', 'OpenCode (remote machine)', 'This session runs on OpenCode on a remote machine.'],
+		['claudecode', 'Claude Code', 'This session runs on Claude Code.'],
+		['r-owner:codex', 'Codex (remote machine)', 'This session runs on Codex on a remote machine.'],
 	] as const) {
 		rerender(<PlatformBadge platform={platform} variant="icon" />);
 		const icon = screen.getByLabelText(label).querySelector('img');
@@ -87,7 +87,7 @@ it('shows accessible icon-only indicators with a platform explanation', async ()
 		expect(icon).toHaveAttribute('alt', '');
 		expect(icon).toHaveAttribute('width', '16');
 		expect(icon).toHaveAttribute('height', '16');
-		expect(screen.queryByTestId('platform-remote-icon') !== null).toBe(remote);
+		expect(screen.queryByTestId('platform-remote-icon')).not.toBeInTheDocument();
 		expect(screen.getByLabelText(label)).toHaveAttribute('tabindex', '0');
 		fireEvent.focus(screen.getByLabelText(label));
 		expect(await screen.findByRole('tooltip')).toHaveTextContent(tip);

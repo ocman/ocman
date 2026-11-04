@@ -14,7 +14,6 @@ import { TargetSelector } from './ComposerSelectorRow';
 import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 
 interface ComposerFooterProps {
-  machineControl?: ReactNode;
   status?: ReactNode;
   directory?: string;
   newConversation?: boolean;
@@ -49,7 +48,7 @@ interface ComposerFooterProps {
 }
 
 export function ComposerFooter({
-  machineControl, status,
+  status,
   directory, newConversation, worktreesSupported, worktrees, target, onTargetChange, targetDisabled, disabled, isRunning,
   effectiveAgent, agentsLoaded, agents, tokensPerSecond, onAbort, tokenStats,
   estimatedCost, sessionTreeStats, contextTokens, effectiveModel, timeCreated,
@@ -73,7 +72,6 @@ export function ComposerFooter({
         {directory && newConversation && (
           <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} worktrees={worktrees} target={target} onTargetChange={onTargetChange} disabled={targetDisabled} />
         )}
-        {machineControl}
         {!disabled && isRunning && (
           <>
             <span
@@ -171,6 +169,7 @@ export function ComposerFooter({
 }
 
 interface ComposerToolbarProps {
+  machineControl?: ReactNode;
   platform?: string;
   agentSelection?: boolean;
   selectorsLoading?: boolean;
@@ -207,12 +206,13 @@ export function ComposerToolbar({
   agents, openAgentPicker, hasModels, modelUnavailable, openModelPicker,
   modelButtonLabel, effectiveModel, hasReasoning, openReasoningPicker,
   selectedReasoning, permissionControl, onLaunchRequest, launching, fileInputRef,
-  addFiles,
+  addFiles, machineControl,
   isRunning, onAbort, sending, hasContent, submit, selectorsLoading, platform, agentSelection = true,
 }: ComposerToolbarProps) {
   return (
     <div className="oc-composer-bar">
       <div className="oc-composer-bar-left">
+        {machineControl}
         {platform && <PlatformBadge platform={platform} variant="icon" alwaysShow />}
         {isBashMode ? (
           <span className="oc-bar-shell">shell</span>

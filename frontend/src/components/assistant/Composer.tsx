@@ -342,6 +342,23 @@ export function Composer({
             onBlur={slash.close} onKeyDown={handleInputKeyDown} onInput={handleInput} onPaste={attachments.handlePaste}
             data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
           <ComposerToolbar platform={platform} isBashMode={isBashMode} uiDisabled={uiDisabled} disabled={disabled} disabledHint={disabledHint}
+            machineControl={newConversation && directory && onMachineChange ? (
+              <ComposerMachineSelector
+                key={`${sessionId}:${directory}:${remoteId}`}
+                directory={directory}
+                remoteId={remoteId}
+                disabled={disabled || selectorDisabled}
+                onSelect={async (machine) => {
+                  setSwitchingMachine(true);
+                  try {
+                    await onMachineChange(machine);
+                  } finally {
+                    setSwitchingMachine(false);
+                  }
+                }}
+              />
+            ) : <HostBadge showIcon alwaysShow={!!remoteId && remoteId !== 'local'}
+              remoteId={remoteId} remoteName={remoteName} stale={remoteStale} />}
             effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded} agents={agents} agentSelection={agentSelection}
             selectorsLoading={newConversation && !agentsLoaded}
             openAgentPicker={() => { if (!uiDisabled) openAgentPicker(); }} hasModels={hasModels} modelUnavailable={modelUnavailable}
@@ -353,23 +370,6 @@ export function Composer({
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}
           status={footerStatus}
-          machineControl={newConversation && directory && onMachineChange ? (<>
-            <ComposerMachineSelector
-              key={`${sessionId}:${directory}:${remoteId}`}
-              directory={directory}
-              remoteId={remoteId}
-              disabled={disabled || selectorDisabled}
-              onSelect={async (machine) => {
-                setSwitchingMachine(true);
-                try {
-                  await onMachineChange(machine);
-                } finally {
-                  setSwitchingMachine(false);
-                }
-              }}
-            />
-          </>) : <HostBadge showIcon alwaysShow={!!remoteId && remoteId !== 'local'}
-            remoteId={remoteId} remoteName={remoteName} stale={remoteStale} />}
           sessionId={sessionId} disabled={disabled} targetDisabled={uiDisabled} target={target} onTargetChange={onTargetChange} isRunning={isRunning} effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded}
           agents={agents} tokensPerSecond={tokensPerSecond} onAbort={onAbort} tokenStats={tokenStats} estimatedCost={estimatedCost}
           sessionTreeStats={sessionTreeStats} contextTokens={contextTokens} effectiveModel={effectiveModel}

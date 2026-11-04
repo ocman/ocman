@@ -2,6 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { HostBadge } from './HostBadge';
+// @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
+import { readFileSync } from 'node:fs';
 
 // useMultiHost gates the badge; control it per test.
 const multiHost = vi.fn();
@@ -10,6 +12,23 @@ vi.mock('../lib/useCapabilities', () => ({
 }));
 
 describe('HostBadge', () => {
+  it('scales the icon to a square within the badge without flex compression', () => {
+    multiHost.mockReturnValue(false);
+    const style = document.createElement('style');
+    style.textContent = readFileSync('src/components/HostBadge.css', 'utf8');
+    document.head.appendChild(style);
+    try {
+      render(<HostBadge remoteId="r1" remoteName="Build host" alwaysShow showIcon />);
+      const icon = screen.getByLabelText('Build host').querySelector('.bi-hdd-network')!;
+      const computed = getComputedStyle(icon);
+      expect(computed.width).toBe('1em');
+      expect(computed.height).toBe('1em');
+      expect(computed.fontSize).toBe('1.2em');
+      expect(computed.flexShrink).toBe('0');
+    } finally {
+      style.remove();
+    }
+  });
   it('can replace the status dot with a machine icon while retaining offline information', () => {
     multiHost.mockReturnValue(false);
     render(<HostBadge remoteId="r1" remoteName="Build host" alwaysShow showIcon stale />);

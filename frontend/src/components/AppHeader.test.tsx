@@ -16,7 +16,7 @@ beforeEach(() => { inventory.projects = []; plugins.pages = []; });
 
 it('shows the remote host pill beside the session title even before host detection resolves', () => {
   const info: HeaderInfo = { sessionId: 'remote', sessionTitle: 'Remote work',
-    sessionRemoteId: 'box', sessionRemoteName: 'Build host', sessionRemoteStale: true };
+    sessionRemoteId: 'box', sessionRemoteName: 'Build host', sessionRemoteStale: true, sessionPlatform: 'r-box:opencode' };
   render(<MemoryRouter initialEntries={['/session/remote']}>
     <HeaderContext.Provider value={{ info, setInfo: vi.fn() }}>
       <AppHeader onOpenNav={vi.fn()} />
@@ -25,6 +25,8 @@ it('shows the remote host pill beside the session title even before host detecti
   const pill = within(screen.getByRole('heading', { level: 1 })).getByLabelText('Build host (offline — last known)');
   expect(pill).toHaveClass('host-badge', 'host-badge--icon', 'stale');
   expect(pill.querySelector('.bi-hdd-network')).toHaveAttribute('aria-hidden', 'true');
+  expect(screen.getByLabelText('OpenCode (remote machine)')).toBeInTheDocument();
+  expect(screen.queryByTestId('platform-remote-icon')).not.toBeInTheDocument();
 });
 
 it('uses the plugin-declared title for the matching owner and page', () => {
