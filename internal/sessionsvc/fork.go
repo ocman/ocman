@@ -14,7 +14,7 @@ func (s *Service) Fork(ctx context.Context, platformID string, req platforms.For
 	if req.SessionID == "" {
 		return nil, validation("session ID is required")
 	}
-	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return nil, err
 	}

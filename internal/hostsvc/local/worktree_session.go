@@ -32,6 +32,11 @@ const provisionalPrefix = "session-"
 // never sits on the first message's critical path; nameWorktree renames the
 // branch and title afterwards while the worktree path stays put.
 func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
+	ctx, release, activityErr := h.beginWorktreeActivity(ctx, req.ProjectDir)
+	if activityErr != nil {
+		return nil, activityErr
+	}
+	defer release()
 	if req.Platform == "" {
 		if h.deps.DefaultPlatform != nil {
 			var err error

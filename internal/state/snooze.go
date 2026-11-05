@@ -19,6 +19,8 @@ func migrateSnooze(tx *sql.Tx) error {
 // SnoozeSession hides a conversation until the hub-clock deadline. Activity
 // and opening cannot resurface it early; explicitly archiving it cancels snooze.
 func (d *DB) SnoozeSession(ctx context.Context, platform, sessionID string, until int64) error {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	if until <= time.Now().UnixMilli() {
 		return fmt.Errorf("snooze time must be in the future")
 	}
@@ -54,6 +56,8 @@ func (d *DB) SnoozedSessions(ctx context.Context) (map[Key]int64, error) {
 // WakeSnoozedSessions atomically removes due archives and protects the woken
 // sessions from inactivity-based auto-archive. Deadlines survive restarts.
 func (d *DB) WakeSnoozedSessions(ctx context.Context, now int64) ([]Key, error) {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err

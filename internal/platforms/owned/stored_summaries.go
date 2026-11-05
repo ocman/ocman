@@ -13,13 +13,21 @@ import (
 )
 
 func (a *Adapter) storedSessions(ctx context.Context, directory, id string) ([]db.Session, error) {
+	return a.storedSessionInventory(ctx, directory, id, false)
+}
+
+func (a *Adapter) WorktreeSessions(ctx context.Context) ([]db.Session, error) {
+	return a.storedSessionInventory(ctx, "", "", true)
+}
+
+func (a *Adapter) storedSessionInventory(ctx context.Context, directory, id string, includeChildren bool) ([]db.Session, error) {
 	instances, err := a.storedReadInstances(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	out := []db.Session{}
 	for _, instance := range instances {
-		rows, err := a.storedInstanceSessions(ctx, instance, directory, id)
+		rows, err := a.storedInstanceSessions(ctx, instance, directory, id, includeChildren)
 		if err != nil {
 			return nil, err
 		}
@@ -34,14 +42,14 @@ func (a *Adapter) storedSessions(ctx context.Context, directory, id string) ([]d
 	return out, nil
 }
 
-func (a *Adapter) storedInstanceSessions(ctx context.Context, instance statev2.Instance, directory, id string) ([]db.Session, error) {
+func (a *Adapter) storedInstanceSessions(ctx context.Context, instance statev2.Instance, directory, id string, includeChildren bool) ([]db.Session, error) {
 	summaries, err := a.history.SessionSummaries(ctx, instance.ID, directory, id)
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]string, 0, len(summaries))
 	for _, summary := range summaries {
-		if id != "" || !summary.Subagent {
+		if includeChildren || id != "" || !summary.Subagent {
 			ids = append(ids, summary.SessionID)
 		}
 	}
@@ -53,7 +61,7 @@ func (a *Adapter) storedInstanceSessions(ctx context.Context, instance statev2.I
 	rows := make([]db.Session, 0, len(summaries))
 	native := make([]db.Session, 0, len(summaries))
 	for _, summary := range summaries {
-		if id == "" && summary.Subagent {
+		if !includeChildren && id == "" && summary.Subagent {
 			continue
 		}
 		identity, ok := identities[summary.SessionID]

@@ -232,7 +232,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	// registryRef (not the registry itself) so the service follows a
 	// swapped s.registry — tests replace it after construction.
 	s.sessions = sessionsvc.New(registryRef{s}, sessionsvc.Hooks{
-		BeginTurn: s.beginConfigTurn,
+		BeginActivity:  s.beginWorktreeSessionActivity,
+		BeginDirectory: s.beginWorktreePlatformDirectoryActivity,
+		BeginTurn:      s.beginConfigTurn,
 		// Cancel any in-flight auto-approve judge before a permission
 		// reply is forwarded: the user has decided, so we must not race
 		// their answer with the AI's verdict, and we must not pay for a

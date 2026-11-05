@@ -11,6 +11,8 @@ import (
 // session "abc123" are tracked independently.
 // interrupted acknowledges the interruption itself, which writes no new activity.
 func (d *DB) MarkSessionSeen(ctx context.Context, platform, sessionID string, sessionTimeUpdated int64, interrupted ...bool) error {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	seenInterrupted := len(interrupted) > 0 && interrupted[0]
 	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO seen_session (platform, session_id, session_time_updated, seen_at, interrupted)

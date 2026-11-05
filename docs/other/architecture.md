@@ -372,6 +372,12 @@ ingestion and preparation progress as background tasks. See
 
 ## 2. Backend composition
 
+Archived checkout maintenance belongs to `internal/worktreecleanup`. Its hourly
+worker uses persisted archive/activity timestamps, owner-side safety checks and
+the shared session mutation fence. Dedicated Host/gRPC cleanup and restoration
+operations retain branches and conversation history. See
+[archived worktree cleanup](../features/worktree-cleanup.md).
+
 Server shutdown cancels and joins its owned background loops before returning,
 so closing the databases cannot race a pending refresh.
 
@@ -405,7 +411,7 @@ flowchart TD
     Factory -->|Project Delivery validation + merge observation| Forge
     Routines --> Registry
     Routines --> Router
-    Modules -->|"tmuxmod, termmod, gitmod: tmux, terminals, git + worktrees via Host"| Router
+    Modules -->|"tmuxmod, termmod, gitmod, worktreecleanup: host operations"| Router
     Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
     Modules -->|module tools| MCP

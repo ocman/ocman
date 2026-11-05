@@ -40,6 +40,8 @@ const QueuedMessageAttemptLimit = 5
 // queue (position = current max + 1). The id is caller-supplied so the
 // service can broadcast/track it.
 func (d *DB) EnqueueMessage(ctx context.Context, m QueuedMessage) error {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO queued_message
 			(id, platform, session_id, position, text, images_json,
@@ -239,6 +241,8 @@ func (d *DB) RecordQueuedMessageFailure(ctx context.Context, id, reason string) 
 // DeleteQueuedMessage removes a single queued message by id. Returns
 // whether a row was actually deleted.
 func (d *DB) DeleteQueuedMessage(ctx context.Context, id string) (bool, error) {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	res, err := d.db.ExecContext(ctx, `DELETE FROM queued_message WHERE id = ?`, id)
 	if err != nil {
 		return false, fmt.Errorf("deleting queued message: %w", err)
@@ -253,6 +257,8 @@ func (d *DB) DeleteQueuedMessage(ctx context.Context, id string) (bool, error) {
 // first/last) returns (false, nil). The swap is transactional so a
 // reorder never leaves two rows sharing a position.
 func (d *DB) MoveQueuedMessage(ctx context.Context, id string, direction int) (bool, error) {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	if direction != -1 && direction != 1 {
 		return false, fmt.Errorf("invalid direction %d", direction)
 	}

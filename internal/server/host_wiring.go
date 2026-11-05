@@ -45,10 +45,11 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		openCodeService = ocv2.RunningService
 	}
 	host := hostlocal.New(hostlocal.Deps{
-		DefaultPlatform: s.stateDB.DefaultPlatform,
-		Runtimes:        runtimes,
-		WorktreeNamers:  namers,
-		HookPlugin:      func() hostsvc.HookPluginManager { return s.hookPlugin() },
+		CheckWorktreeTerminals: term.CheckWorktreeIdle,
+		DefaultPlatform:        s.stateDB.DefaultPlatform,
+		Runtimes:               runtimes,
+		WorktreeNamers:         namers,
+		HookPlugin:             func() hostsvc.HookPluginManager { return s.hookPlugin() },
 		PlatformEnabled: func(id string) bool {
 			if s.registry == nil {
 				return false
@@ -79,16 +80,19 @@ func (s *Server) newLocalHost() hostsvc.Host {
 			}
 			return s.sessions.Create(ctx, id, req)
 		},
-		TmuxSessions:     s.hostTmuxSessions,
-		Projects:         s.hostProjects,
-		ProjectUpstreams: s.hostProjectUpstreams,
-		FetchPRHead:      s.hostFetchPRHead,
-		Caps:             s.hostCaps,
-		TermWindows:      term.Windows,
-		TermCreateWindow: term.CreateWindow,
-		TermKillWindow:   term.KillWindow,
-		TermAttach:       term.AttachLocalPTY,
-		StateDir:         stateDirOrEmpty(s.stateDB),
+		TmuxSessions:         s.hostTmuxSessions,
+		Projects:             s.hostProjects,
+		ProjectUpstreams:     s.hostProjectUpstreams,
+		FetchPRHead:          s.hostFetchPRHead,
+		Caps:                 s.hostCaps,
+		TermWindows:          term.Windows,
+		TermCreateWindow:     term.CreateWindow,
+		TermKillWindow:       term.KillWindow,
+		TermAttach:           term.AttachLocalPTY,
+		WorktreeActivity:     s.beginWorktreeDirectoryActivity,
+		AdmitWorktreeCleanup: s.admitWorktreeCleanup,
+		WorktreeLease:        s.stateDB.WorktreeActivity,
+		StateDir:             stateDirOrEmpty(s.stateDB),
 	})
 	return host
 }

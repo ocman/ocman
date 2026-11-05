@@ -33,6 +33,7 @@ import (
 	"github.com/ocman/ocman/internal/termmod"
 	"github.com/ocman/ocman/internal/tmuxmod"
 	"github.com/ocman/ocman/internal/webhook"
+	"github.com/ocman/ocman/internal/worktreecleanup"
 )
 
 // modules lists the feature modules this server mounts. Routes, startup,
@@ -43,6 +44,7 @@ func (s *Server) modules() []module.Module {
 	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
 	mods = append(mods, &agentui.Module{}, s.backgroundTasksModule())
 	mods = append(mods, s.sourceControlModule(), s.prWorkflowModule())
+	mods = append(mods, s.worktreeCleanupModule())
 	mods = append(mods, s.sidebarModules()...)
 	if s.historyIngest != nil {
 		mods = append(mods, s.historyIngest)
@@ -110,7 +112,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema, sourcecontrol.Schema, prworkflow.Schema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema, sourcecontrol.Schema, prworkflow.Schema, worktreecleanup.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve

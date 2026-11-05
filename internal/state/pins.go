@@ -9,6 +9,8 @@ import (
 // PinSession marks a session as pinned. Idempotent: repeated calls
 // are no-ops (pinned_at is not updated).
 func (d *DB) PinSession(ctx context.Context, platform, sessionID string) error {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO pinned_session (platform, session_id, pinned_at)
 		VALUES (?, ?, ?)
@@ -22,6 +24,8 @@ func (d *DB) PinSession(ctx context.Context, platform, sessionID string) error {
 
 // UnpinSession removes a session's pinned marker.
 func (d *DB) UnpinSession(ctx context.Context, platform, sessionID string) error {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	_, err := d.db.ExecContext(ctx,
 		`DELETE FROM pinned_session WHERE platform = ? AND session_id = ?`,
 		platform, sessionID,

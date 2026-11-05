@@ -27,7 +27,9 @@ type Registry = platforms.SessionRegistry
 // judge cancellation, projects-index refresh) fire no matter which
 // transport initiated the mutation.
 type Hooks struct {
-	BeginTurn func(context.Context, platforms.ID) (func(), error)
+	BeginActivity  func(context.Context, platforms.Platform, string) (context.Context, func(), error)
+	BeginDirectory func(context.Context, platforms.Platform, string) (context.Context, func(), error)
+	BeginTurn      func(context.Context, platforms.ID) (func(), error)
 	// PermissionReplied fires after the owning adapter is resolved and
 	// before a permission reply is forwarded to it. The server wires
 	// this to cancelAutoApprove: the user has decided, so the AI
@@ -152,7 +154,7 @@ func (s *Service) ExecuteCommand(ctx context.Context, platformID string, req pla
 	if req.Command == "" {
 		return validation("command is required")
 	}
-	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -168,7 +170,7 @@ func (s *Service) RunShell(ctx context.Context, platformID string, req platforms
 	if strings.TrimSpace(req.Command) == "" {
 		return validation("command is required")
 	}
-	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -181,19 +183,21 @@ func (s *Service) Rename(ctx context.Context, platformID string, req platforms.R
 	if req.Title == "" {
 		return validation("title is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	return p.RenameSession(ctx, req)
 }
 
 // Abort cancels a session's in-flight turn.
 func (s *Service) Abort(ctx context.Context, platformID string, req platforms.AbortRequest) error {
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	if req.TaskID != "" && !p.Capabilities().BackgroundTaskStop {
 		return platforms.ErrUnsupported
 	}
@@ -205,10 +209,11 @@ func (s *Service) Dispose(ctx context.Context, platformID string, req platforms.
 	if req.SessionID == "" {
 		return validation("session ID is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	disposer, ok := p.(platforms.SessionDisposer)
 	if !ok {
 		return platforms.ErrUnsupported
@@ -226,10 +231,11 @@ func (s *Service) Revert(ctx context.Context, platformID string, req platforms.R
 	if req.SessionID == "" || req.MessageID == "" {
 		return validation("session ID and message ID are required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	reverter, ok := p.(platforms.SessionReverter)
 	if !ok {
 		return platforms.ErrUnsupported
@@ -242,10 +248,11 @@ func (s *Service) Unrevert(ctx context.Context, platformID string, req platforms
 	if req.SessionID == "" {
 		return validation("session ID is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	reverter, ok := p.(platforms.SessionReverter)
 	if !ok {
 		return platforms.ErrUnsupported
@@ -258,7 +265,7 @@ func (s *Service) Compact(ctx context.Context, platformID string, req platforms.
 	if req.ProviderID == "" || req.ModelID == "" {
 		return validation("providerID and modelID are required")
 	}
-	p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveTurn(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -272,10 +279,11 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 	if strings.TrimSpace(req.Directory) == "" {
 		return validation("directory is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	if err := p.MoveSession(ctx, req); err != nil {
 		return err
 	}
@@ -301,10 +309,11 @@ func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req
 	if err := normalizePermissionRules(req.Rules); err != nil {
 		return err
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	if req.NativeMode != nil && !p.Capabilities().NativeAutoPermission {
 		return platforms.ErrUnsupported
 	}
@@ -345,10 +354,11 @@ func (s *Service) RespondPermission(ctx context.Context, platformID string, req 
 	if req.PermissionID == "" {
 		return validation("permission ID is required")
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
+	defer finish()
 	if s.hooks.PermissionReplied != nil {
 		s.hooks.PermissionReplied(req.SessionID, req.PermissionID)
 	}
@@ -361,28 +371,4 @@ func (s *Service) RespondPermission(ctx context.Context, platformID string, req 
 		s.hooks.PermissionReplySucceeded(hookCtx, p.ID(), req)
 	}
 	return nil
-}
-
-// RespondQuestion answers a pending question.
-func (s *Service) RespondQuestion(ctx context.Context, platformID string, req platforms.RespondQuestionRequest) error {
-	if req.RequestID == "" {
-		return validation("question ID is required")
-	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
-	if err != nil {
-		return err
-	}
-	return p.RespondQuestion(ctx, req)
-}
-
-// RejectQuestion rejects a pending question.
-func (s *Service) RejectQuestion(ctx context.Context, platformID string, req platforms.RejectQuestionRequest) error {
-	if req.RequestID == "" {
-		return validation("question ID is required")
-	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
-	if err != nil {
-		return err
-	}
-	return p.RejectQuestion(ctx, req)
 }

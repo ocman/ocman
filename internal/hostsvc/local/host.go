@@ -58,7 +58,11 @@ type Deps struct {
 	TermCreateWindow        func(context.Context, string) (string, error)
 	TermKillWindow          func(context.Context, string, string) error
 	TermAttach              func(context.Context, hostsvc.TermAttachRequest, hostsvc.TermConn) error
+	CheckWorktreeTerminals  func(context.Context, string) error
 	StateDir                string
+	WorktreeActivity        func(context.Context, string) (context.Context, func(), error)
+	AdmitWorktreeCleanup    func(context.Context, hostsvc.CleanupWorktreeRequest) (context.Context, func(), error)
+	WorktreeLease           func(context.Context) (context.Context, func())
 }
 
 // ManagedInstance mirrors the durable runtime fields needed for recovery.
@@ -280,18 +284,33 @@ func (h *Host) TermWindows(ctx context.Context, dir string) ([]hostsvc.TermWindo
 	return h.deps.TermWindows(ctx, dir)
 }
 func (h *Host) TermCreateWindow(ctx context.Context, dir string) (string, error) {
+	ctx, release, err := h.beginWorktreeActivity(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	if h.deps.TermCreateWindow == nil {
 		return "", nil
 	}
 	return h.deps.TermCreateWindow(ctx, dir)
 }
 func (h *Host) TermKillWindow(ctx context.Context, dir, window string) error {
+	ctx, release, err := h.beginWorktreeActivity(ctx, dir)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if h.deps.TermKillWindow == nil {
 		return nil
 	}
 	return h.deps.TermKillWindow(ctx, dir, window)
 }
 func (h *Host) TermAttach(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error {
+	_, release, err := h.beginWorktreeActivity(ctx, req.Dir)
+	if err != nil {
+		return err
+	}
+	release()
 	if h.deps.TermAttach == nil {
 		return nil
 	}

@@ -37,6 +37,8 @@ func ProjectRootForDirectory(directory string) string {
 // ArchiveSession records a session as archived at its current update
 // timestamp for the given platform.
 func (d *DB) ArchiveSession(ctx context.Context, platform, sessionID string, sessionTimeUpdated int64) error {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO archived_session (platform, session_id, session_time_updated, archived_at)
 		VALUES (?, ?, ?, ?)
@@ -55,6 +57,8 @@ func (d *DB) ArchiveSession(ctx context.Context, platform, sessionID string, ses
 // archive or snooze. Manual ArchiveSession intentionally cancels snooze instead.
 // The scan cutoff also protects conversations opened or awakened during the scan.
 func (d *DB) AutoArchiveSession(ctx context.Context, platform, sessionID string, sessionTimeUpdated, cutoff int64) (bool, error) {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	result, err := d.db.ExecContext(ctx, `INSERT INTO archived_session
 		(platform, session_id, session_time_updated, archived_at) SELECT ?, ?, ?, ?
 		WHERE NOT EXISTS (SELECT 1 FROM unarchived_entity
@@ -72,6 +76,8 @@ func (d *DB) AutoArchiveSession(ctx context.Context, platform, sessionID string,
 // and records the user's intent so auto-archive does not immediately
 // re-hide it.
 func (d *DB) UnarchiveSession(ctx context.Context, platform, sessionID string) error {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
 	_, err := d.db.ExecContext(ctx,
 		`DELETE FROM archived_session WHERE platform = ? AND session_id = ?`,
 		platform, sessionID,

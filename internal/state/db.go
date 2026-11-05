@@ -38,6 +38,7 @@ type DB struct {
 	// artifactMu orders blob writes, artifact inserts and blob GC so a delete
 	// never removes a blob a concurrent create is about to reference.
 	artifactMu sync.Mutex
+	worktreeMu sync.RWMutex
 	// enabledPlatforms filters DefaultPlatform; see SetEnabledPlatforms.
 	enabledPlatforms atomic.Pointer[func() []string]
 }
