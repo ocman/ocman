@@ -137,7 +137,7 @@ flowchart LR
     Setup --> Credentials[(Private credential overrides)]
     Workflow --> Links[(PR links and watch snapshots)]
     Links -->|unfinished task counts| UI
-    Workflow -->|session-change SSE invalidation after save| UI
+    Workflow -->|session invalidation: local SSE or owner gRPC to hub SSE| UI
     Workflow -->|owner check; checkout upstream when needed| Host[Owning Host]
     Workflow -->|cached metadata and checks; selective feedback| Forge[GitHub or Forgejo API]
     Setup --> Forge
@@ -173,6 +173,9 @@ flowchart LR
   `ocman.session.changed` event on `/api/events`. The PR controls and background
   task notice refresh on matching events and SSE reconnects, alongside the
   session list. Forwarded mutations notify hub clients after owner acceptance.
+  An authenticated owner-to-hub invalidation stream also carries direct owner
+  mutations and automatic stops, without requiring a browser conversation
+  stream. The hub qualifies identities from its connection, not the payload.
   Polling remains a backstop for missed events.
 - Watches are opt-in, deduplicate changes and queue follow-ups rather than
   running an agent polling loop. Polling continues while a session cannot accept

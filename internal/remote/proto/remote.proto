@@ -30,6 +30,9 @@ service Ocman {
 
   // --- Streaming events (tunneled to hub SSE) ---
   rpc StreamEvents(SessionRef) returns (stream EventChunk);
+  // Owner-local invalidations, independent of conversation/browser streams.
+  // An empty first reference requests reconciliation after (re)attachment.
+  rpc StreamSessionChanges(HelloReq) returns (stream SessionRef);
 
   // First chunk is HTTP response metadata JSON; remaining chunks are file bytes.
   rpc PublishedResource(JsonReq) returns (stream EventChunk);

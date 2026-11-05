@@ -165,6 +165,10 @@ list with its host badge.
   Older hub-stored links transfer automatically when the owner is reachable;
   failed transfers retain the original state and never poll on the wrong host.
   Upgrade both instances to use owner-routed watches.
+  Owner-side watch changes, including automatic stops, reach the hub through
+  `StreamSessionChanges` and then browser SSE. The connection supervisor owns
+  and joins the stream, retries transient stream failures and reconciles known
+  session rows on attachment. Older owners without this RPC retain polling.
 - **Background tasks.** The task page and active counter include application
   work on this machine and connected remotes, with machine badges on each row.
   Progress and history stay on the machine doing the work; the hub reads them

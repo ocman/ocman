@@ -37,6 +37,7 @@ type Server struct {
 	pullRequests                   PullRequestHandler
 	backgroundTasks                tasksvc.Reader
 	publishedResources             http.HandlerFunc
+	sessionChanges                 func(context.Context, func(string, string) error) error
 }
 
 func (s *Server) UsePublishedResources(h http.HandlerFunc) *Server {

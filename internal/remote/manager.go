@@ -259,7 +259,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 
 		// Block until the transport drops (remote restart / network
 		// loss), then tear down the now-stale adapters and reconnect.
-		mr.conn.WaitForDrop(ctx)
+		m.waitForDropWithSessionChanges(ctx, mr, adapters)
 		if ctx.Err() != nil || !m.stillManaged(localID, mr) {
 			return
 		}

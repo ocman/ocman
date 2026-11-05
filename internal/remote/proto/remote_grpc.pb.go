@@ -25,6 +25,7 @@ const (
 	Ocman_Session_FullMethodName                = "/ocman.remote.v1.Ocman/Session"
 	Ocman_SessionsInactiveBefore_FullMethodName = "/ocman.remote.v1.Ocman/SessionsInactiveBefore"
 	Ocman_StreamEvents_FullMethodName           = "/ocman.remote.v1.Ocman/StreamEvents"
+	Ocman_StreamSessionChanges_FullMethodName   = "/ocman.remote.v1.Ocman/StreamSessionChanges"
 	Ocman_PublishedResource_FullMethodName      = "/ocman.remote.v1.Ocman/PublishedResource"
 	Ocman_SaveComposerAttachment_FullMethodName = "/ocman.remote.v1.Ocman/SaveComposerAttachment"
 	Ocman_TerminalStream_FullMethodName         = "/ocman.remote.v1.Ocman/TerminalStream"
@@ -57,6 +58,9 @@ type OcmanClient interface {
 	SessionsInactiveBefore(ctx context.Context, in *CutoffReq, opts ...grpc.CallOption) (*JsonResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventChunk], error)
+	// Owner-local invalidations, independent of conversation/browser streams.
+	// An empty first reference requests reconciliation after (re)attachment.
+	StreamSessionChanges(ctx context.Context, in *HelloReq, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SessionRef], error)
 	// First chunk is HTTP response metadata JSON; remaining chunks are file bytes.
 	PublishedResource(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventChunk], error)
 	// First payload is attachment metadata JSON; subsequent payloads are bytes.
@@ -144,9 +148,28 @@ func (c *ocmanClient) StreamEvents(ctx context.Context, in *SessionRef, opts ...
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Ocman_StreamEventsClient = grpc.ServerStreamingClient[EventChunk]
 
+func (c *ocmanClient) StreamSessionChanges(ctx context.Context, in *HelloReq, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SessionRef], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[1], Ocman_StreamSessionChanges_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[HelloReq, SessionRef]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Ocman_StreamSessionChangesClient = grpc.ServerStreamingClient[SessionRef]
+
 func (c *ocmanClient) PublishedResource(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[1], Ocman_PublishedResource_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[2], Ocman_PublishedResource_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +188,7 @@ type Ocman_PublishedResourceClient = grpc.ServerStreamingClient[EventChunk]
 
 func (c *ocmanClient) SaveComposerAttachment(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[JsonReq, JsonResp], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[2], Ocman_SaveComposerAttachment_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[3], Ocman_SaveComposerAttachment_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +201,7 @@ type Ocman_SaveComposerAttachmentClient = grpc.ClientStreamingClient[JsonReq, Js
 
 func (c *ocmanClient) TerminalStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TermClientMsg, TermServerMsg], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[3], Ocman_TerminalStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[4], Ocman_TerminalStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -216,6 +239,9 @@ type OcmanServer interface {
 	SessionsInactiveBefore(context.Context, *CutoffReq) (*JsonResp, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(*SessionRef, grpc.ServerStreamingServer[EventChunk]) error
+	// Owner-local invalidations, independent of conversation/browser streams.
+	// An empty first reference requests reconciliation after (re)attachment.
+	StreamSessionChanges(*HelloReq, grpc.ServerStreamingServer[SessionRef]) error
 	// First chunk is HTTP response metadata JSON; remaining chunks are file bytes.
 	PublishedResource(*JsonReq, grpc.ServerStreamingServer[EventChunk]) error
 	// First payload is attachment metadata JSON; subsequent payloads are bytes.
@@ -251,6 +277,9 @@ func (UnimplementedOcmanServer) SessionsInactiveBefore(context.Context, *CutoffR
 }
 func (UnimplementedOcmanServer) StreamEvents(*SessionRef, grpc.ServerStreamingServer[EventChunk]) error {
 	return status.Error(codes.Unimplemented, "method StreamEvents not implemented")
+}
+func (UnimplementedOcmanServer) StreamSessionChanges(*HelloReq, grpc.ServerStreamingServer[SessionRef]) error {
+	return status.Error(codes.Unimplemented, "method StreamSessionChanges not implemented")
 }
 func (UnimplementedOcmanServer) PublishedResource(*JsonReq, grpc.ServerStreamingServer[EventChunk]) error {
 	return status.Error(codes.Unimplemented, "method PublishedResource not implemented")
@@ -383,6 +412,17 @@ func _Ocman_StreamEvents_Handler(srv interface{}, stream grpc.ServerStream) erro
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Ocman_StreamEventsServer = grpc.ServerStreamingServer[EventChunk]
 
+func _Ocman_StreamSessionChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(HelloReq)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(OcmanServer).StreamSessionChanges(m, &grpc.GenericServerStream[HelloReq, SessionRef]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Ocman_StreamSessionChangesServer = grpc.ServerStreamingServer[SessionRef]
+
 func _Ocman_PublishedResource_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(JsonReq)
 	if err := stream.RecvMsg(m); err != nil {
@@ -440,6 +480,11 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamEvents",
 			Handler:       _Ocman_StreamEvents_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamSessionChanges",
+			Handler:       _Ocman_StreamSessionChanges_Handler,
 			ServerStreams: true,
 		},
 		{

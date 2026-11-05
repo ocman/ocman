@@ -36,6 +36,7 @@ type remotePlatform struct {
 	capsSet  bool
 	owned    map[string]struct{} // session IDs last seen owned by this remote
 	lastSess []db.Session        // last-known sessions for offline stale serving (Phase 5)
+	sink     platforms.SessionEventSink
 }
 
 // newRemotePlatform builds an adapter for a remote's base platform.
