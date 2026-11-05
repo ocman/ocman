@@ -39,3 +39,22 @@ func TestWorktreeTerminalInspectionFailsClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanupChecksDefaultServerPaneDespiteUnrelatedSessionName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	testutil.WriteScript(t, filepath.Join(dir, "tmux"), "#!/bin/sh\nif [ \"$1\" != '-L' ]; then printf '/repo/nested\\t/elsewhere\\n'; fi\n")
+	if err := CheckWorktreeIdle(t.Context(), "/repo"); err == nil {
+		t.Fatal("missed default-server pane that changed into the worktree")
+	}
+}
+
+func TestCleanupChecksExplicitDefaultServerDespiteInheritedSocket(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("TMUX", "/other/socket,1,0")
+	testutil.WriteScript(t, filepath.Join(dir, "tmux"), "#!/bin/sh\nif [ \"$1\" = '-L' ] && [ \"$2\" = 'default' ]; then printf '/repo/nested\\t/elsewhere\\n'; fi\n")
+	if err := CheckWorktreeIdle(t.Context(), "/repo"); err == nil {
+		t.Fatal("inherited tmux socket hid default-server pane")
+	}
+}

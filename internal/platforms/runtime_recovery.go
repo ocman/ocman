@@ -13,3 +13,11 @@ type RuntimeSessionReader interface {
 	GetSessionIdentities(context.Context) ([]db.Session, error)
 	GetSessionLifecycle(context.Context, string) (db.SessionLifecycle, error)
 }
+
+// WorktreeRuntimeReader supplies strict native safety probes for destructive
+// checkout maintenance. Unlike migration inventory, an unavailable history root
+// or supervisor is an error, never an authoritative empty source.
+type WorktreeRuntimeReader interface {
+	WorktreeRuntimeSessions(context.Context) ([]db.Session, error)
+	WorktreeRuntimeLifecycle(context.Context, string) (db.SessionLifecycle, error)
+}

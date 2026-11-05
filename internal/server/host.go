@@ -84,7 +84,7 @@ func (s *Server) hostTmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, e
 	}
 	out := make([]hostsvc.TmuxSession, 0, len(sessions))
 	for _, ts := range sessions {
-		out = append(out, hostsvc.TmuxSession{Name: ts.Name, Path: ts.ResolvedPath})
+		out = append(out, hostsvc.TmuxSession{Name: ts.Name, Path: ts.Path})
 	}
 	return out, nil
 }

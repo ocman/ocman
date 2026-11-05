@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
@@ -52,6 +53,9 @@ func (m *Module) BeginDirectory(ctx context.Context, dir string) (context.Contex
 
 func (m *Module) BeginOwnerDirectory(ctx context.Context, owner, dir string) (context.Context, func(), error) {
 	owner = state.NormalizeRemoteID(owner)
+	if checkout := managedCheckout(dir); checkout != "" {
+		dir = checkout
+	}
 	if m.d.Store == nil {
 		return ctx, func() {}, nil
 	}
@@ -64,7 +68,13 @@ func (m *Module) BeginOwnerDirectory(ctx context.Context, owner, dir string) (co
 		if remote, _ := platforms.SplitPlatformID(string(p.ID())); state.NormalizeRemoteID(remote) != owner {
 			continue
 		}
-		sessions, err := p.Sessions(ctx, dir, 0)
+		var sessions []db.Session
+		var err error
+		if reader, ok := p.(platforms.WorktreeSessionReader); ok {
+			sessions, err = reader.WorktreeSessions(ctx)
+		} else {
+			sessions, err = p.Sessions(ctx, "", 0)
+		}
 		if err != nil {
 			// An unrelated unavailable adapter must not block terminal/session
 			// creation. Its incomplete inventory already prevents cleanup.

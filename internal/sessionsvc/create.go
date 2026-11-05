@@ -126,11 +126,6 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if err != nil {
 		return nil, err
 	}
-	unlock, err := s.lockCreation(ctx, adapter.ID(), req.Creation.RequestKey)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 	if s.hooks.BeginDirectory != nil {
 		activityCtx, done, err := s.hooks.BeginDirectory(ctx, adapter, req.Directory)
 		if err != nil {
@@ -139,6 +134,11 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		defer done()
 		ctx = activityCtx
 	}
+	unlock, err := s.lockCreation(ctx, adapter.ID(), req.Creation.RequestKey)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	finish, err := s.admit(ctx, adapter)
 	if err != nil {
 		return nil, err

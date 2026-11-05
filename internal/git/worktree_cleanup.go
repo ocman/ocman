@@ -34,6 +34,15 @@ func CheckCleanupWorktree(ctx context.Context, project, path, branch, head strin
 	if !matched {
 		return fmt.Errorf("worktree identity changed, detached, locked or not linked")
 	}
+	flags, err := cleanupGit(ctx, path, "ls-files", "-v", "-z")
+	if err != nil {
+		return err
+	}
+	for _, entry := range strings.Split(flags, "\x00") {
+		if entry != "" && (entry[0] == 'S' || (entry[0] >= 'a' && entry[0] <= 'z')) {
+			return fmt.Errorf("worktree has index flags that can hide tracked edits")
+		}
+	}
 	// Even uninitialized submodules can contain commits or ignored local data.
 	modules, err := cleanupGit(ctx, path, "ls-files", "--stage", "-z")
 	if err != nil {

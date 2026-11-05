@@ -14,7 +14,7 @@ func (a *Adapter) GetSessionIdentities(ctx context.Context) ([]db.Session, error
 	if err := a.checkSource(ctx); err != nil {
 		return nil, err
 	}
-	reader, ok := a.native.(platforms.RuntimeSessionReader)
+	reader, ok := a.runtimeReader()
 	if !ok {
 		return nil, platforms.ErrUnsupported
 	}
@@ -71,7 +71,7 @@ func (a *Adapter) GetSessionLifecycle(ctx context.Context, id string) (db.Sessio
 	if bound.NativeID == "" {
 		return db.SessionLifecycle{}, sessioncatalog.ErrCreating
 	}
-	reader, ok := a.native.(platforms.RuntimeSessionReader)
+	reader, ok := a.runtimeReader()
 	if !ok {
 		return db.SessionLifecycle{}, platforms.ErrUnsupported
 	}
@@ -83,4 +83,24 @@ func (a *Adapter) GetSessionLifecycle(ctx context.Context, id string) (db.Sessio
 		return db.SessionLifecycle{}, err
 	}
 	return lifecycle, nil
+}
+
+func (a *Adapter) runtimeReader() (platforms.RuntimeSessionReader, bool) {
+	if reader, ok := a.native.(platforms.WorktreeRuntimeReader); ok {
+		return worktreeRuntimeReader{reader}, true
+	}
+	reader, ok := a.native.(platforms.RuntimeSessionReader)
+	return reader, ok
+}
+
+type worktreeRuntimeReader struct {
+	platforms.WorktreeRuntimeReader
+}
+
+func (r worktreeRuntimeReader) GetSessionIdentities(ctx context.Context) ([]db.Session, error) {
+	return r.WorktreeRuntimeSessions(ctx)
+}
+
+func (r worktreeRuntimeReader) GetSessionLifecycle(ctx context.Context, id string) (db.SessionLifecycle, error) {
+	return r.WorktreeRuntimeLifecycle(ctx, id)
 }

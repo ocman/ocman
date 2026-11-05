@@ -81,7 +81,8 @@ func (m *Module) observe(ctx context.Context, key state.Key, updated, archiveUpd
 	_, err := m.d.Store.SQL().ExecContext(ctx, `INSERT INTO worktree_cleanup_activity
 		(platform, session_id, activity_at, observed_updated) VALUES (?, ?, ?, ?)
 		ON CONFLICT(platform, session_id) DO UPDATE SET
-		activity_at = CASE WHEN observed_updated != 0 AND observed_updated != excluded.observed_updated THEN ? ELSE activity_at END,
+		activity_at = CASE WHEN observed_updated = 0 THEN MAX(activity_at, excluded.activity_at)
+		WHEN observed_updated != excluded.observed_updated THEN ? ELSE activity_at END,
 		observed_updated = excluded.observed_updated`, key.Platform, key.SessionID,
 		initialActivity(updated, archiveUpdated, m.now().UnixMilli()), updated, m.now().UnixMilli())
 	if err != nil {

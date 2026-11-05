@@ -91,6 +91,12 @@ func TestSubagentRuntimeHistoryCanonicalInspection(t *testing.T) {
 	if err != nil || metadata.ParentID != "root" || metadata.LiveConnection {
 		t.Fatalf("pre-transcript identity: %+v %v", metadata, err)
 	}
+	if rows, err := p.WorktreeRuntimeSessions(t.Context()); err != nil || len(rows) != 2 || rows[1].ParentID != "root" {
+		t.Fatalf("cleanup pre-transcript inventory: %+v %v", rows, err)
+	}
+	if life, err := p.WorktreeRuntimeLifecycle(t.Context(), "agent-child"); err != nil || life.Status != db.StatusBusy || life.Directory != "/repo" {
+		t.Fatalf("cleanup pre-transcript lifecycle: %+v %v", life, err)
+	}
 	core := statetest.Open(t, sessioncatalog.Schema)
 	catalog, err := sessioncatalog.New(core)
 	if err != nil {
@@ -108,6 +114,18 @@ func TestSubagentRuntimeHistoryCanonicalInspection(t *testing.T) {
 	instance := statev2.Instance{ID: statev2.SourceInstanceID("owner", identity.Platform, identity.SourceKey), OwnerID: "owner", Platform: identity.Platform, SourceKey: identity.SourceKey}
 	if err := store.RegisterInstance(t.Context(), instance); err != nil {
 		t.Fatal(err)
+	}
+	runtimeRows, err := a.GetSessionIdentities(t.Context())
+	if err != nil || len(runtimeRows) != 2 {
+		t.Fatalf("canonical cleanup inventory: %+v %v", runtimeRows, err)
+	}
+	for _, row := range runtimeRows {
+		if row.ID == "root" || row.ID == "agent-child" {
+			t.Fatal("cleanup leaked native IDs")
+		}
+		if life, err := a.GetSessionLifecycle(t.Context(), row.ID); err != nil || life.Status != db.StatusBusy {
+			t.Fatalf("canonical cleanup lifecycle: %+v %v", life, err)
+		}
 	}
 	entries, err := a.HistoryInventory(t.Context())
 	if err != nil || len(entries) != 2 {

@@ -46,6 +46,14 @@ func TestCleanupWorktreeGuards(t *testing.T) {
 		allow  bool
 	}{
 		{"clean", nil, true},
+		{"assume unchanged", func(t *testing.T, _, path string) {
+			runGit(t, path, "update-index", "--assume-unchanged", "README.md")
+			writeCleanupFile(t, path, "README.md")
+		}, false},
+		{"skip worktree", func(t *testing.T, _, path string) {
+			runGit(t, path, "update-index", "--skip-worktree", "README.md")
+			writeCleanupFile(t, path, "README.md")
+		}, false},
 		{"ignored dependencies", func(t *testing.T, _, path string) { writeCleanupFile(t, path, "node_modules/pkg/index.js") }, true},
 		{"nested ignored dependencies", func(t *testing.T, _, path string) { writeCleanupFile(t, path, "frontend/node_modules/pkg/index.js") }, true},
 		{"untracked", func(t *testing.T, _, path string) { writeCleanupFile(t, path, "notes.txt") }, false},

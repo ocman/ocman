@@ -378,6 +378,10 @@ the shared session mutation fence. Dedicated Host/gRPC cleanup and restoration
 operations retain branches and conversation history. See
 [archived worktree cleanup](../features/worktree-cleanup.md).
 
+Native safety probes use `platforms.WorktreeRuntimeReader` through the canonical
+adapter, separately from startup identity migration. Missing native history or
+unreachable supervisors block cleanup without changing fresh-install migration.
+
 Server shutdown cancels and joins its owned background loops before returning,
 so closing the databases cannot race a pending refresh.
 

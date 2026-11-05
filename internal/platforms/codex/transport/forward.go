@@ -58,9 +58,14 @@ func (p *Platform) Sessions(ctx context.Context, dir string, since int64) ([]db.
 }
 
 func (p *Platform) SessionLifecycle(ctx context.Context, id string) (*platforms.SessionLifecycle, error) {
-	var out *platforms.SessionLifecycle
-	err := p.do(ctx, func(a *provider.Adapter) (err error) { out, err = a.SessionLifecycle(ctx, id); return err })
-	return out, err
+	if adapter := p.current(); adapter != nil {
+		return adapter.SessionLifecycle(ctx, id)
+	}
+	life, err := p.WorktreeRuntimeLifecycle(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &platforms.SessionLifecycle{Status: life.Status, LatestMessageID: life.LatestMessageID, LatestMessageCreated: life.LatestMessageCreated, LatestMessageRole: life.LatestMessageRole}, nil
 }
 
 func (p *Platform) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
