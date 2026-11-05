@@ -6,6 +6,7 @@ import (
 	"errors"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/ocman/ocman/sdk/protocol"
 )
@@ -112,9 +113,7 @@ func NewOperationTool(name, description string, operations []ToolOperation) (Too
 			if request != nil && (inv.Confirmation == nil || inv.Confirmation.Key != request.Key) {
 				// The host sees only the envelope schema, so name this
 				// operation's write-only values for it to hide.
-				for _, pointer := range protocol.ToolWriteOnlyPointers(op.InputSchema, env.Arguments) {
-					request.Redact = append(request.Redact, "/arguments"+pointer)
-				}
+				request.Redact = boundedRedactions(request.Redact, protocol.ToolWriteOnlyPointers(op.InputSchema, env.Arguments))
 				return ToolResult{Confirmation: request}, nil
 			}
 		}
@@ -156,4 +155,27 @@ func operationHelpResult(operations []ToolOperation, byName map[string]ToolOpera
 		examples = []json.RawMessage{}
 	}
 	return ToolData("", operationHelp{operationSummary: summary(op), InputSchema: op.InputSchema, Examples: examples})
+}
+
+// boundedRedactions adds an operation's write-only pointers under
+// /arguments. When they would exceed the host's count or length limits, it
+// hides all of the operation's arguments instead, never fewer values.
+func boundedRedactions(declared, writeOnly []string) []string {
+	if len(writeOnly) == 0 {
+		return declared
+	}
+	out := slices.Clone(declared)
+	for _, pointer := range writeOnly {
+		out = append(out, "/arguments"+pointer)
+	}
+	if len(out) <= protocol.MaxToolRedactions && !slices.ContainsFunc(out, func(p string) bool { return len(p) > protocol.MaxToolRedactionBytes }) {
+		return out
+	}
+	coalesced := []string{"/arguments"}
+	for _, pointer := range declared {
+		if len(coalesced) < protocol.MaxToolRedactions && len(pointer) <= protocol.MaxToolRedactionBytes && pointer != "/arguments" && !strings.HasPrefix(pointer, "/arguments/") {
+			coalesced = append(coalesced, pointer)
+		}
+	}
+	return coalesced
 }

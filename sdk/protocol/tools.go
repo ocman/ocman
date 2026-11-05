@@ -33,6 +33,7 @@ const (
 	MaxToolStaticConfirmationBytes = 512
 	MaxToolConfirmationTextBytes   = 1024
 	MaxToolRedactions              = 64
+	MaxToolRedactionBytes          = 512
 	DefaultToolTimeoutSeconds      = 30
 	MaxToolTimeoutSeconds          = 300
 
@@ -266,7 +267,8 @@ func (r ToolResult) Validate() error {
 			return ErrInvalidMessage
 		}
 		for _, pointer := range c.Redact {
-			if !strings.HasPrefix(pointer, "/") || len(pointer) > 512 || !utf8.ValidString(pointer) {
+			// "" is the whole-document pointer and hides every argument.
+			if (pointer != "" && !strings.HasPrefix(pointer, "/")) || len(pointer) > MaxToolRedactionBytes || !utf8.ValidString(pointer) {
 				return ErrInvalidMessage
 			}
 		}

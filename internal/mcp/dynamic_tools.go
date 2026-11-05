@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"maps"
 	"sync"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -21,11 +20,11 @@ type dynamicTools struct {
 	builtin map[string]bool
 
 	mu      sync.Mutex
-	current map[string]string // name -> definition fingerprint
+	current map[string]bool // names this mirror registered
 }
 
 func newDynamicTools(server *mcpserver.MCPServer, builtin []mcpserver.ServerTool, source func(context.Context) []mcpserver.ServerTool) *dynamicTools {
-	d := &dynamicTools{server: server, source: source, builtin: map[string]bool{}, current: map[string]string{}}
+	d := &dynamicTools{server: server, source: source, builtin: map[string]bool{}, current: map[string]bool{}}
 	for _, t := range builtin {
 		d.builtin[t.Tool.Name] = true
 	}
@@ -50,8 +49,8 @@ func (d *dynamicTools) sync(ctx context.Context) {
 	for _, t := range tools {
 		count[t.Tool.Name]++
 	}
-	wanted := map[string]mcpserver.ServerTool{}
-	fingerprints := map[string]string{}
+	var wanted []mcpserver.ServerTool
+	names := map[string]bool{}
 	for _, t := range tools {
 		name := t.Tool.Name
 		// Never let one tool silently replace a built-in or another provider's.
@@ -63,17 +62,14 @@ func (d *dynamicTools) sync(ctx context.Context) {
 			continue
 		}
 		t.Tool = tool
-		raw, err := json.Marshal(t.Tool)
-		if err != nil {
-			continue
-		}
-		wanted[name], fingerprints[name] = t, string(raw)
+		wanted = append(wanted, t)
+		names[name] = true
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var stale []string
-	for name, fingerprint := range d.current {
-		if _, ok := wanted[name]; !ok || fingerprints[name] != fingerprint {
+	for name := range d.current {
+		if !names[name] {
 			stale = append(stale, name)
 			delete(d.current, name)
 		}
@@ -81,15 +77,13 @@ func (d *dynamicTools) sync(ctx context.Context) {
 	if len(stale) > 0 {
 		d.server.DeleteTools(stale...)
 	}
-	var added []mcpserver.ServerTool
-	for name, t := range wanted {
-		if _, ok := d.current[name]; !ok {
-			added = append(added, t)
-			d.current[name] = fingerprints[name]
-		}
+	// Re-register every wanted tool: an identical definition can move to a
+	// different owner, and only the handler would tell them apart.
+	if len(wanted) > 0 {
+		d.server.AddTools(wanted...)
 	}
-	if len(added) > 0 {
-		d.server.AddTools(added...)
+	for name := range names {
+		d.current[name] = true
 	}
 }
 
@@ -107,11 +101,9 @@ func withRawIntent(tool mcplib.Tool) (mcplib.Tool, bool) {
 	if properties == nil {
 		properties = map[string]any{}
 	}
-	properties = maps.Clone(properties)
 	if _, declared := properties["intent"]; !declared {
 		properties["intent"] = map[string]any{"type": "string", "description": intentDescription}
 	}
-	schema = maps.Clone(schema)
 	schema["properties"] = properties
 	raw, err := json.Marshal(schema)
 	if err != nil {

@@ -30,11 +30,8 @@ func (m *Module) manageAgentTools(ctx context.Context, p state.PluginRegistratio
 			return nil, state.ErrPluginInvalid
 		}
 		err := m.toolConfirmations.decide(id, confirmationID, decision == "approve", func(r *toolConfirmation) error {
-			if m.processes[id] != r.process {
-				return errPluginConflict
-			}
 			return m.store.WithPluginAuthorization(ctx, id, func(d plugins.Description, grants []string) error {
-				if descriptionDigest(d) != r.description {
+				if bindingOf(m.processes[id], d) != r.binding {
 					return errPluginConflict
 				}
 				return agentToolAllowed(r.Tool)(d, grants)

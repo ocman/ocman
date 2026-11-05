@@ -119,3 +119,16 @@ func TestDynamicToolsFollowTheSourceAndNeverShadowBuiltins(t *testing.T) {
 		t.Fatal("removed tool still callable")
 	}
 }
+
+func TestDynamicToolsRerouteAnIdenticalDefinition(t *testing.T) {
+	source := &toolSource{}
+	c := dynamicClient(t, source)
+	source.set(rawTool("widgets", "first owner"))
+	if text, _ := call(t, c, "widgets"); text != "first owner" {
+		t.Fatalf("first %q", text)
+	}
+	source.set(rawTool("widgets", "second owner"))
+	if text, _ := call(t, c, "widgets"); text != "second owner" {
+		t.Fatalf("identical definition kept the former handler: %q", text)
+	}
+}

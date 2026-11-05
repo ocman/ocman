@@ -128,7 +128,7 @@ func TestToolConfirmationsExpireAndAreBounded(t *testing.T) {
 	now := time.UnixMilli(1_800_000_000_000)
 	c := toolConfirmations{now: func() time.Time { return now }}
 	d := plugins.Description{ID: "org.example.notes"}
-	r, err := c.request(d.ID, "notes_delete", "", "Delete?", nil, []byte(`{}`), d, nil)
+	r, err := c.request(d.ID, "notes_delete", "", "Delete?", nil, []byte(`{}`), toolBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,11 +144,11 @@ func TestToolConfirmationsExpireAndAreBounded(t *testing.T) {
 		t.Fatalf("not forgotten %+v", got)
 	}
 	for range maxPendingToolConfirmation {
-		if _, err := c.request(d.ID, "notes_delete", "", "Delete?", nil, []byte(`{}`), d, nil); err != nil {
+		if _, err := c.request(d.ID, "notes_delete", "", "Delete?", nil, []byte(`{}`), toolBinding{}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := c.request(d.ID, "notes_delete", "", "Delete?", nil, []byte(`{}`), d, nil); !errors.Is(err, plugins.ErrUnavailable) {
+	if _, err := c.request(d.ID, "notes_delete", "", "Delete?", nil, []byte(`{}`), toolBinding{}); !errors.Is(err, plugins.ErrUnavailable) {
 		t.Fatalf("cap %v", err)
 	}
 	c.revoke(d.ID)
@@ -156,7 +156,7 @@ func TestToolConfirmationsExpireAndAreBounded(t *testing.T) {
 		t.Fatalf("revoke %+v", got[0])
 	}
 	// Approval is refused when the current authorization check fails.
-	r, _ = c.request("org.example.other", "x", "", "Run?", nil, []byte(`{}`), d, nil)
+	r, _ = c.request("org.example.other", "x", "", "Run?", nil, []byte(`{}`), toolBinding{})
 	if err := c.decide("org.example.other", r.ID, true, func(*toolConfirmation) error { return plugins.ErrUnavailable }); !errors.Is(err, plugins.ErrUnavailable) {
 		t.Fatalf("authorization %v", err)
 	}

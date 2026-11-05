@@ -6,6 +6,8 @@ package agenttools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -158,13 +160,15 @@ func Inventory(id string) Plugin {
 				return plugin.ToolData("adjusted", map[string]any{"sku": args.SKU, "quantity": stock[args.SKU]})
 			}},
 		{Name: "supplier.connect", Summary: "Store a supplier API token", Mutates: true, RequiredGrants: []string{"inventory.adjust"},
-			InputSchema: json.RawMessage(`{"type":"object","properties":{"supplier":{"type":"string","minLength":1},"token":{"type":"string","minLength":1,"writeOnly":true}},"required":["supplier","token"],"additionalProperties":false}`),
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"supplier":{"type":"string","minLength":1,"maxLength":64},"token":{"type":"string","minLength":1,"writeOnly":true}},"required":["supplier","token"],"additionalProperties":false}`),
 			Confirm: func(_ context.Context, call plugin.ToolOperationCall) (*plugin.ToolConfirmationRequest, error) {
 				var args struct {
 					Supplier string `json:"supplier"`
 				}
 				_ = json.Unmarshal(call.Arguments, &args)
-				return &plugin.ToolConfirmationRequest{Key: "connect:" + args.Supplier, Text: "Store a new API token for supplier " + args.Supplier + "?"}, nil
+				// Keys must be identifiers, so bind the free-form name by digest.
+				sum := sha256.Sum256([]byte(args.Supplier))
+				return &plugin.ToolConfirmationRequest{Key: "connect:" + hex.EncodeToString(sum[:8]), Text: fmt.Sprintf("Store a new API token for supplier %q?", args.Supplier)}, nil
 			},
 			Run: func(_ context.Context, call plugin.ToolOperationCall) (plugin.ToolResult, error) {
 				// Credentials are write-only: report presence, never the value.

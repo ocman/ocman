@@ -33,8 +33,6 @@ type agentToolState struct {
 	PluginName string                 `json:"pluginName"`
 	Tool       plugins.ToolDescriptor `json:"tool"`
 	Status     string                 `json:"status"`
-
-	description plugins.Description
 }
 
 // SetBuiltinTools records the MCP server's own tool names, which always win.
@@ -73,7 +71,7 @@ func (m *Module) agentToolStates(ctx context.Context, running func(state.PluginR
 	for _, p := range registrations {
 		d := p.Description
 		for _, t := range d.Tools {
-			s := agentToolState{PluginID: d.ID, PluginName: d.Name, Tool: t, Status: agentToolAvailable, description: d}
+			s := agentToolState{PluginID: d.ID, PluginName: d.Name, Tool: t, Status: agentToolAvailable}
 			switch {
 			case !p.Enabled || p.Removed || p.Health.Status == "conflict":
 				s.Status = agentToolDisabled

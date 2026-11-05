@@ -25,7 +25,7 @@ export function PluginAgentTools({ plugin, owner }: { plugin: PluginRegistration
 
 function PluginAgentToolsSection({ plugin, owner }: { plugin: PluginRegistration; owner: string }) {
   const id = plugin.description.id;
-  const report = usePluginAgentTools(owner, id);
+  const report = usePluginAgentTools(owner, id, true);
   const confirmations = report.data?.confirmations ?? [];
   return <fieldset style={{ border: 0, padding: 0 }}>
     <legend>Agent tools</legend>

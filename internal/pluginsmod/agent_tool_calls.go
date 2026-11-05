@@ -1,7 +1,6 @@
 package pluginsmod
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -43,32 +42,31 @@ var agentToolStatusErrors = map[string]plugins.ErrorCategory{
 	agentToolConflict:   plugins.ErrorUnavailable,
 }
 
-// admitAgentTool returns the current declaration, sorted grants and process
-// for an available tool, or why it is not callable.
-func (m *Module) admitAgentTool(ctx context.Context, pluginID, name string) (plugins.Description, []string, *plugins.Process, error) {
+// admitAgentTool returns the current declaration and the binding of the
+// child that will serve an available tool, or why it is not callable.
+func (m *Module) admitAgentTool(ctx context.Context, pluginID, name string) (plugins.Description, toolBinding, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	states, err := m.agentToolStatesLocked(ctx)
 	if err != nil {
-		return plugins.Description{}, nil, nil, err
+		return plugins.Description{}, toolBinding{}, err
 	}
 	i := slices.IndexFunc(states, func(s agentToolState) bool { return s.PluginID == pluginID && s.Tool.Name == name })
 	if i < 0 {
-		return plugins.Description{}, nil, nil, wireError(plugins.ErrorNotFound)
+		return plugins.Description{}, toolBinding{}, wireError(plugins.ErrorNotFound)
 	}
 	if category, refused := agentToolStatusErrors[states[i].Status]; refused {
-		return plugins.Description{}, nil, nil, wireError(category)
+		return plugins.Description{}, toolBinding{}, wireError(category)
 	}
 	var description plugins.Description
-	var grants []string
 	err = m.store.WithPluginAuthorization(ctx, pluginID, func(d plugins.Description, approved []string) error {
 		if err := agentToolAllowed(name)(d, approved); err != nil {
 			return err
 		}
-		description, grants = d, slices.Sorted(slices.Values(approved))
+		description = d
 		return nil
 	})
-	return description, grants, m.processes[pluginID], err
+	return description, bindingOf(m.processes[pluginID], description), err
 }
 
 // callAgentTool validates, confirms and dispatches one agent call. args are
@@ -77,7 +75,7 @@ func (m *Module) callAgentTool(ctx context.Context, pluginID, name string, args 
 	if len(args) > plugins.MaxToolArgumentBytes {
 		return agentToolOutcome{}, &plugins.ToolArgumentError{Path: "arguments", Reason: "must be at most " + strconv.Itoa(plugins.MaxToolArgumentBytes) + " bytes"}
 	}
-	description, grants, process, err := m.admitAgentTool(ctx, pluginID, name)
+	description, binding, err := m.admitAgentTool(ctx, pluginID, name)
 	if err != nil {
 		return agentToolOutcome{}, err
 	}
@@ -88,43 +86,37 @@ func (m *Module) callAgentTool(ctx context.Context, pluginID, name string, args 
 	display := plugins.MaskToolArguments(tool.InputSchema, args)
 	var confirmed *plugins.ToolConfirmed
 	if confirmationID != "" {
-		if confirmed, err = m.toolConfirmations.redeem(confirmationID, pluginID, name, args, description, process); err != nil {
+		if confirmed, err = m.toolConfirmations.redeem(confirmationID, pluginID, name, args, binding); err != nil {
 			return agentToolOutcome{}, err
 		}
 	} else if tool.Confirmation != "" {
-		c, err := m.toolConfirmations.request(pluginID, name, "", tool.Confirmation, display, args, description, process)
+		c, err := m.toolConfirmations.request(pluginID, name, "", tool.Confirmation, display, args, binding)
 		return agentToolOutcome{confirmation: c}, err
 	}
-	inv := plugins.ToolInvocation{Tool: name, Arguments: args, Confirmation: confirmed,
-		Context: plugins.ToolContext{Principal: plugins.ToolPrincipalAgent, Transport: plugins.ToolTransportMCP, Grants: grants}}
-	result, err := m.dispatchAgentTool(ctx, pluginID, tool, inv)
+	result, err := m.dispatchAgentTool(ctx, pluginID, tool, binding, plugins.ToolInvocation{Tool: name, Arguments: args, Confirmation: confirmed})
 	if err != nil {
 		return agentToolOutcome{}, err
 	}
 	if c := result.Confirmation; c != nil {
-		record, err := m.toolConfirmations.request(pluginID, name, c.Key, c.Text, plugins.RedactToolArguments(display, c.Redact), args, description, process)
+		record, err := m.toolConfirmations.request(pluginID, name, c.Key, c.Text, plugins.RedactToolArguments(display, c.Redact), args, binding)
 		return agentToolOutcome{confirmation: record}, err
 	}
 	return agentToolOutcome{result: result}, nil
 }
 
 // dispatchAgentTool sends one invoke under the lifecycle lock, atomically with
-// revocation, and discards the result if authority was lost meanwhile.
-func (m *Module) dispatchAgentTool(ctx context.Context, pluginID string, tool plugins.ToolDescriptor, inv plugins.ToolInvocation) (plugins.ToolResult, error) {
+// revocation. The plugin receives the grants approved at that moment, and the
+// result is discarded unless the same grants, declaration and child still hold.
+func (m *Module) dispatchAgentTool(ctx context.Context, pluginID string, tool plugins.ToolDescriptor, binding toolBinding, inv plugins.ToolInvocation) (plugins.ToolResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, tool.Timeout())
 	defer cancel()
-	params, err := json.Marshal(inv)
-	if err != nil {
-		return plugins.ToolResult{}, err
-	}
-	declared, _ := json.Marshal(tool)
-	allowed := func(d plugins.Description, grants []string) error {
+	var forwarded []string
+	current := func(d plugins.Description, grants []string) error {
 		if err := agentToolAllowed(tool.Name)(d, grants); err != nil {
 			return err
 		}
-		// The arguments were validated against this exact declaration.
-		current, _ := d.Tool(tool.Name)
-		if raw, _ := json.Marshal(current); !bytes.Equal(raw, declared) {
+		// The arguments and any confirmation apply to this exact child and declaration.
+		if bindingOf(m.processes[pluginID], d) != binding {
 			return wireError(plugins.ErrorConflict)
 		}
 		return nil
@@ -135,17 +127,18 @@ func (m *Module) dispatchAgentTool(ctx context.Context, pluginID string, tool pl
 		m.mu.Unlock()
 		return plugins.ToolResult{}, plugins.ErrUnavailable
 	}
-	err = m.store.WithPluginAuthorization(ctx, pluginID, func(d plugins.Description, grants []string) error {
-		if err := allowed(d, grants); err != nil {
+	err := m.store.WithPluginAuthorization(ctx, pluginID, func(d plugins.Description, grants []string) error {
+		if err := current(d, grants); err != nil {
 			return err
 		}
-		p := m.processes[pluginID]
-		if p == nil {
-			return plugins.ErrUnavailable
+		forwarded = slices.Sorted(slices.Values(grants))
+		inv.Context = plugins.ToolContext{Principal: plugins.ToolPrincipalAgent, Transport: plugins.ToolTransportMCP, Grants: forwarded}
+		params, err := json.Marshal(inv)
+		if err != nil {
+			return err
 		}
 		deadline, _ := ctx.Deadline()
-		var err error
-		replies, err = p.Call(ctx, plugins.Call{OperationID: "tool:" + rand.Text(), Capability: plugins.ToolCapability.Name,
+		replies, err = binding.process.Call(ctx, plugins.Call{OperationID: "tool:" + rand.Text(), Capability: plugins.ToolCapability.Name,
 			Version: plugins.ToolCapability.Version, Method: plugins.ToolInvokeMethod, DeadlineUnixMS: deadline.UnixMilli(), Params: params})
 		return err
 	})
@@ -173,7 +166,18 @@ func (m *Module) dispatchAgentTool(ctx context.Context, pluginID string, tool pl
 	if result.Error != nil {
 		return plugins.ToolResult{}, result.Error
 	}
-	if err := m.store.WithPluginAuthorization(ctx, pluginID, allowed); err != nil {
+	m.mu.Lock()
+	err = m.store.WithPluginAuthorization(ctx, pluginID, func(d plugins.Description, grants []string) error {
+		if err := current(d, grants); err != nil {
+			return err
+		}
+		if !slices.Equal(slices.Sorted(slices.Values(grants)), forwarded) {
+			return wireError(plugins.ErrorPermissionDenied)
+		}
+		return nil
+	})
+	m.mu.Unlock()
+	if err != nil {
 		return plugins.ToolResult{}, wireError(plugins.ErrorPermissionDenied)
 	}
 	decoded, err := plugins.DecodeToolResult(result.Value)

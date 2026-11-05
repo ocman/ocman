@@ -87,3 +87,17 @@ it('names agent tools in the grant review and omits the section without tools', 
   const { container } = render(<PluginAgentTools plugin={{ ...plugin, description: { ...plugin.description, tools: [] } }} owner="local" />);
   expect(container).toBeEmptyDOMElement();
 });
+
+it('shows a request that arrives while Settings stays open', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    api.agentTools.mockResolvedValueOnce({ tools: report('pending').tools, confirmations: [] });
+    wrap(<PluginAgentTools plugin={plugin} owner="local" />);
+    expect(await screen.findByText(/Available to agents/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});

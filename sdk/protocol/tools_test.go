@@ -237,9 +237,24 @@ func TestToolWriteOnlyPointersAndRedaction(t *testing.T) {
 	for raw, ok := range map[string]bool{
 		`{"confirmation":{"key":"k","text":"t","redact":["/arguments/token"]}}`: true,
 		`{"confirmation":{"key":"k","text":"t","redact":["arguments"]}}`:        false,
+		`{"confirmation":{"key":"k","text":"t","redact":[""]}}`:                 true,
 	} {
 		if _, err := DecodeToolResult([]byte(raw)); (err == nil) != ok {
 			t.Errorf("%s: %v", raw, err)
 		}
+	}
+}
+
+func TestToolWriteOnlyRootPointerIsAValidRedaction(t *testing.T) {
+	pointers := ToolWriteOnlyPointers(json.RawMessage(`{"type":"object","writeOnly":true}`), json.RawMessage(`{"a":1}`))
+	if len(pointers) != 1 || pointers[0] != "" {
+		t.Fatalf("pointers %q", pointers)
+	}
+	result := ToolResult{Confirmation: &ToolConfirmationRequest{Key: "k", Text: "t", Redact: pointers}}
+	if err := result.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if string(RedactToolArguments(json.RawMessage(`{"a":1}`), pointers)) != `"(hidden)"` {
+		t.Fatal("root redaction")
 	}
 }

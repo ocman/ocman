@@ -1,12 +1,14 @@
 package pluginsmod
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/client"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -314,5 +316,77 @@ func TestPluginAgentToolTimeoutLeavesThePluginServing(t *testing.T) {
 	}
 	if h := process.Health(); h.Status != "ready" || h.RestartCount != 0 {
 		t.Fatalf("plugin restarted: %+v", h)
+	}
+}
+
+// Grants revoked after admission never reach the plugin, and a revocation
+// during the call discards its result.
+func TestPluginAgentToolForwardsOnlyCurrentGrants(t *testing.T) {
+	db := statetest.Open(t, Schema)
+	m := NewModule(Deps{Store: db})
+	id := "org.example.edge"
+	startAgentToolPlugin(t, db, m, "edge", id, []string{plugins.ToolAgentGrant, "edge.extra"})
+	description, binding, err := m.admitAgentTool(t.Context(), id, "edge_grants")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetPluginGrants(t.Context(), id, []string{plugins.ToolAgentGrant}); err != nil {
+		t.Fatal(err)
+	}
+	tool, _ := description.Tool("edge_grants")
+	result, err := m.dispatchAgentTool(t.Context(), id, tool, binding, plugins.ToolInvocation{Tool: "edge_grants", Arguments: json.RawMessage(`{}`)})
+	if err != nil || result.Text != plugins.ToolAgentGrant {
+		t.Fatalf("forwarded %q %v", result.Text, err)
+	}
+
+	if err := db.SetPluginGrants(t.Context(), id, []string{plugins.ToolAgentGrant, "edge.extra"}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	go func() {
+		req := mcplib.CallToolRequest{}
+		req.Params.Arguments = map[string]any{}
+		r, _ := m.agentToolHandler(id, "edge_wait")(context.Background(), req)
+		done <- resultText(r)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if err := db.SetPluginGrants(t.Context(), id, []string{plugins.ToolAgentGrant}); err != nil {
+		t.Fatal(err)
+	}
+	if text := <-done; text != agentToolText[plugins.ErrorPermissionDenied] {
+		t.Fatalf("result kept after revocation: %q", text)
+	}
+}
+
+// An automatic child restart behind the same supervisor invalidates consent.
+func TestPluginAgentToolConfirmationDoesNotSurviveAChildRestart(t *testing.T) {
+	db := statetest.Open(t, Schema)
+	m := NewModule(Deps{Store: db})
+	id := "org.example.edge"
+	startAgentToolPlugin(t, db, m, "edge", id, []string{plugins.ToolAgentGrant, "edge.extra"})
+	process := m.processes[id]
+	cid := requireConfirmation(t, m, id, "edge_confirm", map[string]any{})
+	if err := decideConfirmation(t, m, id, cid, "approve"); err != nil {
+		t.Fatal(err)
+	}
+	callTool(t, m, id, "edge_exit", map[string]any{})
+	deadline := time.Now().Add(10 * time.Second)
+	for h := process.Health(); h.Status != "ready" || h.RestartCount == 0; h = process.Health() {
+		if time.Now().After(deadline) {
+			t.Fatalf("no restart: %+v", h)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	r := callTool(t, m, id, "edge_confirm", map[string]any{plugins.ToolConfirmationArgument: cid})
+	if !r.IsError || !strings.Contains(resultText(r), "changed or restarted") {
+		t.Fatalf("approval survived restart: %s", resultText(r))
+	}
+	// A fresh request against the new child works end to end.
+	cid = requireConfirmation(t, m, id, "edge_confirm", map[string]any{})
+	if err := decideConfirmation(t, m, id, cid, "approve"); err != nil {
+		t.Fatal(err)
+	}
+	if r := callTool(t, m, id, "edge_confirm", map[string]any{plugins.ToolConfirmationArgument: cid}); r.IsError || resultText(r) != "confirmed" {
+		t.Fatalf("fresh approval: %s", resultText(r))
 	}
 }

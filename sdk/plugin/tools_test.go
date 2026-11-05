@@ -172,3 +172,36 @@ func TestOperationToolRedactsWriteOnlyArguments(t *testing.T) {
 		t.Fatalf("redact %+v", r.Confirmation)
 	}
 }
+
+func TestOperationToolBoundsGeneratedRedactions(t *testing.T) {
+	confirm := func(context.Context, ToolOperationCall) (*ToolConfirmationRequest, error) {
+		return &ToolConfirmationRequest{Key: "k", Text: "Proceed?", Redact: []string{"/operation"}}, nil
+	}
+	run := func(context.Context, ToolOperationCall) (ToolResult, error) { return ToolText("ran"), nil }
+	_, tool, err := NewOperationTool("vault", "Store secrets.", []ToolOperation{
+		{Name: "many", Summary: "Many secrets", Confirm: confirm, Run: run,
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"list":{"type":"array","items":{"type":"string","writeOnly":true}}}}`)},
+		{Name: "long", Summary: "Long key", Confirm: confirm, Run: run,
+			InputSchema: json.RawMessage(`{"type":"object","additionalProperties":{"type":"string","writeOnly":true}}`)},
+		{Name: "root", Summary: "Whole value", Confirm: confirm, Run: run, InputSchema: json.RawMessage(`{"type":"object","writeOnly":true}`)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := ToolHandler(map[string]ToolFunc{"vault": tool})
+	items := make([]string, 100)
+	for i := range items {
+		items[i] = `"v"`
+	}
+	for name, args := range map[string]string{
+		"many": `{"list":[` + strings.Join(items, ",") + `]}`,
+		"long": `{"` + strings.Repeat("k", 600) + `":"v"}`,
+		"root": `{"a":"v"}`,
+	} {
+		raw, err := h(context.Background(), toolCall("vault", `{"operation":"`+name+`","arguments":`+args+`}`, []string{}, nil), nil)
+		r := decodeResult(t, raw, err)
+		if r.Confirmation == nil || strings.Join(r.Confirmation.Redact, ",") != "/operation,/arguments" && strings.Join(r.Confirmation.Redact, ",") != "/arguments,/operation" {
+			t.Errorf("%s: %+v", name, r.Confirmation)
+		}
+	}
+}

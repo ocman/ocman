@@ -41,9 +41,25 @@ type toolConfirmation struct {
 	CreatedAt int64           `json:"createdAt"`
 	ExpiresAt int64           `json:"expiresAt"`
 
-	arguments   [32]byte
-	description [32]byte
+	arguments [32]byte
+	binding   toolBinding
+}
+
+// toolBinding identifies the exact declaration and running child a decision
+// or dispatch applies to. A supervisor restart replaces the child behind the
+// same Process, so the restart count is part of the identity.
+type toolBinding struct {
 	process     *plugins.Process
+	restarts    int
+	description [32]byte
+}
+
+func bindingOf(p *plugins.Process, d plugins.Description) toolBinding {
+	b := toolBinding{process: p, description: descriptionDigest(d)}
+	if p != nil {
+		b.restarts = p.Health().RestartCount
+	}
+	return b
 }
 
 type toolConfirmations struct {
@@ -82,7 +98,7 @@ func (c *toolConfirmations) expireLocked(now time.Time) {
 
 // request records a pending confirmation for exactly these arguments, bound
 // to the current declaration and process.
-func (c *toolConfirmations) request(pluginID, tool, key, text string, display json.RawMessage, args []byte, d plugins.Description, process *plugins.Process) (*toolConfirmation, error) {
+func (c *toolConfirmations) request(pluginID, tool, key, text string, display json.RawMessage, args []byte, binding toolBinding) (*toolConfirmation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.clock()
@@ -101,7 +117,7 @@ func (c *toolConfirmations) request(pluginID, tool, key, text string, display js
 	}
 	r := &toolConfirmation{ID: "tc_" + rand.Text(), PluginID: pluginID, Tool: tool, Key: key, Text: text, Arguments: display,
 		Status: confirmationPending, CreatedAt: now.UnixMilli(), ExpiresAt: now.Add(toolConfirmationTTL).UnixMilli(),
-		arguments: digest(args), description: descriptionDigest(d), process: process}
+		arguments: digest(args), binding: binding}
 	c.records[r.ID] = r
 	copied := *r
 	return &copied, nil
@@ -114,7 +130,7 @@ func (e errConfirmation) Error() string { return string(e) }
 
 // redeem consumes an approved confirmation for an identical call. A pending
 // request is left untouched so the agent can retry after the user decides.
-func (c *toolConfirmations) redeem(id, pluginID, tool string, args []byte, d plugins.Description, process *plugins.Process) (*plugins.ToolConfirmed, error) {
+func (c *toolConfirmations) redeem(id, pluginID, tool string, args []byte, binding toolBinding) (*plugins.ToolConfirmed, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.expireLocked(c.clock())
@@ -124,7 +140,7 @@ func (c *toolConfirmations) redeem(id, pluginID, tool string, args []byte, d plu
 		return nil, errConfirmation("unknown confirmation_id for this tool; call without it to request a new confirmation")
 	case r.arguments != digest(args):
 		return nil, errConfirmation("confirmation_id was approved for different arguments; call again with the exact same arguments")
-	case r.description != descriptionDigest(d) || r.process != process:
+	case r.binding != binding:
 		r.Status = confirmationExpired
 		return nil, errConfirmation("the plugin changed or restarted since this confirmation was requested; request a new confirmation")
 	case r.Status == confirmationPending:

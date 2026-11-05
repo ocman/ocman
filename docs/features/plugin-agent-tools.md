@@ -201,8 +201,10 @@ authority. Plugins needing session-scoped authority should use
 unique `operationId`; it is never reused across retries or a confirmed resume.
 Use it for audit records and deduplication.
 
-The authorization check runs again when the plugin returns. A plugin disabled
-or a grant revoked while a call is in flight discards its result.
+Authorization runs again at dispatch, which sends the grants approved at that
+moment, and when the plugin returns. A result is discarded unless the same
+grants, declaration and plugin process still hold, so a plugin disabled,
+restarted or with a grant changed while a call is in flight loses its result.
 
 ## Results and errors
 
@@ -239,8 +241,9 @@ of two ways:
   The plugin must not have performed side effects. `key` matches
   `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; `text` is plain text up to 1024 bytes
   that tells the user exactly what will happen. Optional `redact` lists up to
-  64 JSON Pointers into the tool's arguments, such as `/arguments/token`, whose
-  values the host hides when displaying the request. Redaction can only hide
+  64 JSON Pointers of at most 512 bytes into the tool's arguments, such as
+  `/arguments/token` or `""` for all of them, whose values the host hides when
+  displaying the request. Redaction can only hide
   values; the host masks declared `writeOnly` properties regardless.
 
 The host records a pending request and returns this successful MCP result to
@@ -269,7 +272,8 @@ operation and its arguments before acting. A confirmation:
 - can be used once, within 10 minutes of the decision, and expires unanswered
   after 10 minutes;
 - is refused if denied, mismatched, expired, already used, or if the plugin was
-  disabled, changed or lost a required grant; and
+  disabled, changed, restarted (including an automatic restart after a crash)
+  or lost a required grant; and
 - is held in memory only, so a restart discards pending and approved requests.
 
 A plugin can require further confirmation for a different key on the resumed
@@ -426,5 +430,6 @@ and expose it through its own tools, with the same validation and
 confirmation its UI uses. Return credentials as presence flags only, and mark
 credential arguments `writeOnly`. The host cannot see operation schemas
 inside an operation envelope, so `NewOperationTool` adds the operation's
-`writeOnly` values to the confirmation request's `redact` list. Plugins that
+`writeOnly` values to the confirmation request's `redact` list, hiding all of
+the operation's arguments when those pointers would exceed the limits. Plugins that
 build their own envelope must list them themselves.

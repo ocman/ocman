@@ -163,22 +163,27 @@ func sameJSON(a, b any) bool {
 
 // FuzzToolArguments feeds arbitrary schemas and arguments to the tool.v1
 // validator. It must never panic, and accepted arguments must stay accepted
-// after the host's canonical re-encoding.
+// after canonical re-encoding with exact numbers.
 func FuzzToolArguments(f *testing.F) {
 	f.Add(`{"type":"object","properties":{"n":{"type":"integer","maximum":3}},"required":["n"]}`, `{"n":2}`)
 	f.Add(`{"type":"object","additionalProperties":{"type":"array","items":{"enum":[1,"a"]}}}`, `{"x":[1,"a"]}`)
+	f.Add(`{"type":"object","properties":{"n":{"type":"number"}}}`, `{"n":1e400}`)
 	f.Fuzz(func(t *testing.T, schema, args string) {
 		if ValidateToolArguments(json.RawMessage(schema), json.RawMessage(args)) != nil {
 			return
 		}
+		decoder := json.NewDecoder(bytes.NewReader([]byte(args)))
+		decoder.UseNumber()
 		var decoded map[string]any
-		if json.Unmarshal([]byte(args), &decoded) != nil {
+		if decoder.Decode(&decoded) != nil {
 			t.Fatalf("accepted undecodable arguments %q", args)
 		}
-		canonical, _ := json.Marshal(decoded)
-		var argument *ToolArgumentError
-		if err := ValidateToolArguments(json.RawMessage(schema), canonical); err != nil && !errors.As(err, &argument) {
-			t.Fatalf("canonical arguments rejected the schema: %v", err)
+		canonical, err := json.Marshal(decoded)
+		if err != nil {
+			t.Fatalf("accepted arguments do not re-encode: %v", err)
+		}
+		if err := ValidateToolArguments(json.RawMessage(schema), canonical); err != nil {
+			t.Fatalf("canonical %s of accepted %q rejected: %v", canonical, args, err)
 		}
 		_ = MaskToolArguments(json.RawMessage(schema), json.RawMessage(args))
 	})
