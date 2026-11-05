@@ -61,11 +61,30 @@ func (p *Platform) SessionLifecycle(ctx context.Context, id string) (*platforms.
 	if adapter := p.current(); adapter != nil {
 		return adapter.SessionLifecycle(ctx, id)
 	}
-	life, err := p.WorktreeRuntimeLifecycle(ctx, id)
+	snapshot, err := p.HistorySnapshot(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return &platforms.SessionLifecycle{Status: life.Status, LatestMessageID: life.LatestMessageID, LatestMessageCreated: life.LatestMessageCreated, LatestMessageRole: life.LatestMessageRole}, nil
+	life := codexprovider.StoredLifecycle(snapshot)
+	runtime, err := p.cleanupRuntimeInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, session := range runtime {
+		if session.ID != id {
+			continue
+		}
+		if session.Directory != snapshot.Session.Directory {
+			return nil, platforms.ErrHistoryUnavailable
+		}
+		if session.Status == db.StatusBusy || session.BackgroundTaskCount != 0 || session.BackgroundServiceCount != 0 {
+			life.Status = db.StatusBusy
+		}
+		if session.PendingPermission || session.PendingQuestion {
+			life.Status = db.StatusBusy
+		}
+	}
+	return life, nil
 }
 
 func (p *Platform) CreateSession(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {

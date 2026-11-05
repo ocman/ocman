@@ -35,7 +35,7 @@ func (p *claudePlatform) WorktreeRuntimeSessions(ctx context.Context) ([]db.Sess
 		seen[row.ID] = row.Directory
 	}
 	if p.projects != nil {
-		live, err := p.projects.historyRuntimeInventory(ctx)
+		live, err := p.projects.cleanupRuntimeInventory(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -68,10 +68,11 @@ func (p *claudePlatform) WorktreeRuntimeLifecycle(ctx context.Context, id string
 	}
 	out := db.SessionLifecycle{Directory: row.Directory, Status: row.Status, LatestMessageCreated: row.TimeUpdated}
 	if p.projects != nil {
-		rows, err := p.projects.historyRuntimeInventory(ctx)
+		rows, err := p.projects.cleanupRuntimeInventory(ctx)
 		if err != nil {
 			return db.SessionLifecycle{}, err
 		}
+		active := false
 		for _, runtime := range rows {
 			if runtime.ID != id {
 				continue
@@ -79,7 +80,16 @@ func (p *claudePlatform) WorktreeRuntimeLifecycle(ctx context.Context, id string
 			if runtime.Directory != row.Directory {
 				return db.SessionLifecycle{}, fmt.Errorf("claude runtime directory disagrees with its source")
 			}
-			out.Status = runtime.Status
+			if !active || runtime.Status == db.StatusBusy || runtime.Status == db.StatusWaiting {
+				out.Status = runtime.Status
+			}
+			if runtime.PendingPermission || runtime.PendingQuestion {
+				out.Status = db.StatusWaiting
+			}
+			if runtime.BackgroundTaskCount != 0 || runtime.BackgroundServiceCount != 0 {
+				out.Status = db.StatusBusy
+			}
+			active = out.Status == db.StatusBusy || out.Status == db.StatusWaiting
 			out.LatestMessageCreated = max(out.LatestMessageCreated, runtime.TimeUpdated)
 		}
 		if live := p.LiveStatus(id); live != nil {

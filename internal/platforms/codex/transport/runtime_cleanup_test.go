@@ -118,6 +118,9 @@ func TestRuntimeCleanupNativeCodexInventoryAndLifecycle(t *testing.T) {
 		})
 	}
 	s.Handle(codexappserver.MethodThreadRead, func(json.RawMessage) (any, error) { return map[string]any{"thread": thread("child")}, nil })
+	for _, method := range []string{codexappserver.MethodThreadTurns, codexappserver.MethodThreadItems} {
+		s.Handle(method, func(json.RawMessage) (any, error) { return map[string]any{"data": []any{}}, nil })
+	}
 	if life, err := p.SessionLifecycle(t.Context(), "child"); err != nil || life.Status != db.StatusDone {
 		t.Fatalf("non-launching lifecycle: %+v %v", life, err)
 	}
@@ -125,7 +128,7 @@ func TestRuntimeCleanupNativeCodexInventoryAndLifecycle(t *testing.T) {
 		t.Fatal("cleanup launched execution supervisor")
 	}
 	for _, call := range s.Calls() {
-		if call.Method != codexappserver.MethodInitialize && call.Method != codexappserver.MethodThreadList && call.Method != codexappserver.MethodThreadRead {
+		if call.Method != codexappserver.MethodInitialize && call.Method != codexappserver.MethodThreadList && call.Method != codexappserver.MethodThreadRead && call.Method != codexappserver.MethodThreadTurns && call.Method != codexappserver.MethodThreadItems {
 			t.Fatalf("unexpected runtime operation: %s", call.Method)
 		}
 	}

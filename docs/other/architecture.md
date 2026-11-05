@@ -381,6 +381,11 @@ operations retain branches and conversation history. See
 Native safety probes use `platforms.WorktreeRuntimeReader` through the canonical
 adapter, separately from startup identity migration. Missing native history or
 unreachable supervisors block cleanup without changing fresh-install migration.
+The shared provider transport reads persisted runtime handles from state and
+checks liveness through `ocruntime` before omitting an unreadable endpoint.
+Both attached and persisted supervisors are checked; draining owners block
+maintenance. Ordinary Codex lifecycle reads retain complete native message
+identity through the history converter without starting an execution supervisor.
 
 Server shutdown cancels and joins its owned background loops before returning,
 so closing the databases cannot race a pending refresh.

@@ -37,28 +37,26 @@ func (p *Platform) WorktreeRuntimeSessions(ctx context.Context) ([]db.Session, e
 			rows = append(rows, row)
 		}
 	}
-	if adapter := p.current(); adapter != nil {
-		live, err := adapter.RuntimeSessions(ctx)
-		if err != nil {
-			return nil, err
+	live, err := p.cleanupRuntimeInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]string{}
+	for _, row := range rows {
+		seen[row.ID] = row.Directory
+	}
+	for _, row := range live {
+		if row.ID == "" || row.Directory == "" {
+			return nil, platforms.ErrHistoryUnavailable
 		}
-		seen := map[string]string{}
-		for _, row := range rows {
-			seen[row.ID] = row.Directory
-		}
-		for _, row := range live {
-			if row.ID == "" || row.Directory == "" {
-				return nil, platforms.ErrHistoryUnavailable
+		if dir, ok := seen[row.ID]; ok {
+			if dir != row.Directory {
+				return nil, fmt.Errorf("codex runtime directory disagrees with its source")
 			}
-			if dir, ok := seen[row.ID]; ok {
-				if dir != row.Directory {
-					return nil, fmt.Errorf("codex runtime directory disagrees with its source")
-				}
-				continue
-			}
-			rows = append(rows, row)
-			seen[row.ID] = row.Directory
+			continue
 		}
+		rows = append(rows, row)
+		seen[row.ID] = row.Directory
 	}
 	return rows, nil
 }
@@ -90,6 +88,28 @@ func (p *Platform) WorktreeRuntimeLifecycle(ctx context.Context, id string) (db.
 	default:
 		return db.SessionLifecycle{}, fmt.Errorf("unknown Codex runtime status %q", thread.Status.Type)
 	}
+	runtime, err := p.cleanupRuntimeInventory(ctx)
+	if err != nil {
+		return db.SessionLifecycle{}, err
+	}
+	for _, session := range runtime {
+		if session.ID != id {
+			continue
+		}
+		if session.Directory != out.Directory {
+			return db.SessionLifecycle{}, fmt.Errorf("codex runtime directory disagrees with its source")
+		}
+		if session.Status == db.StatusBusy || session.Status == db.StatusWaiting {
+			out.Status = session.Status
+		}
+		if session.PendingPermission || session.PendingQuestion {
+			out.Status = db.StatusWaiting
+		}
+		if session.BackgroundTaskCount != 0 || session.BackgroundServiceCount != 0 {
+			out.Status = db.StatusBusy
+		}
+		out.LatestMessageCreated = max(out.LatestMessageCreated, session.TimeUpdated)
+	}
 	if adapter := p.current(); adapter != nil {
 		life, err := adapter.SessionLifecycle(ctx, id)
 		if err != nil {
@@ -98,7 +118,7 @@ func (p *Platform) WorktreeRuntimeLifecycle(ctx context.Context, id string) (db.
 		if life == nil || life.ReadOnly {
 			return db.SessionLifecycle{}, platforms.ErrHistoryUnavailable
 		}
-		if out.Status != db.StatusBusy {
+		if out.Status != db.StatusBusy && out.Status != db.StatusWaiting {
 			out.Status = life.Status
 		}
 		out.LatestMessageID, out.LatestMessageRole = life.LatestMessageID, life.LatestMessageRole

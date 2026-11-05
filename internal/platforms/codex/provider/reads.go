@@ -2,7 +2,6 @@ package codexprovider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -107,16 +106,9 @@ func (b *backend) lifecycle(ctx context.Context, id string) (*platforms.SessionL
 	if err != nil {
 		return nil, err
 	}
+	out := StoredLifecycle(snap)
 	b.mu.Lock()
-	out := &platforms.SessionLifecycle{Status: b.statusLocked(id, snap.InferredStatus)}
+	out.Status = b.statusLocked(id, snap.InferredStatus)
 	b.mu.Unlock()
-	if n := len(snap.Messages); n > 0 {
-		last := snap.Messages[n-1]
-		var info struct {
-			Role string `json:"role"`
-		}
-		_ = json.Unmarshal(last.Data, &info)
-		out.LatestMessageID, out.LatestMessageCreated, out.LatestMessageRole = last.ID, last.TimeCreated, info.Role
-	}
 	return out, nil
 }
