@@ -248,28 +248,40 @@ function metadataMatchesInput(metadata: Record<string, unknown>, input: unknown)
   ));
 }
 
-function matchingToolPart(sortedToolParts: Part[], approval: PartData, noticeTime: number): Part | undefined {
-  const askedAt = approval.askedAt || noticeTime;
+function toolPartMatches(part: Part, approval: PartData, askedAt: number): boolean {
+  if (partStartedAt(part) > askedAt) return false;
   const metadata = approval.metadata;
+  if (!metadata || Object.keys(metadata).length === 0) return true;
   const permissionTool = toolSpecificPermission(approval.permission || '');
+  const data = parsePart(part);
+  const input = data.state?.input;
+  const tool = (data.tool || '').toLowerCase().replace(/^mcp_/, '');
+  if (permissionTool && tool !== permissionTool) return false;
+  if (permissionTool === 'bash') {
+    const command = metadataLeaves(metadata).find((leaf) => canonicalMetadataKey(leaf.key) === 'command')?.value;
+    return typeof command === 'string'
+      && typeof input?.command === 'string'
+      && input.command === command;
+  }
+  return metadataMatchesInput(metadata, input);
+}
+
+/**
+ * The latest matching tool that started before the permission was asked.
+ * Concurrent identical calls each take one approval: a tool that already
+ * holds an approval is only reused when no other match remains (one call
+ * can need several permissions).
+ */
+function matchingToolPart(sortedToolParts: Part[], approval: PartData, noticeTime: number, claimed: Readonly<Record<string, unknown>>): Part | undefined {
+  const askedAt = approval.askedAt || noticeTime;
+  let fallback: Part | undefined;
   for (let i = sortedToolParts.length - 1; i >= 0; i--) {
     const part = sortedToolParts[i];
-    if (partStartedAt(part) > askedAt) continue;
-    if (!metadata || Object.keys(metadata).length === 0) return part;
-    const data = parsePart(part);
-    const input = data.state?.input;
-    const tool = (data.tool || '').toLowerCase().replace(/^mcp_/, '');
-    if (permissionTool && tool !== permissionTool) continue;
-    if (permissionTool === 'bash') {
-      const command = metadataLeaves(metadata).find((leaf) => canonicalMetadataKey(leaf.key) === 'command')?.value;
-      if (typeof command === 'string'
-        && typeof input?.command === 'string'
-        && input.command === command) return part;
-      continue;
-    }
-    if (metadataMatchesInput(metadata, input)) return part;
+    if (!toolPartMatches(part, approval, askedAt)) continue;
+    if (!claimed[part.id]) return part;
+    fallback ??= part;
   }
-  return undefined;
+  return fallback;
 }
 
 /** Build (or rebuild) the `messageId → parts[]` index. */
@@ -320,7 +332,7 @@ function indexApprovals(
   for (const notice of notices) {
     for (const pd of (partsByMsg[notice.id] || EMPTY_PARTS).map(parsePart)) {
       if (pd.type !== 'auto-approved') continue;
-      const target = matchingToolPart(toolParts, pd, notice.timeCreated);
+      const target = matchingToolPart(toolParts, pd, notice.timeCreated, approvalsByPartId);
       if (!target) continue;
       inlinedNotices.add(notice.id);
       const list = approvalsByPartId[target.id] || (approvalsByPartId[target.id] = []);

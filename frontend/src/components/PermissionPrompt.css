@@ -48,6 +48,13 @@
   margin-bottom: 10px;
 }
 
+.oc-permission-description {
+  color: var(--text);
+  padding-left: 22px;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
 .oc-permission-action {
   padding-left: 22px;
   margin-bottom: 12px;

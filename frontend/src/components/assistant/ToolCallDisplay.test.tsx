@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -196,65 +196,63 @@ describe('ToolCallDisplay bash output', () => {
   });
 });
 
-describe('ToolCallDisplay permission approval footnote', () => {
+describe('ToolCallDisplay permission approval lock', () => {
   const approvedBash = (approval: Record<string, unknown>) => ({
     argsText: 'completed\nrm -rf /tmp/foo',
     artifact: { ocmanApprovals: [approval] },
     result: 'gone',
   });
 
-  it('renders an artifact footnote collapsed below the command', () => {
+  it('renders a lock beside the tool row it unblocked', () => {
     const { container, queryByTestId } = renderTool(
       approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.', approvedBy: 'ai' }),
     );
 
     expect(screen.getByTestId('shell-output-block').textContent).toBe('$ rm -rf /tmp/foo\ngone');
-    const footnote = container.querySelector('.oc-ai-approval-footnote')!;
-    expect(footnote.textContent).toBe('Approved by AI');
+    const lock = screen.getByRole('button', { name: 'Approved by AI' });
+    expect(lock).toHaveClass('oc-approval-lock');
     expect(queryByTestId('ai-approval-detail')).toBeNull();
-    // Footnote sits below the tool's box, not inside it.
     const box = container.querySelector('.oc-tool-shell')!;
-    expect(box.contains(footnote)).toBe(false);
-    expect(box.compareDocumentPosition(footnote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(box.parentElement).toHaveClass('oc-tool-with-footnote');
-    expect(assistantThreadCss).toContain('.oc-hide-tool-details .oc-tool-with-footnote:has(> .oc-tool)');
+    expect(box.contains(lock)).toBe(false);
+    expect(lock.parentElement).toHaveClass('oc-tool-with-approval');
+    expect(assistantThreadCss).toContain('.oc-hide-tool-details .oc-tool-with-approval:has(> .oc-tool-with-approval-body > .oc-tool)');
   });
 
-  it('reveals a non-modal region and closes it with Escape without moving focus', async () => {
+  it('shows who approved and the AI reasoning on hover', async () => {
     const user = userEvent.setup();
-    const { getByTestId } = renderTool(
+    renderTool(
       approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.', approvedBy: 'ai' }),
     );
 
-    const trigger = screen.getByRole('button', { name: 'Approved by AI' });
-    await user.click(trigger);
-    const detail = getByTestId('ai-approval-detail');
-    expect(detail.getAttribute('role')).toBe('region');
-    expect(trigger).toHaveAttribute('aria-controls', detail.id);
-    expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    expect(detail.textContent).toContain('bash');
-    expect(detail.textContent).toContain('rm -rf /tmp/foo');
-    expect(detail.textContent).toContain('Temp dir only.');
-    const popoverRule = assistantThreadCss.match(/\.oc-ai-approval-detail\s*\{[^}]*\}/)?.[0] || '';
-    expect(popoverRule).not.toContain('position: absolute');
-
-    await user.keyboard('{Escape}');
-    expect(screen.queryByTestId('ai-approval-detail')).toBeNull();
-    expect(trigger).toHaveFocus();
-    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await user.hover(screen.getByRole('button', { name: 'Approved by AI' }));
+    const detail = await screen.findByRole('tooltip');
+    expect(detail).toHaveTextContent('Approved by AI');
+    expect(detail).toHaveTextContent('bash');
+    expect(detail).toHaveTextContent('rm -rf /tmp/foo');
+    expect(detail).toHaveTextContent('Temp dir only.');
   });
 
-  it('renders an unmatched approval as a generic audit notice', () => {
-    renderTool({
-      toolName: 'ocman:auto-approved',
-      argsText: '',
-      artifact: { ocmanApprovals: [{ permission: 'edit', patterns: ['/repo/a.ts'], reasoning: '', approvedBy: 'user' }] },
-    });
+  it('shows a user approval on keyboard focus', async () => {
+    renderTool(
+      approvedBash({ permission: 'bash', patterns: ['pnpm test'], reasoning: '', approvedBy: 'user' }),
+    );
 
-    expect(screen.getByText('Permission approved by user')).toBeInTheDocument();
+    act(() => screen.getByRole('button', { name: 'Approved by user' }).focus());
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Approved by user');
   });
 
-  it('keeps unmatched AI reasoning expandable', async () => {
+  it('shows the detail inline when printing', () => {
+    printing.isPrinting = true;
+    try {
+      renderTool(approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.', approvedBy: 'ai' }));
+      expect(screen.getByTestId('ai-approval-detail')).toHaveTextContent('Temp dir only.');
+      expect(screen.queryByRole('button', { name: 'Approved by AI' })).toBeNull();
+    } finally {
+      printing.isPrinting = false;
+    }
+  });
+
+  it('renders an unmatched approval as a generic audit notice with a lock', async () => {
     const user = userEvent.setup();
     renderTool({
       toolName: 'ocman:auto-approved',
@@ -262,17 +260,9 @@ describe('ToolCallDisplay permission approval footnote', () => {
       artifact: { ocmanApprovals: [{ permission: 'edit', patterns: ['/repo/a.ts'], reasoning: 'Scoped edit.', approvedBy: 'ai' }] },
     });
 
-    await user.click(screen.getByRole('button', { name: 'Approved by AI' }));
-    expect(screen.getByTestId('ai-approval-detail')).toHaveTextContent('Scoped edit.');
-  });
-
-  it('mentions a user approval without an expandable reason', () => {
-    const { container } = renderTool(
-      approvedBash({ permission: 'bash', patterns: ['pnpm test'], reasoning: '', approvedBy: 'user' }),
-    );
-
-    expect(container.querySelector('.oc-ai-approval-footnote')!.textContent).toBe('Approved by user');
-    expect(screen.queryByRole('button', { name: 'Approved by user' })).toBeNull();
+    expect(screen.getByText('Permission approved by AI')).toBeInTheDocument();
+    await user.hover(screen.getByRole('button', { name: 'Approved by AI' }));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Scoped edit.');
   });
 
   it('keeps command lines beginning with @approved: visible and untrusted', () => {
@@ -280,7 +270,7 @@ describe('ToolCallDisplay permission approval footnote', () => {
     const { container } = renderTool({ argsText: `completed\n${command}`, result: 'ok' });
 
     expect(screen.getByTestId('shell-output-block').textContent).toBe(`$ ${command}\nok`);
-    expect(container.querySelector('.oc-ai-approval-footnote')).toBeNull();
+    expect(container.querySelector('.oc-approval-lock')).toBeNull();
   });
 
   it('ignores malformed approval artifacts', () => {
@@ -289,23 +279,23 @@ describe('ToolCallDisplay permission approval footnote', () => {
       artifact: { ocmanApprovals: [{ permission: 'bash', patterns: 'echo safe', approvedBy: 'user' }] },
     });
 
-    expect(container.querySelector('.oc-ai-approval-footnote')).toBeNull();
+    expect(container.querySelector('.oc-approval-lock')).toBeNull();
   });
 
-  it('renders no footnote when the tool carries no approval artifact', () => {
+  it('renders no lock when the tool carries no approval artifact', () => {
     const { container } = renderTool({ argsText: 'completed\necho hi', result: 'hi' });
-    expect(container.querySelector('.oc-ai-approval-footnote')).toBeNull();
+    expect(container.querySelector('.oc-approval-lock')).toBeNull();
   });
 
-  it('footnotes muted-line tools too', () => {
+  it('locks muted-line tools too', () => {
     const { container } = renderTool({
       toolName: '__read__',
       argsText: 'Read /etc/hosts',
       artifact: { ocmanApprovals: [{ permission: 'external_directory', patterns: ['/etc/hosts'], reasoning: 'Read only.', approvedBy: 'ai' }] },
     });
-    expect(container.querySelector('.oc-read-line')!.textContent).toBe('\u2192Read /etc/hosts');
-    expect(container.querySelector('.oc-ai-approval-footnote')).not.toBeNull();
-    expect(container.querySelector('.oc-read-line')!.parentElement).toHaveClass('oc-tool-with-footnote');
+    expect(container.querySelector('.oc-read-line')!.textContent).toBe('→Read /etc/hosts');
+    expect(container.querySelector('.oc-approval-lock')).not.toBeNull();
+    expect(container.querySelector('.oc-read-line')!.parentElement!.parentElement).toHaveClass('oc-tool-with-approval');
   });
 });
 

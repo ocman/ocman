@@ -175,6 +175,8 @@ export function PermissionPrompt({
   // Effective "checking" state: backend confirmed via SSE.
   const effectiveChecking = autoApproveChecking ?? false;
   const action = permissionAction(permission.metadata);
+  const rawDescription = permission.metadata?.description;
+  const description = typeof rawDescription === 'string' && rawDescription.trim() !== action ? rawDescription.trim() : '';
   const alwaysPatterns = permission.always ?? permission.patterns;
 
   // Auto-focus on mount and when the step changes so keys work without a click.
@@ -420,6 +422,9 @@ export function PermissionPrompt({
           <div className="oc-permission-desc">
             &larr; {permission.permission}
           </div>
+          {description && (
+            <div className="oc-permission-description" data-testid="permission-description">{description}</div>
+          )}
           {action && (
             <div className="oc-permission-action" data-testid="permission-action">
               <span className="oc-permission-action-label">Action</span>

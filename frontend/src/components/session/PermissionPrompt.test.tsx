@@ -157,6 +157,30 @@ describe('PermissionPrompt', () => {
     expect(screen.getByText('git status --short')).toBeInTheDocument();
   });
 
+  it('shows the permission description alongside the action', () => {
+    render(
+      <PermissionPrompt
+        permission={{ ...permission, metadata: { command: 'git status --short', description: 'Show working tree status' } }}
+        onReply={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('permission-description')).toHaveTextContent('Show working tree status');
+    expect(screen.getByTestId('permission-action')).toHaveTextContent('git status --short');
+  });
+
+  it('does not repeat a description already shown as the action', () => {
+    render(
+      <PermissionPrompt
+        permission={{ ...permission, metadata: { description: 'Needs approval' } }}
+        onReply={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('permission-action')).toHaveTextContent('Needs approval');
+    expect(screen.queryByTestId('permission-description')).not.toBeInTheDocument();
+  });
+
   it('shows OpenCode always-allow patterns on confirmation', () => {
     vi.useFakeTimers();
     render(

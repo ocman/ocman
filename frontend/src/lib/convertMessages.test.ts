@@ -225,6 +225,29 @@ describe('AI approval footnotes', () => {
     expect(calls[1].artifact).toBeUndefined();
   });
 
+  it('gives concurrent identical commands one approval each', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 400, data: { role: 'notice' } },
+      { id: 'ocman-notice-p2', sessionId: 's', timeCreated: 450, data: { role: 'notice' } },
+    ];
+    const notice = (approvedBy: 'ai' | 'user', approvedAt: number): PartData => ({
+      ...approval, approvedBy, metadata: { command: 'pnpm test' }, askedAt: 300, approvedAt, reply: 'once',
+    });
+    const parts = [
+      toolPart('a1', 't1', 'pnpm test', 150),
+      toolPart('a1', 't2', 'pnpm test', 160),
+      makePart('ocman-notice-p1', notice('user', 400), 'n1-part', 400),
+      makePart('ocman-notice-p2', notice('ai', 450), 'n2-part', 450),
+    ];
+
+    const calls = asContentArray(createConvertMessages()(messages, parts)[0].content)
+      .filter((item) => item.type === 'tool-call');
+
+    expect(calls.map((call) => call.artifact?.ocmanApprovals?.map((a) => a.approvedBy)))
+      .toEqual([['ai'], ['user']]);
+  });
+
   it.each([
     ['edit', { filePath: '/repo/a.ts', oldString: 'a', newString: 'b' }, { path: '/repo/a.ts' }],
     ['read', { filePath: '/repo/a.ts' }, { path: '/repo/a.ts' }],

@@ -1,6 +1,6 @@
 // Per-tool-call rendering: the ToolCallDisplay dispatcher. Output
 // renderers live in toolRenderers.tsx, subagent tasks in TaskToolCard.tsx,
-// and approval footnotes in ApprovalFootnote.tsx.
+// and approval locks in ApprovalLock.tsx.
 import React, { useState } from 'react';
 import { type ToolCallMessagePartProps } from '@assistant-ui/react';
 import { parseTodos } from '../../lib/todos';
@@ -27,7 +27,7 @@ import { summarizePatch } from '../../lib/applyPatch';
 import type { FC } from 'react';
 import { ArtifactToolCard } from './ArtifactToolCard';
 import { parseCreatedArtifact } from '../../lib/artifactsApi';
-import { ApprovalFootnote } from './ApprovalFootnote';
+import { ApprovalLock } from './ApprovalLock';
 import { TaskToolCard } from './TaskToolCard';
 import { FactoryMarkerCard } from '../FactoryMarkerCard';
 import { useBetaFeatures } from '../../lib/betaFeatures';
@@ -39,24 +39,19 @@ import { CompactToolCall } from './CompactToolCall';
 import { A2UIToolResult } from './A2UIResult';
 import { parseDiffPayload, renderOutput, renderPatch, shellOutputIsLong, shellOutputPreview, toolOutputPreview } from './toolOutputFormat';
 /**
- * Tool-call renderer. Validated Ocman approval artifacts render below the
- * tool body; argsText remains entirely user-visible and untrusted.
+ * Tool-call renderer. Validated Ocman approval artifacts render as a lock
+ * beside the tool row; argsText remains entirely user-visible and untrusted.
  */
 export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
   const approvals = toolApprovals(props.artifact);
   let body: React.ReactNode;
-  if (props.toolName === 'ocman:auto-approved') {
-    const aiApprovals = approvals.filter((approval) => approval.approvedBy === 'ai');
-    body = aiApprovals.length > 0
-      ? <ApprovalFootnote approvals={aiApprovals} />
-      : <ToolCallBody {...props} />;
-  } else if (approvals.length === 0) {
+  if (approvals.length === 0) {
     body = <ToolCallBody {...props} />;
   } else {
     body = (
-      <div className="oc-tool-with-footnote">
-        <ToolCallBody {...props} />
-        <ApprovalFootnote approvals={approvals} />
+      <div className="oc-tool-with-approval">
+        <div className="oc-tool-with-approval-body"><ToolCallBody {...props} /></div>
+        <ApprovalLock approvals={approvals} />
       </div>
     );
   }

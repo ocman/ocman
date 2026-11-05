@@ -479,16 +479,19 @@
   display: none;
 }
 
-.oc-hide-tool-details .oc-tool-with-footnote:has(> .oc-tool),
-.oc-hide-tool-details .oc-tool-with-footnote:has(> .oc-tool-compact) {
+.oc-hide-tool-details .oc-tool-with-approval:has(> .oc-tool-with-approval-body > .oc-tool),
+.oc-hide-tool-details .oc-tool-with-approval:has(> .oc-tool-with-approval-body > .oc-tool-compact) {
   display: none;
 }
 
 .oc-hide-tool-details .oc-tool-source-revealed .oc-tool,
-.oc-hide-tool-details .oc-tool-source-revealed .oc-tool-compact,
-.oc-hide-tool-details .oc-tool-source-revealed .oc-tool-with-footnote:has(> .oc-tool),
-.oc-hide-tool-details .oc-tool-source-revealed .oc-tool-with-footnote:has(> .oc-tool-compact) {
+.oc-hide-tool-details .oc-tool-source-revealed .oc-tool-compact {
   display: block;
+}
+
+.oc-hide-tool-details .oc-tool-source-revealed .oc-tool-with-approval:has(> .oc-tool-with-approval-body > .oc-tool),
+.oc-hide-tool-details .oc-tool-source-revealed .oc-tool-with-approval:has(> .oc-tool-with-approval-body > .oc-tool-compact) {
+  display: flex;
 }
 
 /* Shared by the non-interactive header (task list / subagent task) and
@@ -1225,40 +1228,43 @@
   color: var(--text);
 }
 
-/* Permission approval as a footnote under the tool's box — same treatment as
- * .oc-shell-attribution, tucked up against the block above. */
-.oc-ai-approval-footnote {
-  margin-top: -3px;
-  margin-bottom: 4px;
-  font-family: var(--font-conversation-mono);
+/* Permission approval as a lock beside the tool row it unblocked; the
+ * detail shows in a tooltip (inline when printing). */
+.oc-tool-with-approval {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.oc-tool-with-approval-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.oc-approval-lock {
+  flex-shrink: 0;
+  cursor: default;
   font-size: 11px;
-  color: var(--text-dim);
-  opacity: 0.75;
-}
-
-.oc-ai-approval-toggle {
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-}
-
-.oc-ai-approval-toggle:hover {
-  text-decoration: underline;
 }
 
 .oc-ai-approval-detail {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   max-width: 420px;
-  margin-top: 4px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  background: var(--surface0);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-conversation-mono);
+  font-size: 11px;
+  white-space: normal;
+}
+
+.oc-ai-approval-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.oc-ai-approval-by {
+  color: var(--text-dim);
 }
 
 .oc-ai-approval-permission {
