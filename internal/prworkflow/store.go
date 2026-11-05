@@ -54,6 +54,9 @@ func (m *Module) put(ctx context.Context, l Link) error {
 		return err
 	}
 	_, err = m.d.DB.SQL().ExecContext(ctx, `INSERT INTO session_pull_request VALUES(?,?,?,?,?,?) ON CONFLICT(platform,session_id,host,repo,number) DO UPDATE SET payload=excluded.payload`, l.Platform, l.SessionID, l.Remote.Host, l.Remote.Repo, l.Number, string(b))
+	if err == nil && m.d.Changed != nil {
+		m.d.Changed(l.Platform, l.SessionID)
+	}
 	return err
 }
 
@@ -92,5 +95,8 @@ func (m *Module) links(ctx context.Context, platform, id string) ([]Link, error)
 
 func (m *Module) remove(ctx context.Context, l Link) error {
 	_, err := m.d.DB.SQL().ExecContext(ctx, `DELETE FROM session_pull_request WHERE platform=? AND session_id=? AND host=? AND repo=? AND number=?`, l.Platform, l.SessionID, l.Remote.Host, l.Remote.Repo, l.Number)
+	if err == nil && m.d.Changed != nil {
+		m.d.Changed(l.Platform, l.SessionID)
+	}
 	return err
 }

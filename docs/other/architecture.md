@@ -346,7 +346,8 @@ Feature-specific designs live with their feature documentation:
   [MCP](../features/mcp.md#how-results-are-rendered).
 - **Session PR workflow.** `sourcecontrol` owns forge credentials and
   `prworkflow` owns session PR links, feedback drafts and opt-in watches that
-  queue follow-ups. See
+  queue follow-ups. Durable changes invalidate browser PR and task views through
+  the existing owner-qualified session-change SSE channel. See
   [Pull requests](../features/pull-requests.md#how-the-pr-workflow-works).
 
 ### Conversation history and session identity

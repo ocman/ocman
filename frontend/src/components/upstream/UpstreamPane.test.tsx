@@ -17,7 +17,8 @@ vi.mock('../../lib/prWorkflowApi', () => ({ prWorkflowApi: { links: vi.fn() } })
 
 const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], error: null as Error | null, page: 1, hasMore: false, setPage: vi.fn(), refresh: vi.fn() }));
 const gitHints = vi.hoisted(() => new Set<(hint: GitCommandHint) => void>());
-vi.mock('../../lib/useGlobalEvents', () => ({
+vi.mock('../../lib/useGlobalEvents', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../lib/useGlobalEvents')>(),
   onGitCommand: (cb: (hint: GitCommandHint) => void) => {
     gitHints.add(cb);
     return () => gitHints.delete(cb);

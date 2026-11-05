@@ -8,6 +8,7 @@ import { IconButton } from '../IconButton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../DropdownMenu';
 import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
 import { useConfirm } from '../../lib/useConfirm';
+import { useSessionLiveRefresh } from '../../lib/useSessionLiveRefresh';
 import { LinkedPRStatus } from './LinkedPRStatus';
 import './SessionPullRequests.css';
 
@@ -25,6 +26,7 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0 }:
   const lastRefresh = useRef(refreshVersion);
   const confirm = useConfirm();
   const load = useCallback(async (refresh = false) => { const result = await prWorkflowApi.links(sessionId, platform, refresh); if (mounted.current) { setLinks(result.pullRequests); setError(''); } }, [sessionId, platform]);
+  useSessionLiveRefresh(sessionId, platform, load);
   useEffect(() => {
     mounted.current = true;
     void load().catch(() => { if (mounted.current) setError('Could not load linked PRs.'); });

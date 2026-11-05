@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { Button } from '../../components/Control';
 import { prWorkflowApi } from '../../lib/prWorkflowApi';
 import { useVisiblePollingQuery } from '../../lib/useVisiblePollingQuery';
+import { useSessionLiveRefresh } from '../../lib/useSessionLiveRefresh';
 import { BackgroundTasksNotice } from './BackgroundTasksNotice';
 
 type Props = ComponentProps<typeof BackgroundTasksNotice> & { sessionId: string; platform: string };
@@ -12,6 +13,7 @@ export function SessionBackgroundTasksNotice({ sessionId, platform, ...props }: 
     run: () => prWorkflowApi.links(sessionId, platform),
     intervalMs: 5_000, timeoutMs: 10_000,
   });
+  useSessionLiveRefresh(sessionId, platform, query.refetch);
   const watches = (query.data?.pullRequests ?? []).filter(link => link.watching);
   return <><BackgroundTasksNotice {...props} sessionId={sessionId} platform={platform}
     additionalTasks={watches.map(link => ({

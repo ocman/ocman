@@ -27,6 +27,9 @@ func (s *Server) prWorkflowModule() *prworkflow.Module {
 			ProjectHandler: s.projectForgeModule().PRToolHandler(),
 			DB:             s.stateDB, Target: s.prTarget, Owner: s.prOwner, ResolveForge: s.resolveForge, Ready: s.prWatchReady,
 			Remote: s.remotePRWorkflow,
+			Changed: func(platform, sessionID string) {
+				s.broadcastSessionPatch(platform, sessionID, nil)
+			},
 			Enqueue: func(ctx context.Context, platform string, req platforms.SendMessageRequest) error {
 				return s.queueSvc().Enqueue(ctx, platform, true, req)
 			},

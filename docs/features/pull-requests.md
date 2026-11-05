@@ -137,6 +137,7 @@ flowchart LR
     Setup --> Credentials[(Private credential overrides)]
     Workflow --> Links[(PR links and watch snapshots)]
     Links -->|unfinished task counts| UI
+    Workflow -->|session-change SSE invalidation after save| UI
     Workflow -->|owner check; checkout upstream when needed| Host[Owning Host]
     Workflow -->|cached metadata and checks; selective feedback| Forge[GitHub or Forgejo API]
     Setup --> Forge
@@ -168,6 +169,11 @@ flowchart LR
   `projectforge` PR-only handler. MCP authentication precedes dispatch; existing
   owner checks and validation still apply. Draft actions return prompts without
   sending them, and cross-fork fetch confirmation remains dashboard-only.
+- Successful link/watch saves and removals publish an owner-qualified
+  `ocman.session.changed` event on `/api/events`. The PR controls and background
+  task notice refresh on matching events and SSE reconnects, alongside the
+  session list. Forwarded mutations notify hub clients after owner acceptance.
+  Polling remains a backstop for missed events.
 - Watches are opt-in, deduplicate changes and queue follow-ups rather than
   running an agent polling loop. Polling continues while a session cannot accept
   follow-ups, so merged or closed PRs stop their watches. Notification delivery

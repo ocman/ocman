@@ -32,6 +32,9 @@ type Deps struct {
 	Now     func() time.Time
 	// Remote resolves only remote session owners. Local targets return nil.
 	Remote func(Target) (platforms.PullRequestWorkflow, error)
+	// Changed publishes an invalidation after a successful durable mutation.
+	// It must not acquire the module mutex, which may still be held.
+	Changed func(platform, sessionID string)
 }
 type Module struct {
 	d      Deps

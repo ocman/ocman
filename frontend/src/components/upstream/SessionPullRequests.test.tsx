@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmContext } from '../../lib/useConfirm';
 import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
 import { SessionPullRequests } from './SessionPullRequests';
+import { __handleSessionChangedForTests } from '../../lib/useGlobalEvents';
 
 vi.mock('../../lib/prWorkflowApi', () => ({ prWorkflowApi: { links: vi.fn(), change: vi.fn(), feedback: vi.fn() } }));
 const confirm = vi.fn();
@@ -16,6 +17,22 @@ function mount() { return render(<MemoryRouter><ConfirmContext.Provider value={c
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [link] }); vi.mocked(prWorkflowApi.change).mockResolvedValue(link); vi.mocked(prWorkflowApi.feedback).mockResolvedValue({ prompt: 'Investigate the failed tests. Do not merge.' }); confirm.mockResolvedValue(true); });
 
 describe('SessionPullRequests', () => {
+  it('refreshes watch starts and stops from owner-qualified live events', async () => {
+    mount();
+    await screen.findByRole('button', { name: 'Watch PR' });
+    vi.mocked(prWorkflowApi.links).mockClear();
+    await act(async () => {
+      __handleSessionChangedForTests(JSON.stringify({ sessionID: 's1', platform: 'opencode' }));
+      __handleSessionChangedForTests(JSON.stringify({ sessionID: 'other', platform: link.platform }));
+    });
+    expect(prWorkflowApi.links).not.toHaveBeenCalled();
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [{ ...link, watching: true }] });
+    act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: 's1', platform: link.platform })));
+    await screen.findByRole('button', { name: 'Stop watching' });
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [link] });
+    act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: 's1', platform: link.platform })));
+    await screen.findByRole('button', { name: 'Watch PR' });
+  });
   it('loads owner-qualified links and confirms a watch', async () => {
     mount(); fireEvent.click(await screen.findByRole('button', { name: 'Watch PR' }));
     await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', { action: 'watch', number: 42, host: 'github.com', repo: 'team/repo' })); expect(confirm).toHaveBeenCalled();

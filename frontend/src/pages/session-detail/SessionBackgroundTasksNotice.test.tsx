@@ -4,11 +4,24 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { renderWithQuery } from '../../test/renderWithQuery';
 import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
 import { SessionBackgroundTasksNotice } from './SessionBackgroundTasksNotice';
+import { __handleSessionChangedForTests } from '../../lib/useGlobalEvents';
 
 vi.mock('../../lib/prWorkflowApi', () => ({ prWorkflowApi: { links: vi.fn(), change: vi.fn() } }));
 const watch = { watching: true, number: 42, remote: { host: 'forge.example', repo: 'team/repo' },
   pr: { title: 'Fix login' } } as PRLink;
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [watch] }); });
+
+it('updates background watches immediately on live start and stop events', async () => {
+  vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+  renderWithQuery(<SessionBackgroundTasksNotice sessionId="s1" platform="r-box:fake" count={0} />);
+  await act(async () => {});
+  vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [watch] });
+  act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: 's1', platform: 'r-box:fake' })));
+  await screen.findByRole('button', { name: '1 background task running' });
+  vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+  act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: 's1', platform: 'r-box:fake' })));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '1 background task running' })).not.toBeInTheDocument());
+});
 
 it('lists PR watches alongside native tasks and stops them through the hub', async () => {
   const { rerender } = renderWithQuery(<SessionBackgroundTasksNotice sessionId="s1" platform="r-box:fake" count={1}

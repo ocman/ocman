@@ -66,6 +66,9 @@ func (m *Module) forward(w http.ResponseWriter, r *http.Request, t Target, opera
 		http.Error(w, "PR workflow owner unavailable", http.StatusServiceUnavailable)
 		return true
 	}
+	if operation == "change" && response.Status >= 200 && response.Status < 300 && m.d.Changed != nil {
+		m.d.Changed(t.Platform, t.SessionID)
+	}
 	// Wire results use owner-local identity; REST callers keep the compound
 	// identity they used to select this session.
 	if response.Status == http.StatusOK {
