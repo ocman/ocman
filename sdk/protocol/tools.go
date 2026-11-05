@@ -32,6 +32,7 @@ const (
 	MaxToolTextBytes               = 64 << 10
 	MaxToolStaticConfirmationBytes = 512
 	MaxToolConfirmationTextBytes   = 1024
+	MaxToolRedactions              = 64
 	DefaultToolTimeoutSeconds      = 30
 	MaxToolTimeoutSeconds          = 300
 
@@ -102,10 +103,13 @@ type ToolResult struct {
 }
 
 // ToolConfirmationRequest asks the host to obtain the user's approval. The
-// plugin must not have made any change before returning it.
+// plugin must not have made any change before returning it. Redact lists
+// JSON Pointers into the call's arguments whose values the host hides when
+// it shows them to the user, beyond the declared writeOnly properties.
 type ToolConfirmationRequest struct {
-	Key  string `json:"key"`
-	Text string `json:"text"`
+	Key    string   `json:"key"`
+	Text   string   `json:"text"`
+	Redact []string `json:"redact,omitempty"`
 }
 
 // Timeout is the declared or default per-call deadline.
@@ -258,8 +262,13 @@ func DecodeToolResult(raw []byte) (ToolResult, error) {
 func (r ToolResult) Validate() error {
 	if r.Confirmation != nil {
 		c := r.Confirmation
-		if r.Text != "" || len(r.Data) > 0 || r.IsError || !actionID.MatchString(c.Key) || !toolText(c.Text, MaxToolConfirmationTextBytes) {
+		if r.Text != "" || len(r.Data) > 0 || r.IsError || !actionID.MatchString(c.Key) || !toolText(c.Text, MaxToolConfirmationTextBytes) || len(c.Redact) > MaxToolRedactions {
 			return ErrInvalidMessage
+		}
+		for _, pointer := range c.Redact {
+			if !strings.HasPrefix(pointer, "/") || len(pointer) > 512 || !utf8.ValidString(pointer) {
+				return ErrInvalidMessage
+			}
 		}
 		return nil
 	}

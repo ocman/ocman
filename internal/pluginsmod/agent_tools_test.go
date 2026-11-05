@@ -207,20 +207,25 @@ func TestPluginAgentToolFailuresUseFixedText(t *testing.T) {
 	db := statetest.Open(t, Schema)
 	m := NewModule(Deps{Store: db})
 	startAgentToolPlugin(t, db, m, "edge", "org.example.edge", []string{plugins.ToolAgentGrant})
-	for tool, want := range map[string]string{
-		"edge_slow":    agentToolText[plugins.ErrorDeadlineExceeded],
-		"edge_chunk":   agentToolText[plugins.ErrorInternal],
-		"edge_invalid": agentToolText[plugins.ErrorInternal],
-		"edge_denied":  agentToolText[plugins.ErrorPermissionDenied],
+	for _, tc := range []struct{ tool, want string }{
+		{"edge_slow", agentToolText[plugins.ErrorDeadlineExceeded]},
+		{"edge_invalid", agentToolText[plugins.ErrorInternal]},
+		{"edge_denied", agentToolText[plugins.ErrorPermissionDenied]},
 	} {
-		if r := callTool(t, m, "org.example.edge", tool, map[string]any{}); !r.IsError || resultText(r) != want {
-			t.Fatalf("%s: %q", tool, resultText(r))
+		if r := callTool(t, m, "org.example.edge", tc.tool, map[string]any{}); !r.IsError || resultText(r) != tc.want {
+			t.Fatalf("%s: %q", tc.tool, resultText(r))
 		}
 	}
 	// Plugin text cannot request a host-rendered confirmation card.
 	r := callTool(t, m, "org.example.edge", "edge_card", map[string]any{})
 	if r.IsError || strings.Contains(resultText(r), "[[ocman:card") {
 		t.Fatalf("card marker: %q", resultText(r))
+	}
+	// A chunk on the unary invoke is a protocol violation: the host refuses
+	// the result, whether it sees the chunk or the resulting process failure.
+	r = callTool(t, m, "org.example.edge", "edge_chunk", map[string]any{})
+	if text := resultText(r); !r.IsError || (text != agentToolText[plugins.ErrorInternal] && text != agentToolText[plugins.ErrorUnavailable]) {
+		t.Fatalf("edge_chunk: %q", text)
 	}
 }
 
@@ -289,5 +294,25 @@ func TestPluginAgentToolsOverTheMCPEndpoint(t *testing.T) {
 	}
 	if _, err := c.CallTool(t.Context(), req); err == nil {
 		t.Fatal("disabled plugin tool still routable")
+	}
+}
+
+// A host deadline cancel can cross the plugin's own deadline result. That
+// must not end the plugin, or every timed-out tool would restart it.
+func TestPluginAgentToolTimeoutLeavesThePluginServing(t *testing.T) {
+	db := statetest.Open(t, Schema)
+	m := NewModule(Deps{Store: db})
+	startAgentToolPlugin(t, db, m, "edge", "org.example.edge", []string{plugins.ToolAgentGrant})
+	process := m.processes["org.example.edge"]
+	for range 3 {
+		if r := callTool(t, m, "org.example.edge", "edge_slow", map[string]any{}); resultText(r) != agentToolText[plugins.ErrorDeadlineExceeded] {
+			t.Fatalf("slow: %q", resultText(r))
+		}
+		if r := callTool(t, m, "org.example.edge", "edge_invalid", map[string]any{}); resultText(r) != agentToolText[plugins.ErrorInternal] {
+			t.Fatalf("after timeout: %q %+v", resultText(r), process.Health())
+		}
+	}
+	if h := process.Health(); h.Status != "ready" || h.RestartCount != 0 {
+		t.Fatalf("plugin restarted: %+v", h)
 	}
 }

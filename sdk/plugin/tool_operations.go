@@ -110,6 +110,11 @@ func NewOperationTool(name, description string, operations []ToolOperation) (Too
 				return ToolResult{}, err
 			}
 			if request != nil && (inv.Confirmation == nil || inv.Confirmation.Key != request.Key) {
+				// The host sees only the envelope schema, so name this
+				// operation's write-only values for it to hide.
+				for _, pointer := range protocol.ToolWriteOnlyPointers(op.InputSchema, env.Arguments) {
+					request.Redact = append(request.Redact, "/arguments"+pointer)
+				}
 				return ToolResult{Confirmation: request}, nil
 			}
 		}

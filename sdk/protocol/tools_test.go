@@ -216,3 +216,30 @@ func TestToolInvocationAndResultDecoding(t *testing.T) {
 		}
 	}
 }
+
+func TestToolWriteOnlyPointersAndRedaction(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"a/b":{"writeOnly":true},"list":{"type":"array","items":{"type":"object","properties":{"key":{"writeOnly":true}}}}}}`)
+	args := json.RawMessage(`{"a/b":"x","list":[{"key":"k0","n":1},{"n":2}]}`)
+	pointers := ToolWriteOnlyPointers(schema, args)
+	if strings.Join(pointers, ",") != "/a~1b,/list/0/key" {
+		t.Fatalf("pointers %v", pointers)
+	}
+	got := string(RedactToolArguments(args, append(pointers, "/list/1/n", "/missing", "/list/9", "relative", "/list/x")))
+	if got != `{"a/b":"(hidden)","list":[{"key":"(hidden)","n":1},{"n":"(hidden)"}]}` {
+		t.Fatalf("redacted %s", got)
+	}
+	if string(RedactToolArguments(json.RawMessage(`{"a":1}`), []string{""})) != `"(hidden)"` || RedactToolArguments(json.RawMessage(`{`), nil) != nil {
+		t.Fatal("whole-document or invalid redaction")
+	}
+	if ToolWriteOnlyPointers(json.RawMessage(`{}`), args) != nil || ToolWriteOnlyPointers(schema, json.RawMessage(`{`)) != nil {
+		t.Fatal("invalid input")
+	}
+	for raw, ok := range map[string]bool{
+		`{"confirmation":{"key":"k","text":"t","redact":["/arguments/token"]}}`: true,
+		`{"confirmation":{"key":"k","text":"t","redact":["arguments"]}}`:        false,
+	} {
+		if _, err := DecodeToolResult([]byte(raw)); (err == nil) != ok {
+			t.Errorf("%s: %v", raw, err)
+		}
+	}
+}

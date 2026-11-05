@@ -13,6 +13,7 @@ vi.mock('../lib/plugins', () => ({
   // The example plugin serves no conversation, so its delivery backlog is not
   // part of the card; PluginDeliveryBacklog.test.tsx covers that on its own.
   hasConversationCapability: () => false,
+  hasAgentTools: () => false,
 }));
 
 const host = (remoteId: string, pluginManagement = true): HostCapabilityEntry => ({

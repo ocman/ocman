@@ -155,3 +155,20 @@ func TestNewOperationToolRejectsInvalidOperations(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationToolRedactsWriteOnlyArguments(t *testing.T) {
+	_, run, err := NewOperationTool("vault", "Store secrets.", []ToolOperation{{Name: "secret.set", Summary: "Set a secret",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"value":{"type":"string","writeOnly":true}}}`),
+		Confirm: func(context.Context, ToolOperationCall) (*ToolConfirmationRequest, error) {
+			return &ToolConfirmationRequest{Key: "set", Text: "Set it?"}, nil
+		},
+		Run: func(context.Context, ToolOperationCall) (ToolResult, error) { return ToolText("set"), nil }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ToolHandler(map[string]ToolFunc{"vault": run})(context.Background(), toolCall("vault", `{"operation":"secret.set","arguments":{"name":"n","value":"v"}}`, []string{}, nil), nil)
+	r := decodeResult(t, raw, err)
+	if r.Confirmation == nil || strings.Join(r.Confirmation.Redact, ",") != "/arguments/value" {
+		t.Fatalf("redact %+v", r.Confirmation)
+	}
+}

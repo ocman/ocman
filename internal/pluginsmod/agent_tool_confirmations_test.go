@@ -161,3 +161,22 @@ func TestToolConfirmationsExpireAndAreBounded(t *testing.T) {
 		t.Fatalf("authorization %v", err)
 	}
 }
+
+func TestPluginAgentToolConfirmationsHideWriteOnlyOperationArguments(t *testing.T) {
+	db := statetest.Open(t, Schema)
+	m := NewModule(Deps{Store: db})
+	startAgentToolPlugin(t, db, m, "inventory", inventoryID, []string{plugins.ToolAgentGrant, "inventory.adjust"})
+	args := map[string]any{"operation": "supplier.connect", "arguments": map[string]any{"supplier": "acme", "token": "s3cr3t-value"}}
+	id := requireConfirmation(t, m, inventoryID, "inventory", args)
+	report := toolsReport(t, m, inventoryID)
+	if shown := string(report.Confirmations[0].Arguments); strings.Contains(shown, "s3cr3t-value") || !strings.Contains(shown, `"supplier":"acme"`) {
+		t.Fatalf("displayed %s", shown)
+	}
+	if err := decideConfirmation(t, m, inventoryID, id, "approve"); err != nil {
+		t.Fatal(err)
+	}
+	args[plugins.ToolConfirmationArgument] = id
+	if r := callTool(t, m, inventoryID, "inventory", args); r.IsError || strings.Contains(resultText(r), "s3cr3t-value") || structured(t, r)["tokenConfigured"] != true {
+		t.Fatalf("connect: %s", resultText(r))
+	}
+}

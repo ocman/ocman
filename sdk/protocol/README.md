@@ -125,7 +125,9 @@ validator. The selected versions can be read with `Stream.Negotiation` after the
 plugin offer. Its readiness flag becomes true after the host acknowledgment, or
 immediately after the single describe response.
 
-Cancellation is advisory and repeatable for an active call. Chunks already in
+Cancellation is advisory and repeatable for an active call. A deadline
+cancellation can cross the call's result, so a plugin must ignore a cancel for a
+call it already completed; only never-issued IDs are a protocol error. Chunks already in
 flight and a racing successful result remain valid after cancellation. The plugin
 normally finishes with `{"error":{"category":"cancelled"}}`; only a result
 releases the concurrency slot. Shutdown is terminal and abandons active calls.
@@ -887,7 +889,7 @@ host's validators.
 The host's only method is `invoke`, whose params are `ToolInvocation`:
 `{"tool","arguments","context":{"principal":"agent","transport":"mcp","grants"},"confirmation"?}`.
 The terminal value is a `ToolResult`: `text` and/or a `data` object, optional
-`isError`, or exclusively `{"confirmation":{"key","text"}}`. Calls are unary
+`isError`, or exclusively `{"confirmation":{"key","text","redact"?}}`. Calls are unary
 and never retried; each has a fresh operation ID. The full contract, including
 naming, discovery, confirmation, limits and lifecycle, is
 [Plugin agent tools](../../docs/features/plugin-agent-tools.md).

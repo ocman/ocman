@@ -147,7 +147,10 @@ The host adds two optional string properties to the advertised schema:
 `confirmation_id`, used to resume a confirmed call. Both are removed before
 validation and are never sent to the plugin.
 
-Arguments are a JSON object of at most 64 KiB. A violation returns an MCP tool
+Arguments are a JSON object of at most 64 KiB. MCP decodes numbers as
+double-precision values, so pass identifiers and integers beyond 2^53 as
+strings. Numbers longer than 64 characters or with an exponent beyond ±400
+are refused. A violation returns an MCP tool
 error naming the JSON path and the failed rule, for example
 `arguments.limit: must be at most 50`. Plugins must still validate their own
 domain rules, and should validate inputs a host could not express.
@@ -232,10 +235,13 @@ of two ways:
 
 - statically, with the tool's `confirmation` text, which applies before every
   call; or
-- dynamically, when the plugin returns `{"confirmation":{"key","text"}}`. The
-  plugin must not have performed side effects. `key` matches
+- dynamically, when the plugin returns `{"confirmation":{"key","text","redact"}}`.
+  The plugin must not have performed side effects. `key` matches
   `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; `text` is plain text up to 1024 bytes
-  that tells the user exactly what will happen.
+  that tells the user exactly what will happen. Optional `redact` lists up to
+  64 JSON Pointers into the tool's arguments, such as `/arguments/token`, whose
+  values the host hides when displaying the request. Redaction can only hide
+  values; the host masks declared `writeOnly` properties regardless.
 
 The host records a pending request and returns this successful MCP result to
 the agent, which has not run the operation:
@@ -313,7 +319,8 @@ host never retries. Chunks are a protocol error: `invoke` is unary.
 `ToolCapability`, `ToolAgentGrant`, `ToolDescriptor`, `ToolAnnotations`,
 `ToolInvocation`, `ToolContext`, `ToolConfirmed`, `ToolResult` and
 `ToolConfirmationRequest`. `protocol.ValidateToolSchema` and
-`protocol.ValidateToolArguments` are the host's own validators.
+`protocol.ValidateToolArguments` are the host's own validators;
+`protocol.ToolWriteOnlyPointers` lists `writeOnly` values for `redact`.
 
 - `plugin.ToolFunc` is
   `func(ctx context.Context, operationID string, inv ToolInvocation) (ToolResult, error)`.
@@ -355,7 +362,8 @@ validates operation arguments with `ValidateToolArguments`, hides operations
 whose grants are missing (as unknown operations, also in help), enforces
 confirmation keys and returns `isError` results naming the bad field. The
 operations, their schemas and their validation are entirely plugin-side, so the
-host never needs to know them.
+host never needs to know them. When an operation asks for confirmation, the SDK
+lists its `writeOnly` argument values in `redact`.
 
 ```go
 notes, run, err := plugin.NewOperationTool("notes", "Manage notes. Call operation help first.", []plugin.ToolOperation{
@@ -395,7 +403,8 @@ units shows the confirmation card.
   confirmation).
 - An **inventory** plugin declares one tool, `inventory`, with operations
   `help`, `items.list`, `items.get`, `items.adjust` (dynamic confirmation for
-  large adjustments) and `audit.export`.
+  large adjustments) and `supplier.connect`, which takes a write-only token,
+  always asks for confirmation and reports only that a token is configured.
 
 The host lists, validates, authorizes and confirms both the same way.
 `TestPluginAgentToolsIsolateUnrelatedWorkflows` exercises both.
@@ -415,7 +424,7 @@ host settings and secrets, restart and removal are not agent tools. A plugin
 that wants agents to manage its setup should keep that state as plugin data
 and expose it through its own tools, with the same validation and
 confirmation its UI uses. Return credentials as presence flags only, and mark
-credential arguments `writeOnly`. The host masks only what the declared tool
-schema marks; it cannot see operation schemas inside an operation envelope.
-Do not request confirmation for a call whose arguments carry a credential, or
-declare that operation as its own tool with a `writeOnly` schema.
+credential arguments `writeOnly`. The host cannot see operation schemas
+inside an operation envelope, so `NewOperationTool` adds the operation's
+`writeOnly` values to the confirmation request's `redact` list. Plugins that
+build their own envelope must list them themselves.

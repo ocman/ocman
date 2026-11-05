@@ -102,7 +102,7 @@ func (m *Module) callAgentTool(ctx context.Context, pluginID, name string, args 
 		return agentToolOutcome{}, err
 	}
 	if c := result.Confirmation; c != nil {
-		record, err := m.toolConfirmations.request(pluginID, name, c.Key, c.Text, display, args, description, process)
+		record, err := m.toolConfirmations.request(pluginID, name, c.Key, c.Text, plugins.RedactToolArguments(display, c.Redact), args, description, process)
 		return agentToolOutcome{confirmation: record}, err
 	}
 	return agentToolOutcome{result: result}, nil
