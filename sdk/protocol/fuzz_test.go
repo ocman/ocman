@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -168,6 +169,7 @@ func FuzzToolArguments(f *testing.F) {
 	f.Add(`{"type":"object","properties":{"n":{"type":"integer","maximum":3}},"required":["n"]}`, `{"n":2}`)
 	f.Add(`{"type":"object","additionalProperties":{"type":"array","items":{"enum":[1,"a"]}}}`, `{"x":[1,"a"]}`)
 	f.Add(`{"type":"object","properties":{"n":{"type":"number"}}}`, `{"n":1e400}`)
+	f.Add(`{"type":"object"}`, `{"x":"`+strings.Repeat("<", 11000)+`"}`)
 	f.Fuzz(func(t *testing.T, schema, args string) {
 		if ValidateToolArguments(json.RawMessage(schema), json.RawMessage(args)) != nil {
 			return
@@ -181,6 +183,11 @@ func FuzzToolArguments(f *testing.F) {
 		canonical, err := json.Marshal(decoded)
 		if err != nil {
 			t.Fatalf("accepted arguments do not re-encode: %v", err)
+		}
+		// Re-encoding escapes HTML characters and can grow past the size limit;
+		// only canonical forms within it must stay accepted.
+		if len(canonical) > MaxToolArgumentBytes {
+			return
 		}
 		if err := ValidateToolArguments(json.RawMessage(schema), canonical); err != nil {
 			t.Fatalf("canonical %s of accepted %q rejected: %v", canonical, args, err)

@@ -593,3 +593,45 @@ func TestProcessRejectsUnapprovedAndInvalidCalls(t *testing.T) {
 		}
 	}
 }
+
+// A call authorized against one child is never sent to its restarted
+// successor, even when the restart completes after the caller's check.
+func TestProcessCallGenerationRefusesARestartedChild(t *testing.T) {
+	p, config := testProcess(t, "success", 1)
+	await(t, func() bool { return p.Health().Status == "ready" })
+	authorized := p.Health().RestartCount
+	generationCall := func(operation string, generation int) Reply {
+		t.Helper()
+		c := *call(1).Call
+		c.Method, c.OperationID, c.DeadlineUnixMS = "invoke", operation, time.Now().Add(15*time.Second).UnixMilli()
+		replies, err := p.CallGeneration(context.Background(), c, generation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := nextReply(t, replies)
+		for r.Err == nil && r.Message.Result == nil {
+			r = nextReply(t, replies)
+		}
+		return r
+	}
+	if r := generationCall("current-child", authorized); r.Err != nil {
+		t.Fatalf("current child: %+v", r)
+	}
+	crashed := processCall(t, p, context.Background(), "crash", "crash", 15*time.Second)
+	_ = nextReply(t, crashed)
+	await(t, func() bool { h := p.Health(); return h.Status == "ready" && h.RestartCount == authorized+1 })
+	if r := generationCall("stale-consent", authorized); !errors.Is(r.Err, ErrUnavailable) {
+		t.Fatalf("stale generation: %+v", r)
+	}
+	if r := generationCall("fresh-consent", authorized+1); r.Err != nil {
+		t.Fatalf("new child: %+v", r)
+	}
+	if _, err := p.CallGeneration(context.Background(), *call(1).Call, -1); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("negative generation: %v", err)
+	}
+	p.Stop()
+	data, _ := os.ReadFile(filepath.Join(config.DataDir, "calls"))
+	if strings.Contains(string(data), "stale-consent") || !strings.Contains(string(data), "fresh-consent") {
+		t.Fatalf("calls %q", data)
+	}
+}

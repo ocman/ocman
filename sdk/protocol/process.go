@@ -55,6 +55,8 @@ type Reply struct {
 type invocation struct {
 	ctx       context.Context
 	call      Call
+	// generation is the restart count the caller authorized, or -1 for any.
+	generation int
 	replies   chan Reply
 	bytes     int
 	cancelled time.Time
@@ -173,6 +175,21 @@ func (p *Process) Requests() <-chan Request { return p.requests }
 // deduplication. Both the wire deadline and context are enforced, including while
 // cancelling; a slot remains occupied until a result or process termination.
 func (p *Process) Call(ctx context.Context, call Call) (<-chan Reply, error) {
+	return p.call(ctx, call, -1)
+}
+
+// CallGeneration is Call bound to one child: generation is the
+// Health().RestartCount the caller authorized against. The supervisor sends
+// the call only if that same child is still serving, otherwise it settles the
+// call with ErrUnavailable before any byte reaches a restarted child.
+func (p *Process) CallGeneration(ctx context.Context, call Call, generation int) (<-chan Reply, error) {
+	if generation < 0 {
+		return nil, ErrInvalidMessage
+	}
+	return p.call(ctx, call, generation)
+}
+
+func (p *Process) call(ctx context.Context, call Call, generation int) (<-chan Reply, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -200,7 +217,7 @@ func (p *Process) Call(ctx context.Context, call Call) (<-chan Reply, error) {
 	}
 	call.Params = append(json.RawMessage(nil), call.Params...)
 	replies := make(chan Reply, maxBufferedFrames+1)
-	r := &invocation{ctx: ctx, call: call, replies: replies}
+	r := &invocation{ctx: ctx, call: call, replies: replies, generation: generation}
 	select {
 	case p.calls <- r:
 		return replies, nil

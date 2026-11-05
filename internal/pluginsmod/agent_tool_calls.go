@@ -138,8 +138,10 @@ func (m *Module) dispatchAgentTool(ctx context.Context, pluginID string, tool pl
 			return err
 		}
 		deadline, _ := ctx.Deadline()
-		replies, err = binding.process.Call(ctx, plugins.Call{OperationID: "tool:" + rand.Text(), Capability: plugins.ToolCapability.Name,
-			Version: plugins.ToolCapability.Version, Method: plugins.ToolInvokeMethod, DeadlineUnixMS: deadline.UnixMilli(), Params: params})
+		// The supervisor refuses the call if the child restarted after the
+		// check above, so consent never reaches a different child.
+		replies, err = binding.process.CallGeneration(ctx, plugins.Call{OperationID: "tool:" + rand.Text(), Capability: plugins.ToolCapability.Name,
+			Version: plugins.ToolCapability.Version, Method: plugins.ToolInvokeMethod, DeadlineUnixMS: deadline.UnixMilli(), Params: params}, binding.restarts)
 		return err
 	})
 	m.mu.Unlock()

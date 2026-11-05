@@ -259,7 +259,9 @@ startup. SDK users read settings and catalog together with
 `plugin.ReadConfiguration`, whose `Catalog` is nil when the member is omitted.
 
 `Process.Call` assigns monotonic request IDs and preserves the caller's operation
-ID. Calls beyond advertised concurrency fail with `ErrBusy`. Each call requires
+ID. `Process.CallGeneration` additionally binds the call to the child whose
+restart count the caller authorized against; if the supervisor restarted the
+child since, the call settles with `ErrUnavailable` and is never sent. Calls beyond advertised concurrency fail with `ErrBusy`. Each call requires
 an absolute deadline; either that deadline or context cancellation settles its
 caller and sends a cancel frame. The slot stays occupied until a result arrives.
 A plugin ignoring cancellation for three seconds is terminated. Crashes, malformed

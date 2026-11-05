@@ -199,7 +199,7 @@ func (p *Process) serve(attempt int) error {
 				p.setHealth("ready", attempt, nil)
 			}
 		case r := <-p.calls:
-			if !ready || p.ctx.Err() != nil {
+			if !ready || p.ctx.Err() != nil || r.generation >= 0 && r.generation != attempt {
 				finish(r, Reply{Err: ErrUnavailable})
 				continue
 			}

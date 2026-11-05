@@ -71,7 +71,6 @@ func (d *dynamicTools) sync(ctx context.Context) {
 	for name := range d.current {
 		if !names[name] {
 			stale = append(stale, name)
-			delete(d.current, name)
 		}
 	}
 	if len(stale) > 0 {
@@ -82,9 +81,7 @@ func (d *dynamicTools) sync(ctx context.Context) {
 	if len(wanted) > 0 {
 		d.server.AddTools(wanted...)
 	}
-	for name := range names {
-		d.current[name] = true
-	}
+	d.current = names
 }
 
 // withRawIntent adds the optional intent property every ocman tool accepts to
