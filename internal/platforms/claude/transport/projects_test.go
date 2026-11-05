@@ -238,9 +238,15 @@ func TestClaudeSupervisorSurvivesOcmanRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "turn completed", func() bool { rec3.mu.Lock(); defer rec3.mu.Unlock(); return rec3.idles[id] == 1 })
-	want := []string{"session.status", "permission.asked", "permission.replied", "message.part.updated", "session.idle"}
-	if got := slices.Compact(rec3.types(id)); !isSubsequence(want, got) {
-		t.Fatalf("replayed turn %v, want %v in order", got, want)
+	// Claude may stream as soon as it receives the control response, before
+	// the supervisor records permission.replied. Both must precede idle.
+	for _, want := range [][]string{
+		{"session.status", "permission.asked", "permission.replied", "session.idle"},
+		{"session.status", "permission.asked", "message.part.updated", "session.idle"},
+	} {
+		if got := slices.Compact(rec3.types(id)); !isSubsequence(want, got) {
+			t.Fatalf("replayed turn %v, want %v in order", got, want)
+		}
 	}
 	if lines := readLines(cwds); len(lines) != 1 || canonical(t, lines[0]) != worktree {
 		t.Fatalf("worktree child cwd = %v", lines)

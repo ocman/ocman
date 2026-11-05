@@ -17,6 +17,7 @@ export function usePluginAgentTools(owner: string, pluginId: string, always = fa
   return useQuery({
     queryKey: ['plugin-agent-tools', owner, pluginId],
     queryFn: ({ signal }) => plugins.agentTools(owner, pluginId, signal),
+    staleTime: 0,
     refetchInterval: (query) => agentToolsRefetchInterval(query.state.data, always),
   });
 }

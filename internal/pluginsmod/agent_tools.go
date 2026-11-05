@@ -193,7 +193,7 @@ func agentToolResult(pluginID string, outcome agentToolOutcome, err error) *mcpl
 	}
 	if c := outcome.confirmation; c != nil {
 		next := "Ask the user to approve this request in ocman (the card under this tool call, or Settings → Plugins → Agent tools), then call the same tool again with the same arguments and confirmation_id."
-		text := "Confirmation required, nothing was changed. " + c.Text + "\n" + next +
+		text := "Confirmation required, nothing was changed. " + neutralizeCards(c.Text) + "\n" + next +
 			"\n[[ocman:card type=plugin-tool-confirmation plugin=" + pluginID + " confirmation=" + c.ID + "]]"
 		return mcplib.NewToolResultStructured(map[string]any{"status": "confirmation_required", "confirmationId": c.ID, "prompt": c.Text, "next": next}, text)
 	}

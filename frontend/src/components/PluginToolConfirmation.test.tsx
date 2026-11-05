@@ -45,6 +45,18 @@ afterEach(() => client.clear());
 
 const wrap = (node: React.ReactNode) => render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
 
+it('fetches a new card despite a freshly cached settled report', async () => {
+  client.setDefaultOptions({ queries: { retry: false, staleTime: 10_000 } });
+  api.agentTools.mockResolvedValueOnce(report('used'));
+  const first = wrap(<PluginToolConfirmationCard owner="local" pluginId="org.example.notes" confirmationId="tc_A" />);
+  expect(await screen.findByRole('status')).toHaveTextContent('Approved and used');
+  first.unmount();
+  api.agentTools.mockResolvedValue({ tools: [], confirmations: [{ ...request('pending'), id: 'tc_B' }] });
+  wrap(<PluginToolConfirmationCard owner="local" pluginId="org.example.notes" confirmationId="tc_B" />);
+  expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+  expect(api.agentTools).toHaveBeenCalledTimes(2);
+});
+
 it('lets the user approve an agent request under its tool call', async () => {
   wrap(<PluginToolConfirmationCard owner="local" pluginId="org.example.notes" confirmationId="tc_A" />);
   expect(await screen.findByText('Delete a saved note?')).toBeInTheDocument();

@@ -19,3 +19,13 @@ it('qualifies and encodes every plugin operation with the owner', () => {
   plugins.stderr('remote/a', 'id/b');
   expect(fetchJSON).toHaveBeenLastCalledWith('/api/plugins/id%2Fb/stderr?ownerId=remote%2Fa');
 });
+
+it('routes agent tool reports and confirmation decisions to their owner', () => {
+  const signal = new AbortController().signal;
+  plugins.agentTools('remote/a', 'id/b', signal);
+  expect(fetchJSON).toHaveBeenLastCalledWith('/api/plugins/id%2Fb/tools?ownerId=remote%2Fa', signal);
+  for (const decision of ['approve', 'deny'] as const) {
+    plugins.decideToolConfirmation('remote/a', 'id/b', 'tc_A', decision);
+    expect(postJSON).toHaveBeenLastCalledWith('/api/plugins/id%2Fb/tools/confirm?ownerId=remote%2Fa', { values: { confirmationId: 'tc_A', decision } });
+  }
+});
