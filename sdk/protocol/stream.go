@@ -141,7 +141,9 @@ func (s *Stream) accept(direction Direction, e Envelope) error {
 			}
 			return nil
 		}
-		if _, ok := s.active[e.Cancel.ID]; direction != FromHost || !ok {
+		// A host deadline cancellation can likewise cross the plugin's
+		// result, so a completed ID is harmless; a never-issued one is not.
+		if direction != FromHost || e.Cancel.ID == 0 || e.Cancel.ID > s.lastID {
 			return ErrStreamOrder
 		}
 	case TypeShutdown:

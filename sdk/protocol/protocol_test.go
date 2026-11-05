@@ -169,6 +169,8 @@ func TestStream(t *testing.T) {
 		{"duplicate cancel", []step{h(call(1)), h(cancel(1)), h(cancel(1))}, false},
 		{"unknown result", []step{p(result(1))}, true},
 		{"unknown cancel", []step{h(cancel(1))}, true},
+		{"deadline cancel crossing the result", []step{h(call(1)), p(result(1)), h(cancel(1))}, false},
+		{"cancel for a future call", []step{h(call(1)), p(result(1)), h(cancel(2))}, true},
 		{"duplicate result", []step{h(call(1)), p(result(1)), p(result(1))}, true},
 		{"chunk after result", []step{h(call(1)), p(result(1)), p(chunk(1, 1))}, true},
 		{"skip chunk", []step{h(call(1)), p(chunk(1, 2))}, true},

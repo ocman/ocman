@@ -148,7 +148,10 @@ func run(ctx context.Context, mode Mode, token string, description Description, 
 			case TypeShutdown:
 				return nil
 			case TypeCancel:
-				active[e.Cancel.ID]()
+				// A deadline cancellation may arrive after this call's result.
+				if stop := active[e.Cancel.ID]; stop != nil {
+					stop()
+				}
 			case TypeCall:
 				callCtx, stop := context.WithDeadline(ctx, time.UnixMilli(e.Call.DeadlineUnixMS))
 				active[e.Call.ID] = stop
