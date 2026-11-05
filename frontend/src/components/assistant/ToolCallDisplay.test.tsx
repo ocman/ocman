@@ -16,7 +16,13 @@ vi.mock('../../lib/printCollapseContext', async (orig) => ({
   usePrintCollapse: () => printing.collapse,
 }));
 
+vi.mock('../PluginToolConfirmation', () => ({
+  PluginToolConfirmationCard: ({ owner, pluginId, confirmationId }: { owner: string; pluginId: string; confirmationId: string }) =>
+    <span data-testid="plugin-tool-confirmation">{`${owner}/${pluginId}/${confirmationId}`}</span>,
+}));
+
 import { ToolCallDisplay } from './ToolCallDisplay';
+import { PreviewOwnerContext } from '../../lib/previews';
 import { useUiStore } from '../../lib/uiStore';
 
 type Props = ComponentProps<typeof ToolCallDisplay>;
@@ -536,5 +542,18 @@ describe('ToolCallDisplay generic diff output', () => {
     });
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     await waitFor(() => expect(container.querySelectorAll('.oc-diff-code .hljs-keyword')).toHaveLength(2));
+  });
+});
+
+describe('ToolCallDisplay plugin tool confirmations', () => {
+  it('renders the consent card under any tool whose result carries the host marker', () => {
+    const result = 'Confirmation required, nothing was changed.\n[[ocman:card type=plugin-tool-confirmation plugin=org.example.notes confirmation=tc_A1]]';
+    render(<PreviewOwnerContext.Provider value="box"><ToolCallDisplay {...({ toolName: 'ocman_notes_delete', argsText: 'completed\n{"id":"n1"}', result } as Props)} /></PreviewOwnerContext.Provider>, { wrapper: MemoryRouter });
+    expect(screen.getByTestId('plugin-tool-confirmation')).toHaveTextContent('box/org.example.notes/tc_A1');
+  });
+
+  it('renders no card for ordinary results', () => {
+    renderTool({ toolName: 'ocman_notes_search', argsText: 'completed\n{}', result: '1 notes matched' });
+    expect(screen.queryByTestId('plugin-tool-confirmation')).toBeNull();
   });
 });

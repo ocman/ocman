@@ -122,13 +122,13 @@ func (m *Module) localPluginOperation(ctx context.Context, req remote.PluginRequ
 	case "artifact":
 		name, data, err := m.Actions().Artifact(ctx, req.Handle)
 		return pluginResponse(pluginArtifact{Name: name, Data: data}, err)
-	case "health", "stderr", "conversations":
+	case "health", "stderr", "conversations", "tools":
 		if !req.Read {
 			return pluginResponse(nil, plugins.ErrInvalidMessage)
 		}
 	case "configuration", "grants":
 	case "enable", "disable", "restart", "retry", "configuration/validate", "remove-data",
-		"conversations/retry", "conversations/discard":
+		"conversations/retry", "conversations/discard", "tools/confirm":
 		if req.Read {
 			return pluginResponse(nil, plugins.ErrInvalidMessage)
 		}

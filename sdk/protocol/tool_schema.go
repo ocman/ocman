@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"slices"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -16,9 +17,6 @@ const (
 	maxToolSchemaDepth = 16
 	maxToolSchemaNodes = 512
 )
-
-var toolSchemaKeywords = []string{"type", "properties", "required", "additionalProperties", "items", "minItems", "maxItems",
-	"enum", "const", "minLength", "maxLength", "minimum", "maximum", "title", "description", "default", "examples", "writeOnly"}
 
 var toolSchemaTypes = []string{"object", "array", "string", "integer", "number", "boolean"}
 
@@ -92,8 +90,23 @@ func rational(v any) (*big.Rat, bool) {
 	if !ok {
 		return nil, false
 	}
-	r, ok := new(big.Rat).SetString(n.String())
-	return r, ok
+	return parseNumber(n)
+}
+
+// parseNumber bounds the text and exponent first: an exact rational for
+// "1e999999999" would take unbounded time and memory.
+func parseNumber(n json.Number) (*big.Rat, bool) {
+	s := n.String()
+	if len(s) > 64 {
+		return nil, false
+	}
+	if i := strings.IndexAny(s, "eE"); i >= 0 {
+		exponent, err := strconv.Atoi(strings.TrimPrefix(s[i+1:], "+"))
+		if err != nil || exponent > 400 || exponent < -400 {
+			return nil, false
+		}
+	}
+	return new(big.Rat).SetString(s)
 }
 
 func compileToolSchemaNode(v any, depth int, nodes *int) (*toolSchema, error) {
@@ -212,7 +225,11 @@ func jsonType(v any) string {
 	case bool:
 		return "boolean"
 	case json.Number:
-		if r, ok := new(big.Rat).SetString(x.String()); ok && r.IsInt() {
+		r, ok := parseNumber(x)
+		if !ok {
+			return "unsupported number"
+		}
+		if r.IsInt() {
 			return "integer"
 		}
 		return "number"
@@ -232,8 +249,8 @@ func jsonEqual(a, b any) bool {
 		if !ok {
 			return false
 		}
-		rx, okx := new(big.Rat).SetString(x.String())
-		ry, oky := new(big.Rat).SetString(y.String())
+		rx, okx := parseNumber(x)
+		ry, oky := parseNumber(y)
 		return okx && oky && rx.Cmp(ry) == 0
 	case map[string]any:
 		y, ok := b.(map[string]any)
@@ -278,7 +295,10 @@ func (s *toolSchema) validate(path string, v any) error {
 			return fail("must be at most %d characters", *s.MaxLength)
 		}
 	case json.Number:
-		r, _ := new(big.Rat).SetString(x.String())
+		r, ok := parseNumber(x)
+		if !ok {
+			return fail("must be a number of at most 64 characters with an exponent within ±400")
+		}
 		if s.Minimum != nil && r.Cmp(s.Minimum) < 0 {
 			return fail("must be at least %s", s.Minimum.RatString())
 		}

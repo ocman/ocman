@@ -19,6 +19,9 @@ type Deps struct {
 	ToolMiddleware mcpserver.ToolHandlerMiddleware
 	// Tools are contributed by feature modules (module.ToolProvider).
 	Tools []mcpserver.ServerTool
+	// DynamicTools is the runtime tool set (module.DynamicToolProvider),
+	// read before every list and call. Built-in names always win. Optional.
+	DynamicTools func(context.Context) []mcpserver.ServerTool
 	// Optional: nil disables session tools. The create and send actions also
 	// need the service to implement CreateSession and SendSessionMessage.
 	SessionService sessionService
@@ -50,7 +53,11 @@ func New(deps Deps) *Server {
 		s.Use(deps.ToolMiddleware)
 	}
 
-	s.AddTools(ServerTools(deps)...)
+	builtin := ServerTools(deps)
+	s.AddTools(builtin...)
+	if deps.DynamicTools != nil {
+		mcpserver.WithHooks(newDynamicTools(s, builtin, deps.DynamicTools).hooks())(s)
+	}
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
@@ -65,6 +72,8 @@ func (s *Server) Handler() http.Handler {
 	return s.handler
 }
 
+const intentDescription = "Briefly explain what this call achieves for the user's task. Include on every call, including help and read-only calls. Shown in the conversation; does not change the operation. In Code Mode, use an inline string literal so it can be displayed. Optional for backward compatibility."
+
 // ServerTools builds the list of server.ServerTool entries for the given
 // dependencies. Used by tests that want to register tools into an mcptest
 // server without going through the full HTTP transport.
@@ -77,9 +86,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	tools = append(tools, modelServerTools(deps)...)
 	for i := range tools {
 		tools[i].Tool.InputSchema.Properties = maps.Clone(tools[i].Tool.InputSchema.Properties)
-		mcplib.WithString("intent", mcplib.Description(
-			"Briefly explain what this call achieves for the user's task. Include on every call, including help and read-only calls. Shown in the conversation; does not change the operation. In Code Mode, use an inline string literal so it can be displayed. Optional for backward compatibility.",
-		))(&tools[i].Tool)
+		mcplib.WithString("intent", mcplib.Description(intentDescription))(&tools[i].Tool)
 	}
 	return tools
 }

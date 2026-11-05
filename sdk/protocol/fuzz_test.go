@@ -160,3 +160,26 @@ func sameJSON(a, b any) bool {
 	y, errB := json.Marshal(b)
 	return errA == nil && errB == nil && bytes.Equal(x, y)
 }
+
+// FuzzToolArguments feeds arbitrary schemas and arguments to the tool.v1
+// validator. It must never panic, and accepted arguments must stay accepted
+// after the host's canonical re-encoding.
+func FuzzToolArguments(f *testing.F) {
+	f.Add(`{"type":"object","properties":{"n":{"type":"integer","maximum":3}},"required":["n"]}`, `{"n":2}`)
+	f.Add(`{"type":"object","additionalProperties":{"type":"array","items":{"enum":[1,"a"]}}}`, `{"x":[1,"a"]}`)
+	f.Fuzz(func(t *testing.T, schema, args string) {
+		if ValidateToolArguments(json.RawMessage(schema), json.RawMessage(args)) != nil {
+			return
+		}
+		var decoded map[string]any
+		if json.Unmarshal([]byte(args), &decoded) != nil {
+			t.Fatalf("accepted undecodable arguments %q", args)
+		}
+		canonical, _ := json.Marshal(decoded)
+		var argument *ToolArgumentError
+		if err := ValidateToolArguments(json.RawMessage(schema), canonical); err != nil && !errors.As(err, &argument) {
+			t.Fatalf("canonical arguments rejected the schema: %v", err)
+		}
+		_ = MaskToolArguments(json.RawMessage(schema), json.RawMessage(args))
+	})
+}

@@ -25,6 +25,8 @@ export interface PluginRegistration {
     settings?: PluginSetting[];
     /** In-app UI bundles (ui.v1), bound into the approval by checksum. */
     ui?: { sdk: string; exposes: Record<string, { sha256: string; size: number }> };
+    /** Agent tools (tool.v1) offered through ocman's MCP endpoint. */
+    tools?: PluginToolDescriptor[];
   };
   checksum: string;
   enabled: boolean;
@@ -52,7 +54,39 @@ export interface PluginInput {
 
 export type PluginMutation =
   | 'enable' | 'disable' | 'retry' | 'restart' | 'grants' | 'configuration' | 'remove-data'
-  | 'conversations/retry' | 'conversations/discard';
+  | 'conversations/retry' | 'conversations/discard' | 'tools/confirm';
+
+export interface PluginToolDescriptor {
+  name: string;
+  title?: string;
+  description: string;
+  requiredGrants?: string[];
+  confirmation?: string;
+}
+
+export type PluginToolStatus = 'available' | 'disabled' | 'stopped' | 'not-granted' | 'conflict';
+
+/** An agent's request waiting for, or decided by, the user. */
+export interface PluginToolConfirmation {
+  id: string;
+  pluginId: string;
+  tool: string;
+  key: string;
+  text: string;
+  arguments: unknown;
+  status: 'pending' | 'approved' | 'denied' | 'used' | 'expired';
+  createdAt: number;
+  expiresAt: number;
+}
+
+export interface PluginAgentTools {
+  tools: (PluginToolDescriptor & { status: PluginToolStatus })[];
+  confirmations: PluginToolConfirmation[];
+}
+
+export function hasAgentTools(plugin: PluginRegistration) {
+  return (plugin.description.tools ?? []).length > 0;
+}
 
 /** One completed reply that exhausted its retries and needs a decision. */
 export interface PluginDeadLetter {
@@ -96,6 +130,10 @@ export const plugins = {
     postJSON<{ agents: string[]; models: string[] }>(url(owner, '/project-catalog'), { directory, platform }, { signal }),
   backlog: (owner: string, id: string, signal?: AbortSignal) =>
     fetchJSON<PluginBacklog>(url(owner, `/${encodeURIComponent(id)}/conversations`), signal),
+  agentTools: (owner: string, id: string, signal?: AbortSignal) =>
+    fetchJSON<PluginAgentTools>(url(owner, `/${encodeURIComponent(id)}/tools`), signal),
+  decideToolConfirmation: (owner: string, id: string, confirmationId: string, decision: 'approve' | 'deny') =>
+    postJSON<PluginAgentTools>(url(owner, `/${encodeURIComponent(id)}/tools/confirm`), { values: { confirmationId, decision } }),
 };
 
 export interface PluginActionContext {

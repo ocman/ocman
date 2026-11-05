@@ -38,6 +38,13 @@ flowchart LR
   with one MCP dispatcher exception. Short-lived bindings route bounded tool
   calls back to the owning plugin, rechecking grants before dispatch. Plugin
   code owns validation and operation semantics. See [session tools](../features/session-tools.md).
+- **Plugin agent tools.** Approved `tool.v1` plugins declare tools that the
+  plugins module mirrors into the shared MCP server before each list and call.
+  Built-in tools win name collisions. Each call is validated against the
+  declared schema, authorized under the plugin lifecycle lock and rechecked on
+  return. Consent requests are held in memory and decided only in the browser,
+  in a card under the tool call or in Settings. Tools are owner-local. See
+  [plugin agent tools](../features/plugin-agent-tools.md) and ADR 0012.
 - **Prepared source sessions.** Plugins may prepare source under their private
   model workspace and request a read-only session with the separately approved
   `session.source` grant. The owner resolves a contained subpath and pins exact

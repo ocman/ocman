@@ -117,6 +117,12 @@ type Module struct {
 	sessionDeliveries *worker.Worker[PluginSessionCompletion]
 	sessionOutbox     *outbox[PluginSessionCompletion]
 	sessionTools      sync.Map // random bearer token -> *sessionToolBinding; never restored after restart
+
+	// tool.v1: the MCP server's built-in names, which win collisions, and
+	// the in-memory confirmations agents wait on.
+	toolNamesMu       sync.Mutex
+	builtinTools      []string
+	toolConfirmations toolConfirmations
 }
 
 var (

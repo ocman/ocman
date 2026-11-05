@@ -41,6 +41,12 @@ profiles and `session.v1` tables belong to `pluginsmod.Schema` in `store.go`.
   through the owner's RPC. Validate bounded acyclic trees. Mount the frontend
   query only while open and consume AbortSignal. Beads CLI parsing lives in
   `examples/ocman-plugin-beads`, not Host.
+- `tool.v1` agent tools (`pluginsmod/agent_tool*.go`, ADR 0012) are owner-local
+  and reach MCP only through `module.DynamicToolProvider`. Authorize at
+  admission, dispatch and return; never forward caller-claimed identity. Keep
+  consent host-held and decided only through the localhost `tools/confirm`
+  route. The host must not learn plugin operations; the operation envelope is
+  SDK-only. Contract: `docs/features/plugin-agent-tools.md`.
 - Drain events through `consumePluginEvents`. An unread event flood fails the
   process rather than silently losing events.
 

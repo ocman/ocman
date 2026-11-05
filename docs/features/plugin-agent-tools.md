@@ -11,7 +11,7 @@ that serves `sessions`, `inbox` and the other built-in tools. This is the
 session the plugin starts.
 
 The decision record is
-[ADR 0012](../../adr/0012-expose-plugin-operations-as-mcp-tools/). This page is
+[ADR 0012](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/docs/adr/0012-expose-plugin-operations-as-mcp-tools.md). This page is
 the author contract. Hosts and plugins built against `tool` 1.0 must keep
 working together for every later 1.x minor.
 
@@ -372,10 +372,21 @@ notes, run, err := plugin.NewOperationTool("notes", "Manage notes. Call operatio
 
 ### Testing
 
-`conformance.RunTools` checks a plugin executable's declarations, validation
-of a supplied call and its result shapes. The deterministic example
-`sdk/examples/ocman-plugin-fixture` declares a multi-tool workflow and an
-operation-envelope workflow with neutral data.
+`conformance.RunTools(t, executable, invocation)` checks a plugin executable's
+declarations, one supplied call and its result shape, and the refusals for an
+unknown tool and malformed parameters. Package `sdk/examples/agenttools` holds
+two deterministic workflows with in-memory data, and
+`sdk/examples/ocman-plugin-agent-tools` serves either one: build it as
+`ocman-plugin-notes-example` or `ocman-plugin-inventory-example`.
+
+```sh
+cd sdk
+go build -trimpath -o ~/.local/share/ocman/plugins/ocman-plugin-inventory-example ./examples/ocman-plugin-agent-tools
+```
+
+Rescan in **Settings → Plugins**, review and approve the plugin, then start a
+new agent session and ask it to list the inventory. An adjustment above ten
+units shows the confirmation card.
 
 ## Two independent workflows
 
@@ -398,3 +409,13 @@ host-validated arguments and user-only confirmation. Any process that holds the
 MCP bearer token can call listed tools. A process that can drive an
 authenticated localhost browser session can also approve confirmations, as it
 can already change plugin approvals.
+
+Plugin lifecycle and host-owned settings stay user-only: approval, grants,
+host settings and secrets, restart and removal are not agent tools. A plugin
+that wants agents to manage its setup should keep that state as plugin data
+and expose it through its own tools, with the same validation and
+confirmation its UI uses. Return credentials as presence flags only, and mark
+credential arguments `writeOnly`. The host masks only what the declared tool
+schema marks; it cannot see operation schemas inside an operation envelope.
+Do not request confirmation for a call whose arguments carry a credential, or
+declare that operation as its own tool with a `writeOnly` schema.

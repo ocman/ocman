@@ -120,6 +120,17 @@ name and raw JSON params. Return `Failure(ErrorNotFound)` for unknown methods.
 `conformance.RunUI` checks the whole contract. See the
 [catalog example](../../examples/ocman-plugin-catalog/main.go).
 
+## Agent tools
+
+`tool.v1` lets agents call a plugin's tools through ocman's MCP endpoint.
+Declare `ToolCapability`, owner scope, `ToolAgentGrant` and `Description.Tools`,
+then serve them with `ToolHandler(map[string]ToolFunc{...})`. A plugin may
+declare several tools, or build one tool with `NewOperationTool`, which
+dispatches named operations behind a built-in, grant-filtered `help`.
+`conformance.RunTools` checks the contract. See
+[Plugin agent tools](../../docs/features/plugin-agent-tools.md) and the
+[examples](../examples/agenttools/agenttools.go).
+
 ## Host-rendered workspaces
 
 Plugins have one navigation entry per owner, named by `Description.Name`.

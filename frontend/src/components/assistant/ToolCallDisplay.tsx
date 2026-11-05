@@ -1,7 +1,7 @@
 // Per-tool-call rendering: the ToolCallDisplay dispatcher. Output
 // renderers live in toolRenderers.tsx, subagent tasks in TaskToolCard.tsx,
 // and approval locks in ApprovalLock.tsx.
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { type ToolCallMessagePartProps } from '@assistant-ui/react';
 import { parseTodos } from '../../lib/todos';
 import { parseShellEnvelope } from '../../lib/shellEnvelope';
@@ -30,6 +30,9 @@ import { parseCreatedArtifact } from '../../lib/artifactsApi';
 import { ApprovalLock } from './ApprovalLock';
 import { TaskToolCard } from './TaskToolCard';
 import { FactoryMarkerCard } from '../FactoryMarkerCard';
+import { PluginToolConfirmationCard } from '../PluginToolConfirmation';
+import { pluginToolConfirmationFromOutput } from '../../lib/pluginAgentTools';
+import { PreviewOwnerContext } from '../../lib/previews';
 import { useBetaFeatures } from '../../lib/betaFeatures';
 import { factoryCardFromToolResult } from '../factoryCards';
 import { AnsiText, AnsweredQuestionBlock, BashPrompt, ToolDuration } from './toolRenderers';
@@ -81,6 +84,7 @@ function toolApprovals(artifact: unknown): ToolApproval[] {
 
 const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolName, argsText: rawArgsText, artifact, result, full = false, ...props }) => {
   const factoryEnabled = useBetaFeatures((s) => s.factory);
+  const previewOwner = useContext(PreviewOwnerContext);
   const [expandedState, setExpanded] = useState(full);
   const compactToolCalls = useUiStore((s) => s.compactToolCalls) && !full;
   // While printing / saving to PDF, force every block open so the
@@ -366,6 +370,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   ].filter(Boolean).join(' ');
   const hasBody = !!(detail || outputDisplay);
   const factoryCard = factoryEnabled ? factoryCardFromToolResult(toolName, outputDisplay) : null;
+  const pluginConfirmation = pluginToolConfirmationFromOutput(outputDisplay);
   const compactLine = (
     <>
       <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>
@@ -403,6 +408,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
     </div>
   );
   // Outside the compact row so a denied call's error colour doesn't tint the card.
+  if (pluginConfirmation) return <>{row}<div><PluginToolConfirmationCard owner={previewOwner} pluginId={pluginConfirmation.pluginId} confirmationId={pluginConfirmation.confirmationId} /></div></>;
   if (!factoryCard) return row;
   return <>{row}<div><FactoryMarkerCard epicID={factoryCard.epicID} issueID={factoryCard.issueID} action={factoryCard.action} /></div></>;
 };

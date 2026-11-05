@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
 	internalmcp "github.com/ocman/ocman/internal/mcp"
@@ -158,6 +159,7 @@ func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handl
 		deps.ModelCatalog = s.sessions.DirectoryCatalog
 	}
 	var filters []module.ToolFilter
+	var dynamic []module.DynamicToolProvider
 	for _, m := range s.modules() {
 		if p, ok := m.(module.ToolProvider); ok {
 			deps.Tools = append(deps.Tools, p.Tools()...)
@@ -165,8 +167,27 @@ func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handl
 		if f, ok := m.(module.ToolFilter); ok {
 			filters = append(filters, f)
 		}
+		if p, ok := m.(module.DynamicToolProvider); ok {
+			dynamic = append(dynamic, p)
+		}
 	}
 	deps.ToolFilter = moduleToolFilter(filters)
+	if len(dynamic) > 0 {
+		var builtin []string
+		for _, t := range internalmcp.ServerTools(deps) {
+			builtin = append(builtin, t.Tool.Name)
+		}
+		for _, p := range dynamic {
+			p.SetBuiltinTools(builtin)
+		}
+		deps.DynamicTools = func(ctx context.Context) []mcpserver.ServerTool {
+			var tools []mcpserver.ServerTool
+			for _, p := range dynamic {
+				tools = append(tools, p.DynamicTools(ctx)...)
+			}
+			return tools
+		}
+	}
 	return internalmcp.New(deps).Handler()
 }
 

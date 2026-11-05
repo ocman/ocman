@@ -10,9 +10,10 @@ a chat provider start an ocman session and receive its completed reply,
 `session.v1`, which lets a plugin run a turn in a session it starts in its one
 approved project and receive that session's completed turns, and
 `pane.v1`, which adds a read-only project tree to the session sidebar,
-`page.v1`, which adds typed project workspaces to navigation, and `ui.v1`,
+`page.v1`, which adds typed project workspaces to navigation, `ui.v1`,
 which lets a plugin on the hub machine ship its own React interface built from
-ocman components. Manage
+ocman components, and `tool.v1`, which lets agents call a plugin's declared
+tools through ocman's MCP endpoint ([plugin agent tools](../plugin-agent-tools/)). Manage
 installations in **Settings → Plugins**, selecting the plugin owner before making
 changes.
 

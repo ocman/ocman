@@ -4,6 +4,7 @@ import { SettingRow } from './SettingRow';
 import { SettingsSection } from './SettingsSection';
 import { PluginConfiguration } from './PluginConfiguration';
 import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
+import { PluginAgentTools, PluginAgentToolsDisclosure } from './PluginAgentTools';
 import { Button, ButtonGroup } from './Control';
 import styles from './PluginSettingsCard.module.css';
 
@@ -100,6 +101,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
         <p>This native executable runs on {owner} with {d.scope} scope. Approve checksum <code>{p.checksum}</code> and these requested grants:</p>
         <ul>{(d.requestedGrants ?? []).map((grant) => <li key={grant}>{grant}</li>)}</ul>
         {!d.requestedGrants?.length && <p>No grants requested.</p>}
+        <PluginAgentToolsDisclosure plugin={p} owner={owner} />
         <PluginUIDisclosure plugin={p} owner={owner} />
         <ButtonGroup label="Plugin approval actions">
           <Button type="button" variant="accent" onClick={() => { void mutate(review, { ...(review === 'enable' ? { approval: p.approval } : {}), grants: d.requestedGrants ?? [] }); }}>{review === 'enable' ? 'Approve grants and enable' : 'Approve grants'}</Button>
@@ -115,6 +117,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
         </ButtonGroup>
       </SettingRow>}
       {hasConversationCapability(p) && <PluginDeliveryBacklog plugin={p} owner={owner} />}
+      <PluginAgentTools plugin={p} owner={owner} />
       <SettingRow label="Recent stderr" desc="Bounded diagnostic output from the selected owner." block>
         <Button type="button" size="small" onClick={() => { void loadLogs(); }}>Load recent stderr</Button>
         {logs !== null && <pre aria-label="Recent stderr" className={styles.logs}>{logs || 'No recent stderr.'}</pre>}

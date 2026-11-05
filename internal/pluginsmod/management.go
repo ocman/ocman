@@ -127,7 +127,7 @@ func (m *Module) managementRoutes(r module.Router) {
 			m.managePlugin(w, r, r.PathValue("id"), action, read)
 		}
 	}
-	for _, action := range []string{"health", "conversations", "grants", "configuration"} {
+	for _, action := range []string{"health", "conversations", "grants", "configuration", "tools"} {
 		r.Public("GET /api/plugins/{id}/"+action, auth(manage(action, true)))
 	}
 	r.Public("GET /api/plugins/{id}/stderr", auth(local(manage("stderr", true))))
@@ -136,7 +136,9 @@ func (m *Module) managementRoutes(r module.Router) {
 		// Retrying or discarding a dead letter is a privileged control, not a
 		// read: it decides whether a reply reaches a thread. It takes the same
 		// localhost-only POST path as every other plugin mutation.
-		"conversations/retry", "conversations/discard"} {
+		"conversations/retry", "conversations/discard",
+		// Approving an agent's tool request is the user's consent, never the agent's.
+		"tools/confirm"} {
 		r.Public("POST /api/plugins/{id}/"+action, auth(local(manage(action, false))))
 	}
 }
@@ -179,6 +181,9 @@ func (m *Module) manageLocalPlugin(ctx context.Context, id, action string, read 
 	}
 	if strings.HasPrefix(action, "conversations") {
 		return m.manageConversationBacklog(ctx, id, action, input)
+	}
+	if action == "tools" || action == "tools/confirm" {
+		return m.manageAgentTools(ctx, p, action, input)
 	}
 	if read {
 		switch action {
@@ -277,6 +282,9 @@ func approvedPluginGrants(p state.PluginRegistration, grants *[]string, all bool
 
 func (m *Module) mutatePluginLocked(ctx context.Context, p state.PluginRegistration, action string, input pluginManagementInput) error {
 	id := p.Description.ID
+	if action == "disable" || action == "grants" || action == "remove-data" {
+		m.toolConfirmations.revoke(id)
+	}
 	switch action {
 	case "enable", "restart", "retry":
 		if p.Removed || p.Health.Status == "conflict" {

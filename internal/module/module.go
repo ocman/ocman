@@ -74,6 +74,15 @@ type ToolProvider interface {
 	Tools() []mcpserver.ServerTool
 }
 
+// DynamicToolProvider contributes MCP tools whose set changes at runtime, such
+// as tools declared by approved plugins. The server reads them before every
+// list and call, and reports its built-in tool names, which always win a
+// collision. Handlers must authorize each call themselves.
+type DynamicToolProvider interface {
+	DynamicTools(ctx context.Context) []mcpserver.ServerTool
+	SetBuiltinTools(names []string)
+}
+
 // ToolFilter hides or reshapes a provider's own tools per request, for
 // example behind a beta setting. Hidden tools cannot be called either. It
 // receives every tool and must return the others unchanged; it must not
