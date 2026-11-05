@@ -75,6 +75,8 @@ type Description struct {
 	Pages           []PageDescriptor   `json:"pages,omitempty"`
 	// UI declares in-app React bundles for the ui capability.
 	UI *UIDescriptor `json:"ui,omitempty"`
+	// Tools declares agent-callable tools for the tool capability.
+	Tools []ToolDescriptor `json:"tools,omitempty"`
 	// WantsCatalog opts the plugin into a launch-time catalog snapshot under
 	// the reserved "catalog" member of the fd-3 configuration object. It is
 	// only meaningful with the required non-secret project setting;
@@ -224,6 +226,9 @@ func (d Description) Validate() error {
 		return err
 	}
 	if err := d.validateUI(); err != nil {
+		return err
+	}
+	if err := d.validateTools(); err != nil {
 		return err
 	}
 	if err := d.validateCatalog(); err != nil {

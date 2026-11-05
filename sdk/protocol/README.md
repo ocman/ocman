@@ -873,6 +873,25 @@ read input and tree output. `examples/ocman-plugin-beads` implements this contra
 with an explicitly configured absolute `bd` executable. See
 [Beads setup](../../docs/features/beads.md).
 
+## tool.v1
+
+The `tool` capability, major 1 minor 0, lets a plugin declare tools that
+agents discover and call through the host's MCP endpoint. A description with
+`tools` requires the capability, `scope: "owner"` and the requested
+`tool.agent` grant. `ToolDescriptor` declares a name (`^[a-z][a-z0-9_]{0,47}$`,
+never reserved), description, object `inputSchema` in a closed JSON Schema
+subset, optional `requiredGrants`, static `confirmation`, `timeoutSeconds` and
+MCP annotation hints. `ValidateToolSchema` and `ValidateToolArguments` are the
+host's validators.
+
+The host's only method is `invoke`, whose params are `ToolInvocation`:
+`{"tool","arguments","context":{"principal":"agent","transport":"mcp","grants"},"confirmation"?}`.
+The terminal value is a `ToolResult`: `text` and/or a `data` object, optional
+`isError`, or exclusively `{"confirmation":{"key","text"}}`. Calls are unary
+and never retried; each has a fresh operation ID. The full contract, including
+naming, discovery, confirmation, limits and lifecycle, is
+[Plugin agent tools](../../docs/features/plugin-agent-tools.md).
+
 ## ui.v1
 
 The `ui` capability, major 1 minor 0, lets a plugin ship in-app React UI. It is
