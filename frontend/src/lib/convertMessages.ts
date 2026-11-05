@@ -268,17 +268,20 @@ function toolPartMatches(part: Part, approval: PartData, askedAt: number): boole
 
 /**
  * The latest matching tool that started before the permission was asked.
- * Concurrent identical calls each take one approval: a tool that already
+ * Concurrent identical calls each take one metadata-matched approval: a tool that already
  * holds an approval is only reused when no other match remains (one call
  * can need several permissions).
  */
 function matchingToolPart(sortedToolParts: Part[], approval: PartData, noticeTime: number, claimed: Readonly<Record<string, unknown>>): Part | undefined {
   const askedAt = approval.askedAt || noticeTime;
+  // Legacy approvals carry no metadata to tell calls apart, so they always
+  // take the latest earlier tool.
+  const legacy = !approval.metadata || Object.keys(approval.metadata).length === 0;
   let fallback: Part | undefined;
   for (let i = sortedToolParts.length - 1; i >= 0; i--) {
     const part = sortedToolParts[i];
     if (!toolPartMatches(part, approval, askedAt)) continue;
-    if (!claimed[part.id]) return part;
+    if (legacy || !claimed[part.id]) return part;
     fallback ??= part;
   }
   return fallback;

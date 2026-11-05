@@ -322,6 +322,26 @@ describe('AI approval footnotes', () => {
     expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
   });
 
+  it('keeps several legacy approvals on the latest tool instead of an older unrelated one', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+      { id: 'ocman-notice-p2', sessionId: 's', timeCreated: 260, data: { role: 'notice' } },
+    ];
+    const parts = [
+      toolPart('a1', 't1', 'echo unrelated', 150),
+      toolPart('a1', 't2', 'rm -rf /tmp/foo', 200),
+      makePart('ocman-notice-p1', approval, 'n1-part', 250),
+      makePart('ocman-notice-p2', { ...approval, permission: 'external_directory' }, 'n2-part', 260),
+    ];
+
+    const calls = asContentArray(createConvertMessages()(messages, parts)[0].content)
+      .filter((item) => item.type === 'tool-call');
+
+    expect(calls[0].artifact).toBeUndefined();
+    expect(calls[1].artifact?.ocmanApprovals).toHaveLength(2);
+  });
+
   it('requires a compatible tool name when read and edit share a path', () => {
     const messages: Message[] = [
       makeMessage('a1', { role: 'assistant' }, 100),
