@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { formatExactDate, relativeTimeISO } from '../lib/format';
+import { formatExactDate, relativeTime, relativeTimeISO } from '../lib/format';
 import { Tooltip } from './Tooltip';
 import './RelativeTime.css';
 
@@ -15,7 +15,7 @@ const MINUTE_MS = 60_000;
 // while the label is still counting seconds, once a minute after that.
 // No timer at all for an unparseable timestamp (the label is empty and
 // will never change).
-export function RelativeTime({ iso }: { iso: string }) {
+export function RelativeTime({ iso, compact = false }: { iso: string; compact?: boolean }) {
   const [, setTick] = useState(0);
   const parsed = Date.parse(iso);
 
@@ -26,7 +26,11 @@ export function RelativeTime({ iso }: { iso: string }) {
     if (Number.isNaN(parsed)) return;
     let id: ReturnType<typeof setTimeout>;
     const schedule = () => {
-      const period = Date.now() - parsed < MINUTE_MS ? SECOND_MS : MINUTE_MS;
+      const age = Math.max(0, Date.now() - parsed);
+      // Memoized sidebar rows no longer get incidental transcript renders.
+      // Tick their labels at the next activity-relative minute boundary.
+      const period = compact ? MINUTE_MS - age % MINUTE_MS
+        : age < MINUTE_MS ? SECOND_MS : MINUTE_MS;
       id = setTimeout(() => {
         setTick((n) => n + 1);
         schedule();
@@ -34,9 +38,11 @@ export function RelativeTime({ iso }: { iso: string }) {
     };
     schedule();
     return () => clearTimeout(id);
-  }, [parsed]);
+  }, [parsed, compact]);
 
-  return <>{relativeTimeISO(iso)}</>;
+  return <>{compact && !Number.isNaN(parsed)
+    ? relativeTime(parsed).replace('just now', 'now').replace(' ago', '')
+    : relativeTimeISO(iso)}</>;
 }
 
 /**

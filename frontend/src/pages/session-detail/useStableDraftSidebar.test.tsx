@@ -9,7 +9,8 @@ import type { SidebarProjectGroup } from './SessionSidebar';
 import { fetchJSON, postJSON } from '../../lib/api.requests';
 
 vi.mock('../../lib/api.requests', () => ({ fetchJSON: vi.fn(async () => []), postJSON: vi.fn(async () => undefined) }));
-vi.mock('../../lib/useProjectIdentityIndex', () => ({ useProjectIdentityIndex: () => () => ({ key: 'project', directory: '/repo', remoteId: 'local' }) }));
+const { project } = vi.hoisted(() => ({ project: () => ({ key: 'project', directory: '/repo', remoteId: 'local' }) }));
+vi.mock('../../lib/useProjectIdentityIndex', () => ({ useProjectIdentityIndex: () => project }));
 const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
 const meta = { draftId: id, directory: '/repo', platform: 'opencode', remoteId: 'local', createdAt: 100 };
 const ready = { [id]: { id, metadata: meta, phase: 'ready' as const, createdAt: 100, steps: {} } };
@@ -109,4 +110,23 @@ it('keeps a completed background draft visible until the actual list row arrives
   act(() => useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: meta, phase: 'ready', createdAt: 100, steps: {} } } }));
   expect(result.current.recent.map((row) => row.id)).toEqual([id]);
   expect(result.current.groups[0].sessions.map((row) => row.id)).toEqual([id]);
+});
+
+it('reuses rows, groups, membership and actions across transcript-only renders', async () => {
+  const recent: Session[] = [];
+  const groups = [group];
+  const navigate = vi.fn();
+  const { result, rerender } = renderHook(() => useStableDraftSidebar(recent, groups, navigate));
+  await act(async () => {});
+  const before = result.current;
+  for (let i = 0; i < 50; i++) rerender();
+  expect(result.current.recent).toBe(before.recent);
+  expect(result.current.recent[0]).toBe(before.recent[0]);
+  expect(result.current.groups).toBe(before.groups);
+  expect(result.current.ids).toBe(before.ids);
+  expect(result.current.open).toBe(before.open);
+  expect(result.current.discard).toBe(before.discard);
+  act(() => useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: meta, phase: 'failed', error: 'failed', createdAt: 100, steps: {} } } }));
+  expect(result.current.recent[0].status).toBe('error');
+  expect(result.current.recent[0]).not.toBe(before.recent[0]);
 });

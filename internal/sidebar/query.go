@@ -2,6 +2,8 @@ package sidebar
 
 // Only pending observations enter the recursive parent walk. Normal browsing
 // never constructs the entire platform's parent map. All edges are source scoped.
+// Ready catalogue rows have nonempty native IDs. Spell that invariant out so
+// SQLite can use the partial unique binding index for pending observations.
 // Background completion gates survive a foreground lease expiring, but never
 // cross an adapter generation or borrow another source's task ownership.
 const observationsCTE = `WITH RECURSIVE runtime AS (
@@ -15,6 +17,7 @@ const observationsCTE = `WITH RECURSIVE runtime AS (
  SELECT c.id,c.parent_native_id,o.pending_permission,o.pending_question,c.owner_id,c.platform,c.source_key FROM live o JOIN core.session_catalog c
  ON c.owner_id=o.owner_id AND c.platform=o.platform AND c.source_key=o.source_key AND c.native_id=o.native_id
  WHERE c.creation_state='ready' AND c.purged=0 AND (o.pending_permission=1 OR o.pending_question=1)
+ AND c.native_id<>''
  UNION
  SELECT c.id,c.parent_native_id,p.permission,p.question,c.owner_id,c.platform,c.source_key FROM prompts p JOIN core.session_catalog c ON c.native_id=p.parent_id AND c.native_id<>'' AND c.owner_id=p.owner_id AND c.platform=p.platform AND c.source_key=p.source_key
  WHERE c.creation_state='ready' AND c.purged=0

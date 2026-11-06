@@ -38,6 +38,18 @@ describe('useSessionCreation', () => {
   });
 
   // A new conversation is a route: no session exists until the first prompt.
+  it('keeps the project action stable across streamed metadata and tracks owner changes', () => {
+    const options = opts();
+    const { result, rerender } = renderHook(({ session }) => useSessionCreation({ ...options, session }), { initialProps: { session } });
+    const open = result.current.handleNewSessionInDirectory;
+    rerender({ session: { ...session, title: 'Updated during streaming' } });
+    expect(result.current.handleNewSessionInDirectory).toBe(open);
+    rerender({ session: { ...session, remoteId: 'other', platform: 'r-other:opencode' } });
+    expect(result.current.handleNewSessionInDirectory).not.toBe(open);
+    result.current.handleNewSessionInDirectory('/repo/a');
+    expect(options.navigate).toHaveBeenLastCalledWith(expect.stringContaining('platform=r-other%3Aopencode'));
+  });
+
   it('opens the new-conversation route, inheriting the platform only for the same project', () => {
     const o = opts();
     const { result } = renderHook(() => useSessionCreation(o));

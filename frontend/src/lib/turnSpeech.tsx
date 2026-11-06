@@ -1,64 +1,10 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import type { Message, Part, SessionStatus } from './api';
-import { parsePart } from './convertMessages';
+import { createSpeechAnswers } from './speechAnswers';
 import type { TurnStatsMap } from './turnStats';
 import { useUiStore } from './uiStore';
-
-/** Read original text only. Rendered thread text also contains reasoning and errors. */
-export function finalAnswers(messages: Message[], parts: Part[], turns: TurnStatsMap): Map<string, string> {
-  const answers = new Map<string, string>();
-  for (const message of messages) {
-    const turn = turns.get(message.id);
-    if (!turn?.isSummaryAnchor || turn.isLive || message.data.role !== 'assistant'
-      || message.data.error || message.data.summary || message.data.agent === 'compaction'
-      || !['stop', 'end_turn'].includes(message.data.finish ?? '')) continue;
-    const text = parts.filter((part) => part.messageId === message.id).map(parsePart)
-      .filter((part) => part.type === 'text' && !part.synthetic && !part.ignored)
-      .map((part) => part.text ?? '').join('\n\n').trim();
-    const prose = speechText(text);
-    if (prose) answers.set(message.id, prose);
-  }
-  return answers;
-}
-
-// speechText renders markdown to static HTML; finalAnswers re-runs for every
-// settled answer on each transcript change (every streamed token), so cache
-// by source text. ponytail: insertion-order eviction, LRU if hit rates matter.
-const SPEECH_CACHE_MAX = 500;
-const speechCache = new Map<string, string>();
-
-export function speechText(markdown: string): string {
-  let prose = speechCache.get(markdown);
-  if (prose === undefined) {
-    prose = renderSpeechText(markdown);
-    if (speechCache.size >= SPEECH_CACHE_MAX) speechCache.delete(speechCache.keys().next().value!);
-    speechCache.set(markdown, prose);
-  }
-  return prose;
-}
-
-function renderSpeechText(markdown: string): string {
-  // Reuse the installed Markdown parser: regex stripping can leak fenced commands.
-  const html = renderToStaticMarkup(<Markdown remarkPlugins={[remarkGfm]} components={{
-    pre: () => null,
-    img: () => null,
-    p: ({ children }) => <p>{children}{'\n'}</p>,
-    li: ({ children }) => <li>{children}{'\n'}</li>,
-    tr: ({ children }) => <tr>{children}{'\n'}</tr>,
-    td: ({ children }) => <td>{children}{' '}</td>,
-    th: ({ children }) => <th>{children}{' '}</th>,
-    h1: ({ children }) => <h1>{children}{'\n'}</h1>,
-    h2: ({ children }) => <h2>{children}{'\n'}</h2>,
-    h3: ({ children }) => <h3>{children}{'\n'}</h3>,
-    h4: ({ children }) => <h4>{children}{'\n'}</h4>,
-    h5: ({ children }) => <h5>{children}{'\n'}</h5>,
-    h6: ({ children }) => <h6>{children}{'\n'}</h6>,
-  }}>{markdown}</Markdown>);
-  return new DOMParser().parseFromString(html, 'text/html').body.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-}
+export { finalAnswers } from './speechAnswers';
+export { speechText } from './speechText';
 
 export function useSpeechPlayback() {
   const supported = typeof window.speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
@@ -124,13 +70,12 @@ export function useTurnSpeech(messages: Message[], parts: Part[], turns: TurnSta
   const autoRead = useUiStore((s) => s.autoReadAnswers);
   const latestUser = messages.findLast((m) => m.data.role === 'user')?.id;
   const latestAssistant = messages.findLast((m) => m.data.role === 'assistant')?.id;
+  const selectAnswers = useMemo(() => createSpeechAnswers(), []);
   const answers = useMemo(() => {
-    const result = finalAnswers(messages, parts, turns);
-    if (latestAssistant && (!reconciled || (status !== undefined && status !== 'done' && status !== 'waiting'))) {
-      result.delete(latestAssistant);
-    }
-    return result;
-  }, [messages, parts, turns, latestAssistant, reconciled, status]);
+    const excludedId = latestAssistant && (!reconciled || (status !== undefined && status !== 'done' && status !== 'waiting'))
+      ? latestAssistant : undefined;
+    return selectAnswers(messages, parts, turns, excludedId);
+  }, [selectAnswers, messages, parts, turns, latestAssistant, reconciled, status]);
   const seen = useRef(new Set(messages.filter((m) => m.data.finish).map((m) => `${sessionKey}:${m.id}`)));
   const armed = useRef<string | null>(null);
 

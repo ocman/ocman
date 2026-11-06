@@ -12,8 +12,8 @@ import { useMessage } from './useMessage';
  * count, and average tok/s. While the turn is still in progress the bar
  * shows whatever data is available so far.
  */
-export function TurnSummaryBar({ messageId, actions }: { messageId: string; actions: ReactNode }) {
-  const stats = useTurnStats(messageId);
+export function TurnSummaryBar({ actions }: { actions: ReactNode }) {
+  const stats = useTurnStats();
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
   const agentColor = useAgentColor(agent);

@@ -57,3 +57,18 @@ it('retains directory identities while resolution is pending and cancels unused 
   await act(async () => unmount());
   expect(signal.aborted).toBe(true);
 });
+
+it('keeps the index stable for transcript-only renders and replaces it after resolution or catalog changes', async () => {
+  const projects = [target];
+  const checkouts = [{ directory: '/unresolved-stable' }];
+  const { result, rerender } = renderHook(({ projects }) => useProjectIdentityIndex(projects, checkouts), { initialProps: { projects } });
+  const pending = result.current;
+  await waitFor(() => expect(result.current('/unresolved-stable').key).toBe('final'));
+  expect(result.current).not.toBe(pending);
+  const settled = result.current;
+  for (let i = 0; i < 50; i++) rerender({ projects });
+  expect(result.current).toBe(settled);
+  rerender({ projects: [{ ...target, remoteName: 'Renamed host' }] });
+  expect(result.current('/final', 'box').remoteName).toBe('Renamed host');
+  expect(result.current).not.toBe(settled);
+});

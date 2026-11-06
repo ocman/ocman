@@ -14,6 +14,7 @@ let runtimeMessages: Array<{ content: unknown }> = [];
 let runtimeRunning = false;
 
 vi.mock('@assistant-ui/react', () => ({
+  useAuiState: (selector: (state: { thread: { messages: typeof runtimeMessages } }) => unknown) => selector({ thread: { messages: runtimeMessages } }),
   AssistantRuntimeProvider: ({ children }: { children: ReactNode }) => children,
   useExternalStoreRuntime: (store: { messages: Array<{ content: unknown }>; isRunning: boolean }) => {
     runtimeMessages = store.messages;

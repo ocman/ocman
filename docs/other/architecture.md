@@ -180,6 +180,14 @@ flowchart LR
   the retired file again. An existing destination always wins.
   Source deletion retains history. Supported upgrades apply append-only migrations;
   unsupported schema versions fail closed and never reset stored history.
+  Stream ingestion classifies display metadata, attention inputs and accounting
+  facts separately. Metadata-only updates copy compact sidebar/analytics fields
+  without rescanning message attention or rebuilding hourly accounting. Missing
+  projections are repaired synchronously; all projection writes, revisions and
+  checkpoints remain in the same FULL-durability transaction.
+  The read-only sidebar reader exposes the ready-catalogue nonempty native-ID
+  invariant to SQLite's partial binding index for live/prompt joins. Eligibility
+  stays before pagination; browsing never runs `ANALYZE` or maintains statistics.
   Database-size analytics include this store as a separate conversation-history
   series, including while its initial import is pending.
 - Application analytics and background token/cost metrics use validated
@@ -1417,6 +1425,28 @@ flowchart TD
   Settled checks retain the bounded repository/SHA localStorage cache. Project
   settings use owner/project/generation query keys, so invalidation cannot let
   an older in-flight read restore stale settings.
+- **Conversation derivations.** Immutable part snapshots share a WeakMap parser
+  in `lib/parsePart.ts`. Conversion caches belong to one platform/session and
+  depend only on referenced task snapshots and that message's failure fields.
+  Turn accounting retains unchanged aggregates and attaches them to converted
+  message metadata. Existing assistant-ui message selectors publish accounting,
+  lifecycle and content together, without a separate full-map context or store.
+  Transcript text does not invalidate sidebar project/draft
+  derivations or row actions; list, prompt, owner and live-status inputs still do.
+
+```mermaid
+flowchart LR
+    Stream[Immutable conversation snapshots] --> Parse[Shared parsed parts]
+    Parse --> Convert[Per-message conversion]
+    Parse --> Stats[Per-turn accounting cache]
+    Stats --> Convert
+    Convert --> Select[Existing per-message runtime selectors]
+    Select --> Thread[Conversation UI]
+    Stream --> Answers[Indexed completed answers]
+    Answers --> Text[Markdown tree to speech text]
+    Text --> Speech[Browser speech synthesis]
+```
+
 - **Session attention.** The app badge and the grouped sidebar's Needs attention group
   share the notify snapshot and one owner-qualified eligibility rule. Notification
   metadata renders directly without loading individual conversations.

@@ -5,22 +5,24 @@ import (
 	"database/sql"
 )
 
-type streamProjectionChanges struct{ sidebar, analytics bool }
+type streamProjectionChanges struct{ sidebar, analytics, metadata, attention bool }
 
 // Compare captured inputs inside the same transaction, before any upsert.
 // Live feeds include unchanged envelopes with part deltas; their presence alone
 // must not cause a session-wide accounting or attention rebuild.
 func projectionChanges(ctx context.Context, tx *sql.Tx, b StreamBatch) (streamProjectionChanges, error) {
 	key := b.key()
-	changes := streamProjectionChanges{sidebar: len(b.RemovedMessages) > 0, analytics: len(b.RemovedMessages)+len(b.RemovedParts) > 0}
-	var sidebar, analytics bool
+	changes := streamProjectionChanges{sidebar: len(b.RemovedMessages) > 0, attention: len(b.RemovedMessages) > 0, analytics: len(b.RemovedMessages)+len(b.RemovedParts) > 0}
+	var sidebar, analytics, attention bool
 	if err := tx.QueryRowContext(ctx, `SELECT
 		EXISTS(SELECT 1 FROM session_sidebar WHERE instance_id=? AND id=?),
-		EXISTS(SELECT 1 FROM analytics_session WHERE instance_id=? AND id=?)`,
-		key.InstanceID, key.SessionID, key.InstanceID, key.SessionID).Scan(&sidebar, &analytics); err != nil {
+		EXISTS(SELECT 1 FROM analytics_session WHERE instance_id=? AND id=?),
+		EXISTS(SELECT 1 FROM sidebar_attention WHERE instance_id=? AND session_id=?)`,
+		key.InstanceID, key.SessionID, key.InstanceID, key.SessionID, key.InstanceID, key.SessionID).Scan(&sidebar, &analytics, &attention); err != nil {
 		return changes, err
 	}
 	changes.sidebar, changes.analytics = changes.sidebar || !sidebar, changes.analytics || !analytics
+	changes.attention = changes.attention || !attention
 	if s := b.Session; s != nil {
 		var same bool
 		err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM session WHERE instance_id=? AND id=?
@@ -31,7 +33,9 @@ func projectionChanges(ctx context.Context, tx *sql.Tx, b StreamBatch) (streamPr
 		if err != nil {
 			return changes, err
 		}
-		changes.sidebar, changes.analytics = changes.sidebar || !same, changes.analytics || !same
+		// Session metadata is copied into the compact rows, but never changes
+		// message facts, hourly accounting, tool timings, or attention maxima.
+		changes.sidebar, changes.metadata = changes.sidebar || !same, !same
 	}
 	for _, m := range b.Messages {
 		var same bool
@@ -47,6 +51,7 @@ func projectionChanges(ctx context.Context, tx *sql.Tx, b StreamBatch) (streamPr
 			return changes, err
 		}
 		changes.sidebar, changes.analytics = changes.sidebar || !same, changes.analytics || !same
+		changes.attention = changes.attention || !same
 	}
 	// Only tools contribute part-level analytics. A tool changing into another
 	// kind must still remove its old timings; new non-tool content does not.
@@ -68,4 +73,15 @@ func projectionChanges(ctx context.Context, tx *sql.Tx, b StreamBatch) (streamPr
 		}
 	}
 	return changes, nil
+}
+
+// Copy only session-owned fields. Accounting totals remain untouched; using a
+// summary refresh here would unnecessarily revisit message facts and hours.
+func refreshAnalyticsSessionMetadata(ctx context.Context, tx *sql.Tx, key Key) error {
+	_, err := tx.ExecContext(ctx, `UPDATE analytics_session SET
+		(parent_id,directory,title,time_created,time_updated,project_id,source_deleted,is_subagent)=
+		(SELECT parent_id,directory,title,created_at,updated_at,project_id,source_deleted,is_subagent
+		 FROM session WHERE instance_id=? AND id=?) WHERE instance_id=? AND id=?`,
+		key.InstanceID, key.SessionID, key.InstanceID, key.SessionID)
+	return err
 }

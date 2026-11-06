@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { unified } from 'unified';
 import type { Message, Part, PartData, SessionStatus } from './api';
 import { computeTurnStats } from './turnStats';
 import { finalAnswers, speechText, useSpeechPlayback, useTurnSpeech } from './turnSpeech';
@@ -70,7 +71,7 @@ it('cleans Markdown with its parser, dropping fences, indented code, images, and
 });
 
 it('renders each distinct answer once and bounds the cache', () => {
-  const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
+  const parse = vi.spyOn(Object.getPrototypeOf(unified), 'parse');
   expect(speechText('cached *answer* one')).toBe('cached answer one');
   expect(speechText('cached *answer* one')).toBe('cached answer one');
   expect(parse).toHaveBeenCalledTimes(1);
@@ -136,6 +137,41 @@ function setup(initialProps = busy) {
     computeTurnStats(p.messages, p.parts), p.key, p.status, p.connected, p.reconciled), { initialProps });
 }
 describe('turn playback lifecycle', () => {
+  it('prepares speech before the click and keeps manual playback available without auto-read gates', () => {
+    const parse = vi.spyOn(Object.getPrototypeOf(unified), 'parse');
+    const ready = part('a', { type: 'text', text: '**Ready before clicking the speaker**' });
+    const { result } = setup({ ...done, connected: false, parts: [ready] });
+    expect(result.current.answers.get('a')).toBe('Ready before clicking the speaker');
+    expect(parse).toHaveBeenCalledTimes(1);
+    parse.mockClear();
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    act(() => result.current.toggle('a'));
+    expect(speak.mock.calls[0][0].text).toBe('Ready before clicking the speaker');
+    expect(parse).not.toHaveBeenCalled();
+  });
+  it('reads waiting completions but never replays a hidden-tab completion', () => {
+    useUiStore.setState({ autoReadAnswers: true });
+    const visible = setup();
+    visible.rerender({ ...done, status: 'waiting' });
+    expect(speak).toHaveBeenCalledTimes(1);
+    visible.unmount();
+    speak.mockClear();
+    const hidden = setup();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    hidden.rerender(done);
+    expect(speak).not.toHaveBeenCalled();
+    visibility.mockReturnValue('visible');
+    hidden.rerender({ ...done, messages: [...done.messages], parts: [...done.parts] });
+    expect(speak).not.toHaveBeenCalled();
+  });
+  it('reuses completed answers across unrelated streamed parts without delaying manual speech', () => {
+    const { result, rerender } = setup(done);
+    const answers = result.current.answers;
+    rerender({ ...done, parts: [...done.parts, part('unrelated', { type: 'text', text: 'streaming token' })] });
+    expect(result.current.answers).toBe(answers);
+    act(() => result.current.toggle('a'));
+    expect(speak.mock.calls[0][0].text).toBe('Finished.');
+  });
   it('is opt-in, allows manual playback, and toggles stop', () => {
     const { result } = setup(done);
     expect(speak).not.toHaveBeenCalled();

@@ -10,7 +10,7 @@
 // `useSession`; the page is mostly props plumbing from there to the
 // individual UI surfaces.
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
@@ -137,12 +137,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // forces React Router's location update to commit immediately so
   // the SSE lifecycle (keyed off the route id) tears down before
   // any further work races the click.
-  const navigateToSession = (nextId: string, replace = false, platform?: string) => {
+  const navigateToSession = useCallback((nextId: string, replace = false, platform?: string) => {
     markSessionSwitchStart(nextId, !!useApiStore.getState().getCachedSession(nextId));
     flushSync(() => {
       navigate(`/session/${nextId}${platform ? `?platform=${encodeURIComponent(platform)}` : ''}`, { replace });
     });
-  };
+  }, [navigate]);
 
   const { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel } = useMobilePanel(id);
   const phone = useIsPhone();
@@ -154,14 +154,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // The drawer click path closes synchronously here (no flicker frame);
   // useMobilePanel's id-keyed effect covers every other navigation source
   // (command palette, auto-redirect, closed-session reopen).
-  const navigateFromSidebar = (nextId: string, platform?: string) => {
+  const navigateFromSidebar = useCallback((nextId: string, platform?: string) => {
     const phoneOverlay = mobilePanel !== null && phone;
     if (phoneOverlay && nextId === id && (!platform || platform === searchParams.get('platform'))) return closeMobilePanel();
     if (nextId === id && platform) closeMobilePanel();
     if (!phoneOverlay) closeMobilePanel();
     setSidebarScroll((previous) => ({ sessionId: nextId, tick: previous.tick + 1 }));
     navigateToSession(nextId, phoneOverlay, platform);
-  };
+  }, [mobilePanel, phone, id, searchParams, closeMobilePanel, navigateToSession]);
 
   // The new SSE pipeline. Owns the EventSource, the reducer, the
   // initial fetch + reload + loadMore, the cache mirror, and the
@@ -718,6 +718,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleArchiveProjectFromSidebar,
   } = useSidebarProjectGroups({ id, activeProject: newConversation ?? undefined, recentSessions, displayStatus, enabled: sidebarVisible || (openModal === 'move' && documentVisible) });
 
+  const newSessionDirectory = session?.directory ?? newConversation?.directory ?? '';
+  const newSessionOwner = session?.remoteId ?? newConversation?.remoteId;
+  const newFromSidebar = useCallback(() => openProjectSessionPalette(
+    projectRootForDirectory(newSessionDirectory) || undefined, newSessionOwner,
+  ), [openProjectSessionPalette, newSessionDirectory, newSessionOwner]);
+
   return (
     <PerfProfiler id="SessionPage">
     <Toast.Provider swipeDirection="right">
@@ -758,10 +764,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onNavigateToSession={navigateFromSidebar}
           onArchiveSession={handleArchiveSession}
           onPinSession={handlePinSession}
-          onNewSession={() => openProjectSessionPalette(
-            projectRootForDirectory(session?.directory ?? newConversation?.directory ?? '') || undefined,
-            session?.remoteId ?? newConversation?.remoteId,
-          )}
+          onNewSession={newFromSidebar}
           onClientSelect={handleClientSelect}
           onNewSessionInDirectory={handleNewSessionInDirectory}
           onArchiveProject={handleArchiveProjectFromSidebar}

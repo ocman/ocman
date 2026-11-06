@@ -57,6 +57,11 @@ func TestSidebarDistinguishesNativeAgentsFromSubsessions(t *testing.T) {
 
 func largeInventory(t testing.TB) (*Reader, *state.DB, *statev2.DB) {
 	t.Helper()
+	return sidebarInventory(t, 10000)
+}
+
+func sidebarInventory(t testing.TB, size int) (*Reader, *state.DB, *statev2.DB) {
+	t.Helper()
 	corePath := statetest.Path(t, sessioncatalog.Schema)
 	core, err := state.Open(corePath, sessioncatalog.Schema)
 	if err != nil {
@@ -69,10 +74,10 @@ func largeInventory(t testing.TB) (*Reader, *state.DB, *statev2.DB) {
 	}
 	// Seed a realistic inventory size without running native agents or importing
 	// payloads. Write behavior is covered by the ingestion/projection tests.
-	_, err = core.SQL().Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000)
+	_, err = core.SQL().Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<?)
 	 INSERT INTO session_catalog(id,owner_id,platform,directory,title,origin,origin_id,creation_state,source_key,native_id,created_at,updated_at)
 	 SELECT printf('ocm_%08d-0000-0000-0000-%012d',x,x),'owner','test',CASE WHEN x%2=0 THEN '/one' ELSE '/two' END,'title',
-	 CASE WHEN x%10=0 THEN 'routine' ELSE 'external' END,CASE WHEN x%10=0 THEN 'r' ELSE '' END,'ready','source',printf('native-%d',x),x,x FROM n`)
+	 CASE WHEN x%10=0 THEN 'routine' ELSE 'external' END,CASE WHEN x%10=0 THEN 'r' ELSE '' END,'ready','source',printf('native-%d',x),x,x FROM n`, size)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,10 +86,10 @@ func largeInventory(t testing.TB) (*Reader, *state.DB, *statev2.DB) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	_, err = conn.Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000)
+	_, err = conn.Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<?)
 	 INSERT INTO session(instance_id,id,title,directory,created_at,updated_at,source_deleted,revision,extensions,parent_id,project_id,read_format,is_subagent)
 	 SELECT 'instance',printf('ocm_%08d-0000-0000-0000-%012d',x,x),'title',CASE WHEN x%2=0 THEN '/one' ELSE '/two' END,x,x,0,1,'{}','','project',1,0 FROM n;
-	 INSERT INTO session_sidebar SELECT instance_id,id,title,directory,project_id,parent_id,created_at,updated_at,updated_at,source_deleted,is_subagent,0,directory,'','assistant','stop','' FROM session`)
+	 INSERT INTO session_sidebar SELECT instance_id,id,title,directory,project_id,parent_id,created_at,updated_at,updated_at,source_deleted,is_subagent,0,directory,'','assistant','stop','' FROM session`, size)
 	if err != nil {
 		t.Fatal(err)
 	}

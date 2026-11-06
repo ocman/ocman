@@ -1,6 +1,7 @@
 package statev2
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"testing"
@@ -11,13 +12,17 @@ import (
 // to an isolated WAL database with production synchronous=FULL durability.
 func BenchmarkStreamTextUpdate(b *testing.B) {
 	for _, count := range []int{100, 2000, 10000} {
-		for _, mode := range []string{"part-only", "unchanged-envelope", "changed-envelope"} {
+		for _, mode := range []string{"part-only", "unchanged-envelope", "changed-envelope", "display-metadata"} {
 			b.Run(fmt.Sprintf("%d/%s", count, mode), func(b *testing.B) {
 				d, err := Open(b.TempDir() + "/conversation.db")
 				if err != nil {
 					b.Fatal(err)
 				}
 				defer d.Close()
+				var synchronous int
+				if err := d.db.QueryRow("PRAGMA synchronous").Scan(&synchronous); err != nil || synchronous != 2 {
+					b.Fatalf("benchmark requires synchronous=FULL: got %d, err=%v", synchronous, err)
+				}
 				if err := d.RegisterInstance(b.Context(), Instance{ID: "first", OwnerID: "owner", Platform: "opencode", SourceKey: "fixture"}); err != nil {
 					b.Fatal(err)
 				}
@@ -47,6 +52,11 @@ func BenchmarkStreamTextUpdate(b *testing.B) {
 					}
 					if mode == "changed-envelope" {
 						s.UpdatedAt++
+					}
+					if mode == "display-metadata" {
+						s.Title, s.Directory = next, "/project/"+next
+						s.UpdatedAt++
+						s.Extensions = json.RawMessage(fmt.Sprintf(`{"ProjectDirectory":%q}`, s.Directory))
 					}
 					start := time.Now()
 					_, err := d.ApplyStream(b.Context(), StreamUpdate{InstanceID: "first", Checkpoint: CheckpointUpdate{Stream: "bench", ExpectedCursor: cursor, Cursor: next}, Batches: []StreamBatch{batch}})

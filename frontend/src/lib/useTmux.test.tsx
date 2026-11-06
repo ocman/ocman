@@ -57,4 +57,12 @@ describe('useTmux', () => {
     expect(store.switchTmuxSession).toHaveBeenCalledWith('work', '/dev/ttys001');
     await expect(result.current.launchOpencode('/repo')).resolves.toEqual({ session: 'work' });
   });
+
+  it('keeps sidebar data and actions stable on unrelated transcript renders', async () => {
+    const { result, rerender } = renderHook(() => useTmux());
+    await waitFor(() => expect(result.current.available).toBe(true));
+    const snapshot = result.current;
+    for (let i = 0; i < 50; i++) rerender();
+    expect(result.current).toBe(snapshot);
+  });
 });

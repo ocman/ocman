@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
 import { api, type TmuxClient, type TmuxSession } from './api';
 import { queryClient } from './queryClient';
 
@@ -40,11 +41,11 @@ export function useTmux(): TmuxState {
   const clients = query.data?.clients ?? EMPTY_CLIENTS;
   const isLocal = checkIsLocal();
 
-  const findSession = (directory: string) => {
+  const findSession = useCallback((directory: string) => {
     return sessions.find(ts => ts.resolvedPath === directory);
-  };
+  }, [sessions]);
 
-  return { available, isLocal, sessions, clients, switchSession: api.tmuxSwitch, findSession, launchOpencode: api.tmuxLaunchOpencode };
+  return useMemo(() => ({ available, isLocal, sessions, clients, switchSession: api.tmuxSwitch, findSession, launchOpencode: api.tmuxLaunchOpencode }), [available, isLocal, sessions, clients, findSession]);
 }
 
 const EMPTY_SESSIONS: TmuxSession[] = [];

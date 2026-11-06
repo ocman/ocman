@@ -2,9 +2,12 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { Message, Part, PartData, TaskSessionData } from './api';
 import { throughputSample } from './throughput';
 import type { FailedSend } from './failedSends';
-import { messageModelRef } from './turnStats';
+import { messageModelRef, type TurnAggregate, type TurnStatsMap } from './turnStats';
 import { formatSeconds } from './format';
 import { isInjectedInstruction } from './injectedInstructions';
+import { parsePart } from './parsePart';
+export { parsePart } from './parsePart';
+import { extractTaskId, isTaskTool } from './taskId';
 import type { ToolApproval } from './threadHelpers';
 import {
   convertToolPart,
@@ -24,14 +27,6 @@ export function isImageMime(mime: string | undefined): boolean {
   return !!mime && mime.startsWith('image/');
 }
 
-/**
- * WeakMap cache for parsed part data. Keyed on the Part object
- * identity — when a part is updated immutably (new reference) the
- * old entry is automatically garbage-collected. Avoids re-running
- * `JSON.parse` on every SSE delta for parts that haven't changed.
- */
-const parsedPartCache = new WeakMap<Part, PartData>();
-
 function displayErrorMessage(message: string): string {
   try {
     const parsed = JSON.parse(message) as { error?: { message?: unknown } };
@@ -39,24 +34,6 @@ function displayErrorMessage(message: string): string {
   } catch {
     return message;
   }
-}
-
-/**
- * Parse a `Part`'s `data` field into a typed `PartData`. The result
- * is cached per Part instance, so identical part references skip
- * parsing on subsequent calls.
- */
-export function parsePart(p: Part): PartData {
-  const cached = parsedPartCache.get(p);
-  if (cached !== undefined) return cached;
-  let result: PartData;
-  try {
-    result = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-  } catch {
-    result = (p.data || {}) as PartData;
-  }
-  parsedPartCache.set(p, result);
-  return result;
 }
 
 /**
@@ -124,11 +101,12 @@ export function computeIsRunning(messages: Message[]): boolean {
  * only the message whose parts changed gets recomputed.
  */
 type ConvertedCacheEntry = {
+  turnStats: TurnAggregate | undefined;
   parts: Part[];
-  pendingAgent: string | undefined;
-  taskLiveOutput: Record<string, TaskSessionData> | undefined;
+  taskOutputs: Array<TaskSessionData | undefined>;
   projectDirectory: string | undefined;
-  failedById: Record<string, FailedSend> | undefined;
+  failedError: string | undefined;
+  imagesDropped: boolean;
   /** Resolved agent for this message (depends on neighbors). */
   msgAgent: string | undefined;
   /**
@@ -147,7 +125,6 @@ type ConvertedCacheEntry = {
   approvalSig: string;
   result: ThreadMessageLike;
 };
-const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
 
 /** Stable empty array for messages with no parts. */
 const EMPTY_PARTS: Part[] = [];
@@ -424,16 +401,15 @@ export type ConvertMessagesFn = (
   failedById?: Record<string, FailedSend>,
   showReasoning?: boolean,
   now?: number,
+  turnStats?: TurnStatsMap,
 ) => ThreadMessageLike[];
 
 /**
  * Build a per-instance `convertMessages` closure. Use this from
  * components so each consumer (one per session detail page) owns
  * its own result-array cache and `partsByMsg` memo. The shared
- * module-level WeakMap caches (`parsedPartCache`,
- * `convertedMessageCache`) are still used for cross-instance reuse
- * — they're keyed on the `Part` / `Message` identity so they're
- * safe to share across sessions.
+ * parsed-part WeakMap remains shared; converted results are local so
+ * independently mounted owners cannot evict each other's context.
  *
  * Returned function:
  *   - Filters to user/assistant messages only (system / tool roles
@@ -450,6 +426,7 @@ export type ConvertMessagesFn = (
  *     is unchanged (`useSyncExternalStore` snapshot stability).
  */
 export function createConvertMessages(): ConvertMessagesFn {
+  const convertedMessageCache = new WeakMap<Message, ConvertedCacheEntry>();
   const state: ConvertState = {
     lastResult: null,
     lastPartsRef: null,
@@ -467,6 +444,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     // to true so non-React callers and the default instance are unchanged.
     showReasoning: boolean = true,
     now: number = Date.now(),
+    turnStats?: TurnStatsMap,
   ): ThreadMessageLike[] {
     // Reuse the bucketed `partsByMsg` index when the input parts
     // array is the same reference we saw last time. Saves an O(N)
@@ -546,6 +524,12 @@ export function createConvertMessages(): ConvertMessagesFn {
     const modelChangedTo = modelChangedById[m.id] || '';
     const timelineAt = timelineById[m.id] || 0;
     const msgPartsRaw = partsByMsg[m.id] || EMPTY_PARTS;
+    const taskOutputs = msgPartsRaw.flatMap((part) => {
+      const data = parsePart(part);
+      const id = data.type === 'tool' && isTaskTool(data.tool) ? extractTaskId(data.state) : '';
+      return id ? [taskLiveOutput?.[id]] : [];
+    });
+    const failedEntry = role === 'user' ? failedById?.[m.id] : undefined;
     const reasoningNow = showReasoning && msgPartsRaw.some((part) => {
       const data = parsePart(part);
       return data.type === 'reasoning' && data.time?.start !== undefined && data.time.end === undefined;
@@ -559,14 +543,17 @@ export function createConvertMessages(): ConvertMessagesFn {
         .join(',')
       : '';
     const cached = convertedMessageCache.get(m);
+    const stats = turnStats?.get(m.id);
     if (
       cached &&
+      cached.turnStats === stats &&
       partsEqual(cached.parts, msgPartsRaw) &&
       cached.approvalSig === approvalSig &&
-      cached.pendingAgent === pendingAgent &&
-      cached.taskLiveOutput === taskLiveOutput &&
-      cached.projectDirectory === projectDirectory &&
-      cached.failedById === failedById &&
+      cached.taskOutputs.length === taskOutputs.length &&
+      cached.taskOutputs.every((output, i) => output === taskOutputs[i]) &&
+      cached.projectDirectory === (projectDirectory || '') &&
+      cached.failedError === failedEntry?.error &&
+      cached.imagesDropped === !!failedEntry?.imagesDropped &&
       cached.msgAgent === msgAgent &&
       cached.modelChangedTo === modelChangedTo &&
       cached.timelineAt === timelineAt &&
@@ -685,10 +672,10 @@ export function createConvertMessages(): ConvertMessagesFn {
           : { type: 'running' as const }
       : undefined;
 
-    const failedEntry = role === 'user' ? failedById?.[m.id] : undefined;
     const model = role === 'assistant' ? messageModelRef(m) : '';
     const [output, modelMs] = throughputSample(m, msgParts);
     const customMeta = {
+      ...(stats ? { turnStats: stats } : {}),
       ...(role === 'assistant' ? { tokensPerSecond: modelMs > 0 ? output / (modelMs / 1000) : null } : {}),
       ...(m.data.tokens ? { tokens: m.data.tokens } : {}),
       ...(m.data.time ? { time: m.data.time } : {}),
@@ -739,11 +726,12 @@ export function createConvertMessages(): ConvertMessagesFn {
 
     // Store in per-message cache.
     convertedMessageCache.set(m, {
+      turnStats: stats,
       parts: msgPartsRaw,
-      pendingAgent,
-      taskLiveOutput,
-      projectDirectory,
-      failedById,
+      taskOutputs,
+      projectDirectory: projectDirectory || '',
+      failedError: failedEntry?.error,
+      imagesDropped: !!failedEntry?.imagesDropped,
       msgAgent,
       modelChangedTo,
       timelineAt,

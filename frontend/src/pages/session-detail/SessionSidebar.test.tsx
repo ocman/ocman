@@ -15,6 +15,11 @@ import { useBackendConversationDrafts } from '../../lib/backendConversationDraft
 import { fetchJSON, postJSON } from '../../lib/api.requests';
 
 vi.mock('../../lib/api.requests', async (original) => ({ ...await original<typeof import('../../lib/api.requests')>(), fetchJSON: vi.fn(async () => []), postJSON: vi.fn(async () => undefined) }));
+import { cloneElement } from 'react';
+import type { SessionSidebarProps } from './SessionSidebar';
+import { countRender } from '../../lib/perfMonitor';
+
+vi.mock('../../lib/perfMonitor', () => ({ countRender: vi.fn() }));
 
 beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
@@ -67,8 +72,7 @@ function renderSidebar(
   path = '/',
 ) {
   function Location() { const location = useLocation(); return <output data-testid="sidebar-location">{location.pathname}</output>; }
-  return render(
-    <MemoryRouter initialEntries={[path]}><Location /><SessionSidebar
+  const element = <SessionSidebar
       activeId={activeId}
       sidebarWidth={300}
       sidebarView={sidebarView}
@@ -104,8 +108,10 @@ function renderSidebar(
       onClientSelect={vi.fn()}
       onNewSessionInDirectory={onNewSessionInDirectory}
       onArchiveProject={vi.fn()}
-    /></MemoryRouter>,
-  );
+    />;
+  const tree = (updates: Partial<SessionSidebarProps> = {}) => <MemoryRouter initialEntries={[path]}><Location />{cloneElement(element, updates)}</MemoryRouter>;
+  const view = render(tree());
+  return { ...view, update: (updates: Partial<SessionSidebarProps>) => view.rerender(tree(updates)) };
 }
 
 describe('SessionSidebar', () => {
@@ -205,6 +211,18 @@ describe('SessionSidebar', () => {
     ];
     renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 900, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, 'recent');
     expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['completed', 'prompted', 'streaming']);
+  });
+
+  it('isolates 200 rows from transcript renders and updates only the active status row', async () => {
+    const rows = Array.from({ length: 200 }, (_, index) => session({ id: index === 0 ? 's' : `row-${index}` }));
+    const view = renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, 'recent');
+    await act(async () => {});
+    vi.mocked(countRender).mockClear();
+    for (let i = 0; i < 50; i++) view.update({});
+    expect(vi.mocked(countRender).mock.calls.filter(([name]) => name === 'SessionSidebar')).toHaveLength(0);
+    expect(vi.mocked(countRender).mock.calls.filter(([name]) => name === 'SidebarSessionRow')).toHaveLength(0);
+    view.update({ activeDisplayStatus: 'busy' });
+    expect(vi.mocked(countRender).mock.calls.filter(([name]) => name === 'SidebarSessionRow')).toHaveLength(1);
   });
 
   it('shows muted running drawers without changing the grouped main list', () => {

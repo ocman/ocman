@@ -152,12 +152,21 @@ func applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (int64, er
 		return 0, err
 	}
 	if changes.sidebar {
-		if err := refreshSidebar(ctx, tx, key); err != nil {
+		if err := refreshSidebarRow(ctx, tx, key); err != nil {
+			return 0, err
+		}
+	}
+	if changes.attention {
+		if err := refreshSidebarAttention(ctx, tx, key); err != nil {
 			return 0, err
 		}
 	}
 	if changes.analytics {
 		if err := refreshAnalyticsSummary(ctx, tx, key, changedAnalyticsMessages(b)); err != nil {
+			return 0, err
+		}
+	} else if changes.metadata {
+		if err := refreshAnalyticsSessionMetadata(ctx, tx, key); err != nil {
 			return 0, err
 		}
 	}

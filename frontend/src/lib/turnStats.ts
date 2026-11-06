@@ -1,8 +1,10 @@
 import { createContext, useContext } from 'react';
+import { useAuiState } from '@assistant-ui/react';
 import type { Message, Part, PartData } from './api';
 import { formatModelRef } from './sessionStatus';
 import { throughputSample } from './throughput';
 import { isTurnNotification } from './turnNotification';
+import { parsePart } from './parsePart';
 
 /**
  * Aggregated stats for a single "turn" — one user prompt plus all the
@@ -82,6 +84,29 @@ export function messageModelRef(m: Message): string {
 /** Map from "assistant message id" → TurnAggregate for its turn. */
 export type TurnStatsMap = Map<string, TurnAggregate>;
 
+interface CachedTurn {
+  assistants: Message[];
+  parts: Part[];
+  running: boolean | undefined;
+  hadCacheRead: boolean;
+  hasCompletedCacheRead: boolean;
+  entries: TurnStatsMap;
+}
+
+/** One cache per conversation; retain only turns in the current snapshot. */
+export function createComputeTurnStats(): typeof computeTurnStats {
+  let turns = new Map<Message, CachedTurn>();
+  let previous: TurnStatsMap = new Map();
+  return (messages, parts, isRunning) => {
+    const next = new Map<Message, CachedTurn>();
+    const result = computeTurnStats(messages, parts, isRunning, turns, next);
+    turns = next;
+    if (result.size === previous.size && [...result].every(([id, stats]) => previous.get(id) === stats)) return previous;
+    previous = result;
+    return result;
+  };
+}
+
 /**
  * Compute per-turn aggregates from the flat messages + parts arrays.
  *
@@ -105,6 +130,8 @@ export function computeTurnStats(
   messages: Message[],
   parts: Part[],
   isRunning?: boolean,
+  cache?: Map<Message, CachedTurn>,
+  nextCache?: Map<Message, CachedTurn>,
 ): TurnStatsMap {
   const map: TurnStatsMap = new Map();
 
@@ -112,8 +139,10 @@ export function computeTurnStats(
   const toolCountByMsg: Record<string, number> = {};
   const toolsByMsg: Record<string, PartData[]> = {};
   const partsByMsg: Record<string, PartData[]> = {};
+  const rawPartsByMsg: Record<string, Part[]> = {};
   for (const p of parts) {
-    const data = typeof p.data === 'string' ? tryParse(p.data) : p.data;
+    (rawPartsByMsg[p.messageId] ??= []).push(p);
+    const data = parsePart(p);
     if (data && typeof data === 'object' && 'type' in data) {
       (partsByMsg[p.messageId] ??= []).push(data as PartData);
     }
@@ -149,6 +178,17 @@ export function computeTurnStats(
     if (assistantMsgs.length === 0) continue;
 
     const isLastTurn = turn === lastTurn;
+    const running = isLastTurn ? isRunning : undefined;
+    const turnParts = assistantMsgs.flatMap((m) => rawPartsByMsg[m.id] ?? []);
+    const cached = cache?.get(userMsg);
+    if (cached && cached.running === running && cached.hadCacheRead === hadCompletedCacheRead
+      && cached.assistants.length === assistantMsgs.length && cached.assistants.every((m, i) => m === assistantMsgs[i])
+      && cached.parts.length === turnParts.length && cached.parts.every((p, i) => p === turnParts[i])) {
+      for (const [id, stats] of cached.entries) map.set(id, stats);
+      nextCache?.set(userMsg, cached);
+      hadCompletedCacheRead = cached.hasCompletedCacheRead;
+      continue;
+    }
     const lastAsst = assistantMsgs[assistantMsgs.length - 1];
     let tokensOut = 0;
     let tokensIn = 0;
@@ -205,8 +245,9 @@ export function computeTurnStats(
     // the turn line never blanks out while ownership moves between
     // messages mid-turn (e.g. during tool calls). Only the last message
     // is the anchor that actually renders the bar.
+    const entries: TurnStatsMap = new Map();
     for (const a of assistantMsgs) {
-      map.set(a.id, {
+      const stats: TurnAggregate = {
         wallClockMs,
         tokensOut,
         tokensIn,
@@ -218,9 +259,16 @@ export function computeTurnStats(
         startedAt: userMsg.timeCreated,
         model,
         isSummaryAnchor: a.id === lastAsst.id,
-      });
+      };
+      // Text-only deltas may change dependencies without changing accounting.
+      const prior = cached?.entries.get(a.id);
+      const stable = prior && (Object.keys(stats) as Array<keyof TurnAggregate>).every((key) => Object.is(stats[key], prior[key])) ? prior : stats;
+      map.set(a.id, stable);
+      entries.set(a.id, stable);
     }
+    const hadCacheRead = hadCompletedCacheRead;
     if (!isLive && cacheRead > 0) hadCompletedCacheRead = true;
+    nextCache?.set(userMsg, { assistants: assistantMsgs, parts: turnParts, running, hadCacheRead, hasCompletedCacheRead: hadCompletedCacheRead, entries });
   }
 
   return map;
@@ -233,16 +281,6 @@ export function latestTurnModel(messages: Message[], turnStatsMap: TurnStatsMap)
   }
   return '';
 }
-
-function tryParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
-
-export const TurnStatsContext = createContext<TurnStatsMap>(new Map());
 
 export type ModelLabelMap = Record<string, string>;
 
@@ -275,8 +313,11 @@ export function humanizeModelRef(model: string): string {
   return words.join(' ') || model;
 }
 
-export function useTurnStats(messageId: string): TurnAggregate | undefined {
-  return useContext(TurnStatsContext).get(messageId);
+export function useTurnStats(messageId?: string): TurnAggregate | undefined {
+  return useAuiState((state) => {
+    const message = messageId === undefined ? state.message : state.thread.messages.find((m) => m.id === messageId);
+    return message?.metadata.custom?.turnStats as TurnAggregate | undefined;
+  });
 }
 
 export function useModelLabel(model: string): string {

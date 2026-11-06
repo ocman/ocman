@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Session, SessionStatus } from '../../lib/api';
 import { api } from '../../lib/api';
 import { useUiStore } from '../../lib/uiStore';
@@ -48,8 +48,11 @@ export function useSidebarProjectGroups({
   // All known projects — the sidebar "projects" view lists every
   // unarchived project, even ones with no session in the recent window.
   const projectsQuery = useProjects({ enabled });
+  const refetchProjects = projectsQuery.refetch;
   const allProjects = projectsQuery.data;
-  const identity = useProjectIdentityIndex(allProjects ?? [], [...recentSessions, ...(activeProject ? [activeProject] : [])], enabled);
+  const knownProjects = useMemo(() => allProjects ?? [], [allProjects]);
+  const checkouts = useMemo(() => [...recentSessions, ...(activeProject ? [activeProject] : [])], [recentSessions, activeProject]);
+  const identity = useProjectIdentityIndex(knownProjects, checkouts, enabled);
   const expanded = useRef('');
   useEffect(() => {
     const current = activeProject ?? recentSessions.find(s => s.id === id);
@@ -154,13 +157,13 @@ export function useSidebarProjectGroups({
 
   // Archive a project from the sidebar: hide its group immediately, then
   // persist + refetch /api/projects. Revert the optimistic hide on error.
-  const handleArchiveProjectFromSidebar = (directory: string, remoteId?: string) => {
+  const handleArchiveProjectFromSidebar = useCallback((directory: string, remoteId?: string) => {
     const root = projectRootForDirectory(directory);
     if (!root) return;
     const key = identity(root, remoteId).key;
     setArchivedProjectRoots((prev) => new Set(prev).add(key));
     archiveProject(root, true, remoteId || 'local')
-      .then(() => projectsQuery.refetch())
+      .then(() => refetchProjects())
       .catch((err) => {
         remoteLog.error('Failed to archive project', err);
         setArchivedProjectRoots((prev) => {
@@ -169,7 +172,7 @@ export function useSidebarProjectGroups({
           return next;
         });
       });
-  };
+  }, [identity, archiveProject, refetchProjects]);
 
   return { allProjects, sidebarProjectGroups, handleReorderProjects, handleArchiveProjectFromSidebar };
 }

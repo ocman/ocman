@@ -4,6 +4,7 @@ import { newSessionPath } from '../../lib/newSessionPath';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SessionMetadata } from '../../lib/sessionReducer';
+import { useCallback } from 'react';
 
 export interface UseSessionCreationOptions {
   session: SessionMetadata | null;
@@ -47,7 +48,11 @@ export function useSessionCreation({
 }: UseSessionCreationOptions) {
   // A new conversation is a route, not a session: nothing is created until
   // its first prompt, so the machine and target can still change freely.
-  const handleNewSessionInDirectory = (directory: string, remoteId?: string, platform?: string, title?: string) => {
+  const hasSession = !!session;
+  const sessionDirectory = session?.directory;
+  const sessionRemoteId = session?.remoteId;
+  const sessionPlatform = session?.platform;
+  const handleNewSessionInDirectory = useCallback((directory: string, remoteId?: string, platform?: string, title?: string) => {
     // Prefer the target project's own platform/host (e.g. a remote
     // project group) over the currently-open session's, so a "+" on a
     // remote project actually targets that remote instead of falling
@@ -57,11 +62,11 @@ export function useSessionCreation({
     // same project — otherwise a "+" on a *different* project (whose
     // group didn't carry a platform) leaks the current session's
     // (possibly remote) platform onto it, mis-targeting the host.
-    const sameProject = !!session && (remoteId === undefined || remoteId === (session.remoteId || 'local'))
-      && projectRootForDirectory(directory) === projectRootForDirectory(session.directory);
-    const targetPlatform = platform ?? (sameProject ? session?.platform : undefined);
+    const sameProject = hasSession && (remoteId === undefined || remoteId === (sessionRemoteId || 'local'))
+      && projectRootForDirectory(directory) === projectRootForDirectory(sessionDirectory ?? '');
+    const targetPlatform = platform ?? (sameProject ? sessionPlatform : undefined);
     navigate(newSessionPath({ directory, remoteId, platform: targetPlatform, title }));
-  };
+  }, [hasSession, sessionDirectory, sessionRemoteId, sessionPlatform, navigate]);
 
   const handleNewSession = async (title?: string) => {
     if (!session) return;

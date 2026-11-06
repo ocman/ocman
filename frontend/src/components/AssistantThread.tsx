@@ -230,7 +230,7 @@ const AssistantMessage: FC = () => {
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
   const timelineAt = typeof custom?.timelineAt === 'number' ? custom.timelineAt : 0;
-  const turnStats = useTurnStats(messageId);
+  const turnStats = useTurnStats();
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
@@ -253,7 +253,7 @@ const AssistantMessage: FC = () => {
         {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
         <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
           <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
-          <TurnSummaryBar messageId={messageId} actions={<TurnActions messageId={messageId} />} />
+          <TurnSummaryBar actions={<TurnActions messageId={messageId} />} />
         </MessagePrimitive.Root>
       </>
     );
@@ -268,7 +268,7 @@ const AssistantMessage: FC = () => {
           <ExplorationContent components={ASSISTANT_PART_COMPONENTS} />
         </div>
         <AssistantMeta />
-        <TurnSummaryBar messageId={messageId} actions={<TurnActions messageId={messageId} />} />
+        <TurnSummaryBar actions={<TurnActions messageId={messageId} />} />
       </MessagePrimitive.Root>
     </>
   );

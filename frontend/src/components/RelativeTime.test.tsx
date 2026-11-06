@@ -44,6 +44,24 @@ describe('RelativeTime', () => {
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('keeps compact sidebar timestamps fresh without rerendering their rows', () => {
+    const { unmount } = render(<RelativeTime iso="2026-01-01T12:00:00Z" compact />);
+    expect(screen.getByText('now')).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(screen.getByText('1m')).toBeInTheDocument();
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('refreshes compact timestamps at the activity boundary rather than mount time', () => {
+    render(<RelativeTime iso="2026-01-01T11:59:01Z" compact />);
+    expect(screen.getByText('now')).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(2_000); });
+    expect(screen.getByText('1m')).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(59_000); });
+    expect(screen.getByText('2m')).toBeInTheDocument();
+  });
 });
 
 describe('RelativeTimestamp', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '../../lib/api.types';
 import { useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import { discardBackendDraft, isBackendDraft, refreshBackendDrafts, retireBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
@@ -34,43 +34,50 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
   const [discardError, setDiscardError] = useState<{ id: string; message: string }>();
   const drafts = useNewConversationDrafts((state) => state.drafts);
   const backend = useBackendConversationDrafts((state) => state.drafts);
-  const stable = drafts.filter((draft) => isBackendDraft(draft.draftId) && backend[draft.draftId]?.phase !== 'discarded');
-  const project = useProjectIdentityIndex(groups.map((group) => ({ ...group, projectKey: group.key })), stable);
+  const stable = useMemo(() => drafts.filter((draft) => isBackendDraft(draft.draftId) && backend[draft.draftId]?.phase !== 'discarded'), [drafts, backend]);
+  const projects = useMemo(() => groups.map((group) => ({ ...group, projectKey: group.key })), [groups]);
+  const project = useProjectIdentityIndex(projects, stable);
   useEffect(() => {
     const stopSync = subscribeBackendDraftSync();
     const stopPolling = startVisiblePolling(() => refreshBackendDrafts()
       .catch((error) => remoteLog.error('Could not load backend drafts', error)), 5000);
     return () => { stopPolling(); stopSync(); };
   }, []);
-  const known = new Map([...recent, ...groups.flatMap((group) => group.sessions)].map((session) => [session.id, session]));
-  const pending = stable.filter((draft) => backend[draft.draftId]?.phase !== 'ready' || !known.has(draft.draftId));
+  const known = useMemo(() => new Map([...recent, ...groups.flatMap((group) => group.sessions)].map((session) => [session.id, session])), [recent, groups]);
   // Once the real row has taken over, retire the background draft so a later
   // archive does not bring the synthetic row back. The open draft page does
   // this itself before navigating.
-  const published = stable.filter((draft) => draft.draftId !== activeId && backend[draft.draftId]?.phase === 'ready'
-    && known.has(draft.draftId)).map((draft) => draft.draftId).join(',');
+  const published = useMemo(() => stable.filter((draft) => draft.draftId !== activeId && backend[draft.draftId]?.phase === 'ready'
+    && known.has(draft.draftId)).map((draft) => draft.draftId).join(','), [stable, activeId, backend, known]);
   useEffect(() => {
     for (const id of published ? published.split(',') : []) {
       void retireBackendDraft(id).catch((error) => remoteLog.error('Could not retire draft metadata', error));
     }
   }, [published]);
-  const ids = new Set(pending.map((draft) => draft.draftId));
-  const synthetic = pending.map(draftSession);
-  const merge = (rows: Session[], extras: Session[]) => {
-    return [...rows.filter((row) => !ids.has(row.id)), ...extras]
-      .sort(compareSidebarCompletion);
-  };
-  const result = groups.map((group) => ({ ...group, sessions: group.sessions.filter((session) => !ids.has(session.id)) }));
-  for (const row of synthetic) {
-    const identity = project(row.directory, row.remoteId);
-    let group = result.find((group) => !group.isPinned && (group.key ?? group.directory) === identity.key);
-    if (!group) {
-      group = { ...identity, sessions: [], lastUpdated: row.timeUpdated, aggregate: { kind: 'none' } };
-      result.push(group);
+  // Transcript updates don't change any of these inputs. Keep row objects,
+  // group arrays and action identities out of that render path.
+  const derived = useMemo(() => {
+    const pending = stable.filter((draft) => backend[draft.draftId]?.phase !== 'ready' || !known.has(draft.draftId));
+    const ids = new Set(pending.map((draft) => draft.draftId));
+    const synthetic = pending.map(draftSession);
+    const merge = (rows: Session[], extras: Session[]) => {
+      return [...rows.filter((row) => !ids.has(row.id)), ...extras]
+        .sort(compareSidebarCompletion);
+    };
+    const result = groups.map((group) => ({ ...group, sessions: group.sessions.filter((session) => !ids.has(session.id)) }));
+    for (const row of synthetic) {
+      const identity = project(row.directory, row.remoteId);
+      let group = result.find((group) => !group.isPinned && (group.key ?? group.directory) === identity.key);
+      if (!group) {
+        group = { ...identity, sessions: [], lastUpdated: row.timeUpdated, aggregate: { kind: 'none' } };
+        result.push(group);
+      }
+      group.sessions = merge(group.sessions, [row, ...group.sessions.filter((session) => ids.has(session.id) && session.id !== row.id)]);
     }
-    group.sessions = merge(group.sessions, [row, ...group.sessions.filter((session) => ids.has(session.id) && session.id !== row.id)]);
-  }
-  function discard(id: string) {
+    return { recent: merge(recent, synthetic), groups: result, ids };
+  }, [recent, groups, stable, backend, project, known]);
+  const { ids } = derived;
+  const discard = useCallback((id: string) => {
     if (!ids.has(id)) return false;
     if (discardInFlight.current.has(id)) return true;
     discardInFlight.current.add(id);
@@ -86,17 +93,17 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
       setDiscarding(new Set(discardInFlight.current));
     });
     return true;
-  }
+  }, [ids, navigate]);
+  const open = useCallback((id: string) => {
+    const draft = stable.find((draft) => draft.draftId === id);
+    if (!draft || backend[id]?.phase === 'ready') return false;
+    navigate(newSessionPath(draft));
+    return true;
+  }, [stable, backend, navigate]);
+  const retryDiscard = useCallback(() => { if (discardError) discard(discardError.id); }, [discardError, discard]);
   return {
-    recent: merge(recent, synthetic), groups: result, ids, discarding,
+    ...derived, discarding,
     discardError: discardError?.message,
-    retryDiscard: () => { if (discardError) discard(discardError.id); },
-    open(id: string) {
-      const draft = stable.find((draft) => draft.draftId === id);
-      if (!draft || backend[id]?.phase === 'ready') return false;
-      navigate(newSessionPath(draft));
-      return true;
-    },
-    discard,
+    retryDiscard, open, discard,
   };
 }

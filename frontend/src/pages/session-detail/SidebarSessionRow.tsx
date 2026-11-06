@@ -1,6 +1,6 @@
-import { useState, type CSSProperties } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 import type { GitInfo, Session } from '../../lib/api';
-import { cleanTitle, relativeTime } from '../../lib/format';
+import { cleanTitle } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { isTerminalStatus } from '../../lib/sessionStatus';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -12,6 +12,8 @@ import { HostBadge } from '../../components/HostBadge';
 import { useHoverPrefetch } from './sessionPrefetch';
 import { SidebarRow } from './SidebarRow';
 import { useSessionSwipe } from '../../lib/useSessionSwipe';
+import { countRender } from '../../lib/perfMonitor';
+import { RelativeTime } from '../../components/RelativeTime';
 import '../../components/SessionSwipe.css';
 
 export interface SidebarSessionRowProps {
@@ -30,13 +32,13 @@ export interface SidebarSessionRowProps {
   draft: boolean;
   debugMode: boolean;
   gitInfo: GitInfo | undefined;
-  onNavigateToSession: (id: string) => void;
+  onNavigateToSession: (id: string, platform?: string) => void;
   onArchiveSession: (e: React.MouseEvent, session: Session) => void;
   onPinSession: (e: React.MouseEvent, session: Session) => void;
 }
 
 /** One session row in the sidebar (flat, pinned or grouped view). */
-export function SidebarSessionRow({
+export const SidebarSessionRow = memo(function SidebarSessionRow({
   session: sib,
   inGroup,
   flat: requestedFlat = false,
@@ -52,6 +54,7 @@ export function SidebarSessionRow({
   onArchiveSession,
   onPinSession,
 }: SidebarSessionRowProps) {
+  countRender('SidebarSessionRow');
   const gitInfo = currentGitInfo ?? (sib.branch ? { branch: sib.branch, ahead: 0, behind: 0, dirty: false } : undefined);
   const activityAt = sib.lastMessageAt || sib.timeUpdated;
   // Independent subsessions keep their own project/branch card. Native agents
@@ -105,7 +108,7 @@ export function SidebarSessionRow({
             at: performance.now(),
           });
         }
-        onNavigateToSession(sib.id);
+        onNavigateToSession(sib.id, sib.platform);
       }}
       // Middle click archives the row. preventDefault on mousedown stops
       // the browser's middle-click autoscroll from kicking in.
@@ -125,7 +128,7 @@ export function SidebarSessionRow({
               at: performance.now(),
             });
           }
-          onNavigateToSession(sib.id);
+          onNavigateToSession(sib.id, sib.platform);
         }
       }}
     >
@@ -149,7 +152,7 @@ export function SidebarSessionRow({
             <HostBadge showIcon alwaysShow={!!sib.remoteId && sib.remoteId !== 'local'}
               remoteId={sib.remoteId} remoteName={sib.remoteName} stale={sib.stale} />
             <span className="session-sidebar-time" title={new Date(activityAt).toLocaleString()}>
-              {relativeTime(activityAt).replace('just now', 'now').replace(' ago', '')}
+              <RelativeTime iso={new Date(activityAt).toJSON() ?? ''} compact />
             </span>
           </span>
         )}
@@ -175,7 +178,7 @@ export function SidebarSessionRow({
       <span className="session-sidebar-meta">
         {!flat && (
           <span className="session-sidebar-time" title={new Date(activityAt).toLocaleString()}>
-            {relativeTime(activityAt).replace('just now', 'now').replace(' ago', '')}
+            <RelativeTime iso={new Date(activityAt).toJSON() ?? ''} compact />
           </span>
         )}
         <span className="session-sidebar-actions">
@@ -195,4 +198,4 @@ export function SidebarSessionRow({
       </span>
     </SidebarRow>
   );
-}
+});

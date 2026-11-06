@@ -8,6 +8,13 @@ import (
 )
 
 func refreshSidebar(ctx context.Context, tx *sql.Tx, key Key) error {
+	if err := refreshSidebarRow(ctx, tx, key); err != nil {
+		return err
+	}
+	return refreshSidebarAttention(ctx, tx, key)
+}
+
+func refreshSidebarRow(ctx context.Context, tx *sql.Tx, key Key) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO session_sidebar `+sidebarSelect+`
 	 WHERE s.instance_id=? AND s.id=? ON CONFLICT(instance_id,id) DO UPDATE SET
 	 title=excluded.title,directory=excluded.directory,project_id=excluded.project_id,parent_id=excluded.parent_id,
@@ -15,10 +22,7 @@ func refreshSidebar(ctx context.Context, tx *sql.Tx, key Key) error {
 	 source_deleted=excluded.source_deleted,is_subagent=excluded.is_subagent,source_child=excluded.source_child,
 	 project_directory=excluded.project_directory,inferred_status=excluded.inferred_status,
 	 last_role=excluded.last_role,last_finish=excluded.last_finish,last_error=excluded.last_error`, key.InstanceID, key.SessionID)
-	if err != nil {
-		return err
-	}
-	return refreshSidebarAttention(ctx, tx, key)
+	return err
 }
 
 type SidebarObservation struct {

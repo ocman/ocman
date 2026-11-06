@@ -1,12 +1,29 @@
 // @vitest-environment jsdom
 //
-// Tests for the pure helper underlying useStickyNavigate. We don't
-// exercise the hook itself here — react-router-dom's useNavigate is
-// well-tested upstream; the only logic worth pinning is the URL
-// rewrite that merges sticky params.
+// Pin both URL rewriting and the sidebar-facing callback identity.
 
-import { describe, expect, it } from 'vitest';
-import { applyStickyParams } from './useStickyNavigate';
+import { describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { applyStickyParams, useStickyNavigate } from './useStickyNavigate';
+
+const router = vi.hoisted(() => ({ navigate: vi.fn(), search: '?debug=one' }));
+vi.mock('react-router-dom', () => ({ useNavigate: () => router.navigate, useLocation: () => ({ search: router.search }) }));
+
+it('keeps navigation stable until routing inputs change and uses the latest sticky search', () => {
+  const { result, rerender } = renderHook(() => useStickyNavigate(['debug']));
+  const navigate = result.current;
+  rerender();
+  expect(result.current).toBe(navigate);
+  result.current('/session/first', { replace: true });
+  expect(router.navigate).toHaveBeenLastCalledWith('/session/first?debug=one', { replace: true });
+  router.search = '?debug=two';
+  rerender();
+  expect(result.current).not.toBe(navigate);
+  result.current('/session/second');
+  expect(router.navigate).toHaveBeenLastCalledWith('/session/second?debug=two', undefined);
+  result.current(-1);
+  expect(router.navigate).toHaveBeenLastCalledWith(-1);
+});
 
 describe('applyStickyParams', () => {
   it('returns the input unchanged when there are no sticky params', () => {

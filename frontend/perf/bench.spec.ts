@@ -184,6 +184,26 @@ test('interaction bench', async ({ mockedPage: page }) => {
       const gap = await page.locator('.oc-thread-viewport').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
       expect(gap).toBeLessThan(40);
     }],
+    // A new assistant message takes over the turn-summary anchor below a
+    // reader. Accounting updates must not move their existing scroll position.
+    ['anchorTransferWhileReading', async () => {
+      const viewport = page.locator('.oc-thread-viewport');
+      // Follow mode intentionally ignores programmatic scroll changes. Use a
+      // real reader gesture before positioning at the start of this fixture.
+      await viewport.hover({ position: { x: 12, y: 24 } });
+      await page.mouse.wheel(0, -1000);
+      await expect(page.getByRole('button', { name: 'Scroll to bottom', exact: true })).toBeVisible();
+      await viewport.evaluate((el) => { el.scrollTop = 0; });
+      await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0);
+      const frames = streamFrames(id(0), { chars: 1000 }).map((frame) => frame.map(([channel, data]) =>
+        [channel, data.replace(/_live/g, '_live_reading')] as [string, string]));
+      await play(page, id(0), frames);
+      await settle(page);
+      expect(await viewport.evaluate((el) => el.scrollTop)).toBe(0);
+      // Leave the following interaction scenarios at their original position.
+      await page.getByRole('button', { name: 'Scroll to bottom', exact: true }).click();
+      await expect.poll(() => viewport.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight)).toBeLessThan(40);
+    }],
     // Type in the composer while streaming.
     ['typeWhileStreaming', async () => {
       const composer = page.locator('[data-perf="composer"] textarea');

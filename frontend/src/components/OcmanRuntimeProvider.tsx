@@ -12,7 +12,7 @@ import { AgentsContext } from '../lib/agentColor';
 import { FailedSendsContext, type FailedSendsContextValue } from '../lib/failedSendsContext';
 import type { FailedSend } from '../lib/failedSends';
 import { computeIsRunning, createConvertMessages, parsePart } from '../lib/convertMessages';
-import { computeTurnStats, ModelLabelsContext, TurnStatsContext } from '../lib/turnStats';
+import { createComputeTurnStats, ModelLabelsContext } from '../lib/turnStats';
 import { formatModelRef, isSessionRunning } from '../lib/sessionStatus';
 import { TurnSpeechContext, useTurnSpeech } from '../lib/turnSpeech';
 import { convertThreadMessage } from '../lib/threadMessageAdapter';
@@ -125,11 +125,22 @@ export function OcmanRuntimeProvider({
   // mount. `sessionId` is in the dep list deliberately even though
   // `createConvertMessages()` doesn't read it — the dep is the
   // *trigger* that drops the previous closure.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionId is the intentional cache-key trigger
-  const convert = useMemo(() => createConvertMessages(), [sessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- explicit owner/session cache boundary
+  const convert = useMemo(() => createConvertMessages(), [sessionId, platformId]);
+
+  const isRunning = useMemo(() => sessionStatus === undefined
+    ? computeIsRunning(messages)
+    : isSessionRunning(messages.at(-1) ?? null, sessionStatus), [messages, sessionStatus]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- explicit owner/session cache boundary
+  const computeStats = useMemo(() => createComputeTurnStats(), [sessionId, platformId]);
+  const turnStatsMap = useMemo(
+    () => computeStats(messages, parts, isRunning),
+    [computeStats, messages, parts, isRunning],
+  );
 
   const converted = useMemo(() => {
-    const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning, reasoningNow);
+    const serverMessages = convert(messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, showReasoning, reasoningNow, turnStatsMap);
     const serverIds = new Set(serverMessages.map((message) => message.id));
     const missingFailures = (failedSends ?? []).filter((entry) => !serverIds.has(entry.id) && entry.id !== pendingSend?.id);
     if (missingFailures.length === 0 && !pendingSend) return serverMessages;
@@ -150,16 +161,7 @@ export function OcmanRuntimeProvider({
       createdAt: new Date(entry.failedAt),
       metadata: { custom: { failed: { error: entry.error, imagesDropped: !!entry.imagesDropped } } },
     })), ...optimistic];
-  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, pendingSend, showReasoning, reasoningNow]);
-
-  const isRunning = useMemo(() => sessionStatus === undefined
-    ? computeIsRunning(messages)
-    : isSessionRunning(messages.at(-1) ?? null, sessionStatus), [messages, sessionStatus]);
-
-  const turnStatsMap = useMemo(
-    () => computeTurnStats(messages, parts, isRunning),
-    [messages, parts, isRunning],
-  );
+  }, [convert, messages, parts, pendingAgent, taskLiveOutput, projectDirectory, failedById, failedSends, pendingSend, showReasoning, reasoningNow, turnStatsMap]);
   const speech = useTurnSpeech(messages, parts, turnStatsMap,
     `${platformId ?? ''}:${sessionId}`, sessionStatus, speechConnected, speechReconciled);
 
@@ -200,13 +202,11 @@ export function OcmanRuntimeProvider({
     <AgentsContext.Provider value={agentList}>
         <FailedSendsContext.Provider value={failedCtx}>
         <ModelLabelsContext.Provider value={modelLabels}>
-          <TurnStatsContext.Provider value={turnStatsMap}>
             <AssistantRuntimeProvider runtime={runtime}>
               <TurnSpeechContext.Provider value={speech}>
                 <A2UIActionContext.Provider value={uiActions}>{children}</A2UIActionContext.Provider>
               </TurnSpeechContext.Provider>
             </AssistantRuntimeProvider>
-          </TurnStatsContext.Provider>
         </ModelLabelsContext.Provider>
       </FailedSendsContext.Provider>
     </AgentsContext.Provider>

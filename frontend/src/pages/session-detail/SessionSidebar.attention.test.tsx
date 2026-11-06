@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { NotifyEntry, Session } from '../../lib/api';
-import { useNotifySnapshot } from '../../lib/useNotifyData';
+import type { NotifySnapshot } from '../../lib/useNotifyData';
 import { useUiStore } from '../../lib/uiStore';
 import { SessionSidebar, type SessionSidebarProps } from './SessionSidebar';
 import { seedView } from '../../test/oceFixtures';
@@ -11,7 +11,15 @@ import { useBetaFeatures } from '../../lib/betaFeatures';
 
 beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
-vi.mock('../../lib/useNotifyData', () => ({ useNotifySnapshot: vi.fn() }));
+const notify = vi.hoisted(() => ({ current: undefined as NotifySnapshot | undefined, listeners: new Set<() => void>() }));
+vi.mock('../../lib/useNotifyData', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    notify.listeners.add(listener);
+    return () => { notify.listeners.delete(listener); };
+  };
+  return { useNotifySnapshot: () => useSyncExternalStore(subscribe, () => notify.current) };
+});
 vi.mock('../../components/BackendStats', () => ({ BackendStats: () => null }));
 vi.mock('../../lib/queries', () => ({ useWorkEpics: () => ({ data: [] }) }));
 vi.mock('../../lib/useCapabilities', async (original) => ({
@@ -24,7 +32,10 @@ const entry: NotifyEntry = {
 };
 
 function snapshot(entries: NotifyEntry[]) {
-  vi.mocked(useNotifySnapshot).mockReturnValue({ entries, fetchedAt: Date.now() });
+  act(() => {
+    notify.current = { entries, fetchedAt: Date.now() };
+    notify.listeners.forEach((listener) => listener());
+  });
 }
 
 function Location() {
@@ -94,10 +105,10 @@ it('reveals a badge-counted Factory interruption absent from grouped history', (
 });
 
 it('removes acknowledged items from attention without adding old history to the recent list', () => {
-  const page = renderSidebar('projects');
+  renderSidebar('projects');
   expect(screen.getByText(entry.title!)).toBeInTheDocument();
   snapshot([]);
-  page.refresh();
+  // The subscription must update the memoized sidebar without a parent render.
   expect(screen.queryByRole('region', { name: 'Needs attention' })).not.toBeInTheDocument();
 });
 
@@ -175,7 +186,7 @@ it('renders missing metadata safely and supports a legacy ownerless entry', () =
 });
 
 it('leaves the normal list intact while notification data is loading', () => {
-  vi.mocked(useNotifySnapshot).mockReturnValue(undefined);
+  notify.current = undefined;
   renderSidebar('recent', [{ ...seedView('normal').session!, title: 'Normal history' }]);
   expect(screen.queryByRole('region', { name: 'Needs attention' })).not.toBeInTheDocument();
   expect(screen.getByText('Normal history')).toBeInTheDocument();

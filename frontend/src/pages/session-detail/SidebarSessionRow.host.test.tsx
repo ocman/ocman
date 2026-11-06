@@ -35,6 +35,6 @@ it('keeps the host pill display-only and preserves mouse and keyboard row naviga
   renderRow('r1', false, navigate);
   fireEvent.click(screen.getByLabelText('Build host'));
   fireEvent.keyDown(screen.getByRole('button', { name: /Remote work/ }), { key: 'Enter' });
-  expect(navigate).toHaveBeenNthCalledWith(1, 'remote-session');
-  expect(navigate).toHaveBeenNthCalledWith(2, 'remote-session');
+  expect(navigate).toHaveBeenNthCalledWith(1, 'remote-session', 'opencode');
+  expect(navigate).toHaveBeenNthCalledWith(2, 'remote-session', 'opencode');
 });
