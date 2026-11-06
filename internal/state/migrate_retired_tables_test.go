@@ -71,7 +71,8 @@ func TestRetiredTablesMigrationDropsOnlyRetiredTables(t *testing.T) {
 		INSERT INTO setting (key, value, updated_at) VALUES ('kept', 'yes', 1)`); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(raw); err != nil {
+	// Compare only the retirement step; later migrations may add new tables.
+	if err := migrateTo(raw, beforeRetiredTables+1); err != nil {
 		t.Fatal(err)
 	}
 	after := schemaObjects(t, raw, true)
@@ -99,7 +100,8 @@ func TestRetiredTablesMigrationDropsOnlyRetiredTables(t *testing.T) {
 	if err := migrate(fresh); err != nil {
 		t.Fatal(err)
 	}
-	if got := schemaObjects(t, fresh, true); !slices.Equal(got, after) {
-		t.Fatalf("fresh schema differs from upgraded schema:\n fresh %v\nupgrade %v", got, after)
+	upgraded := schemaObjects(t, db.db, true)
+	if got := schemaObjects(t, fresh, true); !slices.Equal(got, upgraded) {
+		t.Fatalf("fresh schema differs from upgraded schema:\n fresh %v\nupgrade %v", got, upgraded)
 	}
 }

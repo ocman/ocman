@@ -74,7 +74,7 @@ func TestCreateSessionTool(t *testing.T) {
 		{err: fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate), want: "invalid session request: unknown platform"},
 		{err: platforms.ErrNotFound, want: "session not found"},
 		{err: errors.New("internal detail"), want: "session request failed"},
-		{err: errors.New("send"), created: internalmcp.CreatedSession{Platform: "opencode", SessionID: "ses-half"}, want: "session ses-half was created on opencode but the prompt failed"},
+		{err: errors.New("send"), created: internalmcp.CreatedSession{Platform: "opencode", SessionID: "ses-half"}, want: "session ses-half was created on opencode but setup or prompt delivery failed"},
 	} {
 		svc.err, svc.created = test.err, test.created
 		if result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo", "platform": "opencode", "model": "p/m"}); !result.IsError || testutil.ResultText(result) != test.want {

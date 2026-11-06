@@ -172,6 +172,10 @@ func TestMCPCreateSessionRemote(t *testing.T) {
 	if err != nil || sent.Model != "p/remote-current" {
 		t.Fatalf("remote inheritance = %#v, %v", sent, err)
 	}
+	creator, err := srv.stateDB.GetSessionCreator(t.Context(), "r-machine:opencode", "child")
+	if err != nil || creator == nil || creator.CreatorPlatform != "r-machine:opencode" || creator.CreatorSessionID != "caller" {
+		t.Fatalf("remote creator = %#v, %v", creator, err)
+	}
 }
 
 func TestMCPCallerModel(t *testing.T) {

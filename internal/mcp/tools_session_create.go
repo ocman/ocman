@@ -71,7 +71,7 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 	switch {
 	case err != nil && created.SessionID != "":
 		// Don't hide the session: the agent can retry the prompt in the UI or inspect it.
-		return mcplib.NewToolResultError("session " + created.SessionID + " was created on " + created.Platform + " but the prompt failed")
+		return mcplib.NewToolResultError("session " + created.SessionID + " was created on " + created.Platform + " but setup or prompt delivery failed")
 	case errors.Is(err, ErrInvalidSessionCreate):
 		return mcplib.NewToolResultError(err.Error())
 	case errors.Is(err, platforms.ErrNotFound):

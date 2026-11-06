@@ -430,6 +430,16 @@ target fields are required even when `model` has a platform prefix.
 New sessions use the platform's
 default permissions and do not inherit the caller's rules.
 
+When supplied, caller identity is validated and saved as the new session's
+creator in the MCP-serving instance's `state.db`, including launches in another
+project and on a remote machine. Both references retain their platform and
+machine scope. The link is saved before the first prompt and remains if prompt
+delivery fails. Failure to save the link stops prompt delivery and returns the
+created session's identity. Requests without caller identity have no creator
+link. This provenance is separate from native subagent ancestry and does not
+change session grouping, lifecycle, or permission inheritance. Older launches
+are not backfilled.
+
 OpenCode permissions apply to whole tools, so requiring approval for `create` or `send`
 also requires it for the read-only actions.
 

@@ -22,6 +22,7 @@ var sessionReferenceColumns = []struct{ table, column, owner string }{
 	{"routine", "session_id", "platform"}, {"routine_run", "session_id", "platform"}, {"routine_run", "target_session_id", "platform"},
 	{"seen_session", "session_id", "platform"}, {"session_auto_approve", "session_id", "platform"},
 	{"session_commit", "session_id", "platform"}, {"session_interruption", "session_id", "platform"},
+	{"session_creator", "session_id", "platform"}, {"session_creator", "creator_session_id", "creator_platform"},
 	{"session_replacement_candidate", "session_id", "platform"}, {"share_link", "session_id", "platform"},
 }
 

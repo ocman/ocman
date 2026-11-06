@@ -13,6 +13,7 @@ import (
 	internalmcp "github.com/ocman/ocman/internal/mcp"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/sessionsvc"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // CreateSession uses the same defaults and owner-local launch paths as the
@@ -53,13 +54,14 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 	if !ok {
 		return internalmcp.CreatedSession{}, fmt.Errorf("%w: remote %s is not connected", internalmcp.ErrInvalidSessionCreate, owner)
 	}
-	if in.Model == "" && in.SessionID != "" {
-		if caller == nil {
-			caller, err = s.GetSession(ctx, in.Platform, in.SessionID, 1)
-			if err != nil {
-				return internalmcp.CreatedSession{}, err
-			}
+	// Caller identity is provenance even when all launch options are explicit.
+	if in.SessionID != "" && caller == nil {
+		caller, err = s.GetSession(ctx, in.Platform, in.SessionID, 1)
+		if err != nil {
+			return internalmcp.CreatedSession{}, err
 		}
+	}
+	if in.Model == "" && in.SessionID != "" {
 		in.Model = mcpCallerModel(caller)
 	}
 	if in.Model == "" {
@@ -112,6 +114,18 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 			return internalmcp.CreatedSession{}, err
 		}
 		created.SessionID = resp.ID
+	}
+	if caller != nil {
+		creatorPlatform := caller.Session.Platform
+		if creatorPlatform == "" {
+			creatorPlatform = in.Platform
+		}
+		if err := s.server.stateDB.RecordSessionCreator(ctx, state.SessionCreator{
+			Platform: platformID, SessionID: created.SessionID,
+			CreatorPlatform: creatorPlatform, CreatorSessionID: caller.Session.ID,
+		}); err != nil {
+			return created, fmt.Errorf("recording session creator: %w", err)
+		}
 	}
 	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: created.SessionID, Message: in.Prompt, Model: in.Model, Agent: in.Agent}); err != nil {
 		return created, err

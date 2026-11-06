@@ -476,6 +476,7 @@ flowchart TD
     Modules -->|snooze: archive deadlines + atomic wake-up| State
     MCP --> Registry
     MCP -->|existing-session direct send| Sessions
+    MCP -->|creator provenance before first prompt| State
     Registry --> OC[platforms/opencode/provider + internal/db<br/>adapter and read-only queries]
     Registry --> ClaudePlatform[platforms/claude/transport<br/>native-session runtime bindings]
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
@@ -510,6 +511,11 @@ flowchart TD
     Modules -->|"remotesmod: /api/remotes CRUD, remote-access settings, inventory loop"| RP
     PluginSDK[sdk/plugin<br/>public Go SDK module] -->|canonical DTO aliases + validators| Plugins
 ```
+
+- MCP session creation saves a platform- and machine-scoped creator reference
+  in the serving instance's `state.db` before first delivery, for both worktree
+  and regular launches. This application provenance can cross projects and is
+  independent of native subagent hierarchy, permissions and lifecycle.
 
 - **internal/app.** Application startup owns flags, database selection,
   authentication, logging, platform registration and HTTP/desktop composition.
