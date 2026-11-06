@@ -59,8 +59,9 @@ resolved. Notifications newer than the fetched snapshot remain until a fresh
 snapshot confirms their state, so cleanup cannot erase a newly arrived alert.
 
 Badge appearance depends on the browser and operating system. Ocman requests
-a dot or platform-defined flag, never a numeric unread count. Home and Inbox
-navigation also use nonnumeric indicators. Session rows do not show message counts
+a dot or platform-defined flag, never a numeric unread count. Home navigation
+counts distinct unread or attention sessions; Inbox navigation counts unread,
+unarchived items. Navigation badges display up to 99+. Session rows do not show message counts
 for unread activity. Seen state, read filters and notification delivery are unchanged.
 
 ## Enable on each device

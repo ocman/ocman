@@ -136,16 +136,16 @@ test('header stays compact on desktop and gives phone filters room for touch', a
 });
 
 for (const unreadTotal of [1, 12, 120]) {
-test(`legacy unread count ${unreadTotal} is replaced by an indicator in collapsed navigation`, async ({ mockedPage: page }) => {
-  await page.route('**/api/inbox', (route) => route.fulfill({ json: { items: [{ id: 'new', title: 'New message', remoteId: 'local', createdAt: 1 }], unreadTotal } }));
+test(`${unreadTotal} unread Inbox items are counted in collapsed navigation`, async ({ mockedPage: page }) => {
+  await page.route('**/api/inbox', (route) => route.fulfill({ json: { items: Array.from({ length: unreadTotal }, (_, id) => ({ id: String(id), title: 'New message', body: 'Message body', remoteId: 'local', createdAt: 1 })), unreadTotal: 0 } }));
   await page.goto('/inbox');
   const link = page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: /^Inbox/ });
-  await expect(link).toHaveAccessibleName('Inbox, unread messages');
-  await expect(link).toHaveText('Inbox');
+  await expect(link).toHaveAccessibleName(`Inbox, ${unreadTotal} unread messages`);
+  await expect(link).toHaveText(`Inbox${unreadTotal > 99 ? '99+' : unreadTotal}`);
   await page.getByRole('button', { name: 'Collapse navigation' }).click();
   await expect(page.getByRole('button', { name: 'Expand navigation' })).toBeVisible();
   await expect.poll(async () => (await link.boundingBox())?.width).toBeLessThan(40);
-  await expect(link).toHaveAttribute('title', 'Inbox, unread messages');
+  await expect(link).toHaveAttribute('title', `Inbox, ${unreadTotal} unread messages`);
 });
 }
 
@@ -168,7 +168,7 @@ test('mark unread updates navigation and survives reloading the inbox', async ({
   await page.getByRole('button', { name: /Review ready/ }).click();
   await page.getByRole('button', { name: 'Mark unread' }).click();
   await expect(page.getByRole('heading', { name: 'Select a message' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Inbox, unread messages' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Inbox, 1 unread messages' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('radio', { name: 'Unread', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Review ready/ }).click();

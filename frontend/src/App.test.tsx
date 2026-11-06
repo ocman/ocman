@@ -78,14 +78,13 @@ describe('MainNav', () => {
     act(() => useBetaFeatures.setState({ factory: false }));
     expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
   });
-  it.each([1, 12, 120])('ignores legacy count %i and shows only an unread indicator', (unreadTotal) => {
+  it.each([1, 12, 120])('derives the Inbox count from items, ignoring legacy count %i', (unreadTotal) => {
     vi.mocked(useInbox).mockReturnValue({ data: { items: [{ id: 'new' }], unreadTotal } } as never);
     useUiStore.setState({ mainNavCollapsed: true });
     render(<MemoryRouter><MainNav /></MemoryRouter>);
-    const link = screen.getByRole('link', { name: 'Inbox, unread messages' });
-    expect(link).toHaveTextContent('Inbox');
-    expect(link).not.toHaveTextContent(String(unreadTotal));
-    expect(link).toHaveAttribute('title', 'Inbox, unread messages');
+    const link = screen.getByRole('link', { name: 'Inbox, 1 unread messages' });
+    expect(link).toHaveTextContent('Inbox1');
+    expect(link).toHaveAttribute('title', 'Inbox, 1 unread messages');
     useUiStore.setState({ mainNavCollapsed: false });
   });
 
