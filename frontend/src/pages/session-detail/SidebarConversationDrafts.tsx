@@ -5,7 +5,8 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { InlineAlert } from '../../components/InlineAlert';
 import { shortPath, fuzzyMatch, relativeTime } from '../../lib/format';
 import { newSessionPath } from '../../lib/newSessionPath';
-import { forgetConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
+import { useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
+import { discardBackendDraft } from '../../lib/backendConversationDrafts';
 import './SidebarConversationDrafts.css';
 import { SidebarRow } from './SidebarRow';
 import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
@@ -28,7 +29,7 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
     setDiscarding(draft.draftId);
     try {
       // Only a stored discard moves on; a failure keeps the draft, its text and files.
-      await forgetConversationDraft(draft.draftId, () => {
+      await discardBackendDraft(draft.draftId, () => {
         if (currentLocation.current?.key !== location.key || draft.draftId !== activeId) return;
         navigateAfterDraftDiscard(draft.draftId, navigate);
       });
@@ -36,7 +37,8 @@ function DraftRows({ drafts, searchQuery, inGroup }: { drafts: ConversationDraft
       setFailed({ draftId: draft.draftId, message: `Could not discard the draft: ${error instanceof Error ? error.message : String(error)}` });
     } finally { setDiscarding(undefined); }
   };
-  const activeId = location.pathname === '/session/new' ? new URLSearchParams(location.search).get('draftId') || 'new' : null;
+  const activeId = location.pathname === '/session/new' ? new URLSearchParams(location.search).get('draftId') || 'new'
+    : location.pathname.startsWith('/session/') ? location.pathname.slice('/session/'.length) : null;
   const visible = drafts.filter((draft) => draft.draftId === activeId || !searchQuery.trim() ||
     fuzzyMatch(searchQuery.trim(), `${draft.title || ''} ${draft.directory} ${draft.remoteId || 'local'}`));
   if (!visible.length) return null;

@@ -12,12 +12,31 @@ import { useUiStore } from '../../lib/uiStore';
 import type { Session } from '../../lib/api';
 import { SIDEBAR_SESSIONS_KEY } from '../../lib/sessionsCache';
 import { queryClient } from '../../lib/queryClient';
+import { postJSON } from '../../lib/api.requests';
+
+vi.mock('../../lib/api.requests', async (original) => ({ ...await original<typeof import('../../lib/api.requests')>(), postJSON: vi.fn() }));
 
 beforeEach(() => {
+  vi.mocked(postJSON).mockReset().mockResolvedValue(undefined);
   localStorage.clear();
   useNewConversationDrafts.setState({ drafts: [] });
   queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
   useUiStore.setState({ lastOpenedSessionId: undefined });
+});
+
+it('persists remote draft cleanup before removing the row and leaves its canonical route', async () => {
+  const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
+  rememberConversationDraft({ draftId: id, directory: '/repo', remoteId: 'box', title: 'Failed remote setup' });
+  mount('', newSessionPath({ draftId: id, directory: '/repo', remoteId: 'box' }));
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('cleanup unavailable'));
+  fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('cleanup unavailable');
+  expect(getConversationDraft(id)).toBeTruthy();
+  expect(screen.getByTestId('location')).toHaveTextContent(`/session/${id}`);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(getConversationDraft(id)).toBeUndefined());
+  expect(postJSON).toHaveBeenLastCalledWith(`/api/session-drafts/${id}`, undefined, { method: 'DELETE', parseJSON: false });
+  expect(screen.getByTestId('location').textContent).toBe('/session/new');
 });
 
 it.each(['empty', 'previous', 'latest'])('keeps the session workspace mounted after discarding its last draft: %s', async (target) => {

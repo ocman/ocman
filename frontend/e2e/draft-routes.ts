@@ -17,6 +17,11 @@ export async function mockDraftRoutes(page: Page, start?: (request: StartSession
       return route.fulfill({ status: 204 });
     }
     if (!previous) return route.fulfill({ status: 404 });
+    if (request.method() === 'DELETE') {
+      if (!['draft', 'discarded', 'failed', 'interrupted'].includes(previous.phase) || previous.result?.sessionId === id) return route.fulfill({ status: 409 });
+      drafts.set(id, { ...previous, phase: 'discarded', metadata: { draftId: id, directory: '' }, request: undefined, result: undefined, steps: {}, error: undefined });
+      return route.fulfill({ status: 204 });
+    }
     if (action === 'start') {
       const submitted = request.postDataJSON() as StartSessionRequest;
       try {

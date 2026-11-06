@@ -147,7 +147,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 
 	if req.DraftID != "" {
 		if sessionID != req.DraftID {
-			http.Error(w, "owner did not preserve the draft identity", http.StatusBadGateway)
+			http.Error(w, "The owning machine did not preserve the draft identity. Update ocman on that machine, then discard this failed draft and start a new conversation. Setup has not been retried.", http.StatusBadGateway)
 			return
 		}
 		if m.d.DB != nil {

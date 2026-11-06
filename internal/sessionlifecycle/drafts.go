@@ -113,7 +113,12 @@ func (m *Module) deleteDraft(w http.ResponseWriter, r *http.Request) {
 	if !m.draftEnabled(w) {
 		return
 	}
-	result, err := m.d.DB.ExecContext(r.Context(), `UPDATE conversation_draft SET phase='discarded',metadata='{}' WHERE id=? AND phase IN ('draft','discarded')`, r.PathValue("id"))
+	// Failed setup can be retired on the hub without contacting an outdated or
+	// disconnected owner. A confirmed native session must use session actions.
+	result, err := m.d.DB.ExecContext(r.Context(), `UPDATE conversation_draft
+		SET phase='discarded',metadata='{}',request='',result='',steps='{}',error=''
+		WHERE id=? AND (phase IN ('draft','discarded') OR
+		(phase IN ('failed','interrupted') AND coalesce(json_extract(CASE WHEN json_valid(result) THEN result ELSE '{}' END,'$.sessionId'),'')<>id))`, r.PathValue("id"))
 	if err != nil {
 		httpx.ServerError(w, "discarding draft", err)
 		return
@@ -127,6 +132,7 @@ func (m *Module) deleteDraft(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "draft is already submitted or missing", http.StatusConflict)
 		return
 	}
+	m.draftChanged()
 	w.WriteHeader(http.StatusNoContent)
 }
 

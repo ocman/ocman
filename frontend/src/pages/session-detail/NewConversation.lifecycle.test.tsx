@@ -38,6 +38,9 @@ vi.mock('../../lib/backendConversationDrafts', async (original) => ({
   refreshBackendDrafts: vi.fn(async () => {}),
 }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
+vi.mock('../../lib/api.requests', async (original) => ({
+  ...await original<typeof import('../../lib/api.requests')>(), postJSON: vi.fn(async () => undefined),
+}));
 vi.mock('../../lib/api', async (original) => {
   const actual = await original<typeof import('../../lib/api')>();
   return {
