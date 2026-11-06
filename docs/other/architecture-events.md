@@ -98,6 +98,8 @@ sequenceDiagram
   Conflict Retry previews both versions without advancing the local revision.
   Users explicitly keep local edits or restore the server text and selections;
   restoring advances the browser text fence before remounting the composer.
+  A recovery route gate blocks mounting and autosave until the route matches
+  the chosen server owner, directory, platform and title.
 - The start endpoint acknowledges the committed payload before module-owned
   workers perform setup. The composer clears on that acknowledgement. It
   reconciles a lost initial response through the same idempotent admission before

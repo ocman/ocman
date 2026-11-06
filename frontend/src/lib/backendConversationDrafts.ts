@@ -24,7 +24,8 @@ export interface BackendConversationDraft {
 export const useBackendConversationDrafts = create<{
   drafts: Record<string, BackendConversationDraft>; saveErrors: Record<string, string>;
   conflicts: Record<string, boolean>; recovered: Record<string, number>;
-}>(() => ({ drafts: {}, saveErrors: {}, conflicts: {}, recovered: {} }));
+  recoveryTargets: Record<string, BackendConversationDraft['metadata']>;
+}>(() => ({ drafts: {}, saveErrors: {}, conflicts: {}, recovered: {}, recoveryTargets: {} }));
 export const isBackendDraft = (id?: string) => !!id && /^ocm_[0-9a-f-]{36}$/.test(id);
 let reading: Promise<void> | undefined;
 let syncing = false;
@@ -62,6 +63,7 @@ export function persistBackendDraft(id: string): Promise<void> {
 }
 
 async function writeBackendDraft(id: string, snapshot: ConversationDraft & { text: string }) {
+  if (useBackendConversationDrafts.getState().recoveryTargets[id]) throw new Error('Wait for the recovered draft route before saving.');
   if (useBackendConversationDrafts.getState().conflicts[id]) throw new Error('Resolve the draft conflict before saving.');
   try {
     const revision = useBackendConversationDrafts.getState().drafts[id]?.revision ?? '';
@@ -89,7 +91,8 @@ export async function resolveBackendDraftConflict(id: string, server: BackendCon
   try {
     useBackendConversationDrafts.setState((state) => {
       const saveErrors = { ...state.saveErrors }; delete saveErrors[id];
-      return { drafts: { ...state.drafts, [id]: server }, saveErrors, conflicts: { ...state.conflicts, [id]: false } };
+      return { drafts: { ...state.drafts, [id]: server }, saveErrors, conflicts: { ...state.conflicts, [id]: false },
+        recoveryTargets: choice === 'server' ? { ...state.recoveryTargets, [id]: { ...server.metadata, draftId: id } } : state.recoveryTargets };
     });
     if (choice === 'server') {
       rememberConversationDraft({ title: undefined, platform: undefined, remoteId: undefined, model: undefined, agent: undefined,
@@ -146,7 +149,7 @@ function syncDrafts() {
   for (const draft of useNewConversationDrafts.getState().drafts) {
     const id = draft.draftId;
     const phase = useBackendConversationDrafts.getState().drafts[id]?.phase;
-    if (isBackendDraft(id) && (!phase || phase === 'draft') && !useBackendConversationDrafts.getState().saveErrors[id]) void persistBackendDraft(id).catch((error) => remoteLog.error('Could not save backend draft', error));
+    if (isBackendDraft(id) && (!phase || phase === 'draft') && !useBackendConversationDrafts.getState().saveErrors[id] && !useBackendConversationDrafts.getState().recoveryTargets[id]) void persistBackendDraft(id).catch((error) => remoteLog.error('Could not save backend draft', error));
   }
 }
 export function subscribeBackendDraftSync() {

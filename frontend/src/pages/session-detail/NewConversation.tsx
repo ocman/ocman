@@ -46,7 +46,7 @@ export interface NewConversationProps {
 
 export function NewConversation({ params, composerRef, navigate, navigateToSession }: NewConversationProps) {
   const recovered = useBackendConversationDrafts((state) => state.recovered[params.draftId ?? ''] ?? 0);
-  if (isBackendDraft(params.draftId)) return <DurableDraftRecovery key={params.draftId}><PreparedConversation key={recovered} params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} /></DurableDraftRecovery>;
+  if (isBackendDraft(params.draftId)) return <DurableDraftRecovery key={params.draftId} params={params}><PreparedConversation key={recovered} params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} /></DurableDraftRecovery>;
   return <PreparedDraftLifecycle key={params.draftId || NEW_SESSION_ID} params={params} navigate={navigate} navigateToSession={navigateToSession}>
     <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params}
       composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />

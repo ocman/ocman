@@ -10,7 +10,7 @@ const metadata = { draftId: id, directory: '/repo', remoteId: 'box' };
 beforeEach(() => {
   vi.clearAllMocks();
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
-  useBackendConversationDrafts.setState({ drafts: {}, saveErrors: {}, conflicts: {}, recovered: {} });
+  useBackendConversationDrafts.setState({ drafts: {}, saveErrors: {}, conflicts: {}, recovered: {}, recoveryTargets: {} });
   vi.mocked(postJSON).mockResolvedValue(undefined);
 });
 
@@ -84,6 +84,8 @@ it.each(['local', 'server'] as const)('recovers a conflict using the explicitly 
     expect(useNewConversationDrafts.getState().drafts[0].agent).toBeUndefined();
     expect(useNewConversationDrafts.getState().drafts[0].clone).toBeUndefined();
     expect(useBackendConversationDrafts.getState().recovered[id]).toBe(1);
+    expect(useBackendConversationDrafts.getState().recoveryTargets[id]).toEqual(server.metadata);
+    await expect(persistBackendDraft(id)).rejects.toThrow('Wait for the recovered draft route');
   }
 });
 

@@ -3,8 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NewConversation } from './NewConversation';
 import { api, fetchJSON } from '../../lib/api';
-import { useBackendConversationDrafts, type BackendConversationDraft } from '../../lib/backendConversationDrafts';
-import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { subscribeBackendDraftSync, useBackendConversationDrafts, type BackendConversationDraft } from '../../lib/backendConversationDrafts';
+import { getConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { resetDraftTextsForTests } from '../../lib/composerDraft';
 import { clearSettingsCache } from '../../lib/projectSettingsCache';
 import { useApiStore } from '../../lib/apiStore';
@@ -31,7 +31,7 @@ beforeEach(() => {
   clearSettingsCache();
   resetDraftTextsForTests();
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
-  useBackendConversationDrafts.setState({ drafts: {} });
+  useBackendConversationDrafts.setState({ drafts: {}, conflicts: {}, saveErrors: {}, recovered: {}, recoveryTargets: {} });
   queued.length = 0;
   payload = undefined;
   record = { id, metadata: { draftId: id, directory: '/repo', platform: 'opencode', remoteId: 'local' }, phase: 'draft', steps: {}, createdAt: Date.now() };
@@ -59,6 +59,45 @@ beforeEach(() => {
   }));
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it('waits for the chosen server route before mounting or autosaving recovered selections', async () => {
+  vi.mocked(api.prepareSession).mockResolvedValue({ platform: 'opencode', agents: [{ name: 'peer-agent' }], commands: [],
+    models: { hasProviders: true, models: [{ provider: 'peer', model: 'model' }] }, liveConnection: true });
+  const navigate = vi.fn();
+  const params = { ...record.metadata };
+  const view = render(<NewConversation params={params} composerRef={null} navigate={navigate} navigateToSession={vi.fn()} />);
+  await screen.findByRole('textbox');
+  record = { ...record, revision: 'peer', metadata: { draftId: id, directory: '/peer/repo', remoteId: 'peer', platform: 'opencode',
+    text: 'Peer prompt', model: 'peer/model', agent: 'peer-agent', reasoning: 'high', target: 'current',
+    clone: { url: 'https://example.com/peer.git', source: { directory: '/source', remoteId: 'peer' } } } };
+  const chosen = record.metadata;
+  const puts: unknown[] = [];
+  const fetcher = vi.mocked(fetch);
+  const original = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (url, options) => {
+    if (options?.method === 'PUT') puts.push(JSON.parse(String(options.body)));
+    return original(url, options);
+  });
+  const unsubscribe = subscribeBackendDraftSync();
+  try {
+    act(() => useBackendConversationDrafts.setState({ conflicts: { [id]: true }, saveErrors: { [id]: 'conflict' } }));
+    fireEvent.click(screen.getByRole('button', { name: /Retry/ }));
+    await screen.findByRole('textbox', { name: 'Server version' });
+    fireEvent.click(screen.getByRole('button', { name: 'Use server version' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(getConversationDraft(id)).toMatchObject(chosen);
+    expect(puts).toEqual([]);
+    expect(screen.queryByTestId('conversation-composer')).toBeNull();
+    view.rerender(<NewConversation params={chosen} composerRef={null} navigate={navigate} navigateToSession={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('conversation-composer').querySelector('textarea')).toHaveValue('Peer prompt'));
+    expect(await screen.findByTitle('Model (click to change)')).toHaveTextContent('model');
+    expect(screen.getByTitle('Agent (click to change)')).toHaveTextContent('peer-agent');
+    await waitFor(() => expect(puts.length).toBeGreaterThan(0));
+    for (const metadata of puts) expect(metadata).toMatchObject(chosen);
+    expect(getConversationDraft(id)).toMatchObject(chosen);
+    expect(useBackendConversationDrafts.getState().recoveryTargets[id]).toBeUndefined();
+  } finally { unsubscribe(); }
+});
 
 it('clears only after backend persistence, then accepts a follow-up while setup is still running', async () => {
   const navigate = vi.fn();
