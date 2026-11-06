@@ -27,3 +27,44 @@ export function hardenMessageLinks(root: HardenableRoot): void {
     if (a.rel !== 'noopener noreferrer') a.rel = 'noopener noreferrer';
   }
 }
+
+/** Observe the rendered thread; return a disposer for its queued work. */
+export function observeMessageLinks(thread: HTMLElement): () => void {
+  hardenMessageLinks(thread);
+  const pending = new Set<Element>();
+  let cancel: (() => void) | undefined;
+  const apply = () => {
+    cancel = undefined;
+    for (const root of pending) {
+      if (!root.isConnected || !thread.contains(root)) continue;
+      // An added wrapper covers its added descendants; scan it only once.
+      let parent = root.parentElement;
+      while (parent && parent !== thread && !pending.has(parent)) parent = parent.parentElement;
+      if (parent && pending.has(parent)) continue;
+      if (root.matches(MESSAGE_LINK_SELECTOR)) {
+        const anchor = root as HTMLAnchorElement;
+        if (anchor.target !== '_blank') anchor.target = '_blank';
+        if (anchor.rel !== 'noopener noreferrer') anchor.rel = 'noopener noreferrer';
+      }
+      hardenMessageLinks(root);
+    }
+    pending.clear();
+  };
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node instanceof Element) pending.add(node);
+      }
+    }
+    if (!pending.size || cancel) return;
+    if (typeof requestIdleCallback === 'function') {
+      const handle = requestIdleCallback(apply, { timeout: 200 });
+      cancel = () => cancelIdleCallback(handle);
+    } else {
+      const handle = setTimeout(apply, 200);
+      cancel = () => clearTimeout(handle);
+    }
+  });
+  observer.observe(thread, { childList: true, subtree: true });
+  return () => { observer.disconnect(); cancel?.(); pending.clear(); };
+}

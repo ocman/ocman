@@ -9,7 +9,7 @@ import { useModelLabel, useTurnStats } from '../lib/turnStats';
 import { shouldRenderAssistantMessage } from './assistantMessageVisibility';
 import { useAgentColor } from '../lib/agentColor';
 import { useShortcut } from '../lib/shortcutRegistry';
-import { hardenMessageLinks } from '../lib/linkHardener';
+import { observeMessageLinks } from '../lib/linkHardener';
 import { useFailedSends } from '../lib/failedSendsContext';
 import { isMutedTool } from '../lib/mutedTools';
 import { useStickyBottom } from '../lib/useStickyBottom';
@@ -372,35 +372,11 @@ export function AssistantThread({
   // Markdown links are handled at render time by MarkdownLink; this catches
   // anything else that might land in the DOM with a raw href.
   //
-  // Debounced via requestIdleCallback (with a 200ms timeout fallback) so
-  // the link scan runs at most once per idle period instead of on every
-  // DOM mutation during streaming (P1 fix).
+  // Coalesce added subtrees without rescanning historical messages.
   useEffect(() => {
     const thread = threadRef.current;
     if (!thread) return;
-    const apply = () => hardenMessageLinks(thread);
-    apply();
-    let idleHandle: number | ReturnType<typeof setTimeout> | null = null;
-    const scheduleApply = () => {
-      if (idleHandle !== null) return;
-      if (typeof requestIdleCallback === 'function') {
-        idleHandle = requestIdleCallback(() => { idleHandle = null; apply(); }, { timeout: 200 });
-      } else {
-        idleHandle = setTimeout(() => { idleHandle = null; apply(); }, 200);
-      }
-    };
-    const observer = new MutationObserver(scheduleApply);
-    observer.observe(thread, { childList: true, subtree: true });
-    return () => {
-      observer.disconnect();
-      if (idleHandle !== null) {
-        if (typeof cancelIdleCallback === 'function' && typeof idleHandle === 'number') {
-          cancelIdleCallback(idleHandle);
-        } else {
-          clearTimeout(idleHandle as ReturnType<typeof setTimeout>);
-        }
-      }
-    };
+    return observeMessageLinks(thread);
   }, []);
 
   const isJumpingRef = useRef(false);

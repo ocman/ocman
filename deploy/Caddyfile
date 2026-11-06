@@ -17,6 +17,15 @@
 # (must be connected to Tailscale).
 
 {$OCMAN_CADDY_HOST:localhost} {
+	# Only public build assets: never API, SSE, signed files, HTML or relay data.
+	@staticAssets {
+		method GET HEAD
+		path /assets/* /plugin-shared/*
+	}
+	encode @staticAssets zstd gzip
+	# Identity/range responses must vary too, so a cache cannot pin that encoding.
+	header @staticAssets +Vary Accept-Encoding
+
 	# Relay routes need HTTPS: the share viewer decrypts with WebCrypto,
 	# which browsers disable for non-localhost HTTP origins.
 	handle /s {

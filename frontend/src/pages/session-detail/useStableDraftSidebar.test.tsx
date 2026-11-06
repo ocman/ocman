@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useStableDraftSidebar } from './useStableDraftSidebar';
 import { useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
@@ -39,6 +39,27 @@ it('does not duplicate pending cleanup or leave a newer selection when it commit
   expect(navigate).not.toHaveBeenCalled();
   await waitFor(() => expect(result.current.discarding.has(id)).toBe(false));
   expect(navigate).not.toHaveBeenCalled();
+});
+
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+it('pauses hidden reads, reconciles on return and stops after unmount', async () => {
+  vi.useFakeTimers();
+  let hidden = true;
+  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+  const view = renderHook(() => useStableDraftSidebar([], [group], vi.fn()));
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(fetchJSON).not.toHaveBeenCalled();
+  hidden = false;
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+  expect(fetchJSON).toHaveBeenCalledTimes(1);
+  hidden = true;
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')); await vi.advanceTimersByTimeAsync(30_000); });
+  expect(fetchJSON).toHaveBeenCalledTimes(1);
+  view.unmount();
+  hidden = false;
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('online')); await vi.advanceTimersByTimeAsync(30_000); });
+  expect(fetchJSON).toHaveBeenCalledTimes(1);
 });
 
 it('uses one row ID through draft, setup and actual session publication', async () => {

@@ -2,7 +2,9 @@ package server
 
 import (
 	"fmt"
+	"io/fs"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/ocman/ocman/internal/webui"
@@ -90,8 +92,17 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get static subtree: %w", err)
 	}
+	mux.Handle("/", staticHandler(staticContent))
+	return mux, nil
+}
+
+// Vite content-addressed output only; plugin-shared URLs are deliberately stable.
+var hashedAssetPath = regexp.MustCompile(`^/assets/[^/]+-[A-Za-z0-9_-]{8,}\.(js|css|woff2?|ttf|svg|png|jpe?g|gif|webp|ico|avif)$`)
+
+func staticHandler(staticContent fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(staticContent))
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
 		// Try to serve the file directly
 		path := r.URL.Path
 		if path == "/" {
@@ -101,7 +112,11 @@ func (s *Server) routes() (*http.ServeMux, error) {
 		// Check if the file exists in static
 		f, err := staticContent.Open(strings.TrimPrefix(path, "/"))
 		if err == nil {
+			info, statErr := f.Stat()
 			f.Close()
+			if statErr == nil && !info.IsDir() && hashedAssetPath.MatchString(path) {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}
@@ -109,6 +124,4 @@ func (s *Server) routes() (*http.ServeMux, error) {
 		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
 	})
-
-	return mux, nil
 }

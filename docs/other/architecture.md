@@ -25,7 +25,7 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] --> Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>REST + SSE] --> Ocman[ocman<br/>Go binary :8228<br/>embedded public assets]
     Agent[Local MCP clients] -->|/mcp| Ocman
     Ocman -->|HTTP/SSE or CLI protocols| Platforms[Local OpenCode, Claude Code<br/>and opt-in Codex]
     Platforms --> Native[(Native databases,<br/>transcripts and rollouts)]
@@ -65,6 +65,15 @@ flowchart LR
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
+  Embedded content-hashed `/assets/` files use immutable caching; HTML,
+  client-route fallbacks and stable `/plugin-shared/` entries revalidate.
+  The optional Caddy proxy compresses only public asset GET/HEAD requests,
+  leaving API, SSE, signed resources and relay responses outside that scope.
+  Beta-setting and sidebar-draft periodic reads pause while hidden and
+  reconcile on visibility return, focus and page-resume signals without
+  overlapping reads. Draft persistence and cross-tab subscriptions stay active.
+  Message-link safety scans existing content once, then coalesces added
+  subtrees rather than rescanning the historical thread.
   The composer accepts text and attachments. Voice input belongs to external
   tools; ocman does not capture microphones or provide transcription endpoints.
   Answer read-aloud uses browser speech synthesis independently.

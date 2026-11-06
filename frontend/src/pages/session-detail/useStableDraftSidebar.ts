@@ -6,6 +6,7 @@ import { newSessionPath } from '../../lib/newSessionPath';
 import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 import { remoteLog } from '../../lib/remoteLog';
 import { compareSidebarCompletion } from '../../lib/sidebarHelpers';
+import { startVisiblePolling } from '../../lib/visiblePolling';
 import type { SidebarProjectGroup } from './SessionSidebar';
 import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
 
@@ -37,15 +38,9 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
   const project = useProjectIdentityIndex(groups.map((group) => ({ ...group, projectKey: group.key })), stable);
   useEffect(() => {
     const stopSync = subscribeBackendDraftSync();
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = () => {
-      void refreshBackendDrafts().catch((error) => remoteLog.error('Could not load backend drafts', error)).finally(() => {
-        if (active) timer = setTimeout(refresh, 5000);
-      });
-    };
-    refresh();
-    return () => { active = false; clearTimeout(timer); stopSync(); };
+    const stopPolling = startVisiblePolling(() => refreshBackendDrafts()
+      .catch((error) => remoteLog.error('Could not load backend drafts', error)), 5000);
+    return () => { stopPolling(); stopSync(); };
   }, []);
   const known = new Map([...recent, ...groups.flatMap((group) => group.sessions)].map((session) => [session.id, session]));
   const pending = stable.filter((draft) => backend[draft.draftId]?.phase !== 'ready' || !known.has(draft.draftId));
