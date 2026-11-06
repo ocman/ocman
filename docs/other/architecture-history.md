@@ -737,6 +737,7 @@ payloads or applying list limits. Both counter and page pause polling while hidd
 flowchart LR
     Import[History ingestion] -->|typed work + progress| Manager[tasksvc<br/>4 running, 128 admitted]
     Prepare[Historical identity preparation] -->|typed work + phase counters| Manager
+    Schedule[Existing maintenance loops] -->|inline observation via module| Manager
     Manager -->|module-owned schema| State[(state.db<br/>task records)]
     Browser[Sidebar task counter<br/>and Background tasks page] -->|authenticated GET| API[taskmod]
     API --> State
@@ -753,19 +754,27 @@ flowchart LR
   purged, failed and source-deleted sessions without deleting retained history.
   Polls with nothing to read are not recorded, and a repeated inventory failure
   is recorded once until it changes or recovers.
-- Active keys deduplicate work within a task kind. At most 1,000 terminal records
-  are retained. Reads return at most 200 records, active work first. The hub
+- Active keys deduplicate work within a task kind. The latest 1,000 terminal records
+  are retained, plus recurring receipts whose next-check hint is still in the future.
+  Reads return at most 200 records, active work first, then recurring receipts
+  before ordinary receipts within each status rank. The hub
   aggregates owner-local tasks over authenticated gRPC, omitting remote readers
   that fail. Explicit owner queries fail closed, and local read failures remain
   errors even during aggregation.
-- History ingestion and initial session identity preparation use the manager.
+- History ingestion and initial session identity preparation use the bounded manager.
   Producers own durable resume checkpoints; task records do not replay closures.
-  Other candidates are
-  project inventory refreshes, database cleanup and
-  restore, artifact/share publishing, auto-archive and attachment cleanup, and
-  plugin discovery or reconciliation. These can report rows, checkouts, named
-  steps, files/bytes, items or deliveries, respectively. Integration must preserve
-  their existing locks, authorization and retry rules.
+- `module.Every` observes scheduled iterations through a lifetime-context observer.
+  Manual timer loops use the same `module.Scheduled` or `module.RunScheduled` seam.
+  `tasksvc.ObserveSchedule` runs work synchronously outside executor slots and keeps
+  one stable owner-local receipt per job. Optional JSON metadata carries cadence,
+  run count and a next-check hint through local HTTP and remote gRPC readers.
+  Existing timers, domain locks, cancellation and subscriptions remain authoritative.
+  Completed observations never cancel descendant subscriptions. Shutdown joins
+  admitted observations after their caller lifetimes are cancelled.
+- Loop exit and restart clear stale next-check hints. Cleanup admission counts real
+  queued/running executions but excludes inline schedule observations. Detailed
+  tracked jobs and excluded internal timers are listed in
+  [Scheduled maintenance](../features/scheduled-maintenance.md).
 - Agent execution, permission handling and queue delivery keep their domain-owned
   records and recovery. Connection watchers need health and last-success status,
   not percentage completion. There is no HTTP command-execution or retry endpoint.

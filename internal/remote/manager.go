@@ -116,6 +116,7 @@ func (m *Manager) Start(ctx context.Context) {
 // inventory until ctx is cancelled (AD-8). The inventory backs directory
 // ownership routing, so it remains active without a browser client.
 func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) {
+	defer m.stopInventoryObservation(ctx)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -123,11 +124,7 @@ func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if m.refreshInventories != nil {
-				m.refreshInventories(ctx)
-			} else {
-				m.RefreshInventories(ctx)
-			}
+			m.observeInventories(ctx, interval)
 		}
 	}
 }

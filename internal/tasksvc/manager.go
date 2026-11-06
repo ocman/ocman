@@ -14,14 +14,15 @@ import (
 )
 
 type Manager struct {
-	store   store
-	mu      sync.Mutex
-	ctx     context.Context
-	cancel  context.CancelFunc
-	closed  bool
-	pending int
-	workers module.Workers
-	slots   chan struct{}
+	store    store
+	mu       sync.Mutex
+	ctx      context.Context
+	cancel   context.CancelFunc
+	closed   bool
+	pending  int
+	workers  module.Workers
+	observed sync.WaitGroup
+	slots    chan struct{}
 }
 
 func New(database *state.DB, concurrency int) *Manager {
@@ -69,6 +70,7 @@ func (m *Manager) Stop() {
 	}
 	m.mu.Unlock()
 	m.workers.Close()
+	m.observed.Wait()
 }
 
 type execution struct {
@@ -192,11 +194,14 @@ func (m *Manager) finish(run *execution, workErr, ctxErr error) {
 	}
 	if err != nil {
 		run.task.Error = truncate(err.Error(), 1024)
-	} else {
+	} else if run.task.Schedule == nil || run.task.Progress.Phase == "starting" {
 		run.task.Progress.Phase = "finished"
 	}
 	run.task.FinishedAt = time.Now().UnixMilli()
 	run.task.UpdatedAt = run.task.FinishedAt
+	if run.task.Schedule != nil && ctxErr == nil {
+		run.task.Schedule.NextRunAt = run.task.FinishedAt + run.task.Schedule.IntervalMillis
+	}
 	// Only the final receipt detaches cancellation. Stop joins it before the
 	// caller closes state.db; arbitrary task execution never detaches here.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

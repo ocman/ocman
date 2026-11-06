@@ -15,6 +15,7 @@ import (
 
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/ocruntime"
 )
 
@@ -105,13 +106,21 @@ const machineSupervisorInterval = 30 * time.Second
 // the server at startup and then periodically, relaunching it when the
 // probe fails.
 func (h *Host) RunMachineSupervisor(ctx context.Context) {
-	h.reapNonMachineInstances(ctx)
+	defer module.StopSchedule(ctx, "machine-supervisor")
+	reaped := false
 	tick := time.NewTicker(machineSupervisorInterval)
 	defer tick.Stop()
 	for {
-		if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: machineRoot()}); err != nil && ctx.Err() == nil {
-			log.WithError(err).Warn("host: OpenCode server unavailable")
-		}
+		module.Scheduled(ctx, "machine-supervisor", machineSupervisorInterval, func(ctx context.Context) {
+			if !reaped {
+				h.reapNonMachineInstances(ctx)
+				reaped = true
+			}
+			if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: machineRoot()}); err != nil && ctx.Err() == nil {
+				module.ReportError(ctx, err)
+				log.WithError(err).Warn("host: OpenCode server unavailable")
+			}
+		})
 		select {
 		case <-ctx.Done():
 			return

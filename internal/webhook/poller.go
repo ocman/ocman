@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
 )
@@ -29,10 +30,21 @@ type Poller struct {
 var ErrInboxGone = errors.New("webhook inbox no longer exists")
 
 func (p *Poller) Run(ctx context.Context) {
+	name := "webhook-poll." + p.Inbox.ID
+	defer module.StopSchedule(ctx, name)
 	ticker := time.NewTicker(PollInterval)
 	defer ticker.Stop()
 	for {
-		if errors.Is(p.Poll(ctx), ErrInboxGone) {
+		gone := false
+		_ = module.RunScheduled(ctx, module.Schedule{Name: name, Title: "Poll webhook inbox", Scope: "Webhook inbox " + p.Inbox.ID, Interval: PollInterval}, func(ctx context.Context) error {
+			err := p.Poll(ctx)
+			gone = errors.Is(err, ErrInboxGone)
+			if err != nil && !gone {
+				return errors.New("webhook inbox polling failed")
+			}
+			return nil
+		})
+		if gone {
 			return
 		}
 		select {

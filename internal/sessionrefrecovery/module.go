@@ -36,10 +36,13 @@ func (*Module) Name() string         { return "session-reference-recovery" }
 func (*Module) Routes(module.Router) {}
 
 func (m *Module) Run(ctx context.Context) {
+	defer module.StopSchedule(ctx, m.Name())
 	tick := time.NewTicker(m.deps.Interval)
 	defer tick.Stop()
 	for {
-		if ctx.Err() != nil || m.check(ctx) {
+		stop := false
+		module.Scheduled(ctx, m.Name(), m.deps.Interval, func(ctx context.Context) { stop = m.check(ctx) })
+		if ctx.Err() != nil || stop {
 			return
 		}
 		select {
@@ -64,8 +67,11 @@ func (m *Module) check(ctx context.Context) bool {
 		attempt, cancel := context.WithTimeout(ctx, m.deps.Timeout)
 		bound, err := m.deps.Resolve(attempt, scope)
 		cancel()
-		if err != nil && m.deps.OnError != nil {
-			m.deps.OnError(scope, err)
+		if err != nil {
+			module.ReportError(ctx, err)
+			if m.deps.OnError != nil {
+				m.deps.OnError(scope, err)
+			}
 		}
 		if bound > 0 {
 			m.needsReload = true

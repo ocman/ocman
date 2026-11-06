@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -86,8 +87,15 @@ func safeName(name string) string {
 // Sweep removes expired uploads and prunes empty directories. Best effort:
 // one unreadable directory must not prevent cleanup of the others.
 func Sweep(root string, ttl time.Duration) int {
+	return sweep(context.Background(), root, ttl)
+}
+
+func sweep(ctx context.Context, root string, ttl time.Duration) int {
 	projects, err := os.ReadDir(root)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			module.ReportError(ctx, err)
+		}
 		return 0
 	}
 	cutoff := time.Now().Add(-ttl)
@@ -99,6 +107,9 @@ func Sweep(root string, ttl time.Duration) int {
 		projectDir := filepath.Join(root, project.Name())
 		sessions, err := os.ReadDir(projectDir)
 		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				module.ReportError(ctx, err)
+			}
 			continue
 		}
 		for _, session := range sessions {
@@ -108,6 +119,9 @@ func Sweep(root string, ttl time.Duration) int {
 			sessionDir := filepath.Join(projectDir, session.Name())
 			entries, err := os.ReadDir(sessionDir)
 			if err != nil {
+				if !errors.Is(err, os.ErrNotExist) {
+					module.ReportError(ctx, err)
+				}
 				continue
 			}
 			for _, entry := range entries {
@@ -115,11 +129,20 @@ func Sweep(root string, ttl time.Duration) int {
 					continue
 				}
 				info, err := entry.Info()
-				if err != nil || info.ModTime().After(cutoff) {
+				if err != nil {
+					if !errors.Is(err, os.ErrNotExist) {
+						module.ReportError(ctx, err)
+					}
+					continue
+				}
+				if info.ModTime().After(cutoff) {
 					continue
 				}
 				path := filepath.Join(sessionDir, entry.Name())
 				if err := os.Remove(path); err != nil {
+					if !errors.Is(err, os.ErrNotExist) {
+						module.ReportError(ctx, err)
+					}
 					log.WithError(err).WithField("path", path).Warn("sweeping composer attachment")
 					continue
 				}

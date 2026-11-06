@@ -59,12 +59,17 @@ func (s store) recover(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE background_task SET status='interrupted',updated_at=?,
 		data=json_set(data,'$.status','interrupted','$.updatedAt',?,'$.finishedAt',?,'$.error','Ocman stopped before this task finished; work was not replayed.')
 		WHERE status IN ('queued','running')`, now, now, now)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE background_task SET data=json_set(data,'$.schedule.nextRunAt',0) WHERE json_type(data,'$.schedule')='object'`)
 	return err
 }
 
 func (s store) prune(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM background_task WHERE status NOT IN ('queued','running') AND id NOT IN (
-		SELECT id FROM background_task WHERE status NOT IN ('queued','running') ORDER BY updated_at DESC,id DESC LIMIT 1000)`)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM background_task WHERE status NOT IN ('queued','running')
+		AND COALESCE(json_extract(data,'$.schedule.nextRunAt'),0)<=? AND id NOT IN (
+		SELECT id FROM background_task WHERE status NOT IN ('queued','running') ORDER BY updated_at DESC,id DESC LIMIT 1000)`, time.Now().UnixMilli())
 	return err
 }
 
@@ -77,7 +82,8 @@ func (m *Manager) List(ctx context.Context, status Status, kind string, limit in
 	}
 	rows, err := m.store.db.QueryContext(ctx, `SELECT data FROM background_task
 		WHERE (?='' OR status=?) AND (?='' OR kind=?)
-		ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,updated_at DESC,id DESC LIMIT ?`, status, status, kind, kind, limit)
+		ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+		CASE WHEN json_type(data,'$.schedule')='object' THEN 0 ELSE 1 END,updated_at DESC,id DESC LIMIT ?`, status, status, kind, kind, limit)
 	if err != nil {
 		return nil, err
 	}

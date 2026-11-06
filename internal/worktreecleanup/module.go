@@ -42,13 +42,10 @@ func (m *Module) Run(ctx context.Context) {
 	if m.d.Store == nil {
 		return
 	}
-	sweep := func() {
-		module.RunWithRecover("worktree-cleanup", func() {
-			if err := m.Sweep(ctx); err != nil && ctx.Err() == nil {
-				log.WithError(err).Warn("worktree cleanup deferred")
-			}
-		})
-	}
-	sweep()
-	module.Every(ctx, "worktree-cleanup", time.Hour, func(context.Context) { sweep() })
+	module.Every(ctx, "worktree-cleanup", time.Hour, func(ctx context.Context) {
+		if err := m.Sweep(ctx); err != nil && ctx.Err() == nil {
+			module.ReportError(ctx, err)
+			log.WithError(err).Warn("worktree cleanup deferred")
+		}
+	})
 }

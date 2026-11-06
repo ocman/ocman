@@ -27,10 +27,11 @@ func RunWithRecover(name string, body func()) {
 // Every runs fn now and then interval after each run finishes, until ctx
 // ends. Each run is recovered with RunWithRecover.
 func Every(ctx context.Context, name string, interval time.Duration, fn func(context.Context)) {
+	defer StopSchedule(ctx, name)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		RunWithRecover(name, func() { fn(ctx) })
+		Scheduled(ctx, name, interval, fn)
 		ticker.Reset(interval) // no queued catch-up run after a slow one
 		select {
 		case <-ctx.Done():

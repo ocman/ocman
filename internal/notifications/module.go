@@ -3,6 +3,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -72,6 +73,7 @@ func (m *Module) run(ctx context.Context, interval time.Duration) {
 	defer workers.Wait()
 	module.Every(ctx, "web-push", interval, func(ctx context.Context) {
 		if err := m.tick(ctx); err != nil && ctx.Err() == nil {
+			module.ReportError(ctx, err)
 			log.WithError(err).Warn("checking Web Push notifications")
 		}
 		select {
@@ -82,6 +84,7 @@ func (m *Module) run(ctx context.Context, interval time.Duration) {
 }
 
 func (m *Module) runDelivery(ctx context.Context, interval time.Duration, wake <-chan struct{}) {
+	defer module.StopSchedule(ctx, "web-push-delivery")
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -91,9 +94,12 @@ func (m *Module) runDelivery(ctx context.Context, interval time.Duration, wake <
 		case <-wake:
 		case <-ticker.C:
 		}
-		if err := m.deliver(ctx); err != nil && ctx.Err() == nil {
-			log.WithError(err).Warn("delivering Web Push notifications")
-		}
+		module.Scheduled(ctx, "web-push-delivery", interval, func(ctx context.Context) {
+			if err := m.deliver(ctx); err != nil && ctx.Err() == nil {
+				module.ReportError(ctx, errors.New("web notification delivery failed"))
+				log.WithError(err).Warn("delivering Web Push notifications")
+			}
+		})
 	}
 }
 

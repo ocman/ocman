@@ -43,6 +43,7 @@ func (m *Module) refreshStats(ctx context.Context) {
 	stats, err := getStats(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
+			module.ReportError(ctx, err)
 			log.WithError(err).Warn("stats metrics: failed to query stats")
 		}
 		return

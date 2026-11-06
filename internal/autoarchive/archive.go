@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/telemetry"
@@ -51,6 +52,7 @@ func (m *Module) ArchiveSessions(ctx context.Context) {
 	defer span.End()
 	settings, err := m.Settings(ctx)
 	if err != nil {
+		module.ReportError(ctx, err)
 		span.RecordError(err)
 		log.WithError(err).Error("reading auto-archive settings")
 		return
@@ -67,6 +69,7 @@ func (m *Module) ArchiveSessions(ctx context.Context) {
 	archivedCount := 0
 	archived, err := m.d.Store.ArchivedSessions(ctx)
 	if err != nil {
+		module.ReportError(ctx, err)
 		log.WithError(err).Error("listing archived sessions")
 		return
 	}
@@ -77,6 +80,7 @@ func (m *Module) ArchiveSessions(ctx context.Context) {
 	// anything unarchived just to look at it.
 	keep, err := m.d.Store.SessionsUnarchivedSince(ctx, cutoff)
 	if err != nil {
+		module.ReportError(ctx, err)
 		span.RecordError(err)
 		log.WithError(err).Error("listing recently unarchived sessions")
 		keep = nil
@@ -94,6 +98,7 @@ func (m *Module) ArchiveSessions(ctx context.Context) {
 		cancelRPC()
 		if err != nil {
 			span.RecordError(err)
+			module.ReportError(ctx, err)
 			log.WithFields(log.Fields{"platform": adapter.ID(), "error": err}).
 				Error("listing inactive sessions for auto-archive")
 			continue
@@ -106,6 +111,7 @@ func (m *Module) ArchiveSessions(ctx context.Context) {
 			inserted, err := m.d.Store.AutoArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated, cutoff)
 			if err != nil {
 				span.RecordError(err)
+				module.ReportError(ctx, err)
 				log.WithFields(log.Fields{
 					"platform":  adapter.ID(),
 					"sessionID": session.ID,
@@ -151,6 +157,7 @@ func (m *Module) ArchiveProjects(ctx context.Context) {
 	defer span.End()
 	settings, err := m.Settings(ctx)
 	if err != nil {
+		module.ReportError(ctx, err)
 		span.RecordError(err)
 		log.WithError(err).Error("reading auto-archive settings")
 		return
@@ -170,6 +177,7 @@ func (m *Module) ArchiveProjects(ctx context.Context) {
 	local := m.d.Local()
 	projects, err := local.Projects(ctx)
 	if err != nil {
+		module.ReportError(ctx, err)
 		span.RecordError(err)
 		log.WithError(err).Error("listing projects for auto-archive")
 		return
@@ -177,6 +185,7 @@ func (m *Module) ArchiveProjects(ctx context.Context) {
 
 	archived, err := m.d.Store.ArchivedProjects(ctx)
 	if err != nil {
+		module.ReportError(ctx, err)
 		span.RecordError(err)
 		log.WithError(err).Error("listing archived projects for auto-archive")
 		return

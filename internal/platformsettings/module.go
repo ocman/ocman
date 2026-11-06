@@ -72,6 +72,7 @@ func (m *Module) Begin(ctx context.Context) (func(), error) {
 }
 
 func (m *Module) Run(ctx context.Context) {
+	defer module.StopSchedule(ctx, "platform-reload")
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	for {
@@ -79,7 +80,9 @@ func (m *Module) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			if m.tryReload(ctx) {
+			reloaded := false
+			module.Scheduled(ctx, "platform-reload", time.Second, func(ctx context.Context) { reloaded = m.tryReload(ctx) })
+			if reloaded {
 				return
 			}
 		}

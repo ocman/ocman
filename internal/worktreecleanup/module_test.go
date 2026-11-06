@@ -85,9 +85,9 @@ type fixture struct {
 	now   time.Time
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T, schemas ...state.ModuleSchema) *fixture {
 	t.Helper()
-	store, err := state.Open(statetest.Path(t), Schema)
+	store, err := state.Open(statetest.Path(t), append([]state.ModuleSchema{Schema}, schemas...)...)
 	if err != nil {
 		t.Fatal(err)
 	}

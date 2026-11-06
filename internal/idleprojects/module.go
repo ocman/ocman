@@ -54,6 +54,7 @@ func (m *Module) Routes(r module.Router) {
 func (m *Module) Run(ctx context.Context) {
 	module.Every(ctx, "idle-projects", time.Minute, func(ctx context.Context) {
 		if err := m.sweep(ctx, time.Now()); err != nil {
+			module.ReportError(ctx, err)
 			log.WithError(err).Warn("idle projects: sweep")
 		}
 	})

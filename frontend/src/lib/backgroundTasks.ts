@@ -22,6 +22,11 @@ export interface BackgroundTask {
   updatedAt: number;
   finishedAt?: number;
   error?: string;
+  schedule?: {
+    intervalMillis: number;
+    nextRunAt?: number;
+    runs: number;
+  };
 }
 
 export function backgroundTasks(status: BackgroundTaskStatus | '', signal?: AbortSignal) {

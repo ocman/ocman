@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
 	pb "github.com/ocman/ocman/internal/remote/proto"
 	"github.com/ocman/ocman/internal/state/statetest"
@@ -44,6 +46,13 @@ func TestApplicationTaskObservationsRoundTripToOwner(t *testing.T) {
 	srv := NewServer(reg, localStubHost{}, "owner", "test").UseBackgroundTasks(manager)
 	conn := connectWorkOwner(t, srv)
 	reader := newRemoteHost(conn).BackgroundTaskReader()
+	if err := manager.ObserveSchedule(t.Context(), module.Schedule{Name: "cleanup", Title: "Owner cleanup", Scope: "public scope", Interval: time.Hour}, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	scheduled, err := reader.List(t.Context(), "", "schedule.cleanup", 10)
+	if err != nil || len(scheduled) != 1 || scheduled[0].OwnerID != "owner" || scheduled[0].Scope != "public scope" || scheduled[0].Schedule == nil || scheduled[0].Schedule.Runs != 1 || scheduled[0].Schedule.NextRunAt == 0 {
+		t.Fatalf("remote schedule metadata: %+v %v", scheduled, err)
+	}
 	tasks, err := reader.List(t.Context(), tasksvc.Succeeded, "scan", 10)
 	if err != nil || len(tasks) != 1 || tasks[0].OwnerID != "owner" || tasks[0].Title != "Owner scan" {
 		t.Fatalf("tasks=%+v err=%v", tasks, err)

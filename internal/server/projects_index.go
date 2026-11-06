@@ -45,6 +45,7 @@ type projectsIndexState struct {
 // implementation (FR-11) and assert the loop survives.
 var projectsIndexTickFn = func(ctx context.Context, s *Server) {
 	if err := s.refreshProjectsIndex(ctx); err != nil {
+		module.ReportError(ctx, err)
 		log.WithError(err).Warn("refreshing projects index")
 	}
 }

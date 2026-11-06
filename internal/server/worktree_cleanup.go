@@ -15,7 +15,7 @@ func (s *Server) worktreeCleanupModule() *worktreecleanup.Module {
 		Platforms: func() []platforms.Platform { return s.registry.Platforms() },
 		Router:    s.router,
 		Idle: func(ctx context.Context) error {
-			count, err := s.taskManager().ActiveCount(ctx)
+			count, err := s.taskManager().MaintenanceBlockers(ctx)
 			if err != nil {
 				return err
 			}

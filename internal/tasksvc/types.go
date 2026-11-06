@@ -5,6 +5,8 @@ package tasksvc
 import (
 	"context"
 	"errors"
+
+	"github.com/ocman/ocman/internal/module"
 )
 
 var (
@@ -35,25 +37,26 @@ type Spec struct {
 
 // Progress counts completed units, including failed/skipped units. Total nil
 // means unknown, not zero. Completion of a scan is separate from its success.
-type Progress struct {
-	Phase     string           `json:"phase"`
-	Completed int64            `json:"completed"`
-	Total     *int64           `json:"total"`
-	Unit      string           `json:"unit,omitempty"`
-	Counters  map[string]int64 `json:"counters"`
+type Progress = module.Progress
+
+type ScheduleInfo struct {
+	IntervalMillis int64 `json:"intervalMillis"`
+	NextRunAt      int64 `json:"nextRunAt,omitempty"`
+	Runs           int64 `json:"runs"`
 }
 
 type Task struct {
 	ID string `json:"id"`
 	Spec
-	OwnerID    string   `json:"ownerId"`
-	Status     Status   `json:"status"`
-	Progress   Progress `json:"progress"`
-	CreatedAt  int64    `json:"createdAt"`
-	StartedAt  int64    `json:"startedAt,omitempty"`
-	UpdatedAt  int64    `json:"updatedAt"`
-	FinishedAt int64    `json:"finishedAt,omitempty"`
-	Error      string   `json:"error,omitempty"`
+	OwnerID    string        `json:"ownerId"`
+	Status     Status        `json:"status"`
+	Progress   Progress      `json:"progress"`
+	CreatedAt  int64         `json:"createdAt"`
+	StartedAt  int64         `json:"startedAt,omitempty"`
+	UpdatedAt  int64         `json:"updatedAt"`
+	FinishedAt int64         `json:"finishedAt,omitempty"`
+	Error      string        `json:"error,omitempty"`
+	Schedule   *ScheduleInfo `json:"schedule,omitempty"`
 }
 
 type Work func(context.Context, *Reporter) error

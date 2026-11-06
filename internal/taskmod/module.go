@@ -133,6 +133,9 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 		if a, b := rank(tasks[i].Status), rank(tasks[j].Status); a != b {
 			return a < b
 		}
+		if (tasks[i].Schedule != nil) != (tasks[j].Schedule != nil) {
+			return tasks[i].Schedule != nil
+		}
 		if tasks[i].UpdatedAt != tasks[j].UpdatedAt {
 			return tasks[i].UpdatedAt > tasks[j].UpdatedAt
 		}

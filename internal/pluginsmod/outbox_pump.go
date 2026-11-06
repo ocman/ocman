@@ -75,6 +75,7 @@ type outbox[T any] struct {
 // pump enqueues every due head row that is not already in flight.
 func (o *outbox[T]) pump(ctx context.Context) {
 	allowed := map[string]bool{}
+	var queued int64
 	o.claim(ctx, func(row T) bool {
 		id, pluginID := o.row(row)
 		if _, asked := allowed[pluginID]; !asked {
@@ -84,8 +85,10 @@ func (o *outbox[T]) pump(ctx context.Context) {
 			return false
 		}
 		o.enqueue(row)
+		queued++
 		return true
 	})
+	_ = module.ReportProgress(ctx, module.Progress{Phase: "Checking pending deliveries", Counters: map[string]int64{"queued-deliveries": queued}})
 }
 
 // kick pumps without waiting for the next tick.
@@ -99,21 +102,27 @@ func (o *outbox[T]) kick() {
 // left by a disconnect or a restart is claimed again here. One immediate pass
 // runs at startup, before the first tick.
 func (o *outbox[T]) run(ctx context.Context) {
+	deliveryName, pruneName := "plugin-"+o.name+"-delivery", "plugin-"+o.name+"-prune"
+	defer module.StopSchedule(ctx, deliveryName)
+	defer module.StopSchedule(ctx, pruneName)
 	tick := time.NewTicker(outboxPumpInterval)
 	defer tick.Stop()
 	prune := time.NewTicker(outboxPruneInterval)
 	defer prune.Stop()
-	o.pump(ctx)
+	module.Scheduled(ctx, deliveryName, outboxPumpInterval, o.pump)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			o.pump(ctx)
+			module.Scheduled(ctx, deliveryName, outboxPumpInterval, o.pump)
 		case <-prune.C:
-			if err := o.prune(ctx); err != nil {
-				log.WithError(err).Warn(o.pruneFailed)
-			}
+			module.Scheduled(ctx, pruneName, outboxPruneInterval, func(ctx context.Context) {
+				if err := o.prune(ctx); err != nil {
+					module.ReportError(ctx, err)
+					log.WithError(err).Warn(o.pruneFailed)
+				}
+			})
 		}
 	}
 }

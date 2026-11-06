@@ -73,6 +73,7 @@ func (m *Module) Run(ctx context.Context) {
 	if m.d.Store == nil {
 		return
 	}
+	defer module.StopSchedule(ctx, "auto-archive")
 	for ctx.Err() == nil {
 		next := interval
 		module.RunWithRecover("auto-archive", func() {
@@ -83,8 +84,10 @@ func (m *Module) Run(ctx context.Context) {
 					}
 				}
 			}
-			m.ArchiveSessions(ctx)
-			m.ArchiveProjects(ctx)
+			module.Scheduled(ctx, "auto-archive", next, func(ctx context.Context) {
+				m.ArchiveSessions(ctx)
+				m.ArchiveProjects(ctx)
+			})
 		})
 		timer := time.NewTimer(next)
 		select {

@@ -90,6 +90,7 @@ func (m *Module) wake(ctx context.Context) {
 	keys, err := m.d.Store.WakeSnoozedSessions(ctx, time.Now().UnixMilli())
 	if err != nil {
 		if ctx.Err() == nil {
+			module.ReportError(ctx, err)
 			log.WithError(err).Error("waking snoozed sessions")
 		}
 		return
@@ -97,4 +98,5 @@ func (m *Module) wake(ctx context.Context) {
 	for _, key := range keys {
 		m.broadcast(key.Platform, key.SessionID, 0)
 	}
+	_ = module.ReportProgress(ctx, module.Progress{Phase: "Waking snoozed sessions", Counters: map[string]int64{"woken": int64(len(keys))}})
 }

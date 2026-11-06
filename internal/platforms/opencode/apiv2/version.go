@@ -3,6 +3,7 @@ package ocv2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os/exec"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ocman/ocman/internal/module"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -39,6 +41,7 @@ func InstalledMajor() (major int, ok bool) {
 // warns once when it drops below v2, which ocman no longer supports. A
 // failed read (slow or missing binary) is ignored.
 func WatchInstalledVersion(ctx context.Context) {
+	defer module.StopSchedule(ctx, "opencode-version")
 	tick := time.NewTicker(versionCheckInterval)
 	defer tick.Stop()
 	for {
@@ -47,9 +50,15 @@ func WatchInstalledVersion(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		if major, ok := InstalledMajor(); ok && major < 2 {
-			log.WithField("installedMajor", major).
-				Error("OpenCode was downgraded below v2, which ocman does not support; upgrade OpenCode and restart ocman")
+		downgraded := false
+		module.Scheduled(ctx, "opencode-version", versionCheckInterval, func(ctx context.Context) {
+			if major, ok := InstalledMajor(); ok && major < 2 {
+				module.ReportError(ctx, errors.New("installed OpenCode version is no longer supported"))
+				log.WithField("installedMajor", major).Error("OpenCode was downgraded below v2, which ocman does not support; upgrade OpenCode and restart ocman")
+				downgraded = true
+			}
+		})
+		if downgraded {
 			return
 		}
 	}

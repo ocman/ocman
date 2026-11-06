@@ -6,6 +6,7 @@ import { LoadingState } from '../components/LoadingState';
 import { HostBadge } from '../components/HostBadge';
 import { backgroundTasks, type BackgroundTask, type BackgroundTaskStatus } from '../lib/backgroundTasks';
 import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
+import { formatDuration, formatExactDate } from '../lib/format';
 import './BackgroundTasks.css';
 
 const labels: Record<BackgroundTaskStatus, string> = {
@@ -13,10 +14,22 @@ const labels: Record<BackgroundTaskStatus, string> = {
   cancelled: 'Cancelled', interrupted: 'Interrupted',
 };
 
+function TaskSchedule({ task }: { task: BackgroundTask }) {
+  if (!task.schedule) return null;
+  const { intervalMillis, nextRunAt, runs } = task.schedule;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return <div className="background-task-counters" aria-label={`Schedule for ${task.title}`}>
+    <span>Recurring · every {formatDuration(intervalMillis)} · {runs} {runs === 1 ? 'run' : 'runs'}</span>
+    {nextRunAt !== undefined && nextRunAt > 0 && <span>Next check: <time dateTime={new Date(nextRunAt).toISOString()}>{formatExactDate(nextRunAt)} {timeZone}</time></span>}
+    {task.scope && task.scope !== 'local' && <span>Scope: {task.scope}</span>}
+  </div>;
+}
+
 function TaskProgress({ task }: { task: BackgroundTask }) {
   const { completed, total, unit, phase, counters } = task.progress;
   const known = total !== null && total > 0;
   return <div className="background-task-progress">
+    <TaskSchedule task={task} />
     <span>{phase}{unit && <> · {total === null ? `${completed} ${unit}` : `${completed} / ${total} ${unit}`}</>}</span>
     {(task.status === 'running' || task.status === 'queued' || known) && <progress
       aria-label={`Progress for ${task.title}`}
@@ -36,7 +49,7 @@ function TaskGroup({ title, tasks }: { title: string; tasks: BackgroundTask[] })
     {tasks.map((task) => <DataTableRow key={`${task.ownerId}:${task.id}`}
       primary={<><strong>{task.title}</strong> <span className="background-task-state" data-status={task.status}>{labels[task.status]}</span> <HostBadge alwaysShow remoteId={task.ownerId} remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} /></>}
       secondary={<TaskProgress task={task} />}
-      meta={<time dateTime={new Date(task.updatedAt).toISOString()}>{new Date(task.updatedAt).toLocaleString()}</time>}
+      meta={<time dateTime={new Date(task.updatedAt).toISOString()}>{formatExactDate(task.updatedAt)}</time>}
     />)}
   </DataTableGroup>;
 }
@@ -51,7 +64,7 @@ export function BackgroundTasks() {
   const active = tasks.filter((task) => task.status === 'queued' || task.status === 'running');
   const recent = tasks.filter((task) => task.status !== 'queued' && task.status !== 'running');
   return <section className="background-tasks" aria-label="Ocman background tasks">
-    <p>Ocman work on this machine and connected remotes, separate from coding-agent tasks. History sync retries failed sessions automatically; analytics continues using imported data.</p>
+    <p>Ocman work on this machine and connected remotes, separate from coding-agent tasks. Recurring maintenance keeps one entry per job with its latest result and next check. History sync retries failed sessions automatically.</p>
     <div className="background-tasks-controls">
       <SelectField aria-label="Task status" value={status} onChange={(event) => setStatus(event.target.value as BackgroundTaskStatus | '')}>
         <option value="">All statuses</option>

@@ -33,7 +33,9 @@ func (s *Sweeper) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if removed := Sweep(s.root(), TTL); removed > 0 {
+		removed := sweep(ctx, s.root(), TTL)
+		_ = module.ReportProgress(ctx, module.Progress{Phase: "Checking expired uploads", Counters: map[string]int64{"removed": int64(removed)}})
+		if removed > 0 {
 			log.WithField("removed", removed).Info("swept expired composer attachments")
 		}
 	})

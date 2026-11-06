@@ -184,7 +184,7 @@ func TestSchedulingAndRemovalStopOnPersistenceFailure(t *testing.T) {
 			f := newFixture(t)
 			execFixtureSQL(t, f, "DROP TABLE "+table)
 			owners, _ := f.m.inventory(t.Context())
-			if err := f.m.clean(t.Context(), f.h, f.h, "local", testPath, owners["local"]); err == nil {
+			if _, err := f.m.clean(t.Context(), f.h, f.h, "local", testPath, owners["local"]); err == nil {
 				t.Fatal("cleanup ignored missing persistence")
 			}
 			if len(f.h.removed) != 0 {
@@ -200,7 +200,7 @@ func TestSchedulingAndRemovalStopOnPersistenceFailure(t *testing.T) {
 		}
 		return errors.New("owner refused removal")
 	}
-	if err := f.m.clean(t.Context(), f.h, f.h, "local", testPath, owners["local"]); err == nil {
+	if _, err := f.m.clean(t.Context(), f.h, f.h, "local", testPath, owners["local"]); err == nil {
 		t.Fatal("lost outcome persistence failure")
 	}
 	if len(f.h.removed) != 0 {

@@ -23,6 +23,7 @@ func (m *Module) runSubscriptionUsageLoop(ctx context.Context) {
 	}
 	module.Every(ctx, "subscription-usage", interval, func(ctx context.Context) {
 		if err := m.collectSubscriptionUsage(ctx, time.Now()); err != nil && ctx.Err() == nil {
+			module.ReportError(ctx, err)
 			log.WithError(err).Warn("collecting subscription usage")
 		}
 	})

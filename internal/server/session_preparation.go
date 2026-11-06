@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/startup"
 	"github.com/ocman/ocman/internal/tasksvc"
 	log "github.com/sirupsen/logrus"
@@ -105,6 +106,7 @@ func (s *Server) withMCPReadiness(next http.Handler) http.Handler {
 }
 
 func (s *Server) startServingServices(ctx context.Context, workers *sync.WaitGroup) error {
+	ctx = module.WithScheduleObserver(ctx, s.taskManager())
 	p := s.sessionPreparation
 	if p == nil {
 		return s.startSessionServices(ctx, workers)

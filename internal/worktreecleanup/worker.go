@@ -11,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
 	log "github.com/sirupsen/logrus"
@@ -148,17 +149,61 @@ func (m *Module) Sweep(ctx context.Context) error {
 	if m.d.Store == nil {
 		return nil
 	}
+	_ = module.ReportProgress(ctx, module.Progress{Phase: "Reading session inventories"})
 	owners, failed := m.inventory(ctx)
+	targets, unavailable := m.sweepTargets(owners, failed)
+	total := int64(len(targets))
+	progress := module.Progress{Phase: "Checking checkout safety", Total: &total, Unit: "checkouts", Counters: map[string]int64{"removed": 0, "retained": 0, "already-removed": 0, "unavailable-owners": unavailable}}
+	_ = module.ReportProgress(ctx, progress)
+	for _, target := range targets {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		removed, err := m.clean(ctx, target.host, target.maintenance, target.owner, target.path, target.rows)
+		switch {
+		case removed:
+			progress.Counters["removed"]++
+		case err != nil:
+			progress.Counters["retained"]++
+		default:
+			progress.Counters["already-removed"]++
+		}
+		if err != nil {
+			log.WithFields(log.Fields{"owner": target.owner, "path": target.path, "reason": err.Error()}).Debug("worktree retained")
+		}
+		progress.Completed++
+		_ = module.ReportProgress(ctx, progress)
+	}
+	return nil
+}
+
+type sweepTarget struct {
+	owner, path string
+	rows        []session
+	host        hostsvc.Host
+	maintenance hostsvc.WorktreeMaintenance
+}
+
+func (m *Module) sweepTargets(owners map[string][]session, failed map[string]bool) ([]sweepTarget, int64) {
+	var targets []sweepTarget
+	var unavailable int64
+	for _, incomplete := range failed {
+		if incomplete {
+			unavailable++
+		}
+	}
 	for owner, rows := range owners {
 		if failed[owner] {
 			continue
 		}
 		host, ok := m.d.Router().LookupRemote(owner)
 		if !ok {
+			unavailable++
 			continue
 		}
 		maintenance, ok := host.(hostsvc.WorktreeMaintenance)
 		if !ok {
+			unavailable++
 			continue
 		}
 		paths := map[string]bool{}
@@ -169,15 +214,10 @@ func (m *Module) Sweep(ctx context.Context) error {
 			}
 		}
 		for path := range paths {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if err := m.clean(ctx, host, maintenance, owner, path, rows); err != nil {
-				log.WithFields(log.Fields{"owner": owner, "path": path, "reason": err.Error()}).Debug("worktree retained")
-			}
+			targets = append(targets, sweepTarget{owner: owner, path: path, rows: rows, host: host, maintenance: maintenance})
 		}
 	}
-	return nil
+	return targets, unavailable
 }
 
 func managedCheckout(dir string) string {
@@ -193,19 +233,19 @@ func managedCheckout(dir string) string {
 	return filepath.Join(parent, strings.Split(rel, string(filepath.Separator))[0])
 }
 
-func (m *Module) clean(ctx context.Context, host hostsvc.Host, maintenance hostsvc.WorktreeMaintenance, owner, path string, rows []session) error {
+func (m *Module) clean(ctx context.Context, host hostsvc.Host, maintenance hostsvc.WorktreeMaintenance, owner, path string, rows []session) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	ctx, release := m.d.Store.WorktreeMaintenance(ctx)
 	defer release()
 	checks, err := m.eligible(ctx, path, rows)
 	if err != nil {
-		return err
+		return false, err
 	}
 	project := state.ProjectRootForDirectory(path)
 	entries, err := host.ListWorktrees(ctx, project)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var target *git.Worktree
 	for i := range entries {
@@ -215,14 +255,14 @@ func (m *Module) clean(ctx context.Context, host hostsvc.Host, maintenance hosts
 		}
 	}
 	if target == nil {
-		return nil
+		return false, nil
 	} // removed already; retain recovery receipt
 	if target.Main || target.Bare || target.Locked || target.Branch == "" || target.Head == "" {
-		return fmt.Errorf("unsafe worktree identity")
+		return false, fmt.Errorf("unsafe worktree identity")
 	}
 	checkpoint := hostsvc.WorktreeCheckpoint{Project: project, Path: path, Branch: target.Branch, Head: target.Head}
 	if err := m.remember(ctx, owner, checkpoint); err != nil {
-		return err
+		return false, err
 	}
 	err = maintenance.CleanupWorktree(ctx, hostsvc.CleanupWorktreeRequest{WorktreeCheckpoint: checkpoint, Sessions: checks})
 	reason := ""
@@ -232,14 +272,14 @@ func (m *Module) clean(ctx context.Context, host hostsvc.Host, maintenance hosts
 	// A durable pre-removal receipt is already present. Keep it even if
 	// acknowledgement fails or cancellation arrives just after Git succeeds.
 	if saveErr := m.outcome(ctx, owner, path, reason, err == nil); saveErr != nil {
-		return saveErr
+		return err == nil, saveErr
 	}
 	if errors.Is(err, platforms.ErrUnsupported) || errors.Is(err, platforms.ErrRemoteOffline) {
 		// These failures prove the owner never admitted removal. Do not
 		// make an older owner require an equally unsupported restore RPC.
 		if forgetErr := m.forget(ctx, owner, path); forgetErr != nil {
-			return forgetErr
+			return false, forgetErr
 		}
 	}
-	return err
+	return err == nil, err
 }

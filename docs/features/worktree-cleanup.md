@@ -18,6 +18,13 @@ the owner's or hub's observation time rather than trusting remote clocks.
 Background polling and repeated reads of unchanged agent timestamps do not
 postpone cleanup.
 
+Open Background tasks through the `bgt` counter to inspect cleanup. Its recurring
+entry shows the latest result, hourly cadence, run count and next-check hint.
+Progress counts checked checkouts, with counters for removed, retained,
+already-removed checkouts and unavailable owners. Retained checkouts are normal
+safety decisions, not failed cleanup jobs. Detailed reasons remain in debug logs
+and checkout recovery records.
+
 Unarchiving cancels eligibility. Archiving again starts another seven-day
 period. Snoozing is not archival for cleanup purposes. When several sessions use
 one checkout, every session must qualify. Native child sessions may inherit
@@ -33,7 +40,8 @@ Cleanup retains a checkout when any check fails or cannot be completed:
 
 - An owning session is active, waiting, externally managed, has pending prompts,
   queued messages, or background work. Pending owner-local application tasks also
-  defer cleanup.
+   defer cleanup. Inline observations of scheduled checks do not count as pending
+   executions, so tracking maintenance cannot block cleanup itself.
 - A managed terminal or tmux session still uses the checkout.
 - Tracked edits, untracked files or ignored local files exist. Ignored
   `node_modules` directories are the only disposable-file exception.
@@ -69,6 +77,7 @@ checkouts. Unsafe checkouts are retried on later sweeps.
 flowchart LR
     Archive[Archive and explicit activity] --> State[(state.db timestamps)]
     State --> Worker[worktreecleanup hourly worker]
+    Worker --> Tasks[Recurring Background tasks receipt]
     Worker -->|owner-qualified request| Host[hostsvc local or remote owner]
     Host --> Fence[Activity fence and fresh safety checks]
     Fence --> Git[Guarded Git removal]

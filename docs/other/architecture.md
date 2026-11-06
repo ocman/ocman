@@ -388,6 +388,10 @@ execution stays platform-owned. `internal/sessioncatalog` and
 and keep native IDs behind the adapter boundary. `internal/tasksvc` reports
 ingestion and preparation progress as background tasks. See
 [Conversation history and session identity](architecture-history.md).
+Scheduled maintenance uses inline, owner-local task observations without consuming
+bounded execution slots. The Background tasks page shows the latest recurring
+receipt and next-check hint. See [Scheduled maintenance](../features/scheduled-maintenance.md)
+for tracked jobs and excluded internal timers.
 
 ## 2. Backend composition
 

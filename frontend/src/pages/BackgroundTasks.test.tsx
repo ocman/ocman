@@ -103,4 +103,29 @@ describe('Background tasks', () => {
     expect(await screen.findByText('Showing up to 200 matching tasks, active work first.')).toBeVisible();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
+
+  it('shows recurring cleanup progress, cadence, next check timezone and owner scope', async () => {
+    const nextRunAt = Date.now() + 3_600_000;
+    vi.mocked(backgroundTasks).mockResolvedValue([task('cleanup', {
+      title: 'Clean archived worktrees', status: 'succeeded', ownerId: 'workstation', scope: 'Project inventory',
+      schedule: { intervalMillis: 3_600_000, nextRunAt, runs: 2 },
+      progress: { phase: 'Checking checkout safety', completed: 5, total: 5, unit: 'checkouts', counters: { removed: 2, retained: 3 } },
+    })]);
+    renderWithQuery(<BackgroundTasks />);
+    expect(await screen.findByText('Clean archived worktrees')).toBeVisible();
+    const schedule = within(screen.getByLabelText('Schedule for Clean archived worktrees'));
+    expect(schedule.getByText('Recurring · every 1h 0m · 2 runs')).toBeVisible();
+    expect(schedule.getByText('Scope: Project inventory')).toBeVisible();
+    expect(schedule.getByText(new RegExp(Intl.DateTimeFormat().resolvedOptions().timeZone))).toHaveAttribute('dateTime', new Date(nextRunAt).toISOString());
+    expect(screen.getByText('removed: 2')).toBeVisible();
+    expect(screen.getByText('retained: 3')).toBeVisible();
+    expect(screen.getByLabelText('workstation')).toBeVisible();
+  });
+
+  it('does not claim another run is scheduled after its loop stopped', async () => {
+    vi.mocked(backgroundTasks).mockResolvedValue([task('once', { schedule: { intervalMillis: 60_000, runs: 1, nextRunAt: 0 } })]);
+    renderWithQuery(<BackgroundTasks />);
+    expect(await screen.findByText('Recurring · every 1m 0s · 1 run')).toBeVisible();
+    expect(screen.queryByText(/Next check:/)).not.toBeInTheDocument();
+  });
 });

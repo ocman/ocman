@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/historyjournal"
+	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
 )
 
@@ -34,6 +35,8 @@ func journalDir(reader platforms.HistoryReader) string {
 // while ocman (or a hook) was not running. Afterwards only journal records
 // trigger reads, each refreshing its session; there is no periodic polling.
 func (w *sourceWorker) runJournal(ctx context.Context, dir string) {
+	pruneName := "history-journal-prune." + w.source.AdapterID
+	defer module.StopSchedule(ctx, pruneName)
 	w.journaled = true
 	consumer := &journalConsumer{store: w.module.deps.Store, dir: dir, refresh: w.refreshJournal, pruneIdle: journalIdle,
 		onGap: func(string) { w.module.Notify(w.source.AdapterID, "") }}
@@ -99,7 +102,7 @@ func (w *sourceWorker) runJournal(ctx context.Context, dir string) {
 		case <-prune.C:
 			if w.instance.ID != "" {
 				consumer.instanceID = w.instance.ID
-				_ = consumer.prune(ctx)
+				_ = module.RunScheduled(ctx, module.Schedule{Name: pruneName, Title: "Prune consumed history journal segments", Scope: w.source.AdapterID, Interval: journalPrune}, consumer.prune)
 			}
 		case <-w.wake:
 			// Explicit repairs and waiting reads.

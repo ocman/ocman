@@ -74,6 +74,7 @@ func (m *Module) Routes(r module.Router) {
 
 // Run reconciles permission items with the live prompts until ctx ends.
 func (m *Module) Run(ctx context.Context) {
+	defer module.StopSchedule(ctx, "inbox-reconcile")
 	ticker := time.NewTicker(reconcileInterval)
 	defer ticker.Stop()
 	for {
@@ -81,7 +82,7 @@ func (m *Module) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.Reconcile(ctx)
+			module.Scheduled(ctx, "inbox-reconcile", reconcileInterval, m.Reconcile)
 		}
 	}
 }

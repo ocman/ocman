@@ -141,6 +141,7 @@ func (m *Module) runStoredLLMMetricsTick(ctx context.Context, metrics *llmMetric
 	err := m.withStoredAnalytics(ctx, func(reader *db.DB) error { var err error; next, err = reader.GetMaxMessageTime(ctx); return err })
 	if err != nil {
 		if ctx.Err() == nil {
+			module.ReportError(ctx, err)
 			entry := log.WithError(err)
 			if errors.Is(err, errHistoryImportIncomplete) {
 				entry.Debug("LLM metrics: waiting for history initialization; will retry")
@@ -166,6 +167,7 @@ func (m *Module) runLLMMetricsTick(ctx context.Context, metrics *llmMetrics, hwm
 	}
 	rows, newHWM, err := getMessages(ctx, *hwm)
 	if err != nil {
+		module.ReportError(ctx, err)
 		log.WithError(err).Warn("LLM metrics: scan failed")
 		return
 	}

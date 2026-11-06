@@ -22,6 +22,7 @@ func (m *Module) runDatabaseSizeLoop(ctx context.Context) {
 
 	module.Every(ctx, "database-size", databaseSizeSampleInterval, func(ctx context.Context) {
 		if err := m.collectDatabaseSizes(ctx, time.Now()); err != nil {
+			module.ReportError(ctx, err)
 			log.WithError(err).Warn("collecting database sizes")
 		}
 	})

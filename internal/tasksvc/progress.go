@@ -2,6 +2,7 @@ package tasksvc
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -9,6 +10,15 @@ type Reporter struct {
 	manager *Manager
 	run     *execution
 	ctx     context.Context
+}
+
+func (r *Reporter) Fail(err error) {
+	r.run.mu.Lock()
+	defer r.run.mu.Unlock()
+	if r.run.task.Status != Running {
+		return
+	}
+	r.run.err = errors.Join(r.run.err, err)
 }
 
 func (r *Reporter) Report(progress Progress) error {
@@ -58,4 +68,11 @@ func cloneProgress(progress Progress) Progress {
 	return progress
 }
 
-func cloneTask(task Task) Task { task.Progress = cloneProgress(task.Progress); return task }
+func cloneTask(task Task) Task {
+	task.Progress = cloneProgress(task.Progress)
+	if task.Schedule != nil {
+		schedule := *task.Schedule
+		task.Schedule = &schedule
+	}
+	return task
+}

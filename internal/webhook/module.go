@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"runtime/debug"
 	"sync"
@@ -88,6 +89,7 @@ func (m *Module) Start(ctx context.Context) error {
 // Run polls every inbox and expires delivery history until ctx ends, then
 // waits for every poller, including ones started by later requests.
 func (m *Module) Run(ctx context.Context) {
+	defer module.StopSchedule(ctx, "webhook-history")
 	m.mu.Lock()
 	m.ctx = ctx
 	initial := m.initial
@@ -99,7 +101,7 @@ func (m *Module) Run(ctx context.Context) {
 	ticker := time.NewTicker(historyCleanupInterval)
 	defer ticker.Stop()
 	for {
-		m.cleanHistory(ctx)
+		module.Scheduled(ctx, "webhook-history", historyCleanupInterval, m.cleanHistory)
 		select {
 		case <-ctx.Done():
 			m.mu.Lock() // a startPoller after this sees ctx done
@@ -132,10 +134,12 @@ func (m *Module) startPoller(inbox state.WebhookInbox) {
 func (m *Module) cleanHistory(ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
+			module.ReportError(ctx, errors.New("webhook history cleanup panicked"))
 			log.WithFields(log.Fields{"panic": r, "stack": string(debug.Stack())}).Error("webhook history cleanup panicked, continuing on next tick")
 		}
 	}()
 	if err := m.store.CleanupWebhookHistory(ctx, time.Now().Add(-state.WebhookHistoryRetention).UnixMilli()); err != nil {
+		module.ReportError(ctx, err)
 		log.WithError(err).Warn("webhook history cleanup")
 	}
 }
