@@ -1,5 +1,35 @@
 import { test, expect } from './fixtures';
 
+test('resource tree preserves hierarchy and named context across reloads', async ({ mockedPage: page }) => {
+  await page.route('/api/resources?*', (route) => route.fulfill({ json: {
+    timestamp: Date.now(), cpuPercent: 125, memoryBytes: 0, history: [],
+    processes: [
+      { pid: 100, parentPid: 1, name: 'ocman', cpuPercent: 25, memoryBytes: 0 },
+      { pid: 101, parentPid: 100, name: 'coding-agent', cpuPercent: 100, memoryBytes: 0,
+        sessionId: 'tree-session', sessionTitle: 'Build process tree', projectName: 'ocman' },
+      { pid: 102, parentPid: 101, name: 'worker', cpuPercent: 0, memoryBytes: 0 },
+    ],
+  } }));
+  await page.goto('/sessions?activity=resources');
+  const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
+  const rows = dialog.getByRole('table').getByRole('row');
+  await expect(rows.nth(1)).toContainText('coding-agent');
+  await dialog.getByRole('radio', { name: 'Tree', exact: true }).click();
+  await expect(dialog.getByRole('radio', { name: 'Tree', exact: true })).toBeChecked();
+  await expect(rows.nth(1)).toContainText('ocman');
+  await expect(rows.nth(2)).toContainText('coding-agent');
+  await expect(rows.nth(3)).toContainText('worker');
+  await expect(rows.nth(3)).toHaveAttribute('data-depth', '2');
+  await expect(dialog.getByText('Project: ocman')).toBeVisible();
+  await expect(dialog.getByRole('link', { name: 'Build process tree' })).toHaveAttribute('href', '/session/tree-session');
+  await page.reload();
+  await expect(dialog.getByRole('radio', { name: 'Tree', exact: true })).toBeChecked();
+  await expect(rows.nth(3)).toHaveAttribute('data-depth', '2');
+  await dialog.getByRole('radio', { name: 'Flat', exact: true }).click();
+  await expect(dialog.getByRole('radio', { name: 'Flat', exact: true })).toBeChecked();
+  await expect(rows.nth(1)).toContainText('coding-agent');
+});
+
 test('Activity sits below Inbox and opens background tasks and live resources', async ({ mockedPage: page }) => {
   let samples = 0;
   await page.route('/api/background-tasks?*', (route) => route.fulfill({ json: [] }));

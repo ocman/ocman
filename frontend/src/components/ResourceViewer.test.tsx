@@ -5,10 +5,15 @@ import { renderWithQuery } from '../test/renderWithQuery';
 import { resources, type ResourceSnapshot } from '../lib/resources';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 import { ResourceViewer } from './ResourceViewer';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
-function renderViewer() {
-  return renderWithQuery(<MemoryRouter><ResourceViewer /></MemoryRouter>);
+function Location() {
+  const navigate = useNavigate();
+  return <><div aria-label="Location">{useLocation().search}</div><button onClick={() => navigate(-1)}>Back</button></>;
+}
+
+function renderViewer(search = '/') {
+  return renderWithQuery(<MemoryRouter initialEntries={[search]}><ResourceViewer /><Location /></MemoryRouter>);
 }
 
 vi.mock('../lib/resources', () => ({ resources: vi.fn() }));
@@ -64,6 +69,46 @@ it('shows full commands and links known sessions without selecting the process',
   fireEvent.click(link);
   expect(screen.getByRole('button', { name: 'Select ocman, PID 1' })).toHaveAttribute('aria-pressed', 'false');
   expect(screen.getAllByRole('link')).toHaveLength(1);
+});
+
+it('restores tree view from the URL, sorts siblings and preserves ancestry when selecting', async () => {
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [
+    ...snapshot.processes,
+    { pid: 3, parentPid: 1, name: 'worker', cpuPercent: 50, memoryBytes: 0 },
+  ] });
+  renderViewer('/?activity=resources&resourceView=tree&remoteId=box');
+  const table = await screen.findByRole('table');
+  const rows = () => within(table).getAllByRole('row').slice(1);
+  expect(screen.getByRole('radio', { name: 'Tree' })).toBeChecked();
+  expect(rows().map((row) => row.getAttribute('data-depth'))).toEqual(['0', '1', '1']);
+  expect(rows()[0]).toHaveTextContent('ocman');
+  expect(rows()[1]).toHaveTextContent('agent');
+  fireEvent.click(screen.getByRole('button', { name: 'Select worker, PID 3' }));
+  expect(rows()[0]).toHaveTextContent('ocman');
+  expect(rows()[1]).toHaveTextContent('worker');
+  fireEvent.change(screen.getByLabelText('Sort processes'), { target: { value: 'pid' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Show all processes' }));
+  expect(rows()[1]).toHaveTextContent('agent');
+  fireEvent.click(screen.getByRole('radio', { name: 'Flat' }));
+  expect(screen.getByLabelText('Location')).toHaveTextContent('activity=resources');
+  expect(screen.getByLabelText('Location')).toHaveTextContent('remoteId=box');
+  expect(screen.getByLabelText('Location')).not.toHaveTextContent('resourceView');
+  expect(rows()[1]).not.toHaveAttribute('data-depth');
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(screen.getByRole('radio', { name: 'Tree' })).toBeChecked();
+});
+
+it('switches from flat to tree and displays known project and session names', async () => {
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [
+    snapshot.processes[0],
+    { ...snapshot.processes[1], sessionId: 'session-one', sessionTitle: 'Build process tree', projectName: 'ocman' },
+  ] });
+  renderViewer('/?activity=resources');
+  await screen.findByRole('table');
+  fireEvent.click(screen.getByRole('radio', { name: 'Tree' }));
+  expect(screen.getByLabelText('Location')).toHaveTextContent('resourceView=tree');
+  expect(screen.getByText('Project: ocman')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Build process tree' })).toHaveAttribute('href', '/session/session-one');
 });
 
 it('isolates a process from its area or row, pins it through sorting and clears selection', async () => {

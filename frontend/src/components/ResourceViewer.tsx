@@ -6,11 +6,14 @@ import { EmptyState } from './EmptyState';
 import { resources, type ResourceProcess } from '../lib/resources';
 import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import { ResourceGraph } from './ResourceGraph';
+import { SegmentedControl } from './SegmentedControl';
+import { resourceTree } from '../lib/resourceTree';
 import { formatMemory as memory, processColor, processKey } from '../lib/resourcePresentation';
 
 export function ResourceViewer() {
   const [params, setParams] = useSearchParams();
   const sort = params.get('resourceSort') ?? 'cpuPercent';
+  const tree = params.get('resourceView') === 'tree';
   const selected = params.get('resourceProcess');
   const update = (key: string, value?: string) => setParams((previous) => {
     const next = new URLSearchParams(previous);
@@ -33,6 +36,7 @@ export function ResourceViewer() {
     if (sort === 'pid') return a.pid - b.pid;
     return (sort === 'memoryBytes' ? b.memoryBytes - a.memoryBytes : b.cpuPercent - a.cpuPercent) || a.pid - b.pid;
   });
+  const displayedRows = tree ? resourceTree(rows) : rows.map((process) => ({ process, depth: 0 }));
   return <section className="resource-viewer" aria-label="Live resources">
     <p>This machine · refreshes every second while visible. Includes ocman, managed agents, browser terminals and their child processes. CPU: 100% is one core. Memory is resident memory, summed per process.</p>
     {query.isPending && !query.error && <LoadingState>Loading resources…</LoadingState>}
@@ -44,6 +48,7 @@ export function ResourceViewer() {
       </div>
       <div className="resource-toolbar">
         <span>{rows.length} processes · sampled <time dateTime={new Date(data.timestamp).toISOString()}>{new Date(data.timestamp).toLocaleTimeString()}</time></span>
+        <SegmentedControl label="Process view" value={tree ? 'tree' : 'flat'} options={[{ value: 'flat', label: 'Flat' }, { value: 'tree', label: 'Tree' }]} onChange={(value) => update('resourceView', value === 'tree' ? 'tree' : undefined)} />
         {selected && <><span>{focused ? `${focused.name} · PID ${focused.pid}` : 'Selected process is no longer available'}</span><Button variant="ghost" size="compact" onClick={() => update('resourceProcess')}>Show all processes</Button></>}
         <SelectField aria-label="Sort processes" value={sort} onChange={(event) => update('resourceSort', event.target.value)}>
           <option value="cpuPercent">CPU, highest first</option>
@@ -54,13 +59,15 @@ export function ResourceViewer() {
       </div>
       {rows.length === 0 ? <EmptyState>No managed processes are running.</EmptyState> : <DataTable framed aria-label="Ocman processes">
         <thead><tr><th>PID</th><th>Parent</th><th>Process</th><th>CPU</th><th>Memory</th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={processKey(row)} data-selected={processKey(row) === selected}
+        <tbody>{displayedRows.map(({ process: row, depth }) => <tr key={processKey(row)} data-selected={processKey(row) === selected} data-depth={tree ? depth : undefined}
           onClick={(event) => { if (!(event.target as HTMLElement).closest('button, a') && !window.getSelection()?.toString()) select(row); }}>
-          <td>{row.pid}</td><td>{row.parentPid}</td><td>
+          <td>{row.pid}</td><td>{row.parentPid}</td><td><div className="resource-process-details" style={{ paddingInlineStart: `${depth * 20}px` }}>
+            {depth > 0 && <span className="resource-process-branch" aria-hidden="true">└─</span>}
             <Button variant="link" size="compact" aria-label={`Select ${row.name}, PID ${row.pid}`} aria-pressed={processKey(row) === selected} onClick={() => select(row)}><span className="resource-process-color" style={{ background: processColor(row) }} aria-hidden="true" />{row.name}</Button>
+            {row.projectName && <div className="resource-process-context">Project: {row.projectName}</div>}
             {row.command && <div className="resource-process-command">{row.command}</div>}
-            {row.sessionId && <Link to={`/session/${encodeURIComponent(row.sessionId)}`}>Open session</Link>}
-          </td><td>{row.cpuPercent.toFixed(1)}%</td><td>{memory(row.memoryBytes)}</td>
+            {row.sessionId && <Link to={`/session/${encodeURIComponent(row.sessionId)}`}>{row.sessionTitle || 'Open session'}</Link>}
+          </div></td><td>{row.cpuPercent.toFixed(1)}%</td><td>{memory(row.memoryBytes)}</td>
         </tr>)}</tbody>
       </DataTable>}
     </>}

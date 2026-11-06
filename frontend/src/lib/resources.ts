@@ -13,6 +13,8 @@ export interface ResourceProcess {
   name: string;
   command?: string;
   sessionId?: string;
+  sessionTitle?: string;
+  projectName?: string;
   cpuPercent: number;
   memoryBytes: number;
 }
