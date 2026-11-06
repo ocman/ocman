@@ -92,11 +92,13 @@ func conversationMetadata(ctx context.Context, tx *sql.Tx, key Key, d *Detail) e
 	if err := conversationDefaults(ctx, tx, key, d); err != nil {
 		return err
 	}
+	// The frontier must be the outer loop. Otherwise SQLite can scan every
+	// session in the instance once per recursive step, even for a tiny family.
 	rows, err := tx.QueryContext(ctx, `WITH RECURSIVE tree(id) AS (
 		SELECT id FROM session WHERE instance_id=? AND id=?
-		UNION SELECT s.parent_id FROM session s JOIN tree t ON s.id=t.id WHERE s.instance_id=? AND s.parent_id!='' AND COALESCE(json_extract(s.extensions,'$.SourceChild'),1)!=0
-		UNION SELECT s.id FROM session s JOIN tree t ON s.parent_id=t.id WHERE s.instance_id=? AND COALESCE(json_extract(s.extensions,'$.SourceChild'),1)!=0
-		) SELECT id,title,directory,parent_id,project_id,created_at,updated_at,source_deleted,revision,extensions,read_format,is_subagent FROM session
+		UNION SELECT s.parent_id FROM tree t CROSS JOIN session s INDEXED BY sqlite_autoindex_session_1 ON s.id=t.id WHERE s.instance_id=? AND s.parent_id!='' AND COALESCE(json_extract(s.extensions,'$.SourceChild'),1)!=0
+		UNION SELECT s.id FROM tree t CROSS JOIN session s INDEXED BY session_parent ON s.parent_id=t.id WHERE s.instance_id=? AND COALESCE(json_extract(s.extensions,'$.SourceChild'),1)!=0
+		) SELECT id,title,directory,parent_id,project_id,created_at,updated_at,source_deleted,revision,extensions,read_format,is_subagent FROM session INDEXED BY sqlite_autoindex_session_1
 		WHERE instance_id=? AND id IN(SELECT id FROM tree) ORDER BY created_at,id`, key.InstanceID, key.SessionID, key.InstanceID, key.InstanceID, key.InstanceID)
 	if err != nil {
 		return err

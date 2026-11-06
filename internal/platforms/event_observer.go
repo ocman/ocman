@@ -29,6 +29,12 @@ type OpenCodeEventObserver interface {
 	SessionStatusOnPort(string, string) (db.SessionStatus, error)
 }
 
+// StoredSessionStatusSettler combines canonical stored inference with only the
+// integration's live, port-fenced lifecycle cache. It must not read native history.
+type StoredSessionStatusSettler interface {
+	SettleStoredSessionStatus(id, port string, inferred db.SessionStatus) db.SessionStatus
+}
+
 func OpenCodeObserver(p Integration) OpenCodeEventObserver {
 	if accessor, ok := p.(interface{ OpenCodeObserver() OpenCodeEventObserver }); ok {
 		return accessor.OpenCodeObserver()

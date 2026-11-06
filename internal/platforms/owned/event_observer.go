@@ -32,11 +32,7 @@ func (o *eventObserver) ObserveSessionStatus(port string, generation uint64, id,
 }
 
 func (o *eventObserver) SessionStatusOnPort(id, port string) (db.SessionStatus, error) {
-	row, err := o.adapter.storedSummary(context.Background(), id)
-	if err != nil {
-		return "", err
-	}
-	return row.Status, nil
+	return o.adapter.storedStatus(context.Background(), id, port)
 }
 
 func (o *eventObserver) ObservePromptResolved(directory, kind, id, request string) {

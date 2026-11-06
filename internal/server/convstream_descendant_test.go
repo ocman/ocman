@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/convevents"
+	"github.com/ocman/ocman/internal/convevents/v1map"
 	"github.com/ocman/ocman/internal/convstream"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
@@ -17,15 +19,83 @@ import (
 
 type descendantPlatform struct {
 	fakePlatform
-	rows map[string]db.Session
+	rows         map[string]db.Session
+	summaryCalls int
 }
 
 func (p *descendantPlatform) SessionSummary(_ context.Context, id string) (*db.Session, error) {
+	p.summaryCalls++
+	return p.SessionMetadata(context.Background(), id)
+}
+
+func (p *descendantPlatform) SessionMetadata(_ context.Context, id string) (*db.Session, error) {
 	row, ok := p.rows[id]
 	if !ok {
 		return nil, platforms.ErrNotFound
 	}
 	return &row, nil
+}
+
+func TestConversationDescendantDoesNotReadAccounting(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	p := &descendantPlatform{fakePlatform: fakePlatform{PlatformID: "r-box:opencode"}, rows: map[string]db.Session{
+		"child": {ID: "child", ParentID: "middle"}, "middle": {ID: "middle", ParentID: "root"},
+	}}
+	reg.Register(p)
+	if !srv.isDescendantSession(t.Context(), convstream.Key{Platform: "r-box:opencode", SessionID: "root"}, "child") {
+		t.Fatal("missing descendant")
+	}
+	if p.summaryCalls != 0 {
+		t.Fatalf("ancestor checks performed %d accounting reads", p.summaryCalls)
+	}
+}
+
+func TestChildStatusMapperDoesNotReadAccounting(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	p := &descendantPlatform{fakePlatform: fakePlatform{PlatformID: "opencode"}, rows: map[string]db.Session{
+		"child": {ID: "child", ParentID: "middle"}, "middle": {ID: "middle", ParentID: "root"},
+	}}
+	reg.Register(p)
+	mapper := v1map.New(v1map.Options{SessionID: "root", Descendant: func(id string) bool {
+		return srv.isDescendantSession(t.Context(), convstream.Key{Platform: "opencode", SessionID: "root"}, id)
+	}})
+	// Match the hot profiling path: status -> isChild -> owner ancestor walk,
+	// repeatedly for a child that was not announced by session.created.
+	for range 20 {
+		for _, status := range []string{"busy", "idle"} {
+			result := mapper.Map(v1map.Frame{Data: []byte(fmt.Sprintf(`{"type":"session.status","properties":{"sessionID":"child","status":{"type":%q}}}`, status))})
+			if len(result.Events) != 1 {
+				t.Fatalf("lost child status: %+v", result)
+			}
+			if event, ok := result.Events[0].(convevents.ChildStatus); !ok || event.ChildID != "child" {
+				t.Fatalf("wrong child event: %+v", result.Events[0])
+			}
+		}
+	}
+	if p.summaryCalls != 0 {
+		t.Fatalf("status frames performed %d accounting reads", p.summaryCalls)
+	}
+}
+
+func TestConversationDescendantRejectsCyclesMismatchedIDsAndDeepChains(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	p := &descendantPlatform{fakePlatform: fakePlatform{PlatformID: "opencode"}, rows: map[string]db.Session{
+		"cycle-a": {ID: "cycle-a", ParentID: "cycle-b"}, "cycle-b": {ID: "cycle-b", ParentID: "cycle-a"},
+		"mismatch": {ID: "different", ParentID: "root"},
+	}}
+	for i := range 257 {
+		p.rows[fmt.Sprint(i)] = db.Session{ID: fmt.Sprint(i), ParentID: fmt.Sprint(i + 1)}
+	}
+	p.rows["257"] = db.Session{ID: "257", ParentID: "root"}
+	reg.Register(p)
+	for _, child := range []string{"cycle-a", "mismatch", "0", "missing"} {
+		if srv.isDescendantSession(t.Context(), convstream.Key{Platform: "opencode", SessionID: "root"}, child) {
+			t.Fatalf("accepted %s", child)
+		}
+	}
+	if p.summaryCalls != 0 {
+		t.Fatalf("accounting reads: %d", p.summaryCalls)
+	}
 }
 
 func TestConversationDescendantUsesRemoteOwner(t *testing.T) {

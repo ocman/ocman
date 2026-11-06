@@ -19,6 +19,7 @@ var callHandlers = map[string]callHandler{
 	"SessionLifecycle":        (*Server).SessionLifecycle,
 	"WorktreeSessions":        (*Server).WorktreeSessions,
 	"SessionSummary":          (*Server).SessionSummary,
+	"SessionMetadata":         (*Server).SessionMetadata,
 	"SessionChanges":          (*Server).SessionChanges,
 	"SessionInfo":             (*Server).SessionInfo,
 	"AgentCatalog":            (*Server).AgentCatalog,

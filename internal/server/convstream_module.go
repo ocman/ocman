@@ -92,7 +92,7 @@ func (s *Server) isDescendantSession(ctx context.Context, root convstream.Key, c
 			return true
 		}
 		seen[child] = true
-		row, err := platforms.ReadSessionSummary(ctx, adapter, child)
+		row, err := platforms.ReadSessionMetadata(ctx, adapter, child)
 		if err != nil || row == nil || row.ID != child {
 			return false
 		}

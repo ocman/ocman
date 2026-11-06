@@ -28,7 +28,7 @@ flowchart LR
     Adapters -->|canonical observation snapshot<br/>after status, prompt and background bootstrap| Archive
     Archive -->|archive rows + host/platform receipt atomically| State[(state.db)]
     History --> Reader[conversationread<br/>read-only WAL snapshots]
-    Adapters -->|bounded lifecycle and version only| Reader
+    Adapters -->|indexed metadata, status inputs,<br/>bounded lifecycle and version| Reader
     Reader -->|bounded wait for initial import or stale snapshot| Import
     Reader -->|active sessions only| Live[Platform live transcript]
     History -->|owner-scoped metadata, affected facts<br/>and UTC-hour summaries| Analytics[Projects, text search,<br/>analytics and telemetry]
@@ -46,6 +46,13 @@ flowchart LR
   unfinished, purged or inconsistent rows use the normal atomic repair path.
   The snapshot is capped at twice the input size so partial inventories do not
   load an unbounded source. No inventory cache survives the transaction.
+- Conversation-stream ancestor checks use `SessionMetadata`, including the
+  owner-routed remote `Call` operation. Unsupported older peers retain the
+  summary fallback; disconnects never fall back to local data. Event status
+  reads combine one indexed stored status row with the integration's port-fenced
+  lifecycle cache, without accounting, native history or a source-wide parent map.
+  Accounting queries select their session scope before visiting facts. Family
+  traversal uses indexed ID and parent lookups for each recursive frontier.
 - Content and ingestion progress commit together before upstream acknowledgment
   or outward publication. Conflicting repair writes fail instead of overwriting
   another ingestion revision.
