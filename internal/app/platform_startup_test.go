@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"io/fs"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,7 +20,23 @@ import (
 	ocapi "github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/testutil"
+	log "github.com/sirupsen/logrus"
 )
+
+type startupAddressHook struct{ ready chan string }
+
+func (startupAddressHook) Levels() []log.Level { return []log.Level{log.InfoLevel} }
+func (h startupAddressHook) Fire(entry *log.Entry) error {
+	if entry.Message == "ocman server started" {
+		if addr, ok := entry.Data["addr"].(string); ok {
+			select {
+			case h.ready <- addr:
+			default:
+			}
+		}
+	}
+	return nil
+}
 
 type startupPlatform struct{ platforms.Platform }
 
@@ -50,8 +65,9 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 		}
 		knownPlatforms["test-provider"] = func(context.Context, *db.DB, *state.DB, ocapi.Auth) platforms.Integration { return startupPlatform{} }
 		flag.CommandLine = flag.NewFlagSet("ocman", flag.ExitOnError)
-		addr := os.Getenv("OCMAN_TEST_STARTUP_ADDR")
-		os.Args = []string{"ocman", "-platforms=test-provider", "-addr=" + addr, "-mcp-addr=", "-log-file=off"}
+		ready := make(chan string, 1)
+		log.AddHook(startupAddressHook{ready: ready})
+		os.Args = []string{"ocman", "-platforms=test-provider", "-addr=127.0.0.1:0", "-mcp-addr=", "-log-file=off"}
 		if os.Getenv("OCMAN_TEST_NO_OPENCODE") == "saved" {
 			store, err := state.Open(state.DefaultDBPath())
 			if err != nil {
@@ -67,8 +83,17 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 		}
 		go func() {
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			var addr string
+			select {
+			case addr = <-ready:
+			case <-ctx.Done():
+				_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+				return
+			}
 			client := &http.Client{Timeout: 100 * time.Millisecond}
-			for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			for ; ctx.Err() == nil; time.Sleep(10 * time.Millisecond) {
 				if resp, err := client.Get("http://" + addr + "/api/auth/me"); err == nil {
 					_ = resp.Body.Close()
 					if resp.StatusCode == http.StatusOK {
@@ -85,12 +110,6 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 	for _, mode := range []string{"explicit", "saved"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			addr := listener.Addr().String()
-			_ = listener.Close()
 			bin := filepath.Join(dir, "bin")
 			if err := os.Mkdir(bin, 0700); err != nil {
 				t.Fatal(err)
@@ -100,7 +119,7 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestStartupWithoutOpenCode$")
-			cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_NO_OPENCODE="+mode, "OCMAN_TEST_EXEC_MARKER="+marker, "OCMAN_TEST_STARTUP_ADDR="+addr,
+			cmd.Env = testutil.IsolatedEnv("OCMAN_TEST_NO_OPENCODE="+mode, "OCMAN_TEST_EXEC_MARKER="+marker,
 				"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "HOME="+dir,
 				"XDG_DATA_HOME="+dir, "XDG_CONFIG_HOME="+dir, "XDG_STATE_HOME="+dir, "SHELL=/bin/sh",
 				"OCMAN_AUTH_PASSWORD=", "OPENCODE_SERVER_PASSWORD=", "OPENCODE_CONFIG=", "OPENCODE_CONFIG_DIR=", "OCMAN_RELAY_URL=", "OCMAN_PUBLIC_BASE_URL=", "WAILS_BINDINGS=")
