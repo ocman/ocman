@@ -17,6 +17,10 @@ func TestResourceSessionLinks(t *testing.T) {
 		{"known", "agent --session-id native", "canonical", false},
 		{"resume", "agent --resume=native", "canonical", false},
 		{"session", "agent --session native", "canonical", false},
+		{"fork overrides resume source", "agent --resume native --fork-session --session-id fork-native", "fork", false},
+		{"fork with unavailable source", "agent --resume unknown --fork-session --session-id=fork-native", "fork", false},
+		{"explicit identity before resume", "agent --session-id fork-native --resume native", "fork", false},
+		{"session overrides resume", "agent --resume unknown --session native", "canonical", false},
 		{"missing value", "agent --session-id", "", false},
 		{"option is not a value", "agent --resume --verbose", "", false},
 		{"unknown", "agent --session-id unknown", "", false},
@@ -35,6 +39,7 @@ func TestResourceSessionLinks(t *testing.T) {
 				}
 				return []sessioncatalog.Session{
 					{ID: "canonical", NativeID: "native"},
+					{ID: "fork", NativeID: "fork-native"},
 					{ID: "one", NativeID: "duplicate"},
 					{ID: "two", NativeID: "duplicate"},
 					{ID: "gone", NativeID: "purged", Purged: true},

@@ -13,19 +13,34 @@ import (
 // identities deliberately have no link.
 func sessionArgument(command string) string {
 	args := strings.Fields(command)
+	var sessionID, session, resume string
 	for i := 1; i < len(args); i++ {
 		flag, value, equal := strings.Cut(args[i], "=")
 		if flag != "--session-id" && flag != "--resume" && flag != "--session" {
 			continue
 		}
-		if equal {
-			return value
+		if !equal && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			i++
+			value = args[i]
 		}
-		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-			return args[i+1]
+		switch flag {
+		case "--session-id":
+			sessionID = value
+		case "--session":
+			session = value
+		case "--resume":
+			resume = value
 		}
 	}
-	return ""
+	// Forks resume a source but explicitly name a new session. Never link the
+	// source instead of that new identity, regardless of argument order.
+	if sessionID != "" {
+		return sessionID
+	}
+	if session != "" {
+		return session
+	}
+	return resume
 }
 
 func (m *Module) sessionLinks(ctx context.Context, owner string, processes []hostsvc.ResourceProcess) []hostsvc.ResourceProcess {
