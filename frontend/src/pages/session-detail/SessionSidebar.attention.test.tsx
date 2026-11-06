@@ -34,7 +34,8 @@ function Location() {
 
 function renderSidebar(view: 'recent' | 'projects', rows: Session[] = [], route = '/', activeId = 'other', collapsedProjectSet = new Set(['/old-repo'])) {
   const props: SessionSidebarProps = {
-    activeId, sidebarWidth: 300, sidebarView: view, setSidebarView: vi.fn(),
+    activeId, activePlatform: new URLSearchParams(route.split('?')[1]).get('platform') || undefined,
+    sidebarWidth: 300, sidebarView: view, setSidebarView: vi.fn(),
     showArchivedRecent: false, setShowArchivedRecent: vi.fn(), loadingRecentSessions: false,
     recentSessions: rows, sidebarProjectGroups: rows.length ? [{
       directory: '/old-repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' },
@@ -55,6 +56,30 @@ beforeEach(() => {
   localStorage.clear();
   useUiStore.setState({ sidebarRecentHours: 72 });
   snapshot([entry]);
+});
+
+it.each(['recent', 'projects'] as const)('scopes selected category rows to the explicit owner in %s view', (view) => {
+  const local = { ...seedView('shared').session!, id: 'shared', platform: 'opencode', title: 'Local Factory work', factoryAttemptId: 'attempt', status: 'busy' as const };
+  const remote = { ...local, platform: 'r-box:opencode', title: 'Remote routine work', factoryAttemptId: undefined, routineId: 'routine' };
+  renderSidebar(view, [local, remote], '/session/shared?platform=r-box%3Aopencode', 'shared');
+  const routine = screen.getByRole('button', { name: 'Routines 1' });
+  const factory = screen.getByRole('button', { name: 'Factory 1' });
+  expect(routine).toHaveAttribute('aria-current', 'true');
+  expect(routine).toHaveAttribute('aria-expanded', 'true');
+  expect(factory).not.toHaveAttribute('aria-current');
+  expect(factory).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByText(remote.title).closest('[aria-selected]')).toHaveAttribute('aria-selected', 'true');
+  fireEvent.click(factory);
+  expect(screen.getByText(local.title).closest('[aria-selected]')).toHaveAttribute('aria-selected', 'false');
+});
+
+it.each(['recent', 'projects'] as const)('does not reveal another owner\'s settled same-ID session in the %s main list', (view) => {
+  const local = { ...seedView('shared').session!, id: 'shared', platform: 'opencode', title: 'Local settled Factory', factoryAttemptId: 'attempt', status: 'done' as const };
+  const remote = { ...local, platform: 'r-box:opencode', title: 'Remote selected routine', factoryAttemptId: undefined, routineId: 'routine' };
+  snapshot([]);
+  renderSidebar(view, [local, remote], '/session/shared?platform=r-box%3Aopencode', 'shared');
+  expect(screen.queryByText(local.title)).not.toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Routines 1' })).getByText(remote.title)).toBeInTheDocument();
 });
 
 it('reveals a badge-counted Factory interruption absent from grouped history', () => {

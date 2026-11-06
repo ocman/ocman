@@ -10,6 +10,39 @@ const session = (id: string, patch: Partial<Session> = {}) => ({
 }) as Session;
 
 describe('running sidebar drawers', () => {
+  it('opens and highlights only the selected owner across same-ID categories', () => {
+    const rows = [session('shared', { factoryAttemptId: 'attempt' }),
+      session('shared', { platform: 'remote', routineId: 'routine' })];
+    const { result, rerender } = renderHook(({ platform }) => useSidebarDrawers(rows, '', {}, 'shared', platform),
+      { initialProps: { platform: 'remote' } });
+    expect(result.current.drawers.filter(drawer => drawer.active).map(drawer => drawer.id)).toEqual(['routines']);
+    expect(result.current.expanded.has('routines')).toBe(true);
+    expect(result.current.expanded.has('factory')).toBe(false);
+    act(() => result.current.toggle('routines'));
+    rerender({ platform: 'remote' });
+    expect(result.current.expanded.has('routines')).toBe(false);
+    rerender({ platform: 'local' });
+    expect(result.current.expanded.has('factory')).toBe(true);
+    expect(result.current.drawers.find(drawer => drawer.active)?.id).toBe('factory');
+    rerender({ platform: 'remote' });
+    expect(result.current.expanded.has('routines')).toBe(true);
+  });
+
+  it('treats owner navigation within the same category as a new selection', () => {
+    const rows = [session('shared', { routineId: 'local' }), session('shared', { platform: 'remote', routineId: 'remote' })];
+    const { result, rerender } = renderHook(({ platform }) => useSidebarDrawers(rows, '', {}, 'shared', platform),
+      { initialProps: { platform: 'local' } });
+    act(() => result.current.toggle('routines'));
+    rerender({ platform: 'remote' });
+    expect(result.current.expanded.has('routines')).toBe(true);
+  });
+
+  it('reveals only the selected owner when same-ID settled categories do not match search', () => {
+    const rows = [session('shared', { factoryAttemptId: 'attempt', status: 'done' }),
+      session('shared', { platform: 'remote', routineId: 'routine', status: 'done' })];
+    expect(runningSidebarDrawers(rows, 'no match', {}, 'shared', 'remote').map(drawer => drawer.id)).toEqual(['routines']);
+  });
+
   it('keeps busy sessions and background work and assigns overlapping categories once, with origin first', () => {
     const archive = session('archive', { archived: true });
     const result = runningSidebarDrawers([
@@ -57,8 +90,8 @@ describe('running sidebar drawers', () => {
 
   it('retains selected completed rows but drops an unselected drawer as its final session finishes', () => {
     const rows = [session('archive', { archived: true })];
-    expect(runningSidebarDrawers(rows, '', {}, 'archive', 'done')[0]).toMatchObject({ active: true, sessions: rows });
-    expect(runningSidebarDrawers([{ ...rows[0], status: 'done' }], '', {}, 'archive', 'busy')).toHaveLength(1);
+    expect(runningSidebarDrawers(rows, '', {}, 'archive', 'local')[0]).toMatchObject({ active: true, sessions: rows });
+    expect(runningSidebarDrawers([{ ...rows[0], status: 'done' }], '', {}, 'archive', 'local')).toHaveLength(1);
     const { result, rerender } = renderHook(({ rows }) => useSidebarDrawers(rows, '', {}), { initialProps: { rows } });
     expect(result.current.sections).toEqual([]);
     act(() => result.current.toggle('archived'));
@@ -76,10 +109,10 @@ describe('running sidebar drawers', () => {
     const rows = [session('active', { routineId: 'r', status: 'done' }),
       session('pin', { origin: 'plugin', status: 'done', pinned: true }),
       session('question', { factoryAttemptId: 'attempt', status: 'waiting', pendingQuestion: true })];
-    expect(runningSidebarDrawers(rows, 'no match', {}, 'active', 'done').map(d => [d.id, d.sessions.map(s => s.id)])).toEqual([
+    expect(runningSidebarDrawers(rows, 'no match', {}, 'active', 'local').map(d => [d.id, d.sessions.map(s => s.id)])).toEqual([
       ['factory', ['question']], ['routines', ['active']], ['plugins', ['pin']],
     ]);
-    expect(runningSidebarDrawers(rows, 'no match', {}, 'active', 'done', false).map(d => d.id)).toEqual(['routines', 'plugins']);
+    expect(runningSidebarDrawers(rows, 'no match', {}, 'active', 'local', false).map(d => d.id)).toEqual(['routines', 'plugins']);
   });
 
   it('opens the selected category on navigation without undoing manual collapse on refresh', () => {

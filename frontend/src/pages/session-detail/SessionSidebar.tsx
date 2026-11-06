@@ -76,6 +76,7 @@ export interface SessionSidebarProps {
   visible?: boolean;
   /** Currently active session id from the URL. */
   activeId: string | undefined;
+  activePlatform?: string;
   sidebarWidth: number;
   sidebarView: 'recent' | 'projects';
   setSidebarView: (view: 'recent' | 'projects') => void;
@@ -109,6 +110,7 @@ export interface SessionSidebarProps {
 export function SessionSidebar({
   visible = true,
   activeId,
+  activePlatform,
   sidebarWidth,
   sidebarView,
   setSidebarView,
@@ -176,7 +178,7 @@ export function SessionSidebar({
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, sidebarView, loadingRecentSessions]);
+  }, [activeId, activePlatform, sidebarView, loadingRecentSessions]);
 
   // Share live status, archive and navigation across every session view.
   const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => phone && archivingSessionIds.has(sib.id) ? null : (
@@ -186,7 +188,7 @@ export function SessionSidebar({
       inGroup={inGroup}
       flat={flat}
       depth={depth}
-      active={sib.id === activeId}
+      active={sib.id === activeId && (!activePlatform || sib.platform === activePlatform)}
       activeId={activeId}
       activeDisplayStatus={stableDrafts.ids.has(sib.id) ? sib.status : activeDisplayStatus}
       archiving={archivingSessionIds.has(sib.id) || stableDrafts.discarding.has(sib.id)}
@@ -207,14 +209,14 @@ export function SessionSidebar({
   const query = searchQuery.trim();
   const runningDrawers = useSidebarDrawers(
     [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)],
-    query, siblingGitInfos, activeId, activeDisplayStatus, alwaysShowPrompts,
+    query, siblingGitInfos, activeId, activePlatform, alwaysShowPrompts,
   );
   const filteredProjectGroups = sidebarProjectGroups.flatMap((group) => {
     const projectMatches = !!query && fuzzyMatch(query, group.directory);
     const sessions = group.sessions.filter((session) =>
       !session.pinned && !runningDrawers.keys.has(sessionAttentionKey(session)) &&
       matchesSessionListFilters(session, listFilters,
-        hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
+        hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activePlatform && session.platform !== activePlatform ? undefined : activeId),
     );
     return query && !projectMatches && sessions.length === 0 && !group.drafts?.length ? [] : [{ ...group, sessions }];
   });
@@ -226,7 +228,7 @@ export function SessionSidebar({
   const flatUnpinned = recentSessions.filter((session) =>
     !session.pinned && !runningDrawers.keys.has(sessionAttentionKey(session)) &&
     matchesSessionListFilters(session, listFilters,
-      hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
+      hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activePlatform && session.platform !== activePlatform ? undefined : activeId),
   );
 
   const mainSections = useMemo(() => sidebarView === 'recent'

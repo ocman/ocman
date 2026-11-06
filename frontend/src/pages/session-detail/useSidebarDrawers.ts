@@ -24,7 +24,8 @@ export interface SidebarDrawer {
   active: boolean;
 }
 
-export function runningSidebarDrawers(sessions: Session[], query: string, infos: Record<string, GitInfo>, activeId?: string, activeStatus?: Session['status'], alwaysShowPrompts = true): SidebarDrawer[] {
+export function runningSidebarDrawers(sessions: Session[], query: string, infos: Record<string, GitInfo>, activeId?: string, activePlatform?: string, alwaysShowPrompts = true): SidebarDrawer[] {
+  const isActive = (session: Session) => session.id === activeId && (!activePlatform || session.platform === activePlatform);
   const routineKeys = hiddenSessionOrigins(sessions, { showFactory: true, showRoutines: false, showPlugins: true });
   const pluginKeys = hiddenSessionOrigins(sessions, { showFactory: true, showRoutines: true, showPlugins: false });
   const factoryKeys = hiddenSessionOrigins(sessions, { showFactory: false, showRoutines: true, showPlugins: true });
@@ -34,22 +35,21 @@ export function runningSidebarDrawers(sessions: Session[], query: string, infos:
     const key = `${session.platform}\0${session.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const status = session.id === activeId ? activeStatus ?? session.status : session.status;
-    const reveal = !session.snoozedUntil && (session.id === activeId || session.pinned || alwaysShowPrompts && hasPendingPrompt(session));
-    if (!reveal && (!session.snoozedUntil && status !== 'busy' && !hasBackgroundWork(session)
+    const reveal = !session.snoozedUntil && (isActive(session) || session.pinned || alwaysShowPrompts && hasPendingPrompt(session));
+    if (!reveal && (!session.snoozedUntil && session.status !== 'busy' && !hasBackgroundWork(session)
       || query && !matchesSessionSearch(query, session, infos[checkoutKey(session.directory, session.remoteId)] ?? infos[session.directory]))) continue;
     // Snoozing wins over origin and archive, so each session has one drawer.
     const category = session.snoozedUntil ? 'snoozed' : factoryKeys.has(key) ? 'factory' : routineKeys.has(key) ? 'routines' : pluginKeys.has(key) ? 'plugins' : session.archived ? 'archived' : undefined;
     if (category) rows[category].push(session);
   }
   return DRAWERS.flatMap((drawer) => rows[drawer.id].length
-    ? [{ ...drawer, sessions: rows[drawer.id].sort(compareSidebarCompletion), active: rows[drawer.id].some(session => session.id === activeId) }] : []);
+    ? [{ ...drawer, sessions: rows[drawer.id].sort(compareSidebarCompletion), active: rows[drawer.id].some(isActive) }] : []);
 }
 
-export function useSidebarDrawers(sessions: Session[], query: string, infos: Record<string, GitInfo>, activeId?: string, activeStatus?: Session['status'], alwaysShowPrompts = true) {
-  const drawers = runningSidebarDrawers(sessions, query, infos, activeId, activeStatus, alwaysShowPrompts);
+export function useSidebarDrawers(sessions: Session[], query: string, infos: Record<string, GitInfo>, activeId?: string, activePlatform?: string, alwaysShowPrompts = true) {
+  const drawers = runningSidebarDrawers(sessions, query, infos, activeId, activePlatform, alwaysShowPrompts);
   const activeDrawer = drawers.find(drawer => drawer.active)?.id;
-  const selection = JSON.stringify([activeId, activeDrawer]);
+  const selection = JSON.stringify([activePlatform, activeId, activeDrawer]);
   const [state, setState] = useState(() => ({ selection, expanded: new Set<SidebarDrawerId>(activeDrawer ? [activeDrawer] : []) }));
   // Reveal navigation changes once, without reopening manually collapsed drawers
   // on status updates or adding a post-render effect that moves the selection.

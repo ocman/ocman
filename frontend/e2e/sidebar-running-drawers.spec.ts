@@ -2,6 +2,35 @@ import { test, expect, MOCK_SESSION } from './fixtures';
 
 test.use({ factoryBeta: true });
 
+test('same-ID owner navigation highlights and opens the selected category only', async ({ mockedPage: page }) => {
+  const local = { ...MOCK_SESSION, title: 'Local Factory work', factoryAttemptId: 'attempt', status: 'busy' };
+  const remote = { ...MOCK_SESSION, platform: 'r-box:opencode', remoteId: 'box', title: 'Remote routine work', routineId: 'routine', status: 'busy' };
+  await page.route('/api/sessions*', route => route.fulfill({ json: [local, remote] }));
+  await page.route(new RegExp(`/api/session/${local.id}(\\?|$)`), route => route.fulfill({ json: {
+    session: new URL(route.request().url()).searchParams.get('platform') === remote.platform ? remote : local,
+    messages: [], parts: [], totalMessages: 0,
+  } }));
+  await page.goto(`/session/${local.id}?platform=${encodeURIComponent(remote.platform)}`);
+  const sidebar = page.getByTestId('session-sidebar');
+  const factory = sidebar.getByRole('button', { name: 'Factory 1', exact: true });
+  const routines = sidebar.getByRole('button', { name: 'Routines 1', exact: true });
+  await expect(routines).toHaveAttribute('aria-current', 'true');
+  await expect(routines).toHaveAttribute('aria-expanded', 'true');
+  await expect(factory).not.toHaveAttribute('aria-current', 'true');
+  await expect(factory).toHaveAttribute('aria-expanded', 'false');
+  await routines.click();
+  await factory.click();
+  await sidebar.getByText(local.title).click();
+  await expect(factory).toHaveAttribute('aria-current', 'true');
+  await expect(routines).not.toHaveAttribute('aria-current', 'true');
+  await expect(routines).toHaveAttribute('aria-expanded', 'false');
+  await routines.click();
+  await sidebar.getByText(remote.title).click();
+  await expect(routines).toHaveAttribute('aria-current', 'true');
+  await expect(factory).not.toHaveAttribute('aria-current', 'true');
+  await expect(sidebar.locator('[data-session-key][aria-selected="true"]')).toHaveCount(1);
+});
+
 for (const [label, origin] of [
   ['Routines', { routineId: 'run' }],
   ['Factory', { factoryAttemptId: 'attempt' }],
