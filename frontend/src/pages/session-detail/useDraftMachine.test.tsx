@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useDraftMachine } from './useDraftMachine';
-import { getConversationDraft, hydrateDrafts, useNewConversationDrafts } from '../../lib/newConversationDrafts';
+import { getConversationDraft, hydrateDrafts, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { transact } from '../../lib/draftDb';
 import type { NewSessionParams } from '../../lib/newSessionPath';
 
@@ -49,6 +49,24 @@ it('clears destination-specific consent on browser Back but retains it for platf
   await waitFor(() => expect(getConversationDraft(params.draftId)?.directory).toBe(params.directory));
   expect(hook.result.current.cloneURL).toBeUndefined();
   expect(getConversationDraft(params.draftId)?.clone).toBeUndefined();
+});
+
+it('saves the submitted route when Back skips the machine-switch render', async () => {
+  const hook = renderHook(() => useDraftMachine(params, { target: 'worktree' }, () => false, vi.fn()));
+  await act(() => hook.result.current.onMachineChange(machine));
+  // The router returned to the original location without committing the destination.
+  act(() => hook.result.current.saveDraft());
+  const stored = await transact(['drafts'], 'readonly', (tx) => tx.get('drafts', params.draftId));
+  expect(stored).toMatchObject({ ...params, target: 'worktree', clone: undefined });
+});
+
+it('preserves peer edits made after this view changed machines', async () => {
+  const hook = renderHook(() => useDraftMachine(params, {}, () => false, vi.fn()));
+  await act(() => hook.result.current.onMachineChange(machine));
+  act(() => rememberConversationDraft({ ...getConversationDraft(params.draftId)!, agent: 'plan' }));
+  act(() => hook.result.current.saveDraft());
+  const stored = await transact(['drafts'], 'readonly', (tx) => tx.get('drafts', params.draftId));
+  expect(stored).toMatchObject({ directory: machine.dir, remoteId: machine.remoteId, agent: 'plan' });
 });
 
 it('keeps worktree selection for existing projects and refuses a locked or claimed draft', async () => {

@@ -120,6 +120,20 @@ describe('NewConversation', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ directory: '/repo', remoteId: 'machine', cloneUrl: 'https://example.com/Org/Repo.git', worktree: false }));
   });
 
+  it('retires the original draft after Back skips the machine-switch render', async () => {
+    mount();
+    await ready();
+    await act(() => composer.onMachineChange!({ dir: '/remote/repo', remoteId: 'box', remoteName: 'Box',
+      platform: 'r-box:opencode', cloneUrl: 'https://example.com/repo.git' }));
+    // Back restored the same props before the destination ever rendered.
+    navigate.mockClear();
+    await act(() => composer.onSend!('Stay in the original checkout'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'machine', cloneUrl: undefined }));
+    expect(useNewConversationDrafts.getState().starts.new.replacementDraftId).toBeUndefined();
+    expect(getConversationDraft('new')).toBeUndefined();
+    expect(navigate).toHaveBeenCalledWith('/session/child', { replace: true });
+  });
+
   it('uses project startup defaults and respects explicit composer choices', async () => {
     mocks.settings.mockResolvedValue({ models: ['prov/fallback'], off: false, defaultAgent: 'plan',
       defaults: { model: 'prov/start', agent: 'plan', worktree: 'current' } });

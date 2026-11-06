@@ -138,7 +138,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const routeKey = routeKeyOf({ remoteId, directory, platform: params.platform, title });
   const [pending, setPending] = useState<{ key: string; text: string; images?: AttachedImage[]; startId: string; steps: StartSteps }>();
   const inFlight = useRef<number | undefined>(undefined);
-  const { cloneURL, machineSource, onMachineChange } = useDraftMachine(params,
+  const { cloneURL, machineSource, onMachineChange, saveDraft } = useDraftMachine(params,
     { model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick }, () => inFlight.current !== undefined, navigate);
   const active = useRef(false);
   const generation = useRef(0);
@@ -249,6 +249,9 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
       setPending((p) => p?.startId === id ? { ...p, steps } : p);
     });
     try {
+      // Back can restore this route before the machine-switch render commits.
+      // Persist the submitted route even when its autosave effect did not rerun.
+      saveDraft();
       revision = await beginConversationStart(draftId, routeKey, text);
       if (revision === null) throw new Error('Session creation is already in progress');
       // Synchronous when ready, so a re-point right after submit cannot drop it.
@@ -301,7 +304,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel, cloneURL]);
+  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel, cloneURL, saveDraft]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     rememberPendingDraftPayload(draftId, images, files);
