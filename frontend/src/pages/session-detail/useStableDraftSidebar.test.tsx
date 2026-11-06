@@ -6,16 +6,18 @@ import { useBackendConversationDrafts } from '../../lib/backendConversationDraft
 import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import type { Session } from '../../lib/api.types';
 import type { SidebarProjectGroup } from './SessionSidebar';
-import { postJSON } from '../../lib/api.requests';
+import { fetchJSON, postJSON } from '../../lib/api.requests';
 
 vi.mock('../../lib/api.requests', () => ({ fetchJSON: vi.fn(async () => []), postJSON: vi.fn(async () => undefined) }));
 vi.mock('../../lib/useProjectIdentityIndex', () => ({ useProjectIdentityIndex: () => () => ({ key: 'project', directory: '/repo', remoteId: 'local' }) }));
 const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
 const meta = { draftId: id, directory: '/repo', platform: 'opencode', remoteId: 'local', createdAt: 100 };
+const ready = { [id]: { id, metadata: meta, phase: 'ready' as const, createdAt: 100, steps: {} } };
 const group: SidebarProjectGroup = { key: 'project', directory: '/repo', sessions: [], lastUpdated: 0, aggregate: { kind: 'none' } };
 
 beforeEach(() => {
   vi.mocked(postJSON).mockReset().mockResolvedValue(undefined);
+  vi.mocked(fetchJSON).mockReset().mockResolvedValue([]);
   useNewConversationDrafts.setState({ drafts: [meta] });
   useBackendConversationDrafts.setState({ drafts: {} });
 });
@@ -58,6 +60,26 @@ it('uses one row ID through draft, setup and actual session publication', async 
   expect(result.current.ids.has(id)).toBe(false);
   expect(result.current.open(id)).toBe(false);
   expect(result.current.discard(id)).toBe(false);
+});
+
+it('does not resurface a completed background draft after its session row is archived', async () => {
+  vi.mocked(fetchJSON).mockResolvedValue(Object.values(ready));
+  useBackendConversationDrafts.setState({ drafts: ready });
+  const actual = { id, directory: '/repo', timeUpdated: 200 } as Session;
+  const { result, rerender } = renderHook(({ sessions }: { sessions: Session[] }) => useStableDraftSidebar(sessions,
+    [{ ...group, sessions }], vi.fn()), { initialProps: { sessions: [actual] } });
+  await act(async () => {});
+  rerender({ sessions: [] });
+  await waitFor(() => expect(result.current.recent).toEqual([]));
+  expect(result.current.groups.flatMap((entry) => entry.sessions)).toEqual([]);
+});
+
+it('leaves retiring the open draft to its conversation page', async () => {
+  vi.mocked(fetchJSON).mockResolvedValue(Object.values(ready));
+  useBackendConversationDrafts.setState({ drafts: ready });
+  renderHook(() => useStableDraftSidebar([{ id } as Session], [group], vi.fn(), id));
+  await act(async () => {});
+  expect(useNewConversationDrafts.getState().drafts).toEqual([meta]);
 });
 
 it('keeps a completed background draft visible until the actual list row arrives', async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Session } from '../../lib/api.types';
 import { useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
-import { discardBackendDraft, isBackendDraft, refreshBackendDrafts, subscribeBackendDraftSync, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
+import { discardBackendDraft, isBackendDraft, refreshBackendDrafts, retireBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 import { remoteLog } from '../../lib/remoteLog';
@@ -48,6 +48,16 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
   }, []);
   const known = new Map([...recent, ...groups.flatMap((group) => group.sessions)].map((session) => [session.id, session]));
   const pending = stable.filter((draft) => backend[draft.draftId]?.phase !== 'ready' || !known.has(draft.draftId));
+  // Once the real row has taken over, retire the background draft so a later
+  // archive does not bring the synthetic row back. The open draft page does
+  // this itself before navigating.
+  const published = stable.filter((draft) => draft.draftId !== activeId && backend[draft.draftId]?.phase === 'ready'
+    && known.has(draft.draftId)).map((draft) => draft.draftId).join(',');
+  useEffect(() => {
+    for (const id of published ? published.split(',') : []) {
+      void retireBackendDraft(id).catch((error) => remoteLog.error('Could not retire draft metadata', error));
+    }
+  }, [published]);
   const ids = new Set(pending.map((draft) => draft.draftId));
   const synthetic = pending.map(draftSession);
   const merge = (rows: Session[], extras: Session[]) => {
