@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 // StreamUpdate applies source-ordered events for several sessions together
@@ -50,7 +52,9 @@ func (b StreamBatch) key() Key {
 	return b.Key
 }
 
-func (d *DB) ApplyStream(ctx context.Context, u StreamUpdate) (StreamResult, error) {
+func (d *DB) ApplyStream(ctx context.Context, u StreamUpdate) (_ StreamResult, retErr error) {
+	finish := telemetry.ConversationWork(ctx, telemetry.ConversationCommit)
+	defer func() { finish(retErr, int64(len(u.Batches))) }()
 	result := StreamResult{Sessions: map[Key]int64{}}
 	c := u.Checkpoint
 	if u.InstanceID == "" || c.Stream == "" || c.Cursor == "" || c.Cursor == c.ExpectedCursor {
@@ -109,6 +113,10 @@ func applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (int64, er
 	case err != nil && !errors.Is(err, sql.ErrNoRows):
 		return 0, err
 	}
+	changes, err := projectionChanges(ctx, tx, b)
+	if err != nil {
+		return 0, err
+	}
 	revision++
 	// A full-snapshot digest describes the old revision, not this mutation.
 	// Invalidate in the same transaction so a later identical snapshot repairs it.
@@ -143,11 +151,15 @@ func applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (int64, er
 	if err := retainRemovals(ctx, tx, key, b); err != nil {
 		return 0, err
 	}
-	if err := refreshSidebar(ctx, tx, key); err != nil {
-		return 0, err
+	if changes.sidebar {
+		if err := refreshSidebar(ctx, tx, key); err != nil {
+			return 0, err
+		}
 	}
-	if err := refreshAnalyticsSummary(ctx, tx, key, changedAnalyticsMessages(b)); err != nil {
-		return 0, err
+	if changes.analytics {
+		if err := refreshAnalyticsSummary(ctx, tx, key, changedAnalyticsMessages(b)); err != nil {
+			return 0, err
+		}
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO change_outbox(instance_id,session_id,revision,kind) VALUES(?,?,?,'updated')`,
 		key.InstanceID, key.SessionID, revision)
