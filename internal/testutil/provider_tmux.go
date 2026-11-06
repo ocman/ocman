@@ -57,10 +57,15 @@ func InstallProviderTmux(t testing.TB, bin, pids string) {
 	}
 	WriteScript(t, filepath.Join(bin, "tmux"), string(script))
 	t.Cleanup(func() {
-		paths, err := filepath.Glob(filepath.Join(pids, "*.pid"))
-		if err != nil {
-			t.Error(err)
+		var paths []string
+		for _, pattern := range []string{"*.pid", filepath.Join("groups", "*.pid")} {
+			matches, err := filepath.Glob(filepath.Join(pids, pattern))
+			if err != nil {
+				t.Error(err)
+			}
+			paths = append(paths, matches...)
 		}
+		stopped := map[int]bool{}
 		for _, path := range paths {
 			data, err := os.ReadFile(path)
 			if err != nil {
@@ -72,6 +77,10 @@ func InstallProviderTmux(t testing.TB, bin, pids string) {
 				t.Errorf("invalid provider PID in %s: %v", path, err)
 				continue
 			}
+			if stopped[pid] {
+				continue
+			}
+			stopped[pid] = true
 			if err := StopProcessGroup(pid); err != nil {
 				t.Errorf("stop test provider %s: %v", path, err)
 			}

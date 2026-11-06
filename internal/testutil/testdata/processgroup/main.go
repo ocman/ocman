@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
@@ -35,7 +36,16 @@ func main() {
 			err = syscall.Setpgid(0, 0)
 		}
 		if err == nil && pidFile != "" {
-			err = os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o600)
+			groups := filepath.Join(filepath.Dir(pidFile), "groups")
+			pid := strconv.Itoa(os.Getpid())
+			err = os.MkdirAll(groups, 0o700)
+			if err == nil {
+				// Keep immutable cleanup ownership even if the session name is reused.
+				err = os.WriteFile(filepath.Join(groups, pid+".pid"), []byte(pid), 0o600)
+			}
+			if err == nil {
+				err = os.WriteFile(pidFile, []byte(pid), 0o600)
+			}
 		}
 		if err == nil {
 			err = syscall.Exec(binary, args, os.Environ())

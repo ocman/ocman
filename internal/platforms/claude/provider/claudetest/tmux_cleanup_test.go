@@ -16,7 +16,7 @@ import (
 // A fixture gate deliberately ignores stdin EOF, as a stuck agent can. Killing
 // only the supervisor leaves this child alive after its test directory is gone.
 func TestFakeTmuxCleansUpBlockedChildren(t *testing.T) {
-	for _, mode := range []string{"cleanup", "crashed supervisor", "kill-session"} {
+	for _, mode := range []string{"cleanup", "crashed supervisor", "same-name relaunch", "kill-session"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			childFile, life := filepath.Join(dir, "child"), filepath.Join(dir, "life")
@@ -26,10 +26,12 @@ func TestFakeTmuxCleansUpBlockedChildren(t *testing.T) {
 			}
 			t.Setenv("FAKE_CLAUDE_FIXTURE", fixture)
 			t.Setenv("FAKE_CLAUDE_LIFE_LOG", life)
-			var child int
+			var child, replacement int
 			t.Cleanup(func() {
-				if child > 0 {
-					_ = syscall.Kill(child, syscall.SIGKILL)
+				for _, pid := range []int{child, replacement} {
+					if pid > 0 {
+						_ = syscall.Kill(pid, syscall.SIGKILL)
+					}
 				}
 			})
 			unrelated := exec.Command("sleep", "30")
@@ -54,7 +56,7 @@ func TestFakeTmuxCleansUpBlockedChildren(t *testing.T) {
 					return child > 0 && err == nil
 				})
 				switch mode {
-				case "crashed supervisor":
+				case "crashed supervisor", "same-name relaunch":
 					data, err := os.ReadFile(filepath.Join(pids, "blocked.pid"))
 					if err != nil {
 						t.Fatal(err)
@@ -62,6 +64,22 @@ func TestFakeTmuxCleansUpBlockedChildren(t *testing.T) {
 					pid, _ := strconv.Atoi(string(data))
 					if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 						t.Fatal(err)
+					}
+					if mode == "same-name relaunch" {
+						replacementFile := filepath.Join(dir, "replacement")
+						args[len(args)-1] = replacementFile
+						if out, err := exec.Command(filepath.Join(bin, "tmux"), args...).CombinedOutput(); err != nil {
+							t.Fatalf("relaunch: %v\n%s", err, out)
+						}
+						data, err := os.ReadFile(filepath.Join(pids, "blocked.pid"))
+						if err != nil || string(data) == strconv.Itoa(pid) {
+							t.Errorf("relaunch reported success with a stale PID: %s, %v", data, err)
+						}
+						testutil.WaitFor(t, 5*time.Second, "replacement child started", func() bool {
+							data, _ := os.ReadFile(replacementFile)
+							replacement, _ = strconv.Atoi(string(data))
+							return replacement > 0
+						})
 					}
 				case "kill-session":
 					args = []string{"-L", "x", "-f", "/dev/null", "kill-session", "-t", "=blocked"}
@@ -72,6 +90,9 @@ func TestFakeTmuxCleansUpBlockedChildren(t *testing.T) {
 				}
 			})
 			testutil.WaitFor(t, 2*time.Second, "test cleanup stopped child", func() bool { return !processRunning(child) })
+			if replacement > 0 {
+				testutil.WaitFor(t, 2*time.Second, "test cleanup stopped replacement", func() bool { return !processRunning(replacement) })
+			}
 			if !processRunning(unrelated.Process.Pid) {
 				t.Fatal("cleanup stopped an unrelated process")
 			}
