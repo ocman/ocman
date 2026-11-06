@@ -22,9 +22,10 @@ export function ResourceGraph({ title, history, metric, processes, selected, onS
     const segments: number[][] = [];
     samples.forEach((sample, i) => {
       if (!sample.has(key)) return;
-      // Sampling is once per second; never interpolate across a missed sample.
+      // Sampling is once per second; bridge up to three intervals between known samples.
       const previous = segments.at(-1);
-      if (previous?.at(-1) === i - 1 && history[i].timestamp - history[i - 1].timestamp <= 1500) previous.push(i);
+      const previousIndex = previous?.at(-1);
+      if (previous && previousIndex !== undefined && history[i].timestamp - history[previousIndex].timestamp <= 3 * 1_000) previous.push(i);
       else segments.push([i]);
     });
     if (!segments.length) return null;

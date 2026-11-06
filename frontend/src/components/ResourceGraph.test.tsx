@@ -43,7 +43,7 @@ it('keeps process identities separate when a PID changes parent or executable', 
   expect(processKey(ocman)).not.toEqual(processKey({ ...ocman, name: 'replacement' }));
 });
 
-it('leaves missing samples and collection gaps blank instead of connecting them', () => {
+it('connects short missing-sample gaps but leaves longer collection gaps blank', () => {
   const points = [
     { ...history[0], timestamp: 1000 },
     { ...history[0], timestamp: 2000 },
@@ -54,7 +54,22 @@ it('leaves missing samples and collection gaps blank instead of connecting them'
   render(<ResourceGraph title="CPU" history={points} metric="cpuPercent" processes={[agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
   const area = screen.getByRole('button', { name: 'CPU: agent, PID 2' });
   expect(area.querySelectorAll('polygon')).toHaveLength(1);
-  expect(area.querySelectorAll('circle')).toHaveLength(2);
+  expect(area.querySelectorAll('circle')).toHaveLength(1);
+  expect(area.querySelector('polygon')?.getAttribute('points')?.split(' ')).toHaveLength(6);
+});
+
+it.each(['cpuPercent', 'memoryBytes'] as const)('connects %s samples only when at most three intervals apart', (metric) => {
+  const points = [1000, 4000, 7001, 8000, 9000, 10001].map((timestamp, i) => ({
+    ...history[i === 3 || i === 4 ? 1 : 0], timestamp,
+  }));
+  render(<ResourceGraph title="Resources" history={points} metric={metric} processes={[agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
+  const area = screen.getByRole('button', { name: 'Resources: agent, PID 2' });
+  const polygons = area.querySelectorAll('polygon');
+  expect(polygons).toHaveLength(2);
+  expect(area.querySelectorAll('circle')).toHaveLength(0);
+  // Both a collection gap and missing process samples connect at exactly 3 seconds.
+  expect(polygons[0].getAttribute('points')?.split(' ')).toHaveLength(4);
+  expect(polygons[1].getAttribute('points')?.split(' ')).toHaveLength(4);
 });
 
 it('does not draw processes without samples or report missing values as zero', () => {
