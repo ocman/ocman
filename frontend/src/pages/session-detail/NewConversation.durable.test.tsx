@@ -63,7 +63,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 it('clears only after backend persistence, then accepts a follow-up while setup is still running', async () => {
   const navigate = vi.fn();
   render(<NewConversation params={record.metadata} composerRef={null} navigate={navigate} navigateToSession={vi.fn()} />);
-  const input = screen.getByRole('textbox');
+  const input = await screen.findByRole('textbox');
   fireEvent.input(input, { target: { value: 'first prompt' } });
   fireEvent.keyDown(input, { key: 'Enter' });
   await waitFor(() => expect(payload).toEqual(expect.objectContaining({ send: expect.objectContaining({ message: 'first prompt' }) })));
@@ -87,7 +87,7 @@ it('retains the prompt when backend persistence fails', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => options?.method === 'PUT'
     ? new Response('disk full', { status: 500 }) : json(url === '/api/session-drafts' ? [] : record)));
   render(<NewConversation params={record.metadata} composerRef={null} navigate={vi.fn()} navigateToSession={vi.fn()} />);
-  const input = screen.getByRole('textbox');
+  const input = await screen.findByRole('textbox');
   fireEvent.input(input, { target: { value: 'do not lose this' } });
   fireEvent.keyDown(input, { key: 'Enter' });
   await waitFor(() => expect(screen.getAllByRole('alert').length).toBeGreaterThan(0));

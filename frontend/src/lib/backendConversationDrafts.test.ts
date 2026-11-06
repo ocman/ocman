@@ -33,6 +33,34 @@ it('keeps save errors visible and clears them only after persistence succeeds', 
   expect(useBackendConversationDrafts.getState().saveErrors[id]).toBeUndefined();
 });
 
+it('serializes saves so a delayed old snapshot cannot overwrite newer text', async () => {
+  rememberConversationDraft(metadata);
+  let release!: () => void;
+  const saved: string[] = [];
+  vi.mocked(postJSON).mockImplementationOnce(async (_url, body) => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    saved.push((body as { text: string }).text);
+  }).mockImplementationOnce(async (_url, body) => { saved.push((body as { text: string }).text); });
+  saveDraft(id, 'old');
+  const old = persistBackendDraft(id);
+  await Promise.resolve();
+  saveDraft(id, 'new');
+  const latest = persistBackendDraft(id);
+  await Promise.resolve();
+  release();
+  await Promise.all([old, latest]);
+  expect(saved).toEqual(['old', 'new']);
+});
+
+it('does not adopt a peer revision from polling and silently overwrite its changes', async () => {
+  rememberConversationDraft(metadata);
+  useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata, phase: 'draft', revision: 'base', createdAt: 1, steps: {} } } });
+  vi.mocked(fetchJSON).mockResolvedValue([{ id, metadata: { ...metadata, text: 'peer edit' }, phase: 'draft', revision: 'peer', createdAt: 1, steps: {} }]);
+  await refreshBackendDrafts();
+  await persistBackendDraft(id);
+  expect(postJSON).toHaveBeenCalledWith(`/api/session-drafts/${id}`, expect.anything(), { method: 'PUT', headers: { 'If-Match': 'base' } });
+});
+
 it('retains follow-up text under the same composer key when draft metadata retires', async () => {
   rememberConversationDraft(metadata);
   saveDraft(id, 'unsent follow-up');

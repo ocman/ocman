@@ -35,6 +35,7 @@ type ConversationDraft struct {
 	Error       string            `json:"error,omitempty"`
 	CreatedAt   int64             `json:"createdAt"`
 	SubmittedAt int64             `json:"submittedAt,omitempty"`
+	Revision    string            `json:"revision"`
 }
 
 type draftStore struct{ db *sql.DB }
@@ -45,6 +46,7 @@ func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 	var meta, request, result, steps string
 	err = scan(&d.ID, &meta, &d.Phase, &request, &result, &steps, &d.Error, &d.CreatedAt, &d.SubmittedAt)
 	d.Metadata = json.RawMessage(meta)
+	d.Revision = draftVersion(d.Metadata)
 	if request != "" {
 		d.Request = json.RawMessage(request)
 	}
@@ -93,7 +95,12 @@ func (s draftStore) save(ctx context.Context, id string, metadata json.RawMessag
 // accept commits the complete first payload before the request is acknowledged.
 // Replays are reads. Neither a lost response nor a peer tab can start it twice.
 func (s draftStore) accept(ctx context.Context, id string, request []byte) (ConversationDraft, bool, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE conversation_draft SET phase='accepted', request=?, submitted_at=? WHERE id=? AND phase='draft'`,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ConversationDraft{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE conversation_draft SET phase='accepted', request=?, submitted_at=? WHERE id=? AND phase='draft'`,
 		string(request), time.Now().UnixMilli(), id)
 	if err != nil {
 		return ConversationDraft{}, false, err
@@ -102,9 +109,12 @@ func (s draftStore) accept(ctx context.Context, id string, request []byte) (Conv
 	if err != nil {
 		return ConversationDraft{}, false, err
 	}
-	d, err := s.get(ctx, id)
+	d, err := scanDraft(tx.QueryRowContext(ctx, `SELECT `+draftColumns+` FROM conversation_draft WHERE id=?`, id).Scan)
 	if err == nil && n == 0 && string(d.Request) != string(request) {
 		err = errDraftSubmissionConflict
+	}
+	if err == nil {
+		err = tx.Commit()
 	}
 	return d, n == 1, err
 }

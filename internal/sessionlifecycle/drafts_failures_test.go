@@ -55,7 +55,7 @@ func TestDraftAdmissionMissingConflictAndStoppedWorker(t *testing.T) {
 	if w := draftCall(m, http.MethodPost, "/draft/messages", `{`); w.Code != http.StatusBadRequest {
 		t.Fatal(w.Code)
 	}
-	if w := draftCall(m, http.MethodPut, "/draft", `{"directory":"/repo"}`); w.Code != http.StatusNoContent {
+	if w := draftCall(m, http.MethodPut, "/draft", `{"directory":"/repo"}`); w.Code != http.StatusOK {
 		t.Fatal(w.Code)
 	}
 	m.Finalize()

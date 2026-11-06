@@ -7,7 +7,8 @@ import { remoteLog } from '../../lib/remoteLog';
 import type { DurableStartRequest } from './newConversationSubmission';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { uploadDraftFiles } from './uploadDraftFiles';
-import { postJSON } from '../../lib/api.requests';
+import { APIError, postJSON } from '../../lib/api.requests';
+import { getDraft, saveDraft } from '../../lib/composerDraft';
 
 export function useDurableConversation(params: NewConversationProps['params'], navigate: NewConversationProps['navigate']) {
   const id = params.draftId ?? '';
@@ -17,13 +18,14 @@ export function useDurableConversation(params: NewConversationProps['params'], n
   const saveError = useBackendConversationDrafts((state) => state.saveErrors[id]);
   const metadata = useNewConversationDrafts((state) => state.drafts.find((draft) => draft.draftId === id));
   const complete = useRef('');
+  const pendingInitial = useRef<{ request: DurableStartRequest; original: string } | undefined>(undefined);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const queue = useMessageQueue(enabled && record && record.phase !== 'draft' ? id : undefined, record?.request?.platform);
   useEffect(() => {
-    if (!enabled || !metadata || record && record.phase !== 'draft') return;
+    if (!enabled || !metadata || phase && phase !== 'draft') return;
     void persistBackendDraft(id).catch((error) => remoteLog.error('Could not save backend draft', error));
-  }, [enabled, id, metadata, record]);
+  }, [enabled, id, metadata, phase]);
   useEffect(() => {
     if (!enabled) return;
     let active = true;
@@ -41,6 +43,9 @@ export function useDurableConversation(params: NewConversationProps['params'], n
   }, [enabled, record?.phase, record?.result, id]);
   useEffect(() => {
     if (!enabled || record?.phase !== 'ready' || !record.result || complete.current === id) return;
+    const pending = pendingInitial.current;
+    if (pending && getDraft(id) === (pending.request.prompt ?? pending.request.send?.message)) saveDraft(id, '');
+    pendingInitial.current = undefined;
     complete.current = id;
     const result = record.result;
     useApiStore.getState().seedNewSession(id, result.directory, result.platform, params.title, result.remoteId);
@@ -55,7 +60,15 @@ export function useDurableConversation(params: NewConversationProps['params'], n
     retrySave: () => persistBackendDraft(id),
     submitted: !!record && record.phase !== 'draft',
     async send(request: DurableStartRequest, files?: File[]) {
-      const initialSubmission = !record || record.phase === 'draft';
+      const original = JSON.stringify(request);
+      if (pendingInitial.current) {
+        const pending = pendingInitial.current;
+        await acceptBackendDraft(id, pending.request);
+        pendingInitial.current = undefined;
+        if (pending.original === original) return;
+      }
+      const observed = useBackendConversationDrafts.getState().drafts[id];
+      const initialSubmission = !observed || observed.phase === 'draft';
       await persistBackendDraft(id);
       await fetchBackendDraft(id);
       const current = useBackendConversationDrafts.getState().drafts[id];
@@ -68,7 +81,14 @@ export function useDurableConversation(params: NewConversationProps['params'], n
         return;
       }
       // The response means persisted, not setup complete. Composer can clear now.
-      await acceptBackendDraft(id, request);
+      pendingInitial.current = { request, original };
+      try {
+        await acceptBackendDraft(id, request);
+        pendingInitial.current = undefined;
+      } catch (error) {
+        if (error instanceof APIError && error.status >= 400 && error.status < 500) pendingInitial.current = undefined;
+        throw error;
+      }
     },
     async retry() {
       await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}/retry-delivery`, undefined, { parseJSON: false });

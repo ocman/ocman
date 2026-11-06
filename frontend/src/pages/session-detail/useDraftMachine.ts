@@ -19,8 +19,8 @@ export function useDraftMachine(params: NewSessionParams, selections: Pick<Conve
   const { model, agent, reasoning, target } = selections;
   const saveDraft = useCallback(() => {
     const saved = getConversationDraft(draftId);
-    const sameLocation = saved?.directory === directory && saved.remoteId === remoteId;
-    rememberConversationDraft({ directory, remoteId, platform, title, draftId, model, agent, reasoning, target,
+    const sameLocation = saved?.directory === directory && (saved.remoteId || 'local') === remoteId;
+    rememberConversationDraft({ directory, remoteId, platform, title: title ?? (sameLocation ? saved.title : undefined), draftId, model, agent, reasoning, target,
       clone: sameLocation ? saved.clone : undefined });
   }, [directory, remoteId, platform, title, draftId, model, agent, reasoning, target]);
   useEffect(saveDraft, [saveDraft]);

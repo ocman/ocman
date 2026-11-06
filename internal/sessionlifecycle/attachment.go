@@ -45,7 +45,7 @@ func (m *Module) draftAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var target Target
-	if json.Unmarshal(draft.Metadata, &target) != nil || !target.Validate(w) {
+	if json.Unmarshal(draft.Metadata, &target) != nil || !target.Validate(w) || !target.NormalizeOwner(w) {
 		return
 	}
 	owner, ok := m.d.Owner(w, target.Directory, target.RemoteID)

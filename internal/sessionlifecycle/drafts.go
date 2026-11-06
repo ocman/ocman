@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -96,11 +97,16 @@ func (m *Module) saveDraft(w http.ResponseWriter, r *http.Request) {
 	if !target.Validate(w) {
 		return
 	}
-	if err := (draftStore{m.d.DB}).save(r.Context(), id, meta); err != nil {
+	draft, err := (draftStore{m.d.DB}).saveVersion(r.Context(), id, meta, r.Header.Get("If-Match"))
+	if errors.Is(err, errDraftVersionConflict) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if err != nil {
 		httpx.ServerError(w, "saving draft", err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	httpx.WriteJSONStatus(w, http.StatusOK, draft)
 }
 
 func (m *Module) deleteDraft(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +188,7 @@ func (m *Module) launchDraft(ctx context.Context, id string, raw []byte) {
 	if _, err := m.d.DB.ExecContext(ctx, `UPDATE conversation_draft SET phase='starting' WHERE id=? AND phase='accepted'`, id); err != nil {
 		return
 	}
-	response := &startResponse{header: make(http.Header)}
+	response := httptest.NewRecorder()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "/api/sessions/start", bytes.NewReader(raw))
 	if err != nil {
 		return
@@ -190,14 +196,14 @@ func (m *Module) launchDraft(ctx context.Context, id string, raw []byte) {
 	m.HandleStartSession(response, request)
 	var result struct{ SessionID, FirstMessageError string }
 	var message string
-	if response.status >= 400 || json.Unmarshal(response.Bytes(), &result) != nil || result.SessionID != id {
-		message = "Session setup failed. " + strings.TrimSpace(response.String())
+	if response.Code >= 400 || json.Unmarshal(response.Body.Bytes(), &result) != nil || result.SessionID != id {
+		message = "Session setup failed. " + strings.TrimSpace(response.Body.String())
 	} else {
 		message = result.FirstMessageError
 	}
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if err := store.finish(write, id, response.Bytes(), message); err != nil {
+	if err := store.finish(write, id, response.Body.Bytes(), message); err != nil {
 		log.WithError(err).Error("persisting session setup outcome")
 	}
 	m.draftChanged()
@@ -208,15 +214,6 @@ func (m *Module) launchDraft(ctx context.Context, id string, raw []byte) {
 		}
 	}
 }
-
-type startResponse struct {
-	bytes.Buffer
-	header http.Header
-	status int
-}
-
-func (w *startResponse) Header() http.Header    { return w.header }
-func (w *startResponse) WriteHeader(status int) { w.status = status }
 
 func (m *Module) draftChanged() {
 	if m.d.Broadcast != nil {

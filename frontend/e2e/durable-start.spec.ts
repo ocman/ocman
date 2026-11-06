@@ -1,6 +1,29 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 import type { BackendConversationDraft } from '../src/lib/backendConversationDrafts';
 
+test('recovers server-only text and selections before allowing draft autosave', async ({ mockedPage: page }) => {
+  const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
+  const metadata = { draftId: id, directory: MOCK_SESSION.directory, platform: 'opencode', text: 'Server-only prompt', title: 'Saved title', agent: 'plan' };
+  let release!: () => void;
+  const recovery = new Promise<void>((resolve) => { release = resolve; });
+  const writes: unknown[] = [];
+  await page.route('**/api/session-drafts**', async (route) => {
+    if (route.request().method() === 'PUT') {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({ status: 204 });
+    }
+    await recovery;
+    return route.fulfill({ json: [{ id, metadata, phase: 'draft', createdAt: 1, steps: {} }] });
+  });
+  await page.goto(`/session/${id}?dir=${encodeURIComponent(MOCK_SESSION.directory)}&platform=opencode&draftId=${id}`);
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  expect(writes).toEqual([]);
+  release();
+  await expect(page.getByRole('textbox')).toHaveValue('Server-only prompt');
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  expect(writes).toEqual(expect.arrayContaining([expect.objectContaining({ text: 'Server-only prompt', title: 'Saved title', agent: 'plan' })]));
+});
+
 test('persists first input, keeps the sidebar ID and queues follow-ups during setup', async ({ mockedPage: page }) => {
   const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
   let draft: BackendConversationDraft = { id, metadata: { draftId: id, directory: MOCK_SESSION.directory, platform: 'opencode' },

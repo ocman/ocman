@@ -34,6 +34,7 @@ import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPa
 import { durableStartRequest, resolveTarget, type Ready, type Submission } from './newConversationSubmission';
 import { useDurableConversation } from './useDurableConversation';
 import { discardBackendDraft, isBackendDraft } from '../../lib/backendConversationDrafts';
+import { DurableDraftRecovery } from './DurableDraftRecovery';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -43,7 +44,7 @@ export interface NewConversationProps {
 }
 
 export function NewConversation({ params, composerRef, navigate, navigateToSession }: NewConversationProps) {
-  if (isBackendDraft(params.draftId)) return <PreparedConversation key={params.draftId} params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />;
+  if (isBackendDraft(params.draftId)) return <DurableDraftRecovery key={params.draftId}><PreparedConversation params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} /></DurableDraftRecovery>;
   return <PreparedDraftLifecycle key={params.draftId || NEW_SESSION_ID} params={params} navigate={navigate} navigateToSession={navigateToSession}>
     <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params}
       composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />
@@ -68,7 +69,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   }, [openedWhilePending, draftStart?.error]);
   const [saved] = useState(() => useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId));
   const remoteId = params.remoteId || 'local';
-  const savedSelections = saved?.remoteId === remoteId ? saved : undefined;
+  const savedSelections = saved && (saved.remoteId || 'local') === remoteId ? saved : undefined;
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
   const worktreesCapable = useWorktreeLaunch(remoteId);

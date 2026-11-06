@@ -18,12 +18,14 @@ export interface BackendConversationDraft {
   error?: string;
   createdAt: number;
   submittedAt?: number;
+  revision?: string;
 }
 
 export const useBackendConversationDrafts = create<{ drafts: Record<string, BackendConversationDraft>; saveErrors: Record<string, string> }>(() => ({ drafts: {}, saveErrors: {} }));
 export const isBackendDraft = (id?: string) => !!id && /^ocm_[0-9a-f-]{36}$/.test(id);
 let reading: Promise<void> | undefined;
 let syncing = false;
+let syncDeferred = false;
 
 export function refreshBackendDrafts(): Promise<void> {
   return reading ??= fetchJSON<BackendConversationDraft[]>('/api/session-drafts').then((drafts) => {
@@ -31,7 +33,8 @@ export function refreshBackendDrafts(): Promise<void> {
     try {
       const previous = useBackendConversationDrafts.getState().drafts;
       useBackendConversationDrafts.setState({ drafts: Object.fromEntries(drafts.map((draft) => [draft.id,
-        draft.phase === 'ready' && previous[draft.id]?.phase === 'ready' && previous[draft.id]?.request ? previous[draft.id] : draft])) });
+        draft.phase === 'ready' && previous[draft.id]?.phase === 'ready' && previous[draft.id]?.request ? previous[draft.id]
+          : draft.phase === 'draft' && previous[draft.id] ? { ...draft, revision: previous[draft.id].revision } : draft])) });
       for (const draft of drafts) {
         if (draft.phase === 'discarded') { if (getConversationDraft(draft.id)) void forgetConversationDraft(draft.id); continue; }
         if (draft.phase !== 'ready' && !getConversationDraft(draft.id)) {
@@ -40,14 +43,26 @@ export function refreshBackendDrafts(): Promise<void> {
         }
       }
     } finally { syncing = false; }
-  }).finally(() => { reading = undefined; });
+  }).finally(() => { reading = undefined; if (syncDeferred) { syncDeferred = false; syncDrafts(); } });
 }
 
-export async function persistBackendDraft(id: string) {
+const saves = new Map<string, Promise<void>>();
+export function persistBackendDraft(id: string): Promise<void> {
   const draft = getConversationDraft(id);
-  if (!draft || !isBackendDraft(id)) return;
+  if (!draft || !isBackendDraft(id)) return Promise.resolve();
+  const snapshot = { ...draft, text: getDraft(id) };
+  const previous = saves.get(id) ?? Promise.resolve();
+  const save = previous.catch(() => {}).then(() => writeBackendDraft(id, snapshot));
+  saves.set(id, save);
+  void save.finally(() => { if (saves.get(id) === save) saves.delete(id); }).catch(() => {});
+  return save;
+}
+
+async function writeBackendDraft(id: string, snapshot: ConversationDraft & { text: string }) {
   try {
-    await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}`, { ...draft, text: getDraft(id) }, { method: 'PUT', parseJSON: false });
+    const revision = useBackendConversationDrafts.getState().drafts[id]?.revision ?? '';
+    const saved = await postJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}`, snapshot, { method: 'PUT', headers: { 'If-Match': revision } });
+    if (saved) useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: saved } }));
     useBackendConversationDrafts.setState((state) => { const saveErrors = { ...state.saveErrors }; delete saveErrors[id]; return { saveErrors }; });
   } catch (error) {
     useBackendConversationDrafts.setState((state) => ({ saveErrors: { ...state.saveErrors, [id]: error instanceof Error ? error.message : String(error) } }));
@@ -95,10 +110,11 @@ export async function retireBackendDraft(id: string) {
 // IndexedDB remains the offline composer cache. Server drafts own the lifecycle.
 function syncDrafts() {
   if (syncing) return;
+  if (reading) { syncDeferred = true; return; }
   for (const draft of useNewConversationDrafts.getState().drafts) {
     const id = draft.draftId;
     const phase = useBackendConversationDrafts.getState().drafts[id]?.phase;
-    if (isBackendDraft(id) && (!phase || phase === 'draft')) void persistBackendDraft(id).catch((error) => remoteLog.error('Could not save backend draft', error));
+    if (isBackendDraft(id) && (!phase || phase === 'draft') && !useBackendConversationDrafts.getState().saveErrors[id]) void persistBackendDraft(id).catch((error) => remoteLog.error('Could not save backend draft', error));
   }
 }
 export function subscribeBackendDraftSync() {

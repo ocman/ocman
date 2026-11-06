@@ -20,7 +20,7 @@ export function useSessionLaunchTimeline(id: string | undefined, messages: Messa
   return {
     context: first && visible ? { messageId: first.id, timestamp: record.submittedAt,
       setup: <LaunchSetup steps={record.steps} platform={record.request.platform} complete={record.phase === 'ready'} /> } : null,
-    empty: !messages.length ? <StartProgress prompt={record.request.prompt || ''} images={record.request.send?.images}
+    empty: !hasMore && (!messages.length || (first && !visible)) ? <StartProgress prompt={record.request.prompt || ''} images={record.request.send?.images}
       timestamp={record.submittedAt} steps={record.steps} platform={record.request.platform} complete={record.phase === 'ready'} /> : null,
   };
 }

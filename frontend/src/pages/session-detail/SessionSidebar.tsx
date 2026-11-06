@@ -194,8 +194,8 @@ export function SessionSidebar({
       debugMode={debugMode}
       gitInfo={siblingGitInfos[checkoutKey(sib.directory, sib.remoteId)] ?? siblingGitInfos[sib.directory]}
       onNavigateToSession={(id) => { if (!stableDrafts.open(id)) onNavigateToSession(id); }}
-      onArchiveSession={(event, session) => { if (!stableDrafts.discard(session.id)) onArchiveSession(event, session); }}
-      onPinSession={(event, session) => { if (!stableDrafts.ids.has(session.id)) onPinSession(event, session); }}
+      onArchiveSession={(event, session) => { event.stopPropagation(); if (!stableDrafts.discard(session.id)) onArchiveSession(event, session); }}
+      onPinSession={(event, session) => { event.stopPropagation(); if (!stableDrafts.ids.has(session.id)) onPinSession(event, session); }}
     />
   );
 
@@ -367,7 +367,7 @@ export function SessionSidebar({
         <SidebarAttentionGroup entries={attention} activeId={activeId} />
         {loadingRecentSessions ? (
           <SkeletonLines rows={10} label="Loading sessions" />
-        ) : sidebarView === 'recent' && allRecentSessions.length === 0 && !preparedDrafts.length && !attention.length ? (
+        ) : sidebarView === 'recent' && stableDrafts.recent.length === 0 && !preparedDrafts.length && !attention.length ? (
           <GettingStartedEmpty compact />
         ) : sidebarView === 'recent' ? (
           renderFlatView()

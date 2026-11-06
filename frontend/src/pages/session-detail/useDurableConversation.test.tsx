@@ -4,7 +4,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { useDurableConversation } from './useDurableConversation';
 import { fetchBackendDraft, retireBackendDraft, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { useApiStore } from '../../lib/apiStore';
-import { postJSON } from '../../lib/api.requests';
+import { APIError, postJSON } from '../../lib/api.requests';
+import { getDraft, saveDraft } from '../../lib/composerDraft';
 
 vi.mock('../../lib/backendConversationDrafts', async (original) => ({
   ...await original<typeof import('../../lib/backendConversationDrafts')>(),
@@ -62,4 +63,37 @@ it('rejects commands and missing message payloads during setup', async () => {
     await expect(result.current.send({ directory: '/repo', shell: { command: 'pwd' } })).rejects.toThrow('Commands can run after setup');
     await expect(result.current.send({ directory: '/repo' })).rejects.toThrow('Only messages can be queued');
   });
+});
+
+it('reconciles a lost initial response instead of queuing the restored prompt', async () => {
+  const draft = { id, metadata: params, phase: 'draft' as const, createdAt: 1, steps: {} };
+  useBackendConversationDrafts.setState({ drafts: { [id]: draft } });
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('response lost'));
+  const { result } = renderHook(() => useDurableConversation(params, vi.fn()));
+  const request = { directory: '/repo', send: { message: 'first' } };
+  await act(async () => { await expect(result.current.send(request)).rejects.toThrow('response lost'); });
+  await act(async () => { useBackendConversationDrafts.setState({ drafts: { [id]: { ...draft, phase: 'starting' } } }); });
+  vi.mocked(postJSON).mockResolvedValueOnce({ ...draft, phase: 'starting' });
+  await act(async () => { await result.current.send(request); });
+  expect(vi.mocked(postJSON).mock.calls.map(([url]) => url)).toEqual([
+    `/api/session-drafts/${id}/start`, `/api/session-drafts/${id}/start`,
+  ]);
+});
+
+it('admits a new first payload after a definitive rejection', async () => {
+  vi.mocked(postJSON).mockRejectedValueOnce(new APIError('invalid first input', 400));
+  const { result } = renderHook(() => useDurableConversation(params, vi.fn()));
+  await act(async () => { await expect(result.current.send({ directory: '/repo', send: { message: 'bad' } })).rejects.toThrow('invalid'); });
+  await act(async () => { await result.current.send({ directory: '/repo', send: { message: 'fixed' } }); });
+  expect(postJSON).toHaveBeenLastCalledWith(`/api/session-drafts/${id}/start`, expect.objectContaining({ send: { message: 'fixed' } }));
+});
+
+it('retires a restored first prompt when polling confirms its uncertain admission completed', async () => {
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('response lost'));
+  const { result } = renderHook(() => useDurableConversation(params, vi.fn()));
+  await act(async () => { await expect(result.current.send({ directory: '/repo', send: { message: 'first' } })).rejects.toThrow(); });
+  saveDraft(id, 'first');
+  await act(async () => { useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase: 'ready', createdAt: 1, steps: {},
+    result: { sessionId: id, directory: '/repo', platform: 'opencode', remoteId: 'local', firstMessageSent: true, firstMessageError: '' } } } }); });
+  expect(getDraft(id)).toBe('');
 });

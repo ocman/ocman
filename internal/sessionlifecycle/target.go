@@ -19,13 +19,20 @@ type Target struct {
 	RemoteID  string `json:"remoteId"`
 }
 
-// ResolvePlatform treats an explicit owner as authoritative, even when machines share a path.
-func (t *Target) ResolvePlatform(ctx context.Context, m *Module, w http.ResponseWriter, model string) bool {
+// NormalizeOwner treats an explicit owner as authoritative without starting a runtime.
+func (t *Target) NormalizeOwner(w http.ResponseWriter) bool {
 	if t.RemoteID == "" {
 		t.RemoteID = remoteIDForPlatform(t.Platform)
 	}
 	if t.Platform != "" && remoteIDForPlatform(t.Platform) != t.RemoteID {
 		http.Error(w, "platform does not belong to remoteId", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func (t *Target) ResolvePlatform(ctx context.Context, m *Module, w http.ResponseWriter, model string) bool {
+	if !t.NormalizeOwner(w) {
 		return false
 	}
 	host, ok := m.d.Owner(w, t.Directory, t.RemoteID)

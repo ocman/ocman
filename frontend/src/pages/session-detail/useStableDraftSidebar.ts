@@ -45,9 +45,7 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
   const ids = new Set(pending.map((draft) => draft.draftId));
   const synthetic = pending.map(draftSession);
   const merge = (rows: Session[], extras: Session[]) => {
-    const actual = new Map(rows.map((row) => [row.id, row]));
-    return [...rows.filter((row) => !ids.has(row.id)), ...extras.map((row) =>
-      backend[row.id]?.phase === 'ready' && actual.has(row.id) ? actual.get(row.id)! : row)]
+    return [...rows.filter((row) => !ids.has(row.id)), ...extras]
       .sort((a, b) => b.timeUpdated - a.timeUpdated || a.id.localeCompare(b.id));
   };
   const result = groups.map((group) => ({ ...group, sessions: group.sessions.filter((session) => !ids.has(session.id)) }));

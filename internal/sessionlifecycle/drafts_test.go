@@ -22,6 +22,8 @@ func draftCall(m *Module, method, path, body string) *httptest.ResponseRecorder 
 	r.SetPathValue("id", draftID)
 	w := httptest.NewRecorder()
 	switch {
+	case strings.HasSuffix(path, "/attachment"):
+		m.draftAttachment(w, r)
 	case strings.HasSuffix(path, "/retry-delivery"):
 		m.retryDraftDelivery(w, r)
 	case strings.HasSuffix(path, "/start"):
@@ -84,7 +86,7 @@ func TestDraftPayloadCommitsBeforeSetupAndKeepsIdentity(t *testing.T) {
 			if err := m.Start(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			if w := draftCall(m, "PUT", "/api/session-drafts/"+draftID, `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode"}`); w.Code != 204 {
+			if w := draftCall(m, "PUT", "/api/session-drafts/"+draftID, `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode"}`); w.Code != 200 {
 				t.Fatal(w.Code, w.Body.String())
 			}
 			payload := `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode","prompt":"first","send":{"message":"first"}}`
@@ -151,13 +153,13 @@ func TestDiscardedDraftCannotBeResurrected(t *testing.T) {
 	m := NewModule(Deps{DB: db.SQL()})
 	path := "/api/session-drafts/" + draftID
 	meta := `{"directory":"/repo"}`
-	if w := draftCall(m, "PUT", path, meta); w.Code != 204 {
+	if w := draftCall(m, "PUT", path, meta); w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	if w := draftCall(m, "DELETE", path, ""); w.Code != 204 {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	if w := draftCall(m, "PUT", path, meta); w.Code != 204 {
+	if w := draftCall(m, "PUT", path, meta); w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	row, err := (draftStore{db.SQL()}).get(t.Context(), draftID)

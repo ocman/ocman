@@ -33,6 +33,10 @@ vi.mock('../../lib/useCapabilities', () => ({
 }));
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
 vi.mock('../../components/FactorySessionRecovery', () => ({ FactorySessionRecovery: () => null }));
+vi.mock('../../lib/backendConversationDrafts', async (original) => ({
+  ...await original<typeof import('../../lib/backendConversationDrafts')>(),
+  refreshBackendDrafts: vi.fn(async () => {}),
+}));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 vi.mock('../../lib/api', async (original) => {
   const actual = await original<typeof import('../../lib/api')>();
@@ -365,7 +369,7 @@ describe('new-conversation submission lifecycle', () => {
     render(<MemoryRouter initialEntries={['/session/new?dir=%2Fother']}><DraftWorkspace /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('draft-route')).toHaveTextContent('draftId='));
     expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=new');
-    expect(screen.getByRole('textbox')).toHaveValue('legacy prompt');
+    expect(await screen.findByRole('textbox')).toHaveValue('legacy prompt');
     expect(getDraft('new')).toBe('');
     await waitFor(() => expect(useNewConversationDrafts.getState().drafts).toHaveLength(1));
     expect(api.startSession).not.toHaveBeenCalled();
@@ -396,11 +400,11 @@ describe('new-conversation submission lifecycle', () => {
     const { peerForget } = await peerTab();
     await act(async () => { await peerForget('first'); });
     await waitFor(() => expect(screen.getByTestId('draft-route')).not.toHaveTextContent('draftId=first'));
-    expect(screen.getByRole('textbox')).toHaveValue('');
+    expect(await screen.findByRole('textbox')).toHaveValue('');
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'new text' } });
     fireEvent.click(screen.getByRole('button', { name: 'Another draft' }));
     fireEvent.click(screen.getByRole('button', { name: /First/ }));
-    expect(screen.getByRole('textbox')).toHaveValue('new text');
+    expect(await screen.findByRole('textbox')).toHaveValue('new text');
     expect(getDraft('first')).toBe('');
     expect(useNewConversationDrafts.getState().drafts.map((draft) => draft.draftId)).not.toContain('first');
   });
@@ -487,14 +491,14 @@ describe('new-conversation submission lifecycle', () => {
       </>;
     }
     render(<MemoryRouter initialEntries={[first]}><DraftWorkspace /></MemoryRouter>);
-    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'first prompt' } });
+    fireEvent.input(await screen.findByRole('textbox'), { target: { value: 'first prompt' } });
     fireEvent.click(screen.getByRole('button', { name: 'Prepare another' }));
-    expect(screen.getByRole('textbox')).toHaveValue('');
+    expect(await screen.findByRole('textbox')).toHaveValue('');
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'second prompt' } });
     fireEvent.click(screen.getByRole('button', { name: /First/ }));
-    expect(screen.getByRole('textbox')).toHaveValue('first prompt');
+    expect(await screen.findByRole('textbox')).toHaveValue('first prompt');
     fireEvent.click(screen.getByRole('button', { name: /Second/ }));
-    expect(screen.getByRole('textbox')).toHaveValue('second prompt');
+    expect(await screen.findByRole('textbox')).toHaveValue('second prompt');
     expect(screen.getAllByRole('button', { name: 'Discard draft' })).toHaveLength(2);
     expect(api.startSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole('button', { name: 'Discard draft' })[0]);

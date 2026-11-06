@@ -88,7 +88,7 @@ func TestDraftValidationAndListProjection(t *testing.T) {
 	if w := draftCall(m, "POST", "/draft/messages", `{"message":"hi"}`); w.Code != 404 {
 		t.Fatal(w.Code)
 	}
-	if w := draftCall(m, "PUT", "/draft", `{"directory":"/repo","text":"unsent"}`); w.Code != 204 {
+	if w := draftCall(m, "PUT", "/draft", `{"directory":"/repo","text":"unsent"}`); w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	if w := draftCall(m, "POST", "/draft/messages", `{"message":"hi"}`); w.Code != 409 {
@@ -129,7 +129,7 @@ func TestExplicitOwnerDisconnectCannotAcceptOrQueueDraft(t *testing.T) {
 		http.Error(w, "owner disconnected", http.StatusServiceUnavailable)
 		return nil, false
 	}})
-	if w := draftCall(m, "PUT", "/draft", `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode"}`); w.Code != 204 {
+	if w := draftCall(m, "PUT", "/draft", `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode"}`); w.Code != 200 {
 		t.Fatal(w.Code)
 	}
 	request := `{"directory":"/repo","remoteId":"box","platform":"r-box:claudecode","send":{"message":"first"}}`
@@ -212,7 +212,7 @@ func TestDraftAttachmentPersistsOnExplicitOwnerBeforeAllocation(t *testing.T) {
 		}
 		return host, true
 	}, UploadReadTimeout: func() time.Duration { return time.Second }})
-	if w := draftCall(m, "PUT", "/draft", `{"directory":"/repo","remoteId":"box"}`); w.Code != 204 {
+	if w := draftCall(m, "PUT", "/draft", `{"directory":"/repo","remoteId":"box"}`); w.Code != 200 {
 		t.Fatal(w.Code)
 	}
 	var body bytes.Buffer

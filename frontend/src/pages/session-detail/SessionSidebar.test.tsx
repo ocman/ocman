@@ -253,6 +253,18 @@ describe('SessionSidebar', () => {
     expect(reorder).toHaveBeenLastCalledWith(['/draft-only', '/repo']);
   });
 
+  it('shows durable-only accounts in Recent and stops discarded row clicks', () => {
+    rememberConversationDraft({ draftId: 'ocm_01234567-89ab-4cde-8fab-0123456789ab', directory: '/repo', title: 'Durable task' });
+    const { container } = renderSidebar({ directory: '/repo', sessions: [], lastUpdated: 0, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, 'recent');
+    const row = screen.getByText('Durable task').closest('[data-perf="session-row"]')!;
+    const click = vi.fn();
+    document.body.addEventListener('click', click);
+    fireEvent.click(within(row as HTMLElement).getByRole('button', { name: /Archive/ }));
+    document.body.removeEventListener('click', click);
+    expect(click).not.toHaveBeenCalled();
+    expect(container).toBeInTheDocument();
+  });
+
   it.each(['recent', 'projects'] as const)('includes drafts in the %s session list without a drafts header', (view) => {
     rememberConversationDraft({ draftId: 'draft', directory: '/repo', title: 'Prepared task' });
     const group: SidebarProjectGroup = { directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' } };

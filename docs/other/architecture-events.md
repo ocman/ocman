@@ -66,7 +66,8 @@ sequenceDiagram
     E-->>B: SSE (ocman.inbox.changed); polling fallback
     Note over B,S: inbox/notify event bursts coalesce;<br/>in-flight requests finish before one follow-up
     Note over S,E: queue snapshot invalidations coalesce;<br/>one owner-local read runs at a time
-    B->>S: PUT /api/session-drafts/{id}, then POST /start
+    B->>S: GET draft recovery before mounting composer
+    B->>S: serialized PUT with If-Match, then POST /start
     S->>I: persist complete first payload before acknowledgement
     S-->>B: 202 accepted, composer can clear
     B->>S: POST /api/session-drafts/{id}/messages
@@ -91,9 +92,15 @@ sequenceDiagram
   binding. `sessionlifecycle` stores metadata, the accepted initial payload,
   setup steps and final delivery receipt in `conversation_draft` in state.db.
   IndexedDB remains the offline composer cache. Saving a draft launches nothing.
+  Initial server recovery finishes before composer defaults or autosave mount.
+  Saves serialize per identity and compare metadata revisions atomically, so
+  stale tabs receive a conflict instead of overwriting newer server text.
 - The start endpoint acknowledges the committed payload before module-owned
-  workers perform setup. The composer clears on that acknowledgement and can
-  queue follow-ups immediately. `queuesvc` fences every drain path until setup
+  workers perform setup. The composer clears on that acknowledgement. It
+  reconciles a lost initial response through the same idempotent admission before
+  treating another Send as a follow-up. Admission and its receipt read commit in
+  one transaction; failed receipt reads never leave unscheduled accepted work.
+  The composer can queue follow-ups immediately. `queuesvc` fences every drain path until setup
   and first delivery succeed, then respects the first turn's actual busy/idle
   state. Restart marks uncertain work interrupted without replay. Explicit
   delivery retry uses an already confirmed native binding, never a new worktree.

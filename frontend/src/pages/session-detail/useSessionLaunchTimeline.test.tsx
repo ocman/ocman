@@ -34,6 +34,11 @@ it('never attaches setup to a later page of history or an empty user header', ()
   const { result, rerender } = renderHook(({ hasMore, visibleParts }) => useSessionLaunchTimeline(id, messages, visibleParts, hasMore),
     { initialProps: { hasMore: true, visibleParts: parts } });
   expect(result.current?.context).toBeNull();
+  expect(result.current?.empty).toBeNull();
   rerender({ hasMore: false, visibleParts: [] });
   expect(result.current?.context).toBeNull();
+  expect(result.current?.empty).not.toBeNull();
+  rerender({ hasMore: false, visibleParts: parts });
+  expect(result.current?.empty).toBeNull();
+  expect(result.current?.context?.messageId).toBe('first');
 });
