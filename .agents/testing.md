@@ -26,9 +26,9 @@ whose tests build a real server, host or runtime must call
 
 Provider-runtime tests use `testutil.InstallProviderTmux`, which puts each fake
 supervisor and its children in a private process group and stops the whole group
-at cleanup. Keep its PID files after simulating supervisor crashes so cleanup
-can still find orphaned children. Probe-error tests must inject a fake runtime,
-not rely on isolation to make launching a real agent safe.
+at cleanup. Keep its immutable group PID records after simulating supervisor
+crashes so cleanup can still find orphaned children. Probe-error tests must inject
+a fake runtime, not rely on isolation to make launching a real agent safe.
 
 ## Required behavior coverage
 

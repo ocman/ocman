@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 type rig struct {
@@ -71,8 +73,15 @@ func (r *rig) killSupervisors() {
 		data, _ := os.ReadFile(path)
 		if pid, _ := strconv.Atoi(string(data)); pid > 0 {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
+			testutil.WaitFor(r.t, 5*time.Second, "crashed supervisor exited", func() bool {
+				out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+				return err != nil || strings.HasPrefix(strings.TrimSpace(string(out)), "Z")
+			})
 		}
-		// Keep the group ID for cleanup of children orphaned by this crash.
+		// The tmux session is gone. Immutable group records still own children.
+		if err := os.Remove(path); err != nil {
+			r.t.Fatal(err)
+		}
 	}
 }
 

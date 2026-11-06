@@ -57,6 +57,27 @@ func TestCleanupRejectsUnattachedLiveCodexSupervisor(t *testing.T) {
 	}
 }
 
+func TestSupervisorCrashRetainsOnlyGroupCleanupRecords(t *testing.T) {
+	r := newRig(t)
+	p := r.platform(t.Context())
+	if _, err := p.EnsureRuntime(t.Context(), "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := filepath.Glob(filepath.Join(r.pids, "groups", "*.pid"))
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("group cleanup ownership: %v %v", groups, err)
+	}
+	r.killSupervisors()
+	handles, err := filepath.Glob(filepath.Join(r.pids, "*.pid"))
+	if err != nil || len(handles) != 0 {
+		t.Fatalf("crashed supervisor still has a live tmux handle: %v %v", handles, err)
+	}
+	retained, err := filepath.Glob(filepath.Join(r.pids, "groups", "*.pid"))
+	if err != nil || len(retained) != len(groups) {
+		t.Fatalf("crash lost group cleanup ownership: %v %v", retained, err)
+	}
+}
+
 func TestCleanupRejectsCodexDrainWithoutAttachment(t *testing.T) {
 	p, s := cleanupCodex(t)
 	fakeCodex(s)
