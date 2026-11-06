@@ -1,0 +1,24 @@
+import { fetchJSON } from './api.requests';
+
+export interface ResourcePoint {
+  timestamp: number;
+  cpuPercent: number;
+  memoryBytes: number;
+}
+
+export interface ResourceProcess {
+  pid: number;
+  parentPid: number;
+  name: string;
+  cpuPercent: number;
+  memoryBytes: number;
+}
+
+export interface ResourceSnapshot extends ResourcePoint {
+  processes: ResourceProcess[];
+  history: ResourcePoint[];
+}
+
+export function resources(signal: AbortSignal) {
+  return fetchJSON<ResourceSnapshot>('/api/resources?remoteId=local', signal);
+}

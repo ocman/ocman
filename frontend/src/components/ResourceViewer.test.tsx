@@ -1,0 +1,96 @@
+// @vitest-environment jsdom
+import { act, fireEvent, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { renderWithQuery } from '../test/renderWithQuery';
+import { resources, type ResourceSnapshot } from '../lib/resources';
+import { useDocumentVisible } from '../lib/usePanelVisible';
+import { ResourceViewer } from './ResourceViewer';
+
+vi.mock('../lib/resources', () => ({ resources: vi.fn() }));
+vi.mock('../lib/usePanelVisible', () => ({ useDocumentVisible: vi.fn(() => true) }));
+
+const snapshot: ResourceSnapshot = {
+  timestamp: 10000, cpuPercent: 150, memoryBytes: 2 * 1024 ** 3,
+  processes: [
+    { pid: 1, parentPid: 0, name: 'ocman', cpuPercent: 25, memoryBytes: 1024 ** 3 },
+    { pid: 2, parentPid: 1, name: 'agent', cpuPercent: 125, memoryBytes: 10 * 1024 ** 2 },
+  ],
+  history: [
+    { timestamp: 9000, cpuPercent: 100, memoryBytes: 1024 ** 3 },
+    { timestamp: 10000, cpuPercent: 150, memoryBytes: 2 * 1024 ** 3 },
+  ],
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(useDocumentVisible).mockReturnValue(true);
+  vi.mocked(resources).mockResolvedValue(snapshot);
+});
+afterEach(() => vi.useRealTimers());
+
+it('shows CPU and memory graphs and sorts the top-like process list', async () => {
+  renderWithQuery(<ResourceViewer />);
+  const table = await screen.findByRole('table', { name: 'Ocman processes' });
+  expect(screen.getByRole('img', { name: 'CPU history' })).toBeVisible();
+  expect(screen.getByRole('img', { name: 'Memory history' })).toBeVisible();
+  expect(screen.getByText('150.0%')).toBeVisible();
+  expect(screen.getByText('2.00 GiB')).toBeVisible();
+  const names = () => within(table).getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[2].textContent);
+  expect(names()).toEqual(['agent', 'ocman']);
+  fireEvent.change(screen.getByLabelText('Sort processes'), { target: { value: 'memoryBytes' } });
+  expect(names()).toEqual(['ocman', 'agent']);
+  fireEvent.change(screen.getByLabelText('Sort processes'), { target: { value: 'pid' } });
+  expect(names()).toEqual(['ocman', 'agent']);
+  fireEvent.change(screen.getByLabelText('Sort processes'), { target: { value: 'name' } });
+  expect(names()).toEqual(['agent', 'ocman']);
+});
+
+it('shows loading, failure and retry without claiming there are no processes', async () => {
+  vi.mocked(resources).mockReturnValueOnce(new Promise(() => {}));
+  const pending = renderWithQuery(<ResourceViewer />);
+  expect(screen.getByRole('status')).toHaveTextContent('Loading resources');
+  pending.unmount();
+  vi.mocked(resources).mockRejectedValueOnce(new Error('unavailable'));
+  renderWithQuery(<ResourceViewer />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load process resources');
+  expect(screen.queryByText('No managed processes are running.')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('ocman')).toBeVisible();
+});
+
+it('retains the last successful data when a refresh fails', async () => {
+  const { client } = renderWithQuery(<ResourceViewer />);
+  await screen.findByText('ocman');
+  vi.mocked(resources).mockRejectedValueOnce(new Error('unavailable'));
+  await act(() => client.refetchQueries({ queryKey: ['resources', 'local'] }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Showing the last sample');
+  expect(screen.getByText('ocman')).toBeVisible();
+});
+
+it('shows successful empty results and graphs with no history', async () => {
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [], history: [] });
+  renderWithQuery(<ResourceViewer />);
+  expect(await screen.findByText('No managed processes are running.')).toBeVisible();
+  expect(screen.getByText('0.0%')).toBeVisible();
+});
+
+it('polls once per second, pauses when hidden and aborts when unmounted', async () => {
+  vi.mocked(useDocumentVisible).mockReturnValue(false);
+  const hidden = renderWithQuery(<ResourceViewer />);
+  expect(resources).not.toHaveBeenCalled();
+  hidden.unmount();
+  vi.mocked(useDocumentVisible).mockReturnValue(true);
+  vi.useFakeTimers();
+  const page = renderWithQuery(<ResourceViewer />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(resources).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(resources).toHaveBeenCalledTimes(2);
+  vi.mocked(resources).mockReturnValue(new Promise(() => {}));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  const signal = vi.mocked(resources).mock.calls.at(-1)![0];
+  page.unmount();
+  expect(signal.aborted).toBe(true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  expect(resources).toHaveBeenCalledTimes(3);
+});

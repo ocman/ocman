@@ -82,9 +82,10 @@ type ManagedStore interface {
 }
 
 type Host struct {
-	deps    Deps
-	runtime ocruntime.Runtime
-	store   ManagedStore
+	resources resourceSampler
+	deps      Deps
+	runtime   ocruntime.Runtime
+	store     ManagedStore
 	// sf coalesces identical operations; runtimeLocks serialize root mutations.
 	sf           singleflight.Group
 	runtimeLocks sync.Map // repo root -> *sync.Mutex; inventory never takes these

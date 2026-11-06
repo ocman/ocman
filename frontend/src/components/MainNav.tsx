@@ -6,7 +6,7 @@ import { useNotifySnapshot } from '../lib/useNotifyData';
 import { attentionSessionEntries } from '../lib/sessionAttention';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
-import { featureNav, featureNavigation } from '../features';
+import { featureNav, featureNavigation, featureFooterNavigation } from '../features';
 import { PhoneNavigation } from './PhoneNavigation';
 import { useBetaFeatures, type BetaFeature } from '../lib/betaFeatures';
 import './MainNav.css';
@@ -91,6 +91,7 @@ export function MainNav({
             <span>Inbox</span>
             {inbox.data?.unreadTotal ? <b className="nav-unread-badge">{inbox.data.unreadTotal > 99 ? '99+' : inbox.data.unreadTotal}</b> : null}
           </NavLink>
+          {featureFooterNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={onMobileClose} />)}
           <div className="main-nav-usage-root">
             <button
               ref={usageTrigger}

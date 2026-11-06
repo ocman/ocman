@@ -27,6 +27,7 @@ flowchart LR
     Native -->|owner-local ingestion| Ocman
     Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
+    Browser -->|Activity modal: 1s resource polling| Ocman
     Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
     Ocman <-->|authenticated gRPC:<br/>sessions, PR workflows, tasks and resource streams| Remotes[Remote ocman instances]
@@ -75,6 +76,16 @@ flowchart LR
   owning Host's optional `BackgroundTaskHost` interface. Remote RPCs expose
   only closed PR operations and task reads, never arbitrary HTTP forwarding or
   task submission. See [multi-remote](../features/multi-remote.md).
+- **Live process resources.** The navigation's Activity modal combines existing
+  background tasks with a resource viewer. `resourcemod` resolves the owning
+  `hostsvc.Host` and reads its optional `ResourceViewer` interface. The local
+  host samples `ps` CPU-time deltas and resident memory for ocman's descendants,
+  the dedicated agent and browser-terminal tmux trees and the registered OpenCode service.
+  Executable names, PIDs and parent PIDs are returned, never command arguments.
+  Samples are request-driven, shared for 750 ms and retained in memory for up to
+  60 points. The Resources tab polls once per second only while mounted and the
+  document is visible. The UI explicitly scopes resources to this machine;
+  remote hosts without resource support return 503 rather than falling back.
 - **Remote published resources.** Transcript embeds and artifact links retain
   their session owner. Authenticated `/api/remote-resources/<owner>/…` reads
   resolve the owning Host's optional published-resource seam and stream over

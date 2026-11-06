@@ -10,7 +10,7 @@ import { MainNav } from './MainNav';
 vi.mock('../lib/queries', () => ({ useInbox: () => ({ data: { unreadTotal: 7 } }) }));
 vi.mock('../lib/useNotifyData', () => ({ useNotifySnapshot: vi.fn() }));
 vi.mock('../pages/SubscriptionUsage', () => ({ SubscriptionUsageContent: () => null }));
-vi.mock('../features', () => ({ featureNav: [], featureNavigation: [] }));
+vi.mock('../features', () => ({ featureNav: [], featureNavigation: [], featureFooterNavigation: [] }));
 vi.mock('./PhoneNavigation', () => ({ PhoneNavigation: ({ unreadSessions }: { unreadSessions: number }) => <output aria-label="Phone unread sessions">{unreadSessions}</output> }));
 
 const unread: NotifyEntry = { id: 'one', platform: 'opencode', status: 'waiting', seen: false };

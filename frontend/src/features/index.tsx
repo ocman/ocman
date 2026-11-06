@@ -15,6 +15,7 @@ import type { RevealRequest } from '../lib/useRevealSetting';
 import { PluginPageNav, PluginPageTitle } from '../components/PluginPageNav';
 import { BetaFeatureGate } from '../components/BetaFeatureGate';
 import type { BetaFeature } from '../lib/betaFeatures';
+import { ActivityNavigation } from '../components/ActivityNavigation';
 
 // Every page and settings section loads with its route or settings group, so
 // the registry itself (read by the nav and header on every page) stays small.
@@ -71,6 +72,7 @@ export interface FeatureRoute {
 }
 
 export interface Feature {
+  FooterNavigation?: ComponentType<{ onNavigate?: () => void; triggerOnly?: boolean }>;
   Navigation?: ComponentType<{ onNavigate?: () => void; replace?: boolean }>;
   id: string;
   beta?: BetaFeature;
@@ -99,6 +101,7 @@ export const FEATURES: Feature[] = [
   { id: 'plugin-pages', routes: [{ path: '/plugins/:pluginId/*', element: <PluginRoute />, layout: 'page', title: <PluginPageTitle /> }], Navigation: PluginPageNav, titlePrefix: { prefix: '/plugins/', title: <PluginPageTitle /> } },
   {
     id: 'background-tasks',
+    FooterNavigation: ActivityNavigation,
     routes: [{ path: '/background-tasks', element: <BackgroundTasks />, layout: 'dashboard', title: 'Background tasks' }],
   },
   {
@@ -163,6 +166,7 @@ export const featureRoutes = (layout: FeatureRoute['layout']) =>
 
 export const featureNav = FEATURES.flatMap((f) => (f.nav ? [{ ...f.nav, beta: f.beta }] : []));
 export const featureNavigation = FEATURES.flatMap((f) => f.Navigation ? [f.Navigation] : []);
+export const featureFooterNavigation = FEATURES.flatMap((f) => f.FooterNavigation ? [f.FooterNavigation] : []);
 
 export const featureSettings = FEATURES.flatMap((f) => (f.settings ? [f.settings] : []));
 

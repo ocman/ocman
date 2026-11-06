@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { featureNav, featureNavigation } from '../features';
+import { featureNav, featureNavigation, featureFooterNavigation } from '../features';
 import { useIsPhone } from '../lib/useIsPhone';
 import { usePhoneOverlay } from '../lib/usePhoneOverlay';
 import { useBetaFeatures, type BetaFeature } from '../lib/betaFeatures';
@@ -70,6 +70,7 @@ function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unrea
             <i className="bi bi-chevron-right" aria-hidden="true" />
           </NavLink>)}
           {featureNavigation.map((Navigation, index) => <Navigation key={index} replace />)}
+          {featureFooterNavigation.map((Navigation, index) => <Navigation key={index} triggerOnly />)}
         </nav>
       </Modal>
     </div>}

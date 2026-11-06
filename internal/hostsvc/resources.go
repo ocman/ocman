@@ -1,0 +1,28 @@
+package hostsvc
+
+import "context"
+
+// ResourceViewer is optional for hosts that can inspect their managed processes.
+type ResourceViewer interface {
+	Resources(context.Context) (ResourceSnapshot, error)
+}
+
+type ResourceProcess struct {
+	PID         int     `json:"pid"`
+	ParentPID   int     `json:"parentPid"`
+	Name        string  `json:"name"`
+	CPUPercent  float64 `json:"cpuPercent"`
+	MemoryBytes uint64  `json:"memoryBytes"`
+}
+
+type ResourcePoint struct {
+	Timestamp   int64   `json:"timestamp"`
+	CPUPercent  float64 `json:"cpuPercent"`
+	MemoryBytes uint64  `json:"memoryBytes"`
+}
+
+type ResourceSnapshot struct {
+	ResourcePoint
+	Processes []ResourceProcess `json:"processes"`
+	History   []ResourcePoint   `json:"history"`
+}

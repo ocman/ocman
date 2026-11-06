@@ -24,6 +24,7 @@ import (
 	"github.com/ocman/ocman/internal/prworkflow"
 	"github.com/ocman/ocman/internal/remote"
 	"github.com/ocman/ocman/internal/remotesmod"
+	"github.com/ocman/ocman/internal/resourcemod"
 	"github.com/ocman/ocman/internal/routines"
 	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/sharing"
@@ -42,7 +43,7 @@ func (s *Server) modules() []module.Module {
 	// Auto-approve first: it seeds the judge delay, which ran before every
 	// other startup step. Plugins next: their discovery came after it.
 	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
-	mods = append(mods, &agentui.Module{}, s.backgroundTasksModule())
+	mods = append(mods, &agentui.Module{}, s.backgroundTasksModule(), &resourcemod.Module{ResolveOwner: s.resolveOwner})
 	mods = append(mods, s.sourceControlModule(), s.prWorkflowModule())
 	mods = append(mods, s.worktreeCleanupModule())
 	mods = append(mods, s.sidebarModules()...)
