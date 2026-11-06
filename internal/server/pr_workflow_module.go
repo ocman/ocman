@@ -31,7 +31,9 @@ func (s *Server) prWorkflowModule() *prworkflow.Module {
 				s.broadcastSessionPatch(platform, sessionID, nil)
 			},
 			Enqueue: func(ctx context.Context, platform string, req platforms.SendMessageRequest) error {
-				return s.queueSvc().Enqueue(ctx, platform, true, req)
+				// Readiness already waits for completion. Let the queue deliver now
+				// rather than holding the notice for an idle edge that may never come.
+				return s.queueSvc().Enqueue(ctx, platform, false, req)
 			},
 		})
 	})

@@ -66,7 +66,7 @@ func TestPRWatchResumesAfterNormalAssistantCompletion(t *testing.T) {
 			DB: s.stateDB, Owner: s.prOwner, Ready: s.prWatchReady,
 			ResolveForge: func(forge.Remote) (forge.Forge, bool) { return watchUpdateForge{}, true },
 			Enqueue: func(ctx context.Context, platform string, req platforms.SendMessageRequest) error {
-				return s.queueSvc().Enqueue(ctx, platform, true, req)
+				return s.queueSvc().Enqueue(ctx, platform, false, req)
 			},
 		})
 		done := make(chan struct{})
@@ -78,11 +78,7 @@ func TestPRWatchResumesAfterNormalAssistantCompletion(t *testing.T) {
 		s.registry.Register(life)
 		time.Sleep(2 * time.Minute)
 		synctest.Wait()
-		assertState(t, false, 1)
-		if len(q.sentMessages()) != 0 {
-			t.Fatal("watch bypassed the held queue")
-		}
-		s.queueSvc().Sweep(ctx)
+		assertState(t, false, 0)
 		if sent := q.sentMessages(); len(sent) != 1 || !strings.Contains(sent[0], "ocman/review") {
 			t.Fatalf("sent=%v", sent)
 		}
