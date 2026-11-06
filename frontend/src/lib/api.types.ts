@@ -76,7 +76,7 @@ export interface ClientActivity {
 
 export type { Routine, RoutineInput, RoutineRun, RoutineScheduleKind, RoutineSessionMode } from './routine.types';
 
-export interface WebhookSubscription { id: string; inboxId: string; routineId: string; headerPredicates: string; jsonPredicates: string; createdAt: number }
+export interface WebhookSubscription { id: string; inboxId: string; routineId: string; headerPredicates: string; jsonPredicates: string; createdAt: number; projectPointer?: string }
 export interface WebhookRelaySettings { relayUrl: string; defaultRelayUrl: string; hasEnrollmentToken: boolean }
 export interface WebhookDispatchResult { routineId: string; state: string; error: string; platform: string; sessionId: string }
 export interface WebhookDelivery { deliveryId: string; accepted: boolean; acceptedAt: number; attempts: number; lastError: string; headers: string; body: string; dispatches: WebhookDispatchResult[] }

@@ -305,6 +305,10 @@ func (m *Module) saveSubscription(w http.ResponseWriter, r *http.Request, inbox 
 		http.Error(w, "predicates must be a JSON object of predicate objects", http.StatusBadRequest)
 		return
 	}
+	if !validProjectPointer(sub.ProjectPointer) {
+		http.Error(w, "projectPointer must be an RFC 6901 JSON pointer", http.StatusBadRequest)
+		return
+	}
 	routine, err := m.routines.Get(r.Context(), sub.RoutineID)
 	if errors.Is(err, state.ErrRoutineNotFound) {
 		http.Error(w, err.Error(), http.StatusNotFound)

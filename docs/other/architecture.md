@@ -433,7 +433,7 @@ flowchart TD
     Server --> Recovery[internal/sessionrecovery<br/>interruption history + replacement fences]
     Recovery -->|owner-local lifecycle reads| Registry
     Recovery --> State
-    Modules --> Routines[internal/routines<br/>saved prompts + schedules]
+    Modules --> Routines[internal/routines<br/>saved prompts + schedules<br/>fixed or launch-time project]
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory -->|graph + action Inbox reconciliation| State
@@ -1043,7 +1043,11 @@ flowchart TD
   reports success or failure. Startup resumes observation of linked runs.
   Timeout schedules become an absolute due time when saved. Cron schedules
   use a five-field expression and IANA timezone. Webhook polling is an
-  independent owner-local/remote delivery loop.
+  independent owner-local/remote delivery loop. Unbound routines resolve a
+  launch-time project against the owning Host's project index, then atomically
+  snapshot its directory in the run claim. The dashboard prompts for a project;
+  webhook subscriptions can extract it from a configured JSON pointer. Fixed
+  routine projects cannot be overridden, and webhook targets stay owner-local.
 - **internal/notifications.** Authenticated, same-origin push subscription routes
   and joined observation/delivery workers. Slow sends do not stall snapshots;
   failed or stale owner reads preserve the baseline. It reuses the server's notification projection,

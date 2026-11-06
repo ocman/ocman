@@ -16,8 +16,8 @@ import (
 func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 	name := strings.TrimSpace(input.Name)
 	directory := strings.TrimSpace(input.Directory)
-	if name == "" || strings.TrimSpace(input.Prompt) == "" || directory == "" || !filepath.IsAbs(directory) {
-		return state.Routine{}, fmt.Errorf("name, prompt, and an absolute target directory are required: %w", ErrValidation)
+	if name == "" || strings.TrimSpace(input.Prompt) == "" || (directory != "" && !filepath.IsAbs(directory)) {
+		return state.Routine{}, fmt.Errorf("name, prompt, and an absolute target directory when set are required: %w", ErrValidation)
 	}
 	remoteID := strings.TrimSpace(input.RemoteID)
 	if remoteID == "" {
@@ -28,6 +28,9 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 		sessionMode = SessionNew
 	}
 	sessionID := strings.TrimSpace(input.SessionID)
+	if directory == "" && (sessionMode != SessionNew || (input.Schedule.Kind != ScheduleNone && !input.KeepSchedule)) {
+		return state.Routine{}, fmt.Errorf("routines without a project require new sessions and no schedule: %w", ErrValidation)
+	}
 	switch sessionMode {
 	case SessionNew, SessionReuse:
 		sessionID = ""

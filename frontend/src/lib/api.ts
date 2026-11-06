@@ -151,7 +151,7 @@ export const api = {
     rotate: (id: string, input: { reset: boolean }) => postJSON<{ keyVersion: number }>(`/api/webhook-inboxes/${encodeURIComponent(id)}`, input, { method: 'PUT' }),
     revoke: (id: string) => postJSON<void>(`/api/webhook-inboxes/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false }),
     deliveries: (id: string, signal?: AbortSignal) => fetchJSON<WebhookDelivery[]>(`/api/webhook-inboxes/${encodeURIComponent(id)}/deliveries`, signal),
-    subscribe: (id: string, input: { routineId: string; headerPredicates: string; jsonPredicates: string }) => postJSON<WebhookSubscription>(`/api/webhook-inboxes/${encodeURIComponent(id)}/subscriptions`, input, { method: 'PUT' }),
+    subscribe: (id: string, input: { routineId: string; headerPredicates: string; jsonPredicates: string; projectPointer?: string }) => postJSON<WebhookSubscription>(`/api/webhook-inboxes/${encodeURIComponent(id)}/subscriptions`, input, { method: 'PUT' }),
     redeliver: (id: string, deliveryId: string) => postJSON<{ deliveryId: string }>(`/api/webhook-inboxes/${encodeURIComponent(id)}/redeliver`, { deliveryId }),
     unsubscribe: (id: string, routineId: string) => postJSON<void>(`/api/webhook-inboxes/${encodeURIComponent(id)}/subscriptions`, { routineId }, { method: 'DELETE', parseJSON: false }),
   },
@@ -174,7 +174,7 @@ export const api = {
     create: (input: RoutineInput) => postJSON<Routine, RoutineInput>('/api/routines', input),
     update: (id: string, input: RoutineInput) => postJSON<Routine, RoutineInput>(`/api/routines/${encodeURIComponent(id)}`, input, { method: 'PUT' }),
     remove: (id: string) => postJSON<void, undefined>(`/api/routines/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false }),
-    run: (id: string) => postJSON<RoutineRun, undefined>(`/api/routines/${encodeURIComponent(id)}/run`, undefined),
+    run: (id: string, project?: string) => postJSON<RoutineRun>(`/api/routines/${encodeURIComponent(id)}/run`, project ? { project } : undefined),
     history: (id: string, page: { limit: number; before?: Pick<RoutineRun, 'createdAt' | 'id'> }, signal?: AbortSignal) => {
       const query = new URLSearchParams({ limit: String(page.limit) });
       if (page.before) { query.set('beforeCreatedAt', String(page.before.createdAt)); query.set('beforeId', page.before.id); }

@@ -22,6 +22,7 @@ type routineService interface {
 	List(context.Context, bool) ([]state.Routine, error)
 	Delete(context.Context, string) error
 	RunNow(context.Context, string) (state.RoutineRun, error)
+	RunNowInProject(context.Context, string, string) (state.RoutineRun, error)
 	History(context.Context, string) ([]state.RoutineRun, error)
 }
 
@@ -33,8 +34,8 @@ type routineAction struct {
 	output                     any
 }
 
-var routineInputRequired = []string{"name", "prompt", "directory"}
-var routineInputOptional = []string{"platform", "remote_id", "agent", "model", "session_mode", "session_id", "worktree", "cleanup_worktree", "schedule_kind", "timeout_ms", "at", "cron", "timezone", "enabled", "delete_after_success", "archive_session_after_success", "notify_on_success", "permission_rules"}
+var routineInputRequired = []string{"name", "prompt"}
+var routineInputOptional = []string{"directory", "platform", "remote_id", "agent", "model", "session_mode", "session_id", "worktree", "cleanup_worktree", "schedule_kind", "timeout_ms", "at", "cron", "timezone", "enabled", "delete_after_success", "archive_session_after_success", "notify_on_success", "permission_rules"}
 
 var routineActions = []routineAction{
 	{name: "help", description: "Describes every available routine action.", example: `{"action":"help"}`, output: "Routine action documentation"},
@@ -44,7 +45,7 @@ var routineActions = []routineAction{
 	{name: "update", description: "Replaces one routine definition. Omitted optional fields use their defaults.", example: `{"action":"update","routine_id":"routine-1","name":"Daily review","prompt":"Review open work","directory":"/repo","enabled":true,"schedule_kind":"cron","cron":"0 9 * * 1-5","timezone":"Europe/Brussels"}`, required: append([]string{"routine_id"}, routineInputRequired...), optional: routineInputOptional, output: "Routine"},
 	{name: "patch", description: "Updates one routine in place: only the fields you pass change, everything else keeps its current value. Passing any schedule field replaces only the schedule fields you pass.", example: `{"action":"patch","routine_id":"routine-1","prompt":"Review open work and summarise"}`, required: []string{"routine_id"}, optional: append(append([]string{}, routineInputRequired...), routineInputOptional...), output: "Routine"},
 	{name: "delete", description: "Soft-deletes one routine and disables future runs.", example: `{"action":"delete","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: map[string]string{"status": "deleted"}},
-	{name: "run", description: "Runs one routine now.", example: `{"action":"run","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "RoutineRun"},
+	{name: "run", description: "Runs one routine now. Supply project only when its directory is unset; matches a known directory, project key or repository URL on the routine's machine.", example: `{"action":"run","routine_id":"routine-1"}`, required: []string{"routine_id"}, optional: []string{"project"}, output: "RoutineRun"},
 	{name: "history", description: "Lists runs for one routine, newest first.", example: `{"action":"history","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "RoutineRun[]"},
 }
 
@@ -55,6 +56,7 @@ func routineServerTools(tools *routineTools) []server.ServerTool {
 	return []server.ServerTool{{Tool: mcplib.NewTool("routines",
 		mcplib.WithDescription("Create, inspect, run, and manage routines. Use action help for schemas and examples."),
 		mcplib.WithString("platform"),
+		mcplib.WithString("project"),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("routine_id"), mcplib.WithString("name"), mcplib.WithString("prompt"),
 		mcplib.WithString("directory"), mcplib.WithString("remote_id"), mcplib.WithString("agent"), mcplib.WithString("model"),
 		mcplib.WithString("session_mode"), mcplib.WithString("session_id"), mcplib.WithString("schedule_kind"), mcplib.WithNumber("timeout_ms"),
@@ -135,7 +137,7 @@ func (t *routineTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		}
 		return internalmcp.ToolResultJSON(map[string]string{"status": "deleted"}), nil
 	case "run":
-		run, err := t.svc.RunNow(ctx, req.GetString("routine_id", ""))
+		run, err := t.svc.RunNowInProject(ctx, req.GetString("routine_id", ""), req.GetString("project", ""))
 		if err != nil {
 			return routineToolError(err), nil
 		}
@@ -171,7 +173,7 @@ func routineHelp() map[string]any {
 	}
 	help["actions"] = actions
 	help["errors"] = []string{"action is required", "unknown action", "invalid routine", "routine not found", "routine name already exists", "routine already has an active shared-session run", "routine request failed"}
-	help["rules"] = []string{"directory must be absolute", "session_mode is new, reuse, or existing; existing requires session_id", "schedule_kind is none, timeout, once, or cron", "timeout_ms is a positive millisecond delay", "at is a future Unix timestamp in milliseconds", "cron is a five-field expression and timezone is an IANA timezone", `permission_rules is a JSON array of {permission, pattern, action} objects; action is "allow", "deny", or "ask"; omit or pass [] for platform defaults`}
+	help["rules"] = []string{"directory must be absolute when set; omit it to choose a known project at launch. Unbound routines require session_mode=new and schedule_kind=none", "session_mode is new, reuse, or existing; existing requires session_id", "schedule_kind is none, timeout, once, or cron", "timeout_ms is a positive millisecond delay", "at is a future Unix timestamp in milliseconds", "cron is a five-field expression and timezone is an IANA timezone", `permission_rules is a JSON array of {permission, pattern, action} objects; action is "allow", "deny", or "ask"; omit or pass [] for platform defaults`}
 	return help
 }
 
@@ -261,7 +263,7 @@ func boolArgument(arguments map[string]any, name string) bool {
 
 func routineToolError(err error) *mcplib.CallToolResult {
 	switch {
-	case errors.Is(err, ErrValidation):
+	case errors.Is(err, ErrValidation), errors.Is(err, state.ErrRoutineProject):
 		return mcplib.NewToolResultError(err.Error())
 	case errors.Is(err, state.ErrRoutineNotFound):
 		return mcplib.NewToolResultError("routine not found")

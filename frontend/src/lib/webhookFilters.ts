@@ -75,12 +75,12 @@ export function outcomes(delivery: WebhookDelivery, routineName: (id: string) =>
   }));
 }
 
-export type Trigger = { inboxId: string; headers: FilterRow[]; fields: FilterRow[] };
+export type Trigger = { inboxId: string; headers: FilterRow[]; fields: FilterRow[]; projectPointer?: string };
 
 export function triggerFor(routineId: string | undefined, inboxes: WebhookInbox[]): Trigger {
   for (const inbox of inboxes) {
     const sub = inbox.subscriptions.find((item) => item.routineId === routineId);
-    if (routineId && sub) return { inboxId: inbox.id, headers: decodeFilters(sub.headerPredicates), fields: decodeFilters(sub.jsonPredicates) };
+    if (routineId && sub) return { inboxId: inbox.id, headers: decodeFilters(sub.headerPredicates), fields: decodeFilters(sub.jsonPredicates), ...(sub.projectPointer ? { projectPointer: sub.projectPointer } : {}) };
   }
   return { inboxId: '', headers: [], fields: [] };
 }
@@ -90,7 +90,7 @@ export async function saveTrigger(routineId: string, trigger: Trigger, inboxes: 
   for (const inbox of inboxes) {
     if (inbox.id !== trigger.inboxId && inbox.subscriptions.some((sub) => sub.routineId === routineId)) await api.webhookInboxes.unsubscribe(inbox.id, routineId);
   }
-  if (trigger.inboxId) await api.webhookInboxes.subscribe(trigger.inboxId, { routineId, headerPredicates: encodeFilters(trigger.headers, 'header'), jsonPredicates: encodeFilters(trigger.fields, 'pointer') });
+  if (trigger.inboxId) await api.webhookInboxes.subscribe(trigger.inboxId, { routineId, headerPredicates: encodeFilters(trigger.headers, 'header'), jsonPredicates: encodeFilters(trigger.fields, 'pointer'), ...(trigger.projectPointer ? { projectPointer: trigger.projectPointer } : {}) });
 }
 
 // triggerLabel summarises what starts a routine: its schedule, its webhook

@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { api, type Routine } from '../lib/api';
 import { RoutineEditorForm } from './RoutineEditorDrawer';
 
-vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), prepareSession: vi.fn(), routines: { create: vi.fn(), update: vi.fn() } } }));
+vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), prepareSession: vi.fn(), routines: { create: vi.fn(), update: vi.fn() }, webhookInboxes: { subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
 vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: () => [] }));
 
 const routine: Routine = {
@@ -27,6 +27,36 @@ beforeEach(() => {
 function editor(value = routine) {
   renderWithQuery(<RoutineEditorForm routine={value} inboxes={[]} onClose={vi.fn()} onSaved={vi.fn()} onRefresh={vi.fn()} />);
 }
+
+it('configures a webhook project field for an unbound routine', async () => {
+  const inboxes = [{ id: 'i', name: 'PRs', subscriptions: [] }] as never;
+  renderWithQuery(<RoutineEditorForm routine={{ ...routine, directory: '' }} inboxes={inboxes} onClose={vi.fn()} onSaved={vi.fn()} onRefresh={vi.fn()} />);
+  await userEvent.selectOptions(screen.getByLabelText('Trigger'), 'webhook:i');
+  const field = screen.getByLabelText('Webhook project field');
+  expect(field).toBeRequired();
+  await userEvent.type(field, '/repository/clone_url');
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(api.webhookInboxes.subscribe).toHaveBeenCalledWith('i', expect.objectContaining({ projectPointer: '/repository/clone_url' })));
+});
+
+it('saves a projectless routine without preparing a runtime', async () => {
+  editor({ ...routine, directory: '' });
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith('r', expect.objectContaining({ directory: '', sessionMode: 'new', schedule: { kind: 'none' } })));
+  expect(api.prepareSession).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByText('Session and model'));
+  expect(screen.getByRole('option', { name: 'Reuse session' })).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Existing session' })).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Cron' })).toBeDisabled();
+});
+
+it('clears the project and shared session without changing the owning machine', async () => {
+  editor({ ...routine, remoteId: 'build-box', sessionMode: 'reuse', sessionId: 'previous', scheduleKind: 'cron', scheduleConfigJSON: '{"cron":"0 9 * * *"}' });
+  await userEvent.click(screen.getByRole('combobox', { name: 'Project' }));
+  await userEvent.click(screen.getByRole('option', { name: 'Choose when running' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith('r', expect.objectContaining({ directory: '', remoteId: 'build-box', sessionMode: 'new', sessionId: '', schedule: { kind: 'none' } })));
+});
 
 it('defaults to the current checkout and saves an explicit cleanup opt-in', async () => {
   const user = userEvent.setup();

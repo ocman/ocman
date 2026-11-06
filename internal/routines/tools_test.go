@@ -47,6 +47,10 @@ func (f *fakeRoutineService) RunNow(_ context.Context, id string) (state.Routine
 	f.id = id
 	return state.RoutineRun{ID: "run-1", RoutineID: id}, f.err
 }
+func (f *fakeRoutineService) RunNowInProject(ctx context.Context, id, project string) (state.RoutineRun, error) {
+	f.input.Directory = project
+	return f.RunNow(ctx, id)
+}
 func (f *fakeRoutineService) History(_ context.Context, id string) ([]state.RoutineRun, error) {
 	f.id = id
 	return []state.RoutineRun{{ID: "run-1", RoutineID: id}}, f.err

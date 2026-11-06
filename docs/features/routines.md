@@ -3,7 +3,7 @@ title: Routines
 weight: 4
 ---
 
-Routines save a prompt for a project. Run one by hand or give it a schedule.
+Routines save a prompt with an optional project. Run one by hand or give it a schedule.
 Choose how each routine uses OpenCode sessions:
 
 - **New session** starts a fresh session for every run. This is the default.
@@ -33,6 +33,12 @@ a unique name, the prompt, the target project, session behavior, and a schedule.
 The searchable agent and model lists use values seen in that project. Select
 the default option to let OpenCode choose. You can also disable a routine
 without deleting it.
+
+Select **Choose when running** to leave the project unset. **Run now** then asks
+for a known project on the routine's machine. Each run records its own project;
+the routine stays unbound. These routines require **New session** and cannot
+have a schedule. Existing routines with a fixed project keep their current
+manual, scheduled, reused-session and webhook behavior.
 
 Name, prompt, project, schedule, and enabled status stay visible at the top.
 Expand **Session and model**, **After a run**, or **Permissions** for optional
@@ -99,6 +105,21 @@ and author-only GitHub PR filters.
 3. Edit a routine and pick the inbox as its **Trigger**, then add
    conditions. The trigger is either a schedule or one webhook inbox, not
    both; choosing a webhook clears the schedule.
+
+For an unbound routine, set **Webhook project field** to an RFC 6901 JSON pointer,
+for example `/repository/clone_url`. The field must contain a nonempty string
+matching exactly one known, non-archived project on this machine by repository
+URL, project key or absolute directory. Repository URLs use the same normalized
+identity as the project index, so HTTPS and SSH forms can identify the same repo.
+Missing, unknown or ambiguous values fail the delivery without starting a
+session. The payload cannot select another machine, clone an unknown repository
+or override a routine's fixed project. Fixed-project routines ignore this field.
+
+Through MCP, omit `directory` when creating the routine and pass
+`project_pointer` when subscribing with `webhooks`. For manual MCP runs, pass
+`project` to `routines` action `run`. The REST run endpoint accepts an optional
+`{"project":"/path/to/project"}` body; existing empty-body requests still work
+for fixed-project routines.
 
 Conditions combine header and RFC 6901 JSON Pointer predicates with AND.
 They support only `equals`, `is one of`, `exists`, and `is missing`; scripts

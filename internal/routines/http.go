@@ -2,7 +2,9 @@ package routines
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -61,7 +63,25 @@ func (req routineRequest) input() (Input, error) {
 }
 
 func (m *Module) handleRun(w http.ResponseWriter, r *http.Request) {
-	run, err := m.svc.RunNow(r.Context(), r.PathValue("id"))
+	var req struct {
+		Project string `json:"project"`
+	}
+	if r.Body != nil {
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, httpx.MaxRequestBody))
+		err := decoder.Decode(&req)
+		if err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "invalid run request", http.StatusBadRequest)
+			return
+		}
+		if err == nil {
+			var extra any
+			if !errors.Is(decoder.Decode(&extra), io.EOF) {
+				http.Error(w, "invalid run request", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	run, err := m.svc.RunNowInProject(r.Context(), r.PathValue("id"), req.Project)
 	if err != nil {
 		writeHTTPError(w, "running routine", err)
 		return
@@ -185,7 +205,7 @@ func readRoutineInput(w http.ResponseWriter, r *http.Request) (Input, bool) {
 // writeHTTPError maps a routine service error to an HTTP response.
 func writeHTTPError(w http.ResponseWriter, operation string, err error) {
 	switch {
-	case errors.Is(err, ErrValidation):
+	case errors.Is(err, ErrValidation), errors.Is(err, state.ErrRoutineProject):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, state.ErrRoutineNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)

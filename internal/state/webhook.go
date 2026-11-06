@@ -13,6 +13,7 @@ type WebhookSubscription struct {
 	HeaderPredicatesJSON string `json:"headerPredicates"`
 	JSONPredicatesJSON   string `json:"jsonPredicates"`
 	CreatedAt            int64  `json:"createdAt"`
+	ProjectPointer       string `json:"projectPointer,omitempty"`
 }
 
 type WebhookDispatch struct {
@@ -49,7 +50,7 @@ func (d *DB) SaveWebhookSubscription(ctx context.Context, sub WebhookSubscriptio
 	if sub.CreatedAt == 0 {
 		sub.CreatedAt = time.Now().UnixMilli()
 	}
-	_, err := d.db.ExecContext(ctx, `INSERT INTO webhook_subscription (id,inbox_id,routine_id,header_predicates_json,json_predicates_json,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(inbox_id,routine_id) DO UPDATE SET header_predicates_json=excluded.header_predicates_json,json_predicates_json=excluded.json_predicates_json`, sub.ID, sub.InboxID, sub.RoutineID, sub.HeaderPredicatesJSON, sub.JSONPredicatesJSON, sub.CreatedAt)
+	_, err := d.db.ExecContext(ctx, `INSERT INTO webhook_subscription (id,inbox_id,routine_id,header_predicates_json,json_predicates_json,created_at,project_pointer) VALUES (?,?,?,?,?,?,?) ON CONFLICT(inbox_id,routine_id) DO UPDATE SET header_predicates_json=excluded.header_predicates_json,json_predicates_json=excluded.json_predicates_json,project_pointer=excluded.project_pointer`, sub.ID, sub.InboxID, sub.RoutineID, sub.HeaderPredicatesJSON, sub.JSONPredicatesJSON, sub.CreatedAt, sub.ProjectPointer)
 	return err
 }
 
@@ -58,7 +59,7 @@ func (d *DB) ListWebhookSubscriptions(ctx context.Context, inboxID string) ([]We
 }
 
 func (d *DB) listWebhookSubscriptions(ctx context.Context, column, value string) ([]WebhookSubscription, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT id,inbox_id,routine_id,header_predicates_json,json_predicates_json,created_at FROM webhook_subscription WHERE `+column+`=? ORDER BY id`, value)
+	rows, err := d.db.QueryContext(ctx, `SELECT id,inbox_id,routine_id,header_predicates_json,json_predicates_json,created_at,project_pointer FROM webhook_subscription WHERE `+column+`=? ORDER BY id`, value)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +67,7 @@ func (d *DB) listWebhookSubscriptions(ctx context.Context, column, value string)
 	var result []WebhookSubscription
 	for rows.Next() {
 		var s WebhookSubscription
-		if err := rows.Scan(&s.ID, &s.InboxID, &s.RoutineID, &s.HeaderPredicatesJSON, &s.JSONPredicatesJSON, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.InboxID, &s.RoutineID, &s.HeaderPredicatesJSON, &s.JSONPredicatesJSON, &s.CreatedAt, &s.ProjectPointer); err != nil {
 			return nil, err
 		}
 		result = append(result, s)

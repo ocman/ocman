@@ -38,6 +38,20 @@ function LocationProbe() {
 }
 
 describe('Routines', () => {
+  it('opens the project picker only for an unbound routine and refreshes after launch', async () => {
+    vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, directory: '', scheduleKind: 'none' }]);
+    renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);
+    const row = await screen.findByRole('row', { name: 'View Morning check history' });
+    await userEvent.click(within(row).getByRole('button', { name: 'Run' }));
+    expect(api.routines.run).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('combobox', { name: 'Run project' }));
+    await userEvent.click(await screen.findByRole('option', { name: '/repo' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Run routine' })).not.toBeInTheDocument());
+    expect(api.routines.run).toHaveBeenCalledWith('routine-1', '/repo');
+    expect(api.routines.list).toHaveBeenCalledTimes(2);
+  });
+
   it('shows a dedicated failure with retry instead of a false empty routine list', async () => {
     vi.mocked(api.routines.list).mockRejectedValueOnce(new Error('Routines offline')).mockResolvedValue([routine]);
     renderWithQuery(<MemoryRouter><Routines /></MemoryRouter>);

@@ -19,9 +19,16 @@ func scanRoutineRun(row rowScanner) (RoutineRun, error) {
 	return run, err
 }
 
+// RoutineRunTarget supplies a directory for an unbound routine. RemoteID fences
+// the project lookup against an edit that moved the routine to another owner.
+type RoutineRunTarget struct {
+	Directory string
+	RemoteID  string
+}
+
 // ClaimRoutineRun creates the occurrence and its definition snapshot together.
 // A competing claimant for the same routine occurrence receives claimed=false.
-func (d *DB) ClaimRoutineRun(ctx context.Context, run RoutineRun) (RoutineRun, bool, error) {
+func (d *DB) ClaimRoutineRun(ctx context.Context, run RoutineRun, target ...RoutineRunTarget) (RoutineRun, bool, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return RoutineRun{}, false, fmt.Errorf("beginning routine run claim: %w", err)
@@ -36,6 +43,15 @@ func (d *DB) ClaimRoutineRun(ctx context.Context, run RoutineRun) (RoutineRun, b
 		return RoutineRun{}, false, fmt.Errorf("reading routine for claim: %w", err)
 	}
 	run.RoutineUpdatedAt, run.RoutineName, run.Prompt, run.Directory, run.RemoteID, run.Agent, run.Model, run.SessionMode, run.TargetSessionID = routine.UpdatedAt, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID, routine.Agent, routine.Model, routine.SessionMode, routine.SessionID
+	if len(target) > 0 && target[0].Directory != "" {
+		if run.RemoteID != target[0].RemoteID || (run.Directory != "" && run.Directory != target[0].Directory) {
+			return RoutineRun{}, false, ErrRoutineProject
+		}
+		run.Directory = target[0].Directory
+	}
+	if run.Directory == "" {
+		return RoutineRun{}, false, ErrRoutineProject
+	}
 	run.ArchiveSessionAfterSuccess, run.NotifyOnSuccess = routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess
 	run.Platform = routine.Platform
 	run.Worktree, run.CleanupWorktree = routine.Worktree, routine.CleanupWorktree

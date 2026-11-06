@@ -115,7 +115,7 @@ func Dispatch(ctx context.Context, store *state.DB, svc RoutineDispatcher, inbox
 			continue
 		}
 		occurrence := state.WebhookOccurrence(inboxID, deliveryID)
-		run, err := svc.RunWebhook(ctx, sub.RoutineID, data, label, occurrence)
+		run, err := launchWebhook(ctx, svc, routine, sub, e.Body, data, label, occurrence)
 		receipt := context.WithoutCancel(ctx)
 		if err == nil && run.State == "failure" {
 			// A launch failure comes back as a failed run, not an error.

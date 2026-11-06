@@ -4,14 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/sessionsvc"
@@ -74,21 +72,23 @@ type Input struct {
 }
 
 type Deps struct {
-	Store     *state.DB
-	Router    *hostsvc.Router
-	Sessions  *sessionsvc.Service
-	Platforms *platforms.Registry
-	Now       func() time.Time
-	NewID     func(prefix string) string
+	Store             *state.DB
+	Router            *hostsvc.Router
+	Sessions          *sessionsvc.Service
+	Platforms         *platforms.Registry
+	Now               func() time.Time
+	NewID             func(prefix string) string
+	NormalizeUpstream func(string) string
 }
 
 type Service struct {
-	store     *state.DB
-	router    *hostsvc.Router
-	sessions  *sessionsvc.Service
-	platforms *platforms.Registry
-	now       func() time.Time
-	newID     func(string) string
+	store             *state.DB
+	router            *hostsvc.Router
+	sessions          *sessionsvc.Service
+	platforms         *platforms.Registry
+	now               func() time.Time
+	newID             func(string) string
+	normalizeUpstream func(string) string
 }
 
 func New(deps Deps) *Service {
@@ -98,7 +98,7 @@ func New(deps Deps) *Service {
 	if deps.NewID == nil {
 		deps.NewID = randomID
 	}
-	return &Service{store: deps.Store, router: deps.Router, sessions: deps.Sessions, platforms: deps.Platforms, now: deps.Now, newID: deps.NewID}
+	return &Service{store: deps.Store, router: deps.Router, sessions: deps.Sessions, platforms: deps.Platforms, now: deps.Now, newID: deps.NewID, normalizeUpstream: deps.NormalizeUpstream}
 }
 
 func randomID(prefix string) string {
@@ -181,6 +181,9 @@ func (s *Service) Update(ctx context.Context, id string, input Input) (state.Rou
 	}
 	if input.Platform == "" {
 		input.Platform = existing.Platform
+	}
+	if input.Directory == "" && input.KeepSchedule && existing.ScheduleKind != ScheduleNone {
+		return state.Routine{}, fmt.Errorf("remove the schedule before clearing the project: %w", ErrValidation)
 	}
 	now := s.now()
 	routine, err := buildRoutine(input, now)
@@ -298,12 +301,16 @@ func (s *Service) claimAndDispatch(ctx context.Context, routine state.Routine, o
 	return s.claimAndDispatchPrompt(ctx, routine, occurrence, trigger, routine.Prompt, "")
 }
 
-func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Routine, occurrence int64, trigger, prompt, label string) (state.RoutineRun, error) {
+func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Routine, occurrence int64, trigger, prompt, label string, project ...string) (state.RoutineRun, error) {
 	now := s.now().UnixMilli()
+	var target []state.RoutineRunTarget
+	if len(project) > 0 {
+		target = []state.RoutineRunTarget{{Directory: project[0], RemoteID: routine.RemoteID}}
+	}
 	run, claimed, err := s.store.ClaimRoutineRun(ctx, state.RoutineRun{
 		ID: s.newID("run-"), RoutineID: routine.ID, Trigger: trigger, State: RunRunning,
 		OccurrenceAt: occurrence, CreatedAt: now,
-	})
+	}, target...)
 	if err != nil || !claimed {
 		return run, err
 	}
@@ -379,92 +386,4 @@ func (s *Service) failDispatch(ctx context.Context, run state.RoutineRun, cause 
 		return state.RoutineRun{}, fmt.Errorf("recording routine failure after %w: %w", cause, err)
 	}
 	return s.store.GetRoutineRun(ctx, run.ID)
-}
-
-func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error {
-	runs, err := s.store.ListRunningRoutineRuns(ctx)
-	if err != nil {
-		return err
-	}
-	var result error
-	for _, run := range runs {
-		if run.Platform == "" || run.SessionID == "" {
-			if recoverOrphans {
-				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "dispatch interrupted before session linkage", ""))
-			}
-			continue
-		}
-		platform, ok := s.platforms.Get(platforms.ID(run.Platform))
-		if !ok {
-			continue
-		}
-		detail, err := platform.Session(ctx, run.SessionID, 1, 0)
-		if err != nil {
-			if recoverOrphans || errors.Is(err, platforms.ErrNotFound) {
-				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available", ""))
-			}
-			continue
-		}
-		if detail == nil || detail.Session == nil {
-			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available", ""))
-			continue
-		}
-		_, reply := db.LatestAssistantText(detail.Messages, detail.Parts)
-		switch detail.Session.Status {
-		case db.StatusDone, db.StatusWaiting:
-			if run.CleanupWorktree && s.now().UnixMilli()-detail.Session.TimeUpdated < settleQuietPeriod.Milliseconds() {
-				continue
-			}
-			if run.ArchiveSessionAfterSuccess {
-				// OpenCode writes once more after the turn goes idle; any newer
-				// write resurfaces the session, so wait until it's quiet, then
-				// ponytail: writes >5s late still resurface. Remotes use the owner clock.
-				stamp := detail.Session.TimeUpdated
-				if remoteID, _ := platforms.SplitPlatformID(run.Platform); remoteID == "" {
-					if stamp = s.now().UnixMilli(); stamp-detail.Session.TimeUpdated < settleQuietPeriod.Milliseconds() {
-						continue
-					}
-				}
-				if err := s.store.ArchiveSession(ctx, run.Platform, run.SessionID, stamp); err != nil {
-					result = errors.Join(result, err)
-					continue
-				}
-			}
-			result = errors.Join(result, s.finish(ctx, run, RunSuccess, s.cleanupRunWorktree(ctx, run, detail), reply))
-		case db.StatusError:
-			result = errors.Join(result, s.finish(ctx, run, RunFailure, detail.Session.Status.String(), reply))
-		case db.StatusInterrupted:
-			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, detail.Session.Status.String(), ""))
-		}
-	}
-	return result
-}
-
-func (s *Service) finish(ctx context.Context, run state.RoutineRun, runState, errorText, reply string) error {
-	routine, err := s.store.GetRoutine(ctx, run.RoutineID)
-	if err != nil {
-		return err
-	}
-	// Only a scheduled occurrence consumes a timeout/once schedule. Manual and
-	// webhook runs leave the routine's enabled state and next due time alone,
-	// unless an overdue manual run claimed the due occurrence (RunNow reuses
-	// it): the scheduler could never claim it again, so it must advance here.
-	scheduled := run.Trigger == "schedule" || (routine.NextDueAt > 0 && run.OccurrenceAt == routine.NextDueAt)
-	nextDue, enabled := int64(0), false
-	if scheduled && routine.ScheduleKind == ScheduleCron && routine.Enabled && !routine.Deleted {
-		var config struct {
-			Cron     string `json:"cron"`
-			Timezone string `json:"timezone"`
-		}
-		if err := json.Unmarshal([]byte(routine.ScheduleConfigJSON), &config); err != nil {
-			return err
-		}
-		_, nextDue, err = encodeSchedule(Schedule{Kind: ScheduleCron, Cron: config.Cron, Timezone: config.Timezone}, s.now())
-		if err != nil {
-			return err
-		}
-		enabled = true
-	}
-	_, err = s.store.FinishRoutineRun(ctx, run.ID, runState, errorText, reply, s.now().UnixMilli(), nextDue, enabled, scheduled)
-	return err
 }

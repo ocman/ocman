@@ -12,6 +12,7 @@ import { api, type Routine } from '../lib/api';
 import { useRoutineLists } from '../lib/routineQueries';
 import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
 import { RoutineEditorDrawer } from './RoutineEditorDrawer';
+import { RoutineRunDialog } from './RoutineRunDialog';
 import { WebhookInboxDrawer } from './WebhookInboxDrawer';
 import { triggerLabel } from '../lib/webhookFilters';
 import { formatDateTimeShort } from '../lib/format';
@@ -34,6 +35,7 @@ export function Routines() {
     return next;
   });
   const [showForm, setShowForm] = useState(false);
+  const [runRoutine, setRunRoutine] = useState<Routine>();
   const [busy, setBusy] = useState(false);
   const [actionError, setError] = useState('');
   const error = actionError || loadError;
@@ -71,6 +73,7 @@ export function Routines() {
       <TabsList aria-label="Routine views"><TabsTrigger value="routines">Routines</TabsTrigger><TabsTrigger value="inboxes">Webhook inboxes</TabsTrigger></TabsList>
       {error && !showForm && !unavailable && <InlineAlert onRetry={retry} retrying={routineList.isFetching || inboxList.isFetching}>{error}</InlineAlert>}
       {showForm && <RoutineEditorDrawer inboxes={inboxes} onClose={() => setShowForm(false)} onSaved={saved} onRefresh={refreshAfterSave} />}
+      {runRoutine && <RoutineRunDialog routine={runRoutine} onClose={() => setRunRoutine(undefined)} onStarted={() => { setRunRoutine(undefined); void refreshAfterSave(); }} />}
       {historyRoutine && ready && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} inboxes={inboxes} activeTab={detailTab} onTabChange={(view) => selectRoutine(historyRoutine.id, view)} refreshKey={refreshKey} onRefresh={refreshAfterSave} onSaved={saved} onClose={() => selectRoutine()} />}
       {historyId && !historyRoutine && !loading && !error && <p role="alert">This routine is unavailable.</p>}
       {inboxDrawer !== undefined && <WebhookInboxDrawer key={inboxDrawer} inbox={inboxes.find((inbox) => inbox.id === inboxDrawer) ?? null} routines={routines} onClose={() => setInboxDrawer(undefined)} onChange={() => void load().catch((err: Error) => setError(err.message))} onEditRoutine={openSettings} />}
@@ -85,8 +88,8 @@ export function Routines() {
             const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
             const openHistory = () => selectRoutine(routine.id);
             return <tr key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={openHistory} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openHistory(); } }}>
-              <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td><ProjectLabel path={routine.directory} /></td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{triggerLabel(routine, inboxes)}</td><td>{latest ? formatDateTimeShort(latest.startedAt || latest.createdAt) : '-'}</td><td><RoutineStateBadge state={status} /></td><td><ButtonGroup label={`Actions for ${routine.name}`} joined>
-                <Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button>
+              <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td>{routine.directory ? <ProjectLabel path={routine.directory} /> : 'Choose when running'}</td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{triggerLabel(routine, inboxes)}</td><td>{latest ? formatDateTimeShort(latest.startedAt || latest.createdAt) : '-'}</td><td><RoutineStateBadge state={status} /></td><td><ButtonGroup label={`Actions for ${routine.name}`} joined>
+                <Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); if (!routine.directory) setRunRoutine(routine); else void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button>
                 <Button aria-label="Settings" title="Settings" size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openSettings(routine); }}><i className="bi bi-gear" aria-hidden="true" /></Button>
                 <Button aria-label="Delete" title="Delete" size="small" disabled={busy} type="button" variant="danger" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete "${routine.name}"?`)) void act(() => api.routines.remove(routine.id)); }}><i className="bi bi-trash" aria-hidden="true" /></Button>
               </ButtonGroup></td>

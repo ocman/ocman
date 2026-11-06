@@ -144,6 +144,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const projectOptions = Array.from(new Map(availableProjects.map((project) => [sessionKey(project.remoteId || 'local', project.directory), {
     value: sessionKey(project.remoteId || 'local', project.directory), label: `${project.directory}${project.remoteName ? ` · ${project.remoteName}` : ''}`,
   }])).values());
+  projectOptions.unshift({ value: '', label: 'Choose when running' });
   const selectedProjectKey = form.directory ? sessionKey(form.remoteId, form.directory) : '';
   if (selectedProjectKey && !projectOptions.some((option) => option.value === selectedProjectKey)) projectOptions.unshift({ value: selectedProjectKey, label: form.directory });
   const availableSessions = sessions.filter((session) => session.directory === form.directory && (session.remoteId || 'local') === (form.remoteId || 'local') && !session.parentId && !session.archived && !session.stale);
@@ -159,6 +160,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
         <label className={styles.field}>Name<TextField required data-autofocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
         <label className={styles.field}>Prompt<TextareaField className={styles.prompt} required value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} /></label>
         <div className={styles.field}><span>Project</span><SearchSelect value={selectedProjectKey} options={projectOptions} ariaLabel="Project" placeholder="Select a project" searchLabel="Search projects" disabled={busy} onChange={(key) => {
+          if (!key) { setForm({ ...form, directory: '', sessionMode: 'new', sessionId: '', kind: 'none' }); return; }
           const project = availableProjects.find((item) => sessionKey(item.remoteId || 'local', item.directory) === key);
           if (project) setForm({ ...form, directory: project.directory, remoteId: project.remoteId || 'local', sessionId: '', agent: '', model: '' });
         }} /></div>
@@ -168,17 +170,19 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
           else { setForm({ ...form, kind: value as RoutineScheduleKind }); setTrigger({ ...trigger, inboxId: '' }); }
         }}>
           <option value="none">Manual only</option>
-          <optgroup label="Schedule"><option value="timeout">Timeout</option><option value="once">Once</option><option value="cron">Cron</option></optgroup>
+          <optgroup label="Schedule" disabled={!form.directory}><option value="timeout">Timeout</option><option value="once">Once</option><option value="cron">Cron</option></optgroup>
           {inboxes.length > 0 && <optgroup label="Webhook">{inboxes.map((inbox) => <option key={inbox.id} value={`webhook:${inbox.id}`}>Webhook: {inbox.name || inbox.id}</option>)}</optgroup>}
         </SelectField>{inboxes.length === 0 && <small className={styles.help}>Create an inbox on the Webhook inboxes tab to trigger this routine from a webhook.</small>}</label>
         {trigger.inboxId && <WebhookTriggerFields trigger={trigger} onChange={setTrigger} disabled={busy} />}
+        {!form.directory && <p className={styles.help}>Choose a project at launch. Each run creates a new session on the routine's machine.</p>}
+        {!form.directory && trigger.inboxId && <label className={styles.field}>Webhook project field<TextField aria-label="Webhook project field" required placeholder="/repository/clone_url" value={trigger.projectPointer ?? ''} onChange={(event) => setTrigger({ ...trigger, projectPointer: event.target.value })} /><small className={styles.help}>JSON pointer to a repository URL, project key or absolute directory. Must match exactly one known project on this machine.</small></label>}
         {form.kind === 'timeout' && <label className={styles.field}>Minutes from now<TextField required min="1" type="number" value={form.timeoutMinutes} onChange={(event) => setForm({ ...form, timeoutMinutes: event.target.value })} /></label>}
         {form.kind === 'once' && <label className={styles.field}>Run at<TextField required type="datetime-local" value={form.at} onChange={(event) => setForm({ ...form, at: event.target.value })} /></label>}
         {form.kind === 'cron' && <><label className={styles.field}>Cron expression<TextField required placeholder="0 9 * * *" value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} /></label><label className={styles.field}>Timezone<TextField required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label></>}
         <CheckboxField label="Enabled" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
         <details className={styles.group}>
           <summary>Session and model</summary><div className={styles.groupFields}>
-            <label className={styles.field}>Session<SelectField aria-label="Session" value={form.sessionMode} onChange={(event) => setForm({ ...form, sessionMode: event.target.value as RoutineSessionMode, sessionId: '', worktree: false, cleanupWorktree: false })}><option value="new">New session</option><option value="reuse">Reuse session</option><option value="existing">Existing session</option></SelectField><small className={styles.help}>{form.sessionMode === 'new' ? 'Create a fresh session for every run.' : form.sessionMode === 'reuse' ? 'Create one on the first run, then keep using it.' : 'Continue a session from this project.'}</small></label>
+            <label className={styles.field}>Session<SelectField aria-label="Session" value={form.sessionMode} onChange={(event) => setForm({ ...form, sessionMode: event.target.value as RoutineSessionMode, sessionId: '', worktree: false, cleanupWorktree: false })}><option value="new">New session</option><option value="reuse" disabled={!form.directory}>Reuse session</option><option value="existing" disabled={!form.directory}>Existing session</option></SelectField><small className={styles.help}>{form.sessionMode === 'new' ? 'Create a fresh session for every run.' : form.sessionMode === 'reuse' ? 'Create one on the first run, then keep using it.' : 'Continue a session from this project.'}</small></label>
             {form.sessionMode === 'new' && <label className={styles.field}>Workspace<SelectField aria-label="Workspace" value={form.worktree ? 'worktree' : 'local'} onChange={(event) => setForm({ ...form, worktree: event.target.value === 'worktree', cleanupWorktree: false })}><option value="local">Current checkout</option><option value="worktree">Worktree</option></SelectField><small className={styles.help}>Worktree creates a separate branch and checkout for every run.</small></label>}
             {form.worktree && <div><CheckboxField label="Clean up worktree after a successful run" checked={form.cleanupWorktree} onChange={(event) => setForm({ ...form, cleanupWorktree: event.target.checked })} /><p className={styles.help}>Removes the clean checkout, retaining its branch and session history. Failed runs and worktrees with uncommitted files are kept.</p></div>}
             {form.sessionMode === 'existing' && <div className={styles.field}><span>Existing session</span><SearchSelect value={selectedSessionKey} options={sessionOptions} ariaLabel="Existing session" placeholder={sessionsLoading ? 'Loading sessions...' : 'Select a session'} searchLabel="Search sessions" disabled={busy || sessionsLoading || !form.directory} onChange={(key) => {
@@ -202,7 +206,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
             <PermissionRulesEditor rules={rules} onChange={setRules} disabled={busy} />
           </div>
         </details>
-        <ModalFooter label="Routine form actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} aria-busy={busy} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={onClose}>Cancel</Button></ModalFooter>
+        <ModalFooter label="Routine form actions"><Button disabled={busy || (form.sessionMode === 'existing' && !form.sessionId)} aria-busy={busy} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={onClose}>Cancel</Button></ModalFooter>
       </fieldset>
     </form>;
 }

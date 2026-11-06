@@ -11,6 +11,7 @@ var (
 	ErrRoutineNotFound    = errors.New("routine not found")
 	ErrRoutineRunNotFound = errors.New("routine run not found")
 	ErrRoutineRunActive   = errors.New("routine already has an active shared-session run")
+	ErrRoutineProject     = errors.New("routine requires a project; a fixed project cannot be overridden")
 )
 
 type Routine struct {

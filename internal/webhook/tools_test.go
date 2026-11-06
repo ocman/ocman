@@ -74,7 +74,7 @@ func TestWebhookToolRoutes(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 					t.Fatal(err)
 				}
-				if tc.action == "subscribe" && (body["routineId"] != "routine" || body["headerPredicates"] != "{}" || body["jsonPredicates"] != "{}") {
+				if tc.action == "subscribe" && (body["routineId"] != "routine" || body["headerPredicates"] != "{}" || body["jsonPredicates"] != "{}" || body["projectPointer"] != "/repository/clone_url") {
 					t.Fatalf("subscription body: %+v", body)
 				}
 				if tc.action == "create" && (body["secretHeader"] != "Authorization" || body["secret"] != "hidden") {
@@ -97,6 +97,7 @@ func TestWebhookToolRoutes(t *testing.T) {
 				"action": tc.action, "name": "test", "inbox_id": "inbox", "routine_id": "routine",
 				"secret": "hidden", "secret_header": "Authorization", "enrollmentToken": "ignored",
 				"header_predicates": "{}", "json_predicates": "{}", "delivery_id": "d1",
+				"project_pointer": "/repository/clone_url",
 			}))
 			if err != nil || result.IsError || strings.Contains(string(mustJSON(t, result)), "hidden") {
 				t.Fatalf("result: %+v, %v", result, err)

@@ -1,5 +1,28 @@
 import { test, expect } from './fixtures';
 
+test('chooses a project when launching an unbound routine', async ({ mockedPage: page }) => {
+  const routine = { id: 'unbound', name: 'Review PR', prompt: 'Review the PR', directory: '', remoteId: 'local', sessionMode: 'new', sessionId: '', scheduleKind: 'none', scheduleConfigJSON: '{}', permissionRulesJSON: '[]', enabled: true, createdAt: 1, updatedAt: 1 };
+  let selectedProject = '';
+  await page.route('/api/routines', route => route.fulfill({ json: [routine] }));
+  await page.route('/api/webhook-inboxes', route => route.fulfill({ json: [] }));
+  await page.route('/api/routines/unbound/run', route => {
+    selectedProject = route.request().postDataJSON().project;
+    return route.fulfill({ json: { id: 'run', state: 'running' } });
+  });
+  await page.goto('/routines');
+  const row = page.getByRole('row', { name: 'View Review PR history' });
+  await expect(row.getByText('Choose when running')).toBeVisible();
+  await row.getByRole('button', { name: 'Run' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Run routine' });
+  await expect(dialog.getByRole('button', { name: 'Run now' })).toBeDisabled();
+  await dialog.getByRole('combobox', { name: 'Run project' }).click();
+  await page.getByRole('option', { name: '/home/user/projects/myapp' }).click();
+  await dialog.getByRole('button', { name: 'Run now' }).click();
+  await expect(dialog).toBeHidden();
+  expect(selectedProject).toBe('/home/user/projects/myapp');
+  await expect(row.getByText('Choose when running')).toBeVisible();
+});
+
 test('creates and runs a routine', async ({ mockedPage: page }) => {
   let routines: object[] = [];
   let runs: object[] = [];
