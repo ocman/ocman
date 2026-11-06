@@ -36,7 +36,7 @@ it('persists remote draft cleanup before removing the row and leaves its canonic
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() => expect(getConversationDraft(id)).toBeUndefined());
   expect(postJSON).toHaveBeenLastCalledWith(`/api/session-drafts/${id}`, undefined, { method: 'DELETE', parseJSON: false });
-  expect(screen.getByTestId('location').textContent).toBe('/session/new');
+  await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/session/new'));
 });
 
 it.each(['empty', 'previous', 'latest'])('keeps the session workspace mounted after discarding its last draft: %s', async (target) => {
