@@ -205,8 +205,25 @@ flowchart LR
   session. The endpoint's own Bearer key stays in this instance's `state.db`
   and is never returned by settings reads. These calls use a separate HTTP
   client from OpenCode authentication, reject redirects, bound response sizes,
-  and fall through to human review on failures. Cached safe verdicts include
-  the endpoint configuration used by the original judgment.
+  and fall through to human review on failures. TypeSafe requests separate
+  environment facts, retained user messages, and untrusted tool input. Named
+  Noul probabilities feed a Go rule evaluator with hard-deny precedence and
+  soft-deny exceptions or exact consent. Missing or oversized user history
+  requires human review. Jev bypasses command-cache reuse and rechecks context
+  before approval; other endpoint verdicts retain their configuration-scoped cache.
+  Jev approval records are context-bound, so worktree inheritance does not turn
+  them into standing allow rules. Existing approvals retain their previous behavior.
+
+  ```mermaid
+  flowchart LR
+      Call[Pending tool call] --> Rules[Static and manual rules]
+      History[Stored user prose<br/>and configured policy] --> Jev[Named Noul questions]
+      Rules --> Jev
+      Jev --> Policy[Go precedence evaluator]
+      Policy --> Check[Recheck current context]
+      Check --> Decision[Approve once<br/>or human review]
+  ```
+
 - **Native plugin executables.** Startup and explicit rescans describe direct
   executables from the local plugin directory. Each describe has a fresh token,
   minimal environment, bounded output, and a fifteen-second deadline. Duplicate

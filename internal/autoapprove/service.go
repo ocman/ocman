@@ -78,6 +78,8 @@ type Deps struct {
 	SessionDir func(sessionID string) (string, error)
 	// RecentUserMessages reads ingested owner-local prose, never native history.
 	RecentUserMessages func(context.Context, platforms.ID, string) ([]string, error)
+	// JudgeUserMessages returns complete bounded user prose, or an error if incomplete.
+	JudgeUserMessages func(context.Context, platforms.ID, string) ([]string, error)
 
 	// ParentSessionID resolves a (possibly child) session ID to its
 	// parent session ID, returning ok=false when the session is not a

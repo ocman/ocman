@@ -40,7 +40,7 @@ func TestHostedTypeSafeUsageThroughJudge(t *testing.T) {
 		status, calls int
 		input         *int64
 	}{
-		{"valid", `{"model":"jev-1.14.0","usage":{"input_tokens":100,"output_tokens":5},"answers":{"verdict":{"choice":"safe","probabilities":{"safe":1,"unsafe":0,"uncertain":0}}}}`, 200, 1, new(int64(100))},
+		{"valid", strings.TrimSuffix(typeSafeTestResponse(nil, nil), "}") + `,"model":"jev-1.14.0","usage":{"input_tokens":100,"output_tokens":5}}`, 200, 1, new(int64(100))},
 		{"invalid verdict still billed", `{"model":"jev-1.14.0","usage":{"input_tokens":100}}`, 200, 1, new(int64(100))},
 		{"missing usage", `{"model":"jev-1.14.0"}`, 200, 1, nil},
 		{"malformed", `{`, 200, 1, nil},

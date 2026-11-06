@@ -129,8 +129,8 @@ type JudgeResult struct {
 	// Only used by the in-flight callback. Completed judge sessions are deleted.
 	SessionID  string
 	Reasoning  string
-	cacheScope string       // Configuration actually used, even if settings change mid-call.
-	scores     *judgeScores // Present only for validated TypeSafe probability distributions.
+	cacheScope string      // Configuration actually used, even if settings change mid-call.
+	ruleScores []ruleScore // Independent Jev rule probabilities; never a verdict distribution.
 	usage      *typeSafeUsage
 }
 
@@ -150,7 +150,7 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 		if onSessionCreated != nil {
 			onSessionCreated("")
 		}
-		result = judgeEndpoint(ctx, config, permission, patterns, metadata, customSections)
+		result = judgeEndpoint(ctx, config, directory, permission, patterns, metadata, customSections)
 		j.recordTypeSafeUsage(ctx, config, result.usage)
 		return result
 	}

@@ -22,6 +22,16 @@ func ap(text string, patterns ...string) state.ApprovedPermission {
 	return state.ApprovedPermission{PermissionText: text, Patterns: patterns}
 }
 
+func TestContextBoundApprovalsAreNotInherited(t *testing.T) {
+	for _, key := range []string{"bash", "webfetch", "mcp__server__tool"} {
+		rows := fakeLister{rows: []state.ApprovedPermission{{PermissionText: key, Patterns: []string{"*"}, ApprovedBy: state.ApprovalActorAI, Reply: state.ApprovalReplyOnce, ContextBound: true}}}
+		rules, count, err := BuildInheritedRules(t.Context(), rows, "opencode", "parent")
+		if err != nil || count != 0 || len(rules) != 0 {
+			t.Fatalf("%s inherited context-bound approval: %v %d %v", key, rules, count, err)
+		}
+	}
+}
+
 func TestBuildInheritedRules(t *testing.T) {
 	tests := []struct {
 		name  string

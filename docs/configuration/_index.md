@@ -40,9 +40,12 @@ The alternatives to Jev do not all use the same API. A server must implement one
 of the contracts below, or you must provide an adapter. Span-01 and a model that
 returns a single answer letter are not automatically compatible.
 
-Reviewer requests include tool input and configured custom rules. When available,
-the prompt also includes up to six recent user-message excerpts. Choosing a hosted
-endpoint sends that context to its provider.
+Reviewer requests include tool input and configured custom rules. OpenAI-compatible
+requests include up to six recent user-message excerpts. TypeSafe-compatible
+requests include the project directory and retained user prose without excerpt
+truncation, limited to fewer than 100 messages and 32,000 bytes. Missing or oversized
+context requires human review. Choosing a hosted endpoint sends that context to
+its provider.
 
 - **OpenAI-compatible.** Ocman sends non-streaming `messages` with the existing
   permission-review prompt and custom rules. The response must contain one
@@ -50,16 +53,26 @@ endpoint sends that context to its provider.
   `choices[0].message.content`, such as
   `{"verdict":"safe","reasoning":"Read-only repository inspection."}`.
   Refusals, incomplete outputs and malformed verdicts require human review.
-- **TypeSafe-compatible.** Ocman sends the untrusted action, patterns and tool
-  metadata in `state`, and the reviewer policy in a `choice` question named
-  `verdict`. Its options are `safe`, `unsafe`, and `uncertain`. The response must
-  return `answers.verdict.choice` and a numeric `probabilities` distribution over
-  all three options. A safe answer is approved only when its safe probability
-  meets **Minimum safe probability**, which defaults to `0.99`. This is the
-  model's reported probability, not a measured error-rate guarantee. TypeSafe's
-  separate `confidence` statistic is not used. The approval explanation reports
-  the classification and probability because decision models do not generate
-  prose.
+- **TypeSafe-compatible.** Ocman sends separate `environment`, `user_messages`
+  and untrusted `tool_call` fields in `state`. Each policy rule is a named `noul`
+  question; the response must contain `answers.<id>.type: "noul"` and a numeric
+  `answers.<id>.noul` probability from 0 to 1 for every question. These are
+  independent probabilities, not a distribution that sums to one. Existing
+  adapters returning a single `verdict` choice must adopt this contract.
+  Go applies the decision policy:
+  - Hard-deny matches, including exfiltration, security bypasses, and violations
+    of configured custom policy sections, cannot be cleared by an exception or consent.
+  - Soft-deny matches cover writes, deletion, remote side effects, operations
+    outside the project, credentials, privilege changes, and user boundaries.
+    A routine-project-work exception or explicit consent for the exact operation
+    and target can clear them. An unlifted user boundary requires explicit consent,
+    even if the routine-work exception matches.
+  - Deny rules match at `0.6`. Exceptions, consent and sufficient-evidence checks
+    must meet **Minimum safe probability**, default `0.99`, with a floor of `0.7`.
+    Missing, malformed or insufficient evidence leaves the request for human review.
+  The explanation names matched rules and any exception used. These are model
+  probabilities, not measured error-rate guarantees. The static hard denylist
+  still runs before the reviewer; Jev does not override manual permission rules.
 
 Endpoint settings and keys persist in this instance's owner-only `state.db`.
 Settings responses never return a saved key. Leave the key field blank to keep
@@ -67,9 +80,13 @@ it, or use **Remove stored API key** and save to delete it. Changing the URL
 clears the old key unless you supply a replacement. Keys are sent only as
 `Authorization: Bearer …`; redirects are not followed.
 
-Endpoint failures leave the permission for human review. Cached safe judgments
-are scoped to the endpoint configuration that produced them, including the
-model and probability threshold, even if settings change during a request.
+Endpoint failures leave the permission for human review. Jev judgments are never
+reused from the command cache or a parent's cache. Policy and user context are
+checked again before applying an in-flight approval. New Jev approvals remain
+visible in the audit history but cannot become inherited allow rules in child
+sessions. Other reviewers' cached safe
+judgments remain scoped to the endpoint configuration that produced them,
+including the model and probability threshold.
 Choose **OpenCode** and save to return to the existing reviewer. Direct provider
 API calls use that provider's billing, independently of any ChatGPT subscription.
 
@@ -437,12 +454,13 @@ Permission judge evaluations emit these metrics after the safe-command cache gat
 | --- | --- |
 | `ocman.judge.calls` | Evaluation count, including failed evaluations and unavailable backends. |
 | `ocman.judge.duration` | Evaluation duration in seconds. |
-| `ocman.judge.probability` | SystemOne/TypeSafe probability histogram for each `answer`: `safe`, `unsafe`, `uncertain`. |
-| `ocman.judge.safe_threshold` | Configured safe probability threshold, recorded per validated SystemOne/TypeSafe response. |
+| `ocman.judge.probability` | SystemOne/TypeSafe match probability histogram for each rule. |
+| `ocman.judge.rule_threshold` | Effective match threshold for each validated SystemOne/TypeSafe rule. |
 
 All have bounded `backend` and `outcome` labels. Outcomes are `approved`,
 `not_approved`, `error`, and `needs_user`. Probability and threshold histograms
-also carry the reviewer's `choice`; probabilities additionally carry `answer`.
+also carry the rule ID and its tier, never the rule text. These replace the old
+verdict `choice`/`answer` labels and `ocman.judge.safe_threshold` metric.
 Scores and thresholds range from 0 to 1, not percentages. Invalid responses emit
 an error outcome without scores. Cache hits do not count as judge calls.
 Commands, prompts, paths, session IDs and credentials are never metric labels.

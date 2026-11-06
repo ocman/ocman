@@ -76,6 +76,8 @@ type ApprovedPermission struct {
 	Metadata       map[string]any
 	AskedAt        int64
 	ApprovedAt     int64
+	// ContextBound approvals are audit-only, never inherited by child sessions.
+	ContextBound bool
 }
 
 func (p ApprovedPermission) UserApproved() bool {
@@ -109,8 +111,8 @@ func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID s
 	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO auto_approved_permission
 			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, reasoning,
-			 approved_by, reply, metadata_json, asked_at, approved_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 approved_by, reply, metadata_json, asked_at, approved_at, context_bound)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(platform, session_id, permission_id) DO UPDATE SET
 			permission_text  = excluded.permission_text,
 			patterns_json    = excluded.patterns_json,
@@ -120,12 +122,13 @@ func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID s
 			reply            = excluded.reply,
 			metadata_json    = excluded.metadata_json,
 			asked_at         = excluded.asked_at,
-			approved_at      = excluded.approved_at
+			approved_at      = excluded.approved_at,
+			context_bound    = MAX(auto_approved_permission.context_bound, excluded.context_bound)
 		-- The AI's recorded approval stands: a later observation of the same
 		-- reply (replayed after a restart) carries no provenance of its own.
 		WHERE auto_approved_permission.approved_by != 'ai' OR excluded.approved_by = 'ai'
 	`, platform, sessionID, p.PermissionID, p.PermissionText, patternsJSON, p.JudgeSessionID, p.Reasoning,
-		p.ApprovedBy, p.Reply, metadataJSON, p.AskedAt, p.ApprovedAt)
+		p.ApprovedBy, p.Reply, metadataJSON, p.AskedAt, p.ApprovedAt, p.ContextBound)
 	if err != nil {
 		return fmt.Errorf("recording approved permission: %w", err)
 	}
@@ -150,7 +153,7 @@ func (d *DB) ApprovedPermission(ctx context.Context, platform, sessionID, permis
 func (d *DB) listApprovedPermissions(ctx context.Context, where string, args ...any) ([]ApprovedPermission, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT permission_id, permission_text, patterns_json, judge_session_id, reasoning,
-		       approved_by, reply, metadata_json, asked_at, approved_at
+		       approved_by, reply, metadata_json, asked_at, approved_at, context_bound
 		FROM auto_approved_permission
 		WHERE `+where+`
 		ORDER BY approved_at ASC
@@ -165,7 +168,7 @@ func (d *DB) listApprovedPermissions(ctx context.Context, where string, args ...
 		var p ApprovedPermission
 		var patternsJSON, metadataJSON string
 		if err := rows.Scan(&p.PermissionID, &p.PermissionText, &patternsJSON, &p.JudgeSessionID, &p.Reasoning,
-			&p.ApprovedBy, &p.Reply, &metadataJSON, &p.AskedAt, &p.ApprovedAt); err != nil {
+			&p.ApprovedBy, &p.Reply, &metadataJSON, &p.AskedAt, &p.ApprovedAt, &p.ContextBound); err != nil {
 			return nil, fmt.Errorf("scanning approved permission: %w", err)
 		}
 		p.Patterns, err = decodePatterns(patternsJSON)

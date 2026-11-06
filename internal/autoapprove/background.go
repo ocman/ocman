@@ -184,6 +184,9 @@ func (s *Service) backgroundAutoApprove(
 		EvaluationMethod: state.PermissionEvaluationJudge,
 	})
 	result := s.judgePermission(ctx, platformID, inputs.directory, permission, patterns, metadata, inputs.sections, s.emitChecking(sessionID, permissionID))
+	if result.Verdict == verdictSafe && !s.ruleReviewCurrent(ctx, adapter, inputs.directory, sessionID, inputs.sections, result) {
+		result = JudgeResult{Verdict: verdictUnsafe, Reasoning: "Reviewer policy or user context changed during evaluation. Human review required."}
+	}
 	s.completeJudgeLifecycle(asked, sessionID, permissionID, result)
 	if ctx.Err() != nil {
 		logger.WithField("ctxErr", ctx.Err()).Debug("background auto-approve: cancelled before result could be applied")
@@ -198,7 +201,8 @@ func (s *Service) backgroundAutoApprove(
 		return
 	}
 	s.recordJudgedWithReasoning(sessionID, permissionID, result.Verdict, result.Reasoning)
-	if hash := scopedPermissionHash(permissionHash(permission, patterns, metadata), result.cacheScope); hash != "" {
+	asked.contextBound = len(result.ruleScores) > 0
+	if hash := scopedPermissionHash(permissionHash(permission, patterns, metadata), result.cacheScope); !asked.contextBound && hash != "" {
 		s.recordSafeCommandVerdict(sessionID, hash, result.Reasoning)
 	}
 	s.respondAndPersistSafeApproval(platformID, adapter, sessionID, permissionID, asked, result.Reasoning, logger)
@@ -319,6 +323,7 @@ func (s *Service) respondAndPersistSafeApproval(
 				Metadata:       asked.metadata,
 				AskedAt:        asked.askedAt,
 				ApprovedAt:     approvedAt,
+				ContextBound:   asked.contextBound,
 			},
 		); err != nil {
 			logger.WithError(err).Warn("background auto-approve: failed to persist approval")

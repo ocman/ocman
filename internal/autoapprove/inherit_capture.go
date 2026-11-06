@@ -24,6 +24,7 @@ type askedPermission struct {
 	lifecycleObserved bool
 	directory         string
 	directoryErr      error
+	contextBound      bool
 }
 
 // askedCacheMax bounds the in-memory asked cache. A permission that is

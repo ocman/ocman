@@ -50,6 +50,11 @@ func (s *Service) permissionCacheHash(ctx context.Context, permission string, pa
 	if err != nil {
 		return ""
 	}
+	// Jev exceptions and consent depend on current conversation context. Never
+	// replay a context-free command approval, including one from a parent.
+	if config.Format == "typesafe" {
+		return ""
+	}
 	return scopedPermissionHash(permissionHash(permission, patterns, metadata), endpointCacheScope(config))
 }
 

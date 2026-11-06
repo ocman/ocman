@@ -35,7 +35,7 @@ func (s *metricsStore) GetSetting(context.Context, string) (string, bool, error)
 
 func TestSystemOneMetricsThroughEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{"answers":{"verdict":{"choice":"uncertain","probabilities":{"safe":0.4,"unsafe":0.07,"uncertain":0.53}}}}`)
+		_, _ = io.WriteString(w, typeSafeTestResponse(map[string]float64{"sufficient": .53}, nil))
 	}))
 	defer server.Close()
 	config, err := json.Marshal(JudgeEndpoint{Format: "typesafe", Endpoint: server.URL, MinSafeProbability: .5})
@@ -53,8 +53,8 @@ func TestSystemOneMetricsThroughEndpoint(t *testing.T) {
 		_ = provider.Shutdown(context.Background())
 	})
 	for range 2 {
-		result := s.judgePermission(t.Context(), "opencode", "/project", "bash", nil, nil, nil, nil)
-		if result.EvaluationFailed || result.scores == nil {
+		result := s.judgePermission(t.Context(), "opencode", "/project", "bash", nil, nil, typeSafeTestIntent(), nil)
+		if result.EvaluationFailed || len(result.ruleScores) == 0 {
 			t.Fatalf("result = %+v", result)
 		}
 	}
@@ -70,7 +70,7 @@ func TestSystemOneMetricsThroughEndpoint(t *testing.T) {
 			}
 			found = true
 			points := m.Data.(metricdata.Histogram[float64]).DataPoints
-			if len(points) != 3 {
+			if len(points) != len(typeSafeRules(nil)) {
 				t.Fatalf("points = %+v", points)
 			}
 			for _, point := range points {
@@ -100,9 +100,9 @@ func TestJudgeMetrics(t *testing.T) {
 		{"unavailable", "unavailable", "needs_user", nil, nil, false},
 		{"opencode unavailable", "opencode", "needs_user", (*PermissionJudge)(nil), nil, false},
 		{"settings error", "unavailable", "error", nil, errors.New("offline"), false},
-		{"systemone uncertain", "custom", "not_approved", metricsJudge{result: parseTypeSafeVerdict([]byte(`{"answers":{"verdict":{"choice":"uncertain","probabilities":{"safe":0.4,"unsafe":0.07,"uncertain":0.53}}}}`), .5)}, nil, true},
-		{"systemone safe", "custom", "approved", metricsJudge{result: parseTypeSafeVerdict([]byte(`{"answers":{"verdict":{"choice":"safe","probabilities":{"safe":0.99,"unsafe":0.005,"uncertain":0.005}}}}`), .95)}, nil, true},
-		{"invalid scores", "custom", "error", metricsJudge{result: parseTypeSafeVerdict([]byte(`{"answers":{"verdict":{"choice":"safe","probabilities":{"safe":0.9,"unsafe":0.2,"uncertain":0.1}}}}`), .5)}, nil, false},
+		{"systemone uncertain", "custom", "not_approved", metricsJudge{result: parseTypeSafeRules([]byte(typeSafeTestResponse(map[string]float64{"sufficient": .53}, nil)), typeSafeRules(nil), .5, true)}, nil, true},
+		{"systemone safe", "custom", "approved", metricsJudge{result: parseTypeSafeRules([]byte(typeSafeTestResponse(nil, nil)), typeSafeRules(nil), .95, true)}, nil, true},
+		{"invalid scores", "custom", "error", metricsJudge{result: parseTypeSafeRules([]byte(`{}`), typeSafeRules(nil), .5, true)}, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := sdkmetric.NewManualReader()
@@ -148,20 +148,30 @@ func TestJudgeMetrics(t *testing.T) {
 				return
 			}
 			probabilities := metrics["ocman.judge.probability"].Data.(metricdata.Histogram[float64]).DataPoints
-			if len(probabilities) != 3 {
+			if len(probabilities) != len(result.ruleScores) {
 				t.Fatalf("probabilities = %+v", probabilities)
 			}
-			wantScores := map[string]float64{"safe": result.scores.Safe, "unsafe": result.scores.Unsafe, "uncertain": result.scores.Uncertain}
+			wantScores := map[string]ruleScore{}
+			for _, score := range result.ruleScores {
+				wantScores[score.ID] = score
+			}
 			for _, point := range probabilities {
-				answer, _ := point.Attributes.Value("answer")
-				choice, _ := point.Attributes.Value("choice")
-				if point.Count != 1 || point.Sum != wantScores[answer.AsString()] || choice.AsString() != result.scores.Choice || point.Attributes.Len() != 4 {
+				rule, _ := point.Attributes.Value("rule")
+				tier, _ := point.Attributes.Value("tier")
+				score := wantScores[rule.AsString()]
+				if point.Count != 1 || point.Sum != score.Probability || tier.AsString() != string(score.Tier) || point.Attributes.Len() != 4 {
 					t.Errorf("probability = %+v", point)
 				}
 			}
-			threshold := metrics["ocman.judge.safe_threshold"].Data.(metricdata.Histogram[float64]).DataPoints
-			if len(threshold) != 1 || threshold[0].Count != 1 || threshold[0].Sum != result.scores.Threshold {
+			threshold := metrics["ocman.judge.rule_threshold"].Data.(metricdata.Histogram[float64]).DataPoints
+			if len(threshold) != len(result.ruleScores) {
 				t.Fatalf("threshold = %+v", threshold)
+			}
+			for _, point := range threshold {
+				rule, _ := point.Attributes.Value("rule")
+				if point.Count != 1 || point.Sum != wantScores[rule.AsString()].Threshold {
+					t.Errorf("threshold = %+v", point)
+				}
 			}
 		})
 	}

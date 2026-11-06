@@ -91,7 +91,7 @@ func TestCustomJudgeBypassesOpenCode(t *testing.T) {
 					if request["state"] == nil || request["questions"] == nil {
 						t.Error("missing System One fields")
 					}
-					_, _ = io.WriteString(w, `{"answers":{"verdict":{"choice":"safe","probabilities":{"safe":0.995,"unsafe":0.003,"uncertain":0.002}}}}`)
+					_, _ = io.WriteString(w, typeSafeTestResponse(nil, []PromptSection{{Title: "Extra policy", Content: "Only inspect this repository"}}))
 				}
 			}))
 			defer server.Close()
@@ -99,7 +99,8 @@ func TestCustomJudgeBypassesOpenCode(t *testing.T) {
 			value, _ := json.Marshal(config)
 			judge := &PermissionJudge{store: endpointStore{value: string(value)}, openCodePort: func(string) string { t.Error("OpenCode must not be contacted"); return "" }}
 			checking := false
-			result := judge.JudgeWithCallback(t.Context(), "", "bash", []string{"git *"}, map[string]any{"command": "git status"}, []PromptSection{{Title: "Extra policy", Content: "Only inspect this repository"}}, func(id string) {
+			sections := append([]PromptSection{{Title: "Extra policy", Content: "Only inspect this repository"}}, typeSafeTestIntent()...)
+			result := judge.JudgeWithCallback(t.Context(), "/repo", "bash", []string{"git *"}, map[string]any{"command": "git status"}, sections, func(id string) {
 				checking = true
 				if id != "" {
 					t.Error("external check has no transient session")
@@ -140,7 +141,7 @@ func TestEndpointFailsClosed(t *testing.T) {
 			}))
 			defer server.Close()
 			config := JudgeEndpoint{Format: "openai", Endpoint: server.URL, Model: "local", MinSafeProbability: .99}
-			result := judgeEndpoint(t.Context(), config, "read", nil, nil, nil)
+			result := judgeEndpoint(t.Context(), config, "/repo", "read", nil, nil, nil)
 			if result.Verdict != verdictUnsafe || !result.EvaluationFailed || strings.Contains(result.Reasoning, "secret-provider-error") {
 				t.Fatalf("result = %+v", result)
 			}
@@ -148,69 +149,21 @@ func TestEndpointFailsClosed(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result := judgeEndpoint(ctx, JudgeEndpoint{Format: "openai", Endpoint: "http://127.0.0.1:1", Model: "local", MinSafeProbability: .99}, "read", nil, nil, nil)
+	result := judgeEndpoint(ctx, JudgeEndpoint{Format: "openai", Endpoint: "http://127.0.0.1:1", Model: "local", MinSafeProbability: .99}, "/repo", "read", nil, nil, nil)
 	if !result.EvaluationFailed {
 		t.Fatal("cancelled request did not fail")
 	}
-	result = judgeEndpoint(t.Context(), JudgeEndpoint{}, "read", nil, nil, nil)
+	result = judgeEndpoint(t.Context(), JudgeEndpoint{}, "/repo", "read", nil, nil, nil)
 	if !result.EvaluationFailed {
 		t.Fatal("invalid config did not fail")
 	}
-	result = judgeEndpoint(t.Context(), JudgeEndpoint{Format: "openai", Endpoint: "http://localhost", Model: "local", MinSafeProbability: .99}, "read", nil, map[string]any{"bad": make(chan int)}, nil)
+	result = judgeEndpoint(t.Context(), JudgeEndpoint{Format: "openai", Endpoint: "http://localhost", Model: "local", MinSafeProbability: .99}, "/repo", "read", nil, map[string]any{"bad": make(chan int)}, nil)
 	if !result.EvaluationFailed {
 		t.Fatal("unencodable request did not fail")
 	}
 	judge := &PermissionJudge{store: endpointStore{err: errors.New("unavailable")}}
 	if !judge.JudgeWithCallback(t.Context(), "", "read", nil, nil, nil, nil).EvaluationFailed {
 		t.Fatal("store failure did not fail closed")
-	}
-}
-
-func TestTypeSafeProbabilityGate(t *testing.T) {
-	for _, tc := range []struct {
-		name, body   string
-		safe, failed bool
-	}{
-		{"safe", `{"choice":"safe","probabilities":{"safe":0.99,"unsafe":0.005,"uncertain":0.005}}`, true, false},
-		{"below threshold", `{"choice":"safe","probabilities":{"safe":0.98,"unsafe":0.01,"uncertain":0.01}}`, false, false},
-		{"unsafe", `{"choice":"unsafe","probabilities":{"safe":0,"unsafe":1,"uncertain":0}}`, false, false},
-		{"uncertain", `{"choice":"uncertain","probabilities":{"safe":0,"unsafe":0,"uncertain":1}}`, false, false},
-		{"missing probabilities", `{"choice":"safe"}`, false, true},
-		{"null probability", `{"choice":"safe","probabilities":{"safe":1,"unsafe":null,"uncertain":0}}`, false, true},
-		{"unknown choice", `{"choice":"allowed","probabilities":{"safe":1,"unsafe":0,"uncertain":0}}`, false, true},
-		{"wrong sum", `{"choice":"safe","probabilities":{"safe":1,"unsafe":1,"uncertain":0}}`, false, true},
-		{"out of range", `{"choice":"safe","probabilities":{"safe":1.2,"unsafe":-0.2,"uncertain":0}}`, false, true},
-		{"not top choice", `{"choice":"safe","probabilities":{"safe":0.1,"unsafe":0.9,"uncertain":0}}`, false, true},
-		{"unknown key", `{"choice":"safe","probabilities":{"safe":1,"unsafe":0,"other":0}}`, false, true},
-		{"malformed", `{`, false, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			result := parseTypeSafeVerdict([]byte(`{"answers":{"verdict":`+tc.body+`}}`), .99)
-			if (result.Verdict == verdictSafe) != tc.safe || result.EvaluationFailed != tc.failed {
-				t.Fatalf("result = %+v", result)
-			}
-		})
-	}
-	if !parseTypeSafeVerdict([]byte(`{}`), .99).EvaluationFailed {
-		t.Fatal("missing verdict accepted")
-	}
-}
-
-func TestTypeSafeDeclinedReasoning(t *testing.T) {
-	for _, tc := range []struct {
-		name, body, want string
-	}{
-		{"unsafe", `{"choice":"unsafe","probabilities":{"safe":0.05,"unsafe":0.9,"uncertain":0.05}}`, "answer: no, confidence: 90.00%, required safe confidence: 99.00%"},
-		{"below threshold", `{"choice":"safe","probabilities":{"safe":0.98,"unsafe":0.01,"uncertain":0.01}}`, "answer: yes, confidence: 98.00%, required safe confidence: 99.00%"},
-		{"uncertain", `{"choice":"uncertain","probabilities":{"safe":0.05,"unsafe":0.05,"uncertain":0.9}}`, "answer: uncertain, confidence: 90.00%, required safe confidence: 99.00%"},
-		{"fractional confidence", `{"choice":"unsafe","probabilities":{"safe":0.002,"unsafe":0.995,"uncertain":0.003}}`, "answer: no, confidence: 99.50%, required safe confidence: 99.00%"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			result := parseTypeSafeVerdict([]byte(`{"answers":{"verdict":`+tc.body+`}}`), .99)
-			if result.Verdict != verdictUnsafe || result.EvaluationFailed || !strings.Contains(result.Reasoning, tc.want) {
-				t.Fatalf("result = %+v, want reasoning containing %q", result, tc.want)
-			}
-		})
 	}
 }
 

@@ -89,6 +89,7 @@ runtime sharing and `spec/worktree-sessions/` for design history.
   YOLO/custom modes that are not stored as approvals. Apply the child rules
   before first send. Inheritance snapshots at split, defaults on through
   `worktree.inherit_permissions`, and soft-fails without blocking launch.
+  Context-bound judge approvals are audit-only and never become inherited rules.
 - Nested permission/question prompts resolve to the top-level ancestor through
   recursive `db.GetSessionParentIDs`, including native or deeply nested subagents,
   so the visible session row remains actionable.

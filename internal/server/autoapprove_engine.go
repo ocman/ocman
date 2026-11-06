@@ -37,6 +37,7 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 
 func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 	deps := autoapprove.Deps{
+		JudgeUserMessages: s.permissionJudgeUserMessages,
 		RecentUserMessages: func(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
 			if !s.hasStoredHistory() {
 				return nil, platforms.ErrHistoryUnavailable
@@ -131,6 +132,25 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		}
 	}
 	return deps
+}
+
+func (s *Server) permissionJudgeUserMessages(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
+	if !s.hasStoredHistory() {
+		return nil, platforms.ErrHistoryUnavailable
+	}
+	owner, kind := platforms.SplitPlatformID(string(platform))
+	if owner != "" {
+		return nil, platforms.ErrUnsupported
+	}
+	messages, err := s.historyAnalytics.Store.RecentUserMessages(ctx, s.historyOwner, kind, id, 100)
+	if err != nil {
+		return nil, err
+	}
+	// At the query limit we cannot prove earlier restrictions were retained.
+	if len(messages) >= 100 {
+		return nil, platforms.ErrHistoryUnavailable
+	}
+	return messages, nil
 }
 
 // openCodeEnabled reports whether this machine runs the OpenCode platform.

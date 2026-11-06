@@ -3,6 +3,7 @@ package autoapprove
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -64,14 +65,30 @@ func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Pl
 			for _, section := range stored {
 				sections = append(sections, PromptSection{Title: section.Title, Content: section.Content, Enabled: section.Enabled})
 			}
+		} else {
+			sections = append(sections, PromptSection{contextUnavailable: true})
 		}
 	}
 	var messages []string
 	if s.deps.RecentUserMessages != nil && adapter != nil {
-		messages, _ = s.deps.RecentUserMessages(ctx, adapter.ID(), sessionID)
+		var err error
+		messages, err = s.deps.RecentUserMessages(ctx, adapter.ID(), sessionID)
+		if err != nil {
+			messages = nil
+		}
+	}
+	judgeMessages := messages
+	if config, err := LoadJudgeEndpoint(ctx, s.deps.Store); err == nil && config.Format == "typesafe" && s.deps.JudgeUserMessages != nil && adapter != nil {
+		judgeMessages, err = s.deps.JudgeUserMessages(ctx, adapter.ID(), sessionID)
+		if err != nil {
+			judgeMessages = nil
+		}
 	}
 	if len(messages) == 0 {
-		return sections
+		if len(judgeMessages) == 0 {
+			return sections
+		}
+		return append(sections, PromptSection{userIntent: true, messages: judgeMessages})
 	}
 	var content strings.Builder
 	content.WriteString("The user recently sent these messages (oldest first):\n")
@@ -82,7 +99,7 @@ func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Pl
 		content.WriteString("  - " + message + "\n")
 	}
 	content.WriteString("\nIf the permission request is a direct and proportionate consequence of what the user asked for, lean toward SAFE.")
-	return append(sections, PromptSection{Title: "Recent user intent", Content: content.String()})
+	return append(sections, PromptSection{Title: "Recent user intent", Content: content.String(), userIntent: true, messages: judgeMessages})
 }
 
 func (s *Service) emitChecking(sessionID, permissionID string) func(string) {
@@ -92,4 +109,16 @@ func (s *Service) emitChecking(sessionID, permissionID string) func(string) {
 			s.emitSessionSseEvent(sessionID, "ocman.permission.checking", payload)
 		}
 	}
+}
+
+// A changed policy or user restriction invalidates an in-flight Jev approval.
+func (s *Service) ruleReviewCurrent(ctx context.Context, adapter platforms.Platform, directory, sessionID string, sections []PromptSection, result JudgeResult) bool {
+	if len(result.ruleScores) == 0 {
+		return true
+	}
+	config, err := LoadJudgeEndpoint(ctx, s.deps.Store)
+	if err != nil || config.Format != "typesafe" || endpointCacheScope(config) != result.cacheScope {
+		return false
+	}
+	return reflect.DeepEqual(sections, s.resolveJudgeSections(ctx, adapter, directory, sessionID))
 }

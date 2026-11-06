@@ -161,6 +161,9 @@ func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, p
 	seen := map[string]bool{} // "key\x00pattern" -> true
 
 	for _, ap := range approvals {
+		if ap.ContextBound {
+			continue
+		}
 		if ap.ApprovedBy == state.ApprovalActorUser && ap.Reply != state.ApprovalReplyAlways {
 			continue
 		}
