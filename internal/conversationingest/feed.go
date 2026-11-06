@@ -199,9 +199,10 @@ func (w *sourceWorker) drainFeed(ctx context.Context) {
 	dirty := w.dirty
 	w.dirty = map[string]bool{}
 	w.mu.Unlock()
+	items := int64(len(pending) + len(dirty))
 	w.last.Counters = nil
 	err := w.ensureInstance(ctx)
-	defer func() { finish(err, int64(len(pending)+len(dirty))) }()
+	defer func() { finish(err, items) }()
 	if err == nil && (catchUp || dirty[""]) {
 		w.readiness(false)
 		err = w.catchUpFeed(ctx, dirty, pending)
