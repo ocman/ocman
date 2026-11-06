@@ -7,6 +7,14 @@
 
 .oc-launch-setup > summary {
   cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  list-style: none;
+}
+
+.oc-launch-setup > summary::-webkit-details-marker {
+  display: none;
 }
 
 .oc-launch-setup > summary:focus-visible {

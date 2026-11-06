@@ -25,7 +25,7 @@ test('completed session setup stays close to the conversation', async ({ mockedP
     totalMessages: 2,
   } }));
   await page.goto(`/session/${session.id}`);
-  const setup = page.getByText(/^Setup/);
+  const setup = page.locator('summary').filter({ hasText: 'Setup ocman session' });
   const response = page.getByText('Conversation begins here.', { exact: true });
   await expect(setup).toBeVisible();
   await expect(response).toBeVisible();
@@ -35,7 +35,8 @@ test('completed session setup stays close to the conversation', async ({ mockedP
     return message.getBoundingClientRect().top - setup.getBoundingClientRect().bottom;
   });
   expect(gap).toBeLessThanOrEqual(12);
-  await expect(setup).toHaveText('Setup ocman session');
+  await expect(setup).toHaveText('→Setup ocman session');
+  await expect(setup).toHaveCSS('list-style-type', 'none');
   await expect(setup.locator('..')).not.toHaveAttribute('open');
   await setup.click();
   await expect(page.getByTestId('start-step-session')).toBeVisible();
