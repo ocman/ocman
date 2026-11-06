@@ -11,11 +11,26 @@ it('changes the sidebar hash when only the Factory association changes', () => {
 
 it('ranks an older resumed conversation above a newer inactive one on fresh compact reads', () => {
   const newer = makeSession({ id: 'newer', timeCreated: 200, timeUpdated: 200 });
-  for (const attention of ['lastUserPromptAt', 'lastTurnCompletedAt', 'lastHaltAt'] as const) {
+  for (const attention of ['lastUserPromptAt', 'lastTurnCompletedAt'] as const) {
     const resumed = makeSession({ id: 'resumed', timeCreated: 1, timeUpdated: 400, [attention]: 300 });
     const sessions = JSON.parse(JSON.stringify([newer, resumed])) as Session[];
     expect(sessions.sort(compareSidebarCompletion).map(s => s.id)).toEqual(['resumed', 'newer']);
   }
+});
+
+it('does not reorder sessions for permission halts or streaming updates', () => {
+  const prompted = makeSession({ id: 'prompted', lastUserPromptAt: 300 });
+  const waiting = makeSession({ id: 'waiting', lastUserPromptAt: 200, timeUpdated: 900, lastHaltAt: 800 });
+  expect([waiting, prompted].sort(compareSidebarCompletion).map(s => s.id)).toEqual(['prompted', 'waiting']);
+});
+
+it('defers completion ordering until finite background tasks finish', () => {
+  const prompted = makeSession({ id: 'prompted', lastUserPromptAt: 300 });
+  const background = makeSession({ id: 'background', lastUserPromptAt: 200, lastTurnCompletedAt: 500, backgroundTaskCount: 1 });
+  expect([background, prompted].sort(compareSidebarCompletion).map(s => s.id)).toEqual(['prompted', 'background']);
+  expect([{ ...background, status: 'busy' as const, backgroundTaskCount: 0 }, prompted].sort(compareSidebarCompletion).map(s => s.id)).toEqual(['prompted', 'background']);
+  expect([{ ...background, backgroundTaskCount: 0, lastTurnCompletedAt: 600 }, prompted].sort(compareSidebarCompletion).map(s => s.id)).toEqual(['background', 'prompted']);
+  expect([{ ...background, backgroundServiceCount: 1 }, prompted].sort(compareSidebarCompletion).map(s => s.id)).toEqual(['background', 'prompted']);
 });
 
 function makeSession(overrides: Partial<Session> = {}): Session {

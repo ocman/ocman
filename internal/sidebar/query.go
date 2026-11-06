@@ -32,7 +32,7 @@ const selectSessions = observationsCTE + `, halted(id,parent_id,at,owner_id,plat
  WHERE c.creation_state='ready' AND c.purged=0
  ), halt_flags AS (SELECT id,max(at) AS at FROM halted GROUP BY id)
   SELECT s.id,i.platform,s.project_id,s.parent_id,s.title,s.directory,s.created_at,s.updated_at,s.last_message_at,
-  COALESCE(att.last_turn_completed_at,0),COALESCE(att.last_user_prompt_at,0),COALESCE(hlt.at,0),
+   max(COALESCE(att.last_turn_completed_at,0),COALESCE(bgc.completed_at,0)),COALESCE(att.last_user_prompt_at,0),COALESCE(hlt.at,0),
  COALESCE(b.branch,''),c.origin,c.origin_id,
  CASE WHEN c.origin='routine' THEN c.origin_id WHEN pc.origin='routine' THEN pc.origin_id ELSE '' END,
  CASE WHEN c.origin='factory' THEN c.origin_id WHEN pc.origin='factory' THEN pc.origin_id ELSE '' END,
@@ -48,7 +48,8 @@ const selectSessions = observationsCTE + `, halted(id,parent_id,at,owner_id,plat
   LEFT JOIN flags f ON f.id=s.id
   LEFT JOIN main.sidebar_observation bg ON bg.native_id=c.native_id AND bg.owner_id=c.owner_id AND bg.platform=c.platform AND bg.source_key=c.source_key AND bg.generation=(SELECT generation FROM runtime WHERE owner=c.owner_id AND platform=c.platform AND source=c.source_key)
   LEFT JOIN halt_flags hlt ON hlt.id=s.id
-  LEFT JOIN main.sidebar_attention att ON att.instance_id=s.instance_id AND att.session_id=s.id
+   LEFT JOIN main.sidebar_attention att ON att.instance_id=s.instance_id AND att.session_id=s.id
+   LEFT JOIN main.sidebar_background_completion bgc ON bgc.owner_id=c.owner_id AND bgc.platform=c.platform AND bgc.source_key=c.source_key AND bgc.native_id=c.native_id
  LEFT JOIN main.sidebar_branch b ON b.owner_id=i.owner_id AND b.directory=s.directory
  LEFT JOIN core.pinned_session pin ON pin.platform=i.platform AND pin.session_id=s.id
  LEFT JOIN core.archived_session a ON a.platform=i.platform AND a.session_id=s.id

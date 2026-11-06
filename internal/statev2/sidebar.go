@@ -64,6 +64,9 @@ func (d *DB) ReplaceSidebarObservations(ctx context.Context, scope Instance, gen
 	if n != 1 {
 		return ErrConflict
 	}
+	if err := checkpointBackgroundCompletion(ctx, tx, scope, generation, string(raw), expiresAt > 0); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `DELETE FROM sidebar_observation WHERE owner_id=? AND platform=? AND source_key=?
 	 AND (generation!=? OR native_id NOT IN (SELECT key FROM json_each(?)))`, scope.OwnerID, scope.Platform, scope.SourceKey, generation, string(raw))
 	if err != nil {

@@ -152,6 +152,16 @@ describe('SessionSidebar', () => {
     expect(archive).not.toHaveBeenCalled();
   });
 
+  it('orders flat sessions by latest prompt or completion, not streaming activity', () => {
+    const rows = [
+      session({ id: 'streaming', title: 'Streaming activity', timeUpdated: 900, lastUserPromptAt: 100 }),
+      session({ id: 'prompted', title: 'Latest prompt', timeUpdated: 300, lastUserPromptAt: 300 }),
+      session({ id: 'completed', title: 'Latest completion', timeUpdated: 400, lastTurnCompletedAt: 400 }),
+    ];
+    renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 900, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, 'recent');
+    expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['completed', 'prompted', 'streaming']);
+  });
+
   it('shows muted running drawers without changing the grouped main list', () => {
     for (const filter of ['routines', 'plugins']) localStorage.setItem(`ocman:sidebar-filter:${filter}`, 'true');
     const rows = [
@@ -767,18 +777,12 @@ describe('SessionSidebar', () => {
       }
       expect(screen.getByText('Opened task')).toBeInTheDocument();
       expect(screen.getAllByText('Pinned task').length).toBeGreaterThan(0);
-      if (sidebarView === 'recent' && ['factory', 'factory descendants', 'routines'].includes(filter)) {
-        expect(screen.getByText('Hidden task')).toBeInTheDocument();
-        expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(filter === 'factory descendants'
-          ? ['pin', 'factory', 'other', 's'] : ['pin', 'other', 's']);
-        return;
-      }
       expect(screen.queryByText('Hidden task')).not.toBeInTheDocument();
       expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['pin', 's']);
     });
   });
 
-  it('shows running Factory sessions in their drawer in grouped view without fetching Epics', () => {
+  it.each(['projects', 'recent'] as const)('shows running Factory sessions only in their drawer in %s view without fetching Epics', (view) => {
     localStorage.setItem('ocman:sidebar-filter:factory', 'true');
     const group: SidebarProjectGroup = {
       directory: '/repo',
@@ -794,7 +798,7 @@ describe('SessionSidebar', () => {
       aggregate: { kind: 'none' },
     };
 
-    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'projects');
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), view);
 
     expect(screen.queryByText('Factory task')).not.toBeInTheDocument();
     expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
@@ -817,28 +821,36 @@ describe('SessionSidebar', () => {
     expect(useWorkEpics).not.toHaveBeenCalled();
   });
 
-  it('reveals running routine sessions in their drawer in grouped view', () => {
-    const group: SidebarProjectGroup = {
-      directory: '/repo',
-      sessions: [
-        session(),
-        session({ id: 'routine', title: 'Nightly check', routineId: 'rt', status: 'busy' }),
-        session({ id: 'routine-child', title: 'Routine child', parentId: 'routine', status: 'busy' }),
-      ],
-      lastUpdated: 1,
-      aggregate: { kind: 'none' },
-    };
+  describe.each([
+    ['routine', { routineId: 'rt' }, 'Routines'],
+    ['plugin', { origin: 'plugin' }, 'Plugins'],
+  ] as const)('%s sessions', (_origin, originFields, drawer) => {
+    it.each(['projects', 'recent'] as const)('reveals running sessions only in their drawer in %s view', (view) => {
+      const group: SidebarProjectGroup = {
+        directory: '/repo',
+        sessions: [
+          session(),
+          session({ id: 'origin', title: 'Automated check', ...originFields, status: 'busy' }),
+          session({ id: 'origin-child', title: 'Automated child', parentId: 'origin', status: 'busy' }),
+        ],
+        lastUpdated: 1,
+        aggregate: { kind: 'none' },
+      };
 
-    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'projects');
+      renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), view);
 
-    expect(screen.queryByText('Nightly check')).not.toBeInTheDocument();
-    expect(screen.queryByText('Routine child')).not.toBeInTheDocument();
-    expect(screen.getByText('Fix thing')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
-    expect(screen.queryByRole('checkbox', { name: 'Show routines' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Routines 2' }));
-    expect(screen.getByText('Nightly check')).toBeInTheDocument();
-    expect(screen.getByText('Routine child')).toBeInTheDocument();
+      expect(screen.queryByText('Automated check')).not.toBeInTheDocument();
+      expect(screen.queryByText('Automated child')).not.toBeInTheDocument();
+      expect(screen.getByText('Fix thing')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+      expect(screen.queryByRole('checkbox', { name: 'Show routines' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: `${drawer} 2` }));
+      const drawerRows = within(screen.getByRole('region', { name: `${drawer} 2` }));
+      expect(drawerRows.getByText('Automated check')).toBeInTheDocument();
+      expect(drawerRows.getByText('Automated child')).toBeInTheDocument();
+      expect(screen.getAllByText('Automated check')).toHaveLength(1);
+      expect(screen.getAllByText('Automated child')).toHaveLength(1);
+    });
   });
 
   it.each(['projects', 'recent'] as const)('publishes only filtered rows, in order, as archive candidates in the %s view', (sidebarView) => {
@@ -854,13 +866,6 @@ describe('SessionSidebar', () => {
     };
 
     const { unmount } = renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
-    if (sidebarView === 'recent') {
-      expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'b', 'routine']);
-      expect(screen.queryByRole('button', { name: 'Routines 1' })).not.toBeInTheDocument();
-      unmount();
-      expect(visibleSidebarSessions.current).toBeNull();
-      return;
-    }
     expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'b']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));

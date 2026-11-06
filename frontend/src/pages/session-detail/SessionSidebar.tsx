@@ -146,9 +146,7 @@ export function SessionSidebar({
   const stableDrafts = useStableDraftSidebar(allRecentSessions, allProjectGroups, navigate, activeId);
   const draftGroups = useSidebarDraftGroups(stableDrafts.groups, searchQuery);
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren } = useSessionListFilters();
-  // The flat list is archive-driven, not split into origin-specific groups.
-  const listFilters = { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren,
-    ...(sidebarView === 'recent' && { showFactory: true, showRoutines: true, showPlugins: true }) };
+  const listFilters = { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren };
   const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(stableDrafts.recent, draftGroups, alwaysShowPrompts);
   const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
@@ -226,8 +224,7 @@ export function SessionSidebar({
       hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
   );
   const runningDrawers = useSidebarDrawers(
-    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)]
-      .filter((session) => sidebarView !== 'recent' || session.archived || session.snoozedUntil),
+    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)],
     query, siblingGitInfos, activeId, activeDisplayStatus,
   );
 

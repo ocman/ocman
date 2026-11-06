@@ -93,7 +93,7 @@ it('selects only the active owner when attention contains same-id sessions on di
 });
 
 it.each(['recent', 'projects'] as const)('deduplicates attention against %s history without hiding another owner', (view) => {
-  const row = { ...seedView(entry.id).session!, ...entry, status: 'interrupted' as const, factoryAttemptId: 'attempt' };
+  const row = { ...seedView(entry.id).session!, ...entry, status: 'interrupted' as const };
   snapshot([entry, entry]);
   renderSidebar(view, [row, { ...row, platform: 'r-other:opencode', title: 'Other owner', factoryAttemptId: undefined, pinned: true }]);
   expect(screen.getAllByText(entry.title!)).toHaveLength(1);
@@ -156,19 +156,21 @@ it('leaves the normal list intact while notification data is loading', () => {
   expect(screen.getByText('Normal history')).toBeInTheDocument();
 });
 
-it('shows unarchived sessions of every origin as normal flat rows after acknowledgement', () => {
+it('keeps ordinary unarchived sessions visible after acknowledgement without leaking settled origins', () => {
   const rows: Session[] = [
+    { ...seedView('normal').session!, title: 'Normal result' },
     { ...seedView(entry.id).session!, ...entry, status: 'interrupted' as const, factoryAttemptId: 'attempt' },
     { ...seedView('routine').session!, title: 'Routine result', routineId: 'run' },
     { ...seedView('plugin').session!, title: 'Plugin result', origin: 'plugin' },
   ];
   const page = renderSidebar('recent', rows);
-  for (const row of rows) expect(screen.getByText(row.title)).toBeInTheDocument();
+  expect(screen.getByText('Normal result')).toBeInTheDocument();
+  for (const row of rows.slice(1)) expect(screen.queryByText(row.title)).not.toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Needs attention' })).not.toBeInTheDocument();
-  expect(screen.getByText(entry.title!).closest('[data-session-key]')).not.toBeNull();
   snapshot([]);
   page.refresh();
-  for (const row of rows) expect(screen.getByText(row.title)).toBeInTheDocument();
+  expect(screen.getByText('Normal result')).toBeInTheDocument();
+  for (const row of rows.slice(1)) expect(screen.queryByText(row.title)).not.toBeInTheDocument();
 });
 
 it('does not inject stale notification-only rows into the flat list or bypass its search', () => {
@@ -191,14 +193,15 @@ it('keeps archived and snoozed sessions hidden in the flat list', () => {
   expect(screen.queryByRole('region', { name: 'Needs attention' })).not.toBeInTheDocument();
 });
 
-it('keeps running origins in the flat list and only archived or snoozed work in drawers', () => {
+it('keeps running origins, archived and snoozed work in drawers rather than the flat list', () => {
   renderSidebar('recent', [
     { ...seedView('routine').session!, title: 'Running routine', status: 'busy', routineId: 'run' },
     { ...seedView('archived').session!, title: 'Archived work', status: 'busy', archived: true },
     { ...seedView('snoozed').session!, title: 'Snoozed work', status: 'busy', snoozedUntil: Date.now() + 60_000 },
   ]);
-  expect(screen.getAllByText('Running routine')).toHaveLength(1);
-  expect(screen.queryByRole('button', { name: 'Routines 1' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Running routine')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Routines 1' }));
+  expect(within(screen.getByRole('region', { name: 'Routines 1' })).getByText('Running routine')).toBeInTheDocument();
   expect(screen.queryByText('Archived work')).not.toBeInTheDocument();
   expect(screen.queryByText('Snoozed work')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Background 1' }));

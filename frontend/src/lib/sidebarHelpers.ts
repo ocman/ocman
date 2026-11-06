@@ -7,9 +7,10 @@ export function compareSidebarActivity(a: Pick<Session, 'timeUpdated'>, b: Pick<
   return Math.floor(b.timeUpdated / 60_000) - Math.floor(a.timeUpdated / 60_000);
 }
 
-/** Exact attention time. Streaming and read-state changes never advance it. */
+/** Latest prompt or settled completion. Streaming and permission halts do not reorder rows. */
 function sidebarAttentionTime(s: Session): number {
-  return Math.max(s.lastUserPromptAt ?? 0, s.lastHaltAt ?? 0, s.lastTurnCompletedAt ?? 0) || s.timeCreated || 0;
+  const completed = s.status !== 'busy' && (s.backgroundTaskCount ?? 0) <= (s.backgroundServiceCount ?? 0) ? s.lastTurnCompletedAt ?? 0 : 0;
+  return Math.max(s.lastUserPromptAt ?? 0, completed) || s.timeCreated || 0;
 }
 
 export function compareSidebarCompletion(a: Session, b: Session): number {

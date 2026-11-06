@@ -1,5 +1,7 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 
+test.use({ factoryBeta: true });
+
 const rows = [
   { ...MOCK_SESSION, status: 'done', seen: true, title: 'Sidebar filter redesign' },
   { ...MOCK_SESSION, id: 'archive', status: 'busy', archived: true, title: 'Deploy hotfix' },
@@ -9,6 +11,28 @@ const rows = [
   { ...MOCK_SESSION, id: 'done', status: 'done', archived: true, title: 'Finished archive' },
   { ...MOCK_SESSION, id: 'snoozed', status: 'done', archived: true, snoozedUntil: 9999999999999, title: 'Resume tomorrow' },
 ];
+
+for (const view of ['recent', 'projects'] as const) {
+  test(`automated sessions stay in their drawers in ${view} view`, async ({ mockedPage: page }) => {
+    const automated = [
+      rows[3], rows[4],
+      { ...MOCK_SESSION, id: 'factory', status: 'busy', factoryAttemptId: 'attempt', title: 'Factory implementation' },
+    ];
+    await page.route('/api/sessions*', route => route.fulfill({ json: [rows[0], ...automated] }));
+    await page.goto(`/session/${MOCK_SESSION.id}`);
+    if (view === 'projects') await page.getByRole('button', { name: 'Group sessions by project', exact: true }).click();
+    const sidebar = page.getByTestId('session-sidebar');
+    await expect(sidebar.getByText(rows[0].title)).toBeVisible();
+    const drawers = sidebar.getByRole('group', { name: 'Session drawers' });
+    for (const [index, label] of ['Routines', 'Plugins', 'Factory'].entries()) {
+      const title = automated[index].title;
+      await expect(sidebar.getByText(title)).toHaveCount(0);
+      await drawers.getByRole('button', { name: `${label} 1`, exact: true }).click();
+      await expect(drawers.getByText(title)).toBeVisible();
+      await expect(sidebar.getByText(title)).toHaveCount(1);
+    }
+  });
+}
 
 test('muted drawers share search, open independently and keep rows unindented', async ({ mockedPage: page }, testInfo) => {
   await page.route('/api/sessions*', route => route.fulfill({ json: rows }));

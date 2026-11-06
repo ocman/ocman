@@ -5,6 +5,7 @@ import { discardBackendDraft, isBackendDraft, refreshBackendDrafts, retireBacken
 import { newSessionPath } from '../../lib/newSessionPath';
 import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 import { remoteLog } from '../../lib/remoteLog';
+import { compareSidebarCompletion } from '../../lib/sidebarHelpers';
 import type { SidebarProjectGroup } from './SessionSidebar';
 import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
 
@@ -62,7 +63,7 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
   const synthetic = pending.map(draftSession);
   const merge = (rows: Session[], extras: Session[]) => {
     return [...rows.filter((row) => !ids.has(row.id)), ...extras]
-      .sort((a, b) => b.timeUpdated - a.timeUpdated || a.id.localeCompare(b.id));
+      .sort(compareSidebarCompletion);
   };
   const result = groups.map((group) => ({ ...group, sessions: group.sessions.filter((session) => !ids.has(session.id)) }));
   for (const row of synthetic) {

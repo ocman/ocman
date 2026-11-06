@@ -368,7 +368,7 @@ the production queries against an explicitly supplied validation snapshot.
 ```mermaid
 flowchart LR
     Import[Conversation ingestion] -->|same transaction| List[(state_conv.db<br/>compact list + attention projections)]
-    Events[Platform event caches] -->|generation and expiring lease| List
+    Events[Platform event caches] -->|leased observations + durable background completion| List
     Git[Owner Git-info samples] -->|branch observations| List
     List --> Query[internal/sidebar<br/>one read-only SQL query]
     Core[(state.db<br/>catalogue and user flags)] -->|read-only attachment| Query
@@ -390,6 +390,12 @@ flowchart LR
   restart. Pending prompts and persisted halt receipts use source-scoped native
   ancestor walks, never application worktree links. An idle observation settles
   against the retained outcome rather than replacing waiting/error with done.
+- Sidebar ordering uses the latest user prompt or completed turn, not streaming
+  activity. Finite background tasks delay completion ordering. Their final
+  observed completion is checkpointed before observations are replaced, scoped
+  by owner, platform, source and native session. It survives lease expiry;
+  disconnects and new runtime generations do not invent completion edges.
+  Declared services do not delay completion. Draft insertion uses the same sort.
 - Seen, archive, snooze and pin state join in the same query. Numeric unread
   counts are retired; conversation JSON, message ranges and accounting facts
   are not scanned. Running-count polling uses a dedicated owner-routed aggregate

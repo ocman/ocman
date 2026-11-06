@@ -16,7 +16,7 @@ beforeEach(() => {
   queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, sessions);
 });
 
-it('orders by the exact latest prompt, halt or completion, ignoring streams and reads', () => {
+it('orders by the exact latest prompt or completion, ignoring permission halts, streams and reads', () => {
   const rows = [
     { ...sessions[0], id: 'completed', lastTurnCompletedAt: 120_001 },
     { ...sessions[1], id: 'prompted', lastUserPromptAt: 120_003 },
@@ -24,9 +24,9 @@ it('orders by the exact latest prompt, halt or completion, ignoring streams and 
     { ...sessions[1], id: 'streaming', timeUpdated: 999_999, seenTimeUpdated: 999_999 },
   ] as Session[];
   const merged = mergeSidebarSessions(rows, []);
-  expect(merged.map(s => s.id)).toEqual(['prompted', 'halted', 'completed', 'streaming']);
+  expect(merged.map(s => s.id)).toEqual(['prompted', 'completed', 'halted', 'streaming']);
   expect(mergeSidebarSessions(rows.map(s => ({ ...s, lastUserPromptAt: 0, lastHaltAt: 0 })), merged)
-    .map(s => s.id)).toEqual(['prompted', 'halted', 'completed', 'streaming']);
+    .map(s => s.id)).toEqual(['prompted', 'completed', 'halted', 'streaming']);
   expect(computeSidebarHash(rows)).not.toBe(computeSidebarHash(rows.map(s => ({ ...s, lastUserPromptAt: 0, lastHaltAt: 0 }))));
 });
 
