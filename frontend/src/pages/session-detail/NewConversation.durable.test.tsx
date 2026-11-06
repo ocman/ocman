@@ -111,7 +111,7 @@ it('clears only after backend persistence, then accepts a follow-up while setup 
   record = { ...record, phase: 'accepted', submittedAt: Date.now(), request: payload as BackendConversationDraft['request'] };
   await act(async () => release(json(record, 202)));
   await waitFor(() => { expect(input).toHaveValue(''); expect(input).not.toBeDisabled(); });
-  expect(screen.getByText('Setup').closest('details')!.open).toBe(true);
+  expect(screen.getByText('Setup ocman session').closest('details')!.open).toBe(true);
   fireEvent.input(input, { target: { value: 'follow-up during setup' } });
   fireEvent.keyDown(input, { key: 'Enter' });
   await waitFor(() => expect(queued).toEqual([expect.objectContaining({ text: 'follow-up during setup' })]));
