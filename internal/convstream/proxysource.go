@@ -51,7 +51,8 @@ func (p *proxyLiveSource) Settle(ctx context.Context) (*platforms.SessionLifecyc
 }
 
 func (p *proxyLiveSource) Watch(ctx context.Context, sink Sink) error {
-	f := &feeder{p: p, ctx: ctx, sink: sink, refreshed: map[string]bool{},
+	ctx, cancel := context.WithCancel(ctx)
+	f := &feeder{p: p, ctx: ctx, cancel: cancel, sink: sink,
 		mapper: v1map.New(v1map.Options{SessionID: p.key.SessionID, Now: p.now, Descendant: p.descendant})}
 	f.capture = openCapture(p.captureDir, p.key)
 	defer f.close()
@@ -65,15 +66,16 @@ func (p *proxyLiveSource) Watch(ctx context.Context, sink Sink) error {
 // feeder receives whole SSE frames from the platform and from synthetic
 // writers, one at a time, and maps them in order.
 type feeder struct {
-	p    *proxyLiveSource
-	ctx  context.Context
-	sink Sink
+	p      *proxyLiveSource
+	ctx    context.Context
+	cancel context.CancelFunc
+	sink   Sink
 
 	mu        sync.Mutex
 	mapper    *v1map.Mapper
 	connected bool
 	closed    bool
-	refreshed map[string]bool
+	refresh   displayRefreshState
 	capture   *capture
 	lastSeq   uint64
 }
@@ -125,9 +127,11 @@ func (f *feeder) connect() {
 
 func (f *feeder) close() {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.closed = true
+	f.cancel()
 	f.capture.close()
+	f.mu.Unlock()
+	f.refresh.workers.Wait()
 }
 
 // connectLocked seeds live state once the upstream is up: the adapter's
@@ -185,6 +189,7 @@ func (f *feeder) deliverLocked(res v1map.Result) {
 	// Sequence admission happens before mapping, once per source frame.
 	meta := Meta{Replayed: res.Replayed}
 	for _, ev := range res.Events {
+		f.invalidateDisplayLocked(ev)
 		f.sink.Emit(ev, meta)
 	}
 	if res.QueueChanged {
@@ -192,42 +197,5 @@ func (f *feeder) deliverLocked(res v1map.Result) {
 	}
 	for _, ref := range res.Unanchored {
 		f.refreshLocked(ref)
-	}
-}
-
-// refreshLocked supplies a display snapshot, not a delta anchor. REST has no
-// stream cursor and may already include queued deltas. Those remain suppressed
-// until an upstream ordered part upsert establishes the mapper's base.
-func (f *feeder) refreshLocked(ref v1map.PartRef) {
-	if f.refreshed[ref.PartID] {
-		return
-	}
-	if len(f.refreshed) >= 4096 {
-		clear(f.refreshed)
-	}
-	f.refreshed[ref.PartID] = true
-	ctx, cancel := context.WithTimeout(f.ctx, refreshTimeout)
-	defer cancel()
-	detail, err := f.p.adapter.Session(ctx, f.p.key.SessionID, 1, 0)
-	if err != nil || detail == nil {
-		return
-	}
-	for _, part := range detail.Parts {
-		if part.ID != ref.PartID || part.MessageID != ref.MessageID {
-			continue
-		}
-		var data map[string]json.RawMessage
-		if json.Unmarshal(part.Data, &data) != nil {
-			return
-		}
-		data["id"], _ = json.Marshal(part.ID)
-		data["messageID"], _ = json.Marshal(part.MessageID)
-		data["sessionID"], _ = json.Marshal(f.p.key.SessionID)
-		raw, err := json.Marshal(map[string]any{"type": "message.part.updated", "properties": map[string]any{"part": data}})
-		if err == nil {
-			display := v1map.New(v1map.Options{SessionID: f.p.key.SessionID, Now: f.p.now})
-			f.deliverLocked(display.Map(v1map.Frame{Data: raw}))
-		}
-		return
 	}
 }

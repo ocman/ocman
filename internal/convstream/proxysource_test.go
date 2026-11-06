@@ -114,12 +114,21 @@ func TestProxySourceMapsFramesAndSynthetics(t *testing.T) {
 		detail: &platforms.SessionDetail{Parts: []db.Part{{ID: "prt_1", MessageID: "msg_1", Data: mustJSON(part)}}},
 	}
 	dir := t.TempDir()
+	partReady := make(chan struct{})
 	src := &proxyLiveSource{key: testKey, adapter: fp, grace: time.Hour, captureDir: dir,
 		proxy: func(ctx context.Context, sid string, a platforms.Platform, raw, synthetic io.Writer, flush func()) error {
 			_, _ = io.WriteString(synthetic, "event: ocman.permission.checking\ndata: {\"permissionId\":\"per_1\"}\n\n")
-			return a.ProxyEvents(ctx, sid, raw, flush)
+			if err := a.ProxyEvents(ctx, sid, raw, flush); err != nil {
+				return err
+			}
+			select {
+			case <-partReady:
+				return nil
+			case <-time.After(waitFor):
+				return fmt.Errorf("display snapshot was never published")
+			}
 		}}
-	sink := &recordSink{}
+	sink := &displayRecordSink{recordSink: &recordSink{}, ready: partReady}
 	if err := src.Watch(t.Context(), sink); err != nil {
 		t.Fatal(err)
 	}
