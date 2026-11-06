@@ -44,7 +44,16 @@ func (s *Server) modules() []module.Module {
 	// Auto-approve first: it seeds the judge delay, which ran before every
 	// other startup step. Plugins next: their discovery came after it.
 	mods := []module.Module{s.autoapproveModule(), s.pluginsModule(), s.factoryModule(), s.sessionTitlesModule()}
-	mods = append(mods, &agentui.Module{}, s.backgroundTasksModule(), &resourcemod.Module{ResolveOwner: s.resolveOwner})
+	mods = append(mods, &agentui.Module{}, s.backgroundTasksModule(), &resourcemod.Module{
+		ResolveOwner: s.resolveOwner,
+		Sessions: func(ctx context.Context, owner string, limit, offset int) ([]sessioncatalog.Session, error) {
+			catalogue, err := sessioncatalog.New(s.stateDB)
+			if err != nil {
+				return nil, err
+			}
+			return catalogue.List(ctx, owner, limit, offset)
+		},
+	})
 	mods = append(mods, s.sourceControlModule(), s.prWorkflowModule())
 	mods = append(mods, s.worktreeCleanupModule())
 	mods = append(mods, s.sidebarModules()...)

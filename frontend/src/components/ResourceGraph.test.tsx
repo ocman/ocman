@@ -17,8 +17,9 @@ it('stacks actual per-process samples and retains the area of a process that exi
   render(<ResourceGraph title="CPU" history={history} metric="cpuPercent" processes={[ocman, agent]} selected={null} onSelect={select} />);
   const first = screen.getByRole('button', { name: 'CPU: ocman, PID 1' });
   const second = screen.getByRole('button', { name: 'CPU: agent, PID 2' });
-  expect(first).toHaveAttribute('points', '4,74 596,74 596,96 4,96');
-  expect(second).toHaveAttribute('points', '4,8 596,74 596,74 4,74');
+  expect(first.querySelector('polygon')).toHaveAttribute('points', '4,74 596,74 596,96 4,96');
+  expect(second.querySelector('circle')).toHaveAttribute('cx', '4');
+  expect(second.querySelector('circle')).toHaveAttribute('cy', '8');
   expect(first).toHaveAttribute('fill', processColor(ocman));
   fireEvent.keyDown(second, { key: 'Enter' });
   expect(select).toHaveBeenLastCalledWith(agent);
@@ -28,9 +29,11 @@ it('stacks actual per-process samples and retains the area of a process that exi
   expect(select).toHaveBeenCalledTimes(2);
 });
 
-it('isolates memory values and renders a single sample as a selectable area', () => {
+it('isolates memory values and renders a single sample as a selectable dot', () => {
   render(<ResourceGraph title="Memory" history={[history[0]]} metric="memoryBytes" processes={[ocman, agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
-  expect(screen.getByRole('button', { name: 'Memory: agent, PID 2' })).toHaveAttribute('points', '4,8 596,8 596,96 4,96');
+  const area = screen.getByRole('button', { name: 'Memory: agent, PID 2' });
+  expect(area.querySelector('polygon')).toBeNull();
+  expect(area.querySelector('circle')).toHaveAttribute('cy', '8');
   expect(screen.queryByRole('button', { name: 'Memory: ocman, PID 1' })).not.toBeInTheDocument();
   expect(screen.getByText('1.0 MiB')).toBeVisible();
 });
@@ -38,4 +41,24 @@ it('isolates memory values and renders a single sample as a selectable area', ()
 it('keeps process identities separate when a PID changes parent or executable', () => {
   expect(processKey(ocman)).not.toEqual(processKey({ ...ocman, parentPid: 99 }));
   expect(processKey(ocman)).not.toEqual(processKey({ ...ocman, name: 'replacement' }));
+});
+
+it('leaves missing samples and collection gaps blank instead of connecting them', () => {
+  const points = [
+    { ...history[0], timestamp: 1000 },
+    { ...history[0], timestamp: 2000 },
+    { ...history[1], timestamp: 3000 },
+    { ...history[0], timestamp: 4000 },
+    { ...history[0], timestamp: 10000 },
+  ];
+  render(<ResourceGraph title="CPU" history={points} metric="cpuPercent" processes={[agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
+  const area = screen.getByRole('button', { name: 'CPU: agent, PID 2' });
+  expect(area.querySelectorAll('polygon')).toHaveLength(1);
+  expect(area.querySelectorAll('circle')).toHaveLength(2);
+});
+
+it('does not draw processes without samples or report missing values as zero', () => {
+  render(<ResourceGraph title="CPU" history={[history[1]]} metric="cpuPercent" processes={[agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getByText('No data')).toBeVisible();
 });

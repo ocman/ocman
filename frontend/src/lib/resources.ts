@@ -11,6 +11,8 @@ export interface ResourceProcess {
   pid: number;
   parentPid: number;
   name: string;
+  command?: string;
+  sessionId?: string;
   cpuPercent: number;
   memoryBytes: number;
 }

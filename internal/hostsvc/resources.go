@@ -11,6 +11,8 @@ type ResourceProcess struct {
 	PID         int     `json:"pid"`
 	ParentPID   int     `json:"parentPid"`
 	Name        string  `json:"name"`
+	Command     string  `json:"command,omitempty"`
+	SessionID   string  `json:"sessionId,omitempty"`
 	CPUPercent  float64 `json:"cpuPercent"`
 	MemoryBytes uint64  `json:"memoryBytes"`
 }

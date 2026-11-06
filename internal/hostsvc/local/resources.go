@@ -31,7 +31,7 @@ type resourceSampler struct {
 }
 
 // Resources includes ocman's own tree, detached managed tmux trees and the
-// registered machine service. Only executable names are exposed, never argv.
+// registered machine service, including their full command lines.
 func (h *Host) Resources(ctx context.Context) (hostsvc.ResourceSnapshot, error) {
 	s := &h.resources
 	s.mu.Lock()
@@ -66,6 +66,25 @@ func (h *Host) Resources(ctx context.Context) (hostsvc.ResourceSnapshot, error) 
 	readings, err := parseResourceProcesses(string(out))
 	if err != nil {
 		return hostsvc.ResourceSnapshot{}, err
+	}
+	// Keep comm separate: executable names can contain spaces. Wide output avoids
+	// truncating argv to the terminal width. Missing commands are non-fatal (a
+	// process may have exited between the two inventories).
+	cmd = exec.CommandContext(ctx, "ps", "-axww", "-o", "pid=,args=")
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	if commands, err := cmd.Output(); err == nil {
+		for _, line := range strings.Split(string(commands), "\n") {
+			line = strings.TrimSpace(line)
+			i := strings.IndexAny(line, " \t")
+			if i < 0 {
+				continue
+			}
+			pid, err := strconv.Atoi(line[:i])
+			if reading, ok := readings[pid]; err == nil && ok {
+				reading.Command = strings.TrimSpace(line[i:])
+				readings[pid] = reading
+			}
+		}
 	}
 	return s.update(time.Now(), readings, roots), nil
 }

@@ -1,4 +1,4 @@
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, SelectField } from './Control';
 import { DataTable } from './DataTable';
 import { LoadingState } from './LoadingState';
@@ -55,8 +55,12 @@ export function ResourceViewer() {
       {rows.length === 0 ? <EmptyState>No managed processes are running.</EmptyState> : <DataTable framed aria-label="Ocman processes">
         <thead><tr><th>PID</th><th>Parent</th><th>Process</th><th>CPU</th><th>Memory</th></tr></thead>
         <tbody>{rows.map((row) => <tr key={processKey(row)} data-selected={processKey(row) === selected}
-          onClick={(event) => { if (!(event.target as HTMLElement).closest('button') && !window.getSelection()?.toString()) select(row); }}>
-          <td>{row.pid}</td><td>{row.parentPid}</td><td><Button variant="link" size="compact" aria-label={`Select ${row.name}, PID ${row.pid}`} aria-pressed={processKey(row) === selected} onClick={() => select(row)}><span className="resource-process-color" style={{ background: processColor(row) }} aria-hidden="true" />{row.name}</Button></td><td>{row.cpuPercent.toFixed(1)}%</td><td>{memory(row.memoryBytes)}</td>
+          onClick={(event) => { if (!(event.target as HTMLElement).closest('button, a') && !window.getSelection()?.toString()) select(row); }}>
+          <td>{row.pid}</td><td>{row.parentPid}</td><td>
+            <Button variant="link" size="compact" aria-label={`Select ${row.name}, PID ${row.pid}`} aria-pressed={processKey(row) === selected} onClick={() => select(row)}><span className="resource-process-color" style={{ background: processColor(row) }} aria-hidden="true" />{row.name}</Button>
+            {row.command && <div className="resource-process-command">{row.command}</div>}
+            {row.sessionId && <Link to={`/session/${encodeURIComponent(row.sessionId)}`}>Open session</Link>}
+          </td><td>{row.cpuPercent.toFixed(1)}%</td><td>{memory(row.memoryBytes)}</td>
         </tr>)}</tbody>
       </DataTable>}
     </>}

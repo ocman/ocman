@@ -71,11 +71,26 @@ func TestHostResources(t *testing.T) {
 	}
 	t.Setenv("PATH", dir)
 	write("tmux", "echo '200 201'")
-	write("ps", fmt.Sprintf("echo '%d 1 100 00:01 ocman\n200 1 20 00:00 tmux\n201 200 10 00:00 supervisor\n300 1 30 00:00 service\n301 300 5 00:00 agent'", os.Getpid()))
+	write("ps", fmt.Sprintf(`case "$*" in
+  *args=*) echo '%d /usr/bin/ocman  serve --port 8222
+malformed
+bad invalid
+99999999 unrelated --secret';;
+  *) echo '%d 1 100 00:01 ocman
+200 1 20 00:00 tmux
+201 200 10 00:00 supervisor
+300 1 30 00:00 service
+301 300 5 00:00 agent';;
+esac`, os.Getpid(), os.Getpid()))
 	h := &Host{deps: Deps{OpenCodeService: func() (ocv2.Service, error) { return ocv2.Service{PID: 300}, nil }}}
 	result, err := h.Resources(context.Background())
 	if err != nil || len(result.Processes) != 5 {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	for _, process := range result.Processes {
+		if process.PID == os.Getpid() && process.Command != "/usr/bin/ocman  serve --port 8222" {
+			t.Fatalf("full command missing: %+v", process)
+		}
 	}
 	write("ps", "exit 1")
 	if cached, err := h.Resources(context.Background()); err != nil || cached.Timestamp != result.Timestamp {
@@ -94,5 +109,13 @@ func TestHostResources(t *testing.T) {
 	h.deps.OpenCodeService = func() (ocv2.Service, error) { return ocv2.Service{}, fmt.Errorf("no service") }
 	if result, err := h.Resources(context.Background()); err != nil || len(result.Processes) != 1 {
 		t.Fatalf("missing optional runtimes: %+v %v", result, err)
+	}
+	h.resources.at = time.Time{}
+	write("ps", fmt.Sprintf(`case "$*" in
+  *args=*) exit 1;;
+  *) echo '%d 1 100 00:01 ocman';;
+esac`, os.Getpid()))
+	if result, err := h.Resources(context.Background()); err != nil || result.Processes[0].Command != "" {
+		t.Fatalf("missing optional commands: %+v %v", result, err)
 	}
 }

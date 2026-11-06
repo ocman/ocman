@@ -1,4 +1,4 @@
-.oc-modal:has(> .activity-modal) { width: min(1000px, 100%); }
+.oc-modal:has(> .activity-modal) { width: 90vw; height: 90vh; max-height: 90vh; align-content: start; }
 .activity-modal { min-width: 0; }
 .activity-modal .oc-modal-header { margin-bottom: 14px; }
 .resource-viewer { display: grid; gap: 14px; }
@@ -8,14 +8,16 @@
 .resource-graph figcaption, .resource-graph-scale, .resource-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .resource-graph svg { display: block; width: 100%; height: 110px; margin-top: 8px; overflow: visible; }
 .resource-graph line { stroke: var(--border); }
-.resource-graph polygon { fill-opacity: 0.75; stroke: var(--bg); stroke-width: 0.5; cursor: pointer; vector-effect: non-scaling-stroke; }
-.resource-graph polygon:hover, .resource-graph polygon:focus-visible { fill-opacity: 1; stroke: var(--text); stroke-width: 2; outline: none; }
+.resource-graph g[role="button"] { fill-opacity: 0.75; stroke: var(--bg); stroke-width: 0.5; cursor: pointer; }
+.resource-graph polygon, .resource-graph circle { vector-effect: non-scaling-stroke; }
+.resource-graph g[role="button"]:hover, .resource-graph g[role="button"]:focus-visible { fill-opacity: 1; stroke: var(--text); stroke-width: 2; outline: none; }
 .resource-viewer tr[data-selected="true"] { background: var(--bg-hover); }
 .resource-viewer tbody tr { cursor: pointer; }
 .resource-process-color { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; }
 .resource-graph-scale { color: var(--text-dim); font-size: 11px; }
 .resource-viewer td { font-variant-numeric: tabular-nums; }
 .resource-viewer td:nth-child(3) { overflow-wrap: anywhere; }
+.resource-process-command { white-space: pre-wrap; font-family: var(--font-conversation-mono); }
 .resource-toolbar { flex-wrap: wrap; }
 @media (max-width: 600px) {
   .resource-graphs { grid-template-columns: 1fr; }

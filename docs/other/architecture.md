@@ -32,7 +32,7 @@ flowchart LR
     Native -->|owner-local ingestion| Ocman
     Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
-    Browser -->|Activity modal: 1s resource polling| Ocman
+    Browser -->|Activity: 1s resource polling,<br/>commands and canonical session links| Ocman
     Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
     Plugins -.->|standard asset/read: inert SVG icons| Ocman
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
@@ -92,9 +92,14 @@ flowchart LR
   `hostsvc.Host` and reads its optional `ResourceViewer` interface. The local
   host samples `ps` CPU-time deltas and resident memory for ocman's descendants,
   the dedicated agent and browser-terminal tmux trees and the registered OpenCode service.
-  Executable names, PIDs and parent PIDs are returned, never command arguments.
+   Executable names, full command lines, PIDs and parent PIDs are returned.
+   `resourcemod` matches explicit session identity arguments against the owning
+   machine's canonical session catalogue; ambiguous, unknown or purged bindings
+   have no link. Child processes inherit a known parent's session association.
   Samples are request-driven, shared for 750 ms and retained in memory for up to
-   60 points, including each process's CPU and memory for stacked area graphs.
+    60 points, including each process's CPU and memory for stacked area graphs.
+    Missing process samples and collection gaps remain blank; isolated samples
+    render as dots, not fabricated full-width areas.
    Selecting an area or process isolates its graphs and pins its current row;
    selection and sorting are URL-backed. Background tasks use compact rows with
    progress, counters and schedule details in the shared popover.

@@ -30,6 +30,10 @@ test('Activity sits below Inbox and opens background tasks and live resources', 
   expect(activityBox!.y).toBeGreaterThan(inboxBox!.y);
   await activity.click();
   const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
+  const viewport = page.viewportSize()!;
+  const bounds = await dialog.boundingBox();
+  expect(bounds!.width).toBeCloseTo(viewport.width * 0.9, 0);
+  expect(bounds!.height).toBeCloseTo(viewport.height * 0.9, 0);
   await expect(dialog.getByRole('tab', { name: 'Background tasks' })).toHaveAttribute('aria-selected', 'true');
   await expect(dialog.getByText('No background tasks match this view.')).toBeVisible();
   expect(samples).toBe(0);
@@ -65,6 +69,8 @@ test('Activity resource graphs fit a phone viewport and close with the shared co
   await expect(dialog.getByRole('group', { name: 'CPU history' })).toBeVisible();
   await expect(dialog.getByRole('group', { name: 'Memory history' })).toBeVisible();
   const box = await dialog.boundingBox();
+  expect(box!.width).toBeCloseTo(390 * 0.9, 0);
+  expect(box!.height).toBeCloseTo(844 * 0.9, 0);
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   await dialog.getByRole('button', { name: 'Close activity' }).click();

@@ -2,15 +2,18 @@
 package resourcemod
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 type Module struct {
 	ResolveOwner func(http.ResponseWriter, string, string) (hostsvc.Host, bool)
+	Sessions     func(context.Context, string, int, int) ([]sessioncatalog.Session, error)
 }
 
 func (*Module) Name() string { return "resources" }
@@ -33,6 +36,9 @@ func (m *Module) resources(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "could not read process resources", http.StatusServiceUnavailable)
 		return
+	}
+	if m.Sessions != nil {
+		snapshot.Processes = m.sessionLinks(r.Context(), owner.RemoteID(), snapshot.Processes)
 	}
 	httpx.WriteJSON(w, snapshot)
 }

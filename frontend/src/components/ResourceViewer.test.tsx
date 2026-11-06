@@ -52,6 +52,20 @@ it('shows CPU and memory graphs and sorts the top-like process list', async () =
   expect(names()).toEqual(['agent', 'ocman']);
 });
 
+it('shows full commands and links known sessions without selecting the process', async () => {
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [
+    { ...snapshot.processes[0], command: '/usr/bin/ocman serve --port 8222', sessionId: 'session/one' },
+    snapshot.processes[1],
+  ] });
+  renderViewer();
+  expect(await screen.findByText('/usr/bin/ocman serve --port 8222')).toBeVisible();
+  const link = screen.getByRole('link', { name: 'Open session' });
+  expect(link).toHaveAttribute('href', '/session/session%2Fone');
+  fireEvent.click(link);
+  expect(screen.getByRole('button', { name: 'Select ocman, PID 1' })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getAllByRole('link')).toHaveLength(1);
+});
+
 it('isolates a process from its area or row, pins it through sorting and clears selection', async () => {
   renderViewer();
   await screen.findByText('ocman');
@@ -92,7 +106,7 @@ it('keeps selection pinned through polling and does not select a replacement wit
   expect(screen.getByText('Selected process is no longer available')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Select replacement, PID 1' })).toHaveAttribute('aria-pressed', 'false');
   fireEvent.click(screen.getByRole('button', { name: 'Show all processes' }));
-  expect(screen.getByRole('button', { name: 'CPU: replacement, PID 1' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'CPU: replacement, PID 1' })).not.toBeInTheDocument();
 });
 
 it('retains the last successful data when a refresh fails', async () => {
@@ -108,7 +122,7 @@ it('shows successful empty results and graphs with no history', async () => {
   vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [], history: [] });
   renderViewer();
   expect(await screen.findByText('No managed processes are running.')).toBeVisible();
-  expect(screen.getByText('0.0%')).toBeVisible();
+  expect(screen.getAllByText('No data')).toHaveLength(2);
 });
 
 it('polls once per second, pauses when hidden and aborts when unmounted', async () => {

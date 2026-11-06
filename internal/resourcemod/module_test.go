@@ -9,15 +9,39 @@ import (
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/module/moduletest"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 type resourceHost struct {
 	hostsvc.Host
-	err error
+	err      error
+	snapshot hostsvc.ResourceSnapshot
 }
 
+func (h resourceHost) RemoteID() string { return "local" }
+
 func (h resourceHost) Resources(context.Context) (hostsvc.ResourceSnapshot, error) {
+	if h.snapshot.Processes != nil {
+		return h.snapshot, h.err
+	}
 	return hostsvc.ResourceSnapshot{Processes: []hostsvc.ResourceProcess{}, History: []hostsvc.ResourcePoint{}}, h.err
+}
+
+func TestResourceRouteSessionLink(t *testing.T) {
+	host := resourceHost{snapshot: hostsvc.ResourceSnapshot{Processes: []hostsvc.ResourceProcess{{PID: 1, Command: "agent --session-id native"}}}}
+	m := &Module{
+		ResolveOwner: func(http.ResponseWriter, string, string) (hostsvc.Host, bool) { return host, true },
+		Sessions: func(context.Context, string, int, int) ([]sessioncatalog.Session, error) {
+			return []sessioncatalog.Session{{ID: "canonical", NativeID: "native"}}, nil
+		},
+	}
+	response := moduletest.Do(moduletest.Mount(m), "GET", "/api/resources", "", "")
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"sessionId":"canonical"`) {
+		t.Fatal(response.Body.String())
+	}
+	if host.snapshot.Processes[0].SessionID != "" {
+		t.Fatal("mutated host cache")
+	}
 }
 
 func TestResourceRoutes(t *testing.T) {
