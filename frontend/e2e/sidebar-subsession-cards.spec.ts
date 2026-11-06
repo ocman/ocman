@@ -9,7 +9,15 @@ test('flat sidebar mixes full subsession cards and compact agents with full-widt
   await page.route(new RegExp(`/api/session/${child.id}(\\?|$)`), route => route.fulfill({
     json: { session: child, messages: [], parts: [], totalMessages: 0 },
   }));
-  await page.route('/api/git/info*', route => route.fulfill({ json: { branch: 'feature/login', ahead: 0, behind: 0, dirty: false } }));
+  let releaseGit!: () => void;
+  const gitReady = new Promise<void>((resolve) => { releaseGit = resolve; });
+  await page.route('/api/git/info*', async route => {
+    await gitReady;
+    await route.fulfill({ json: {
+      [MOCK_SESSION.directory]: { branch: 'feature/auth', ahead: 0, behind: 0, dirty: false },
+      [child.directory]: { branch: 'feature/login', ahead: 0, behind: 0, dirty: false },
+    } });
+  });
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const sidebar = page.getByTestId('session-sidebar');
   const parent = sidebar.getByRole('button', { name: /Fix the login bug/ });
@@ -18,6 +26,11 @@ test('flat sidebar mixes full subsession cards and compact agents with full-widt
   await expect(card).toBeVisible();
   await expect(card.getByText('web-app')).toBeVisible();
   await expect(card.getByText('feature/login')).toBeVisible();
+  // The child has a stored branch immediately; the parent must first load Git
+  // metadata. Compare populated cards, not a populated card and an empty slot.
+  await expect(parent.getByText('feature/auth')).toHaveCount(0);
+  releaseGit();
+  await expect(parent.getByText('feature/auth')).toBeVisible();
   await expect(compact.getByText('web-app')).toHaveCount(0);
   await expect(compact.getByText('feature/login')).toHaveCount(0);
   const parentBox = (await parent.boundingBox())!;
