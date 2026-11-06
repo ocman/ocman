@@ -205,9 +205,14 @@ export function SessionSidebar({
 
   // Pinned rows come first; only project groups are reorderable.
   const query = searchQuery.trim();
+  const runningDrawers = useSidebarDrawers(
+    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)],
+    query, siblingGitInfos, activeId, activeDisplayStatus, alwaysShowPrompts,
+  );
   const filteredProjectGroups = sidebarProjectGroups.flatMap((group) => {
     const projectMatches = !!query && fuzzyMatch(query, group.directory);
     const sessions = group.sessions.filter((session) =>
+      !session.pinned && !runningDrawers.keys.has(sessionAttentionKey(session)) &&
       matchesSessionListFilters(session, listFilters,
         hiddenSessions, !query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
     );
@@ -215,17 +220,13 @@ export function SessionSidebar({
   });
 
   const filteredPinnedSessions = recentSessions
-    .filter((session) => session.pinned && !session.snoozedUntil)
+    .filter((session) => session.pinned && !session.snoozedUntil && !runningDrawers.keys.has(sessionAttentionKey(session)))
     .sort((a, b) => b.pinnedAt - a.pinnedAt);
   const sortableGroups = filteredProjectGroups.filter((g) => !g.isPinned);
   const flatUnpinned = recentSessions.filter((session) =>
-    !session.pinned &&
+    !session.pinned && !runningDrawers.keys.has(sessionAttentionKey(session)) &&
     matchesSessionListFilters(session, listFilters,
       hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
-  );
-  const runningDrawers = useSidebarDrawers(
-    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)],
-    query, siblingGitInfos, activeId, activeDisplayStatus,
   );
 
   const mainSections = useMemo(() => sidebarView === 'recent'
@@ -240,7 +241,7 @@ export function SessionSidebar({
     ...runningDrawers.sections], [mainSections, runningDrawers.sections]);
   const visibleKeys = new Set(sections.flat().map(sessionAttentionKey));
   const attention = sidebarView === 'projects'
-    ? attentionSessionEntries(notify?.entries ?? []).filter((entry) => !visibleKeys.has(sessionAttentionKey(entry))) : [];
+    ? attentionSessionEntries(notify?.entries ?? []).filter((entry) => !visibleKeys.has(sessionAttentionKey(entry)) && !runningDrawers.keys.has(sessionAttentionKey(entry))) : [];
 
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.

@@ -18,7 +18,7 @@ describe('running sidebar drawers', () => {
       session('routine', { archived: true, routineId: 'r' }), session('plugin', { archived: true, origin: 'plugin' }),
     ], '', {});
     expect(result.map((drawer) => [drawer.id, drawer.sessions.map((row) => row.id)])).toEqual([
-      ['archived', ['archive', 'done']], ['routines', ['routine']], ['plugins', ['plugin']],
+      ['archived', ['archive', 'done', 'waiting']], ['routines', ['routine']], ['plugins', ['plugin']],
     ]);
   });
 
@@ -44,8 +44,8 @@ describe('running sidebar drawers', () => {
     ]);
   });
 
-  it('shares title, directory and owner-qualified branch search without pin or prompt bypasses', () => {
-    const rows = [session('archive', { archived: true, title: 'Deploy fix', pinned: true, pendingQuestion: true }),
+  it('shares title, directory and owner-qualified branch search for ordinary drawer rows', () => {
+    const rows = [session('archive', { archived: true, title: 'Deploy fix' }),
       session('plugin', { origin: 'plugin', directory: '/other', remoteId: 'box', branch: 'stored' })];
     const infos = { [checkoutKey('/other', 'box')]: { branch: 'feature/search', ahead: 0, behind: 0, dirty: false } };
     expect(runningSidebarDrawers(rows, 'Deploy', {}).flatMap((drawer) => drawer.sessions).map((row) => row.id)).toEqual(['archive']);
@@ -55,9 +55,9 @@ describe('running sidebar drawers', () => {
     expect(runningSidebarDrawers(rows, 'absent', {})).toEqual([]);
   });
 
-  it('uses the active session live status and drops a drawer as its final session finishes', () => {
+  it('retains selected completed rows but drops an unselected drawer as its final session finishes', () => {
     const rows = [session('archive', { archived: true })];
-    expect(runningSidebarDrawers(rows, '', {}, 'archive', 'done')).toEqual([]);
+    expect(runningSidebarDrawers(rows, '', {}, 'archive', 'done')[0]).toMatchObject({ active: true, sessions: rows });
     expect(runningSidebarDrawers([{ ...rows[0], status: 'done' }], '', {}, 'archive', 'busy')).toHaveLength(1);
     const { result, rerender } = renderHook(({ rows }) => useSidebarDrawers(rows, '', {}), { initialProps: { rows } });
     expect(result.current.sections).toEqual([]);
@@ -70,6 +70,29 @@ describe('running sidebar drawers', () => {
     expect(result.current.sections).toEqual([rows]);
     act(() => result.current.toggle('archived'));
     expect(result.current.sections).toEqual([]);
+  });
+
+  it('keeps selected, pinned and pending rows in their categories through completion and search', () => {
+    const rows = [session('active', { routineId: 'r', status: 'done' }),
+      session('pin', { origin: 'plugin', status: 'done', pinned: true }),
+      session('question', { factoryAttemptId: 'attempt', status: 'waiting', pendingQuestion: true })];
+    expect(runningSidebarDrawers(rows, 'no match', {}, 'active', 'done').map(d => [d.id, d.sessions.map(s => s.id)])).toEqual([
+      ['factory', ['question']], ['routines', ['active']], ['plugins', ['pin']],
+    ]);
+    expect(runningSidebarDrawers(rows, 'no match', {}, 'active', 'done', false).map(d => d.id)).toEqual(['routines', 'plugins']);
+  });
+
+  it('opens the selected category on navigation without undoing manual collapse on refresh', () => {
+    const rows = [session('routine', { routineId: 'r', status: 'done' }), session('plugin', { origin: 'plugin' })];
+    const { result, rerender } = renderHook(({ activeId }) => useSidebarDrawers(rows, '', {}, activeId), { initialProps: { activeId: 'routine' } });
+    expect(result.current.expanded.has('routines')).toBe(true);
+    expect(result.current.keys.has('local:routine')).toBe(true);
+    act(() => result.current.toggle('routines'));
+    rerender({ activeId: 'routine' });
+    expect(result.current.expanded.has('routines')).toBe(false);
+    rerender({ activeId: 'plugin' });
+    expect(result.current.expanded.has('plugins')).toBe(true);
+    expect(result.current.drawers.find(drawer => drawer.active)?.id).toBe('plugins');
   });
 
   it('puts snoozed sessions in their own drawer regardless of status or origin', () => {

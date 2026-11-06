@@ -26,6 +26,12 @@
   font-size: 10px;
 }
 
+.session-sidebar-drawer-toggle.oc-button[aria-current='true'] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .session-sidebar-drawer-toggle.oc-button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--bg-hover) 25%, transparent);
   color: var(--subtext0);

@@ -22,7 +22,7 @@ export function SidebarDrawers({ drawers, expanded, onToggle, renderRow }: Props
         return (
           <section className="session-sidebar-drawer" key={drawer.id}>
             <Button variant="ghost" size="small" className="session-sidebar-drawer-toggle"
-              aria-expanded={open} aria-controls={id} id={`${id}-toggle`}
+              aria-expanded={open} aria-controls={id} aria-current={drawer.active ? 'true' : undefined} id={`${id}-toggle`}
               onClick={() => onToggle(drawer.id)}>
               <i className={`bi ${open ? 'bi-chevron-down' : 'bi-chevron-right'}`} aria-hidden="true" />
               <i className={`bi ${drawer.icon}`} aria-hidden="true" />

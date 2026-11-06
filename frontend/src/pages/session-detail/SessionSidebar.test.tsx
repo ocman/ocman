@@ -152,6 +152,32 @@ describe('SessionSidebar', () => {
     expect(archive).not.toHaveBeenCalled();
   });
 
+  describe.each([
+    ['Factory', { factoryAttemptId: 'attempt' }],
+    ['Routines', { routineId: 'routine' }],
+    ['Plugins', { origin: 'plugin' }],
+  ] as const)('%s category ownership', (label, origin) => {
+    it.each(['recent', 'projects'] as const)('keeps selected and pinned descendants only in their category in %s view', (view) => {
+      const rows = [
+        session({ ...origin, title: 'Selected automated session', backgroundTaskCount: 1 }),
+        session({ id: 'pinned-child', title: 'Pinned automated child', parentId: 's', pinned: true, status: 'busy' }),
+        session({ id: 'plain', title: 'Ordinary pinned session', pinned: true }),
+      ];
+      renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'busy', count: 2 } }, {}, undefined, undefined, undefined, view);
+      const toggle = screen.getByRole('button', { name: `${label} 2` });
+      if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+      const category = within(screen.getByRole('region', { name: `${label} 2` }));
+      for (const title of ['Selected automated session', 'Pinned automated child']) {
+        expect(category.getByText(title)).toBeInTheDocument();
+        expect(screen.getAllByText(title)).toHaveLength(1);
+      }
+      expect(category.getByText('Selected automated session').closest('[aria-selected]')).toHaveAttribute('aria-selected', 'true');
+      expect(toggle).toHaveAttribute('aria-current', 'true');
+      expect(screen.getAllByText('Ordinary pinned session')).toHaveLength(1);
+      expect(visibleSidebarSessions.current?.map(row => row.id)).toEqual(['plain', 'pinned-child', 's']);
+    });
+  });
+
   it('orders flat sessions by latest prompt or completion, not streaming activity', () => {
     const rows = [
       session({ id: 'streaming', title: 'Streaming activity', timeUpdated: 900, lastUserPromptAt: 100 }),
@@ -253,10 +279,11 @@ describe('SessionSidebar', () => {
     expect(screen.queryByText('Snoozed pin')).not.toBeInTheDocument();
   });
 
-  it('keeps snoozed rows hidden even when showing archives, prompts and the active session', () => {
+  it('reveals the active snoozed row only inside its category even when showing archives and prompts', () => {
     const rows = [session({ title: 'Active snoozed pin', pinned: true, pendingPermission: true, archived: true, snoozedUntil: 9999999999999 })];
     renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' } }, {}, undefined, undefined, undefined, 'recent', undefined, undefined, undefined, undefined, undefined, true);
-    expect(screen.queryByText('Active snoozed pin')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Snoozed 1' })).getByText('Active snoozed pin')).toBeInTheDocument();
+    expect(screen.getAllByText('Active snoozed pin')).toHaveLength(1);
   });
 
   it.each([false, true])('omits project and branch context on nested rows with flat=%s', (flat) => {
@@ -439,7 +466,7 @@ describe('SessionSidebar', () => {
     expect(screen.getByRole('checkbox', { name: 'Always show prompts' })).not.toBeChecked();
   });
 
-  it.each(['recent', 'projects'] as const)('lets prompts bypass project, search, child, factory and routine filters in %s view', (view) => {
+  it.each(['recent', 'projects'] as const)('reveals prompts within their categories despite project, search and child filters in %s view', (view) => {
     localStorage.setItem('ocman:sidebar-filter:children', 'false');
     const permission = session({ id: 'permission', title: 'Permission task', parentId: 'factory', factoryAttemptId: 'attempt', pendingPermission: true, archived: true });
     const question = session({ id: 'question', title: 'Question task', routineId: 'routine', pendingQuestion: true });
@@ -454,9 +481,12 @@ describe('SessionSidebar', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Project' }));
     fireEvent.click(screen.getByRole('option', { name: '/other' }));
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'unmatched' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Factory 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Routines 1' }));
     expect(screen.getByText('Permission task')).toBeInTheDocument();
     expect(screen.getByText('Question task')).toBeInTheDocument();
     expect(screen.queryByText('Hidden task')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).not.toBeInTheDocument();
     expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['permission', 'question']);
     fireEvent.click(screen.getByRole('checkbox', { name: 'Always show prompts' }));
     expect(screen.queryByText('Permission task')).not.toBeInTheDocument();
