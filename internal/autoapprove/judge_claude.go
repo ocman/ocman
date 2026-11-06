@@ -20,6 +20,10 @@ type ClaudeJudge struct {
 	// Slot, when set, takes a machine-wide helper slot for the call: judges
 	// are bounded but never wait behind the pooled session children.
 	Slot func(context.Context) (func(), error)
+
+	// output is a test seam for controlling process timing without changing
+	// the production timeout or pipe-drain delay.
+	output func(*exec.Cmd) ([]byte, error)
 }
 
 // ClaudeJudgeArgs is the fixed command line; the prompt goes on stdin.
@@ -53,7 +57,11 @@ func (j ClaudeJudge) JudgeWithCallback(ctx context.Context, _, permission string
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Env = claudecli.Environment(nil, cmd.Dir)
 	cmd.Stdin = strings.NewReader(judgePrompt(permission, patterns, metadata, customSections))
-	out, err := cmd.Output()
+	output := j.output
+	if output == nil {
+		output = (*exec.Cmd).Output
+	}
+	out, err := output(cmd)
 	if err != nil {
 		log.WithError(err).Warn("auto-approve judge: claude -p failed")
 		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}

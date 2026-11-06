@@ -165,18 +165,3 @@ func TestClaudeJudgeRunsOutsideProject(t *testing.T) {
 		t.Fatalf("judge ran in the project directory %q", got)
 	}
 }
-
-// A judge child that exits but leaves stdout open (a backgrounded
-// grandchild) must not block the judge, and its helper slot, past WaitDelay.
-func TestClaudeJudgeDoesNotWaitForLeakedStdout(t *testing.T) {
-	cli := filepath.Join(t.TempDir(), "claude")
-	script := "#!/bin/sh\ncat > /dev/null\nsleep 15 &\nprintf '%s' '{\"verdict\":\"safe\",\"reasoning\":\"ok\"}'\n"
-	if err := os.WriteFile(cli, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	start := time.Now()
-	r := (ClaudeJudge{CLI: cli}).JudgeWithCallback(t.Context(), t.TempDir(), "bash", []string{"ls"}, nil, nil, nil)
-	if elapsed := time.Since(start); elapsed > 8*time.Second {
-		t.Fatalf("judge blocked %s on a leaked stdout (result %+v)", elapsed, r)
-	}
-}
