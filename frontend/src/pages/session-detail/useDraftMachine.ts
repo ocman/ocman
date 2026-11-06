@@ -30,10 +30,11 @@ export function useDraftMachine(params: NewSessionParams, selections: Pick<Conve
     if (machineEdit.current && machineEdit.current === JSON.stringify(getConversationDraft(draftId))) saveDraft();
   }, [draftId, saveDraft]);
   const { setInfo } = useHeaderInfo();
+  const routeId = draftId.startsWith('ocm_') ? draftId : NEW_SESSION_ID;
   useEffect(() => {
-    setInfo({ sessionId: NEW_SESSION_ID, sessionProject: shortPath(projectRootForDirectory(directory)), sessionProjectFull: directory, sessionRemoteId: remoteId });
+    setInfo({ sessionId: routeId, sessionProject: shortPath(projectRootForDirectory(directory)), sessionProjectFull: directory, sessionRemoteId: remoteId });
     return () => setInfo({});
-  }, [directory, remoteId, setInfo]);
+  }, [directory, remoteId, setInfo, routeId]);
 
   const onMachineChange = async (machine: TargetCandidate) => {
     const start = useNewConversationDrafts.getState().starts[draftId];

@@ -5,11 +5,21 @@ import { useDraftMachine } from './useDraftMachine';
 import { getConversationDraft, hydrateDrafts, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { transact } from '../../lib/draftDb';
 import type { NewSessionParams } from '../../lib/newSessionPath';
+import { HeaderContext } from '../../lib/headerContext';
 
 const params = { directory: '/source', remoteId: 'local', platform: 'opencode', draftId: 'clone-draft' };
 const machine = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/target/repo', cloneUrl: 'https://example.com/Org/Repo.git' };
 
 beforeEach(() => { useNewConversationDrafts.setState({ drafts: [], starts: {}, saveErrors: {} }); });
+
+it('publishes header metadata under the canonical draft route identity', () => {
+  const setInfo = vi.fn();
+  const draftId = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
+  renderHook(() => useDraftMachine({ ...params, draftId }, {}, () => false, vi.fn()), {
+    wrapper: ({ children }) => <HeaderContext.Provider value={{ info: {}, setInfo }}>{children}</HeaderContext.Provider>,
+  });
+  expect(setInfo).toHaveBeenCalledWith(expect.objectContaining({ sessionId: draftId, sessionProjectFull: '/source' }));
+});
 
 it('keeps clone consent in the shared draft, not the route, and restores it after hydration', async () => {
   const navigate = vi.fn();

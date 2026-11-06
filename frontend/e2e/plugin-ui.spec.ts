@@ -76,7 +76,7 @@ test('hands unrelated workflows to the composer as editable drafts without start
   await page.route('**/api/worktree/list?*', (route) => route.fulfill({ json: { worktrees: [] } }));
   await page.route('**/api/git/info?*', (route) => route.fulfill({ json: {} }));
   const starts: string[] = [];
-  await page.route('**/api/sessions/start', (route) => { starts.push(route.request().url()); return route.abort(); });
+  await page.route(/\/api\/(?:sessions\/start|session-drafts\/[^/]+\/start)$/, (route) => { starts.push(route.request().url()); return route.abort(); });
 
   await page.goto('/plugins/org.example.catalog');
   await page.getByRole('button', { name: 'Draft in unknown project' }).click();
@@ -85,7 +85,7 @@ test('hands unrelated workflows to the composer as editable drafts without start
 
   const composer = page.getByTestId('conversation-composer').getByRole('textbox');
   await page.getByRole('button', { name: 'Draft maintenance task' }).click();
-  await expect(page).toHaveURL(/\/session\/new\?dir=%2Fhome%2Fuser%2Fprojects%2Fmyapp&title=Update\+deprecated\+API\+calls&draftId=/);
+  await expect(page).toHaveURL(/\/session\/ocm_[0-9a-f-]{36}\?dir=%2Fhome%2Fuser%2Fprojects%2Fmyapp&title=Update\+deprecated\+API\+calls&draftId=/);
   await expect(composer).toHaveValue('Replace calls to the deprecated client.fetchAll() with client.list() and keep the tests passing.');
   const maintenance = new URL(page.url()).searchParams.get('draftId');
   await composer.fill('Replace client.fetchAll() in the billing module only.');
@@ -95,10 +95,11 @@ test('hands unrelated workflows to the composer as editable drafts without start
   await expect(page).toHaveURL(/title=Refresh\+the\+setup\+guide/);
   await expect(composer).toHaveValue('Update docs/setup.md for the new install command.');
   expect(new URL(page.url()).searchParams.get('draftId')).not.toBe(maintenance);
-  await expect(page.getByTestId('conversation-draft')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /Update deprecated API calls/ })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /Refresh the setup guide/ })).toHaveCount(1);
 
   // The earlier draft keeps the user's edit.
-  await page.goto(`/session/new?dir=%2Fhome%2Fuser%2Fprojects%2Fmyapp&title=Update+deprecated+API+calls&draftId=${maintenance}`);
+  await page.goto(`/session/${maintenance}?dir=%2Fhome%2Fuser%2Fprojects%2Fmyapp&title=Update+deprecated+API+calls&draftId=${maintenance}`);
   await expect(composer).toHaveValue('Replace client.fetchAll() in the billing module only.');
   expect(starts).toEqual([]);
 });

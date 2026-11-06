@@ -1,4 +1,5 @@
 import { test, expect, mockSessionWithLiveConnection, makeCapabilitiesWithPort } from './fixtures';
+import { mockDraftRoutes } from './draft-routes';
 
 for (const width of [1280, 390]) test(`clone confirmation, reload and first submission at ${width}px`, async ({ mockedPage: page }) => {
   await page.setViewportSize({ width, height: 844 });
@@ -23,14 +24,15 @@ for (const width of [1280, 390]) test(`clone confirmation, reload and first subm
   await page.route('**/api/git/info*', (route) => route.fulfill({ json: {} }));
   await page.route('**/api/worktree/list*', (route) => route.fulfill({ json: { worktrees: [] } }));
   const starts: unknown[] = [];
-  await page.route('**/api/sessions/start', (route) => {
-    starts.push(route.request().postDataJSON());
-    return starts.length === 1
-      ? route.fulfill({ status: 502, body: 'Clone failed: check remote credentials' })
-      : route.fulfill({ json: { sessionId: 'cloned-session', platform: target.platform, remoteId: target.remoteId, directory: destination, firstMessageSent: true, firstMessageError: '' } });
+  let sessionId = '';
+  await mockDraftRoutes(page, (request, id) => {
+    starts.push(request);
+    if (starts.length === 1) throw new Error('Clone failed: check remote credentials');
+    sessionId = id;
+    return { sessionId: id, platform: target.platform, remoteId: target.remoteId, directory: destination, firstMessageSent: true, firstMessageError: '' };
   });
-  await page.route(/\/api\/session\/cloned-session(\?|$)/, (route) => route.fulfill({ json: {
-    session: { ...source, id: 'cloned-session', directory: destination, platform: target.platform, remoteId: target.remoteId }, messages: [], parts: [], totalMessages: 0,
+  await page.route(/\/api\/session\/ocm_[^/?]+(\?|$)/, (route) => route.fulfill({ json: {
+    session: { ...source, id: sessionId, directory: destination, platform: target.platform, remoteId: target.remoteId }, messages: [], parts: [], totalMessages: 0,
   } }));
 
   await page.goto(`/session/new?dir=${encodeURIComponent(source.directory)}&platform=${source.platform}`);
@@ -55,6 +57,7 @@ for (const width of [1280, 390]) test(`clone confirmation, reload and first subm
   expect(page.url()).not.toContain('cloneUrl');
   expect(starts).toHaveLength(0);
   await page.reload();
+  const draftId = new URL(page.url()).searchParams.get('draftId')!;
   await expect(composer).toHaveValue('Continue on the build box');
   await expect(page.getByText(`On first submission, clone ${url}`, { exact: false })).toBeVisible();
   await composer.press('Enter');
@@ -62,7 +65,7 @@ for (const width of [1280, 390]) test(`clone confirmation, reload and first subm
   await expect(composer).toHaveValue('Continue on the build box');
   expect(starts).toHaveLength(1);
   await composer.press('Enter');
-  await expect(page).toHaveURL(/\/session\/cloned-session$/);
+  await expect(page).toHaveURL(new RegExp(`/session/${draftId}$`));
   expect(starts).toHaveLength(2);
   for (const start of starts) expect(start).toMatchObject({ directory: destination, remoteId: target.remoteId, platform: target.platform, cloneUrl: url, worktree: false, send: { message: 'Continue on the build box' } });
 });

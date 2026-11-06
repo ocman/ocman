@@ -20,6 +20,7 @@
 
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import type { OceEvent, OcePrompt } from '../src/lib/conversation/events';
+import { mockDraftRoutes } from './draft-routes';
 export { expect };
 export type { Page };
 
@@ -80,6 +81,7 @@ export async function installDefaultRoutes(page: Page, factoryBeta = false) {
   await page.route('/api/**', (route: Route) =>
     route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }),
   );
+  await mockDraftRoutes(page);
 
   const zeroUsage = { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0, estCost: 0 };
   await page.route(/\/api\/factory\/epics(\?|$)/, (route) => route.fulfill({ json: [] }));
