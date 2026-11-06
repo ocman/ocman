@@ -13,6 +13,7 @@ func seedFixture(t *testing.T) (repo, worktree string) {
 	t.Helper()
 	repo, worktree = t.TempDir(), t.TempDir()
 	for rel, body := range map[string]string{
+		".gitignore":                "node_modules\npackage.json\npackage-lock.json\n.gitignore\n",
 		"node_modules/pkg/index.js": "x",
 		"package.json":              "{}",
 		"package-lock.json":         "{}",
@@ -31,6 +32,33 @@ func seedFixture(t *testing.T) (repo, worktree string) {
 func exists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
+}
+
+func TestSeedOpencodeDepsGitignore(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(map[bool]string{false: "copies missing", true: "preserves existing"}[existing], func(t *testing.T) {
+			repo, worktree := seedFixture(t)
+			dst := filepath.Join(worktree, ".opencode")
+			if err := os.Mkdir(dst, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			want, err := os.ReadFile(filepath.Join(repo, ".opencode", ".gitignore"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if existing {
+				want = []byte("branch-specific\n")
+				if err := os.WriteFile(filepath.Join(dst, ".gitignore"), want, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			seedOpencodeDeps(context.Background(), repo, worktree)
+			got, err := os.ReadFile(filepath.Join(dst, ".gitignore"))
+			if err != nil || string(got) != string(want) {
+				t.Fatalf(".gitignore = %q, %v; want %q", got, err, want)
+			}
+		})
+	}
 }
 
 // A checked-out .opencode symlink must not redirect writes outside the worktree.

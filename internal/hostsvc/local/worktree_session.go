@@ -163,10 +163,11 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 }
 
 // seedOpencodeDeps copies the main checkout's untracked .opencode
-// dependencies into a fresh worktree. OpenCode runs an npm install for any
-// config dir without node_modules and, with plugins configured, holds session
-// creation on it (~2.5s); a present node_modules whose lock lists the plugin
-// package is skipped. Best-effort: a failure only costs that install.
+// dependencies and their .gitignore into a fresh worktree. OpenCode runs an
+// npm install for any config dir without node_modules and, with plugins
+// configured, holds session creation on it (~2.5s); a present node_modules
+// whose lock lists the plugin package is skipped. Best-effort: a failure only
+// costs that install.
 //
 // Only a real, checked-out .opencode directory is seeded (a tracked symlink
 // could redirect writes outside the worktree), existing entries are never
@@ -180,7 +181,7 @@ func seedOpencodeDeps(ctx context.Context, repoRoot, worktree string) {
 		return
 	}
 	var names []string
-	for _, name := range []string{"node_modules", "package.json", "package-lock.json"} {
+	for _, name := range []string{"node_modules", ".gitignore", "package.json", "package-lock.json"} {
 		_, srcErr := os.Stat(filepath.Join(src, name))
 		_, dstErr := os.Lstat(filepath.Join(dst, name))
 		if srcErr == nil && errors.Is(dstErr, fs.ErrNotExist) {

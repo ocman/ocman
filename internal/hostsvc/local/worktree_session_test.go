@@ -33,7 +33,7 @@ func TestWorktreeSessionSeedsOpencodeDeps(t *testing.T) {
 		}
 	}
 	write("opencode.json", "{}")
-	write(".gitignore", "node_modules\npackage.json\npackage-lock.json\n")
+	write(".gitignore", "node_modules\npackage.json\npackage-lock.json\n.gitignore\n")
 	git := exec.Command("git", "-C", repo, "add", ".opencode")
 	git.Env = gitexec.CleanEnv()
 	if out, err := git.CombinedOutput(); err != nil {
@@ -51,10 +51,13 @@ func TestWorktreeSessionSeedsOpencodeDeps(t *testing.T) {
 	h := New(Deps{
 		Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:4242"},
 		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-			for _, rel := range []string{"node_modules/@opencode-ai/plugin/index.js", "package.json", "package-lock.json"} {
+			for _, rel := range []string{"node_modules/@opencode-ai/plugin/index.js", ".gitignore", "package.json", "package-lock.json"} {
 				if _, err := os.Stat(filepath.Join(req.Directory, ".opencode", rel)); err != nil {
 					t.Errorf("%s not seeded before session create: %v", rel, err)
 				}
+			}
+			if out, err := gitexec.Command(context.Background(), "-C", req.Directory, "status", "--porcelain", "--untracked-files=all").CombinedOutput(); err != nil || len(out) != 0 {
+				t.Errorf("seeded worktree is not clean: %s, %v", out, err)
 			}
 			return &platforms.CreateSessionResponse{ID: "s"}, nil
 		},
