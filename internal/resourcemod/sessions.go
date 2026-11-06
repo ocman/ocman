@@ -2,10 +2,13 @@ package resourcemod
 
 import (
 	"context"
+	"path"
 	"slices"
 	"strings"
 
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/state"
 )
 
 // sessionArgument only accepts explicit session identity options, not arbitrary
@@ -45,11 +48,11 @@ func sessionArgument(command string) string {
 
 func (m *Module) sessionLinks(ctx context.Context, owner string, processes []hostsvc.ResourceProcess) []hostsvc.ResourceProcess {
 	byPID := make(map[int]hostsvc.ResourceProcess, len(processes))
-	candidates := make(map[string]string)
+	candidates := make(map[string]sessioncatalog.Session)
 	for _, process := range processes {
 		byPID[process.PID] = process
 		if id := sessionArgument(process.Command); id != "" {
-			candidates[id] = ""
+			candidates[id] = sessioncatalog.Session{}
 		}
 	}
 	if len(candidates) == 0 {
@@ -66,9 +69,9 @@ func (m *Module) sessionLinks(ctx context.Context, owner string, processes []hos
 				continue
 			}
 			if seen[row.NativeID] || row.Purged {
-				candidates[row.NativeID] = ""
+				candidates[row.NativeID] = sessioncatalog.Session{}
 			} else {
-				candidates[row.NativeID] = row.ID
+				candidates[row.NativeID] = row
 			}
 			seen[row.NativeID] = true
 		}
@@ -82,7 +85,12 @@ func (m *Module) sessionLinks(ctx context.Context, owner string, processes []hos
 		for !visited[process.PID] {
 			visited[process.PID] = true
 			if id := sessionArgument(process.Command); id != "" {
-				out[i].SessionID = candidates[id]
+				session := candidates[id]
+				out[i].SessionID = session.ID
+				out[i].SessionTitle = session.Title
+				if session.Directory != "" {
+					out[i].ProjectName = path.Base(state.ProjectRootForDirectory(session.Directory))
+				}
 				break
 			}
 			parent, ok := byPID[process.ParentPID]

@@ -38,17 +38,26 @@ func TestResourceSessionLinks(t *testing.T) {
 					return nil, errors.New("unavailable")
 				}
 				return []sessioncatalog.Session{
-					{ID: "canonical", NativeID: "native"},
+					{ID: "canonical", NativeID: "native", Title: "Build process tree", Directory: "/src/.worktrees/ocman/feature"},
 					{ID: "fork", NativeID: "fork-native"},
-					{ID: "one", NativeID: "duplicate"},
-					{ID: "two", NativeID: "duplicate"},
-					{ID: "gone", NativeID: "purged", Purged: true},
+					{ID: "one", NativeID: "duplicate", Title: "Ambiguous one", Directory: "/src/one"},
+					{ID: "two", NativeID: "duplicate", Title: "Ambiguous two", Directory: "/src/two"},
+					{ID: "gone", NativeID: "purged", Purged: true, Title: "Purged", Directory: "/src/gone"},
 				}, nil
 			}}
 			original := []hostsvc.ResourceProcess{{PID: 1, Command: tc.command}, {PID: 2, ParentPID: 1}}
 			got := m.sessionLinks(t.Context(), "local", original)
 			if got[0].SessionID != tc.want || got[1].SessionID != tc.want {
 				t.Fatalf("links=%+v", got)
+			}
+			for _, process := range got {
+				if tc.want == "canonical" {
+					if process.SessionTitle != "Build process tree" || process.ProjectName != "ocman" {
+						t.Fatalf("missing context: %+v", process)
+					}
+				} else if process.SessionTitle != "" || process.ProjectName != "" {
+					t.Fatalf("unexpected context: %+v", process)
+				}
 			}
 			if original[0].SessionID != "" {
 				t.Fatal("mutated host snapshot")

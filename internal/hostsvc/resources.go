@@ -8,13 +8,15 @@ type ResourceViewer interface {
 }
 
 type ResourceProcess struct {
-	PID         int     `json:"pid"`
-	ParentPID   int     `json:"parentPid"`
-	Name        string  `json:"name"`
-	Command     string  `json:"command,omitempty"`
-	SessionID   string  `json:"sessionId,omitempty"`
-	CPUPercent  float64 `json:"cpuPercent"`
-	MemoryBytes uint64  `json:"memoryBytes"`
+	PID          int     `json:"pid"`
+	ParentPID    int     `json:"parentPid"`
+	Name         string  `json:"name"`
+	Command      string  `json:"command,omitempty"`
+	SessionID    string  `json:"sessionId,omitempty"`
+	SessionTitle string  `json:"sessionTitle,omitempty"`
+	ProjectName  string  `json:"projectName,omitempty"`
+	CPUPercent   float64 `json:"cpuPercent"`
+	MemoryBytes  uint64  `json:"memoryBytes"`
 }
 
 type ResourcePoint struct {
