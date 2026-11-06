@@ -70,8 +70,16 @@ func TestACPDisconnectedChildPromptsRecoverBeforeReplacement(t *testing.T) {
 			if !pending {
 				t.Fatal("unrecorded child prompt disappeared")
 			}
-			if err := h.b.acp.client.Close(); err != nil {
+			previous := h.b.acp.client
+			if err := previous.Close(); err != nil {
 				t.Fatal(err)
+			}
+			// Close reaps the process; the transport observes disconnect separately.
+			// conn must see Done before this test can require replacement.
+			select {
+			case <-previous.Done():
+			case <-time.After(5 * time.Second):
+				t.Fatal("closed ACP transport did not disconnect")
 			}
 			// Connection replacement must finish old-generation prompt cleanup
 			// before it discards the only native child mapping.
@@ -85,6 +93,9 @@ func TestACPDisconnectedChildPromptsRecoverBeforeReplacement(t *testing.T) {
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("child cleanup did not recover")
+			}
+			if h.b.acp.client == previous {
+				t.Fatal("disconnected ACP connection was reused")
 			}
 			h.b.mu.Lock()
 			pending = h.b.prompts[id] != nil
