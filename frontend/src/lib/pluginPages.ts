@@ -2,8 +2,9 @@ import { useQueries } from '@tanstack/react-query';
 import { fetchJSON, postJSON } from './api';
 import { useHostCapabilities } from './settingsQueries';
 import type { PluginPaneTree } from './pluginPanes';
+import type { PluginIconDescriptor } from './pluginIcons';
 
-export type PluginPage = { ownerId: string; pluginId: string; pluginLabel?: string; page: { id: string; label: string; validate?: boolean; scope?: 'project' | 'plugin' } };
+export type PluginPage = { ownerId: string; pluginId: string; pluginLabel?: string; icon?: PluginIconDescriptor; page: { id: string; label: string; validate?: boolean; scope?: 'project' | 'plugin' } };
 export type PageField = { key: string; label: string; type: 'text' | 'multiline' | 'secret' | 'boolean' | 'list' | 'projects' | 'model' | 'select' | 'number' | 'integer'; help?: string; fields?: PageField[]; optionsFrom?: string;
   required?: boolean; minimum?: number; maximum?: number; minLength?: number; maxLength?: number; minItems?: number; maxItems?: number; options?: { value: string; label: string }[] };
 export type PageValues = { [key: string]: string | boolean | number | PageValues[] };

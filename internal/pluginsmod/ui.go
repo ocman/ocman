@@ -21,6 +21,7 @@ const uiOwner = "local"
 type listedPluginUI struct {
 	PluginID    string                     `json:"pluginId"`
 	PluginLabel string                     `json:"pluginLabel"`
+	Icon        *plugins.IconDescriptor    `json:"icon,omitempty"`
 	OwnerID     string                     `json:"ownerId"`
 	SDK         string                     `json:"sdk"`
 	HostSDK     string                     `json:"hostSdk"`
@@ -53,7 +54,7 @@ func pluginUIDeclarations(registrations []state.PluginRegistration) []listedPlug
 		if !p.Enabled || p.Removed || p.Health.Status == "conflict" || d.UI == nil || !slices.Contains(p.Grants, plugins.UIAppGrant) {
 			continue
 		}
-		entry := listedPluginUI{PluginID: d.ID, PluginLabel: d.Name, OwnerID: uiOwner, SDK: d.UI.SDK, HostSDK: plugins.UISDKVersion,
+		entry := listedPluginUI{PluginID: d.ID, PluginLabel: d.Name, Icon: d.Icon, OwnerID: uiOwner, SDK: d.UI.SDK, HostSDK: plugins.UISDKVersion,
 			Compatible: d.UIAllowed(p.Grants), Actions: []plugins.ActionDescriptor{}}
 		// The UI runs actions through the palette dialog, so it may only see
 		// granted command-palette actions.

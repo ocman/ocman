@@ -29,6 +29,7 @@ flowchart LR
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
     Browser -->|Activity modal: 1s resource polling| Ocman
     Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
+    Plugins -.->|standard asset/read: inert SVG icons| Ocman
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
     Ocman <-->|authenticated gRPC:<br/>sessions, PR workflows, tasks and resource streams| Remotes[Remote ocman instances]
     Ocman -->|encrypted shares + webhook poll| Relay[ocman-relay]
@@ -66,6 +67,11 @@ flowchart LR
   bundle from `/api/plugins/ui/bundle`, and the bundle shares the SPA's React,
   router, query client and `@ocman/plugin-ui` through `/plugin-shared/` entries
   (ADR 0009).
+  Optional plugin navigation icons are metadata. Built-in names use the bundled
+  Bootstrap font. SVG reads use the standard no-grant `asset/read` method over
+  supervised NDJSON and authenticated owner routing. The host validates bounded
+  inert geometry before serving it; the SPA uses an image-backed `currentColor`
+  mask, never inline plugin SVG. See [plugins](../features/plugins.md).
 - **Owner-local background work.** `prworkflow` routes session PR operations
   through the resolved Platform's optional `PullRequestWorkflow` interface.
   The session owner stores links, polls the forge and queues updates; the hub

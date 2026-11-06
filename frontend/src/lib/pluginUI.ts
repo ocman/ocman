@@ -3,12 +3,14 @@ import { create } from 'zustand';
 import { fetchJSON, postJSON } from './api';
 import type { PluginAction } from './plugins';
 import { pluginCallResponseError } from './pluginCallError';
+import type { PluginIconDescriptor } from './pluginIcons';
 
 /** A hub-local plugin that ships in-app UI (ui.v1), listed without running it. */
 export interface PluginUI {
   pluginId: string;
   pluginLabel: string;
   ownerId: string;
+  icon?: PluginIconDescriptor;
   /** The @ocman/plugin-ui range the bundle was built against. */
   sdk: string;
   hostSdk: string;

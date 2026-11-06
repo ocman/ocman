@@ -13,10 +13,11 @@ import (
 )
 
 type listedPluginPage struct {
-	PluginID    string                 `json:"pluginId"`
-	PluginLabel string                 `json:"pluginLabel"`
-	OwnerID     string                 `json:"ownerId"`
-	Page        plugins.PageDescriptor `json:"page"`
+	PluginID    string                  `json:"pluginId"`
+	PluginLabel string                  `json:"pluginLabel"`
+	Icon        *plugins.IconDescriptor `json:"icon,omitempty"`
+	OwnerID     string                  `json:"ownerId"`
+	Page        plugins.PageDescriptor  `json:"page"`
 }
 
 func pluginPageDeclarations(registrations []state.PluginRegistration, owner string) []listedPluginPage {
@@ -27,7 +28,7 @@ func pluginPageDeclarations(registrations []state.PluginRegistration, owner stri
 		}
 		for _, page := range p.Description.Pages {
 			if p.Description.PageAllowed(page.ID, p.Grants) {
-				pages = append(pages, listedPluginPage{PluginID: p.Description.ID, PluginLabel: p.Description.Name, OwnerID: owner, Page: page})
+				pages = append(pages, listedPluginPage{PluginID: p.Description.ID, PluginLabel: p.Description.Name, Icon: p.Description.Icon, OwnerID: owner, Page: page})
 			}
 		}
 	}

@@ -38,3 +38,11 @@ it('keeps declarative navigation for plugins whose interface cannot load', () =>
   render(<MemoryRouter><PluginPageNav /></MemoryRouter>);
   expect(screen.getByRole('link', { name: 'Catalog (local)' })).toHaveAttribute('href', '/plugins/org.example.catalog/settings?ownerId=local');
 });
+
+it('uses optional icons from both UI and owner-local page catalogs', () => {
+  mocks.uis = [{ ...(mocks.uis[0] as object), icon: { bootstrap: 'journal-text' } }];
+  mocks.pages = [{ ...(mocks.pages[1] as object), icon: { bootstrap: 'tools' } }];
+  render(<MemoryRouter><PluginPageNav /></MemoryRouter>);
+  expect(screen.getByRole('link', { name: 'Catalog (local)' }).querySelector('i')).toHaveClass('bi-journal-text');
+  expect(screen.getByRole('link', { name: 'Catalog (machine)' }).querySelector('i')).toHaveClass('bi-tools');
+});

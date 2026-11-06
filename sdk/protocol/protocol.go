@@ -63,6 +63,7 @@ type Capability struct {
 type Description struct {
 	ID              string             `json:"id"`
 	Name            string             `json:"name"`
+	Icon            *IconDescriptor    `json:"icon,omitempty"`
 	Version         string             `json:"version"`
 	Protocol        Version            `json:"protocol"`
 	Capabilities    []Capability       `json:"capabilities,omitempty"`
@@ -205,6 +206,9 @@ func validateCapabilities(caps []Capability) error {
 }
 
 func (d Description) Validate() error {
+	if err := d.validateIcon(); err != nil {
+		return err
+	}
 	if len(d.ID) > 253 || !pluginID.MatchString(d.ID) || !validText(d.Name) || !validText(d.Version) ||
 		!validVersion(d.Protocol) || d.MaxConcurrency < 1 || d.MaxConcurrency > MaxConcurrency ||
 		(d.Scope != ScopeHub && d.Scope != ScopeOwner && d.Scope != ScopeGlobal) {
@@ -322,7 +326,7 @@ func Negotiate(protocol Version, supported []Capability, remote Description) (Ne
 		return Negotiated{}, ErrIncompatibleVersion
 	}
 	n := Negotiated{Protocol: Version{protocol.Major, min(protocol.Minor, remote.Protocol.Minor)}}
-	for _, r := range remote.Capabilities {
+	for _, r := range remote.effectiveCapabilities() {
 		for _, local := range supported {
 			if local.Name == r.Name && local.Version.Major == r.Version.Major {
 				n.Capabilities = append(n.Capabilities, Capability{r.Name, Version{r.Version.Major, min(local.Version.Minor, r.Version.Minor)}})

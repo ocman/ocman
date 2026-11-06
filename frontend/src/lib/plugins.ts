@@ -1,4 +1,5 @@
 import { fetchJSON, postJSON } from './api';
+import type { PluginIconDescriptor } from './pluginIcons';
 
 export interface PluginSetting {
   key: string;
@@ -18,6 +19,7 @@ export interface PluginRegistration {
   description: {
     id: string;
     name: string;
+    icon?: PluginIconDescriptor;
     version: string;
     scope: 'hub' | 'owner';
     capabilities?: { name: string; version: { major: number; minor: number } }[];

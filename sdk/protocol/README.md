@@ -49,6 +49,33 @@ directly from any language.
 
 ## Modes and handshake
 
+### Optional icon metadata
+
+Descriptions may include `icon: {bootstrap: "journal-text"}` or
+`icon: {path: "assets/wrench.svg"}`, never both fields. Omission retains puzzle.
+Unknown Bootstrap names also retain puzzle. This is ordinary plugin metadata and
+adds no grant or opt-in capability. For SVG paths only, negotiation implicitly
+offers `asset` version 1.0 without an entry in `Description.capabilities`.
+Older hosts can ignore the metadata and omit that standard method.
+
+The unary call is capability `asset`, version `{major:1,minor:0}`, method `read`,
+params `{"path":"assets/wrench.svg"}`. Its result is `{"data":"<base64>"}`,
+with no chunks. Only the exact declared icon path is readable. Raw bytes are
+capped at 64 KiB and must pass `ValidateIconSVG`. Paths are at most 256 bytes,
+relative slash-separated segments matching `[A-Za-z0-9_.-]+`, excluding `.` and
+`..`, with a `.svg` suffix. URLs, percent escapes, backslashes, empty segments,
+query strings and fragments are refused.
+
+The normal authenticated `GET /api/plugins/icon?ownerId=...&pluginId=...&path=...`
+route uses the named owner's authenticated PluginOperation transport. Owners
+check current enablement and exact metadata before dispatch and return. The hub
+validates the returned SVG again and serves `image/svg+xml` with nosniff, no-store
+and restrictive CSP. Disconnected explicit owners never fall back locally.
+The browser preloads an image and applies a monochrome alpha mask, never plugin
+markup in the DOM. See the [SDK examples](../plugin/README.md#optional-navigation-icons)
+and [design notes](../../spec/plugin-navigation-icons/README.md) for existing
+mechanisms examined, supported SVG geometry and independent workflows.
+
 An executable receives one argument, `describe` or `serve`. In either mode its
 first stdout frame is `hello`, containing the mode, a description, and the exact
 one-time token supplied by the host. The launcher supplies a fresh cryptographically

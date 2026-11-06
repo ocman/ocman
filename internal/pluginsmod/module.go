@@ -160,6 +160,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("POST /api/plugins/pages/call", m.handlePluginPage)
 	r.Handle("GET /api/plugins/panes/read", m.handlePluginPaneRead)
 	r.Handle("GET /api/plugins/ui", m.handlePluginUIs)
+	r.Handle("GET /api/plugins/icon", m.handlePluginIcon)
 	r.Handle("GET /api/plugins/ui/bundle", m.handlePluginUIBundle)
 	r.Handle("POST /api/plugins/ui/call", m.handlePluginUICall)
 	// Profiles are Settings data (normal auth, like the other settings rows):

@@ -23,6 +23,17 @@ section for its grants, configuration, health and diagnostics.
 
 ## Plugin workspaces
 
+Plugins may set an optional navigation icon, either a built-in Bootstrap icon
+name or a plugin-served monochrome SVG. Icons inherit the navigation color in
+light, dark and active states. No icon means the existing puzzle symbol. Unknown
+names, missing images and rejected SVGs also use puzzle. Icons require no extra
+grant or capability approval and do not enable executable UI.
+
+For example, a document index can select `journal-text`, while an equipment
+maintenance workspace can embed `assets/wrench.svg`. Authoring examples and the
+64 KiB safe-SVG contract are in the
+[Go SDK guide](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md#optional-navigation-icons).
+
 For supported fields, lists, detail pages, validation hooks and a runnable
 example, see the [plugin contribution guide](../plugin-contributions/).
 

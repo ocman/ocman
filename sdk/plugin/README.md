@@ -1,5 +1,47 @@
 # Go plugin SDK
 
+## Optional navigation icons
+
+Icons are ordinary metadata, not a grant or opt-in capability. Leave `Icon` nil
+to keep the puzzle icon. A document-indexing workspace can select a bundled
+Bootstrap icon without serving any bytes:
+
+```go
+description.Icon = &plugin.IconDescriptor{Bootstrap: "journal-text"}
+```
+
+Use bare names, not `bi-` class names. Unknown names fall back to puzzle.
+An unrelated equipment-maintenance workspace can embed its own monochrome SVG:
+
+```go
+//go:embed assets/wrench.svg
+var assets embed.FS
+
+// In the plugin's description constructor:
+description.Icon = &plugin.IconDescriptor{Path: "assets/wrench.svg"}
+
+// In the existing handler dispatcher:
+if call.Capability == "asset" {
+    return plugin.AssetHandler(description, assets)(ctx, call, emit)
+}
+```
+
+Import `embed` for `embed.FS`. Do not add `asset` to `Capabilities` or add grants.
+The host automatically negotiates the standard asset method for an SVG icon.
+`AssetHandler` reads only the exact declared path, capped at 64 KiB, and validates
+the SVG. It works with an embedded filesystem, independent of the process working
+directory. The path must be relative, slash-separated ASCII, with a `.svg` suffix
+and no empty, `.` or `..` segments, URLs, backslashes or percent escapes.
+
+Safe icons use `svg`, `g`, `path`, `circle`, `rect`, `ellipse`, `line`, `polyline`,
+`polygon`, `title` and `desc`. Basic geometry, `viewBox`, `fill="none"`,
+`stroke="currentColor"`, numeric stroke widths, line caps/joins, fill rules,
+opacity and numeric transforms are supported. Remove XML declarations, editor
+namespaces, styles, classes, events, links, references and embedded images. The
+browser uses an alpha mask colored with `currentColor`, not inline SVG markup.
+Missing, invalid or failed assets retain puzzle. Existing page/UI permissions and
+installation approval still apply, but icons require no additional permission.
+
 The SDK is the Go module `github.com/ocman/ocman/sdk`, nested in this
 repository's `sdk/` directory. Add it to a plugin with the default Go proxy and
 checksum database; no `replace`, `GOPRIVATE` or vendoring is needed:
