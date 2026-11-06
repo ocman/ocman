@@ -391,6 +391,8 @@ Feature-specific designs live with their feature documentation:
   the existing owner-qualified session-change SSE channel.
   Owner-local invalidations cross the authenticated `StreamSessionChanges`
   gRPC stream before the hub publishes them with connection-qualified identity.
+  A newly loaded link missing from its matching project PR list triggers one
+  cache-bypassing list fetch, scoped by owner, forge host and repository.
   See [Pull requests](../features/pull-requests.md#how-the-pr-workflow-works).
 
 ### Conversation history and session identity

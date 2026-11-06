@@ -14,6 +14,9 @@ import { onGitCommand } from '../../lib/useGlobalEvents';
 import { Spinner } from '../Spinner';
 import { SessionPullRequests } from './SessionPullRequests';
 import { IconButton } from '../IconButton';
+import type { PRLink } from '../../lib/prWorkflowApi';
+
+const EMPTY_LINKS: PRLink[] = [];
 
 function UpstreamDetectionStatus() {
   const [visible, setVisible] = useState(false);
@@ -96,6 +99,12 @@ export function UpstreamPane({
   const { infos: gitInfos } = useGitInfo(currentDirectory && upstreams.length > 0 ? [currentDirectory] : [], remoteId);
   const currentBranch = currentDirectory ? gitInfos[currentDirectory]?.branch : undefined;
   const launchDirectory = actionsEnabled ? currentDirectory : undefined;
+  const linkScope = JSON.stringify([launchPlatform, sessionId]);
+  const [loadedLinks, setLoadedLinks] = useState({ scope: '', links: EMPTY_LINKS });
+  const onLinksLoaded = useCallback((links: PRLink[]) => {
+    setLoadedLinks({ scope: linkScope, links });
+  }, [linkScope]);
+  const linkedPRs = loadedLinks.scope === linkScope ? loadedLinks.links : EMPTY_LINKS;
 
   const { tab, prState, issueState, prMine, issueMine } = useUpstreamPreferences((state) => state.preferences);
   const setPreferences = useUpstreamPreferences((state) => state.setPreferences);
@@ -123,7 +132,7 @@ export function UpstreamPane({
     return (
       <div className="oc-upstream-pane" data-testid="upstream-pane">
         {onLinkPullRequest && <div className="oc-upstream-tabs-row"><IconButton variant="ghost" icon="bi-paperclip" label="Link pull request" onClick={onLinkPullRequest} /></div>}
-        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} refreshVersion={refreshVersion} />}
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} refreshVersion={refreshVersion} onLinksLoaded={onLinksLoaded} />}
         <NoUpstreamMessage directory={directory} />
       </div>
     );
@@ -141,10 +150,11 @@ export function UpstreamPane({
       </div>
 
       <TabsContent value="prs" className="oc-upstream-panel">
-        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} refreshVersion={refreshVersion} />}
+        {sessionId && launchPlatform && <SessionPullRequests sessionId={sessionId} platform={launchPlatform} linksVersion={linksVersion} refreshVersion={refreshVersion} onLinksLoaded={onLinksLoaded} />}
         <UpstreamTabContent
           key="prs"
           kind="prs"
+          linkedPRs={linkedPRs}
           directory={directory}
           projectId={projectId}
           launchDirectory={launchDirectory}
@@ -186,6 +196,7 @@ export function UpstreamPane({
 
 interface UpstreamTabContentProps {
   kind: Tab;
+  linkedPRs?: PRLink[];
   directory: string | undefined;
   projectId?: string;
   launchDirectory: string | undefined;
@@ -203,6 +214,7 @@ interface UpstreamTabContentProps {
 
 function UpstreamTabContent({
   kind,
+  linkedPRs = EMPTY_LINKS,
   directory,
   projectId,
   launchDirectory,
@@ -279,6 +291,9 @@ function UpstreamTabContent({
         <UpstreamRemoteGroup
           key={`${remoteId}/${directory}/${u.host}/${u.remote}`}
           kind={kind}
+          linkedPRNumbers={linkedPRs
+            .filter((link) => link.remoteId === remoteId && link.remote.host === u.host && link.remote.repo === u.repo)
+            .map((link) => link.number).sort((a, b) => a - b).join(',')}
           upstream={u}
           directory={directory!}
           launchDirectory={launchDirectory}

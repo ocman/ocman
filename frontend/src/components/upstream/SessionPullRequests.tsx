@@ -12,12 +12,12 @@ import { useSessionLiveRefresh } from '../../lib/useSessionLiveRefresh';
 import { LinkedPRStatus } from './LinkedPRStatus';
 import './SessionPullRequests.css';
 
-interface Props { sessionId: string; platform: string; linksVersion?: number; refreshVersion?: number }
+interface Props { sessionId: string; platform: string; linksVersion?: number; refreshVersion?: number; onLinksLoaded?: (links: PRLink[]) => void }
 export function SessionPullRequests(props: Props) {
   return <SessionLinks key={`${props.platform}:${props.sessionId}`} {...props} />;
 }
 
-function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0 }: Props) {
+function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0, onLinksLoaded }: Props) {
   const [links, setLinks] = useState<PRLink[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -25,7 +25,14 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0 }:
   const mounted = useRef(true);
   const lastRefresh = useRef(refreshVersion);
   const confirm = useConfirm();
-  const load = useCallback(async (refresh = false) => { const result = await prWorkflowApi.links(sessionId, platform, refresh); if (mounted.current) { setLinks(result.pullRequests); setError(''); } }, [sessionId, platform]);
+  const load = useCallback(async (refresh = false) => {
+    const result = await prWorkflowApi.links(sessionId, platform, refresh);
+    if (mounted.current) {
+      setLinks(result.pullRequests);
+      setError('');
+      onLinksLoaded?.(result.pullRequests);
+    }
+  }, [sessionId, platform, onLinksLoaded]);
   useSessionLiveRefresh(sessionId, platform, load);
   useEffect(() => {
     mounted.current = true;

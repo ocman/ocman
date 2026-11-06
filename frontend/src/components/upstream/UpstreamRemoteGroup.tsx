@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useUpstreamList } from '../../lib/useUpstreamList';
+import { useUpstreamList, type UseUpstreamListResult } from '../../lib/useUpstreamList';
 import type { PR, Issue, StateFilter, Upstream } from '../../lib/upstreamApi';
 import { UpstreamApiError } from '../../lib/upstreamApi';
 import { useForgeUser } from '../../lib/useForgeUser';
@@ -11,6 +11,8 @@ import './UpstreamRemoteGroup.css';
 
 export interface UpstreamRemoteGroupProps {
   kind: 'prs' | 'issues';
+  /** Sorted, comma-separated numbers linked to this owner and repository. */
+  linkedPRNumbers?: string;
   upstream: Upstream;
   directory: string;
   /** Where row actions launch; undefined disables them. */
@@ -26,6 +28,7 @@ export interface UpstreamRemoteGroupProps {
 
 export function UpstreamRemoteGroup({
   kind,
+  linkedPRNumbers = '',
   upstream,
   directory,
   launchDirectory,
@@ -42,6 +45,7 @@ export function UpstreamRemoteGroup({
   // and don't send the filter parameter.
   const identity = useForgeUser(mine ? directory : undefined, mine ? upstream.remote : undefined, remoteId);
   const mineFilter = mine && identity.login ? identity.login : undefined;
+  const enabled = !mine || (identity.ready && !!identity.login);
 
   const list = useUpstreamList<PR | Issue>({
     kind,
@@ -50,8 +54,10 @@ export function UpstreamRemoteGroup({
     remote: upstream.remote,
     state,
     mine: mineFilter,
-    enabled: !mine || (identity.ready && !!identity.login),
+    enabled,
   });
+
+  useLinkedPRListRefresh(kind === 'prs' && enabled, linkedPRNumbers, list);
 
   // Push our refresh callback up; unregister on unmount.
   useEffect(() => {
@@ -148,6 +154,22 @@ export function UpstreamRemoteGroup({
       )}
     </section>
   );
+}
+
+function useLinkedPRListRefresh(enabled: boolean, numbers: string, list: UseUpstreamListResult<PR | Issue>) {
+  const { loading, items, rateLimit, error, refresh } = list;
+  const checkedLinks = useRef('');
+  const rateLimited = rateLimit.limited || (error instanceof UpstreamApiError && error.envelope?.error.code === 'rate_limited');
+  useEffect(() => {
+    if (!enabled || loading || checkedLinks.current === numbers) return;
+    const previous = checkedLinks.current.split(',');
+    checkedLinks.current = numbers;
+    // Linked PRs are authoritative evidence that a cached list may be stale.
+    // Wait for any older read, then bypass both caches once per link set.
+    const missing = numbers.split(',').some((number) =>
+      number && !previous.includes(number) && !items.some((item) => item.number === Number(number)));
+    if (missing && !rateLimited) refresh(true);
+  }, [enabled, numbers, loading, items, rateLimited, refresh]);
 }
 
 // jsdom has no scrollIntoView, hence the optional call.

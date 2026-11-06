@@ -64,6 +64,11 @@ The linked-PR pane refreshes once per minute while the document is visible.
 The sidebar **Refresh** control refreshes both the PR list and linked PRs,
 explicitly revalidating GitHub metadata within the shared request budget.
 Reopening the pane uses the cached read path.
+If a newly loaded link is missing from its project's PR list, the pane fetches
+that repository's list once with `refresh=1`, bypassing the backend cache too.
+It waits for any older list request first and keeps the current filters and page.
+Watch/status updates and unlinking do not trigger this fetch; rate-limited
+lists are not retried automatically.
 
 Active turns and sessions waiting on prompts are not interrupted. Disconnected
 owners are skipped without falling back to the hub. Read failures preserve the
@@ -133,7 +138,8 @@ flowchart LR
     UI --> Workflow[prworkflow]
     MCP[Agent pull_requests tool] -->|session and optional explicit repository| Workflow
     MCP --> Launch
-    Launch[projectforge launches] --> Workflow
+    Launch[projectforge lists and launches] --> Workflow
+    UI -->|new link missing from matching list: refresh=1| Launch
     Setup --> Credentials[(Private credential overrides)]
     Workflow --> Links[(PR links and watch snapshots)]
     Links -->|unfinished task counts| UI
@@ -177,6 +183,10 @@ flowchart LR
   mutations and automatic stops, without requiring a browser conversation
   stream. The hub qualifies identities from its connection, not the payload.
   Polling remains a backstop for missed events.
+- Loaded session links also reconcile the matching owner, forge host and
+  repository's project PR list. A missing new link triggers one fresh list read,
+  not cache warming or a refetch on every session event. Existing rows and
+  unrelated upstreams are left alone.
 - Watches are opt-in, deduplicate changes and queue follow-ups rather than
   running an agent polling loop. Polling continues while a session cannot accept
   follow-ups, so merged or closed PRs stop their watches. Notification delivery
