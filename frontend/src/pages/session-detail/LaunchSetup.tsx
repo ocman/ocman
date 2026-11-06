@@ -27,11 +27,11 @@ export function LaunchSetup({ steps, platform, complete }: { steps: StartSteps; 
   const shown = ORDER.filter((id) => steps[id]);
   const done = complete ?? (steps.prompt === 'done' && shown.every((id) => steps[id] === 'done'));
   return <details key={done ? 'done' : 'running'} className="oc-launch-setup" open={!done}>
-    <summary><span className="oc-read-arrow" aria-hidden="true">→</span>Setup ocman session</summary>
+    <summary className="oc-tool-compact-line"><span className="oc-read-arrow" aria-hidden="true">→</span>Setup ocman session</summary>
     <ul className="oc-launch-steps oc-start-steps" role="status" aria-live="polite" data-testid="start-progress">
-      {shown.length === 0 && <li className="oc-launch-step"><Icon state="active" /><span>Starting session</span></li>}
+      {shown.length === 0 && <li className="oc-launch-step"><span className="oc-read-arrow" aria-hidden="true">└</span><Icon state="active" /><span>Starting session</span></li>}
       {shown.map((id) => <li key={id} className={`oc-launch-step ${steps[id]}`} data-testid={`start-step-${id}`}>
-        <Icon state={steps[id]!} /><span className="oc-launch-step-label">{labels[id][steps[id]!]}</span>
+        <span className="oc-read-arrow" aria-hidden="true">└</span><Icon state={steps[id]!} /><span className="oc-launch-step-label">{labels[id][steps[id]!]}</span>
       </li>)}
     </ul>
   </details>;

@@ -40,4 +40,18 @@ test('completed session setup stays close to the conversation', async ({ mockedP
   await expect(setup.locator('..')).not.toHaveAttribute('open');
   await setup.click();
   await expect(page.getByTestId('start-step-session')).toBeVisible();
+  await expect(page.getByTestId('start-step-session').locator('.oc-read-arrow')).toHaveText('└');
+  const spacing = await setup.evaluate(element => {
+    const details = element.parentElement!;
+    const list = details.querySelector('ul')!;
+    const first = list.firstElementChild!;
+    return {
+      gap: first.getBoundingClientRect().top - element.getBoundingClientRect().bottom,
+      indent: first.getBoundingClientRect().left - element.getBoundingClientRect().left,
+      bottom: details.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom,
+    };
+  });
+  expect(spacing.gap).toBe(0);
+  expect(spacing.indent).toBe(16);
+  expect(spacing.bottom).toBe(0);
 });

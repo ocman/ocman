@@ -1,16 +1,29 @@
 .oc-launch-setup {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--text-dim);
   font-family: var(--font-conversation-mono);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .oc-launch-setup > summary {
   cursor: pointer;
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 6px;
   list-style: none;
+}
+
+.oc-launch-setup > .oc-start-steps {
+  margin: 0;
+  padding-left: 16px;
+  gap: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.oc-launch-setup .oc-launch-step {
+  gap: 6px;
 }
 
 .oc-launch-setup > summary::-webkit-details-marker {

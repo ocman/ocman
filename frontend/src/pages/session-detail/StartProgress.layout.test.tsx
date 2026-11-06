@@ -7,6 +7,15 @@ vi.mock('../../lib/useCapabilities', () => ({ useCapabilities: () => undefined }
 vi.mock('../../components/AssistantThread', () => ({ ImageDisplay: () => null }));
 
 describe('launch timeline', () => {
+  it('renders setup steps as child rows before their status icons', () => {
+    render(<StartProgress prompt="First prompt" steps={{ platform: 'done', prompt: 'active' }} />);
+    for (const id of ['platform', 'prompt']) {
+      const step = screen.getByTestId(`start-step-${id}`);
+      expect(step.firstElementChild?.textContent).toBe('└');
+      expect(step.children[1].classList.contains('oc-launch-icon')).toBe(true);
+    }
+  });
+
   it('puts the timestamp before the prompt and groups setup below it', () => {
     render(<StartProgress prompt="First prompt" steps={{ platform: 'active' }} />);
     const prompt = screen.getByTestId('pending-prompt');
