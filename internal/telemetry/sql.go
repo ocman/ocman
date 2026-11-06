@@ -19,6 +19,9 @@ import (
 // transaction queries. The latency histogram's count is the per-query counter;
 // the same fingerprint on spans lets an operator find the full SQL in Tempo.
 func OpenSQL(dsn, name string) (*sql.DB, error) {
+	if sqlInstrumentationDisabled.Load() {
+		return sql.Open("sqlite", dsn)
+	}
 	return otelsql.Open("sqlite", dsn,
 		otelsql.WithAttributes(semconv.DBSystemSqlite, attribute.String("db.name", name)),
 		otelsql.WithAttributesGetter(sqlQueryAttributes),
@@ -29,6 +32,10 @@ func OpenSQL(dsn, name string) (*sql.DB, error) {
 var sqlValueList = regexp.MustCompile(`\bin\s*\(\s*\?(?:\s*,\s*\?)*\s*\)`)
 
 func sqlQueryAttributes(_ context.Context, _ otelsql.Method, query string, _ []driver.NamedValue) []attribute.KeyValue {
+	return queryAttributes.get(query)
+}
+
+func buildSQLQueryAttributes(query string) []attribute.KeyValue {
 	normalized := normalizeSQL(query)
 	if normalized == "" {
 		return nil

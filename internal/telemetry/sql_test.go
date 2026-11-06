@@ -76,6 +76,8 @@ func TestSQLQueryAttributes(t *testing.T) {
 }
 
 func TestSQLMetricsAndSpans(t *testing.T) {
+	wasDisabled := sqlInstrumentationDisabled.Swap(false)
+	t.Cleanup(func() { sqlInstrumentationDisabled.Store(wasDisabled) })
 	reader := withTestMeterProvider(t)
 	exporter := tracetest.NewInMemoryExporter()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))

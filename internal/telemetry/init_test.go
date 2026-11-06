@@ -68,6 +68,9 @@ func TestInitHTTPExporterAndShutdown(t *testing.T) {
 	if !Enabled() {
 		t.Fatal("successful initialization did not enable telemetry")
 	}
+	if sqlInstrumentationDisabled.Load() {
+		t.Fatal("successful initialization left SQL instrumentation disabled")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	if err := shutdown(ctx); err != nil {

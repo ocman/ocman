@@ -98,7 +98,11 @@ flowchart LR
 - **Telemetry collector.** Optional OTLP/HTTP export of traces, metrics,
   and batched Logrus logs through `internal/telemetry`. Logs retain structured
   fields and span context, console output stays enabled, and shutdown flushes
-  all three signals. The bundled LGTM stack routes logs to Loki.
+  all three signals. The bundled LGTM stack routes logs to Loki. SQLite handles
+  opened after startup explicitly disables telemetry use the unwrapped driver.
+  Callers supplying their own OTel providers before startup retain instrumentation. Enabled SQL
+  instrumentation caches immutable fingerprints and summaries in a bounded
+  256-entry cache, without caching statements longer than 4 KiB.
 - **UI usage.** Authenticated browsers send active foreground intervals once
   a minute and on focus/visibility changes. The hub unions overlapping tabs
   and devices in one state.db transaction, retains two minutes of deduplication

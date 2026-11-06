@@ -49,6 +49,7 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 		endpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	}
 	if endpoint == "" {
+		sqlInstrumentationDisabled.Store(true)
 		return noop, nil
 	}
 
@@ -156,6 +157,7 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 		return errors.Join(errs...)
 	}
 	enabled.Store(true)
+	sqlInstrumentationDisabled.Store(false)
 	return shutdown, nil
 }
 
