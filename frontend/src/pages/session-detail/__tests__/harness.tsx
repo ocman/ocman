@@ -258,6 +258,7 @@ vi.mock('../../../lib/useTmux', () => ({
 
 vi.mock('../../../lib/useGitInfo', () => ({
   useGitInfo: () => ({ infos: {}, loading: false, error: null }),
+  useCheckoutGitInfos: () => ({}),
 }));
 
 vi.mock('../../../lib/useSessionChanges', () => ({

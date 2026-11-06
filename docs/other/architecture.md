@@ -1358,6 +1358,8 @@ and unmount the closed mobile details drawer. Document visibility pauses reads
 without unmounting open panes or recovery controls, preserving fullscreen diffs,
 pagination, expanded previews and unsent guidance. Resuming refreshes the visible
 content, including the artifact pages already opened by the user.
+Sidebar branch/worktree metadata batches checkouts per owner rather than the
+active conversation's machine, retaining known same-owner labels during refreshes.
 Conversation archive and keyboard navigation load their candidates on demand
 when the mobile sidebar is closed, without restarting sidebar polling. Archive
 changes broadcast to every client and close the affected open conversation;

@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchJSON } from './api';
 import type { GitInfo } from './api';
 import { acquireActivityScope } from './activityScopes';
+import { checkoutKey } from './projectIdentity';
 
 /**
  * useGitInfo subscribes to git-status info for a set of directories
@@ -29,6 +30,57 @@ import { acquireActivityScope } from './activityScopes';
 
 const REFRESH_INTERVAL_MS = 30_000;
 const EMPTY: Record<string, GitInfo> = {};
+
+function gitInfoQuery(dirs: string[] | undefined, remoteId: string, enabled: boolean) {
+  const queryParam = buildDirsQueryParam(dirs);
+  return {
+    queryKey: ['git-info', remoteId, queryParam],
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchGitInfoOnce(queryParam === null ? [] : decodeURIComponent(queryParam).split(','), remoteId, signal),
+    enabled: enabled && queryParam !== null,
+    refetchInterval: REFRESH_INTERVAL_MS,
+  };
+}
+
+function useGitActivityScopes(queryParam: string | null, active: boolean) {
+  useEffect(() => {
+    if (!active || queryParam === null) return;
+    const releaseScopes = decodeURIComponent(queryParam).split(',').map((dir) => acquireActivityScope(`git-status:${dir}`));
+    return () => releaseScopes.forEach((release) => release());
+  }, [active, queryParam]);
+}
+
+/** Fetch every sidebar owner's checkouts, independently of the open session. */
+export function useCheckoutGitInfos(checkouts: Array<{ directory: string; remoteId?: string }>, enabled = true): Record<string, GitInfo> {
+  const client = useQueryClient();
+  const owners = new Map<string, string[]>();
+  for (const { directory, remoteId } of checkouts) {
+    if (!directory) continue;
+    const owner = remoteId || 'local';
+    const dirs = owners.get(owner) ?? [];
+    dirs.push(directory);
+    owners.set(owner, dirs);
+  }
+  const entries = [...owners.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const infos = useQueries({
+    queries: entries.map(([owner, dirs]) => ({
+      ...gitInfoQuery(dirs, owner, enabled),
+      // A changed sidebar directory set is a new query. Reuse only this
+      // owner's still-requested checkouts until that query has fresh data.
+      placeholderData: () => {
+        const requested = new Set(dirs.map((dir) => dir.trim()));
+        const cached = client.getQueryCache().findAll({ queryKey: ['git-info', owner] })
+          .sort((a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt);
+        return Object.fromEntries(cached.flatMap((query) =>
+          Object.entries((query.state.data as Record<string, GitInfo> | undefined) ?? EMPTY)
+            .filter(([directory]) => requested.has(directory))));
+      },
+    })),
+    combine: (results) => Object.fromEntries(results.flatMap((result, index) =>
+      Object.entries(result.data ?? EMPTY).map(([directory, info]) => [checkoutKey(directory, entries[index][0]), info]))),
+  });
+  useGitActivityScopes(buildDirsQueryParam(checkouts.map(({ directory }) => directory)), enabled);
+  return infos;
+}
 
 export interface UseGitInfoResult {
   infos: Record<string, GitInfo>;
@@ -101,18 +153,11 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string, enabled
   const active = enabled && queryParam !== null;
 
   const query = useQuery({
-    queryKey: ['git-info', remoteId, queryParam],
-    queryFn: ({ signal }) => fetchGitInfoOnce(dirList, remoteId, signal),
-    enabled: active,
-    refetchInterval: REFRESH_INTERVAL_MS,
+    ...gitInfoQuery(dirs, remoteId, enabled),
     placeholderData: (prev, prevQuery) => (!enabled && prevQuery?.queryKey[1] === remoteId ? prev : undefined),
   });
 
-  useEffect(() => {
-    if (!active || queryParam === null) return;
-    const releaseScopes = decodeURIComponent(queryParam).split(',').map((dir) => acquireActivityScope(`git-status:${dir}`));
-    return () => releaseScopes.forEach((release) => release());
-  }, [active, queryParam]);
+  useGitActivityScopes(queryParam, active);
 
   if (queryParam === null) return { infos: EMPTY, loading: false, error: null };
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Failed to load git info') : null;

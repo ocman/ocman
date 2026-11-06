@@ -24,6 +24,11 @@ sequenceDiagram
     S->>E: ocman.session.changed (id, platform, archived)
     E-->>B: all clients update archive state and close the active conversation
     B->>S: GET /api/sessions
+    loop each sidebar checkout owner
+        B->>S: GET /api/git/info?dirs=...&remoteId=owner
+        S->>R: Host.GitInfo on the owning machine
+        R-->>B: owner-qualified branch/worktree status
+    end
     S->>R: resolve platform/host
     R->>A: ListSessions()
     D-->>A: background /global/event prompts + terminal parts
@@ -81,6 +86,10 @@ sequenceDiagram
     O->>E: ocman.session.changed for affected sessions
 ```
 
+- Sidebar git reads batch directories per owner, independently of the active
+  conversation. Query caches keep identical paths on different machines separate
+  and retain still-requested same-owner labels while a directory-set refresh is
+  pending. Closed mobile drawers pause these reads without clearing known labels.
 - Inbox titles are indexed session-metadata reads on the owning machine,
   including native children. Remote owners enrich the existing Inbox RPC;
   the hub does not fetch a session list or transcript for a title. Notify

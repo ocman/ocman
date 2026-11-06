@@ -40,10 +40,9 @@ import { McpAuthBanner } from '../../components/McpAuthBanner';
 import { useUiStore } from '../../lib/uiStore';
 import { shortcutLabel, useShortcutRegistry } from '../../lib/shortcutRegistry';
 import { projectRootForDirectory } from '../../lib/worktrees';
-import { checkoutKey } from '../../lib/projectIdentity';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
-import { useGitInfo } from '../../lib/useGitInfo';
+import { useCheckoutGitInfos } from '../../lib/useGitInfo';
 import { usePlatformCapabilities, usePlatformName } from '../../lib/useCapabilities';
 import {
   isSessionRunning,
@@ -350,19 +349,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
     return [...ids];
   }, [id, sessionTree]);
-  const gitInfoRemoteId = session?.remoteId
-    ?? recentSessions.find((candidate) => candidate.id === id)?.remoteId
-    ?? 'local';
-  const { infos: ownerGitInfos } = useGitInfo(
-    recentSessions
-      .filter((candidate) => (candidate.remoteId || 'local') === gitInfoRemoteId)
-      .map((candidate) => candidate.directory)
-      .filter(Boolean),
-    gitInfoRemoteId,
-    sidebarVisible,
-  );
-  const siblingGitInfos = Object.fromEntries(Object.entries(ownerGitInfos)
-    .map(([directory, info]) => [checkoutKey(directory, gitInfoRemoteId), info]));
+  const siblingGitInfos = useCheckoutGitInfos(recentSessions, sidebarVisible);
   const {
     bookmarkedMessageIds,
     selectedMessageBookmarkKey,

@@ -16,6 +16,7 @@ import { useUiStore } from '../../../lib/uiStore';
 import type { SessionInfo, FileChange } from '../../../lib/api';
 import * as gitInfoHook from '../../../lib/useGitInfo';
 import { visibleSidebarSessions } from '../../../lib/sidebarHelpers';
+import { checkoutKey } from '../../../lib/projectIdentity';
 
 let slot: HTMLDivElement;
 let navigationSlot: HTMLSpanElement;
@@ -113,9 +114,8 @@ describe('SessionDetail — phone overlay panels', () => {
   it('keeps branch-only search and archive candidates when the mobile drawer closes', async () => {
     vi.stubGlobal('innerWidth', 390);
     useUiStore.setState({ sidebarView: 'recent' });
-    vi.spyOn(gitInfoHook, 'useGitInfo').mockImplementation((dirs): gitInfoHook.UseGitInfoResult => ({
-      infos: dirs?.includes('/branch') ? { '/branch': { branch: 'feature-only' } as never } : {}, loading: false, error: null,
-    }));
+    vi.spyOn(gitInfoHook, 'useCheckoutGitInfos').mockImplementation((checkouts) =>
+      checkouts.some(({ directory }) => directory === '/branch') ? { [checkoutKey('/branch', 'local')]: { branch: 'feature-only' } as never } : {});
     const current = makeSession({ id: 'sess_1', directory: '/current', title: 'Current', timeCreated: 300, timeUpdated: 300 });
     const next = makeSession({ id: 'branch-session', directory: '/branch', title: 'Matching branch', timeCreated: 200, timeUpdated: 200 });
     const other = makeSession({ id: 'other-session', directory: '/other', title: 'Other', timeCreated: 100, timeUpdated: 100 });
@@ -133,6 +133,21 @@ describe('SessionDetail — phone overlay panels', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
       await waitFor(() => expect(vi.mocked(api.session).mock.calls.some(([id]) => id === next.id)).toBe(true));
     } finally { vi.unstubAllGlobals(); }
+  });
+  it('keeps branch labels for every machine when the active session changes owner', async () => {
+    useUiStore.setState({ sidebarView: 'recent' });
+    vi.spyOn(gitInfoHook, 'useCheckoutGitInfos').mockImplementation((checkouts) => Object.fromEntries(
+      checkouts.map(({ directory, remoteId }) => [checkoutKey(directory, remoteId || 'local'), { branch: `${remoteId || 'local'}-branch` } as never]),
+    ));
+    const local = makeSession({ id: 'sess_1', directory: '/repo', title: 'Local session', remoteId: 'local' });
+    const remote = makeSession({ id: 'remote-session', directory: '/repo', title: 'Remote session', remoteId: 'box', platform: 'r-box:opencode' });
+    const page = renderSessionPage({ sessionId: local.id, detail: makeSessionDetail(local), sessions: [local, remote] });
+    await screen.findByRole('textbox');
+    await waitFor(() => expect(screen.getByTitle('Current branch: local-branch')).toBeInTheDocument());
+    expect(screen.getByTitle('Current branch: box-branch')).toBeInTheDocument();
+    await act(async () => { page.navigate(`/session/${remote.id}`); await flushPromises(); });
+    await waitFor(() => expect(screen.getByTitle('Current branch: box-branch')).toBeInTheDocument());
+    expect(screen.getByTitle('Current branch: local-branch')).toBeInTheDocument();
   });
   it.each(['archive', 'next'] as const)('reports a forced current-session fallback failure for %s', async (action) => {
     vi.stubGlobal('innerWidth', 390);
