@@ -143,7 +143,7 @@ export function SessionSidebar({
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
-  const stableDrafts = useStableDraftSidebar(allRecentSessions, allProjectGroups, navigate);
+  const stableDrafts = useStableDraftSidebar(allRecentSessions, allProjectGroups, navigate, activeId);
   const draftGroups = useSidebarDraftGroups(stableDrafts.groups, searchQuery);
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren } = useSessionListFilters();
   // The flat list is archive-driven, not split into origin-specific groups.
@@ -191,7 +191,7 @@ export function SessionSidebar({
       active={sib.id === activeId}
       activeId={activeId}
       activeDisplayStatus={stableDrafts.ids.has(sib.id) ? sib.status : activeDisplayStatus}
-      archiving={archivingSessionIds.has(sib.id)}
+      archiving={archivingSessionIds.has(sib.id) || stableDrafts.discarding.has(sib.id)}
       draft={draftSessionIds.has(sib.id) || stableDrafts.ids.has(sib.id)}
       debugMode={debugMode}
       gitInfo={siblingGitInfos[checkoutKey(sib.directory, sib.remoteId)] ?? siblingGitInfos[sib.directory]}
@@ -315,7 +315,7 @@ export function SessionSidebar({
               onNewSessionInDirectory={onNewSessionInDirectory}
               onArchiveProject={onArchiveProject}
               renderRow={renderRow}
-              draftRows={<SidebarConversationDrafts drafts={group.drafts} searchQuery={searchQuery} inGroup />}
+              draftRows={<SidebarConversationDrafts drafts={group.drafts ?? []} searchQuery={searchQuery} inGroup />}
             />
           ))}
         </SortableContext>
@@ -368,6 +368,7 @@ export function SessionSidebar({
         onNewSession={onNewSession}
       />
       {archiveError && <InlineAlert>{archiveError}</InlineAlert>}
+      {stableDrafts.discardError && <InlineAlert onRetry={stableDrafts.retryDiscard}>{stableDrafts.discardError}</InlineAlert>}
       {pendingTmuxSession && pickerPos && (
         <TmuxClientPopover pickerRef={pickerRef} pos={pickerPos} clients={tmux.clients} onSelect={onClientSelect} />
       )}

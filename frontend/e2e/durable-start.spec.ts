@@ -1,6 +1,34 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 import type { BackendConversationDraft } from '../src/lib/backendConversationDrafts';
 
+test('discards a failed remote draft from the production sidebar and keeps it discarded after reload', async ({ mockedPage: page }) => {
+  const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
+  let draft: BackendConversationDraft = { id, metadata: { draftId: id, directory: MOCK_SESSION.directory, remoteId: 'box', title: 'Stuck remote draft' },
+    phase: 'failed', createdAt: Date.now(), steps: {}, error: 'The remote needs an update.' };
+  let deletes = 0;
+  await page.route('**/api/session-drafts**', (route) => {
+    const request = route.request();
+    if (request.method() === 'DELETE') {
+      deletes++;
+      draft = { ...draft, phase: 'discarded', metadata: { draftId: id, directory: '' } };
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({ json: new URL(request.url()).pathname === '/api/session-drafts' ? [draft] : draft });
+  });
+  await page.goto(`/session/${id}?dir=${encodeURIComponent(MOCK_SESSION.directory)}&remoteId=box&draftId=${id}`);
+  const sidebar = page.getByTestId('session-sidebar');
+  const row = sidebar.getByRole('button').filter({ hasText: 'Stuck remote draft' });
+  await expect(row).toHaveCount(1);
+  await row.hover();
+  await row.getByRole('button', { name: 'Archive session', exact: true }).click();
+  await expect.poll(() => deletes).toBe(1);
+  await expect(sidebar.getByText('Stuck remote draft')).toHaveCount(0);
+  await expect.poll(() => new URL(page.url()).pathname).not.toBe(`/session/${id}`);
+  await page.reload();
+  await expect(sidebar.getByText('Stuck remote draft')).toHaveCount(0);
+  expect(deletes).toBe(1);
+});
+
 test('recovers server-only text and selections before allowing draft autosave', async ({ mockedPage: page }) => {
   const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
   const metadata = { draftId: id, directory: MOCK_SESSION.directory, platform: 'opencode', text: 'Server-only prompt', title: 'Saved title', agent: 'plan' };

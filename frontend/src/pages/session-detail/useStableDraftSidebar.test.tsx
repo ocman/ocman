@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useStableDraftSidebar } from './useStableDraftSidebar';
 import { useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import type { Session } from '../../lib/api.types';
 import type { SidebarProjectGroup } from './SessionSidebar';
+import { postJSON } from '../../lib/api.requests';
 
 vi.mock('../../lib/api.requests', () => ({ fetchJSON: vi.fn(async () => []), postJSON: vi.fn(async () => undefined) }));
 vi.mock('../../lib/useProjectIdentityIndex', () => ({ useProjectIdentityIndex: () => () => ({ key: 'project', directory: '/repo', remoteId: 'local' }) }));
@@ -14,8 +15,28 @@ const meta = { draftId: id, directory: '/repo', platform: 'opencode', remoteId: 
 const group: SidebarProjectGroup = { key: 'project', directory: '/repo', sessions: [], lastUpdated: 0, aggregate: { kind: 'none' } };
 
 beforeEach(() => {
+  vi.mocked(postJSON).mockReset().mockResolvedValue(undefined);
   useNewConversationDrafts.setState({ drafts: [meta] });
   useBackendConversationDrafts.setState({ drafts: {} });
+});
+
+it('does not duplicate pending cleanup or leave a newer selection when it commits', async () => {
+  let release!: () => void;
+  vi.mocked(postJSON).mockReturnValue(new Promise<void>((resolve) => { release = resolve; }));
+  const navigate = vi.fn();
+  const { result, rerender } = renderHook(({ active }) => useStableDraftSidebar([], [group], navigate, active), { initialProps: { active: id } });
+  await act(async () => {});
+  act(() => {
+    expect(result.current.discard(id)).toBe(true);
+    expect(result.current.discard(id)).toBe(true);
+  });
+  expect(postJSON).toHaveBeenCalledTimes(1);
+  expect(result.current.discarding.has(id)).toBe(true);
+  rerender({ active: 'other' });
+  await act(async () => { release(); });
+  expect(navigate).not.toHaveBeenCalled();
+  await waitFor(() => expect(result.current.discarding.has(id)).toBe(false));
+  expect(navigate).not.toHaveBeenCalled();
 });
 
 it('uses one row ID through draft, setup and actual session publication', async () => {

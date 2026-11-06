@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Session } from '../../lib/api.types';
 import { useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import { discardBackendDraft, isBackendDraft, refreshBackendDrafts, subscribeBackendDraftSync, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
@@ -6,6 +6,7 @@ import { newSessionPath } from '../../lib/newSessionPath';
 import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SidebarProjectGroup } from './SessionSidebar';
+import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
 
 function draftSession(draft: ConversationDraft): Session {
   const backend = useBackendConversationDrafts.getState().drafts[draft.draftId];
@@ -23,7 +24,12 @@ function draftSession(draft: ConversationDraft): Session {
 }
 
 /** Drafts and native-backed sessions use the same row and React key. */
-export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectGroup[], navigate: (path: string) => void) {
+export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectGroup[], navigate: (path: string, options?: { replace: boolean }) => void, activeId?: string) {
+  const currentId = useRef(activeId);
+  useLayoutEffect(() => { currentId.current = activeId; return () => { currentId.current = undefined; }; }, [activeId]);
+  const discardInFlight = useRef(new Set<string>());
+  const [discarding, setDiscarding] = useState(new Set<string>());
+  const [discardError, setDiscardError] = useState<{ id: string; message: string }>();
   const drafts = useNewConversationDrafts((state) => state.drafts);
   const backend = useBackendConversationDrafts((state) => state.drafts);
   const stable = drafts.filter((draft) => isBackendDraft(draft.draftId) && backend[draft.draftId]?.phase !== 'discarded');
@@ -58,19 +64,33 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
     }
     group.sessions = merge(group.sessions, [row, ...group.sessions.filter((session) => ids.has(session.id) && session.id !== row.id)]);
   }
+  function discard(id: string) {
+    if (!ids.has(id)) return false;
+    if (discardInFlight.current.has(id)) return true;
+    discardInFlight.current.add(id);
+    setDiscarding(new Set(discardInFlight.current));
+    setDiscardError(undefined);
+    // The API owns the phase/binding guard. Never fall through to native archive.
+    void discardBackendDraft(id, () => {
+      if (currentId.current === id) navigateAfterDraftDiscard(id, navigate);
+    }).catch((error: unknown) => {
+      setDiscardError({ id, message: `Could not discard the draft: ${error instanceof Error ? error.message : String(error)}` });
+    }).finally(() => {
+      discardInFlight.current.delete(id);
+      setDiscarding(new Set(discardInFlight.current));
+    });
+    return true;
+  }
   return {
-    recent: merge(recent, synthetic), groups: result, ids,
+    recent: merge(recent, synthetic), groups: result, ids, discarding,
+    discardError: discardError?.message,
+    retryDiscard: () => { if (discardError) discard(discardError.id); },
     open(id: string) {
       const draft = stable.find((draft) => draft.draftId === id);
       if (!draft || backend[id]?.phase === 'ready') return false;
       navigate(newSessionPath(draft));
       return true;
     },
-    discard(id: string) {
-      if (!ids.has(id)) return false;
-      if (backend[id] && backend[id].phase !== 'draft') return true;
-      void discardBackendDraft(id).catch((error) => remoteLog.error('Could not discard backend draft', error));
-      return true;
-    },
+    discard,
   };
 }

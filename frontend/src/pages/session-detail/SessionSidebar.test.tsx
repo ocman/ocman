@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { DndContext } from '@dnd-kit/core';
 import { useUiStore } from '../../lib/uiStore';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
@@ -8,9 +8,13 @@ import { SidebarSessionRow } from './SidebarSessionRow';
 import type { GitInfo, Session } from '../../lib/api';
 import { useWorkEpics } from '../../lib/queries';
 import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { useBetaFeatures } from '../../lib/betaFeatures';
+import { useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
+import { fetchJSON, postJSON } from '../../lib/api.requests';
+
+vi.mock('../../lib/api.requests', async (original) => ({ ...await original<typeof import('../../lib/api.requests')>(), fetchJSON: vi.fn(async () => []), postJSON: vi.fn(async () => undefined) }));
 
 beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
@@ -59,10 +63,13 @@ function renderSidebar(
   onReorderProjects: (keys: string[]) => void = vi.fn(),
   collapsedProjectSet: Set<string> = new Set(),
   showArchivedRecent = false,
+  activeId = 's',
+  path = '/',
 ) {
+  function Location() { const location = useLocation(); return <output data-testid="sidebar-location">{location.pathname}</output>; }
   return render(
-    <MemoryRouter><SessionSidebar
-      activeId="s"
+    <MemoryRouter initialEntries={[path]}><Location /><SessionSidebar
+      activeId={activeId}
       sidebarWidth={300}
       sidebarView={sidebarView}
       setSidebarView={setSidebarView}
@@ -102,6 +109,49 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it.each(['recent', 'projects'] as const)('cleans up failed durable drafts from the real %s sidebar with visible retry', async (view) => {
+    const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
+    const metadata = { draftId: id, directory: '/repo', remoteId: 'box', title: 'Failed remote draft' };
+    const draft = { id, metadata, phase: 'failed' as const, createdAt: 1, steps: {}, error: 'Outdated owner' };
+    vi.mocked(fetchJSON).mockResolvedValue([draft]);
+    vi.mocked(postJSON).mockReset().mockResolvedValue(undefined);
+    rememberConversationDraft(metadata);
+    useBackendConversationDrafts.setState({ drafts: { [id]: draft } });
+    const archive = vi.fn();
+    renderSidebar({ directory: '/repo', remoteId: 'box', sessions: [], lastUpdated: 1, aggregate: { kind: 'none' } }, {}, undefined, archive,
+      undefined, view, undefined, undefined, undefined, undefined, undefined, false, id, `/session/${id}`);
+    const row = screen.getAllByText('Failed remote draft').map((title) => title.closest('[data-session-key]')).find(Boolean)!;
+    vi.mocked(postJSON).mockRejectedValueOnce(new Error('cleanup unavailable'));
+    fireEvent.click(within(row as HTMLElement).getByRole('button', { name: 'Archive session' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('cleanup unavailable');
+    expect(screen.getAllByText('Failed remote draft')).toHaveLength(1);
+    expect(screen.getByTestId('sidebar-location')).toHaveTextContent(`/session/${id}`);
+    vi.mocked(fetchJSON).mockResolvedValue([{ ...draft, phase: 'discarded' }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByText('Failed remote draft')).not.toBeInTheDocument());
+    expect(postJSON).toHaveBeenLastCalledWith(`/api/session-drafts/${id}`, undefined, { method: 'DELETE', parseJSON: false });
+    expect(archive).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('sidebar-location').textContent).toBe('/session/new'));
+  });
+
+  it.each(['starting', 'failed'] as const)('surfaces protected %s draft cleanup conflicts without native archive', async (phase) => {
+    const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
+    const metadata = { draftId: id, directory: '/repo', title: 'Protected draft' };
+    const draft = { id, metadata, phase, createdAt: 1, steps: {}, result: {
+      sessionId: id, platform: 'opencode', remoteId: 'local', directory: '/repo', firstMessageSent: false, firstMessageError: 'failed',
+    } };
+    vi.mocked(fetchJSON).mockResolvedValue([draft]);
+    rememberConversationDraft(metadata);
+    useBackendConversationDrafts.setState({ drafts: { [id]: draft } });
+    const archive = vi.fn();
+    renderSidebar({ directory: '/repo', sessions: [], lastUpdated: 1, aggregate: { kind: 'none' } }, {}, undefined, archive, undefined, 'recent');
+    vi.mocked(postJSON).mockRejectedValueOnce(new Error('draft is already submitted or missing'));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive session' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('draft is already submitted');
+    expect(screen.getByText('Protected draft')).toBeInTheDocument();
+    expect(archive).not.toHaveBeenCalled();
+  });
+
   it('shows muted running drawers without changing the grouped main list', () => {
     for (const filter of ['routines', 'plugins']) localStorage.setItem(`ocman:sidebar-filter:${filter}`, 'true');
     const rows = [
@@ -229,6 +279,9 @@ describe('SessionSidebar', () => {
   });
 
   beforeEach(() => {
+    vi.mocked(fetchJSON).mockResolvedValue([]);
+    vi.mocked(postJSON).mockReset().mockResolvedValue(undefined);
+    useBackendConversationDrafts.setState({ drafts: {}, saveErrors: {}, conflicts: {}, recoveryTargets: {} });
     localStorage.clear();
     useNewConversationDrafts.setState({ drafts: [] });
     useUiStore.setState({ projectOrder: [] });
