@@ -4,15 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strconv"
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms/codex/acptest"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // TestMain doubles as both executables the platform launches: `ocman
@@ -83,32 +80,12 @@ func fakeCodex(s *codextest.Server) {
 }
 
 // installFakeTmux puts the repository's provider tmux shim first on PATH. It
-// runs launched supervisors as plain children; they are killed at cleanup.
+// stops launched supervisors and their descendants at cleanup.
 func installFakeTmux(t *testing.T) string {
 	t.Helper()
-	_, source, _, _ := runtime.Caller(0)
-	script, err := os.ReadFile(filepath.Join(filepath.Dir(source), "..", "..", "..", "hostsvc", "local", "testdata", "provider-tmux"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	bin, pids := t.TempDir(), t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "tmux"), script, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	// Pay macOS's first-execution check now, not inside tmux.Run's 2 s limit.
-	_ = exec.Command(filepath.Join(bin, "tmux"), "-L", "x", "-f", "/dev/null", "has-session", "-t", "warm").Run()
+	testutil.InstallProviderTmux(t, bin, pids)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OCMAN_FAKE_PROVIDER_PID_DIR", pids)
-	t.Cleanup(func() {
-		paths, _ := filepath.Glob(filepath.Join(pids, "*.pid"))
-		for _, path := range paths {
-			data, _ := os.ReadFile(path)
-			if pid, _ := strconv.Atoi(string(data)); pid > 0 {
-				if p, err := os.FindProcess(pid); err == nil {
-					_ = p.Kill()
-				}
-			}
-		}
-	})
 	return pids
 }

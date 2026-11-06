@@ -13,8 +13,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func Directory(t testing.TB) string {
@@ -54,11 +57,18 @@ func Start(t testing.TB, binary string, version int) *Process {
 	p := &Process{Socket: filepath.Join(dir, "s")}
 	p.Client = Client(p.Socket)
 	p.Cmd = exec.Command(binary, "provider", "fake", "--socket", p.Socket, "--spool", filepath.Join(dir, "spool"), "--repo", dir, "--version", fmt.Sprint(version))
+	p.Cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	p.Cmd.Stderr = os.Stderr
 	if err := p.Cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = p.Cmd.Process.Kill(); _ = p.Cmd.Wait(); p.Client.CloseIdleConnections() })
+	t.Cleanup(func() {
+		if err := testutil.StopProcessGroup(p.Cmd.Process.Pid); err != nil {
+			t.Error(err)
+		}
+		_ = p.Cmd.Wait()
+		p.Client.CloseIdleConnections()
+	})
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err := p.Client.Get("http://provider/hello")

@@ -16,7 +16,7 @@ const warmupEnv = "OCMAN_TEST_SCRIPT_WARMUP"
 // can take seconds. A fake binary called under a short command timeout
 // (tmux's is 2s) would otherwise fail on that assessment, not on the
 // behaviour under test. script must start with a "#!" line.
-func WriteScript(t *testing.T, path, script string) {
+func WriteScript(t testing.TB, path, script string) {
 	t.Helper()
 	shebang, body, ok := strings.Cut(script, "\n")
 	if !ok || !strings.HasPrefix(shebang, "#!") {
@@ -36,7 +36,7 @@ func WriteScript(t *testing.T, path, script string) {
 // WarmExecutable runs a freshly built binary once and ignores how it exits,
 // so the first-exec assessment WriteScript describes happens before a test
 // starts timing it.
-func WarmExecutable(t *testing.T, path string) {
+func WarmExecutable(t testing.TB, path string) {
 	t.Helper()
 	cmd := exec.Command(path)
 	cmd.Stdin = nil

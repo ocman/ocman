@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func setupBins(t *testing.T, version string) string {
@@ -20,9 +22,7 @@ func setupBins(t *testing.T, version string) string {
 
 func writeSetupBin(t *testing.T, dir, name, script string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, filepath.Join(dir, name), "#!/bin/sh\n"+script+"\n")
 }
 
 func TestPlatformSetup(t *testing.T) {

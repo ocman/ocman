@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,24 +17,15 @@ import (
 	"github.com/ocman/ocman/internal/providerprotocol"
 	"github.com/ocman/ocman/internal/providersupervisor/providertest"
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 func providerManager(t *testing.T) (*ProviderManager, string, string) {
 	t.Helper()
 	dir := providertest.Directory(t)
-	fixture, err := os.ReadFile("testdata/provider-tmux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), fixture, 0700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.InstallProviderTmux(t, dir, dir)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("OCMAN_FAKE_PROVIDER_PID_DIR", dir)
-	// macOS validates a newly written executable on its first exec, measured at
-	// 0.1-0.4s idle and past tmux's 2s command deadline under coverage load.
-	// Pay that here, outside the deadline; "has-session" on no pid exits 1.
-	_ = exec.Command(filepath.Join(dir, "tmux"), "-L", "ocman-agents", "-f", "/dev/null", "has-session", "-t", "warm").Run()
 	db, err := state.Open(filepath.Join(dir, "state.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -43,17 +33,6 @@ func providerManager(t *testing.T) (*ProviderManager, string, string) {
 	t.Cleanup(func() { _ = db.Close() })
 	binary := providertest.Binary(t)
 	m := &ProviderManager{Runtime: ocruntime.NewBackendRuntime("fake", binary, dir), State: db}
-	t.Cleanup(func() {
-		paths, _ := filepath.Glob(filepath.Join(dir, "*.pid"))
-		for _, path := range paths {
-			data, _ := os.ReadFile(path)
-			pid, _ := strconv.Atoi(string(data))
-			if pid > 0 {
-				process, _ := os.FindProcess(pid)
-				_ = process.Kill()
-			}
-		}
-	})
 	root := filepath.Join(dir, "repo")
 	if err := os.Mkdir(root, 0700); err != nil {
 		t.Fatal(err)
@@ -180,6 +159,10 @@ func TestProviderVersionSkewDrainsWithoutInterruptingTurn(t *testing.T) {
 	if err != nil || strings.Contains(row.Endpoint, old.Socket) {
 		t.Fatal(row, err)
 	}
+	if resp, err := old.Client.Get("http://provider/hello"); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("replaced supervisor is still serving")
+	}
 }
 
 func TestProviderManagerErrors(t *testing.T) {
@@ -242,6 +225,10 @@ func TestProviderRecover(t *testing.T) {
 	replaced, ok, err := restarted.Recover(t.Context(), root)
 	if err != nil || !ok || !replaced.Launched || replaced.Endpoint == "unix://"+old.Socket {
 		t.Fatal(replaced, ok, err)
+	}
+	if resp, err := old.Client.Get("http://provider/hello"); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("replaced supervisor is still serving")
 	}
 }
 

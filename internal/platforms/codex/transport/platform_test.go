@@ -72,7 +72,7 @@ func (r *rig) killSupervisors() {
 		if pid, _ := strconv.Atoi(string(data)); pid > 0 {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
-		_ = os.Remove(path)
+		// Keep the group ID for cleanup of children orphaned by this crash.
 	}
 }
 

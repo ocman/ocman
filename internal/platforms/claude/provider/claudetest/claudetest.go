@@ -8,9 +8,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"sync"
 	"testing"
+
+	"github.com/ocman/ocman/internal/testutil"
 )
 
 // Version is the CLI version the fixtures were recorded with.
@@ -21,33 +22,10 @@ func root() string {
 	return filepath.Join(filepath.Dir(source), "..", "..", "..", "..", "..")
 }
 
-// InstallFakeTmux installs the provider test shim and cleans up its supervisors.
+// InstallFakeTmux installs the provider test shim and cleans up its process trees.
 func InstallFakeTmux(t testing.TB, bin, pids string) {
 	t.Helper()
-	script, err := os.ReadFile(filepath.Join(root(), "internal", "hostsvc", "local", "testdata", "provider-tmux"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, dir := range []string{bin, pids} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(bin, "tmux"), script, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	_ = exec.Command(filepath.Join(bin, "tmux"), "-L", "x", "-f", "/dev/null", "has-session", "-t", "warm").Run()
-	t.Cleanup(func() {
-		paths, _ := filepath.Glob(filepath.Join(pids, "*.pid"))
-		for _, path := range paths {
-			data, _ := os.ReadFile(path)
-			if pid, _ := strconv.Atoi(string(data)); pid > 0 {
-				if p, err := os.FindProcess(pid); err == nil {
-					_ = p.Kill()
-				}
-			}
-		}
-	})
+	testutil.InstallProviderTmux(t, bin, pids)
 }
 
 // Binary returns a caller-owned fake as "claude" in the test's temp dir. The executable is built and warmed once per test binary (macOS

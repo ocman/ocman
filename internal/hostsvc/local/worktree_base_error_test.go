@@ -38,7 +38,8 @@ func TestWorktreeBaseProbeFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			h := New(Deps{})
+			rt := &fakeRuntime{}
+			h := New(Deps{Runtime: rt})
 			for _, start := range []bool{false, true} {
 				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 				if start {
@@ -52,6 +53,9 @@ func TestWorktreeBaseProbeFailure(t *testing.T) {
 				}
 				if mode == "timeout" && !errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("start=%t: timeout error = %v", start, err)
+				}
+				if rt.launchCount() != 0 {
+					t.Fatalf("start=%t: launched a runtime despite a base-ref probe failure", start)
 				}
 			}
 		})

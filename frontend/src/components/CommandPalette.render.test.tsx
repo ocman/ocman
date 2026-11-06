@@ -326,7 +326,9 @@ describe('CommandPalette project mode', () => {
     renderPalette();
 
     const project = await screen.findByText('workspace/research');
-    expect(project.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => {
+      expect(project.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true');
+    });
   });
 
   it('preselects the requested owner when final projects share a path', async () => {

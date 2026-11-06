@@ -24,6 +24,12 @@ whose tests build a real server, host or runtime must call
 `OPENCODE_*`. Add it to any new package that does this.
 `internal/server/tmux_isolation_test.go` is the regression test.
 
+Provider-runtime tests use `testutil.InstallProviderTmux`, which puts each fake
+supervisor and its children in a private process group and stops the whole group
+at cleanup. Keep its PID files after simulating supervisor crashes so cleanup
+can still find orphaned children. Probe-error tests must inject a fake runtime,
+not rely on isolation to make launching a real agent safe.
+
 ## Required behavior coverage
 
 - Test new functions, branches, loops, parsers and money/security paths in the

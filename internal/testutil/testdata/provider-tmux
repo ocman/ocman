@@ -1,5 +1,5 @@
 #!/bin/sh
-# Test-only tmux substitute. Executes the fake provider as a detached child.
+# Test-only tmux substitute. Each detached provider owns a process group.
 # With OCMAN_FAKE_TMUX_ENV naming a file of NAME=value lines, the provider
 # gets only that environment, like a tmux server started earlier.
 # Drops the server selection: -L <server> -f /dev/null.
@@ -19,16 +19,21 @@ case "$command" in
     if [ -n "$OCMAN_FAKE_TMUX_ENV" ]; then
       pids="$OCMAN_FAKE_PROVIDER_PID_DIR"
       # shellcheck disable=SC2046
-      env -i $(cat "$OCMAN_FAKE_TMUX_ENV") "$@" >"$pids/$name.log" 2>&1 &
+      env -i $(cat "$OCMAN_FAKE_TMUX_ENV") "$(dirname "$0")/process-group" --pid-file "$pids/$name.pid" "$@" >"$pids/$name.log" 2>&1 &
     else
-      "$@" >"$OCMAN_FAKE_PROVIDER_PID_DIR/$name.log" 2>&1 &
+      "$(dirname "$0")/process-group" --pid-file "$OCMAN_FAKE_PROVIDER_PID_DIR/$name.pid" "$@" >"$OCMAN_FAKE_PROVIDER_PID_DIR/$name.log" 2>&1 &
     fi
-    printf '%s' "$!" >"$OCMAN_FAKE_PROVIDER_PID_DIR/$name.pid"
+    pid="$!"
+    # Publish success only after the launcher established its private group.
+    while [ ! -s "$OCMAN_FAKE_PROVIDER_PID_DIR/$name.pid" ]; do
+      kill -0 "$pid" 2>/dev/null || exit 1
+      sleep 0.01
+    done
     ;;
   # Targets are exact ("-t =name"), as tmux.KillManagedSession sends them.
   kill-session)
     shift
-    kill "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/${1#=}.pid")"
+    "$(dirname "$0")/process-group" --stop "$(cat "$OCMAN_FAKE_PROVIDER_PID_DIR/${1#=}.pid")"
     ;;
   has-session)
     shift
