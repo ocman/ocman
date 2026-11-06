@@ -45,6 +45,9 @@ func TestResourceSamplerTreesAndDeltas(t *testing.T) {
 	if second.CPUPercent != 300 || len(second.History) != 2 || first.History[0].CPUPercent != 0 {
 		t.Fatalf("second=%+v", second)
 	}
+	if len(second.History[0].Processes) != 5 || second.History[1].Processes[1].CPUPercent != 200 || first.History[0].Processes[1].CPUPercent != 0 {
+		t.Fatal("per-process history missing or mutated")
+	}
 	// Reused PIDs, counter resets and cycles must not produce negative CPU or hang.
 	reused, _ := parseResourceProcesses("10 11 1 00:00 replacement\n11 10 1 00:01 child")
 	third := s.update(start.Add(2*time.Second), reused, roots)

@@ -4,6 +4,7 @@ export interface ResourcePoint {
   timestamp: number;
   cpuPercent: number;
   memoryBytes: number;
+  processes?: ResourceProcess[];
 }
 
 export interface ResourceProcess {

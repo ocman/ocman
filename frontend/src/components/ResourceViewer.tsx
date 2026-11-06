@@ -1,39 +1,34 @@
-import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button, SelectField } from './Control';
 import { DataTable } from './DataTable';
 import { LoadingState } from './LoadingState';
 import { EmptyState } from './EmptyState';
-import { resources, type ResourcePoint } from '../lib/resources';
+import { resources, type ResourceProcess } from '../lib/resources';
 import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
-
-function memory(bytes: number) {
-  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GiB` : `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
-}
-
-function ResourceGraph({ title, history, metric }: { title: string; history: ResourcePoint[]; metric: 'cpuPercent' | 'memoryBytes' }) {
-  const values = history.map((point) => point[metric]);
-  const ceiling = Math.max(metric === 'cpuPercent' ? 100 : 1024 ** 2, ...values);
-  const format = metric === 'cpuPercent' ? (value: number) => `${value.toFixed(1)}%` : memory;
-  const start = history[0]?.timestamp ?? 0;
-  const duration = Math.max(59_000, (history.at(-1)?.timestamp ?? start) - start);
-  const points = history.map((point) => `${4 + (point.timestamp - start) / duration * 592},${96 - point[metric] / ceiling * 88}`).join(' ');
-  return <figure className="resource-graph">
-    <figcaption><span>{title}</span><strong>{format(values.at(-1) ?? 0)}</strong></figcaption>
-    <svg viewBox="0 0 600 100" role="img" aria-label={`${title} history`} preserveAspectRatio="none">
-      <line x1="4" x2="596" y1="96" y2="96" />
-      <polyline points={points} />
-    </svg>
-    <div className="resource-graph-scale"><span>Recent samples</span><span>0 – {format(ceiling)}</span></div>
-  </figure>;
-}
+import { ResourceGraph } from './ResourceGraph';
+import { formatMemory as memory, processColor, processKey } from '../lib/resourcePresentation';
 
 export function ResourceViewer() {
-  const [sort, setSort] = useState('cpuPercent');
+  const [params, setParams] = useSearchParams();
+  const sort = params.get('resourceSort') ?? 'cpuPercent';
+  const selected = params.get('resourceProcess');
+  const update = (key: string, value?: string) => setParams((previous) => {
+    const next = new URLSearchParams(previous);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    return next;
+  });
+  const select = (process: ResourceProcess) => update('resourceProcess', processKey(process) === selected ? undefined : processKey(process));
   const query = useVisiblePollingQuery({
     queryKey: ['resources', 'local'], run: resources, intervalMs: 1_000, timeoutMs: 5_000,
   });
   const data = query.data;
+  const history = data?.history ?? [];
+  const processes = [...new Map([...history.flatMap((point) => point.processes ?? []), ...(data?.processes ?? [])].map((process) => [processKey(process), process])).values()];
+  const focused = processes.find((process) => processKey(process) === selected);
   const rows = [...(data?.processes ?? [])].sort((a, b) => {
+    if (processKey(a) === selected) return -1;
+    if (processKey(b) === selected) return 1;
     if (sort === 'name') return a.name.localeCompare(b.name) || a.pid - b.pid;
     if (sort === 'pid') return a.pid - b.pid;
     return (sort === 'memoryBytes' ? b.memoryBytes - a.memoryBytes : b.cpuPercent - a.cpuPercent) || a.pid - b.pid;
@@ -44,12 +39,13 @@ export function ResourceViewer() {
     {query.error && <div role="alert">{data ? 'Resource refresh failed. Showing the last sample.' : 'Could not load process resources.'} <Button variant="ghost" onClick={() => void query.refetch()}>Retry</Button></div>}
     {data && <>
       <div className="resource-graphs">
-        <ResourceGraph title="CPU" history={data.history} metric="cpuPercent" />
-        <ResourceGraph title="Memory" history={data.history} metric="memoryBytes" />
+        <ResourceGraph title="CPU" history={history} metric="cpuPercent" processes={processes} selected={selected} onSelect={select} />
+        <ResourceGraph title="Memory" history={history} metric="memoryBytes" processes={processes} selected={selected} onSelect={select} />
       </div>
       <div className="resource-toolbar">
         <span>{rows.length} processes · sampled <time dateTime={new Date(data.timestamp).toISOString()}>{new Date(data.timestamp).toLocaleTimeString()}</time></span>
-        <SelectField aria-label="Sort processes" value={sort} onChange={(event) => setSort(event.target.value)}>
+        {selected && <><span>{focused ? `${focused.name} · PID ${focused.pid}` : 'Selected process is no longer available'}</span><Button variant="ghost" size="compact" onClick={() => update('resourceProcess')}>Show all processes</Button></>}
+        <SelectField aria-label="Sort processes" value={sort} onChange={(event) => update('resourceSort', event.target.value)}>
           <option value="cpuPercent">CPU, highest first</option>
           <option value="memoryBytes">Memory, highest first</option>
           <option value="pid">PID</option>
@@ -58,8 +54,9 @@ export function ResourceViewer() {
       </div>
       {rows.length === 0 ? <EmptyState>No managed processes are running.</EmptyState> : <DataTable framed aria-label="Ocman processes">
         <thead><tr><th>PID</th><th>Parent</th><th>Process</th><th>CPU</th><th>Memory</th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.pid}>
-          <td>{row.pid}</td><td>{row.parentPid}</td><td>{row.name}</td><td>{row.cpuPercent.toFixed(1)}%</td><td>{memory(row.memoryBytes)}</td>
+        <tbody>{rows.map((row) => <tr key={processKey(row)} data-selected={processKey(row) === selected}
+          onClick={(event) => { if (!(event.target as HTMLElement).closest('button') && !window.getSelection()?.toString()) select(row); }}>
+          <td>{row.pid}</td><td>{row.parentPid}</td><td><Button variant="link" size="compact" aria-label={`Select ${row.name}, PID ${row.pid}`} aria-pressed={processKey(row) === selected} onClick={() => select(row)}><span className="resource-process-color" style={{ background: processColor(row) }} aria-hidden="true" />{row.name}</Button></td><td>{row.cpuPercent.toFixed(1)}%</td><td>{memory(row.memoryBytes)}</td>
         </tr>)}</tbody>
       </DataTable>}
     </>}

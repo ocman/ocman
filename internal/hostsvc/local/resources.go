@@ -157,6 +157,7 @@ func (s *resourceSampler) update(now time.Time, readings map[int]processReading,
 		processes = append(processes, reading.ResourceProcess)
 	}
 	sort.Slice(processes, func(i, j int) bool { return processes[i].PID < processes[j].PID })
+	point.Processes = processes
 	history := append(append([]hostsvc.ResourcePoint{}, s.snapshot.History...), point)
 	if len(history) > 60 {
 		history = history[len(history)-60:]

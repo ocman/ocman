@@ -1,6 +1,6 @@
 .background-tasks {
   display: grid;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .background-tasks > p,
@@ -42,4 +42,27 @@
 .background-task-error {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.background-task-row.oc-button {
+  display: flex;
+  width: 100%;
+  height: 30px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 12px;
+}
+
+.background-task-row strong,
+.background-task-phase { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.background-task-row strong { min-width: 0; }
+.background-task-row .background-task-state { margin: 0; flex-shrink: 0; }
+.background-task-phase { margin-left: auto; color: var(--text-dim); }
+.background-task-row > i { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .background-task-phase { display: none; }
+  .background-task-row > i { margin-left: auto; }
 }

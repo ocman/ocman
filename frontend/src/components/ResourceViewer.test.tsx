@@ -5,6 +5,11 @@ import { renderWithQuery } from '../test/renderWithQuery';
 import { resources, type ResourceSnapshot } from '../lib/resources';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 import { ResourceViewer } from './ResourceViewer';
+import { MemoryRouter } from 'react-router-dom';
+
+function renderViewer() {
+  return renderWithQuery(<MemoryRouter><ResourceViewer /></MemoryRouter>);
+}
 
 vi.mock('../lib/resources', () => ({ resources: vi.fn() }));
 vi.mock('../lib/usePanelVisible', () => ({ useDocumentVisible: vi.fn(() => true) }));
@@ -20,6 +25,8 @@ const snapshot: ResourceSnapshot = {
     { timestamp: 10000, cpuPercent: 150, memoryBytes: 2 * 1024 ** 3 },
   ],
 };
+snapshot.history[0].processes = snapshot.processes.map((process) => ({ ...process, cpuPercent: process.cpuPercent * 2 / 3 }));
+snapshot.history[1].processes = snapshot.processes;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -29,10 +36,10 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 it('shows CPU and memory graphs and sorts the top-like process list', async () => {
-  renderWithQuery(<ResourceViewer />);
+  renderViewer();
   const table = await screen.findByRole('table', { name: 'Ocman processes' });
-  expect(screen.getByRole('img', { name: 'CPU history' })).toBeVisible();
-  expect(screen.getByRole('img', { name: 'Memory history' })).toBeVisible();
+  expect(screen.getByRole('group', { name: 'CPU history' })).toBeVisible();
+  expect(screen.getByRole('group', { name: 'Memory history' })).toBeVisible();
   expect(screen.getByText('150.0%')).toBeVisible();
   expect(screen.getByText('2.00 GiB')).toBeVisible();
   const names = () => within(table).getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell')[2].textContent);
@@ -45,21 +52,51 @@ it('shows CPU and memory graphs and sorts the top-like process list', async () =
   expect(names()).toEqual(['agent', 'ocman']);
 });
 
+it('isolates a process from its area or row, pins it through sorting and clears selection', async () => {
+  renderViewer();
+  await screen.findByText('ocman');
+  fireEvent.click(screen.getByRole('button', { name: 'CPU: ocman, PID 1' }));
+  expect(screen.getByRole('button', { name: 'Select ocman, PID 1' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByRole('button', { name: 'CPU: agent, PID 2' })).not.toBeInTheDocument();
+  const rows = () => within(screen.getByRole('table')).getAllByRole('row').slice(1);
+  expect(rows()[0]).toHaveTextContent('ocman');
+  fireEvent.change(screen.getByLabelText('Sort processes'), { target: { value: 'name' } });
+  expect(rows()[0]).toHaveTextContent('ocman');
+  fireEvent.click(screen.getByRole('button', { name: 'Show all processes' }));
+  expect(screen.getByRole('button', { name: 'CPU: agent, PID 2' })).toBeVisible();
+  fireEvent.click(rows()[0]);
+  expect(screen.getByRole('button', { name: 'Select agent, PID 2' })).toHaveAttribute('aria-pressed', 'true');
+});
+
 it('shows loading, failure and retry without claiming there are no processes', async () => {
   vi.mocked(resources).mockReturnValueOnce(new Promise(() => {}));
-  const pending = renderWithQuery(<ResourceViewer />);
+  const pending = renderViewer();
   expect(screen.getByRole('status')).toHaveTextContent('Loading resources');
   pending.unmount();
   vi.mocked(resources).mockRejectedValueOnce(new Error('unavailable'));
-  renderWithQuery(<ResourceViewer />);
+  renderViewer();
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load process resources');
   expect(screen.queryByText('No managed processes are running.')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByText('ocman')).toBeVisible();
 });
 
+it('keeps selection pinned through polling and does not select a replacement with the same PID', async () => {
+  const { client } = renderViewer();
+  fireEvent.click(await screen.findByRole('button', { name: 'Select ocman, PID 1' }));
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: snapshot.processes.map((process) => ({ ...process, cpuPercent: process.pid === 2 ? 999 : 0 })) });
+  await act(() => client.refetchQueries({ queryKey: ['resources', 'local'] }));
+  expect(within(screen.getByRole('table')).getAllByRole('row')[1]).toHaveTextContent('ocman');
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, history: [], processes: [{ ...snapshot.processes[0], name: 'replacement' }] });
+  await act(() => client.refetchQueries({ queryKey: ['resources', 'local'] }));
+  expect(screen.getByText('Selected process is no longer available')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Select replacement, PID 1' })).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(screen.getByRole('button', { name: 'Show all processes' }));
+  expect(screen.getByRole('button', { name: 'CPU: replacement, PID 1' })).toBeVisible();
+});
+
 it('retains the last successful data when a refresh fails', async () => {
-  const { client } = renderWithQuery(<ResourceViewer />);
+  const { client } = renderViewer();
   await screen.findByText('ocman');
   vi.mocked(resources).mockRejectedValueOnce(new Error('unavailable'));
   await act(() => client.refetchQueries({ queryKey: ['resources', 'local'] }));
@@ -69,19 +106,19 @@ it('retains the last successful data when a refresh fails', async () => {
 
 it('shows successful empty results and graphs with no history', async () => {
   vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [], history: [] });
-  renderWithQuery(<ResourceViewer />);
+  renderViewer();
   expect(await screen.findByText('No managed processes are running.')).toBeVisible();
   expect(screen.getByText('0.0%')).toBeVisible();
 });
 
 it('polls once per second, pauses when hidden and aborts when unmounted', async () => {
   vi.mocked(useDocumentVisible).mockReturnValue(false);
-  const hidden = renderWithQuery(<ResourceViewer />);
+  const hidden = renderViewer();
   expect(resources).not.toHaveBeenCalled();
   hidden.unmount();
   vi.mocked(useDocumentVisible).mockReturnValue(true);
   vi.useFakeTimers();
-  const page = renderWithQuery(<ResourceViewer />);
+  const page = renderViewer();
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   expect(resources).toHaveBeenCalledTimes(1);
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });

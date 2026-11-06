@@ -16,9 +16,10 @@ type ResourceProcess struct {
 }
 
 type ResourcePoint struct {
-	Timestamp   int64   `json:"timestamp"`
-	CPUPercent  float64 `json:"cpuPercent"`
-	MemoryBytes uint64  `json:"memoryBytes"`
+	Timestamp   int64             `json:"timestamp"`
+	CPUPercent  float64           `json:"cpuPercent"`
+	MemoryBytes uint64            `json:"memoryBytes"`
+	Processes   []ResourceProcess `json:"processes,omitempty"`
 }
 
 type ResourceSnapshot struct {

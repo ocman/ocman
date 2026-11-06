@@ -143,20 +143,14 @@ it('uses the session id when its title is empty and closes on outside click', ()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 
-it('tabs from the real footer counter into the popover before the adjacent stats button', async () => {
+it('tabs directly to system stats without mounting footer task counters or session queries', async () => {
   vi.useRealTimers();
   useUiStore.setState({ sidebarStatsExpanded: false });
   const user = userEvent.setup();
   render(<MemoryRouter><BackendStats /></MemoryRouter>);
   await user.tab();
-  expect(screen.getByRole('button', { name: 'Total active sessions: 3' })).toHaveFocus();
-  await user.tab();
-  expect(screen.getByRole('dialog', { name: 'Active sessions' })).toHaveFocus();
-  await user.tab();
-  expect(screen.getByRole('link', { name: 'Local task' })).toHaveFocus();
-  await user.keyboard('{Escape}');
+  expect(screen.getByRole('button', { name: 'Show system stats' })).toHaveFocus();
+  expect(screen.queryByRole('button', { name: 'Total active sessions: 3' })).not.toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Total active sessions: 3' })).toHaveFocus();
-  await user.tab({ shift: true });
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(useSessions).not.toHaveBeenCalled();
 });

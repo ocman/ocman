@@ -89,7 +89,11 @@ flowchart LR
   the dedicated agent and browser-terminal tmux trees and the registered OpenCode service.
   Executable names, PIDs and parent PIDs are returned, never command arguments.
   Samples are request-driven, shared for 750 ms and retained in memory for up to
-  60 points. The Resources tab polls once per second only while mounted and the
+   60 points, including each process's CPU and memory for stacked area graphs.
+   Selecting an area or process isolates its graphs and pins its current row;
+   selection and sorting are URL-backed. Background tasks use compact rows with
+   progress, counters and schedule details in the shared popover.
+   The Resources tab polls once per second only while mounted and the
   document is visible. The UI explicitly scopes resources to this machine;
   remote hosts without resource support return 503 rather than falling back.
 - **Remote published resources.** Transcript embeds and artifact links retain

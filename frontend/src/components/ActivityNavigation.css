@@ -8,7 +8,11 @@
 .resource-graph figcaption, .resource-graph-scale, .resource-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .resource-graph svg { display: block; width: 100%; height: 110px; margin-top: 8px; overflow: visible; }
 .resource-graph line { stroke: var(--border); }
-.resource-graph polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.resource-graph polygon { fill-opacity: 0.75; stroke: var(--bg); stroke-width: 0.5; cursor: pointer; vector-effect: non-scaling-stroke; }
+.resource-graph polygon:hover, .resource-graph polygon:focus-visible { fill-opacity: 1; stroke: var(--text); stroke-width: 2; outline: none; }
+.resource-viewer tr[data-selected="true"] { background: var(--bg-hover); }
+.resource-viewer tbody tr { cursor: pointer; }
+.resource-process-color { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; }
 .resource-graph-scale { color: var(--text-dim); font-size: 11px; }
 .resource-viewer td { font-variant-numeric: tabular-nums; }
 .resource-viewer td:nth-child(3) { overflow-wrap: anywhere; }

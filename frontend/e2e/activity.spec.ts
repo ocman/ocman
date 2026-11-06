@@ -5,11 +5,12 @@ test('Activity sits below Inbox and opens background tasks and live resources', 
   await page.route('/api/background-tasks?*', (route) => route.fulfill({ json: [] }));
   await page.route('/api/resources?remoteId=local', (route) => {
     samples++;
-    const point = { timestamp: Date.now(), cpuPercent: 125, memoryBytes: 1024 ** 3 };
+    const processes = [{ pid: 100, parentPid: 1, name: 'ocman', cpuPercent: 25, memoryBytes: 128 * 1024 ** 2 },
+      { pid: 101, parentPid: 100, name: 'coding-agent', cpuPercent: 100, memoryBytes: 896 * 1024 ** 2 }];
+    const point = { timestamp: Date.now(), cpuPercent: 125, memoryBytes: 1024 ** 3, processes };
     return route.fulfill({ json: {
       ...point, history: [point],
-      processes: [{ pid: 100, parentPid: 1, name: 'ocman', cpuPercent: 25, memoryBytes: 128 * 1024 ** 2 },
-        { pid: 101, parentPid: 100, name: 'coding-agent', cpuPercent: 100, memoryBytes: 896 * 1024 ** 2 }],
+      processes,
     } });
   });
   await page.goto('/');
@@ -17,6 +18,13 @@ test('Activity sits below Inbox and opens background tasks and live resources', 
   const inbox = nav.getByRole('link', { name: /^Inbox/ });
   const activity = nav.getByRole('button', { name: 'Activity', exact: true });
   await expect(activity).toBeVisible();
+  const collapse = page.getByRole('button', { name: 'Collapse navigation' });
+  if (await collapse.isVisible()) await collapse.click();
+  await expect.poll(async () => activity.evaluate((button) => {
+    const icon = button.querySelector('i')!.getBoundingClientRect();
+    const bounds = button.getBoundingClientRect();
+    return icon.left >= bounds.left && icon.right <= bounds.right;
+  })).toBe(true);
   const inboxBox = await inbox.boundingBox();
   const activityBox = await activity.boundingBox();
   expect(activityBox!.y).toBeGreaterThan(inboxBox!.y);
@@ -27,14 +35,20 @@ test('Activity sits below Inbox and opens background tasks and live resources', 
   expect(samples).toBe(0);
   await dialog.getByRole('tab', { name: 'Resources', exact: true }).click();
   await expect(dialog.getByRole('table', { name: 'Ocman processes' })).toBeVisible();
-  await expect(dialog.getByRole('img', { name: 'CPU history' })).toBeVisible();
-  await expect(dialog.getByRole('img', { name: 'Memory history' })).toBeVisible();
-  await expect(dialog.getByRole('cell', { name: 'coding-agent', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('group', { name: 'CPU history' })).toBeVisible();
+  await expect(dialog.getByRole('group', { name: 'Memory history' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'CPU: ocman, PID 100', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Select ocman, PID 100' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('table').getByRole('row').nth(1)).toContainText('ocman');
+  await expect(dialog.getByRole('button', { name: 'CPU: coding-agent, PID 101' })).toHaveCount(0);
+  await page.reload();
+  await expect(dialog.getByRole('button', { name: 'Select ocman, PID 100' })).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('button', { name: 'Show all processes' }).click();
+  await expect(dialog.getByRole('button', { name: 'Select coding-agent, PID 101' })).toBeVisible();
   const initial = samples;
   await expect.poll(() => samples).toBeGreaterThan(initial);
   await page.keyboard.press('Escape');
   await expect(dialog).not.toBeVisible();
-  await expect(activity).toBeFocused();
   await expect(page).not.toHaveURL(/activity=/);
 });
 
@@ -48,11 +62,31 @@ test('Activity resource graphs fit a phone viewport and close with the shared co
   await page.getByRole('navigation', { name: 'More destinations' }).getByRole('link', { name: 'Activity' }).click();
   const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
   await dialog.getByRole('tab', { name: 'Resources', exact: true }).click();
-  await expect(dialog.getByRole('img', { name: 'CPU history' })).toBeVisible();
-  await expect(dialog.getByRole('img', { name: 'Memory history' })).toBeVisible();
+  await expect(dialog.getByRole('group', { name: 'CPU history' })).toBeVisible();
+  await expect(dialog.getByRole('group', { name: 'Memory history' })).toBeVisible();
   const box = await dialog.boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   await dialog.getByRole('button', { name: 'Close activity' }).click();
   await expect(dialog).not.toBeVisible();
+});
+
+test('task rows stay compact and open details without closing the activity modal', async ({ mockedPage: page }) => {
+  await page.route('/api/background-tasks?*', (route) => route.fulfill({ json: [{
+    id: 'sync', title: 'Sync history', kind: 'conversation.history', ownerId: 'local', status: 'running',
+    progress: { phase: 'Checking sessions', completed: 3, total: 5, unit: 'sessions', counters: { imported: 2 } },
+    createdAt: 1000, updatedAt: 2000,
+  }] }));
+  await page.goto('/sessions?activity=tasks');
+  const row = page.getByRole('button', { name: /Sync history/ });
+  await expect(row).toBeVisible();
+  expect((await row.boundingBox())!.height).toBeLessThanOrEqual(32);
+  await row.click();
+  const details = page.getByRole('dialog', { name: 'Details for Sync history' });
+  await expect(details.getByText('imported: 2')).toBeVisible();
+  await expect(details.getByRole('progressbar')).toHaveAttribute('value', '3');
+  await page.keyboard.press('Escape');
+  await expect(details).not.toBeVisible();
+  await expect(row).toBeFocused();
+  await expect(page.getByRole('dialog', { name: 'Activity', exact: true })).toBeVisible();
 });

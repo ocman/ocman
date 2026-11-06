@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
-import { useRunningSessionCount } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { IconButton } from './IconButton';
-import { ActiveSessions } from './ActiveSessions';
-import { BackgroundTaskCounter } from './BackgroundTaskCounter';
 import { useLongTaskMonitor } from '../lib/useLongTaskMonitor';
 import './BackendStats.css';
 
@@ -26,7 +23,6 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
   const [frontendMemory, setFrontendMemory] = useState<number | null>(null);
   const longTasks = useLongTaskMonitor();
   const getSystemStats = api.systemStats;
-  const runningSessions = useRunningSessionCount(enabled).data?.count;
   const expanded = useUiStore((s) => s.sidebarStatsExpanded);
   const toggleStats = useUiStore((s) => s.toggleSidebarStats);
 
@@ -136,10 +132,6 @@ export function BackendStats({ enabled = true }: { enabled?: boolean }) {
   return (
     <div className="backend-stats">
       <div className="backend-stats-row">
-        {runningSessions !== undefined && (
-          <ActiveSessions count={runningSessions} enabled={enabled} />
-        )}
-        <BackgroundTaskCounter enabled={enabled} />
         <IconButton
           className="backend-stats-toggle"
           label={expanded ? 'Hide system stats' : 'Show system stats'}

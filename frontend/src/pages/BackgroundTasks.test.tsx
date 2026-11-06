@@ -35,15 +35,22 @@ describe('Background tasks', () => {
     expect(await screen.findByText('Task running')).toBeVisible();
     expect(within(screen.getByRole('region', { name: 'Active tasks' })).getByText('Task queued')).toBeVisible();
     expect(within(screen.getByRole('region', { name: 'Recent tasks' })).getByText('Task failed')).toBeVisible();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Task running/ }));
     expect(screen.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('value', '3');
     expect(screen.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('max', '5');
+    expect(screen.getByText('imported: 2')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /Task queued/ }));
     expect(screen.getByRole('progressbar', { name: 'Progress for Task queued' })).not.toHaveAttribute('value');
+    fireEvent.click(screen.getByRole('button', { name: /Task failed/ }));
     expect(screen.getByText('failed: 2')).toBeVisible();
     expect(screen.getAllByRole('alert').map((element) => element.textContent)).toContain('2 sessions failed; history was not fully verified');
     const recent = within(screen.getByRole('region', { name: 'Recent tasks' }));
     expect(recent.getByText('Cancelled')).toBeVisible();
     expect(recent.getByText('Interrupted')).toBeVisible();
-    expect(within(screen.getByRole('region', { name: 'Active tasks' })).getByText('imported: 2')).toBeVisible();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Task failed/ })).toHaveFocus();
   });
 
   it('filters by status and refreshes without accepting work submissions', async () => {
@@ -113,6 +120,7 @@ describe('Background tasks', () => {
     })]);
     renderWithQuery(<BackgroundTasks />);
     expect(await screen.findByText('Clean archived worktrees')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /Clean archived worktrees/ }));
     const schedule = within(screen.getByLabelText('Schedule for Clean archived worktrees'));
     expect(schedule.getByText('Recurring · every 1h 0m · 2 runs')).toBeVisible();
     expect(schedule.getByText('Scope: Project inventory')).toBeVisible();
@@ -125,6 +133,7 @@ describe('Background tasks', () => {
   it('does not claim another run is scheduled after its loop stopped', async () => {
     vi.mocked(backgroundTasks).mockResolvedValue([task('once', { schedule: { intervalMillis: 60_000, runs: 1, nextRunAt: 0 } })]);
     renderWithQuery(<BackgroundTasks />);
+    fireEvent.click(await screen.findByRole('button', { name: /Task once/ }));
     expect(await screen.findByText('Recurring · every 1m 0s · 1 run')).toBeVisible();
     expect(screen.queryByText(/Next check:/)).not.toBeInTheDocument();
   });
