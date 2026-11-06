@@ -44,7 +44,10 @@ Reviewer requests include tool input and configured custom rules. OpenAI-compati
 requests include up to six recent user-message excerpts. TypeSafe-compatible
 requests include the project directory and retained user prose without excerpt
 truncation, limited to fewer than 100 messages and 32,000 bytes. Missing or oversized
-context requires human review. Choosing a hosted endpoint sends that context to
+context requires human review. Each Jev authorization read, including the final
+recheck, waits up to five seconds for a session-specific ingestion refresh.
+Unavailable ingestion or a failed refresh requires human review rather than
+using stale consent. Choosing a hosted endpoint sends that context to
 its provider.
 
 - **OpenAI-compatible.** Ocman sends non-streaming `messages` with the existing

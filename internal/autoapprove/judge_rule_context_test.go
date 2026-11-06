@@ -111,8 +111,9 @@ func TestTypeSafeFullContextWithoutRecentExcerpts(t *testing.T) {
 }
 
 func TestTypeSafePipelineRechecksContextBeforeReply(t *testing.T) {
-	for _, changed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "unchanged", true: "new user restriction"}[changed], func(t *testing.T) {
+	for _, scenario := range []string{"unchanged", "new user restriction", "refresh failed"} {
+		t.Run(scenario, func(t *testing.T) {
+			changed := scenario != "unchanged"
 			var evaluated atomic.Bool
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -125,19 +126,29 @@ func TestTypeSafePipelineRechecksContextBeforeReply(t *testing.T) {
 			store := &ruleContextStore{metricsStore: metricsStore{value: string(config)}}
 			replies := 0
 			p := &fakePlatform{id: "test", respondPermissionFn: func(platforms.RespondPermissionRequest) error { replies++; return nil }}
-			s := NewService(Deps{Store: store, DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil }, RecentUserMessages: func(context.Context, platforms.ID, string) ([]string, error) {
-				if changed && evaluated.Load() {
+			read := func(context.Context, platforms.ID, string) ([]string, error) {
+				if scenario == "new user restriction" && evaluated.Load() {
 					return []string{"Stop; do not change files."}, nil
 				}
 				return []string{"Fix the project tests."}, nil
-			}})
+			}
+			freshReads := 0
+			s := NewService(Deps{Store: store, DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil }, RecentUserMessages: read,
+				JudgeUserMessages: func(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
+					freshReads++
+					if scenario == "refresh failed" && evaluated.Load() {
+						return nil, errors.New("fresh history unavailable")
+					}
+					return read(ctx, platform, id)
+				},
+			})
 			metadata := map[string]any{"command": "go test ./..."}
 			// Even a previously safe command must reach Jev, not its old cache.
 			s.recordSafeCommandVerdict("session", s.scopedTestHash(t, metadata), "old consent")
 			asked := s.rememberAskedForEnsure("test", "session", "permission", "bash", nil, metadata)
 			s.backgroundAutoApprove(t.Context(), "test", p, "session", "permission", asked)
-			if calls.Load() != 1 || replies != map[bool]int{false: 1, true: 0}[changed] {
-				t.Fatalf("calls=%d replies=%d", calls.Load(), replies)
+			if calls.Load() != 1 || freshReads != 2 || replies != map[bool]int{false: 1, true: 0}[changed] {
+				t.Fatalf("calls=%d freshReads=%d replies=%d", calls.Load(), freshReads, replies)
 			}
 			if !changed && (len(store.approved) != 1 || !store.approved[0].ContextBound) {
 				t.Fatalf("approval can be inherited: %+v", store.approved)

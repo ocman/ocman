@@ -210,14 +210,16 @@ flowchart LR
   Noul probabilities feed a Go rule evaluator with hard-deny precedence and
   soft-deny exceptions or exact consent. Missing or oversized user history
   requires human review. Jev bypasses command-cache reuse and rechecks context
-  before approval; other endpoint verdicts retain their configuration-scoped cache.
+  before approval. Each authorization read awaits a bounded session-specific
+  ingestion refresh receipt; missing ingestion or refresh failure cannot reuse
+  retained consent. Other endpoint verdicts retain their configuration-scoped cache.
   Jev approval records are context-bound, so worktree inheritance does not turn
   them into standing allow rules. Existing approvals retain their previous behavior.
 
   ```mermaid
   flowchart LR
       Call[Pending tool call] --> Rules[Static and manual rules]
-      History[Stored user prose<br/>and configured policy] --> Jev[Named Noul questions]
+      History[Freshness receipt<br/>and stored user prose] --> Jev[Named Noul questions]
       Rules --> Jev
       Jev --> Policy[Go precedence evaluator]
       Policy --> Check[Recheck current context]

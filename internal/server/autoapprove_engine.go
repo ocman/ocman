@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ocman/ocman/internal/autoapprove"
 	"github.com/ocman/ocman/internal/db"
@@ -135,12 +136,19 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 }
 
 func (s *Server) permissionJudgeUserMessages(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
-	if !s.hasStoredHistory() {
+	if !s.hasStoredHistory() || s.historyIngest == nil {
 		return nil, platforms.ErrHistoryUnavailable
 	}
 	owner, kind := platforms.SplitPlatformID(string(platform))
 	if owner != "" {
 		return nil, platforms.ErrUnsupported
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	// Every authorization read, including the final recheck, needs its own
+	// session-specific receipt. Equal retained snapshots may both be stale.
+	if err := s.historyIngest.RefreshStored(ctx, string(platform), id); err != nil {
+		return nil, err
 	}
 	messages, err := s.historyAnalytics.Store.RecentUserMessages(ctx, s.historyOwner, kind, id, 100)
 	if err != nil {
