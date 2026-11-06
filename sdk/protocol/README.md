@@ -444,7 +444,8 @@ Navigation permits only the static core destinations `sessions`, `projects`,
 
 Errors contain only `{"error":{"category":"..."}}`. HTTP mapping: invalid
 argument 400, denied 403, missing 404, conflict 409, unavailable 503, deadline 504,
-cancelled 408, and internal 500. Plugin diagnostics and transport errors are never
+cancelled 408, and internal 500. Host admission overload (`ErrBusy`) maps to
+`unavailable`/503, not an internal error. Plugin diagnostics and transport errors are never
 returned. A listed plugin can become unavailable before invocation; the caller
 must handle the error without bypassing the broker.
 

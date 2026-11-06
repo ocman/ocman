@@ -15,7 +15,7 @@ vi.mock('../lib/useCapabilities', () => ({ useCapabilities: () => ({ platforms: 
 const packageJSON = JSON.parse(packageText) as { version: string };
 
 it('exposes exactly the published contract at runtime', () => {
-  const declared = [...contract.matchAll(/^export declare (?:function|const) (\w+)/gm)].map((m) => m[1]).sort();
+  const declared = [...contract.matchAll(/^export declare (?:function|const|class) (\w+)/gm)].map((m) => m[1]).sort();
   expect(Object.keys(PluginUI).sort()).toEqual(declared);
   expect(PluginUI.PLUGIN_UI_VERSION).toBe(packageJSON.version);
 });

@@ -41,8 +41,11 @@ func TestUIProcessHelper(t *testing.T) {
 		// Serve bytes that differ from the approved checksum.
 		bundle.Data = append([]byte("//"), bundle.Data[2:]...)
 	}
-	ui := plugin.UIHandler(d, func(_ context.Context, method string, params json.RawMessage) (any, error) {
+	ui := plugin.UIHandler(d, func(ctx context.Context, method string, params json.RawMessage) (any, error) {
 		switch method {
+		case "items.wait":
+			<-ctx.Done()
+			return nil, ctx.Err()
 		case "items.list":
 			return map[string]any{"items": []string{"alpha"}, "params": params}, nil
 		case "chunky":

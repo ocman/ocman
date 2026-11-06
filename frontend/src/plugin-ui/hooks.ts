@@ -20,7 +20,8 @@ export function usePluginCall<T>(method: string, params?: unknown, options: Plug
     queryFn: ({ signal }) => callPluginUI<T>(pluginId, method, params, signal),
     enabled: options.enabled,
     refetchInterval: options.refetchInterval,
-    retry: false,
+    retry: options.retry ?? false,
+    retryDelay: options.retryDelay,
   });
 }
 
@@ -28,6 +29,7 @@ export function usePluginMutation<T, P = unknown>(method: string) {
   const { pluginId } = usePluginHost();
   const client = useQueryClient();
   return useMutation<T, Error, P>({
+    retry: false,
     mutationFn: (params: P) => callPluginUI<T>(pluginId, method, params),
     onSuccess: () => client.invalidateQueries({ queryKey: pluginUIQueryKey(pluginId) }),
   });

@@ -124,7 +124,7 @@ export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T
 
 export async function postJSON<TResp, TReq = unknown>(
   url: string, body: TReq,
-  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'PUT' | 'DELETE'; acceptStatus?: number },
+  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'PUT' | 'DELETE'; acceptStatus?: number; responseError?: (response: Response) => Promise<Error> },
 ): Promise<TResp> {
   const method = opts?.method ?? 'POST';
   const startedAt = performance.now();
@@ -136,7 +136,10 @@ export async function postJSON<TResp, TReq = unknown>(
       body: hasBody ? JSON.stringify(body) : undefined, signal: opts?.signal,
     });
     status = resp.status;
-    if (!resp.ok && resp.status !== opts?.acceptStatus) await throwForStatus(resp);
+    if (!resp.ok && resp.status !== opts?.acceptStatus) {
+      if (resp.status !== 401 && opts?.responseError) throw await opts.responseError(resp);
+      await throwForStatus(resp);
+    }
     if (opts?.parseJSON === false || resp.status === 204) return undefined as unknown as TResp;
     return await readJSON<TResp>(resp);
   } finally {

@@ -1,4 +1,4 @@
-// @ocman/plugin-ui 1.2.0: the public, semver-versioned surface a plugin UI
+// @ocman/plugin-ui 1.3.0: the public, semver-versioned surface a plugin UI
 // bundle may import. The host provides the implementation at runtime; plugin
 // builds keep this module external (see @ocman/plugin-vite). Additions are
 // minor releases; removals or changed meaning are major releases.
@@ -23,12 +23,26 @@ export declare function usePluginContext(): PluginContextValue;
 export interface PluginCallOptions {
   enabled?: boolean;
   refetchInterval?: number | false;
+  /** Opt-in query retries. Defaults to false. Use a bounded policy for known reads only. */
+  retry?: boolean | number | ((failureCount: number, error: Error) => boolean);
+  /** Retry delay in milliseconds. The attempt index starts at zero. */
+  retryDelay?: number | ((attemptIndex: number, error: Error) => number);
+}
+
+/** Non-401 HTTP failure. Network, cancellation and authentication errors retain their existing types. */
+export declare class PluginCallError extends Error {
+  readonly status: number;
+  /** A recognized safe protocol category, otherwise null. */
+  readonly category: string | null;
+  /** Parsed Retry-After delay in milliseconds, otherwise null. Not an automatic retry policy. */
+  readonly retryAfterMs: number | null;
+  constructor(status: number, category: string | null, retryAfterMs: number | null);
 }
 
 /** Calls a plugin-defined ui.v1 method of this plugin, as a cached query. */
 export declare function usePluginCall<T>(method: string, params?: unknown, options?: PluginCallOptions): UseQueryResult<T, Error>;
 
-/** Calls a plugin-defined ui.v1 method imperatively. Success refreshes this plugin's queries. */
+/** Calls a plugin-defined ui.v1 method imperatively, without automatic retries. Success refreshes this plugin's queries. */
 export declare function usePluginMutation<T, P = unknown>(method: string): UseMutationResult<T, Error, P>;
 
 export interface PluginActionHandle {

@@ -60,7 +60,7 @@ func pluginResponse(value any, err error) remote.PluginResponse {
 		category = plugins.ErrorInvalidArgument
 	case errors.Is(err, errPluginConflict):
 		category = plugins.ErrorConflict
-	case errors.Is(err, plugins.ErrUnavailable), errors.Is(err, platforms.ErrRemoteOffline):
+	case errors.Is(err, plugins.ErrBusy), errors.Is(err, plugins.ErrUnavailable), errors.Is(err, platforms.ErrRemoteOffline):
 		category = plugins.ErrorUnavailable
 	case errors.Is(err, context.Canceled):
 		category = plugins.ErrorCancelled

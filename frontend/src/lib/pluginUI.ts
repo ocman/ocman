@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { fetchJSON, postJSON } from './api';
 import type { PluginAction } from './plugins';
+import { pluginCallResponseError } from './pluginCallError';
 
 /** A hub-local plugin that ships in-app UI (ui.v1), listed without running it. */
 export interface PluginUI {
@@ -27,7 +28,7 @@ export function usePluginUIs() {
 }
 
 export function callPluginUI<T>(pluginId: string, method: string, params: unknown, signal?: AbortSignal) {
-  return postJSON<T>('/api/plugins/ui/call', { pluginId, method, ...(params === undefined ? {} : { params }) }, { signal });
+  return postJSON<T>('/api/plugins/ui/call', { pluginId, method, ...(params === undefined ? {} : { params }) }, { signal, responseError: pluginCallResponseError });
 }
 
 /** The root query key of every ui.v1 call made by one plugin. */
