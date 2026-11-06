@@ -32,7 +32,7 @@ describe('nested sidebar session cards', () => {
     expect(row).toHaveAttribute('aria-selected', 'true');
     expect(within(row).getByTitle(new Date(1).toLocaleString())).toBeInTheDocument();
     fireEvent.click(within(row).getByText('└─'));
-    expect(navigate).toHaveBeenCalledWith('child');
+    expect(navigate).toHaveBeenCalledWith('child', 'test');
     fireEvent.click(within(row).getByRole('button', { name: 'Archive session' }));
     expect(archive).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledOnce();
