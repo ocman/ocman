@@ -37,6 +37,7 @@ type session struct {
 	st           statusState
 	queueGen     uint64
 	queueReading bool
+	settlement   settlementState
 
 	descMu sync.Mutex
 	desc   map[string]descendant

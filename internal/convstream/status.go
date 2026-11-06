@@ -1,8 +1,6 @@
 package convstream
 
 import (
-	"context"
-
 	"github.com/ocman/ocman/internal/convevents"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
@@ -100,25 +98,6 @@ func (s *session) idleLocked(replayed bool) {
 	s.ledger.settle()
 	s.emitStatusLocked(replayed)
 	s.scheduleSettleLocked(s.st.gen, replayed)
-}
-
-func (s *session) scheduleSettleLocked(gen uint64, replayed bool) {
-	settler, ok := s.source.(Settler)
-	if !ok {
-		s.settledLocked(gen, nil, platforms.ErrUnsupported, replayed)
-		return
-	}
-	started := s.hub.opts.Workers.Go(func(ctx context.Context) {
-		ctx, cancel := context.WithTimeout(ctx, settleTimeout)
-		lc, err := settler.Settle(ctx)
-		cancel()
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.settledLocked(gen, lc, err, replayed)
-	})
-	if !started {
-		s.settledLocked(gen, nil, ErrClosed, replayed)
-	}
 }
 
 // settledLocked ends the pending turn with the settled outcome. A failed
