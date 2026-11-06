@@ -40,21 +40,29 @@ test('new-session launch checklist keeps its rows close together', async ({ mock
   await page.getByRole('textbox').press('Enter');
   const checklist = page.getByTestId('start-progress');
   await expect(checklist.getByRole('listitem')).toHaveCount(4);
-  await expect(checklist).toHaveCSS('font-size', '10px');
+  const summary = page.locator('summary').filter({ hasText: 'Setup ocman session' });
+  const rowStyle = await summary.evaluate(element => {
+    const style = getComputedStyle(element);
+    return { fontSize: style.fontSize, lineHeight: Number.parseFloat(style.lineHeight) };
+  });
+  await expect(checklist).toHaveCSS('font-size', rowStyle.fontSize);
+  for (const row of await checklist.getByRole('listitem').all()) {
+    await expect(row.locator('.oc-read-arrow')).toHaveText('└');
+  }
   const mutedColor = await checklist.evaluate((element) => getComputedStyle(element).color);
-  for (const icon of await checklist.locator('[aria-hidden]').all()) {
+  for (const icon of await checklist.locator('.oc-launch-icon').all()) {
     await expect(icon).toHaveCSS('width', '10px');
     await expect(icon).toHaveCSS('height', '10px');
     await expect(icon).toHaveCSS('color', mutedColor);
   }
-  await expect(checklist.getByTestId('start-step-prompt').locator('[aria-hidden]')).toHaveCSS('border-top-color', mutedColor);
+  await expect(checklist.getByTestId('start-step-prompt').locator('.oc-launch-icon')).toHaveCSS('border-top-color', mutedColor);
   const rows = await checklist.getByRole('listitem').evaluateAll((items) => items.map((item) => {
     const rect = item.getBoundingClientRect();
     const label = item.lastElementChild!.getBoundingClientRect();
     return { top: rect.top, bottom: rect.bottom, height: rect.height, labelLeft: label.left };
   }));
   for (let i = 0; i < rows.length; i++) {
-    expect(rows[i].height).toBeLessThanOrEqual(12.5);
+    expect(rows[i].height).toBeLessThanOrEqual(rowStyle.lineHeight);
     expect(rows[i].labelLeft).toBe(rows[0].labelLeft);
     if (i > 0) expect(rows[i].top - rows[i - 1].bottom).toBeLessThanOrEqual(1);
   }
