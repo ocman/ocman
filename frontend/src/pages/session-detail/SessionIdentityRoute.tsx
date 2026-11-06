@@ -18,7 +18,7 @@ export function SessionIdentityRoute({ id, children }: { id?: string; children: 
   const legacy = !!id && id !== 'new' && !id.startsWith('ocm_');
 
   useEffect(() => {
-    if (!capabilities?.ownedSessionIds || !id || id === 'new') return;
+    if (!capabilities?.ownedSessionIds || !id || id === 'new' || new URLSearchParams(location.search).get('draftId') === id) return;
     const controller = new AbortController();
     const query = new URLSearchParams(location.search);
     const resolution = legacy

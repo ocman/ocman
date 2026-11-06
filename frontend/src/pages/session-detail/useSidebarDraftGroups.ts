@@ -7,7 +7,8 @@ import { orderSidebarProjectGroups } from './useSidebarProjectGroups';
 import type { SidebarProjectGroup } from './SessionSidebar';
 
 export function useSidebarDraftGroups(groups: SidebarProjectGroup[], searchQuery: string) {
-  const drafts = useNewConversationDrafts((state) => state.drafts);
+  const stored = useNewConversationDrafts((state) => state.drafts);
+  const drafts = stored.filter((draft) => !draft.draftId.startsWith('ocm_'));
   const projectOrder = useUiStore((state) => state.projectOrder);
   const location = useLocation();
   const activeId = location.pathname === '/session/new' ? new URLSearchParams(location.search).get('draftId') || 'new' : null;

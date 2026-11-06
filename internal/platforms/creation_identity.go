@@ -3,6 +3,8 @@ package platforms
 // CreationIdentity travels with owner-routed creation, including across gRPC.
 // It describes Ocman's intent, not platform-specific execution parameters.
 type CreationIdentity struct {
+	// SessionID preserves an application draft identity through native allocation.
+	SessionID       string           `json:"sessionId,omitempty"`
 	RequestKey      string           `json:"requestKey"`
 	Origin          string           `json:"origin"`
 	OriginID        string           `json:"originId,omitempty"`

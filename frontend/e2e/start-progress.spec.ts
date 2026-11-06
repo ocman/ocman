@@ -35,7 +35,7 @@ test('new-session launch checklist keeps its rows close together', async ({ mock
     }, startId);
     // Hold creation pending so the real launch UI remains visible.
   });
-  await page.goto(`/session/new?dir=${encodeURIComponent(MOCK_SESSION.directory)}&platform=opencode`);
+  await page.goto(`/session/new?dir=${encodeURIComponent(MOCK_SESSION.directory)}&platform=opencode&draftId=legacy-start-checklist`);
   await page.getByRole('textbox').fill('Tighten the spacing in the session launch checklist.');
   await page.getByRole('textbox').press('Enter');
   const checklist = page.getByTestId('start-progress');

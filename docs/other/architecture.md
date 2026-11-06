@@ -14,6 +14,11 @@ flow](architecture-events.md) and [Conversation history and session
 identity](architecture-history.md) expand on the core data paths, and
 feature-specific designs live on their feature pages.
 
+New conversations persist an application draft and accepted first prompt before
+native setup. The same Ocman ID stays in the route and sidebar when the owner
+binds a native execution. The [session/event flow](architecture-events.md)
+describes asynchronous setup, delivery receipts and held follow-ups.
+
 ## 1. System context
 
 Everything external that the ocman process touches.

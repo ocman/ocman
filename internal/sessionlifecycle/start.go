@@ -1,15 +1,18 @@
 package sessionlifecycle
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os/exec"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 // startSendBody is delivered in the start request. Failures leave the created
@@ -25,18 +28,31 @@ type startSendBody struct {
 	Reasoning string `json:"reasoning"`
 }
 
+type startRequest struct {
+	Target
+	Worktree bool           `json:"worktree"`
+	Title    string         `json:"title"`
+	Prompt   string         `json:"prompt"`
+	Send     *startSendBody `json:"send"`
+	StartID  string         `json:"startId"`
+	DraftID  string         `json:"draftId,omitempty"`
+	Command  *struct {
+		Command   string `json:"command"`
+		Arguments string `json:"arguments"`
+	} `json:"command,omitempty"`
+	Shell *struct {
+		Command string `json:"command"`
+	} `json:"shell,omitempty"`
+}
+
 // HandleStartSession creates at the chosen target and delivers the first prompt.
 func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Target
-		Worktree bool   `json:"worktree"`
-		Title    string `json:"title"`
-		// Prompt names automatic worktrees, including client-run commands.
-		Prompt  string         `json:"prompt"`
-		Send    *startSendBody `json:"send"`
-		StartID string         `json:"startId"`
-	}
+	var req startRequest
 	if !httpx.ReadJSON(w, r, httpx.MaxSendMessageBody, &req) || !req.Validate(w) {
+		return
+	}
+	if req.DraftID != "" && !sessioncatalog.IsID(req.DraftID) || req.Command != nil && req.Shell != nil {
+		http.Error(w, "invalid draft launch", http.StatusBadRequest)
 		return
 	}
 	var model string
@@ -46,6 +62,10 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	if !req.ResolvePlatform(r.Context(), m, w, model) {
 		return
 	}
+	var creation *platforms.CreationIdentity
+	if req.DraftID != "" {
+		creation = &platforms.CreationIdentity{SessionID: req.DraftID, RequestKey: "draft:" + req.DraftID, Origin: "user"}
+	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
 	ctx := r.Context()
 	permissionRules, err := m.d.PermissionDefaults(ctx, req.Directory, req.RemoteID)
@@ -54,7 +74,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.StartID != "" {
-		ctx = hostsvc.WithProgress(ctx, m.startProgress(req.StartID))
+		ctx = hostsvc.WithProgress(ctx, m.startProgress(ctx, req.StartID))
 		r = r.WithContext(ctx)
 	}
 
@@ -87,6 +107,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 			hostsvc.ReportProgress(ctx, hostsvc.StepWorktree, hostsvc.StepActive)
 		}
 		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
+			Creation:   creation,
 			Platform:   base,
 			ProjectDir: req.Directory, AutoName: true, Prompt: req.Prompt, Title: req.Title,
 			PermissionRules: permissionRules,
@@ -114,7 +135,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		}
 		hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepDone)
 		hostsvc.ReportProgress(ctx, hostsvc.StepSession, hostsvc.StepActive)
-		resp, err := m.d.Sessions().CreateConfigured(ctx, resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port}, permissionRules)
+		resp, err := m.d.Sessions().CreateConfigured(ctx, resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port, Creation: creation}, permissionRules)
 		hostsvc.FinishStep(ctx, hostsvc.StepSession, err)
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{"platform": resolved, "directory": req.Directory}).Warn("hub: start session failed")
@@ -124,18 +145,24 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		platform, sessionID, directory = resolved, resp.ID, req.Directory
 	}
 
+	if req.DraftID != "" {
+		if sessionID != req.DraftID {
+			http.Error(w, "owner did not preserve the draft identity", http.StatusBadGateway)
+			return
+		}
+		if m.d.DB != nil {
+			write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			err := (draftStore{m.d.DB}).confirmed(write, sessionID, map[string]any{"sessionId": sessionID, "platform": platform, "remoteId": remoteIDForPlatform(platform), "directory": directory, "worktreePath": worktreePath, "branch": branch, "firstMessageSent": false})
+			cancel()
+			if err != nil {
+				httpx.ServerError(w, "recording session binding", err)
+				return
+			}
+		}
+	}
 	sent, sendErr := false, ""
 	if req.Send != nil {
-		images := make([]platforms.ImageAttachment, 0, len(req.Send.Images))
-		for _, img := range req.Send.Images {
-			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
-		}
-		hostsvc.ReportProgress(ctx, hostsvc.StepPrompt, hostsvc.StepActive)
-		err := m.d.SendNow(ctx, platform, platforms.SendMessageRequest{
-			SessionID: sessionID, Message: req.Send.Message, Images: images,
-			Model: req.Send.Model, Agent: req.Send.Agent, Reasoning: req.Send.Reasoning,
-		})
-		hostsvc.FinishStep(ctx, hostsvc.StepPrompt, err)
+		err := m.deliverFirst(ctx, req, platform, sessionID)
 		if err != nil {
 			log.WithError(err).Warn("hub: sending first message")
 			sendErr = err.Error()
@@ -155,8 +182,13 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (m *Module) startProgress(startID string) hostsvc.ProgressFunc {
+func (m *Module) startProgress(ctx context.Context, startID string) hostsvc.ProgressFunc {
 	return func(step, state string) {
+		if m.d.DB != nil {
+			if err := (draftStore{m.d.DB}).progress(ctx, startID, step, state); err != nil {
+				log.WithError(err).Warn("persisting setup progress")
+			}
+		}
 		payload, err := json.Marshal(map[string]string{"startId": startID, "step": step, "state": state})
 		if err == nil {
 			m.d.Broadcast("ocman.session.start.progress", payload)

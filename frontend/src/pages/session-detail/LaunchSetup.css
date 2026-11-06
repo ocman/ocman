@@ -1,0 +1,15 @@
+.oc-launch-setup {
+  margin: 8px 0 16px;
+  color: var(--text-dim);
+  font-family: var(--font-conversation-mono);
+  font-size: 10px;
+}
+
+.oc-launch-setup > summary {
+  cursor: pointer;
+}
+
+.oc-launch-setup > summary:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+}

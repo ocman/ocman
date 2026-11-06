@@ -8,6 +8,8 @@ import type { QueuedMessage, Session } from './api';
 import { clearSettingsCache } from './projectSettingsCache';
 import { useBetaFeatures } from './betaFeatures';
 import { queryClient } from './queryClient';
+import { applyBackendStartProgress, refreshBackendDrafts } from './backendConversationDrafts';
+import { remoteLog } from './remoteLog';
 
 /**
  * App-wide SSE subscriber for `/api/events`.
@@ -173,6 +175,7 @@ function handleStartProgress(raw: string): void {
   try {
     const { startId, step, state } = JSON.parse(raw);
     if (typeof startId !== 'string' || typeof step !== 'string' || typeof state !== 'string') return;
+    applyBackendStartProgress(startId, step, state);
     for (const cb of startProgressListeners) cb(startId, step as StartStep, state as StartStepState);
   } catch { /* Ignore malformed SSE payloads. */ }
 }
@@ -306,6 +309,9 @@ function open(): void {
   });
   next.addEventListener('ocman.session.start.progress', (e) => {
     handleStartProgress((e as MessageEvent).data);
+  });
+  next.addEventListener('ocman.session.draft.updated', () => {
+    void refreshBackendDrafts().catch((error) => remoteLog.error('Could not refresh conversation drafts', error));
   });
   next.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);

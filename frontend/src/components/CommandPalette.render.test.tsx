@@ -10,6 +10,14 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
+function expectDraftLocation(expectedQuery: string) {
+  const location = screen.getByTestId('location').textContent!;
+  const url = new URL(location, 'http://localhost');
+  expect(url.pathname).toMatch(/^\/session\/ocm_[0-9a-f-]{36}$/);
+  expect(url.pathname).toBe(`/session/${url.searchParams.get('draftId')}`);
+  expect(url.search).toContain(expectedQuery);
+}
+
 const mocks = vi.hoisted(() => {
   const uiState = {
     paletteOpen: true,
@@ -229,7 +237,7 @@ describe('CommandPalette project mode', () => {
     fireEvent.click(await screen.findByText('Use this directory'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter');
+      expectDraftLocation('?dir=%2FUsers%2Fpeter');
     });
     expect(mocks.uiState.closePalette).toHaveBeenCalled();
   });
@@ -313,7 +321,7 @@ describe('CommandPalette project mode', () => {
     fireEvent.click(target);
     await waitFor(() => {
       const location = screen.getByTestId('location').textContent!;
-      expect(location).toContain('/session/new?dir=%2Fremote%2Ftarget&remoteId=box');
+      expectDraftLocation('?dir=%2Fremote%2Ftarget&remoteId=box');
       expect(location).toContain('&platform=r-box%3Aopencode');
     });
     expect(mocks.apiState.resolveProjectIdentities).toHaveBeenCalledWith([{ directory: '/local/source', remoteId }], expect.any(AbortSignal));
@@ -406,7 +414,7 @@ describe('CommandPalette project mode', () => {
     const selected = await screen.findByRole('option', { name: /renamed\/repo/ });
     expect(selected).toHaveAttribute('aria-selected', 'true');
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Frenamed%2Frepo'));
+    await waitFor(() => expectDraftLocation('?dir=%2Frenamed%2Frepo'));
   });
 
   it('does not override an explicit selection when initial resolution completes later', async () => {
@@ -424,7 +432,7 @@ describe('CommandPalette project mode', () => {
     await act(async () => resolve([{ key: 'second' }]));
     await waitFor(() => expect(first).toHaveAttribute('aria-selected', 'true'));
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Ffirst'));
+    await waitFor(() => expectDraftLocation('?dir=%2Ffirst'));
   });
 
   it('reports a resolved identity missing from the project list without selecting a fallback', async () => {
@@ -436,7 +444,7 @@ describe('CommandPalette project mode', () => {
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
     fireEvent.click(screen.getByText('workspace/research'));
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter%2Fworkspace%2Fresearch'));
+    await waitFor(() => expectDraftLocation('?dir=%2FUsers%2Fpeter%2Fworkspace%2Fresearch'));
   });
 
   it('surfaces resolution failures and requires an explicit target before Enter', async () => {
@@ -455,7 +463,7 @@ describe('CommandPalette project mode', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter%2Fworkspace%2Focman'));
+    await waitFor(() => expectDraftLocation('?dir=%2FUsers%2Fpeter%2Fworkspace%2Focman'));
   });
 
   it('focuses the project picker when it opens', () => {
@@ -477,7 +485,7 @@ describe('CommandPalette project mode', () => {
     fireEvent.click(await screen.findByText('workspace/ocman'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter%2Fworkspace%2Focman');
+      expectDraftLocation('?dir=%2FUsers%2Fpeter%2Fworkspace%2Focman');
     });
   });
 
@@ -492,7 +500,7 @@ describe('CommandPalette project mode', () => {
     fireEvent.click(await screen.findByText('remote/repo'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Fremote%2Frepo&remoteId=box&platform=r-box%3Aopencode');
+      expectDraftLocation('?dir=%2Fremote%2Frepo&remoteId=box&platform=r-box%3Aopencode');
     });
   });
 

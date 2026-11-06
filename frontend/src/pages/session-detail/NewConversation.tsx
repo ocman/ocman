@@ -1,10 +1,5 @@
-// The new-conversation composer. There is no session yet: the first
-// submission creates one at the selected machine + target (worktree or
-// current checkout) and sends the prompt in the same request, so the id,
-// directory and machine never change under the user afterwards.
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, postJSON, type StartSessionRequest } from '../../lib/api';
+import { api, postJSON } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
 import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft, getConversationDraft, retryConversationDraftSave, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
@@ -36,6 +31,9 @@ import { PreparedDraftLifecycle } from './PreparedDraftLifecycle';
 import { navigateAfterDraftDiscard } from './navigateAfterDraftDiscard';
 import { useDraftMachine } from './useDraftMachine';
 import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
+import { durableStartRequest, resolveTarget, type Ready, type Submission } from './newConversationSubmission';
+import { useDurableConversation } from './useDurableConversation';
+import { discardBackendDraft, isBackendDraft } from '../../lib/backendConversationDrafts';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -44,20 +42,8 @@ export interface NewConversationProps {
   navigateToSession: (id: string) => void;
 }
 
-/** What a submission needs before it can start: the catalog and the resolved target. */
-interface Ready { catalog: DraftCatalog; canWorktree: boolean; worktrees: { path: string }[]; platform?: string; model: string }
-/** A server-delivered prompt, or work the client runs on the new session. */
-interface Submission {
-  model: string;
-  send?: StartSessionRequest['send'];
-  execute?: (sessionId: string, platform: string) => Promise<void>;
-}
-
-function resolveTarget(target: SessionTarget, canWorktree: boolean, worktrees: { path: string }[]): SessionTarget {
-  return !canWorktree || target.startsWith('dir:') && !worktrees.some((tree) => `dir:${tree.path}` === target) ? 'current' : target;
-}
-
 export function NewConversation({ params, composerRef, navigate, navigateToSession }: NewConversationProps) {
+  if (isBackendDraft(params.draftId)) return <PreparedConversation key={params.draftId} params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />;
   return <PreparedDraftLifecycle key={params.draftId || NEW_SESSION_ID} params={params} navigate={navigate} navigateToSession={navigateToSession}>
     <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params}
       composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />
@@ -67,6 +53,7 @@ export function NewConversation({ params, composerRef, navigate, navigateToSessi
 function PreparedConversation({ params, composerRef, navigate }: NewConversationProps) {
   const { directory, title } = params;
   const draftId = params.draftId || NEW_SESSION_ID;
+  const durable = useDurableConversation(params, navigate);
   const draftStart = useNewConversationDrafts((state) => state.starts[draftId]);
   const saveError = useNewConversationDrafts((state) => state.saveErrors[draftId]);
   const [openedWhilePending] = useState(() => !!draftStart && !draftStart.error && !draftStart.sessionId);
@@ -174,22 +161,24 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   }, [machinePlatforms]);
   // Re-points the route when model runs on another platform; reports whether it did.
   const repoint = useCallback((model: string) => {
+    if (durable.submitted) return false;
     const next = platformForModel(model);
     if (!next || !platform || basePlatform(next) === basePlatform(platform)) return false;
     navigate(newSessionPath({ directory, remoteId, platform: next, title, draftId }));
     return true;
-  }, [directory, remoteId, title, draftId, platform, platformForModel, navigate]);
+  }, [directory, remoteId, title, draftId, platform, platformForModel, navigate, durable.submitted]);
   // A default model of another platform (the project's or the last pick)
   // opens the conversation on that platform.
   useEffect(() => {
     if (catalogReady && !selectedModel && activeModel) repoint(activeModel);
   }, [catalogReady, selectedModel, activeModel, repoint]);
   const handleModelChange = useCallback((model: string) => {
+    if (durable.submitted && platformForModel(model) && platformForModel(model) !== durable.record?.request?.platform) { setError('The platform cannot change after the first prompt is submitted.'); return; }
     setSelectedModel(model);
     setSelectedReasoning('');
     saveProjectModel(directory, model);
     if (repoint(model)) setSelectedAgent(''); // agents belong to a platform
-  }, [directory, repoint]);
+  }, [directory, repoint, durable.submitted, durable.record?.request?.platform, platformForModel]);
   const handleAgentChange = useCallback((agent: string) => {
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
@@ -227,18 +216,25 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   // arrived wins, otherwise the catalog's defaults apply.
   const pick = (r: Ready) => ({ model: selectedModel || r.model, agent: selectedAgent || r.catalog.defaultAgent || '', reasoning: selectedReasoning });
 
-  // Create the session at the target, then either the server has sent the
-  // prompt or the client runs `execute` on the new session. Failures stay
-  // retryable on that session, independently of the next composer draft.
   const start = useCallback(async (text: string, build: (ready: Ready) => Submission, images?: AttachedImage[]) => {
+    if (durable.enabled) {
+      const r = await waitReady();
+      const submission = build(r);
+      if (submission.send) {
+        try {
+          await durable.send(durableStartRequest(r, submission, { directory, remoteId, title, target: targetPick, platformForModel, cloneURL }, text), submission.files);
+          if (submission.model) saveSessionModel(draftId, submission.model);
+          setError('');
+          return;
+        } catch (error) { const message = error instanceof Error ? error.message : String(error); setError(message); throw new Error(message); }
+      }
+    }
     const sourceGeneration = generation.current;
     if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
     let revision: number | null = null;
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
     inFlight.current = sourceGeneration;
     setError('');
-    // The server reports each step (instance, worktree, session, prompt)
-    // under the pending prompt; it all goes away with this page.
     const startId = randomId();
     setPending({ key: routeKey, text, images, startId, steps: {} });
     let steps: StartSteps = {};
@@ -304,20 +300,20 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel, cloneURL, saveDraft]);
+  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel, cloneURL, saveDraft, durable]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     rememberPendingDraftPayload(draftId, images, files);
     return start(text, (r) => {
       const { model, agent, reasoning } = pick(r);
       const send = { message: text, images, model, agent: agent || undefined, reasoning: reasoning || undefined };
-      return files?.length ? { model, execute: sendFirstFiles(send, files) } : { model, send };
+      return files?.length && !durable.enabled ? { model, execute: sendFirstFiles(send, files) } : { model, send, files };
     }, images);
   };
 
   const onCommand = (command: string, args: string) => {
     if (command === 'archive') {
-      return forgetConversationDraft(draftId, () => {
+      return (durable.enabled ? discardBackendDraft : forgetConversationDraft)(draftId, () => {
         if (active.current) navigateAfterDraftDiscard(draftId, navigate);
       }).catch((error: unknown) => {
         if (active.current) setError(`Could not discard the draft: ${error instanceof Error ? error.message : String(error)}`);
@@ -332,12 +328,14 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
       setError(`/${command} needs an existing conversation.`);
       return;
     }
-    return start(`/${command}${args ? ` ${args}` : ''}`, (r) => ({ model: pick(r).model, execute: (id, sessionPlatform) =>
+    return start(`/${command}${args ? ` ${args}` : ''}`, (r) => ({ model: pick(r).model,
+      ...(durable.enabled ? { send: { message: `/${command} ${args}`.trim(), ...pick(r) }, command: { command, arguments: args } } : {}), execute: (id, sessionPlatform) =>
       postJSON<void>(`/api/session/${encodeURIComponent(id)}/command?platform=${encodeURIComponent(sessionPlatform)}`,
         { command, arguments: args, ...pick(r) }, { parseJSON: false }) }));
   };
 
-  const onShell = (command: string) => start(`!${command}`, (r) => ({ model: pick(r).model, execute: (id, sessionPlatform) =>
+  const onShell = (command: string) => start(`!${command}`, (r) => ({ model: pick(r).model,
+    ...(durable.enabled ? { send: { message: `!${command}`, ...pick(r) }, shell: { command } } : {}), execute: (id, sessionPlatform) =>
     postJSON<void>(`/api/session/${encodeURIComponent(id)}/shell?platform=${encodeURIComponent(sessionPlatform)}`,
       { command, agent: pick(r).agent }, { parseJSON: false }) }));
 
@@ -346,6 +344,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     // to the bottom with the thread's padding.
     <div className="oc-thread" data-testid="new-conversation">
       <div className="oc-thread-viewport">
+        {durable.submitted && <StartProgress platform={durable.record?.request?.platform} prompt={durable.record?.request?.prompt || ''} images={durable.record?.request?.send?.images} steps={durable.record?.steps ?? {}} timestamp={durable.record?.submittedAt} complete={durable.record?.phase === 'ready'} />}
         {pending?.key === routeKey && <StartProgress platform={platform} prompt={pending.text} images={pending.images} steps={pending.steps} />}
         {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress platform={platform} prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
       </div>
@@ -354,7 +353,8 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {saveError && <InlineAlert onRetry={() => retryConversationDraftSave(draftId)}>Draft selections not saved: {saveError}</InlineAlert>}
-        {(error || draftStart?.error) && <InlineAlert>{error || draftStart?.error}</InlineAlert>}
+        {durable.saveError && !error && <InlineAlert onRetry={durable.retrySave}>Draft not saved on the backend: {durable.saveError}</InlineAlert>}
+        {(error || draftStart?.error || durable.record?.error) && <InlineAlert onRetry={durable.record?.error && durable.record.result?.sessionId === draftId ? durable.retry : undefined}>{error || draftStart?.error || durable.record?.error}</InlineAlert>}
         <Composer
           key={`${routeKey}:${recoveryKey}`}
           composerRef={composerRef}
@@ -365,7 +365,8 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
           onCommand={onCommand}
           onShell={caps.shellExec ? onShell : undefined}
           shellExec={caps.shellExec}
-          isRunning={false}
+           isRunning={false}
+           queuedMessages={durable.queue.queue} onRemoveQueuedMessage={durable.queue.remove} onMoveQueuedMessage={durable.queue.move}
           disabled={!!draftStart && !draftStart.sessionId && !draftStart.error}
           models={models}
           modelEntries={catalog?.models.models ?? []}
@@ -383,13 +384,13 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
           onReasoningChange={setSelectedReasoning}
           directory={directory}
           platform={platform}
-          newConversation
+           newConversation={!durable.submitted}
           worktreesSupported={canWorktree}
           worktrees={eligibility.resolved?.worktrees}
           target={effectiveTarget}
           onTargetChange={setTarget}
           remoteId={remoteId}
-          onMachineChange={onMachineChange}
+           onMachineChange={durable.submitted ? undefined : onMachineChange}
           machineSource={machineSource}
           draftKey={draftId}
         />

@@ -42,6 +42,8 @@ import type { GitInfo } from '../../lib/api';
 import { checkoutKey } from '../../lib/projectIdentity';
 import { countRender } from '../../lib/perfMonitor';
 import { SidebarConversationDrafts } from './SidebarConversationDrafts';
+import { useStableDraftSidebar } from './useStableDraftSidebar';
+import { useNavigate } from 'react-router-dom';
 import type { ConversationDraft } from '../../lib/newConversationDrafts';
 import { useSidebarDraftGroups } from './useSidebarDraftGroups';
 import { hasPendingPrompt } from '../../lib/sessionVisibility';
@@ -140,10 +142,12 @@ export function SessionSidebar({
   const phone = useIsPhone();
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const [searchQuery, setSearchQuery] = useState('');
-  const draftGroups = useSidebarDraftGroups(allProjectGroups, searchQuery);
+  const navigate = useNavigate();
+  const stableDrafts = useStableDraftSidebar(allRecentSessions, allProjectGroups, navigate);
+  const draftGroups = useSidebarDraftGroups(stableDrafts.groups, searchQuery);
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren } = useSessionListFilters();
   const listFilters = { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren };
-  const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(allRecentSessions, draftGroups, alwaysShowPrompts);
+  const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(stableDrafts.recent, draftGroups, alwaysShowPrompts);
   const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
@@ -177,21 +181,21 @@ export function SessionSidebar({
   // Share live status, archive and navigation across every session view.
   const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => phone && archivingSessionIds.has(sib.id) ? null : (
     <SidebarSessionRow
-      key={`${sib.platform}:${sib.id}`}
+      key={sib.id.startsWith('ocm_') ? sib.id : `${sib.platform}:${sib.id}`}
       session={sib}
       inGroup={inGroup}
       flat={flat}
       depth={depth}
       active={sib.id === activeId}
       activeId={activeId}
-      activeDisplayStatus={activeDisplayStatus}
+      activeDisplayStatus={stableDrafts.ids.has(sib.id) ? sib.status : activeDisplayStatus}
       archiving={archivingSessionIds.has(sib.id)}
-      draft={draftSessionIds.has(sib.id)}
+      draft={draftSessionIds.has(sib.id) || stableDrafts.ids.has(sib.id)}
       debugMode={debugMode}
       gitInfo={siblingGitInfos[checkoutKey(sib.directory, sib.remoteId)] ?? siblingGitInfos[sib.directory]}
-      onNavigateToSession={onNavigateToSession}
-      onArchiveSession={onArchiveSession}
-      onPinSession={onPinSession}
+      onNavigateToSession={(id) => { if (!stableDrafts.open(id)) onNavigateToSession(id); }}
+      onArchiveSession={(event, session) => { if (!stableDrafts.discard(session.id)) onArchiveSession(event, session); }}
+      onPinSession={(event, session) => { if (!stableDrafts.ids.has(session.id)) onPinSession(event, session); }}
     />
   );
 

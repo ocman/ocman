@@ -66,7 +66,11 @@ sequenceDiagram
     E-->>B: SSE (ocman.inbox.changed); polling fallback
     Note over B,S: inbox/notify event bursts coalesce;<br/>in-flight requests finish before one follow-up
     Note over S,E: queue snapshot invalidations coalesce;<br/>one owner-local read runs at a time
-    B->>S: POST /api/sessions/start (startId)
+    B->>S: PUT /api/session-drafts/{id}, then POST /start
+    S->>I: persist complete first payload before acknowledgement
+    S-->>B: 202 accepted, composer can clear
+    B->>S: POST /api/session-drafts/{id}/messages
+    S->>I: hold follow-ups in existing queue until first delivery succeeds
     S->>E: step progress via hostsvc.WithProgress
     E-->>B: SSE (ocman.session.start.progress)
     R->>O: replace managed OpenCode server
@@ -83,13 +87,22 @@ sequenceDiagram
   mid-fetch clears only that request, including a child's prompt surfaced on
   an ancestor. Periodic polling pauses in hidden tabs, but event refreshes
   remain active for background notifications.
-- A new conversation's first submission sends a random `startId`. The server
-  reports each start step (OpenCode, worktree, session, prompt) through the
-  request context's progress callback and broadcasts it as
-  `ocman.session.start.progress`; only the tab holding that `startId` renders
-  it, beneath the pending prompt. The callback does not cross gRPC, so for a
-  remote worktree start the hub reports OpenCode and the worktree around the
-  whole call.
+- New conversations keep one `ocm_<uuid>` identity from draft through native
+  binding. `sessionlifecycle` stores metadata, the accepted initial payload,
+  setup steps and final delivery receipt in `conversation_draft` in state.db.
+  IndexedDB remains the offline composer cache. Saving a draft launches nothing.
+- The start endpoint acknowledges the committed payload before module-owned
+  workers perform setup. The composer clears on that acknowledgement and can
+  queue follow-ups immediately. `queuesvc` fences every drain path until setup
+  and first delivery succeed, then respects the first turn's actual busy/idle
+  state. Restart marks uncertain work interrupted without replay. Explicit
+  delivery retry uses an already confirmed native binding, never a new worktree.
+- The draft ID also tags `ocman.session.start.progress`. Progress persists as
+  well as streaming through SSE, so another tab or reload can reconstruct the
+  launch timeline. The callback does not cross gRPC; the hub reports platform
+  and worktree progress around a remote call. Timestamp and first prompt precede
+  the Setup disclosure, which stays open while running or failed and collapses
+  when complete. Completed setup remains under the first native user message.
 
 - Only the first successful session-detail fetch after navigation opens a local
   session and clears its archive markers. Browser reloads and history restores,

@@ -5,8 +5,10 @@
 Read `internal/sessionlifecycle` for prepare/start and first delivery, and
 `internal/sessionsvc` for shared REST/gRPC session mutations.
 
-- A new conversation is only `/session/new?dir=…&remoteId=…&platform=…` until
-  first submission. Do not create a session, worktree or placeholder earlier.
+- New conversations allocate an Ocman draft ID and use `/session/{id}?dir=…`
+  before native setup. `sessionlifecycle` persists their metadata in state.db.
+  Saving a draft never launches a platform or creates a worktree. Legacy
+  `/session/new?dir=…` drafts retain their existing recovery path.
 - `/api/sessions/prepare` gets catalogs through `Platform.DirectoryCatalog`,
   owner-routed through the remote `Call` RPC. It never launches OpenCode:
   use an existing instance or historical models. Submission waits for catalog
@@ -27,10 +29,11 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
 - Machine selection changes the route only. Each draft retains its `draftId`
   query parameter and `draftKey`. Prepared local conversations appear in the
   sidebar, first within their project in grouped view, before sessions exist.
-- All composer text, prepared metadata, start and first-delivery receipts live
-  in `lib/draftDb`, IndexedDB `ocman.drafts.v1`. Claims, failure, completion with
-  retirement/relocation and discard each use one readwrite transaction. Never
-  add another draft storage path.
+- IndexedDB `ocman.drafts.v1` is the offline composer cache and owns legacy
+  start receipts. New draft lifecycle, accepted initial payloads, setup progress
+  and delivery outcomes live in `sessionlifecycle`'s `conversation_draft` table.
+  Keep native binding separate in `sessioncatalog`, passing the same ID through
+  `CreationIdentity.SessionID` on both local and remote worktree starts.
 - Plugin UIs hand prompts over only through `@ocman/plugin-ui`
   `useSessionDraft`, which validates the project and calls
   `seedConversationDraft`: one transaction that refuses existing identities.
@@ -54,10 +57,16 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   are `ocman.session.start.progress`, tagged with `startId`, through
   `hostsvc.WithProgress`. Context progress does not cross gRPC; the hub reports
   remote worktree progress around the call. Show parallel steps together.
-- Lock the composer and machine/target controls during start. Claims prevent
-  duplicate submission across tabs/reloads. Never automatically replay a start
-  transport failure. Retire only the unchanged submitted revision, including
-  background starts. Navigate only the currently open initiating draft.
+- Lock only the in-flight persistence request. After the backend acknowledges
+  the complete first payload, clear the composer and accept held follow-ups
+  through the existing queue, without waiting for setup. Freeze machine and
+  target after admission. Queue drains, including idle events, must respect the
+  setup/first-delivery gate. Never replay uncertain setup after restart. An
+  explicit first-delivery retry uses the confirmed session, never allocation.
+  Legacy browser start claims still prevent duplicate submission across tabs.
+- Keep one sidebar row keyed by the Ocman ID through draft, setup and native
+  binding. Render timestamp, prompt, Setup, then conversation. Setup is expanded
+  while running or failed and collapsed when complete, including after reload.
 - Failed first sends retain the whole payload in shared in-memory `failedSends`.
   The capped localStorage copy is best-effort; quota errors cannot erase live
   recovery. Non-image attachments remain browser Files until creation, then

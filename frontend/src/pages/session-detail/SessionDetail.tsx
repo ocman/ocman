@@ -94,6 +94,8 @@ import { platformMessageCount, useSession } from './useSession';
 import { usePendingSend } from './usePendingSend';
 import { StartProgress } from './StartProgress';
 import { useStartHandoff } from './startHandoffs';
+import { useSessionLaunchTimeline } from './useSessionLaunchTimeline';
+import { ConversationLaunchContext } from '../../components/assistant/ConversationLaunchContext';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { SkeletonLines } from '../../components/Skeleton';
@@ -125,7 +127,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const openAgentPicker = () => composerRef.current?.openAgentPicker();
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
-  const newConversation = id === NEW_SESSION_ID ? parseNewSessionParams(searchParams) : null;
+  const newConversation = id === NEW_SESSION_ID || searchParams.get('draftId') === id ? parseNewSessionParams(searchParams) : null;
   const factoryEnabled = useBetaFeatures((s) => s.factory);
   const factoryEpicID = factoryEnabled ? searchParams.get('factoryEpic') ?? '' : '';
   const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
@@ -168,7 +170,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const protectedMessageId = scrollToMessageBookmark && scrollToMessageBookmark.sessionId === id
     ? scrollToMessageBookmark.id
     : commitSourceJump && commitSourceJump.sessionId === id ? commitSourceJump.messageId : null;
-  const view = useSession(id, {
+  const view = useSession(newConversation ? NEW_SESSION_ID : id, {
     platform: searchParams.get('platform') || undefined,
     debug: debugMode,
     maxMessages: MAX_RETAINED_MESSAGES,
@@ -209,6 +211,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // A conversation just started here keeps its prompt and steps on screen
   // until the first message lands, instead of flashing an empty thread.
   const startHandoff = useStartHandoff(id, session?.id, messages, parts);
+  const launchTimeline = useSessionLaunchTimeline(id, messages, parts, totalMessages > messages.length);
   // Auto-clear pending when SSE delivers the real user message.
   // Runs in an effect (not render) so the pending → null setState
   // is properly batched and React doesn't see a setState during
@@ -844,6 +847,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               >
                 <PreviewOwnerContext.Provider value={session.remoteId || 'local'}>
                 <PreviewSessionContext.Provider value={session.id}>
+                <ConversationLaunchContext.Provider value={launchTimeline?.context ?? null}>
                 <AssistantThread
                   scrollToBottomTick={sidebarScroll.sessionId === session.id ? sidebarScroll.tick : 0}
                   hasMore={hasMore}
@@ -855,7 +859,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   scrollToMessageId={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.id : null}
                   scrollToMessageTick={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.tick : 0}
                   scrollToToolCall={commitSourceJump?.sessionId === session.id && commitSourceJump.platformId === session.platform ? commitSourceJump : null}
-                  empty={startHandoff && <StartProgress platform={session.platform} prompt={startHandoff.prompt} images={startHandoff.images} steps={startHandoff.steps} />}
+                  empty={launchTimeline?.empty || startHandoff && <StartProgress platform={session.platform} prompt={startHandoff.prompt} images={startHandoff.images} steps={startHandoff.steps} />}
                   composer={(
                     <>
                     <div className="oc-composer-notices" data-testid="composer-notices" tabIndex={0} role="region" aria-label="Conversation status">
@@ -995,6 +999,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                     </>
                   ) : undefined}
                 />
+                </ConversationLaunchContext.Provider>
                 </PreviewSessionContext.Provider>
                 </PreviewOwnerContext.Provider>
               </ErrorBoundary>

@@ -36,6 +36,7 @@ import (
 	"github.com/ocman/ocman/internal/remote"
 	"github.com/ocman/ocman/internal/remotesmod"
 	"github.com/ocman/ocman/internal/routines"
+	"github.com/ocman/ocman/internal/sessionlifecycle"
 	"github.com/ocman/ocman/internal/sessionrefrecovery"
 	"github.com/ocman/ocman/internal/sessionsvc"
 	"github.com/ocman/ocman/internal/sessiontitles"
@@ -148,11 +149,12 @@ type Server struct {
 
 	// routineMod is built on first use (routinesModule); tests may set it
 	// before then.
-	routineMod    lazy[*routines.Module]
-	idleProjects  lazy[*idleprojects.Module]
-	sessionTitles lazy[*sessiontitles.Module]
-	lifetimeMu    sync.Mutex
-	lifetimeCtx   context.Context // guarded by lifetimeMu
+	routineMod       lazy[*routines.Module]
+	idleProjects     lazy[*idleprojects.Module]
+	sessionTitles    lazy[*sessiontitles.Module]
+	sessionLifecycle lazy[*sessionlifecycle.Module]
+	lifetimeMu       sync.Mutex
+	lifetimeCtx      context.Context // guarded by lifetimeMu
 	// requests joins admitted HTTP handlers before teardown (both listeners).
 	requests         requestFence
 	pluginsMod       lazy[*pluginsmod.Module]

@@ -82,6 +82,7 @@ type Service struct {
 	status         StatusInferer
 	notify         func(context.Context, string, string) // optional; broadcast queue.updated
 	beginAdmission func(context.Context, string) (func(), error)
+	startBlocked   func(context.Context, string) bool
 
 	// One lock per session serializes flush drains so an enqueue-driven
 	// flush and an idle-driven flush cannot pop the same head twice.

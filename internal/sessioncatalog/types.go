@@ -61,6 +61,7 @@ type Session struct {
 }
 
 type Reservation struct {
+	SessionID  string `json:"sessionId,omitempty"`
 	RequestKey string
 	// PayloadHash is the SHA-256 of the complete creation request, including
 	// execution configuration not stored as catalogue metadata. Reusing a key

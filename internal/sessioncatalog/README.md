@@ -19,6 +19,9 @@ consumers. Legacy keys and creation receipts remain available for recovery.
 - `Reserve` persists `ocm_<uuid>`, the stable owning-machine ID, platform,
   directory, Ocman parent ID and origin before platform creation. Routine and
   factory origins require their routine/attempt ID immediately.
+  Browser drafts supply `CreationIdentity.SessionID` so reservation preserves
+  their existing ID. The owner still owns native binding and rejects identity
+  collisions. The hub's `sessionlifecycle` draft receipt is not execution authority.
 - A request key is unique within an owner. Replays return the same identity
   with `created=false`, including interrupted and failed attempts. A hash of
   the complete creation payload prevents changed execution settings from
@@ -137,4 +140,6 @@ queues and other native-keyed state are not rewritten or removed by indexing.
    but cannot be rebound to the currently selected native source. A dedicated
    retained-source read flow can expose those without restoring live authority.
 
-Persisted drafts and draft UI changes are outside this work.
+Browser draft persistence and asynchronous first delivery belong to
+`internal/sessionlifecycle`. Their stable identity passes through reservations;
+their durable receipt and queue gate do not live in the native binding catalogue.

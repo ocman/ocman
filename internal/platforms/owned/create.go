@@ -38,7 +38,7 @@ func (a *Adapter) reserve(ctx context.Context, req platforms.CreateSessionReques
 		return sessioncatalog.Session{}, false, err
 	}
 	hash := sha256.Sum256(raw)
-	row, created, err := a.store.Reserve(ctx, sessioncatalog.Reservation{OwnerID: a.owner, Platform: string(a.ID()), Directory: req.Directory, Title: req.Title, ParentID: req.Creation.ParentID, Origin: sessioncatalog.Origin(req.Creation.Origin), OriginID: req.Creation.OriginID, RequestKey: req.Creation.RequestKey, PayloadHash: hex.EncodeToString(hash[:])})
+	row, created, err := a.store.Reserve(ctx, sessioncatalog.Reservation{SessionID: req.Creation.SessionID, OwnerID: a.owner, Platform: string(a.ID()), Directory: req.Directory, Title: req.Title, ParentID: req.Creation.ParentID, Origin: sessioncatalog.Origin(req.Creation.Origin), OriginID: req.Creation.OriginID, RequestKey: req.Creation.RequestKey, PayloadHash: hex.EncodeToString(hash[:])})
 	if err != nil {
 		return row, false, err
 	}

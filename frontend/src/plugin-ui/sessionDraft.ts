@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SessionDraftHandle, SessionDraftOptions } from '@ocman/plugin-ui';
 import { seedConversationDraft } from '../lib/newConversationDrafts';
-import { newSessionPath } from '../lib/newSessionPath';
+import { newConversationId, newSessionPath } from '../lib/newSessionPath';
 import { projectsQuery } from '../lib/queries';
-import { randomId } from '../lib/randomId';
 import { remoteLog } from '../lib/remoteLog';
 import { usePluginHost } from './context';
 
@@ -51,7 +50,7 @@ export function useSessionDraft(): SessionDraftHandle {
       if (!projects.some((p) => p.directory === directory && (p.remoteId || 'local') === ownerId)) {
         throw new Error(`${directory} is not a project on this machine.`);
       }
-      const draft = { directory, remoteId: ownerId, title: title || undefined, draftId: randomId() };
+      const draft = { directory, remoteId: ownerId, title: title || undefined, draftId: newConversationId() };
       await seedConversationDraft(draft, prompt).catch((error: unknown) => {
         remoteLog.warn('Could not save a plugin session draft', error);
         throw new Error(`Could not save the draft: ${error instanceof Error ? error.message : String(error)}`);

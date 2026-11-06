@@ -67,7 +67,7 @@ it('opens editable drafts for unrelated workflows without starting anything', as
   mount();
 
   await act(() => probe.handle.open(maintenance));
-  expect(probe.location).toMatch(/^\/session\/new\?/);
+  expect(probe.location).toMatch(/^\/session\/ocm_[0-9a-f-]{36}\?/);
   const first = params();
   expect(first).toMatchObject({ directory: '/work/service', remoteId: 'local', title: 'Update deprecated API calls' });
   expect(getDraft(first.draftId!)).toBe(maintenance.prompt);
@@ -114,16 +114,17 @@ it('reports a project catalog failure and clears the error on the next attempt',
   expect(screen.getByRole('alert')).toHaveTextContent('Could not load projects');
   await act(() => probe.handle.open(maintenance));
   expect(screen.queryByRole('alert')).toBeNull();
-  expect(probe.location).toMatch(/^\/session\/new\?/);
+  expect(probe.location).toMatch(/^\/session\/ocm_[0-9a-f-]{36}\?/);
 });
 
 it('never overwrites an existing draft identity', async () => {
-  rememberConversationDraft({ draftId: 'fixed', directory: '/work/service', remoteId: 'local' });
-  saveDraft('fixed', 'keep me');
-  vi.mocked(randomId).mockReturnValueOnce('fixed');
+  const id = 'ocm_11111111-1111-4111-8111-111111111111';
+  rememberConversationDraft({ draftId: id, directory: '/work/service', remoteId: 'local' });
+  saveDraft(id, 'keep me');
+  vi.mocked(randomId).mockReturnValueOnce(id.slice(4));
   mount();
   await act(() => expect(probe.handle.open(maintenance)).rejects.toThrow('Could not save the draft: This draft already exists.'));
-  expect(getDraft('fixed')).toBe('keep me');
+  expect(getDraft(id)).toBe('keep me');
   expect(probe.location).toBe('/plugins/org.example.tasks');
 });
 

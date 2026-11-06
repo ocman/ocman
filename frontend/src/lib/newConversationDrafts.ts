@@ -24,7 +24,7 @@ export interface ConversationDraft extends NewSessionParams {
   clone?: { url: string; source: { directory: string; remoteId: string } };
 }
 /** A retired identity stays as a tombstone so a late autosave cannot resurrect it. */
-type StoredDraft = ConversationDraft & { deleted?: boolean };
+type StoredDraft = ConversationDraft & { deleted?: boolean; launched?: boolean };
 type Submitted = NonNullable<DraftStart['submitted']>;
 
 export const routeKeyOf = (draft: Pick<NewSessionParams, 'remoteId' | 'directory' | 'platform' | 'title'>) =>
@@ -104,7 +104,7 @@ async function refresh(ids: string[]) {
     draftSeq.set(id, (draftSeq.get(id) || 0) + 1);
     settleText(id, rows[i][0]);
     applyDrafts([[id, rows[i][1]]]);
-    forgetDraftAttachments(id);
+    if (!rows[i][1]?.launched) forgetDraftAttachments(id);
   });
   applyTexts(current.map((i) => [ids[i], rows[i][0]]), textSeqs);
   applyDrafts(current.map((i) => [ids[i], rows[i][1]]), seqs);
@@ -125,7 +125,7 @@ export async function hydrateDrafts() {
 
 export function rememberConversationDraft(params: ConversationDraft) {
   const existing = getConversationDraft(params.draftId);
-  const merged = { ...existing, ...params, createdAt: existing?.createdAt || Date.now() };
+  const merged = { ...existing, ...params, createdAt: existing?.createdAt || params.createdAt || Date.now() };
   const seq = (draftSeq.get(params.draftId) || 0) + 1;
   draftSeq.set(params.draftId, seq);
   applyDrafts([[params.draftId, merged]]);

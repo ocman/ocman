@@ -33,6 +33,7 @@ func (s *Server) queueModule() *queuemod.Module {
 			d.Store = s.stateDB
 		}
 		s.queueMod = queuemod.NewModule(d)
+		s.queueMod.Service().WithStartGate(func(ctx context.Context, id string) bool { return s.sessionLifecycleModule().QueueBlocked(ctx, id) })
 		s.queueMod.Service().WithAdmission(func(ctx context.Context, id string) (func(), error) { return s.beginConfigTurn(ctx, platforms.ID(id)) })
 	})
 	return s.queueMod

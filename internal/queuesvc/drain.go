@@ -36,6 +36,9 @@ func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
 // lock. Flush trusts its idle edge; enqueue and Sweep gate on turn status.
 // A guarded sweep passes its existing read after checking guard generation.
 func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool, prior *completionState) {
+	if s.startBlocked != nil && s.startBlocked(ctx, key.SessionID) {
+		return
+	}
 	sessionID := key.SessionID
 	completion, hasCompletion := s.status.(completionInferer)
 	// LatestMessageState reports running too, so it is the only status read

@@ -4,6 +4,7 @@ package sessionlifecycle
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"time"
 
@@ -34,6 +35,9 @@ type Sessions interface {
 // Deps reads mutable server options and adapters at call time. The direct-send
 // callback is also used by the queue, without making queueing this module's job.
 type Deps struct {
+	DB                  *sql.DB
+	Enqueue             func(context.Context, string, platforms.SendMessageRequest) error
+	DispatchQueued      func(context.Context, string, string)
 	Sessions            func() Sessions
 	Owner               func(http.ResponseWriter, string, string) (hostsvc.Host, bool)
 	CreatePlatform      func(context.Context, hostsvc.Host, string, string) (string, string, error)
@@ -48,12 +52,17 @@ type Deps struct {
 	UploadReadTimeout   func() time.Duration
 }
 
-type Module struct{ d Deps }
+type Module struct {
+	d           Deps
+	workers     module.Workers
+	launchSlots chan struct{}
+}
 
-func NewModule(d Deps) *Module { return &Module{d: d} }
+func NewModule(d Deps) *Module { return &Module{d: d, launchSlots: make(chan struct{}, 4)} }
 func (*Module) Name() string   { return "sessionlifecycle" }
 
 func (m *Module) Routes(r module.Router) {
+	m.draftRoutes(r)
 	r.Local("POST /api/sessions/prepare", m.HandlePrepareSession)
 	r.Local("POST /api/sessions/plan-clone", m.HandlePlanProjectClone)
 	r.Local("POST /api/sessions/start", m.HandleStartSession)

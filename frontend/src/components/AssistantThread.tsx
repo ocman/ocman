@@ -5,8 +5,6 @@ import {
   MessagePrimitive,
 } from '@assistant-ui/react';
 
-import { formatFullDateTime } from '../lib/format';
-import { Tooltip } from './Tooltip';
 import { useModelLabel, useTurnStats } from '../lib/turnStats';
 import { shouldRenderAssistantMessage } from './assistantMessageVisibility';
 import { useAgentColor } from '../lib/agentColor';
@@ -40,7 +38,8 @@ import { useMessage } from './assistant/useMessage';
 import { ExplorationContent } from './assistant/ExplorationContent';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
-import { formatTimelineMarker } from '../lib/conversationTimeline';
+import { TimelineMarker } from './assistant/TimelineMarker';
+import { ConversationLaunchContext } from './assistant/ConversationLaunchContext';
 
 interface MessageBookmarkContextValue {
   bookmarkedIds: Set<string>;
@@ -149,25 +148,8 @@ const UserTextPart: FC<{ text: string }> = ({ text }) => {
   );
 };
 
-const TimelineMarker: FC<{ timestamp: number }> = ({ timestamp }) => {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const id = setTimeout(() => setNow(new Date()), nextMidnight.getTime() - now.getTime());
-    return () => clearTimeout(id);
-  }, [now]);
-  const date = new Date(timestamp);
-  return (
-    <div className="oc-timeline-marker">
-      <hr />
-      <Tooltip content={formatFullDateTime(timestamp)}>
-        <time dateTime={date.toISOString()}>{formatTimelineMarker(timestamp, now)}</time>
-      </Tooltip>
-    </div>
-  );
-};
-
 const UserMessage: FC = () => {
+  const launch = React.useContext(ConversationLaunchContext);
   const content = useMessage((m) => m.content);
   const localCommand = content.length === 1 && content[0].type === 'text' && parseLocalCommand(content[0].text);
   const id = useMessage((m) => m.id);
@@ -175,6 +157,7 @@ const UserMessage: FC = () => {
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
   const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
   const timelineAt = typeof custom?.timelineAt === 'number' ? custom.timelineAt : 0;
+  const displayedTimeline = launch?.messageId === id ? launch.timestamp ?? timelineAt : timelineAt;
   const failed = (custom?.failed && typeof custom.failed === 'object')
     ? (custom.failed as { error?: string; imagesDropped?: boolean })
     : undefined;
@@ -200,7 +183,7 @@ const UserMessage: FC = () => {
 
   return (
     <>
-      {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
+      {!!displayedTimeline && <TimelineMarker timestamp={displayedTimeline} />}
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
     <MessagePrimitive.Root
       className={`oc-msg ${systemNotification ? 'oc-msg-system' : 'oc-msg-user'}${onlyTools ? ' oc-msg-tools' : ''}${localCommand && !failed ? ' oc-msg-local-command' : ''}${failed ? ' oc-msg-failed' : ''}`}
@@ -236,6 +219,7 @@ const UserMessage: FC = () => {
         </div>
       )}
     </MessagePrimitive.Root>
+    {launch?.messageId === id && launch.setup}
     </>
   );
 };

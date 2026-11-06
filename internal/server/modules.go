@@ -27,6 +27,7 @@ import (
 	"github.com/ocman/ocman/internal/resourcemod"
 	"github.com/ocman/ocman/internal/routines"
 	"github.com/ocman/ocman/internal/sessioncatalog"
+	"github.com/ocman/ocman/internal/sessionlifecycle"
 	"github.com/ocman/ocman/internal/sharing"
 	"github.com/ocman/ocman/internal/sourcecontrol"
 	"github.com/ocman/ocman/internal/state"
@@ -113,7 +114,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema, sourcecontrol.Schema, prworkflow.Schema, worktreecleanup.Schema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema, sourcecontrol.Schema, prworkflow.Schema, worktreecleanup.Schema, sessionlifecycle.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve

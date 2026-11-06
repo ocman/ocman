@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 
 const listWorktrees = vi.fn();
-vi.mock('../../lib/randomId', () => ({ randomId: () => 'draft-test' }));
+vi.mock('../../lib/randomId', () => ({ randomId: () => '11111111-1111-4111-8111-111111111111' }));
 vi.mock('../../lib/api', () => ({
   api: { compactSession: vi.fn().mockResolvedValue(undefined), worktree: { list: (...args: unknown[]) => listWorktrees(...args) } },
 }));
@@ -43,20 +43,20 @@ describe('useSessionCreation', () => {
     const { result } = renderHook(() => useSessionCreation(o));
 
     act(() => result.current.handleNewSessionInDirectory('/repo/.worktrees/a/feat'));
-    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Frepo%2F.worktrees%2Fa%2Ffeat&platform=r-x%3Aopencode&draftId=draft-test');
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Frepo%2F.worktrees%2Fa%2Ffeat&platform=r-x%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
 
     act(() => result.current.handleNewSessionInDirectory('/repo/other'));
-    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Frepo%2Fother&draftId=draft-test');
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Frepo%2Fother&draftId=ocm_11111111-1111-4111-8111-111111111111');
 
     act(() => result.current.handleNewSessionInDirectory('/remote/repo', 'box', 'r-box:opencode'));
-    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Fremote%2Frepo&remoteId=box&platform=r-box%3Aopencode&draftId=draft-test');
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Fremote%2Frepo&remoteId=box&platform=r-box%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
   });
 
   it('does not inherit a remote platform for an explicitly local checkout at the same path', async () => {
     const o = opts();
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSessionInDirectory('/repo/a', 'local'));
-    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Frepo%2Fa&draftId=draft-test');
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Frepo%2Fa&draftId=ocm_11111111-1111-4111-8111-111111111111');
   });
 
   it('resolves the main checkout from the owner for a worktree outside the managed layout', async () => {
@@ -68,21 +68,21 @@ describe('useSessionCreation', () => {
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession());
     expect(listWorktrees).toHaveBeenCalledWith('/src/repo-feature', 'r-x');
-    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode&draftId=draft-test');
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
   });
 
   it('falls back to the directory layout when the worktree lookup fails', async () => {
     const o = opts({ session: { ...session, directory: '/src/.worktrees/repo/feat' } });
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession());
-    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode&draftId=draft-test');
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
   });
 
   it('starts a new conversation beside the open session, with an optional title', async () => {
     const o = opts();
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession('Fix login'));
-    expect(o.navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo%2Fa&remoteId=r-x&platform=r-x%3Aopencode&title=Fix+login&draftId=draft-test');
+    expect(o.navigate).toHaveBeenCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Frepo%2Fa&remoteId=r-x&platform=r-x%3Aopencode&title=Fix+login&draftId=ocm_11111111-1111-4111-8111-111111111111');
 
     const none = opts({ session: null });
     const { result: r2 } = renderHook(() => useSessionCreation(none));

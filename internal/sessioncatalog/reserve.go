@@ -46,7 +46,11 @@ func (s *Store) Reserve(ctx context.Context, req Reservation) (record Session, c
 		return record, false, err
 	}
 	now := time.Now().UnixMilli()
-	record = Session{ID: "ocm_" + uuid.NewString(), OwnerID: req.OwnerID, Platform: req.Platform,
+	id = req.SessionID
+	if id == "" {
+		id = "ocm_" + uuid.NewString()
+	}
+	record = Session{ID: id, OwnerID: req.OwnerID, Platform: req.Platform,
 		Directory: req.Directory, Title: req.Title, ParentID: req.ParentID, Origin: req.Origin, OriginID: req.OriginID,
 		CreationState: Creating, CreatedAt: now, UpdatedAt: now}
 	if err := insert(ctx, tx, record, req.RequestKey, fingerprint); err != nil {
@@ -59,6 +63,9 @@ func (s *Store) Reserve(ctx context.Context, req Reservation) (record Session, c
 }
 
 func validReservation(r Reservation) bool {
+	if r.SessionID != "" && !IsID(r.SessionID) {
+		return false
+	}
 	if !nonempty(r.RequestKey) || !nonempty(r.OwnerID) || !nonempty(r.Platform) || !nonempty(r.Directory) {
 		return false
 	}

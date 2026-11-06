@@ -1,9 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { NEW_SESSION_ID, newSessionPath } from '../../lib/newSessionPath';
+import { NEW_SESSION_ID, newConversationId, newSessionPath } from '../../lib/newSessionPath';
 import { reconcileConversationStart, retryDraftRelocation, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { useApiStore } from '../../lib/apiStore';
 import { migrateDraft } from '../../lib/composerDraft';
-import { randomId } from '../../lib/randomId';
 import { InlineAlert } from '../../components/InlineAlert';
 import type { NewConversationProps } from './NewConversation';
 
@@ -11,7 +10,7 @@ import type { NewConversationProps } from './NewConversation';
 export function PreparedDraftLifecycle({ params, navigate, children }:
   Pick<NewConversationProps, 'params' | 'navigate' | 'navigateToSession'> & { children: ReactNode }) {
   const { directory, remoteId, platform, title, draftId: routeDraftId } = params;
-  const [legacyId] = useState(randomId);
+  const [legacyId] = useState(newConversationId);
   const draftId = params.draftId || legacyId;
   const exists = useNewConversationDrafts((state) => state.drafts.some((draft) => draft.draftId === draftId));
   const discardNavigation = useNewConversationDrafts((state) => !!state.discardNavigation[draftId]);
