@@ -12,16 +12,18 @@ import (
 	"github.com/ocman/ocman/internal/sqliteutil"
 	"github.com/ocman/ocman/internal/telemetry"
 	log "github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/metric"
 	_ "modernc.org/sqlite"
 )
 
 // DB owns a separate state_conv.db. Callers supply the path explicitly so tests
 // and development never silently fall back to a live or another checkout's DB.
 type DB struct {
-	db        *sql.DB
-	read      *sql.DB
-	path      string
-	committed atomic.Pointer[CommitObserver]
+	db          *sql.DB
+	read        *sql.DB
+	path        string
+	committed   atomic.Pointer[CommitObserver]
+	poolMetrics []metric.Registration
 }
 
 // Path places state_conv.db beside an explicitly resolved application database.
@@ -64,10 +66,15 @@ func Open(path string) (*DB, error) {
 		return nil, err
 	}
 	d.read = read
+	d.registerPoolMetrics()
 	return d, nil
 }
 
 func (d *DB) Close() error {
+	for _, registration := range d.poolMetrics {
+		_ = registration.Unregister()
+	}
+	d.poolMetrics = nil
 	var readErr error
 	if d.read != nil {
 		readErr = d.read.Close()
