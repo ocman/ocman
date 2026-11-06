@@ -42,6 +42,7 @@ type ID string
 // FR-14. Every adapter must return the same shape — handlers trust the
 // typed fields rather than extracting from a map.
 type SessionDetail struct {
+	Creator            *SessionCreator  `json:"creator,omitempty"`
 	Session            *db.Session      `json:"session"`
 	SessionTree        []db.Session     `json:"sessionTree"`
 	Messages           []db.Message     `json:"messages"`

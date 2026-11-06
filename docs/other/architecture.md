@@ -513,6 +513,7 @@ flowchart TD
     MCP --> Registry
     MCP -->|existing-session direct send| Sessions
     MCP -->|creator provenance before first prompt| State
+    State -->|creator reference on REST and MCP detail reads| MCP
     Registry --> OC[platforms/opencode/provider + internal/db<br/>adapter and read-only queries]
     Registry --> ClaudePlatform[platforms/claude/transport<br/>native-session runtime bindings]
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
@@ -552,6 +553,8 @@ flowchart TD
   in the serving instance's `state.db` before first delivery, for both worktree
   and regular launches. This application provenance can cross projects and is
   independent of native subagent hierarchy, permissions and lifecycle.
+  REST and MCP detail reads expose this serving-instance provenance as an
+  optional `creator` reference without changing native `parentId` or the tree.
 
 - **internal/app.** Application startup owns flags, database selection,
   authentication, logging, platform registration and HTTP/desktop composition.

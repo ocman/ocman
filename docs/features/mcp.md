@@ -440,6 +440,14 @@ link. This provenance is separate from native subagent ancestry and does not
 change session grouping, lifecycle, or permission inheritance. Older launches
 are not backfilled.
 
+`sessions.get` and `GET /api/session/{id}` return a separate optional `creator`
+object with `platform`, `sessionId` and `createdAt` (Unix milliseconds), read from
+the serving instance's saved launch provenance. The platform includes machine
+scope for remote creators. This field does not replace `session.parentId` or
+add the creator to `sessionTree`. Sessions without a saved link omit it. List and
+search responses and sidebar grouping are unchanged. A provenance read failure
+is logged and omits the field without blocking conversation access.
+
 OpenCode permissions apply to whole tools, so requiring approval for `create` or `send`
 also requires it for the read-only actions.
 

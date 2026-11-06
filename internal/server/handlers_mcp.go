@@ -265,6 +265,7 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 		detail.Session = &sessions[0]
 	}
 	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
+	s.server.enrichSessionCreator(ctx, string(adapter.ID()), id, detail)
 	return detail, nil
 }
 

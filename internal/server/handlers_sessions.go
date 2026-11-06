@@ -144,6 +144,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	composed := read.Compose(detail, limit, offset)
 	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
+	s.enrichSessionCreator(r.Context(), string(adapter.ID()), sessionID, detail)
 	peek := r.URL.Query().Get("peek") == "1"
 	var snoozed map[state.Key]int64
 	if s.stateDB != nil && !peek {
@@ -205,6 +206,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"contextTokenCount": detail.ContextTokenCount,
 		"defaultAgent":      detail.DefaultAgent,
 		"defaultModel":      detail.DefaultModel,
+	}
+	if detail.Creator != nil {
+		body["creator"] = detail.Creator
 	}
 	if composed.Cursor != "" || len(composed.MessageIDs) > 0 {
 		body["stream"] = map[string]any{"cursor": composed.Cursor, "composedMessageIds": composed.MessageIDs}
