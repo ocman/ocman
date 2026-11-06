@@ -138,10 +138,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // forces React Router's location update to commit immediately so
   // the SSE lifecycle (keyed off the route id) tears down before
   // any further work races the click.
-  const navigateToSession = (nextId: string, replace = false) => {
+  const navigateToSession = (nextId: string, replace = false, platform?: string) => {
     markSessionSwitchStart(nextId, !!useApiStore.getState().getCachedSession(nextId));
     flushSync(() => {
-      navigate(`/session/${nextId}`, { replace });
+      navigate(`/session/${nextId}${platform ? `?platform=${encodeURIComponent(platform)}` : ''}`, { replace });
     });
   };
 
@@ -155,12 +155,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // The drawer click path closes synchronously here (no flicker frame);
   // useMobilePanel's id-keyed effect covers every other navigation source
   // (command palette, auto-redirect, closed-session reopen).
-  const navigateFromSidebar = (nextId: string) => {
+  const navigateFromSidebar = (nextId: string, platform?: string) => {
     const phoneOverlay = mobilePanel !== null && phone;
-    if (phoneOverlay && nextId === id) return closeMobilePanel();
+    if (phoneOverlay && nextId === id && (!platform || platform === searchParams.get('platform'))) return closeMobilePanel();
+    if (nextId === id && platform) closeMobilePanel();
     if (!phoneOverlay) closeMobilePanel();
     setSidebarScroll((previous) => ({ sessionId: nextId, tick: previous.tick + 1 }));
-    navigateToSession(nextId, phoneOverlay);
+    navigateToSession(nextId, phoneOverlay, platform);
   };
 
   // The new SSE pipeline. Owns the EventSource, the reducer, the

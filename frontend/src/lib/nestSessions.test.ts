@@ -7,6 +7,16 @@ const flatten = (rows: ReturnType<typeof nestSessions<Row>>) =>
   rows.map((r) => `${r.depth}:${r.session.id}`);
 
 describe('nestSessions', () => {
+  it('keeps same-id sessions and their children separate by owner', () => {
+    const rows = nestSessions([
+      { id: 'parent', platform: 'local' },
+      { id: 'parent', platform: 'remote' },
+      { id: 'child', parentId: 'parent', platform: 'remote' },
+      { id: 'orphan', parentId: 'child', platform: 'local' },
+    ]);
+    expect(rows.map(({ session, depth }) => `${session.platform}:${session.id}:${depth}`))
+      .toEqual(['local:parent:0', 'remote:parent:0', 'remote:child:1', 'local:orphan:0']);
+  });
   it('returns [] for null/undefined/empty input', () => {
     expect(nestSessions<Row>(null)).toEqual([]);
     expect(nestSessions<Row>(undefined)).toEqual([]);

@@ -97,7 +97,7 @@ export interface SessionSidebarProps {
   pickerPos: { top: number; left: number } | null;
   pickerRef: React.RefObject<HTMLDivElement | null>;
   tmux: TmuxState;
-  onNavigateToSession: (id: string) => void;
+  onNavigateToSession: (id: string, platform?: string) => void;
   onArchiveSession: (e: React.MouseEvent, session: Session) => void;
   onPinSession: (e: React.MouseEvent, session: Session) => void;
   onNewSession: () => void;
@@ -146,7 +146,9 @@ export function SessionSidebar({
   const stableDrafts = useStableDraftSidebar(allRecentSessions, allProjectGroups, navigate);
   const draftGroups = useSidebarDraftGroups(stableDrafts.groups, searchQuery);
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren } = useSessionListFilters();
-  const listFilters = { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren };
+  // The flat list is archive-driven, not split into origin-specific groups.
+  const listFilters = { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren,
+    ...(sidebarView === 'recent' && { showFactory: true, showRoutines: true, showPlugins: true }) };
   const { recentSessions, sidebarProjectGroups, projects, projectFilter, setProjectFilter } = useSidebarProjectFilter(stableDrafts.recent, draftGroups, alwaysShowPrompts);
   const preparedDrafts = sidebarProjectGroups.flatMap((group) => group.drafts ?? []);
   const sidebarListRef = useRef<HTMLDivElement>(null);
@@ -193,7 +195,11 @@ export function SessionSidebar({
       draft={draftSessionIds.has(sib.id) || stableDrafts.ids.has(sib.id)}
       debugMode={debugMode}
       gitInfo={siblingGitInfos[checkoutKey(sib.directory, sib.remoteId)] ?? siblingGitInfos[sib.directory]}
-      onNavigateToSession={(id) => { if (!stableDrafts.open(id)) onNavigateToSession(id); }}
+      onNavigateToSession={(id) => {
+        if (stableDrafts.open(id)) return;
+        if (allRecentSessions.some((row) => row.id === id && row.platform !== sib.platform)) onNavigateToSession(id, sib.platform);
+        else onNavigateToSession(id);
+      }}
       onArchiveSession={(event, session) => { event.stopPropagation(); if (!stableDrafts.discard(session.id)) onArchiveSession(event, session); }}
       onPinSession={(event, session) => { event.stopPropagation(); if (!stableDrafts.ids.has(session.id)) onPinSession(event, session); }}
     />
@@ -220,7 +226,8 @@ export function SessionSidebar({
       hiddenSessions, !query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]), activeId),
   );
   const runningDrawers = useSidebarDrawers(
-    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)],
+    [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)]
+      .filter((session) => sidebarView !== 'recent' || session.archived || session.snoozedUntil),
     query, siblingGitInfos, activeId, activeDisplayStatus,
   );
 
@@ -235,7 +242,8 @@ export function SessionSidebar({
   const sections = useMemo(() => [...mainSections.map((rows) => nestSessions(rows).map(({ session }) => session)),
     ...runningDrawers.sections], [mainSections, runningDrawers.sections]);
   const visibleKeys = new Set(sections.flat().map(sessionAttentionKey));
-  const attention = attentionSessionEntries(notify?.entries ?? []).filter((entry) => !visibleKeys.has(sessionAttentionKey(entry)));
+  const attention = sidebarView === 'projects'
+    ? attentionSessionEntries(notify?.entries ?? []).filter((entry) => !visibleKeys.has(sessionAttentionKey(entry))) : [];
 
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.

@@ -13,6 +13,7 @@ const rows = [
 test('muted drawers share search, open independently and keep rows unindented', async ({ mockedPage: page }, testInfo) => {
   await page.route('/api/sessions*', route => route.fulfill({ json: rows }));
   await page.goto(`/session/${MOCK_SESSION.id}`);
+  await page.getByRole('button', { name: 'Group sessions by project', exact: true }).click();
   const sidebar = page.getByTestId('session-sidebar');
   const drawers = sidebar.getByRole('group', { name: 'Session drawers' });
   const archive = drawers.getByRole('button', { name: 'Background 2', exact: true });
@@ -56,6 +57,7 @@ test('expanded drawers stay scrollable and within the phone sidebar', async ({ m
   await page.goto(`/session/${MOCK_SESSION.id}`);
   await page.getByRole('button', { name: 'Open session details', exact: true }).click();
   await page.getByRole('button', { name: 'Open session list', exact: true }).click();
+  await page.getByRole('button', { name: 'Group sessions by project', exact: true }).click();
   const sidebar = page.getByTestId('session-sidebar');
   const drawers = sidebar.getByRole('group', { name: 'Session drawers' });
   await drawers.getByRole('button', { name: 'Background 25', exact: true }).click();

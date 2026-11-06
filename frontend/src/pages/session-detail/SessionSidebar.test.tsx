@@ -102,7 +102,7 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
-  it.each(['recent', 'projects'] as const)('shows muted running drawers without changing the %s main list', (view) => {
+  it('shows muted running drawers without changing the grouped main list', () => {
     for (const filter of ['routines', 'plugins']) localStorage.setItem(`ocman:sidebar-filter:${filter}`, 'true');
     const rows = [
       session({ id: 'normal', title: 'Normal session' }),
@@ -111,7 +111,7 @@ describe('SessionSidebar', () => {
       session({ id: 'plugin', title: 'Plugin run', status: 'busy', origin: 'plugin' }),
       session({ id: 'done', title: 'Completed archive', archived: true }),
     ];
-    renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'busy', count: 3 } }, {}, undefined, undefined, undefined, view);
+    renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'busy', count: 3 } }, {}, undefined, undefined, undefined, 'projects');
     expect(screen.getByText('Normal session')).toBeInTheDocument();
     const drawers = screen.getByRole('group', { name: 'Session drawers' });
     for (const label of ['Background', 'Routines', 'Plugins']) {
@@ -714,12 +714,18 @@ describe('SessionSidebar', () => {
       }
       expect(screen.getByText('Opened task')).toBeInTheDocument();
       expect(screen.getAllByText('Pinned task').length).toBeGreaterThan(0);
+      if (sidebarView === 'recent' && ['factory', 'factory descendants', 'routines'].includes(filter)) {
+        expect(screen.getByText('Hidden task')).toBeInTheDocument();
+        expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(filter === 'factory descendants'
+          ? ['pin', 'factory', 'other', 's'] : ['pin', 'other', 's']);
+        return;
+      }
       expect(screen.queryByText('Hidden task')).not.toBeInTheDocument();
       expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['pin', 's']);
     });
   });
 
-  it.each(['projects', 'recent'] as const)('shows running Factory sessions in their drawer in the %s view without fetching Epics', (sidebarView) => {
+  it('shows running Factory sessions in their drawer in grouped view without fetching Epics', () => {
     localStorage.setItem('ocman:sidebar-filter:factory', 'true');
     const group: SidebarProjectGroup = {
       directory: '/repo',
@@ -735,7 +741,7 @@ describe('SessionSidebar', () => {
       aggregate: { kind: 'none' },
     };
 
-    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'projects');
 
     expect(screen.queryByText('Factory task')).not.toBeInTheDocument();
     expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
@@ -758,7 +764,7 @@ describe('SessionSidebar', () => {
     expect(useWorkEpics).not.toHaveBeenCalled();
   });
 
-  it.each(['projects', 'recent'] as const)('reveals running routine sessions in their drawer in the %s view', (sidebarView) => {
+  it('reveals running routine sessions in their drawer in grouped view', () => {
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [
@@ -770,7 +776,7 @@ describe('SessionSidebar', () => {
       aggregate: { kind: 'none' },
     };
 
-    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'projects');
 
     expect(screen.queryByText('Nightly check')).not.toBeInTheDocument();
     expect(screen.queryByText('Routine child')).not.toBeInTheDocument();
@@ -795,6 +801,13 @@ describe('SessionSidebar', () => {
     };
 
     const { unmount } = renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+    if (sidebarView === 'recent') {
+      expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'b', 'routine']);
+      expect(screen.queryByRole('button', { name: 'Routines 1' })).not.toBeInTheDocument();
+      unmount();
+      expect(visibleSidebarSessions.current).toBeNull();
+      return;
+    }
     expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'b']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
@@ -832,7 +845,7 @@ describe('SessionSidebar', () => {
     expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a']);
   });
 
-  it.each(['projects', 'recent'] as const)('hides Factory descendants when the attempt is absent in the %s view', (sidebarView) => {
+  it('hides Factory descendants when the attempt is absent in grouped view', () => {
     // The server tags direct children of an attempt session; deeper
     // descendants are hidden through the parent chain.
     const group: SidebarProjectGroup = {
@@ -846,7 +859,7 @@ describe('SessionSidebar', () => {
       aggregate: { kind: 'none' },
     };
 
-    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'projects');
 
     expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
     expect(screen.queryByText('Factory grandchild')).not.toBeInTheDocument();

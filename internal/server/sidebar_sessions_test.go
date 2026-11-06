@@ -118,18 +118,22 @@ func TestSidebarKeepsHubRemotePinsAndOriginTags(t *testing.T) {
 	}
 }
 
-func TestSidebarKeepsRemoteRunningSessionsOutsideRecentWindow(t *testing.T) {
+func TestSidebarKeepsRemoteUnarchivedAndRunningSessionsOutsideRecentWindow(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
 	platform := "r-remote:test"
 	p := &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: platform}, rows: []db.Session{
 		{ID: "running", Platform: platform, TimeUpdated: 1, Status: db.StatusBusy},
 		{ID: "done", Platform: platform, TimeUpdated: 2, Status: db.StatusDone},
+		{ID: "archived", Platform: platform, TimeUpdated: 3, Status: db.StatusDone},
 	}}
 	reg.Register(p)
+	if err := s.stateDB.ArchiveSession(t.Context(), platform, "archived", 3); err != nil {
+		t.Fatal(err)
+	}
 	w := httptest.NewRecorder()
 	s.handleSessions(w, httptest.NewRequest(http.MethodGet, "/api/sessions?view=sidebar&since=100&limit=0", nil))
 	var rows []db.Session
-	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil || w.Code != 200 || len(rows) != 1 || rows[0].ID != "running" {
+	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil || w.Code != 200 || len(rows) != 2 || rows[0].ID != "done" || rows[1].ID != "running" {
 		t.Fatalf("running rows=%+v err=%v status=%d", rows, err, w.Code)
 	}
 }

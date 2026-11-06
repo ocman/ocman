@@ -13,6 +13,7 @@
 
 type SessionLike = {
   id: string;
+  platform?: string;
   parentId?: string;
 };
 
@@ -41,15 +42,16 @@ export function nestSessions<T extends SessionLike>(
 ): NestedRow<T>[] {
   if (!sessions || !sessions.length) return [];
 
+  const key = (session: T, id = session.id) => `${session.platform ?? ''}\0${id}`;
   const byId = new Map<string, T>();
-  for (const s of sessions) byId.set(s.id, s);
+  for (const s of sessions) byId.set(key(s), s);
 
   // Bucket children under their (present) parent, preserving order.
   const childrenOf = new Map<string, T[]>();
   const roots: T[] = [];
   for (const s of sessions) {
-    const parentId = s.parentId;
-    if (parentId && parentId !== s.id && byId.has(parentId)) {
+    const parentId = s.parentId && key(s, s.parentId);
+    if (parentId && parentId !== key(s) && byId.has(parentId)) {
       const bucket = childrenOf.get(parentId);
       if (bucket) bucket.push(s);
       else childrenOf.set(parentId, [s]);
@@ -63,9 +65,9 @@ export function nestSessions<T extends SessionLike>(
   const visited = new Set<string>();
 
   const walk = (session: T, depth: number) => {
-    if (visited.has(session.id)) return;
-    visited.add(session.id);
-    const kids = childrenOf.get(session.id) ?? [];
+    if (visited.has(key(session))) return;
+    visited.add(key(session));
+    const kids = childrenOf.get(key(session)) ?? [];
     out.push({ session, depth, hasChildren: kids.length > 0 });
     for (const kid of kids) walk(kid, depth + 1);
   };
@@ -76,7 +78,7 @@ export function nestSessions<T extends SessionLike>(
   // pure cycle where no member is a root) as a top-level row so nothing
   // silently disappears from the list.
   for (const s of sessions) {
-    if (!visited.has(s.id)) walk(s, 0);
+    if (!visited.has(key(s))) walk(s, 0);
   }
 
   return out;

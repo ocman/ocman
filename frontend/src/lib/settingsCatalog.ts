@@ -110,8 +110,8 @@ export const SETTINGS = {
   'recent-sessions-window': {
     group: 'sessions',
     title: 'Recent sessions window',
-    description: 'How far back the "Recent sessions" sidebar looks while you are inside a session.',
-    example: 'Set to 2 days to keep the sidebar short and show only what you touched yesterday and today.',
+    description: 'How far back archived history is available in the session sidebar. Unarchived sessions remain available regardless of age.',
+    example: 'Set to 2 days to limit older history when Show archived is enabled. Unarchived sessions and active work stay available.',
     keywords: 'sidebar days',
   },
   'message-metadata': {

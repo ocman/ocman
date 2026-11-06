@@ -88,7 +88,7 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
           // Replayed events get receipt times. Trust activity only on live rows.
           const live = row.status === 'busy';
           const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
-          if (!hasBackgroundWork(row) && !row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !live && row.timeUpdated < since) {
+          if (row.archived && !hasBackgroundWork(row) && !row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !live && row.timeUpdated < since) {
             hiddenSessions.add(sessionID);
             return;
           }

@@ -4,6 +4,8 @@ package sidebar
 // never constructs the entire platform's parent map. All edges are source scoped.
 // Background completion gates survive a foreground lease expiring, but never
 // cross an adapter generation or borrow another source's task ownership.
+// The history cutoff only excludes unchanged archived rows; unarchived and
+// potentially resurfaced sessions remain available as ordinary sidebar rows.
 const selectSessions = `WITH RECURSIVE runtime AS (
  SELECT json_extract(value,'$.Owner') AS owner,json_extract(value,'$.Platform') AS platform,json_extract(value,'$.Source') AS source,json_extract(value,'$.Generation') AS generation FROM json_each(?)
 ), requested AS (SELECT value AS id FROM json_each(?)), viewer AS (SELECT ? AS external), cutoffs AS (SELECT key AS id,value AS at FROM json_each(?)), connections AS (
@@ -59,6 +61,7 @@ const selectSessions = `WITH RECURSIVE runtime AS (
  AND (s.is_subagent=0 OR s.source_child=1 OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested)
  AND (s.source_child=0 OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested OR (o.status='busy' AND COALESCE(f.permission,0)=0 AND COALESCE(f.question,0)=0))
  AND (?='' OR s.directory=?)
-  AND (?=0 OR s.updated_at>=? OR o.status='busy' OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested OR COALESCE(f.permission,0)=1 OR COALESCE(f.question,0)=1)
+   AND (?=0 OR s.updated_at>=? OR o.status='busy' OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested OR COALESCE(f.permission,0)=1 OR COALESCE(f.question,0)=1
+    OR ((a.session_id IS NULL OR s.updated_at>a.session_time_updated) AND (ap.archived_at IS NULL OR s.updated_at>ap.archived_at)))
  AND (?='' OR c.origin=?) AND (?='' OR c.origin_id=?)
  ORDER BY s.updated_at DESC,s.id LIMIT ? OFFSET ?`

@@ -747,11 +747,11 @@ describe('useSidebarSessions live refresh', () => {
     expect(fresh.result.current.recentSessions).toEqual([]);
   });
 
-  it('does not resurface an idle old session on replayed activity from a new instance', async () => {
+  it.each([true, false])('preserves archive state and timestamps on replayed old activity, archived=%s', async (archived) => {
     // A freshly launched instance emits message events for old sessions; the
     // backend stamps them "now". An idle row must keep its real timestamp.
     const peekSession = vi.fn().mockResolvedValue({ session: {
-      id: 'stale', timeUpdated: 1, directory: '/repo', status: 'waiting',
+      id: 'stale', timeUpdated: 1, directory: '/repo', status: 'waiting', archived,
     } as Session });
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
     useApiStore.setState({peekSession });
@@ -760,7 +760,7 @@ describe('useSidebarSessions live refresh', () => {
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     await act(async () => { sessionActivity?.('stale', Date.now()); });
-    expect(getSidebarSessions()).toEqual([]);
+    expect(getSidebarSessions()).toEqual(archived ? [] : [expect.objectContaining({ id: 'stale', timeUpdated: 1, archived: false })]);
   });
 
   it.each(['busy', 'backgroundTaskCount', 'backgroundServiceCount'] as const)('admits an archived session with %s through activity for the Archived drawer', async (kind) => {

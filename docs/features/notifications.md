@@ -39,11 +39,15 @@ sessions on different owners count separately. Inbox permission requests never
 add another count. Reading, resolving or archiving items removes their count
 when the app refreshes its notification state.
 
-The session sidebar shows a **Needs attention** group for counted sessions that
-are missing from the normal list. This includes older sessions outside its
-recent-history window and sessions hidden by Factory, child, project or search
+The grouped session sidebar shows a **Needs attention** group for counted sessions
+that are missing from the normal list, including sessions hidden by Factory, child, project or search
 filters. Sessions already visible in the list are not repeated. Opening an item
 uses its owning machine; acknowledging it removes it from the group on refresh.
+
+The flat list has no separate attention group. It shows unarchived sessions of
+every origin as ordinary rows, even outside the recent-history window. Reading
+a result does not remove its row; archiving or snoozing does. Search, project
+and child filters still apply, with the existing always-show-prompts option.
 
 Archived sessions, including sessions in archived projects, do not count or
 generate alerts until new activity resurfaces them under your archive settings.

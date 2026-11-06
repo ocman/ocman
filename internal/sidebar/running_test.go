@@ -10,6 +10,10 @@ import (
 
 func TestSidebarRunningDrawersOutsideRecentWindow(t *testing.T) {
 	r, core, history := largeInventory(t)
+	if _, err := core.SQL().Exec(`INSERT INTO archived_session(platform,session_id,session_time_updated,archived_at)
+	 SELECT platform,id,updated_at,updated_at FROM session_catalog`); err != nil {
+		t.Fatal(err)
+	}
 	const id = "ocm_00000001-0000-0000-0000-000000000001"
 	scope := statev2.Instance{OwnerID: "owner", Platform: "test", SourceKey: "source"}
 	if err := history.BeginSidebarGeneration(t.Context(), scope, "g"); err != nil {
