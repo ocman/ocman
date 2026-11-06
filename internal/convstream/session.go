@@ -33,9 +33,10 @@ type session struct {
 	log           *sessionLog
 	ov            overlay
 	// ledger is shared with later sessions for the same key (Hub.ledgers).
-	ledger   *ledger
-	st       statusState
-	queueGen uint64
+	ledger       *ledger
+	st           statusState
+	queueGen     uint64
+	queueReading bool
 
 	descMu sync.Mutex
 	desc   map[string]descendant
@@ -256,25 +257,38 @@ func (s *session) isDescendant(child string) bool {
 
 func (s *session) readQueueLocked() {
 	read := s.hub.opts.Queue
-	if read == nil {
+	if read == nil || s.detached {
 		return
 	}
 	s.queueGen++
+	if s.queueReading {
+		return
+	}
+	s.queueReading = true
 	gen := s.queueGen
-	s.hub.opts.Workers.Go(func(ctx context.Context) {
-		ctx, cancel := context.WithTimeout(ctx, queueReadTimeout)
-		msgs, err := read(ctx, s.key)
-		cancel()
-		if err != nil {
+	if !s.hub.opts.Workers.Go(func(ctx context.Context) {
+		for {
+			readCtx, cancel := context.WithTimeout(ctx, queueReadTimeout)
+			msgs, err := read(readCtx, s.key)
+			cancel()
+			s.mu.Lock()
+			if !s.detached && ctx.Err() == nil && gen != s.queueGen {
+				// Invalidations during this read need only one fresh snapshot.
+				gen = s.queueGen
+				s.mu.Unlock()
+				continue
+			}
+			s.queueReading = false
+			if !s.detached && ctx.Err() == nil && err == nil {
+				if msgs == nil {
+					msgs = []convevents.QueuedMessage{}
+				}
+				s.handleLocked(convevents.QueueChanged{Messages: msgs}, false)
+			}
+			s.mu.Unlock()
 			return
 		}
-		if msgs == nil {
-			msgs = []convevents.QueuedMessage{}
-		}
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if gen == s.queueGen {
-			s.handleLocked(convevents.QueueChanged{Messages: msgs}, false)
-		}
-	})
+	}) {
+		s.queueReading = false
+	}
 }
