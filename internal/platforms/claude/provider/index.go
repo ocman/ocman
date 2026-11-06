@@ -84,7 +84,8 @@ func OpenIndex(path, configDir string) (*Index, error) {
 		}
 	}
 	if _, err := conn.Exec(`CREATE TABLE IF NOT EXISTS index_cursor (path TEXT PRIMARY KEY, data TEXT NOT NULL);
-		CREATE INDEX IF NOT EXISTS session_parent ON session(parent_id)`); err != nil {
+		CREATE INDEX IF NOT EXISTS session_parent ON session(parent_id);
+		CREATE INDEX IF NOT EXISTS usage_latest ON usage(session_id,time_created DESC,id DESC)`); err != nil {
 		conn.Close()
 		return nil, err
 	}

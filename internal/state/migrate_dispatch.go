@@ -9,7 +9,7 @@ import (
 // v101 adds artifacts and their relay shares (artifacts.go).
 // v102 adds viewer-scoped Inbox item pins.
 // v113 indexes running routine runs in scheduler polling order.
-const latestSchemaVersion = 131
+const latestSchemaVersion = 132
 
 // migrations maps each schema version to its DDL. Index 0 is unused.
 var migrations = []func(*sql.Tx) error{
@@ -144,6 +144,7 @@ var migrations = []func(*sql.Tx) error{
 	129: migrateContextBoundApprovals,
 	130: migrateWebhookProject,
 	131: migrateSessionCreator,
+	132: migrateQueryReadIndexes,
 }
 
 // applyMigration runs the DDL for the given target version.

@@ -11,7 +11,6 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/prworkflow"
 	"github.com/ocman/ocman/internal/sourcecontrol"
-	"github.com/ocman/ocman/internal/state"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -108,11 +107,8 @@ func (s *Server) prOwner(_ context.Context, t prworkflow.Target) (hostsvc.Host, 
 
 func (s *Server) prWatchReady(ctx context.Context, t prworkflow.Target) bool {
 	if s.stateDB != nil {
-		archived, err := s.stateDB.ArchivedSessions(ctx)
-		if err != nil {
-			return false
-		}
-		if _, ok := archived[state.Key{Platform: t.Platform, SessionID: t.SessionID}]; ok {
+		archived, err := s.stateDB.IsSessionArchived(ctx, t.Platform, t.SessionID)
+		if err != nil || archived {
 			return false
 		}
 	}

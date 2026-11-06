@@ -199,6 +199,13 @@ func (d *DB) unarchivedSince(ctx context.Context, kind string, cutoff int64) (ma
 	return out, nil
 }
 
+// IsSessionArchived checks one platform-scoped identity without loading history.
+func (d *DB) IsSessionArchived(ctx context.Context, platform, sessionID string) (bool, error) {
+	var archived bool
+	err := d.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM archived_session WHERE platform=? AND session_id=?)`, platform, sessionID).Scan(&archived)
+	return archived, err
+}
+
 // ArchivedSessions returns every archived session's time_updated,
 // keyed by (platform, session-id).
 func (d *DB) ArchivedSessions(ctx context.Context) (map[Key]int64, error) {

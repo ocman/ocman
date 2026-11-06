@@ -23,7 +23,7 @@ var Schema = state.ModuleSchema{
 		 next_at INTEGER NOT NULL, created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0,
 		 PRIMARY KEY(endpoint,event));`)
 		return err
-	}},
+	}, migrateDeliveryIndexes},
 }
 
 type store struct {
@@ -114,14 +114,13 @@ type delivery struct {
 func (s *store) due(ctx context.Context) ([]delivery, error) {
 	now := time.Now().UnixMilli()
 	// Keep receipts for a week so repeated snapshots cannot replay an alert.
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM push_delivery WHERE created_at<?`, now-int64((7*24*time.Hour)/time.Millisecond)); err != nil {
+	if _, err := s.db.ExecContext(ctx, deliveryRetentionSQL, now-int64((7*24*time.Hour)/time.Millisecond)); err != nil {
 		return nil, err
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE push_delivery SET done=1 WHERE done=0 AND created_at<?`, now-int64(time.Hour/time.Millisecond)); err != nil {
+	if _, err := s.db.ExecContext(ctx, deliveryExpirySQL, now-int64(time.Hour/time.Millisecond)); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT d.endpoint,event,payload,subscription,attempts FROM push_delivery d
-	 JOIN push_subscription s ON s.endpoint=d.endpoint WHERE done=0 AND next_at<=? ORDER BY d.created_at LIMIT 32`, now)
+	rows, err := s.db.QueryContext(ctx, dueDeliveriesSQL, now)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +135,11 @@ func (s *store) due(ctx context.Context) ([]delivery, error) {
 	}
 	return out, rows.Err()
 }
+
+const deliveryRetentionSQL = `DELETE FROM push_delivery WHERE created_at<?`
+const deliveryExpirySQL = `UPDATE push_delivery SET done=1 WHERE done=0 AND created_at<?`
+const dueDeliveriesSQL = `SELECT d.endpoint,event,payload,subscription,attempts FROM push_delivery d
+	 JOIN push_subscription s ON s.endpoint=d.endpoint WHERE done=0 AND next_at<=? ORDER BY d.created_at LIMIT 32`
 
 func (s *store) finish(ctx context.Context, d delivery, success bool, delay time.Duration) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE push_delivery SET done=?,attempts=attempts+1,next_at=? WHERE endpoint=? AND event=?`,

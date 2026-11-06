@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"slices"
 	"time"
@@ -112,18 +113,31 @@ func (d *DB) UpsertPermissionLifecycle(ctx context.Context, lifecycle Permission
 // PermissionApprovalStats aggregates permission requests observed at or after
 // since in the exact directory. Dates are UTC and durations are milliseconds.
 func (d *DB) PermissionApprovalStats(ctx context.Context, since int64, directory string) (PermissionApprovalStats, error) {
-	rows, err := d.reader().QueryContext(ctx, `
-		SELECT session_id, requested_at, judge_started_at, judge_completed_at, resolved_at,
-		       evaluation_method, evaluation_result, resolution, manually_preempted
-		FROM permission_lifecycle
-		WHERE requested_at >= ? AND (? = '' OR project_root = ?)
-		ORDER BY requested_at
-	`, since, directory, directory)
+	query, args := permissionApprovalQuery(since, directory)
+	rows, err := d.reader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return PermissionApprovalStats{}, fmt.Errorf("querying permission approval stats: %w", err)
 	}
 	defer rows.Close()
 
+	return permissionApprovalRows(rows)
+}
+
+func permissionApprovalQuery(since int64, directory string) (string, []any) {
+	query := `
+		SELECT session_id, requested_at, judge_started_at, judge_completed_at, resolved_at,
+		       evaluation_method, evaluation_result, resolution, manually_preempted
+		FROM permission_lifecycle
+		WHERE requested_at >= ?`
+	args := []any{since}
+	if directory != "" {
+		query += ` AND project_root = ?`
+		args = append(args, directory)
+	}
+	return query + ` ORDER BY requested_at`, args
+}
+
+func permissionApprovalRows(rows *sql.Rows) (PermissionApprovalStats, error) {
 	stats := PermissionApprovalStats{Daily: []PermissionApprovalDaily{}}
 	var judgmentDurations, manualDurations, userWaits []int64
 	affectedSessions := make(map[string]struct{})

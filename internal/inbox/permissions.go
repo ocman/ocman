@@ -60,18 +60,14 @@ func (m *Module) permissionKey(ctx context.Context, scope, session, permission s
 // Reconcile recovers missed replies, aborted turns and requests resolved while ocman was down.
 // Failed owner reads leave the request intact; lack of connectivity is not resolution.
 func (m *Module) Reconcile(ctx context.Context) {
-	items, err := m.Store.ListInboxItems(ctx)
+	permissions, err := m.Store.PendingInboxPermissions(ctx)
 	if err != nil {
 		log.WithError(err).Warn("reconciling permission Inbox")
 		return
 	}
 	type sessionKey struct{ platform, sessionID string }
 	pending := make(map[sessionKey]map[string]bool)
-	for _, item := range items {
-		permission := item.Permission
-		if permission == nil {
-			continue
-		}
+	for _, permission := range permissions {
 		key := sessionKey{permission.Platform, permission.SessionID}
 		ids, loaded := pending[key]
 		if !loaded {

@@ -214,21 +214,40 @@ func (d *DB) WithPluginConversation(ctx context.Context, id string, use func(plu
 }
 
 func (d *DB) GetPlugin(ctx context.Context, id string) (PluginRegistration, error) {
-	var p PluginRegistration
-	var desc, instances, grants, config, secret, health string
-	var working, workingSecret sql.NullString
-	err := d.db.QueryRowContext(ctx, `SELECT description_json,executable_path,checksum,enabled,removed,instances_json,grants_json,config_json,secret_file,working_config_json,working_secret_file,health_json FROM plugin_registration WHERE id=?`, id).
-		Scan(&desc, &p.ExecutablePath, &p.Checksum, &p.Enabled, &p.Removed, &instances, &grants, &config, &secret, &working, &workingSecret, &health)
+	row, err := scanPluginRow(d.db.QueryRowContext(ctx, `SELECT id,`+pluginRegistrationColumns+` FROM plugin_registration WHERE id=?`, id))
+	if err != nil {
+		return PluginRegistration{}, err
+	}
+	return d.decodePlugin(row)
+}
+
+const pluginRegistrationColumns = `description_json,executable_path,checksum,enabled,removed,instances_json,grants_json,config_json,secret_file,working_config_json,working_secret_file,health_json`
+
+type pluginRow struct {
+	p                                                   PluginRegistration
+	id, desc, instances, grants, config, secret, health string
+	working, workingSecret                              sql.NullString
+}
+
+func scanPluginRow(scanner interface{ Scan(...any) error }) (pluginRow, error) {
+	var row pluginRow
+	p := &row.p
+	err := scanner.Scan(&row.id, &row.desc, &p.ExecutablePath, &p.Checksum, &p.Enabled, &p.Removed, &row.instances, &row.grants, &row.config, &row.secret, &row.working, &row.workingSecret, &row.health)
 	if errors.Is(err, sql.ErrNoRows) {
-		return p, ErrPluginNotFound
+		return row, ErrPluginNotFound
 	}
 	if err != nil {
-		return p, ErrPluginState
+		return row, ErrPluginState
 	}
+	return row, nil
+}
+
+func (d *DB) decodePlugin(row pluginRow) (PluginRegistration, error) {
+	p := row.p
 	for _, field := range []struct {
 		data   string
 		target any
-	}{{desc, &p.Description}, {instances, &p.Instances}, {grants, &p.Grants}, {health, &p.Health}} {
+	}{{row.desc, &p.Description}, {row.instances, &p.Instances}, {row.grants, &p.Grants}, {row.health, &p.Health}} {
 		if json.Unmarshal([]byte(field.data), field.target) != nil {
 			return PluginRegistration{}, ErrPluginState
 		}
@@ -236,44 +255,48 @@ func (d *DB) GetPlugin(ctx context.Context, id string) (PluginRegistration, erro
 	approved, _ := json.Marshal([]any{p.Description, p.ExecutablePath, p.Checksum, p.Instances})
 	fingerprint := sha256.Sum256(approved)
 	p.Approval = hex.EncodeToString(fingerprint[:])
-	p.Configuration, err = d.pluginConfiguration(id, config, secret)
+	var err error
+	p.Configuration, err = d.pluginConfiguration(row.id, row.config, row.secret)
 	if err != nil {
 		return PluginRegistration{}, err
 	}
-	if working.Valid {
-		value, err := d.pluginConfiguration(id, working.String, workingSecret.String)
+	if row.working.Valid {
+		value, err := d.pluginConfiguration(row.id, row.working.String, row.workingSecret.String)
 		if err != nil {
 			return PluginRegistration{}, err
 		}
 		p.LastWorkingConfiguration = &value
 	}
-	p.Health.LastError = d.RedactPluginDiagnostics(id, p.Health.LastError)
+	p.Health.LastError = d.RedactPluginDiagnostics(row.id, p.Health.LastError)
 	return p, nil
 }
 
 // ListPlugins includes tombstones so retained configuration remains manageable.
 func (d *DB) ListPlugins(ctx context.Context) ([]PluginRegistration, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT id FROM plugin_registration ORDER BY id`)
+	rows, err := d.db.QueryContext(ctx, `SELECT id,`+pluginRegistrationColumns+` FROM plugin_registration ORDER BY id`)
 	if err != nil {
 		return nil, ErrPluginState
 	}
-	var ids []string
+	defer rows.Close()
+	var buffered []pluginRow
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return nil, ErrPluginState
+		row, err := scanPluginRow(rows)
+		if err != nil {
+			return nil, err
 		}
-		ids = append(ids, id)
+		buffered = append(buffered, row)
 	}
-	err = rows.Err()
-	_ = rows.Close() // Release the single connection before GetPlugin.
-	if err != nil {
+	if rows.Err() != nil {
 		return nil, ErrPluginState
 	}
-	out := make([]PluginRegistration, 0, len(ids))
-	for _, id := range ids {
-		p, err := d.GetPlugin(ctx, id)
+	// Secret redaction takes pluginMu; never hold the writer's SQL connection
+	// while acquiring that lock, since configuration writes take it first.
+	if rows.Close() != nil {
+		return nil, ErrPluginState
+	}
+	out := make([]PluginRegistration, 0, len(buffered))
+	for _, row := range buffered {
+		p, err := d.decodePlugin(row)
 		if err != nil {
 			return nil, err
 		}

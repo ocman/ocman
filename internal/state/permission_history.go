@@ -2,7 +2,9 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -21,46 +23,25 @@ func (d *DB) SessionPermissionHistory(ctx context.Context, platform string, sess
 	if len(sessionIDs) == 0 {
 		return out, nil
 	}
+	tx, err := d.reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var invalid bool
+	if err := tx.QueryRowContext(ctx, invalidPermissionHistorySQL).Scan(&invalid); err != nil {
+		return nil, err
+	}
+	if invalid {
+		return nil, fmt.Errorf("permission history contains invalid permission JSON")
+	}
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(sessionIDs)), ",")
 	args := []any{platform}
 	for _, id := range sessionIDs {
 		args = append(args, id)
 	}
 	args = append(args, args...)
-	rows, err := d.reader().QueryContext(ctx, `
-		WITH requests AS (
-			SELECT permission_json AS payload, created_at AS requested_at, 0 AS resolved_at
-			FROM inbox_item
-			WHERE category = 'permission' AND permission_json != ''
-			AND json_extract(permission_json, '$.platform') = ?
-			AND json_extract(permission_json, '$.sessionId') IN (`+marks+`)
-			UNION ALL
-			SELECT json_object('platform', platform, 'sessionId', session_id,
-				'permissionId', permission_id, 'permission', permission_text,
-				'patterns', json(patterns_json), 'metadata', json(metadata_json)),
-				CASE WHEN asked_at > 0 THEN asked_at ELSE approved_at END, approved_at
-			FROM auto_approved_permission
-			WHERE platform = ? AND session_id IN (`+marks+`)
-			AND NOT EXISTS (
-				SELECT 1 FROM inbox_item i WHERE i.category = 'permission' AND i.permission_json != ''
-				AND json_extract(i.permission_json, '$.platform') = auto_approved_permission.platform
-				AND json_extract(i.permission_json, '$.sessionId') = auto_approved_permission.session_id
-				AND json_extract(i.permission_json, '$.permissionId') = auto_approved_permission.permission_id
-			)
-		)
-		SELECT r.payload, r.requested_at,
-			MAX(r.resolved_at, COALESCE(l.resolved_at, 0), COALESCE(a.approved_at, 0)),
-			COALESCE(NULLIF(l.resolution, ''), CASE WHEN a.permission_id IS NOT NULL
-				THEN a.approved_by || '-' || a.reply
-				WHEN MAX(r.resolved_at, COALESCE(l.resolved_at, 0)) > 0 THEN 'resolved' ELSE 'pending' END)
-		FROM requests r
-		LEFT JOIN permission_lifecycle l ON l.platform = json_extract(r.payload, '$.platform')
-			AND l.session_id = json_extract(r.payload, '$.sessionId')
-			AND l.permission_id = json_extract(r.payload, '$.permissionId')
-		LEFT JOIN auto_approved_permission a ON a.platform = json_extract(r.payload, '$.platform')
-			AND a.session_id = json_extract(r.payload, '$.sessionId')
-			AND a.permission_id = json_extract(r.payload, '$.permissionId')
-		ORDER BY r.requested_at DESC LIMIT 2000`, args...)
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(sessionPermissionHistorySQL, marks, marks), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -87,3 +68,43 @@ func (d *DB) SessionPermissionHistory(ctx context.Context, platform string, sess
 	}
 	return out, rows.Err()
 }
+
+const invalidPermissionHistorySQL = `SELECT EXISTS(SELECT 1 FROM inbox_item
+	WHERE category='permission' AND permission_json!='' AND NOT json_valid(permission_json))`
+
+const sessionPermissionHistorySQL = `
+		WITH requests AS (
+			SELECT permission_json AS payload, created_at AS requested_at, 0 AS resolved_at
+			FROM inbox_item
+			WHERE category = 'permission' AND permission_json != '' AND json_valid(permission_json)
+			AND CAST(json_extract(permission_json, '$.platform') AS TEXT) = ?
+			AND CAST(json_extract(permission_json, '$.sessionId') AS TEXT) IN (%s)
+			AND typeof(json_extract(permission_json, '$.platform'))='text'
+			AND typeof(json_extract(permission_json, '$.sessionId'))='text'
+			UNION ALL
+			SELECT json_object('platform', platform, 'sessionId', session_id,
+				'permissionId', permission_id, 'permission', permission_text,
+				'patterns', json(patterns_json), 'metadata', json(metadata_json)),
+				CASE WHEN asked_at > 0 THEN asked_at ELSE approved_at END, approved_at
+			FROM auto_approved_permission
+			WHERE platform = ? AND session_id IN (%s)
+			AND NOT EXISTS (
+				SELECT 1 FROM inbox_item i WHERE i.category = 'permission' AND i.permission_json != '' AND json_valid(i.permission_json)
+				AND CAST(json_extract(i.permission_json, '$.platform') AS TEXT) = auto_approved_permission.platform
+				AND CAST(json_extract(i.permission_json, '$.sessionId') AS TEXT) = auto_approved_permission.session_id
+				AND CAST(json_extract(i.permission_json, '$.permissionId') AS TEXT) = auto_approved_permission.permission_id
+			)
+		)
+		SELECT r.payload, r.requested_at,
+			MAX(r.resolved_at, COALESCE(l.resolved_at, 0), COALESCE(a.approved_at, 0)),
+			COALESCE(NULLIF(l.resolution, ''), CASE WHEN a.permission_id IS NOT NULL
+				THEN a.approved_by || '-' || a.reply
+				WHEN MAX(r.resolved_at, COALESCE(l.resolved_at, 0)) > 0 THEN 'resolved' ELSE 'pending' END)
+		FROM requests r
+		LEFT JOIN permission_lifecycle l ON l.platform = json_extract(r.payload, '$.platform')
+			AND l.session_id = json_extract(r.payload, '$.sessionId')
+			AND l.permission_id = json_extract(r.payload, '$.permissionId')
+		LEFT JOIN auto_approved_permission a ON a.platform = json_extract(r.payload, '$.platform')
+			AND a.session_id = json_extract(r.payload, '$.sessionId')
+			AND a.permission_id = json_extract(r.payload, '$.permissionId')
+		ORDER BY r.requested_at DESC LIMIT 2000`

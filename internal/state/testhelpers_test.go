@@ -3,10 +3,8 @@ package state
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -32,21 +30,6 @@ func (d *DB) UpdateRoutineRun(ctx context.Context, run RoutineRun) error {
 		return ErrRoutineRunNotFound
 	}
 	return nil
-}
-
-func (d *DB) IsSessionArchived(ctx context.Context, platform, sessionID string) (bool, error) {
-	var one int
-	err := d.db.QueryRowContext(ctx,
-		`SELECT 1 FROM archived_session WHERE platform = ? AND session_id = ?`,
-		platform, sessionID,
-	).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("checking archived session: %w", err)
-	}
-	return true, nil
 }
 
 func (d *DB) CountUnreadInboxItems(ctx context.Context) (int, error) {
