@@ -21,7 +21,6 @@ type routineService interface {
 	Get(context.Context, string) (state.Routine, error)
 	List(context.Context, bool) ([]state.Routine, error)
 	Delete(context.Context, string) error
-	RunNow(context.Context, string) (state.RoutineRun, error)
 	RunNowInProject(context.Context, string, string) (state.RoutineRun, error)
 	History(context.Context, string) ([]state.RoutineRun, error)
 }

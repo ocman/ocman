@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/ocruntime"
@@ -23,6 +24,9 @@ import (
 type routineTestHost struct{ hostsvc.Host }
 
 func (*routineTestHost) RemoteID() string { return "local" }
+func (*routineTestHost) Projects(context.Context) ([]db.ProjectStats, error) {
+	return []db.ProjectStats{{Directory: "/repo"}}, nil
+}
 func (*routineTestHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureRuntimeResult, error) {
 	return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:1234", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "test"}}, nil
 }
@@ -49,8 +53,9 @@ func routineHTTPServer(t *testing.T) (*Server, http.Handler, *atomic.Int32) {
 	now.Store(1000)
 	srv.routineMod.set(routines.NewModule(routines.Deps{
 		Store: srv.stateDB, Router: router, Sessions: srv.sessions, Platforms: registry,
-		Now:   func() time.Time { return time.UnixMilli(now.Add(1)) },
-		NewID: func(prefix string) string { return prefix + string('0'+ids.Add(1)) },
+		ProjectCatalog: func(ctx context.Context) ([]db.ProjectStats, error) { return srv.projectsModule().Catalog(ctx) },
+		Now:            func() time.Time { return time.UnixMilli(now.Add(1)) },
+		NewID:          func(prefix string) string { return prefix + string('0'+ids.Add(1)) },
 	}))
 	mux, err := srv.routes()
 	if err != nil {

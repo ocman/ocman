@@ -186,6 +186,7 @@ func (h *remoteHost) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 	out := make([]db.ProjectStats, 0, len(idents))
 	for _, id := range idents {
 		out = append(out, db.ProjectStats{
+			UpstreamKeys: id.UpstreamKeys, UpstreamOrigin: id.Origin,
 			AssociatedDirectory: id.AssociatedDirectory,
 			Directory:           id.Dir,
 			SessionCount:        id.SessionCount,

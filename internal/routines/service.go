@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/sessionsvc"
@@ -79,6 +80,7 @@ type Deps struct {
 	Now               func() time.Time
 	NewID             func(prefix string) string
 	NormalizeUpstream func(string) string
+	ProjectCatalog    func(context.Context) ([]db.ProjectStats, error)
 }
 
 type Service struct {
@@ -89,6 +91,7 @@ type Service struct {
 	now               func() time.Time
 	newID             func(string) string
 	normalizeUpstream func(string) string
+	projectCatalog    func(context.Context) ([]db.ProjectStats, error)
 }
 
 func New(deps Deps) *Service {
@@ -98,7 +101,7 @@ func New(deps Deps) *Service {
 	if deps.NewID == nil {
 		deps.NewID = randomID
 	}
-	return &Service{store: deps.Store, router: deps.Router, sessions: deps.Sessions, platforms: deps.Platforms, now: deps.Now, newID: deps.NewID, normalizeUpstream: deps.NormalizeUpstream}
+	return &Service{store: deps.Store, router: deps.Router, sessions: deps.Sessions, platforms: deps.Platforms, now: deps.Now, newID: deps.NewID, normalizeUpstream: deps.NormalizeUpstream, projectCatalog: deps.ProjectCatalog}
 }
 
 func randomID(prefix string) string {
@@ -182,7 +185,7 @@ func (s *Service) Update(ctx context.Context, id string, input Input) (state.Rou
 	if input.Platform == "" {
 		input.Platform = existing.Platform
 	}
-	if input.Directory == "" && input.KeepSchedule && existing.ScheduleKind != ScheduleNone {
+	if strings.TrimSpace(input.Directory) == "" && input.KeepSchedule && existing.ScheduleKind != ScheduleNone {
 		return state.Routine{}, fmt.Errorf("remove the schedule before clearing the project: %w", ErrValidation)
 	}
 	now := s.now()

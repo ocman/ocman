@@ -65,7 +65,13 @@ func projectHarness(t *testing.T) (*harness, *projectHost) {
 		{Directory: "/other", UpstreamOrigin: "forge.test/org/two"},
 	}}
 	h.svc.router = hostsvc.NewRouter(host)
-	h.svc.normalizeUpstream = func(raw string) string { return strings.TrimSuffix(strings.TrimPrefix(raw, "https://"), ".git") }
+	h.svc.projectCatalog = func(context.Context) ([]db.ProjectStats, error) { return host.projects, host.err }
+	h.svc.normalizeUpstream = func(raw string) string {
+		if !strings.HasPrefix(raw, "https://") {
+			return ""
+		}
+		return strings.TrimSuffix(strings.TrimPrefix(raw, "https://"), ".git")
+	}
 	return h, host
 }
 

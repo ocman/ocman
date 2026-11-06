@@ -43,13 +43,9 @@ func (f *fakeRoutineService) Delete(_ context.Context, id string) error {
 	f.id = id
 	return f.err
 }
-func (f *fakeRoutineService) RunNow(_ context.Context, id string) (state.RoutineRun, error) {
-	f.id = id
+func (f *fakeRoutineService) RunNowInProject(_ context.Context, id, project string) (state.RoutineRun, error) {
+	f.id, f.input.Directory = id, project
 	return state.RoutineRun{ID: "run-1", RoutineID: id}, f.err
-}
-func (f *fakeRoutineService) RunNowInProject(ctx context.Context, id, project string) (state.RoutineRun, error) {
-	f.input.Directory = project
-	return f.RunNow(ctx, id)
 }
 func (f *fakeRoutineService) History(_ context.Context, id string) ([]state.RoutineRun, error) {
 	f.id = id

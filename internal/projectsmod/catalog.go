@@ -1,6 +1,7 @@
 package projectsmod
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strings"
@@ -9,6 +10,15 @@ import (
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/state"
 )
+
+// Catalog returns the final project identities exposed by the project list API.
+func (m *Module) Catalog(ctx context.Context) ([]db.ProjectStats, error) {
+	projects, err := m.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return finalCatalog(projects).projects, nil
+}
 
 // Checkout membership stays private. HTTP clients receive only final identities.
 type projectIdentity struct {

@@ -2,12 +2,28 @@ package remote
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	pb "github.com/ocman/ocman/internal/remote/proto"
 )
+
+type upstreamProjectHost struct{ localStubHost }
+
+func (upstreamProjectHost) Projects(context.Context) ([]db.ProjectStats, error) {
+	return []db.ProjectStats{{Directory: "/repo", UpstreamKeys: []string{"forge.test/org/repo"}, UpstreamOrigin: "forge.test/org/repo"}}, nil
+}
+
+func TestProjectUpstreamsSurviveHostRPCRoundTrip(t *testing.T) {
+	conn := startTestServer(t, "tok", NewServer(platforms.NewRegistry(), upstreamProjectHost{}, "rid", "v"))
+	host := newRemoteHost(&RemoteConn{client: pb.NewOcmanClient(conn), remoteID: "rid"})
+	projects, err := host.Projects(t.Context())
+	if err != nil || len(projects) != 1 || !slices.Equal(projects[0].UpstreamKeys, []string{"forge.test/org/repo"}) || projects[0].UpstreamOrigin != "forge.test/org/repo" {
+		t.Fatalf("RPC lost project upstreams: %+v, %v", projects, err)
+	}
+}
 
 type associatedProjectHost struct{ localStubHost }
 

@@ -63,6 +63,9 @@ func (s *Service) launchProject(ctx context.Context, routine state.Routine, proj
 	if !ok {
 		return "", fmt.Errorf("routine target %q is unavailable", routine.RemoteID)
 	}
+	if !filepath.IsAbs(project) && (strings.HasPrefix(project, "dir:") || strings.HasPrefix(project, "git:") || s.normalizeProjectUpstream(project) == "") {
+		return s.launchProjectKey(ctx, routine.RemoteID, project)
+	}
 	projects, err := host.Projects(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing routine projects: %w", err)
@@ -81,7 +84,7 @@ func (s *Service) launchProject(ctx context.Context, routine state.Routine, proj
 		if candidate.Archived || (isArchived && candidate.LastUsed <= archivedAt) || !filepath.IsAbs(candidate.Directory) {
 			continue
 		}
-		match := project == candidate.Directory || project == candidate.ProjectKey
+		match := project == candidate.Directory
 		for _, upstream := range candidate.UpstreamKeys {
 			match = match || (key != "" && upstream == key)
 		}
@@ -94,6 +97,36 @@ func (s *Service) launchProject(ctx context.Context, routine state.Routine, proj
 	}
 	if len(matches) != 1 {
 		return "", fmt.Errorf("project must match exactly one known project on the routine's machine: %w", ErrValidation)
+	}
+	for directory := range matches {
+		return directory, nil
+	}
+	return "", state.ErrRoutineProject
+}
+
+func (s *Service) normalizeProjectUpstream(project string) string {
+	if s.normalizeUpstream == nil {
+		return ""
+	}
+	return s.normalizeUpstream(project)
+}
+
+func (s *Service) launchProjectKey(ctx context.Context, owner, key string) (string, error) {
+	if s.projectCatalog == nil {
+		return "", fmt.Errorf("project catalog unavailable: %w", ErrValidation)
+	}
+	projects, err := s.projectCatalog(ctx)
+	if err != nil {
+		return "", err
+	}
+	matches := map[string]bool{}
+	for _, project := range projects {
+		if project.ProjectKey == key && !project.Archived && filepath.IsAbs(project.Directory) && state.NormalizeRemoteID(project.RemoteID) == state.NormalizeRemoteID(owner) {
+			matches[project.Directory] = true
+		}
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("project key must match exactly one known project on the routine's machine: %w", ErrValidation)
 	}
 	for directory := range matches {
 		return directory, nil
