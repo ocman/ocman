@@ -16,10 +16,10 @@ and question requests remain available while work runs. A long-lived command
 started by the session keeps it busy until that command stops; unrelated
 terminals do not affect its status.
 
-## App icon count
+## App attention badge
 
 On supported installed PWAs, **Settings → Notifications → App icon badge** lets
-you choose what contributes to the count:
+you choose which sources enable a nonnumeric attention badge:
 
 - Unread sessions and input requests, including permission and choice prompts.
 - Primary Inbox unread messages.
@@ -28,19 +28,18 @@ you choose what contributes to the count:
 
 The first three sources are enabled by default; Routines Inbox is off. These
 preferences are shared by every device connected to this ocman instance and apply
-to foreground counts and background push. Routine sessions are excluded from
-the count and session alerts. Explicit Inbox messages from routines can still
-count when you enable Routines Inbox.
+to foreground badges and background push. Routine sessions are excluded from
+session attention and alerts. Explicit Inbox messages from routines can still
+enable the badge when you enable Routines Inbox.
 Remote owners attach their own routine associations to session listings, so
 routine sessions are excluded even when scheduled independently on a remote.
 
-A session needing both permission and question input counts once; same-id
-sessions on different owners count separately. Inbox permission requests never
-add another count. Reading, resolving or archiving items removes their count
-when the app refreshes its notification state.
+Reading, resolving or archiving items clears their attention state when the app
+refreshes. Inbox permission requests are represented by session attention.
 
-The grouped session sidebar shows a **Needs attention** group for counted sessions
-that are missing from the normal list, including sessions hidden by Factory, child, project or search
+The grouped session sidebar shows a **Needs attention** group for sessions
+that are missing from the normal list, including sessions hidden by Factory,
+child, project or search
 filters. Sessions already visible in the list are not repeated. Opening an item
 uses its owning machine; acknowledging it removes it from the group on refresh.
 
@@ -49,19 +48,20 @@ every origin as ordinary rows, even outside the recent-history window. Reading
 a result does not remove its row; archiving or snoozing does. Search, project
 and child filters still apply, with the existing always-show-prompts option.
 
-Archived sessions, including sessions in archived projects, do not count or
+Archived sessions, including sessions in archived projects, do not enable the badge or
 generate alerts until new activity resurfaces them under your archive settings.
-Push alerts also carry the current count so a closed app can update its badge.
-Completed shell envelopes can trigger an alert, but do not count toward the
-badge unless they need permission or question input, matching the in-app count.
+Push alerts carry a boolean attention flag so a closed app can update its badge.
+Completed shell envelopes can trigger an alert, but do not enable the
+badge unless they need permission or question input.
 Without a new push, changes made on another device refresh when this app opens.
 While open, the app dismisses session alerts once their unread/input state is
 resolved. Notifications newer than the fetched snapshot remain until a fresh
 snapshot confirms their state, so cleanup cannot erase a newly arrived alert.
 
-Numeric badges depend on the browser and operating system. iOS/iPadOS and
-supported desktop browsers can show a number. Android generally shows the OS's
-notification dot instead; the browser does not provide exact numeric control.
+Badge appearance depends on the browser and operating system. Ocman requests
+a dot or platform-defined flag, never a numeric unread count. Home and Inbox
+navigation also use nonnumeric indicators. Session rows do not show message counts
+for unread activity. Seen state, read filters and notification delivery are unchanged.
 
 ## Enable on each device
 

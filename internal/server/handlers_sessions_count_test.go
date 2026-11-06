@@ -17,11 +17,8 @@ func TestHandleSessionsRunningCount(t *testing.T) {
 	child := mkSession("fake", "child", "busy", 2)
 	child.Status = db.StatusBusy
 	child.ParentID = "archived-busy"
-	counter := &countingUnreadPlatform{fakePlatform: fakePlatform{PlatformID: "fake", SessionList: []db.Session{busy, child, mkSession("fake", "done", "done", 3)}}}
+	counter := &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "fake"}, rows: []db.Session{busy, child, mkSession("fake", "done", "done", 3)}}
 	reg.Register(counter)
-	remote := mkSession("remote", "busy", "busy", 4)
-	remote.Status = db.StatusBusy
-	reg.Register(&fakePlatform{PlatformID: "remote", SessionList: []db.Session{remote}})
 	rr := httptest.NewRecorder()
 	srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions?view=running-count", nil))
 	var result struct {
@@ -30,14 +27,13 @@ func TestHandleSessionsRunningCount(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Count != 3 {
-		t.Fatalf("count = %d, want 3", result.Count)
+	if result.Count != 2 {
+		t.Fatalf("count = %d, want 2", result.Count)
 	}
-	if counter.callCount() != 0 {
-		t.Fatal("running count invoked unread enrichment")
+	if counter.calls != 0 {
+		t.Fatal("running count loaded sidebar rows")
 	}
-	counter.SessionList = nil
-	reg.Unregister("remote")
+	counter.rows = nil
 	rr = httptest.NewRecorder()
 	srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions?view=running-count", nil))
 	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { NotifyEntry } from '../lib/api';
@@ -7,11 +7,11 @@ import { useNotifySnapshot } from '../lib/useNotifyData';
 import { useUiStore } from '../lib/uiStore';
 import { MainNav } from './MainNav';
 
-vi.mock('../lib/queries', () => ({ useInbox: () => ({ data: { unreadTotal: 7 } }) }));
+vi.mock('../lib/queries', () => ({ useInbox: () => ({ data: { items: [{ id: 'new' }], unreadTotal: 7 } }) }));
 vi.mock('../lib/useNotifyData', () => ({ useNotifySnapshot: vi.fn() }));
 vi.mock('../pages/SubscriptionUsage', () => ({ SubscriptionUsageContent: () => null }));
 vi.mock('../features', () => ({ featureNav: [], featureNavigation: [], featureFooterNavigation: [] }));
-vi.mock('./PhoneNavigation', () => ({ PhoneNavigation: ({ unreadSessions }: { unreadSessions: number }) => <output aria-label="Phone unread sessions">{unreadSessions}</output> }));
+vi.mock('./PhoneNavigation', () => ({ PhoneNavigation: ({ attention }: { attention: boolean }) => <output aria-label="Phone attention">{String(attention)}</output> }));
 
 const unread: NotifyEntry = { id: 'one', platform: 'opencode', status: 'waiting', seen: false };
 function snapshot(entries?: NotifyEntry[]) {
@@ -29,10 +29,10 @@ it.each([undefined, []])('hides the Home badge with no unread snapshot: %j', (en
   snapshot(entries);
   mount();
   expect(screen.getByRole('link', { name: 'Home' })).toHaveTextContent(/^Home$/);
-  expect(screen.getByRole('link', { name: 'Inbox, 7 unread messages' })).toHaveTextContent('7');
+  expect(screen.getByRole('link', { name: 'Inbox, unread messages' })).toHaveTextContent(/^Inbox$/);
 });
 
-it('counts distinct attention sessions across owners and forwards the count to phone navigation', () => {
+it('preserves a nonnumeric attention indicator across owners and phone navigation', () => {
   snapshot([
     unread, unread, { ...unread, platform: 'r-box:opencode' },
     { ...unread, id: 'read', seen: true },
@@ -41,26 +41,25 @@ it('counts distinct attention sessions across owners and forwards the count to p
     { ...unread, id: 'permission', seen: true, pendingPermission: true },
   ]);
   mount();
-  const home = screen.getByRole('link', { name: 'Home, 4 unread sessions' });
-  expect(home).toHaveTextContent('4');
-  expect(within(home).getByText('4')).toHaveAttribute('aria-hidden', 'true');
-  expect(screen.getByLabelText('Phone unread sessions')).toHaveTextContent('4');
+  const home = screen.getByRole('link', { name: 'Home, needs attention' });
+  expect(home).toHaveTextContent(/^Home$/);
+  expect(screen.getByLabelText('Phone attention')).toHaveTextContent('true');
 });
 
-it('caps the visible badge at 99+ but announces the full count when collapsed', () => {
+it('shows no numeric badge even with many attention sessions', () => {
   useUiStore.setState({ mainNavCollapsed: true });
   snapshot(Array.from({ length: 120 }, (_, id) => ({ ...unread, id: String(id) })));
   mount();
-  const home = screen.getByRole('link', { name: 'Home, 120 unread sessions' });
-  expect(home).toHaveTextContent('99+');
-  expect(home).toHaveAttribute('title', 'Home, 120 unread sessions');
+  const home = screen.getByRole('link', { name: 'Home, needs attention' });
+  expect(home).toHaveTextContent(/^Home$/);
+  expect(home).toHaveAttribute('title', 'Home, needs attention');
 });
 
 it('updates and clears the badge when sessions are acknowledged, preserving Home navigation', () => {
   snapshot([unread]);
   const close = vi.fn();
   const page = mount(close);
-  const home = screen.getByRole('link', { name: 'Home, 1 unread sessions' });
+  const home = screen.getByRole('link', { name: 'Home, needs attention' });
   expect(home).toHaveAttribute('href', '/');
   fireEvent.click(home);
   expect(close).toHaveBeenCalledOnce();

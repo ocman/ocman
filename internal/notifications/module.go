@@ -19,7 +19,8 @@ type Notification struct {
 	URL        string `json:"url"`
 	Tag        string `json:"tag"`
 	Kind       string `json:"kind"`
-	BadgeCount int    `json:"badgeCount"`
+	BadgeCount int    `json:"badgeCount"` // Deprecated: always zero for older workers.
+	Badge      bool   `json:"badge"`
 }
 
 // Key identifies a prompt request or the final assistant message, not a poll.

@@ -31,7 +31,7 @@ Messages show their source machine in the reading pane, but there is no machine
 filter. Every detail header includes the originating session link, or
 "Originating session unavailable" for messages without recorded session metadata.
 Archived messages remain readable, but opening them does not mark them read or
-change the navigation's unread count. Resolved permission actions are hidden.
+change the navigation's unread indicator. Resolved permission actions are hidden.
 
 ## Permission requests
 

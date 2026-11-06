@@ -17,13 +17,13 @@ describe('useUnreadMarker', () => {
       ({ session }: { session: SessionMetadata | null }) => useUnreadMarker(session, messages),
       { initialProps: { session: s1 as SessionMetadata | null } },
     );
-    expect(result.current).toEqual({ firstUnreadMessageId: 'a1', unreadMessageCount: 2 });
+    expect(result.current).toEqual({ firstUnreadMessageId: 'a1' });
 
     rerender({ session: { ...s1, seenTimeUpdated: 99 } });
     expect(result.current.firstUnreadMessageId).toBe('a1');
 
     rerender({ session: { id: 's2', seenTimeUpdated: 15 } as SessionMetadata });
-    expect(result.current).toEqual({ firstUnreadMessageId: 'a2', unreadMessageCount: 1 });
+    expect(result.current).toEqual({ firstUnreadMessageId: 'a2' });
 
     rerender({ session: null });
     expect(result.current.firstUnreadMessageId).toBeNull();

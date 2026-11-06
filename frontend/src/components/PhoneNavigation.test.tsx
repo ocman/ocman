@@ -30,7 +30,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 function mount(path = '/sessions', unreadTotal = 0, state?: object, unreadSessions = 0) {
   return render(<MemoryRouter initialEntries={[state ? { pathname: path, state } : path]}>
-    <PhoneNavigation unreadTotal={unreadTotal} unreadSessions={unreadSessions} />
+    <PhoneNavigation inboxUnread={unreadTotal > 0} attention={unreadSessions > 0} />
     <Routes><Route path="*" element={<div>Current page</div>} /></Routes>
   </MemoryRouter>);
 }
@@ -52,7 +52,7 @@ describe('phone navigation', () => {
       const navigate = useNavigate();
       return <><output>{location.pathname + location.search}</output><button onClick={() => navigate(-1)}>Back</button><button onClick={() => navigate(1)}>Forward</button></>;
     }
-    const router = createMemoryRouter([{ path: '*', element: <><PhoneNavigation unreadTotal={0} /><History /></> }], { initialEntries: ['/projects', '/sessions'] });
+    const router = createMemoryRouter([{ path: '*', element: <><PhoneNavigation /><History /></> }], { initialEntries: ['/projects', '/sessions'] });
     const navigations: string[] = [];
     router.subscribe(state => navigations.push(state.historyAction));
     render(<RouterProvider router={router} />);
@@ -81,18 +81,18 @@ describe('phone navigation', () => {
     expect(within(nav).getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current');
   });
 
-  it.each([1, 12, 120])('announces %i unread messages', (count) => {
+  it.each([1, 12, 120])('shows only an unread indicator for %i messages', (count) => {
     mount('/inbox', count);
-    expect(screen.getByRole('link', { name: `Inbox, ${count} unread messages` })).toHaveTextContent(count > 99 ? '99+' : String(count));
+    expect(screen.getByRole('link', { name: 'Inbox, unread messages' })).toHaveTextContent(/^Inbox$/);
   });
 
   it.each([0, 1, 12, 120])('shows %i unread sessions on Home in More destinations', async (count) => {
     mount('/sessions', 7, undefined, count);
     await userEvent.setup().click(screen.getByRole('button', { name: 'More' }));
-    const home = screen.getByRole('link', { name: count ? `Home, ${count} unread sessions` : 'Home' });
-    expect(home).toHaveTextContent(count ? (count > 99 ? '99+' : String(count)) : /^Home$/);
+    const home = screen.getByRole('link', { name: count ? 'Home, needs attention' : 'Home' });
+    expect(home).toHaveTextContent(/^Home$/);
     expect(home).toHaveAttribute('href', '/');
-    expect(screen.getByRole('link', { name: 'Inbox, 7 unread messages' })).toHaveTextContent('7');
+    expect(screen.getByRole('link', { name: 'Inbox, unread messages' })).toHaveTextContent(/^Inbox$/);
   });
 
   it('keeps Projects selected inside an owner-qualified project', () => {

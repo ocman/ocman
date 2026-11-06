@@ -113,17 +113,18 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 		}
 		add("completed:"+life.LatestMessageID, "completed", action)
 	}
-	attention := make(map[[2]string]bool)
+	attention := false
 	for _, entry := range entries {
 		// Match useNotifyData's attention filter; done envelopes only trigger alerts.
 		if settings.Sessions && (entry.PendingPermission || entry.PendingQuestion || (!entry.Seen && !entry.SuppressTerminal &&
 			(entry.Status == db.StatusWaiting || entry.Status == db.StatusError || entry.Status == db.StatusInterrupted))) {
-			attention[[2]string{entry.platform, entry.ID}] = true
+			attention = true
+			break
 		}
 	}
-	inboxCount := 0
+	inboxAttention := false
 	if settings.Primary || settings.Factory || settings.Routines {
-		inboxCount, err = s.inboxModule().BadgeCount(ctx, map[string]bool{
+		inboxAttention, err = s.inboxModule().BadgeAttention(ctx, map[string]bool{
 			state.InboxGeneral: settings.Primary, state.InboxFactory: settings.Factory, state.InboxRoutine: settings.Routines,
 		})
 		if err != nil {
@@ -131,7 +132,7 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 		}
 	}
 	for i := range out {
-		out[i].Notification.BadgeCount = len(attention) + inboxCount
+		out[i].Notification.Badge = attention || inboxAttention
 	}
 	return out, nil
 }

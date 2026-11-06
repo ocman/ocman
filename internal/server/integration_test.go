@@ -603,10 +603,7 @@ func TestApplySessionState_Overlays(t *testing.T) {
 	}
 }
 
-// TestApplySessionState_UnreadCount inserts messages into the
-// fake OpenCode DB so the adapter's UnreadCounter implementation
-// has real rows to count against. Verifies the overlay correctly
-// surfaces unread counts on the Session struct.
+// Numeric unread counts are retired, but seen versions remain authoritative.
 func TestApplySessionState_UnreadCount(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
@@ -628,8 +625,7 @@ func TestApplySessionState_UnreadCount(t *testing.T) {
 	ingestRaw(t, srv, 2)
 	s1, s2 := canonicalID(t, srv, "s1"), canonicalID(t, srv, "s2")
 
-	// s1: user saw up to time_updated=200 → 2 messages newer (m2, m3).
-	// s2: user saw up to time_updated=300 → fully seen, count omitted.
+	// s1 has newer activity; s2 is fully seen.
 	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", s1, 200); err != nil {
 		t.Fatal(err)
 	}
@@ -644,8 +640,8 @@ func TestApplySessionState_UnreadCount(t *testing.T) {
 	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
-	if sessions[0].UnreadCount != 2 {
-		t.Errorf("s1 UnreadCount: want 2, got %d", sessions[0].UnreadCount)
+	if sessions[0].UnreadCount != 0 || sessions[0].Seen {
+		t.Errorf("s1 should remain unseen without a numeric count: %+v", sessions[0])
 	}
 	if sessions[1].UnreadCount != 0 {
 		t.Errorf("s2 UnreadCount: want 0 (fully seen), got %d", sessions[1].UnreadCount)
@@ -655,9 +651,7 @@ func TestApplySessionState_UnreadCount(t *testing.T) {
 	}
 }
 
-// TestApplySessionState_UnreadCount_NeverSeen verifies that a
-// session the user has never opened reports all its messages as
-// unread (cutoff defaults to 0).
+// Never-opened sessions remain unseen without counting their messages.
 func TestApplySessionState_UnreadCount_NeverSeen(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
@@ -680,8 +674,8 @@ func TestApplySessionState_UnreadCount_NeverSeen(t *testing.T) {
 	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
-	if sessions[0].UnreadCount != 3 {
-		t.Errorf("never-seen UnreadCount: want 3, got %d", sessions[0].UnreadCount)
+	if sessions[0].UnreadCount != 0 || sessions[0].Seen {
+		t.Errorf("never-seen session should have no numeric count: %+v", sessions[0])
 	}
 	if sessions[0].SeenTimeUpdated != 0 {
 		t.Errorf("never-seen SeenTimeUpdated: want 0, got %d", sessions[0].SeenTimeUpdated)

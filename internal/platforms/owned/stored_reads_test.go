@@ -76,9 +76,6 @@ func TestStoredReadScopePublicationAndArchiveSelection(t *testing.T) {
 	if _, err := a.SessionMetadata(t.Context(), unpublished.ID); !errors.Is(err, sessioncatalog.ErrCreating) {
 		t.Fatal(err)
 	}
-	if _, err := a.UnreadCounts(t.Context(), map[string]int64{unpublished.ID: 0}); err != nil {
-		t.Fatal(err)
-	}
 	children, err := a.SessionDescendants(t.Context(), id)
 	if err != nil || !reflect.DeepEqual(children, []string{id, child.ID}) {
 		t.Fatalf("stored descendants: %v %v", children, err)
@@ -102,7 +99,6 @@ func TestBoundReadModelFailsClosedWithoutStoreOrAfterStoreCloses(t *testing.T) {
 		"summary":     func() error { _, err := a.SessionSummary(t.Context(), id); return err },
 		"metadata":    func() error { _, err := a.SessionMetadata(t.Context(), id); return err },
 		"usage":       func() error { _, err := a.SessionUsage(t.Context(), id); return err },
-		"unread":      func() error { _, err := a.UnreadCounts(t.Context(), map[string]int64{id: 0}); return err },
 		"descendants": func() error { _, err := a.SessionDescendants(t.Context(), id); return err },
 		"archive":     func() error { _, err := a.SessionsInactiveBefore(t.Context(), 100); return err },
 	} {
@@ -132,9 +128,5 @@ func TestCanonicalPersistedReadsNeverDelegateToNativeReaders(t *testing.T) {
 	usage, err := a.SessionUsage(t.Context(), id)
 	if err != nil || usage[id].Cost != 0.5 || usage[id].Tokens.CacheRead != 2 {
 		t.Fatalf("usage bypassed statev2: %+v %v", usage, err)
-	}
-	unread, err := a.UnreadCounts(t.Context(), map[string]int64{id: 10})
-	if err != nil || unread[id] != 1 {
-		t.Fatalf("unread bypassed statev2: %v %v", unread, err)
 	}
 }

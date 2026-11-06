@@ -93,7 +93,7 @@ func TestInboxHTTPListAndMutations(t *testing.T) {
 	if err := json.Unmarshal(list.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if len(response.Items) != 1 || response.Items[0].RemoteID != "local" || response.UnreadTotal != 1 {
+	if len(response.Items) != 1 || response.Items[0].RemoteID != "local" || response.UnreadTotal != 0 {
 		t.Fatalf("list response = %+v", response)
 	}
 

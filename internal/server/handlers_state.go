@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/platforms"
@@ -222,13 +220,8 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 	if err != nil {
 		return err
 	}
-	// Build the per-platform "I want unread counts for these sessions
-	// at this cutoff" maps. Skip sessions that are fully seen
-	// (Seen==true) — their count would be zero by definition.
-	// Sessions never seen pass cutoff=0 so every message counts.
-	unreadCutoffs := map[string]map[string]int64{}
-
 	for i := range sessions {
+		sessions[i].UnreadCount = 0 // Deprecated wire field, including older peers.
 		// Stamp local host identity when an adapter didn't set it
 		// (remote adapters stamp their own RemoteID/RemoteName). This
 		// gives every local session a host badge of "This machine"
@@ -269,18 +262,6 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 			sessions[i].FactoryAttemptID = factorySessions[state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ParentID}]
 		}
 
-		// Queue unread-count lookup for unseen sessions. The
-		// cutoff is the user's last-seen time_updated for this
-		// session, or 0 (= count every message) when never seen.
-		if !sessions[i].Seen {
-			byPlatform, ok := unreadCutoffs[sessions[i].Platform]
-			if !ok {
-				byPlatform = map[string]int64{}
-				unreadCutoffs[sessions[i].Platform] = byPlatform
-			}
-			byPlatform[sessions[i].ID] = seenAtUpdate
-		}
-
 		archivedAtUpdate, ok := archived[key]
 		if ok {
 			if db.ShouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
@@ -309,19 +290,11 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 		}
 	}
 
-	// Resolve unread counts per platform via the optional
-	// UnreadCounter interface. Platforms that don't implement it
-	// leave UnreadCount at zero; the frontend still shows the
-	// "new" affordance via Seen==false.
-	if err := s.overlayUnreadCounts(ctx, sessions, unreadCutoffs); err != nil {
-		return err
-	}
-
 	return nil
 }
 
 // applyNotifySessionState overlays seen and archive state without the full
-// list's per-session unread aggregates, pin, routine or Factory lookups.
+// list's pin, routine or Factory lookups.
 func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Session) error {
 	if err := s.overlayPRWatchTasks(ctx, sessions); err != nil {
 		return err
@@ -367,50 +340,6 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 		projectKey := projectsmod.ArchiveKey(sessions[i].RemoteID, sessions[i].Directory)
 		if archivedAt, ok := archivedProjects[projectKey]; ok && sessions[i].TimeUpdated <= archivedAt {
 			sessions[i].Archived = true
-		}
-	}
-	return nil
-}
-
-// overlayUnreadCounts asks each platform's optional UnreadCounter for
-// counts at the cutoffs collected by applySessionState, then writes
-// them onto the matching session entries. Errors from a single
-// platform are logged but not fatal — a missing unread count
-// degrades gracefully to zero.
-func (s *Server) overlayUnreadCounts(ctx context.Context, sessions []db.Session, cutoffsByPlatform map[string]map[string]int64) error {
-	if len(cutoffsByPlatform) == 0 {
-		return nil
-	}
-
-	// One call per platform, then one O(N) pass to write the
-	// numbers back onto the session slice.
-	counts := map[state.Key]int{}
-	for platformID, cutoffs := range cutoffsByPlatform {
-		adapter, ok := s.registry.Get(platforms.ID(platformID))
-		if !ok {
-			continue
-		}
-		counter, ok := adapter.(platforms.UnreadCounter)
-		if !ok {
-			continue
-		}
-		got, err := counter.UnreadCounts(ctx, cutoffs)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"platform": platformID,
-				"error":    err,
-			}).Warn("UnreadCounts failed; treating as zero")
-			continue
-		}
-		for sid, n := range got {
-			counts[state.Key{Platform: platformID, SessionID: sid}] = n
-		}
-	}
-
-	for i := range sessions {
-		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
-		if n, ok := counts[key]; ok {
-			sessions[i].UnreadCount = n
 		}
 	}
 	return nil

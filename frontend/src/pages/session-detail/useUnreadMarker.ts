@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { Message } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
-import { countUnreadMessages, findFirstUnreadMessageId } from './unreadMarker';
+import { findFirstUnreadMessageId } from './unreadMarker';
 
 /**
  * Snapshot of the user's last-seen cutoff for the current session,
  * captured once per session id. Later updates (markSessionSeen, SSE)
- * do NOT move the cutoff so the "first unread" marker and the "N new
- * messages" pill stay put after the persisted seen state advances.
+ * do NOT move the cutoff so the first-unread marker stays put after
+ * the persisted seen state advances.
  *
  * Stored as state keyed on the session id (derived-state-during-render
  * pattern) rather than a ref so it resets on navigation without an
@@ -23,9 +23,5 @@ export function useUnreadMarker(session: SessionMetadata | null, messages: Messa
     () => session ? findFirstUnreadMessageId(messages, cutoff) : null,
     [session, messages, cutoff],
   );
-  const unreadMessageCount = useMemo(
-    () => firstUnreadMessageId ? countUnreadMessages(messages, cutoff) : 0,
-    [messages, firstUnreadMessageId, cutoff],
-  );
-  return { firstUnreadMessageId, unreadMessageCount };
+  return { firstUnreadMessageId };
 }

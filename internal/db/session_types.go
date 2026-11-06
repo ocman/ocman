@@ -129,7 +129,7 @@ type Session struct {
 	// Session time_updated when viewed. The server stamps this read watermark.
 	SeenTimeUpdated int64 `json:"seenTimeUpdated"`
 	// Messages newer than the read watermark; zero when suppressed or unsupported.
-	UnreadCount         int            `json:"unreadCount"`
+	UnreadCount         int            `json:"unreadCount"` // Deprecated: always zero; retained for wire compatibility.
 	Notice              *SessionNotice `json:"notice,omitempty"`
 	ProjectDefaultModel string         `json:"projectDefaultModel,omitempty"`
 	// Display-only owner attributes. Capabilities control host behavior.

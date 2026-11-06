@@ -27,7 +27,7 @@ beforeEach(() => {
 function show(platformId = session.platform, sessionId = session.id, factorySession = true) {
   return render(<MemoryRouter>
     {factorySession && <FactorySessionRecovery platformID={platformId} sessionID={sessionId} />}
-    <SessionComposerSlot sessionId={sessionId} platformId={platformId} firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={vi.fn()} composer={{ isRunning: false } as never} />
+    <SessionComposerSlot sessionId={sessionId} platformId={platformId} firstUnreadMessageId={null} onJumpToUnread={vi.fn()} composer={{ isRunning: false } as never} />
   </MemoryRouter>);
 }
 

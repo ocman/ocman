@@ -227,7 +227,7 @@ Settled OpenCode and Claude conversations always use validated statev2
 snapshots. No opt-in or legacy opt-out is available.
 
 - Canonical adapters serve every persisted read (lists, summaries, metadata,
-  conversation pages, usage, unread counts, descendants, archive candidates,
+  conversation pages, usage, descendants, archive candidates,
   panels and catalogues) from statev2. `internal/conversationread` only
   converts a stored page to the wire format. There is no per-request choice
   between native and stored reads, and no native fallback.
@@ -372,6 +372,9 @@ flowchart LR
     Git[Owner Git-info samples] -->|branch observations| List
     List --> Query[internal/sidebar<br/>one read-only SQL query]
     Core[(state.db<br/>catalogue and user flags)] -->|read-only attachment| Query
+    List --> Count[Running aggregate<br/>leased busy without pending prompts]
+    Core --> Count
+    Count -->|owner-routed scalar| UI
     Query -->|filtered and paginated metadata| UI[Conversation sidebar]
     Query -->|compact rows| Project[Project session list]
     Accounting[Full accounting API] -->|message counts and duration only<br/>non-blocking| Project
@@ -387,9 +390,18 @@ flowchart LR
   restart. Pending prompts and persisted halt receipts use source-scoped native
   ancestor walks, never application worktree links. An idle observation settles
   against the retained outcome rather than replacing waiting/error with done.
-- Seen, archive, snooze and pin state join in the same query. Unread ranges use
-  a covering timestamp index; conversation JSON and accounting facts are not
-  scanned. Running-count and notification polling use the compact path as well.
+- Seen, archive, snooze and pin state join in the same query. Numeric unread
+  counts are retired; conversation JSON, message ranges and accounting facts
+  are not scanned. Running-count polling uses a dedicated owner-routed aggregate
+  over the same generation-fenced observations and prompt ancestors, without
+  sorting or returning session rows. Notification polling still reads compact rows.
+  Older owners without the aggregate follow the sidebar's partial-owner failure
+  policy rather than falling back to full session inventories.
+- Numeric unread wire fields remain as zero-valued compatibility keys:
+  session `unreadCount`, Inbox `unreadTotal` and push `badgeCount`. Current clients
+  ignore these fields. Push carries boolean `badge` state, and app/navigation
+  badges request only a dot or platform-defined flag. Seen versions, first-unread
+  markers, read filters and notification delivery remain separate from counts.
 - Conversation headers reuse already-loaded metadata and totals. Full accounting
   summaries remain separate, for views that actually display them. Cached native
   child prompts bubble to the same root in conversation and sidebar reads.
@@ -571,7 +583,7 @@ flowchart LR
   execution and streaming. Only canonical adapters and remote proxies implement
   the browsing half of `platforms.Platform`. `owned.New` requires the statev2
   store, so there is no adapter without it. Session lists, metadata, summaries,
-  conversation pages, usage, unread counts and archive candidates read that
+  conversation pages, usage and archive candidates read that
   store. An unknown native ID gets an identity only after the integration's
   `SessionIdentityProbe` proves its source has it; that probe returns binding
   metadata, never transcript content. Info/change panels reuse platform converters with

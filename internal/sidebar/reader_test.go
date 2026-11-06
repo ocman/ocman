@@ -14,7 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/statev2/statev2test"
 )
 
-func largeInventory(t *testing.T) (*Reader, *state.DB, *statev2.DB) {
+func largeInventory(t testing.TB) (*Reader, *state.DB, *statev2.DB) {
 	t.Helper()
 	corePath := statetest.Path(t, sessioncatalog.Schema)
 	core, err := state.Open(corePath, sessioncatalog.Schema)

@@ -14,7 +14,6 @@ export interface SessionComposerSlotProps {
   directory?: string;
   remoteId?: string;
   firstUnreadMessageId: string | null;
-  unreadMessageCount: number;
   onJumpToUnread: (messageId: string) => void;
   pendingPrompt?: boolean;
   composer: ComponentProps<typeof Composer> | null;

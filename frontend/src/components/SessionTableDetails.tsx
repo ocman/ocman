@@ -1,11 +1,4 @@
-import type { GitInfo, Session } from '../lib/api';
-
-export function UnreadBadge({ session }: { session: Session }) {
-  if (!session.unreadCount || session.seen) return null;
-  const label = session.unreadCount > 99 ? '99+' : String(session.unreadCount);
-  return <span className="session-unread-badge" data-testid="session-unread-badge"
-    title={`${session.unreadCount} new message${session.unreadCount === 1 ? '' : 's'} since you last viewed this session`}>{label}</span>;
-}
+import type { GitInfo } from '../lib/api';
 
 export function ShortPath({ path }: { path: string }) {
   const parts = (path || '').split('/').filter(Boolean);

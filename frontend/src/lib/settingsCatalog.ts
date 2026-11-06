@@ -54,8 +54,8 @@ export const SETTINGS = {
   },
   'app-icon-badge': {
     group: 'app', title: 'App icon badge',
-    description: 'Choose which unread items contribute to the installed app icon count. These settings apply to every device connected to this ocman instance, including background push. Reading or archiving items removes their count.',
-    example: 'Include unread sessions and Primary Inbox messages, but disable automated messages. Permission and choice prompts count once per session, never again as Inbox permission items.',
+    description: 'Choose which items enable the installed app attention badge. The badge has no number. These settings apply to every device connected to this ocman instance, including background push.',
+    example: 'Include unseen sessions and Primary Inbox messages, but disable automated messages. Reading, resolving or archiving items clears their attention state.',
     keywords: 'badge count ipad ios unread primary routines permissions choices',
   },
   'enabled-platforms': {

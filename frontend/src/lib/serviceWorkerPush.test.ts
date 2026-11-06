@@ -29,14 +29,19 @@ it('displays background push and preserves the owner-qualified target', async ()
   expect(w.showNotification).toHaveBeenCalledWith('ocman — input required', expect.objectContaining({ requireInteraction: true, data: expect.objectContaining({ url: '/session/s?platform=r-owner%3Aopencode' }) }));
 });
 
-it('updates the installed icon badge from push and clears a zero count', async () => {
+it('updates a nonnumeric badge from new and legacy pushes', async () => {
   const w = worker();
   await w.emit('push', { data: { json: () => ({ badgeCount: 3 }) } });
-  expect(w.setAppBadge).toHaveBeenCalledWith(3);
+  expect(w.setAppBadge).toHaveBeenCalledWith();
   await w.emit('push', { data: { json: () => ({ badgeCount: 0 }) } });
   expect(w.clearAppBadge).toHaveBeenCalledOnce();
   await w.emit('push', { data: { json: () => ({ badgeCount: -1 }) } });
   expect(w.setAppBadge).toHaveBeenCalledOnce();
+  await w.emit('push', { data: { json: () => ({ badge: true, badgeCount: 0 }) } });
+  expect(w.setAppBadge).toHaveBeenLastCalledWith();
+  expect(w.setAppBadge).toHaveBeenCalledTimes(2);
+  await w.emit('push', { data: { json: () => ({ badge: false, badgeCount: 9 }) } });
+  expect(w.clearAppBadge).toHaveBeenCalledTimes(2);
 });
 
 it('still displays notifications if OS badging is rejected', async () => {

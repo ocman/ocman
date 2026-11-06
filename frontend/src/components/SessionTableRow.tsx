@@ -7,7 +7,7 @@ import { useIsPhone } from '../lib/useIsPhone';
 import { useSessionSwipe } from '../lib/useSessionSwipe';
 import { StatusBadge } from './StatusBadge';
 import { PhoneSessionMeta } from './PhoneSessionMeta';
-import { ShortPath, UnreadBadge } from './SessionTableDetails';
+import { ShortPath } from './SessionTableDetails';
 import { ArchiveButton } from './ArchiveButton';
 import { SnoozeButton } from './SnoozeButton';
 import './SessionSwipe.css';
@@ -40,7 +40,6 @@ export function SessionTableRow({ session, depth, showProject, archiving, onArch
           <StatusBadge status={session.status} resetsAt={session.resetsAt} compact
             seen={isTerminalStatus(session.status) && session.seen} pending={session.pendingPermission || session.pendingQuestion} />
           <span className="session-title">{cleanTitle(session.title) || 'Untitled'}</span>
-          {!phone && <UnreadBadge session={session} />}
         </div>
         <PhoneSessionMeta session={session} />
         <div className="mono">{session.id}</div>

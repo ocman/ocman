@@ -19,6 +19,12 @@ held for the configured duration. New activity, reopening a normal session,
 and uncertain reads reset the timer. Timers also restart when ocman restarts.
 Sessions, transcripts, branches, and worktrees remain available.
 
+Each sweep reads one session inventory per platform and groups sessions by
+resolved project root. Directory membership is cached only for that sweep.
+Immediately before stopping, cleanup reads a fresh inventory, resolves membership
+again, and checks live lifecycle, archive intent, queued messages and background
+work. The shared preliminary inventory never authorizes a stop on its own.
+
 For deleted checkouts, cleanup uses the project identity stored with managed
 session ownership. Retained terminal transcripts from unrelated deleted paths
 do not block cleanup. Unreadable ownership or legacy managed records without a

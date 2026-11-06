@@ -1485,10 +1485,7 @@ func TestHandleSessionsNotify_AutoUnarchivesUpdatedSession(t *testing.T) {
 	}
 }
 
-// countingUnreadPlatform is a fakePlatform that also implements
-// platforms.UnreadCounter, recording each call. Unread counts are the
-// expensive part of the full overlay (a message aggregate scan per
-// unseen session) and notify's projection has no field for them.
+// Simulate the retired optional interface to catch accidental unread lookups.
 type countingUnreadPlatform struct {
 	fakePlatform
 	mu    sync.Mutex
@@ -1508,11 +1505,7 @@ func (f *countingUnreadPlatform) callCount() int {
 	return f.calls
 }
 
-// TestHandleSessionsNotify_SkipsUnreadCounts is the performance
-// contract of FR-3: the notify read must not trigger the unread-count
-// aggregate. The /api/sessions leg is the control — it proves the
-// counter is reachable, so a zero on the notify leg means "not called",
-// not "not wired".
+// Neither notification polling nor ordinary lists may calculate unread counts.
 func TestHandleSessionsNotify_SkipsUnreadCounts(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	waiting := mkSession("fake", "unseen-waiting", "waiting", 10_000)
@@ -1529,8 +1522,8 @@ func TestHandleSessionsNotify_SkipsUnreadCounts(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	srv.handleSessions(httptest.NewRecorder(), req)
-	if n := counter.callCount(); n != 1 {
-		t.Errorf("/api/sessions made %d unread-count lookups, want 1 (control)", n)
+	if n := counter.callCount(); n != 0 {
+		t.Errorf("/api/sessions made %d unread-count lookups, want 0", n)
 	}
 }
 

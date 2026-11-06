@@ -51,13 +51,6 @@ func TestSessionSummariesAndRelationsAreInstanceScoped(t *testing.T) {
 	if err != nil || len(usage) != 2 || usage["child"][0].Paid != 0.5 {
 		t.Fatalf("usage: %v %v", usage, err)
 	}
-	unread, err := d.UnreadCounts(t.Context(), "first", map[string]int64{"root": 10, "child": 20, "deleted": 0, "absent": 0})
-	if err != nil || !reflect.DeepEqual(unread, map[string]int{"root": 1}) {
-		t.Fatalf("unread: %v %v", unread, err)
-	}
-	if unread, err := d.UnreadCounts(t.Context(), "first", nil); err != nil || len(unread) != 0 {
-		t.Fatalf("empty unread: %v %v", unread, err)
-	}
 }
 
 func TestSummaryQueriesRejectMissingScopeAndClosedStores(t *testing.T) {
@@ -67,7 +60,6 @@ func TestSummaryQueriesRejectMissingScopeAndClosedStores(t *testing.T) {
 		"parents":     func() error { _, err := d.SessionParents(t.Context(), ""); return err },
 		"descendants": func() error { _, err := d.Descendants(t.Context(), Key{}); return err },
 		"usage":       func() error { _, err := d.DescendantUsage(t.Context(), Key{}); return err },
-		"unread":      func() error { _, err := d.UnreadCounts(t.Context(), "", nil); return err },
 	}
 	for name, query := range queries {
 		if query() == nil {
@@ -80,7 +72,6 @@ func TestSummaryQueriesRejectMissingScopeAndClosedStores(t *testing.T) {
 		"parents":     func() error { _, err := d.SessionParents(t.Context(), "first"); return err },
 		"descendants": func() error { _, err := d.Descendants(t.Context(), Key{"first", "s"}); return err },
 		"usage":       func() error { _, err := d.DescendantUsage(t.Context(), Key{"first", "s"}); return err },
-		"unread":      func() error { _, err := d.UnreadCounts(t.Context(), "first", map[string]int64{"s": 0}); return err },
 	}
 	for name, query := range queries {
 		if query() == nil {

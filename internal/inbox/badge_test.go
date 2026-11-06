@@ -31,9 +31,9 @@ func TestBadgeCountLocalItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := NewModule(Deps{Store: db})
-	count, err := m.BadgeCount(t.Context(), map[string]bool{state.InboxGeneral: true, state.InboxFactory: true, state.InboxPermissionCategory: true})
-	if err != nil || count != 2 {
-		t.Fatalf("badge = %d, %v; want 2 without permission duplication", count, err)
+	attention, err := m.BadgeAttention(t.Context(), map[string]bool{state.InboxGeneral: true, state.InboxFactory: true, state.InboxPermissionCategory: true})
+	if err != nil || !attention {
+		t.Fatalf("badge attention = %t, %v", attention, err)
 	}
 }
 
@@ -50,19 +50,15 @@ func TestBadgeCountOwnersAndUnavailableSources(t *testing.T) {
 				}, nil
 			}}
 			m := NewModule(Deps{Remotes: func() Remotes { return r }})
-			count, err := m.BadgeCount(t.Context(), map[string]bool{state.InboxGeneral: true})
+			attention, err := m.BadgeAttention(t.Context(), map[string]bool{state.InboxGeneral: true})
 			if failingSource == "local" {
 				if err == nil {
 					t.Fatal("local storage failure ignored")
 				}
 				return
 			}
-			want := 2
-			if failingSource == "remote" {
-				want = 1
-			}
-			if err != nil || count != want {
-				t.Fatalf("badge = %d, %v; want %d", count, err, want)
+			if err != nil || !attention {
+				t.Fatalf("badge attention = %t, %v", attention, err)
 			}
 		})
 	}

@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useInbox } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { useNotifySnapshot } from '../lib/useNotifyData';
-import { attentionSessionEntries } from '../lib/sessionAttention';
+import { needsSessionAttention } from '../lib/sessionAttention';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
 import { featureNav, featureNavigation, featureFooterNavigation } from '../features';
@@ -33,8 +33,8 @@ export function MainNav({
   const toggleCollapsed = useUiStore((state) => state.toggleMainNav);
   const inbox = useInbox();
   const notify = useNotifySnapshot();
-  const unreadSessions = attentionSessionEntries(notify?.entries ?? []).length;
-  const homeLabel = unreadSessions ? `Home, ${unreadSessions} unread sessions` : 'Home';
+  const attention = notify?.entries.some(needsSessionAttention) ?? false;
+  const homeLabel = attention ? 'Home, needs attention' : 'Home';
   const usageTrigger = useRef<HTMLButtonElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const toggleLabel = mobileOpen
@@ -55,13 +55,12 @@ export function MainNav({
     >
       <i className={`bi ${item.icon}`} aria-hidden="true" />
       <span>{item.label}</span>
-      {item.to === '/' && unreadSessions > 0 && <b className="nav-unread-badge" aria-hidden="true">{unreadSessions > 99 ? '99+' : unreadSessions}</b>}
+      {item.to === '/' && attention && <span className="nav-attention-dot" aria-hidden="true" />}
     </NavLink>
   );
 
-  const inboxLabel = inbox.data?.unreadTotal
-    ? `Inbox, ${inbox.data.unreadTotal} unread messages`
-    : 'Inbox';
+  const inboxUnread = inbox.data?.items.some(item => !item.readAt && !item.archivedAt) ?? false;
+  const inboxLabel = inboxUnread ? 'Inbox, unread messages' : 'Inbox';
 
   return (
     <>
@@ -89,7 +88,7 @@ export function MainNav({
           >
             <i className="bi bi-inbox" aria-hidden="true" />
             <span>Inbox</span>
-            {inbox.data?.unreadTotal ? <b className="nav-unread-badge">{inbox.data.unreadTotal > 99 ? '99+' : inbox.data.unreadTotal}</b> : null}
+            {inboxUnread && <span className="nav-attention-dot" aria-hidden="true" />}
           </NavLink>
           {featureFooterNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={onMobileClose} />)}
           <div className="main-nav-usage-root">
@@ -122,7 +121,7 @@ export function MainNav({
         aria-label="Close navigation"
         onClick={onMobileClose}
       />
-      <PhoneNavigation unreadTotal={inbox.data?.unreadTotal ?? 0} unreadSessions={unreadSessions} />
+      <PhoneNavigation inboxUnread={inboxUnread} attention={attention} />
     </>
   );
 }

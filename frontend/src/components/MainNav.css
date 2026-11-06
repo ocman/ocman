@@ -52,8 +52,8 @@
 .main-nav nav a i { width: 16px; flex-shrink: 0; font-size: 15px; text-align: center; }
 .main-nav nav a:hover { color: var(--text); background: var(--bg-hover); }
 .main-nav nav a.active { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.nav-unread-badge { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 18px; height: 18px; margin-left: auto; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--bg); font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; }
-.main-nav.collapsed:not(.mobile-open) .nav-unread-badge { position: absolute; top: 0; right: 0; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; }
+.nav-attention-dot { display: inline-block; flex-shrink: 0; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--accent); }
+.main-nav.collapsed:not(.mobile-open) .nav-attention-dot { position: absolute; top: 0; right: 0; }
 .main-nav-backdrop { display: none; }
 
 /* Clear the native window's traffic-light buttons. */

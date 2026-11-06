@@ -2,11 +2,8 @@ package owned
 
 import (
 	"context"
-	"errors"
-	"maps"
 
 	"github.com/ocman/ocman/internal/platforms"
-	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
 func (a *Adapter) storedUsage(ctx context.Context, id string) (map[string]platforms.Usage, error) {
@@ -40,35 +37,6 @@ func (a *Adapter) storedUsage(ctx context.Context, id string) (map[string]platfo
 			}
 		}
 		out[id] = total
-	}
-	return out, nil
-}
-
-func (a *Adapter) storedUnread(ctx context.Context, cutoffs map[string]int64) (map[string]int, error) {
-	groups := map[string]map[string]int64{}
-	for id, cutoff := range cutoffs {
-		identity, err := a.storedIdentity(ctx, id)
-		if errors.Is(err, platforms.ErrNotFound) || errors.Is(err, sessioncatalog.ErrCreating) {
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-		if groups[identity.SourceKey] == nil {
-			groups[identity.SourceKey] = map[string]int64{}
-		}
-		groups[identity.SourceKey][id] = cutoff
-	}
-	out := map[string]int{}
-	for source, validated := range groups {
-		instance, err := a.history.FindInstance(ctx, a.owner, a.source.Platform, source)
-		if err != nil {
-			return nil, err
-		}
-		counts, err := a.history.UnreadCounts(ctx, instance.ID, validated)
-		if err != nil {
-			return nil, err
-		}
-		maps.Copy(out, counts)
 	}
 	return out, nil
 }

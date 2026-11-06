@@ -1298,9 +1298,9 @@ semantics.
   `session_events.go`) can move behind hub subscriptions for attached
   sessions. For sessions with no subscriber the headless watcher remains the
   source.
-- Unread and activity (`ocman.session.activity`, `unreadCount`) stay
-  list-level concerns, computed by `UnreadCounter` on poll and patched by
-  activity events.
+- Seen state and activity (`ocman.session.activity`) stay list-level concerns,
+  patched by activity events. Numeric unread counts and `UnreadCounter` are
+  retired; the legacy `unreadCount` response field remains zero.
 - Optional later step: give the global stream an `epoch:seq` so a reconnect
   can skip the full list refetch. This is not needed for this design.
 

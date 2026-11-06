@@ -41,7 +41,7 @@ func TestNotificationBadgeExcludesRoutineSessions(t *testing.T) {
 			t.Fatalf("routine counted in browser snapshot: %s, %v", w.Body.String(), err)
 		}
 		rows, err := s.pushSnapshot(t.Context())
-		if err != nil || len(rows) != 1 || rows[0].Notification.BadgeCount != 1 {
+		if err != nil || len(rows) != 1 || !rows[0].Notification.Badge || rows[0].Notification.BadgeCount != 0 {
 			t.Fatalf("routine counted or alerted by push: %+v, %v", rows, err)
 		}
 	}
@@ -76,7 +76,7 @@ func TestPushBadgeIncludesSelectedInboxCategories(t *testing.T) {
 			}
 		}
 		rows, err := s.pushSnapshot(t.Context())
-		if err != nil || len(rows) != 1 || rows[0].Notification.BadgeCount != tc.want {
+		if err != nil || len(rows) != 1 || rows[0].Notification.Badge != (tc.want > 0) || rows[0].Notification.BadgeCount != 0 {
 			t.Fatalf("badge with %s = %+v, %v; want %d", tc.settings, rows, err, tc.want)
 		}
 	}

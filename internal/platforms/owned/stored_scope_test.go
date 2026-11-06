@@ -12,7 +12,7 @@ import (
 )
 
 func TestOldPhysicalSourcesStayReadableWithoutBorrowingCurrentNativeIDs(t *testing.T) {
-	a, p, current := storedFixture(t)
+	a, p, _ := storedFixture(t)
 	if _, err := a.store.Reconcile(t.Context(), sessioncatalog.Source{OwnerID: "owner", Platform: "test", SourceKey: "old"}, []sessioncatalog.NativeSession{{ID: "native", Directory: "/old"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -45,10 +45,6 @@ func TestOldPhysicalSourcesStayReadableWithoutBorrowingCurrentNativeIDs(t *testi
 	usage, err := a.SessionUsage(t.Context(), old.ID)
 	if err != nil || usage[old.ID].Cost != 1 {
 		t.Fatalf("usage crossed source: %v %v", usage, err)
-	}
-	counts, err := a.UnreadCounts(t.Context(), map[string]int64{current: 10, old.ID: 0})
-	if err != nil || counts[current] != 1 || counts[old.ID] != 2 {
-		t.Fatalf("unread crossed source: %v %v", counts, err)
 	}
 	models, err := a.SessionModels(t.Context(), old.ID)
 	if err != nil || len(models.Models) != 1 || models.Models[0].Provider != "old-provider" || models.HasProviders {

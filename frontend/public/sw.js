@@ -40,9 +40,9 @@ self.addEventListener('push', (event) => {
       const target = new URL(message?.url || '/inbox', self.location.origin);
       if (target.origin === self.location.origin) url = target.pathname + target.search;
     } catch { /* Malformed targets still show an alert with a safe fallback. */ }
-    if (typeof navigator !== 'undefined' && navigator.setAppBadge && Number.isSafeInteger(message?.badgeCount) && message.badgeCount >= 0) {
+    if (typeof navigator !== 'undefined' && navigator.setAppBadge && (typeof message?.badge === 'boolean' || (Number.isSafeInteger(message?.badgeCount) && message.badgeCount >= 0))) {
       try {
-        if (message.badgeCount > 0) await navigator.setAppBadge(message.badgeCount);
+        if (message.badge ?? message.badgeCount > 0) await navigator.setAppBadge();
         else await navigator.clearAppBadge();
       } catch { /* Badge restrictions must not prevent the notification. */ }
     }

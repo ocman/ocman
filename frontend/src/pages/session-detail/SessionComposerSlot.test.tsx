@@ -24,7 +24,6 @@ function renderSlot(over: Partial<SessionComposerSlotProps> = {}) {
     sessionId: 's1',
     platformId: 'opencode',
     firstUnreadMessageId: null,
-    unreadMessageCount: 0,
     onJumpToUnread: vi.fn(),
     composer: null,
     ...over,
@@ -66,7 +65,7 @@ describe('SessionComposerSlot', () => {
   });
 
   it('does not show a new-message count above the composer', () => {
-    renderSlot({ firstUnreadMessageId: 'm7', unreadMessageCount: 3, composer });
+    renderSlot({ firstUnreadMessageId: 'm7', composer });
     expect(screen.queryByTestId('jump-to-first-unread')).toBeNull();
     expect(screen.queryByText(/new messages?/)).toBeNull();
     expect(screen.getByText('composer')).toBeInTheDocument();

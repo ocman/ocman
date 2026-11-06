@@ -24,16 +24,16 @@ const moreItems: { to: string; label: string; icon: string; beta?: BetaFeature }
 ];
 
 /** Conversations stay full-height, but their session list exposes global navigation. */
-export function PhoneNavigation({ unreadTotal, unreadSessions = 0 }: { unreadTotal: number; unreadSessions?: number }) {
+export function PhoneNavigation({ inboxUnread = false, attention = false }: { inboxUnread?: boolean; attention?: boolean }) {
   const phone = useIsPhone();
   const location = useLocation();
   const [panel] = usePhoneOverlay<'sidebar' | 'details'>('conversation-panel');
   const [navigation] = usePhoneOverlay<'more'>('navigation');
   if (!phone || (location.pathname.startsWith('/session/') && panel !== 'sidebar' && navigation !== 'more')) return null;
-  return <PhoneTabs key={location.pathname + location.search} unreadTotal={unreadTotal} unreadSessions={unreadSessions} />;
+  return <PhoneTabs key={location.pathname + location.search} inboxUnread={inboxUnread} attention={attention} />;
 }
 
-function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unreadSessions: number }) {
+function PhoneTabs({ inboxUnread, attention }: { inboxUnread: boolean; attention: boolean }) {
   const beta = useBetaFeatures();
   const { pathname } = useLocation();
   const [overlay, setOverlay] = usePhoneOverlay<'more'>('navigation');
@@ -48,10 +48,10 @@ function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unrea
         const active = pathname === to || (to === '/projects' && inProjects) || (to === '/sessions' && inSessions);
         return <Link key={to} to={to} className={active ? 'active' : ''}
           aria-current={active ? 'page' : undefined}
-          aria-label={to === '/inbox' && unreadTotal ? `Inbox, ${unreadTotal} unread messages` : label}>
+          aria-label={to === '/inbox' && inboxUnread ? 'Inbox, unread messages' : label}>
           <i className={`bi ${icon}`} aria-hidden="true" />
           <span>{label}</span>
-          {to === '/inbox' && unreadTotal > 0 && <b className="phone-tab-badge" aria-hidden="true">{unreadTotal > 99 ? '99+' : unreadTotal}</b>}
+          {to === '/inbox' && inboxUnread && <span className="nav-attention-dot" aria-hidden="true" />}
         </Link>;
       })}
       <Button variant="ghost" className={moreOpen || !inPrimary ? 'active' : ''}
@@ -64,9 +64,9 @@ function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unrea
         <ModalHeader title="More" onClose={() => setOverlay(null)} closeLabel="Close more destinations" />
         <nav aria-label="More destinations">
           {moreItems.filter((item) => !item.beta || beta[item.beta]).map(({ to, label, icon }) => <NavLink key={to} to={to} replace end={to === '/'}
-            aria-label={to === '/' && unreadSessions ? `Home, ${unreadSessions} unread sessions` : label}>
+            aria-label={to === '/' && attention ? 'Home, needs attention' : label}>
              <i className={`bi ${icon}`} aria-hidden="true" /><span>{label}</span>
-             {to === '/' && unreadSessions > 0 && <b className="nav-unread-badge" aria-hidden="true">{unreadSessions > 99 ? '99+' : unreadSessions}</b>}
+             {to === '/' && attention && <span className="nav-attention-dot" aria-hidden="true" />}
             <i className="bi bi-chevron-right" aria-hidden="true" />
           </NavLink>)}
           {featureNavigation.map((Navigation, index) => <Navigation key={index} replace />)}

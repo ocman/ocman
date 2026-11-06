@@ -32,10 +32,6 @@ func TestConversationReadsDoNotQueueBehindIngestionWriter(t *testing.T) {
 			_, err := d.FindInstance(ctx, "owner", "opencode", "first")
 			return err
 		},
-		"unread": func(ctx context.Context) error {
-			_, err := d.UnreadCounts(ctx, "first", map[string]int64{"session": 0})
-			return err
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)

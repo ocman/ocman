@@ -162,8 +162,8 @@ func TestSidebarFiltersTagsAndReadsAuthoritativeFlags(t *testing.T) {
 	if !row.Pinned || !row.Archived || !row.Seen || row.RoutineID != "routine-1" || row.Branch != "fix/sidebar" || row.LastMessageAt != 20 {
 		t.Fatalf("flags/metadata lost: %+v", row)
 	}
-	remoteRows, err := a.SidebarSessions(t.Context(), platforms.SidebarQuery{UseSeenCutoffs: true, SeenCutoffs: map[string]int64{id: 10}})
-	if err != nil || len(remoteRows) != 1 || remoteRows[0].UnreadCount != 1 || remoteRows[0].SeenTimeUpdated != 10 {
+	remoteRows, err := a.SidebarSessions(t.Context(), platforms.SidebarQuery{})
+	if err != nil || len(remoteRows) != 1 || remoteRows[0].UnreadCount != 0 || remoteRows[0].SeenTimeUpdated != 30 {
 		t.Fatalf("viewer unread range ignored: %+v %v", remoteRows, err)
 	}
 	for _, q := range []platforms.SidebarQuery{{Origin: "factory"}, {OriginID: "other"}, {Directory: "/other"}, {Offset: 1}} {

@@ -61,7 +61,7 @@ func TestNotificationBadgeExcludesOwnerLocalRemoteRoutines(t *testing.T) {
 			t.Fatalf("hub counted a remote routine: %s, %v", w.Body.String(), err)
 		}
 		rows, err := hub.pushSnapshot(t.Context())
-		if err != nil || len(rows) != 1 || rows[0].Notification.BadgeCount != 1 {
+		if err != nil || len(rows) != 1 || !rows[0].Notification.Badge || rows[0].Notification.BadgeCount != 0 {
 			t.Fatalf("hub counted or alerted on remote routine: %+v, %v", rows, err)
 		}
 	}

@@ -5,11 +5,11 @@ import (
 	"sync"
 )
 
-// BadgeCount uses the same owners as the Inbox, without title or pin enrichment.
+// BadgeAttention uses the same owners as the Inbox, without title or pin enrichment.
 // Permission items are already represented by their session's attention state.
-func (m *Module) BadgeCount(ctx context.Context, categories map[string]bool) (int, error) {
+func (m *Module) BadgeAttention(ctx context.Context, categories map[string]bool) (bool, error) {
 	sources := m.inboxSources()
-	counts := make([]int, len(sources))
+	attention := make([]bool, len(sources))
 	errors := make([]error, len(sources))
 	sem := make(chan struct{}, fanoutLimit)
 	var wg sync.WaitGroup
@@ -31,21 +31,22 @@ func (m *Module) BadgeCount(ctx context.Context, categories map[string]bool) (in
 					category = "general"
 				}
 				if categories[category] && category != "permission" && item.Permission == nil && item.ReadAt == 0 && item.ArchivedAt == 0 {
-					counts[i]++
+					attention[i] = true
+					break
 				}
 			}
 		})
 	}
 	wg.Wait()
-	count := 0
+	found := false
 	for i, source := range sources {
 		if errors[i] != nil {
 			if source == "local" {
-				return 0, errors[i]
+				return false, errors[i]
 			}
 			continue // Match the Inbox's unavailable-owner behaviour.
 		}
-		count += counts[i]
+		found = found || attention[i]
 	}
-	return count, nil
+	return found, nil
 }

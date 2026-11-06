@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findFirstUnreadMessageId, countUnreadMessages } from './unreadMarker';
+import { findFirstUnreadMessageId } from './unreadMarker';
 import type { Message } from '../../lib/api';
 
 function msg(id: string, role: string, timeCreated: number): Message {
@@ -58,32 +58,5 @@ describe('findFirstUnreadMessageId', () => {
   it('uses strict > comparison (cutoff equal to message time is treated as seen)', () => {
     const msgs: Message[] = [msg('a1', 'assistant', 100)];
     expect(findFirstUnreadMessageId(msgs, 100)).toBeNull();
-  });
-});
-
-describe('countUnreadMessages', () => {
-  const messages: Message[] = [
-    msg('u1', 'user', 100),
-    msg('a1', 'assistant', 150),
-    msg('u2', 'user', 200),
-    msg('a2', 'assistant', 250),
-    msg('a3', 'assistant', 300),
-  ];
-
-  it('returns 0 when cutoff is zero', () => {
-    expect(countUnreadMessages(messages, 0)).toBe(0);
-  });
-
-  it('counts only non-user messages past the cutoff', () => {
-    // 175 → a2 and a3, skipping u2.
-    expect(countUnreadMessages(messages, 175)).toBe(2);
-  });
-
-  it('returns 0 when all newer messages are from the user', () => {
-    const onlyUser: Message[] = [
-      msg('a1', 'assistant', 100),
-      msg('u1', 'user', 200),
-    ];
-    expect(countUnreadMessages(onlyUser, 150)).toBe(0);
   });
 });

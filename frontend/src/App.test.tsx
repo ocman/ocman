@@ -78,13 +78,14 @@ describe('MainNav', () => {
     act(() => useBetaFeatures.setState({ factory: false }));
     expect(screen.queryByRole('link', { name: 'Factory' })).not.toBeInTheDocument();
   });
-  it.each([1, 12, 120])('announces %i unread messages and caps the visible badge', (unreadTotal) => {
-    vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal } } as never);
+  it.each([1, 12, 120])('ignores legacy count %i and shows only an unread indicator', (unreadTotal) => {
+    vi.mocked(useInbox).mockReturnValue({ data: { items: [{ id: 'new' }], unreadTotal } } as never);
     useUiStore.setState({ mainNavCollapsed: true });
     render(<MemoryRouter><MainNav /></MemoryRouter>);
-    const link = screen.getByRole('link', { name: `Inbox, ${unreadTotal} unread messages` });
-    expect(link).toHaveTextContent(unreadTotal > 99 ? '99+' : String(unreadTotal));
-    expect(link).toHaveAttribute('title', `Inbox, ${unreadTotal} unread messages`);
+    const link = screen.getByRole('link', { name: 'Inbox, unread messages' });
+    expect(link).toHaveTextContent('Inbox');
+    expect(link).not.toHaveTextContent(String(unreadTotal));
+    expect(link).toHaveAttribute('title', 'Inbox, unread messages');
     useUiStore.setState({ mainNavCollapsed: false });
   });
 

@@ -14,9 +14,9 @@ func TestApplyFlags(t *testing.T) {
 		seen, pinned, archived bool
 		unread                 int
 	}{
-		{name: "unseen", row: db.Session{TimeUpdated: 10, UnreadCount: 2}, unread: 2},
+		{name: "unseen", row: db.Session{TimeUpdated: 10, UnreadCount: 2}},
 		{name: "seen current version", row: db.Session{TimeUpdated: 10, SeenTimeUpdated: 10, UnreadCount: 2}, flags: Flags{Seen: true}, seen: true},
-		{name: "seen older version", row: db.Session{TimeUpdated: 11, SeenTimeUpdated: 10, UnreadCount: 2}, flags: Flags{Seen: true}, unread: 2},
+		{name: "seen older version", row: db.Session{TimeUpdated: 11, SeenTimeUpdated: 10, UnreadCount: 2}, flags: Flags{Seen: true}},
 		{name: "interruption not seen", row: db.Session{Status: db.StatusInterrupted, TimeUpdated: 10, SeenTimeUpdated: 10}, flags: Flags{Seen: true}},
 		{name: "interruption seen", row: db.Session{Status: db.StatusInterrupted, TimeUpdated: 10, SeenTimeUpdated: 10}, flags: Flags{Seen: true, SeenInterrupted: true}, seen: true},
 		{name: "pinned", row: db.Session{PinnedAt: 5}, pinned: true},

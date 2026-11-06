@@ -9,7 +9,7 @@ import { SessionTableRow } from './SessionTableRow';
 import { useSessionTableArchive } from './useSessionTableArchive';
 import { useIsPhone } from '../lib/useIsPhone';
 import { InlineAlert } from './InlineAlert';
-export { UnreadBadge, ShortPath, GitStatusLine } from './SessionTableDetails';
+export { ShortPath, GitStatusLine } from './SessionTableDetails';
 
 interface Props {
   sessions: Session[];

@@ -44,10 +44,6 @@ func (a *Adapter) SessionUsage(ctx context.Context, id string) (map[string]platf
 	return a.storedUsage(ctx, id)
 }
 
-func (a *Adapter) UnreadCounts(ctx context.Context, cutoffs map[string]int64) (map[string]int, error) {
-	return a.storedUnread(ctx, cutoffs)
-}
-
 func (a *Adapter) SessionDescendants(ctx context.Context, id string) ([]string, error) {
 	key, err := a.storedKey(ctx, id)
 	if err != nil {

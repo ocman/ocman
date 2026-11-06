@@ -107,7 +107,7 @@ function Child() {
       {entry.error}<button onClick={() => actions.handleRetrySend(entry.id)}>Retry message</button>
     </div>)}
     <SessionComposerSlot sessionId="child" platformId="opencode"
-    firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={() => {}}
+    firstUnreadMessageId={null} onJumpToUnread={() => {}}
     composer={{ sessionId: 'child', isRunning: false, onSend: actions.handleSend }} />
   </>;
 }

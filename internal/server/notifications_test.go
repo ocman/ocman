@@ -41,7 +41,7 @@ func TestPushSnapshotIncludesDoneWithoutChangingBrowserProjection(t *testing.T) 
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("done completion missing: %+v %v", rows, err)
 	}
-	if rows[0].Notification.BadgeCount != 0 {
+	if rows[0].Notification.Badge || rows[0].Notification.BadgeCount != 0 {
 		t.Fatalf("push badge counts a done envelope hidden by the app: %+v", rows)
 	}
 	browser, err := s.notificationEntries(t.Context(), 0, 500)
@@ -79,7 +79,7 @@ func TestPushSnapshotUsesRemoteOwnersPermissionDecision(t *testing.T) {
 	}
 	p.prompts = append(p.prompts, platforms.LivePrompt{"id": "another-request", "sessionID": "another-child", platforms.NotificationDeferredField: false})
 	rows, err = s.pushSnapshot(t.Context())
-	if err != nil || len(rows) != 2 || rows[0].Notification.BadgeCount != 1 || rows[1].Notification.BadgeCount != 1 {
+	if err != nil || len(rows) != 2 || !rows[0].Notification.Badge || !rows[1].Notification.Badge || rows[0].Notification.BadgeCount != 0 {
 		t.Fatalf("badge counted prompts rather than sessions: %+v %v", rows, err)
 	}
 	p.prompts = p.prompts[2:3]
@@ -227,7 +227,7 @@ func TestPushBadgeCountsInterruptedAttentionSessions(t *testing.T) {
 	}}, life: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageRole: "assistant", LatestMessageID: "message"}}
 	s.registry.Register(p)
 	rows, err := s.pushSnapshot(t.Context())
-	if err != nil || len(rows) != 2 || rows[0].Notification.BadgeCount != 2 || rows[1].Notification.BadgeCount != 2 {
+	if err != nil || len(rows) != 2 || !rows[0].Notification.Badge || !rows[1].Notification.Badge || rows[0].Notification.BadgeCount != 0 {
 		t.Fatalf("attention badge missed interrupted session: %+v %v", rows, err)
 	}
 }
@@ -262,7 +262,7 @@ func TestNotificationBadgeExcludesArchivedSessions(t *testing.T) {
 		t.Fatalf("push should notify only unread and prompt sessions: %+v, %v", rows, err)
 	}
 	for _, row := range rows {
-		if row.Notification.BadgeCount != 2 {
+		if !row.Notification.Badge || row.Notification.BadgeCount != 0 {
 			t.Fatalf("push badge should be 2: %+v", row)
 		}
 	}

@@ -69,7 +69,7 @@ export function useMarkInboxItemRead() {
     onMutate: ({ id, remoteId }) => {
       client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
         ...data,
-        unreadTotal: Math.max(0, data.unreadTotal - (data.items.some((item) => item.id === id && item.remoteId === remoteId && !item.readAt) ? 1 : 0)),
+        unreadTotal: 0,
         items: data.items.map((item) => item.id === id && item.remoteId === remoteId ? { ...item, readAt: Date.now() } : item),
       });
     },
@@ -84,7 +84,7 @@ export function useMarkInboxItemUnread() {
     onSuccess: (_result, { id, remoteId }) => {
       client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
         ...data,
-        unreadTotal: data.unreadTotal + (data.items.some((item) => item.id === id && item.remoteId === remoteId && item.readAt) ? 1 : 0),
+        unreadTotal: 0,
         items: data.items.map((item) => item.id === id && item.remoteId === remoteId ? { ...item, readAt: undefined } : item),
       });
     },
@@ -126,7 +126,7 @@ export function useArchiveInboxItems() {
     onSuccess: (_result, items) => client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
       ...data,
       items: data.items.filter((item) => !items.some((selected) => selected.id === item.id && selected.remoteId === item.remoteId)),
-      unreadTotal: data.unreadTotal - items.filter((selected) => data.items.some((item) => item.id === selected.id && item.remoteId === selected.remoteId && !item.readAt)).length,
+      unreadTotal: 0,
     }),
     onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
   });

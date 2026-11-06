@@ -22,7 +22,7 @@ import (
 // handleSessions fans out to every registered Platform adapter for
 // session data, then applies local state (archived / seen).
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("view") == "sidebar" || (r.URL.Query().Get("view") == "running-count" && s.supportsSidebar()) {
+	if r.URL.Query().Get("view") == "sidebar" || r.URL.Query().Get("view") == "running-count" {
 		s.handleSidebarSessions(w, r)
 		return
 	}
@@ -40,19 +40,6 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	fanPhase := srvtiming.Begin(ctx, "sessions_fanout")
 	all := s.fanOutSessions(ctx, dir, since, s.registry.RememberSessions)
 	fanPhase.End()
-	if r.URL.Query().Get("view") == "running-count" {
-		count := 0
-		for _, session := range all {
-			if session.Status == db.StatusBusy {
-				count++
-			}
-		}
-		httpx.WriteJSON(w, struct {
-			Count int `json:"count"`
-		}{Count: count})
-		return
-	}
-
 	// Force-include pinned and snoozed sessions outside the time window.
 	// These sets are typically small; each miss is a single
 	// adapter lookup. Silently skip sessions that are deleted or

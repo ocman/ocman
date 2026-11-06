@@ -457,15 +457,14 @@ describe('Inbox', () => {
     expect(screen.getByRole('link', { name: 'details' })).toBeInTheDocument();
   });
 
-  it('marks the open message unread, updates the count, and returns to the list', async () => {
-    const { client } = renderInbox();
+  it('marks the open message unread and returns to the list', async () => {
+    renderInbox();
     fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Mark unread' })).not.toBeDisabled());
     vi.mocked(api.inbox).mockResolvedValue({ items: items.map((item) => ({ ...item, readAt: undefined })), unreadTotal: 2 });
     fireEvent.click(screen.getByRole('button', { name: 'Mark unread' }));
     await waitFor(() => expect(api.markInboxItemUnread).toHaveBeenCalledWith('2', 'laptop'));
     await screen.findByText('Select a message');
-    expect(client.getQueryData(['inbox'])).toMatchObject({ unreadTotal: 2 });
     fireEvent.click(screen.getByRole('button', { name: /Remote note/ }));
     await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('2', 'laptop'));
   });

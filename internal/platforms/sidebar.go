@@ -12,13 +12,19 @@ type SidebarQuery struct {
 	Since            int64
 	Limit, Offset    int
 	Origin, OriginID string
-	IncludeIDs       []string         `json:",omitempty"`
-	UseSeenCutoffs   bool             `json:",omitempty"`
-	SeenCutoffs      map[string]int64 `json:",omitempty"`
+	IncludeIDs       []string `json:",omitempty"`
 }
 
 type SidebarReader interface {
 	SidebarSessions(context.Context, SidebarQuery) ([]db.Session, error)
+}
+
+type RunningSessionCounter interface {
+	RunningSessionCount(context.Context, SidebarQuery) (int, error)
+}
+
+type RunningSessionGroupCounter interface {
+	RunningSessionCountFor(context.Context, []SidebarSource, SidebarQuery) (int, error)
 }
 
 // SidebarGroupReader combines the owner's enabled local platforms in one query.

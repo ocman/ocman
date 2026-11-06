@@ -2,7 +2,7 @@ import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
 
 test.use({ serviceWorkers: 'block' });
 
-test('phone rows omit status text and unread counts while desktop retains counts', async ({ mockedPage: page }) => {
+test('phone rows omit status text and all rows omit unread counts', async ({ mockedPage: page }) => {
   await page.route('/api/git/info*', route => route.fulfill({ json: {
     [MOCK_SESSION.directory]: { branch: 'fix/login', dirty: false, ahead: 0, behind: 0 },
   } }));
@@ -33,6 +33,5 @@ test('phone rows omit status text and unread counts while desktop retains counts
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(project).toBeHidden();
   await expect(branch).toBeHidden();
-  await expect(first.getByTestId('session-unread-badge')).toHaveText('7');
-  await expect(second.getByTestId('session-unread-badge')).toHaveText('12');
+  await expect(page.getByTestId('session-unread-badge')).toHaveCount(0);
 });

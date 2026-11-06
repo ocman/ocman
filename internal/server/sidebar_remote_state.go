@@ -14,9 +14,6 @@ func applyRemoteSidebarFlags(rows []db.Session, flags state.SidebarFlags) {
 		row := &rows[i]
 		key := state.Key{Platform: row.Platform, SessionID: row.ID}
 		seen, known := flags.Seen[key]
-		if row.SeenTimeUpdated != seen.TimeUpdated {
-			row.UnreadCount = 0
-		}
 		row.SeenTimeUpdated = seen.TimeUpdated
 		row.PinnedAt = flags.Pinned[key]
 		row.SnoozedUntil = flags.Snoozed[key]

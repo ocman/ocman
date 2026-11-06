@@ -27,5 +27,6 @@ export interface InboxItem {
 
 export interface InboxResponse {
   items: InboxItem[];
+  /** @deprecated Always zero. Read state lives on each item. */
   unreadTotal: number;
 }

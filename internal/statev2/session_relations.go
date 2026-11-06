@@ -2,7 +2,6 @@ package statev2
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 )
 
@@ -45,39 +44,6 @@ func (d *DB) Descendants(ctx context.Context, key Key) ([]string, error) {
 			return nil, err
 		}
 		out = append(out, id)
-	}
-	return out, rows.Err()
-}
-
-// UnreadCounts batches indexed ranges and keeps native message IDs irrelevant to
-// identity. Missing or deleted sessions never contribute counts.
-func (d *DB) UnreadCounts(ctx context.Context, instance string, cutoffs map[string]int64) (map[string]int, error) {
-	if instance == "" {
-		return nil, fmt.Errorf("statev2: session instance is required")
-	}
-	if len(cutoffs) == 0 {
-		return map[string]int{}, nil
-	}
-	raw, err := json.Marshal(cutoffs)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := d.reader().QueryContext(ctx, `SELECT c.key,(SELECT count(*) FROM message m WHERE m.instance_id=? AND m.session_id=c.key AND m.source_deleted=0 AND m.created_at>c.value)
-		FROM json_each(?) c JOIN session s ON s.instance_id=? AND s.id=c.key WHERE s.source_deleted=0`, instance, string(raw), instance)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var id string
-		var count int
-		if err := rows.Scan(&id, &count); err != nil {
-			return nil, err
-		}
-		if count > 0 {
-			out[id] = count
-		}
 	}
 	return out, rows.Err()
 }

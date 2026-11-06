@@ -229,7 +229,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     id, session, messages, parts, hydrateHistory, closeMobilePanel,
   });
 
-  const { firstUnreadMessageId, unreadMessageCount } = useUnreadMarker(session, messages);
+  const { firstUnreadMessageId } = useUnreadMarker(session, messages);
   const { visibleSessionWarnings, dismissSessionWarning } = useSessionWarnings(session);
 
   const handleScrollToMessageBookmark = (bookmark: MessageBookmark) => {
@@ -893,7 +893,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       directory={session.directory}
                       remoteId={session.remoteId}
                       firstUnreadMessageId={firstUnreadMessageId}
-                      unreadMessageCount={unreadMessageCount}
                       onJumpToUnread={(messageId) => setScrollToMessageBookmark({
                         sessionId: session.id,
                         id: messageId,

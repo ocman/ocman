@@ -28,24 +28,19 @@ func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("view") == "running-count" {
-		q.Limit = 0
-		q.Offset = 0
-	}
-	all, err := s.sidebarSessionRows(r.Context(), q, false)
-	if err != nil {
-		httpx.ServerError(w, "reading compact sessions", err)
-		return
-	}
-	if r.URL.Query().Get("view") == "running-count" {
-		count := 0
-		for _, row := range all {
-			if row.Status == db.StatusBusy {
-				count++
-			}
+		count, err := s.runningSessionCount(r.Context(), q)
+		if err != nil {
+			httpx.ServerError(w, "counting running sessions", err)
+			return
 		}
 		httpx.WriteJSON(w, struct {
 			Count int `json:"count"`
 		}{count})
+		return
+	}
+	all, err := s.sidebarSessionRows(r.Context(), q, false)
+	if err != nil {
+		httpx.ServerError(w, "reading compact sessions", err)
 		return
 	}
 	httpx.WriteJSON(w, all)
@@ -115,15 +110,6 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			}
 			remotePage := page
 			remotePage.IncludeIDs = append([]string(nil), page.IncludeIDs...)
-			if s.stateDB != nil {
-				remotePage.UseSeenCutoffs = true
-				remotePage.SeenCutoffs = map[string]int64{}
-				for key, seen := range remoteFlags.Seen {
-					if key.Platform == string(a.ID()) {
-						remotePage.SeenCutoffs[key.SessionID] = seen.TimeUpdated
-					}
-				}
-			}
 			for key := range remoteFlags.Pinned {
 				if key.Platform == string(a.ID()) {
 					remotePage.IncludeIDs = append(remotePage.IncludeIDs, key.SessionID)

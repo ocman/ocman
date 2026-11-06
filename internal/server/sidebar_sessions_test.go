@@ -32,6 +32,17 @@ func (p *compactTestPlatform) SidebarSessions(context.Context, platforms.Sidebar
 	panic("owner-local platforms must be combined")
 }
 
+func (p *compactTestPlatform) RunningSessionCountFor(_ context.Context, sources []platforms.SidebarSource, q platforms.SidebarQuery) (int, error) {
+	p.query, p.sources = q, sources
+	count := 0
+	for _, row := range p.rows {
+		if row.Status == db.StatusBusy {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func TestSidebarEndpointCombinesPlatformsWithoutSummaryOrStateFanout(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
 	p := &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "first", SessionsFn: func(context.Context, string, int64) ([]db.Session, error) {
@@ -73,7 +84,7 @@ func TestSidebarEndpointCountsRunningAndRejectsBadPages(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleSessions(w, httptest.NewRequest(http.MethodGet, "/api/sessions?view=running-count", nil))
 	var result struct{ Count int }
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Count != 1 || p.query.Limit != 0 {
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Count != 1 || p.calls != 0 {
 		t.Fatalf("count=%+v %v body=%s", result, err, w.Body.String())
 	}
 	for _, query := range []string{"limit=-1", "offset=-1", "limit=10001", "offset=1000001"} {
@@ -110,10 +121,10 @@ func TestSidebarKeepsHubRemotePinsAndOriginTags(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleSessions(w, httptest.NewRequest(http.MethodGet, "/api/sessions?view=sidebar&since=100&limit=0", nil))
 	var rows []db.Session
-	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil || w.Code != 200 || len(rows) != 1 || !rows[0].Pinned || rows[0].FactoryAttemptID != "attempt" || rows[0].Seen || rows[0].UnreadCount != 1 {
+	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil || w.Code != 200 || len(rows) != 1 || !rows[0].Pinned || rows[0].FactoryAttemptID != "attempt" || rows[0].Seen || rows[0].UnreadCount != 0 {
 		t.Fatalf("hub flags/tags=%+v %v body=%s", rows, err, w.Body.String())
 	}
-	if len(p.query.IncludeIDs) != 1 || p.query.IncludeIDs[0] != "old" || !p.query.UseSeenCutoffs || p.query.SeenCutoffs["old"] != 1 {
+	if len(p.query.IncludeIDs) != 1 || p.query.IncludeIDs[0] != "old" {
 		t.Fatalf("owner query lost hub preferences: %+v", p.query)
 	}
 }

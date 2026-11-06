@@ -110,9 +110,17 @@ func (m *Module) sweep(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return err
 		}
+		if len(roots) == 0 {
+			continue
+		}
+		inventory, err := projectInventory(ctx, target)
+		if err != nil {
+			log.WithError(err).Warn("idle projects: reading inventory")
+			continue // Reset every affected timer after an uncertain inventory.
+		}
 		for _, root := range roots {
 			key := state.Key{Platform: string(target.Platform.ID()), SessionID: root}
-			_, stamp, idle, err := m.eligible(ctx, target, root, false)
+			_, stamp, idle, err := m.eligibleInventory(ctx, target, root, false, inventory)
 			if err != nil {
 				log.WithError(err).WithField("project", root).Warn("idle projects: checking eligibility")
 				continue // An uncertain read resets the grace period.
@@ -149,48 +157,17 @@ func active(status db.SessionStatus) bool {
 }
 
 func (m *Module) eligible(ctx context.Context, target Target, root string, fresh bool) ([]db.Session, string, bool, error) {
-	platform := target.Platform
-	resolved := map[string]string{}
-	var history map[string]string
-	historyRead := false
-	resolve := func(directory string) (string, error) {
-		if root, ok := resolved[directory]; ok {
-			return root, nil
-		}
-		root, err := target.Runtime.ProjectRoot(ctx, directory)
-		if err == nil {
-			resolved[directory] = root
-		}
-		return root, err
-	}
-	all, err := platform.Sessions(ctx, "", 0)
+	inventory, err := projectInventory(ctx, target)
 	if err != nil {
 		return nil, "", false, err
 	}
+	return m.eligibleInventory(ctx, target, root, fresh, inventory)
+}
+
+func (m *Module) eligibleInventory(ctx context.Context, target Target, root string, fresh bool, inventory inventory) ([]db.Session, string, bool, error) {
+	platform := target.Platform
 	var sessions []db.Session
-	for _, session := range all {
-		owner, err := resolve(session.Directory)
-		if errors.Is(err, hostsvc.ErrMissingProjectDirectory) {
-			if !historyRead {
-				history, err = target.Runtime.HistoricalSessionRoots(ctx)
-				if err != nil {
-					return nil, "", false, err
-				}
-				historyRead = true
-			}
-			var owned bool
-			owner, owned = history[session.ID]
-			err = nil
-			if owned && owner == "" {
-				err = fmt.Errorf("historical project membership is unknown for session %s", session.ID)
-			}
-		}
-		if err != nil {
-			return nil, "", false, err
-		}
-		if owner != root {
-			continue
-		}
+	for _, session := range inventory.sessions[root] {
 		if reader, ok := platform.(platforms.LifecycleReader); fresh && ok {
 			lifecycle, err := reader.SessionLifecycle(ctx, session.ID)
 			if err != nil {
@@ -235,7 +212,7 @@ func (m *Module) eligible(ctx context.Context, target Target, root string, fresh
 	if err != nil {
 		return nil, "", false, err
 	}
-	if work, err := m.backgroundWork(ctx, root, resolve); err != nil || work {
+	if work, err := m.backgroundWork(ctx, root, inventory.resolve); err != nil || work {
 		return nil, "", false, err
 	}
 	var stamps []string

@@ -105,7 +105,6 @@ func (m *Module) handleInboxList(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "listing pinned Inbox items", err)
 		return
 	}
-	unread := 0
 	for _, result := range results {
 		if result.err != nil {
 			if result.source == "local" {
@@ -130,9 +129,6 @@ func (m *Module) handleInboxList(w http.ResponseWriter, r *http.Request) {
 			}
 			pinnedAt := pinned[state.InboxKey{RemoteID: result.source, ItemID: item.ID}]
 			items = append(items, ItemView{item.ID, item.Title, item.Body, item.CreatedAt, item.ReadAt, item.ArchivedAt, result.source, item.Category, item.Permission, item.Session, pinnedAt > 0, pinnedAt})
-			if item.ReadAt == 0 && item.ArchivedAt == 0 {
-				unread++
-			}
 		}
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -150,7 +146,7 @@ func (m *Module) handleInboxList(w http.ResponseWriter, r *http.Request) {
 		}
 		return items[i].RemoteID > items[j].RemoteID
 	})
-	httpx.WriteJSON(w, map[string]any{"items": items, "unreadTotal": unread})
+	httpx.WriteJSON(w, map[string]any{"items": items, "unreadTotal": 0}) // Deprecated numeric field.
 }
 
 func (m *Module) handleInboxPin(w http.ResponseWriter, r *http.Request) {

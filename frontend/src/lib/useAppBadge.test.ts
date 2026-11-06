@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { attentionSessionCount, updateAppBadge, useAppBadge } from './useAppBadge';
+import { hasSessionAttention, updateAppBadge, useAppBadge } from './useAppBadge';
 import { useNotifySnapshot } from './useNotifyData';
 import { useInbox } from './queries';
 import { useBadgeSettings } from './badgeSettings';
@@ -20,15 +20,16 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
 
-it('counts distinct unread or attention sessions, including seen sessions needing input', () => {
-  expect(attentionSessionCount([
+it('detects attention sessions, including seen sessions needing input, without counting', () => {
+  expect(hasSessionAttention([
     { id: 'one', platform: 'opencode', status: 'waiting', seen: false, pendingPermission: true, pendingQuestion: true },
     { id: 'one', platform: 'opencode', status: 'waiting', seen: false },
     { id: 'one', platform: 'r-owner:opencode', status: 'waiting', seen: false },
     { id: 'seen-prompt', status: 'busy', seen: true, pendingQuestion: true },
     { id: 'seen', status: 'waiting', seen: true },
     { id: 'judging', status: 'waiting', seen: false, suppressTerminal: true },
-  ])).toBe(3);
+  ])).toBe(true);
+  expect(hasSessionAttention([])).toBe(false);
 });
 
 it('updates the icon count and clears it when attention is resolved', async () => {
@@ -37,7 +38,7 @@ it('updates the icon count and clears it when attention is resolved', async () =
   vi.stubGlobal('navigator', { setAppBadge, clearAppBadge });
   mockEntries([{ id: 'session', status: 'waiting', seen: false }]);
   const hook = renderHook(() => useAppBadge());
-  await waitFor(() => expect(setAppBadge).toHaveBeenCalledWith(1));
+  await waitFor(() => expect(setAppBadge).toHaveBeenCalledWith());
   mockEntries([]);
   hook.rerender();
   await waitFor(() => expect(clearAppBadge).toHaveBeenCalledOnce());
@@ -51,9 +52,9 @@ it('does not clear an existing badge while the initial snapshot is loading', () 
 });
 
 it('handles unsupported browsers and rejected OS updates', async () => {
-  vi.stubGlobal('navigator', {}); await updateAppBadge(1);
+  vi.stubGlobal('navigator', {}); await updateAppBadge(true);
   vi.stubGlobal('navigator', { setAppBadge: vi.fn().mockRejectedValue(new Error('denied')) });
-  await expect(updateAppBadge(1)).resolves.toBeUndefined();
+  await expect(updateAppBadge(true)).resolves.toBeUndefined();
 });
 
 it('combines selected unread Inbox categories with sessions, excluding permission items', async () => {
@@ -67,10 +68,10 @@ it('combines selected unread Inbox categories with sessions, excluding permissio
     { id: 'read', readAt: 1 }, { id: 'archived', archivedAt: 1 },
   ], unreadTotal: 6 } } as ReturnType<typeof useInbox>);
   const hook = renderHook(() => useAppBadge());
-  await waitFor(() => expect(setAppBadge).toHaveBeenLastCalledWith(4));
+  await waitFor(() => expect(setAppBadge).toHaveBeenLastCalledWith());
   vi.mocked(useBadgeSettings).mockReturnValue({ data: { sessions: false, primary: false, factory: true, routines: true } } as ReturnType<typeof useBadgeSettings>);
   hook.rerender();
-  await waitFor(() => expect(setAppBadge).toHaveBeenLastCalledWith(2));
+  await waitFor(() => expect(setAppBadge).toHaveBeenLastCalledWith());
   vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as unknown as ReturnType<typeof useInbox>);
   vi.stubGlobal('navigator', { setAppBadge, clearAppBadge: vi.fn().mockResolvedValue(undefined) });
   hook.rerender();

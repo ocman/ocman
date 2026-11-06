@@ -2,7 +2,7 @@
 import { act, fireEvent, screen } from '@testing-library/react';
 import { renderWithQuery as render } from '../test/renderWithQuery';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../lib/api';
 import { useIsPhone } from '../lib/useIsPhone';
 
@@ -34,6 +34,38 @@ function makeSession(): Session {
 
 describe('SessionTable archive and navigation', () => {
   beforeEach(() => { vi.clearAllMocks(); vi.mocked(useIsPhone).mockReturnValue(false); });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('ignores numeric unread counts from older servers', () => {
+    render(<MemoryRouter><SessionTable sessions={[{ ...makeSession(), seen: false, unreadCount: 7 }]} showProject={false} /></MemoryRouter>);
+    expect(screen.getByRole('link', { name: /Work/ })).toBeInTheDocument();
+    expect(screen.queryByTestId('session-unread-badge')).not.toBeInTheDocument();
+  });
+
+  it('keeps whole-row navigation after removing the count badge', () => {
+    render(<MemoryRouter><HistoryControls /><SessionTable sessions={[makeSession()]} showProject={false} /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('link', { name: /Work/ }).closest('tr')!);
+    expect(screen.getByLabelText('Current path')).toHaveTextContent('/session/ses_1');
+  });
+
+  it.each([-100, 100])('keeps phone swipe actions without numeric badges: %i', async (distance) => {
+    class TouchPointer extends MouseEvent {
+      pointerId = 1;
+      pointerType = 'touch';
+      isPrimary = true;
+    }
+    vi.stubGlobal('PointerEvent', TouchPointer);
+    vi.mocked(useIsPhone).mockReturnValue(true);
+    render(<MemoryRouter><SessionTable sessions={[{ ...makeSession(), seen: false, unreadCount: 120 }]} showProject={false} /></MemoryRouter>);
+    const row = screen.getByRole('link', { name: /Work/ }).closest('tr')!;
+    row.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(row, { clientX: 150, clientY: 150 });
+    fireEvent.pointerMove(row, { clientX: 150 + distance, clientY: 150 });
+    fireEvent.pointerUp(row, { clientX: 150 + distance, clientY: 150 });
+    expect(screen.queryByTestId('session-unread-badge')).not.toBeInTheDocument();
+    if (distance > 0) expect(mocks.apiState.archiveSession).toHaveBeenCalled();
+    else expect(await screen.findByRole('menuitem', { name: 'Custom...' })).toBeInTheDocument();
+  });
 
   it('hides a phone row before the archive response and restores it on failure', async () => {
     vi.mocked(useIsPhone).mockReturnValue(true);

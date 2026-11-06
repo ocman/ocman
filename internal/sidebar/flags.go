@@ -18,9 +18,7 @@ type Flags struct {
 // resurfaces on newer activity; a project archive hides rows not updated since.
 func ApplyFlags(row *db.Session, f Flags) {
 	row.Seen = f.Seen && row.SeenTimeUpdated >= row.TimeUpdated && (row.Status != db.StatusInterrupted || f.SeenInterrupted)
-	if row.Seen {
-		row.UnreadCount = 0
-	}
+	row.UnreadCount = 0 // Deprecated wire field; never calculate numeric unread.
 	row.Pinned = row.PinnedAt > 0
 	row.Archived = f.Archived && !db.ShouldResurfaceSession(*row, f.ArchivedAt, f.Mode)
 	row.Archived = row.Archived || (f.ProjectArchivedAt > 0 && row.TimeUpdated <= f.ProjectArchivedAt)

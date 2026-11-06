@@ -51,6 +51,7 @@ export interface Session {
   /** Session timeUpdated when viewed. Used for first-unread markers and badges. */
   seenTimeUpdated: number;
   /** Messages newer than the read watermark; zero when suppressed or unsupported. */
+  /** @deprecated Always zero on current servers. Ignored by the UI. */
   unreadCount: number;
   notice?: SessionNotice;
   projectDefaultModel?: string;
