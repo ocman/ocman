@@ -21,13 +21,14 @@ const (
 )
 
 type sourceWorker struct {
-	module   *Module
-	source   Source
-	instance statev2.Instance
-	wake     chan struct{}
-	mu       sync.Mutex
-	dirty    map[string]bool
-	priority map[string]bool // requested conversation reads, served before backfill
+	module    *Module
+	source    Source
+	instance  statev2.Instance
+	wake      chan struct{}
+	reconnect chan struct{} // explicit demand only; ordinary hints cannot bypass backoff
+	mu        sync.Mutex
+	dirty     map[string]bool
+	priority  map[string]bool // requested conversation reads, served before backfill
 	// versions holds the source version hint of each stored session. It is
 	// persisted, so a restart reads only sessions that changed meanwhile.
 	versions      map[string]string

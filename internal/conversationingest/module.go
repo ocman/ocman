@@ -76,7 +76,7 @@ func NewModule(deps Deps) *Module {
 	m := &Module{deps: deps, backfill: newBackfillLimiter(deps.BackfillDutyPercent)}
 	for _, source := range deps.Sources {
 		if source.Reader != nil {
-			m.workers = append(m.workers, &sourceWorker{module: m, source: source, wake: make(chan struct{}, 1),
+			m.workers = append(m.workers, &sourceWorker{module: m, source: source, wake: make(chan struct{}, 1), reconnect: make(chan struct{}, 1),
 				dirty: map[string]bool{}, versions: map[string]string{}, failing: map[string]string{}})
 		}
 	}
@@ -138,6 +138,12 @@ func (m *Module) notify(adapterID, sessionID string, force, priority bool) {
 			w.dirty[sessionID] = w.dirty[sessionID] || force
 		}
 		w.mu.Unlock()
+		if priority {
+			select {
+			case w.reconnect <- struct{}{}:
+			default:
+			}
+		}
 		select {
 		case w.wake <- struct{}{}:
 		default:

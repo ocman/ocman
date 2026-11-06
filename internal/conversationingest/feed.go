@@ -11,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/statev2"
+	"github.com/ocman/ocman/internal/telemetry"
 )
 
 const (
@@ -90,6 +91,7 @@ func (w *sourceWorker) runFeed(ctx context.Context) {
 		if retryTimer != nil {
 			retryTimer.Stop()
 		}
+		w.serveFeedPriority(ctx, retry)
 		if !retry.due() {
 			continue
 		}
@@ -103,24 +105,36 @@ func (w *sourceWorker) runFeed(ctx context.Context) {
 }
 
 func (w *sourceWorker) watchFeed(ctx context.Context) {
+	var retry reconnectBackoff
 	for ctx.Err() == nil {
+		// Demand already satisfied by this attempt must not shorten its retry.
+		select {
+		case <-w.reconnect:
+		default:
+		}
+		var connectedAt time.Time // guarded by feedState.mu with connection state
+		finish := telemetry.ConversationWork(ctx, telemetry.ConversationWatch)
 		err := w.feed.WatchHistory(ctx, func() {
 			w.feedState.mu.Lock()
+			connectedAt = time.Now()
 			w.feedState.connected, w.feedState.catchUp = true, true
 			w.feedState.mu.Unlock()
 			w.signal()
 		}, w.enqueue)
+		finish(err, 1)
 		w.feedState.mu.Lock()
 		w.feedState.connected = false
+		var uptime time.Duration
+		if !connectedAt.IsZero() {
+			uptime = time.Since(connectedAt)
+		}
 		w.feedState.mu.Unlock()
 		if ctx.Err() != nil {
 			return
 		}
 		log.WithError(err).WithField("source", w.source.AdapterID).Debug("conversation history feed disconnected; reconnecting")
-		select {
-		case <-ctx.Done():
+		if !waitReconnect(ctx, w.reconnect, retry.after(uptime)) {
 			return
-		case <-time.After(2 * time.Second):
 		}
 	}
 }
@@ -175,6 +189,7 @@ func (w *sourceWorker) signal() {
 }
 
 func (w *sourceWorker) drainFeed(ctx context.Context) {
+	finish := telemetry.ConversationWork(ctx, telemetry.ConversationDrain)
 	w.feedState.mu.Lock()
 	catchUp, pending := w.feedState.catchUp, w.feedState.pending
 	w.feedState.catchUp, w.feedState.pending = false, map[string]*platforms.HistoryChange{}
@@ -186,6 +201,7 @@ func (w *sourceWorker) drainFeed(ctx context.Context) {
 	w.mu.Unlock()
 	w.last.Counters = nil
 	err := w.ensureInstance(ctx)
+	defer func() { finish(err, int64(len(pending)+len(dirty))) }()
 	if err == nil && (catchUp || dirty[""]) {
 		w.readiness(false)
 		err = w.catchUpFeed(ctx, dirty, pending)

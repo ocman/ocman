@@ -705,6 +705,9 @@ flowchart TD
   `epoch:seq` cursor, and the live overlay that `stream.hello` restates. It
   settles idle edges through `LifecycleReader`, derives `waiting` and turn
   edges, and resets slow consumers. It is the only per-session browser stream.
+  [Conversation load resilience](../backend-load-resilience/) describes bounded
+  lifecycle and display readers, transactional projection checks, reconnect
+  backoff and pool/work diagnostics.
   Until native sources exist, its live source runs the owner pipeline:
   `ProxyEvents` through the auto-approve tee and sinks, then
   `internal/convevents/v1map`. Remote sessions are bridged on the hub from the
