@@ -1,6 +1,7 @@
 package claudetest
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,11 +35,30 @@ func TestFakeTmuxCleansUpBlockedChildren(t *testing.T) {
 					}
 				}
 			})
-			unrelated := exec.Command("sleep", "30")
-			if err := unrelated.Start(); err != nil {
+			// Unlike sleep, this child cannot expire while a slow test is
+			// still checking that provider cleanup leaves it alone.
+			unrelated := exec.Command("cat")
+			stdin, err := unrelated.StdinPipe()
+			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = unrelated.Process.Kill(); _ = unrelated.Wait() })
+			output, writer, err := os.Pipe()
+			if err != nil {
+				_ = stdin.Close()
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = output.Close(); _ = writer.Close() })
+			unrelated.Stdout = writer
+			if err := unrelated.Start(); err != nil {
+				_ = stdin.Close()
+				t.Fatal(err)
+			}
+			_ = writer.Close()
+			t.Cleanup(func() {
+				_ = stdin.Close()
+				_ = unrelated.Process.Kill()
+				_ = unrelated.Wait()
+			})
 			t.Run("lifetime", func(t *testing.T) {
 				bin, pids := filepath.Join(dir, "bin"), filepath.Join(dir, "pids")
 				InstallFakeTmux(t, bin, pids)
@@ -93,8 +113,17 @@ func TestFakeTmuxCleansUpBlockedChildren(t *testing.T) {
 			if replacement > 0 {
 				testutil.WaitFor(t, 2*time.Second, "test cleanup stopped replacement", func() bool { return !processRunning(replacement) })
 			}
-			if !processRunning(unrelated.Process.Pid) {
-				t.Fatal("cleanup stopped an unrelated process")
+			// An echo after cleanup proves it is still responsive, without
+			// racing a ps snapshot against process exit or goroutine scheduling.
+			if _, err := io.WriteString(stdin, "alive"); err != nil {
+				t.Fatalf("cleanup stopped an unrelated process: %v", err)
+			}
+			if err := output.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			var echo [5]byte
+			if _, err := io.ReadFull(output, echo[:]); err != nil || string(echo[:]) != "alive" {
+				t.Fatalf("unrelated process did not respond: %q, %v", echo, err)
 			}
 		})
 	}

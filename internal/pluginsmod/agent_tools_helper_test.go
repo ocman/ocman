@@ -13,6 +13,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/ocman/ocman/internal/state"
+	"github.com/ocman/ocman/internal/testutil"
 	"github.com/ocman/ocman/sdk/examples/agenttools"
 	plugin "github.com/ocman/ocman/sdk/plugin"
 	plugins "github.com/ocman/ocman/sdk/protocol"
@@ -99,9 +100,7 @@ func startAgentToolPlugin(t *testing.T, db *state.DB, m *Module, workflow, id st
 	}
 	path := filepath.Join(root, "ocman-plugin-"+workflow)
 	script := "#!/bin/sh\nexport AGENT_TOOL_HELPER=" + workflow + "\nexport AGENT_TOOL_ID=" + id + "\nexec '" + strings.ReplaceAll(executable, "'", "'\\''") + "' -test.run='^TestAgentToolProcessHelper$' -- \"$@\"\n"
-	if err = os.WriteFile(path, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteScript(t, path, script)
 	candidates, err := plugins.Scan(t.Context(), root, nil)
 	if err != nil || len(candidates) != 1 || candidates[0].Err != nil {
 		t.Fatalf("discovery: %+v %v", candidates, err)
