@@ -63,7 +63,8 @@ func (s *Service) launchProject(ctx context.Context, routine state.Routine, proj
 	if !ok {
 		return "", fmt.Errorf("routine target %q is unavailable", routine.RemoteID)
 	}
-	if !filepath.IsAbs(project) && (strings.HasPrefix(project, "dir:") || strings.HasPrefix(project, "git:") || s.normalizeProjectUpstream(project) == "") {
+	canonicalGitKey := strings.HasPrefix(project, "git:") && !strings.HasPrefix(project, "git://")
+	if !filepath.IsAbs(project) && (strings.HasPrefix(project, "dir:") || canonicalGitKey || s.normalizeProjectUpstream(project) == "") {
 		return s.launchProjectKey(ctx, routine.RemoteID, project)
 	}
 	projects, err := host.Projects(ctx)
