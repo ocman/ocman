@@ -38,6 +38,7 @@ describe('nested sidebar session cards', () => {
     expect(navigate).toHaveBeenCalledOnce();
     fireEvent.keyDown(row, { key: 'Enter' });
     expect(navigate).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenLastCalledWith('child', 'test');
   });
 
   it('keeps native agents compact even in the flat view', () => {
