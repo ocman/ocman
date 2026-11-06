@@ -55,6 +55,16 @@ export function useDurableConversation(params: NewConversationProps['params'], n
     });
   }, [enabled, record, id, navigate, params.title]);
 
+  async function admitInitial(request: DurableStartRequest) {
+    try {
+      await acceptBackendDraft(id, request);
+      pendingInitial.current = undefined;
+    } catch (error) {
+      if (error instanceof APIError && error.status >= 400 && error.status < 500) pendingInitial.current = undefined;
+      throw error;
+    }
+  }
+
   return {
     enabled, record, queue, saveError,
     retrySave: () => persistBackendDraft(id),
@@ -63,8 +73,7 @@ export function useDurableConversation(params: NewConversationProps['params'], n
       const original = JSON.stringify(request);
       if (pendingInitial.current) {
         const pending = pendingInitial.current;
-        await acceptBackendDraft(id, pending.request);
-        pendingInitial.current = undefined;
+        await admitInitial(pending.request);
         if (pending.original === original) return;
       }
       const observed = useBackendConversationDrafts.getState().drafts[id];
@@ -82,13 +91,7 @@ export function useDurableConversation(params: NewConversationProps['params'], n
       }
       // The response means persisted, not setup complete. Composer can clear now.
       pendingInitial.current = { request, original };
-      try {
-        await acceptBackendDraft(id, request);
-        pendingInitial.current = undefined;
-      } catch (error) {
-        if (error instanceof APIError && error.status >= 400 && error.status < 500) pendingInitial.current = undefined;
-        throw error;
-      }
+      await admitInitial(request);
     },
     async retry() {
       await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}/retry-delivery`, undefined, { parseJSON: false });

@@ -95,6 +95,9 @@ sequenceDiagram
   Initial server recovery finishes before composer defaults or autosave mount.
   Saves serialize per identity and compare metadata revisions atomically, so
   stale tabs receive a conflict instead of overwriting newer server text.
+  Conflict Retry previews both versions without advancing the local revision.
+  Users explicitly keep local edits or restore the server text and selections;
+  restoring advances the browser text fence before remounting the composer.
 - The start endpoint acknowledges the committed payload before module-owned
   workers perform setup. The composer clears on that acknowledgement. It
   reconciles a lost initial response through the same idempotent admission before

@@ -1,16 +1,16 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { applyBackendStartProgress, discardBackendDraft, persistBackendDraft, queueBackendDraft, refreshBackendDrafts, retireBackendDraft, useBackendConversationDrafts } from './backendConversationDrafts';
-import { fetchJSON, postJSON } from './api.requests';
+import { applyBackendStartProgress, discardBackendDraft, loadBackendDraftConflict, resolveBackendDraftConflict, persistBackendDraft, queueBackendDraft, refreshBackendDrafts, retireBackendDraft, useBackendConversationDrafts } from './backendConversationDrafts';
+import { APIError, fetchJSON, postJSON } from './api.requests';
 import { rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
 import { getDraft, saveDraft } from './composerDraft';
 
-vi.mock('./api.requests', () => ({ fetchJSON: vi.fn(), postJSON: vi.fn() }));
+vi.mock('./api.requests', async (original) => ({ ...await original<typeof import('./api.requests')>(), fetchJSON: vi.fn(), postJSON: vi.fn() }));
 const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
 const metadata = { draftId: id, directory: '/repo', remoteId: 'box' };
 beforeEach(() => {
   vi.clearAllMocks();
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
-  useBackendConversationDrafts.setState({ drafts: {}, saveErrors: {} });
+  useBackendConversationDrafts.setState({ drafts: {}, saveErrors: {}, conflicts: {}, recovered: {} });
   vi.mocked(postJSON).mockResolvedValue(undefined);
 });
 
@@ -59,6 +59,40 @@ it('does not adopt a peer revision from polling and silently overwrite its chang
   await refreshBackendDrafts();
   await persistBackendDraft(id);
   expect(postJSON).toHaveBeenCalledWith(`/api/session-drafts/${id}`, expect.anything(), { method: 'PUT', headers: { 'If-Match': 'base' } });
+});
+
+it.each(['local', 'server'] as const)('recovers a conflict using the explicitly chosen %s version', async (choice) => {
+  rememberConversationDraft({ ...metadata, title: 'Local title', model: 'local-model', agent: 'local-agent', clone: { url: 'https://example.com/repo', source: { directory: '/old', remoteId: 'local' } } });
+  saveDraft(id, 'local text');
+  const server = { id, metadata: { ...metadata, title: 'Peer title', model: 'peer-model', text: 'peer text' }, phase: 'draft' as const, revision: 'peer', createdAt: 1, steps: {} };
+  vi.mocked(postJSON).mockRejectedValueOnce(new APIError('conflict', 409));
+  await expect(persistBackendDraft(id)).rejects.toThrow('conflict');
+  await expect(persistBackendDraft(id)).rejects.toThrow('Resolve the draft conflict');
+  expect(postJSON).toHaveBeenCalledTimes(1);
+  vi.mocked(fetchJSON).mockResolvedValueOnce(server);
+  const inspected = await loadBackendDraftConflict(id);
+  expect(getDraft(id)).toBe('local text');
+  await resolveBackendDraftConflict(id, inspected, choice);
+  expect(useBackendConversationDrafts.getState().saveErrors[id]).toBeUndefined();
+  expect(useBackendConversationDrafts.getState().conflicts[id]).toBe(false);
+  if (choice === 'local') {
+    expect(getDraft(id)).toBe('local text');
+    expect(postJSON).toHaveBeenLastCalledWith(`/api/session-drafts/${id}`, expect.objectContaining({ text: 'local text', model: 'local-model' }), { method: 'PUT', headers: { 'If-Match': 'peer' } });
+  } else {
+    expect(getDraft(id)).toBe('peer text');
+    expect(useNewConversationDrafts.getState().drafts[0]).toMatchObject({ title: 'Peer title', model: 'peer-model' });
+    expect(useNewConversationDrafts.getState().drafts[0].agent).toBeUndefined();
+    expect(useNewConversationDrafts.getState().drafts[0].clone).toBeUndefined();
+    expect(useBackendConversationDrafts.getState().recovered[id]).toBe(1);
+  }
+});
+
+it('does not adopt or overwrite a peer draft that was submitted while the dialog was open', async () => {
+  rememberConversationDraft(metadata);
+  saveDraft(id, 'local');
+  await expect(resolveBackendDraftConflict(id, { id, metadata, phase: 'starting', createdAt: 1, steps: {} }, 'server')).rejects.toThrow('no longer an editable draft');
+  expect(getDraft(id)).toBe('local');
+  expect(postJSON).not.toHaveBeenCalled();
 });
 
 it('retains follow-up text under the same composer key when draft metadata retires', async () => {

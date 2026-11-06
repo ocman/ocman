@@ -88,6 +88,18 @@ it('admits a new first payload after a definitive rejection', async () => {
   expect(postJSON).toHaveBeenLastCalledWith(`/api/session-drafts/${id}/start`, expect.objectContaining({ send: { message: 'fixed' } }));
 });
 
+it('releases an uncertain initial payload when replay receives a definitive rejection', async () => {
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('response lost')).mockRejectedValueOnce(new APIError('too large', 400));
+  const { result } = renderHook(() => useDurableConversation(params, vi.fn()));
+  const original = { directory: '/repo', send: { message: 'oversized original' } };
+  const corrected = { directory: '/repo', send: { message: 'corrected' } };
+  await act(async () => { await expect(result.current.send(original)).rejects.toThrow('response lost'); });
+  await act(async () => { await expect(result.current.send(corrected)).rejects.toThrow('too large'); });
+  await act(async () => { await result.current.send(corrected); });
+  expect(vi.mocked(postJSON).mock.calls.map(([, body]) => body)).toEqual([original, original, corrected]);
+  expect(postJSON).toHaveBeenLastCalledWith(`/api/session-drafts/${id}/start`, corrected);
+});
+
 it('retires a restored first prompt when polling confirms its uncertain admission completed', async () => {
   vi.mocked(postJSON).mockRejectedValueOnce(new Error('response lost'));
   const { result } = renderHook(() => useDurableConversation(params, vi.fn()));

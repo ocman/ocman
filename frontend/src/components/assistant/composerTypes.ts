@@ -7,6 +7,7 @@ import type { TargetCandidate } from '../../lib/api.types';
 export interface ComposerHandle {
   openModelPicker: (query?: string) => void;
   openAgentPicker: (query?: string) => void;
+  getText?: () => string;
 }
 
 export interface ComposerProps {

@@ -1,9 +1,9 @@
 import { create } from 'zustand';
-import { fetchJSON, postJSON } from './api.requests';
+import { APIError, fetchJSON, postJSON } from './api.requests';
 import type { StartSessionResponse } from './api.types';
 import type { DurableStartRequest } from '../pages/session-detail/newConversationSubmission';
 import { forgetConversationDraft, getConversationDraft, rememberConversationDraft, useNewConversationDrafts, type ConversationDraft } from './newConversationDrafts';
-import { getDraft, saveDraft, subscribeDraftTexts } from './composerDraft';
+import { discardDraft, getDraft, saveDraft, subscribeDraftTexts } from './composerDraft';
 import { publishDraftChange, transact } from './draftDb';
 import { remoteLog } from './remoteLog';
 import type { StartSteps } from '../pages/session-detail/LaunchSetup';
@@ -21,7 +21,10 @@ export interface BackendConversationDraft {
   revision?: string;
 }
 
-export const useBackendConversationDrafts = create<{ drafts: Record<string, BackendConversationDraft>; saveErrors: Record<string, string> }>(() => ({ drafts: {}, saveErrors: {} }));
+export const useBackendConversationDrafts = create<{
+  drafts: Record<string, BackendConversationDraft>; saveErrors: Record<string, string>;
+  conflicts: Record<string, boolean>; recovered: Record<string, number>;
+}>(() => ({ drafts: {}, saveErrors: {}, conflicts: {}, recovered: {} }));
 export const isBackendDraft = (id?: string) => !!id && /^ocm_[0-9a-f-]{36}$/.test(id);
 let reading: Promise<void> | undefined;
 let syncing = false;
@@ -59,15 +62,44 @@ export function persistBackendDraft(id: string): Promise<void> {
 }
 
 async function writeBackendDraft(id: string, snapshot: ConversationDraft & { text: string }) {
+  if (useBackendConversationDrafts.getState().conflicts[id]) throw new Error('Resolve the draft conflict before saving.');
   try {
     const revision = useBackendConversationDrafts.getState().drafts[id]?.revision ?? '';
     const saved = await postJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}`, snapshot, { method: 'PUT', headers: { 'If-Match': revision } });
     if (saved) useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: saved } }));
     useBackendConversationDrafts.setState((state) => { const saveErrors = { ...state.saveErrors }; delete saveErrors[id]; return { saveErrors }; });
   } catch (error) {
-    useBackendConversationDrafts.setState((state) => ({ saveErrors: { ...state.saveErrors, [id]: error instanceof Error ? error.message : String(error) } }));
+    useBackendConversationDrafts.setState((state) => ({ saveErrors: { ...state.saveErrors, [id]: error instanceof Error ? error.message : String(error) },
+      conflicts: { ...state.conflicts, [id]: error instanceof APIError && error.status === 409 } }));
     throw error;
   }
+}
+
+/** Inspect without adopting the peer revision or mutating the local editor. */
+export async function loadBackendDraftConflict(id: string) {
+  await saves.get(id)?.catch(() => {});
+  return fetchJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}`);
+}
+
+export async function resolveBackendDraftConflict(id: string, server: BackendConversationDraft, choice: 'local' | 'server') {
+  await saves.get(id)?.catch(() => {});
+  if (server.id !== id || server.phase !== 'draft') throw new Error('This conversation is no longer an editable draft. Reopen it to recover its current state.');
+  // Only an explicit choice may advance this editor's base revision.
+  syncing = true;
+  try {
+    useBackendConversationDrafts.setState((state) => {
+      const saveErrors = { ...state.saveErrors }; delete saveErrors[id];
+      return { drafts: { ...state.drafts, [id]: server }, saveErrors, conflicts: { ...state.conflicts, [id]: false } };
+    });
+    if (choice === 'server') {
+      rememberConversationDraft({ title: undefined, platform: undefined, remoteId: undefined, model: undefined, agent: undefined,
+        reasoning: undefined, target: undefined, clone: undefined, ...server.metadata, draftId: id, createdAt: server.createdAt });
+      discardDraft(id);
+      saveDraft(id, server.metadata.text ?? '');
+      useBackendConversationDrafts.setState((state) => ({ recovered: { ...state.recovered, [id]: (state.recovered[id] ?? 0) + 1 } }));
+    }
+  } finally { syncing = false; }
+  if (choice === 'local') await persistBackendDraft(id);
 }
 
 export function applyBackendStartProgress(id: string, step: string, value: string) {

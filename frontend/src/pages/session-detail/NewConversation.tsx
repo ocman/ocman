@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api, postJSON } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
@@ -33,8 +33,9 @@ import { useDraftMachine } from './useDraftMachine';
 import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
 import { durableStartRequest, resolveTarget, type Ready, type Submission } from './newConversationSubmission';
 import { useDurableConversation } from './useDurableConversation';
-import { discardBackendDraft, isBackendDraft } from '../../lib/backendConversationDrafts';
+import { discardBackendDraft, isBackendDraft, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { DurableDraftRecovery } from './DurableDraftRecovery';
+import { DraftSaveError } from './DraftSaveError';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -44,7 +45,8 @@ export interface NewConversationProps {
 }
 
 export function NewConversation({ params, composerRef, navigate, navigateToSession }: NewConversationProps) {
-  if (isBackendDraft(params.draftId)) return <DurableDraftRecovery key={params.draftId}><PreparedConversation params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} /></DurableDraftRecovery>;
+  const recovered = useBackendConversationDrafts((state) => state.recovered[params.draftId ?? ''] ?? 0);
+  if (isBackendDraft(params.draftId)) return <DurableDraftRecovery key={params.draftId}><PreparedConversation key={recovered} params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} /></DurableDraftRecovery>;
   return <PreparedDraftLifecycle key={params.draftId || NEW_SESSION_ID} params={params} navigate={navigate} navigateToSession={navigateToSession}>
     <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params}
       composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />
@@ -52,6 +54,8 @@ export function NewConversation({ params, composerRef, navigate, navigateToSessi
 }
 
 function PreparedConversation({ params, composerRef, navigate }: NewConversationProps) {
+  const localComposer = useRef<ComposerHandle>(null);
+  useImperativeHandle(composerRef, () => ({ openModelPicker: (query) => localComposer.current?.openModelPicker(query), openAgentPicker: (query) => localComposer.current?.openAgentPicker(query) }), []);
   const { directory, title } = params;
   const draftId = params.draftId || NEW_SESSION_ID;
   const durable = useDurableConversation(params, navigate);
@@ -354,11 +358,11 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {saveError && <InlineAlert onRetry={() => retryConversationDraftSave(draftId)}>Draft selections not saved: {saveError}</InlineAlert>}
-        {durable.saveError && !error && <InlineAlert onRetry={durable.retrySave}>Draft not saved on the backend: {durable.saveError}</InlineAlert>}
+        <DraftSaveError id={draftId} error={durable.saveError} retry={durable.retrySave} navigate={navigate} getLocalText={() => localComposer.current?.getText?.()} />
         {(error || draftStart?.error || durable.record?.error) && <InlineAlert onRetry={durable.record?.error && durable.record.result?.sessionId === draftId ? durable.retry : undefined}>{error || draftStart?.error || durable.record?.error}</InlineAlert>}
         <Composer
           key={`${routeKey}:${recoveryKey}`}
-          composerRef={composerRef}
+          composerRef={localComposer}
           initialAttachments={attachmentPayload}
           onAttachmentProcessing={() => pendingAttachmentWriter(draftId)}
           onAttachmentsChange={(payload) => { if (getConversationDraft(draftId)) updateDraftAttachments(draftId, payload); }}

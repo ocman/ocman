@@ -111,7 +111,7 @@ export function Composer({
     onTextChange: (text) => syncInputRef.current(text),
   });
   const { openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker } = pickers;
-  useImperativeHandle(composerRef, () => ({ openModelPicker, openAgentPicker }), [openModelPicker, openAgentPicker]);
+  useImperativeHandle(composerRef, () => ({ openModelPicker, openAgentPicker, getText: () => inputRef.current?.value ?? '' }), [openModelPicker, openAgentPicker]);
 
   const clearComposerInput = useCallback(() => {
     const el = inputRef.current;
