@@ -55,7 +55,7 @@ export function MainNav({
     >
       <i className={`bi ${item.icon}`} aria-hidden="true" />
       <span>{item.label}</span>
-      {item.to === '/' && attention && <span className="nav-attention-dot" aria-hidden="true" />}
+      {item.to === '/' && attention && <span className="nav-attention-dot" data-testid="nav-attention-dot" aria-hidden="true" />}
     </NavLink>
   );
 
@@ -88,7 +88,7 @@ export function MainNav({
           >
             <i className="bi bi-inbox" aria-hidden="true" />
             <span>Inbox</span>
-            {inboxUnread && <span className="nav-attention-dot" aria-hidden="true" />}
+            {inboxUnread && <span className="nav-attention-dot" data-testid="nav-attention-dot" aria-hidden="true" />}
           </NavLink>
           {featureFooterNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={onMobileClose} />)}
           <div className="main-nav-usage-root">

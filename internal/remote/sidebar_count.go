@@ -44,7 +44,7 @@ func (p *remotePlatform) RunningSessionCount(ctx context.Context, q platforms.Si
 	}
 	response, err := client.Call(ctx, &pb.CallReq{Method: "RunningSessionCount", Platform: p.base, Payload: raw})
 	if err != nil {
-		if status.Code(err) != codes.Unimplemented {
+		if ctx.Err() == nil && status.Code(err) != codes.Unimplemented {
 			p.conn.markOffline()
 		}
 		return 0, err
