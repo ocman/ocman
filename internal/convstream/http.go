@@ -111,6 +111,17 @@ func (o *sseOut) pump(ctx context.Context, sub *Subscription, keepalive <-chan t
 			if reason == "" {
 				return "", false
 			}
+			// A reconnect stops this subscription's producer. Deliver its
+			// queued frames, including stream.error, before the epoch reset.
+			if reason == convevents.ResetSourceRestarted {
+				for len(sub.ch) > 0 {
+					f := <-sub.C()
+					if !o.write(f.frame) {
+						return "", false
+					}
+					last = max(last, f.seq)
+				}
+			}
 			return reason, o.write(sub.controlFrame(convevents.StreamReset{Reason: reason}, last))
 		case <-keepalive:
 			if !o.write([]byte(httpx.SSEKeepalive)) {
