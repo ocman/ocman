@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/module"
+	log "github.com/sirupsen/logrus"
 )
 
 // ObserveSchedule records one latest receipt per recurring job. It executes
@@ -32,6 +33,10 @@ func (m *Manager) ObserveSchedule(caller context.Context, spec module.Schedule, 
 		m.mu.Unlock()
 		return err
 	}
+	if m.schedules[spec.Name] {
+		m.mu.Unlock()
+		return ErrBusy
+	}
 	now := time.Now().UnixMilli()
 	identity := sha256.Sum256([]byte("ocman.schedule." + spec.Name))
 	task := Task{ID: hex.EncodeToString(identity[:]), Spec: Spec{Kind: "schedule." + spec.Name, Key: spec.Name, Title: spec.Title, Scope: "local"}, OwnerID: "local", Status: Running, CreatedAt: now, StartedAt: now, UpdatedAt: now,
@@ -46,36 +51,51 @@ func (m *Manager) ObserveSchedule(caller context.Context, spec module.Schedule, 
 			task.Schedule.Runs += previous.Schedule.Runs
 		}
 	}
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if errors.Is(err, ErrNotFound) {
+		err = nil
+	}
+	if err == nil {
+		err = m.store.beginScheduled(caller, task)
+	}
+	if errors.Is(err, ErrBusy) {
 		m.mu.Unlock()
 		return err
 	}
-	if err = m.store.beginScheduled(caller, task); err != nil {
-		m.mu.Unlock()
-		return err
+	if m.schedules == nil {
+		m.schedules = make(map[string]bool)
 	}
+	m.schedules[spec.Name] = true
 	m.observed.Add(1)
 	m.mu.Unlock()
-	defer m.observed.Done()
+	defer func() {
+		m.mu.Lock()
+		delete(m.schedules, spec.Name)
+		m.mu.Unlock()
+		m.observed.Done()
+	}()
+	if err != nil {
+		log.WithError(err).WithField("job", spec.Name).Warn("scheduled task receipt unavailable; running maintenance without observation")
+		return runScheduledWork(caller, work)
+	}
 	ctx := caller
 	run := &execution{task: task}
 	reporter := &Reporter{manager: m, run: run, ctx: ctx}
 	ctx = module.WithProgressReporter(ctx, reporter)
-	var workErr error
-	func() {
-		defer func() {
-			if recover() != nil {
-				workErr = errors.New("scheduled task panicked")
-			}
-		}()
-		if ctx.Err() != nil {
-			workErr = ctx.Err()
-			return
-		}
-		workErr = work(ctx)
-	}()
+	workErr := runScheduledWork(ctx, work)
 	m.finish(run, workErr, ctx.Err())
 	return run.err
+}
+
+func runScheduledWork(ctx context.Context, work func(context.Context) error) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errors.New("scheduled task panicked")
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return work(ctx)
 }
 
 func (m *Manager) StopSchedule(ctx context.Context, name string) error {

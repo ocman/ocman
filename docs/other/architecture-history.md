@@ -755,7 +755,7 @@ flowchart LR
   Polls with nothing to read are not recorded, and a repeated inventory failure
   is recorded once until it changes or recovers.
 - Active keys deduplicate work within a task kind. The latest 1,000 terminal records
-  are retained, plus recurring receipts whose next-check hint is still in the future.
+  are retained, plus recurring receipts with a nonzero next-check hint, even when overdue.
   Reads return at most 200 records, active work first, then recurring receipts
   before ordinary receipts within each status rank. The hub
   aggregates owner-local tasks over authenticated gRPC, omitting remote readers
@@ -771,6 +771,8 @@ flowchart LR
   Existing timers, domain locks, cancellation and subscriptions remain authoritative.
   Completed observations never cancel descendant subscriptions. Shutdown joins
   admitted observations after their caller lifetimes are cancelled.
+  Receipt-storage failures log separately and run maintenance without a reporter;
+  in-memory overlap guards and shutdown joining still apply.
 - Loop exit and restart clear stale next-check hints. Cleanup admission counts real
   queued/running executions but excludes inline schedule observations. Detailed
   tracked jobs and excluded internal timers are listed in

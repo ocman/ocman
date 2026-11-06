@@ -44,8 +44,13 @@ func TestScheduledRetentionAndListPriority(t *testing.T) {
 		t.Fatal(err)
 	}
 	scheduled := tasks(t, m)[0]
+	// A live loop can be delayed beyond its approximate hint.
+	scheduled.Schedule.NextRunAt = time.Now().Add(-time.Hour).UnixMilli()
+	if err := m.store.save(t.Context(), scheduled); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 1002; i++ {
-		row := Task{ID: fmt.Sprint(i), Spec: Spec{Kind: "ordinary", Title: "Completed work"}, Status: Succeeded, UpdatedAt: scheduled.UpdatedAt + int64(i+1)}
+		row := Task{ID: fmt.Sprint(i), Spec: Spec{Kind: "ordinary", Title: "Completed work"}, Status: Succeeded, UpdatedAt: scheduled.UpdatedAt + time.Hour.Milliseconds() + int64(i+1)}
 		if err := m.store.insert(t.Context(), row); err != nil {
 			t.Fatal(err)
 		}
@@ -56,6 +61,13 @@ func TestScheduledRetentionAndListPriority(t *testing.T) {
 	rows, err := m.List(t.Context(), "", "", 1)
 	if err != nil || len(rows) != 1 || rows[0].ID != scheduled.ID {
 		t.Fatalf("schedule lost behind recent history: %+v %v", rows, err)
+	}
+	if err := m.ObserveSchedule(t.Context(), exampleSchedule, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := m.Get(t.Context(), scheduled.ID)
+	if err != nil || resumed.Schedule.Runs != 2 || resumed.CreatedAt != scheduled.CreatedAt {
+		t.Fatalf("live schedule history reset: %+v %v", resumed, err)
 	}
 	if err := m.StopSchedule(t.Context(), exampleSchedule.Name); err != nil {
 		t.Fatal(err)

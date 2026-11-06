@@ -204,6 +204,7 @@ func (m *Module) ArchiveProjects(ctx context.Context) {
 	// Same guard as sessions: don't undo a deliberate unarchive.
 	keep, err := m.d.Store.ProjectsUnarchivedSince(ctx, cutoff)
 	if err != nil {
+		module.ReportError(ctx, err)
 		span.RecordError(err)
 		log.WithError(err).Error("listing recently unarchived projects")
 		keep = nil
@@ -229,6 +230,7 @@ func (m *Module) ArchiveProjects(ctx context.Context) {
 				Warn("stopping opencode for auto-archived project")
 		}
 		if err := m.d.Store.ArchiveProject(ctx, state.LocalRemoteID, root); err != nil {
+			module.ReportError(ctx, err)
 			span.RecordError(err)
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
 				Error("auto-archiving inactive project")

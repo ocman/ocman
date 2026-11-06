@@ -14,15 +14,16 @@ import (
 )
 
 type Manager struct {
-	store    store
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	closed   bool
-	pending  int
-	workers  module.Workers
-	observed sync.WaitGroup
-	slots    chan struct{}
+	store     store
+	mu        sync.Mutex
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closed    bool
+	pending   int
+	workers   module.Workers
+	observed  sync.WaitGroup
+	schedules map[string]bool // includes unobserved runs during receipt-storage failures
+	slots     chan struct{}
 }
 
 func New(database *state.DB, concurrency int) *Manager {

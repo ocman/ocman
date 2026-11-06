@@ -68,8 +68,8 @@ func (s store) recover(ctx context.Context) error {
 
 func (s store) prune(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM background_task WHERE status NOT IN ('queued','running')
-		AND COALESCE(json_extract(data,'$.schedule.nextRunAt'),0)<=? AND id NOT IN (
-		SELECT id FROM background_task WHERE status NOT IN ('queued','running') ORDER BY updated_at DESC,id DESC LIMIT 1000)`, time.Now().UnixMilli())
+		AND COALESCE(json_extract(data,'$.schedule.nextRunAt'),0)=0 AND id NOT IN (
+		SELECT id FROM background_task WHERE status NOT IN ('queued','running') ORDER BY updated_at DESC,id DESC LIMIT 1000)`)
 	return err
 }
 
