@@ -1444,6 +1444,8 @@ export interface SlashCommand {
 // - isProviderDefault: OpenCode's default for this provider
 // - isAvailable: provider is in /provider's `connected` set (user has it set up)
 export interface SessionModelEntry {
+  /** False for historical/custom IDs not eligible for automatic selection; absent when unknown. */
+  isDefaultEligible?: boolean;
   // Base platform the model runs on, set when several platforms' models are
   // listed together (a new conversation); the value sent is qualified with it.
   platform?: string;

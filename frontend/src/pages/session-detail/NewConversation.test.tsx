@@ -105,6 +105,26 @@ describe('NewConversation', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
   });
 
+  it.each([false, true])('replaces a retired remote default while preserving explicit picks (%s)', async (explicit) => {
+    mocks.prepare.mockResolvedValue({
+      platform: 'r-machine:opencode', liveConnection: true, defaultModel: 'openai/gpt-5.5',
+      agents: [], commands: [], models: { hasProviders: true, models: [
+        { provider: 'openai', model: 'gpt-5.5', isAvailable: true, isDefaultEligible: false },
+        { provider: 'openai', model: 'gpt-6.1-sol', isAvailable: true, isDefaultEligible: true, isProviderDefault: true },
+      ] },
+    });
+    mount();
+    await ready();
+    expect(composer.selectedModel).toBe('openai/gpt-6.1-sol');
+    if (explicit) {
+      act(() => composer.onModelChange!('openai/custom-deployment'));
+      expect(composer.selectedModel).toBe('openai/custom-deployment');
+    }
+    await act(() => composer.onSend!('Use my custom model'));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'machine',
+      send: expect.objectContaining({ model: explicit ? 'openai/custom-deployment' : 'openai/gpt-6.1-sol' }) }));
+  });
+
   it('restores pending clone consent and clones only on first submission without probing the missing checkout', async () => {
     rememberConversationDraft({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', draftId: 'new',
       clone: { url: 'https://example.com/Org/Repo.git', source: { directory: '/source', remoteId: 'local' } } });

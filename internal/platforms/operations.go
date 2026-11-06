@@ -273,6 +273,9 @@ type SessionModel struct {
 	IsAvailable       bool     `json:"isAvailable"`
 	IsFavorite        bool     `json:"isFavorite,omitempty"`
 	Reasoning         []string `json:"reasoning,omitempty"`
+	// IsDefaultEligible distinguishes live catalog models from historical/custom
+	// IDs that remain manually selectable. Nil means catalog eligibility is unknown.
+	IsDefaultEligible *bool `json:"isDefaultEligible,omitempty"`
 	// Description is an optional usage hint shown under the model's name.
 	Description string `json:"description,omitempty"`
 	// Hidden entries only resolve names and options of a model stored under

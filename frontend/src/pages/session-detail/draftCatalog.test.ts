@@ -9,6 +9,30 @@ const catalog: PrepareSessionResponse = {
 };
 
 describe('draft catalog defaults', () => {
+  it.each(['project', 'remembered', 'history'])('skips a retired %s default in favor of the live provider default', (source) => {
+    const retired = 'openai/gpt-5.5';
+    const current = 'openai/gpt-6.1-sol';
+    const result = {
+      ...catalog,
+      projectDefaultModel: source === 'project' ? retired : '',
+      defaultModel: source === 'history' ? retired : current,
+      models: { hasProviders: true, models: [
+        { provider: 'openai', model: 'gpt-5.5', isAvailable: true, isDefaultEligible: false },
+        { provider: 'openai', model: 'gpt-6.1-sol', isAvailable: true, isDefaultEligible: true, isProviderDefault: true },
+      ] },
+    };
+    expect(draftDefaultModel(result, source === 'remembered' ? retired : '')).toBe(current);
+    const prepared = prepareDraftCatalog(result, { models: [], off: false, defaultAgent: '', defaults: { model: retired, agent: '', worktree: '' } });
+    expect(prepared.projectDefaultModel).toBe('');
+  });
+
+  it('does not select an unavailable historical default', () => {
+    expect(draftDefaultModel({ ...catalog, defaultModel: 'openai/retired', models: { hasProviders: true, models: [
+      { provider: 'openai', model: 'retired', isAvailable: false },
+      { provider: 'anthropic', model: 'sonnet', isAvailable: true, isProviderDefault: true },
+    ] } }, '')).toBe('anthropic/sonnet');
+  });
+
   it('allows supported custom defaults beyond catalog aliases and supported primary agents', () => {
     const result = prepareDraftCatalog(catalog, { models: [], off: false, defaultAgent: 'custom',
       defaults: { model: 'anthropic/custom-deployment', agent: 'custom', worktree: 'current' } });

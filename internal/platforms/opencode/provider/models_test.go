@@ -1,11 +1,41 @@
 package opencode
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/state"
 )
+
+func TestBuildSessionModelEntries_DefaultEligibility(t *testing.T) {
+	providers := providersFixture()
+	providers.All[0].Models["retired"] = OpenCodeProviderModel{ID: "retired", Status: "deprecated"}
+	for _, live := range []bool{true, false} {
+		entries := buildSessionModelEntries([]db.RecentModel{{Provider: "anthropic", Model: "retired"}}, nil, providers, live, "anthropic/removed")
+		for _, entry := range entries {
+			data, err := json.Marshal(entry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]any
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			eligible, present := fields["isDefaultEligible"]
+			if !live {
+				if present {
+					t.Fatalf("offline eligibility must stay unknown: %s", data)
+				}
+				continue
+			}
+			want := entry.Model != "removed" && entry.Model != "retired"
+			if !present || eligible != want {
+				t.Errorf("%s: eligibility = %v, want %v", entry.Model, eligible, want)
+			}
+		}
+	}
+}
 
 // providersFixture returns a minimal /provider response covering one
 // connected provider with two models. Enough to exercise the merger

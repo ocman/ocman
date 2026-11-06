@@ -86,6 +86,7 @@ func buildSessionModelEntries(
 	for _, id := range providers.Connected {
 		connected[id] = struct{}{}
 	}
+	defaultEligible := make(map[string]bool)
 
 	// Live-available models override names and mark availability. Filter to
 	// connected providers only — showing 115 unconfigured providers would be
@@ -97,6 +98,7 @@ func buildSessionModelEntries(
 			continue
 		}
 		for modelID, m := range p.Models {
+			defaultEligible[key(p.ID, modelID)] = m.Status == "" || m.Status == "active"
 			// Hide deprecated models unless we have a reason to show them.
 			if m.Status != "" && m.Status != "active" {
 				if _, seen := entryMap[key(p.ID, modelID)]; !seen && sessionDefault != key(p.ID, modelID) {
@@ -141,6 +143,10 @@ func buildSessionModelEntries(
 	// model IDs can still work with a connected provider.
 	for _, e := range entryMap {
 		_, e.IsAvailable = connected[e.Provider]
+		if hasProviders {
+			eligible := defaultEligible[key(e.Provider, e.Model)]
+			e.IsDefaultEligible = &eligible
+		}
 	}
 
 	// Collect and sort.
