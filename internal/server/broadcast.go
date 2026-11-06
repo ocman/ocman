@@ -82,6 +82,7 @@ type broadcastHub struct {
 	// events in the same order (full-state snapshots are applied as-is).
 	// mu guards only membership.
 	publishMu sync.Mutex
+	snapshot  []*broadcastSub // reused only while publishMu is held
 	mu        sync.Mutex
 	subs      map[*broadcastSub]struct{}
 }
@@ -159,14 +160,17 @@ func (h *broadcastHub) broadcast(event string, data []byte) {
 	h.publishMu.Lock()
 	defer h.publishMu.Unlock()
 	h.mu.Lock()
-	subs := make([]*broadcastSub, 0, len(h.subs))
+	subs := h.snapshot[:0]
 	for sub := range h.subs {
 		subs = append(subs, sub)
 	}
 	h.mu.Unlock()
+	var merges sessionChangeMerger
 	for _, sub := range subs {
-		sub.deliver(ev)
+		sub.deliverMerged(ev, &merges)
 	}
+	clear(subs) // do not retain disconnected subscribers between publications
+	h.snapshot = subs[:0]
 }
 
 // deliver queues ev on the subscriber's buffer, or parks it when it is a
@@ -177,6 +181,10 @@ func (h *broadcastHub) broadcast(event string, data []byte) {
 // batch under the same lock (takeBatch), so each key's events reach the
 // client in publish order. ev.key must already be set for coalescing events.
 func (s *broadcastSub) deliver(ev broadcastEvent) {
+	s.deliverMerged(ev, &sessionChangeMerger{})
+}
+
+func (s *broadcastSub) deliverMerged(ev broadcastEvent, merges *sessionChangeMerger) {
 	coalescing := coalescingEvents[ev.event]
 	key := ev.key
 	s.mu.Lock()
@@ -201,7 +209,7 @@ func (s *broadcastSub) deliver(ev broadcastEvent) {
 		return
 	}
 	if old, ok := s.pending[key]; ok && ev.event == "ocman.session.changed" {
-		ev = mergeSessionChanges(old, ev)
+		ev = merges.merge(old, ev)
 	}
 	s.pending[key] = ev
 	s.mu.Unlock()

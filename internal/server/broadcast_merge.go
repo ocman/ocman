@@ -9,6 +9,26 @@ type sessionChange struct {
 	patch  map[string]json.RawMessage
 }
 
+// One publication often reaches subscribers with the same parked snapshot.
+// Share their immutable merged result instead of cloning a patch per client.
+// This memo lives only for the fan-out, never in a retained event or backlog.
+type sessionChangeMerger struct {
+	older  *sessionChange
+	merged *sessionChange
+}
+
+func (m *sessionChangeMerger) merge(older, newer broadcastEvent) broadcastEvent {
+	if older.change == nil || newer.change == nil {
+		return newer
+	}
+	if m.older != older.change {
+		m.older = older.change
+		m.merged = mergeSessionChanges(older, newer).change
+	}
+	newer.change, newer.data = m.merged, nil
+	return newer
+}
+
 func decodeSessionChange(data []byte) *sessionChange {
 	var c sessionChange
 	if json.Unmarshal(data, &c.fields) != nil || c.fields == nil {

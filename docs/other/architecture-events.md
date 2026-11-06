@@ -65,6 +65,7 @@ sequenceDiagram
     S-->>B: categorized Inbox JSON with owner-local metadata titles
     E-->>B: SSE (ocman.inbox.changed); polling fallback
     Note over B,S: inbox/notify event bursts coalesce;<br/>in-flight requests finish before one follow-up
+    Note over S,E: queue snapshot invalidations coalesce;<br/>one owner-local read runs at a time
     B->>S: POST /api/sessions/start (startId)
     S->>E: step progress via hostsvc.WithProgress
     E-->>B: SSE (ocman.session.start.progress)
@@ -162,6 +163,14 @@ sequenceDiagram
   the writer takes buffered then parked events as one batch under the same
   lock producers use to decide between buffering and parking. The watcher publishes
   titles one at a time, so an older title is never sent after a newer one.
+  During one publication, subscribers with the same parked change share an
+  immutable merged patch. Different backlogs still merge independently. The
+  fan-out reuses its subscriber snapshot storage without retaining disconnected
+  subscribers between publications.
+- Queue-change hints in a conversation stream run at most one owner-local
+  snapshot read per session. Hints received during the read request one trailing
+  refresh; stale results are not published. Detaching the stream prevents further
+  refreshes or publication, and a failed read allows later hints to retry.
 - Reconnecting and the slow reconciliation poll recover missed events.
   Sleep or a network change can leave a stream half-open, so it never
   errors and never reconnects. The browser therefore replaces both the
