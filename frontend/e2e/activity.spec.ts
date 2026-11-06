@@ -85,6 +85,11 @@ test('task rows stay compact and open details without closing the activity modal
   const details = page.getByRole('dialog', { name: 'Details for Sync history' });
   await expect(details.getByText('imported: 2')).toBeVisible();
   await expect(details.getByRole('progressbar')).toHaveAttribute('value', '3');
+  expect(await details.evaluate((panel) => {
+    const rect = panel.getBoundingClientRect();
+    return panel.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+  })).toBe(true);
+  await details.getByText('imported: 2').click({ trial: true });
   await page.keyboard.press('Escape');
   await expect(details).not.toBeVisible();
   await expect(row).toBeFocused();

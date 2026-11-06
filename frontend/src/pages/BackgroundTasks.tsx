@@ -77,7 +77,7 @@ function TaskRow({ task, selected, onSelect }: { task: BackgroundTask } & TaskSe
       <i className="bi bi-info-circle" aria-hidden="true" />
     </Button>
     <Popover open={open} onClose={() => onSelect(null)} triggerRef={trigger}
-      id={id} label={`Details for ${task.title}`} style={position}>
+      id={id} label={`Details for ${task.title}`} className="background-task-details" style={position}>
       <strong>{task.title}</strong>
       <TaskProgress task={task} />
       <p>Updated <time dateTime={new Date(task.updatedAt).toISOString()}>{formatExactDate(task.updatedAt)}</time></p>
