@@ -375,7 +375,7 @@ flowchart LR
     List --> Count[Running aggregate<br/>leased busy without pending prompts]
     Core --> Count
     Count -->|owner-routed scalar| UI
-    Query -->|filtered and paginated metadata| UI[Conversation sidebar]
+    Query -->|metadata + native-child marker| UI[Conversation sidebar]
     Query -->|compact rows| Project[Project session list]
     Accounting[Full accounting API] -->|message counts and duration only<br/>non-blocking| Project
 ```
@@ -385,6 +385,13 @@ flowchart LR
   attention timestamps and
   cached branch data. Catalogue joins preserve authoritative owner/source,
   publication, purge and routine/Factory origin checks without copying authority.
+- Session JSON carries `sourceChild` for native subagents, separate from the
+  shared `parentId` link. The flat sidebar nests independent subsessions using
+  full project/title/branch cards, while native agents retain compact child rows.
+  Selection spans the complete row, including its nesting gutter. Completed
+  subsessions follow ordinary archive visibility; only settled native agents
+  disappear automatically. Canonical parent links can cross projects and coding
+  tools; legacy native IDs remain platform/owner scoped.
 - An owner-local worker persists event-cache observations every 500 ms. Runtime
   generations and expiring leases prevent stale busy flags after disconnect or
   restart. Pending prompts and persisted halt receipts use source-scoped native

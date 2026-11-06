@@ -1400,6 +1400,10 @@
         "omitempty": false
       },
       {
+        "name": "sourceChild",
+        "omitempty": true
+      },
+      {
         "name": "stale",
         "omitempty": true
       },

@@ -153,8 +153,7 @@ export function useSidebarSessions({
         // coerce here so .find() / filterVisibleSessions never see null.
         const result = (await getSessions({ since, limit: 0, view: 'sidebar' }, signal)) ?? [];
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
-        // Child sessions are useful while active; completed output has
-        // already bubbled up to the parent.
+        // Hide settled native agents, but retain independent subsessions.
         const rooted = filterInactiveChildren(result, id);
         // When the open session is older than the recent window, fetch it once
         // by id so it is always present in the sidebar.

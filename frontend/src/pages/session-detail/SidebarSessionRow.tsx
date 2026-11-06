@@ -54,7 +54,9 @@ export function SidebarSessionRow({
 }: SidebarSessionRowProps) {
   const gitInfo = currentGitInfo ?? (sib.branch ? { branch: sib.branch, ahead: 0, behind: 0, dirty: false } : undefined);
   const activityAt = sib.lastMessageAt || sib.timeUpdated;
-  const flat = requestedFlat && depth === 0;
+  // Independent subsessions keep their own project/branch card. Native agents
+  // remain compact. Keep nesting inside SidebarRow so selection covers the gutter.
+  const flat = requestedFlat && (depth === 0 || !sib.sourceChild);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozing, setSnoozing] = useState(false);
   const swipe = useSessionSwipe({ disabled: archiving || snoozeOpen || snoozing,

@@ -1,0 +1,43 @@
+import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
+
+test('flat sidebar mixes full subsession cards and compact agents with full-width selection', async ({ mockedPage: page }) => {
+  const child = { ...MOCK_SESSION_2, parentId: MOCK_SESSION.id, title: 'Build login UI',
+    directory: '/home/user/projects/web-app', branch: 'feature/login', sourceChild: false, status: 'done' };
+  const agent = { ...child, id: 'native-agent', parentId: child.id, sourceChild: true,
+    title: 'Review accessibility', status: 'busy' };
+  await page.route('/api/sessions*', route => route.fulfill({ json: [agent, child, MOCK_SESSION] }));
+  await page.route(new RegExp(`/api/session/${child.id}(\\?|$)`), route => route.fulfill({
+    json: { session: child, messages: [], parts: [], totalMessages: 0 },
+  }));
+  await page.route('/api/git/info*', route => route.fulfill({ json: { branch: 'feature/login', ahead: 0, behind: 0, dirty: false } }));
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  const sidebar = page.getByTestId('session-sidebar');
+  const parent = sidebar.getByRole('button', { name: /Fix the login bug/ });
+  const card = sidebar.getByRole('button', { name: /Build login UI/ });
+  const compact = sidebar.getByRole('button', { name: /Review accessibility/ });
+  await expect(card).toBeVisible();
+  await expect(card.getByText('web-app')).toBeVisible();
+  await expect(card.getByText('feature/login')).toBeVisible();
+  await expect(compact.getByText('web-app')).toHaveCount(0);
+  await expect(compact.getByText('feature/login')).toHaveCount(0);
+  const parentBox = (await parent.boundingBox())!;
+  const cardBox = (await card.boundingBox())!;
+  const compactBox = (await compact.boundingBox())!;
+  expect(cardBox.y).toBeGreaterThan(parentBox.y);
+  expect(compactBox.y).toBeGreaterThan(cardBox.y);
+  expect(cardBox.x).toBe(parentBox.x);
+  expect(cardBox.width).toBe(parentBox.width);
+  expect(cardBox.height).toBe(parentBox.height);
+  expect(compactBox.height).toBeLessThan(cardBox.height);
+
+  // The leading nesting gutter is part of the clickable, selected row.
+  await card.click({ position: { x: 5, y: cardBox.height / 2 } });
+  await expect(page).toHaveURL(new RegExp(`/session/${child.id}`));
+  await expect(card).toHaveAttribute('aria-selected', 'true');
+  await expect(card).toHaveCSS('box-shadow', /inset/);
+  await expect(card).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const before = (await card.boundingBox())!;
+  await card.hover();
+  await expect(card.getByRole('button', { name: 'Archive session' })).toBeVisible();
+  expect((await card.boundingBox())!.height).toBe(before.height);
+});

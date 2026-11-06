@@ -381,9 +381,10 @@ describe('useSidebarSessions project visibility', () => {
     const fixtures: Partial<Session>[] = [
       { id: 'open', archived: true },
       { id: 'pin-archived', pinned: true, archived: true },
-      { id: 'pin-child', pinned: true, parentId: 'parent', status: 'done' as const },
+      { id: 'pin-child', pinned: true, parentId: 'parent', sourceChild: true, status: 'done' as const },
       { id: 'hidden-archived', archived: true },
-      { id: 'hidden-child', parentId: 'parent', status: 'done' as const },
+      { id: 'hidden-child', parentId: 'parent', sourceChild: true, status: 'done' as const },
+      { id: 'subsession', parentId: 'parent', sourceChild: false, status: 'done' as const },
       { id: 'archived-permission', archived: true, pendingPermission: true },
       { id: 'archived-question', archived: true, pendingQuestion: true },
     ];
@@ -396,7 +397,7 @@ describe('useSidebarSessions project visibility', () => {
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     await act(async () => { await result.current.loadRecentSessions(); });
-    expect(result.current.recentSessions.map((row) => row.id)).toEqual(['archived-permission', 'archived-question', 'open', 'pin-archived', 'pin-child']);
+    expect(result.current.recentSessions.map((row) => row.id)).toEqual(['archived-permission', 'archived-question', 'open', 'pin-archived', 'pin-child', 'subsession']);
   });
 
   it('keeps a quiet project after newer sessions, including when switching views', async () => {

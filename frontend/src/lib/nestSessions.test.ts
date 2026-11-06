@@ -7,6 +7,14 @@ const flatten = (rows: ReturnType<typeof nestSessions<Row>>) =>
   rows.map((r) => `${r.depth}:${r.session.id}`);
 
 describe('nestSessions', () => {
+  it('nests canonical subsessions across coding tools without merging legacy owner-scoped ids', () => {
+    const rows = nestSessions([
+      { id: 'ocm_parent', platform: 'tool-a' },
+      { id: 'ocm_child', parentId: 'ocm_parent', platform: 'tool-b' },
+      { id: 'agent', parentId: 'ocm_child', platform: 'tool-b' },
+    ]);
+    expect(flatten(rows)).toEqual(['0:ocm_parent', '1:ocm_child', '2:agent']);
+  });
   it('keeps same-id sessions and their children separate by owner', () => {
     const rows = nestSessions([
       { id: 'parent', platform: 'local' },

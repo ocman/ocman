@@ -109,7 +109,7 @@ func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		var inferred, role, finish, lastError, liveStatus, mode string
 		var archiveAt, projectArchiveAt int64
 		var hasArchive, hasSeen, seenInterrupted bool
-		if err := rows.Scan(&row.ID, &row.Platform, &row.ProjectID, &row.ParentID, &row.Title, &row.Directory, &row.TimeCreated, &row.TimeUpdated, &row.LastMessageAt, &row.LastTurnCompletedAt, &row.LastUserPromptAt, &row.LastHaltAt, &row.Branch, &row.Origin, &row.OriginID,
+		if err := rows.Scan(&row.ID, &row.Platform, &row.ProjectID, &row.ParentID, &row.SourceChild, &row.Title, &row.Directory, &row.TimeCreated, &row.TimeUpdated, &row.LastMessageAt, &row.LastTurnCompletedAt, &row.LastUserPromptAt, &row.LastHaltAt, &row.Branch, &row.Origin, &row.OriginID,
 			&row.RoutineID, &row.FactoryAttemptID, &inferred, &role, &finish, &lastError, &liveStatus, &row.ResetsAt, &row.LiveConnection, &row.PendingPermission, &row.PendingQuestion,
 			&row.BackgroundTaskCount, &row.BackgroundServiceCount, &row.PinnedAt, &hasArchive, &archiveAt, &row.SnoozedUntil, &projectArchiveAt, &row.SeenTimeUpdated, &hasSeen, &seenInterrupted, &mode); err != nil {
 			return nil, err

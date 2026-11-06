@@ -1,8 +1,8 @@
 /**
  * Parent/child nesting for session lists.
  *
- * A session may descend from another via `parentId` (an OpenCode
- * native Task subagent). The
+ * A session may descend from another via `parentId` (a native subagent
+ * or an independent application-created subsession). The
  * lists render this as a tree: each parent is immediately followed by
  * its children, indented by `depth`.
  *
@@ -42,7 +42,9 @@ export function nestSessions<T extends SessionLike>(
 ): NestedRow<T>[] {
   if (!sessions || !sessions.length) return [];
 
-  const key = (session: T, id = session.id) => `${session.platform ?? ''}\0${id}`;
+  // Canonical ids are globally unique, including children using another tool.
+  // Legacy native ids still need their platform/owner namespace.
+  const key = (session: T, id = session.id) => id.startsWith('ocm_') ? id : `${session.platform ?? ''}\0${id}`;
   const byId = new Map<string, T>();
   for (const s of sessions) byId.set(key(s), s);
 

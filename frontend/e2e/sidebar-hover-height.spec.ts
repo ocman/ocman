@@ -1,7 +1,7 @@
 import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
 
 test('child session keeps its height and following rows in place on hover and focus', async ({ mockedPage: page }) => {
-  const child = { ...MOCK_SESSION_2, status: 'busy', parentId: MOCK_SESSION.id };
+  const child = { ...MOCK_SESSION_2, status: 'busy', parentId: MOCK_SESSION.id, sourceChild: true };
   const sibling = { ...child, id: 'sess-child-sibling', title: 'Following child' };
   await page.route('/api/sessions*', route => route.fulfill({ json: [MOCK_SESSION, child, sibling] }));
   await page.goto(`/session/${MOCK_SESSION.id}`);

@@ -86,6 +86,7 @@ type Session struct {
 	ProjectID string `json:"projectId"`
 	// ParentID is the native parent, or an ocman child link stamped by the server.
 	ParentID      string `json:"parentId,omitempty"`
+	SourceChild   bool   `json:"sourceChild,omitempty"` // native subagent, not an application-created subsession
 	Title         string `json:"title"`
 	Directory     string `json:"directory"`
 	TimeCreated   int64  `json:"timeCreated"`
@@ -140,7 +141,6 @@ type Session struct {
 	LastErrorName    string `json:"-"`
 	LastErrorMessage string `json:"-"`
 	LastErrorAt      int64  `json:"-"`
-	SourceChild      bool   `json:"-"` // native hierarchy, distinct from application child links
 	// Non-wire contribution tracked for idempotent hub overlays.
 	ApplicationBackgroundTaskCount int `json:"-"`
 }

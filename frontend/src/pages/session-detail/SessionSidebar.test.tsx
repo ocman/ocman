@@ -109,6 +109,25 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it('nests cross-project subsession cards with compact native agents in visible navigation order', () => {
+    const parent = session({ id: 'ocm_parent', title: 'Implement authentication' });
+    const child = session({ id: 'ocm_child', platform: 'another-tool', parentId: parent.id,
+      title: 'Build login UI', directory: '/web-app', branch: 'feature/login' });
+    const agent = session({ id: 'ocm_agent', platform: child.platform, parentId: child.id,
+      sourceChild: true, title: 'Review accessibility', directory: child.directory, status: 'busy' });
+    renderSidebar({ directory: '/repo', sessions: [agent, child, parent], lastUpdated: 1, aggregate: { kind: 'busy', count: 1 } },
+      {}, undefined, undefined, undefined, 'recent');
+    const childRow = screen.getByText(child.title).closest('.session-sidebar-item')!;
+    const agentRow = screen.getByText(agent.title).closest('.session-sidebar-item')!;
+    expect(childRow).toHaveClass('flat', 'session-sidebar-item-child');
+    expect(within(childRow as HTMLElement).getByText('web-app')).toBeInTheDocument();
+    expect(within(childRow as HTMLElement).getByText('feature/login')).toBeInTheDocument();
+    expect(agentRow).toHaveClass('session-sidebar-item-child');
+    expect(agentRow).not.toHaveClass('flat');
+    expect(within(agentRow as HTMLElement).getByText('└─')).toHaveStyle({ '--depth': '2' });
+    expect(visibleSidebarSessions.current?.map(({ id }) => id)).toEqual([parent.id, child.id, agent.id]);
+  });
+
   it.each(['recent', 'projects'] as const)('cleans up failed durable drafts from the real %s sidebar with visible retry', async (view) => {
     const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
     const metadata = { draftId: id, directory: '/repo', remoteId: 'box', title: 'Failed remote draft' };
@@ -286,9 +305,9 @@ describe('SessionSidebar', () => {
     expect(screen.getAllByText('Active snoozed pin')).toHaveLength(1);
   });
 
-  it.each([false, true])('omits project and branch context on nested rows with flat=%s', (flat) => {
+  it.each([false, true])('omits project and branch context on native agent rows with flat=%s', (flat) => {
     const props = {
-      session: session(), inGroup: false, flat, active: false, activeId: 'other',
+      session: session({ sourceChild: true }), inGroup: false, flat, active: false, activeId: 'other',
       activeDisplayStatus: 'done' as const, archiving: false, draft: false,
       debugMode: false, gitInfo: gitInfo('feature-branch'),
       onNavigateToSession: vi.fn(), onArchiveSession: vi.fn(), onPinSession: vi.fn(),

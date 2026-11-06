@@ -31,18 +31,19 @@ export function computeSidebarHash(sessions: readonly Session[]): string {
   return sessions
     .map(
       (s) =>
-        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.lastUserPromptAt ?? 0}|${s.lastHaltAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.archived}${s.snoozedUntil ? `|s:${s.snoozedUntil}` : ''}${s.factoryAttemptId ? `|f:${s.factoryAttemptId}` : ''}${s.backgroundTaskCount || s.backgroundServiceCount ? `|bg:${s.backgroundTaskCount ?? 0}:${s.backgroundServiceCount ?? 0}` : ''}`,
+        `${s.id}|${s.status}|${s.timeUpdated}|${s.lastTurnCompletedAt ?? 0}|${s.lastUserPromptAt ?? 0}|${s.lastHaltAt ?? 0}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.archived}${s.snoozedUntil ? `|s:${s.snoozedUntil}` : ''}${s.factoryAttemptId ? `|f:${s.factoryAttemptId}` : ''}${s.backgroundTaskCount || s.backgroundServiceCount ? `|bg:${s.backgroundTaskCount ?? 0}:${s.backgroundServiceCount ?? 0}` : ''}${s.parentId ? `|parent:${s.parentId}` : ''}${s.sourceChild ? '|native' : ''}`,
     )
     .join(',');
 }
 
 /**
- * Drop inactive subagent/child sessions from a flat sidebar list.
+ * Drop inactive native subagents from a flat sidebar list.
  *
- * A child remains useful while it is busy or waiting for input. Once it
+ * A native agent remains useful while it is busy or waiting for input. Once it
  * completes, its result has bubbled up to the parent and it only adds
  * noise. The currently-open child remains visible so its sidebar row
- * does not disappear while the user is viewing it.
+ * does not disappear while the user is viewing it. Independent subsessions
+ * follow the normal session archive rules, not the native agent lifecycle.
  */
 export function filterInactiveChildren(
   sessions: readonly Session[],
@@ -55,7 +56,7 @@ export function filterInactiveChildren(
     // Match the backend list's internal-session exclusion. SSE can fetch
     // details directly, which also exposes parentless auto-approve judges.
     if (!s.parentId && s.title?.endsWith(' subagent)')) return false;
-    return !s.parentId || isActive(s);
+    return !s.sourceChild || isActive(s);
   });
 }
 

@@ -10,8 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// SourceChild is intentionally not part of the display-session wire shape.
-// Carry it explicitly for the maintenance inventory's inheritance checks.
+// Retain nativeChild for compatibility with older maintenance inventory peers.
 type worktreeSession struct {
 	db.Session
 	NativeChild bool `json:"nativeChild"`

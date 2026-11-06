@@ -31,7 +31,7 @@ const selectSessions = observationsCTE + `, halted(id,parent_id,at,owner_id,plat
  JOIN core.session_catalog c ON c.native_id=h.parent_id AND c.native_id<>'' AND c.owner_id=h.owner_id AND c.platform=h.platform AND c.source_key=h.source_key
  WHERE c.creation_state='ready' AND c.purged=0
  ), halt_flags AS (SELECT id,max(at) AS at FROM halted GROUP BY id)
-  SELECT s.id,i.platform,s.project_id,s.parent_id,s.title,s.directory,s.created_at,s.updated_at,s.last_message_at,
+  SELECT s.id,i.platform,s.project_id,s.parent_id,s.source_child,s.title,s.directory,s.created_at,s.updated_at,s.last_message_at,
    max(COALESCE(att.last_turn_completed_at,0),COALESCE(bgc.completed_at,0)),COALESCE(att.last_user_prompt_at,0),COALESCE(hlt.at,0),
  COALESCE(b.branch,''),c.origin,c.origin_id,
  CASE WHEN c.origin='routine' THEN c.origin_id WHEN pc.origin='routine' THEN pc.origin_id ELSE '' END,

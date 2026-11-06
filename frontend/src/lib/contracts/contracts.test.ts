@@ -30,7 +30,7 @@ const flags = <T,>() => <R extends Flags<T>>(r: R & Record<Exclude<keyof R, keyo
 
 const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   Session: flags<Session>()({
-    id: false, platform: false, projectId: false, parentId: true, title: false, directory: false,
+    id: false, platform: false, projectId: false, parentId: true, sourceChild: true, title: false, directory: false,
     timeCreated: false, timeUpdated: false, lastTurnCompletedAt: true, lastUserPromptAt: true, lastHaltAt: true,
     lastMessageAt: true, branch: true, origin: true, originId: true,
     summaryAdditions: false, summaryDeletions: false, summaryFiles: false, shareUrl: false, messageCount: false,

@@ -67,6 +67,13 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('filterInactiveChildren', () => {
+  it('retains independent subsessions after completion, even without a visible parent', () => {
+    const subsessions = ['parent', 'missing'].map((parentId, index) => makeSession({
+      id: `subsession-${index}`, parentId, sourceChild: false, status: 'done',
+    }));
+    expect(filterInactiveChildren(subsessions)).toEqual(subsessions);
+  });
+
   it('keeps an interrupted session unread despite an identical live read watermark', () => {
     const current = [makeSession({ status: 'interrupted', seen: true, timeUpdated: 100, seenTimeUpdated: 100 })];
     const next = [makeSession({ status: 'interrupted', seen: false, timeUpdated: 100, seenTimeUpdated: 100 })];
@@ -93,7 +100,7 @@ describe('filterInactiveChildren', () => {
   it('drops a child whose parent is not in the list', () => {
     const sessions = [
       makeSession({ id: 'top' }),
-      makeSession({ id: 'orphan', parentId: 'missing-parent' }),
+      makeSession({ id: 'orphan', parentId: 'missing-parent', sourceChild: true }),
     ];
     expect(filterInactiveChildren(sessions).map((s) => s.id)).toEqual(['top']);
   });
@@ -101,7 +108,7 @@ describe('filterInactiveChildren', () => {
   it('drops a completed child even when its parent is present', () => {
     const sessions = [
       makeSession({ id: 'parent' }),
-      makeSession({ id: 'child', parentId: 'parent' }),
+      makeSession({ id: 'child', parentId: 'parent', sourceChild: true }),
     ];
     expect(filterInactiveChildren(sessions).map((s) => s.id)).toEqual(['parent']);
   });
@@ -109,7 +116,7 @@ describe('filterInactiveChildren', () => {
   it('keeps the currently-open session even if it is an orphan child', () => {
     const sessions = [
       makeSession({ id: 'top' }),
-      makeSession({ id: 'open', parentId: 'missing-parent' }),
+      makeSession({ id: 'open', parentId: 'missing-parent', sourceChild: true }),
     ];
     expect(filterInactiveChildren(sessions, 'open').map((s) => s.id)).toEqual(['top', 'open']);
   });
@@ -122,15 +129,21 @@ describe('filterInactiveChildren', () => {
   it('keeps an orphan child while it is active, drops it once done', () => {
     const active = [
       makeSession({ id: 'top' }),
-      makeSession({ id: 'busy', parentId: 'missing', status: 'busy' }),
-      makeSession({ id: 'prompt', parentId: 'missing', status: 'done', pendingPermission: true }),
-      makeSession({ id: 'gone', parentId: 'missing', status: 'done' }),
+      makeSession({ id: 'busy', parentId: 'missing', sourceChild: true, status: 'busy' }),
+      makeSession({ id: 'prompt', parentId: 'missing', sourceChild: true, status: 'done', pendingPermission: true }),
+      makeSession({ id: 'gone', parentId: 'missing', sourceChild: true, status: 'done' }),
     ];
     expect(filterInactiveChildren(active).map((s) => s.id)).toEqual(['top', 'busy', 'prompt']);
   });
 });
 
 describe('computeSidebarHash', () => {
+  it('tracks parent links and native agent classification', () => {
+    const row = makeSession();
+    const child = { ...row, parentId: 'parent' };
+    expect(computeSidebarHash([row])).not.toBe(computeSidebarHash([child]));
+    expect(computeSidebarHash([child])).not.toBe(computeSidebarHash([{ ...child, sourceChild: true }]));
+  });
   it('tracks snooze deadlines separately from archives', () => {
     const row = makeSession({ archived: true });
     expect(computeSidebarHash([row])).not.toBe(computeSidebarHash([{ ...row, snoozedUntil: 123 }]));

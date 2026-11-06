@@ -2,6 +2,7 @@ package sidebar
 
 import (
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,6 +14,46 @@ import (
 	"github.com/ocman/ocman/internal/statev2"
 	"github.com/ocman/ocman/internal/statev2/statev2test"
 )
+
+func TestSidebarDistinguishesNativeAgentsFromSubsessions(t *testing.T) {
+	r, _, history := largeInventory(t)
+	native := "ocm_00000001-0000-0000-0000-000000000001"
+	child := "ocm_00000002-0000-0000-0000-000000000002"
+	parent := "ocm_00000003-0000-0000-0000-000000000003"
+	conn, err := sql.Open("sqlite", history.FilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(`UPDATE session_sidebar SET parent_id=?,source_child=(id=?) WHERE id IN (?,?)`, parent, native, native, child); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := r.Sessions(t.Context(), Scope{Owner: "owner", Platform: "test", Source: "source", Generation: "g"}, platforms.SidebarQuery{IncludeIDs: []string{native, child}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, row := range rows {
+		if row.ID != native && row.ID != child {
+			continue
+		}
+		checked++
+		if row.ParentID != parent || row.SourceChild != (row.ID == native) {
+			t.Fatalf("child relationship lost: %+v", row)
+		}
+		wire, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded struct{ SourceChild bool }
+		if err := json.Unmarshal(wire, &decoded); err != nil || decoded.SourceChild != (row.ID == native) {
+			t.Fatalf("child relationship missing on wire: %s (%v)", wire, err)
+		}
+	}
+	if checked != 2 {
+		t.Fatalf("checked %d children, want 2", checked)
+	}
+}
 
 func largeInventory(t testing.TB) (*Reader, *state.DB, *statev2.DB) {
 	t.Helper()
