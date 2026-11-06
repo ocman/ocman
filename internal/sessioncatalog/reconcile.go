@@ -31,6 +31,18 @@ func (s *Store) Reconcile(ctx context.Context, source Source, sessions []NativeS
 		return result, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if len(sessions) >= 32 {
+		unchanged, err := unchangedInventory(ctx, tx, source, sessions)
+		if err != nil {
+			return result, err
+		}
+		if unchanged {
+			startup.Report(ctx, "Reconciling session identities", len(sessions), len(sessions))
+			startup.Report(ctx, "Linking native session parents", len(sessions), len(sessions))
+			startup.Report(ctx, "Validating session parent links", len(sessions), len(sessions))
+			return result, tx.Commit()
+		}
+	}
 	now := time.Now().UnixMilli()
 	rows := make([]Session, 0, len(sessions))
 	startup.Report(ctx, "Reconciling session identities", 0, len(sessions))

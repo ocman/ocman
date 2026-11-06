@@ -41,6 +41,11 @@ flowchart LR
   lookups, including the parent map used for nested live prompts. Query count
   does not grow with the retained inventory. Every batch still validates owner,
   platform, publication and purge state; identities are not cached across reads.
+- Stable discovery inventories of at least 32 sessions validate metadata and
+  both parent graphs from one transaction-local catalogue snapshot. Changed,
+  unfinished, purged or inconsistent rows use the normal atomic repair path.
+  The snapshot is capped at twice the input size so partial inventories do not
+  load an unbounded source. No inventory cache survives the transaction.
 - Content and ingestion progress commit together before upstream acknowledgment
   or outward publication. Conflicting repair writes fail instead of overwriting
   another ingestion revision.
