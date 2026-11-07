@@ -36,7 +36,10 @@ type startRequest struct {
 	Send     *startSendBody `json:"send"`
 	StartID  string         `json:"startId"`
 	DraftID  string         `json:"draftId,omitempty"`
-	Command  *struct {
+	// PermissionRules, when present, replaces the owner/project defaults with
+	// the posture chosen in the composer before the first prompt.
+	PermissionRules *[]platforms.PermissionRule `json:"permissionRules,omitempty"`
+	Command         *struct {
 		Command   string `json:"command"`
 		Arguments string `json:"arguments"`
 	} `json:"command,omitempty"`
@@ -55,6 +58,9 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid draft launch", http.StatusBadRequest)
 		return
 	}
+	if !validStartRules(w, req.PermissionRules) {
+		return
+	}
 	var model string
 	if req.Send != nil {
 		model = req.Send.Model
@@ -68,7 +74,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
 	ctx := r.Context()
-	permissionRules, err := m.d.PermissionDefaults(ctx, req.Directory, req.RemoteID)
+	permissionRules, err := m.startPermissionRules(ctx, req)
 	if err != nil {
 		httpx.ServerError(w, "reading project defaults", err)
 		return
@@ -194,4 +200,32 @@ func (m *Module) startProgress(ctx context.Context, startID string) hostsvc.Prog
 			m.d.Broadcast("ocman.session.start.progress", payload)
 		}
 	}
+}
+
+// startPermissionRules prefers the composer's explicit posture over defaults.
+func (m *Module) startPermissionRules(ctx context.Context, req startRequest) ([]platforms.PermissionRule, error) {
+	if req.PermissionRules != nil {
+		return *req.PermissionRules, nil
+	}
+	return m.d.PermissionDefaults(ctx, req.Directory, req.RemoteID)
+}
+
+// validStartRules rejects malformed rules before any worktree or session exists.
+func validStartRules(w http.ResponseWriter, rules *[]platforms.PermissionRule) bool {
+	if rules == nil {
+		return true
+	}
+	for _, rule := range *rules {
+		switch rule.Action {
+		case "allow", "deny", "ask":
+		default:
+			http.Error(w, "invalid permission rule action: expected allow, deny, or ask", http.StatusBadRequest)
+			return false
+		}
+		if rule.Permission == "" {
+			http.Error(w, "permission rule permission is required", http.StatusBadRequest)
+			return false
+		}
+	}
+	return true
 }

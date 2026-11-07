@@ -118,7 +118,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
         description: `${nativePending ? 'Applies on the next turn. ' : ''}Claude reviews tool calls. Ocman rules and auto-approval stay separate. Applies on next turn when idle; requires a supported model.`,
         rules: [],
       });
-      return modes.map((m) => ({ ...m, value: m.id, iconClass: permissionModeIconClass(m.id) }));
+      return modeEntries(modes);
     },
     [nativeMode, nativePending],
   );
@@ -127,33 +127,11 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
 
   return (
     <>
-      <button
-        type="button"
-        className={`oc-permission-lock oc-permission-mode-${modeId || 'default'}`}
-        title={error || `Permission mode: ${label}`}
-        aria-label={`Permission mode: ${label}`}
-        onClick={() => setPickerOpen(true)}
-        disabled={saving}
-        data-testid="permission-mode-lock"
-      >
-        <i className={`bi ${permissionModeIconClass(modeId)}`} aria-hidden="true" />
-      </button>
-      <CommandListPicker
+      <PermissionModeButton modeId={modeId} label={label} error={error} disabled={saving} onOpen={() => setPickerOpen(true)} />
+      <PermissionModePicker
         open={pickerOpen}
         entries={entries}
-        sectionOf={nativeMode !== null ? (m) => m.id.startsWith('native-') ? 'Platform modes' : 'Ocman modes' : undefined}
-        fuseKeys={[{ name: 'label', weight: 1 }, { name: 'description', weight: 0.5 }]}
-        renderRow={(m) => (
-          <>
-            <span className={`oc-permission-mode-icon oc-permission-mode-${m.id}`} aria-hidden="true"><i className={`bi ${m.iconClass}`} /></span>
-            <span className="oc-permission-mode-copy">
-              <span className="oc-cmd-title">{m.label}</span>
-              <span className="oc-cmd-meta">{m.description}</span>
-            </span>
-          </>
-        )}
-        placeholder={() => 'Permission mode...'}
-        emptyMessage="No permission modes"
+        sectioned={nativeMode !== null}
         isCurrent={(m) => m.id === modeId || (m.id === 'native-default' && nativeMode === 'auto')}
         onSelect={(id) => { void apply(id); }}
         onClose={() => setPickerOpen(false)}
@@ -161,6 +139,95 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       {error && <div className="oc-permission-lock-error">{error}</div>}
       {confirmMode && <PermissionModeConfirmation mode={confirmMode} saving={saving} onClose={() => setConfirmMode(null)} onConfirm={() => apply(confirmMode.id)} />}
     </>
+  );
+}
+
+/**
+ * Permission mode for a conversation that does not exist yet. The pick is
+ * applied by the backend at creation, before the first prompt; 'default'
+ * keeps the owner/project defaults.
+ */
+export function DraftPermissionMode({ value, onChange, disabled }: {
+  value: string; onChange: (id: string) => void; disabled?: boolean;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<PermissionMode | null>(null);
+  useEffect(() => {
+    const open = () => setPickerOpen(true);
+    window.addEventListener('oc-permission-mode-open', open);
+    return () => window.removeEventListener('oc-permission-mode-open', open);
+  }, []);
+  const modeId = PERMISSION_MODES.some((m) => m.id === value) ? value : 'default';
+  const label = PERMISSION_MODES.find((m) => m.id === modeId)?.label ?? 'Default';
+  const entries = useMemo(() => modeEntries(PERMISSION_MODES), []);
+  const select = (id: string) => {
+    const target = PERMISSION_MODES.find((m) => m.id === id);
+    if (!target) return;
+    if (target.dangerous) { setConfirmMode(target); return; }
+    onChange(id);
+  };
+  return (
+    <>
+      <PermissionModeButton modeId={modeId} label={label} disabled={disabled} onOpen={() => setPickerOpen(true)} />
+      <PermissionModePicker
+        open={pickerOpen}
+        entries={entries}
+        isCurrent={(m) => m.id === modeId}
+        onSelect={select}
+        onClose={() => setPickerOpen(false)}
+      />
+      {confirmMode && <PermissionModeConfirmation mode={confirmMode} saving={false} onClose={() => setConfirmMode(null)}
+        onConfirm={async () => { onChange(confirmMode.id); setConfirmMode(null); }} />}
+    </>
+  );
+}
+
+type ModeEntry = PermissionMode & { value: string; iconClass: string };
+const modeEntries = (modes: PermissionMode[]): ModeEntry[] => modes.map((m) => ({ ...m, value: m.id, iconClass: permissionModeIconClass(m.id) }));
+
+function PermissionModeButton({ modeId, label, error, disabled, onOpen }: {
+  modeId: string; label: string; error?: string; disabled?: boolean; onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`oc-permission-lock oc-permission-mode-${modeId || 'default'}`}
+      title={error || `Permission mode: ${label}`}
+      aria-label={`Permission mode: ${label}`}
+      onClick={onOpen}
+      disabled={disabled}
+      data-testid="permission-mode-lock"
+    >
+      <i className={`bi ${permissionModeIconClass(modeId)}`} aria-hidden="true" />
+    </button>
+  );
+}
+
+function PermissionModePicker({ open, entries, sectioned, isCurrent, onSelect, onClose }: {
+  open: boolean; entries: ModeEntry[]; sectioned?: boolean; isCurrent: (m: ModeEntry) => boolean;
+  onSelect: (id: string) => void; onClose: () => void;
+}) {
+  return (
+    <CommandListPicker
+      open={open}
+      entries={entries}
+      sectionOf={sectioned ? (m) => m.id.startsWith('native-') ? 'Platform modes' : 'Ocman modes' : undefined}
+      fuseKeys={[{ name: 'label', weight: 1 }, { name: 'description', weight: 0.5 }]}
+      renderRow={(m) => (
+        <>
+          <span className={`oc-permission-mode-icon oc-permission-mode-${m.id}`} aria-hidden="true"><i className={`bi ${m.iconClass}`} /></span>
+          <span className="oc-permission-mode-copy">
+            <span className="oc-cmd-title">{m.label}</span>
+            <span className="oc-cmd-meta">{m.description}</span>
+          </span>
+        </>
+      )}
+      placeholder={() => 'Permission mode...'}
+      emptyMessage="No permission modes"
+      isCurrent={isCurrent}
+      onSelect={onSelect}
+      onClose={onClose}
+    />
   );
 }
 

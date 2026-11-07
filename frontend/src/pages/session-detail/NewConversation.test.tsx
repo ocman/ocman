@@ -94,6 +94,35 @@ describe('NewConversation', () => {
     mocks.start.mockResolvedValue({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/worktrees/fix', firstMessageSent: true, firstMessageError: '' });
   });
 
+  it.each([false, true])('applies a chosen permission mode at creation, else keeps defaults (chosen=%s)', async (chosen) => {
+    mocks.caps = { shellExec: true, permissionRules: true } as typeof mocks.caps;
+    try {
+      mount();
+      await ready();
+      type Control = React.ReactElement<{ value: string; onChange: (id: string) => void }>;
+      expect((composer.permissionControl as Control).props.value).toBe('default');
+      if (chosen) {
+        act(() => (composer.permissionControl as Control).props.onChange('plan'));
+        expect(getConversationDraft('new')?.permissionMode).toBe('plan');
+      }
+      await act(() => composer.onSend!('First'));
+      const request = mocks.start.mock.calls[0][0];
+      if (chosen) {
+        expect(request.permissionRules).toEqual([{ permission: 'edit', pattern: '*', action: 'deny' }, { permission: 'bash', pattern: '*', action: 'deny' }]);
+      } else {
+        expect(request).not.toHaveProperty('permissionRules');
+      }
+    } finally {
+      mocks.caps = { shellExec: true };
+    }
+  });
+
+  it('hides the permission mode for platforms without rule support', async () => {
+    mount();
+    await ready();
+    expect(composer.permissionControl).toBeUndefined();
+  });
+
   it('uses the current checkout when the owner has no usable worktree base', async () => {
     mocks.baseRef.mockResolvedValue({ baseRef: '' });
     mount();

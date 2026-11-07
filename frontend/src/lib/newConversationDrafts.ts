@@ -20,6 +20,8 @@ export interface ConversationDraft extends NewSessionParams {
   agent?: string;
   reasoning?: string;
   target?: string;
+  /** Permission mode preset applied at creation; unset keeps project defaults. */
+  permissionMode?: string;
   createdAt?: number;
   clone?: { url: string; source: { directory: string; remoteId: string } };
 }
@@ -29,8 +31,8 @@ type Submitted = NonNullable<DraftStart['submitted']>;
 
 export const routeKeyOf = (draft: Pick<NewSessionParams, 'remoteId' | 'directory' | 'platform' | 'title'>) =>
   `${draft.remoteId || 'local'}:${draft.directory}:${draft.platform}:${draft.title}`;
-export const selectionsKey = (draft: Pick<ConversationDraft, 'model' | 'agent' | 'reasoning' | 'target'>) =>
-  JSON.stringify([draft.model || '', draft.agent || '', draft.reasoning || '', draft.target || '']);
+export const selectionsKey = (draft: Pick<ConversationDraft, 'model' | 'agent' | 'reasoning' | 'target' | 'permissionMode'>) =>
+  JSON.stringify([draft.model || '', draft.agent || '', draft.reasoning || '', draft.target || '', draft.permissionMode || '']);
 
 export const useNewConversationDrafts = create<{
   drafts: ConversationDraft[];

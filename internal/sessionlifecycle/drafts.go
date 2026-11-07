@@ -152,7 +152,7 @@ func (m *Module) acceptDraft(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "a draft identity and first prompt are required", http.StatusBadRequest)
 		return
 	}
-	if !req.Validate(w) || !req.ResolvePlatform(r.Context(), m, w, req.Send.Model) {
+	if !req.Validate(w) || !validStartRules(w, req.PermissionRules) || !req.ResolvePlatform(r.Context(), m, w, req.Send.Model) {
 		return
 	}
 	req.DraftID, req.StartID = id, id

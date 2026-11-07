@@ -1,4 +1,4 @@
-import type { StartSessionRequest } from '../../lib/api';
+import type { PermissionRule, StartSessionRequest } from '../../lib/api';
 import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
 import type { DraftCatalog } from './draftCatalog';
 
@@ -17,12 +17,13 @@ export function resolveTarget(target: SessionTarget, canWorktree: boolean, workt
 }
 
 export function durableStartRequest(r: Ready, submission: Submission, params: {
-  directory: string; remoteId: string; title?: string; target?: SessionTarget; cloneURL?: string;
+  directory: string; remoteId: string; title?: string; target?: SessionTarget; cloneURL?: string; permissionRules?: PermissionRule[];
   platformForModel: (model: string) => string | undefined;
 }, prompt: string): DurableStartRequest {
   const target = resolveTarget(params.target || r.catalog.defaults?.worktree || 'worktree', r.canWorktree, r.worktrees);
   return { directory: target.startsWith('dir:') ? target.slice(4) : params.directory,
     platform: (submission.model && params.platformForModel(submission.model)) || r.platform,
     remoteId: params.remoteId, title: params.title, prompt, send: submission.send,
-    worktree: target === 'worktree', cloneUrl: params.cloneURL, command: submission.command, shell: submission.shell };
+    worktree: target === 'worktree', cloneUrl: params.cloneURL, command: submission.command, shell: submission.shell,
+    ...(params.permissionRules ? { permissionRules: params.permissionRules } : {}) };
 }

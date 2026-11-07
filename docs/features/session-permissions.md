@@ -22,6 +22,16 @@ attached to this session across refreshes and Ocman restarts. They also cover
 its nested subagents, but do not carry into separate sessions or worktree
 splits.
 
+## Choosing a mode for a new conversation
+
+The lock button in a new conversation's composer picks the permission mode
+before the session exists: **Default**, **Plan only**, **Auto-accept edits**
+or **YOLO**. The mode is applied when the session is created, before the first
+prompt runs. **Default** keeps the machine and project permission defaults;
+any other mode replaces them for that session. YOLO asks for confirmation.
+The pick is saved with the draft. Change it later from the same button in the
+session.
+
 ## Rule behavior
 
 - **Allow** answers matching requests with a one-time approval.

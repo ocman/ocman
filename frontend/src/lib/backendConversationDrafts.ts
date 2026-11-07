@@ -96,7 +96,7 @@ export async function resolveBackendDraftConflict(id: string, server: BackendCon
     });
     if (choice === 'server') {
       rememberConversationDraft({ title: undefined, platform: undefined, remoteId: undefined, model: undefined, agent: undefined,
-        reasoning: undefined, target: undefined, clone: undefined, ...server.metadata, draftId: id, createdAt: server.createdAt });
+        reasoning: undefined, target: undefined, permissionMode: undefined, clone: undefined, ...server.metadata, draftId: id, createdAt: server.createdAt });
       discardDraft(id);
       saveDraft(id, server.metadata.text ?? '');
       useBackendConversationDrafts.setState((state) => ({ recovered: { ...state.recovered, [id]: (state.recovered[id] ?? 0) + 1 } }));

@@ -36,6 +36,8 @@ import { useDurableConversation } from './useDurableConversation';
 import { discardBackendDraft, isBackendDraft, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { DurableDraftRecovery } from './DurableDraftRecovery';
 import { DraftSaveError } from './DraftSaveError';
+import { DraftPermissionMode } from '../../components/PermissionModeLock';
+import { PERMISSION_MODES } from '../../lib/permissionModes';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -120,6 +122,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const [selectedAgent, setSelectedAgent] = useState(savedSelections?.agent || '');
   const [selectedReasoning, setSelectedReasoning] = useState(savedSelections?.reasoning || '');
   const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
+  const [permissionMode, setPermissionMode] = useState(savedSelections?.permissionMode || 'default');
   // A model pick re-points the platform, so selections survive a platform change.
   const machineKey = JSON.stringify([remoteId, directory]);
   const [selectionKey, setSelectionKey] = useState(machineKey);
@@ -136,7 +139,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const [pending, setPending] = useState<{ key: string; text: string; images?: AttachedImage[]; startId: string; steps: StartSteps }>();
   const inFlight = useRef<number | undefined>(undefined);
   const { cloneURL, machineSource, onMachineChange, saveDraft } = useDraftMachine(params,
-    { model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick }, () => inFlight.current !== undefined, navigate);
+    { model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick, permissionMode: permissionMode === 'default' ? undefined : permissionMode }, () => inFlight.current !== undefined, navigate);
   const active = useRef(false);
   const generation = useRef(0);
   const readyWaiters = useRef<{ resolve: (value: Ready) => void; reject: (err: Error) => void }[]>([]);
@@ -206,6 +209,9 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     }
   }, [platform, platformForModel]);
 
+  // 'default' and platforms without rule support keep the owner/project defaults.
+  const permissionRules = caps.permissionRules && permissionMode !== 'default' ? PERMISSION_MODES.find((m) => m.id === permissionMode)?.rules : undefined;
+
   const canWorktree = worktreesCapable && (eligibility.resolved?.canCreate ?? false);
   const effectiveTarget = resolveTarget(target, canWorktree, eligibility.resolved?.worktrees || []);
 
@@ -232,7 +238,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
       const submission = build(r);
       if (submission.send) {
         try {
-          await durable.send(durableStartRequest(r, submission, { directory, remoteId, title, target: targetPick, platformForModel, cloneURL }, text), submission.files);
+          await durable.send(durableStartRequest(r, submission, { directory, remoteId, title, target: targetPick, platformForModel, cloneURL, permissionRules }, text), submission.files);
           if (submission.model) saveSessionModel(draftId, submission.model);
           setError('');
           return;
@@ -269,13 +275,13 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
       }
       const { send, execute, model } = build(ready);
       // Retirement compares these initiating selections, not ones a peer stored meanwhile.
-      const submitted = { revision, routeKey, selections: selectionsKey({ model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick }) };
+      const submitted = { revision, routeKey, selections: selectionsKey({ model: selectedModel, agent: selectedAgent, reasoning: selectedReasoning, target: targetPick, permissionMode: permissionMode === 'default' ? undefined : permissionMode }) };
       const startTarget = resolveTarget(targetPick || ready.catalog.defaults?.worktree || 'worktree', ready.canWorktree, ready.worktrees);
       const res = await api.startSession({
         directory: startTarget.startsWith('dir:') ? startTarget.slice(4) : directory,
         // The model picks the platform; a pick racing its route change still lands there.
         platform: (model && platformForModel(model)) || ready.platform, remoteId, title, prompt: text, send, startId,
-        worktree: startTarget === 'worktree', cloneUrl: cloneURL,
+        worktree: startTarget === 'worktree', cloneUrl: cloneURL, ...(permissionRules ? { permissionRules } : {}),
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
       if (model) startModels.set(res.sessionId, model);
@@ -310,7 +316,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     }
   // waitReady only reads refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, seedNewSession, draftId, platformForModel, cloneURL, saveDraft, durable]);
+  }, [directory, remoteId, title, routeKey, targetPick, selectedModel, selectedAgent, selectedReasoning, permissionMode, permissionRules, seedNewSession, draftId, platformForModel, cloneURL, saveDraft, durable]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     rememberPendingDraftPayload(draftId, images, files);
@@ -403,6 +409,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
            onMachineChange={durable.submitted ? undefined : onMachineChange}
           machineSource={machineSource}
           draftKey={draftId}
+          permissionControl={caps.permissionRules && !durable.submitted ? <DraftPermissionMode value={permissionMode} onChange={setPermissionMode} disabled={!!draftStart && !draftStart.sessionId && !draftStart.error} /> : undefined}
         />
       </div>
     </div>

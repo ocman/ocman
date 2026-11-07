@@ -6,7 +6,7 @@ import { newSessionPath, NEW_SESSION_ID, type NewSessionParams } from '../../lib
 import { getConversationDraft, rememberConversationDraft, useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
 import { projectRootForDirectory } from '../../lib/worktrees';
 
-export function useDraftMachine(params: NewSessionParams, selections: Pick<ConversationDraft, 'model' | 'agent' | 'reasoning' | 'target'>,
+export function useDraftMachine(params: NewSessionParams, selections: Pick<ConversationDraft, 'model' | 'agent' | 'reasoning' | 'target' | 'permissionMode'>,
   locked: () => boolean, navigate: (path: string) => void) {
   const { directory, platform, title } = params;
   const remoteId = params.remoteId || 'local';
@@ -16,13 +16,13 @@ export function useDraftMachine(params: NewSessionParams, selections: Pick<Conve
     const draft = state.drafts.find((d) => d.draftId === draftId);
     return draft?.directory === directory && draft.remoteId === remoteId ? draft.clone : undefined;
   });
-  const { model, agent, reasoning, target } = selections;
+  const { model, agent, reasoning, target, permissionMode } = selections;
   const saveDraft = useCallback(() => {
     const saved = getConversationDraft(draftId);
     const sameLocation = saved?.directory === directory && (saved.remoteId || 'local') === remoteId;
-    rememberConversationDraft({ directory, remoteId, platform, title: title ?? (sameLocation ? saved.title : undefined), draftId, model, agent, reasoning, target,
+    rememberConversationDraft({ directory, remoteId, platform, title: title ?? (sameLocation ? saved.title : undefined), draftId, model, agent, reasoning, target, permissionMode,
       clone: sameLocation ? saved.clone : undefined });
-  }, [directory, remoteId, platform, title, draftId, model, agent, reasoning, target]);
+  }, [directory, remoteId, platform, title, draftId, model, agent, reasoning, target, permissionMode]);
   useEffect(saveDraft, [saveDraft]);
   const saveSubmittedRoute = useCallback(() => {
     // Only undo this view's unchanged machine edit. A peer's newer edits must
@@ -40,7 +40,7 @@ export function useDraftMachine(params: NewSessionParams, selections: Pick<Conve
     const start = useNewConversationDrafts.getState().starts[draftId];
     if (locked() || start && !start.error && !start.sessionId) throw new Error('Session creation is already in progress');
     const next = { directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title, draftId };
-    rememberConversationDraft({ ...next, target: machine.cloneUrl || target?.startsWith('dir:') ? 'current' : target, model: '', agent: '', reasoning: '',
+    rememberConversationDraft({ ...next, target: machine.cloneUrl || target?.startsWith('dir:') ? 'current' : target, model: '', agent: '', reasoning: '', permissionMode,
       clone: machine.cloneUrl ? { url: machine.cloneUrl, source: clone?.source || { directory, remoteId } } : undefined });
     machineEdit.current = JSON.stringify(getConversationDraft(draftId));
     navigate(newSessionPath(next));

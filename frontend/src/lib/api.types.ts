@@ -1306,6 +1306,8 @@ export interface StartSessionRequest extends NewSessionTarget {
   prompt?: string;
   /** Tags ocman.session.start.progress broadcasts for this request. */
   startId?: string;
+  /** Replaces the owner/project permission defaults at creation. Omit to keep them. */
+  permissionRules?: PermissionRule[];
   /** First prompt, delivered server-side. Omit for commands the client runs itself. */
   send?: {
     message: string;

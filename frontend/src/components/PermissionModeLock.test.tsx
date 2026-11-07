@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLayoutEffect } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { PermissionModeLock } from './PermissionModeLock';
+import { DraftPermissionMode, PermissionModeLock } from './PermissionModeLock';
 import { PERMISSION_MODES } from '../lib/permissionModes';
 
 const getPermissionRules = vi.fn();
@@ -147,5 +147,39 @@ describe('PermissionModeLock', () => {
     finish();
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirm permission mode' })).not.toBeInTheDocument());
     expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument();
+  });
+});
+
+describe('DraftPermissionMode', () => {
+  it('reports a preset without touching any session', async () => {
+    const onChange = vi.fn();
+    render(<DraftPermissionMode value="default" onChange={onChange} />);
+    await userEvent.click(screen.getByLabelText('Permission mode: Default'));
+    await userEvent.click(screen.getByText('Plan only'));
+    expect(onChange).toHaveBeenCalledWith('plan');
+    expect(setPermissionRules).not.toHaveBeenCalled();
+    expect(getPermissionRules).not.toHaveBeenCalled();
+  });
+
+  it('confirms yolo before reporting it and aborts on cancel', async () => {
+    const onChange = vi.fn();
+    render(<DraftPermissionMode value="default" onChange={onChange} />);
+    await userEvent.click(screen.getByLabelText('Permission mode: Default'));
+    await userEvent.click(screen.getByText('YOLO'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(onChange).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByLabelText('Permission mode: Default'));
+    await userEvent.click(screen.getByText('YOLO'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    expect(onChange).toHaveBeenCalledWith('yolo');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirm permission mode' })).not.toBeInTheDocument());
+  });
+
+  it('labels the selected mode and falls back to Default for unknown ids', () => {
+    const { rerender } = render(<DraftPermissionMode value="auto-edit" onChange={vi.fn()} />);
+    expect(screen.getByLabelText('Permission mode: Auto-accept edits')).toBeInTheDocument();
+    rerender(<DraftPermissionMode value="bogus" onChange={vi.fn()} />);
+    expect(screen.getByLabelText('Permission mode: Default')).toBeInTheDocument();
   });
 });
