@@ -57,6 +57,7 @@ func (s *Server) modules() []module.Module {
 	mods = append(mods, s.sourceControlModule(), s.prWorkflowModule())
 	mods = append(mods, s.worktreeCleanupModule())
 	mods = append(mods, s.sidebarModules()...)
+	mods = append(mods, s.sessionUpdatesModule())
 	if s.historyIngest != nil {
 		mods = append(mods, s.historyIngest)
 	}

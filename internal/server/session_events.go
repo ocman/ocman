@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) sessionEventSink() platforms.SessionEventSink {
-	return platforms.SessionEventSink{OnSessionBackgroundChanged: s.broadcastSessionChanged, OnSessionStatus: s.onSessionStatus, OnSessionIdle: func(platform, session string) {
+	return platforms.SessionEventSink{OnSidebarChanged: s.broadcastSidebarChanged, OnSessionBackgroundChanged: s.broadcastSessionChanged, OnSessionStatus: s.onSessionStatus, OnSessionIdle: func(platform, session string) {
 		s.onAgentWaitIdle(platform, session)
 		s.onSessionIdle(platform, session)
 	}}
@@ -50,7 +50,11 @@ func (s *Server) broadcastSessionChanged(platform, sessionID string) {
 	if err != nil {
 		return
 	}
-	s.broadcastGlobalEvent("ocman.session.changed", payload)
+	if !s.enqueueSidebarChange(platform, sessionID) {
+		s.broadcastGlobalEvent("ocman.session.changed", payload)
+	} else {
+		s.observeHistoryChange("ocman.session.changed", payload)
+	}
 	// Recovery for terminal changes without a matching idle edge.
 	// Runs on the caller's goroutine (joined event watchers), bounded by the
 	// server lifetime so shutdown cancels its reads.

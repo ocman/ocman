@@ -37,14 +37,21 @@ func (d *DB) BeginSidebarGeneration(ctx context.Context, scope Instance, generat
 	if scope.OwnerID == "" || scope.Platform == "" || scope.SourceKey == "" || generation == "" {
 		return fmt.Errorf("sidebar: complete source and generation required")
 	}
+	d.sidebarLive.write.Lock()
+	defer d.sidebarLive.write.Unlock()
 	_, err := d.db.ExecContext(ctx, `INSERT INTO sidebar_connection VALUES(?,?,?,?,0)
 	 ON CONFLICT(owner_id,platform,source_key) DO UPDATE SET generation=excluded.generation,expires_at=0`, scope.OwnerID, scope.Platform, scope.SourceKey, generation)
+	if err == nil {
+		d.publishSidebarLive(scope, generation, 0, nil, false)
+	}
 	return err
 }
 
 // ReplaceSidebarObservations checkpoints event-cache state. The lease is
 // renewed only by the current generation, never by a delayed old writer.
 func (d *DB) ReplaceSidebarObservations(ctx context.Context, scope Instance, generation string, expiresAt int64, observations map[string]SidebarObservation) error {
+	d.sidebarLive.write.Lock()
+	defer d.sidebarLive.write.Unlock()
 	if observations == nil {
 		observations = map[string]SidebarObservation{}
 	}
@@ -84,13 +91,19 @@ func (d *DB) ReplaceSidebarObservations(ctx context.Context, scope Instance, gen
 	if err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	d.publishSidebarLive(scope, generation, expiresAt, observations, false)
+	return nil
 }
 
 // RenewSidebarLease extends the current generation's lease with one UPDATE
 // and leaves the observations untouched. Callers write observations through
 // ReplaceSidebarObservations only when they change.
 func (d *DB) RenewSidebarLease(ctx context.Context, scope Instance, generation string, expiresAt int64) error {
+	d.sidebarLive.write.Lock()
+	defer d.sidebarLive.write.Unlock()
 	result, err := d.db.ExecContext(ctx, `UPDATE sidebar_connection SET expires_at=? WHERE owner_id=? AND platform=? AND source_key=? AND generation=?`, expiresAt, scope.OwnerID, scope.Platform, scope.SourceKey, generation)
 	if err != nil {
 		return err
@@ -102,6 +115,7 @@ func (d *DB) RenewSidebarLease(ctx context.Context, scope Instance, generation s
 	if n != 1 {
 		return ErrConflict
 	}
+	d.publishSidebarLive(scope, generation, expiresAt, nil, true)
 	return nil
 }
 

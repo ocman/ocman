@@ -40,7 +40,8 @@ import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { MainNav } from './components/MainNav';
 import { ImagePreviewProvider } from './components/ImagePreview';
 import { featureRoutes } from './features';
-import { patchSessionLists } from './lib/sessionsCache';
+import { patchSessionLists, isSidebarSessionsKey } from './lib/sessionsCache';
+import { isCompactSessionSnapshot } from './lib/sessionEventOrder';
 import { BetaFeaturesSync } from './components/BetaFeaturesSync';
 
 // Analytics (chart.js) loads with its route.
@@ -274,7 +275,9 @@ function PerfDevHandle() {
 // module scope so it's wired once for the app's lifetime; the
 // EventSource itself is opened by useGlobalEvents() mounted at the root.
 const sessionsEventRefresh = queryEventRefresh(queryClient, ['sessions']);
-onSessionChanged((_sessionId, session) => {
+const compactSessionRefresh = queryEventRefresh(queryClient, ['sessions'], query => !isSidebarSessionsKey(query.queryKey));
+onSessionChanged((_sessionId, session, patch) => {
+  if (isCompactSessionSnapshot(session, patch)) { compactSessionRefresh.schedule(); return; }
   // Insert the provisional row first so a freshly-created session shows
   // up instantly, then invalidate so the authoritative list overwrites
   // it on the next fetch.

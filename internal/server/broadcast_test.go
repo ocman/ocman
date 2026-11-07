@@ -44,7 +44,7 @@ func TestBroadcastSessionTitleCarriesPatch(t *testing.T) {
 
 	srv.broadcastSessionTitle("claudecode", "s1", "Renamed")
 	ev := <-sub.ch
-	if ev.event != "ocman.session.changed" || string(ev.data) != `{"patch":{"title":"Renamed"},"platform":"claudecode","sessionID":"s1"}` {
+	if ev.event != "ocman.session.changed" || string(ev.data) != `{"patch":{"title":"Renamed"},"platform":"claudecode","revision":1,"sessionID":"s1"}` {
 		t.Fatalf("unexpected event: %s %s", ev.event, ev.data)
 	}
 }
@@ -57,7 +57,7 @@ func TestBroadcastSessionChangedCarriesCallerPlatform(t *testing.T) {
 
 	srv.broadcastSessionChanged("claudecode", "s1")
 	ev := <-sub.ch
-	if ev.event != "ocman.session.changed" || string(ev.data) != `{"platform":"claudecode","sessionID":"s1"}` {
+	if ev.event != "ocman.session.changed" || string(ev.data) != `{"platform":"claudecode","revision":1,"sessionID":"s1"}` {
 		t.Fatalf("unexpected event: %s %s", ev.event, ev.data)
 	}
 }
@@ -74,7 +74,7 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 	srv.broadcastSessionTitle("opencode", "s1", "Renamed")
 	srv.broadcastSessionStatus("opencode", "s1", db.StatusBusy)
 	pending := sub.drainPending()
-	if len(pending) != 1 || string(pending[0].data) != `{"patch":{"status":"busy","title":"Renamed"},"platform":"opencode","sessionID":"s1"}` {
+	if len(pending) != 1 || string(pending[0].data) != `{"patch":{"status":"busy","title":"Renamed"},"platform":"opencode","revision":2,"sessionID":"s1"}` {
 		t.Fatalf("pending = %+v", pending)
 	}
 
@@ -84,7 +84,7 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 	srv.broadcastSessionChanged("opencode", "s1")
 	srv.broadcastSessionStatus("opencode", "s1", db.StatusDone)
 	pending = sub.drainPending()
-	if len(pending) != 1 || string(pending[0].data) != `{"platform":"opencode","sessionID":"s1"}` {
+	if len(pending) != 1 || string(pending[0].data) != `{"platform":"opencode","revision":5,"sessionID":"s1"}` {
 		t.Fatalf("pending = %+v", pending)
 	}
 }

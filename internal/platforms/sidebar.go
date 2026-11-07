@@ -19,6 +19,12 @@ type SidebarReader interface {
 	SidebarSessions(context.Context, SidebarQuery) ([]db.Session, error)
 }
 
+// SidebarSessionReader supplies a committed compact row for event fan-out,
+// without loading a conversation or an entire session inventory.
+type SidebarSessionReader interface {
+	SidebarSession(context.Context, string) (*db.Session, error)
+}
+
 type RunningSessionCounter interface {
 	RunningSessionCount(context.Context, SidebarQuery) (int, error)
 }

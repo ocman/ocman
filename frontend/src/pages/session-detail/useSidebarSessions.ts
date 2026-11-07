@@ -13,6 +13,7 @@ import { SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
 import { useIsPhone } from '../../lib/useIsPhone';
 import { flushSync } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
+import { beginCompactSidebarRead, finishCompactSidebarRead, preserveCompactSidebarRows } from '../../lib/compactSidebarRows';
 import { queryClient } from '../../lib/queryClient';
 import { useDocumentVisible } from '../../lib/usePanelVisible';
 import { withDeadline } from '../../lib/coalescedRefresh';
@@ -145,6 +146,7 @@ export function useSidebarSessions({
     }
     const promise = withDeadline(15_000, async (signal) => {
       const requestStart = getSidebarSessions();
+      const compactRead = beginCompactSidebarRead(signal);
       const startedStatusRevisions = useApiStore.getState().recentStatusRevisions;
       const pendingReads = useApiStore.getState().pendingInterruptionReads;
       try {
@@ -188,12 +190,15 @@ export function useSidebarSessions({
           { started: startedStatusRevisions, current: useApiStore.getState().recentStatusRevisions },
         );
 
-        if (force) flushSync(() => setSidebarSessions(merged));
-        else setSidebarSessions(merged);
+        const reconciled = preserveCompactSidebarRows(merged, getSidebarSessions(), compactRead);
+        if (force) flushSync(() => setSidebarSessions(reconciled));
+        else setSidebarSessions(reconciled);
         setLoadingRecentSessions(false);
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         throw e;
+      } finally {
+        finishCompactSidebarRead(compactRead);
       }
     }, signal);
     const request = { key, signal, force, promise };

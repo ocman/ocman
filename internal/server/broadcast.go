@@ -244,6 +244,7 @@ func (s *Server) broadcastGlobalEvent(event string, data []byte) {
 	if s == nil || s.broadcastHub == nil {
 		return
 	}
+	data = s.versionSessionEvent(event, data)
 	s.broadcastHub.broadcast(event, data)
 	s.observeHistoryChange(event, data)
 }

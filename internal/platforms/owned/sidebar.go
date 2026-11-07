@@ -29,7 +29,7 @@ func (a *Adapter) openSidebar(ctx context.Context) (*sidebar.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	r, err := sidebar.Open(a.history.FilePath(), core)
+	r, err := sidebar.OpenLive(a.history.FilePath(), core, a.history.SidebarLiveJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +98,10 @@ const (
 )
 
 type sidebarWorker struct {
-	adapter    *Adapter
-	background map[string][2]int
+	adapter      *Adapter
+	background   map[string][2]int
+	observations map[string]statev2.SidebarObservation
+	available    bool
 	// written is the generation and encoded observations last committed;
 	// leaseUntil is the lease written with them (0 when unavailable).
 	written    string
@@ -193,6 +195,7 @@ func (w *sidebarWorker) snapshot(ctx context.Context) error {
 		w.leaseUntil = leaseUntil
 	}
 	w.publishBackgroundChanges(ctx, observations)
+	w.publishSidebarChanges(ctx, observations, !leaseUntil.IsZero())
 	return nil
 }
 

@@ -195,15 +195,7 @@ export function useSessions(
   }, appQueryClient);
 }
 
-export function useRunningSessionCount(enabled: boolean) {
-  useActivityScope(enabled ? 'sessions' : undefined);
-  return useQuery({
-    queryKey: ['running-session-count'],
-    queryFn: ({ signal }) => api.runningSessionCount(signal),
-    enabled,
-    refetchInterval: 5000,
-  });
-}
+export { useRunningSessionCount } from './runningSessionCount';
 
 /**
  * Insert (or replace) a provisional session row into every cached

@@ -54,6 +54,9 @@ func mergeSessionChanges(older, newer broadcastEvent) broadcastEvent {
 	if older.change == nil || newer.change == nil {
 		return newer
 	}
+	if sessionChangeRevision(older.change) > sessionChangeRevision(newer.change) {
+		return older
+	}
 	merged := &sessionChange{fields: newer.change.fields}
 	if older.change.patch != nil && newer.change.patch != nil {
 		merged.patch = make(map[string]json.RawMessage, len(older.change.patch)+len(newer.change.patch))
@@ -66,6 +69,12 @@ func mergeSessionChanges(older, newer broadcastEvent) broadcastEvent {
 	}
 	newer.change, newer.data = merged, nil
 	return newer
+}
+
+func sessionChangeRevision(change *sessionChange) uint64 {
+	var revision uint64
+	_ = json.Unmarshal(change.fields["revision"], &revision)
+	return revision
 }
 
 // encode fills data for a merged change. Called outside the subscriber lock.

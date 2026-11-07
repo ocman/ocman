@@ -69,6 +69,43 @@ import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists } from '../
 import { queryClient } from '../../lib/queryClient';
 
 describe('useSidebarSessions project visibility', () => {
+  it('does not let an older list response rewind a committed compact event', async () => {
+    const row = { id: 'compact-race', platform: 'opencode', status: 'busy', title: 'old',
+      seen: false, seenTimeUpdated: 0, timeUpdated: 10 } as Session;
+    let finish!: (rows: Session[]) => void;
+    const getSessions = vi.fn().mockImplementation(() => new Promise<Session[]>(resolve => { finish = resolve; }));
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+    useApiStore.setState({ getSessions });
+    const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+      sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+    try {
+      let loading!: Promise<void>;
+      act(() => { loading = view.result.current.loadRecentSessions(); });
+      const next = { ...row, title: 'new', status: 'waiting', backgroundTaskCount: 2 } as Session;
+      await act(async () => { sessionChanged?.(row.id, next, next, row.platform); });
+      await act(async () => { finish([row]); await loading; });
+      expect(view.result.current.recentSessions[0]).toMatchObject({ title: 'new', status: 'waiting', backgroundTaskCount: 2 });
+    } finally { view.unmount(); }
+  });
+	 it('applies committed compact row events without a session or list refetch', async () => {
+	   const row = { id: 'compact', platform: 'opencode', status: 'busy', title: 'before', timeUpdated: 10,
+	     seen: false, seenTimeUpdated: 0 } as Session;
+	   const next = { ...row, status: 'waiting', title: 'committed', lastTurnCompletedAt: 42 } as Session;
+	   const getSessions = vi.fn().mockResolvedValue([row]);
+	   const getSession = vi.fn().mockResolvedValue({ session: next });
+	   queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [row]);
+	   useApiStore.setState({ getSessions, getSession });
+	   const view = renderHook(() => useSidebarSessions({ id: undefined, sessionId: undefined, collapsedProjects: [],
+	     sidebarView: 'recent', abortSignalRef: { current: new AbortController() }, navigate: vi.fn() }));
+	   try {
+	     await act(async () => { await view.result.current.loadRecentSessions(); });
+	     getSessions.mockClear(); getSession.mockClear();
+	     await act(async () => { sessionChanged?.('compact', next, next, 'opencode'); });
+	     expect(view.result.current.recentSessions[0]).toMatchObject({ title: 'committed', status: 'waiting', lastTurnCompletedAt: 42 });
+	     expect(getSession).not.toHaveBeenCalled();
+	     expect(getSessions).not.toHaveBeenCalled();
+	   } finally { view.unmount(); }
+	 });
   it.each(['backgroundTaskCount', 'backgroundServiceCount'] as const)('retains archived background work on refresh with %s, including children', async (field) => {
     const rows = [undefined, 'parent'].map((parentId, i) => ({ id: `background-${i}`, platform: 'opencode',
       parentId, archived: true, status: 'done', backgroundTaskCount: field === 'backgroundTaskCount' ? 1 : 0,

@@ -1380,8 +1380,13 @@ flowchart LR
 See [Session and event data flow](../architecture-events/) for the sequence
 diagram covering session reads, SSE activity updates, remote streams, and
 routine dispatch. Sidebar activity updates arrive over global SSE without
-changing row order. Terminal status events fetch the owner-qualified session's
-durable completion timestamp, which ranks rows newest first.
+changing row order. `internal/sessionupdates` coalesces owner-qualified compact
+row reads before fan-out; complete row events include durable ordering times
+and avoid browser sidebar/detail refetches. Older owners and failed compact reads
+retain invalidation/reconciliation. Sidebar and count reads share committed
+process-local observations for sparse live state, with indexed SQL retained for
+dense snapshots and durable facts. See the companion event-flow page for bounds,
+generation fences and recovery behavior.
 Session list/detail responses carry `factoryAttemptId` from a single state.db
 attempt lookup. The sidebar filters these tagged rows and their descendants
 without requesting `/api/factory/epics`. Only tagged conversations mount Factory

@@ -11,6 +11,9 @@ type SessionEventSink struct {
 	OnSessionStatus            func(platform, sessionID string, status db.SessionStatus, resetsAt int64)
 	OnSessionIdle              func(platform, sessionID string)
 	OnSessionBackgroundChanged func(platform, sessionID string)
+	// OnSidebarChanged follows a committed observation checkpoint, including
+	// generation/disconnection changes. It is not a foreground idle edge.
+	OnSidebarChanged func(platform, sessionID string)
 }
 
 // SessionEventSource is implemented by adapters that produce lifecycle events.

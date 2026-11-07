@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ocman/ocman/internal/analytics"
@@ -40,6 +41,7 @@ import (
 	"github.com/ocman/ocman/internal/sessionrefrecovery"
 	"github.com/ocman/ocman/internal/sessionsvc"
 	"github.com/ocman/ocman/internal/sessiontitles"
+	"github.com/ocman/ocman/internal/sessionupdates"
 	"github.com/ocman/ocman/internal/sharing"
 	"github.com/ocman/ocman/internal/sourcecontrol"
 	"github.com/ocman/ocman/internal/state"
@@ -121,8 +123,10 @@ type Server struct {
 	// Used for cross-page signals such as "permission resolved" so
 	// in-app prompt toasts can clear instantly rather than waiting for
 	// the next /api/sessions/notify poll.
-	broadcastHub *broadcastHub
-	activity     *clientActivityPolicy
+	broadcastHub    *broadcastHub
+	sessionUpdatesV lazy[*sessionupdates.Module]
+	sessionRevision atomic.Uint64
+	activity        *clientActivityPolicy
 
 	// remoteAccess describes this instance's own remote-access surface
 	// (instance ID, whether the gRPC server is listening, its address,

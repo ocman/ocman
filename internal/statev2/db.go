@@ -23,6 +23,7 @@ type DB struct {
 	read        *sql.DB
 	path        string
 	committed   atomic.Pointer[CommitObserver]
+	sidebarLive sidebarLive
 	poolMetrics []metric.Registration
 }
 

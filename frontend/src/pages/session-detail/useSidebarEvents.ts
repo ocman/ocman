@@ -7,6 +7,8 @@ import { onInboxChanged, onSessionActivity, onSessionChanged, onSseConnect } fro
 import { remoteLog } from '../../lib/remoteLog';
 import { eventRefresh } from '../../lib/eventRefresh';
 import { getSidebarSessions, patchSessionLists, setSidebarSessions } from '../../lib/sessionsCache';
+import { isCompactSessionSnapshot } from '../../lib/sessionEventOrder';
+import { markCompactSidebarUpdate } from '../../lib/compactSidebarRows';
 
 interface Options {
   enabled: boolean;
@@ -36,8 +38,19 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
     const unsubscribeInbox = onInboxChanged(() => {
       if (enabledRef.current && !document.hidden) changedRefresh.schedule();
     });
-    const unsubscribeChanged = onSessionChanged((sessionID, _session, patch, platform) => {
+    const unsubscribeChanged = onSessionChanged((sessionID, session, patch, platform) => {
       if (!enabledRef.current || document.hidden) return;
+      if (isCompactSessionSnapshot(session, patch) && session.platform === platform) {
+        const current = getSidebarSessions();
+        const others = current.filter(row => row.id !== sessionID || row.platform !== platform);
+        const eligible = filterInactiveChildren([session], id);
+        const keep = eligible.length && (showArchivedRecentRef.current || !session.archived || session.status === 'busy' || hasBackgroundWork(session) || hasPendingPrompt(session) || session.pinned || session.snoozedUntil || session.id === id);
+        // Track the event revision through the existing poll-race fence too.
+        patchSessionLists(sessionID, patch!, platform);
+        setSidebarSessions(mergeSidebarSessions(keep ? [session, ...others] : others, current, id, undefined, useApiStore.getState().pendingInterruptionReads));
+        markCompactSidebarUpdate(session);
+        return;
+      }
       const matches = getSidebarSessions().filter(s => s.id === sessionID && (!platform || s.platform === platform));
       // Older unqualified events are safe only when the owner is unambiguous.
       if (patch && matches.length === 1) {

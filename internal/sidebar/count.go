@@ -46,7 +46,8 @@ func (r *Reader) RunningCount(ctx context.Context, scopes []Scope, q platforms.S
 		return 0, err
 	}
 	var count int
-	err = r.db.QueryRowContext(ctx, countRunning, string(raw), string(included), time.Now().UnixMilli(), owner,
-		q.Directory, q.Directory, q.Origin, q.Origin, q.OriginID, q.OriginID).Scan(&count)
+	query, args := r.liveQuery(countRunning, []any{string(raw), string(included), time.Now().UnixMilli(), owner,
+		q.Directory, q.Directory, q.Origin, q.Origin, q.OriginID, q.OriginID})
+	err = r.db.QueryRowContext(ctx, query, args...).Scan(&count)
 	return count, err
 }

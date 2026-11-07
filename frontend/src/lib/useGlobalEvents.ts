@@ -8,6 +8,7 @@ import type { QueuedMessage, Session } from './api';
 import { clearSettingsCache } from './projectSettingsCache';
 import { useBetaFeatures } from './betaFeatures';
 import { queryClient } from './queryClient';
+import { acceptSessionEvent, resetSessionEventOrder } from './sessionEventOrder';
 import { applyBackendStartProgress, refreshBackendDrafts } from './backendConversationDrafts';
 import { remoteLog } from './remoteLog';
 
@@ -53,6 +54,7 @@ function nextReconnectDelay(): number {
 
 /** Payload shape carrying a session id (all broadcast events have one). */
 type SessionEventPayload = {
+  revision?: number;
   sessionID?: string;
   platform?: string;
   permissionId?: string;
@@ -218,6 +220,7 @@ export function onSessionChanged(
 
 function handleSessionChanged(raw: string): void {
   const parsed = parsePayload(raw);
+  if (parsed && !acceptSessionEvent(parsed)) return;
   const sessionId = parsed?.sessionID;
   if (!sessionId) return;
   for (const cb of sessionChangedListeners) cb(sessionId, parsed?.session, parsed?.patch, parsed?.platform ?? parsed?.session?.platform);
@@ -276,6 +279,7 @@ function open(): void {
     for (const cb of inboxChangedListeners) cb();
   });
   next.onopen = () => {
+    resetSessionEventOrder();
     clearSettingsCache();
     reconnectAttempt = 0;
     markBackendReachable();
@@ -379,6 +383,7 @@ function stop(): void {
 /** Test-only: tear down the shared connection and reset refcount. */
 export function __resetForTests(): void {
   stop();
+  resetSessionEventOrder();
   refCount = 0;
 }
 

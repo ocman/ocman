@@ -36,8 +36,8 @@ func TestPRLinkChangesBroadcastSessionChange(t *testing.T) {
 		if len(events) != 1 || events[0].event != "ocman.session.changed" {
 			t.Fatalf("%s events = %v", action, events)
 		}
-		var payload map[string]string
-		if err := json.Unmarshal(events[0].data, &payload); err != nil || payload["platform"] != "fake" || payload["sessionID"] != "s1" {
+		var payload struct{ Platform, SessionID string }
+		if err := json.Unmarshal(events[0].data, &payload); err != nil || payload.Platform != "fake" || payload.SessionID != "s1" {
 			t.Fatalf("unexpected payload: %s, %v", events[0].data, err)
 		}
 	}

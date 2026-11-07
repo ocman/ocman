@@ -38,9 +38,12 @@ sequenceDiagram
     D-->>E: watcher observes message/part mutation
     E-->>B: /api/events: ocman.session.activity (id, timestamp)
     B->>B: patch activity label; keep completion order
-    E-->>B: ocman.session.changed (id, platform, terminal status)
-    B->>S: GET /api/session/id?platform=owner&peek=1
-    S-->>B: JSON with durable prompt, halt and completion times
+    S->>S: sessionupdates coalesces bounded compact-row reads
+    S->>E: ocman.session.changed (id, platform, revision, compact row)
+    E-->>B: apply compact row without another sidebar/session read
+    opt legacy owner or failed compact read
+        B->>S: reconcile sidebar or owner-qualified session
+    end
     B->>B: sort by completion; animate moved rows
     D-->>S: settled bash part containing git commit/push
     S->>E: ocman.git.command (session, owner, project, action)
@@ -178,6 +181,35 @@ sequenceDiagram
   owner-qualified session and validates its identity before applying completion
   metadata, bypassing a potentially stale global list snapshot. Older events
   with ambiguous owners trigger a list refresh without patching a guessed row.
+- Committed observation checkpoints publish `OnSidebarChanged` after both SQL
+  completion bookkeeping and the process-local live snapshot are ready.
+  `internal/sessionupdates` coalesces invalidations over 100 ms, admits at most
+  128 pending identities and bounds each compact read to 250 ms. It reads one
+  row per changed identity, not once per browser. Complete row events include
+  creator provenance and PR-watch background work. Unsupported readers, overload
+  and read failures retain the existing invalidation path. Runtime event producers
+  never wait for these reads; immediate status patches remain immediate.
+- Compact row events and partial patches share per-server revisions. Browsers
+  reject duplicate/older owner-qualified events, and parked broadcasts retain
+  the newer revision. Revisions are ordering fences, not contiguous replay
+  cursors. Reconnects reset the fence and reconcile from durable state; the
+  three-minute sidebar recovery poll remains. Complete compact events bypass
+  sidebar list invalidation and the terminal-session peek; accounting and other
+  server-backed lists retain their normal invalidation.
+- Owner-local sidebar/count readers share an immutable observation snapshot
+  published only after successful checkpoint commits. Sparse reads bind its
+  cached tuple encoding instead of reading observation/lease tables. Counts
+  bind only busy sessions and pending prompts, including ancestor prompt rules.
+  SQL remains authoritative for catalogue publication, user preferences, retained
+  metadata and completion timestamps. Generations, expiry and disconnected
+  background-task gates are unchanged; a new process restores no live authority.
+  Dense snapshots use the existing indexed SQL joins: encoding stops at 1,000
+  observations and readers cap JSON at 64 KiB, avoiding the measured dense-JSON
+  regression. Checkpoint writes remain durable; this is not deferred persistence.
+- The optional running-count query hook refreshes on session changes and stream
+  reconnects, with a three-minute recovery interval rather than five-second
+  polling. Current navigation has no production consumer of that hook; no
+  permanent count worker or extra event connection is started for it.
 - Sending a message updates sidebar activity optimistically. Queued messages
   wait until sent. Failed sends restore the old timestamp unless newer SSE
   activity has arrived. Accepted user prompts advance the attention key; queued

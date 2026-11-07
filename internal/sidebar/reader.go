@@ -35,8 +35,9 @@ func init() {
 
 type Scope struct{ Owner, Platform, Source, Generation string }
 type Reader struct {
-	db  *sql.DB
-	dsn string
+	db        *sql.DB
+	dsn       string
+	snapshots func(bool) string
 }
 
 // Open attaches both files read-only. Catalogue publication and purge checks
@@ -73,6 +74,14 @@ func (r *Reader) Sessions(ctx context.Context, scope Scope, q platforms.SidebarQ
 }
 
 func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.SidebarQuery) ([]db.Session, error) {
+	statement := selectSessions
+	if q.Limit == 0 {
+		statement = selectInventory
+	}
+	return r.sessionsFor(ctx, scopes, q, statement)
+}
+
+func (r *Reader) sessionsFor(ctx context.Context, scopes []Scope, q platforms.SidebarQuery, statement string) ([]db.Session, error) {
 	if len(scopes) == 0 {
 		return []db.Session{}, nil
 	}
@@ -94,13 +103,12 @@ func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		return nil, err
 	}
 	limit := q.Limit
-	query := selectSessions
 	if limit == 0 {
 		limit = -1
-		query = selectInventory
 	}
-	rows, err := r.db.QueryContext(ctx, query, string(raw), string(included), time.Now().UnixMilli(), scope.Owner,
-		q.Directory, q.Directory, q.Since, q.Since, q.Origin, q.Origin, q.OriginID, q.OriginID, limit, q.Offset)
+	query, args := r.liveQuery(statement, []any{string(raw), string(included), time.Now().UnixMilli(), scope.Owner,
+		q.Directory, q.Directory, q.Since, q.Since, q.Origin, q.Origin, q.OriginID, q.OriginID, limit, q.Offset})
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
