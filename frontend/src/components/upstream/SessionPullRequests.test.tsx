@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithQuery as render } from '../../test/renderWithQuery';
 import { MemoryRouter } from 'react-router-dom';
@@ -17,6 +17,51 @@ function mount() { return render(<MemoryRouter><ConfirmContext.Provider value={c
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [link] }); vi.mocked(prWorkflowApi.change).mockResolvedValue(link); vi.mocked(prWorkflowApi.feedback).mockResolvedValue({ prompt: 'Investigate the failed tests. Do not merge.' }); confirm.mockResolvedValue(true); });
 
 describe('SessionPullRequests', () => {
+  it('keeps unmerged PRs visible and puts merged PRs in a collapsed drawer', async () => {
+    const merged = { ...link, number: 43, pr: { ...link.pr, number: 43, title: 'Already shipped', status: 'merged' as const } };
+    const closed = { ...link, number: 44, pr: { ...link.pr, number: 44, title: 'Not merged', status: 'closed' as const } };
+    const draft = { ...link, number: 45, pr: { ...link.pr, number: 45, title: 'Work in progress', status: 'draft' as const } };
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [merged, link, closed, draft] });
+    const user = userEvent.setup();
+    mount();
+    const toggle = await screen.findByRole('button', { name: 'Merged PRs (1)' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('link', { name: '#43 Already shipped' })).not.toBeInTheDocument();
+    for (const name of ['#42 Improve authentication', '#44 Not merged', '#45 Work in progress']) {
+      expect(screen.getByRole('link', { name })).toBeVisible();
+    }
+    toggle.focus();
+    await user.keyboard('{Enter}');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const drawer = screen.getByRole('region', { name: 'Merged PRs' });
+    expect(within(drawer).getByRole('link', { name: '#43 Already shipped' })).toBeVisible();
+    expect(within(drawer).getByRole('button', { name: 'Watch PR' })).toBeDisabled();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('region', { name: 'Merged PRs' })).not.toBeInTheDocument();
+  });
+  it('moves a PR into the drawer when a live update reports it merged', async () => {
+    mount();
+    await screen.findByRole('link', { name: '#42 Improve authentication' });
+    expect(screen.queryByRole('button', { name: /Merged PRs/ })).not.toBeInTheDocument();
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [{ ...link, pr: { ...link.pr, status: 'merged' } }] });
+    act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: 's1', platform: link.platform })));
+    expect(await screen.findByRole('button', { name: 'Merged PRs (1)' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('link', { name: '#42 Improve authentication' })).not.toBeInTheDocument();
+  });
+  it('counts merged links and allows unlinking them from an expanded drawer', async () => {
+    const merged = { ...link, pr: { ...link.pr, status: 'merged' as const } };
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [merged, { ...merged, number: 43, pr: { ...merged.pr, number: 43 } }] });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Merged PRs (2)' }));
+    const drawer = screen.getByRole('region', { name: 'Merged PRs' });
+    expect(drawer).toHaveAttribute('id', screen.getByRole('button', { name: 'Merged PRs (2)' }).getAttribute('aria-controls'));
+    expect(within(drawer).getAllByRole('link')).toHaveLength(2);
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [] });
+    fireEvent.click(within(drawer).getAllByRole('button', { name: 'Unlink' })[0]);
+    await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', 'r-box:opencode', { action: 'unlink', number: 42, host: 'github.com', repo: 'team/repo' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Linked pull requests' })).not.toBeInTheDocument());
+  });
   it('refreshes watch starts and stops from owner-qualified live events', async () => {
     mount();
     await screen.findByRole('button', { name: 'Watch PR' });

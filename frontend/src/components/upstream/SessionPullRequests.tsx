@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Button, ButtonGroup, TextareaField } from '../Control';
 import { Modal } from '../Modal';
 import { ModalHeader } from '../ModalHeader';
@@ -22,6 +22,8 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [prompt, setPrompt] = useState<string | null>(null);
+  const [mergedExpanded, setMergedExpanded] = useState(false);
+  const mergedId = useId();
   const mounted = useRef(true);
   const lastRefresh = useRef(refreshVersion);
   const confirm = useConfirm();
@@ -54,10 +56,8 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0, o
   const change = (link: PRLink, action: string) => prWorkflowApi.change(sessionId, platform, { action, number: link.number, host: link.remote.host, repo: link.remote.repo });
   const feedback = (link: PRLink, action: string) => run(async () => { const result = await prWorkflowApi.feedback(sessionId, platform, link, action); if (mounted.current) setPrompt(result.prompt); });
   if (links?.length === 0 && !error) return null;
-  return <section className="oc-session-prs" aria-label="Linked pull requests">
-    {error && <p role="alert">{error} <Button variant="ghost" onClick={() => void run(load, false)}>Retry links</Button></p>}
-    {links === null && !error && <p role="status">Loading linked PRs…</p>}
-    {links?.map((link) => <article className="oc-session-pr" key={`${link.remote.host}/${link.remote.repo}/${link.number}`}>
+  const mergedLinks = links?.filter((link) => link.pr.status === 'merged') ?? [];
+  const renderLink = (link: PRLink) => <article className="oc-session-pr" key={`${link.remote.host}/${link.remote.repo}/${link.number}`}>
       <a href={link.pr.url} target="_blank" rel="noreferrer noopener">#{link.number} {link.pr.title}</a>
       <div className="oc-session-pr-repo">
       <p className="oc-session-pr-meta">{link.remote.host}/{link.remote.repo}</p>
@@ -83,7 +83,17 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0, o
           </DropdownMenuContent>
         </DropdownMenu>
       </ButtonGroup>
-    </article>)}
+    </article>;
+  return <section className="oc-session-prs" aria-label="Linked pull requests">
+    {error && <p role="alert">{error} <Button variant="ghost" onClick={() => void run(load, false)}>Retry links</Button></p>}
+    {links === null && !error && <p role="status">Loading linked PRs…</p>}
+    {links?.filter((link) => link.pr.status !== 'merged').map(renderLink)}
+    {mergedLinks.length > 0 && <>
+      <Button variant="ghost" size="small" aria-expanded={mergedExpanded} aria-controls={mergedId} onClick={() => setMergedExpanded((expanded) => !expanded)}>
+        <i className={`bi bi-chevron-${mergedExpanded ? 'down' : 'right'}`} aria-hidden="true" /> Merged PRs ({mergedLinks.length})
+      </Button>
+      {mergedExpanded && <div id={mergedId} className="oc-session-pr-merged" role="region" aria-label="Merged PRs">{mergedLinks.map(renderLink)}</div>}
+    </>}
     {prompt !== null && <Modal label="Review feedback task" onClose={() => setPrompt(null)}><ModalHeader title="Review feedback task" closeLabel="Close feedback task" onClose={() => setPrompt(null)} /><p>Review this task before copying it into your session. Nothing has been sent.</p><TextareaField aria-label="PR feedback task" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={14} /><ModalFooter label="Feedback task actions"><CopyButton text={prompt} label="Copy task" /><Button onClick={() => setPrompt(null)}>Close</Button></ModalFooter></Modal>}
   </section>;
 }
