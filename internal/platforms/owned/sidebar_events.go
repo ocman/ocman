@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 
+	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/statev2"
 )
 
@@ -26,14 +27,38 @@ func (w *sidebarWorker) publishSidebarChanges(ctx context.Context, observations 
 			changed[id] = true
 		}
 	}
+	previous := w.observations
 	w.observations, w.available = maps.Clone(observations), available
 	if notify == nil {
 		return
 	}
+	notified := map[string]bool{}
+	publish := func(row sessioncatalog.Session) {
+		if !notified[row.ID] {
+			notified[row.ID] = true
+			notify(string(a.ID()), row.ID)
+		}
+	}
 	for id := range changed {
 		identity, err := a.canonical(ctx, id)
-		if err == nil {
-			notify(string(a.ID()), identity.ID)
+		if err != nil {
+			continue
+		}
+		publish(identity)
+		before, after := previous[id], observations[id]
+		if !before.PendingPermission && !before.PendingQuestion && !after.PendingPermission && !after.PendingQuestion {
+			continue
+		}
+		// Prompt queries follow native ancestry, never application parent links.
+		// Resolve each edge through this adapter's owner/platform/source binding.
+		seen := map[string]bool{identity.NativeID: true}
+		for identity.NativeParentID != "" && !seen[identity.NativeParentID] {
+			seen[identity.NativeParentID] = true
+			identity, err = a.store.FindBinding(ctx, a.binding(identity.NativeParentID))
+			if err != nil || identity.Purged || identity.CreationState != sessioncatalog.Ready {
+				break
+			}
+			publish(identity)
 		}
 	}
 }

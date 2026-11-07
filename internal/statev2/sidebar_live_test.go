@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"testing"
 )
 
 func TestSidebarLiveCommitFencesAndCopies(t *testing.T) {
 	d := openTestDB(t)
 	scope := Instance{OwnerID: "owner", Platform: "test", SourceKey: "source"}
-	if got := d.SidebarLiveSnapshots(); got != nil {
+	key := sidebarLiveKey(scope.OwnerID, scope.Platform, scope.SourceKey)
+	if got := d.sidebarLive.value.Load(); got != nil {
 		t.Fatal(got)
 	}
 	if err := d.BeginSidebarGeneration(t.Context(), scope, "g"); err != nil {
@@ -22,19 +22,15 @@ func TestSidebarLiveCommitFencesAndCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows["native"] = SidebarObservation{Status: "done"}
-	snapshot := d.SidebarLiveSnapshots()
-	if snapshot[0].ExpiresAt != 123 || snapshot[0].Observations["native"].Status != "busy" {
+	snapshot := d.sidebarLive.value.Load().sources[key]
+	if snapshot.ExpiresAt != 123 || snapshot.Observations["native"].Status != "busy" {
 		t.Fatal(snapshot)
-	}
-	snapshot[0].Observations["native"] = SidebarObservation{}
-	if d.SidebarLiveSnapshots()[0].Observations["native"].Status != "busy" {
-		t.Fatal("snapshot aliases reader")
 	}
 	if err := d.RenewSidebarLease(t.Context(), scope, "g", 456); err != nil {
 		t.Fatal(err)
 	}
-	before := d.SidebarLiveSnapshots()
-	if before[0].ExpiresAt != 456 || before[0].Observations["native"].Status != "busy" {
+	before := d.sidebarLive.value.Load()
+	if before.sources[key].ExpiresAt != 456 || before.sources[key].Observations["native"].Status != "busy" || snapshot.ExpiresAt != 123 {
 		t.Fatal(before)
 	}
 	if err := d.RenewSidebarLease(t.Context(), scope, "old", 999); !errors.Is(err, ErrConflict) {
@@ -43,7 +39,7 @@ func TestSidebarLiveCommitFencesAndCopies(t *testing.T) {
 	if err := d.ReplaceSidebarObservations(t.Context(), scope, "old", 999, rows); !errors.Is(err, ErrConflict) {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(before, d.SidebarLiveSnapshots()) {
+	if before != d.sidebarLive.value.Load() {
 		t.Fatal("stale writer changed live view")
 	}
 	if _, err := d.db.Exec(`CREATE TRIGGER reject_observation BEFORE INSERT ON sidebar_observation BEGIN SELECT RAISE(ABORT,'rollback'); END`); err != nil {
@@ -52,19 +48,19 @@ func TestSidebarLiveCommitFencesAndCopies(t *testing.T) {
 	if err := d.ReplaceSidebarObservations(t.Context(), scope, "g", 999, rows); err == nil {
 		t.Fatal("expected rollback")
 	}
-	if !reflect.DeepEqual(before, d.SidebarLiveSnapshots()) {
+	if before != d.sidebarLive.value.Load() {
 		t.Fatal("failed commit published observations")
 	}
 	if err := d.BeginSidebarGeneration(t.Context(), scope, "new"); err != nil {
 		t.Fatal(err)
 	}
-	got := d.SidebarLiveSnapshots()[0]
+	got := d.sidebarLive.value.Load().sources[key]
 	if got.Generation != "new" || got.ExpiresAt != 0 || len(got.Observations) != 0 {
 		t.Fatal(got)
 	}
 	// Publication is serialized with writes, but readers never take that lock.
 	d.sidebarLive.write.Lock()
-	_ = d.SidebarLiveSnapshots()
+	_ = d.SidebarLiveJSON(false)
 	d.sidebarLive.write.Unlock()
 }
 
@@ -122,7 +118,7 @@ func TestSidebarLiveDoesNotRestoreAuthorityAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if got := reopened.SidebarLiveSnapshots(); got != nil {
+	if got := reopened.sidebarLive.value.Load(); got != nil {
 		t.Fatalf("restored stale live authority: %v", got)
 	}
 }

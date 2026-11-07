@@ -183,6 +183,9 @@ sequenceDiagram
   with ambiguous owners trigger a list refresh without patching a guessed row.
 - Committed observation checkpoints publish `OnSidebarChanged` after both SQL
   completion bookkeeping and the process-local live snapshot are ready.
+  Prompt changes also notify native ancestors through owner/platform/source-scoped
+  bindings, including prompt removal and connection loss; application links do not
+  propagate prompts.
   `internal/sessionupdates` coalesces invalidations over 100 ms, admits at most
   128 pending identities and bounds each compact read to 250 ms. It reads one
   row per changed identity, not once per browser. Complete row events include

@@ -87,18 +87,3 @@ func (d *DB) SidebarLiveJSON(runningOnly bool) string {
 	}
 	return "[]"
 }
-
-// SidebarLiveSnapshots copies only live observations, not history or accounting.
-// Reads never wait for the SQLite writer. Callers may mutate their own copies.
-func (d *DB) SidebarLiveSnapshots() []SidebarLiveSnapshot {
-	current := d.sidebarLive.value.Load()
-	if current == nil {
-		return nil
-	}
-	out := make([]SidebarLiveSnapshot, 0, len(current.sources))
-	for _, snapshot := range current.sources {
-		snapshot.Observations = maps.Clone(snapshot.Observations)
-		out = append(out, snapshot)
-	}
-	return out
-}
