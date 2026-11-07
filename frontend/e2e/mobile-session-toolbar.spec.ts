@@ -74,7 +74,10 @@ test('phone filters can widen a retained time range and fetch older sessions', a
   await page.setViewportSize({ width: 390, height: 844 });
   const older = { ...MOCK_SESSION_2, timeUpdated: Date.now() - 48 * 3600_000 };
   await page.route('/api/sessions*', route => {
-    const since = Number(new URL(route.request().url()).searchParams.get('since'));
+    const params = new URL(route.request().url()).searchParams;
+    const since = params.has('sinceHours')
+      ? Date.now() - Number(params.get('sinceHours')) * 3600_000
+      : Number(params.get('since'));
     return route.fulfill({ json: since > older.timeUpdated ? [MOCK_SESSION] : [MOCK_SESSION, older] });
   });
   await page.goto('/sessions?t=12');
