@@ -48,8 +48,8 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   from it and reject mismatches before launch. Apply owner/project quick-setting
   permission defaults before publication and first prompt; an explicit
   `permissionRules` from the composer's mode picker replaces them, and its
-  absence means Default. Saving YOLO requires browser confirmation; existing
-  sessions keep their rules.
+  absence means Default. Selecting YOLO or saving it as a project default needs
+  no extra confirmation; existing sessions keep their rules.
 - Worktree starts create owner-local `session-<id8>` without an LLM in the first
   message path. Current-checkout starts use the directory's project instance.
   Plain prompts deliver server-side in the same request, returning

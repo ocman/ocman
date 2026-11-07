@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLayoutEffect } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DraftPermissionMode, PermissionModeLock } from './PermissionModeLock';
 import { PERMISSION_MODES } from '../lib/permissionModes';
@@ -75,18 +75,17 @@ describe('PermissionModeLock', () => {
     expect(screen.getByLabelText('Permission mode: Plan only')).toBeInTheDocument();
   });
 
-  it('asks for confirmation before yolo and aborts on cancel', async () => {
+  it('applies YOLO immediately without an extra confirmation', async () => {
     getPermissionRules.mockResolvedValue({ rules: [] });
     render(<PermissionModeLock sessionId="s1" />);
     await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
 
     await userEvent.click(screen.getByText('YOLO'));
-    expect(await screen.findByRole('dialog', { name: 'Confirm permission mode' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(setPermissionRules).not.toHaveBeenCalled();
+    await waitFor(() => expect(setPermissionRules).toHaveBeenCalledWith('s1', PERMISSION_MODES.find((m) => m.id === 'yolo')!.rules));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('renders the confirmation outside disabled composer styling, like the picker', async () => {
+  it('renders the picker outside disabled composer styling and applies YOLO directly', async () => {
     getPermissionRules.mockResolvedValue({ rules: [] });
     const { container } = render(
       <div className="oc-composer-disabled"><div className="oc-composer-bar-left">
@@ -96,19 +95,18 @@ describe('PermissionModeLock', () => {
     await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
     expect(container).not.toContainElement(screen.getByRole('dialog', { name: 'Permission mode...' }));
     await userEvent.click(screen.getByText('YOLO'));
-    const confirmation = await screen.findByRole('dialog', { name: 'Confirm permission mode' });
-    expect(container).not.toContainElement(confirmation);
-    expect(confirmation.parentElement?.parentElement).toBe(document.body);
+    expect(setPermissionRules).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('applies yolo when confirmed', async () => {
+  it('applies YOLO using the keyboard', async () => {
     getPermissionRules.mockResolvedValue({ rules: [] });
     setPermissionRules.mockResolvedValue(undefined);
     render(<PermissionModeLock sessionId="s1" />);
     await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
 
-    await userEvent.click(screen.getByText('YOLO'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await userEvent.type(screen.getByRole('combobox'), 'YOLO');
+    await userEvent.keyboard('{Enter}');
     await waitFor(() =>
       expect(setPermissionRules).toHaveBeenCalledWith(
         's1',
@@ -118,19 +116,22 @@ describe('PermissionModeLock', () => {
     expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument();
   });
 
-  it('focuses Confirm so Enter applies yolo', async () => {
+  it('retains the previous mode and permits retry if saving YOLO fails', async () => {
     getPermissionRules.mockResolvedValue({ rules: [] });
-    setPermissionRules.mockResolvedValue(undefined);
+    setPermissionRules.mockRejectedValueOnce(new Error('save offline')).mockResolvedValueOnce(undefined);
     render(<PermissionModeLock sessionId="s1" />);
     await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
 
     await userEvent.click(screen.getByText('YOLO'));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus());
-    await userEvent.keyboard('{Enter}');
+    const lock = await screen.findByTitle('save offline');
+    expect(lock).toHaveAccessibleName('Permission mode: Default');
+    expect(lock).toBeEnabled();
+    await userEvent.click(lock);
+    await userEvent.click(screen.getByText('YOLO'));
     await waitFor(() => expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument());
   });
 
-  it('keeps the confirmation open and busy until yolo is saved', async () => {
+  it('disables the mode control until YOLO is saved', async () => {
     let finish!: () => void;
     getPermissionRules.mockResolvedValue({ rules: [] });
     setPermissionRules.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
@@ -138,14 +139,12 @@ describe('PermissionModeLock', () => {
     await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
 
     await userEvent.click(screen.getByText('YOLO'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
-    const dialog = screen.getByRole('dialog', { name: 'Confirm permission mode' });
-    expect(within(dialog).getByRole('button', { name: 'Applying…' })).toHaveAttribute('aria-busy', 'true');
-    await userEvent.keyboard('{Escape}');
-    expect(screen.getByRole('dialog', { name: 'Confirm permission mode' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Permission mode: Default')).toBeDisabled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(setPermissionRules).toHaveBeenCalledTimes(1);
 
-    finish();
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirm permission mode' })).not.toBeInTheDocument());
+    await act(async () => finish());
+    expect(screen.getByLabelText('Permission mode: YOLO')).toBeEnabled();
     expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument();
   });
 });
@@ -161,19 +160,13 @@ describe('DraftPermissionMode', () => {
     expect(getPermissionRules).not.toHaveBeenCalled();
   });
 
-  it('confirms yolo before reporting it and aborts on cancel', async () => {
+  it('reports YOLO directly without an extra confirmation', async () => {
     const onChange = vi.fn();
     render(<DraftPermissionMode value="default" onChange={onChange} />);
     await userEvent.click(screen.getByLabelText('Permission mode: Default'));
     await userEvent.click(screen.getByText('YOLO'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
-    expect(onChange).not.toHaveBeenCalled();
-
-    await userEvent.click(screen.getByLabelText('Permission mode: Default'));
-    await userEvent.click(screen.getByText('YOLO'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
     expect(onChange).toHaveBeenCalledWith('yolo');
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirm permission mode' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('labels the selected mode and falls back to Default for unknown ids', () => {

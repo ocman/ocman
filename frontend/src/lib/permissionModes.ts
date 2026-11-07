@@ -11,7 +11,7 @@ export interface PermissionMode {
   label: string;
   description: string;
   rules: PermissionRule[];
-  /** Marks postures worth an extra confirmation (e.g. yolo). */
+  /** Marks permissive postures for warning styling (e.g. yolo). */
   dangerous?: boolean;
 }
 

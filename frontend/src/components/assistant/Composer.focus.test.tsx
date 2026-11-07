@@ -130,7 +130,7 @@ it.each(['model', 'agent', 'reasoning', 'skills', 'routines', 'help', 'permissio
   },
 );
 
-it.each(['Cancel', 'Confirm'])('returns focus after %s on a permission confirmation', async (action) => {
+it('returns focus after selecting YOLO without confirmation', async () => {
   const user = userEvent.setup();
   vi.spyOn(api, 'getPermissionRules').mockResolvedValue({ rules: [] });
   const save = vi.spyOn(api, 'setPermissionRules').mockResolvedValue(undefined);
@@ -139,13 +139,9 @@ it.each(['Cancel', 'Confirm'])('returns focus after %s on a permission confirmat
   await waitFor(() => expect(input).toHaveFocus());
   await user.click(await screen.findByLabelText('Permission mode: Default'));
   await user.click(screen.getByRole('option', { name: /YOLO/ }));
-  expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus();
-  expect(save).not.toHaveBeenCalled();
-
-  await user.click(screen.getByRole('button', { name: action }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(input).toHaveFocus();
-  expect(save).toHaveBeenCalledTimes(action === 'Confirm' ? 1 : 0);
+  expect(save).toHaveBeenCalledTimes(1);
   await user.keyboard('Next prompt');
   expect(input).toHaveValue('Next prompt');
 });

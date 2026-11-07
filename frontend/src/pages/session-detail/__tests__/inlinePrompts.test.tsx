@@ -18,7 +18,7 @@ describe('conversation prompts', () => {
       : { question: { questions: [{ header: 'Choice', question: 'Which approach?', options: [{ label: 'Small', description: 'Keep it small' }] }] } }),
   } });
 
-  it.each(['permission', 'question'] as const)('keeps the permission picker and YOLO confirmation open during a %s prompt', async (kind) => {
+  it.each(['permission', 'question'] as const)('keeps the permission picker usable during a %s prompt and applies YOLO directly', async (kind) => {
     const user = userEvent.setup();
     const save = vi.fn().mockResolvedValue(undefined);
     const page = renderSessionPage({ sessionId: 'sess_1', realAssistantThread: true, apiOverrides: {
@@ -31,8 +31,7 @@ describe('conversation prompts', () => {
     expect(screen.getByRole('dialog', { name: 'Permission mode...' })).toBeInTheDocument();
     await user.click(screen.getByRole('option', { name: /YOLO/ }));
     emitPrompt('second');
-    expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus();
-    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    expect(screen.queryByRole('dialog', { name: 'Confirm permission mode' })).not.toBeInTheDocument();
     await waitFor(() => expect(save).toHaveBeenCalledWith('sess_1', [{ permission: '*', pattern: '*', action: 'allow' }]));
     expect(within(screen.getByTestId('conversation-composer')).getByRole('textbox')).toBeDisabled();
   });

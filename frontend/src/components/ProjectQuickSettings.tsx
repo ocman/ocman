@@ -64,7 +64,6 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
   }} onSubmit={async (event) => {
     event.preventDefault();
     if (!defaults || saving) return;
-    if (defaults.permissionMode === 'yolo' && !window.confirm('Use YOLO for new conversations in this project? The agent will run edits and commands without asking.')) return;
     setSaving(true); setError('');
     try {
       await postJSON('/api/project/settings', { directory, remoteId, defaults });

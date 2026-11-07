@@ -14,7 +14,7 @@ async function expectOpaqueTree(dialog: Locator) {
 }
 
 for (const width of [1440, 390]) {
-  test(`permission dialogs stay opaque with a pending prompt at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+  test(`permission picker stays opaque with a pending prompt at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 1100 });
     const caps = makeCapabilitiesWithPort();
     await page.route('**/api/capabilities', route => route.fulfill({ json: {
@@ -36,16 +36,8 @@ for (const width of [1440, 390]) {
     const picker = page.getByRole('dialog', { name: 'Permission mode...' });
     await expectOpaqueTree(picker);
     await picker.getByRole('option', { name: /YOLO/ }).click();
-    const confirmation = page.getByRole('dialog', { name: 'Confirm permission mode' });
-    await expectOpaqueTree(confirmation);
-    await expect(confirmation.getByRole('button', { name: 'Confirm', exact: true })).toBeFocused();
-    expect(await confirmation.evaluate(element => {
-      const { x, y, width: dialogWidth, height } = element.getBoundingClientRect();
-      return element.contains(document.elementFromPoint(x + dialogWidth / 2, y + height / 2));
-    })).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath('permission-confirmation.png'), fullPage: true });
-    await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(confirmation).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Permission mode: YOLO', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Confirm permission mode' })).not.toBeVisible();
     await expectOpaqueTree(page.getByRole('dialog', { name: 'Permission required' }));
   });
 }

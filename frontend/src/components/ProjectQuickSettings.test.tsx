@@ -85,17 +85,15 @@ it('loads and resets a saved permission mode', async () => {
   expect(postJSON).toHaveBeenCalledWith('/api/project/settings', { directory: '/repo', remoteId: 'local', defaults: { model: '', agent: '', worktree: '', permissionMode: '' } });
 });
 
-it('requires confirmation before saving YOLO as the project default', async () => {
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+it('saves YOLO as the project default without an extra confirmation', async () => {
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   render(<ProjectQuickSettings directory="/repo">repo</ProjectQuickSettings>);
   await open();
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Default permission mode' }), 'yolo');
   expect(screen.getByText('Allow everything without asking')).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-  expect(postJSON).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(postJSON).toHaveBeenCalledWith('/api/project/settings', { directory: '/repo', remoteId: 'local', defaults: { model: '', agent: '', worktree: '', permissionMode: 'yolo' } });
-  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(confirm).not.toHaveBeenCalled();
   confirm.mockRestore();
 });
 it('dismisses on Escape or outside click and cancels obsolete preparation', async () => {

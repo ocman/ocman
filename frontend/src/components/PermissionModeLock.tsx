@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { api, type PermissionRule } from '../lib/api';
 import { classifyPermissionMode, PERMISSION_MODES, type PermissionMode } from '../lib/permissionModes';
-import { Button, SubmitButton } from './Control';
 import { CommandListPicker } from './assistant/CommandListPicker';
-import { Modal } from './Modal';
 import { onSessionChanged } from '../lib/useGlobalEvents';
 import './PermissionModeLock.css';
 
@@ -22,7 +19,6 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [confirmMode, setConfirmMode] = useState<PermissionMode | null>(null);
 
   const [prevSessionId, setPrevSessionId] = useState(sessionId);
   if (prevSessionId !== sessionId) {
@@ -92,10 +88,6 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
     }
     const target = PERMISSION_MODES.find((m) => m.id === id);
     if (!target || saving) return;
-    if (target.dangerous && confirmMode?.id !== target.id) {
-      setConfirmMode(target);
-      return;
-    }
     setSaving(true);
     setError('');
     try {
@@ -105,9 +97,8 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       setError(e instanceof Error ? e.message : 'failed to set permission mode');
     } finally {
       setSaving(false);
-      setConfirmMode(null);
     }
-  }, [confirmMode, saving, sessionId]);
+  }, [saving, sessionId]);
 
   const entries = useMemo(
     () => {
@@ -137,7 +128,6 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
         onClose={() => setPickerOpen(false)}
       />
       {error && <div className="oc-permission-lock-error">{error}</div>}
-      {confirmMode && <PermissionModeConfirmation mode={confirmMode} saving={saving} onClose={() => setConfirmMode(null)} onConfirm={() => apply(confirmMode.id)} />}
     </>
   );
 }
@@ -151,7 +141,6 @@ export function DraftPermissionMode({ value, onChange, disabled }: {
   value: string; onChange: (id: string) => void; disabled?: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [confirmMode, setConfirmMode] = useState<PermissionMode | null>(null);
   useEffect(() => {
     const open = () => setPickerOpen(true);
     window.addEventListener('oc-permission-mode-open', open);
@@ -163,7 +152,6 @@ export function DraftPermissionMode({ value, onChange, disabled }: {
   const select = (id: string) => {
     const target = PERMISSION_MODES.find((m) => m.id === id);
     if (!target) return;
-    if (target.dangerous) { setConfirmMode(target); return; }
     onChange(id);
   };
   return (
@@ -176,8 +164,6 @@ export function DraftPermissionMode({ value, onChange, disabled }: {
         onSelect={select}
         onClose={() => setPickerOpen(false)}
       />
-      {confirmMode && <PermissionModeConfirmation mode={confirmMode} saving={false} onClose={() => setConfirmMode(null)}
-        onConfirm={async () => { onChange(confirmMode.id); setConfirmMode(null); }} />}
     </>
   );
 }
@@ -228,34 +214,6 @@ function PermissionModePicker({ open, entries, sectioned, isCurrent, onSelect, o
       onSelect={onSelect}
       onClose={onClose}
     />
-  );
-}
-
-function PermissionModeConfirmation({ mode, saving, onClose, onConfirm }: {
-  mode: PermissionMode; saving: boolean; onClose: () => void; onConfirm: () => Promise<void>;
-}) {
-  // Match the picker: disabled composer styles must not dim the modal or backdrop.
-  return createPortal(
-    <Modal
-      label="Confirm permission mode"
-      backdropClassName="oc-cmd-backdrop oc-permission-confirm-backdrop"
-      dialogClassName="oc-cmd-palette oc-permission-confirm"
-      onClose={onClose}
-      canClose={!saving}
-    >
-      <div className="oc-permission-confirm-body">
-        <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>
-        <div>
-          <div className="oc-cmd-title">Switch to {mode.label}?</div>
-          <div className="oc-cmd-meta">The agent will run edits and commands without asking.</div>
-        </div>
-      </div>
-      <div className="oc-permission-confirm-actions">
-        <Button size="small" disabled={saving} onClick={onClose}>Cancel</Button>
-        <SubmitButton size="small" variant="danger" data-autofocus pendingLabel="Applying…" onClick={onConfirm}>Confirm</SubmitButton>
-      </div>
-    </Modal>,
-    document.body,
   );
 }
 
