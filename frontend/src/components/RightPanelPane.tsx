@@ -181,6 +181,7 @@ export function Pane({
           {tab === 'working-tree' && (
             <WorkingTreeChangesSidebar
               directory={directory}
+              remoteId={session?.remoteId || upstreamTarget.remoteId}
               dirtyTick={dirtyTick}
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}

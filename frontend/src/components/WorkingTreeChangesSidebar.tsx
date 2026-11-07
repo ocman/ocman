@@ -29,6 +29,8 @@ interface WorkingTreeChangesSidebarProps extends ChangesPaneCallbacks {
   // Absolute path to the session's directory. Empty string disables
   // the hook and renders an empty state.
   directory: string | undefined;
+  // The session's owning machine, so a remote session's diff is read there.
+  remoteId?: string;
   dirtyTick?: number;
 }
 
@@ -40,9 +42,9 @@ const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
   untracked: '?',
 };
 
-export function WorkingTreeChangesSidebar({ directory, dirtyTick, ...callbacks }: WorkingTreeChangesSidebarProps) {
+export function WorkingTreeChangesSidebar({ directory, remoteId, dirtyTick, ...callbacks }: WorkingTreeChangesSidebarProps) {
   const enabled = !!directory;
-  const { data, loading, error, notRepo, refresh } = useWorkingTreeDiff(directory, { enabled, dirtyTick });
+  const { data, loading, error, notRepo, refresh } = useWorkingTreeDiff(directory, { enabled, dirtyTick, remoteId });
 
   // Defensive default: a faulty backend / older deployment could
   // ship `null` instead of `[]` for files. Coerce here, memoised so

@@ -313,3 +313,21 @@ func TestWorktreeRemoveRejectsInvalidJSON(t *testing.T) {
 		t.Fatalf("invalid JSON = %d", rr.Code)
 	}
 }
+
+// A remote session's diff must follow its explicit owner rather than
+// path inference, which falls back to the hub when the inventory has not
+// mapped the directory, and must fail closed when that owner is gone.
+func TestGitDiffUsesExplicitOwner(t *testing.T) {
+	h := newHarness(module.Guards{Auth: pass, Localhost: pass})
+	var inferred bool
+	h.m.ForDir = func(string) hostsvc.Host { inferred = true; return h.host }
+	if got := h.serve(http.MethodGet, "/api/git/diff?dir=/r&remoteId=gone", "").Code; got != http.StatusServiceUnavailable {
+		t.Fatalf("disconnected owner = %d, want 503", got)
+	}
+	if got := h.serve(http.MethodGet, "/api/git/diff?dir=/r&remoteId=rem1", "").Code; got != http.StatusOK {
+		t.Fatalf("connected owner = %d, want 200", got)
+	}
+	if inferred {
+		t.Fatal("explicit owner fell back to path inference")
+	}
+}

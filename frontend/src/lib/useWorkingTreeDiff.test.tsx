@@ -5,7 +5,7 @@ import type { WorkingTreeDiff } from './api';
 import { renderHookWithQuery } from '../test/renderWithQuery';
 
 const diff: WorkingTreeDiff = { repo: '/x', branch: 'main', ahead: 0, behind: 0, files: [], truncated: false };
-const getGitDiff = vi.fn<(dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>>(() => Promise.resolve(diff));
+const getGitDiff = vi.fn<(dir: string, opts?: { fresh?: boolean; remoteId?: string }, signal?: AbortSignal) => Promise<WorkingTreeDiff>>(() => Promise.resolve(diff));
 vi.mock('./api', () => ({
   api: { gitDiff: getGitDiff },
 }));
@@ -29,6 +29,12 @@ describe('useWorkingTreeDiff', () => {
     expect(result.current.loading).toBe(true);
     await waitFor(() => expect(result.current.data).toEqual(diff));
     expect(getGitDiff).toHaveBeenCalledWith('/repo', { fresh: true }, expect.any(AbortSignal));
+  });
+
+  it('asks the session owner for the diff', async () => {
+    const { result } = renderHookWithQuery(() => useWorkingTreeDiff('/repo', { remoteId: 'r1' }));
+    await waitFor(() => expect(result.current.data).toEqual(diff));
+    expect(getGitDiff).toHaveBeenCalledWith('/repo', { fresh: true, remoteId: 'r1' }, expect.any(AbortSignal));
   });
 
   it('skips the fetch when no dir is provided', () => {

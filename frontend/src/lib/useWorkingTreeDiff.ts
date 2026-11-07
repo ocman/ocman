@@ -23,7 +23,11 @@ export interface UseWorkingTreeDiffResult {
   refresh: () => void;
 }
 
-export type UseWorkingTreeDiffOptions = SessionResourceOptions;
+export interface UseWorkingTreeDiffOptions extends SessionResourceOptions {
+  // The session's owning machine. Without it the backend infers the owner
+  // from the path, which falls back to the hub for an unmapped remote dir.
+  remoteId?: string;
+}
 
 // A 404 (or "not a git worktree" body) means the directory isn't a git
 // repo. gitDiff throws a plain Error whose message is the response text
@@ -43,16 +47,16 @@ function isNotRepoError(err: unknown): boolean {
  */
 export function useWorkingTreeDiff(
   dir: string | undefined,
-  options: UseWorkingTreeDiffOptions = {},
+  { remoteId, ...options }: UseWorkingTreeDiffOptions = {},
 ): UseWorkingTreeDiffResult {
   const getGitDiff = api.gitDiff;
   const { data, loading, error, refresh } = useSessionResourceQuery(
-    dir ? ['git-diff', dir] : undefined,
+    dir ? ['git-diff', remoteId ?? '', dir] : undefined,
     async (signal) => {
       try {
         // fresh=true bypasses the backend's tiny cache so an
         // edit-event-triggered refresh is never sub-second stale.
-        return { diff: await getGitDiff(dir!, { fresh: true }, signal), notRepo: false };
+        return { diff: await getGitDiff(dir!, remoteId ? { fresh: true, remoteId } : { fresh: true }, signal), notRepo: false };
       } catch (err) {
         if (isNotRepoError(err)) return { diff: EMPTY_DIFF, notRepo: true };
         throw err;

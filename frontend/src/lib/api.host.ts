@@ -14,9 +14,11 @@ export const hostApi = {
     if (limit) q.set('limit', String(limit));
     return fetchJSON<DirectorySearchResponse>(`/api/filesystem/directory-search?${q.toString()}`, signal);
   },
-  gitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => {
+  // Explicit ownership fails closed when the remote is disconnected.
+  gitDiff: (dir: string, opts?: { fresh?: boolean; remoteId?: string }, signal?: AbortSignal) => {
     const q = new URLSearchParams({ dir });
     if (opts?.fresh) q.set('fresh', '1');
+    if (opts?.remoteId) q.set('remoteId', opts.remoteId);
     return fetchJSON<WorkingTreeDiff>(`/api/git/diff?${q.toString()}`, signal);
   },
   repoFiles: (dir: string, remoteId: string, signal?: AbortSignal, ignored = false) =>

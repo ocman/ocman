@@ -86,6 +86,7 @@ const rows: Array<[string, () => Promise<unknown>, string, string, unknown?]> = 
   ['sessionChanges', () => api.sessionChanges('s'), 'GET', '/api/session/s/changes'],
   ['sessionTasks', () => api.sessionTasks('s', ['a', 'b/c']), 'GET', '/api/session/s/tasks?ids=a,b%2Fc'],
   ['gitDiff fresh', () => api.gitDiff('/r', { fresh: true }), 'GET', '/api/git/diff?dir=%2Fr&fresh=1'],
+  ['gitDiff owner', () => api.gitDiff('/r', { fresh: true, remoteId: 'r1' }), 'GET', '/api/git/diff?dir=%2Fr&fresh=1&remoteId=r1'],
   ['repoFiles ignored', () => api.repoFiles('/r', 'local', undefined, true), 'GET', '/api/git/files?dir=%2Fr&remoteId=local&ignored=1'],
   ['repoFile', () => api.repoFile('/r', 'a b', 'local'), 'GET', '/api/git/file?dir=%2Fr&path=a%20b&remoteId=local'],
   ['archiveSession', () => api.archiveSession('claudecode', 's', 9), 'POST', '/api/session/archive', { platform: 'claudecode', sessionId: 's', timeUpdated: 9, archived: true }],

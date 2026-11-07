@@ -203,6 +203,8 @@ func (m *Module) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 //     requests; the frontend's SSE-driven refetch path passes
 //     fresh=1 so an edit-event-triggered refresh is never served
 //     stale data.
+//   - `remoteId` (optional): explicit owner; disconnected owners fail
+//     closed. When empty the owner is inferred from `dir`.
 //
 // Status codes:
 //
@@ -210,14 +212,21 @@ func (m *Module) handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 //	400 Bad Req    — `dir` missing or relative
 //	404 Not Found  — `dir` is not a git worktree
 //	502 Bad Gateway — git invocation failed (timeout, fork error)
+//	503 Service Unavailable — explicit owner is disconnected
 func (m *Module) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 	dir, ok := httpx.AbsDir(w, r)
 	if !ok {
 		return
 	}
 	fresh := r.URL.Query().Get("fresh") == "1"
+	// Path inference falls back to the hub for a remote directory the
+	// inventory has not mapped, so honour the client's explicit owner.
+	host, ok := m.Owner(w, dir, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
 
-	d, err := m.ForDir(dir).GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
+	d, err := host.GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
 	if err != nil {
 		// Git can replace cancellation with ErrNotRepo or a killed-process
 		// exit error, so check the request before interpreting its result.
