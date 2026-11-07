@@ -132,6 +132,7 @@ func (m *Module) notify(adapterID, sessionID string, force, priority bool) {
 			}
 			w.priority[sessionID] = true
 		}
+		w.explicit = w.explicit || force
 		if len(w.dirty) >= 4096 {
 			w.dirty = map[string]bool{"": true} // bounded queue, repair all on overflow
 		} else {

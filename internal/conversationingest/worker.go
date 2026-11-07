@@ -29,6 +29,7 @@ type sourceWorker struct {
 	mu        sync.Mutex
 	dirty     map[string]bool
 	priority  map[string]bool // requested conversation reads, served before backfill
+	explicit  bool            // a forced request arrived since the journal loop last woke
 	// versions holds the source version hint of each stored session. It is
 	// persisted, so a restart reads only sessions that changed meanwhile.
 	versions      map[string]string

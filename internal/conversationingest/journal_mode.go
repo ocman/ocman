@@ -105,11 +105,36 @@ func (w *sourceWorker) runJournal(ctx context.Context, dir string) {
 				_ = module.RunScheduled(ctx, module.Schedule{Name: pruneName, Title: "Prune consumed history journal segments", Scope: w.source.AdapterID, Interval: journalPrune}, consumer.prune)
 			}
 		case <-w.wake:
-			// Explicit repairs and waiting reads.
+			pending, explicit := w.journalHints()
+			if !pending {
+				continue
+			}
 			sweep, drain = true, true
-			retry = retryBackoff{}
+			// Explicit repairs and waiting reads bypass a failure's cooldown;
+			// live activity hints wait for it, as with feeds.
+			if explicit {
+				retry = retryBackoff{}
+			}
 		}
 	}
+}
+
+// journalHints drops activity hints for sessions this journal never stored.
+// Hook records already announce new sessions, while hints without a platform
+// reach every source and would otherwise inventory all transcripts per token.
+// It reports whether any demand remains and whether a forced request arrived.
+func (w *sourceWorker) journalHints() (pending, explicit bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	explicit, w.explicit = w.explicit, false
+	for id, force := range w.dirty {
+		if !force && id != "" && w.loaded {
+			if _, known := w.versions[id]; !known {
+				delete(w.dirty, id)
+			}
+		}
+	}
+	return len(w.dirty) > 0, explicit
 }
 
 // journalGrew reports whether any segment changed size since the last check.

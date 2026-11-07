@@ -22,6 +22,7 @@ type fakeHistory struct {
 	snapshots                              map[string]*db.HistorySnapshot
 	identityErr, inventoryErr, snapshotErr error
 	reads                                  int
+	inventories                            int
 	changingReads                          int // leading snapshot reads that fail as the source is written
 	block                                  bool
 	afterSnapshot                          func()
@@ -39,6 +40,7 @@ func (f *fakeHistory) HistoryIdentity(context.Context) (platforms.HistoryIdentit
 
 func (f *fakeHistory) HistoryInventory(ctx context.Context) ([]db.HistoryEntry, error) {
 	f.mu.Lock()
+	f.inventories++
 	entries, err, block := append([]db.HistoryEntry{}, f.entries...), f.inventoryErr, f.block
 	f.mu.Unlock()
 	if block {

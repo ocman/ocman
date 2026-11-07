@@ -3,6 +3,53 @@ title: Profiling
 weight: 8
 ---
 
+## Cross-platform ingestion wakeups, November 7, 2026
+
+On Linux, the live backend idled at 1–5% of one core, with spikes up to 36%.
+It had written 16 GB in 12 hours. Its log showed up to 315
+`conversation history repair failed` warnings per minute while
+`~/.claude/projects` was briefly missing. The binary was stripped and ptrace
+was blocked, so no stacks were captured. The cause was found by reading the
+code and confirmed with regression tests.
+
+- The OpenCode watcher broadcast `ocman.session.activity` for every message
+  or part event without a `platform`. Ingestion treats a missing platform as
+  "wake every source", so each streamed OpenCode part also woke the Claude Code
+  journal worker.
+- The journal worker did not know that OpenCode session ID. That made it run a
+  full pass, loading every stored session and listing every Claude transcript.
+  Each wake also reset the failure backoff, so a missing source retried on every
+  token.
+
+Fixes: the activity event now carries `platform: opencode`. The journal worker
+drops unforced hints for sessions it has never stored, because hook records
+announce new sessions. Only forced repairs reset its backoff. Tests: 50 foreign
+hints caused 50 inventories before the fix and none after. 200 hints against a
+failing source caused 199 failed repairs before and at most 6 after.
+
+Each misrouted hint cost at least one Claude transcript inventory. The
+benchmark below excludes `store.Sessions` and the comparison loop, so it is a
+lower bound. On an i7-12700K, with three two-second runs per size:
+
+| Transcripts | Per inventory | Allocations |
+|---:|---:|---:|
+| 100 | 2.3–3.1 ms | 3,775 |
+| 1,000 | 23–26 ms | 32,798 |
+| 10,000 | 132–177 ms | 321,025 |
+
+The live log recorded up to 315 failed passes per minute, about 5 per second,
+during OpenCode streaming. At that rate, the removed work is roughly 1% of one
+core at 100 transcripts and 12% at 1,000. At 10,000 it is 65–90%, until the
+coalesced wake channel caps it at about one core. This machine had a single
+transcript, so its live saving is negligible. These are projections, not
+before/after process measurements.
+
+```sh
+go test ./internal/conversationingest -run 'TestJournalMode' -count=1
+go test ./internal/autoapprove -run TestSessionDataBroadcastsActivity -count=1
+go test ./internal/platforms/claude/provider -run '^$' -bench '^BenchmarkHistoryInventory$' -benchtime=2s -count=3
+```
+
 ## Follow-up CPU and spike captures, November 7, 2026
 
 Read-only sampling of the local backend confirmed that high CPU remains after

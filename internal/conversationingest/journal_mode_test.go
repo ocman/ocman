@@ -2,6 +2,7 @@ package conversationingest
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -105,4 +106,54 @@ func TestJournalModeCatchesUpChangesMadeWhileStopped(t *testing.T) {
 		detail, err := store.ReadConversation(t.Context(), key, 10, 0)
 		return err == nil && len(detail.Parts) == 1 && detail.Parts[0].Text == "changed while stopped"
 	})
+}
+
+// Activity hints from another platform carry IDs this journal never wrote.
+// They must not turn each streamed token into a full transcript inventory.
+func TestJournalModeIgnoresUnknownActivityHints(t *testing.T) {
+	m, src, _ := journalModule(t, time.Hour)
+	stop := runModule(t, m)
+	defer stop()
+	eventually(t, "startup import did not finish", func() bool { _, ready := m.ReadyInstances(); return ready })
+	src.mu.Lock()
+	before := src.inventories
+	src.mu.Unlock()
+	for i := range 50 {
+		m.Observe("", "foreign-"+string(rune('a'+i%26)))
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	src.mu.Lock()
+	after := src.inventories
+	src.mu.Unlock()
+	if after != before {
+		t.Fatalf("unknown activity hints ran %d inventories", after-before)
+	}
+}
+
+// A failing source keeps its backoff while activity hints keep arriving.
+func TestJournalModeActivityHintsDoNotResetFailureBackoff(t *testing.T) {
+	m, src, _ := journalModule(t, time.Hour)
+	var mu sync.Mutex
+	failures := 0
+	m.deps.OnError = func(string, string, error) { mu.Lock(); failures++; mu.Unlock() }
+	stop := runModule(t, m)
+	defer stop()
+	eventually(t, "startup import did not finish", func() bool { _, ready := m.ReadyInstances(); return ready })
+	src.mu.Lock()
+	src.inventoryErr = errors.New("stat projects: no such file or directory")
+	src.mu.Unlock()
+	m.Notify("claude", "") // explicit repair: fails and starts the backoff
+	eventually(t, "explicit repair did not fail", func() bool { mu.Lock(); defer mu.Unlock(); return failures > 0 })
+	for range 200 {
+		m.Observe("", "session")
+		time.Sleep(time.Millisecond)
+	}
+	mu.Lock()
+	got := failures
+	mu.Unlock()
+	// 100 ms doubling backoff allows only a handful of retries in ~250 ms.
+	if got > 6 {
+		t.Fatalf("activity hints caused %d failed repairs", got)
+	}
 }

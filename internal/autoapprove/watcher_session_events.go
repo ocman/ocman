@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -28,6 +29,7 @@ func (w *autoApproveWatcher) handleSessionDataChanged(sessionID string) {
 	if w.svc != nil {
 		payload, _ := json.Marshal(map[string]any{
 			"sessionID":   sessionID,
+			"platform":    opencode.PlatformID,
 			"timeUpdated": time.Now().UnixMilli(),
 		})
 		w.svc.broadcastGlobalEvent("ocman.session.activity", payload)

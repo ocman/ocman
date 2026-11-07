@@ -22,12 +22,15 @@ func TestSessionDataBroadcastsActivity(t *testing.T) {
 	}
 	var payload struct {
 		SessionID   string `json:"sessionID"`
+		Platform    string `json:"platform"`
 		TimeUpdated int64  `json:"timeUpdated"`
 	}
 	if err := json.Unmarshal(payloads[0], &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.SessionID != "background" || payload.TimeUpdated < before {
+	// Without a platform, ingestion wakes every source, including Claude Code,
+	// for each streamed OpenCode part.
+	if payload.SessionID != "background" || payload.Platform != "opencode" || payload.TimeUpdated < before {
 		t.Fatalf("bad activity payload: %+v", payload)
 	}
 	if ids := rec.sortedIDs(); len(ids) != 1 || ids[0] != "background" {
