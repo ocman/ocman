@@ -317,7 +317,7 @@ jobs:
           retention-days: 7
 
   tag:
-    name: Semantic Tag
+    name: Dev Tag
     needs: [frontend, backend, e2e]
     runs-on: [ubuntu-latest, amd64]
     steps:
@@ -325,32 +325,13 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT || github.token }}
-      # Pinned by digest: this job holds secrets.RELEASE_PAT and
-      # contents: write, so an unverified tarball piped straight into tar
-      # would be a supply-chain foothold. Update both digests when
-      # bumping the version.
       - name: Install git-cliff
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GIT_CLIFF_VERSION: 2.13.1
-          GIT_CLIFF_SHA256_X86_64: 200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249
-          GIT_CLIFF_SHA256_AARCH64: 4054c124b926c117f3fa048939bc8be0a954f29f3b6f367627e8cb22c1971882
-        run: |
-          set -euo pipefail
-          case "$(uname -m)" in
-            x86_64)  arch=x86_64;  sha="${GIT_CLIFF_SHA256_X86_64}" ;;
-            aarch64) arch=aarch64; sha="${GIT_CLIFF_SHA256_AARCH64}" ;;
-            *)       echo "Unsupported arch: $(uname -m)"; exit 1 ;;
-          esac
-          tarball="git-cliff-${GIT_CLIFF_VERSION}-${arch}-unknown-linux-musl.tar.gz"
-          curl -sSfL --output "${tarball}" \
-            "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${tarball}"
-          printf '%s  %s\n' "${sha}" "${tarball}" | sha256sum --check --strict
-          tar -xz --strip-components=1 -C /usr/local/bin \
-            -f "${tarball}" "git-cliff-${GIT_CLIFF_VERSION}/git-cliff"
-          rm -f "${tarball}"
-          git-cliff --version
-      - name: Decide next tag
+        uses: ./.forgejo/actions/install-git-cliff
+      # Every green push to main gets a vX.Y.Z-dev.N tag and nothing else:
+      # dev tags publish no build. Nightlies and stable releases are cut from
+      # dev tags by cut-release.yml (see docs/other/releases.md).
+      - name: Decide next dev tag
         id: decide
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -367,11 +348,10 @@ jobs:
 
           git fetch --force --tags origin
 
-          # Drain the pipe: head can give git SIGPIPE (141) under pipefail.
-          latest_tag="$(git tag -l 'v*' --sort=-version:refname | sed -n '1p')"
-          next_tag="$(git-cliff --config cliff.toml --bumped-version)"
-          if [ "${next_tag}" = "${latest_tag}" ]; then
-            printf '%s\n' "No releasable conventional commits found"
+          next_version="$(git-cliff --config cliff.toml --bumped-version)"
+          next_tag="$(./scripts/release-tag.sh dev "${next_version}" "${TARGET_SHA}")"
+          if [ -z "${next_tag}" ]; then
+            printf '%s\n' "No releasable conventional commits since the previous tag"
             printf 'release=false\n' >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -397,8 +377,9 @@ jobs:
             printf 'target_sha=%s\n' "${TARGET_SHA}"
           } >> "${GITHUB_OUTPUT}"
 
-          printf 'Will create tag %s from %s (previous=%s)\n' \
-            "${next_tag}" "${TARGET_SHA}" "${latest_tag:-<none>}"
+          printf 'Will create tag %s from %s\n' "${next_tag}" "${TARGET_SHA}"
+      # Dev notes cover only the commits since the previous app tag of any
+      # channel, so --tag-pattern widens cliff.toml's stable-only pattern.
       - name: Render changelog
         if: steps.decide.outputs.release == 'true'
         env:
@@ -407,7 +388,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          git-cliff --config cliff.toml --unreleased --tag "${NEXT_TAG}" --output changelog.md
+          git-cliff --config cliff.toml --tag-pattern '^v[0-9]' --unreleased --tag "${NEXT_TAG}" --output changelog.md
           printf -- '--- changelog.md ---\n'
           cat changelog.md
       - name: Create and push annotated tag
@@ -419,8 +400,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          # Annotated tag carries the changelog as its message; the
-          # release workflow recovers it via `git tag -l --format`.
+          # Annotated tag carries the changelog as its message.
           # `--cleanup=verbatim` preserves `### Heading` lines that
           # git would otherwise strip as comments.
           git tag -a -F changelog.md --cleanup=verbatim "${NEXT_TAG}" "${TARGET_SHA}"
@@ -428,7 +408,8 @@ jobs:
           printf 'Created and pushed tag %s from %s\n' "${NEXT_TAG}" "${TARGET_SHA}"
       # sdk/ is the nested Go module github.com/ocman/ocman/sdk, versioned by
       # its own sdk/vX.Y.Z tags (see sdk/plugin/README.md). These tags do not
-      # match the release workflow's "v*" filter, so they publish no binaries.
+      # match the GitHub release workflow's tag filter, so they publish no
+      # binaries.
       - name: Tag SDK module
         id: sdk_tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

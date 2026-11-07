@@ -4,7 +4,7 @@ layout: hextra-home
 description: "One dashboard for every coding-agent session: browse and drive OpenCode, Claude Code and Codex sessions across projects, worktrees and machines."
 ---
 
-{{< hextra/hero-badge link="https://forgejo.nousefreak.be/dries/ocman/releases" >}}
+{{< hextra/hero-badge link="https://github.com/ocman/ocman/releases" >}}
   <span>Single binary · MIT licensed</span>
 {{< /hextra/hero-badge >}}
 
@@ -82,7 +82,7 @@ description: "One dashboard for every coding-agent session: browse and drive Ope
 ./ocman            # listens on 127.0.0.1:8228
 ```
 
-Download a binary from the [releases page](https://forgejo.nousefreak.be/dries/ocman/releases),
+Download a binary from the [releases page](https://github.com/ocman/ocman/releases),
 or build from source with `make build`. Full flag and environment reference in
 [Configuration](docs/configuration/).
 

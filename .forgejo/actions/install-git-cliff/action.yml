@@ -1,0 +1,30 @@
+name: Install git-cliff
+description: Install the pinned git-cliff release, verified by digest.
+
+# Pinned by digest: the release jobs hold secrets.RELEASE_PAT and push tags,
+# so an unverified tarball piped straight into tar would be a supply-chain
+# foothold. Update both digests with the version, and keep the version in
+# step with mise.toml.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GIT_CLIFF_VERSION: 2.13.1
+        GIT_CLIFF_SHA256_X86_64: 200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249
+        GIT_CLIFF_SHA256_AARCH64: 4054c124b926c117f3fa048939bc8be0a954f29f3b6f367627e8cb22c1971882
+      run: |
+        set -euo pipefail
+        case "$(uname -m)" in
+          x86_64)  arch=x86_64;  sha="${GIT_CLIFF_SHA256_X86_64}" ;;
+          aarch64) arch=aarch64; sha="${GIT_CLIFF_SHA256_AARCH64}" ;;
+          *)       echo "Unsupported arch: $(uname -m)"; exit 1 ;;
+        esac
+        tarball="git-cliff-${GIT_CLIFF_VERSION}-${arch}-unknown-linux-musl.tar.gz"
+        curl -sSfL --output "${tarball}" \
+          "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${tarball}"
+        printf '%s  %s\n' "${sha}" "${tarball}" | sha256sum --check --strict
+        tar -xz --strip-components=1 -C /usr/local/bin \
+          -f "${tarball}" "git-cliff-${GIT_CLIFF_VERSION}/git-cliff"
+        rm -f "${tarball}"
+        git-cliff --version

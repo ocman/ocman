@@ -1,5 +1,10 @@
 # Release Changelog Generation
 
+> **Superseded tagging and publishing.** Releases are now cut in three
+> channels (dev, nightly, stable) and published on the GitHub mirror; see
+> [docs/other/releases.md](../../docs/other/releases.md). The changelog
+> rendering described here still applies to each tag.
+
 ## Background
 
 The release pipeline (`.forgejo/workflows/ci.yml` `tag` job +

@@ -46,8 +46,10 @@ trim = true
 conventional_commits = true
 filter_unconventional = true
 filter_commits = true
-# Anchored so the SDK module's sdk/vX.Y.Z tags never count as app releases.
-tag_pattern = "^v[0-9]"
+# Stable releases only: the SDK module's sdk/vX.Y.Z tags and the -dev/-nightly
+# prerelease tags never count. Prerelease changelogs pass --tag-pattern to
+# start from the previous tag of their channel (see scripts/release-tag.sh).
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 sort_commits = "newest"
 protect_breaking_commits = true
 

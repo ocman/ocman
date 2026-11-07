@@ -1,7 +1,7 @@
 # ocman
 
 [![CI](https://forgejo.nousefreak.be/dries/ocman/actions/workflows/ci.yml/badge.svg)](https://forgejo.nousefreak.be/dries/ocman/actions?workflow=ci.yml)
-[![Release](https://forgejo.nousefreak.be/dries/ocman/actions/workflows/release.yml/badge.svg)](https://forgejo.nousefreak.be/dries/ocman/actions?workflow=release.yml)
+[![Release](https://github.com/ocman/ocman/actions/workflows/release.yml/badge.svg)](https://github.com/ocman/ocman/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A web dashboard for browsing and driving your coding-agent sessions.
@@ -48,7 +48,7 @@ ocman-ctl doctor              # dependency check only
 Override with `OCMAN_ADDR`, `OCMAN_PREFIX`, `OCMAN_BRANCH`, `OCMAN_SRC`.
 
 Alternatively, download the latest binary from the
-[releases page](https://forgejo.nousefreak.be/dries/ocman/releases), or build
+[releases page](https://github.com/ocman/ocman/releases), or build
 from source with `make build`. Use the Go version required by [go.mod](go.mod)
 and the Node.js and pnpm versions pinned in [mise.toml](mise.toml).
 

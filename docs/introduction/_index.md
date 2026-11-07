@@ -52,7 +52,7 @@ ocman.
 ```
 
 Prebuilt binaries, including a macOS `.dmg` desktop build, are on the
-[releases page](https://forgejo.nousefreak.be/dries/ocman/releases). To build
+[releases page](https://github.com/ocman/ocman/releases). To build
 from source, use the Go version in `go.mod` and Node.js and pnpm versions in
 `mise.toml` (see [Contributing](../other/contributing.md#requirements)):
 

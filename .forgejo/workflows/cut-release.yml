@@ -1,0 +1,120 @@
+name: Cut Release
+
+# Creates the tags that the GitHub release workflow builds and publishes:
+#
+# - nightly: daily, and on demand. Tags the newest vX.Y.Z-dev.N commit (one
+#   that passed CI on main) as vX.Y.Z-nightly.YYYYMMDD, unless it already
+#   shipped.
+# - stable: on demand only. Promotes the newest nightly's commit to vX.Y.Z,
+#   so a stable release always ships a build nightly users already ran.
+#
+# Tags are created here, not on GitHub: the push mirror would delete tags
+# that exist only on GitHub. See docs/other/releases.md.
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        required: true
+        default: nightly
+        type: choice
+        options:
+          - nightly
+          - stable
+      version:
+        description: Stable version override, for example 1.2.3. Defaults to the version the newest nightly previewed.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  cut:
+    name: Cut ${{ inputs.channel || 'nightly' }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: [ubuntu-latest, amd64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT || github.token }}
+      - uses: ./.forgejo/actions/install-git-cliff
+      - name: Decide tag
+        id: decide
+        env:
+          CHANNEL: ${{ inputs.channel || 'nightly' }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          if [ "${CHANNEL}" = "stable" ]; then
+            result="$(./scripts/release-tag.sh stable "${VERSION}")"
+          else
+            result="$(./scripts/release-tag.sh nightly "$(date -u +%Y%m%d)" HEAD)"
+          fi
+          if [ -z "${result}" ]; then
+            printf '%s\n' "The newest dev tag already shipped; nothing to release"
+            printf 'release=false\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          read -r tag sha <<< "${result}"
+          {
+            printf 'release=true\n'
+            printf 'tag=%s\n' "${tag}"
+            printf 'sha=%s\n' "${sha}"
+          } >> "${GITHUB_OUTPUT}"
+          printf 'Will create %s tag %s from %s\n' "${CHANNEL}" "${tag}" "${sha}"
+      # Rendered at the tagged commit. Nightly notes start from the previous
+      # nightly or stable tag; stable notes use cliff.toml's stable-only
+      # pattern, so they cover everything since the previous stable release.
+      - name: Render changelog
+        if: steps.decide.outputs.release == 'true'
+        env:
+          CHANNEL: ${{ inputs.channel || 'nightly' }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          SHA: ${{ steps.decide.outputs.sha }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git checkout --quiet --detach "${SHA}"
+          pattern=()
+          if [ "${CHANNEL}" != "stable" ]; then
+            pattern=(--tag-pattern '^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$')
+          fi
+          git-cliff --config cliff.toml "${pattern[@]}" --unreleased --tag "${TAG}" --output changelog.md
+          printf -- '--- changelog.md ---\n'
+          cat changelog.md
+      - name: Create and push annotated tag
+        if: steps.decide.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          SHA: ${{ steps.decide.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # The GitHub release workflow publishes the tag message as the
+          # release notes. `--cleanup=verbatim` keeps `### Heading` lines.
+          git tag -a -F changelog.md --cleanup=verbatim "${TAG}" "${SHA}"
+          git push origin "${TAG}"
+          printf 'Created and pushed tag %s from %s\n' "${TAG}" "${SHA}"
+      # GitHub builds the release when the tag arrives, so push it now rather
+      # than at the mirror's 8h interval. Needs a token with repository admin
+      # rights; without one the release waits for the next interval.
+      - name: Sync push mirrors
+        if: steps.decide.outputs.release == 'true'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+          FORGEJO_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --request POST --header "Authorization: token ${RELEASE_TOKEN}" \
+            "${FORGEJO_API_URL}/repos/${REPOSITORY}/push_mirrors-sync")"
+          if [ "${status}" != "200" ]; then
+            printf '::warning::push mirror sync returned HTTP %s; the tag reaches GitHub on the next mirror interval\n' "${status}"
+          fi

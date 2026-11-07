@@ -371,8 +371,9 @@ lint-css-tokens:
 lint-fuzz-scripts:
 	./scripts/fuzz_test.sh
 
-# Self-test for the SDK release tag calculation, against throwaway repos.
+# Self-tests for the app and SDK release tag calculation, against throwaway repos.
 lint-release-scripts:
+	./scripts/release-tag_test.sh
 	./scripts/sdk-next-tag_test.sh
 	python3 scripts/test_tag_selection.py
 

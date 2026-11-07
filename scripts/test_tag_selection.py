@@ -2,7 +2,6 @@
 """Exercise release tag selection with output larger than a pipe buffer."""
 import os
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import unittest
@@ -36,15 +35,12 @@ if sys.argv[1] == 'tag':
         self.env = dict(os.environ, PATH=self.directory.name + os.pathsep + os.environ["PATH"])
 
     def test_app_tag_selection_consumes_all_output(self):
-        workflow = (ROOT / ".forgejo/workflows/ci.yml").read_text()
-        expression = re.search(r'^\s*(latest_tag=".*")$', workflow, re.MULTILINE)
-        self.assertIsNotNone(expression)
         result = subprocess.run(
-            ["bash", "-euo", "pipefail", "-c", expression[1] + '\nprintf "%s" "$latest_tag"'],
+            ["bash", str(ROOT / "scripts/release-tag.sh"), "latest-stable"],
             env=self.env, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "v0.9.0")
+        self.assertEqual(result.stdout, "v0.9.0\n")
 
     def test_sdk_tag_selection_consumes_all_output(self):
         result = subprocess.run(
@@ -55,11 +51,9 @@ if sys.argv[1] == 'tag':
         self.assertEqual(result.stdout, "")
 
     def test_producer_errors_are_not_hidden(self):
-        workflow = (ROOT / ".forgejo/workflows/ci.yml").read_text()
-        expression = re.search(r'^\s*(latest_tag=".*")$', workflow, re.MULTILINE)
         env = dict(self.env, TAG_TEST_GIT_FAILURE="1")
         commands = [
-            ["bash", "-euo", "pipefail", "-c", expression[1]],
+            ["bash", str(ROOT / "scripts/release-tag.sh"), "latest-stable"],
             ["bash", str(ROOT / "scripts/sdk-next-tag.sh")],
         ]
         for command in commands:
