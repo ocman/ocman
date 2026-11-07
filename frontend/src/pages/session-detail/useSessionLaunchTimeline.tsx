@@ -20,7 +20,9 @@ export function useSessionLaunchTimeline(id: string | undefined, messages: Messa
   return {
     context: first && visible ? { messageId: first.id, timestamp: record.submittedAt,
       setup: <LaunchSetup steps={record.steps} platform={record.request.platform} complete={record.phase === 'ready'} /> } : null,
-    empty: !hasMore && (!messages.length || (first && !visible)) ? <StartProgress prompt={record.request.prompt || ''} images={record.request.send?.images}
+    // Assistant activity can stream before history contains the initial user
+    // message. Keep the durable launch visible until that message has a body.
+    empty: !hasMore && !visible ? <StartProgress prompt={record.request.prompt || ''} images={record.request.send?.images}
       timestamp={record.submittedAt} steps={record.steps} platform={record.request.platform} complete={record.phase === 'ready'} /> : null,
   };
 }

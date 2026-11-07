@@ -24,10 +24,29 @@ it('attaches completed setup to the initial native user message with the submitt
   expect(result.current?.empty).toBeNull();
 });
 
-it('shows the saved prompt until any native messages arrive', () => {
+it('shows the saved prompt before native messages arrive', () => {
   const { result } = renderHook(() => useSessionLaunchTimeline(id, [], [], false));
   expect(result.current?.context).toBeNull();
   expect((result.current?.empty as ReactElement<{ prompt: string }>).props.prompt).toBe('Prompt');
+});
+
+it.each(['assistant', 'notice'])('keeps the saved prompt and setup visible when a %s message arrives before the initial user message', (role) => {
+  const assistant: Message = { id: 'reply', sessionId: id, timeCreated: 300, data: { role } };
+  const { result, rerender } = renderHook(({ visibleMessages, visibleParts }) => useSessionLaunchTimeline(id, visibleMessages, visibleParts, false),
+    { initialProps: { visibleMessages: [assistant], visibleParts: [] as Part[] } });
+  expect(result.current?.context).toBeNull();
+  expect((result.current?.empty as ReactElement<{ prompt: string; complete: boolean }>).props).toMatchObject({ prompt: 'Prompt', complete: true });
+
+  rerender({ visibleMessages: [...messages, assistant], visibleParts: parts });
+  expect(result.current?.empty).toBeNull();
+  expect(result.current?.context?.messageId).toBe('first');
+});
+
+it('does not prepend the saved prompt to a later history page without a user message', () => {
+  const assistant: Message = { id: 'reply', sessionId: id, timeCreated: 300, data: { role: 'assistant' } };
+  const { result } = renderHook(() => useSessionLaunchTimeline(id, [assistant], [], true));
+  expect(result.current?.context).toBeNull();
+  expect(result.current?.empty).toBeNull();
 });
 
 it('never attaches setup to a later page of history or an empty user header', () => {
