@@ -1,5 +1,29 @@
 import { test, expect } from './fixtures';
 
+test('resource project and session filters scope the list and graphs and survive reload', async ({ mockedPage: page }) => {
+  const processes = [
+    { pid: 1, parentPid: 0, name: 'ocman', cpuPercent: 25, memoryBytes: 0 },
+    { pid: 2, parentPid: 1, name: 'agent', cpuPercent: 100, memoryBytes: 1024, sessionId: 'one', sessionTitle: 'Build UI', projectName: 'ocman' },
+    { pid: 3, parentPid: 1, name: 'worker', cpuPercent: 50, memoryBytes: 0, sessionId: 'two', sessionTitle: 'Fix tests', projectName: 'tools' },
+  ];
+  const point = { timestamp: Date.now(), cpuPercent: 175, memoryBytes: 1024, processes };
+  await page.route('/api/resources?*', (route) => route.fulfill({ json: { ...point, history: [point] } }));
+  await page.goto('/sessions?activity=resources');
+  const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
+  await dialog.getByRole('combobox', { name: 'Filter by project' }).selectOption('ocman');
+  await dialog.getByRole('combobox', { name: 'Filter by session' }).selectOption('one');
+  await expect(dialog.getByRole('table').getByRole('row')).toHaveCount(2);
+  await expect(dialog.getByRole('button', { name: 'CPU: worker, PID 3' })).toHaveCount(0);
+  await expect(dialog.getByRole('link', { name: 'Build UI' })).toBeVisible();
+  await page.reload();
+  await expect(dialog.getByRole('combobox', { name: 'Filter by project' })).toHaveValue('ocman');
+  await expect(dialog.getByRole('combobox', { name: 'Filter by session' })).toHaveValue('one');
+  await expect(dialog.getByRole('table').getByRole('row')).toHaveCount(2);
+  await dialog.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(dialog.getByRole('table').getByRole('row')).toHaveCount(4);
+  await expect(page).toHaveURL(/activity=resources/);
+});
+
 test('resource tree preserves hierarchy and named context across reloads', async ({ mockedPage: page }) => {
   await page.route('/api/resources?*', (route) => route.fulfill({ json: {
     timestamp: Date.now(), cpuPercent: 125, memoryBytes: 0, history: [],
@@ -20,7 +44,7 @@ test('resource tree preserves hierarchy and named context across reloads', async
   await expect(rows.nth(2)).toContainText('coding-agent');
   await expect(rows.nth(3)).toContainText('worker');
   await expect(rows.nth(3)).toHaveAttribute('data-depth', '2');
-  await expect(dialog.getByText('Project: ocman')).toBeVisible();
+  await expect(rows.nth(2).getByRole('cell', { name: 'ocman', exact: true })).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'Build process tree' })).toHaveAttribute('href', '/session/tree-session');
   await page.reload();
   await expect(dialog.getByRole('radio', { name: 'Tree', exact: true })).toBeChecked();

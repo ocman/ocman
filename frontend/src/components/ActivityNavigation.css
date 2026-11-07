@@ -18,12 +18,12 @@
 .resource-process-color { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; }
 .resource-graph-scale { color: var(--text-dim); font-size: 11px; }
 .resource-viewer td { font-variant-numeric: tabular-nums; }
-.resource-viewer td:nth-child(3) { overflow-wrap: anywhere; }
+.resource-viewer td:nth-child(3), .resource-viewer td:nth-child(4), .resource-viewer td:nth-child(5) { overflow-wrap: anywhere; }
 .resource-process-command { white-space: pre-wrap; font-family: var(--font-conversation-mono); }
 .resource-process-details { position: relative; }
 .resource-process-branch { position: absolute; margin-inline-start: -20px; color: var(--text-dim); font-family: var(--font-conversation-mono); }
-.resource-process-context { color: var(--text-dim); }
 .resource-toolbar { flex-wrap: wrap; }
+.resource-toolbar .oc-field { max-width: 100%; }
 @media (max-width: 600px) {
   .resource-graphs { grid-template-columns: 1fr; }
 }

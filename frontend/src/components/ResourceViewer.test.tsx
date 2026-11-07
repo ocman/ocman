@@ -107,8 +107,54 @@ it('switches from flat to tree and displays known project and session names', as
   await screen.findByRole('table');
   fireEvent.click(screen.getByRole('radio', { name: 'Tree' }));
   expect(screen.getByLabelText('Location')).toHaveTextContent('resourceView=tree');
-  expect(screen.getByText('Project: ocman')).toBeVisible();
+  expect(within(screen.getByRole('table')).getByText('ocman', { selector: 'td' })).toBeVisible();
   expect(screen.getByRole('link', { name: 'Build process tree' })).toHaveAttribute('href', '/session/session-one');
+});
+
+it('filters the list and graph totals by project and session, preserving URL scope and Back', async () => {
+  const processes = [
+    snapshot.processes[0],
+    { ...snapshot.processes[1], sessionId: 'one', sessionTitle: 'Build UI', projectName: 'ocman' },
+    { pid: 3, parentPid: 2, name: 'worker', cpuPercent: 50, memoryBytes: 0, sessionId: 'one', projectName: 'ocman' },
+    { pid: 4, parentPid: 1, name: 'other', cpuPercent: 10, memoryBytes: 0, sessionId: 'two', sessionTitle: 'Fix tests', projectName: 'tools' },
+  ];
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes, history: [{ ...snapshot.history[1], processes }] });
+  renderViewer('/?activity=resources&remoteId=box');
+  await screen.findByRole('table');
+  expect(screen.getByRole('columnheader', { name: 'Session' })).toBeVisible();
+  expect(screen.getByRole('columnheader', { name: 'Project' })).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Filter by project'), { target: { value: 'ocman' } });
+  expect(screen.getByText('2 processes', { exact: false })).toBeVisible();
+  expect(screen.getByText('175.0%')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Select other, PID 4' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'CPU: ocman, PID 1' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Filter by session'), { target: { value: 'two' } });
+  expect(screen.getByText('No processes match these filters.')).toBeVisible();
+  expect(screen.getByLabelText('Location')).toHaveTextContent('resourceProject=ocman');
+  expect(screen.getByLabelText('Location')).toHaveTextContent('resourceSession=two');
+  fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+  expect(screen.getByRole('button', { name: 'Select other, PID 4' })).toBeVisible();
+  expect(screen.getByLabelText('Location')).toHaveTextContent('remoteId=box');
+  expect(screen.getByLabelText('Location')).toHaveTextContent('activity=resources');
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(screen.getByLabelText('Filter by session')).toHaveValue('two');
+});
+
+it('restores session filters and keeps their options when processes exit', async () => {
+  const process = { ...snapshot.processes[1], sessionId: 'one', projectName: 'ocman' };
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [process], history: [{ ...snapshot.history[1], processes: [process] }] });
+  const { client } = renderViewer('/?resourceSession=one&resourceProcess=1%3A0%3Aocman&resourceView=tree');
+  await screen.findByRole('table');
+  expect(screen.getByLabelText('Filter by session')).toHaveValue('one');
+  expect(screen.getByRole('option', { name: 'one' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Open session' })).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Filter by project'), { target: { value: 'ocman' } });
+  expect(screen.getByLabelText('Location')).not.toHaveTextContent('resourceProcess');
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [], history: [] });
+  await act(() => client.refetchQueries({ queryKey: ['resources', 'local'] }));
+  expect(await screen.findByText('No processes match these filters.')).toBeVisible();
+  expect(screen.getByLabelText('Filter by session')).toHaveValue('one');
+  expect(screen.getByLabelText('Filter by project')).toHaveValue('ocman');
 });
 
 it('isolates a process from its area or row, pins it through sorting and clears selection', async () => {
