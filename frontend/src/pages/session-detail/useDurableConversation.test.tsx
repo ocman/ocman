@@ -109,3 +109,31 @@ it('retires a restored first prompt when polling confirms its uncertain admissio
     result: { sessionId: id, directory: '/repo', platform: 'opencode', remoteId: 'local', firstMessageSent: true, firstMessageError: '' } } } }); });
   expect(getDraft(id)).toBe('');
 });
+
+it.each(['accepted', 'starting', 'delivering', 'failed'] as const)('clears a restored prompt as soon as polling confirms admission (%s)', async (phase) => {
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('response lost'));
+  const { result } = renderHook(() => useDurableConversation(params, vi.fn()));
+  const request = { directory: '/repo', prompt: 'first', send: { message: 'first' } };
+  await act(async () => { await expect(result.current.send(request)).rejects.toThrow('response lost'); });
+  saveDraft(id, 'first');
+  await act(async () => { useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase, request, createdAt: 1, steps: {} } } }); });
+  expect(getDraft(id)).toBe('');
+});
+
+it('preserves a newer composer edit when polling confirms initial admission', async () => {
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('response lost'));
+  const { result } = renderHook(() => useDurableConversation(params, vi.fn()));
+  const request = { directory: '/repo', send: { message: 'first' } };
+  await act(async () => { await expect(result.current.send(request)).rejects.toThrow('response lost'); });
+  saveDraft(id, 'new follow-up');
+  await act(async () => { useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase: 'accepted', request, createdAt: 1, steps: {} } } }); });
+  expect(getDraft(id)).toBe('new follow-up');
+});
+
+it('clears the accepted first prompt when reopening a draft before setup finishes', async () => {
+  saveDraft(id, 'accepted prompt');
+  useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase: 'starting',
+    request: { directory: '/repo', prompt: 'accepted prompt' }, createdAt: 1, steps: {} } } });
+  renderHook(() => useDurableConversation(params, vi.fn()));
+  expect(getDraft(id)).toBe('');
+});

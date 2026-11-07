@@ -8,7 +8,7 @@ import type { DurableStartRequest } from './newConversationSubmission';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { uploadDraftFiles } from './uploadDraftFiles';
 import { APIError, postJSON } from '../../lib/api.requests';
-import { getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft } from '../../lib/composerDraft';
 
 export function useDurableConversation(params: NewConversationProps['params'], navigate: NewConversationProps['navigate']) {
   const id = params.draftId ?? '';
@@ -18,6 +18,7 @@ export function useDurableConversation(params: NewConversationProps['params'], n
   const saveError = useBackendConversationDrafts((state) => state.saveErrors[id]);
   const metadata = useNewConversationDrafts((state) => state.drafts.find((draft) => draft.draftId === id));
   const complete = useRef('');
+  const reconciled = useRef('');
   const pendingInitial = useRef<{ request: DurableStartRequest; original: string } | undefined>(undefined);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -42,9 +43,18 @@ export function useDurableConversation(params: NewConversationProps['params'], n
     if (enabled && record?.phase === 'ready' && !record.result) void fetchBackendDraft(id).catch((error) => remoteLog.error('Could not read setup result', error));
   }, [enabled, record?.phase, record?.result, id]);
   useEffect(() => {
+    if (!enabled || !record || record.phase === 'draft' || record.phase === 'discarded' || reconciled.current === id) return;
+    // Admission owns the first payload even while setup/delivery is unfinished.
+    // Also reconcile restored text after a lost response or reopening the draft.
+    const request = record.request ?? pendingInitial.current?.request;
+    const text = request?.prompt ?? request?.send?.message;
+    if (text !== undefined) {
+      clearDraft(id, text);
+      reconciled.current = id;
+    }
+  }, [enabled, record, id]);
+  useEffect(() => {
     if (!enabled || record?.phase !== 'ready' || !record.result || complete.current === id) return;
-    const pending = pendingInitial.current;
-    if (pending && getDraft(id) === (pending.request.prompt ?? pending.request.send?.message)) saveDraft(id, '');
     pendingInitial.current = undefined;
     complete.current = id;
     const result = record.result;
