@@ -125,6 +125,31 @@ describe('NewConversation', () => {
       send: expect.objectContaining({ model: explicit ? 'openai/custom-deployment' : 'openai/gpt-6.1-sol' }) }));
   });
 
+  it('resets owner selections and clone target without remounting on a machine change', async () => {
+    const view = mount();
+    await ready();
+    act(() => {
+      composer.onModelChange!('prov/manual');
+      composer.onAgentChange!('build');
+      composer.onReasoningChange!('high');
+      composer.onTargetChange!('dir:/repo/old-worktree');
+    });
+    const original = view.container.querySelector('span');
+    await act(() => composer.onMachineChange!({ dir: '/clone', remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode', cloneUrl: 'https://example.com/repo.git' }));
+    mocks.prepare.mockReturnValue(new Promise(() => {}));
+    view.rerender(<NewConversation params={{ directory: '/clone', remoteId: 'box', platform: 'r-box:opencode', draftId: 'new' }}
+      composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    expect(view.container.querySelector('span')).toBe(original);
+    expect(composer.selectedAgent).toBe('');
+    expect(composer.selectedReasoning).toBe('');
+    expect(composer.selectedModel).not.toBe('prov/manual');
+    expect(composer.agentsLoaded).toBe(false);
+    expect(composer.target).toBe('current');
+    expect(composer.machineSource).toEqual({ directory: '/repo', remoteId: 'machine' });
+    expect(screen.getByRole('status')).toHaveTextContent('clone https://example.com/repo.git');
+    expect(mocks.prepare).toHaveBeenLastCalledWith({ directory: '/clone', remoteId: 'box', platform: 'r-box:opencode' }, expect.any(AbortSignal));
+  });
+
   it('restores pending clone consent and clones only on first submission without probing the missing checkout', async () => {
     rememberConversationDraft({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', draftId: 'new',
       clone: { url: 'https://example.com/Org/Repo.git', source: { directory: '/source', remoteId: 'local' } } });

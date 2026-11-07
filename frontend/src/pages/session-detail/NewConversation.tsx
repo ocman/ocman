@@ -48,7 +48,7 @@ export function NewConversation({ params, composerRef, navigate, navigateToSessi
   const recovered = useBackendConversationDrafts((state) => state.recovered[params.draftId ?? ''] ?? 0);
   if (isBackendDraft(params.draftId)) return <DurableDraftRecovery key={params.draftId} params={params}><PreparedConversation key={recovered} params={params} composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} /></DurableDraftRecovery>;
   return <PreparedDraftLifecycle key={params.draftId || NEW_SESSION_ID} params={params} navigate={navigate} navigateToSession={navigateToSession}>
-    <PreparedConversation key={`${params.draftId || NEW_SESSION_ID}:${params.remoteId || 'local'}:${params.directory}`} params={params}
+    <PreparedConversation key={params.draftId || NEW_SESSION_ID} params={params}
       composerRef={composerRef} navigate={navigate} navigateToSession={navigateToSession} />
   </PreparedDraftLifecycle>;
 }
@@ -71,8 +71,12 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
       setRecoveryKey(1);
     }
   }, [openedWhilePending, draftStart?.error]);
-  const [saved] = useState(() => useNewConversationDrafts.getState().drafts.find((draft) => draft.draftId === draftId));
   const remoteId = params.remoteId || 'local';
+  // Snapshot the destination's selections on navigation, not on each autosave.
+  const saved = useMemo(() => {
+    const draft = getConversationDraft(draftId);
+    return draft?.directory === directory && (draft.remoteId || 'local') === remoteId ? draft : undefined;
+  }, [draftId, remoteId, directory]);
   const savedSelections = saved && (saved.remoteId || 'local') === remoteId ? saved : undefined;
   const seedNewSession = useApiStore((state) => state.seedNewSession);
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
@@ -115,14 +119,15 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const [selectedModel, setSelectedModel] = useState(savedSelections?.model || '');
   const [selectedAgent, setSelectedAgent] = useState(savedSelections?.agent || '');
   const [selectedReasoning, setSelectedReasoning] = useState(savedSelections?.reasoning || '');
+  const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
   // A model pick re-points the platform, so selections survive a platform change.
   const machineKey = JSON.stringify([remoteId, directory]);
   const [selectionKey, setSelectionKey] = useState(machineKey);
   if (selectionKey !== machineKey) {
     setSelectionKey(machineKey);
     setSelectedModel(''); setSelectedAgent(''); setSelectedReasoning('');
+    setTarget(saved?.target as SessionTarget | undefined);
   }
-  const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
   const target = targetPick || catalog?.defaults?.worktree || 'worktree';
   const [error, setError] = useState('');
   // The submitted prompt, shown as the conversation's first message while
@@ -361,7 +366,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         <DraftSaveError id={draftId} error={durable.saveError} retry={durable.retrySave} navigate={navigate} getLocalText={() => localComposer.current?.getText?.()} />
         {(error || draftStart?.error || durable.record?.error) && <InlineAlert onRetry={durable.record?.error && durable.record.result?.sessionId === draftId ? durable.retry : undefined}>{error || draftStart?.error || durable.record?.error}</InlineAlert>}
         <Composer
-          key={`${routeKey}:${recoveryKey}`}
+          key={recoveryKey}
           composerRef={localComposer}
           initialAttachments={attachmentPayload}
           onAttachmentProcessing={() => pendingAttachmentWriter(draftId)}

@@ -27,6 +27,32 @@ async function prepareDraft(page: Page) {
   await page.route('**/api/sessions/resolve-targets', (route) => route.fulfill({ json: { candidates: [local, remote], remotes: [remote] } }));
 }
 
+for (const width of [1280, 390]) for (const durable of [false, true]) test(`switching a ${durable ? 'durable' : 'legacy'} draft's remote keeps the composer mounted at ${width}px`, async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width, height: 720 });
+  await prepareDraft(page);
+  const id = durable ? 'ocm_01234567-89ab-4cde-8fab-0123456789ab' : 'remote-switch';
+  let metadata = { draftId: id, directory: '/repo', remoteId: 'local', platform: 'opencode' };
+  await page.route('**/api/session-drafts**', (route) => {
+    if (route.request().method() === 'PUT') {
+      metadata = route.request().postDataJSON();
+      return route.fulfill({ status: 204 });
+    }
+    const draft = { id, metadata, phase: 'draft', createdAt: 1, steps: {} };
+    return route.fulfill({ json: new URL(route.request().url()).pathname === '/api/session-drafts' ? [draft] : draft });
+  });
+  await page.goto(`/session/${durable ? id : 'new'}?dir=%2Frepo&draftId=${id}&platform=opencode`);
+  const input = page.getByRole('textbox');
+  await input.fill('Keep this prompt while changing machines');
+  const original = await input.elementHandle();
+  for (const remote of ['box', 'local']) {
+    await page.getByRole('combobox', { name: 'Session machine' }).click();
+    await page.getByRole('option', { name: remote === 'box' ? /Build box/ : /This machine/ }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('remoteId') || 'local').toBe(remote);
+    await expect(input).toHaveValue('Keep this prompt while changing machines');
+    expect(await original!.evaluate((node) => node.isConnected)).toBe(true);
+  }
+});
+
 for (const width of [1280, 390]) test(`large session launch errors stay bounded and scrollable at ${width}px`, async ({ mockedPage: page }) => {
   await page.setViewportSize({ width, height: 720 });
   await prepareDraft(page);

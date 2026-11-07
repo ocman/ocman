@@ -793,7 +793,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <SessionLoadError message={loadError} onRetry={() => { void reload(); }} />
           ) : newConversation && !session ? (
             <NewConversation
-              key={`${newConversation.remoteId}:${newConversation.directory}:${newConversation.platform ?? ''}`}
+              key={newConversation.draftId || NEW_SESSION_ID}
               params={newConversation}
               composerRef={composerRef}
               navigate={navigate}
