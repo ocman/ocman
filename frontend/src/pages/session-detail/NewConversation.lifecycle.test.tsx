@@ -765,7 +765,8 @@ describe('new-conversation submission lifecycle', () => {
     fireEvent.drop(input, { dataTransfer: { files: [image] } });
     await screen.findByAltText('Attachment 1');
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(await screen.findByRole('alert')).toHaveTextContent('upstream failed');
+    // Encoding the 3 MiB image outlasts the 1s default on a loaded CI runner.
+    expect(await screen.findByRole('alert', undefined, { timeout: 5000 })).toHaveTextContent('upstream failed');
     expect(listFailedSends('child')[0].images?.[0].url.length).toBeGreaterThan(4 * 1024 * 1024);
     const persisted = JSON.parse(window.localStorage.getItem('ocman.failedSends.v1')!);
     expect(persisted.child[0].imagesDropped).toBe(true);
