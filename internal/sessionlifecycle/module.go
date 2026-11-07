@@ -38,6 +38,9 @@ type Deps struct {
 	DB                  *sql.DB
 	Enqueue             func(context.Context, string, platforms.SendMessageRequest) error
 	DispatchQueued      func(context.Context, string, string)
+	QueueList           http.HandlerFunc
+	QueueDelete         http.HandlerFunc
+	QueueMove           http.HandlerFunc
 	Sessions            func() Sessions
 	Owner               func(http.ResponseWriter, string, string) (hostsvc.Host, bool)
 	CreatePlatform      func(context.Context, hostsvc.Host, string, string) (string, string, error)

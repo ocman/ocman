@@ -80,6 +80,8 @@ sequenceDiagram
     S-->>B: 202 accepted, composer can clear
     B->>S: POST /api/session-drafts/{id}/messages
     S->>I: hold follow-ups in existing queue until first delivery succeeds
+    B->>S: GET/DELETE/POST /api/session-drafts/{id}/queue[/item[/move]]
+    S->>I: validate admission and read/edit held queue with committed platform
     S->>E: step progress via hostsvc.WithProgress
     E-->>B: SSE (ocman.session.start.progress)
     R->>O: replace managed OpenCode server
@@ -127,6 +129,12 @@ sequenceDiagram
   and worktree progress around a remote call. Timestamp and first prompt precede
   the Setup disclosure, which stays open while running or failed and collapses
   when complete. Completed setup remains under the first native user message.
+- Draft sidebar rows use draft metadata rather than looking up an unbound ID as
+  a native session. During setup, `sessionlifecycle` validates queue access against
+  the accepted first payload and delegates held-queue reads and edits to
+  `queuemod`. The committed platform overrides caller hints; reads do not require
+  native binding or contact the owner. Established sessions retain the normal
+  identity-checked queue routes and include native-held follow-ups.
 
 - Only the first successful session-detail fetch after navigation opens a local
   session and clears its archive markers. Browser reloads and history restores,

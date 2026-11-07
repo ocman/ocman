@@ -27,6 +27,9 @@ func (m *Module) draftRoutes(r module.Router) {
 	r.Local("POST /api/session-drafts/{id}/messages", m.enqueueDraft)
 	r.Local("POST /api/session-drafts/{id}/attachment", m.draftAttachment)
 	r.Local("POST /api/session-drafts/{id}/retry-delivery", m.retryDraftDelivery)
+	r.Local("GET /api/session-drafts/{id}/queue", m.withDraftQueue(m.d.QueueList))
+	r.Local("DELETE /api/session-drafts/{id}/queue/{qmid}", m.withDraftQueue(m.d.QueueDelete))
+	r.Local("POST /api/session-drafts/{id}/queue/{qmid}/move", m.withDraftQueue(m.d.QueueMove))
 }
 
 func (m *Module) Start(ctx context.Context) error {

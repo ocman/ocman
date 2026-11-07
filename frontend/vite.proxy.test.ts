@@ -2,11 +2,69 @@ import { createServer as createHttpServer, get, type ServerResponse } from 'node
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { createServer, type ProxyOptions } from 'vite';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import config from './vite.config';
+
+it.each(['server', 'preview'] as const)('%s reports an unavailable upstream instead of an empty success', (mode) => {
+  const handlers = new Map<string, (...args: unknown[]) => void>();
+  const proxy = { on: vi.fn((event, handler) => { handlers.set(event, handler); }) };
+  const options = config[mode]!.proxy!['/api'] as ProxyOptions;
+  options.configure!(proxy as never, options);
+  const response = { headersSent: false, writableEnded: false, writeHead: vi.fn(), end: vi.fn(), destroy: vi.fn() };
+  handlers.get('error')!(new Error('ECONNREFUSED'), {}, response);
+  expect(response.writeHead).toHaveBeenCalledWith(503, expect.objectContaining({ 'Content-Type': 'text/plain' }));
+  expect(response.end).toHaveBeenCalledWith('ocman backend unavailable\n');
+});
+
+it('destroys interrupted streams and WebSockets without rewriting sent headers', () => {
+  const handlers = new Map<string, (...args: unknown[]) => void>();
+  const proxy = { on: vi.fn((event, handler) => { handlers.set(event, handler); }) };
+  const options = config.server!.proxy!['/api'] as ProxyOptions;
+  options.configure!(proxy as never, options);
+  const error = handlers.get('error')!;
+  const streaming = { headersSent: true, writableEnded: false, writeHead: vi.fn(), destroy: vi.fn() };
+  error(new Error('reset'), {}, streaming);
+  expect(streaming.destroy).toHaveBeenCalledOnce();
+  expect(streaming.writeHead).not.toHaveBeenCalled();
+  const socket = { destroy: vi.fn() };
+  error(new Error('reset'), {}, socket);
+  expect(socket.destroy).toHaveBeenCalledOnce();
+  const ended = { writableEnded: true, writeHead: vi.fn(), end: vi.fn() };
+  error(new Error('reset'), {}, ended);
+  expect(ended.end).not.toHaveBeenCalled();
+});
 
 it.each(['server', 'preview'] as const)('%s keeps the Tailscale upstream on loopback port 8228', (mode) => {
   expect(config[mode]).toMatchObject({ host: '127.0.0.1', port: 8228, strictPort: true });
+});
+
+it('returns 503 while the backend is down and recovers without restarting the proxy', async () => {
+  const backend = createHttpServer((_req, res) => { res.end('[]'); });
+  backend.listen(0, '127.0.0.1');
+  await once(backend, 'listening');
+  const port = (backend.address() as AddressInfo).port;
+  await new Promise<void>((resolve) => backend.close(() => resolve()));
+  const options = config.server!.proxy!['/api'] as ProxyOptions;
+  const vite = await createServer({ configFile: false, logLevel: 'silent', server: {
+    host: '127.0.0.1', port: 0, hmr: false,
+    proxy: { '/api': { ...options, target: `http://127.0.0.1:${port}` } },
+  } });
+  try {
+    await vite.listen();
+    const url = `http://127.0.0.1:${(vite.httpServer!.address() as AddressInfo).port}/api/session/test/queue`;
+    const unavailable = await fetch(url);
+    expect(unavailable.status).toBe(503);
+    expect(await unavailable.text()).toBe('ocman backend unavailable\n');
+    backend.listen(port, '127.0.0.1');
+    await once(backend, 'listening');
+    const recovered = await fetch(url);
+    expect(recovered.status).toBe(200);
+    expect(await recovered.json()).toEqual([]);
+  } finally {
+    backend.closeAllConnections();
+    await vite.close();
+    if (backend.listening) await new Promise<void>((resolve) => backend.close(() => resolve()));
+  }
 });
 
 it.each(['/api/events', '/api/session/test/events', '/mcp'])('disconnects %s when the backend restarts, then streams again', async (path) => {

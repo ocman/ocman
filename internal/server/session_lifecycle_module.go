@@ -44,6 +44,9 @@ func (s *Server) sessionLifecycleModule() *sessionlifecycle.Module {
 				return s.queueSvc().Enqueue(ctx, platform, true, req)
 			},
 			DispatchQueued: func(ctx context.Context, platform, id string) { s.queueSvc().TryFlush(ctx, platform, id) },
+			QueueList:      func(w http.ResponseWriter, r *http.Request) { s.queueModule().ListHeld(w, r) },
+			QueueDelete:    func(w http.ResponseWriter, r *http.Request) { s.queueModule().DeleteHeld(w, r) },
+			QueueMove:      func(w http.ResponseWriter, r *http.Request) { s.queueModule().Move(w, r) },
 		}
 		if s.stateDB != nil {
 			d.DB = s.stateDB.SQL()

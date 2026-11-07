@@ -6,13 +6,14 @@ import { fetchBackendDraft, retireBackendDraft, useBackendConversationDrafts } f
 import { useApiStore } from '../../lib/apiStore';
 import { APIError, postJSON } from '../../lib/api.requests';
 import { getDraft, saveDraft } from '../../lib/composerDraft';
+import { useMessageQueue } from '../../lib/useMessageQueue';
 
 vi.mock('../../lib/backendConversationDrafts', async (original) => ({
   ...await original<typeof import('../../lib/backendConversationDrafts')>(),
   refreshBackendDrafts: vi.fn(async () => {}), persistBackendDraft: vi.fn(async () => {}),
   fetchBackendDraft: vi.fn(async () => {}), retireBackendDraft: vi.fn(async () => {}),
 }));
-vi.mock('../../lib/useMessageQueue', () => ({ useMessageQueue: () => ({ queue: [], refresh: vi.fn() }) }));
+vi.mock('../../lib/useMessageQueue', () => ({ useMessageQueue: vi.fn(() => ({ queue: [], refresh: vi.fn() })) }));
 vi.mock('../../lib/api.requests', async (original) => ({ ...await original<typeof import('../../lib/api.requests')>(), postJSON: vi.fn(async () => {}) }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
@@ -21,6 +22,21 @@ beforeEach(() => {
   vi.clearAllMocks();
   useBackendConversationDrafts.setState({ drafts: {}, saveErrors: {} });
   vi.spyOn(useApiStore.getState(), 'seedNewSession').mockImplementation(() => {});
+});
+
+it.each(['accepted', 'starting', 'delivering', 'failed', 'interrupted'] as const)('uses admission-backed queue access during %s', (phase) => {
+  useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase,
+    request: { directory: '/repo', platform: 'r-box:opencode' }, createdAt: 1, steps: {} } } });
+  renderHook(() => useDurableConversation(params, vi.fn()));
+  expect(useMessageQueue).toHaveBeenCalledWith(id, 'r-box:opencode', expect.objectContaining({
+    queuedMessages: expect.any(Function), deleteQueuedMessage: expect.any(Function), moveQueuedMessage: expect.any(Function),
+  }));
+});
+
+it.each(['draft', 'discarded'] as const)('does not load a queue for a %s conversation', (phase) => {
+  useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase, createdAt: 1, steps: {} } } });
+  renderHook(() => useDurableConversation(params, vi.fn()));
+  expect(useMessageQueue).toHaveBeenCalledWith(undefined, undefined, expect.anything());
 });
 
 it('retires completed metadata and navigates using the unchanged identity', async () => {

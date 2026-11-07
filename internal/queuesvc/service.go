@@ -336,12 +336,15 @@ func (s *Service) ListAnyPlatform(ctx context.Context, sessionID string) ([]stat
 // Remove deletes a queued message by id, but only if it belongs to the
 // given session (so one session can't mutate another's queue). Returns
 // whether a row was removed.
-func (s *Service) Remove(ctx context.Context, sessionID, id string) (bool, error) {
+func (s *Service) Remove(ctx context.Context, sessionID, id string, scope ...string) (bool, error) {
 	platform, owner, ok, err := s.store.GetQueuedMessageSession(ctx, id)
 	if err != nil {
 		return false, err
 	}
 	if !ok || owner != sessionID {
+		return false, nil
+	}
+	if len(scope) > 0 && scope[0] != "" && platform != scope[0] {
 		return false, nil
 	}
 	removed, err := s.store.DeleteQueuedMessage(ctx, id)
@@ -360,12 +363,15 @@ func (s *Service) Remove(ctx context.Context, sessionID, id string) (bool, error
 // the adjacent message in the given direction (-1 up, +1 down), only if
 // the message belongs to the given session. Returns whether a swap
 // happened (false at a boundary or on a mismatch).
-func (s *Service) Move(ctx context.Context, sessionID, id string, direction int) (bool, error) {
+func (s *Service) Move(ctx context.Context, sessionID, id string, direction int, scope ...string) (bool, error) {
 	platform, owner, ok, err := s.store.GetQueuedMessageSession(ctx, id)
 	if err != nil {
 		return false, err
 	}
 	if !ok || owner != sessionID {
+		return false, nil
+	}
+	if len(scope) > 0 && scope[0] != "" && platform != scope[0] {
 		return false, nil
 	}
 	moved, err := s.store.MoveQueuedMessage(ctx, id, direction)

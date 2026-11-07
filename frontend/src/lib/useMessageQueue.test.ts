@@ -39,6 +39,22 @@ afterEach(() => {
 });
 
 describe('useMessageQueue', () => {
+  it('uses the draft transport for reads, refreshes, removal and reordering', async () => {
+    const transport = {
+      queuedMessages: vi.fn().mockResolvedValue([mkMsg('a', 'held')]),
+      deleteQueuedMessage: vi.fn().mockResolvedValue(undefined),
+      moveQueuedMessage: vi.fn().mockResolvedValue(undefined),
+    };
+    const { result } = renderHook(() => useMessageQueue('draft', 'r-box:opencode', transport));
+    await waitFor(() => expect(result.current.queue).toHaveLength(1));
+    act(() => { result.current.move('a', -1); result.current.remove('a'); result.current.refresh(); });
+    expect(transport.queuedMessages).toHaveBeenCalledWith('draft', 'r-box:opencode');
+    expect(transport.queuedMessages).toHaveBeenCalledTimes(2);
+    expect(transport.deleteQueuedMessage).toHaveBeenCalledWith('draft', 'a', 'r-box:opencode');
+    expect(transport.moveQueuedMessage).toHaveBeenCalledWith('draft', 'a', -1, 'r-box:opencode');
+    expect(api.queuedMessages).not.toHaveBeenCalled();
+    await act(async () => {});
+  });
   it('fetches the queue on mount', async () => {
     vi.mocked(api.queuedMessages).mockResolvedValue([mkMsg('a', 'one')]);
     const { result } = renderHook(() => useMessageQueue('s1', 'opencode'));

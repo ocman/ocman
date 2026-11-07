@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { api, type QueuedMessage } from './api';
 import { onQueueUpdated, onSseConnect } from './useGlobalEvents';
 import { remoteLog } from './remoteLog';
+import type { MessageQueueAPI } from './api.queue';
 
 /**
  * Owns the follow-up message queue for a session (#58). The queue lives
@@ -20,7 +21,7 @@ import { remoteLog } from './remoteLog';
  * load is in flight wins (bumps the token), so the slower load result is
  * dropped and can't resurrect a drained item.
  */
-export function useMessageQueue(sessionId?: string, platform?: string) {
+export function useMessageQueue(sessionId?: string, platform?: string, queueAPI: MessageQueueAPI = api) {
   const [queue, setQueue] = useState<QueuedMessage[]>([]);
   // Bumped when a load starts and when an update is applied. A load discards
   // its result if a newer request or broadcast landed since.
@@ -37,13 +38,13 @@ export function useMessageQueue(sessionId?: string, platform?: string) {
   const load = useCallback(() => {
     if (!sessionId) return;
     const issuedAt = ++seqRef.current;
-    api.queuedMessages(sessionId, platform)
+    queueAPI.queuedMessages(sessionId, platform)
       .then((messages) => {
         if (seqRef.current !== issuedAt) return; // a newer update won
         applyLatest(messages);
       })
       .catch((e) => remoteLog.error('Failed to load message queue', e));
-  }, [sessionId, platform, applyLatest]);
+  }, [sessionId, platform, applyLatest, queueAPI]);
 
   // Track the session the current list belongs to, so we only reset the
   // list on an actual session change — not on every effect re-run (e.g.
@@ -104,16 +105,16 @@ export function useMessageQueue(sessionId?: string, platform?: string) {
     // resurrect it); the broadcast reconciles to server truth.
     seqRef.current += 1;
     setQueue((prev) => prev.filter((m) => m.id !== id));
-    api.deleteQueuedMessage(sessionId, id, platform)
+    queueAPI.deleteQueuedMessage(sessionId, id, platform)
       .catch((e) => { remoteLog.error('Failed to remove queued message', e); refresh(); });
-  }, [sessionId, platform, refresh]);
+  }, [sessionId, platform, refresh, queueAPI]);
 
   const move = useCallback((id: string, direction: -1 | 1) => {
     if (!sessionId) return;
-    api.moveQueuedMessage(sessionId, id, direction, platform)
+    queueAPI.moveQueuedMessage(sessionId, id, direction, platform)
       .catch((e) => { remoteLog.error('Failed to move queued message', e); refresh(); });
     // The broadcast supplies the authoritative new order.
-  }, [sessionId, platform, refresh]);
+  }, [sessionId, platform, refresh, queueAPI]);
 
   return { queue, refresh, remove, move };
 }

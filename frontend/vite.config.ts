@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { ServerResponse } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
@@ -31,10 +32,14 @@ const configureApiProxy: ProxyOptions['configure'] = (proxy) => {
     // End it cleanly so the browser sees a failed request instead of a
     // hung connection — and, crucially, so the unhandled `error` event
     // doesn't crash the whole Vite server.
-    const res = target as { writableEnded?: boolean; end?: () => void; destroy?: () => void }
     try {
-      if (res && typeof res.end === 'function' && !res.writableEnded) res.end()
-      else if (res && typeof res.destroy === 'function') res.destroy()
+      if (target instanceof ServerResponse || target && 'writeHead' in target) {
+        const res = target as ServerResponse
+        if (res.writableEnded) return
+        if (res.headersSent) { res.destroy(); return }
+        res.writeHead(503, { 'Content-Type': 'text/plain' })
+        res.end('ocman backend unavailable\n')
+      } else target?.destroy()
     } catch { /* socket already closed */ }
   })
   // During Playwright e2e the preview server proxies to a backend that

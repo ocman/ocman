@@ -6,6 +6,7 @@ import type { NewConversationProps } from './NewConversation';
 import { remoteLog } from '../../lib/remoteLog';
 import type { DurableStartRequest } from './newConversationSubmission';
 import { useMessageQueue } from '../../lib/useMessageQueue';
+import { draftQueueAPI } from '../../lib/api.queue';
 import { uploadDraftFiles } from './uploadDraftFiles';
 import { APIError, postJSON } from '../../lib/api.requests';
 import { clearDraft } from '../../lib/composerDraft';
@@ -22,7 +23,7 @@ export function useDurableConversation(params: NewConversationProps['params'], n
   const pendingInitial = useRef<{ request: DurableStartRequest; original: string } | undefined>(undefined);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const queue = useMessageQueue(enabled && record && record.phase !== 'draft' ? id : undefined, record?.request?.platform);
+  const queue = useMessageQueue(enabled && record && !['draft', 'discarded'].includes(record.phase) ? id : undefined, record?.request?.platform, draftQueueAPI);
   useEffect(() => {
     if (!enabled || !metadata || phase && phase !== 'draft') return;
     void persistBackendDraft(id).catch((error) => remoteLog.error('Could not save backend draft', error));

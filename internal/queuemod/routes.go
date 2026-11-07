@@ -27,6 +27,15 @@ type queuedMessageView = MessageView
 // handleSessionQueueList serves GET /api/session/{id}/queue — the pending
 // follow-up messages waiting for the session's next idle edge (#58).
 func (s *Module) List(w http.ResponseWriter, r *http.Request) {
+	s.list(w, r, true)
+}
+
+// ListHeld reads the hub's accepted follow-ups before native binding exists.
+func (s *Module) ListHeld(w http.ResponseWriter, r *http.Request) {
+	s.list(w, r, false)
+}
+
+func (s *Module) list(w http.ResponseWriter, r *http.Request, native bool) {
 	sessionID, ok := httpx.SessionID(w, r)
 	if !ok {
 		return
@@ -43,6 +52,9 @@ func (s *Module) List(w http.ResponseWriter, r *http.Request) {
 		msgs, err = s.queue.ListAnyPlatform(r.Context(), sessionID)
 	}
 	if err != nil {
+		if httpx.WriteCancellation(w, "listing message queue", err) {
+			return
+		}
 		log.WithError(err).WithField("session", sessionID).Error("listing message queue")
 		http.Error(w, "failed to list queue", http.StatusInternalServerError)
 		return
@@ -51,7 +63,10 @@ func (s *Module) List(w http.ResponseWriter, r *http.Request) {
 	for _, m := range msgs {
 		out = append(out, toQueuedMessageView(m))
 	}
-	httpx.WriteJSON(w, mergeQueued(out, s.nativeQueuedViews(r.Context(), httpx.PlatformHint(r), sessionID)))
+	if native {
+		out = mergeQueued(out, s.nativeQueuedViews(r.Context(), httpx.PlatformHint(r), sessionID))
+	}
+	httpx.WriteJSON(w, out)
 }
 
 // handleSessionQueueDelete serves DELETE /api/session/{id}/queue/{qmid} —
@@ -60,6 +75,15 @@ func (s *Module) List(w http.ResponseWriter, r *http.Request) {
 // so a missing id still returns 204 rather than 404. This also removes the
 // click-delete-just-as-it-drains race.
 func (s *Module) Delete(w http.ResponseWriter, r *http.Request) {
+	s.delete(w, r, true)
+}
+
+// DeleteHeld never sends a native cancellation while draft setup is unfinished.
+func (s *Module) DeleteHeld(w http.ResponseWriter, r *http.Request) {
+	s.delete(w, r, false)
+}
+
+func (s *Module) delete(w http.ResponseWriter, r *http.Request, native bool) {
 	sessionID, ok := httpx.SessionID(w, r)
 	if !ok {
 		return
@@ -69,7 +93,7 @@ func (s *Module) Delete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid queued message ID", http.StatusBadRequest)
 		return
 	}
-	if handled, err := s.cancelNativeQueued(r.Context(), httpx.PlatformHint(r), sessionID, qmid); handled {
+	if handled, err := s.cancelNativeQueuedIf(native, r, sessionID, qmid); handled {
 		if err != nil {
 			log.WithError(err).WithField("queued", qmid).Error("cancelling native follow-up")
 			http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
@@ -78,12 +102,19 @@ func (s *Module) Delete(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if _, err := s.queue.Remove(r.Context(), sessionID, qmid); err != nil {
+	if _, err := s.queue.Remove(r.Context(), sessionID, qmid, httpx.PlatformHint(r)); err != nil {
 		log.WithError(err).WithField("queued", qmid).Error("removing queued message")
 		http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Module) cancelNativeQueuedIf(native bool, r *http.Request, sessionID, qmid string) (bool, error) {
+	if !native {
+		return false, nil
+	}
+	return s.cancelNativeQueued(r.Context(), httpx.PlatformHint(r), sessionID, qmid)
 }
 
 // handleSessionQueueMove serves POST /api/session/{id}/queue/{qmid}/move —
@@ -108,7 +139,7 @@ func (s *Module) Move(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid queued message ID", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.queue.Move(r.Context(), sessionID, qmid, req.Direction); err != nil {
+	if _, err := s.queue.Move(r.Context(), sessionID, qmid, req.Direction, httpx.PlatformHint(r)); err != nil {
 		log.WithError(err).WithField("queued", qmid).Error("moving queued message")
 		http.Error(w, "failed to move queued message", http.StatusInternalServerError)
 		return

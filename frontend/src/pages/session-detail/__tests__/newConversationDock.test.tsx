@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { renderSessionPage } from './harness';
+import { flushPromises, renderSessionPage } from './harness';
 
 vi.mock('../NewConversation', () => ({ NewConversation: () => <div data-testid="new-conversation" /> }));
 vi.mock('../../../components/TerminalPane', () => ({
@@ -29,6 +29,15 @@ it('docks a terminal below a new conversation, on its directory and machine', as
   expect(await screen.findByTestId('new-conversation')).toBeInTheDocument();
   expect(screen.getByTestId('terminal-dock')).toBeInTheDocument();
   await waitFor(() => expect(term.listWindows).toHaveBeenCalledWith('/repo', 'box', expect.any(AbortSignal)));
+});
+
+it('does not resolve an unsubmitted draft through the session sidebar endpoint', async () => {
+  const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
+  const page = renderSessionPage({ sessionId: `${id}?dir=%2Frepo&draftId=${id}`, sessions: [] });
+  expect(await screen.findByTestId('new-conversation')).toBeInTheDocument();
+  await waitFor(() => expect(page.store.getSessions).toHaveBeenCalled());
+  await act(async () => flushPromises());
+  expect(page.store.getSession.mock.calls.filter(([sid]) => sid === id)).toEqual([]);
 });
 
 it('drops a pending terminal from the previous machine after a machine switch', async () => {

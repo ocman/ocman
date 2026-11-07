@@ -1,9 +1,10 @@
 import { apiFetch, BackendUnavailableError, fetchJSON, postJSON, queryString, raiseForUnauthorized, readJSON } from './api.requests';
 import type { AgentInfo, NewSessionTarget, PrepareSessionResponse, StartSessionRequest, StartSessionResponse,
   ResolveTargetsResponse, Session, NotifyEntry, SessionDetail, SessionChanges, SessionInfo, TaskSessionData,
-  SessionModelsResponse, QueuedMessage, PermissionRule, SlashCommand, ShareLink, GlobalShareLink,
+  SessionModelsResponse, PermissionRule, SlashCommand, ShareLink, GlobalShareLink,
   SharedConversation, PermissionRequest, QuestionRequest } from './api.types';
 import type { BackgroundTask } from './sessionBackgroundTasks';
+import { sessionQueueAPI } from './api.queue';
 
 export const sessionApi = {
   sessionBackgroundTasks: (sessionId: string, platform: string, signal?: AbortSignal) =>
@@ -104,27 +105,7 @@ export const sessionApi = {
       throw new Error(body || `HTTP ${resp.status}`);
     }
   },
-  queuedMessages: async (sessionId: string, platform?: string): Promise<QueuedMessage[]> => {
-    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/queue${query}`);
-    await raiseForUnauthorized(resp);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return readJSON<QueuedMessage[]>(resp);
-  },
-  deleteQueuedMessage: async (sessionId: string, queuedId: string, platform?: string) => {
-    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queuedId)}${query}`, { method: 'DELETE' });
-    await raiseForUnauthorized(resp);
-    if (!resp.ok && resp.status !== 404) throw new Error(`HTTP ${resp.status}`);
-  },
-  moveQueuedMessage: async (sessionId: string, queuedId: string, direction: -1 | 1, platform?: string) => {
-    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queuedId)}/move${query}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction }),
-    });
-    await raiseForUnauthorized(resp);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  },
+  ...sessionQueueAPI,
   uploadComposerAttachment: async (sessionId: string, file: File, platform?: string) => {
     const form = new FormData();
     form.append('file', file);

@@ -317,7 +317,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     collapsedProjectSet,
   } = useSidebarSessions({
     enabled: sidebarVisible,
-    id,
+    id: newConversation ? undefined : id,
     // Fall back to the URL id so the sidebar's initial load fires even
     // when no session resolves (the `new` sentinel after archiving the
     // last one) — session?.id would be undefined and skip the load.
