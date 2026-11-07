@@ -438,19 +438,16 @@ button.session-sidebar-group-header.collapsed::before {
   margin: 20px 12px;
   border-top: 1px solid var(--border);
 }
-/* Nested child rows (subagent / MCP-split sessions). The tree-branch
-   glyph sits in its own leading column, before the status dot, so the
-   status dots of parent and child stay vertically aligned and the
-   nesting reads as a gutter rather than shifted content. The glyph's
-   left margin scales with nesting depth via --depth. */
+/* Keep the nesting gutter inside the selected row. Each additional level
+   shifts the branch and content far enough to read as a child. */
 .session-sidebar-item-child {
   padding-left: 12px;
 }
-.session-child-branch {
+.session-sidebar-item-child .session-child-branch {
   flex-shrink: 0;
   align-self: flex-start;
   margin-top: 1px;
-  margin-left: calc((var(--depth, 1) - 1) * 14px);
+  margin-left: calc((var(--depth, 1) - 1) * 28px);
   color: var(--overlay0);
   opacity: 0.6;
   font-family: 'SF Mono', Consolas, monospace;

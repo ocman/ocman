@@ -46,6 +46,9 @@ test(`flat sidebar nests ${link}-linked full cards and compact agents with full-
   expect(cardBox.width).toBe(parentBox.width);
   expect(cardBox.height).toBe(parentBox.height);
   expect(compactBox.height).toBeLessThan(cardBox.height);
+  const cardBranchBox = (await card.getByText('└─').boundingBox())!;
+  const agentBranchBox = (await compact.getByText('└─').boundingBox())!;
+  expect(agentBranchBox.x - cardBranchBox.x).toBeGreaterThanOrEqual(28);
 
   // The leading nesting gutter is part of the clickable, selected row.
   await card.click({ position: { x: 5, y: cardBox.height / 2 } });
