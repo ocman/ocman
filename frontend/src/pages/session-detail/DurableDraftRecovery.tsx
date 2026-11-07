@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { refreshBackendDrafts, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
-import { Button } from '../../components/Control';
+import { InlineAlert } from '../../components/InlineAlert';
+import { SkeletonLines } from '../../components/Skeleton';
 
 /** Recover server text and selections before any composer can register defaults. */
 export function DurableDraftRecovery({ children, params }: { children: ReactNode; params: NewSessionParams }) {
@@ -28,5 +29,7 @@ export function DurableDraftRecovery({ children, params }: { children: ReactNode
     return () => { active = false; };
   }, [attempt]);
   if (ready && routeMatches) return children;
-  return <div role="status">{error || 'Recovering saved conversation…'}{error && <Button onClick={() => { setError(''); setAttempt(attempt + 1); }}>Retry</Button>}</div>;
+  // Matches a loading conversation so a launch does not flash bare status text.
+  if (error) return <InlineAlert onRetry={() => { setError(''); setAttempt(attempt + 1); }}>{error}</InlineAlert>;
+  return <SkeletonLines rows={10} label="Recovering saved conversation" testId="thread-skeleton" />;
 }

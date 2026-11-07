@@ -14,6 +14,9 @@ it('does not mount an editable draft before delayed backend recovery finishes', 
   render(<DurableDraftRecovery params={{ directory: '/repo' }}><Editor /></DurableDraftRecovery>);
   expect(mounted).not.toHaveBeenCalled();
   expect(screen.queryByText('Editable prompt')).toBeNull();
+  // Same placeholder as a loading conversation, not bare status text.
+  expect(screen.getByTestId('thread-skeleton')).toHaveAttribute('aria-busy', 'true');
+  expect(screen.queryByText(/Recovering saved conversation/)).toBeNull();
   await act(async () => { resolve(); });
   expect(screen.getByText('Editable prompt')).toBeInTheDocument();
 });
@@ -21,7 +24,7 @@ it('does not mount an editable draft before delayed backend recovery finishes', 
 it('keeps editing blocked after recovery fails and supports an explicit retry', async () => {
   vi.mocked(refreshBackendDrafts).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
   render(<DurableDraftRecovery params={{ directory: '/repo' }}><div>Editable prompt</div></DurableDraftRecovery>);
-  await screen.findByText('offline');
+  expect(await screen.findByRole('alert')).toHaveTextContent('offline');
   expect(screen.queryByText('Editable prompt')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByText('Editable prompt')).toBeInTheDocument();
