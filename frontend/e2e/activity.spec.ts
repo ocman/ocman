@@ -7,13 +7,15 @@ test('resource project and session filters scope the list and graphs and survive
     { pid: 3, parentPid: 1, name: 'worker', cpuPercent: 50, memoryBytes: 0, sessionId: 'two', sessionTitle: 'Fix tests', projectName: 'tools' },
   ];
   const point = { timestamp: Date.now(), cpuPercent: 175, memoryBytes: 1024, processes };
-  await page.route('/api/resources?*', (route) => route.fulfill({ json: { ...point, history: [point] } }));
+  const rawProcesses = processes.map(({ sessionId: _session, sessionTitle: _title, projectName: _project, ...process }) => process);
+  await page.route('/api/resources?*', (route) => route.fulfill({ json: { ...point, history: [{ ...point, processes: rawProcesses }] } }));
   await page.goto('/sessions?activity=resources');
   const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
   await dialog.getByRole('combobox', { name: 'Filter by project' }).selectOption('ocman');
   await dialog.getByRole('combobox', { name: 'Filter by session' }).selectOption('one');
   await expect(dialog.getByRole('table').getByRole('row')).toHaveCount(2);
   await expect(dialog.getByRole('button', { name: 'CPU: worker, PID 3' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'CPU: agent, PID 2' })).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'Build UI' })).toBeVisible();
   await page.reload();
   await expect(dialog.getByRole('combobox', { name: 'Filter by project' })).toHaveValue('ocman');

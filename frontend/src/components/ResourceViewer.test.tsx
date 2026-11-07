@@ -118,7 +118,8 @@ it('filters the list and graph totals by project and session, preserving URL sco
     { pid: 3, parentPid: 2, name: 'worker', cpuPercent: 50, memoryBytes: 0, sessionId: 'one', projectName: 'ocman' },
     { pid: 4, parentPid: 1, name: 'other', cpuPercent: 10, memoryBytes: 0, sessionId: 'two', sessionTitle: 'Fix tests', projectName: 'tools' },
   ];
-  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes, history: [{ ...snapshot.history[1], processes }] });
+  const rawProcesses = processes.map(({ sessionId: _session, sessionTitle: _title, projectName: _project, ...process }) => process);
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes, history: [{ ...snapshot.history[1], processes: rawProcesses }] });
   renderViewer('/?activity=resources&remoteId=box');
   await screen.findByRole('table');
   expect(screen.getByRole('columnheader', { name: 'Session' })).toBeVisible();
@@ -155,6 +156,24 @@ it('restores session filters and keeps their options when processes exit', async
   expect(await screen.findByText('No processes match these filters.')).toBeVisible();
   expect(screen.getByLabelText('Filter by session')).toHaveValue('one');
   expect(screen.getByLabelText('Filter by project')).toHaveValue('ocman');
+});
+
+it('retains known historical attribution after a process exits without attributing a reused PID', async () => {
+  const process = { ...snapshot.processes[1], sessionId: 'one', sessionTitle: 'Build UI', projectName: 'ocman' };
+  const raw = snapshot.processes[1];
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [process], history: [{ ...snapshot.history[1], processes: [raw] }] });
+  const { client } = renderViewer('/?resourceSession=one');
+  await screen.findByRole('table');
+  expect(screen.getByRole('button', { name: 'CPU: agent, PID 2' })).toBeVisible();
+  vi.mocked(resources).mockResolvedValue({ ...snapshot, processes: [{ ...raw, name: 'replacement' }], history: [
+    { ...snapshot.history[1], processes: [raw] },
+    { timestamp: 12000, cpuPercent: 999, memoryBytes: 0, processes: [{ ...raw, name: 'replacement', cpuPercent: 999 }] },
+  ] });
+  await act(() => client.refetchQueries({ queryKey: ['resources', 'local'] }));
+  expect(await screen.findByText('No processes match these filters.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'CPU: agent, PID 2' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'CPU: replacement, PID 2' })).not.toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Build UI' })).toBeInTheDocument();
 });
 
 it('isolates a process from its area or row, pins it through sorting and clears selection', async () => {

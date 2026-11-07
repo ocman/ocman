@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, SelectField } from './Control';
 import { DataTable } from './DataTable';
@@ -9,9 +10,11 @@ import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import { ResourceGraph } from './ResourceGraph';
 import { SegmentedControl } from './SegmentedControl';
 import { resourceTree } from '../lib/resourceTree';
+import { attributeResourceHistory } from '../lib/resourceAttribution';
 import { formatMemory as memory, processColor, processKey } from '../lib/resourcePresentation';
 
 export function ResourceViewer() {
+  const client = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [pausedSample, setPausedSample] = useState<ResourceSnapshot | null>(null);
   const sort = params.get('resourceSort') ?? 'cpuPercent';
@@ -36,7 +39,9 @@ export function ResourceViewer() {
   });
   const select = (process: ResourceProcess) => update('resourceProcess', processKey(process) === selected ? undefined : processKey(process));
   const query = useVisiblePollingQuery({
-    queryKey: ['resources', 'local'], run: resources, intervalMs: 2_000, timeoutMs: 5_000,
+    queryKey: ['resources', 'local'],
+    run: async (signal) => attributeResourceHistory(await resources(signal), client.getQueryData<ResourceSnapshot>(['resources', 'local'])),
+    intervalMs: 2_000, timeoutMs: 5_000,
   });
   const data = query.data;
   const listData = pausedSample ?? data;
