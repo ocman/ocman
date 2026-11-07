@@ -1008,6 +1008,84 @@ describe('useSidebarSessions project collapse', () => {
 });
 
 describe('useSidebarSessions archive navigation', () => {
+  it('hides a desktop row on click, keeps it hidden during refresh, and restores it only on failure', async () => {
+    const target = { id: 'target', platform: 'opencode', status: 'done', archived: false, timeUpdated: 1,
+      seen: false, seenTimeUpdated: 0, lastHaltAt: 0, lastTurnCompletedAt: 0, lastUserPromptAt: 0 } as Session;
+    let fail!: (error: Error) => void;
+    const archiveSession = vi.fn(() => new Promise<never>((_resolve, reject) => { fail = reject; }));
+    const getSessions = vi.fn().mockResolvedValue([target]);
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [target]);
+    useApiStore.setState({ getSessions, archiveSession });
+    const view = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    try {
+      act(() => view.result.current.handleArchiveSession({ stopPropagation: vi.fn() } as never, target));
+      expect(view.result.current.recentSessions).toEqual([]);
+      expect(archiveSession).toHaveBeenCalledExactlyOnceWith('opencode', 'target', 1, true);
+      await act(async () => { await view.result.current.loadRecentSessions(); });
+      expect(view.result.current.recentSessions).toEqual([]);
+      await act(async () => { fail(new Error('Offline')); });
+      expect(view.result.current.recentSessions).toEqual([target]);
+      expect(view.result.current.archiveError).toMatch(/Could not archive session/);
+    } finally { view.unmount(); }
+  });
+
+  it('does not restore an archived row from an older activity lookup', async () => {
+    vi.useFakeTimers();
+    const target = { id: 'target', platform: 'opencode', status: 'done', archived: false, timeUpdated: 1 } as Session;
+    let finish!: (value: { session: Session }) => void;
+    const peekSession = vi.fn().mockImplementationOnce(() => new Promise<{ session: Session }>(resolve => { finish = resolve; }))
+      .mockResolvedValue({ session: { ...target, status: 'busy' } });
+    const getSessions = vi.fn().mockResolvedValue([{ ...target, archived: true }]);
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
+    useApiStore.setState({ getSessions, peekSession, archiveSession: vi.fn().mockResolvedValue(undefined) });
+    const abortSignalRef = { current: new AbortController() };
+    const view = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef, navigate: vi.fn(),
+    }));
+    try {
+      act(() => { sessionActivity?.(target.id, 1); });
+      act(() => { queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [target]); });
+      act(() => view.result.current.handleArchiveSession({ stopPropagation: vi.fn() } as never, target));
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(view.result.current.recentSessions).toEqual([]);
+      await act(async () => { finish({ session: target }); });
+      expect(view.result.current.recentSessions).toEqual([]);
+      await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+      expect(getSessions).toHaveBeenCalledOnce();
+      expect(view.result.current.recentSessions).toEqual([]);
+      await act(async () => { sessionActivity?.(target.id, 2); });
+      expect(view.result.current.recentSessions).toMatchObject([{ id: target.id, status: 'busy' }]);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+
+  it('does not restore an archived row from a list read started before archive completed', async () => {
+    vi.useFakeTimers();
+    const target = { id: 'target', platform: 'opencode', status: 'done', archived: false, timeUpdated: 1 } as Session;
+    let finish!: (rows: Session[]) => void;
+    const getSessions = vi.fn().mockImplementationOnce(() => new Promise<Session[]>(resolve => { finish = resolve; }))
+      .mockResolvedValue([{ ...target, archived: true }]);
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [target]);
+    useApiStore.setState({ getSessions, archiveSession: vi.fn().mockResolvedValue(undefined) });
+    const view = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    try {
+      let refresh!: Promise<void>;
+      act(() => { refresh = view.result.current.loadRecentSessions(); });
+      act(() => view.result.current.handleArchiveSession({ stopPropagation: vi.fn() } as never, target));
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(view.result.current.recentSessions).toEqual([]);
+      await act(async () => { finish([target]); await refresh; });
+      expect(view.result.current.recentSessions).toEqual([]);
+      expect(getSessions).toHaveBeenCalledTimes(2);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+
   it('starts a phone archive immediately and restores pending state with a visible error on failure', async () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     let fail!: (error: Error) => void;

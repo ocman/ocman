@@ -19,11 +19,12 @@ interface Options {
   recentRequest: MutableRefObject<{ promise: Promise<void> } | null>;
   showArchivedRecentRef: MutableRefObject<boolean>;
   sidebarRecentHoursRef: MutableRefObject<number>;
+  archiveRevisionRef: MutableRefObject<number>;
 }
 
 // SSE is the primary invalidation path. Reconnects reconcile missed events.
 export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
-  abortSignalRef, recentRequest, showArchivedRecentRef, sidebarRecentHoursRef }: Options) {
+  abortSignalRef, recentRequest, showArchivedRecentRef, sidebarRecentHoursRef, archiveRevisionRef }: Options) {
   const peekSession = useApiStore((s) => s.peekSession);
   useEffect(() => {
     if (!enabled) return;
@@ -91,8 +92,13 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
         const pending = pendingActivity.get(sessionID);
         pendingActivity.set(sessionID, Math.max(pending ?? 0, timeUpdated));
         if (pending !== undefined) return;
+        const archiveRevision = archiveRevisionRef.current;
         peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
           if (!subscribed) return;
+          if (archiveRevision !== archiveRevisionRef.current) {
+            changedRefresh.schedule();
+            return;
+          }
           const candidates = filterInactiveChildren([row], id);
           if (!candidates.length || (row.status !== 'busy' && !hasBackgroundWork(row) && !row.snoozedUntil && !row.pinned && !hasPendingPrompt(row) && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
             hiddenSessions.add(sessionID);
@@ -124,5 +130,5 @@ export function useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions,
       changedRefresh.dispose();
     };
   }, [loadRecentSessions, abortSignalRef, peekSession, id, enabled,
-    enabledRef, recentRequest, showArchivedRecentRef, sidebarRecentHoursRef]);
+    enabledRef, recentRequest, showArchivedRecentRef, sidebarRecentHoursRef, archiveRevisionRef]);
 }

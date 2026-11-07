@@ -67,8 +67,8 @@ describe('SessionTable archive and navigation', () => {
     else expect(await screen.findByRole('menuitem', { name: 'Custom...' })).toBeInTheDocument();
   });
 
-  it('hides a phone row before the archive response and restores it on failure', async () => {
-    vi.mocked(useIsPhone).mockReturnValue(true);
+  it.each([false, true])('hides a row immediately and restores it on failure, phone=%s', async (phone) => {
+    vi.mocked(useIsPhone).mockReturnValue(phone);
     let fail!: (error: Error) => void;
     mocks.apiState.archiveSession.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
     render(<MemoryRouter><SessionTable sessions={[makeSession()]} showProject={false} /></MemoryRouter>);

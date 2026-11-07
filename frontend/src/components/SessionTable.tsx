@@ -7,7 +7,6 @@ import { SkeletonTable } from './Skeleton';
 import { DataTable } from './DataTable';
 import { SessionTableRow } from './SessionTableRow';
 import { useSessionTableArchive } from './useSessionTableArchive';
-import { useIsPhone } from '../lib/useIsPhone';
 import { InlineAlert } from './InlineAlert';
 export { ShortPath, GitStatusLine } from './SessionTableDetails';
 
@@ -23,7 +22,6 @@ interface Props {
 }
 
 export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered, activityPendingKeys }: Props) {
-  const phone = useIsPhone();
   const { archivingSessionIds, locallyArchivedSessionIds, archiveError, handleArchiveSession } = useSessionTableArchive();
 
   if (loading) {
@@ -32,7 +30,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived, 
 
   const colCount = showProject ? 5 : 4;
   const visibleSessions = (includeArchived || prefiltered ? sessions : filterVisibleSessions(sessions))
-    .filter(session => !phone || !archivingSessionIds.has(session.id))
+    .filter(session => !archivingSessionIds.has(session.id))
     .filter(session => includeArchived || !locallyArchivedSessionIds.has(session.id));
 
   if (!visibleSessions.length) {

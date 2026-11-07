@@ -3,7 +3,7 @@ import type { Session } from '../lib/api';
 import { api } from '../lib/api';
 import { remoteLog } from '../lib/remoteLog';
 
-/** Shared mutation state lets both table layouts hide pending phone archives. */
+/** Shared mutation state lets both table layouts hide pending archives. */
 export function useSessionTableArchive() {
   const archiveSession = api.archiveSession;
   const inFlight = useRef(new Set<string>());

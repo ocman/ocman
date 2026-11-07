@@ -10,7 +10,6 @@ import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
 import { useSessionFilterPreference } from '../../lib/useSessionFilterPreference';
 import { SESSION_FILTER_DEFAULTS } from '../../lib/sessionListFilters';
-import { useIsPhone } from '../../lib/useIsPhone';
 import { flushSync } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { beginCompactSidebarRead, finishCompactSidebarRead, preserveCompactSidebarRows } from '../../lib/compactSidebarRows';
@@ -26,11 +25,6 @@ import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebar
  * updates arrive through the global SSE stream.
  */
 const SIDEBAR_REFRESH_MS = 3 * 60 * 1000;
-/**
- * How long to delay archive completion so the row's fade-out
- * animation can finish. Matches the CSS transition.
- */
-const ARCHIVE_ANIMATION_MS = 220;
 
 export interface UseSidebarSessionsOptions {
   enabled?: boolean;
@@ -79,9 +73,8 @@ export interface UseSidebarSessionsResult {
  *     merges over them (see mergeSidebarSessions for which fields are
  *     sticky and which the server owns);
  *   - the archived-session toggle and its ref-mirror;
- *   - the optimistic archive flow (delayed 220 ms so the fade-out
- *     animation can play) plus the in-flight ids set used by the
- *     renderer to fade rows out;
+ *   - the optimistic archive flow, hiding rows immediately until the
+ *     server confirms the archive or an error restores them;
  *   - the optimistic pin toggle with revert-on-failure;
  *   - the collapsed-projects set, with the current session's group
  *     forcibly expanded.
@@ -99,12 +92,11 @@ export function useSidebarSessions({
   abortSignalRef,
   navigate,
 }: UseSidebarSessionsOptions): UseSidebarSessionsResult {
-  const phone = useIsPhone();
   const enabledRef = useRef(enabled);
   useLayoutEffect(() => { enabledRef.current = enabled; }, [enabled]);
   useActivityScope(enabled ? 'sessions' : undefined);
   const { sessions: getSessions, session: getSession, archiveSession, pinSession } = api;
-  const recentSessions = useSidebarSessionList();
+  const cachedSessions = useSidebarSessionList();
   const sidebarRecentHours = useUiStore((s) => s.sidebarRecentHours);
   const expandProjects = useUiStore((s) => s.expandProjects);
 
@@ -117,10 +109,12 @@ export function useSidebarSessions({
 
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
+  const recentSessions = useMemo(() => cachedSessions.filter(session => !archivingSessionIds.has(session.id)), [cachedSessions, archivingSessionIds]);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [showArchivedRecent, setShowArchivedRecent] = useSessionFilterPreference('archived', SESSION_FILTER_DEFAULTS.showArchived);
 
-  const archiveTimeoutsRef = useRef<Record<string, number>>({});
+  // Reads started before a successful archive must not republish its old row.
+  const archiveRevisionRef = useRef(0);
   const showArchivedRecentRef = useRef(showArchivedRecent);
 
   const recentSessionsRef = useRef<Session[]>([]);
@@ -146,6 +140,7 @@ export function useSidebarSessions({
       return recentRequest.current.promise;
     }
     const promise = withDeadline(15_000, async (signal) => {
+      const archiveRevision = archiveRevisionRef.current;
       const requestStart = getSidebarSessions();
       const compactRead = beginCompactSidebarRead(signal);
       const startedStatusRevisions = useApiStore.getState().recentStatusRevisions;
@@ -175,6 +170,12 @@ export function useSidebarSessions({
           },
         });
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
+        if (archiveRevision !== archiveRevisionRef.current) {
+          const request = recentRequest.current;
+          void request?.promise.then(() => load(request.signal, force))
+            .catch((err) => remoteLog.error('Failed to refresh sessions after archive', err));
+          return;
+        }
         openSessionFallbackRef.current = resolved.cache;
         const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.status === 'busy' || hasBackgroundWork(s) || s.snoozedUntil || s.pinned || !s.archived || hasPendingPrompt(s));
         const current = resolved.session;
@@ -238,7 +239,7 @@ export function useSidebarSessions({
   }, [showArchivedRecent, loadRecentSessions]);
 
   useSidebarEvents({ enabled, enabledRef, id, loadRecentSessions, abortSignalRef,
-    recentRequest, showArchivedRecentRef, sidebarRecentHoursRef });
+    recentRequest, showArchivedRecentRef, sidebarRecentHoursRef, archiveRevisionRef });
 
   const visible = useDocumentVisible();
   useQuery({
@@ -256,11 +257,6 @@ export function useSidebarSessions({
     retry: false,
   }, queryClient);
 
-  // Cleanup any outstanding archive timers on unmount.
-  useEffect(() => () => {
-    Object.values(archiveTimeoutsRef.current).forEach((timeoutId) => window.clearTimeout(timeoutId));
-  }, []);
-
   const handleArchiveSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();
     if (archivingSessionIds.has(target.id)) return;
@@ -275,41 +271,37 @@ export function useSidebarSessions({
       : undefined;
     setArchiveError(null);
     setArchivingSessionIds((prev) => new Set(prev).add(target.id));
-    const runArchive = () => {
-      archiveSession(target.platform, target.id, target.timeUpdated, true)
-        .then(() => {
-          // Remember the just-closed session so it can be reopened via the
-          // Alt+Shift+N "reopen last closed session" shortcut.
-          useApiStore.getState().pushClosedSession({
-            platform: target.platform,
-            id: target.id,
-            timeUpdated: target.timeUpdated,
-          });
-          setSidebarSessions(getSidebarSessions().flatMap((session) => session.id !== target.id ? [session]
-            : showArchivedRecentRef.current || session.status === 'busy' || hasBackgroundWork(session) || session.pinned || hasPendingPrompt(session) ? [{ ...session, archived: true }] : []));
-          if (isCurrent) {
-            // No session left: stay on the detail page with the `new`
-            // sentinel so the sidebar + empty-detail hint show instead
-            // of bouncing to the dashboard.
-            navigate(nextSession ? `/session/${nextSession.id}` : '/session/new');
-          }
-        })
-        .catch((err) => {
-          remoteLog.error('Failed to archive session', err);
-          setArchiveError('Could not archive session. Please try again.');
-        })
-        .finally(() => {
-          setArchivingSessionIds((prev) => {
-            const next = new Set(prev);
-            next.delete(target.id);
-            return next;
-          });
-          delete archiveTimeoutsRef.current[target.id];
+    archiveSession(target.platform, target.id, target.timeUpdated, true)
+      .then(() => {
+        archiveRevisionRef.current += 1;
+        // Remember the just-closed session so it can be reopened via the
+        // Alt+Shift+N "reopen last closed session" shortcut.
+        useApiStore.getState().pushClosedSession({
+          platform: target.platform,
+          id: target.id,
+          timeUpdated: target.timeUpdated,
         });
-    };
-    if (phone) runArchive();
-    else archiveTimeoutsRef.current[target.id] = window.setTimeout(runArchive, ARCHIVE_ANIMATION_MS);
-  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, sidebarView, phone]);
+        setSidebarSessions(getSidebarSessions().flatMap((session) => session.id !== target.id ? [session]
+          : showArchivedRecentRef.current || session.status === 'busy' || hasBackgroundWork(session) || session.pinned || hasPendingPrompt(session) ? [{ ...session, archived: true }] : []));
+        if (isCurrent) {
+          // No session left: stay on the detail page with the `new`
+          // sentinel so the sidebar + empty-detail hint show instead
+          // of bouncing to the dashboard.
+          navigate(nextSession ? `/session/${nextSession.id}` : '/session/new');
+        }
+      })
+      .catch((err) => {
+        remoteLog.error('Failed to archive session', err);
+        setArchiveError('Could not archive session. Please try again.');
+      })
+      .finally(() => {
+        setArchivingSessionIds((prev) => {
+          const next = new Set(prev);
+          next.delete(target.id);
+          return next;
+        });
+      });
+  }, [archiveSession, archivingSessionIds, id, navigate, recentSessions, sidebarView]);
 
   const handlePinSession = useCallback((e: React.MouseEvent, target: Session) => {
     e.stopPropagation();

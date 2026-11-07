@@ -981,13 +981,7 @@ describe('SessionDetail — sidebar archive', () => {
     await act(async () => {
       (archiveBtns[0] as HTMLButtonElement).click();
     });
-    // The handler delays archiveSession by ARCHIVE_ANIMATION_MS
-    // (220 ms) so the sibling row can fade out. Wait past the
-    // animation window before asserting.
-    await waitFor(
-      () => expect(handle.store.archiveSession).toHaveBeenCalled(),
-      { timeout: 1000 },
-    );
+    expect(handle.store.archiveSession).toHaveBeenCalled();
   });
 
   it('optimistically unarchives the active session on open', async () => {
