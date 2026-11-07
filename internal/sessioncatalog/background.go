@@ -24,8 +24,7 @@ func (s *Store) SetBackgroundLifecycle(ctx context.Context, sessionID, taskID, l
 
 // BackgroundLifecycles returns native-keyed overrides for exactly one source.
 func (s *Store) BackgroundLifecycles(ctx context.Context, owner, platform, source string) (map[string]map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT c.native_id,b.task_id,b.lifecycle FROM session_background_lifecycle b
-	 JOIN session_catalog c ON c.id=b.session_id WHERE c.owner_id=? AND c.platform=? AND c.source_key=? AND c.purged=0`, owner, platform, source)
+	rows, err := s.db.QueryContext(ctx, backgroundLifecyclesQuery, owner, platform, source)
 	if err != nil {
 		return nil, err
 	}
@@ -43,3 +42,8 @@ func (s *Store) BackgroundLifecycles(ctx context.Context, owner, platform, sourc
 	}
 	return out, rows.Err()
 }
+
+// Runtime snapshots usually have few overrides and thousands of retained
+// sessions. Pin the sparse table first so an empty override set reads no history.
+const backgroundLifecyclesQuery = `SELECT c.native_id,b.task_id,b.lifecycle FROM session_background_lifecycle b
+ CROSS JOIN session_catalog c ON c.id=b.session_id WHERE c.owner_id=? AND c.platform=? AND c.source_key=? AND c.purged=0`

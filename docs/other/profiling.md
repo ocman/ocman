@@ -3,7 +3,100 @@ title: Profiling
 weight: 8
 ---
 
-## Backend CPU investigation, November 2026
+## Follow-up CPU and spike captures, November 7, 2026
+
+Read-only sampling of the local backend confirmed that high CPU remains after
+the sidebar query fixes below. The running binary reported clean revision
+`0c0bcf71576310fc994d74776a54b25722d9f135`, which includes those fixes.
+No backend was restarted, no development server was started against live data,
+and no live database was changed by this investigation.
+
+CPU was calculated from differences in the backend PID's cumulative CPU time,
+not `ps %cpu`, which is a decaying average. Agent and plugin subprocesses are
+excluded. On macOS, 100% is one core.
+
+| Existing dashboard activity | Duration | Average CPU | 95th percentile | Highest interval |
+|---|---:|---:|---:|---:|
+| Initial observation | 91.16 s | 59.44% | 145.07% | 161.80% |
+| Spike-triggered observation | about 122 s | 51.75% | not calculated | 190.64% |
+
+Intervals were approximately one second. The second average is the arithmetic
+mean of interval percentages. These are observed, uncontrolled workloads, not
+no-client idle measurements or a before/after comparison. The initial window
+overlapped OS stack sampling, which has overhead. The second window also
+overlapped local tests and benchmarks, so machine contention can affect it.
+Halving the initial average would mean 29.72%, but that target has **not** been
+demonstrated.
+
+### What was captured during spikes
+
+A 15-second OS stack sample and a denser 30-second sample were followed by
+three 10-second samples triggered when an interval exceeded 100% CPU. Their
+trigger intervals measured 106.39%, 186.84% and 103.44% CPU. Captures start after
+the trigger interval, so they may miss the exact highest instant. These samples
+repeatedly included:
+
+- Sidebar HTTP reads through `sidebar.Reader.SessionsFor`.
+- `state.DB.SidebarFlags`, including reads from the PR-watch overlay.
+- Conversation ingestion through `importSession`, `statev2.DB.Commit` and
+  `applyContent`, plus inventory and binding reads.
+- Background snapshots through `sessioncatalog.Store.BackgroundLifecycles`.
+
+Several kinds of work overlap in the spike windows. OS sampling includes
+sleeping and blocked threads and does not reliably unwind every Go stack, so
+stack counts are not percentages of CPU. These captures identify work to
+reproduce, not an exact allocation of each peak's CPU or proof that one query
+caused the entire peak. Open PR #1367 already addresses shared live session
+reads; this follow-up does not duplicate that work.
+
+### Reproduced background lifecycle scan
+
+The production query plan started at the owner/source catalogue index and
+looked up lifecycle overrides for every retained session. This happened even
+when the override table was empty. Runtime background snapshots call this query.
+
+The fix pins the sparse override table as the driving table using `CROSS JOIN`,
+then looks up each catalogue row by identity. Owner, platform, source and purge
+predicates are unchanged. There is no cache, delayed invalidation or migration.
+
+Apple M4 Max, production Go SQLite driver, disposable migrated databases, two
+one-second benchmark runs per case:
+
+| Retained sessions | Overrides | Before | After |
+|---|---:|---:|---:|
+| 1,000 | 0 | 219–221 µs | 15–16 µs |
+| 1,000 | 37 | 259–260 µs | 53–54 µs |
+| 20,000 | 0 | 4.68–4.75 ms | 14.6–14.7 µs |
+| 20,000 | 37 | 5.15–5.36 ms | 55.8–57.2 µs |
+
+The 20,000-session query is about 99% faster, and no longer scales with retained
+history when overrides stay sparse. This is **not** a 99% backend CPU reduction.
+The query-plan regression test failed before the fix and passed afterward.
+Behavior tests cover multiple tasks, replacement, source/owner/platform
+isolation, purged sessions, missing sources and closed-store errors.
+
+```sh
+go test ./internal/sessioncatalog -run '^TestBackgroundLifecycle' -count=1
+go test ./internal/sessioncatalog -run '^$' -bench '^BenchmarkBackgroundLifecycles$' -benchtime=1s -count=3
+# Optional isolated Go CPU profile; setup is included, so inspect call stacks too.
+go test ./internal/sessioncatalog -run '^$' -bench '^BenchmarkBackgroundLifecycles/history20000/overrides37$' -benchtime=5s -cpuprofile=cpu.pprof -o catalog.test
+go tool pprof -top catalog.test cpu.pprof
+```
+
+### Remaining work for the 50% target
+
+Deploy the fix, then repeat whole-process CPU captures under matching client
+counts, retained-history size and ingestion event rates. Measure no-client idle,
+quiet dashboards and active streaming separately. Keep benchmark/test runs out
+of the measurement window. Do not compare uncontrolled activity before and
+after and attribute all differences to this change.
+
+The remaining measured candidates are repeated sidebar/display-flag reads and
+ingestion bursts. Reproduce their costs independently before changing them.
+If OS stacks cannot separate them, add opt-in, loopback-only Go profiling for
+a future instrumented run. No profiling HTTP endpoint is introduced here.
+
+## Earlier backend CPU investigation, November 2026
 
 The running backend reproduced 45–47% CPU in two-second windows and averaged
 31% over a separate ten-second window. These are ocman's own process costs,
