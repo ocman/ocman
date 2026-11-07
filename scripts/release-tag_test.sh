@@ -88,8 +88,8 @@ expect_fail "override equal to latest stable" stable 0.1.0
 git -C "$repo" checkout -q --detach "$dev1"
 expect "v0.1.0" "latest stable from an older commit" latest-stable
 git -C "$repo" checkout -q -
-expect "v0.2.0 ${dev2}" "promote newest nightly" stable
-expect "v0.3.0 ${dev2}" "version override" stable 0.3.0
+expect "v0.2.0 ${dev2} v0.2.0-nightly.20261107" "promote newest nightly" stable
+expect "v0.3.0 ${dev2} v0.2.0-nightly.20261107" "version override" stable 0.3.0
 expect_fail "invalid override" stable 0.3
 tag v0.2.0 "$dev2"
 expect_fail "nightly already part of stable" stable
@@ -101,7 +101,24 @@ tag v0.2.1-dev.1
 expect "v0.2.1-nightly.20261108 $(head_sha)" "nightly after promotion" nightly 20261108
 tag v0.2.1-nightly.20261108
 expect_fail "older override" stable 0.1.9
-expect "v0.2.1 $(head_sha)" "promote next nightly" stable
+expect "v0.2.1 $(head_sha) v0.2.1-nightly.20261108" "promote next nightly" stable
+tag v0.2.1
+
+# CI can finish out of order: B (a child of A) is tagged before A.
+commit "fix: A"
+a_sha="$(head_sha)"
+commit "fix: B"
+b_sha="$(head_sha)"
+expect "v0.2.2-dev.1" "B finishes CI first" dev v0.2.2 "$b_sha"
+tag v0.2.2-dev.1 "$b_sha"
+expect "" "A finishes later and is superseded by B" dev v0.2.2 "$a_sha"
+# Even if the older commit gets a newer tag, ancestry decides.
+tag v0.2.2-dev.2 "$a_sha"
+expect "v0.2.2-nightly.20261109 ${b_sha}" "nightly follows main ancestry" nightly 20261109
+tag v0.2.2-nightly.20261109 "$b_sha"
+expect "" "B shipped as nightly" nightly 20261110
+tag v0.2.2-nightly.20261110 "$a_sha"
+expect "v0.2.2 ${b_sha} v0.2.2-nightly.20261109" "stable promotes the nearest nightly on main" stable
 
 empty="$(mktemp -d)"
 git -C "$empty" init -q

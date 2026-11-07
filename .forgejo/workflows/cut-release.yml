@@ -2,11 +2,12 @@ name: Cut Release
 
 # Creates the tags that the GitHub release workflow builds and publishes:
 #
-# - nightly: daily, and on demand. Tags the newest vX.Y.Z-dev.N commit (one
-#   that passed CI on main) as vX.Y.Z-nightly.YYYYMMDD, unless it already
+# - nightly: daily, and on demand. Tags the nearest vX.Y.Z-dev.N commit on
+#   main (one that passed CI) as vX.Y.Z-nightly.YYYYMMDD, unless it already
 #   shipped.
-# - stable: on demand only. Promotes the newest nightly's commit to vX.Y.Z,
-#   so a stable release always ships a build nightly users already ran.
+# - stable: on demand only. Promotes the nearest nightly on main to vX.Y.Z
+#   once its GitHub release is published, so a stable release always ships a
+#   build nightly users could already run.
 #
 # Tags are created here, not on GitHub: the push mirror would delete tags
 # that exist only on GitHub. See docs/other/releases.md.
@@ -47,6 +48,7 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel || 'nightly' }}
           VERSION: ${{ inputs.version }}
+          GITHUB_MIRROR_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
         run: |
           set -euo pipefail
           git fetch --force --tags origin
@@ -60,7 +62,14 @@ jobs:
             printf 'release=false\n' >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          read -r tag sha <<< "${result}"
+          read -r tag sha nightly <<< "${result}"
+          # Stable ships only a nightly users could download: its GitHub
+          # release must be published, complete and on the same commit.
+          # Fails closed while packaging is pending, failed or unreachable.
+          if [ "${CHANNEL}" = "stable" ]; then
+            command -v python3 > /dev/null || { apt-get update && apt-get install -y python3; }
+            python3 -I scripts/check_published_release.py "${nightly}" "${sha}"
+          fi
           {
             printf 'release=true\n'
             printf 'tag=%s\n' "${tag}"

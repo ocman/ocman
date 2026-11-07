@@ -13,15 +13,19 @@ nightly and stable builds are published on the
 | Nightly | Daily at 03:23 UTC, or on demand, when a newer dev tag exists | `v0.274.0-nightly.20261107` | GitHub prerelease with binaries and the macOS DMG |
 | Stable | On demand only | `v0.274.0` | GitHub release, marked latest |
 
-A nightly always tags the commit of the newest dev tag, so it ships a commit
-that passed CI. A stable release promotes the commit of the newest nightly,
-so it ships a build that nightly users have already run.
+A nightly always tags the nearest dev-tagged commit on `main`, so it ships a
+commit that passed CI. A stable release promotes the nearest nightly on
+`main`, and only once that nightly's GitHub release is published with every
+asset, so it ships a build that nightly users could already run. "Nearest"
+follows `main`'s history, not tag creation time, because CI runs can finish
+out of order; a commit whose descendant is already tagged gets no dev tag.
 
 ## Files
 
 - `.forgejo/workflows/ci.yml`: after the frontend, backend and end-to-end jobs pass on `main`, the **Dev Tag** job pushes an annotated `vX.Y.Z-dev.N` tag. It also tags the SDK module.
 - `.forgejo/workflows/cut-release.yml`: creates nightly tags on a schedule and nightly or stable tags on demand.
 - `scripts/release-tag.sh`: chooses the next tag for each channel. `make lint-release-scripts` runs its self-test.
+- `scripts/check_published_release.py`: before a stable promotion, checks that the nightly's GitHub release is published on the same commit with every asset. Set the optional Forgejo secret **`GITHUB_MIRROR_TOKEN`** if anonymous GitHub API limits get in the way.
 - `cliff.toml`: commit grouping, filtering, changelog formatting and version-bump policy. Its tag pattern matches stable tags only, so the version always bumps from the previous stable release.
 - `.github/workflows/release.yml`: runs on GitHub when a nightly or stable tag arrives through the push mirror. It builds platform archives and the macOS DMG, then publishes a GitHub release whose notes are the annotated tag message.
 
@@ -44,9 +48,10 @@ Each tag's annotation holds its changelog:
 3. For a stable release, leave **version** empty to use the version the nightly previewed, or enter a newer `X.Y.Z`.
 4. Watch the **Release** workflow on GitHub publish the build.
 
-A stable release fails when the newest nightly is already part of a stable
-release or the version is not newer than the latest stable tag. Wait for, or
-cut, a newer nightly first.
+A stable release fails when the nightly is already part of a stable release,
+its GitHub release is not published yet or lacks assets, or the version is
+not newer than the latest stable tag. Wait for the GitHub build, or cut a
+newer nightly, and try again.
 
 ## One-time setup
 

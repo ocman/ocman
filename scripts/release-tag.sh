@@ -8,17 +8,22 @@
 #   release-tag.sh dev NEXT [REV]
 #       The next vX.Y.Z-dev.N tag for REV, where NEXT is the stable version
 #       git-cliff would bump to (`git-cliff --bumped-version`). Prints nothing
-#       when NEXT is not a new version, REV already has a dev tag, or no
-#       releasable commit landed since the previous app tag.
+#       when NEXT is not a new version, REV or a later commit already has an
+#       app tag, or no releasable commit landed since the previous app tag.
 #
 #   release-tag.sh nightly DATE [REV]
-#       The next vX.Y.Z-nightly.DATE tag, placed on the newest dev tag
-#       reachable from REV. Prints "TAG SHA", or nothing when that commit
+#       The next vX.Y.Z-nightly.DATE tag, placed on the nearest dev-tagged
+#       commit in REV's history. Prints "TAG SHA", or nothing when that commit
 #       already shipped as a nightly or stable release.
 #
 #   release-tag.sh stable [VERSION]
-#       Promotes the newest nightly to vX.Y.Z (or vVERSION). Prints "TAG SHA"
-#       and fails when the nightly already shipped or the version is taken.
+#       Promotes the nearest nightly in HEAD's history to vX.Y.Z (or
+#       vVERSION). Prints "TAG SHA NIGHTLY" and fails when the nightly
+#       already shipped or the version is taken. The caller must still check
+#       that NIGHTLY was published.
+#
+# "Nearest" follows main's first-parent history, not tag creation time: CI
+# runs can finish out of order, so an older commit may be tagged later.
 #
 # Releasable commits use the visible Conventional Commit types in cliff.toml.
 set -euo pipefail
@@ -39,30 +44,38 @@ latest_stable() { # $1=rev
 	git tag -l 'v*' --merged "$1" --sort=-version:refname | first_matching "$stable_re"
 }
 
-# Newest tag of a channel by tagger date: version sort cannot order prerelease
-# suffixes against their stable versions without extra git configuration.
-latest_channel() { # $1=glob $2=rev (optional)
-	if [ -n "${2:-}" ]; then
-		git tag -l "$1" --merged "$2" --sort=-creatordate | first_matching .
-	else
-		git tag -l "$1" --sort=-creatordate | first_matching .
-	fi
+# The tag matching $1 on the nearest commit in REV's first-parent history,
+# REV included. Lightweight tags have no peeled object name.
+nearest_tag() { # $1=regex $2=rev
+	local refs commits
+	refs="$(git for-each-ref --format='%(objectname) %(*objectname) %(refname:short)' 'refs/tags/v*')"
+	commits="$(git rev-list --first-parent "$2")"
+	RE="$1" awk '
+		FNR == NR {
+			sha = NF == 3 ? $2 : $1
+			if ($NF ~ ENVIRON["RE"] && !(sha in tag)) tag[sha] = $NF
+			next
+		}
+		($1 in tag) && !found { print tag[$1]; found = 1 }
+	' <(printf '%s\n' "$refs") <(printf '%s\n' "$commits")
+}
+
+# App tags on REV or any commit after it.
+tags_containing() { # $1=rev
+	git tag -l 'v*' --contains "$1"
 }
 
 commit_of() { git rev-parse "$1^{commit}"; }
-
-tags_at() { # $1=rev $2=glob
-	git tag -l "$2" --points-at "$1"
-}
 
 cmd_dev() {
 	local next="${1:?usage: release-tag.sh dev NEXT [REV]}" rev="${2:-HEAD}"
 	[[ "$next" =~ $stable_re ]] || die "NEXT must look like vX.Y.Z, got '$next'"
 	[ "$next" != "$(latest_stable "$rev")" ] || return 0
-	[ -z "$(tags_at "$rev" 'v*-dev.*')" ] || return 0
+	# A later commit that finished CI first already covers REV.
+	[ -z "$(tags_containing "$rev")" ] || return 0
 
 	local previous range log
-	previous="$(git tag -l 'v*' --merged "$rev" --sort=-creatordate | first_matching '^v[0-9]')"
+	previous="$(nearest_tag '^v[0-9]' "$rev")"
 	range="$rev"
 	[ -z "$previous" ] || range="${previous}..${rev}"
 	# Captured first: `grep -q` exits early and would SIGPIPE git.
@@ -82,11 +95,10 @@ cmd_nightly() {
 	[[ "$date" =~ ^[0-9]{8}$ ]] || die "DATE must be YYYYMMDD, got '$date'"
 
 	local dev sha
-	dev="$(latest_channel 'v*-dev.*' "$rev")"
+	dev="$(nearest_tag '-dev\.[0-9]+$' "$rev")"
 	[ -n "$dev" ] || return 0
 	sha="$(commit_of "$dev")"
-	[ -z "$(tags_at "$sha" 'v*-nightly.*')" ] || return 0
-	[ -z "$(tags_at "$sha" 'v*' | first_matching "$stable_re")" ] || return 0
+	[ -z "$(tags_containing "$sha" | first_matching "-nightly\\.|${stable_re}")" ] || return 0
 
 	local tag="${dev%-dev.*}-nightly.${date}"
 	if git rev-parse -q --verify "refs/tags/${tag}" > /dev/null; then
@@ -97,7 +109,7 @@ cmd_nightly() {
 
 cmd_stable() {
 	local override="${1:-}" nightly sha latest tag
-	nightly="$(latest_channel 'v*-nightly.*')"
+	nightly="$(nearest_tag '-nightly\.[0-9]+$' HEAD)"
 	[ -n "$nightly" ] || die "no nightly to promote; stable releases ship a published nightly"
 	sha="$(commit_of "$nightly")"
 
@@ -121,7 +133,7 @@ cmd_stable() {
 	if git rev-parse -q --verify "refs/tags/${tag}" > /dev/null; then
 		die "${tag} already exists"
 	fi
-	echo "${tag} ${sha}"
+	echo "${tag} ${sha} ${nightly}"
 }
 
 case "${1:-}" in

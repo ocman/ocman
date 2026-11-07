@@ -376,6 +376,7 @@ lint-release-scripts:
 	./scripts/release-tag_test.sh
 	./scripts/sdk-next-tag_test.sh
 	python3 scripts/test_tag_selection.py
+	python3 scripts/test_check_published_release.py
 
 # Self-test for the script CI uses to read pinned tool versions.
 lint-ci-scripts:
