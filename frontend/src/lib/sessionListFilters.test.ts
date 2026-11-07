@@ -27,12 +27,22 @@ describe('shared session filters', () => {
     expect([...hiddenSessionOrigins(sessions, { showFactory: true, showRoutines: true, showPlugins: true })]).toEqual([]);
   });
 
+  it('applies origin filters to creator-linked descendants with explicit owner scope', () => {
+    const sessions = [row({ id: 'ocm_parent', platform: 'planner', routineId: 'routine' }),
+      row({ id: 'ocm_child', creator: { platform: 'planner', sessionId: 'ocm_parent', createdAt: 1 } }),
+      row({ id: 'ocm_other', creator: { platform: 'remote:planner', sessionId: 'ocm_parent', createdAt: 1 } })];
+    expect([...hiddenSessionOrigins(sessions, { showFactory: false, showRoutines: false, showPlugins: false })].sort())
+      .toEqual(['local\0ocm_child', 'planner\0ocm_parent']);
+  });
+
   it.each<[{ session?: Partial<Session>; filters?: Partial<SessionListFilters>; search?: boolean; active?: string; hidden?: boolean }, boolean]>([
     [{}, true],
     [{ session: { archived: true } }, false],
     [{ session: { archived: true }, filters: { showArchived: true } }, true],
     [{ session: { parentId: 'parent' } }, true],
     [{ session: { parentId: 'parent' }, filters: { showChildren: false } }, false],
+    [{ session: { creator: { platform: 'local', sessionId: 'parent', createdAt: 1 } } }, true],
+    [{ session: { creator: { platform: 'local', sessionId: 'parent', createdAt: 1 } }, filters: { showChildren: false } }, false],
     [{ search: false }, false],
     [{ hidden: true }, false],
     [{ session: { pinned: true }, hidden: true, search: false }, true],

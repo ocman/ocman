@@ -47,6 +47,9 @@ func TestSessionDetailReturnsCreator(t *testing.T) {
 			if detail.Session.ParentID != "native-parent" {
 				t.Fatal("creator changed native ancestry")
 			}
+			if detail.Session.Creator == nil || detail.Session.Creator != detail.Creator {
+				t.Fatal("detail row lost creator needed by activity refresh and sidebar fallback")
+			}
 			req := httptest.NewRequest(http.MethodGet, "/api/session/child?platform="+platform, nil)
 			req.SetPathValue("id", "child")
 			rr := httptest.NewRecorder()

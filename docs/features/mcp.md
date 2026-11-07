@@ -444,9 +444,19 @@ are not backfilled.
 object with `platform`, `sessionId` and `createdAt` (Unix milliseconds), read from
 the serving instance's saved launch provenance. The platform includes machine
 scope for remote creators. This field does not replace `session.parentId` or
-add the creator to `sessionTree`. Sessions without a saved link omit it. List and
-search responses and sidebar grouping are unchanged. A provenance read failure
-is logged and omits the field without blocking conversation access.
+add the creator to `sessionTree`. Sessions without a saved link omit it. A detail
+provenance read failure is logged and omits the field without blocking conversation
+access.
+
+The compact sidebar response also includes `session.creator`, fetched in one
+batch from the serving instance. Detail rows carry the same reference so an
+activity refresh or open-session fallback retains the link. The sidebar nests
+these independent sessions under their creator when both are in the displayed
+list, including cross-project and cross-platform launches. Native `parentId`
+takes precedence. Missing or filtered creators leave the session top-level;
+cycles cannot hide rows. Independent sessions keep full cards and ordinary
+archive behavior, while native subagents remain compact. The children and origin
+filters follow these display links without changing lifecycle or permissions.
 
 OpenCode permissions apply to whole tools, so requiring approval for `create` or `send`
 also requires it for the read-only actions.

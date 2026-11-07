@@ -138,6 +138,14 @@ describe('filterInactiveChildren', () => {
 });
 
 describe('computeSidebarHash', () => {
+  it('tracks creator identity and machine scope', () => {
+    const row = makeSession();
+    const creator = { platform: 'opencode', sessionId: 'ocm_parent', createdAt: 1 };
+    const hash = computeSidebarHash([{ ...row, creator }]);
+    expect(hash).not.toBe(computeSidebarHash([row]));
+    expect(hash).not.toBe(computeSidebarHash([{ ...row, creator: { ...creator, platform: 'remote:opencode' } }]));
+    expect(hash).not.toBe(computeSidebarHash([{ ...row, creator: { ...creator, sessionId: 'ocm_other' } }]));
+  });
   it('tracks parent links and native agent classification', () => {
     const row = makeSession();
     const child = { ...row, parentId: 'parent' };

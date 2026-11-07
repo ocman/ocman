@@ -185,6 +185,9 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			all = all[:q.Limit]
 		}
 	}
+	if err := s.enrichSidebarCreators(ctx, all); err != nil {
+		return nil, err
+	}
 	return all, nil
 }
 

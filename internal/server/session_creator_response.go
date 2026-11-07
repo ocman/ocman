@@ -24,5 +24,8 @@ func (s *Server) enrichSessionCreator(ctx context.Context, platform, sessionID s
 		detail.Creator = &platforms.SessionCreator{
 			Platform: creator.CreatorPlatform, SessionID: creator.CreatorSessionID, CreatedAt: creator.CreatedAt,
 		}
+		if detail.Session != nil {
+			detail.Session.Creator = detail.Creator
+		}
 	}
 }

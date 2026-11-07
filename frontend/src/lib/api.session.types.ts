@@ -7,6 +7,7 @@ export interface Session {
   projectId: string;
   /** Native parent or an ocman child link; empty for top-level sessions. */
   parentId?: string;
+  creator?: { platform: string; sessionId: string; createdAt: number };
   /** True for native subagents; application-created subsessions use full cards. */
   sourceChild?: boolean;
   title: string;

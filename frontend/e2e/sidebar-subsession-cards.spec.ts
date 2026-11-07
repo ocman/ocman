@@ -1,9 +1,11 @@
 import { test, expect, MOCK_SESSION, MOCK_SESSION_2 } from './fixtures';
 
-test('flat sidebar mixes full subsession cards and compact agents with full-width selection', async ({ mockedPage: page }) => {
-  const child = { ...MOCK_SESSION_2, parentId: MOCK_SESSION.id, title: 'Build login UI',
+for (const link of ['parent', 'creator'] as const) {
+test(`flat sidebar nests ${link}-linked full cards and compact agents with full-width selection`, async ({ mockedPage: page }) => {
+  const child = { ...MOCK_SESSION_2, parentId: link === 'parent' ? MOCK_SESSION.id : undefined,
+    creator: link === 'creator' ? { platform: MOCK_SESSION.platform, sessionId: MOCK_SESSION.id, createdAt: 1 } : undefined, title: 'Build login UI',
     directory: '/home/user/projects/web-app', branch: 'feature/login', sourceChild: false, status: 'done' };
-  const agent = { ...child, id: 'native-agent', parentId: child.id, sourceChild: true,
+  const agent = { ...child, id: 'native-agent', parentId: child.id, creator: undefined, sourceChild: true,
     title: 'Review accessibility', status: 'busy' };
   await page.route('/api/sessions*', route => route.fulfill({ json: [agent, child, MOCK_SESSION] }));
   await page.route(new RegExp(`/api/session/${child.id}(\\?|$)`), route => route.fulfill({
@@ -24,6 +26,8 @@ test('flat sidebar mixes full subsession cards and compact agents with full-widt
   const card = sidebar.getByRole('button', { name: /Build login UI/ });
   const compact = sidebar.getByRole('button', { name: /Review accessibility/ });
   await expect(card).toBeVisible();
+  await expect(card.getByText('└─')).toBeVisible();
+  await expect(compact.getByText('└─')).toBeVisible();
   await expect(card.getByText('web-app')).toBeVisible();
   await expect(card.getByText('feature/login')).toBeVisible();
   // The child has a stored branch immediately; the parent must first load Git
@@ -54,3 +58,4 @@ test('flat sidebar mixes full subsession cards and compact agents with full-widt
   await expect(card.getByRole('button', { name: 'Archive session' })).toBeVisible();
   expect((await card.boundingBox())!.height).toBe(before.height);
 });
+}

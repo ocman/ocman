@@ -514,6 +514,7 @@ flowchart TD
     MCP -->|existing-session direct send| Sessions
     MCP -->|creator provenance before first prompt| State
     State -->|creator reference on REST and MCP detail reads| MCP
+    State -->|batched creator links for sidebar nesting| Browser
     Registry --> OC[platforms/opencode/provider + internal/db<br/>adapter and read-only queries]
     Registry --> ClaudePlatform[platforms/claude/transport<br/>native-session runtime bindings]
     ClaudePlatform --> Provider[platforms/provider<br/>per-instance socket adapter]
@@ -555,6 +556,9 @@ flowchart TD
   independent of native subagent hierarchy, permissions and lifecycle.
   REST and MCP detail reads expose this serving-instance provenance as an
   optional `creator` reference without changing native `parentId` or the tree.
+  Compact sidebar reads batch creator references for the returned rows. The
+  browser uses these links only for display nesting and filtering, preserving
+  native ancestry and keeping independent sessions as full nested cards.
 
 - **internal/app.** Application startup owns flags, database selection,
   authentication, logging, platform registration and HTTP/desktop composition.

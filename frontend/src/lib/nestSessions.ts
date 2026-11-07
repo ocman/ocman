@@ -1,8 +1,8 @@
 /**
  * Parent/child nesting for session lists.
  *
- * A session may descend from another via `parentId` (a native subagent
- * or an independent application-created subsession). The
+ * A session may descend from another via `parentId` or be launched by a
+ * `creator`. Creator links affect display only, not native ancestry. The
  * lists render this as a tree: each parent is immediately followed by
  * its children, indented by `depth`.
  *
@@ -15,6 +15,7 @@ type SessionLike = {
   id: string;
   platform?: string;
   parentId?: string;
+  creator?: { platform: string; sessionId: string };
 };
 
 export interface NestedRow<T> {
@@ -47,12 +48,14 @@ export function nestSessions<T extends SessionLike>(
   const key = (session: T, id = session.id) => id.startsWith('ocm_') ? id : `${session.platform ?? ''}\0${id}`;
   const byId = new Map<string, T>();
   for (const s of sessions) byId.set(key(s), s);
+  const byScope = new Map(sessions.map((s) => [`${s.platform ?? ''}\0${s.id}`, s]));
 
   // Bucket children under their (present) parent, preserving order.
   const childrenOf = new Map<string, T[]>();
   const roots: T[] = [];
   for (const s of sessions) {
-    const parentId = s.parentId && key(s, s.parentId);
+    const creator = s.creator && byScope.get(`${s.creator.platform}\0${s.creator.sessionId}`);
+    const parentId = s.parentId ? key(s, s.parentId) : creator && key(creator);
     if (parentId && parentId !== key(s) && byId.has(parentId)) {
       const bucket = childrenOf.get(parentId);
       if (bucket) bucket.push(s);

@@ -1284,6 +1284,10 @@
         "omitempty": true
       },
       {
+        "name": "creator",
+        "omitempty": true
+      },
+      {
         "name": "directory",
         "omitempty": false
       },

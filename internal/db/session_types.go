@@ -81,9 +81,10 @@ func InferStoredSessionStatus(lastRole, lastFinish, lastError string) SessionSta
 // Session represents a coding-platform session. Platform identifies the tool,
 // not the composer agent role. Unsupported platform fields are zero or nil.
 type Session struct {
-	ID        string `json:"id"`
-	Platform  string `json:"platform"`
-	ProjectID string `json:"projectId"`
+	Creator   *SessionCreator `json:"creator,omitempty"`
+	ID        string          `json:"id"`
+	Platform  string          `json:"platform"`
+	ProjectID string          `json:"projectId"`
 	// ParentID is the native parent, or an ocman child link stamped by the server.
 	ParentID      string `json:"parentId,omitempty"`
 	SourceChild   bool   `json:"sourceChild,omitempty"` // native subagent, not an application-created subsession

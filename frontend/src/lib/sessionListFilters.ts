@@ -30,8 +30,9 @@ export function hiddenSessionOrigins(sessions: readonly Session[], { showFactory
     const key = `${session.platform}\0${session.id}`;
     if ((!showFactory && session.factoryAttemptId) || (!showRoutines && session.routineId)
       || (!showPlugins && session.origin === 'plugin')) hidden.add(key);
-    if (!session.parentId) continue;
-    const parent = `${session.platform}\0${session.parentId}`;
+    const parent = session.parentId ? `${session.platform}\0${session.parentId}`
+      : session.creator && `${session.creator.platform}\0${session.creator.sessionId}`;
+    if (!parent) continue;
     const siblings = children.get(parent) ?? [];
     siblings.push(key);
     children.set(parent, siblings);
@@ -49,6 +50,6 @@ export function matchesSessionListFilters(session: Session, filters: SessionList
   if (session.id === activeId || session.pinned || filters.alwaysShowPrompts && hasPendingPrompt(session)) return true;
   return !hidden.has(`${session.platform}\0${session.id}`)
     && (session.snoozedUntil ? filters.showSnoozed : filters.showArchived || !session.archived)
-    && (filters.showChildren || !session.parentId)
+    && (filters.showChildren || !session.parentId && !session.creator)
     && matchesSearch;
 }
