@@ -154,8 +154,10 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	out := make([]capabilityEntry, 0)
 	for _, p := range s.registry.Platforms() {
+		remoteID, _ := platforms.SplitPlatformID(string(p.ID()))
 		out = append(out, capabilityEntry{
 			ID:           string(p.ID()),
+			RemoteID:     remoteID,
 			DisplayName:  p.DisplayName(),
 			Available:    p.Available(ctx),
 			Capabilities: p.Capabilities(),
