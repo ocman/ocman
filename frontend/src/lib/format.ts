@@ -172,8 +172,8 @@ export function formatSubscriptionResetDate(ts: string): string {
   return `${weekday} ${month} ${day}${suffix} ${date.getFullYear()}, ${time}`;
 }
 
-function relativeAge(ts: number, extended: boolean): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+function relativeAge(ts: number, extended: boolean, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - ts) / 1000));
   const mins = Math.floor(seconds / 60);
   if (mins < 1) return extended ? `${seconds}s ago` : 'just now';
   if (mins < 60) return mins + 'm ago';
@@ -186,8 +186,10 @@ function relativeAge(ts: number, extended: boolean): string {
   return months < 12 ? `${months}mo ago` : `${Math.floor(months / 12)}y ago`;
 }
 
-export function relativeTime(ts: number): string {
-  return relativeAge(ts, false);
+// `now` defaults to the current clock. Components that tick pass the clock
+// they keep in state, so the label is an explicit input to render.
+export function relativeTime(ts: number, now = Date.now()): string {
+  return relativeAge(ts, false, now);
 }
 
 // relativeTimeISO renders an ISO-8601 timestamp as "2h ago" / "3mo ago".
@@ -195,10 +197,10 @@ export function relativeTime(ts: number): string {
 // rows want a relative hint at any age) and returns '' on unparseable
 // input. Cheap and deliberately approximate; not stable enough for
 // sorting.
-export function relativeTimeISO(iso: string): string {
+export function relativeTimeISO(iso: string, now = Date.now()): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return '';
-  return relativeAge(t, true);
+  return relativeAge(t, true, now);
 }
 
 export function shortPath(path: string): string {

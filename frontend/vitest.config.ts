@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 
 // Vitest runs the unit-test suite (Zustand stores, pure helpers, small
 // hooks). Playwright specs live alongside under `e2e/**` — same
@@ -13,8 +14,19 @@ import react from '@vitejs/plugin-react';
 //   // @vitest-environment jsdom
 // at the top of the spec. setupFiles loads DOM matchers and React Testing
 // Library only for those tests, while sharing state isolation with Node tests.
+// The production build runs the React Compiler (vite.config.ts), which
+// memoizes render output: a component that re-renders through unused state
+// passes here and freezes in the shipped bundle. Opt modules in as they are
+// verified under the compiler; the goal is to compile everything.
+const compiledInTests = [
+  /\/src\/components\/RelativeTime\.tsx$/,
+];
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    babel({ presets: [reactCompilerPreset({ sources: (file) => compiledInTests.some((re) => re.test(file)) })] }),
+  ],
   // The plugin UI contract tests read the published packages in ../sdk.
   server: { fs: { allow: ['.', '../sdk'] } },
   test: {

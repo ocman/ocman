@@ -15,8 +15,13 @@ const MINUTE_MS = 60_000;
 // while the label is still counting seconds, once a minute after that.
 // No timer at all for an unparseable timestamp (the label is empty and
 // will never change).
+//
+// The clock lives in state and is passed to the formatter. A bare
+// "tick" counter is not enough: the React Compiler caches the label on
+// its inputs (iso, compact), so a re-render without a new `now` returns
+// the label from mount time.
 export function RelativeTime({ iso, compact = false }: { iso: string; compact?: boolean }) {
-  const [, setTick] = useState(0);
+  const [now, setNow] = useState(Date.now);
   const parsed = Date.parse(iso);
 
   // Self-rescheduling timeout rather than a fixed interval: the clock
@@ -32,7 +37,7 @@ export function RelativeTime({ iso, compact = false }: { iso: string; compact?: 
       const period = compact ? MINUTE_MS - age % MINUTE_MS
         : age < MINUTE_MS ? SECOND_MS : MINUTE_MS;
       id = setTimeout(() => {
-        setTick((n) => n + 1);
+        setNow(Date.now());
         schedule();
       }, period);
     };
@@ -41,8 +46,8 @@ export function RelativeTime({ iso, compact = false }: { iso: string; compact?: 
   }, [parsed, compact]);
 
   return <>{compact && !Number.isNaN(parsed)
-    ? relativeTime(parsed).replace('just now', 'now').replace(' ago', '')
-    : relativeTimeISO(iso)}</>;
+    ? relativeTime(parsed, now).replace('just now', 'now').replace(' ago', '')
+    : relativeTimeISO(iso, now)}</>;
 }
 
 /**

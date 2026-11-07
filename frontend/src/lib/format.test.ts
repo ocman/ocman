@@ -45,6 +45,12 @@ describe('relative timestamp styles', () => {
   it('rejects malformed ISO timestamps', () => {
     expect(relativeTimeISO('not a timestamp')).toBe('');
   });
+
+  it('measures age against an explicit clock instead of the current time', () => {
+    const at = Date.UTC(2026, 9, 23, 12);
+    expect(relativeTime(at, at + 5 * 60_000)).toBe('5m ago');
+    expect(relativeTimeISO(new Date(at).toISOString(), at + 2 * 3_600_000)).toBe('2h ago');
+  });
 });
 
 describe('fuzzyScore', () => {
