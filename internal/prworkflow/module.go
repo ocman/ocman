@@ -77,6 +77,9 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 			cancel()
 			if err == nil {
 				links[i].PR = pr
+				if r.URL.Query().Get("refresh") == "true" && links[i].Watching {
+					m.processLinks(r.Context(), links[i:i+1], true)
+				}
 			} else if links[i].LastError == "" {
 				links[i].LastError = "Could not refresh PR metadata. Showing the last saved status."
 			}

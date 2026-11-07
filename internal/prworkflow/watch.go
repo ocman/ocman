@@ -33,14 +33,24 @@ func (m *Module) read(ctx context.Context, l Link) (*Snapshot, forge.PR, error) 
 }
 
 func (m *Module) readSnapshot(ctx context.Context, l Link, selective bool) (*Snapshot, forge.PR, error) {
+	return m.readSnapshotWithPR(ctx, l, selective, nil)
+}
+
+func (m *Module) readSnapshotWithPR(ctx context.Context, l Link, selective bool, known *forge.PR) (*Snapshot, forge.PR, error) {
 	ctx = forgehttp.WithFreshReads(ctx)
 	f, ok := m.d.ResolveForge(l.Remote)
 	if !ok {
 		return nil, forge.PR{}, fmt.Errorf("forge unavailable")
 	}
-	pr, err := f.LookupPR(ctx, l.Remote.Repo, l.Number)
-	if err != nil {
-		return nil, pr, err
+	var pr forge.PR
+	if known != nil {
+		pr = *known
+	} else {
+		var err error
+		pr, err = f.LookupPR(ctx, l.Remote.Repo, l.Number)
+		if err != nil {
+			return nil, pr, err
+		}
 	}
 	s := &Snapshot{SHA: pr.HeadSHA, Conflict: pr.Mergeable != nil && !*pr.Mergeable, Remarks: map[string]string{}, UpdatedAt: pr.UpdatedAt, InFlight: pr.Mergeable == nil}
 	// A terminal PR needs no checks or comment pagination to stop its watch.
@@ -129,6 +139,13 @@ func (m *Module) sweep(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	m.processLinks(ctx, links, false)
+}
+
+// processLinks runs with m.mu held. Explicit refreshes reuse the fetched PR and
+// bypass the quiet/backoff schedule, but still honor host rate-limit deadlines.
+// Updating the slice also gives refresh callers the resulting public watch state.
+func (m *Module) processLinks(ctx context.Context, links []Link, refreshed bool) {
 	type readResult struct {
 		s   *Snapshot
 		pr  forge.PR
@@ -140,35 +157,36 @@ func (m *Module) sweep(ctx context.Context) {
 			delete(m.paused, host)
 		}
 	}
-	for _, l := range links {
+	for i := range links {
+		l := &links[i]
 		if ctx.Err() != nil {
 			return
 		}
 		// Legacy hub watches move to the session owner before polling or
 		// delivering anything. An unavailable owner never falls back locally.
-		if owner, err := m.remote(targetOf(l)); err != nil {
+		if owner, err := m.remote(targetOf(*l)); err != nil {
 			continue
 		} else if owner != nil {
 			transferCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			_ = m.migrate(transferCtx, targetOf(l), owner)
+			_ = m.migrate(transferCtx, targetOf(*l), owner)
 			cancel()
 			continue
 		}
-		if l.Pending == "" && (!l.Watching || l.NextAt > m.now().UnixMilli()) {
+		if l.Pending == "" && (!l.Watching || (!refreshed && l.NextAt > m.now().UnixMilli())) {
 			continue
 		}
 		readCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		if err := m.checkOwner(readCtx, l); err != nil {
+		if err := m.checkOwner(readCtx, *l); err != nil {
 			cancel()
 			continue
 		}
-		if l.Watching && l.NextAt <= m.now().UnixMilli() {
+		if l.Watching && (refreshed || l.NextAt <= m.now().UnixMilli()) {
 			host := string(l.Remote.Type) + "/" + l.Remote.Host
 			if until := m.paused[host]; until.After(m.now()) {
 				l.NextAt = until.UnixMilli()
 				l.LastError = "Forge rate limited. Watching will resume after the retry deadline."
-				_ = m.put(readCtx, l)
-				m.deliverPending(readCtx, l)
+				_ = m.put(readCtx, *l)
+				m.deliverPending(readCtx, *l)
 				cancel()
 				continue
 			}
@@ -176,7 +194,11 @@ func (m *Module) sweep(ctx context.Context) {
 			key := fmt.Sprintf("%s\x00%s\x00%s/%s/%d/%t", l.RemoteID, l.Directory, host, l.Remote.Repo, l.Number, feedbackDue(l.Snapshot, l.PR, m.now()))
 			read, ok := reads[key]
 			if !ok {
-				read.s, read.pr, read.err = m.readSnapshot(github.WithCache(readCtx), l, true)
+				if refreshed {
+					read.s, read.pr, read.err = m.readSnapshotWithPR(github.WithRefresh(readCtx), *l, true, &l.PR)
+				} else {
+					read.s, read.pr, read.err = m.readSnapshot(github.WithCache(readCtx), *l, true)
+				}
 				reads[key] = read
 			}
 			// A forge read can exhaust its deadline. Persistence and delivery need
@@ -201,8 +223,8 @@ func (m *Module) sweep(ctx context.Context) {
 					}
 					m.paused[host] = until
 					l.NextAt, l.LastError = until.UnixMilli(), "Forge rate limited. Watching will resume after the retry deadline."
-					_ = m.put(readCtx, l)
-					m.deliverPending(readCtx, l)
+					_ = m.put(readCtx, *l)
+					m.deliverPending(readCtx, *l)
 					cancel()
 					continue
 				}
@@ -213,8 +235,8 @@ func (m *Module) sweep(ctx context.Context) {
 					l.Watching = false
 					l.LastError = "Watch stopped after repeated read failures. Recheck source-control setup and start watching again."
 				}
-				_ = m.put(readCtx, l)
-				m.deliverPending(readCtx, l)
+				_ = m.put(readCtx, *l)
+				m.deliverPending(readCtx, *l)
 				cancel()
 				continue
 			}
@@ -258,12 +280,12 @@ func (m *Module) sweep(ctx context.Context) {
 				}
 				l.Pending = message
 			}
-			if err := m.put(readCtx, l); err != nil {
+			if err := m.put(readCtx, *l); err != nil {
 				cancel()
 				continue
 			}
 		}
-		m.deliverPending(readCtx, l)
+		m.deliverPending(readCtx, *l)
 		cancel()
 	}
 }

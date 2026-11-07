@@ -2,6 +2,7 @@ package prworkflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -9,6 +10,109 @@ import (
 	"github.com/ocman/ocman/internal/forge"
 	"github.com/ocman/ocman/internal/forge/forgehttp"
 )
+
+func TestExplicitRefreshProcessesWatch(t *testing.T) {
+	for _, terminal := range []bool{false, true} {
+		t.Run(map[bool]string{false: "checks", true: "merged"}[terminal], func(t *testing.T) {
+			x := newFixture(t)
+			x.link(t)
+			x.watch(t)
+			l := x.only(t)
+			l.NextAt = time.Now().Add(time.Hour).UnixMilli()
+			if err := x.m.put(t.Context(), l); err != nil {
+				t.Fatal(err)
+			}
+			x.f.checks.State = forge.CIStateSuccess
+			if terminal {
+				x.f.pr.Status = "merged"
+			}
+			reads, checks := x.f.reads, x.f.checkReads
+			w := x.request(t, "pull-requests?refresh=true", "", 200)
+			if len(x.sent) != 1 {
+				t.Fatalf("refresh did not process watch: sent=%v", x.sent)
+			}
+			if x.f.reads != reads+1 {
+				t.Fatal("refreshed PR metadata was fetched twice")
+			}
+			wantChecks := checks + 1
+			if terminal {
+				wantChecks = checks
+			}
+			if x.f.checkReads != wantChecks {
+				t.Fatal("unexpected check reads")
+			}
+			var result struct {
+				PullRequests []Link `json:"pullRequests"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.PullRequests[0].Watching == terminal || x.only(t).Watching == terminal {
+				t.Fatal("response or stored watch state is stale")
+			}
+			x.request(t, "pull-requests?refresh=true", "", 200)
+			if len(x.sent) != 1 {
+				t.Fatal("refresh replayed update")
+			}
+		})
+	}
+}
+
+func TestRefreshWatchGuards(t *testing.T) {
+	for _, guard := range []string{"passive", "unwatched", "metadata failure", "owner offline", "rate limited"} {
+		t.Run(guard, func(t *testing.T) {
+			x := newFixture(t)
+			x.link(t)
+			if guard != "unwatched" {
+				x.watch(t)
+			}
+			x.f.checks.State = forge.CIStateSuccess
+			path := "pull-requests?refresh=true"
+			switch guard {
+			case "passive":
+				path = "pull-requests"
+			case "metadata failure":
+				x.f.err = errors.New("offline")
+			case "owner offline":
+				x.ownerErr = errors.New("disconnected")
+			case "rate limited":
+				x.m.paused["github/github.com"] = time.Now().Add(time.Hour)
+			}
+			checks := x.f.checkReads
+			x.request(t, path, "", 200)
+			if len(x.sent) != 0 || x.f.checkReads != checks {
+				t.Fatal("refresh ignored watch guard")
+			}
+		})
+	}
+}
+
+func TestRefreshRetainsFeedbackUntilSessionReady(t *testing.T) {
+	x := newFixture(t)
+	x.link(t)
+	x.watch(t)
+	// A refresh is scoped to the requested session, not every due watch.
+	other := x.only(t)
+	other.SessionID = "s2"
+	if err := x.m.put(t.Context(), other); err != nil {
+		t.Fatal(err)
+	}
+	x.ready = false
+	x.f.remarks = []forge.Remark{{ID: "review", Author: "other", Body: "Please fix"}}
+	x.request(t, "pull-requests?refresh=true", "", 200)
+	if len(x.sent) != 0 || x.only(t).Pending == "" {
+		t.Fatal("refresh lost feedback for busy session")
+	}
+	links, err := x.m.links(t.Context(), other.Platform, other.SessionID)
+	if err != nil || len(links) != 1 || links[0].Pending != "" || len(links[0].Snapshot.Remarks) != 0 {
+		t.Fatal("refresh processed another session", links, err)
+	}
+	x.ready = true
+	x.request(t, "pull-requests?refresh=true", "", 200)
+	if len(x.sent) != 1 || x.only(t).Pending != "" {
+		t.Fatal("refresh did not deliver pending feedback")
+	}
+}
 
 func TestRateLimitDoesNotExhaustWatch(t *testing.T) {
 	x := newFixture(t)

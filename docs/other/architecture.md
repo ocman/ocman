@@ -431,6 +431,9 @@ Feature-specific designs live with their feature documentation:
   `prworkflow` owns session PR links, feedback drafts and opt-in watches that
   queue follow-ups. Durable changes invalidate browser PR and task views through
   the existing owner-qualified session-change SSE channel.
+  Explicit linked-PR refreshes reuse fetched metadata to process active watches
+  immediately on the session owner, without waiting for the periodic sweep.
+  Checks and due feedback are refreshed too; forge rate-limit deadlines still apply.
   Owner-local invalidations cross the authenticated `StreamSessionChanges`
   gRPC stream before the hub publishes them with connection-qualified identity.
   A newly loaded link missing from its matching project PR list triggers one
