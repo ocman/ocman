@@ -159,6 +159,9 @@ type Server struct {
 	sessionLifecycle lazy[*sessionlifecycle.Module]
 	lifetimeMu       sync.Mutex
 	lifetimeCtx      context.Context // guarded by lifetimeMu
+	// deferredArchives holds busy local sessions to archive on their next
+	// idle edge. In memory only: a restart leaves the session visible.
+	deferredArchives deferredArchives
 	// requests joins admitted HTTP handlers before teardown (both listeners).
 	requests         requestFence
 	pluginsMod       lazy[*pluginsmod.Module]

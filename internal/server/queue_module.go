@@ -62,6 +62,7 @@ func (s *Server) onSessionIdle(platform, id string) {
 	if s.stateDB == nil || platform == "" {
 		return
 	}
+	s.applyDeferredArchive(platform, id)
 	s.queueModule().OnSessionIdle(platform, id)
 	s.bus().PublishSessionIdle(s.lifetime(), module.SessionIdle{Platform: platform, SessionID: id})
 }

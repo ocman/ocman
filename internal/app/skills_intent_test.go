@@ -47,3 +47,12 @@ func TestSessionsSkillTeachesPRCompletion(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionsSkillTeachesArchive(t *testing.T) {
+	text := string(skillCatalog["ocman-sessions"])
+	for _, guidance := range []string{"`archive` / `unarchive`", "You may archive yourself", "`deferred: true`", "busy remote session is rejected"} {
+		if !strings.Contains(text, guidance) {
+			t.Errorf("missing archive guidance: %s", guidance)
+		}
+	}
+}

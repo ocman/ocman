@@ -93,8 +93,21 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.setSessionArchived(r.Context(), platform, req.SessionID, req.SessionTimeUpdated, req.Archived); err != nil {
+		httpx.ServerError(w, "updating archived session state", err)
+		return
+	}
+	httpx.WriteJSON(w, map[string]bool{"ok": true})
+}
+
+// setSessionArchived is the shared archive mutation behind the HTTP route and
+// the MCP sessions tool. timeUpdated is the session's last update as seen by
+// the caller; it is ignored when unarchiving. Either direction supersedes a
+// pending deferred archive.
+func (s *Server) setSessionArchived(ctx context.Context, platform, sessionID string, timeUpdated int64, archived bool) error {
+	s.deferredArchives.take(platform, sessionID)
 	var err error
-	if req.Archived {
+	if archived {
 		// The client's timeUpdated comes from its cached sidebar row,
 		// which can lag the session's real time_updated (the adapter's
 		// sessions cache has a multi-second TTL, and a busy session
@@ -111,27 +124,26 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 		// on the next poll/reconnect — the archive never sticks. The
 		// client-reported value is the same remote clock the later
 		// applySessionState comparison uses, so store it verbatim.
-		ts := req.SessionTimeUpdated
+		ts := timeUpdated
 		if remoteID, _ := platforms.SplitPlatformID(platform); remoteID == "" {
 			if now := time.Now().UnixMilli(); now > ts {
 				ts = now
 			}
 		}
-		err = s.stateDB.ArchiveSession(r.Context(), platform, req.SessionID, ts)
+		err = s.stateDB.ArchiveSession(ctx, platform, sessionID, ts)
 	} else {
-		err = s.stateDB.UnarchiveSession(r.Context(), platform, req.SessionID)
+		err = s.stateDB.UnarchiveSession(ctx, platform, sessionID)
 	}
 	if err != nil {
-		httpx.ServerError(w, "updating archived session state", err)
-		return
+		return err
 	}
 
 	payload, _ := json.Marshal(map[string]any{
-		"sessionID": req.SessionID, "platform": platform,
-		"patch": map[string]any{"archived": req.Archived, "snoozedUntil": 0},
+		"sessionID": sessionID, "platform": platform,
+		"patch": map[string]any{"archived": archived, "snoozedUntil": 0},
 	})
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
-	httpx.WriteJSON(w, map[string]bool{"ok": true})
+	return nil
 }
 
 func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {

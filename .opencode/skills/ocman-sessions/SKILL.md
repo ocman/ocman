@@ -85,8 +85,18 @@ schemas, limits, examples, and errors. Its actions:
 - `create` — start a new top-level session and send it `prompt`.
 - `send` — send `prompt` to an existing recipient's `session_id`, with optional
   `platform` to disambiguate or target a remote machine.
+- `archive` / `unarchive` — hide or restore a session by `session_id`, with
+  optional `platform`.
 
 `list`, `search`, and `get` are read-only. The tool cannot cancel sessions.
+
+Use `archive` only when the user asks, for example to archive a session after
+its PR merged. You may archive yourself. A busy session on this machine returns
+`deferred: true` and is archived when its current turn finishes, so its own
+reply does not resurface it. A busy remote session is rejected; retry after its
+turn ends. New activity later resurfaces an archived session.
+
+`{"action":"archive","intent":"Archive this session now that its PR merged","session_id":"ses_1","platform":"opencode"}`
 
 Use `send` only when the user requests messaging another session. Unlike
 `create`, its `session_id` identifies the recipient, not you. It sends plain text
