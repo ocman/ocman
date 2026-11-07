@@ -4,7 +4,7 @@ import { newSessionPath } from '../../lib/newSessionPath';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SessionMetadata } from '../../lib/sessionReducer';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 export interface UseSessionCreationOptions {
   session: SessionMetadata | null;
@@ -23,15 +23,15 @@ export interface UseSessionCreationOptions {
  * worktrees outside ocman's `.worktrees/<repo>/<slug>` layout are covered.
  * A failed lookup (e.g. not a repository) keeps the layout-based guess.
  */
-async function mainCheckout(session: SessionMetadata): Promise<string> {
+async function mainCheckout(directory: string, remoteId: string | undefined, signal: AbortSignal): Promise<string> {
   try {
-    const { worktrees } = await api.worktree.list(session.directory, session.remoteId || 'local');
+    const { worktrees } = await api.worktree.list(directory, remoteId || 'local', signal);
     const main = worktrees.find((tree) => tree.main && !tree.bare)?.path;
     if (main) return main;
   } catch (e) {
-    remoteLog.warn('Resolving main checkout failed; using directory layout', e);
+    if (!signal.aborted) remoteLog.warn('Resolving main checkout failed; using directory layout', e);
   }
-  return projectRootForDirectory(session.directory);
+  return projectRootForDirectory(directory);
 }
 
 /** New-session and `/compact` actions for the open session. */
@@ -52,6 +52,20 @@ export function useSessionCreation({
   const sessionDirectory = session?.directory;
   const sessionRemoteId = session?.remoteId;
   const sessionPlatform = session?.platform;
+  const checkout = useRef<{ controller: AbortController; directory: Promise<string> } | undefined>(undefined);
+  useEffect(() => {
+    if (!sessionDirectory) return;
+    const controller = new AbortController();
+    // Resolve while viewing the session, not on the shortcut's critical path.
+    // Reuse the promise for early presses as well as the settled result. Streaming
+    // metadata and same-checkout session switches must not restart this read.
+    checkout.current = { controller, directory: mainCheckout(sessionDirectory, sessionRemoteId, controller.signal) };
+    return () => {
+      controller.abort();
+      checkout.current = undefined;
+    };
+  }, [sessionDirectory, sessionRemoteId]);
+
   const handleNewSessionInDirectory = useCallback((directory: string, remoteId?: string, platform?: string, title?: string) => {
     // Prefer the target project's own platform/host (e.g. a remote
     // project group) over the currently-open session's, so a "+" on a
@@ -69,10 +83,13 @@ export function useSessionCreation({
   }, [hasSession, sessionDirectory, sessionRemoteId, sessionPlatform, navigate]);
 
   const handleNewSession = async (title?: string) => {
-    if (!session) return;
+    const resolved = checkout.current;
+    if (!session || !resolved) return;
     // Start from the main checkout: a session already inside a linked worktree
     // would make the composer skip its "New worktree" target (the default).
-    await handleNewSessionInDirectory(await mainCheckout(session), session.remoteId, session.platform, title);
+    const directory = await resolved.directory;
+    if (resolved.controller.signal.aborted) return;
+    handleNewSessionInDirectory(directory, session.remoteId, session.platform, title);
   };
 
   const handleCompact = async () => {

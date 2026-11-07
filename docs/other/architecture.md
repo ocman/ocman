@@ -1630,6 +1630,11 @@ flowchart LR
   checkout, and automatic creation rejects it before launching OpenCode.
   Named bases use fully qualified refs to avoid branch/tag name collisions.
   Git probe failures propagate to the eligibility retry controls.
+  `useSessionCreation` prefetches the owner's main checkout while an existing
+  session is open, reusing that promise for Option/Alt+C and Option/Alt+T rather
+  than starting a worktree-list request on each press. Directory or owner changes
+  and unmounts cancel the lookup and suppress stale navigation; an early press
+  shares the in-flight lookup so external worktree layouts still resolve correctly.
   Factory removes the exact namespace when recording a forge target branch.
   A detached default uses verified local `main` or `master` for delivery,
   otherwise preparation requires an explicit named target. Legacy recovery

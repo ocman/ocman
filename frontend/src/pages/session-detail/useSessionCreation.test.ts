@@ -79,7 +79,7 @@ describe('useSessionCreation', () => {
     const o = opts({ session: { ...session, directory: '/src/repo-feature' } });
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession());
-    expect(listWorktrees).toHaveBeenCalledWith('/src/repo-feature', 'r-x');
+    expect(listWorktrees).toHaveBeenCalledWith('/src/repo-feature', 'r-x', expect.any(AbortSignal));
     expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
   });
 
