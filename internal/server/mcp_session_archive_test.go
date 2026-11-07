@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,13 +18,12 @@ import (
 // controls; reads counts Session calls so a test can flip status mid-call.
 func archiveTarget(t *testing.T, reg *platforms.Registry, platform string, status func(reads int) db.SessionStatus) {
 	t.Helper()
-	reads := 0
+	var reads atomic.Int32
 	reg.Register(&fakePlatform{PlatformID: platform, SessionFn: func(id string) (*platforms.SessionDetail, error) {
 		if id != "target" {
 			return nil, platforms.ErrNotFound
 		}
-		reads++
-		return &platforms.SessionDetail{Session: &db.Session{ID: id, TimeUpdated: 1000, Status: status(reads)}}, nil
+		return &platforms.SessionDetail{Session: &db.Session{ID: id, TimeUpdated: 1000, Status: status(int(reads.Add(1)))}}, nil
 	}})
 }
 
@@ -178,5 +178,37 @@ func TestMCPArchiveSessionToolDelivery(t *testing.T) {
 	result := testutil.CallTool(t, mcpServer, "sessions", map[string]any{"action": "archive", "session_id": "target"})
 	if _, ok := archivedStamp(t, srv, "test"); result.IsError || !ok {
 		t.Fatalf("tool result = %q, archived = %v", testutil.ResultText(result), ok)
+	}
+}
+
+// An unarchive arriving after the idle edge claimed a deferred archive, but
+// before it was written, must win: the claim and the write are one step.
+func TestMCPUnarchiveDuringDeferredArchiveWrite(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	archiveTarget(t, reg, "opencode", func(int) db.SessionStatus { return db.StatusBusy })
+	svc := sessionMCPService{srv}
+	if got, err := svc.SetSessionArchived(t.Context(), "opencode", "target", true); err != nil || !got.Deferred {
+		t.Fatalf("archive = %#v, %v", got, err)
+	}
+	unarchived := make(chan error, 1)
+	srv.deferredArchives.claimed = func() {
+		go func() {
+			_, err := svc.SetSessionArchived(t.Context(), "opencode", "target", false)
+			unarchived <- err
+		}()
+		// Give an unserialized unarchive time to finish inside the gap; a
+		// serialized one stays blocked until the deferred write completes.
+		select {
+		case err := <-unarchived:
+			unarchived <- err
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	srv.onSessionIdle("opencode", "target")
+	if err := <-unarchived; err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archivedStamp(t, srv, "opencode"); ok {
+		t.Fatal("deferred archive overwrote a later unarchive")
 	}
 }

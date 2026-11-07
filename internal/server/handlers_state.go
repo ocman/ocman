@@ -103,9 +103,18 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 // setSessionArchived is the shared archive mutation behind the HTTP route and
 // the MCP sessions tool. timeUpdated is the session's last update as seen by
 // the caller; it is ignored when unarchiving. Either direction supersedes a
-// pending deferred archive.
+// pending deferred archive, in the same step as the write so a deferred
+// archive claimed concurrently cannot land after it.
 func (s *Server) setSessionArchived(ctx context.Context, platform, sessionID string, timeUpdated int64, archived bool) error {
-	s.deferredArchives.take(platform, sessionID)
+	unlock := s.deferredArchives.lock()
+	defer unlock()
+	s.deferredArchives.cancelLocked(platform, sessionID)
+	return s.writeSessionArchived(ctx, platform, sessionID, timeUpdated, archived)
+}
+
+// writeSessionArchived persists and broadcasts archive state. Callers hold
+// the deferredArchives lock; it does not take it again.
+func (s *Server) writeSessionArchived(ctx context.Context, platform, sessionID string, timeUpdated int64, archived bool) error {
 	var err error
 	if archived {
 		// The client's timeUpdated comes from its cached sidebar row,

@@ -17,25 +17,34 @@ import (
 // the archive stamp resurfaces the session.
 const deferredArchiveGrace = 5 * time.Second
 
-// deferredArchives holds busy local sessions awaiting their idle edge.
+// deferredArchives holds busy local sessions awaiting their idle edge. Its
+// lock covers both the pending set and every archive-state write, so
+// claiming or cancelling a pending archive and persisting the result are one
+// step: a later unarchive cannot be overwritten by an earlier claim.
+// ponytail: one lock for all sessions; archive writes are rare and short.
 type deferredArchives struct {
 	mu   sync.Mutex
 	keys map[state.Key]bool
+	// claimed is a test seam run after a deferred archive is claimed and
+	// before it is written.
+	claimed func()
+}
+
+func (d *deferredArchives) lock() func() {
+	d.mu.Lock()
+	return d.mu.Unlock
 }
 
 func (d *deferredArchives) add(platform, sessionID string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	defer d.lock()()
 	if d.keys == nil {
 		d.keys = map[state.Key]bool{}
 	}
 	d.keys[state.Key{Platform: platform, SessionID: sessionID}] = true
 }
 
-// take removes a pending archive, reporting whether one was pending.
-func (d *deferredArchives) take(platform, sessionID string) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// cancelLocked removes a pending archive, reporting whether one was pending.
+func (d *deferredArchives) cancelLocked(platform, sessionID string) bool {
 	key := state.Key{Platform: platform, SessionID: sessionID}
 	pending := d.keys[key]
 	delete(d.keys, key)
@@ -65,8 +74,10 @@ func (s sessionMCPService) SetSessionArchived(ctx context.Context, platform, id 
 	s.server.deferredArchives.add(platform, id)
 	// The turn may have ended between the status read and add, so its idle
 	// edge has passed: archive now instead of waiting for the next turn.
-	if detail, err := s.readTarget(ctx, platform, id); err == nil && detail.Session.Status != db.StatusBusy && s.server.deferredArchives.take(platform, id) {
-		return result, s.server.archiveAfterTurn(ctx, platform, id)
+	if detail, err := s.readTarget(ctx, platform, id); err == nil && detail.Session.Status != db.StatusBusy {
+		if applied, err := s.server.applyPendingArchive(ctx, platform, id); applied {
+			return result, err
+		}
 	}
 	result.Archived, result.Deferred = false, true
 	return result, nil
@@ -74,16 +85,23 @@ func (s sessionMCPService) SetSessionArchived(ctx context.Context, platform, id 
 
 // applyDeferredArchive archives a session whose archive waited for this idle edge.
 func (s *Server) applyDeferredArchive(platform, sessionID string) {
-	if !s.deferredArchives.take(platform, sessionID) {
-		return
-	}
 	ctx, cancel := s.lifetimeCall()
 	defer cancel()
-	if err := s.archiveAfterTurn(ctx, platform, sessionID); err != nil {
+	if _, err := s.applyPendingArchive(ctx, platform, sessionID); err != nil {
 		log.WithError(err).WithField("session", sessionID).Warn("applying deferred session archive")
 	}
 }
 
-func (s *Server) archiveAfterTurn(ctx context.Context, platform, sessionID string) error {
-	return s.setSessionArchived(ctx, platform, sessionID, time.Now().Add(deferredArchiveGrace).UnixMilli(), true)
+// applyPendingArchive claims and writes a pending archive under one lock,
+// stamped past the idle edge. It reports whether an archive was pending.
+func (s *Server) applyPendingArchive(ctx context.Context, platform, sessionID string) (bool, error) {
+	unlock := s.deferredArchives.lock()
+	defer unlock()
+	if !s.deferredArchives.cancelLocked(platform, sessionID) {
+		return false, nil
+	}
+	if s.deferredArchives.claimed != nil {
+		s.deferredArchives.claimed()
+	}
+	return true, s.writeSessionArchived(ctx, platform, sessionID, time.Now().Add(deferredArchiveGrace).UnixMilli(), true)
 }
