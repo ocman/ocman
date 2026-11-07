@@ -33,21 +33,28 @@ describe('Background tasks', () => {
     ]);
     renderWithQuery(<BackgroundTasks />);
     expect(await screen.findByText('Task running')).toBeVisible();
-    expect(within(screen.getByRole('region', { name: 'Active tasks' })).getByText('Task queued')).toBeVisible();
-    expect(within(screen.getByRole('region', { name: 'Recent tasks' })).getByText('Task failed')).toBeVisible();
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    const list = screen.getByRole('list', { name: 'Background tasks' });
+    expect(screen.getAllByRole('list')).toHaveLength(1);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(5);
+    expect(screen.queryByRole('region', { name: 'Active tasks' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Recent tasks' })).not.toBeInTheDocument();
+    const running = screen.getByRole('button', { name: /Task running/ });
+    expect(running.querySelector('.oc-loading-spinner')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('button', { name: /Task queued/ }).querySelector('.oc-loading-spinner')).toBeNull();
+    expect(screen.getByRole('button', { name: /Task failed/ }).querySelector('.oc-loading-spinner')).toBeNull();
+    expect(within(running).getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('value', '3');
     fireEvent.click(screen.getByRole('button', { name: /Task running/ }));
-    expect(screen.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('value', '3');
-    expect(screen.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('max', '5');
+    const details = within(screen.getByRole('dialog', { name: 'Details for Task running' }));
+    expect(details.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('value', '3');
+    expect(details.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('max', '5');
     expect(screen.getByText('imported: 2')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: /Task queued/ }));
-    expect(screen.getByRole('progressbar', { name: 'Progress for Task queued' })).not.toHaveAttribute('value');
+    expect(screen.queryByRole('progressbar', { name: 'Progress for Task queued' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Task failed/ }));
     expect(screen.getByText('failed: 2')).toBeVisible();
     expect(screen.getAllByRole('alert').map((element) => element.textContent)).toContain('2 sessions failed; history was not fully verified');
-    const recent = within(screen.getByRole('region', { name: 'Recent tasks' }));
-    expect(recent.getByText('Cancelled')).toBeVisible();
-    expect(recent.getByText('Interrupted')).toBeVisible();
+    expect(within(list).getByText('Cancelled')).toBeVisible();
+    expect(within(list).getByText('Interrupted')).toBeVisible();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Task failed/ })).toHaveFocus();
@@ -64,6 +71,28 @@ describe('Background tasks', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     await waitFor(() => expect(backgroundTasks).toHaveBeenCalledTimes(count + 1));
     expect(screen.queryByRole('button', { name: 'Start task' })).not.toBeInTheDocument();
+  });
+
+  it('keeps server ordering and only shows determinate bars for known positive totals', async () => {
+    vi.mocked(backgroundTasks).mockResolvedValue([
+      task('finished', { status: 'succeeded' }),
+      task('unknown', { progress: { phase: 'working', completed: 2, total: null, counters: {} } }),
+      task('zero', { progress: { phase: 'discovering', completed: 0, total: 0, counters: {} } }),
+      task('waiting', { status: 'queued' }),
+    ]);
+    renderWithQuery(<BackgroundTasks />);
+    const list = await screen.findByRole('list', { name: 'Background tasks' });
+    const rows = within(list).getAllByRole('listitem');
+    expect(rows.map((row) => within(row).getByRole('button').textContent)).toEqual([
+      expect.stringContaining('Task finished'), expect.stringContaining('Task unknown'),
+      expect.stringContaining('Task zero'), expect.stringContaining('Task waiting'),
+    ]);
+    expect(within(list).getAllByRole('progressbar')).toHaveLength(2);
+    expect(within(rows[0]).getByRole('progressbar')).toHaveAttribute('max', '5');
+    expect(rows[1].querySelector('.oc-loading-spinner')).toBeInTheDocument();
+    expect(rows[2].querySelector('.oc-loading-spinner')).toBeInTheDocument();
+    fireEvent.click(within(rows[1]).getByRole('button'));
+    expect(within(screen.getByRole('dialog')).queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   it('distinguishes local and remote tasks even when their IDs collide', async () => {

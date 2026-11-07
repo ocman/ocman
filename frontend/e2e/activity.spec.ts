@@ -169,6 +169,8 @@ test('task rows stay compact and open details without closing the activity modal
   await page.goto('/sessions?activity=tasks');
   const row = page.getByRole('button', { name: /Sync history/ });
   await expect(row).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Background tasks' })).toHaveCount(1);
+  await expect(row.getByRole('progressbar')).toHaveAttribute('value', '3');
   expect((await row.boundingBox())!.height).toBeLessThanOrEqual(32);
   await row.click();
   const details = page.getByRole('dialog', { name: 'Details for Sync history' });
@@ -183,4 +185,9 @@ test('task rows stay compact and open details without closing the activity modal
   await expect(details).not.toBeVisible();
   await expect(row).toBeFocused();
   await expect(page.getByRole('dialog', { name: 'Activity', exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(row.getByRole('progressbar')).toBeInViewport();
+  expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await row.click();
+  await expect(details.getByRole('progressbar')).toBeVisible();
 });

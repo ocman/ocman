@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type CSSProperties } from 'react';
 import { Button, SelectField } from '../components/Control';
-import { DataTableGroup } from '../components/DataTable';
+import { Spinner } from '../components/Spinner';
 import { Popover } from '../components/Popover';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
@@ -26,17 +26,19 @@ function TaskSchedule({ task }: { task: BackgroundTask }) {
   </div>;
 }
 
+function TaskProgressBar({ task }: { task: BackgroundTask }) {
+  const { completed, total } = task.progress;
+  return total !== null && total > 0 ? <progress
+    aria-label={`Progress for ${task.title}`} value={completed} max={total}
+  /> : null;
+}
+
 function TaskProgress({ task }: { task: BackgroundTask }) {
   const { completed, total, unit, phase, counters } = task.progress;
-  const known = total !== null && total > 0;
   return <div className="background-task-progress">
     <TaskSchedule task={task} />
     <span>{phase}{unit && <> · {total === null ? `${completed} ${unit}` : `${completed} / ${total} ${unit}`}</>}</span>
-    {(task.status === 'running' || task.status === 'queued' || known) && <progress
-      aria-label={`Progress for ${task.title}`}
-      value={known ? completed : undefined}
-      max={known ? total : 1}
-    />}
+    <TaskProgressBar task={task} />
     {Object.keys(counters).length > 0 && <span className="background-task-counters">
       {Object.entries(counters).map(([name, value]) => <span key={name}>{name.replaceAll('-', ' ')}: {value}</span>)}
     </span>}
@@ -45,13 +47,6 @@ function TaskProgress({ task }: { task: BackgroundTask }) {
 }
 
 type TaskSelection = { selected: string | null; onSelect: (id: string | null) => void };
-
-function TaskGroup({ title, tasks, ...selection }: { title: string; tasks: BackgroundTask[] } & TaskSelection) {
-  if (tasks.length === 0) return null;
-  return <DataTableGroup label={title} noun="tasks" count={tasks.length}>
-    {tasks.map((task) => <TaskRow key={`${task.ownerId}:${task.id}`} task={task} {...selection} />)}
-  </DataTableGroup>;
-}
 
 function TaskRow({ task, selected, onSelect }: { task: BackgroundTask } & TaskSelection) {
   const trigger = useRef<HTMLButtonElement>(null);
@@ -71,9 +66,12 @@ function TaskRow({ task, selected, onSelect }: { task: BackgroundTask } & TaskSe
         });
       }}>
       <strong>{task.title}</strong>
-      <span className="background-task-state" data-status={task.status}>{labels[task.status]}</span>
+      <span className="background-task-state" data-status={task.status}>
+        {task.status === 'running' && <Spinner />}{labels[task.status]}
+      </span>
       <HostBadge alwaysShow remoteId={task.ownerId} remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} />
       <span className="background-task-phase">{task.progress.phase}</span>
+      <TaskProgressBar task={task} />
       <i className="bi bi-info-circle" aria-hidden="true" />
     </Button>
     <Popover open={open} onClose={() => onSelect(null)} triggerRef={trigger}
@@ -93,8 +91,6 @@ export function BackgroundTasks() {
     run: (signal) => backgroundTasks(status, signal),
   });
   const tasks = query.data ?? [];
-  const active = tasks.filter((task) => task.status === 'queued' || task.status === 'running');
-  const recent = tasks.filter((task) => task.status !== 'queued' && task.status !== 'running');
   return <section className="background-tasks" aria-label="Ocman background tasks">
     <p>Background work on this machine and connected remotes. Select a task for progress and schedule details.</p>
     <div className="background-tasks-controls">
@@ -107,8 +103,9 @@ export function BackgroundTasks() {
     {query.isPending && !query.error && <LoadingState>Loading background tasks…</LoadingState>}
     {query.error && <p role="alert">Could not load background tasks: {query.error.message}</p>}
     {!query.isPending && !query.error && tasks.length === 0 && <EmptyState>No background tasks match this view.</EmptyState>}
-    <TaskGroup title="Active" tasks={active} selected={selected} onSelect={setSelected} />
-    <TaskGroup title="Recent" tasks={recent} selected={selected} onSelect={setSelected} />
+    {tasks.length > 0 && <div role="list" aria-label="Background tasks">
+      {tasks.map((task) => <TaskRow key={`${task.ownerId}:${task.id}`} task={task} selected={selected} onSelect={setSelected} />)}
+    </div>}
     {tasks.length >= 200 && <p>Showing up to 200 matching tasks, active work first.</p>}
   </section>;
 }

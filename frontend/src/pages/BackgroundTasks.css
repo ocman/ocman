@@ -23,13 +23,17 @@
   padding-top: 0.3rem;
 }
 
-.background-task-progress progress {
+.background-task-progress progress,
+.background-task-row progress {
   width: 100%;
   max-width: 28rem;
   accent-color: var(--accent);
 }
 
 .background-task-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   margin-left: 0.5rem;
 }
 
@@ -65,7 +69,11 @@
 .background-task-row .background-task-state { margin: 0; flex-shrink: 0; }
 .background-task-phase { margin-left: auto; color: var(--text-dim); }
 .background-task-row > i { flex-shrink: 0; }
+.background-task-row progress { width: 6rem; flex-shrink: 0; }
+.background-task-row .oc-loading-spinner { width: 12px; height: 12px; }
 @media (max-width: 600px) {
+  .background-task-row.oc-button { flex-wrap: wrap; height: auto; min-height: 30px; padding-block: 6px; }
+  .background-task-row progress { order: 1; width: 100%; max-width: none; }
   .background-task-phase { display: none; }
   .background-task-row > i { margin-left: auto; }
 }
