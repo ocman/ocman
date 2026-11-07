@@ -44,15 +44,18 @@ test('old ordinary unarchived sessions stay in the flat list without an attentio
   await expect(sidebar.getByRole('region', { name: 'Needs attention' })).toHaveCount(0);
 });
 
-test('same-id sessions on different machines remain visible and open their owner', async ({ mockedPage: page }) => {
-  const local = { ...MOCK_SESSION, id: 'shared-id', title: 'Local result' };
-  const remote = { ...local, platform: 'r-box:opencode', remoteId: 'box', title: 'Remote result' };
+test('canonical sessions on different machines remain visible and open the selected session', async ({ mockedPage: page }) => {
+  const local = { ...MOCK_SESSION, id: 'ocm_11111111-1111-4111-8111-111111111111', title: 'Local result' };
+  const remote = { ...local, id: 'ocm_22222222-2222-4222-8222-222222222222', platform: 'r-box:opencode', remoteId: 'box', title: 'Remote result' };
   await page.route('/api/sessions*', route => route.fulfill({ json: [MOCK_SESSION, local, remote] }));
   await page.route('/api/sessions/notify*', route => route.fulfill({ json: [] }));
+  await page.route(new RegExp(`/api/session/${remote.id}(\\?|$)`), route => route.fulfill({
+    json: { session: remote, sessionTree: [remote], messages: [], parts: [], totalMessages: 0 },
+  }));
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const sidebar = page.getByTestId('session-sidebar');
   await expect(sidebar.getByText(local.title)).toBeVisible();
   await expect(sidebar.getByText(remote.title)).toBeVisible();
   await sidebar.getByText(remote.title).click();
-  await expect(page).toHaveURL(/\/session\/shared-id\?platform=r-box%3Aopencode$/);
+  await expect(page).toHaveURL(new RegExp(`/session/${remote.id}$`));
 });
