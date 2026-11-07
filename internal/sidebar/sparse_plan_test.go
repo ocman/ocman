@@ -180,6 +180,12 @@ func TestSparseQueryEquivalence(t *testing.T) {
 						if !reflect.DeepEqual(got, want) {
 							t.Fatalf("result mismatch: current=%v previous=%v", got, want)
 						}
+						if !count {
+							inventory := drainQuery(t, r, selectInventory, args)
+							if !reflect.DeepEqual(got, inventory) {
+								t.Fatal("recency page differs from inventory-driven joins")
+							}
+						}
 					})
 				}
 			}

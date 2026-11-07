@@ -3,8 +3,83 @@ title: Profiling
 weight: 8
 ---
 
-This is a historical performance investigation, including measurements and a
-backlog from an earlier OpenCode-only implementation. Polling cadences, source
+## Backend CPU investigation, November 2026
+
+The running backend reproduced 45–47% CPU in two-second windows and averaged
+31% over a separate ten-second window. These are ocman's own process costs,
+not its agent subprocesses. On macOS, 100% means one CPU core. The captures did
+not reproduce the reported 150% peak or establish a no-client idle baseline.
+
+Read-only process samples repeatedly reached `sidebarSessionRows` and
+`sidebar.Reader.SessionsFor`, through sidebar and notification HTTP requests.
+Aggregate-only, read-only database inspection found 16,816 catalogue rows,
+20,577 sidebar rows, 308 halt settings, 4,771 seen flags and 37 live observations.
+No development server or migration ran against those live databases.
+
+Two query plans did unnecessary history-sized work:
+
+- Bounded pages joined the catalogue inventory and sorted all eligible rows
+  before applying `LIMIT`. A global recency index and fixed driving join order
+  let pages stop after enough eligible rows. Filters still precede the limit.
+- Halt propagation visited every catalogue row to discover sparse halt settings.
+  It now starts at an indexed setting-prefix range, then looks up canonical or
+  legacy native identities before walking their source-scoped ancestors.
+
+Unbounded inventory reads retain planner-selected join order. The new recency
+index is an appended history migration; it does not rewrite conversation data.
+
+### Repeatable query measurements
+
+Apple M4 Max, production Go SQLite driver, disposable migrated databases,
+10,000 sessions. The polling fixture has 37 live observations, 308 halt settings
+and 4,771 seen flags. Paired reads alternate order on the same fixture.
+
+| Workload | Before | After |
+|---|---:|---:|
+| 50-row page, no observations or halts, three runs | 34.7–35.6 ms | 1.70–1.71 ms |
+| 50-row polling page with sparse live state, three paired runs | 61.3–61.5 ms | 4.23–4.31 ms |
+| 500-row polling page with sparse live state, three paired runs | 68.8–69.4 ms | 6.93–7.07 ms |
+
+The first workload includes `SessionsFor` decoding. Paired polling workloads
+use identical generic row draining on both queries. These are query timings,
+not a claimed 90–95% reduction in total backend CPU. The baseline page CPU
+profile attributed about 90% of samples cumulatively to SQLite's VM.
+
+```sh
+go test ./internal/sidebar -run 'TestSidebar(PageStreamsRecency|HaltSeedUsesSparseLookups)|TestSparseHaltsMatchCatalogueWalk'
+go test ./internal/sidebar -run '^$' -bench '^BenchmarkSidebar(PageRead|Polling)$' -benchtime=2s -count=3
+```
+
+The query-plan regression tests were observed failing before their fixes.
+Behavior comparisons cover publication/purge fences, archived/deleted/child
+visibility, sparse pins and explicit inclusions, filtering, pagination, legacy
+halt keys and recursive cycles. An upgrade test checks index creation without
+losing stored sidebar history.
+
+### Expected operating profile and remaining validation
+
+Treat these as provisional acceptance budgets, not measurements already met:
+
+- Settled backend with no clients, ingestion or foreground work should be near
+  idle, targeting less than 1% of one core over a minute.
+- One quiet dashboard over roughly 20,000 retained sessions should target less
+  than 5% of one core over a minute. Historical session count should not multiply
+  every small page read's work.
+- Active streaming must be measured separately at a recorded event rate and
+  concurrency. Record CPU per event and allocations, not just short peaks, and
+  exclude agent/model inference processes from ocman's budget.
+
+The live process was not restarted or replaced during this investigation.
+Re-measure its CPU after deploying the change, with the same dashboard and
+session activity, then separately measure no-client idle and active streaming.
+Further captured work included historical display flags and background lifecycle
+snapshots; their residual contribution has not been isolated or fixed here.
+Do not declare the reported peak resolved from query benchmarks alone.
+
+## Earlier OpenCode-only investigation
+
+The remainder is a historical performance investigation, including measurements
+and a backlog from an earlier OpenCode-only implementation. Polling cadences, source
 locations and lsof-based discovery below describe that snapshot, not the current
 runtime. Current ownership and data flows are documented in
 [Architecture](architecture.md), including compact stored sidebar queries,

@@ -14,8 +14,15 @@ The read connection opens both databases read-only. It attaches the authoritativ
 `state.db` as `core`, joining catalogue publication/purge/source checks and user
 flags directly instead of asynchronously copying them. Routine and Factory
 origin fields support `origin` and `originId` filters before pagination. Seen,
-pin, archive and snooze flags use indexed joins. Unread counts use a covering
-message-timestamp index, not JSON payloads or accounting aggregates.
+pin, archive and snooze flags use indexed joins. Sidebar reads do not count unread
+messages or load JSON payloads or accounting aggregates.
+
+Bounded pages scan the global `updated_at DESC,id` index before identity joins,
+so the limit stops work after enough eligible rows rather than after sorting
+the complete inventory. All visibility filters still precede the limit.
+Unbounded inventories retain planner-selected join order. Halt propagation starts
+from indexed halt settings with separate canonical and legacy identity lookups,
+then walks only their native ancestors within the source.
 
 An owner-local module copies platform event caches into `sidebar_observation`
 every 500 ms. It never lists transcripts, contacts supervisors or discovers

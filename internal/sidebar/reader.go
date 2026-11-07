@@ -94,10 +94,12 @@ func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		return nil, err
 	}
 	limit := q.Limit
+	query := selectSessions
 	if limit == 0 {
 		limit = -1
+		query = selectInventory
 	}
-	rows, err := r.db.QueryContext(ctx, selectSessions, string(raw), string(included), time.Now().UnixMilli(), scope.Owner,
+	rows, err := r.db.QueryContext(ctx, query, string(raw), string(included), time.Now().UnixMilli(), scope.Owner,
 		q.Directory, q.Directory, q.Since, q.Since, q.Origin, q.Origin, q.OriginID, q.OriginID, limit, q.Offset)
 	if err != nil {
 		return nil, err
