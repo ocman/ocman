@@ -1,17 +1,19 @@
 import type { ResourcePoint, ResourceProcess } from '../lib/resources';
 import { processKey, processColor, formatMemory } from '../lib/resourcePresentation';
 
-export function ResourceGraph({ title, history, metric, processes, selected, onSelect }: {
+export function ResourceGraph({ title, history: allHistory, metric, processes, selected, onSelect }: {
   title: string; history: ResourcePoint[]; metric: 'cpuPercent' | 'memoryBytes';
   processes: ResourceProcess[]; selected: string | null; onSelect: (process: ResourceProcess) => void;
 }) {
+  const end = allHistory.at(-1)?.timestamp ?? 0;
+  const duration = Math.min(15 * 60_000, Math.max(5 * 60_000, end - (allHistory[0]?.timestamp ?? end)));
+  const start = end - duration;
+  const history = allHistory.filter((point) => point.timestamp >= start);
   const visible = processes.filter((process) => !selected || processKey(process) === selected);
   const samples = history.map((point) => new Map((point.processes ?? []).map((process) => [processKey(process), process[metric]])));
   const values = history.map((point, i) => selected ? samples[i].get(selected) : point[metric]);
   const ceiling = Math.max(metric === 'cpuPercent' ? 100 : 1024 ** 2, ...values.filter((value) => value !== undefined));
   const format = metric === 'cpuPercent' ? (value: number) => `${value.toFixed(1)}%` : formatMemory;
-  const start = history[0]?.timestamp ?? 0;
-  const duration = Math.max(1_000, (history.at(-1)?.timestamp ?? start) - start);
   const x = (index: number) => 4 + ((history[index].timestamp - start) / duration) * 592;
   const y = (value: number) => 96 - value / ceiling * 88;
   const baseline = history.map(() => 0);
@@ -22,7 +24,7 @@ export function ResourceGraph({ title, history, metric, processes, selected, onS
     const segments: number[][] = [];
     samples.forEach((sample, i) => {
       if (!sample.has(key)) return;
-      // Sampling is once per second; bridge up to three intervals between known samples.
+      // Bridge normal two-second polling jitter, but leave longer collection gaps blank.
       const previous = segments.at(-1);
       const previousIndex = previous?.at(-1);
       if (previous && previousIndex !== undefined && history[i].timestamp - history[previousIndex].timestamp <= 3 * 1_000) previous.push(i);
@@ -46,6 +48,6 @@ export function ResourceGraph({ title, history, metric, processes, selected, onS
       <line x1="4" x2="596" y1="96" y2="96" />
       {areas}
     </svg>
-    <div className="resource-graph-scale"><span>Recent samples</span><span>0 – {format(ceiling)}</span></div>
+    <div className="resource-graph-scale"><span>Last {Number((duration / 60_000).toFixed(1))} min</span><span>0 – {format(ceiling)}</span></div>
   </figure>;
 }

@@ -170,7 +170,7 @@ it('shows successful empty results and graphs with no history', async () => {
   expect(screen.getAllByText('No data')).toHaveLength(2);
 });
 
-it('polls once per second, pauses when hidden and aborts when unmounted', async () => {
+it('polls every two seconds, pauses when hidden and aborts when unmounted', async () => {
   vi.mocked(useDocumentVisible).mockReturnValue(false);
   const hidden = renderViewer();
   expect(resources).not.toHaveBeenCalled();
@@ -181,12 +181,29 @@ it('polls once per second, pauses when hidden and aborts when unmounted', async 
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   expect(resources).toHaveBeenCalledTimes(1);
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(resources).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(resources).toHaveBeenCalledTimes(2);
   vi.mocked(resources).mockReturnValue(new Promise(() => {}));
-  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
   const signal = vi.mocked(resources).mock.calls.at(-1)![0];
   page.unmount();
   expect(signal.aborted).toBe(true);
   await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
   expect(resources).toHaveBeenCalledTimes(3);
+});
+
+it('freezes list samples while paused, keeps graphs live and resumes with the latest sample', async () => {
+  const { client } = renderViewer();
+  await screen.findByRole('table');
+  fireEvent.click(screen.getByRole('button', { name: 'Pause list updates' }));
+  const latest = { ...snapshot, cpuPercent: 999, processes: [{ ...snapshot.processes[0], name: 'new process' }], history: [{ ...snapshot.history[0], cpuPercent: 999 }] };
+  vi.mocked(resources).mockResolvedValue(latest);
+  await act(() => client.refetchQueries({ queryKey: ['resources', 'local'] }));
+  expect(await screen.findByText('999.0%')).toBeVisible();
+  expect(within(screen.getByRole('table')).getByText('agent')).toBeVisible();
+  expect(within(screen.getByRole('table')).queryByText('new process')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Resume list updates' }));
+  expect(within(screen.getByRole('table')).getByText('new process')).toBeVisible();
+  expect(within(screen.getByRole('table')).queryByText('agent')).not.toBeInTheDocument();
 });

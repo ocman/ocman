@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, SelectField } from './Control';
 import { DataTable } from './DataTable';
 import { LoadingState } from './LoadingState';
 import { EmptyState } from './EmptyState';
-import { resources, type ResourceProcess } from '../lib/resources';
+import { resources, type ResourceProcess, type ResourceSnapshot } from '../lib/resources';
 import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import { ResourceGraph } from './ResourceGraph';
 import { SegmentedControl } from './SegmentedControl';
@@ -12,6 +13,7 @@ import { formatMemory as memory, processColor, processKey } from '../lib/resourc
 
 export function ResourceViewer() {
   const [params, setParams] = useSearchParams();
+  const [pausedSample, setPausedSample] = useState<ResourceSnapshot | null>(null);
   const sort = params.get('resourceSort') ?? 'cpuPercent';
   const tree = params.get('resourceView') === 'tree';
   const selected = params.get('resourceProcess');
@@ -23,13 +25,14 @@ export function ResourceViewer() {
   });
   const select = (process: ResourceProcess) => update('resourceProcess', processKey(process) === selected ? undefined : processKey(process));
   const query = useVisiblePollingQuery({
-    queryKey: ['resources', 'local'], run: resources, intervalMs: 1_000, timeoutMs: 5_000,
+    queryKey: ['resources', 'local'], run: resources, intervalMs: 2_000, timeoutMs: 5_000,
   });
   const data = query.data;
+  const listData = pausedSample ?? data;
   const history = data?.history ?? [];
   const processes = [...new Map([...history.flatMap((point) => point.processes ?? []), ...(data?.processes ?? [])].map((process) => [processKey(process), process])).values()];
   const focused = processes.find((process) => processKey(process) === selected);
-  const rows = [...(data?.processes ?? [])].sort((a, b) => {
+  const rows = [...(listData?.processes ?? [])].sort((a, b) => {
     if (processKey(a) === selected) return -1;
     if (processKey(b) === selected) return 1;
     if (sort === 'name') return a.name.localeCompare(b.name) || a.pid - b.pid;
@@ -38,16 +41,17 @@ export function ResourceViewer() {
   });
   const displayedRows = tree ? resourceTree(rows) : rows.map((process) => ({ process, depth: 0 }));
   return <section className="resource-viewer" aria-label="Live resources">
-    <p>This machine · refreshes every second while visible. Includes ocman, managed agents, browser terminals and their child processes. CPU: 100% is one core. Memory is resident memory, summed per process.</p>
+    <p>This machine · refreshes every 2 seconds while visible. Includes ocman, managed agents, browser terminals and their child processes. CPU: 100% is one core. Memory is resident memory, summed per process.</p>
     {query.isPending && !query.error && <LoadingState>Loading resources…</LoadingState>}
     {query.error && <div role="alert">{data ? 'Resource refresh failed. Showing the last sample.' : 'Could not load process resources.'} <Button variant="ghost" onClick={() => void query.refetch()}>Retry</Button></div>}
-    {data && <>
+    {data && listData && <>
       <div className="resource-graphs">
         <ResourceGraph title="CPU" history={history} metric="cpuPercent" processes={processes} selected={selected} onSelect={select} />
         <ResourceGraph title="Memory" history={history} metric="memoryBytes" processes={processes} selected={selected} onSelect={select} />
       </div>
       <div className="resource-toolbar">
-        <span>{rows.length} processes · sampled <time dateTime={new Date(data.timestamp).toISOString()}>{new Date(data.timestamp).toLocaleTimeString()}</time></span>
+        <span>{rows.length} processes · sampled <time dateTime={new Date(listData.timestamp).toISOString()}>{new Date(listData.timestamp).toLocaleTimeString()}</time>{pausedSample && ' · List updates paused'}</span>
+        <Button variant="ghost" size="compact" onClick={() => setPausedSample(pausedSample ? null : data)}>{pausedSample ? 'Resume list updates' : 'Pause list updates'}</Button>
         <SegmentedControl label="Process view" value={tree ? 'tree' : 'flat'} options={[{ value: 'flat', label: 'Flat' }, { value: 'tree', label: 'Tree' }]} onChange={(value) => update('resourceView', value === 'tree' ? 'tree' : undefined)} />
         {selected && <><span>{focused ? `${focused.name} · PID ${focused.pid}` : 'Selected process is no longer available'}</span><Button variant="ghost" size="compact" onClick={() => update('resourceProcess')}>Show all processes</Button></>}
         <SelectField aria-label="Sort processes" value={sort} onChange={(event) => update('resourceSort', event.target.value)}>

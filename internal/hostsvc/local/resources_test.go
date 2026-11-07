@@ -55,11 +55,15 @@ func TestResourceSamplerTreesAndDeltas(t *testing.T) {
 	if third.CPUPercent != 0 || len(third.Processes) != 2 {
 		t.Fatalf("third=%+v", third)
 	}
-	for i := 3; i < 70; i++ {
+	for i := 3; i <= 1000; i++ {
 		s.update(start.Add(time.Duration(i)*time.Second), reused, roots)
 	}
-	if len(s.snapshot.History) != 60 || len(first.History) != 1 {
+	if len(s.snapshot.History) != 901 || s.snapshot.History[0].Timestamp != start.Add(100*time.Second).UnixMilli() || len(first.History) != 1 {
 		t.Fatal("history not bounded or mutated earlier snapshot")
+	}
+	s.update(start.Add(time.Hour), reused, roots)
+	if len(s.snapshot.History) != 1 {
+		t.Fatal("stale history retained after collection gap")
 	}
 }
 

@@ -1,5 +1,7 @@
-.oc-modal:has(> .activity-modal) { width: 90vw; height: 90vh; max-height: 90vh; align-content: start; }
-.activity-modal { min-width: 0; }
+.oc-modal:has(> .activity-modal) { width: 90vw; height: 90vh; max-height: 90vh; overflow: hidden; }
+.activity-modal { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.activity-tabs { min-height: 0; display: flex; flex: 1; flex-direction: column; }
+.activity-tabs > .oc-tabs-content { min-height: 0; overflow: auto; padding-top: 14px; }
 .activity-modal .oc-modal-header { margin-bottom: 14px; }
 .resource-viewer { display: grid; gap: 14px; }
 .resource-viewer p { margin: 0; color: var(--text-dim); }

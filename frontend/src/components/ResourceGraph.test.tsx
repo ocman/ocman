@@ -17,8 +17,11 @@ it('stacks actual per-process samples and retains the area of a process that exi
   render(<ResourceGraph title="CPU" history={history} metric="cpuPercent" processes={[ocman, agent]} selected={null} onSelect={select} />);
   const first = screen.getByRole('button', { name: 'CPU: ocman, PID 1' });
   const second = screen.getByRole('button', { name: 'CPU: agent, PID 2' });
-  expect(first.querySelector('polygon')).toHaveAttribute('points', '4,74 596,74 596,96 4,96');
-  expect(second.querySelector('circle')).toHaveAttribute('cx', '4');
+  const points = first.querySelector('polygon')!.getAttribute('points')!.split(' ');
+  expect(Number(points[0].split(',')[0])).toBeCloseTo(594.0267);
+  expect(points[1]).toBe('596,74');
+  expect(Number(second.querySelector('circle')!.getAttribute('cx'))).toBeCloseTo(594.0267);
+  expect(screen.getByText('Last 5 min')).toBeVisible();
   expect(second.querySelector('circle')).toHaveAttribute('cy', '8');
   expect(first).toHaveAttribute('fill', processColor(ocman));
   fireEvent.keyDown(second, { key: 'Enter' });
@@ -27,6 +30,15 @@ it('stacks actual per-process samples and retains the area of a process that exi
   expect(select).toHaveBeenLastCalledWith(ocman);
   fireEvent.keyDown(first, { key: 'ArrowRight' });
   expect(select).toHaveBeenCalledTimes(2);
+});
+
+it.each([10, 20])('grows the time window up to fifteen minutes for %i minutes of history', (minutes) => {
+  const points = Array.from({ length: minutes * 60 + 1 }, (_, i) => ({ ...history[0], timestamp: i * 1000 }));
+  render(<ResourceGraph title="CPU" history={points} metric="cpuPercent" processes={[ocman]} selected={null} onSelect={vi.fn()} />);
+  expect(screen.getByText(`Last ${Math.min(minutes, 15)} min`)).toBeVisible();
+  const polygon = screen.getByRole('button').querySelector('polygon')!;
+  expect(polygon.getAttribute('points')!.split(' ')[0]).toBe('4,74');
+  expect(polygon.getAttribute('points')!.split(' ')).toHaveLength((Math.min(minutes, 15) * 60 + 1) * 2);
 });
 
 it('isolates memory values and renders a single sample as a selectable dot', () => {

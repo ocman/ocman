@@ -24,7 +24,7 @@ export function ActivityNavigation({ onNavigate, triggerOnly = false }: { onNavi
   };
   if (triggerOnly) {
     const destination = new URLSearchParams(params);
-    destination.set('activity', 'tasks');
+    destination.set('activity', 'resources');
     return <Link to={{ search: destination.toString() }} replace onClick={onNavigate}>
       <i className="bi bi-activity" aria-hidden="true" /><span>Activity</span><i className="bi bi-chevron-right" aria-hidden="true" />
     </Link>;
@@ -32,16 +32,16 @@ export function ActivityNavigation({ onNavigate, triggerOnly = false }: { onNavi
   return <>
     <Button variant="ghost" className={`main-nav-usage${open ? ' active' : ''}`}
       aria-label="Activity" title="Activity" aria-haspopup="dialog" aria-expanded={open}
-      onClick={() => { changeTab('tasks'); onNavigate?.(); }}>
+      onClick={() => { changeTab('resources'); onNavigate?.(); }}>
       <i className="bi bi-activity" aria-hidden="true" /><span>Activity</span>
     </Button>
     {open && createPortal(<Modal label="Activity" onClose={() => changeTab()}>
       <div className="activity-modal">
         <ModalHeader title="Activity" onClose={() => changeTab()} closeLabel="Close activity" />
-        <Tabs value={tab} onValueChange={changeTab}>
+        <Tabs className="activity-tabs" value={tab} onValueChange={changeTab}>
           <TabsList aria-label="Activity views">
-            <TabsTrigger value="tasks">Background tasks</TabsTrigger>
             <TabsTrigger value="resources">Resources</TabsTrigger>
+            <TabsTrigger value="tasks">Background tasks</TabsTrigger>
           </TabsList>
           <TabsContent value="tasks"><BackgroundTasks /></TabsContent>
           <TabsContent value="resources"><ResourceViewer /></TabsContent>

@@ -64,9 +64,11 @@ test('Activity sits below Inbox and opens background tasks and live resources', 
   const bounds = await dialog.boundingBox();
   expect(bounds!.width).toBeCloseTo(viewport.width * 0.9, 0);
   expect(bounds!.height).toBeCloseTo(viewport.height * 0.9, 0);
-  await expect(dialog.getByRole('tab', { name: 'Background tasks' })).toHaveAttribute('aria-selected', 'true');
+  await expect(dialog.getByRole('tab', { name: 'Resources', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(dialog.getByRole('table', { name: 'Ocman processes' })).toBeVisible();
+  expect(samples).toBeGreaterThan(0);
+  await dialog.getByRole('tab', { name: 'Background tasks' }).click();
   await expect(dialog.getByText('No background tasks match this view.')).toBeVisible();
-  expect(samples).toBe(0);
   await dialog.getByRole('tab', { name: 'Resources', exact: true }).click();
   await expect(dialog.getByRole('table', { name: 'Ocman processes' })).toBeVisible();
   await expect(dialog.getByRole('group', { name: 'CPU history' })).toBeVisible();
@@ -95,7 +97,7 @@ test('Activity resource graphs fit a phone viewport and close with the shared co
   await page.getByRole('button', { name: 'More', exact: true }).click();
   await page.getByRole('navigation', { name: 'More destinations' }).getByRole('link', { name: 'Activity' }).click();
   const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
-  await dialog.getByRole('tab', { name: 'Resources', exact: true }).click();
+  await expect(dialog.getByRole('tab', { name: 'Resources', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(dialog.getByRole('group', { name: 'CPU history' })).toBeVisible();
   await expect(dialog.getByRole('group', { name: 'Memory history' })).toBeVisible();
   const box = await dialog.boundingBox();
@@ -106,6 +108,31 @@ test('Activity resource graphs fit a phone viewport and close with the shared co
   await dialog.getByRole('button', { name: 'Close activity' }).click();
   await expect(dialog).not.toBeVisible();
 });
+
+for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+  test(`activity header and tabs remain fixed while scrolling at ${viewport.width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize(viewport);
+    await page.route('/api/resources?*', (route) => route.fulfill({ json: {
+      timestamp: Date.now(), cpuPercent: 0, memoryBytes: 0, history: [],
+      processes: Array.from({ length: 100 }, (_, i) => ({ pid: i + 1, parentPid: 0, name: `process-${i}`, cpuPercent: 0, memoryBytes: 0 })),
+    } }));
+    await page.goto('/sessions?activity=resources');
+    const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
+    const close = dialog.getByRole('button', { name: 'Close activity' });
+    const tabs = dialog.getByRole('tablist');
+    const panel = dialog.getByRole('tabpanel');
+    await expect(dialog.getByRole('table')).toBeVisible();
+    const headerBefore = await close.boundingBox();
+    const tabsBefore = await tabs.boundingBox();
+    await panel.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await close.boundingBox()).toEqual(headerBefore);
+    expect(await tabs.boundingBox()).toEqual(tabsBefore);
+    await expect(close).toBeInViewport();
+    await close.click();
+    await expect(dialog).not.toBeVisible();
+  });
+}
 
 test('task rows stay compact and open details without closing the activity modal', async ({ mockedPage: page }) => {
   await page.route('/api/background-tasks?*', (route) => route.fulfill({ json: [{

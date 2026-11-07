@@ -21,14 +21,13 @@ it('opens a two-tab modal, preserves URL scope and restores focus on close', asy
   fireEvent.click(trigger);
   expect(onNavigate).toHaveBeenCalledOnce();
   expect(screen.getByRole('dialog', { name: 'Activity' })).toBeVisible();
-  expect(screen.getByRole('tab', { name: 'Background tasks' })).toHaveAttribute('aria-selected', 'true');
-  expect(await screen.findByText('Task list')).toBeVisible();
-  expect(resources).not.toHaveBeenCalled();
-  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Resources' }), { button: 0, ctrlKey: false });
+  expect(screen.getByRole('tab', { name: 'Resources' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByText('Task list')).not.toBeInTheDocument();
   await waitFor(() => expect(resources).toHaveBeenCalled());
   expect(screen.getByLabelText('Location')).toHaveTextContent('remoteId=box&activity=resources');
   const signal = vi.mocked(resources).mock.calls.at(-1)![0];
   fireEvent.mouseDown(screen.getByRole('tab', { name: 'Background tasks' }), { button: 0, ctrlKey: false });
+  expect(await screen.findByText('Task list')).toBeVisible();
   expect(signal.aborted).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Close activity' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -46,6 +45,6 @@ it('restores an open resources tab from the URL and closes with Escape', () => {
 it('offers a phone destination without mounting a second modal', () => {
   renderWithQuery(<MemoryRouter initialEntries={['/sessions?remoteId=box']}><ActivityNavigation triggerOnly /><Location /></MemoryRouter>);
   fireEvent.click(screen.getByRole('link', { name: 'Activity' }));
-  expect(screen.getByLabelText('Location')).toHaveTextContent('?remoteId=box&activity=tasks');
+  expect(screen.getByLabelText('Location')).toHaveTextContent('?remoteId=box&activity=resources');
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
