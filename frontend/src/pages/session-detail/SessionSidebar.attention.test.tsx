@@ -147,16 +147,17 @@ it('does not repeat an attention item already visible in normal history', () => 
   expect(screen.getAllByText(entry.title!)).toHaveLength(1);
 });
 
-it.each(['recent', 'projects'] as const)('keeps same-id rows owner-routed in %s history without an attention fallback', (view) => {
-  const remote = { ...entry, platform: 'r-box:opencode', title: 'Remote verification' };
-  snapshot([entry, remote]);
-  const row = { ...seedView(entry.id).session!, ...entry, status: 'interrupted' as const };
+it.each(['recent', 'projects'] as const)('keeps canonical rows from different owners visible in %s history without an attention fallback', (view) => {
+  const local = { ...entry, id: 'ocm_local' };
+  const remote = { ...entry, id: 'ocm_remote', platform: 'r-box:opencode', title: 'Remote verification' };
+  snapshot([local, remote]);
+  const row = { ...seedView(local.id).session!, ...local, status: 'interrupted' as const };
   const page = renderSidebar(view, [row, { ...row, ...remote, status: 'interrupted' }], '/', 'other', new Set());
   expect(screen.getAllByText(entry.title!)).toHaveLength(1);
   expect(screen.getAllByText(remote.title)).toHaveLength(1);
   expect(screen.queryByRole('region', { name: 'Needs attention' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByText(remote.title));
-  expect(page.navigateToSession).toHaveBeenCalledWith(remote.id, remote.platform);
+  expect(page.navigateToSession).toHaveBeenCalledWith(remote.id);
 });
 
 it('keeps hidden Factory descendants hidden when their parent moves to attention', () => {

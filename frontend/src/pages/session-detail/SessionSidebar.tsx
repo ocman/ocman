@@ -196,7 +196,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   }, [stableDrafts.ids, onPinSession]);
   const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => phone && archivingSessionIds.has(sib.id) ? null : (
     <SidebarSessionRow
-      key={sib.id.startsWith('ocm_') ? sib.id : `${sib.platform}:${sib.id}`}
+      key={sib.id}
       session={sib}
       inGroup={inGroup}
       flat={flat}

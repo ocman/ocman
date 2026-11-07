@@ -43,11 +43,8 @@ export function nestSessions<T extends SessionLike>(
 ): NestedRow<T>[] {
   if (!sessions || !sessions.length) return [];
 
-  // Canonical ids are globally unique, including children using another tool.
-  // Legacy native ids still need their platform/owner namespace.
-  const key = (session: T, id = session.id) => id.startsWith('ocm_') ? id : `${session.platform ?? ''}\0${id}`;
-  const byId = new Map<string, T>();
-  for (const s of sessions) byId.set(key(s), s);
+  // Sidebar identities are canonical ocm_* IDs, globally unique across tools.
+  const byId = new Map(sessions.map((s) => [s.id, s]));
   const byScope = new Map(sessions.map((s) => [`${s.platform ?? ''}\0${s.id}`, s]));
 
   // Bucket children under their (present) parent, preserving order.
@@ -55,8 +52,8 @@ export function nestSessions<T extends SessionLike>(
   const roots: T[] = [];
   for (const s of sessions) {
     const creator = s.creator && byScope.get(`${s.creator.platform}\0${s.creator.sessionId}`);
-    const parentId = s.parentId ? key(s, s.parentId) : creator && key(creator);
-    if (parentId && parentId !== key(s) && byId.has(parentId)) {
+    const parentId = s.parentId || creator?.id;
+    if (parentId && parentId !== s.id && byId.has(parentId)) {
       const bucket = childrenOf.get(parentId);
       if (bucket) bucket.push(s);
       else childrenOf.set(parentId, [s]);
@@ -70,9 +67,9 @@ export function nestSessions<T extends SessionLike>(
   const visited = new Set<string>();
 
   const walk = (session: T, depth: number) => {
-    if (visited.has(key(session))) return;
-    visited.add(key(session));
-    const kids = childrenOf.get(key(session)) ?? [];
+    if (visited.has(session.id)) return;
+    visited.add(session.id);
+    const kids = childrenOf.get(session.id) ?? [];
     out.push({ session, depth, hasChildren: kids.length > 0 });
     for (const kid of kids) walk(kid, depth + 1);
   };
@@ -83,7 +80,7 @@ export function nestSessions<T extends SessionLike>(
   // pure cycle where no member is a root) as a top-level row so nothing
   // silently disappears from the list.
   for (const s of sessions) {
-    if (!visited.has(key(s))) walk(s, 0);
+    if (!visited.has(s.id)) walk(s, 0);
   }
 
   return out;

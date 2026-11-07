@@ -457,6 +457,9 @@ takes precedence. Missing or filtered creators leave the session top-level;
 cycles cannot hide rows. Independent sessions keep full cards and ordinary
 archive behavior, while native subagents remain compact. The children and origin
 filters follow these display links without changing lifecycle or permissions.
+Sidebar nesting and row keys use canonical `ocm_*` identities directly; there is
+no fallback to platform-prefixed native IDs. Creator references still require
+the matching platform and machine scope.
 
 OpenCode permissions apply to whole tools, so requiring approval for `create` or `send`
 also requires it for the read-only actions.
