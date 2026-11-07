@@ -3,6 +3,7 @@ import { api, type NotifyEntry, type NotifyPrompt } from './api';
 import { useActivityScope } from './activityScopes';
 import { coalescedRefresh, withDeadline } from './coalescedRefresh';
 import { queryClient } from './queryClient';
+import { snapshotPollingDelay } from './snapshotJSON';
 
 /**
  * Shared `/api/sessions/notify` query behind the favicon, badge, bell,
@@ -12,7 +13,7 @@ import { queryClient } from './queryClient';
  */
 
 const POLL_INTERVAL_MS = 10_000;
-const LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const LOOKBACK_HOURS = 7 * 24;
 const LIMIT = 500;
 
 // Not under ['sessions']: those caches hold session lists and are patched and
@@ -47,7 +48,7 @@ async function fetchNotify(): Promise<NotifySnapshot> {
   const fetchedAt = Date.now();
   // RQ's signal is deliberately unused so unmounting never aborts a request.
   const data = await withDeadline(NOTIFY_TIMEOUT_MS, (signal) =>
-    api.sessionsNotify({ since: Date.now() - LOOKBACK_MS, limit: LIMIT, includeDone: 1 }, signal));
+    api.sessionsNotify({ sinceHours: LOOKBACK_HOURS, limit: LIMIT, includeDone: 1 }, signal));
   // Reconcile by owner, prompting session and request identity, rather than
   // the visible ancestor's id. Other outstanding prompts remain visible.
   const entries = data.map((entry) => {
@@ -89,7 +90,7 @@ export function useNotifySnapshot(): NotifySnapshot | undefined {
     queryFn: fetchNotify,
     staleTime: 0,
     retry: false,
-    refetchInterval: POLL_INTERVAL_MS,
+    refetchInterval: () => snapshotPollingDelay('/api/sessions/notify', { sinceHours: LOOKBACK_HOURS, limit: LIMIT, includeDone: 1 }, POLL_INTERVAL_MS),
     refetchOnReconnect: false,
     // Each poll is a new snapshot, so consumers re-evaluate it even when
     // the payload is unchanged.

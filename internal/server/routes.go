@@ -77,7 +77,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	api.HandleFunc("POST /api/debug/log", s.requireLocalhost(s.handleDebugLog))
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/", api)
+	mux.Handle("/api/", s.invalidateSessionWrites(api))
 
 	// MCP server — localhost-only, enabled by default.
 	// Password auth applies here like everywhere else. Clients that

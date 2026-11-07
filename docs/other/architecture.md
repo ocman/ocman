@@ -1387,6 +1387,42 @@ retain invalidation/reconciliation. Sidebar and count reads share committed
 process-local observations for sparse live state, with indexed SQL retained for
 dense snapshots and durable facts. See the companion event-flow page for bounds,
 generation fences and recovery behavior.
+
+```mermaid
+flowchart LR
+    Tabs[Browser tabs] -->|stable relative windows + conditional GET| Snapshots[Bounded HTTP snapshots]
+    Snapshots -->|one request-owned refresh per query| Sidebar[Authoritative sidebar reader]
+    Sidebar --> Local[Local compact projection]
+    Sidebar --> Remotes[Owner-routed remote reads]
+    Mutations[Session/project/preferences writes] -->|fence publication + invalidate| Snapshots
+    Events[Global session/state events] -->|invalidate| Snapshots
+    Events -->|compact rows| Tabs
+    Push[Strict Web Push snapshot] -->|bypasses partial browser cache| Sidebar
+```
+
+- Browser sidebar and notification HTTP responses share immutable serialized
+  snapshots per exact query. Relative `sinceHours` windows produce stable keys;
+  explicit `since` values retain exact semantics. Entries expire five seconds
+  after the authoritative read starts, independently of event delivery. Refreshes
+  run in the initiating request, join concurrent consumers, and never return
+  stale content on error. Retention is bounded to 64 entries and 32 MiB.
+- ETags combine a server-local epoch and content digest. Conditional reads skip
+  unchanged response bodies. Mutations and state broadcasts invalidate snapshots;
+  a mutation during a read prevents that response acquiring a reusable version.
+  Missing backend invalidations still recover through expiration. Browser partial
+  owner results are never reused by strict Web Push delivery.
+- Complete compact events update eligible existing cached list rows without another
+  SQL read. Unknown rows and native child membership reconcile authoritatively;
+  bounded lists also reconcile removals and backwards moves;
+  accounting queries retain authoritative reads. Request-scoped fences prevent
+  older HTTP responses overwriting newer event rows. List/notification polling
+  retain their five-/ten-second freshness budgets: the server reports snapshot
+  age, which is subtracted from the next polling delay rather than adding another
+  full interval. Retries have a 250 ms floor. Existing reconnect/resume
+  reconciliation remains unchanged.
+- PR-watch archive overlays read only watched archive identities and the
+  resurfacing mode, not the full historical seen/pinned preference maps.
+
 Session list/detail responses carry `factoryAttemptId` from a single state.db
 attempt lookup. The sidebar filters these tagged rows and their descendants
 without requesting `/api/factory/epics`. Only tagged conversations mount Factory
@@ -1406,6 +1442,13 @@ Settled agent bash commands also produce `ocman.git.command` refresh hints for
 the owning project's PR/Issue pane.
 
 ## 4. Frontend composition
+
+Each production frontend build embeds the same build hash in its JavaScript and
+`/build-hash.json`. The authenticated shell checks this static file with browser
+caching disabled every three visible minutes and on visibility/online recovery.
+A different valid hash opens a persistent update notice with Refresh now and a
+60-second wall-clock countdown to reload. Missing files, malformed responses and
+network errors do not trigger reloads. Development HMR does not run the checker.
 
 ```mermaid
 flowchart TD

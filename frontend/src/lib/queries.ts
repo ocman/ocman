@@ -16,6 +16,8 @@ import { queryClient as appQueryClient } from './queryClient';
 import { useActivityScope } from './activityScopes';
 import { withDeadline } from './coalescedRefresh';
 import { queryEventRefresh } from './queryEventRefresh';
+import { readSessionInventory } from './applySessionSnapshot';
+import { snapshotPollingDelay } from './snapshotJSON';
 import { useBetaFeatures } from './betaFeatures';
 import { withoutFactoryInbox } from './betaInbox';
 import type {
@@ -185,10 +187,10 @@ export function useSessions(
       const since = params?.sinceHours
         ? Date.now() - params.sinceHours * 60 * 60 * 1000
         : undefined;
-      return api.sessions({ dir: params?.dir, since, limit: params?.limit, view: params?.accounting ? undefined : 'sidebar' }, signal)
-        .then((r) => r ?? []);
+      return readSessionInventory(appQueryClient, key, () => api.sessions({ dir: params?.dir, ...(params?.accounting ? { since } : { sinceHours: params?.sinceHours }), limit: params?.limit, view: params?.accounting ? undefined : 'sidebar' }, signal), signal);
     },
-    refetchInterval: options?.poll ? SESSIONS_POLL_MS : undefined,
+    refetchInterval: options?.poll ? () => params?.accounting ? SESSIONS_POLL_MS : snapshotPollingDelay('/api/sessions',
+      { dir: params?.dir, sinceHours: params?.sinceHours, limit: params?.limit, view: 'sidebar' }, SESSIONS_POLL_MS) : undefined,
     enabled: options?.enabled,
   // Pinned to the app client: every session list lives in one cache that
   // code outside React patches too (lib/sessionsCache).

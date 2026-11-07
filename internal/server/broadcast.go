@@ -241,6 +241,9 @@ func (s *broadcastSub) takeBatch() []broadcastEvent {
 // paths to push an event to every connected /api/events client. No-op
 // if the hub hasn't been initialised (e.g. zero-value Server in tests).
 func (s *Server) broadcastGlobalEvent(event string, data []byte) {
+	if s != nil && invalidatesSessionSnapshots(event) {
+		s.sessionSnapshots.invalidate()
+	}
 	if s == nil || s.broadcastHub == nil {
 		return
 	}

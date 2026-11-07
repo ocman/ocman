@@ -42,7 +42,13 @@ type notifyPrompt struct {
 // Only pending prompts and unseen waiting/error/interrupted sessions can
 // contribute to notification state; keep the response small.
 func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
-	since := httpx.QueryInt[int64](r, "since", 0)
+	s.writeSessionSnapshot(w, r, func() (any, error) {
+		return s.readSessionsNotify(r)
+	})
+}
+
+func (s *Server) readSessionsNotify(r *http.Request) ([]notifyEntry, error) {
+	since := sidebarSince(r)
 	limit := httpx.QueryInt(r, "limit", 500)
 	if limit < 0 {
 		limit = 500
@@ -52,18 +58,13 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("includeDone") == "1" {
 		all, readErr := s.notificationSessionRows(r.Context(), since, limit)
 		if readErr != nil {
-			httpx.ServerError(w, "reading compact notification sessions", readErr)
-			return
+			return nil, readErr
 		}
 		out, err = s.notificationEntriesForSessions(r.Context(), all, false, true)
 	} else {
 		out, err = s.notificationEntries(r.Context(), since, limit)
 	}
-	if err != nil {
-		httpx.ServerError(w, "fetching session state for notify", err)
-		return
-	}
-	httpx.WriteJSON(w, out)
+	return out, err
 }
 
 func (s *Server) notificationEntries(ctx context.Context, since int64, limit int) ([]notifyEntry, error) {

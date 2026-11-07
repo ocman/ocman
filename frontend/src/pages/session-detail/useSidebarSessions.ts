@@ -18,6 +18,7 @@ import { queryClient } from '../../lib/queryClient';
 import { useDocumentVisible } from '../../lib/usePanelVisible';
 import { withDeadline } from '../../lib/coalescedRefresh';
 import { useSidebarEvents } from './useSidebarEvents';
+import { snapshotPollingDelay } from '../../lib/snapshotJSON';
 import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebarSessions, useSidebarSessionList } from '../../lib/sessionsCache';
 
 /**
@@ -150,10 +151,9 @@ export function useSidebarSessions({
       const startedStatusRevisions = useApiStore.getState().recentStatusRevisions;
       const pendingReads = useApiStore.getState().pendingInterruptionReads;
       try {
-        const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
         // /api/sessions can serialize a Go nil slice as JSON `null`;
         // coerce here so .find() / filterVisibleSessions never see null.
-        const result = (await getSessions({ since, limit: 0, view: 'sidebar' }, signal)) ?? [];
+        const result = (await getSessions({ sinceHours: sidebarRecentHoursRef.current, limit: 0, view: 'sidebar' }, signal)) ?? [];
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         // Hide settled native agents, but retain independent subsessions.
         const rooted = filterInactiveChildren(result, id);
@@ -252,7 +252,7 @@ export function useSidebarSessions({
     staleTime: 0,
     refetchOnMount: false, // The session-change effect owns the first load.
     refetchOnWindowFocus: 'always',
-    refetchInterval: SIDEBAR_REFRESH_MS,
+    refetchInterval: () => snapshotPollingDelay('/api/sessions', { sinceHours: sidebarRecentHoursRef.current, limit: 0, view: 'sidebar' }, SIDEBAR_REFRESH_MS),
     retry: false,
   }, queryClient);
 

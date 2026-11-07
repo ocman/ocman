@@ -93,6 +93,7 @@ func (s *Server) versionSessionEvent(event string, data []byte) []byte {
 }
 
 func (s *Server) broadcastSidebarChanged(platform, id string) {
+	s.sessionSnapshots.invalidate()
 	if !s.enqueueSidebarChange(platform, id) {
 		s.broadcastSessionPatch(platform, id, nil)
 	}

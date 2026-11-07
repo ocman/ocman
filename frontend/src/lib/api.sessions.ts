@@ -5,6 +5,7 @@ import type { AgentInfo, NewSessionTarget, PrepareSessionResponse, StartSessionR
   SharedConversation, PermissionRequest, QuestionRequest } from './api.types';
 import type { BackgroundTask } from './sessionBackgroundTasks';
 import { sessionQueueAPI } from './api.queue';
+import { snapshotJSON } from './snapshotJSON';
 
 export const sessionApi = {
   sessionBackgroundTasks: (sessionId: string, platform: string, signal?: AbortSignal) =>
@@ -15,10 +16,10 @@ export const sessionApi = {
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/background/${encodeURIComponent(taskId)}/stop${queryString({ platform })}`, undefined, { parseJSON: false }),
   runningSessionCount: (signal?: AbortSignal) =>
     fetchJSON<{ count: number }>('/api/sessions?view=running-count', signal),
-  sessions: (params?: { dir?: string; since?: number; limit?: number; view?: 'sidebar'; origin?: string; originId?: string; offset?: number }, signal?: AbortSignal) =>
-    fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
-  sessionsNotify: (params?: { since?: number; limit?: number; includeDone?: 1 }, signal?: AbortSignal) =>
-    fetchJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
+  sessions: (params?: { dir?: string; since?: number; sinceHours?: number; limit?: number; view?: 'sidebar'; origin?: string; originId?: string; offset?: number }, signal?: AbortSignal) =>
+    (params?.view === 'sidebar' ? snapshotJSON<Session[]> : fetchJSON<Session[]>)(`/api/sessions${queryString(params)}`, signal),
+  sessionsNotify: (params?: { since?: number; sinceHours?: number; limit?: number; includeDone?: 1 }, signal?: AbortSignal) =>
+    snapshotJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
   // Reads preserve archives; only a navigation fetch explicitly opens a session.
   session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = true) => {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });

@@ -16,12 +16,14 @@ func TestStaticCacheSafety(t *testing.T) {
 		"assets/stable.js":          {Data: []byte("stable")},
 		"assets/page-Abcd1234.html": {Data: []byte("<html>page</html>")},
 		"plugin-shared/react.js":    {Data: []byte("shared")},
+		"build-hash.json":           {Data: []byte(`{"hash":"deployment"}`)},
 	}
 	h := staticHandler(files)
 	for _, tc := range []struct{ path, cache string }{
 		{"/", "no-cache"}, {"/index.html", "no-cache"}, {"/session/example", "no-cache"},
 		{"/plugin-shared/react.js", "no-cache"}, {"/assets/stable.js", "no-cache"},
 		{"/assets/missing-Abcd1234.js", "no-cache"},
+		{"/build-hash.json", "no-cache"},
 		{"/assets/page-Abcd1234.html", "no-cache"},
 		{"/assets/index-Abcd1234.js", "public, max-age=31536000, immutable"},
 	} {

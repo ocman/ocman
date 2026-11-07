@@ -358,9 +358,8 @@ describe('SessionDetail — sidebar polling', () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.store.getSessions).toHaveBeenCalled());
-    const [params] = handle.store.getSessions.mock.calls[0] as [{ since?: number; limit?: number }];
-    expect(typeof params.since).toBe('number');
-    expect(params.since).toBeLessThan(Date.now());
+    const [params] = handle.store.getSessions.mock.calls[0] as [{ sinceHours?: number; limit?: number }];
+    expect(params.sinceHours).toBe(useUiStore.getState().sidebarRecentHours);
     expect(params.limit).toBe(0);
   });
 });
@@ -430,7 +429,7 @@ describe('SessionDetail — session tree usage', () => {
     const link = await screen.findByRole('link', { name: 'Parent planning session' });
     expect(link).toHaveAttribute('href', '/session/sess_parent');
     expect(link.closest('[role="note"]')).toHaveTextContent('Child session of');
-    for (const [params] of handle.api.sessions.mock.calls) expect(params).toHaveProperty('since');
+    for (const [params] of handle.api.sessions.mock.calls) expect(params).toHaveProperty('sinceHours');
   });
 
   it('shows totals for the current session and nested subagents', async () => {
@@ -457,7 +456,7 @@ describe('SessionDetail — session tree usage', () => {
     expect(title.parentElement).toHaveTextContent('Reported cost$0.3000');
     expect(title.parentElement).toHaveTextContent('API-equivalent cost$0.7500');
     expect(title.parentElement).toHaveTextContent('Cost$0.6500');
-    for (const [params] of handle.api.sessions.mock.calls) expect(params).toHaveProperty('since');
+    for (const [params] of handle.api.sessions.mock.calls) expect(params).toHaveProperty('sinceHours');
   });
 
   it('shows estimated cost without requiring context usage', async () => {

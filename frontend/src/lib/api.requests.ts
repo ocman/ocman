@@ -92,7 +92,7 @@ export async function raiseForUnauthorized(resp: Response): Promise<void> {
   throw raiseAuthError((await resp.text().catch(() => '')) || undefined);
 }
 
-async function throwForStatus(resp: Response): Promise<never> {
+export async function throwForStatus(resp: Response): Promise<never> {
   const body = await resp.text().catch(() => '');
   if (resp.status === 401) throw raiseAuthError(body || 'unauthorized');
   throw new APIError(envelopeMessage(body) ?? (body || statusLine(resp)), resp.status);

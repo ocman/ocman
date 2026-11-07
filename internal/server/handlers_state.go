@@ -70,6 +70,7 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "updating seen session state", err)
 		return
 	}
+	s.broadcastSidebarChanged(platform, req.SessionID)
 
 	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }
@@ -179,6 +180,7 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerError(w, "updating pinned session state", err)
 		return
 	}
+	s.broadcastSidebarChanged(platform, req.SessionID)
 
 	httpx.WriteJSON(w, map[string]bool{"ok": true})
 }

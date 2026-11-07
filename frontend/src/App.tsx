@@ -9,6 +9,7 @@ import { lazyComponent } from './components/lazyComponent';
 import { RootRedirect } from './pages/RootRedirect';
 import { SessionDetail } from './pages/session-detail';
 import { onInboxChanged, onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
+import { createCompactSessionRefresh } from './lib/applySessionSnapshot';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { CommandPalette } from './components/CommandPalette';
 import { WorktreeFormModal } from './components/WorktreeFormModal';
@@ -24,6 +25,7 @@ import { McpConfigPrompt } from './components/McpConfigPrompt';
 import { HookPluginPrompt } from './components/HookPluginPrompt';
 import { SetupPrompt } from './components/SetupPrompt';
 import { BackendStatusBanner } from './components/BackendStatusBanner';
+import { BuildUpdateNotice } from './components/BuildUpdateNotice';
 import { AuthGate } from './components/AuthGate';
 import { useUiStore } from './lib/uiStore';
 import { api } from './lib/api';
@@ -40,7 +42,7 @@ import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { MainNav } from './components/MainNav';
 import { ImagePreviewProvider } from './components/ImagePreview';
 import { featureRoutes } from './features';
-import { patchSessionLists, isSidebarSessionsKey } from './lib/sessionsCache';
+import { patchSessionLists } from './lib/sessionsCache';
 import { isCompactSessionSnapshot } from './lib/sessionEventOrder';
 import { BetaFeaturesSync } from './components/BetaFeaturesSync';
 
@@ -275,9 +277,9 @@ function PerfDevHandle() {
 // module scope so it's wired once for the app's lifetime; the
 // EventSource itself is opened by useGlobalEvents() mounted at the root.
 const sessionsEventRefresh = queryEventRefresh(queryClient, ['sessions']);
-const compactSessionRefresh = queryEventRefresh(queryClient, ['sessions'], query => !isSidebarSessionsKey(query.queryKey));
+const compactSessionRefresh = createCompactSessionRefresh(queryClient);
 onSessionChanged((_sessionId, session, patch) => {
-  if (isCompactSessionSnapshot(session, patch)) { compactSessionRefresh.schedule(); return; }
+  if (isCompactSessionSnapshot(session, patch)) { compactSessionRefresh(session); return; }
   // Insert the provisional row first so a freshly-created session shows
   // up instantly, then invalidate so the authoritative list overwrites
   // it on the next fetch.
@@ -344,6 +346,7 @@ function AuthenticatedShell() {
         />
         <div className="container">
           <BackendStatusBanner />
+          <BuildUpdateNotice />
           <AppHeader onOpenNav={() => setMobileNavOpen(true)} />
           <div className="content">
             <RoutesBoundary>

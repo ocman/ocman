@@ -123,10 +123,11 @@ type Server struct {
 	// Used for cross-page signals such as "permission resolved" so
 	// in-app prompt toasts can clear instantly rather than waiting for
 	// the next /api/sessions/notify poll.
-	broadcastHub    *broadcastHub
-	sessionUpdatesV lazy[*sessionupdates.Module]
-	sessionRevision atomic.Uint64
-	activity        *clientActivityPolicy
+	broadcastHub     *broadcastHub
+	sessionUpdatesV  lazy[*sessionupdates.Module]
+	sessionRevision  atomic.Uint64
+	sessionSnapshots httpSnapshots
+	activity         *clientActivityPolicy
 
 	// remoteAccess describes this instance's own remote-access surface
 	// (instance ID, whether the gRPC server is listening, its address,

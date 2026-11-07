@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin, type ProxyOptions } from 'vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
+import { buildHash, buildHashAsset } from './build-hash.ts'
 
 // Extra hostnames (Tailscale, LAN, reverse proxies, etc.) that Vite's dev
 // and preview servers are allowed to respond to. Comma-separated list,
@@ -129,7 +130,9 @@ function noExternalImports(): Plugin {
 const profileBuild = process.env.OCMAN_PROFILE === '1'
 
 export default defineConfig({
+  define: { __OCMAN_BUILD_HASH__: JSON.stringify(buildHash) },
   plugins: [
+    buildHashAsset(),
     pluginSharedCommonJS(),
     noExternalImports(),
     react(),

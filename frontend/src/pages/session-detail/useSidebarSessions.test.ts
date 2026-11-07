@@ -775,7 +775,7 @@ describe('useSidebarSessions live refresh', () => {
     expect(first.result.current.recentSessions).toEqual([row]);
     await act(async () => { await first.result.current.loadRecentSessions(); });
     expect(first.result.current.recentSessions).toEqual([row]);
-    expect(getSessions).toHaveBeenCalledWith({ since: expect.any(Number), limit: 0, view: 'sidebar' }, expect.anything());
+    expect(getSessions).toHaveBeenCalledWith({ sinceHours: 72, limit: 0, view: 'sidebar' }, expect.anything());
     first.unmount();
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
     const fresh = renderHook(() => useSidebarSessions({ ...options, sessionId: 'ready' }));

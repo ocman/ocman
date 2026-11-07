@@ -18,7 +18,7 @@ import (
 // handleSidebarSessions deliberately bypasses summary fanout and applySessionState.
 // Each owner returns filtered metadata, flags and observations in one SQL query.
 func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
-	q := platforms.SidebarQuery{Directory: r.URL.Query().Get("dir"), Since: httpx.QueryInt[int64](r, "since", 0), Limit: httpx.QueryInt(r, "limit", 500), Offset: httpx.QueryInt(r, "offset", 0), Origin: r.URL.Query().Get("origin"), OriginID: r.URL.Query().Get("originId")}
+	q := platforms.SidebarQuery{Directory: r.URL.Query().Get("dir"), Since: sidebarSince(r), Limit: httpx.QueryInt(r, "limit", 500), Offset: httpx.QueryInt(r, "offset", 0), Origin: r.URL.Query().Get("origin"), OriginID: r.URL.Query().Get("originId")}
 	if q.Limit < 0 || q.Offset < 0 {
 		http.Error(w, "invalid sidebar page", http.StatusBadRequest)
 		return
@@ -38,12 +38,10 @@ func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
 		}{count})
 		return
 	}
-	all, err := s.sidebarSessionRows(r.Context(), q, false)
-	if err != nil {
-		httpx.ServerError(w, "reading compact sessions", err)
-		return
-	}
-	httpx.WriteJSON(w, all)
+	s.writeSessionSnapshot(w, r, func() (any, error) {
+		q.Since = sidebarSince(r)
+		return s.sidebarSessionRows(r.Context(), q, false)
+	})
 }
 
 func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuery, strict bool) ([]db.Session, error) {

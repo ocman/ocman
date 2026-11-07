@@ -76,7 +76,11 @@ func (s *Server) overlayPRWatchTasks(ctx context.Context, sessions []db.Session)
 	if len(watched) == 0 || s.stateDB == nil {
 		return nil
 	}
-	flags, err := s.stateDB.SidebarFlags(ctx)
+	keys := make([]state.Key, 0, len(watched))
+	for _, i := range watched {
+		keys = append(keys, state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID})
+	}
+	archives, mode, err := s.stateDB.SidebarArchives(ctx, keys)
 	if err != nil {
 		return err
 	}
@@ -84,7 +88,7 @@ func (s *Server) overlayPRWatchTasks(ctx context.Context, sessions []db.Session)
 	// watches were added. Reapply only the completion hold, preserving other flags.
 	for _, i := range watched {
 		row := &sessions[i]
-		if at, archived := flags.Archived[state.Key{Platform: row.Platform, SessionID: row.ID}]; archived && !db.ShouldResurfaceSession(*row, at, flags.Mode) {
+		if at, archived := archives[state.Key{Platform: row.Platform, SessionID: row.ID}]; archived && !db.ShouldResurfaceSession(*row, at, mode) {
 			row.Archived = true
 		}
 	}
