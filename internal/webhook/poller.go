@@ -37,29 +37,51 @@ var ErrInboxGone = errors.New("webhook inbox no longer exists")
 func (p *Poller) Run(ctx context.Context) {
 	name := "webhook-poll." + p.Inbox.ID
 	defer module.StopSchedule(ctx, name)
-	ticker := time.NewTicker(PollInterval)
-	defer ticker.Stop()
+	delay := PollInterval
+	failing := false
 	for {
 		gone := false
+		var pollErr error
 		err := module.RunScheduled(ctx, module.Schedule{Name: name, Title: "Poll webhook inbox", Scope: "Webhook inbox " + p.Inbox.ID, Interval: PollInterval}, func(ctx context.Context) error {
 			err := p.Poll(ctx)
+			pollErr = err
 			gone = errors.Is(err, ErrInboxGone)
 			if err != nil && !gone {
+				var relayErr *share.RelayError
+				if errors.As(err, &relayErr) && relayErr.Status != 0 {
+					return fmt.Errorf("webhook inbox polling failed: HTTP %d", relayErr.Status)
+				}
 				return errors.New("webhook inbox polling failed")
 			}
 			return nil
 		})
-		if err != nil && ctx.Err() == nil {
-			// Relay errors can contain private endpoints or credentials.
-			log.WithField("job", name).Warn("webhook inbox polling iteration failed")
-		}
-		if gone {
+		if gone || ctx.Err() != nil {
 			return
 		}
+		wait := PollInterval
+		if err != nil {
+			if !failing {
+				// Never log response bodies, endpoints or raw observer errors.
+				entry := log.WithField("job", name)
+				var relayErr *share.RelayError
+				if errors.As(pollErr, &relayErr) {
+					entry = entry.WithField("status", relayErr.Status)
+				}
+				entry.Warn("webhook inbox polling iteration failed")
+			}
+			failing = true
+			wait = delay
+			delay = min(delay*2, 5*time.Minute)
+		} else {
+			failing = false
+			delay = PollInterval
+		}
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }
