@@ -3,11 +3,13 @@ package resourcemod
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/module"
+	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/sessioncatalog"
 )
 
@@ -33,6 +35,10 @@ func (m *Module) resources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snapshot, err := viewer.Resources(r.Context())
+	if errors.Is(err, platforms.ErrUnsupported) {
+		http.Error(w, "resource viewer unavailable on this host", http.StatusServiceUnavailable)
+		return
+	}
 	if err != nil {
 		http.Error(w, "could not read process resources", http.StatusServiceUnavailable)
 		return

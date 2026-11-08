@@ -93,6 +93,7 @@ var callHandlers = map[string]callHandler{
 	"TermCreateWindow":        (*Server).TermCreateWindow,
 	"TermKillWindow":          (*Server).TermKillWindow,
 	"Projects":                (*Server).Projects,
+	"Resources":               (*Server).Resources,
 }
 
 // Call dispatches a unary operation. An unknown method answers

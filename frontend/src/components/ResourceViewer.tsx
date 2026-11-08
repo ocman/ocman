@@ -14,6 +14,23 @@ import { api } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { attributeResourceHistory } from '../lib/resourceAttribution';
 import { formatMemory as memory, processColor, processKey } from '../lib/resourcePresentation';
+import { useRemotes } from '../lib/settingsQueries';
+import type { RemoteStatus } from '../lib/api.types';
+
+type Machine = { id: string; name: string; connected: boolean };
+
+// Machines that can be inspected: this one plus every remote with a known
+// identity. Disconnected remotes stay listed so a restored URL keeps its owner
+// and fails closed instead of silently showing this machine.
+function resourceMachines(remotes: RemoteStatus[] | undefined, selected: string): Machine[] {
+  const machines: Machine[] = [{ id: 'local', name: 'This machine', connected: true }];
+  for (const remote of remotes ?? []) {
+    if (!remote.remoteId || machines.some((machine) => machine.id === remote.remoteId)) continue;
+    machines.push({ id: remote.remoteId, name: remote.displayName || remote.hostname || remote.remoteId, connected: remote.enabled && remote.health === 'connected' });
+  }
+  if (!machines.some((machine) => machine.id === selected)) machines.push({ id: selected, name: selected, connected: false });
+  return machines;
+}
 
 export function ResourceViewer() {
   const client = useQueryClient();
@@ -25,13 +42,21 @@ export function ResourceViewer() {
   const project = params.get('resourceProject') ?? '';
   const session = params.get('resourceSession') ?? '';
   const filtered = Boolean(project || session);
+  const machine = params.get('resourceMachine') || 'local';
+  const machines = resourceMachines(useRemotes().data, machine);
+  const machineName = machines.find((candidate) => candidate.id === machine)!.name;
   const update = (key: string, value?: string) => setParams((previous) => {
     const next = new URLSearchParams(previous);
     if (value) next.set(key, value);
     else next.delete(key);
     if (key === 'resourceProject' || key === 'resourceSession') next.delete('resourceProcess');
+    if (key === 'resourceMachine') ['resourceProject', 'resourceSession', 'resourceProcess'].forEach((scoped) => next.delete(scoped));
     return next;
   });
+  const selectMachine = (id: string) => {
+    setPausedSample(null);
+    update('resourceMachine', id === 'local' ? undefined : id);
+  };
   const clearFilters = () => setParams((previous) => {
     const next = new URLSearchParams(previous);
     next.delete('resourceProject');
@@ -41,14 +66,16 @@ export function ResourceViewer() {
   });
   const select = (process: ResourceProcess) => update('resourceProcess', processKey(process) === selected ? undefined : processKey(process));
   const query = useVisiblePollingQuery({
-    queryKey: ['resources', 'local'],
-    run: async (signal) => attributeResourceHistory(await resources(signal), client.getQueryData<ResourceSnapshot>(['resources', 'local'])),
+    queryKey: ['resources', machine],
+    run: async (signal) => attributeResourceHistory(await resources(machine, signal), client.getQueryData<ResourceSnapshot>(['resources', machine])),
     intervalMs: 2_000, timeoutMs: 5_000,
   });
+  // System stats describe the hub's own process, so only show them for it.
+  const local = machine === 'local';
   const uptime = useVisiblePollingQuery({
     queryKey: ['resource-uptime'],
     run: (signal) => api.systemStats(signal),
-    intervalMs: 5_000, timeoutMs: 5_000,
+    intervalMs: 5_000, timeoutMs: 5_000, enabled: local,
   });
   const data = query.data;
   const listData = pausedSample ?? data;
@@ -76,12 +103,17 @@ export function ResourceViewer() {
   });
   const displayedRows = tree ? resourceTree(rows) : rows.map((process) => ({ process, depth: 0 }));
   return <section className="resource-viewer" aria-label="Live resources">
-    <p>This machine · refreshes every 2 seconds while visible. Includes ocman, managed agents, browser terminals and their child processes. CPU: 100% is one core. Memory is resident memory, summed per process.</p>
-    <div className="resource-toolbar">
+    {machines.length > 1 && <div className="resource-toolbar">
+      <SelectField aria-label="Machine" value={machine} onChange={(event) => selectMachine(event.target.value)}>
+        {machines.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.connected ? candidate.name : `${candidate.name} (offline)`}</option>)}
+      </SelectField>
+    </div>}
+    <p>{machineName} · refreshes every 2 seconds while visible. Includes ocman, managed agents, browser terminals and their child processes. CPU: 100% is one core. Memory is resident memory, summed per process.</p>
+    {local && <div className="resource-toolbar">
       {uptime.data ? <span title="Time since the backend started">Backend uptime: {formatDuration(uptime.data.uptime * 1000)}</span>
         : <span>{uptime.error ? 'Backend uptime unavailable' : 'Loading backend uptime…'}</span>}
       {uptime.error && <><span>{uptime.data && 'Uptime refresh failed. Showing the last sample.'}</span><Button variant="ghost" size="compact" onClick={() => void uptime.refetch()}>Retry uptime</Button></>}
-    </div>
+    </div>}
     {query.isPending && !query.error && <LoadingState>Loading resources…</LoadingState>}
     {query.error && <div role="alert">{data ? 'Resource refresh failed. Showing the last sample.' : 'Could not load process resources.'} <Button variant="ghost" onClick={() => void query.refetch()}>Retry</Button></div>}
     {data && listData && <>

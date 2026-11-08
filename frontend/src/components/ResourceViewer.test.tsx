@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { renderWithQuery } from '../test/renderWithQuery';
 import { resources, type ResourceSnapshot } from '../lib/resources';
 import { useDocumentVisible } from '../lib/usePanelVisible';
+import { useRemotes } from '../lib/settingsQueries';
+import type { RemoteStatus } from '../lib/api.types';
 import { ResourceViewer } from './ResourceViewer';
 import { api } from '../lib/api';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
@@ -20,6 +22,14 @@ function renderViewer(search = '/') {
 vi.mock('../lib/resources', () => ({ resources: vi.fn() }));
 vi.mock('../lib/api', () => ({ api: { systemStats: vi.fn() } }));
 vi.mock('../lib/usePanelVisible', () => ({ useDocumentVisible: vi.fn(() => true) }));
+vi.mock('../lib/settingsQueries', () => ({ useRemotes: vi.fn() }));
+
+function mockRemotes(remotes: Partial<RemoteStatus>[]) {
+  vi.mocked(useRemotes).mockReturnValue({ data: remotes.map((remote, index) => ({
+    localId: index + 1, displayName: '', address: '', enabled: true, health: 'connected', hostname: '',
+    protocolVersion: 1, lastSeen: 0, sessionCount: 0, ...remote,
+  })) } as ReturnType<typeof useRemotes>);
+}
 
 const snapshot: ResourceSnapshot = {
   timestamp: 10000, cpuPercent: 150, memoryBytes: 2 * 1024 ** 3,
@@ -40,6 +50,7 @@ beforeEach(() => {
   vi.mocked(useDocumentVisible).mockReturnValue(true);
   vi.mocked(resources).mockResolvedValue(snapshot);
   vi.mocked(api.systemStats).mockResolvedValue({ uptime: 3661 } as Awaited<ReturnType<typeof api.systemStats>>);
+  mockRemotes([]);
 });
 afterEach(() => vi.useRealTimers());
 
@@ -301,7 +312,7 @@ it('polls every two seconds, pauses when hidden and aborts when unmounted', asyn
   expect(resources).toHaveBeenCalledTimes(2);
   vi.mocked(resources).mockReturnValue(new Promise(() => {}));
   await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-  const signal = vi.mocked(resources).mock.calls.at(-1)![0];
+  const signal = vi.mocked(resources).mock.calls.at(-1)![1];
   page.unmount();
   expect(signal.aborted).toBe(true);
   await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
@@ -321,4 +332,43 @@ it('freezes list samples while paused, keeps graphs live and resumes with the la
   fireEvent.click(screen.getByRole('button', { name: 'Resume list updates' }));
   expect(within(screen.getByRole('table')).getByText('new process')).toBeVisible();
   expect(within(screen.getByRole('table')).queryByText('agent')).not.toBeInTheDocument();
+});
+
+it('hides the machine selector when no remotes are configured and reads this machine', async () => {
+  renderViewer();
+  await screen.findByRole('table', { name: 'Ocman processes' });
+  expect(screen.queryByRole('combobox', { name: 'Machine' })).toBeNull();
+  expect(screen.getByText(/^This machine · refreshes/)).toBeVisible();
+  expect(resources).toHaveBeenCalledWith('local', expect.any(AbortSignal));
+});
+
+it('switches to a remote machine, clears machine-scoped filters and restores it from the URL', async () => {
+  mockRemotes([
+    { remoteId: 'build', displayName: 'Build box' },
+    { remoteId: 'laptop', hostname: 'laptop.lan', health: 'connecting' },
+    { displayName: 'Never connected' },
+  ]);
+  renderViewer('/?resourceProject=ocman&resourceSession=one&resourceProcess=1&resourceSort=pid');
+  const select = await screen.findByRole('combobox', { name: 'Machine' });
+  expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(['This machine', 'Build box', 'laptop.lan (offline)']);
+  expect(select).toHaveValue('local');
+  fireEvent.change(select, { target: { value: 'build' } });
+  expect(screen.getByLabelText('Location').textContent).toBe('?resourceSort=pid&resourceMachine=build');
+  await screen.findByText(/^Build box · refreshes/);
+  expect(resources).toHaveBeenLastCalledWith('build', expect.any(AbortSignal));
+  expect(screen.queryByText(/Backend uptime/)).toBeNull();
+  fireEvent.change(select, { target: { value: 'local' } });
+  expect(screen.getByLabelText('Location').textContent).toBe('?resourceSort=pid');
+});
+
+it('keeps an unknown machine from the URL selected and fails closed instead of showing this machine', async () => {
+  mockRemotes([{ remoteId: 'build', displayName: 'Build box' }]);
+  vi.mocked(resources).mockImplementation((machine) => machine === 'gone' ? Promise.reject(new Error('remote gone is not connected')) : Promise.resolve(snapshot));
+  renderViewer('/?resourceMachine=gone');
+  const select = await screen.findByRole('combobox', { name: 'Machine' });
+  expect(select).toHaveValue('gone');
+  expect(within(select).getByRole('option', { name: 'gone (offline)' })).toBeInTheDocument();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load process resources.');
+  expect(screen.queryByRole('table')).toBeNull();
+  expect(resources).not.toHaveBeenCalledWith('local', expect.anything());
 });

@@ -191,3 +191,31 @@ test('task rows stay compact and open details without closing the activity modal
   await row.click();
   await expect(details.getByRole('progressbar')).toBeVisible();
 });
+
+test('resource machine selector reads a connected remote and survives reload', async ({ mockedPage: page }) => {
+  await page.route('/api/remotes', (route) => route.fulfill({ json: [
+    { localId: 1, remoteId: 'build', displayName: 'Build box', address: 'build:7443', enabled: true, health: 'connected', hostname: 'build', protocolVersion: 1, lastSeen: 0, sessionCount: 0 },
+  ] }));
+  const requested: string[] = [];
+  await page.route('/api/resources?*', (route) => {
+    const machine = new URL(route.request().url()).searchParams.get('remoteId')!;
+    requested.push(machine);
+    return route.fulfill({ json: {
+      timestamp: Date.now(), cpuPercent: 0, memoryBytes: 0, history: [],
+      processes: [{ pid: 1, parentPid: 0, name: `${machine}-agent`, cpuPercent: 0, memoryBytes: 0 }],
+    } });
+  });
+  await page.goto('/sessions?activity=resources');
+  const dialog = page.getByRole('dialog', { name: 'Activity', exact: true });
+  const machine = dialog.getByRole('combobox', { name: 'Machine' });
+  await expect(machine).toHaveValue('local');
+  await expect(dialog.getByRole('button', { name: 'Select local-agent, PID 1' })).toBeVisible();
+  await machine.selectOption('build');
+  await expect(dialog.getByRole('button', { name: 'Select build-agent, PID 1' })).toBeVisible();
+  await expect(dialog.getByText(/^Build box · refreshes/)).toBeVisible();
+  await expect(page).toHaveURL(/resourceMachine=build/);
+  await page.reload();
+  await expect(machine).toHaveValue('build');
+  await expect(dialog.getByRole('button', { name: 'Select build-agent, PID 1' })).toBeVisible();
+  expect(requested).toContain('build');
+});

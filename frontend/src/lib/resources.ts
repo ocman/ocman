@@ -24,6 +24,6 @@ export interface ResourceSnapshot extends ResourcePoint {
   history: ResourcePoint[];
 }
 
-export function resources(signal: AbortSignal) {
-  return fetchJSON<ResourceSnapshot>('/api/resources?remoteId=local', signal);
+export function resources(remoteId: string, signal: AbortSignal) {
+  return fetchJSON<ResourceSnapshot>(`/api/resources?remoteId=${encodeURIComponent(remoteId)}`, signal);
 }

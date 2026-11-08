@@ -26,7 +26,8 @@ it('opens a two-tab modal, preserves URL scope and restores focus on close', asy
   expect(screen.queryByText('Task list')).not.toBeInTheDocument();
   await waitFor(() => expect(resources).toHaveBeenCalled());
   expect(screen.getByLabelText('Location')).toHaveTextContent('remoteId=box&activity=resources');
-  const signal = vi.mocked(resources).mock.calls.at(-1)![0];
+  const [machine, signal] = vi.mocked(resources).mock.calls.at(-1)!;
+  expect(machine).toBe('local');
   fireEvent.mouseDown(screen.getByRole('tab', { name: 'Background tasks' }), { button: 0, ctrlKey: false });
   expect(await screen.findByText('Task list')).toBeVisible();
   expect(signal.aborted).toBe(true);

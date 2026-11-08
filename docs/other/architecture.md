@@ -127,8 +127,12 @@ flowchart LR
    Background tasks use compact rows with
    progress, counters and schedule details in the shared popover.
    The Resources tab polls once per second only while mounted and the
-  document is visible. The UI explicitly scopes resources to this machine;
-  remote hosts without resource support return 503 rather than falling back.
+  document is visible. A URL-backed machine selector, shown when remotes are
+  configured, sends an explicit `remoteId`; switching machines clears its
+  project, session and process filters. Remote hosts forward the read through
+  the closed `Resources` RPC to the owner's local sampler, and the hub links
+  sessions against its catalogue for that owner. Disconnected remotes, and
+  older owners without the RPC, return 503 rather than falling back.
 - **Remote published resources.** Transcript embeds and artifact links retain
   their session owner. Authenticated `/api/remote-resources/<owner>/…` reads
   resolve the owning Host's optional published-resource seam and stream over
