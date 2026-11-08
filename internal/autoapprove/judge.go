@@ -10,6 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/state"
 )
 
 type judgeVerdict string
@@ -20,7 +21,7 @@ const (
 	judgeTimeout                      = 30 * time.Second
 	judgeModelProvider                = "anthropic"
 	judgeModelID                      = "claude-haiku-4-5"
-	JudgeModelSettingKey              = "judge_model"
+	JudgeModelSettingKey              = state.JudgeModelSettingKey
 	DefaultJudgeModel                 = judgeModelProvider + "/" + judgeModelID
 	judgeAgent                        = "build"
 )

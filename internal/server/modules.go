@@ -110,6 +110,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 	}
 	if s.stateDB != nil {
 		d.Identity = s.stateDB // untyped nil otherwise
+		d.Managed = s.stateDB
 	}
 	return remotesmod.NewModule(d)
 }

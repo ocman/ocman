@@ -1252,6 +1252,8 @@ export interface RemoteStatus {
   protocolVersion: number;
   lastSeen: number;
   sessionCount: number;
+  /** Last settings push result while connected. */
+  managedSettings?: 'applied' | 'not-managed' | 'unsupported' | 'failed';
 }
 
 /**
@@ -1336,6 +1338,8 @@ export interface RemoteAccessStatus {
   listenAddr: string;
   tls: boolean;
   tokenSet: boolean;
+  /** Present when started with -remote-managed; hub is empty until a hub sends settings. */
+  managed?: { hub?: string; appliedAt?: number };
 }
 
 /**

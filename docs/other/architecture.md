@@ -309,6 +309,9 @@ flowchart LR
   Plugin catalog, management, health, actions and artifact reads use the same
   authenticated connection. Each machine discovers its own binaries and stores
   its own configuration and secrets. The hub never installs remote binaries.
+  A remote started with `-remote-managed` instead uses the auto-approve
+  settings the hub sends over `Call` on connect and after each change. It
+  stores them in `state.db` as a separate layer above its own values.
 - **Project identity.** Each owner enriches its project snapshot with Git fetch
   remotes inside the existing singleflight refresh. Loaded snapshots return
   immediately while background discovery runs; inventory projection reuses the

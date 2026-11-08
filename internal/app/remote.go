@@ -24,6 +24,45 @@ func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay 
 	return nil
 }
 
+// validateRemoteManaged rejects -remote-managed without a listener: no hub
+// could ever reach the instance to send its settings.
+func validateRemoteManaged(listenAddr string, managed bool) error {
+	if managed && listenAddr == "" {
+		return fmt.Errorf("-remote-managed requires -remote-listen")
+	}
+	return nil
+}
+
+// enableRemoteManaged switches state.db to the hub's settings snapshot.
+func enableRemoteManaged(ctx context.Context, stateDB *state.DB, managed bool) error {
+	if !managed {
+		return nil
+	}
+	if err := stateDB.EnableManagedSettings(ctx); err != nil {
+		return err
+	}
+	if snapshot, ok := stateDB.ManagedSettings(); ok {
+		log.WithField("hub", snapshot.Hub).Info("remote: managed mode, using the hub's saved settings")
+	} else {
+		log.Info("remote: managed mode, using local settings until a hub connects")
+	}
+	return nil
+}
+
+// useHubManagedSettings makes the manager send this instance's settings to
+// the remotes it manages, on connect and after every managed setting change.
+func useHubManagedSettings(mgr *remote.Manager, srv *server.Server, stateDB *state.DB, instanceID string) {
+	mgr.UseManagedSettings(hubManagedSettings(srv, stateDB, instanceID))
+	stateDB.OnManagedSettingsChange(mgr.PushManagedSettings)
+}
+
+// hubManagedSettings reads this hub's effective settings at send time.
+func hubManagedSettings(srv *server.Server, stateDB *state.DB, instanceID string) func(context.Context) (state.ManagedSettings, error) {
+	return func(ctx context.Context) (state.ManagedSettings, error) {
+		return stateDB.HubManagedSettings(ctx, instanceID, srv.AutoApproveDefault())
+	}
+}
+
 // Remote access is opt-in; a listener failure must not block the dashboard.
 func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.DB, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string, trustedOverlay bool) (bool, string, bool, func()) {
 	if listenAddr == "" {
@@ -34,7 +73,7 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 		UsePullRequests(srv.RemotePullRequestOperation).UseBackgroundTasks(srv.BackgroundTaskReader()).
 		UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseEventProxy(srv.ProxyRemoteSessionEvents).
 		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred).UsePermissionPolicy(srv.SessionPermissionPolicy).
-		UseAutoApprove(srv.SessionAutoApprove).
+		UseAutoApprove(srv.SessionAutoApprove).UseManagedSettings(stateDB).
 		UsePublishedResources(srv.ServePublishedResource).UseSessionChanges(srv.StreamRemoteSessionChanges)
 	ln, err := remote.NewListener(remote.ListenConfig{Context: ctx, Ready: srv.SessionsReady, Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
 	if err != nil {

@@ -134,6 +134,16 @@ type Deps struct {
 	// DefaultEnabled is the server-wide auto-approve default applied
 	// when a session has no per-session override.
 	DefaultEnabled bool
+	// DefaultEnabledFunc, when set, replaces DefaultEnabled and is read per
+	// prompt, so a managed remote follows its hub's default.
+	DefaultEnabledFunc func() bool
+}
+
+func (s *Service) defaultEnabled() bool {
+	if s.deps.DefaultEnabledFunc != nil {
+		return s.deps.DefaultEnabledFunc()
+	}
+	return s.deps.DefaultEnabled
 }
 
 // ObservePermissionPrompt retains the full action scope, including OpenCode's

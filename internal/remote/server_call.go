@@ -34,6 +34,7 @@ var callHandlers = map[string]callHandler{
 	"NativePermissionState":   (*Server).NativePermissionState,
 	"SessionPermissionPolicy": (*Server).SessionPermissionPolicy,
 	"SessionAutoApprove":      (*Server).SessionAutoApprove,
+	"ApplyManagedSettings":    (*Server).ApplyManagedSettings,
 	"Capabilities":            (*Server).Capabilities,
 	"NativeQueued":            (*Server).NativeQueued,
 	"SessionUsage":            (*Server).SessionUsage,

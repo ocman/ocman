@@ -199,6 +199,9 @@ type PromptSection struct {
 // GetPromptSections returns the persisted judge prompt sections, or an
 // empty slice if none have been saved yet.
 func (d *DB) GetPromptSections(ctx context.Context) ([]PromptSection, error) {
+	if s := d.managedSnapshot(); s != nil {
+		return append([]PromptSection{}, s.PromptSections...), nil
+	}
 	var sectionsJSON string
 	err := d.db.QueryRowContext(ctx, `SELECT sections_json FROM judge_prompt_sections WHERE id = 1`).Scan(&sectionsJSON)
 	if err == sql.ErrNoRows {
@@ -216,7 +219,15 @@ func (d *DB) GetPromptSections(ctx context.Context) ([]PromptSection, error) {
 
 // SetPromptSections persists the judge prompt sections, overwriting any
 // existing row. Pass an empty slice to clear all custom sections.
-func (d *DB) SetPromptSections(ctx context.Context, sections []PromptSection) error {
+func (d *DB) SetPromptSections(ctx context.Context, sections []PromptSection) (err error) {
+	if err := d.rejectManagedWrite(managedPromptSectionsKey); err != nil {
+		return err
+	}
+	defer func() {
+		if err == nil {
+			d.notifyManagedSettingsChange()
+		}
+	}()
 	if sections == nil {
 		sections = []PromptSection{}
 	}
@@ -244,6 +255,9 @@ const DefaultJudgeDelayMs = 5000
 // after a permission.asked event before starting the LLM judge.
 // Returns defaultJudgeDelayMs when no row has been saved yet.
 func (d *DB) GetJudgeDelayMs(ctx context.Context) (int64, error) {
+	if s := d.managedSnapshot(); s != nil {
+		return s.JudgeDelayMs, nil
+	}
 	var ms int64
 	err := d.db.QueryRowContext(ctx, `SELECT delay_ms FROM judge_settings WHERE id = 1`).Scan(&ms)
 	if err == sql.ErrNoRows {
@@ -257,11 +271,19 @@ func (d *DB) GetJudgeDelayMs(ctx context.Context) (int64, error) {
 
 // SetJudgeDelayMs persists the judge delay. A value of 0 means no delay
 // (judge fires immediately). Negative values are clamped to 0.
-func (d *DB) SetJudgeDelayMs(ctx context.Context, ms int64) error {
+func (d *DB) SetJudgeDelayMs(ctx context.Context, ms int64) (err error) {
+	if err := d.rejectManagedWrite(managedJudgeDelayKey); err != nil {
+		return err
+	}
+	defer func() {
+		if err == nil {
+			d.notifyManagedSettingsChange()
+		}
+	}()
 	if ms < 0 {
 		ms = 0
 	}
-	_, err := d.db.ExecContext(ctx, `
+	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO judge_settings (id, delay_ms) VALUES (1, ?)
 		ON CONFLICT(id) DO UPDATE SET delay_ms = excluded.delay_ms
 	`, ms)

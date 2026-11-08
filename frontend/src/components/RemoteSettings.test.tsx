@@ -262,4 +262,36 @@ describe('RemoteSettings', () => {
     });
     expect(m.removeRemote).toHaveBeenCalledWith(1);
   });
+
+  it('shows whether each remote uses this hub\'s settings', async () => {
+    seed([
+      { localId: 1, displayName: 'Managed', address: 'a:8230', enabled: true, health: 'connected', managedSettings: 'applied' },
+      { localId: 2, displayName: 'Plain', address: 'b:8230', enabled: true, health: 'connected', managedSettings: 'not-managed' },
+      { localId: 3, displayName: 'Old', address: 'c:8230', enabled: true, health: 'connected', managedSettings: 'unsupported' },
+      { localId: 4, displayName: 'Broken', address: 'd:8230', enabled: true, health: 'connected', managedSettings: 'failed' },
+      { localId: 5, displayName: 'Offline', address: 'e:8230', enabled: true, health: 'offline' },
+    ]);
+    renderWithQuery(<RemoteSettings />);
+    const row = async (name: string) => (await screen.findByText(name)).closest('tr')!;
+    expect(await row('Managed')).toHaveTextContent("Uses this hub's auto-approve settings");
+    expect(await row('Plain')).toHaveTextContent('start it with -remote-managed');
+    expect(await row('Old')).toHaveTextContent('update ocman on the remote');
+    expect(await row('Broken')).toHaveTextContent('Could not send settings');
+    expect(within(await row('Offline')).queryByTestId('managed-settings')).toBeNull();
+  });
+
+  it('shows which hub manages this machine', async () => {
+    seed();
+    m.remoteAccess.mockResolvedValueOnce({
+      instanceId: 'inst123', listening: true, listenAddr: '0.0.0.0:8230', tls: true, tokenSet: true, managed: {},
+    });
+    const { unmount } = renderWithQuery(<RemoteSettings />);
+    expect(await screen.findByTestId('managed-by')).toHaveTextContent('using local settings until a hub connects');
+    unmount();
+    m.remoteAccess.mockResolvedValueOnce({
+      instanceId: 'inst123', listening: true, listenAddr: '0.0.0.0:8230', tls: true, tokenSet: true, managed: { hub: 'hub-1', appliedAt: 1 },
+    });
+    renderWithQuery(<RemoteSettings />);
+    expect(await screen.findByTestId('managed-by')).toHaveTextContent('managed by hub hub-1');
+  });
 });

@@ -33,6 +33,12 @@ type Identity interface {
 	InstanceIdentity(ctx context.Context) (state.InstanceIdentity, error)
 }
 
+// Managed reports this instance's remote-managed settings layer.
+type Managed interface {
+	ManagedMode() bool
+	ManagedSettings() (state.ManagedSettings, bool)
+}
+
 // Access is this instance's remote-access listener as configured at startup.
 type Access struct {
 	InstanceID string
@@ -48,7 +54,9 @@ type Deps struct {
 	Manager func() Manager
 	// Identity is nil without a state DB.
 	Identity Identity
-	Access   func() Access
+	// Managed is nil without a state DB.
+	Managed Managed
+	Access  func() Access
 	// Interval overrides InventoryInterval (tests).
 	Interval time.Duration
 }

@@ -20,6 +20,15 @@ type accessStatus struct {
 	TLS        bool   `json:"tls"`
 	Transport  string `json:"transport"`
 	TokenSet   bool   `json:"tokenSet"`
+	// Managed is present when started with -remote-managed.
+	Managed *managedStatus `json:"managed,omitempty"`
+}
+
+// managedStatus names the hub whose settings this instance uses. Hub is
+// empty until a hub first sends its settings.
+type managedStatus struct {
+	Hub       string `json:"hub,omitempty"`
+	AppliedAt int64  `json:"appliedAt,omitempty"`
 }
 
 func (m *Module) handleAccess(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +49,12 @@ func (m *Module) handleAccess(w http.ResponseWriter, r *http.Request) {
 				status.InstanceID = ident.InstanceID
 			}
 			status.TokenSet = ident.RemoteToken != ""
+		}
+	}
+	if m.d.Managed != nil && m.d.Managed.ManagedMode() {
+		status.Managed = &managedStatus{}
+		if snapshot, ok := m.d.Managed.ManagedSettings(); ok {
+			status.Managed.Hub, status.Managed.AppliedAt = snapshot.Hub, snapshot.AppliedAt
 		}
 	}
 	httpx.WriteJSON(w, status)

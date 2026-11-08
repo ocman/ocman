@@ -41,6 +41,10 @@ type DB struct {
 	worktreeMu sync.RWMutex
 	// enabledPlatforms filters DefaultPlatform; see SetEnabledPlatforms.
 	enabledPlatforms atomic.Pointer[func() []string]
+	// managed is the hub snapshot layer of a remote-managed instance; nil
+	// otherwise. See EnableManagedSettings.
+	managed        atomic.Pointer[managedLayer]
+	managedChanged atomic.Pointer[func()]
 }
 
 // DefaultDBPath returns OCMAN_STATE_DB when set, otherwise the default state path.

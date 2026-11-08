@@ -224,6 +224,58 @@ Remove any attachments before switching machines; uploaded files belong to
 the original host. The first prompt creates the session on the selected
 machine, and from then on it stays on its owner.
 
+## Managed remotes
+
+By default each remote applies its own settings to its sessions. Auto-approve
+judging runs on the machine that owns the session, so a remote judges with
+the judge model, delay and prompt sections from its own Settings page.
+
+Start a remote with `-remote-managed` to make it use the hub's settings:
+
+```sh
+ocman -remote-listen 0.0.0.0:8230 -remote-managed \
+  -remote-tls-cert cert.pem -remote-tls-key key.pem
+```
+
+The hub sends these settings when it connects and again whenever you change one:
+
+- the default auto-approve state for new sessions (`-auto-approve` on the hub)
+- the judge model
+- the judge delay
+- the judge prompt sections
+
+The remote saves the last settings it received, so it keeps using them across
+restarts and while the hub is disconnected. Until a hub first connects it
+uses its own settings. The remote's own values are not overwritten: start
+it without `-remote-managed` to use them again.
+
+On a managed remote, these fields cannot be changed from its own Settings
+page. **Settings → Remotes → This machine** shows which hub manages it.
+On the hub, each connected remote shows whether it uses the hub's settings:
+
+| Status | Meaning |
+|--------|---------|
+| Uses this hub's auto-approve settings | The remote applied the hub's settings. |
+| Uses its own settings (start it with -remote-managed…) | The remote runs without `-remote-managed`. |
+| Uses its own settings (update ocman…) | The remote's ocman is too old to accept settings. |
+| Could not send settings | Sending failed; the remote keeps the last settings it received. |
+
+Use **one hub per managed remote**. Ocman does not enforce this. If several
+hubs attach to the same managed remote, each one replaces the settings when
+it connects or changes a setting, and the remote logs a warning.
+
+Settings that belong to the machine never sync: tokens and credentials, the
+judge endpoint and its API key, provider and forge logins, installed
+platforms, Claude hooks and plugins. A managed remote with its own judge
+endpoint keeps using that endpoint and its model instead of the hub's judge
+model. The judge model must also be available on the remote. The per-session auto-approve switch in
+a conversation always applies on the remote, with or without `-remote-managed`.
+
+> Managing a remote lets the hub decide which tool calls that machine
+> approves automatically. Anyone who can attach as a hub can already send
+> prompts there, so this does not grant new access, but only use
+> `-remote-managed` on machines whose hubs you trust.
+
 ## Managing remotes
 
 The hub's **Settings → Remotes** page lists each attached remote with
@@ -271,6 +323,7 @@ cannot be edited.
 | `-remote-tls-cert` | _(unset)_ | remote | TLS certificate file. Required with `-remote-tls-key` unless using a trusted overlay. |
 | `-remote-tls-key` | _(unset)_ | remote | TLS key file. |
 | `-remote-trusted-overlay` | `false` | remote | Explicitly allow plaintext only on a trusted overlay network. |
+| `-remote-managed` | `false` | remote | Use the auto-approve settings sent by the connected hub. Requires `-remote-listen`. See [Managed remotes](#managed-remotes). |
 
 The hub needs no flags. You add remotes at runtime from the Settings page,
 and ocman persists them in `state.db`.
@@ -287,7 +340,7 @@ and ocman persists them in `state.db`.
 
 ## Limitations (v1)
 
-- Auto-approve for a remote session runs on the owning remote, with that
-  machine's settings, not the hub's.
+- Auto-approve for a remote session runs on the owning remote. It uses that
+  machine's settings unless the remote runs with `-remote-managed`.
 - Stale sessions from an offline remote are kept in memory only. After a hub
   restart an offline remote shows no sessions until it reconnects.

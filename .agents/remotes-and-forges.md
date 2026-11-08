@@ -19,6 +19,14 @@ instances over long-lived authenticated gRPC and re-emits events as SSE.
 - Duplicate live instance IDs must publish no adapters. `publishAdapters` marks
   the connection `duplicate-identity` rather than rebinding existing ownership.
   Cloned state.db files are a common source of duplicates.
+- `-remote-managed` makes `state.db` read an allowlisted hub snapshot
+  (`state.ManagedSettings`) instead of local values and reject local writes
+  with `ErrManagedSetting`. Add a setting only if it affects running sessions
+  and is not a secret, credential, installed integration or machine path.
+  Hubs send on connect and after a managed setting changes. One hub per
+  managed remote is advised, not enforced: the last hub to send wins.
+- Per-session settings stored by the owner, such as the auto-approve toggle
+  and manual rules, route through owner RPCs. Never write them to the hub.
 - Machine-aware creation uses `/api/sessions/resolve-targets` and the composer
   selector; the default is local. Keep the frontend host-agnostic.
   golangci-lint's `forbidigo` rule enforces handler boundaries.

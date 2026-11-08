@@ -252,7 +252,7 @@ func (s *Server) deferPermissionNotification(ctx context.Context, session *db.Se
 	if !adapter.Capabilities().AutoApprove {
 		return false, nil
 	}
-	enabled := s.autoApproveDefault
+	enabled := s.AutoApproveDefault()
 	if s.stateDB != nil {
 		value, exists, err := s.stateDB.GetAutoApprove(ctx, session.Platform, session.ID)
 		if err != nil {

@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -52,6 +53,9 @@ type Manager struct {
 	// before Start.
 	beforeAdapterRegister func()
 	refreshInventories    func(context.Context)
+	// managedSettings builds the snapshot sent to managed remotes; nil
+	// sends none. See UseManagedSettings.
+	managedSettings func(context.Context) (state.ManagedSettings, error)
 }
 
 // managedRemote bundles a RemoteConn with its registered adapters and the
@@ -62,6 +66,10 @@ type managedRemote struct {
 	platforms []*remotePlatform
 	host      *remoteHost
 	name      string // hub display name (live)
+	// settingsMu serializes managed-settings pushes; settingsStatus holds
+	// the last result (a ManagedSettings* constant).
+	settingsMu     sync.Mutex
+	settingsStatus atomic.Value
 }
 
 // NewManager creates a Manager. base is the default local platform for targets.
@@ -247,6 +255,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		}
 		m.persistHealth(ctx, localID, mr.conn)
 		m.refreshInventory(ctx, mr)
+		m.pushManagedSettings(ctx, mr)
 
 		log.WithFields(log.Fields{
 			"remote":   localID,
@@ -578,6 +587,9 @@ type RemoteStatus struct {
 	ProtocolVersion int    `json:"protocolVersion"`
 	LastSeen        int64  `json:"lastSeen"`
 	SessionCount    int    `json:"sessionCount"`
+	// ManagedSettings is the last settings push result while connected:
+	// applied, not-managed, unsupported or failed.
+	ManagedSettings string `json:"managedSettings,omitempty"`
 }
 
 // List returns the status of every configured remote, merging persisted
@@ -613,10 +625,20 @@ func (m *Manager) List(ctx context.Context) ([]RemoteStatus, error) {
 				st.Hostname = conn.Hostname()
 			}
 			st.SessionCount = m.sessionCount(r.LocalID)
+			st.ManagedSettings = m.managedSettingsStatus(r.LocalID)
 		}
 		out = append(out, st)
 	}
 	return out, nil
+}
+
+func (m *Manager) managedSettingsStatus(localID int64) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if mr, ok := m.remotes[localID]; ok && mr.conn.Client() != nil {
+		return mr.managedSettingsStatus()
+	}
+	return ""
 }
 
 // sessionCount returns the number of sessions currently known for a

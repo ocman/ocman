@@ -12,6 +12,9 @@ import (
 // "explicit empty string" from "not set". Callers typically fall back
 // to a default when ok is false.
 func (d *DB) GetSetting(ctx context.Context, key string) (value string, ok bool, err error) {
+	if value, ok, managed := d.managedSettingValue(key); managed {
+		return value, ok, nil
+	}
 	err = d.reader().QueryRowContext(ctx, `SELECT value FROM setting WHERE key = ?`, key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", false, nil
@@ -54,7 +57,21 @@ func (d *DB) SetWorktreeInheritPermissions(ctx context.Context, enabled bool) er
 // SetSetting inserts or updates the value for the given key. Empty
 // string values are valid and persist (they are distinguishable from
 // "not set" via GetSetting's ok return).
+// On a remote-managed instance, a setting the hub supplies is read-only.
 func (d *DB) SetSetting(ctx context.Context, key, value string) error {
+	if err := d.rejectManagedWrite(key); err != nil {
+		return err
+	}
+	if err := d.setSetting(ctx, key, value); err != nil {
+		return err
+	}
+	if key == JudgeModelSettingKey {
+		d.notifyManagedSettingsChange()
+	}
+	return nil
+}
+
+func (d *DB) setSetting(ctx context.Context, key, value string) error {
 	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO setting (key, value, updated_at)
 		VALUES (?, ?, ?)

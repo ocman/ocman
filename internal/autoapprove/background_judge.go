@@ -21,7 +21,7 @@ func (s *Service) prepareAutoApprove(ctx context.Context, platformID platforms.I
 	if asked.lifecycleObserved {
 		return asked, asked.lifecycleEnabled
 	}
-	enabled := s.deps.DefaultEnabled
+	enabled := s.defaultEnabled()
 	if s.deps.Store != nil {
 		perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID)
 		switch {

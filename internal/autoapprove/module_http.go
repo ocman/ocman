@@ -3,6 +3,7 @@ package autoapprove
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -69,6 +70,16 @@ func (m *Module) SessionAutoApprove(ctx context.Context, adapter platforms.Platf
 		value = m.defaultEnabled()
 	}
 	return AutoApproveState{Enabled: value, Overridden: exists}, nil
+}
+
+// writeSettingError answers a rejected write to a hub-managed setting with
+// 409 and its reason, so a managed remote's own Settings page explains it.
+func writeSettingError(w http.ResponseWriter, msg string, err error) {
+	if errors.Is(err, state.ErrManagedSetting) {
+		http.Error(w, "this setting is managed by the hub controlling this machine", http.StatusConflict)
+		return
+	}
+	httpx.ServerError(w, msg, err)
 }
 
 func (m *Module) defaultEnabled() bool { return m.DefaultEnabled != nil && m.DefaultEnabled() }
@@ -159,7 +170,7 @@ func (m *Module) handlePromptSections(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := m.Store.SetPromptSections(r.Context(), sections); err != nil {
-			httpx.ServerError(w, "saving prompt sections", err)
+			writeSettingError(w, "saving prompt sections", err)
 			return
 		}
 		if sections == nil {
@@ -194,7 +205,7 @@ func (m *Module) handleJudgeDelay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := m.Store.SetJudgeDelayMs(r.Context(), body.DelayMs); err != nil {
-			httpx.ServerError(w, "saving judge delay", err)
+			writeSettingError(w, "saving judge delay", err)
 			return
 		}
 		// The next permission event uses the new delay without a DB read.
@@ -229,7 +240,7 @@ func (m *Module) handleJudgeModel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := m.Store.SetSetting(r.Context(), JudgeModelSettingKey, body.Model); err != nil {
-			httpx.ServerError(w, "saving judge model", err)
+			writeSettingError(w, "saving judge model", err)
 			return
 		}
 		// Apply immediately so the next judge run uses the new model.

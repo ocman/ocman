@@ -369,6 +369,17 @@ func (s *Server) WithAutoApproveDefault(enabled bool) *Server {
 	return s
 }
 
+// AutoApproveDefault is the effective server-wide default. On a managed
+// remote with a hub snapshot it is the hub's default, not -auto-approve.
+func (s *Server) AutoApproveDefault() bool {
+	if s.stateDB != nil {
+		if managed, ok := s.stateDB.ManagedSettings(); ok {
+			return managed.AutoApproveDefault
+		}
+	}
+	return s.autoApproveDefault
+}
+
 // WithPublicBaseURL sets the externally reachable base URL used to build
 // absolute share links. Empty leaves the "derive from request Host"
 // behaviour in place. The trailing slash is trimmed so callers can

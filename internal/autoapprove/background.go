@@ -147,7 +147,7 @@ func (s *Service) backgroundAutoApprove(
 	asked, enabled := s.prepareAutoApprove(ctx, platformID, sessionID, permissionID, asked)
 	logger.WithFields(log.Fields{
 		"enabled":            enabled,
-		"autoApproveDefault": s.deps.DefaultEnabled,
+		"autoApproveDefault": s.defaultEnabled(),
 	}).Debug("background auto-approve: checking enabled state")
 	if !enabled {
 		logger.Debug("background auto-approve: disabled, skipping")

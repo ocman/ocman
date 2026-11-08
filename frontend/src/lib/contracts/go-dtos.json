@@ -1250,6 +1250,10 @@
         "omitempty": false
       },
       {
+        "name": "managedSettings",
+        "omitempty": true
+      },
+      {
         "name": "protocolVersion",
         "omitempty": false
       },

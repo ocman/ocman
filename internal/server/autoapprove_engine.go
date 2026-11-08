@@ -31,7 +31,7 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 		Engine:         engine,
 		Store:          s.stateDB,
 		Session:        s.resolvePlatformForSession,
-		DefaultEnabled: func() bool { return s.autoApproveDefault },
+		DefaultEnabled: s.AutoApproveDefault,
 		OpenCode:       s.openCodeEnabled,
 	})
 }
@@ -103,7 +103,8 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 			// broadcastGitCommand bounds its own reads.
 			s.broadcastGitCommand(s.lifetime(), string(opencode.PlatformID), sessionID, action)
 		},
-		DefaultEnabled: s.autoApproveDefault,
+		DefaultEnabled:     s.autoApproveDefault,
+		DefaultEnabledFunc: s.AutoApproveDefault,
 	}
 	deps.RefreshSession = func(ctx context.Context, sessionID string) error {
 		if s.registry != nil {

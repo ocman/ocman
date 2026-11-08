@@ -99,6 +99,7 @@ func run() {
 	remoteTLSCert := flag.String("remote-tls-cert", "", "TLS certificate file for the remote-access gRPC server (enables TLS together with -remote-tls-key)")
 	remoteTLSKey := flag.String("remote-tls-key", "", "TLS key file for the remote-access gRPC server")
 	remoteTrustedOverlay := flag.Bool("remote-trusted-overlay", false, "explicitly allow plaintext remote gRPC on a trusted overlay network")
+	remoteManaged := flag.Bool("remote-managed", false, "run as a managed remote: auto-approve settings come from the connected hub instead of this machine (requires -remote-listen)")
 	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow a non-loopback -addr/-gui-addr or a public -public-base-url with no password configured (also "+insecureNoAuthEnv+"=1)")
 	logFile := flag.String("log-file", "", "log file path in addition to stderr (empty = ~/Library/Logs/ocman/ocman.log on macOS, else $XDG_STATE_HOME/ocman/ocman.log; \"-\" or \"off\" = stderr only)")
 	flag.Parse()
@@ -113,6 +114,9 @@ func run() {
 	}
 	fatal := gui.Fatalf
 	if err := validateRemoteTransport(*remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay); err != nil {
+		fatal("%v", err)
+	}
+	if err := validateRemoteManaged(*remoteListen, *remoteManaged); err != nil {
 		fatal("%v", err)
 	}
 
@@ -270,6 +274,9 @@ func run() {
 		if err != nil {
 			fatal("Failed to ensure instance identity: %v", err)
 		}
+		if err := enableRemoteManaged(ctx, stateDB, *remoteManaged); err != nil {
+			fatal("Failed to load managed remote settings: %v", err)
+		}
 
 		// Pre-warm the pricing table in the background so the first metrics request
 		// doesn't block on a remote fetch.
@@ -339,6 +346,7 @@ func run() {
 			// remotes this is a no-op (NFR-6).
 			mgr := remote.NewManager(srv.Registry(), srv.HostRouter(), stateDB, string(opencodeplatform.PlatformID))
 			srv.SetRemoteManager(mgr)
+			useHubManagedSettings(mgr, srv, stateDB, ident.InstanceID)
 			// Stop after Start returns: the remotes module's inventory loop
 			// has been joined by then, and state.db closes after this.
 			defer startPreparedRemoteManager(ctx, srv, mgr)()

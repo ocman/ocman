@@ -342,3 +342,30 @@ func TestRunJoinsInventoryLoop(t *testing.T) {
 		t.Fatalf("interval %v", f.gotIval)
 	}
 }
+
+func TestAccessReportsManagedMode(t *testing.T) {
+	read := func(d Deps) *managedStatus {
+		t.Helper()
+		var got accessStatus
+		if err := json.Unmarshal(do(mux(d), http.MethodGet, "/api/settings/remote-access", "").Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Managed
+	}
+	st := statetest.Open(t)
+	if got := read(Deps{Managed: st}); got != nil {
+		t.Fatalf("unmanaged = %+v", got)
+	}
+	if err := st.EnableManagedSettings(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(Deps{Managed: st}); got == nil || got.Hub != "" {
+		t.Fatalf("awaiting hub = %+v", got)
+	}
+	if err := st.ApplyManagedSettings(t.Context(), state.ManagedSettings{Hub: "hub-1"}, 99); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(Deps{Managed: st}); got == nil || got.Hub != "hub-1" || got.AppliedAt != 99 {
+		t.Fatalf("applied = %+v", got)
+	}
+}

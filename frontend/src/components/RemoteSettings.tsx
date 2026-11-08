@@ -18,6 +18,13 @@ import { ModalFooter } from './ModalFooter';
  */
 const EMPTY_REMOTES: RemoteStatus[] = [];
 
+const MANAGED_SETTINGS_LABELS: Record<NonNullable<RemoteStatus['managedSettings']>, string> = {
+  applied: 'Uses this hub\'s auto-approve settings',
+  'not-managed': 'Uses its own settings (start it with -remote-managed to manage them here)',
+  unsupported: 'Uses its own settings (update ocman on the remote to manage them here)',
+  failed: 'Could not send settings; it keeps the last settings it received',
+};
+
 export function RemoteSettings() {
   const access = useRemoteAccess().data ?? null;
   const remotesQ = useRemotes();
@@ -58,6 +65,13 @@ export function RemoteSettings() {
                     ? `listening on ${access.listenAddr}${access.tls ? ' (TLS)' : ' (no TLS)'}`
                     : 'remote access off (start with -remote-listen)'}
                 </div>
+                {access.managed && (
+                  <div className={styles.meta} data-testid="managed-by">
+                    {access.managed.hub
+                      ? `Auto-approve settings managed by hub ${access.managed.hub}`
+                      : 'Managed remote: using local settings until a hub connects'}
+                  </div>
+                )}
               </td>
               <td><span className={styles.health} data-health={access.listening ? 'connected' : 'disabled'}>{access.listening ? 'listening' : 'off'}</span></td>
               <td>
@@ -125,6 +139,11 @@ function RemoteRow({ remote, onChanged, onEdit }: { remote: RemoteStatus; onChan
           {remote.sessionCount ? ` · ${remote.sessionCount} sessions` : ''}
           {remote.lastSeen ? ` · seen ${new Date(remote.lastSeen).toLocaleString()}` : ''}
         </div>
+        {remote.managedSettings && (
+          <div className={styles.meta} data-testid="managed-settings">
+            {MANAGED_SETTINGS_LABELS[remote.managedSettings]}
+          </div>
+        )}
         {error && <div className={styles.error} role="alert">{error}</div>}
       </td>
       <td><span className={styles.health} data-health={remote.enabled ? remote.health || 'unknown' : 'disabled'}>

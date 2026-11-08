@@ -35,6 +35,7 @@ type Server struct {
 	plugins                        PluginHandler
 	permissionPolicy               PermissionPolicyHandler
 	autoApprove                    AutoApproveHandler
+	managedSettings                ManagedSettingsStore
 	pullRequests                   PullRequestHandler
 	backgroundTasks                tasksvc.Reader
 	publishedResources             http.HandlerFunc

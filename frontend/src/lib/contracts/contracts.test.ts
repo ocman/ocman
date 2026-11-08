@@ -72,7 +72,7 @@ const ts: Record<keyof typeof goDtos.dtos, Record<string, boolean>> = {
   MetricsCostByModel: flags<MetricsCostByModel>()({ models: false, series: false }),
   ModelCostPoint: flags<ModelCostPoint>()({ label: false, costs: false }),
   DatabaseSizeSample: flags<DatabaseSizeSample>()({ database: false, label: false, sampledAt: false, sizeBytes: false }),
-  RemoteStatus: flags<RemoteStatus>()({ localId: false, remoteId: true, displayName: false, address: false, enabled: false, health: false, hostname: false, protocolVersion: false, lastSeen: false, sessionCount: false }),
+  RemoteStatus: flags<RemoteStatus>()({ localId: false, remoteId: true, displayName: false, address: false, enabled: false, health: false, hostname: false, protocolVersion: false, lastSeen: false, sessionCount: false, managedSettings: true }),
   TargetCandidate: flags<TargetCandidate>()({ remoteId: false, remoteName: false, platform: false, dir: false, cloneUrl: true }),
 
   // Conversation events (lib/conversation/events.ts).
