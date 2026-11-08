@@ -6,9 +6,10 @@ test('deployment change shows refresh action and reloads after the 60-second cou
   await page.goto('/sessions');
   await expect(page.getByText('Update available', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh now' })).toBeVisible();
-  await expect(page.getByText(/Refreshing automatically in 60 seconds/)).toBeVisible();
+  const toast = page.getByRole('listitem').filter({ hasText: 'Update available' });
+  await expect(toast.getByText(/Refreshing automatically in 60 seconds/)).toBeVisible();
   await page.clock.fastForward(59_000);
-  await expect(page.getByText(/Refreshing automatically in 1 second\./)).toBeVisible();
+  await expect(toast.getByText(/Refreshing automatically in 1 second\./)).toBeVisible();
   const navigation = page.waitForEvent('load');
   await page.clock.fastForward(1000);
   await navigation;
