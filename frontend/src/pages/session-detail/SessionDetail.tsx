@@ -738,7 +738,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
         />
         <PerfProfiler id="SessionSidebar">
         <SessionSidebar
-          visible={sidebarVisible}
           activeId={id}
           activePlatform={searchParams.get('platform') || (session?.id === id ? session?.platform : undefined)}
           sidebarWidth={sidebarWidth}

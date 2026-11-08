@@ -72,7 +72,6 @@ export interface SidebarProjectGroup {
 }
 
 export interface SessionSidebarProps {
-  visible?: boolean;
   /** Currently active session id from the URL. */
   activeId: string | undefined;
   activePlatform?: string;
