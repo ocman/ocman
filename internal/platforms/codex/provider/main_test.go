@@ -36,13 +36,13 @@ func TestMain(m *testing.M) {
 			if path := os.Getenv("FAKE_CODEX_ACP_STATE"); path != "" {
 				acptest.ConfigureNative(s, path)
 			}
+			if os.Getenv("FAKE_CODEX") == "exit" {
+				s.Handle("test/exit", func(json.RawMessage) (any, error) {
+					go func() { time.Sleep(100 * time.Millisecond); os.Exit(0) }()
+					return map[string]any{"pid": os.Getpid()}, nil
+				})
+			}
 		})
-		if os.Getenv("FAKE_CODEX") == "exit" {
-			s.Handle("test/exit", func(json.RawMessage) (any, error) {
-				go func() { time.Sleep(100 * time.Millisecond); os.Exit(0) }()
-				return map[string]any{"pid": os.Getpid()}, nil
-			})
-		}
 		<-s.Done()
 	default:
 		os.Exit(2)
