@@ -140,6 +140,18 @@ class InstallTest(unittest.TestCase):
         self.run_install('install', '--no-start', piped=True)
         self.assertEqual((self.prefix / 'bin/ocman-ctl').read_text(), (ROOT / 'install.sh').read_text())
 
+    def test_controller_refresh_requires_bootstrap(self):
+        self.run_install('install', '--no-start')
+        controller = self.prefix / 'bin/ocman-ctl'
+        old_controller = controller.read_text() + '\n# installed controller marker\n'
+        controller.write_text(old_controller)
+        result = subprocess.run(['bash', str(controller), 'update', '--no-start'],
+                                env=self.env, text=True, capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(controller.read_text(), old_controller)
+        self.run_install('install', '--no-start', piped=True)
+        self.assertEqual(controller.read_text(), (ROOT / 'install.sh').read_text())
+
     def test_nightly_pagination(self):
         self.env['PAGINATE'] = '1'
         self.run_install('install', 'nightly', '--no-start')

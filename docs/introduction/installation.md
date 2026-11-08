@@ -58,6 +58,12 @@ The selected channel or exact tag is saved in
 only after installation succeeds. Restart a process you manage yourself
 after replacing its binary.
 
+`ocman-ctl update` keeps the currently installed controller script. To get
+installer and service-management fixes too, rerun the bootstrap command from
+the first section with your chosen channel or version. Add `--no-start` if
+you manage the process yourself. Bootstrap downloads the current controller
+from Forgejo's `main` branch independently of the selected binary version.
+
 ## Build fallback
 
 Local builds need git, Go, Node.js and pnpm. Use the versions required by
