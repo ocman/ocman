@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -78,7 +79,7 @@ const webhookFilesGCBatch = 256
 
 // cleanupWebhookFiles removes delivery files last written before cutoff, the
 // same retention as the delivery rows they belong to.
-func (d *DB) cleanupWebhookFiles(before int64) error {
+func (d *DB) cleanupWebhookFiles(ctx context.Context, before int64) error {
 	if d.dataDir == "" {
 		return nil
 	}
@@ -93,8 +94,14 @@ func (d *DB) cleanupWebhookFiles(before int64) error {
 	defer f.Close()
 	cutoff := time.UnixMilli(before)
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		entries, err := f.ReadDir(webhookFilesGCBatch)
 		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			info, err := entry.Info()
 			if err != nil || !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
 				continue

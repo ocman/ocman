@@ -774,8 +774,8 @@ payloads or applying list limits. Both counter and page pause polling while hidd
 flowchart LR
     Import[History ingestion] -->|typed work + progress| Manager[tasksvc<br/>4 running, 128 admitted]
     Prepare[Historical identity preparation] -->|typed work + phase counters| Manager
-    Schedule[Existing maintenance loops] -->|inline observation via module| Manager
-    Manager -->|module-owned schema| State[(state.db<br/>task records)]
+    Schedule[Existing maintenance loops] -->|inline observation via module<br/>in-memory overlap guard| Manager
+    Manager -->|durable receipts<br/>module-owned schema| State[(state.db<br/>task records)]
     Browser[Sidebar task counter<br/>and Background tasks page] -->|authenticated GET| API[taskmod]
     API --> State
     API -->|authenticated gRPC| Remote[Remote owner task readers]
@@ -809,7 +809,11 @@ flowchart LR
   Completed observations never cancel descendant subscriptions. Shutdown joins
   admitted observations after their caller lifetimes are cancelled.
   Receipt-storage failures log separately and run maintenance without a reporter;
-  in-memory overlap guards and shutdown joining still apply.
+  in-memory overlap guards and shutdown joining still apply. Those guards, not
+  persisted receipt status, own recurring-job admission. A final receipt write
+  failure cannot block later iterations once storage recovers. Webhook passes
+  have independent cancellation budgets for relay requests, polling and cleanup;
+  expiry never releases admission before the current call returns.
 - Loop exit and restart clear stale next-check hints. Cleanup admission counts real
   queued/running executions but excludes inline schedule observations. Detailed
   tracked jobs and excluded internal timers are listed in

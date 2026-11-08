@@ -14,9 +14,14 @@ import (
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/share"
 	"github.com/ocman/ocman/internal/state"
+	log "github.com/sirupsen/logrus"
 )
 
 const PollInterval = 15 * time.Second
+
+// A pass can launch routines and drain several pages, so its budget is longer
+// than one relay request. Expiry cancels the pass, not the poller's lifetime.
+const pollTimeout = 2 * time.Minute
 
 type Poller struct {
 	Store    *state.DB
@@ -36,7 +41,7 @@ func (p *Poller) Run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		gone := false
-		_ = module.RunScheduled(ctx, module.Schedule{Name: name, Title: "Poll webhook inbox", Scope: "Webhook inbox " + p.Inbox.ID, Interval: PollInterval}, func(ctx context.Context) error {
+		err := module.RunScheduled(ctx, module.Schedule{Name: name, Title: "Poll webhook inbox", Scope: "Webhook inbox " + p.Inbox.ID, Interval: PollInterval}, func(ctx context.Context) error {
 			err := p.Poll(ctx)
 			gone = errors.Is(err, ErrInboxGone)
 			if err != nil && !gone {
@@ -44,6 +49,10 @@ func (p *Poller) Run(ctx context.Context) {
 			}
 			return nil
 		})
+		if err != nil && ctx.Err() == nil {
+			// Relay errors can contain private endpoints or credentials.
+			log.WithField("job", name).Warn("webhook inbox polling iteration failed")
+		}
 		if gone {
 			return
 		}
@@ -82,6 +91,8 @@ func RegisterStandalone(ctx context.Context, store *state.DB, name, relayURL, en
 // Poll traverses the complete relay cursor range. A bad delivery is recorded
 // and skipped, so it cannot block newer deliveries behind it.
 func (p *Poller) Poll(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
+	defer cancel()
 	now := time.Now
 	if p.Now != nil {
 		now = p.Now
@@ -97,7 +108,10 @@ func (p *Poller) Poll(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("parsing webhook identity: %w", err)
 	}
-	client := share.RelayClient{BaseURL: p.Inbox.RelayURL, HTTP: p.HTTP}
+	client := share.NewRelayClient(p.Inbox.RelayURL)
+	if p.HTTP != nil {
+		client.HTTP = p.HTTP
+	}
 	cursor := ""
 	for {
 		page, err := client.ListInboxDeliveries(ctx, p.Inbox.ID, p.Inbox.FetchToken, cursor)

@@ -1,6 +1,8 @@
 package state
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +87,52 @@ func TestWebhookFilesNeedDataDir(t *testing.T) {
 	if _, err := d.WriteWebhookFile("inbox", "d", WebhookBodyFile, nil); err == nil {
 		t.Fatal("wrote a body without a data directory")
 	}
-	if err := d.cleanupWebhookFiles(1); err != nil {
+	if err := d.cleanupWebhookFiles(t.Context(), 1); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type webhookCleanupContext struct {
+	context.Context
+	cancel   context.CancelFunc
+	checks   int
+	cancelAt int
+}
+
+func (c *webhookCleanupContext) Err() error {
+	c.checks++
+	if c.checks == c.cancelAt {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func TestWebhookFileCleanupHonorsCancellation(t *testing.T) {
+	for _, cancelAt := range []int{1, 2} {
+		t.Run(fmt.Sprint(cancelAt), func(t *testing.T) {
+			d := openTestStateDB(t)
+			path, err := d.WriteWebhookFile("inbox", "delivery", WebhookBodyFile, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parent, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			// Cancel either before reading the batch or before deleting its first
+			// entry. No timing race or real filesystem workload is needed.
+			ctx := &webhookCleanupContext{Context: parent, cancel: cancel, cancelAt: cancelAt}
+			before := time.Now().Add(time.Hour).UnixMilli()
+			if err := d.cleanupWebhookFiles(ctx, before); !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancelled file sweep: %v", err)
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("cancelled sweep removed a file: %v", err)
+			}
+			if err := d.cleanupWebhookFiles(t.Context(), before); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("fresh sweep did not resume: %v", err)
+			}
+		})
 	}
 }

@@ -19,6 +19,8 @@ import (
 // so hourly keeps up without scanning on every inbox poll.
 const historyCleanupInterval = time.Hour
 
+const historyCleanupTimeout = time.Minute
+
 // Routines is what webhooks need from the routines module: a dispatcher, and
 // a lookup to check a subscription targets a routine on this machine.
 type Routines interface {
@@ -132,6 +134,8 @@ func (m *Module) startPoller(inbox state.WebhookInbox) {
 // cleanHistory expires delivery rows and files independent of whether any
 // inbox still exists: a revoked last inbox must not leave files behind.
 func (m *Module) cleanHistory(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, historyCleanupTimeout)
+	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
 			module.ReportError(ctx, errors.New("webhook history cleanup panicked"))

@@ -52,3 +52,15 @@ its idle journal/feed polls do not create receipts.
 
 Observations do not enqueue another execution or bypass mutation fences. Queued
 messages, routine runs and agent executions keep their own recovery records.
+
+Recurring jobs use an in-memory overlap guard, not their last persisted status,
+to decide whether another iteration may run. A failed completion-receipt write
+can leave a stale `running` entry, but cannot stop later iterations after storage
+recovers. A deadline never authorizes overlapping a call that has not returned.
+
+Webhook relay requests time out after 30 seconds. Each inbox poll has a two-minute
+budget, including routine launch work, and each history sweep has a one-minute
+budget. These deadlines cancel individual passes without cancelling the module's
+lifetime or stopping an already-launched routine session. Cancellation is
+cooperative; dependencies must honor their context. Later passes receive fresh
+budgets and retain delivery deduplication and retry rules.

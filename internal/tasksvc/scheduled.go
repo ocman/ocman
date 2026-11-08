@@ -57,10 +57,6 @@ func (m *Manager) ObserveSchedule(caller context.Context, spec module.Schedule, 
 	if err == nil {
 		err = m.store.beginScheduled(caller, task)
 	}
-	if errors.Is(err, ErrBusy) {
-		m.mu.Unlock()
-		return err
-	}
 	if m.schedules == nil {
 		m.schedules = make(map[string]bool)
 	}
