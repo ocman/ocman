@@ -1431,11 +1431,14 @@ flowchart LR
 Session list/detail responses carry `factoryAttemptId` from a single state.db
 attempt lookup. The sidebar filters these tagged rows and their descendants
 without requesting `/api/factory/epics`. Only tagged conversations mount Factory
-recovery queries. On mobile, closed drawers disable sidebar list/git/stats reads
+recovery queries. On mobile, closed drawers disable sidebar list/git reads
 and unmount the closed mobile details drawer. Document visibility pauses reads
 without unmounting open panes or recovery controls, preserving fullscreen diffs,
 pagination, expanded previews and unsent guidance. Resuming refreshes the visible
 content, including the artifact pages already opened by the user.
+Activity's Resources view polls backend uptime through `/api/system/stats` every
+five seconds while visible, independently of process sampling. The session sidebar
+does not poll or display runtime stats.
 Sidebar branch/worktree metadata batches checkouts per owner rather than the
 active conversation's machine, retaining known same-owner labels during refreshes.
 Conversation archive and keyboard navigation load their candidates on demand

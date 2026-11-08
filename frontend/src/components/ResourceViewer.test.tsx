@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { renderWithQuery } from '../test/renderWithQuery';
 import { resources, type ResourceSnapshot } from '../lib/resources';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 import { ResourceViewer } from './ResourceViewer';
+import { api } from '../lib/api';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
 function Location() {
@@ -17,6 +18,7 @@ function renderViewer(search = '/') {
 }
 
 vi.mock('../lib/resources', () => ({ resources: vi.fn() }));
+vi.mock('../lib/api', () => ({ api: { systemStats: vi.fn() } }));
 vi.mock('../lib/usePanelVisible', () => ({ useDocumentVisible: vi.fn(() => true) }));
 
 const snapshot: ResourceSnapshot = {
@@ -37,8 +39,56 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useDocumentVisible).mockReturnValue(true);
   vi.mocked(resources).mockResolvedValue(snapshot);
+  vi.mocked(api.systemStats).mockResolvedValue({ uptime: 3661 } as Awaited<ReturnType<typeof api.systemStats>>);
 });
 afterEach(() => vi.useRealTimers());
+
+it('shows backend uptime independently of process resource loading', async () => {
+  vi.mocked(resources).mockRejectedValue(new Error('unavailable'));
+  renderViewer();
+  expect(await screen.findByText('Backend uptime: 1h 1m')).toBeVisible();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not load process resources.');
+});
+
+it('keeps process resources available when uptime fails', async () => {
+  vi.mocked(api.systemStats).mockRejectedValue(new Error('unavailable'));
+  renderViewer();
+  expect(await screen.findByText('Backend uptime unavailable')).toBeVisible();
+  expect(await screen.findByRole('table', { name: 'Ocman processes' })).toBeVisible();
+});
+
+it('keeps the last uptime on refresh failure and supports retry', async () => {
+  const { client } = renderViewer();
+  await screen.findByText('Backend uptime: 1h 1m');
+  vi.mocked(api.systemStats).mockRejectedValueOnce(new Error('unavailable'));
+  await act(() => client.refetchQueries({ queryKey: ['resource-uptime'] }));
+  expect(await screen.findByText('Uptime refresh failed. Showing the last sample.')).toBeVisible();
+  expect(screen.getByText('Backend uptime: 1h 1m')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry uptime' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry uptime' })).not.toBeInTheDocument());
+});
+
+it('loads uptime only while visible, refreshes every five seconds and aborts on unmount', async () => {
+  vi.mocked(useDocumentVisible).mockReturnValue(false);
+  const hidden = renderViewer();
+  expect(api.systemStats).not.toHaveBeenCalled();
+  hidden.unmount();
+  vi.mocked(useDocumentVisible).mockReturnValue(true);
+  vi.useFakeTimers();
+  vi.mocked(api.systemStats).mockReturnValue(new Promise(() => {}));
+  const page = renderViewer();
+  expect(screen.getByText('Loading backend uptime…')).toBeVisible();
+  const signal = vi.mocked(api.systemStats).mock.calls.at(-1)![0];
+  page.unmount();
+  expect(signal?.aborted).toBe(true);
+  vi.mocked(api.systemStats).mockResolvedValue({ uptime: 61 } as Awaited<ReturnType<typeof api.systemStats>>);
+  const polling = renderViewer();
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(api.systemStats).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(api.systemStats).toHaveBeenCalledTimes(3);
+  polling.unmount();
+});
 
 it('shows CPU and memory graphs and sorts the top-like process list', async () => {
   renderViewer();

@@ -273,7 +273,7 @@ simultaneously:
 |---|----------------------------------------|--------------------|----------------------------------------------------|
 | 1 | `App.tsx` → `useFaviconNotify`         | 10 s               | `GET /api/sessions/notify`                         |
 | 2 | `App.tsx` → `useBellNotify`            | 10 s               | Independent poller hitting the same endpoint       |
-| 3 | `App.tsx` → `BackendStats`             | 5 s                | `GET /api/system/stats`                            |
+| 3 | Activity → `ResourceViewer` uptime    | 5 s while visible  | `GET /api/system/stats`                            |
 | 4 | `App.tsx` → `useMemoryMonitor`         | 30 s               | Local-only, fine                                   |
 | 5 | `App.tsx` → `usePerformanceCleanup`    | 60 s (dev)         | Local-only, fine                                   |
 | 6 | `SessionDetail` line ~1078             | 5 s                | Sidebar `recentSessions` refresh                   |
@@ -835,4 +835,4 @@ Findings that are easy to miss:
 - `frontend/src/lib/perfMonitor.ts`: interaction metrics (`__ocmanPerf.metrics()`).
 - `frontend/perf/`: interaction bench (`pnpm perf`).
 - `frontend/src/lib/useLongTaskMonitor.ts`: long-task observer.
-- `frontend/src/components/BackendStats.tsx`: footer display.
+- `frontend/src/components/ResourceViewer.tsx`: process resources and backend uptime in Activity.

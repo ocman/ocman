@@ -35,7 +35,7 @@ import { insertProvisionalSession, inboxEventRefresh } from './lib/queries';
 import { queryEventRefresh } from './lib/queryEventRefresh';
 import { remoteLog } from './lib/remoteLog';
 // Starts the global long-task observer at boot, so main-thread stalls are
-// counted whether or not BackendStats is rendered.
+// counted on every page.
 import './lib/useLongTaskMonitor';
 import { installPerfMonitor } from './lib/perfMonitor';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';

@@ -28,8 +28,6 @@ export type UiStore = {
 
   sidebarView: SidebarView;
   setSidebarView: (view: SidebarView) => void;
-  sidebarStatsExpanded: boolean;
-  toggleSidebarStats: () => void;
 
   // Collapsed project directories in the "projects" sidebar view. Stored as
   // a plain string[] (not Set) so Zustand's persist middleware can serialise
@@ -232,8 +230,6 @@ export const useUiStore = create<UiStore>()(
 
       sidebarView: 'recent',
       setSidebarView: (view) => set({ sidebarView: view }),
-      sidebarStatsExpanded: false,
-      toggleSidebarStats: () => set((s) => ({ sidebarStatsExpanded: !s.sidebarStatsExpanded })),
 
       collapsedProjects: [],
       toggleCollapsedProject: (directory) =>

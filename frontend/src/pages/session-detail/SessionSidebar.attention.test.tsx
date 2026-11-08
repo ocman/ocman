@@ -20,7 +20,6 @@ vi.mock('../../lib/useNotifyData', async () => {
   };
   return { useNotifySnapshot: () => useSyncExternalStore(subscribe, () => notify.current) };
 });
-vi.mock('../../components/BackendStats', () => ({ BackendStats: () => null }));
 vi.mock('../../lib/queries', () => ({ useWorkEpics: () => ({ data: [] }) }));
 vi.mock('../../lib/useCapabilities', async (original) => ({
   ...await original<typeof import('../../lib/useCapabilities')>(), useMultiHost: () => false,

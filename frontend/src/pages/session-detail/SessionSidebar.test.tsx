@@ -23,9 +23,6 @@ vi.mock('../../lib/perfMonitor', () => ({ countRender: vi.fn() }));
 
 beforeEach(() => useBetaFeatures.setState({ factory: true }));
 
-vi.mock('../../components/BackendStats', () => ({
-  BackendStats: () => null,
-}));
 vi.mock('@dnd-kit/core', async (importOriginal) => {
   const original = await importOriginal<typeof import('@dnd-kit/core')>();
   return { ...original, DndContext: vi.fn((props: React.ComponentProps<typeof original.DndContext>) => <original.DndContext {...props} />) };
@@ -115,6 +112,10 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it('does not show a system stats footer', () => {
+    renderSidebar({ directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'busy', count: 1 } }, {});
+    expect(screen.queryByRole('button', { name: /system stats/i })).not.toBeInTheDocument();
+  });
   it('nests cross-project subsession cards with compact native agents in visible navigation order', () => {
     const parent = session({ id: 'ocm_parent', title: 'Implement authentication' });
     const child = session({ id: 'ocm_child', platform: 'another-tool', parentId: parent.id,

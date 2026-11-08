@@ -10,6 +10,8 @@ import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import { ResourceGraph } from './ResourceGraph';
 import { SegmentedControl } from './SegmentedControl';
 import { resourceTree } from '../lib/resourceTree';
+import { api } from '../lib/api';
+import { formatDuration } from '../lib/format';
 import { attributeResourceHistory } from '../lib/resourceAttribution';
 import { formatMemory as memory, processColor, processKey } from '../lib/resourcePresentation';
 
@@ -43,6 +45,11 @@ export function ResourceViewer() {
     run: async (signal) => attributeResourceHistory(await resources(signal), client.getQueryData<ResourceSnapshot>(['resources', 'local'])),
     intervalMs: 2_000, timeoutMs: 5_000,
   });
+  const uptime = useVisiblePollingQuery({
+    queryKey: ['resource-uptime'],
+    run: (signal) => api.systemStats(signal),
+    intervalMs: 5_000, timeoutMs: 5_000,
+  });
   const data = query.data;
   const listData = pausedSample ?? data;
   const allHistory = data?.history ?? [];
@@ -70,6 +77,11 @@ export function ResourceViewer() {
   const displayedRows = tree ? resourceTree(rows) : rows.map((process) => ({ process, depth: 0 }));
   return <section className="resource-viewer" aria-label="Live resources">
     <p>This machine · refreshes every 2 seconds while visible. Includes ocman, managed agents, browser terminals and their child processes. CPU: 100% is one core. Memory is resident memory, summed per process.</p>
+    <div className="resource-toolbar">
+      {uptime.data ? <span title="Time since the backend started">Backend uptime: {formatDuration(uptime.data.uptime * 1000)}</span>
+        : <span>{uptime.error ? 'Backend uptime unavailable' : 'Loading backend uptime…'}</span>}
+      {uptime.error && <><span>{uptime.data && 'Uptime refresh failed. Showing the last sample.'}</span><Button variant="ghost" size="compact" onClick={() => void uptime.refetch()}>Retry uptime</Button></>}
+    </div>
     {query.isPending && !query.error && <LoadingState>Loading resources…</LoadingState>}
     {query.error && <div role="alert">{data ? 'Resource refresh failed. Showing the last sample.' : 'Could not load process resources.'} <Button variant="ghost" onClick={() => void query.refetch()}>Retry</Button></div>}
     {data && listData && <>

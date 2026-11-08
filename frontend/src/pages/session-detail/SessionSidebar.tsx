@@ -21,7 +21,6 @@ import { fuzzyMatch } from '../../lib/format';
 import { matchesSessionSearch } from './sidebarSessionSearch';
 import { useSidebarDrawers } from './useSidebarDrawers';
 import { SidebarDrawers } from './SidebarDrawers';
-import { BackendStats } from '../../components/BackendStats';
 import { Resizer } from '../../components/Resizer';
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useUiStore } from '../../lib/uiStore';
 import { SkeletonLines } from '../../components/Skeleton';
@@ -108,7 +107,6 @@ export interface SessionSidebarProps {
 }
 
 export const SessionSidebar = memo(function SessionSidebar({
-  visible = true,
   activeId,
   activePlatform,
   sidebarWidth,
@@ -397,7 +395,6 @@ export const SessionSidebar = memo(function SessionSidebar({
       </div>
       {!loadingRecentSessions && <SidebarDrawers drawers={runningDrawers.drawers} expanded={runningDrawers.expanded}
         onToggle={runningDrawers.toggle} renderRow={renderRow} />}
-      <BackendStats enabled={visible} />
     </div>
   );
 });

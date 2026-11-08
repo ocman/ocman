@@ -8,6 +8,7 @@ import { resources } from '../lib/resources';
 
 vi.mock('../pages/BackgroundTasks', () => ({ BackgroundTasks: () => <p>Task list</p> }));
 vi.mock('../lib/resources', () => ({ resources: vi.fn(() => new Promise(() => {})) }));
+vi.mock('../lib/api', () => ({ api: { systemStats: vi.fn(() => new Promise(() => {})) } }));
 
 function Location() {
   return <output aria-label="Location">{useLocation().search}</output>;

@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ActiveSessions } from './ActiveSessions';
-import { BackendStats } from './BackendStats';
 vi.mock('./BackgroundTaskCounter', () => ({ BackgroundTaskCounter: () => null }));
-import { useUiStore } from '../lib/uiStore';
 import { TOOLTIP_DELAY_MS } from './Tooltip';
 import { projectIdentityIndex } from '../lib/projectIdentity';
 
@@ -141,16 +138,4 @@ it('uses the session id when its title is empty and closes on outside click', ()
   expect(screen.getByRole('link', { name: 'untitled' })).toBeInTheDocument();
   fireEvent.mouseDown(document.body);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-});
-
-it('tabs directly to system stats without mounting footer task counters or session queries', async () => {
-  vi.useRealTimers();
-  useUiStore.setState({ sidebarStatsExpanded: false });
-  const user = userEvent.setup();
-  render(<MemoryRouter><BackendStats /></MemoryRouter>);
-  await user.tab();
-  expect(screen.getByRole('button', { name: 'Show system stats' })).toHaveFocus();
-  expect(screen.queryByRole('button', { name: 'Total active sessions: 3' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  expect(useSessions).not.toHaveBeenCalled();
 });
