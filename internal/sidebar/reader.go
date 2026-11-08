@@ -74,11 +74,17 @@ func (r *Reader) Sessions(ctx context.Context, scope Scope, q platforms.SidebarQ
 }
 
 func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.SidebarQuery) ([]db.Session, error) {
-	statement := selectSessions
+	return r.sessionsFor(ctx, scopes, q, sessionStatement(q))
+}
+
+func sessionStatement(q platforms.SidebarQuery) string {
 	if q.Limit == 0 {
-		statement = selectInventory
+		return selectInventory
 	}
-	return r.sessionsFor(ctx, scopes, q, statement)
+	if q.Directory != "" {
+		return selectDirectorySessions
+	}
+	return selectSessions
 }
 
 func (r *Reader) sessionsFor(ctx context.Context, scopes []Scope, q platforms.SidebarQuery, statement string) ([]db.Session, error) {

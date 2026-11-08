@@ -1392,7 +1392,7 @@ generation fences and recovery behavior.
 flowchart LR
     Tabs[Browser tabs] -->|stable relative windows + conditional GET| Snapshots[Bounded HTTP snapshots]
     Snapshots -->|one request-owned refresh per query| Sidebar[Authoritative sidebar reader]
-    Sidebar --> Local[Local compact projection]
+    Sidebar -->|directory or global recency index| Local[Local compact projection]
     Sidebar --> Remotes[Owner-routed remote reads]
     Mutations[Session/project/preferences writes] -->|fence publication + invalidate| Snapshots
     Events[Global session/state events] -->|invalidate| Snapshots
@@ -1422,6 +1422,11 @@ flowchart LR
   reconciliation remains unchanged.
 - PR-watch archive overlays read only watched archive identities and the
   resurfacing mode, not the full historical seen/pinned preference maps.
+- Bounded local directory pages seek `(directory, updated_at DESC, id)` rather
+  than walking unrelated global history. Global pages keep global recency;
+  unbounded inventories retain their existing query plan. Owner/publication,
+  visibility and origin filters still run before pagination. The directory index
+  is added by an append-only history migration without rewriting stored content.
 
 Session list/detail responses carry `factoryAttemptId` from a single state.db
 attempt lookup. The sidebar filters these tagged rows and their descendants

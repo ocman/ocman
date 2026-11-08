@@ -3,6 +3,36 @@ title: Profiling
 weight: 8
 ---
 
+## Directory-filtered pages, November 8, 2026
+
+Spike-triggered OS samples still included sidebar reads and SQLite execution.
+They do not establish that a directory query caused a particular CPU peak.
+An isolated reproduction did confirm that a bounded page for an older directory
+walked the global recency index through unrelated retained history.
+
+Bounded directory pages now use an explicit directory equality and the appended
+`(directory, updated_at DESC, id)` index. Both are needed: either alone retained
+the global scan. Global pages and unbounded inventories keep their existing paths.
+
+Paired Apple M4 Max measurements alternate query order on the same disposable
+production-driver fixture: 100 old directory sessions, 50 requested rows and
+37 live observations. Three one-second runs per size:
+
+| Retained sessions | Global scan | Directory seek |
+|---:|---:|---:|
+| 1,000 | 2.63–2.66 ms | 2.27–2.30 ms |
+| 20,000 | 13.63–13.67 ms | 2.41–2.43 ms |
+
+This is about 82% less query time at 20,000 sessions, not a measured backend CPU
+reduction. Query-plan and migration regressions failed before the fix. Parity
+tests compare full rows and ordering across owner/platform scopes, live and
+durable state, visibility, origin filters and pagination.
+
+```sh
+go test ./internal/sidebar ./internal/statev2 -run 'TestDirectory|TestSidebarDirectory|TestSessionStatement'
+go test ./internal/sidebar -run '^$' -bench '^BenchmarkSidebarDirectoryPage$' -benchtime=1s -count=3
+```
+
 ## Cross-platform ingestion wakeups, November 7, 2026
 
 On Linux, the live backend idled at 1–5% of one core, with spikes up to 36%.
