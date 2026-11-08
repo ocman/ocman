@@ -13,6 +13,8 @@ import { usePluginActions } from '../lib/usePluginActions';
 import type { PluginActionRequest } from '../lib/plugins';
 import { PluginActionDialog } from './PluginActionDialog';
 import { InlineAlert } from './InlineAlert';
+import { sessionProjectDirectory } from '../lib/oneOffProject';
+import { useOneOffProjects } from '../lib/useOneOffProjects';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string; run?: () => void };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
@@ -187,7 +189,7 @@ export function CommandPalette() {
   useEffect(() => () => { worktreeLookup.current?.abort(); }, [location.key, paletteOpen]);
 
   const projectQuery = useProjects({ enabled: paletteOpen && mode === 'project-session' });
-  const projectList = projectQuery.data;
+  const { projects: projectList, start: startProjectSession } = useOneOffProjects(projectQuery.data, projectSessionInitialRemoteId || new URLSearchParams(location.search).get('remoteId') || 'local', setWorktreeError);
   const projectListError = projectList ? null : projectQuery.error ? projectQuery.error.message || 'Failed to load projects' : null;
   // The requested project is preselected once per open; later refetches keep the user's selection.
   const [preselectedFor, setPreselectedFor] = useState<string | null>(null);
@@ -339,9 +341,9 @@ export function CommandPalette() {
   }, [paletteOpen, mode, projectBrowser.open, projectBrowser.loading, openProjectBrowser]);
 
   useEffect(() => {
-    const directory = projectSessionInitialDirectory;
+    const directory = sessionProjectDirectory(projectSessionInitialDirectory || '');
     const owner = projectSessionInitialRemoteId || 'local';
-    const key = `${directory}\0${owner}`;
+    const key = `${projectSessionInitialDirectory}\0${owner}`;
     if (!paletteOpen || mode !== 'project-session' || !directory || !projectList || preselectedFor === key || explicitlySelectedProject.current) return;
     const controller = new AbortController();
     const requested = (project: Project) => project.directory === directory && (project.remoteId || 'local') === owner;
@@ -465,7 +467,7 @@ export function CommandPalette() {
       // Recency first so it breaks ties between equally good matches.
       const byRecency = projectList.slice().sort((a, b) => b.lastUsed - a.lastUsed);
       const projects = fuzzyRank(byRecency, (p) => fuzzyScore(q, p.directory))
-        .slice(0, 20)
+        .filter((project, index) => index < 20 || project.directory === 'one-off')
         .map((p) => ({ kind: 'project' as const, project: p }));
       // "Create new project" always stays at the end, unaffected by search.
       return [...projects, { kind: 'new-project' as const }];
@@ -556,10 +558,7 @@ export function CommandPalette() {
       closePalette();
       navigate(`/session/${item.session.id}`);
     } else if (item.kind === 'project') {
-      startSessionInDirectory(item.project.directory, {
-        remoteId: item.project.remoteId,
-        platform: item.project.platform,
-      });
+      await startProjectSession(item.project, (directory, project) => startSessionInDirectory(directory, project));
     } else if (item.kind === 'browse-parent') {
       openProjectBrowser(item.directory);
     } else if (item.kind === 'browse-directory') {

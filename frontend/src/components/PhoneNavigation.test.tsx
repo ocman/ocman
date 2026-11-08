@@ -36,6 +36,11 @@ function mount(path = '/sessions', unreadTotal = 0, state?: object, unreadSessio
 }
 
 describe('phone navigation', () => {
+  it('does not offer a one-off action in More', async () => {
+    mount();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'More' }));
+    expect(screen.queryByRole('button', { name: 'New one-off session' })).not.toBeInTheDocument();
+  });
   it('only shows Factory in More when the beta is enabled', async () => {
     mount();
     await userEvent.setup().click(screen.getByRole('button', { name: 'More' }));

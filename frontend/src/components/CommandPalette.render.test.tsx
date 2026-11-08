@@ -4,6 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '../lib/api';
+import { postJSON } from '../lib/api.requests';
+
+vi.mock('../lib/api.requests', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/api.requests')>(), postJSON: vi.fn(),
+}));
 
 function LocationProbe() {
   const location = useLocation();
@@ -301,6 +306,42 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.browseDirectories).not.toHaveBeenCalled();
   });
 
+  it('preselects a virtual one-off project for an unsaved temporary workspace', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/tmp/ocman-one-off-123456';
+    mocks.apiState.getProjects.mockResolvedValue([]);
+    renderPalette();
+    const project = await screen.findByText('one-off');
+    await waitFor(() => expect(project.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true'));
+    expect(mocks.apiState.resolveProjectIdentities).not.toHaveBeenCalled();
+  });
+
+  it('keeps the one-off choice visible with more than twenty recent projects', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.apiState.getProjects.mockResolvedValue(Array.from({ length: 25 }, (_, index) => ({
+      directory: `/repo/project-${index}`, sessionCount: 1, messageCount: 0,
+      totalTokensIn: 0, totalTokensOut: 0, lastUsed: index + 1,
+    })));
+    renderPalette();
+    expect(await screen.findByText('one-off')).toBeInTheDocument();
+  });
+
+  it('starts a fresh owner-local workspace from the virtual project, with retry after failure', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/tmp/ocman-one-off-123456';
+    mocks.uiState.projectSessionInitialRemoteId = 'box';
+    mocks.apiState.getProjects.mockResolvedValue([]);
+    vi.mocked(postJSON).mockRejectedValueOnce(new Error('Machine disconnected'))
+      .mockResolvedValueOnce({ directory: '/remote/tmp/ocman-one-off-fresh' });
+    renderPalette();
+    fireEvent.click(await screen.findByText('one-off'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Machine disconnected');
+    expect(mocks.uiState.closePalette).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('one-off'));
+    await waitFor(() => expectDraftLocation('?dir=%2Fremote%2Ftmp%2Focman-one-off-fresh&remoteId=box'));
+    expect(postJSON).toHaveBeenLastCalledWith('/api/sessions/one-off', { remoteId: 'box' });
+  });
+
   it.each([undefined, 'source-box'])('uses final API projects and owner-qualified preselection: %s', async (remoteId) => {
     mocks.uiState.paletteMode = 'project-session';
     mocks.uiState.projectSessionInitialDirectory = '/local/source';
@@ -316,7 +357,7 @@ describe('CommandPalette project mode', () => {
 
     const target = await screen.findByText('remote/target');
     expect(screen.queryByText('local/source')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('option')).toHaveLength(3);
+    expect(screen.getAllByRole('option')).toHaveLength(4);
     expect(target.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(target);
     await waitFor(() => {

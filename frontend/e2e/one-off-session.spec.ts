@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 
-for (const trigger of ['navigation', 'shortcut']) test(`create a project-free draft through ${trigger}`, async ({ mockedPage: page }) => {
+for (const trigger of ['project picker', 'shortcut']) test(`create a project-free draft through ${trigger}`, async ({ mockedPage: page }) => {
   const directory = '/tmp/ocman-one-off-example';
   let allocations = 0;
   let starts = 0;
@@ -19,9 +19,12 @@ for (const trigger of ['navigation', 'shortcut']) test(`create a project-free dr
   } }));
   await page.route('**/api/sessions/start', route => { starts++; return route.fulfill({ status: 500 }); });
   await page.goto('/sessions');
-  await expect(page.getByRole('button', { name: 'New one-off session' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New one-off session' })).toHaveCount(0);
   if (trigger === 'shortcut') await page.keyboard.press('Alt+o');
-  else await page.getByRole('button', { name: 'New one-off session' }).click();
+  else {
+    await page.getByRole('button', { name: 'New session', exact: true }).first().click();
+    await page.getByRole('option').filter({ hasText: 'one-off' }).click();
+  }
   await expect(page).toHaveURL(/\/session\/ocm_.*draftId=ocm_/);
   expect(new URL(page.url()).searchParams.get('dir')).toBe(directory);
   const composer = page.getByRole('textbox');
@@ -37,16 +40,13 @@ for (const trigger of ['navigation', 'shortcut']) test(`create a project-free dr
   expect(starts).toBe(0);
 });
 
-test('allocation errors remain visible outside the phone navigation', async ({ mockedPage: page }) => {
+test('allocation errors remain visible in the project picker on phones', async ({ mockedPage: page }) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await page.route('**/api/sessions/one-off', route => route.fulfill({ status: 503, body: 'Machine is disconnected' }));
   await page.goto('/sessions');
-  await page.getByRole('button', { name: 'More', exact: true }).click();
-  await page.getByRole('button', { name: 'New one-off session' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Could not create one-off session' });
-  await expect(dialog).toBeInViewport();
-  await expect(dialog.getByRole('alert')).toHaveText('Machine is disconnected');
-  expect(await dialog.evaluate(node => node.closest('.main-nav'))).toBeNull();
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
-  await expect(dialog).not.toBeVisible();
+  await page.getByRole('button', { name: 'New session', exact: true }).first().click();
+  await page.getByRole('option').filter({ hasText: 'one-off' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Machine is disconnected');
+  await expect(page.getByRole('listbox', { name: 'Results' })).toBeInViewport();
+  await expect(page).toHaveURL(/\/sessions$/);
 });

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+it('labels temporary one-off projects without their random workspace name', () => {
+  expect(shortPath('/private/var/tmp/ocman-one-off-123456')).toBe('one-off');
+});
 import {
   cleanTitle,
   formatCompactNumber,

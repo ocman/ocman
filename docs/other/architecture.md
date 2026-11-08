@@ -32,7 +32,7 @@ flowchart LR
     Native -->|owner-local ingestion| Ocman
     Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
-    Browser -->|one-off workspace allocation, then normal draft| Ocman
+    Browser -->|virtual one-off project or Option+O, then normal draft| Ocman
     Browser -->|Activity: 1s resource polling,<br/>process tree and session context| Ocman
     Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
     Plugins -.->|standard asset/read: inert SVG icons| Ocman
@@ -87,7 +87,7 @@ flowchart LR
   supervised NDJSON and authenticated owner routing. The host validates bounded
   inert geometry before serving it; the SPA uses an image-backed `currentColor`
   mask, never inline plugin SVG. See [plugins](../features/plugins.md).
-- **One-off sessions.** The navigation action and Option+O allocate a private
+- **One-off sessions.** The virtual `one-off` project choice and Option+O allocate a private
   temporary directory through `POST /api/sessions/one-off` and the explicitly
   selected `hostsvc.Host`. Remote allocation uses the authenticated Call RPC
   and fails closed when disconnected. The browser opens a normal durable draft

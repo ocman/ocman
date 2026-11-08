@@ -1,3 +1,5 @@
+import { isOneOffDirectory } from './oneOffProject';
+
 // fuzzyScore: case-insensitive subsequence match with a rank; -1 = no
 // match, higher is better. Exact > prefix > substring at a word start >
 // other substring > scattered subsequence (tighter and earlier wins).
@@ -205,6 +207,7 @@ export function relativeTimeISO(iso: string, now = Date.now()): string {
 
 export function shortPath(path: string): string {
   if (!path) return '';
+  if (isOneOffDirectory(path)) return 'one-off';
   const parts = path.split('/');
   return parts.slice(-2).join('/');
 }

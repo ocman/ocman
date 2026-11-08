@@ -15,6 +15,10 @@ vi.mock('../features', () => ({ featureNav: [], featureNavigation: [], featureFo
 vi.mock('./PhoneNavigation', () => ({ PhoneNavigation: ({ unreadSessions, unreadTotal }: { unreadSessions: number; unreadTotal: number }) => <><output aria-label="Phone unread sessions">{unreadSessions}</output><output aria-label="Phone unread inbox">{unreadTotal}</output></> }));
 
 const unread: NotifyEntry = { id: 'one', platform: 'opencode', status: 'waiting', seen: false };
+it('does not add session creation to main navigation', () => {
+  mount();
+  expect(screen.queryByRole('button', { name: 'New one-off session' })).not.toBeInTheDocument();
+});
 function snapshot(entries?: NotifyEntry[]) {
   vi.mocked(useNotifySnapshot).mockReturnValue(entries ? { entries, fetchedAt: 100 } : undefined);
 }

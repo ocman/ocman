@@ -65,6 +65,7 @@ export function MainNav({
 
   return (
     <>
+      <OneOffSessionAction shortcutOnly onNavigate={onMobileClose} />
       <aside className={`main-nav${collapsed ? ' collapsed' : ''}${mobileOpen ? ' mobile-open' : ''}`}>
         <button
           type="button"
@@ -78,7 +79,6 @@ export function MainNav({
           <span className="main-nav-brand">ocman</span>
         </button>
         <nav id="main-navigation" aria-label="Main navigation">
-          <OneOffSessionAction onNavigate={onMobileClose} />
           {NAV_ITEMS.filter((item) => !item.beta || beta[item.beta]).map((item) => navLink(item))}
           {featureNavigation.map((Navigation, index) => <Navigation key={index} onNavigate={onMobileClose} />)}
           <NavLink

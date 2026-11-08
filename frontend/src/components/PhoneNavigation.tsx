@@ -6,7 +6,6 @@ import { useBetaFeatures, type BetaFeature } from '../lib/betaFeatures';
 import { Button } from './Control';
 import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
-import { OneOffSessionAction } from './OneOffSessionAction';
 import './PhoneNavigation.css';
 import './PhoneControls.css';
 
@@ -64,7 +63,6 @@ function PhoneTabs({ unreadTotal, unreadSessions }: { unreadTotal: number; unrea
       <Modal label="More destinations" onClose={() => setOverlay(null)}>
         <ModalHeader title="More" onClose={() => setOverlay(null)} closeLabel="Close more destinations" />
         <nav aria-label="More destinations">
-          <OneOffSessionAction registerShortcut={false} />
           {moreItems.filter((item) => !item.beta || beta[item.beta]).map(({ to, label, icon }) => <NavLink key={to} to={to} replace end={to === '/'}
             aria-label={to === '/' && unreadSessions ? `Home, ${unreadSessions} unread sessions` : label}>
              <i className={`bi ${icon}`} aria-hidden="true" /><span>{label}</span>

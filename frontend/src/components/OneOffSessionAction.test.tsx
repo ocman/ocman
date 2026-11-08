@@ -9,13 +9,21 @@ import { OneOffSessionAction } from './OneOffSessionAction';
 vi.mock('../lib/api.requests', () => ({ postJSON: vi.fn() }));
 const post = vi.mocked(postJSON);
 
-function Harness({ onNavigate }: { onNavigate?: () => void }) {
+function Harness({ onNavigate, shortcutOnly }: { onNavigate?: () => void; shortcutOnly?: boolean }) {
   useShortcutDispatcher();
   const location = useLocation();
-  return <><OneOffSessionAction onNavigate={onNavigate} /><output data-testid="route">{location.pathname}{location.search}</output><textarea aria-label="Prompt" /></>;
+  return <><OneOffSessionAction onNavigate={onNavigate} shortcutOnly={shortcutOnly} /><output data-testid="route">{location.pathname}{location.search}</output><textarea aria-label="Prompt" /></>;
 }
 
 beforeEach(() => { vi.resetAllMocks(); });
+
+it('keeps Option+O available without a navigation action', async () => {
+  post.mockResolvedValue({ directory: '/tmp/ocman-one-off-hidden' });
+  render(<MemoryRouter><Harness shortcutOnly /></MemoryRouter>);
+  expect(screen.queryByRole('button', { name: 'New one-off session' })).not.toBeInTheDocument();
+  fireEvent.keyDown(window, { code: 'KeyO', altKey: true });
+  await waitFor(() => expect(screen.getByTestId('route').textContent).toContain('/session/ocm_'));
+});
 
 it('opens a normal draft in a new local workspace without choosing a project', async () => {
   post.mockResolvedValue({ directory: '/tmp/ocman-one-off-first' });
