@@ -26,9 +26,11 @@ func TestMain(m *testing.M) {
 		if len(os.Args) < 2 || os.Args[1] != "app-server" {
 			os.Exit(2)
 		}
-		s := codextest.Serve(os.Stdin, os.Stdout)
-		s.Handle(codexappserver.MethodModelList, func(json.RawMessage) (any, error) {
-			return map[string]any{"data": []map[string]any{{"id": "m", "model": "gpt-test", "isDefault": true}}}, nil
+		// Install handlers before Serve can read the parent's requests.
+		s := codextest.Serve(os.Stdin, os.Stdout, func(s *codextest.Server) {
+			s.Handle(codexappserver.MethodModelList, func(json.RawMessage) (any, error) {
+				return map[string]any{"data": []map[string]any{{"id": "m", "model": "gpt-test", "isDefault": true}}}, nil
+			})
 		})
 		<-s.Done()
 		os.Exit(0)
