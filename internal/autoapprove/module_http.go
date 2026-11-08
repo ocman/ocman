@@ -1,7 +1,9 @@
 package autoapprove
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -25,18 +27,61 @@ func (m *Module) withSession(h sessionHandler) http.HandlerFunc {
 	}
 }
 
+// AutoApproveState is a session's effective auto-approve toggle. Overridden
+// reports a per-session value rather than the server-wide default.
+type AutoApproveState struct {
+	Enabled    bool `json:"enabled"`
+	Overridden bool `json:"overridden"`
+}
+
+// AutoApproveOwner is implemented by remote platform adapters. The toggle
+// is stored on the machine that owns the session, where its judge runs.
+type AutoApproveOwner interface {
+	SessionAutoApprove(ctx context.Context, sessionID string, enabled *bool) (AutoApproveState, error)
+}
+
+// SessionAutoApprove reads, and with a non-nil enabled sets, a session's
+// toggle. It is shared by REST and authenticated owner RPCs. Remote
+// sessions route to their owner and never fall back to this database.
+func (m *Module) SessionAutoApprove(ctx context.Context, adapter platforms.Platform, sessionID string, enabled *bool) (AutoApproveState, error) {
+	if owner, ok := adapter.(AutoApproveOwner); ok {
+		return owner.SessionAutoApprove(ctx, sessionID, enabled)
+	}
+	if isRemote(adapter.ID()) {
+		return AutoApproveState{}, platforms.ErrUnsupported
+	}
+	if m.Store == nil {
+		return AutoApproveState{}, fmt.Errorf("state database unavailable")
+	}
+	if enabled != nil {
+		if err := m.Store.SetAutoApprove(ctx, string(adapter.ID()), sessionID, *enabled); err != nil {
+			return AutoApproveState{}, fmt.Errorf("setting auto-approve state: %w", err)
+		}
+		if *enabled {
+			m.resumePending(ctx, adapter, sessionID)
+		}
+	}
+	value, exists, err := m.Store.GetAutoApprove(ctx, string(adapter.ID()), sessionID)
+	if err != nil {
+		return AutoApproveState{}, fmt.Errorf("getting auto-approve state: %w", err)
+	}
+	if !exists {
+		value = m.defaultEnabled()
+	}
+	return AutoApproveState{Enabled: value, Overridden: exists}, nil
+}
+
+func (m *Module) defaultEnabled() bool { return m.DefaultEnabled != nil && m.DefaultEnabled() }
+
 // handleAutoApproveGet serves GET /api/session/{id}/auto-approve: the
 // per-session override when set, otherwise the server-wide default.
 func (m *Module) handleAutoApproveGet(w http.ResponseWriter, r *http.Request, sessionID string, adapter platforms.Platform) {
-	enabled, exists, err := m.Store.GetAutoApprove(r.Context(), string(adapter.ID()), sessionID)
+	state, err := m.SessionAutoApprove(r.Context(), adapter, sessionID, nil)
 	if err != nil {
-		httpx.ServerError(w, "getting auto-approve state", err)
+		httpx.WritePlatformError(w, "getting auto-approve state", err)
 		return
 	}
-	if !exists {
-		enabled = m.DefaultEnabled()
-	}
-	httpx.WriteJSON(w, map[string]any{"enabled": enabled, "overridden": exists})
+	httpx.WriteJSON(w, state)
 }
 
 // handleAutoApproveSet serves POST /api/session/{id}/auto-approve with body
@@ -50,12 +95,9 @@ func (m *Module) handleAutoApproveSet(w http.ResponseWriter, r *http.Request, se
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) {
 		return
 	}
-	if err := m.Store.SetAutoApprove(r.Context(), string(adapter.ID()), sessionID, req.Enabled); err != nil {
-		httpx.ServerError(w, "setting auto-approve state", err)
+	if _, err := m.SessionAutoApprove(r.Context(), adapter, sessionID, &req.Enabled); err != nil {
+		httpx.WritePlatformError(w, "setting auto-approve state", err)
 		return
-	}
-	if req.Enabled {
-		m.resumePending(r.Context(), adapter, sessionID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

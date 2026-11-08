@@ -34,6 +34,7 @@ type Server struct {
 	permissionNotificationDeferred func(string, string) bool
 	plugins                        PluginHandler
 	permissionPolicy               PermissionPolicyHandler
+	autoApprove                    AutoApproveHandler
 	pullRequests                   PullRequestHandler
 	backgroundTasks                tasksvc.Reader
 	publishedResources             http.HandlerFunc

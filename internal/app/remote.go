@@ -34,6 +34,7 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 		UsePullRequests(srv.RemotePullRequestOperation).UseBackgroundTasks(srv.BackgroundTaskReader()).
 		UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseEventProxy(srv.ProxyRemoteSessionEvents).
 		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred).UsePermissionPolicy(srv.SessionPermissionPolicy).
+		UseAutoApprove(srv.SessionAutoApprove).
 		UsePublishedResources(srv.ServePublishedResource).UseSessionChanges(srv.StreamRemoteSessionChanges)
 	ln, err := remote.NewListener(remote.ListenConfig{Context: ctx, Ready: srv.SessionsReady, Addr: listenAddr, Token: ident.RemoteToken, TLSCertFile: tlsCert, TLSKeyFile: tlsKey, TrustedOverlay: trustedOverlay}, rsrv)
 	if err != nil {
