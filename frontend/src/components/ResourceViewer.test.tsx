@@ -12,7 +12,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 
 function Location() {
   const navigate = useNavigate();
-  return <><div aria-label="Location">{useLocation().search}</div><button onClick={() => navigate(-1)}>Back</button></>;
+  return <><div aria-label="Location">{useLocation().search}</div><button onClick={() => navigate(-1)}>Back</button><button onClick={() => navigate(1)}>Forward</button></>;
 }
 
 function renderViewer(search = '/') {
@@ -371,4 +371,26 @@ it('keeps an unknown machine from the URL selected and fails closed instead of s
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load process resources.');
   expect(screen.queryByRole('table')).toBeNull();
   expect(resources).not.toHaveBeenCalledWith('local', expect.anything());
+});
+
+it('never shows a paused sample from another machine after Back or Forward', async () => {
+  mockRemotes([{ remoteId: 'build', displayName: 'Build box' }]);
+  vi.mocked(resources).mockImplementation(async (machine) => ({
+    ...snapshot, processes: [{ ...snapshot.processes[0], name: `${machine}-agent` }],
+  }));
+  renderViewer();
+  const table = () => screen.getByRole('table', { name: 'Ocman processes' });
+  await screen.findByText('local-agent');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Machine' }), { target: { value: 'build' } });
+  await screen.findByText('build-agent');
+  fireEvent.click(screen.getByRole('button', { name: 'Pause list updates' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(await screen.findByText(/^This machine · refreshes/)).toBeVisible();
+  expect(await within(table()).findByText('local-agent')).toBeVisible();
+  expect(within(table()).queryByText('build-agent')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Pause list updates' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+  expect(await screen.findByText(/^Build box · refreshes/)).toBeVisible();
+  expect(await within(table()).findByText('build-agent')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Pause list updates' })).toBeVisible();
 });

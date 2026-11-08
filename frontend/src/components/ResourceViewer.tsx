@@ -32,10 +32,28 @@ function resourceMachines(remotes: RemoteStatus[] | undefined, selected: string)
   return machines;
 }
 
+function MachineSelect({ machines, value, onChange }: { machines: Machine[]; value: string; onChange: (id: string) => void }) {
+  if (machines.length < 2) return null;
+  return <div className="resource-toolbar">
+    <SelectField aria-label="Machine" value={value} onChange={(event) => onChange(event.target.value)}>
+      {machines.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.connected ? candidate.name : `${candidate.name} (offline)`}</option>)}
+    </SelectField>
+  </div>;
+}
+
+// A paused list belongs to one machine. Any owner change, including browser
+// Back/Forward, resumes updates, and a stale sample is never rendered.
+function usePausedSample(machine: string) {
+  const [paused, setPaused] = useState<{ machine: string; snapshot: ResourceSnapshot } | null>(null);
+  if (paused && paused.machine !== machine) setPaused(null);
+  const sample = paused?.machine === machine ? paused.snapshot : null;
+  const toggle = (snapshot: ResourceSnapshot) => setPaused(sample ? null : { machine, snapshot });
+  return [sample, toggle] as const;
+}
+
 export function ResourceViewer() {
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [pausedSample, setPausedSample] = useState<ResourceSnapshot | null>(null);
   const sort = params.get('resourceSort') ?? 'cpuPercent';
   const tree = params.get('resourceView') === 'tree';
   const selected = params.get('resourceProcess');
@@ -45,6 +63,7 @@ export function ResourceViewer() {
   const machine = params.get('resourceMachine') || 'local';
   const machines = resourceMachines(useRemotes().data, machine);
   const machineName = machines.find((candidate) => candidate.id === machine)!.name;
+  const [pausedSample, togglePaused] = usePausedSample(machine);
   const update = (key: string, value?: string) => setParams((previous) => {
     const next = new URLSearchParams(previous);
     if (value) next.set(key, value);
@@ -53,10 +72,7 @@ export function ResourceViewer() {
     if (key === 'resourceMachine') ['resourceProject', 'resourceSession', 'resourceProcess'].forEach((scoped) => next.delete(scoped));
     return next;
   });
-  const selectMachine = (id: string) => {
-    setPausedSample(null);
-    update('resourceMachine', id === 'local' ? undefined : id);
-  };
+  const selectMachine = (id: string) => update('resourceMachine', id === 'local' ? undefined : id);
   const clearFilters = () => setParams((previous) => {
     const next = new URLSearchParams(previous);
     next.delete('resourceProject');
@@ -103,11 +119,7 @@ export function ResourceViewer() {
   });
   const displayedRows = tree ? resourceTree(rows) : rows.map((process) => ({ process, depth: 0 }));
   return <section className="resource-viewer" aria-label="Live resources">
-    {machines.length > 1 && <div className="resource-toolbar">
-      <SelectField aria-label="Machine" value={machine} onChange={(event) => selectMachine(event.target.value)}>
-        {machines.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.connected ? candidate.name : `${candidate.name} (offline)`}</option>)}
-      </SelectField>
-    </div>}
+    <MachineSelect machines={machines} value={machine} onChange={selectMachine} />
     <p>{machineName} · refreshes every 2 seconds while visible. Includes ocman, managed agents, browser terminals and their child processes. CPU: 100% is one core. Memory is resident memory, summed per process.</p>
     {local && <div className="resource-toolbar">
       {uptime.data ? <span title="Time since the backend started">Backend uptime: {formatDuration(uptime.data.uptime * 1000)}</span>
@@ -134,7 +146,7 @@ export function ResourceViewer() {
       </div>
       <div className="resource-toolbar">
         <span>{rows.length} processes · sampled <time dateTime={new Date(listData.timestamp).toISOString()}>{new Date(listData.timestamp).toLocaleTimeString()}</time>{pausedSample && ' · List updates paused'}</span>
-        <Button variant="ghost" size="compact" onClick={() => setPausedSample(pausedSample ? null : data)}>{pausedSample ? 'Resume list updates' : 'Pause list updates'}</Button>
+        <Button variant="ghost" size="compact" onClick={() => togglePaused(data)}>{pausedSample ? 'Resume list updates' : 'Pause list updates'}</Button>
         <SegmentedControl label="Process view" value={tree ? 'tree' : 'flat'} options={[{ value: 'flat', label: 'Flat' }, { value: 'tree', label: 'Tree' }]} onChange={(value) => update('resourceView', value === 'tree' ? 'tree' : undefined)} />
         {selected && <><span>{focused ? `${focused.name} · PID ${focused.pid}` : 'Selected process is no longer available'}</span><Button variant="ghost" size="compact" onClick={() => update('resourceProcess')}>Show all processes</Button></>}
         <SelectField aria-label="Sort processes" value={sort} onChange={(event) => update('resourceSort', event.target.value)}>
