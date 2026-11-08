@@ -6,6 +6,8 @@ weight: 9
 ocman releases in three channels. All tags are created on Forgejo, and
 nightly and stable builds are published on the
 [GitHub mirror](https://github.com/ocman/ocman/releases).
+Users can install stable, nightly or an exact tag with the
+[shell installer](../introduction/installation.md).
 
 | Channel | When | Tag | Published |
 | --- | --- | --- | --- |

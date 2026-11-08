@@ -46,10 +46,14 @@ ocman.
 ## Install
 
 ```sh
-# Download a binary from the releases page, then:
-./ocman
+curl -fsSL https://forgejo.nousefreak.be/dries/ocman/raw/branch/main/install.sh | bash -s -- install
 # Open http://localhost:8228
 ```
+
+Use `install nightly` or `install v0.274.0` to choose a channel or pin a
+version. The installer prefers a GitHub binary and falls back to building
+the same tag locally. See [Installation](installation.md) for updates,
+requirements, service commands and overrides.
 
 Prebuilt binaries, including a macOS `.dmg` desktop build, are on the
 [releases page](https://github.com/ocman/ocman/releases). To build

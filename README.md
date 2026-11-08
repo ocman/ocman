@@ -34,18 +34,34 @@ curl -fsSL https://forgejo.nousefreak.be/dries/ocman/raw/branch/main/install.sh 
 # Open http://localhost:8228
 ```
 
-The script checks your toolchain (git, go, node, pnpm), builds from source into
-`~/.local/share/ocman/src`, installs the binary to `~/.local/bin/ocman`, and
-starts it in the background. It also installs itself as `ocman-ctl`:
+The installer downloads the latest stable GitHub binary for macOS or Linux,
+on amd64 or arm64. If the binary is unavailable, it builds that same version
+locally using git, Go, Node.js and pnpm. It installs to `~/.local/bin/ocman`
+and starts in the background. Add `~/.local/bin` to your PATH.
+
+Choose a channel or version by adding it after `install`:
+
+```sh
+# Use the same curl command above with one of these arguments:
+# bash -s -- install nightly
+# bash -s -- install v0.274.0
+# bash -s -- install stable --no-start
+```
+
+The script also installs `ocman-ctl`:
 
 ```sh
 ocman-ctl status | start | stop | restart | logs
-ocman-ctl update              # pull, rebuild, restart
+ocman-ctl update              # update the saved channel, or reinstall a pinned version
+ocman-ctl update nightly      # switch to nightly
+ocman-ctl update v0.274.0     # pin a specific version
 ocman-ctl uninstall           # add --purge to also delete state.db
 ocman-ctl doctor              # dependency check only
 ```
 
-Override with `OCMAN_ADDR`, `OCMAN_PREFIX`, `OCMAN_BRANCH`, `OCMAN_SRC`.
+Use `--no-start` to install without launching, or `--source` to force a local
+build. See [Installation](docs/introduction/installation.md) for requirements,
+updates and path overrides.
 
 Alternatively, download the latest binary from the
 [releases page](https://github.com/ocman/ocman/releases), or build

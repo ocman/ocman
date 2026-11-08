@@ -272,6 +272,7 @@ test: test-backend test-frontend test-dev-scripts
 
 test-dev-scripts: ## Test dev log streaming and shutdown without launching ocman
 	python3 scripts/dev_test.py
+	python3 scripts/test_install.py
 
 # Run the backend, frontend and e2e suites in parallel. Each runner stops at
 # its first failing test (Go -failfast, Vitest --bail=1, Playwright
@@ -381,6 +382,8 @@ lint-release-scripts:
 # Self-test for the script CI uses to read pinned tool versions.
 lint-ci-scripts:
 	./scripts/ci-tool-versions_test.sh
+	bash -n install.sh
+	python3 scripts/test_install.py
 
 # Refresh the Go DTO snapshot (frontend/src/lib/contracts/go-dtos.json) that
 # the frontend's hand-written API types are checked against. The Go test
