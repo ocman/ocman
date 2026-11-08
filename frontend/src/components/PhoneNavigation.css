@@ -101,9 +101,11 @@
   }
 
   .phone-more-sheet nav { overflow: hidden; background: var(--bg); }
-  .phone-more-sheet nav a {
+  .phone-more-sheet nav :is(a, .main-nav-action) {
     display: flex;
+    width: 100%;
     align-items: center;
+    justify-content: flex-start;
     gap: 14px;
     min-height: 52px;
     padding: 12px 16px;
@@ -112,8 +114,8 @@
     font-size: 15px;
   }
 
-  .phone-more-sheet nav a + a { border-top: 1px solid var(--border); }
-  .phone-more-sheet nav a > i:first-child { color: var(--accent); }
+  .phone-more-sheet nav :is(a, .main-nav-action) + a { border-top: 1px solid var(--border); }
+  .phone-more-sheet nav :is(a, .main-nav-action) > i:first-child { color: var(--accent); }
   .phone-more-sheet nav a > i:last-child { margin-left: auto; color: var(--text-dim); font-size: 12px; }
   .phone-more-sheet nav a.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 }

@@ -233,6 +233,8 @@ type TmuxSession struct {
 // git.ErrNotARepo, ...) into HTTP status codes as before.
 type Host interface {
 	ProjectCloner
+	// CreateOneOffDirectory allocates a private temporary workspace on this owner.
+	CreateOneOffDirectory(context.Context) (string, error)
 	// RemoteID returns "local" for the in-process host, else the
 	// remote's instance ID. Display/routing only.
 	RemoteID() string

@@ -66,6 +66,7 @@ func (*Module) Name() string   { return "sessionlifecycle" }
 
 func (m *Module) Routes(r module.Router) {
 	m.draftRoutes(r)
+	r.Local("POST /api/sessions/one-off", m.HandleOneOffDirectory)
 	r.Local("POST /api/sessions/prepare", m.HandlePrepareSession)
 	r.Local("POST /api/sessions/plan-clone", m.HandlePlanProjectClone)
 	r.Local("POST /api/sessions/start", m.HandleStartSession)

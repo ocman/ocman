@@ -65,6 +65,7 @@ var callHandlers = map[string]callHandler{
 	"ProjectUpstreams":        (*Server).ProjectUpstreams,
 	"PlanProjectClone":        (*Server).PlanProjectClone,
 	"CloneProject":            (*Server).CloneProject,
+	"CreateOneOffDirectory":   (*Server).CreateOneOffDirectory,
 	"FetchPRHead":             (*Server).FetchPRHead,
 	"ListWorktrees":           (*Server).ListWorktrees,
 	"WorktreeDefaultBaseRef":  (*Server).WorktreeDefaultBaseRef,
