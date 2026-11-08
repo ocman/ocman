@@ -12,14 +12,19 @@ import (
 )
 
 func TestValidateRemoteManaged(t *testing.T) {
-	if err := validateRemoteManaged("", true); err == nil {
+	if err := validateRemoteManaged("", true, false); err == nil {
 		t.Fatal("managed without a listener accepted")
 	}
+	// Regression: GUI mode never starts the remote listener, so a managed
+	// GUI instance would lock its settings with no hub able to reach it.
+	if err := validateRemoteManaged("127.0.0.1:8230", true, true); err == nil {
+		t.Fatal("managed GUI instance accepted")
+	}
 	for _, c := range []struct {
-		listen  string
-		managed bool
-	}{{"", false}, {"0.0.0.0:8230", false}, {"0.0.0.0:8230", true}} {
-		if err := validateRemoteManaged(c.listen, c.managed); err != nil {
+		listen       string
+		managed, gui bool
+	}{{"", false, false}, {"0.0.0.0:8230", false, false}, {"0.0.0.0:8230", true, false}, {"127.0.0.1:8230", false, true}} {
+		if err := validateRemoteManaged(c.listen, c.managed, c.gui); err != nil {
 			t.Fatalf("%+v: %v", c, err)
 		}
 	}

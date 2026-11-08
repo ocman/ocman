@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ocman/ocman/internal/platforms/opencode/api"
+	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
 
@@ -39,5 +41,33 @@ func TestDefaultEnabledFuncOverridesFlag(t *testing.T) {
 	}
 	if !NewService(Deps{DefaultEnabled: true}).defaultEnabled() {
 		t.Fatal("flag ignored without func")
+	}
+}
+
+// Regression: clearing the hub's judge model left the judge on the old one,
+// because each judgment only replaced the cached model on a successful load.
+func TestManagedJudgeModelClearedRestoresDefault(t *testing.T) {
+	store := statetest.Open(t)
+	if err := store.EnableManagedSettings(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	s := NewService(Deps{Store: store})
+	s.judge = newPermissionJudge(ocapi.Auth{})
+	apply := func(model string) {
+		t.Helper()
+		if err := store.ApplyManagedSettings(t.Context(), state.ManagedSettings{Hub: "hub-1", JudgeModel: model}, 1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.resolveJudgeInputs(t.Context(), "/repo", nil, "s1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply("custom/model")
+	if p, m := s.judge.model(); p != "custom" || m != "model" {
+		t.Fatalf("custom model = %s/%s", p, m)
+	}
+	apply("")
+	if p, m := s.judge.model(); p != judgeModelProvider || m != judgeModelID {
+		t.Fatalf("cleared model = %s/%s, want the default", p, m)
 	}
 }

@@ -1,9 +1,12 @@
 package state
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestManagedSettingsRequireManagedMode(t *testing.T) {
@@ -193,5 +196,94 @@ func TestHubManagedSettingsSnapshot(t *testing.T) {
 	_ = db.Close()
 	if _, err := db.HubManagedSettings(ctx, "hub-1", false); err == nil {
 		t.Fatal("closed database read succeeded")
+	}
+}
+
+// Regression: forwarding every received snapshot made two managed instances
+// that manage each other resend the same settings forever.
+func TestManagedSettingsForwardOnlyChanges(t *testing.T) {
+	ctx := t.Context()
+	db := openTestStateDB(t)
+	if err := db.EnableManagedSettings(ctx); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	db.OnManagedSettingsChange(func() { calls++ })
+	snapshot := ManagedSettings{Hub: "hub-a", JudgeModel: "p/m", JudgeDelayMs: 5, PromptSections: []PromptSection{{Title: "t"}}}
+	if err := db.ApplyManagedSettings(ctx, snapshot, 1); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("first snapshot forwarded %d times", calls)
+	}
+	// Same values from another sender at another time: metadata only.
+	snapshot.Hub = "hub-b"
+	if err := db.ApplyManagedSettings(ctx, snapshot, 2); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal("unchanged values were forwarded")
+	}
+	if got, _ := db.ManagedSettings(); got.Hub != "hub-b" || got.AppliedAt != 2 {
+		t.Fatalf("metadata not stored: %+v", got)
+	}
+	// nil and empty prompt sections are the same value.
+	snapshot.PromptSections = nil
+	snapshot.JudgeDelayMs = 6
+	if err := db.ApplyManagedSettings(ctx, snapshot, 3); err != nil || calls != 2 {
+		t.Fatalf("changed delay forwarded %d times: %v", calls, err)
+	}
+	snapshot.PromptSections = []PromptSection{}
+	if err := db.ApplyManagedSettings(ctx, snapshot, 4); err != nil || calls != 2 {
+		t.Fatalf("empty sections after nil forwarded %d times: %v", calls, err)
+	}
+	snapshot.AutoApproveDefault = true
+	if err := db.ApplyManagedSettings(ctx, snapshot, 5); err != nil || calls != 3 {
+		t.Fatalf("changed default forwarded %d times: %v", calls, err)
+	}
+}
+
+// Regression: concurrent hubs could persist one snapshot and publish another,
+// so a restart silently switched to a different approval policy.
+func TestManagedSettingsPersistedMatchesActive(t *testing.T) {
+	ctx := t.Context()
+	db := openTestStateDB(t)
+	if err := db.EnableManagedSettings(ctx); err != nil {
+		t.Fatal(err)
+	}
+	layer := db.managed.Load()
+	var paused atomic.Bool
+	second := make(chan error, 1)
+	// Hub A pauses after persisting; hub B applies in that window.
+	layer.afterPersist = func() {
+		if paused.Swap(true) {
+			return
+		}
+		func() {
+			go func() { second <- db.ApplyManagedSettings(ctx, ManagedSettings{Hub: "hub-b", JudgeDelayMs: 2}, 2) }()
+			select {
+			case err := <-second:
+				second <- err
+			case <-time.After(200 * time.Millisecond): // B waits for A
+			}
+		}()
+	}
+	if err := db.ApplyManagedSettings(ctx, ManagedSettings{Hub: "hub-a", JudgeDelayMs: 1}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	active, _ := db.ManagedSettings()
+	raw, _, err := db.GetSetting(ctx, managedSettingsKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted ManagedSettings
+	if err := json.Unmarshal([]byte(raw), &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Hub != active.Hub {
+		t.Fatalf("persisted %s but running sessions use %s", persisted.Hub, active.Hub)
 	}
 }

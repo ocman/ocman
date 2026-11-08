@@ -24,10 +24,16 @@ func validateRemoteTransport(listenAddr, tlsCert, tlsKey string, trustedOverlay 
 	return nil
 }
 
-// validateRemoteManaged rejects -remote-managed without a listener: no hub
-// could ever reach the instance to send its settings.
-func validateRemoteManaged(listenAddr string, managed bool) error {
-	if managed && listenAddr == "" {
+// validateRemoteManaged rejects -remote-managed where no hub could ever
+// reach the instance to send its settings: without a listener, or in GUI
+// mode, which does not start one.
+func validateRemoteManaged(listenAddr string, managed, gui bool) error {
+	switch {
+	case !managed:
+		return nil
+	case gui:
+		return fmt.Errorf("-remote-managed is not supported with -gui, which does not start the remote listener")
+	case listenAddr == "":
 		return fmt.Errorf("-remote-managed requires -remote-listen")
 	}
 	return nil

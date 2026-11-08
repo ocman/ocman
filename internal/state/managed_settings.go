@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"sync"
 	"sync/atomic"
 )
 
@@ -45,7 +47,12 @@ type ManagedSettings struct {
 // managedLayer is present only in managed mode. snapshot is nil until the
 // first hub snapshot arrives, so the remote's own values apply until then.
 type managedLayer struct {
+	// applyMu orders persisting and publishing across concurrent hubs.
+	applyMu  sync.Mutex
 	snapshot atomic.Pointer[ManagedSettings]
+	// afterPersist runs between persisting and publishing a snapshot.
+	// Test seam for ordering between concurrent hubs; nil in production.
+	afterPersist func()
 }
 
 // EnableManagedSettings puts the database in remote-managed mode and loads
@@ -100,17 +107,42 @@ func (d *DB) ApplyManagedSettings(ctx context.Context, snapshot ManagedSettings,
 		snapshot.PromptSections = []PromptSection{}
 	}
 	snapshot.AppliedAt = now
-	raw, err := json.Marshal(snapshot)
+	changed, err := d.storeManagedSettings(ctx, layer, snapshot)
 	if err != nil {
 		return err
 	}
-	if err := d.setSetting(ctx, managedSettingsKey, string(raw)); err != nil {
-		return err
+	// A managed remote that is also a hub forwards what it received, but
+	// only real changes: two instances managing each other would otherwise
+	// resend the same settings forever.
+	if changed {
+		d.notifyManagedSettingsChange()
 	}
-	layer.snapshot.Store(&snapshot)
-	// A managed remote that is also a hub forwards what it received.
-	d.notifyManagedSettingsChange()
 	return nil
+}
+
+// storeManagedSettings persists and publishes under one lock, so the
+// snapshot running sessions use is always the one a restart loads.
+func (d *DB) storeManagedSettings(ctx context.Context, layer *managedLayer, snapshot ManagedSettings) (changed bool, err error) {
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return false, err
+	}
+	layer.applyMu.Lock()
+	defer layer.applyMu.Unlock()
+	if err := d.setSetting(ctx, managedSettingsKey, string(raw)); err != nil {
+		return false, err
+	}
+	if layer.afterPersist != nil {
+		layer.afterPersist()
+	}
+	previous := layer.snapshot.Swap(&snapshot)
+	return previous == nil || !sameManagedValues(*previous, snapshot), nil
+}
+
+// sameManagedValues compares effective settings, ignoring sender metadata.
+func sameManagedValues(a, b ManagedSettings) bool {
+	a.Hub, a.AppliedAt, b.Hub, b.AppliedAt = "", 0, "", 0
+	return reflect.DeepEqual(a, b)
 }
 
 // managedSettingValue answers GetSetting for a key the hub supplies.

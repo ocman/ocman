@@ -323,7 +323,7 @@ cannot be edited.
 | `-remote-tls-cert` | _(unset)_ | remote | TLS certificate file. Required with `-remote-tls-key` unless using a trusted overlay. |
 | `-remote-tls-key` | _(unset)_ | remote | TLS key file. |
 | `-remote-trusted-overlay` | `false` | remote | Explicitly allow plaintext only on a trusted overlay network. |
-| `-remote-managed` | `false` | remote | Use the auto-approve settings sent by the connected hub. Requires `-remote-listen`. See [Managed remotes](#managed-remotes). |
+| `-remote-managed` | `false` | remote | Use the auto-approve settings sent by the connected hub. Requires `-remote-listen`; not supported with `-gui`. See [Managed remotes](#managed-remotes). |
 
 The hub needs no flags. You add remotes at runtime from the Settings page,
 and ocman persists them in `state.db`.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync/atomic"
+	"time"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -170,5 +171,57 @@ func TestApplyManagedSettingsValidation(t *testing.T) {
 	srv.UseManagedSettings(failingManagedStore{previous: &state.ManagedSettings{Hub: "hub-1"}})
 	if _, err := srv.ApplyManagedSettings(t.Context(), &pb.CallReq{Payload: valid}); err != nil {
 		t.Fatalf("second hub = %v", err)
+	}
+}
+
+// countingStore counts snapshots a managed instance receives.
+type countingStore struct {
+	*state.DB
+	applied atomic.Int64
+}
+
+func (s *countingStore) ApplyManagedSettings(ctx context.Context, snapshot state.ManagedSettings, now int64) error {
+	s.applied.Add(1)
+	return s.DB.ApplyManagedSettings(ctx, snapshot, now)
+}
+
+// Two managed instances that also manage each other must settle instead of
+// resending the same settings forever.
+func TestReciprocalManagedInstancesSettle(t *testing.T) {
+	type instance struct {
+		store *countingStore
+		addr  string
+	}
+	start := func(name string) instance {
+		store := &countingStore{DB: statetest.Open(t)}
+		if err := store.EnableManagedSettings(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		return instance{store: store, addr: startManagedRemote(t, store)}
+	}
+	a, b := start("a"), start("b")
+	connect := func(from, to instance, id string) {
+		hubStore := statetest.Open(t)
+		if _, err := hubStore.AddRemote(t.Context(), to.addr, "tok", id); err != nil {
+			t.Fatal(err)
+		}
+		mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), hubStore, "opencode")
+		mgr.UseManagedSettings(func(ctx context.Context) (state.ManagedSettings, error) {
+			return from.store.HubManagedSettings(ctx, id, false)
+		})
+		from.store.OnManagedSettingsChange(mgr.PushManagedSettings)
+		t.Cleanup(mgr.Stop)
+		mgr.Start(context.Background())
+	}
+	connect(a, b, "a")
+	connect(b, a, "b")
+	testutil.WaitFor(t, waitTimeout, "both instances to receive settings", func() bool {
+		return a.store.applied.Load() > 0 && b.store.applied.Load() > 0
+	})
+	time.Sleep(500 * time.Millisecond)
+	settled := a.store.applied.Load() + b.store.applied.Load()
+	time.Sleep(500 * time.Millisecond)
+	if now := a.store.applied.Load() + b.store.applied.Load(); now != settled || now > 6 {
+		t.Fatalf("settings kept propagating: %d then %d applies", settled, now)
 	}
 }

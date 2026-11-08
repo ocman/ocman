@@ -51,9 +51,9 @@ func (s *Service) resolveJudgeInputs(ctx context.Context, directory string, dire
 		if delay, err := s.deps.Store.GetJudgeDelayMs(ctx); err == nil {
 			inputs.delay = delay
 		}
-		if provider, modelID, ok := loadJudgeModel(ctx, s.deps.Store); ok && s.judge != nil {
-			s.judge.setModel(provider, modelID)
-		}
+		// Reload, not update-on-success: a cleared setting (including a hub
+		// clearing a managed remote's model) must restore the default.
+		s.ReloadJudgeModel(ctx)
 	}
 	return inputs, nil
 }

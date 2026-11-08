@@ -116,7 +116,7 @@ func run() {
 	if err := validateRemoteTransport(*remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay); err != nil {
 		fatal("%v", err)
 	}
-	if err := validateRemoteManaged(*remoteListen, *remoteManaged); err != nil {
+	if err := validateRemoteManaged(*remoteListen, *remoteManaged, *guiMode); err != nil {
 		fatal("%v", err)
 	}
 
