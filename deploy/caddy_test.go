@@ -23,6 +23,8 @@ func TestAssetEncoding(t *testing.T) {
 	if _, err := exec.LookPath("caddy"); err != nil {
 		t.Skip("caddy not installed")
 	}
+	// Match the requests below, regardless of the developer's deployment hostname.
+	t.Setenv("OCMAN_CADDY_HOST", "localhost")
 	data := strings.Repeat("console.log('public build asset');\n", 1000)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript")
