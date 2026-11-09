@@ -56,8 +56,11 @@ type Session struct {
 	CreationError string        `json:"creationError,omitempty"`
 	SourceKey     string        `json:"sourceKey,omitempty"`
 	NativeID      string        `json:"nativeId,omitempty"`
-	CreatedAt     int64         `json:"createdAt"`
-	UpdatedAt     int64         `json:"updatedAt"`
+	// CreatedAt is the reservation time, or native creation time on first import
+	// when known. Rediscovery never changes it. All times are Unix milliseconds.
+	CreatedAt int64 `json:"createdAt"`
+	// UpdatedAt tracks catalogue writes, not native session activity.
+	UpdatedAt int64 `json:"updatedAt"`
 }
 
 type Reservation struct {
@@ -95,7 +98,7 @@ type Source struct {
 // scoped to the same physical source; it is never used as an Ocman route ID.
 type NativeSession struct {
 	ID        string
-	CreatedAt int64 // Native creation time in Unix milliseconds; zero means unknown.
+	CreatedAt int64 // Native creation time in Unix milliseconds; nonpositive means unknown.
 	ParentID  string
 	Directory string
 	Title     string

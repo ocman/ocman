@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/statev2"
 )
 
 func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t *testing.T) {
+	const created int64 = 1790841600456
+	const activity int64 = created + 3600000
 	_, _, catalogue := fixture(t)
 	history, err := statev2.Open(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
@@ -24,11 +27,12 @@ func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t 
 		if err := history.RegisterInstance(t.Context(), source); err != nil {
 			t.Fatal(err)
 		}
-		batch := statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: source.ID, SessionID: "same-native"}, ParentID: "missing-parent", Title: source.ID, Directory: "/repo", Extensions: json.RawMessage(`{"ParentID":"missing-parent"}`)}, Messages: []statev2.Message{{ID: "native-message", Role: "assistant", ConversationVisible: true}}, Parts: []statev2.Part{{ID: "native-part", MessageID: "native-message", Kind: "text", Text: "retained content"}}}
+		batch := statev2.Batch{Session: statev2.Session{Key: statev2.Key{InstanceID: source.ID, SessionID: "same-native"}, ParentID: "missing-parent", Title: source.ID, Directory: "/repo", CreatedAt: created, UpdatedAt: activity, Extensions: json.RawMessage(`{"ParentID":"missing-parent"}`)}, Messages: []statev2.Message{{ID: "native-message", Role: "assistant", ConversationVisible: true}}, Parts: []statev2.Part{{ID: "native-part", MessageID: "native-message", Kind: "text", Text: "retained content"}}}
 		if _, err := history.Commit(t.Context(), batch); err != nil {
 			t.Fatal(err)
 		}
 	}
+	beforeImport := time.Now().UnixMilli()
 	if err := MigrateHistory(t.Context(), catalogue, history, "owner"); err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +43,9 @@ func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t 
 			t.Fatal(err)
 		}
 		identities[source] = row.ID
+		if row.CreatedAt != created || row.UpdatedAt < beforeImport || row.UpdatedAt > time.Now().UnixMilli() {
+			t.Errorf("retained source %s lost creation or catalogue modification time: %+v", source, row)
+		}
 		instance := "active"
 		if source == "old-source" {
 			instance = "inactive"
@@ -46,6 +53,9 @@ func TestHistoryMigrationRetainsInactiveSourcesAndReplaysWithoutNewIdentities(t 
 		page, err := history.ReadConversation(t.Context(), statev2.Key{InstanceID: instance, SessionID: row.ID}, 20, 0)
 		if err != nil || page.Session.ParentID != row.ParentID || page.Messages[0].ID != "native-message" || page.Parts[0].Text != "retained content" {
 			t.Fatalf("retained source %s: %+v %v", source, page, err)
+		}
+		if page.Session.CreatedAt != created || page.Session.UpdatedAt != activity {
+			t.Fatalf("retained history timestamps changed: %+v", page.Session)
 		}
 	}
 	if identities["source"] == identities["old-source"] {

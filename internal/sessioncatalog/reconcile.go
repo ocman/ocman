@@ -131,9 +131,13 @@ func reconcileRow(ctx context.Context, tx *sql.Tx, source Source, metadata Nativ
 		if origin == "" {
 			origin = External
 		}
+		createdAt := metadata.CreatedAt
+		if createdAt <= 0 {
+			createdAt = now
+		}
 		row = Session{ID: "ocm_" + uuid.NewString(), OwnerID: source.OwnerID, Platform: source.Platform,
 			SourceKey: source.SourceKey, NativeID: metadata.ID, Directory: metadata.Directory, Title: metadata.Title,
-			Origin: origin, OriginID: metadata.OriginID, CreationState: Ready, CreatedAt: now, UpdatedAt: now}
+			Origin: origin, OriginID: metadata.OriginID, CreationState: Ready, CreatedAt: createdAt, UpdatedAt: now}
 		if err := insert(ctx, tx, row, "", ""); err != nil {
 			return row, false, false, err
 		}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ocman/ocman/internal/statev2"
 )
@@ -71,6 +72,27 @@ func TestCatalogueModuleBackfillsPagesAndMaintainsLateParents(t *testing.T) {
 type failingMetadata struct {
 	*statev2.DB
 	fail bool
+}
+
+func TestCatalogueModulePreservesHistoricalCreationTimestamp(t *testing.T) {
+	s, _ := openStore(t)
+	h := metadataHistory(t)
+	const created int64 = 1790841600456
+	const activity int64 = created + 3600000
+	if _, err := h.Commit(t.Context(), statev2.Batch{Session: statev2.Session{
+		Key: statev2.Key{InstanceID: "history", SessionID: "historical"}, CreatedAt: created, UpdatedAt: activity,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now().UnixMilli()
+	m := NewModule(Deps{Store: s, History: h, OwnerID: catalogSource().OwnerID})
+	if err := m.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	row, err := s.FindBinding(t.Context(), nativeBinding("historical"))
+	if err != nil || row.CreatedAt != created || row.UpdatedAt < before || row.UpdatedAt > time.Now().UnixMilli() {
+		t.Fatalf("bootstrap lost native creation or catalogue modification time: %+v %v", row, err)
+	}
 }
 
 func TestCatalogueModuleRejectsMissingDependenciesAndPrepareFailure(t *testing.T) {
