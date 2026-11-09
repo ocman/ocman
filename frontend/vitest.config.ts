@@ -48,6 +48,7 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       'e2e/**',
+      'component-e2e/**', // Isolated Playwright UI reviews, never unit tests.
       'perf/**', // Playwright interaction bench (`pnpm perf`).
     ],
     coverage: {

@@ -1,0 +1,36 @@
+.review-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 52px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-header span {
+  color: var(--subtext0);
+  font-size: 12px;
+}
+
+.review-main {
+  max-width: 1060px;
+  margin: 32px auto;
+  padding: 0 24px;
+}
+
+.review-main h1 {
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+
+.review-description {
+  color: var(--subtext0);
+  margin: 0 0 32px;
+  font-size: 13px;
+}
+
+.review-footer {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-top: 32px;
+}
