@@ -29,17 +29,22 @@ export const useBackendConversationDrafts = create<{
 export const isBackendDraft = (id?: string) => !!id && /^ocm_[0-9a-f-]{36}$/.test(id);
 let reading: Promise<void> | undefined;
 let syncing = false;
-let syncDeferred = false;
+const syncDeferred = new Set<string>();
 
 export function refreshBackendDrafts(): Promise<void> {
-  return reading ??= fetchJSON<BackendConversationDraft[]>('/api/session-drafts').then((drafts) => {
+  if (reading) return reading;
+  const started = useBackendConversationDrafts.getState().drafts;
+  return reading = fetchJSON<BackendConversationDraft[]>('/api/session-drafts').then((drafts) => {
     syncing = true;
     try {
       const previous = useBackendConversationDrafts.getState().drafts;
-      useBackendConversationDrafts.setState({ drafts: Object.fromEntries(drafts.map((draft) => [draft.id,
+      const next = Object.fromEntries(drafts.map((draft) => [draft.id,
         draft.phase === 'ready' && previous[draft.id]?.phase === 'ready' && previous[draft.id]?.request ? previous[draft.id]
-          : draft.phase === 'draft' && previous[draft.id] ? { ...draft, revision: previous[draft.id].revision } : draft])) });
-      for (const draft of drafts) {
+          : draft.phase === 'draft' && previous[draft.id] ? { ...draft, revision: previous[draft.id].revision } : draft]));
+      // A list captured before an acknowledgement cannot erase that save.
+      for (const [id, draft] of Object.entries(previous)) if (draft !== started[id]) next[id] = draft;
+      useBackendConversationDrafts.setState({ drafts: next });
+      for (const draft of Object.values(next)) {
         if (draft.phase === 'discarded') { if (getConversationDraft(draft.id)) void forgetConversationDraft(draft.id); continue; }
         if (draft.phase !== 'ready' && !getConversationDraft(draft.id)) {
           rememberConversationDraft({ ...draft.metadata, draftId: draft.id, createdAt: draft.createdAt });
@@ -47,7 +52,7 @@ export function refreshBackendDrafts(): Promise<void> {
         }
       }
     } finally { syncing = false; }
-  }).finally(() => { reading = undefined; if (syncDeferred) { syncDeferred = false; syncDrafts(); } });
+  }).finally(() => { reading = undefined; const ids = [...syncDeferred]; syncDeferred.clear(); syncDrafts(ids); });
 }
 
 const saves = new Map<string, Promise<void>>();
@@ -114,8 +119,13 @@ export function applyBackendStartProgress(id: string, step: string, value: strin
 
 export async function fetchBackendDraft(id: string) {
   if (!isBackendDraft(id)) return;
+  const previous = useBackendConversationDrafts.getState().drafts[id];
   const draft = await fetchJSON<BackendConversationDraft>(`/api/session-drafts/${encodeURIComponent(id)}`);
-  useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: draft } }));
+  useBackendConversationDrafts.setState((state) => {
+    // A save or another read completed while this request was in flight.
+    if (state.drafts[id] !== previous) return state;
+    return { drafts: { ...state.drafts, [id]: draft.phase === 'draft' && previous ? { ...draft, revision: previous.revision } : draft } };
+  });
 }
 
 export async function discardBackendDraft(id: string, afterCommit?: () => void) {
@@ -143,17 +153,25 @@ export async function retireBackendDraft(id: string) {
 }
 
 // IndexedDB remains the offline composer cache. Server drafts own the lifecycle.
-function syncDrafts() {
+function syncDrafts(ids: string[]) {
   if (syncing) return;
-  if (reading) { syncDeferred = true; return; }
-  for (const draft of useNewConversationDrafts.getState().drafts) {
-    const id = draft.draftId;
+  if (reading) { ids.forEach((id) => syncDeferred.add(id)); return; }
+  for (const id of ids) {
     const phase = useBackendConversationDrafts.getState().drafts[id]?.phase;
     if (isBackendDraft(id) && (!phase || phase === 'draft') && !useBackendConversationDrafts.getState().saveErrors[id] && !useBackendConversationDrafts.getState().recoveryTargets[id]) void persistBackendDraft(id).catch((error) => remoteLog.error('Could not save backend draft', error));
   }
 }
 export function subscribeBackendDraftSync() {
-  const metadata = useNewConversationDrafts.subscribe((state, previous) => { if (state.drafts !== previous.drafts) syncDrafts(); });
-  const texts = subscribeDraftTexts(syncDrafts);
+  const snapshots = () => new Map(useNewConversationDrafts.getState().drafts.map((draft) =>
+    [draft.draftId, JSON.stringify({ ...draft, text: getDraft(draft.draftId) })]));
+  let previous = snapshots();
+  const changed = () => {
+    const current = snapshots();
+    const ids = [...current].filter(([id, snapshot]) => snapshot !== previous.get(id)).map(([id]) => id);
+    previous = current;
+    syncDrafts(ids);
+  };
+  const metadata = useNewConversationDrafts.subscribe((state, previous) => { if (state.drafts !== previous.drafts) changed(); });
+  const texts = subscribeDraftTexts(changed);
   return () => { metadata(); texts(); };
 }

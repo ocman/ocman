@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { applyBackendStartProgress, discardBackendDraft, loadBackendDraftConflict, resolveBackendDraftConflict, persistBackendDraft, queueBackendDraft, refreshBackendDrafts, retireBackendDraft, useBackendConversationDrafts } from './backendConversationDrafts';
+import { applyBackendStartProgress, discardBackendDraft, fetchBackendDraft, loadBackendDraftConflict, resolveBackendDraftConflict, persistBackendDraft, queueBackendDraft, refreshBackendDrafts, retireBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts } from './backendConversationDrafts';
 import { APIError, fetchJSON, postJSON } from './api.requests';
 import { rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
-import { getDraft, saveDraft } from './composerDraft';
+import { applyTexts, getDraft, saveDraft } from './composerDraft';
 
 vi.mock('./api.requests', async (original) => ({ ...await original<typeof import('./api.requests')>(), fetchJSON: vi.fn(), postJSON: vi.fn() }));
 const id = 'ocm_01234567-89ab-4cde-8fab-0123456789ab';
@@ -59,6 +59,88 @@ it('does not adopt a peer revision from polling and silently overwrite its chang
   await refreshBackendDrafts();
   await persistBackendDraft(id);
   expect(postJSON).toHaveBeenCalledWith(`/api/session-drafts/${id}`, expect.anything(), { method: 'PUT', headers: { 'If-Match': 'base' } });
+});
+
+it('does not save an untouched stale draft when another composer changes', async () => {
+  rememberConversationDraft(metadata);
+  const other = 'ocm_11234567-89ab-4cde-8fab-0123456789ab';
+  rememberConversationDraft({ draftId: other, directory: '/other' });
+  vi.mocked(postJSON).mockImplementation(async (url) => {
+    if (url === `/api/session-drafts/${id}`) throw new APIError('draft changed in another tab; recover the saved draft before overwriting it', 409);
+  });
+  const stop = subscribeBackendDraftSync();
+  try {
+    saveDraft(other, 'new message');
+    await persistBackendDraft(other);
+    expect(useBackendConversationDrafts.getState().saveErrors[id]).toBeUndefined();
+    expect(vi.mocked(postJSON).mock.calls.every(([url]) => url === `/api/session-drafts/${other}`)).toBe(true);
+  } finally { stop(); }
+});
+
+it('keeps the acknowledged revision when an older detail read finishes after a save', async () => {
+  rememberConversationDraft(metadata);
+  const base = { id, metadata, phase: 'draft' as const, revision: 'base', createdAt: 1, steps: {} };
+  useBackendConversationDrafts.setState({ drafts: { [id]: base } });
+  let release!: (value: typeof base) => void;
+  vi.mocked(fetchJSON).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+  const reading = fetchBackendDraft(id);
+  vi.mocked(postJSON).mockResolvedValue({ ...base, revision: 'saved' });
+  await persistBackendDraft(id);
+  release(base);
+  await reading;
+  expect(useBackendConversationDrafts.getState().drafts[id].revision).toBe('saved');
+});
+
+it('does not lose a newly saved draft when a stale list response omits it', async () => {
+  rememberConversationDraft(metadata);
+  let release!: () => void;
+  vi.mocked(fetchJSON).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve([]); }));
+  const reading = refreshBackendDrafts();
+  vi.mocked(postJSON).mockResolvedValue({ id, metadata, phase: 'draft', revision: 'saved', createdAt: 1, steps: {} });
+  await persistBackendDraft(id);
+  release();
+  await reading;
+  expect(useBackendConversationDrafts.getState().drafts[id]?.revision).toBe('saved');
+});
+
+it('does not advance an editor revision from a peer detail read', async () => {
+  const base = { id, metadata, phase: 'draft' as const, revision: 'base', createdAt: 1, steps: {} };
+  useBackendConversationDrafts.setState({ drafts: { [id]: base } });
+  vi.mocked(fetchJSON).mockResolvedValue({ ...base, revision: 'peer' });
+  await fetchBackendDraft(id);
+  expect(useBackendConversationDrafts.getState().drafts[id].revision).toBe('base');
+});
+
+it('does not autosave unchanged text notifications or identical metadata', async () => {
+  rememberConversationDraft(metadata);
+  const stop = subscribeBackendDraftSync();
+  try {
+    applyTexts([[id, { text: getDraft(id), revision: 0 }]]);
+    rememberConversationDraft(metadata);
+    await vi.waitFor(() => expect(useNewConversationDrafts.getState().saveErrors[id]).toBeUndefined());
+    expect(postJSON).not.toHaveBeenCalled();
+  } finally { stop(); }
+});
+
+it('defers only changed drafts during a refresh and does not echo restored drafts', async () => {
+  rememberConversationDraft(metadata);
+  const restored = 'ocm_21234567-89ab-4cde-8fab-0123456789ab';
+  let release!: () => void;
+  vi.mocked(fetchJSON).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve([
+    { id: restored, metadata: { draftId: restored, directory: '/restored', text: 'server text' }, phase: 'draft', createdAt: 1, steps: {} },
+  ]); }));
+  const stop = subscribeBackendDraftSync();
+  try {
+    const reading = refreshBackendDrafts();
+    saveDraft(id, 'edited during refresh');
+    expect(postJSON).not.toHaveBeenCalled();
+    release();
+    await reading;
+    await persistBackendDraft(id);
+    expect(vi.mocked(postJSON).mock.calls.every(([url]) => url === `/api/session-drafts/${id}`)).toBe(true);
+    expect(postJSON).toHaveBeenCalledWith(`/api/session-drafts/${id}`, expect.objectContaining({ text: 'edited during refresh' }), expect.anything());
+    expect(getDraft(restored)).toBe('server text');
+  } finally { stop(); }
 });
 
 it.each(['local', 'server'] as const)('recovers a conflict using the explicitly chosen %s version', async (choice) => {
