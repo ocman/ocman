@@ -287,7 +287,7 @@ export function Composer({
   const { label: modelButtonLabel, unavailable: modelUnavailable, reasoningOptions } = describeModel(effectiveModel, modelEntries);
   const hasReasoning = reasoningOptions.length > 0;
   const reasoningCycleShortcut = useMemo(() => ({
-    id: 'composer.reasoning-cycle', scope: 'composer' as const, keys: { code: 'KeyR', alt: true },
+    id: 'composer.reasoning-cycle', scope: 'composer' as const,
     description: 'Cycle reasoning level',
     enabled: () => !!(reasoningOptions.length > 0 && !disabled),
     handler: () => {

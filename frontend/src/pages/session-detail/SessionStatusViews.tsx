@@ -9,6 +9,6 @@ export function SessionLoadError({ message, onRetry }: { message: string; onRetr
 export function SessionEmptyDetail({ shortcutLabel }: { shortcutLabel: string }) {
   return <EmptyState className={styles.spacing} data-testid="empty-detail">
     <p>No session open.</p>
-    <p>Pick a session from the sidebar, or press <kbd>{shortcutLabel}</kbd> and run <code>/new</code> to start one.</p>
+    <p>Pick a session from the sidebar{shortcutLabel && <>, or press <kbd>{shortcutLabel}</kbd> and run <code>/new</code> to start one</>}.</p>
   </EmptyState>;
 }

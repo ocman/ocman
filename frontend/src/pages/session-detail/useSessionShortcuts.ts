@@ -22,18 +22,9 @@ export interface UseSessionShortcutsOptions {
 }
 
 /**
- * Registers the per-page keyboard shortcuts:
- *
- *   Alt+J / Alt+K — next / previous recent session
-  *   Alt+V         — open in VS Code
-  *   Alt+C / Alt+T — create new session in current project
- *   Alt+M         — open the model-change palette
- *   Alt+G         — open the user-message jump picker
- *
- * Internally uses useSyncRef to mirror handler / state values into
- * stable refs so the useShortcut registrations don't re-bind on
- * every render — the registry's identity check (id, scope, keys)
- * keys off referential stability of the handler descriptor object.
+ * Registers session navigation, editor, creation and picker actions.
+ * Key combinations come from the backend catalog. Stable refs keep the
+ * registered handlers and availability checks on the latest page state.
  */
 export function useSessionShortcuts({
   session,
@@ -58,7 +49,6 @@ export function useSessionShortcuts({
   const navNextShortcut = useMemo(() => ({
     id: 'session.nav-next',
     scope: 'session' as const,
-    keys: { code: 'KeyJ', alt: true },
     description: 'Go to next session',
     handler: () => jumpToSession(1),
   }), [jumpToSession]);
@@ -66,7 +56,6 @@ export function useSessionShortcuts({
   const navPrevShortcut = useMemo(() => ({
     id: 'session.nav-prev',
     scope: 'session' as const,
-    keys: { code: 'KeyK', alt: true },
     description: 'Go to previous session',
     handler: () => jumpToSession(-1),
   }), [jumpToSession]);
@@ -77,7 +66,6 @@ export function useSessionShortcuts({
   const openVscodeShortcut = useMemo(() => ({
     id: 'session.open-vscode',
     scope: 'session' as const,
-    keys: { code: 'KeyV', alt: true },
     description: 'Open current session in VS Code',
     enabled: () => !!sessionRef.current,
     handler: () => handleVSCodeShortcutRef.current(),
@@ -87,10 +75,6 @@ export function useSessionShortcuts({
   const newSessionShortcut = useMemo(() => ({
     id: 'session.new-session',
     scope: 'session' as const,
-    keys: [
-      { code: 'KeyC', alt: true },
-      { code: 'KeyT', alt: true },
-    ],
     description: 'Create new session in current project',
     enabled: () => !!sessionRef.current && portAvailableRef.current,
     handler: () => handleNewSessionRef.current(),
@@ -103,7 +87,6 @@ export function useSessionShortcuts({
   const changeModelShortcut = useMemo(() => ({
     id: 'session.change-model',
     scope: 'session' as const,
-    keys: { code: 'KeyM', alt: true },
     description: 'Change model via palette',
     handler: () => openModelPickerRef.current(),
   }), [openModelPickerRef]);
@@ -113,7 +96,6 @@ export function useSessionShortcuts({
   const messageJumpShortcut = useMemo(() => ({
     id: 'session.jump-to-message',
     scope: 'session' as const,
-    keys: { code: 'KeyG', alt: true },
     description: 'Jump to user message',
     enabled: () => !!sessionRef.current,
     handler: () => openMessageJumpPickerRef.current(),

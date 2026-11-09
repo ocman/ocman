@@ -1,0 +1,31 @@
+{
+  "site.toggle-shortcuts": [
+    { "code": "Slash", "alt": true, "shift": true },
+    { "code": "Slash", "alt": true },
+    { "code": "IntlRo", "alt": true, "shift": true },
+    { "code": "IntlRo", "alt": true }
+  ],
+  "site.scroll-down": [{ "code": "ArrowDown", "alt": true }],
+  "site.scroll-up": [{ "code": "ArrowUp", "alt": true }],
+  "site.command-palette": [{ "code": "Space", "alt": true }],
+  "site.search-palette": [{ "code": "KeyF", "alt": true }],
+  "site.project-palette": [
+    { "code": "KeyN", "alt": true },
+    { "code": "KeyN", "alt": true, "shift": true }
+  ],
+  "site.reopen-closed-session": [{ "code": "KeyT", "alt": true, "shift": true }],
+  "site.open-inbox": [{ "code": "KeyI", "alt": true }],
+  "site.one-off-session": [{ "code": "KeyO", "alt": true }],
+  "project.open-vscode": [{ "code": "KeyV", "alt": true }],
+  "inbox.archive": [{ "code": "Delete" }, { "code": "Backspace" }],
+  "session.nav-next": [{ "code": "KeyJ", "alt": true }],
+  "session.nav-prev": [{ "code": "KeyK", "alt": true }],
+  "session.open-vscode": [{ "code": "KeyV", "alt": true }],
+  "session.new-session": [{ "code": "KeyC", "alt": true }, { "code": "KeyT", "alt": true }],
+  "session.change-model": [{ "code": "KeyM", "alt": true }],
+  "session.jump-to-message": [{ "code": "KeyG", "alt": true }],
+  "session.prev-user-message": [{ "code": "KeyH", "alt": true }],
+  "session.next-user-message": [{ "code": "KeyL", "alt": true }],
+  "composer.select-host": [{ "code": "KeyH", "alt": true }],
+  "composer.reasoning-cycle": [{ "code": "KeyR", "alt": true }]
+}

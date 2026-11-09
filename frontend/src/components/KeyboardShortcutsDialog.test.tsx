@@ -7,8 +7,8 @@ import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog';
 import { useShortcut } from '../lib/shortcutRegistry';
 
 function RegisteredShortcuts() {
-  useShortcut({ id: 'test.site', scope: 'site', keys: { code: 'Space', alt: true }, description: 'Open palette', handler: () => {} });
-  useShortcut({ id: 'test.session', scope: 'session', keys: [{ code: 'KeyJ', alt: true }, { code: 'ArrowDown' }], description: 'Next session', handler: () => {} });
+  useShortcut({ id: 'site.command-palette', scope: 'site', description: 'Open palette', handler: () => {} });
+  useShortcut({ id: 'session.nav-next', scope: 'session', description: 'Next session', handler: () => {} });
   return <Example />;
 }
 

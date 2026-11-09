@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import type { AgentInfo } from '../../lib/api';
 import { useUiStore } from '../../lib/uiStore';
 import { useClickOutside } from '../../lib/useClickOutside';
+import { useShortcutLabel } from '../../lib/shortcutRegistry';
 import { isMacPlatform } from '../../lib/shortcuts';
 import { agentColor } from '../../lib/agentColor';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
@@ -57,6 +58,7 @@ export function ComposerFooter({
   const [showTokenPopover, setShowTokenPopover] = useState(false);
   const tokenPopoverRef = useRef<HTMLDivElement>(null);
   const openShortcuts = useUiStore((s) => s.openShortcuts);
+  const shortcutsLabel = useShortcutLabel('site.toggle-shortcuts');
   const contextWindow = contextTokens ? getContextWindow(effectiveModel) : null;
   const contextPercent = contextTokens && contextWindow
     ? Math.min(100, (contextTokens / contextWindow) * 100)
@@ -162,7 +164,7 @@ export function ComposerFooter({
           </span>
         )}
         {visibleDurationMs > 0 && <span title="Total time spent answering">{formatDuration(visibleDurationMs)}</span>}
-        {!isRunning && <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{isMacPlatform() ? '⌥+?' : 'Alt+?'} for shortcuts</button>}
+        {!isRunning && <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{shortcutsLabel ? `${shortcutsLabel} for shortcuts` : 'Keyboard shortcuts'}</button>}
       </span>
     </div>
   );

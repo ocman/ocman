@@ -10,7 +10,7 @@ import { useShortcut, useShortcutDispatcher } from './shortcutRegistry';
 it('updates the handler in the same commit as the DOM', () => {
   const handled: number[] = [];
   function Item({ n }: { n: number }) {
-    useShortcut({ id: 'test.commit', scope: 'site', keys: [{ code: 'Delete' }], description: 'test', handler: () => { handled.push(n); } });
+    useShortcut({ id: 'inbox.archive', scope: 'site', description: 'test', handler: () => { handled.push(n); } });
     return null;
   }
   // Fires during the commit, before passive effects would have run.

@@ -455,7 +455,6 @@ export function AssistantThread({
   const prevUserMessageShortcut = {
     id: 'session.prev-user-message',
     scope: 'session' as const,
-    keys: { code: 'KeyH', alt: true },
     description: 'Jump to previous user message',
     runInEditable: true,
     handler: () => jumpToUserMessage('prev'),
@@ -464,7 +463,6 @@ export function AssistantThread({
   const nextUserMessageShortcut = {
     id: 'session.next-user-message',
     scope: 'session' as const,
-    keys: { code: 'KeyL', alt: true },
     description: 'Jump to next user message',
     runInEditable: true,
     handler: () => jumpToUserMessage('next'),

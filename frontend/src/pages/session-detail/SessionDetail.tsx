@@ -426,7 +426,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // A string selector, so re-registrations elsewhere don't re-render the page.
   const paletteShortcutLabel = useShortcutRegistry((state) => {
     const shortcut = state.shortcuts.get('site.command-palette');
-    return shortcut ? shortcutLabel(shortcut) : 'Alt+Space';
+    return shortcut ? shortcutLabel(shortcut) : '';
   });
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 

@@ -8,7 +8,7 @@ import { useShortcut, useShortcutDispatcher } from '../../lib/shortcutRegistry';
 
 function Shortcuts({ onHistory = vi.fn() }: { onHistory?: () => void }) {
   useShortcutDispatcher();
-  useShortcut({ id: 'test.history', scope: 'session', keys: { code: 'KeyH', alt: true }, description: 'Previous message', handler: onHistory });
+  useShortcut({ id: 'session.prev-user-message', scope: 'session', description: 'Previous message', handler: onHistory });
   return <textarea aria-label="Draft prompt" />;
 }
 

@@ -63,7 +63,7 @@ test('code copying reports denial and succeeds on retry', async ({ mockedPage: p
 
 test('Alt+I opens the inbox and is listed in keyboard shortcut help', async ({ mockedPage: page }) => {
   await page.route('**/api/inbox', (route) => route.fulfill({ json: { items: [], unreadTotal: 0 } }));
-  await page.goto('/sessions');
+  await Promise.all([page.waitForResponse('**/api/keybindings'), page.goto('/sessions')]);
   await page.getByRole('link', { name: 'Inbox', exact: true }).waitFor();
   await page.keyboard.press('Alt+i');
   await expect(page).toHaveURL('/inbox');

@@ -20,3 +20,9 @@ it('keeps the current shortcut and new-session command in the empty view', () =>
   expect(screen.getByText('Alt+Space').tagName).toBe('KBD');
   expect(screen.getByText('/new').tagName).toBe('CODE');
 });
+
+it('does not advertise a shortcut while bindings are unavailable', () => {
+  const { container } = render(<SessionEmptyDetail shortcutLabel="" />);
+  expect(screen.getByTestId('empty-detail')).toHaveTextContent('Pick a session from the sidebar.');
+  expect(container.querySelector('kbd')).toBeNull();
+});

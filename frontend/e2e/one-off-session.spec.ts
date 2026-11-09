@@ -18,7 +18,8 @@ for (const trigger of ['project picker', 'shortcut']) test(`create a project-fre
     candidates: [{ remoteId: 'local', remoteName: 'This machine', platform: 'opencode', dir: directory }], remotes: [],
   } }));
   await page.route('**/api/sessions/start', route => { starts++; return route.fulfill({ status: 500 }); });
-  await page.goto('/sessions');
+  await Promise.all([page.waitForResponse('**/api/keybindings'), page.goto('/sessions')]);
+  await expect(page.getByRole('button', { name: 'New session', exact: true }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'New one-off session' })).toHaveCount(0);
   if (trigger === 'shortcut') await page.keyboard.press('Alt+o');
   else {

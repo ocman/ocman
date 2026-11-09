@@ -14,6 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/factorymod"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/inbox"
+	"github.com/ocman/ocman/internal/keybindings"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/notifications"
 	"github.com/ocman/ocman/internal/platforms"
@@ -48,7 +49,7 @@ func (s *Server) modules() []module.Module {
 		ResolveOwner: s.resolveOwner,
 		Sessions:     s.resourceSessions,
 	})
-	mods = append(mods, s.sourceControlModule(), s.prWorkflowModule())
+	mods = append(mods, &keybindings.Module{}, s.sourceControlModule(), s.prWorkflowModule())
 	mods = append(mods, s.worktreeCleanupModule())
 	mods = append(mods, s.sidebarModules()...)
 	mods = append(mods, s.sessionUpdatesModule())

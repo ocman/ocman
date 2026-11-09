@@ -154,7 +154,6 @@ export function Inbox() {
   useShortcut({
     id: 'inbox.archive',
     scope: 'site',
-    keys: [{ code: 'Delete' }, { code: 'Backspace' }],
     description: 'Archive the open message',
     enabled: () => !!activeItem && !archived && !archive.isPending,
     handler: () => {

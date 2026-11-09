@@ -16,6 +16,7 @@
 import { useEffect, useLayoutEffect } from 'react';
 import { create } from 'zustand';
 import { isMacPlatform } from './shortcuts';
+import { useKeybindings } from './keybindings';
 
 export type Scope = 'site' | 'session' | 'project' | 'composer' | 'prompt';
 
@@ -88,18 +89,20 @@ export const useShortcutRegistry = create<Registry>((set) => ({
     }),
 }));
 
-// React hook: register a shortcut for the lifetime of the calling component.
-// The shortcut argument is captured in a ref so handlers see the latest
-// closure without re-registering on every render.
-export function useShortcut(shortcut: Shortcut): void {
+// Register an action for the lifetime of its component, using only the
+// backend's bindings. Missing or empty entries leave the action unbound.
+export function useShortcut(shortcut: Omit<Shortcut, 'keys' | 'label'>): void {
   const register = useShortcutRegistry((s) => s.register);
   const unregister = useShortcutRegistry((s) => s.unregister);
+  const { data } = useKeybindings();
+  const keys = data?.[shortcut.id];
 
   // Layout effect: the handler must update in the same commit as the DOM it
   // acts on, or a key pressed right after a re-render runs a stale closure
   // (e.g. Delete archiving the previous Inbox message again).
   useLayoutEffect(() => {
-    register(shortcut);
+    if (!keys?.length) return;
+    register({ ...shortcut, keys });
     return () => {
       unregister(shortcut.id);
     };
@@ -112,13 +115,12 @@ export function useShortcut(shortcut: Shortcut): void {
     shortcut,
     shortcut.id,
     shortcut.scope,
-    shortcut.label,
     shortcut.description,
     shortcut.handler,
     shortcut.runInEditable,
     shortcut.enabled,
     shortcut.priority,
-    shortcut.keys,
+    keys,
   ]);
 }
 
@@ -297,6 +299,13 @@ export function shortcutLabel(shortcut: Shortcut): string {
   const bindings = Array.isArray(shortcut.keys) ? shortcut.keys : [shortcut.keys];
   if (bindings.length === 0) return '';
   return bindingKeys(bindings[0]).join('+');
+}
+
+// Hints use the same backend catalog even before the owning action mounts.
+export function useShortcutLabel(id: string): string {
+  const { data } = useKeybindings();
+  const primary = data?.[id]?.[0];
+  return primary ? bindingKeys(primary).join('+') : '';
 }
 
 // Group shortcuts by scope and sort alphabetically by their resolved label so

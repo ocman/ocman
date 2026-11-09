@@ -1500,6 +1500,7 @@ flowchart TD
     SSE -->|events| Hub
     Hub -->|ocman.settings.changed: advance settings query generation| Stores
     Hub -->|foreground status + independent background shell/agent details| Stores
+    Hub -->|GET /api/keybindings: shared cached binding catalog| Stores
     Comp -->|owner-routed task stop + task/service override| API
     Comp --> Caps[useCapabilities<br/>capability gating]
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
@@ -1512,6 +1513,17 @@ flowchart TD
   Settled checks retain the bounded repository/SHA localStorage cache. Project
   settings use owner/project/generation query keys, so invalidation cannot let
   an older in-flight read restore stale settings.
+- **Keyboard bindings.** `internal/keybindings` serves the hub-owned catalog at
+  authenticated `GET /api/keybindings`. `defaults.json` is embedded in the binary;
+  reading an external user config file is not implemented yet. The browser loads
+  the catalog through one shared QueryClient entry, cached for the page lifetime.
+  React components register action IDs, handlers, scopes and availability, not
+  key combinations. Dispatch, shortcut help and hints use the loaded bindings.
+  The response maps stable action IDs to arrays of physical-key bindings such as
+  `{"code":"KeyJ","alt":true}`. Only `code`, `alt` and `shift` are supported.
+  Missing IDs and empty binding arrays disable actions; unknown IDs cannot add
+  handlers. Until loading succeeds, shortcuts stay inactive. Failed requests use
+  the shared retry and focus/reconnect recovery policy, with no frontend defaults.
 - **Conversation derivations.** Immutable part snapshots share a WeakMap parser
   in `lib/parsePart.ts`. Conversion caches belong to one platform/session and
   depend only on referenced task snapshots and that message's failure fields.

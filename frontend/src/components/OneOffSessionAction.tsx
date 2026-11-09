@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { postJSON } from '../lib/api.requests';
 import { newSessionPath } from '../lib/newSessionPath';
-import { useShortcut } from '../lib/shortcutRegistry';
+import { useShortcut, useShortcutLabel } from '../lib/shortcutRegistry';
 import { Button } from './Control';
 import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
@@ -12,7 +12,7 @@ import { ModalFooter } from './ModalFooter';
 function OneOffSessionShortcut({ start }: { start: () => Promise<void> }) {
   useShortcut({
     id: 'site.one-off-session', scope: 'site',
-    keys: { code: 'KeyO', alt: true }, description: 'New one-off session',
+    description: 'New one-off session',
     runInEditable: true, handler: () => { void start(); },
   });
   return null;
@@ -25,6 +25,7 @@ export function OneOffSessionAction({ onNavigate, registerShortcut = true, short
   const locked = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const shortcutLabel = useShortcutLabel('site.one-off-session');
 
   async function start() {
     if (locked.current) return;
@@ -45,7 +46,7 @@ export function OneOffSessionAction({ onNavigate, registerShortcut = true, short
 
   return <>
     {registerShortcut && <OneOffSessionShortcut start={start} />}
-    {!shortcutOnly && <Button variant="ghost" className="main-nav-action" title="New session in a temporary folder (Option+O / Alt+O)"
+    {!shortcutOnly && <Button variant="ghost" className="main-nav-action" title={`New session in a temporary folder${shortcutLabel ? ` (${shortcutLabel})` : ''}`}
       aria-label="New one-off session" aria-busy={pending} disabled={pending} onClick={() => { void start(); }}>
       <i className={`bi ${pending ? 'bi-hourglass-split' : 'bi-plus-square'}`} aria-hidden="true" />
       <span>{pending ? 'Creating workspace…' : 'One-off session'}</span>

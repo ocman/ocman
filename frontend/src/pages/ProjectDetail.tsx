@@ -84,7 +84,6 @@ export function ProjectDetail() {
   const openVscodeShortcut = {
     id: 'project.open-vscode',
     scope: 'project' as const,
-    keys: { code: 'KeyV', alt: true },
     description: 'Open current project in VS Code',
     enabled: () => !!directoryRef.current,
     handler: () => {

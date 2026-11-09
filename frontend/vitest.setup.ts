@@ -5,8 +5,15 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { closeDraftDbForTests } from './src/lib/draftDb';
 import { queryClient } from './src/lib/queryClient';
+import defaultKeybindings from '../internal/keybindings/defaults.json';
 
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
+
+// Component tests start with the same catalog the backend serves. Loader tests
+// remove this cached value to exercise real pending/error/request behavior.
+beforeEach(() => {
+  queryClient.setQueryData(['keybindings'], defaultKeybindings);
+});
 
 // A static import would load the DOM dependency graph even for pure Node tests.
 const cleanup = typeof document === 'undefined'

@@ -101,7 +101,7 @@ export function GlobalHotkeys() {
     navigate(`/session/${closed.id}`);
   }, [navigate]);
 
-  const scrollHalfPage = useCallback((e: KeyboardEvent) => {
+  const scrollHalfPage = useCallback((direction: 1 | -1) => {
     let el: Element | null = document.activeElement;
     let scroller: Element | null = null;
     while (el && el !== document.documentElement) {
@@ -116,18 +116,12 @@ export function GlobalHotkeys() {
     if (!scroller) scroller = document.querySelector('.oc-thread-viewport') ?? document.documentElement;
 
     const amount = scroller.clientHeight / 2;
-    scroller.scrollBy({ top: e.code === 'ArrowDown' ? amount : -amount, behavior: 'smooth' });
+    scroller.scrollBy({ top: direction * amount, behavior: 'smooth' });
   }, []);
 
   const toggleShortcutsShortcut = useMemo(() => ({
     id: 'site.toggle-shortcuts',
     scope: 'site' as const,
-    keys: [
-      { code: 'Slash', alt: true, shift: true },
-      { code: 'Slash', alt: true },
-      { code: 'IntlRo', alt: true, shift: true },
-      { code: 'IntlRo', alt: true },
-    ],
     description: 'Open keyboard shortcuts',
     handler: toggleShortcuts,
   }), [toggleShortcuts]);
@@ -135,24 +129,20 @@ export function GlobalHotkeys() {
   const scrollDownShortcut = useMemo(() => ({
     id: 'site.scroll-down',
     scope: 'site' as const,
-    keys: { code: 'ArrowDown', alt: true },
     description: 'Scroll down half a page',
-    handler: scrollHalfPage,
+    handler: () => scrollHalfPage(1),
   }), [scrollHalfPage]);
 
   const scrollUpShortcut = useMemo(() => ({
     id: 'site.scroll-up',
     scope: 'site' as const,
-    keys: { code: 'ArrowUp', alt: true },
     description: 'Scroll up half a page',
-    handler: scrollHalfPage,
+    handler: () => scrollHalfPage(-1),
   }), [scrollHalfPage]);
 
   const commandPaletteShortcut = useMemo(() => ({
     id: 'site.command-palette',
     scope: 'site' as const,
-    keys: { code: 'Space', alt: true },
-    label: 'Alt+Space',
     description: 'Open command palette',
     handler: () => {
       useUiStore.getState().openPalette('command');
@@ -163,8 +153,6 @@ export function GlobalHotkeys() {
   const searchPaletteShortcut = useMemo(() => ({
     id: 'site.search-palette',
     scope: 'site' as const,
-    keys: { code: 'KeyF', alt: true },
-    label: 'Alt+F',
     description: 'Search sessions',
     handler: () => useUiStore.getState().openPalette('search'),
     runInEditable: true,
@@ -173,10 +161,6 @@ export function GlobalHotkeys() {
   const projectPaletteShortcut = useMemo(() => ({
     id: 'site.project-palette',
     scope: 'site' as const,
-    keys: [
-      { code: 'KeyN', alt: true },
-      { code: 'KeyN', alt: true, shift: true },
-    ],
     description: 'Create new session in project',
     handler: () => useUiStore.getState().openPalette('project-session'),
     runInEditable: true,
@@ -185,7 +169,6 @@ export function GlobalHotkeys() {
   const reopenClosedShortcut = useMemo(() => ({
     id: 'site.reopen-closed-session',
     scope: 'site' as const,
-    keys: { code: 'KeyT', alt: true, shift: true },
     description: 'Reopen last closed session',
     enabled: () => useApiStore.getState().closedSessionStack.length > 0,
     handler: reopenClosedSession,
@@ -195,7 +178,6 @@ export function GlobalHotkeys() {
   const inboxShortcut = useMemo(() => ({
     id: 'site.open-inbox',
     scope: 'site' as const,
-    keys: { code: 'KeyI', alt: true },
     description: 'Open inbox',
     handler: () => navigate('/inbox'),
     runInEditable: true,

@@ -37,7 +37,7 @@ describe('useSessionShortcuts', () => {
     }));
 
     const shortcut = useShortcutRegistry.getState().shortcuts.get('session.jump-to-message');
-    expect(shortcut?.keys).toEqual({ code: 'KeyG', alt: true });
+    expect(shortcut?.keys).toEqual([{ code: 'KeyG', alt: true }]);
     shortcut?.handler(new KeyboardEvent('keydown'));
     expect(openMessageJumpPicker).toHaveBeenCalledOnce();
   });

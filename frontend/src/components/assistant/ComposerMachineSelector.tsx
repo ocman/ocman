@@ -22,7 +22,6 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', source,
   const hostShortcut = useMemo(() => ({
     id: 'composer.select-host',
     scope: 'composer' as const,
-    keys: { code: 'KeyH', alt: true },
     description: 'Select host for new conversation',
     enabled: () => !disabled && !!targets && targets.remotes.length > 0,
     handler: () => selectorRef.current?.querySelector<HTMLButtonElement>('[role="combobox"]')?.click(),
