@@ -443,3 +443,4 @@ describe('shortcutLabel (string fallback)', () => {
     });
   });
 });
+// @vitest-environment jsdom

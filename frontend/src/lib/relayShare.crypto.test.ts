@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment node
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { decryptRelayBytes, parseRelayShareURL, readRelayShare } from './relayShare';
 import type { SharedConversation } from './api.types';
