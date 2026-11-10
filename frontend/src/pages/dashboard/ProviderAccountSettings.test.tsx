@@ -87,11 +87,12 @@ describe('ProviderAccountSettings', () => {
         rateLimits: [{ name: 'five_hour', utilization: 0.5, resetsAt: 0 }],
       }],
     });
-    const { unmount } = renderSettings(<ProviderLimitsCard />);
-    expect(await screen.findByRole('heading', { name: 'Subscription limits' })).toBeInTheDocument();
+    const { unmount } = renderSettings(<ProviderLimitsCard days={30} />);
+    expect(await screen.findByRole('heading', { name: 'Subscription burndown' })).toBeInTheDocument();
     expect(await screen.findByRole('img', { name: 'Claude Code subscription usage history' })).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    expect(useProviderUsageHistory).toHaveBeenCalledWith(7);
+    expect(useProviderUsageHistory).toHaveBeenCalledWith(30);
+    expect(screen.getByText(/Last 30 days/)).toBeInTheDocument();
     expect(chart.mock.lastCall?.[0].data.datasets).toMatchObject([
       { label: '5 hours', data: [{ y: 20 }, { y: 30 }] },
       { label: 'Monthly budget', data: [{ y: 25 }, { y: 25 }] },
@@ -101,25 +102,40 @@ describe('ProviderAccountSettings', () => {
     providerAccounts.mockResolvedValueOnce({ accounts: [] });
     const { container } = renderSettings(<ProviderLimitsCard />);
     await vi.waitFor(() => expect(providerAccounts).toHaveBeenCalledTimes(2));
-    expect(container).toBeEmptyDOMElement();
+    await vi.waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
   it('shows history loading and empty states without replacing account settings', async () => {
     providerAccounts.mockResolvedValue({ accounts: [{ platform: 'claudecode', displayName: 'Claude Code', status: 'ok', subscriptionType: 'pro', rateLimits: [] }] });
     vi.mocked(useProviderUsageHistory).mockReturnValue({ isLoading: true } as never);
     const view = renderSettings(<ProviderLimitsCard />);
-    expect(await screen.findByText('Loading subscription history')).toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: 'Loading subscription history' })).toBeInTheDocument();
     vi.mocked(useProviderUsageHistory).mockReturnValue({ data: { sampleIntervalMs: 300000, samples: [] } } as never);
     view.rerender(<QueryClientProvider client={new QueryClient()}><ProviderLimitsCard /></QueryClientProvider>);
     expect(await screen.findByText(/Graphs start with the next successful platform reading/)).toBeInTheDocument();
   });
 
+  it('shows a chart skeleton while subscription accounts are loading', () => {
+    providerAccounts.mockReturnValue(new Promise(() => {}));
+    renderSettings(<ProviderLimitsCard />);
+    expect(screen.getByRole('status', { name: 'Loading subscription history' })).toBeInTheDocument();
+  });
+
+  it.each([[0, 'All history'], [1, 'Last 24 hours']])('labels the selected %s-day period', async (days, label) => {
+    providerAccounts.mockResolvedValue({ accounts: [{ platform: 'claudecode', displayName: 'Claude Code', status: 'ok', subscriptionType: 'pro', rateLimits: [] }] });
+    vi.mocked(useProviderUsageHistory).mockReturnValue({ data: historyData } as never);
+    renderSettings(<ProviderLimitsCard days={Number(days)} />);
+    expect(await screen.findByText(`${label}. Gaps indicate missing readings or quota resets.`)).toBeInTheDocument();
+    expect(useProviderUsageHistory).toHaveBeenCalledWith(days);
+  });
+
   it('keeps the last graph during history errors and retries the history request', async () => {
     providerAccounts.mockResolvedValue({ accounts: [{ platform: 'claudecode', displayName: 'Claude Code', status: 'ok', subscriptionType: 'pro', rateLimits: [] }] });
     const refetch = vi.fn();
-    vi.mocked(useProviderUsageHistory).mockReturnValue({ data: historyData, error: new Error('History unavailable'), refetch } as never);
+    vi.mocked(useProviderUsageHistory).mockReturnValue({ data: historyData, isLoading: true, error: new Error('History unavailable'), refetch } as never);
     renderSettings(<ProviderLimitsCard />);
     expect(await screen.findByRole('img')).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Loading subscription history' })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('History unavailable');
     expect(screen.queryByText(/Graphs start/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));

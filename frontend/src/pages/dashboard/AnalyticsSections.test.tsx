@@ -13,7 +13,7 @@ vi.mock('react-chartjs-2', () => ({
     return <div data-testid="line-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />;
   },
 }));
-vi.mock('./ProviderAccountSettings', () => ({ ProviderLimitsCard: () => <div>subscription limits</div> }));
+vi.mock('./ProviderAccountSettings', () => ({ ProviderLimitsCard: ({ days }: { days: number }) => <div>subscription burndown {days}</div> }));
 vi.mock('../../components/ProjectScopePicker', () => ({ ProjectScopePicker: () => <div>project scope</div> }));
 vi.mock('./context', () => ({ useDashboard: () => ({ projects: [], dirScope: '/repo', setDirScope: vi.fn() }) }));
 
@@ -243,8 +243,14 @@ describe('analytics sections', () => {
     expect(screen.getByText('Cost Distribution by Model')).toBeInTheDocument();
     expect(screen.getByText('Estimated Cost Distribution by Type')).toBeInTheDocument();
     expect(screen.getByText('Agent breakdown')).toBeInTheDocument();
-    expect(screen.getByText('subscription limits')).toBeInTheDocument();
+    expect(screen.getByText('subscription burndown 30')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Last' }));
+    fireEvent.click(screen.getByRole('option', { name: '7 days' }));
+    expect(screen.getByText('subscription burndown 7')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Last' }));
+    fireEvent.click(screen.getByRole('option', { name: 'All time' }));
+    expect(screen.getByText('subscription burndown 0')).toBeInTheDocument();
   });
 
   it('applies the model filter to usage charts', () => {

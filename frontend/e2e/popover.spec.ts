@@ -19,6 +19,13 @@ test('analytics graphs subscription history while current usage keeps its progre
   await page.goto('/analytics/models');
   const content = page.getByTestId('page-content');
   await expect(content.getByRole('img', { name: 'OpenCode subscription usage history' })).toBeVisible();
+  await expect(content.getByRole('heading', { name: 'Subscription burndown', exact: true })).toBeVisible();
+  await expect(content.getByText('Last 30 days. Gaps indicate missing readings or quota resets.')).toBeVisible();
+  await content.getByRole('combobox', { name: 'Last', exact: true }).click();
+  const historyRequest = page.waitForRequest('**/api/provider-usage/history?days=7');
+  await page.getByRole('option', { name: '7 days', exact: true }).click();
+  await historyRequest;
+  await expect(content.getByText('Last 7 days. Gaps indicate missing readings or quota resets.')).toBeVisible();
   await expect(content.getByRole('progressbar')).toHaveCount(0);
   const nextChart = await content.getByRole('heading', { name: 'Model Usage', exact: true }).boundingBox();
   const historyChart = await content.getByRole('img', { name: 'OpenCode subscription usage history' }).boundingBox();
@@ -49,7 +56,7 @@ test('subscription history graphs persisted readings and keeps its period on rel
   } }));
   await page.goto('/provider-usage');
   await page.getByRole('tab', { name: 'History', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Subscription usage history', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Subscription burndown', exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: 'Codex subscription usage history' })).toBeVisible();
   await page.getByRole('combobox', { name: 'History period' }).selectOption('30');
   await expect(page).toHaveURL(/view=history&days=30/);
@@ -57,7 +64,7 @@ test('subscription history graphs persisted readings and keeps its period on rel
   await expect(page.getByRole('combobox', { name: 'History period' })).toHaveValue('30');
   await expect(page.getByRole('img', { name: 'Codex subscription usage history' })).toBeVisible();
   await page.getByRole('tab', { name: 'Current usage', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Subscription usage history', exact: true })).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Subscription burndown', exact: true })).not.toBeVisible();
 });
 
 test('provider usage shows the local seven-day TypeSafe estimate', async ({ mockedPage: page }) => {

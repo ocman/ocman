@@ -33,7 +33,7 @@ export function ModelsTab() {
     <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {errors.map((error) => <InlineAlert key={error.message}>{error.message}</InlineAlert>)}
-      <ProviderLimitsCard />
+      <ProviderLimitsCard days={days} />
       <div className="analytics-chart-pair">
         <ChartSlot isLoading={modelsQ.isLoading} label="Loading model usage"><ChartCard title="Model Usage">
               <Doughnut data={{ labels: top.map((item) => item.model), datasets: [{ data: top.map((item) => item.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={DOUGHNUT_OPTIONS} />

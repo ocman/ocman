@@ -6,6 +6,7 @@ import { RefreshButton } from '../components/RefreshButton';
 import { InlineAlert } from '../components/InlineAlert';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
+import { ChartSkeleton } from './dashboard/shared';
 import { ProviderSpend } from './ProviderSpend';
 import { ProviderBudget } from './ProviderBudget';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
@@ -100,7 +101,7 @@ export function SubscriptionUsage() {
   })}>
     <TabsList aria-label="Provider usage views"><TabsTrigger value="current">Current usage</TabsTrigger><TabsTrigger value="history">History</TabsTrigger></TabsList>
     <TabsContent value="current"><SubscriptionUsageContent /></TabsContent>
-    <TabsContent value="history"><Suspense fallback={<LoadingState>Loading subscription history</LoadingState>}><History /></Suspense></TabsContent>
+    <TabsContent value="history"><Suspense fallback={<ChartSkeleton label="Loading subscription history" />}><History /></Suspense></TabsContent>
   </Tabs></div>;
 }
 import { lazy, Suspense } from 'react';

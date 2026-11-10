@@ -24,9 +24,10 @@ describe('SubscriptionUsageHistory', () => {
     vi.mocked(useProviderUsageHistory).mockReturnValue({ data, refetch: vi.fn() } as never);
     mount('/provider-usage?view=history&days=30&remoteId=local');
     expect(useProviderUsageHistory).toHaveBeenCalledWith(30);
+    expect(screen.getByRole('heading', { name: 'Subscription burndown' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Codex subscription usage history' })).toBeInTheDocument();
     const props = chart.mock.lastCall?.[0];
-    expect(props.data.datasets[0]).toMatchObject({ label: '5 hours', spanGaps: false, data: [{ x: 1793548800000, y: 20 }] });
+    expect(props.data.datasets[0]).toMatchObject({ label: '5 hours', pointRadius: 0, spanGaps: false, data: [{ x: 1793548800000, y: 20 }] });
     expect(props.options.scales.y).toMatchObject({ min: 0, max: 100 });
     expect(props.options.scales.y.ticks.callback(25)).toBe('25%');
     expect(props.options.scales.x.ticks.callback(1793548800000)).toContain('Nov');
@@ -41,7 +42,7 @@ describe('SubscriptionUsageHistory', () => {
     vi.mocked(useProviderUsageHistory).mockReturnValue({ isLoading: true } as never);
     const view = mount('/provider-usage?view=history&days=invalid');
     expect(useProviderUsageHistory).toHaveBeenCalledWith(7);
-    expect(screen.getByRole('status')).toHaveTextContent('Loading subscription history');
+    expect(screen.getByRole('status', { name: 'Loading subscription history' })).toBeInTheDocument();
     vi.mocked(useProviderUsageHistory).mockReturnValue({ data: { ...data, samples: [] } } as never);
     view.rerender(<MemoryRouter><SubscriptionUsageHistory /></MemoryRouter>);
     expect(screen.getByText(/History starts with the next successful platform reading/)).toBeInTheDocument();
@@ -52,7 +53,7 @@ describe('SubscriptionUsageHistory', () => {
     vi.mocked(useProviderUsageHistory).mockReturnValue({ data, error: new Error('History read failed'), isLoading: true, refetch } as never);
     mount();
     expect(screen.getByRole('img')).toBeInTheDocument();
-    expect(screen.queryByText('Loading subscription history')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Loading subscription history' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(refetch).toHaveBeenCalledTimes(2);
