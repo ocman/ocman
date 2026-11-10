@@ -70,11 +70,6 @@ func (f connectionFactory) buildNamed(ctx context.Context, c platformconnections
 	}
 }
 
-func (f connectionFactory) openCode(ctx context.Context, c platformconnections.Connection) (platforms.Integration, error) {
-	cfg := f.openCodeConfig(c)
-	return f.buildOpenCode(ctx, c, cfg)
-}
-
 func (f connectionFactory) openCodeConfig(c platformconnections.Connection) ocruntime.NativeConnectionConfig {
 	base := filepath.Join(f.dataDir, "platform-connections", c.ID, "native")
 	cfg := ocruntime.NativeConnectionConfig{DBPath: filepath.Join(base, "data", "opencode", "opencode.db"), ConfigDir: c.Directory, DataDir: filepath.Join(base, "data"), StateDir: filepath.Join(base, "state"), CacheDir: filepath.Join(base, "cache"), RuntimeDir: filepath.Join(base, "runtime"), Executable: "opencode"}
@@ -102,7 +97,8 @@ func (f connectionFactory) openCodeConfig(c platformconnections.Connection) ocru
 	return cfg
 }
 
-func (f connectionFactory) buildOpenCode(ctx context.Context, c platformconnections.Connection, cfg ocruntime.NativeConnectionConfig) (platforms.Integration, error) {
+func (f connectionFactory) openCode(ctx context.Context, c platformconnections.Connection) (platforms.Integration, error) {
+	cfg := f.openCodeConfig(c)
 	if err := os.MkdirAll(cfg.RuntimeDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -175,6 +171,9 @@ func (f connectionFactory) buildOpenCode(ctx context.Context, c platformconnecti
 
 func (f connectionFactory) connectionAuth(ctx context.Context, c platformconnections.Connection) (ocapi.Auth, error) {
 	if c.LegacyKind == "opencode" {
+		if f.legacyAuth.Enabled() {
+			return f.legacyAuth, nil
+		}
 		password, err := startupOpenCodePassword(ctx, f.state, "", true, sharesServiceDB(f.openCodeDB))
 		return ocapi.New(password), err
 	}
@@ -211,11 +210,17 @@ func (p *openCodeConnection) Close() {
 	}
 }
 func (p *openCodeConnection) HostServices() hostsvc.PlatformServices {
-	return hostsvc.PlatformServices{Runtime: connectionRuntime{p.host}}
+	return hostsvc.PlatformServices{Runtime: p, Namer: p}
 }
 
-type connectionRuntime struct{ host *local.Host }
+func (p *openCodeConnection) EnsureRuntime(ctx context.Context, dir string) (*hostsvc.EnsureRuntimeResult, error) {
+	return p.host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+}
 
-func (r connectionRuntime) EnsureRuntime(ctx context.Context, dir string) (*hostsvc.EnsureRuntimeResult, error) {
-	return r.host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+func (p *openCodeConnection) WorktreeName(ctx context.Context, dir, prompt string) (string, error) {
+	runtime, err := p.EnsureRuntime(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	return p.Adapter.WorktreeName(ctx, runtime.Port(), dir, prompt)
 }

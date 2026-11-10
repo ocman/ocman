@@ -65,7 +65,7 @@ func initializeConnections(ctx context.Context, db *state.DB, existed bool, enab
 				kinds[scope] = true
 			}
 		}
-		def, err := db.DefaultPlatform(ctx)
+		def, _, err := db.GetSetting(ctx, state.DefaultPlatformSetting)
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +75,9 @@ func initializeConnections(ctx context.Context, db *state.DB, existed bool, enab
 				selected = append(selected, kind)
 			}
 		}
-		def = state.PickEnabledPlatform(def, selected)
+		if def == "" {
+			def = state.PickEnabledPlatform("opencode", selected)
+		}
 		if _, ok := configs[def]; ok {
 			kinds[def] = true
 			seed.DefaultKind = def
