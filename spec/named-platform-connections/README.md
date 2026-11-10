@@ -39,6 +39,13 @@ account/catalog probes. Fake-child tests cover the session launch path. This is
 not a named Claude constructor: project recovery keys, persistence directories,
 transport-level helpers and plugin management still need account-aware wiring.
 
+The shared `platformconnections.Router` binds configured platform adapters by
+connection ID. Exact selections, explicit defaults and retained legacy mappings
+share one admission policy. Multiple adapters of the same kind coexist without
+changing their platform or native session identity. This is tested against
+disposable stores and fake adapters, not yet used by application startup or
+session services. The platform-kind registry remains unchanged.
+
 **Only the schema is wired into startup.** The repository initializer and
 mutations have no production callers yet. Existing platform settings remain
 authoritative. Native authentication, runtime isolation and routing have not
@@ -258,6 +265,32 @@ commands displayed in the browser fixture are examples, not executable setup.
   effective account identity before advertising isolation. The registry remains
   platform-kind keyed; these native constructors are not yet new-session routing
   or a completed multi-account feature.
+
+### Shared connection routing contract
+
+- `Reference.ConnectionID` selects an exact owner-local connection.
+  `Reference.LegacyKind` selects only the original retained migration mapping.
+  Setting both is invalid; setting neither uses the explicit saved default.
+  No path chooses the first available connection of a kind.
+- `Router.Bind` registers an already configured `platforms.Platform` under its
+  connection ID, verifies the stored kind, and refuses duplicate registration.
+  The adapter's `ID()` still names the native platform kind, not the connection.
+  Disabled entries can be composed, but removed entries cannot be bound.
+- `Router.Resolve` rereads persisted selection and enabled/removal intent and
+  checks current adapter availability. Failure never falls back to the owner
+  default, a sibling account or a display-name match. Returned metadata reflects
+  renames without retargeting the binding.
+- One router uses one owner's Store. The caller must resolve an explicit owner
+  before selecting a connection and must fail closed on disconnected remotes.
+  Tests verify that an unknown other-owner ID cannot select the local default.
+- The router does not construct, launch, close or prove account isolation for an
+  adapter. Composition owns those operations and must drain before replacement.
+  Resolution is an admission snapshot, not an atomic lease against concurrent
+  removal. Active-work lifecycle coordination remains required.
+- Session services still need to consume this seam and persist connection IDs
+  alongside durable session bindings. Canonical session/source identities must
+  not be rewritten as connection IDs. Production activation remains gated on
+  native isolation, connection-aware composition and owner/API integration.
 
 ### Claude child-environment checkpoint
 

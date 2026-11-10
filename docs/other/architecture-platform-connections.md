@@ -57,6 +57,41 @@ flowchart LR
   inventory and account isolation are still required before enabling multiple
   accounts of the same kind.
 
+## Shared connection routing
+
+`platformconnections.Router` is the shared owner-local selection seam. It binds
+already configured adapters by connection ID, not platform kind. Multiple Claude
+or Codex adapters can therefore coexist without changing their `Platform.ID()`
+or native protocol. Application startup and session services do not use it yet.
+
+```mermaid
+flowchart LR
+    Selection[Connection reference] --> Router[Owner-local connection Router]
+    Router --> Store[Store: exact ID, saved default<br/>or retained legacy mapping]
+    Store --> Intent[Check enabled intent and tombstone]
+    Intent --> Binding[Connection-ID adapter binding]
+    Binding --> Ready[Check current adapter availability]
+    Ready --> Work[Work account adapter<br/>kind claudecode]
+    Ready --> Personal[Personal account adapter<br/>kind claudecode]
+```
+
+- A reference contains either a connection ID or a legacy platform kind. An
+  empty reference uses the explicit saved default. Ambiguous references fail.
+  Display names and native session IDs are not connection routing keys.
+- Defaults and metadata are read on every resolution. Disabled, removed,
+  missing, unbound and unavailable selections return an error, never a sibling.
+  A legacy reference stays pinned to its original mapping after removal.
+- Binding verifies that the adapter's kind matches the stored connection. A
+  second binding for the same ID fails rather than silently replacing it. The
+  composition layer must drain and retire a router before replacing its adapters.
+- Each router belongs to one owner's store. Owner resolution remains outside
+  this module; a disconnected explicit remote must not fall back to this owner.
+- A resolved route carries both connection metadata and the unchanged platform
+  adapter. It is not a credential-isolation proof or a revocable operation lease.
+  Callers must resolve at each admission, persist the selected connection ID and
+  coordinate removal with draining. Existing-session execution still needs a
+  durable connection binding separate from its physical history identity.
+
 ## Explicit Codex runtime configuration
 
 The Codex constructor accepts an optional named connection with an immutable ID
