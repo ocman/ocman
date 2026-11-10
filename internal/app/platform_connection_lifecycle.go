@@ -62,10 +62,22 @@ func connectionLifecycle(factory connectionFactory, router *platformconnections.
 			result := hostsvc.ConnectionCheck{Status: "unchecked", Directory: c.Directory, Checks: []hostsvc.ConnectionCheckItem{}}
 			result.Command = factory.loginCommand(c)
 			result.Instructions = "Run this sign-in command on this connection's owning machine, then check again."
+			if c.LegacyKind == "opencode" && c.Kind == "opencode" && adapters[c.ID] == nil {
+				return factory.inspectMigratedOpenCode(ctx, c, result)
+			}
 			var inspection platforms.ConnectionInspection
 			var err error
 			if p := adapters[c.ID]; p != nil {
-				if inspector, ok := p.(platforms.ConnectionInspector); ok {
+				if c.LegacyKind != "" && c.LegacyKind == c.Kind {
+					// Migration retains the machine configuration's original readiness
+					// contract. Named-account isolation is not retroactive policy.
+					inspection.Ready = p.Available(ctx)
+					inspection.Message = "Existing machine configuration is unavailable. Check its native CLI and runtime on the owning machine."
+					if inspection.Ready {
+						inspection.Message = "Existing machine configuration is available. Native authentication settings are unchanged."
+					}
+					err = ctx.Err()
+				} else if inspector, ok := p.(platforms.ConnectionInspector); ok {
 					inspection, err = inspector.InspectConnection(ctx)
 				} else {
 					return result, nil

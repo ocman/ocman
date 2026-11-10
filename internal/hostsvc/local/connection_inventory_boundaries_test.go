@@ -39,11 +39,14 @@ func TestConnectionInventoryRejectsInvalidInspectionAndMutationBoundaries(t *tes
 				}
 				return hostsvc.ConnectionCheck{Status: "unknown-status"}, nil
 			}
-			if _, err := h.InventoryPlatformConnections(t.Context()); err == nil {
-				t.Fatal("invalid native inspection published")
-			}
-			if _, err := h.CheckPlatformConnection(t.Context(), hostsvc.ConnectionCheckRequest{ID: c.ID}); err == nil {
-				t.Fatal("invalid native inspection accepted")
+			inventory, inventoryErr := h.InventoryPlatformConnections(t.Context())
+			check, checkErr := h.CheckPlatformConnection(t.Context(), hostsvc.ConnectionCheckRequest{ID: c.ID})
+			if mode == "native-error" {
+				if inventoryErr != nil || len(inventory.Connections) != 1 || inventory.Connections[0].Status != "error" || checkErr != nil || check.Status != "error" {
+					t.Fatalf("broken row hidden: %+v %v %+v %v", inventory, inventoryErr, check, checkErr)
+				}
+			} else if inventoryErr == nil || checkErr == nil {
+				t.Fatal("invalid native inspection status accepted")
 			}
 			if err := h.UpdatePlatformConnection(t.Context(), hostsvc.ConnectionUpdate{ID: c.ID, Default: true}); err == nil {
 				t.Fatal("invalid inspection became default")

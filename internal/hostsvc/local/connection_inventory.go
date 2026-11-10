@@ -2,6 +2,8 @@ package local
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -9,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platformconnections"
 	"github.com/ocman/ocman/internal/platforms"
+	log "github.com/sirupsen/logrus"
 )
 
 var _ hostsvc.ConnectionHost = (*Host)(nil)
@@ -19,10 +22,17 @@ func (h *Host) inspectConnection(ctx context.Context, c platformconnections.Conn
 	}
 	check, err := h.deps.ConnectionLifecycle.Inspect(ctx, c)
 	if err != nil {
-		return hostsvc.ConnectionCheck{}, err
+		if ctx.Err() != nil {
+			return hostsvc.ConnectionCheck{}, ctx.Err()
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, sql.ErrConnDone) || errors.Is(err, sql.ErrTxDone) {
+			return hostsvc.ConnectionCheck{}, err
+		}
+		log.WithError(err).WithFields(log.Fields{"connection": c.ID, "kind": c.Kind}).Warn("host: account inspection failed")
+		check = hostsvc.ConnectionCheck{Status: "error", Instructions: "Account inspection failed on the owning machine. Review its diagnostics and check again."}
 	}
 	switch check.Status {
-	case "ready", "unchecked", "sign-in-required", "dependencies-missing":
+	case "ready", "unchecked", "sign-in-required", "dependencies-missing", "error":
 	default:
 		return hostsvc.ConnectionCheck{}, fmt.Errorf("invalid connection inspection status")
 	}

@@ -56,9 +56,6 @@ func InspectOpenCodeConnection(ctx context.Context, root string, runtime ocrunti
 		// Cancel and join detached startup before testing launch ownership.
 		// Otherwise cancellation could race a launch after cleanup looked.
 		host.Finalize()
-		if !owned.wasLaunched() {
-			return
-		}
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		stopErr := owned.stopOwned(stopCtx)
@@ -94,12 +91,6 @@ func (r *inspectionOwnedRuntime) Launch(ctx context.Context, spec ocruntime.Laun
 		r.mu.Unlock()
 	}
 	return inst, err
-}
-
-func (r *inspectionOwnedRuntime) wasLaunched() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.instance != nil
 }
 
 func (r *inspectionOwnedRuntime) Stop(ctx context.Context, inst *ocruntime.Instance) error {
