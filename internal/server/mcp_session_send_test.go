@@ -31,7 +31,7 @@ func TestMCPSendSessionMessage(t *testing.T) {
 				if err != nil || got != (internalmcp.SentSession{Platform: platform, SessionID: "recipient", Sent: true}) {
 					t.Fatalf("send = %#v, %v", got, err)
 				}
-				if sent.SessionID != "recipient" || sent.Message != "Continue the review" || sent.Model != "" || sent.Delivery != "" || sent.Agent != "" {
+				if sent.SessionID != "recipient" || sent.Message != wantMCPAgentMessage("Continue the review") || sent.Model != "" || sent.Delivery != "" || sent.Agent != "" {
 					t.Fatalf("sent = %#v", sent)
 				}
 			}
@@ -67,10 +67,18 @@ func TestMCPSendSessionToolDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(mcpServer.Close)
-	result := testutil.CallTool(t, mcpServer, "sessions", map[string]any{"action": "send", "session_id": "recipient", "platform": "test", "prompt": "Review this"})
-	if result.IsError || sent.SessionID != "recipient" || sent.Message != "Review this" {
-		t.Fatalf("tool result = %q, sent = %#v", testutil.ResultText(result), sent)
+	for _, prompt := range []string{"Review this", "  # Concrete plan\n\n  Keep indentation\n", "/review", "<agent-message from=\"nested\">\nQuoted\n</agent-message>"} {
+		result := testutil.CallTool(t, mcpServer, "sessions", map[string]any{"action": "send", "session_id": "recipient", "platform": "test", "prompt": prompt})
+		if result.IsError || sent.SessionID != "recipient" || sent.Message != wantMCPAgentMessage(prompt) {
+			t.Fatalf("tool result = %q, sent = %#v", testutil.ResultText(result), sent)
+		}
 	}
+}
+
+func wantMCPAgentMessage(prompt string) string {
+	return "<agent-message from=\"ocman.sessions\">\n" +
+		"[Agent message] Sent by an agent through ocman.sessions, not the user. The message follows:\n" +
+		prompt + "\n</agent-message>"
 }
 
 func TestMCPSendSessionCanonicalReference(t *testing.T) {

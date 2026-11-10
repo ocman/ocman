@@ -530,7 +530,7 @@ flowchart TD
     Modules -->|notifications: subscriptions + durable delivery receipts| State
     Modules -->|snooze: archive deadlines + atomic wake-up| State
     MCP --> Registry
-    MCP -->|existing-session direct send| Sessions
+    MCP -->|agent envelope via existing-session direct send| Sessions
     MCP -->|creator provenance before first prompt| State
     State -->|creator reference on REST and MCP detail reads| MCP
     State -->|batched creator links for sidebar nesting| Browser
@@ -569,6 +569,10 @@ flowchart TD
     PluginSDK[sdk/plugin<br/>public Go SDK module] -->|canonical DTO aliases + validators| Plugins
 ```
 
+- MCP session sends retain an `agent-message` envelope in native history through
+  the normal owner-routed send path. The browser displays these as agent messages
+  without treating the envelope as authentication or user authority. See
+  [MCP](../features/mcp.md#tools).
 - MCP session creation saves a platform- and machine-scoped creator reference
   in the serving instance's `state.db` before first delivery, for both worktree
   and regular launches. This application provenance can cross projects and is

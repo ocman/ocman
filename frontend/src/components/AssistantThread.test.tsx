@@ -135,6 +135,21 @@ That "other Claude session" is an agent working inside this same session. Treat 
   expect(screen.getByText('a0f4644f22af5fdf8')).toBeInTheDocument();
 });
 
+it('renders MCP agent delivery outside the user bubble', () => {
+  threadState.renderUser = true;
+  message.content = [{ type: 'text', text: `<agent-message from="ocman.sessions">
+[Agent message] Sent by an agent through ocman.sessions, not the user. The message follows:
+Concrete plan: add hostsvc.ConnectionHost
+</agent-message>` }];
+  const { container } = render(<AssistantThread />);
+  expect(container.querySelector('.oc-msg-user')).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Task notification' })).toBeInTheDocument();
+  expect(screen.getByText('Agent message')).toBeInTheDocument();
+  expect(screen.getByText('Concrete plan: add hostsvc.ConnectionHost')).toBeInTheDocument();
+  expect(screen.getByText('ocman.sessions')).toBeInTheDocument();
+  expect(container.textContent).not.toContain('<agent-message');
+});
+
 it.each([
   ['shell', '<shell id="sh_1" state="completed" command="echo "hello"">\nhello\n</shell>', 'hello'],
   ['user shell', 'The following shell command was executed by the user:\n<shell id="sh_1" state="completed" command="pwd">\n/workspace\n</shell>', '/workspace'],

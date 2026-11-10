@@ -4,6 +4,16 @@ import { parseAgentMessage } from './agentMessage';
 const wrap = (body: string) => `Another Claude session sent a message:\n<agent-message from="agent-1">\n${body}\n</agent-message>`;
 
 describe('parseAgentMessage', () => {
+  it.each(['\n', '\r\n'])('renders MCP delivery as an agent message using %j line endings', (newline) => {
+    const context = '[Agent message] Sent by an agent through ocman.sessions, not the user. The message follows:';
+    const body = '# Concrete plan\n\n  Keep indentation\n<agent-message from="nested">\nQuoted\n</agent-message>';
+    const text = `<agent-message from="ocman.sessions">\n${context}\n${body}\n</agent-message>`;
+    expect(parseAgentMessage(text.replaceAll('\n', newline))).toEqual({
+      summary: 'Agent message', status: '', result: body.replaceAll('\n', newline),
+      details: [['Source', 'ocman.sessions'], ['Delivery context', context]],
+    });
+  });
+
   it('renders a standalone report and preserves its sender', () => {
     expect(parseAgentMessage(wrap('**Findings**'))).toEqual({
       summary: 'Subagent feedback', status: '', result: '**Findings**',
@@ -50,6 +60,12 @@ describe('parseAgentMessage', () => {
     expect(parseAgentMessage('<agent-message from="agent-1">\nReport\n</agent-message>')?.result).toBe('Report');
   });
 
+  it('keeps an unframed MCP message visible without inventing a sender ID', () => {
+    expect(parseAgentMessage('<agent-message from="ocman.sessions">\nReport\n</agent-message>')).toEqual({
+      summary: 'Agent message', status: '', result: 'Report', details: [['Source', 'ocman.sessions']],
+    });
+  });
+
   it('keeps an unfamiliar hand-back body visible rather than discarding it', () => {
     const body = '[Subagent hand-back] A changed format\n  Findings';
     expect(parseAgentMessage(wrap(body))?.result).toBe(body);
@@ -68,6 +84,7 @@ describe('parseAgentMessage', () => {
     wrap('Report').replace('from="agent-1"', 'from=""'),
     wrap('  '),
     wrap('[Subagent hand-back] The report follows:\n  '),
+    '<agent-message from="ocman.sessions">\n[Agent message] Sent by an agent through ocman.sessions, not the user. The message follows:\n  \n</agent-message>',
   ])('leaves non-standalone or incomplete messages alone: %s', (text) => {
     expect(parseAgentMessage(text)).toBeNull();
   });

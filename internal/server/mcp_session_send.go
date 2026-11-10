@@ -9,12 +9,16 @@ import (
 )
 
 // SendSessionMessage uses the composer's direct-send path, never the held queue.
+// Keep MCP agent delivery distinct from human input in native history and the UI.
 func (s sessionMCPService) SendSessionMessage(ctx context.Context, platform, id, prompt string) (internalmcp.SentSession, error) {
 	platform, id, _, err := s.resolveTarget(ctx, platform, id)
 	if err != nil {
 		return internalmcp.SentSession{}, err
 	}
-	if err := s.server.sendNow(ctx, platform, platforms.SendMessageRequest{SessionID: id, Message: prompt}); err != nil {
+	message := "<agent-message from=\"ocman.sessions\">\n" +
+		"[Agent message] Sent by an agent through ocman.sessions, not the user. The message follows:\n" +
+		prompt + "\n</agent-message>"
+	if err := s.server.sendNow(ctx, platform, platforms.SendMessageRequest{SessionID: id, Message: message}); err != nil {
 		return internalmcp.SentSession{}, err
 	}
 	return internalmcp.SentSession{Platform: platform, SessionID: id, Sent: true}, nil

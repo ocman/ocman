@@ -153,6 +153,13 @@ in `tools.ocman` calls; variables and computed values are not evaluated for disp
 | `plugin_session_tool` | Dispatcher for tools a plugin grants to a private session it started. Only usable with that session's binding. See [Plugin session tools](../session-tools/). |
 | Plugin agent tools | Tools declared by enabled plugins on this machine and approved with `tool.agent`, listed under their declared names. Arguments are validated against each tool's schema. Requests needing consent return `confirmation_required` until the user approves them in ocman; repeat the call with `confirmation_id`. See [Plugin agent tools](../plugin-agent-tools/). |
 
+`sessions` with `action: "send"` wraps the prompt in an agent-message envelope
+before using the existing direct-send path. Native history retains that envelope;
+the dashboard renders it as an **Agent message**, not a user bubble. The source
+is `ocman.sessions`, not an authenticated sending-session ID, and the message
+does not carry user authority. Older plain-text deliveries remain unchanged
+because they have no reliable agent-origin marker.
+
 To create a session on a specific platform, pass an absolute `directory` and
 `platform`, such as `claudecode` or `r-machine:claudecode`. No caller `session_id`
 is needed. Supply both `platform` and `session_id` only when using an existing
