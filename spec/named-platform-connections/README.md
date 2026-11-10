@@ -2,60 +2,34 @@
 
 ## Delivery status
 
-The first implementation checkpoint is a UI review, requested before completing
-the feature. `PlatformConnections` and `PlatformConnectionDialog` are reusable
-production components, but are **not registered in Settings or onboarding yet**.
-Their callbacks currently run only in unit tests and the browser review fixture.
-The next backend checkpoint adds `internal/platformconnections`, a tested
-owner-local repository with its schema registered in `server.ModuleSchemas`.
-It persists immutable connection IDs and configuration metadata, display names,
-enabled intent, explicit default preference, removal tombstones and onboarding
-completion. Its transactional initializer can record legacy mappings once and
-distinguishes missing configuration from an intentionally empty collection.
+The implementation now includes owner-local persistence and setup receipts,
+connection-keyed routing, native account constructors, owner/remote APIs and the
+mounted Settings/onboarding/composer flow. Full tests, browser regressions and
+lint pass with coverage above both baselines. The contracts below describe the
+implementation and its supported native modes.
 
-The setup checkpoint adds durable `stp_<uuid>` reservations and the optional
-`hostsvc.ConnectionSetupHost` seam. The local host can prepare private,
-owner-allocated configuration directories, resume the same receipt and save its
-preassigned connection ID atomically. Setup remains disabled unless composition
-explicitly supplies the store and per-integration configuration policy.
+- Immutable `cnx_<uuid>` IDs identify named configurations. Native platform kinds,
+  physical history sources and canonical session IDs remain separate identities.
+- Durable setup receipts survive retries and browser reload. Save reuses the
+  preassigned connection ID; cancellation never removes possible credentials.
+- Creation receipts pin retry keys, canonical session IDs and accounts before
+  native effects. Existing sessions and forks retain their original connection.
+- Shared admission fences prevent new work during disable/removal; prompt
+  replies and abort remain available so active work can settle. Retained source
+  bindings allow disabled/removed history to stay browsable, not executable.
+- Saved-collection startup composes multiple adapters of one kind. Explicit
+  `-platforms` remains a legacy CLI override, does not rewrite saved intent, and
+  does not advertise editable named-connection onboarding for that run.
+- Claude, Codex and OpenCode have explicit account-scoped constructors and native
+  metadata inspectors. Unknown authentication/configuration/version combinations
+  fail closed rather than borrowing machine credentials or another account.
+- Authenticated remote metadata carries connection routing keys and physical
+  source proof internally. Public capabilities expose native kind separately;
+  composer models keep their native namespace while selection uses a connection.
 
-The dialog callback contract carries the owner's `reservationId` through Check
-again, Back, renaming and Save retries. It rejects a response that changes or
-drops a pinned receipt. This is tested with callback mocks, not a live owner API.
-
-The Codex runtime checkpoint adds an explicit `Config.Connection` constructor
-option. It pins a canonical account home, scopes rules and supervisor recovery
-keys to the connection ID, and filters inherited owner authentication overrides
-for history readers, supervisor readers and ACP execution. Two fake accounts in
-the same project execute and recover independently, including when the owner
-state directory is itself inside a Git checkout. Default machine construction
-is unchanged. No startup caller selects named Codex connections yet.
-
-Claude's provider now has an opt-in `Options.ConnectionAccount` environment
-policy. It requires an explicit existing absolute configuration directory before
-opening the index, freezes its canonical path, and filters inherited Anthropic
-credentials and Claude cloud-service selectors for session children and provider
-account/catalog probes. Fake-child tests cover the session launch path. This is
-not a named Claude constructor: project recovery keys, persistence directories,
-transport-level helpers and plugin management still need account-aware wiring.
-
-The shared `platformconnections.Router` binds configured platform adapters by
-connection ID. Exact selections, explicit defaults and retained legacy mappings
-share one admission policy. Multiple adapters of the same kind coexist without
-changing their platform or native session identity. This is tested against
-disposable stores and fake adapters, not yet used by application startup or
-session services. The platform-kind registry remains unchanged.
-
-Owner-local canonical sessions can now be durably pinned to a connection before
-native side effects. The append-only connection schema retains these bindings
-through removal and restart. Shared admission uses a pinned account on retry,
-even after the default changes. Session-service and canonical-adapter wiring is
-still required before this persistence affects live traffic.
-
-**Only the schema is wired into startup.** The repository initializer and
-mutations have no production callers yet. Existing platform settings remain
-authoritative. Native authentication, runtime isolation and routing have not
-changed. Do not describe either checkpoint as working multi-account support.
+Tests use disposable databases, fake agents and private fake runtimes. No tests
+sign in, copy credentials or issue real model requests. A successful setup check
+is a native login/configuration snapshot, not a network, quota or model guarantee.
 
 Run the isolated browser review:
 
@@ -98,13 +72,12 @@ platform identities. Machine paths and login commands must be produced and
 shell-quoted on the owning host, never synthesized by the browser. Sign-in
 commands displayed in the browser fixture are examples, not executable setup.
 
-## Backend implementation still required
+## Implementation requirements
 
-1. Activate the persisted collection on the owner once runtime routing can
-   consume it. The repository and atomic legacy initializer are implemented;
-   startup still needs to capture installation state before creating native
-   state, resolve persisted legacy selections without transient CLI overrides,
-   and supply the initial default preference. Legacy configurations, including
+1. Activate the persisted collection on the owner only with connection-aware
+   runtime routing. Capture installation state before creating native state,
+   resolve persisted legacy selections without transient CLI overrides,
+   and preserve the initial default preference. Legacy configurations, including
    disabled ones with saved references, must migrate without forcing existing
    users through onboarding.
 2. Separate platform kind, connection routing ID and physical source identity.
@@ -114,15 +87,13 @@ commands displayed in the browser fixture are examples, not executable setup.
 3. Refactor integration constructors to accept explicit connection configuration.
    Never change process-global environment variables while constructing adapters.
    Audit native environment inheritance so an API token cannot override the
-   intended subscription account silently. Codex has the explicit constructor
-   and filtered child environments. Claude has a provider-level environment
-   policy, but not the named transport constructor; OpenCode still needs both.
+   intended subscription account silently. All three native adapters now expose
+   explicit constructors; default-machine constructors retain legacy behavior.
 4. Scope supervisors, runtime records, rules, launch files, sockets, spools,
-   discovery and recovery to connections. Claude currently persists supervisors
-   by `(provider, repo_root)`; Codex currently has one machine supervisor root.
-   These keys must not collide for two accounts in the same repository. Explicit
-   named Codex constructors now use separate roots, rules and instance names;
-   the default constructor retains its existing machine-wide root.
+   discovery and recovery to connections. Named provider runtime records include
+   connection ID, native platform and repository root. These keys must not collide
+   for two accounts in the same repository. Legacy constructors retain their
+   original recovery stores and instance identities.
 5. Preserve the canonical wrapper's optional capabilities and source checks.
    A shallow interface wrapper that loses optional interfaces is not sufficient.
    Browsing must remain source-scoped: the retained-history fallback must not
@@ -131,11 +102,10 @@ commands displayed in the browser fixture are examples, not executable setup.
    capabilities, session targets, drafts, defaults, routines, Factory, MCP,
    helper/title generation, usage and cooldowns. Explicit unavailable owners or
    connections fail closed; never fall back to a similarly named connection.
-7. Wire the implemented owner-local setup reservations into setup inspection,
-   login instructions and the dialog's API controller. The dialog retains the
-   receipt during its lifetime; the controller still needs to cancel abandoned
-   reservations and decide how to resume setup after a browser reload. Add native account checks
-   and login commands that use that reserved configuration. The browser's
+7. Wire owner-local setup reservations into inspection, login instructions and
+   the dialog's API controller. Retain receipts across reload and allow explicit
+   cancellation of abandoned setup. Native account checks and login commands use
+   that reserved configuration. The browser's
    account/status observations are never mutation authority. Preparing a private
    directory alone does not establish credential isolation.
 8. Replace `PlatformSettings` and the OpenCode-only getting-started empty state
@@ -149,10 +119,8 @@ commands displayed in the browser fixture are examples, not executable setup.
   environments, indexing, plugin installation and per-project supervisors.
   Verify effective credential isolation, including OS credential stores.
 - **Codex:** explicit `CODEX_HOME` for both execution and the read-only
-   app-server, with separate supervisor roots and recovery records. This is
-   implemented behind the explicit constructor and tested with fake processes,
-   but registry routing, setup account probes and installed-version/credential-
-   store validation still gate user-facing isolation support.
+  app-server, with separate supervisor roots and recovery records, effective
+  native configuration inspection and backend project-override guards.
 - **OpenCode:** isolated configuration, authentication, data/database and server
   per connection. Existing-service adoption remains only for the connection
   matching that service's database and credentials. A separate database alone
@@ -161,8 +129,8 @@ commands displayed in the browser fixture are examples, not executable setup.
 
 ### Connection repository contract
 
-- Each owner keeps its own collection in its own `state.db`. There is no hub
-  mirror or remote mutation API yet.
+- Each owner keeps its own authoritative collection in its own `state.db`.
+  Authenticated remote operations query and mutate that owner, not a hub copy.
 - `Initialize` takes an explicit owner-supplied installation snapshot. It commits
   metadata and legacy mappings together, or nothing. Once initialized it ignores
   later seeds, including after every connection is removed. Schema migration
@@ -185,7 +153,7 @@ commands displayed in the browser fixture are examples, not executable setup.
   change the saved default ID. A replacement becomes the default only through
   an explicit selection.
 - Enabled state is intent, not readiness. Readiness and account observations are
-  not persisted as authorization. The future owner service must verify setup
+  not persisted as authorization. The owner service verifies setup
   before setting a default, recheck admission before execution, and drain work
   before recording removal. Direct repository calls do not stop runtimes.
 - The store admits up to 64 nonremoved connections and pending setup reservations
@@ -220,10 +188,9 @@ commands displayed in the browser fixture are examples, not executable setup.
 - Cancellation releases pending capacity but retains the receipt and directory.
   A partially completed login may already have stored credentials there. A saved
   receipt cannot be canceled to bypass the connection removal/draining path.
-- The local Host has no configured setup store or preparation policy by default.
-  There are no setup HTTP routes, remote RPCs, login commands or account probes
-  for named connections yet. Runtime-level account isolation and admission are
-  still separate completion requirements.
+- A bare local Host has no configured setup store or preparation policy by
+  default. Saved-collection application composition supplies the policy and
+  lifecycle hooks; unsupported owners do not advertise an editable setup UI.
 - The reusable dialog keeps the receipt out of editable form state and includes
   it in callback requests. Name changes and Back do not start another setup;
   kind, configuration mode and normalized directory changes invalidate it. An
@@ -265,12 +232,12 @@ commands displayed in the browser fixture are examples, not executable setup.
   not contact real model services,
   read real credentials or establish compatibility with every installed Codex
   version or credential-store configuration.
-- Native keyring namespacing is [documented upstream](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/storage.rs)
-  as a hash of canonical `CODEX_HOME`. Owner setup still needs to verify supported
-  native versions and
-  effective account identity before advertising isolation. The registry remains
-  platform-kind keyed; these native constructors are not yet new-session routing
-  or a completed multi-account feature.
+- Supported named inspection is deliberately narrower than upstream capability:
+  Codex 0.164.x/0.165.x with native file-stored ChatGPT authentication. Unknown
+  versions/layers, profiles, custom providers and keyring storage are unsupported.
+  Inspection reads effective configuration and account metadata without refreshing
+  tokens. Actual project `.codex/config.toml` overrides are rejected at backend
+  create/resume/send, not merely during setup.
 
 ### Shared connection routing contract
 
@@ -291,12 +258,12 @@ commands displayed in the browser fixture are examples, not executable setup.
   Tests verify that an unknown other-owner ID cannot select the local default.
 - The router does not construct, launch, close or prove account isolation for an
   adapter. Composition owns those operations and must drain before replacement.
-  Resolution is an admission snapshot, not an atomic lease against concurrent
-  removal. Active-work lifecycle coordination remains required.
-- Session services still need to consume this seam and persist connection IDs
-  alongside durable session bindings. Canonical session/source identities must
-  not be rewritten as connection IDs. Production activation remains gated on
-  native isolation, connection-aware composition and owner/API integration.
+  Resolution is a snapshot. `Begin` leases native mutations; `Detach` fences new
+  admissions and waits for leases before lifecycle draining and persistence.
+  Prompt responses/abort bypass the new-turn fence so work can settle.
+- Session services, saved-collection startup and remote publication consume this
+  seam. Canonical session/source identities must not be rewritten as connection
+  IDs. Retained read-only bindings are distinct from executable routing.
 
 ### Durable session routing
 
@@ -317,7 +284,35 @@ commands displayed in the browser fixture are examples, not executable setup.
   accounts, retained tombstones, schema upgrade and database reopen. These are
   persistence/admission tests, not application-level routing activation.
 
-### Claude child-environment checkpoint
+### Connection-scoped creation and service dispatch
+
+- `Router.AdmitCreation` reserves a retry key, canonical session ID and selected
+  connection atomically. Generated IDs survive retry and router reconstruction;
+  an explicitly supplied identity cannot change or acquire a second request key.
+  Payload fingerprints and canonical owner/source authority remain the session
+  catalogue's responsibility. No credential or native model operation occurs.
+- `Service.WithConnections` installs canonical owner-local routing before
+  serving. Local creation pins its account before invoking a canonical adapter.
+  Existing supplied catalogue identities must already have connection authority.
+  The owned adapter still owns source validation, native binding and publication.
+- Creation retry uses the receipt, not a changed default. Forks inherit their
+  parent's pinned connection and reserve the child's identity before the native
+  fork. Subsequent service mutations resolve catalogue authority and then the
+  durable connection, ignoring the legacy kind-keyed registry for local accounts.
+- Explicit connection scopes cannot override the recorded account. Explicit
+  remote scopes and remote-owned catalogue rows retain authenticated remote
+  registry/gateway routing; they never acquire the local default. Remote named
+   inventory includes exact connection IDs and authenticated physical source
+   proof, not an inferred first account of the same kind.
+- Catalogue preparation and platform selection return the connection ID while
+  native adapters, created-session events and physical history retain their
+  existing platform kind. Unknown imported sessions are not assigned to a default.
+- Tests exercise two canonical same-kind adapters with distinct native sources,
+  pre-native account pinning, creation/fork retry, mutation routing and disabled
+  connections. Source-proven imported history can acquire its exact execution
+  binding; unknown sources remain unbound, never assigned to the current default.
+
+### Claude account isolation
 
 - `claudeprovider.Options.ConnectionAccount` is opt-in. A missing, relative,
   nonexistent or non-directory `ConfigDir` fails before opening an index or
@@ -334,16 +329,58 @@ commands displayed in the browser fixture are examples, not executable setup.
 - The inherited-API-key regression test failed before the policy and passed
   afterward. A fake Claude turn also verifies that session spawning uses it.
   These tests do not read real credentials or contact model services.
-- This is not proof of effective subscription identity. Native settings can
-  reintroduce authentication through `env` or `apiKeyHelper`, and native profile
-  fallback also needs inspection. Setup must inspect the effective account and
-  supported installed version. Upstream [authentication documentation](https://code.claude.com/docs/en/authentication)
+- Environment filtering alone is not proof of subscription identity. Supported
+  inspection requires Claude 2.1.268+ within the 2.1 series, an already initialized
+  `.claude.json`, matching native `configDirectory` and subscription auth mode.
+  Named launches/helpers pin user-only settings; `apiKeyHelper`, authentication
+  overrides and ambiguous managed/remote policies are unsupported. Upstream
+  [authentication documentation](https://code.claude.com/docs/en/authentication)
   describes directory-scoped keychain entries for subscription logins, but warns
   that Console sign-ins without API keys are not isolated by config directory.
-- Nothing enables this option in production. The named transport still needs
-  account-scoped index/rules/ownership/usage/launch state, separate project
-  supervisor recovery keys, account-aware plugin management and transport-level
-  naming/judging helpers before it is safe to route user-facing connections.
+- The named transport scopes index, rules, session ownership, usage, launch
+  configuration and plugin marketplace under the connection runtime directory.
+  Supervisor records include connection ID/platform/repository. Helpers, titles,
+  judging and plugin commands select the same filtered native account. Owner MCP
+  tokens and machine-wide child/helper slot budgets remain shared.
+
+### OpenCode account isolation
+
+- Named OpenCode uses an explicit native database and separate configuration,
+  data, state, cache and runtime paths. It never adopts the machine-wide native
+  background service. The original migrated machine integration may retain its
+  matching registered service, but newly isolated connections cannot borrow it.
+- HTTP/SSE authentication, native dialect discovery, catalogue caches and prompt
+  request-to-session bindings are account-private. A regression reproduced a
+  permission reply crossing accounts when native request IDs collided, before
+  the transport cache was isolated.
+- Supported inspection uses verified OpenCode 2.1.x `/api/info` and
+  `/api/integration` metadata only. It reads the native active-first connection
+  ordering and accepts saved key/OAuth modes; environment/external/unknown modes
+  fail closed. It does not fetch the credential-secret endpoint.
+- Pre-save inspection can initialize the selected private database with a
+  uniquely named, no-model metadata server. An ephemeral namespace-filtered
+  store and bounded cancellation cleanup stop only that inspection's process.
+
+### Owner, remote and browser integration
+
+- `/api/platform-connections?remoteId=<owner>` resolves the explicit owner.
+  Mutation routes are localhost-guarded and use `ConnectionHost`; unsupported or
+  disconnected remotes cannot borrow local inventory or credentials.
+- `Activate` is idempotent and requests safe composition reload. An activation
+  failure retains the saved connection/receipt for retry. Disable/removal closes
+  admission and drains before changing persisted intent; failure restores it.
+- Authenticated `ConnectionPlatforms` metadata separates native kind and route
+  ID and carries physical source proof internally. Legacy peers may fall back
+  only for original non-connection platform keys. Physical paths are not exposed
+  through public capabilities.
+- Settings and onboarding use the same owner-controlled setup dialog. Browser
+  recovery is scoped to the owner and preserves the durable receipt. Explicit
+  defaults are required; failed requests, empty inventory and unsupported owners
+  remain distinct. Canceling after a lost successful Save never deletes the
+  saved configuration or possible credentials.
+- Composer selection uses owner-qualified connection IDs. Capability metadata
+  retains native kind for model references. Model selection never changes to a
+  same-kind sibling account automatically.
 
 ## Completion gates
 

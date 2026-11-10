@@ -1,156 +1,166 @@
 ---
-title: Named platform connection persistence
+title: Named platform connections
 weight: 15
 ---
 
-Named connections are under development. The UI components are not mounted in
-live Settings or onboarding. Only the connection schema is registered at startup;
-no production code initializes or mutates the collection yet. Current platform
-selection and runtime behavior are unchanged.
+Named connections separate the configuration selected by a user from the native
+platform kind and physical history source. Two Claude, Codex or OpenCode accounts
+can use the same project without sharing execution state.
+
+## Identity and routing
 
 ```mermaid
 flowchart LR
-    Startup[Application startup] --> Schemas[server.ModuleSchemas]
-    Schemas --> Migration[state.Open module migrations]
-    Migration --> Tables[(Connection tables in owner state.db)]
-    Tests[Disposable repository tests] --> Store[internal/platformconnections]
-    Tests -->|receipt-aware callback mocks| Dialog[Unmounted setup dialog]
-    Tests --> Host[Owner-local ConnectionSetupHost]
-    Host -->|durable setup receipt and Save| Store
-    Host -->|private empty configuration only| Config[(Explicit owner state directory)]
-    Store --> Tables
-    Store --> Identity[Stable IDs, legacy mappings<br/>and exact defaults]
+    Browser[Settings, onboarding and composer] --> Owner[Explicit owner resolution]
+    Owner --> Setup[ConnectionHost setup and inspection]
+    Setup --> Store[(Owner state.db: connections,<br/>receipts and source bindings)]
+    Owner --> Sessions[Shared session service]
+    Sessions --> Router[Connection router and admission leases]
+    Router --> Canonical[Source-scoped canonical adapter]
+    Canonical --> Native[Account-configured native adapter]
+    Canonical --> History[(Retained canonical history)]
+    Native --> Runtime[Connection-scoped native runtime]
 ```
 
-- `internal/platformconnections` owns the append-only module schema and queries.
-  It stores connection kind, immutable configuration metadata, display name,
-  enabled intent, removal tombstones and collection onboarding state. It does
-  not store credentials, persist setup readiness or launch agents.
-- `hostsvc.ConnectionSetupHost` is the optional owner seam for setup preparation,
-  Save and cancellation. Its local implementation requires an explicitly
-  injected store and integration policy; neither is wired in production yet.
-  It allocates private empty configuration directories without copying account
-  data. Preparing a directory does not prove credential isolation or readiness.
-- Durable setup receipts pin a configuration and preassign the connection ID
-  before preparation. Retry uses the same directory after restart. Save consumes
-  the receipt transactionally; repeats return the current connection without
-  creating a duplicate or undoing later edits. Cancellation retains possible
-  credentials and frees only pending capacity.
-- The unmounted dialog includes an owner-issued receipt in Check again and Save
-  callbacks. It retains the receipt through Back, name edits and request retries,
-  but invalidates it for configuration changes. A changed or missing receipt in
-  a subsequent owner response blocks Save. There is no live API controller yet;
-  abandoned-reservation cleanup and browser-reload recovery remain to be wired.
-- The atomic initializer takes a snapshot from the owner. New installations
-  start empty with onboarding incomplete; existing installations skip onboarding
-  and retain mappings from old platform kinds to opaque connection IDs. An
-  initialized empty collection is not reseeded. Installation detection and
-  startup activation remain future work.
-- Connection IDs do not change platform IDs, physical source keys or canonical
-  session IDs. Legacy mappings survive removal so a replacement account cannot
-  acquire the old account's references. Renaming cannot retarget configuration.
-- Removal records a disabled tombstone. It does not delete native directories,
-  credentials or retained history. Disabled and removed defaults stay selected
-  in storage, but default lookup returns an error rather than another account.
-- Before exposing the store through Settings, owner-local services must enforce
-  setup checks and removal draining. Connection-scoped runtime routing, remote
-  inventory and account isolation are still required before enabling multiple
-  accounts of the same kind.
+- `cnx_<uuid>` is an immutable owner-local connection ID. Names are presentation
+  only. Native kinds remain `opencode`, `claudecode` and `codex`.
+- Registry entries retain their connection key separately from `Platform.ID()`.
+  Remote routing keys are owner-qualified, such as `r-owner:cnx_<uuid>`; native
+  model references retain their original platform namespace.
+- Physical source keys and canonical `ocm_<uuid>` session IDs are not rewritten.
+  Source provenance selects an exact account, never the first account of a kind.
+- Creation receipts atomically pin the retry key, generated canonical ID and
+  connection before native side effects. Forks inherit their parent's account.
+  Changing a default cannot retarget an existing session or retry.
+- Defaults are explicit. Disabled, removed, missing, unavailable and disconnected
+  selections fail closed, without borrowing another account or owner.
 
-## Shared connection routing
+## Persistence and lifecycle
 
-`platformconnections.Router` is the shared owner-local selection seam. It binds
-already configured adapters by connection ID, not platform kind. Multiple Claude
-or Codex adapters can therefore coexist without changing their `Platform.ID()`
-or native protocol. Application startup and session services do not use it yet.
+`internal/platformconnections` owns the append-only module schema in each
+owner's `state.db`. It stores immutable configuration metadata, enabled intent,
+defaults, onboarding state, setup/creation receipts, canonical session bindings,
+physical source provenance and connection-scoped provider runtime records. It
+stores no credentials and does not persist readiness as authorization.
 
-```mermaid
-flowchart LR
-    Selection[Connection reference] --> Router[Owner-local connection Router]
-    Router --> Store[Store: exact ID, saved default<br/>or retained legacy mapping]
-    Store --> Intent[Check enabled intent and tombstone]
-    Intent --> Binding[Connection-ID adapter binding]
-    Binding --> Ready[Check current adapter availability]
-    Ready --> Work[Work account adapter<br/>kind claudecode]
-    Ready --> Personal[Personal account adapter<br/>kind claudecode]
-```
+`Router.Begin` leases new-turn/creation admission through native effects and
+checks native readiness. Disable/removal fences new admissions and drains active
+work before changing intent. Prompt replies and abort remain possible while
+draining. Failed persistence or cancellation restores admission.
 
-- A reference contains either a connection ID or a legacy platform kind. An
-  empty reference uses the explicit saved default. Ambiguous references fail.
-  Display names and native session IDs are not connection routing keys.
-- Defaults and metadata are read on every resolution. Disabled, removed,
-  missing, unbound and unavailable selections return an error, never a sibling.
-  A legacy reference stays pinned to its original mapping after removal.
-- Binding verifies that the adapter's kind matches the stored connection. A
-  second binding for the same ID fails rather than silently replacing it. The
-  composition layer must drain and retire a router before replacing its adapters.
-- Each router belongs to one owner's store. Owner resolution remains outside
-  this module; a disconnected explicit remote must not fall back to this owner.
-- A resolved route carries both connection metadata and the unchanged platform
-  adapter. It is not a credential-isolation proof or a revocable operation lease.
-  Callers must resolve at each admission, persist the selected connection ID and
-  coordinate removal with draining. Existing-session execution still needs a
-  durable connection binding separate from its physical history identity.
+Removed connections retain tombstones and history/source mappings. Read-only
+canonical adapters reconstruct retained history without launching native tools.
+They cannot authorize execution. Named aggregate reads are source-scoped, so
+registering two accounts does not duplicate their histories across both entries.
 
-`platform_connection_session` now supplies that durable owner-local binding.
-`Router.AdmitSession` pins a canonical session before native side effects;
-`ResolveSession` requires the pinned connection on later operations. A retry
-without an explicit selection keeps its account even after a default change.
-Reassignment conflicts, and disabled/removed accounts do not fall back. These
-methods do not establish session-catalogue owner/source authority themselves;
-the session integration must verify it before using them. Production creation,
-import and session routing still need to consume this seam.
+Activation requests safe composition reload because ingestion sources are fixed
+for a running generation. Activation is idempotent; a failure retains the saved
+identity and receipt rather than allocating another connection on retry.
 
-## Explicit Codex runtime configuration
+## Startup compatibility
 
-The Codex constructor accepts an optional named connection with an immutable ID
-and an explicit existing home. Application startup does not supply it yet. Nil
-keeps the legacy machine account and its existing launch identity unchanged.
+Saved-collection startup captures installation state before native side effects.
+Initialization happens once. Existing installations keep legacy mappings,
+enabled intent and exact default preference; new installations start empty with
+onboarding incomplete. An intentionally empty collection is never reseeded.
 
-```mermaid
-flowchart LR
-    Config[Explicit connection ID and home] --> Paths[Validate canonical home<br/>and private runtime directories]
-    Paths --> Rules[Connection-scoped rules]
-    Paths --> Manager[ProviderManager<br/>canonical runtime root, no Git folding]
-    Manager --> Record[(Owner state.db<br/>connection-scoped recovery key)]
-    Manager --> Supervisor[Short owner socket parent<br/>unique scoped instance name]
-    Config --> Env[Filtered named-account environment]
-    Env --> History[Dashboard history app-server]
-    Env --> Supervisor
-    Supervisor --> Native[Native reader and ACP execution]
-```
+Explicit `-platforms` remains a legacy CLI composition override. It does not
+rewrite the saved collection, register duplicate aliases or advertise named
+onboarding for that run. Original migrated machine configurations retain their
+legacy environment, physical source and recovery behavior.
 
-- The account home remains the physical native-history source key. No canonical
-  session IDs or platform kinds are rewritten by this constructor.
-- Named runtime roots are owner-allocated directories, not project directories.
-  `ProviderManager.CanonicalRoots` prevents their accidental collapse to a Git
-  checkout and refuses aliases introduced before a later ensure or recovery.
-  Default project-supervisor normalization remains unchanged. These checks do
-  not contain another process running as the same user.
-- Rules and recovery roots are scoped to the connection ID. Socket/spool
-  directories keep the short owner-wide parent, with the scoped root hash in
-  each unique instance name. The owner's MCP listener and credential path remain
-  owner-wide.
-- Named readers and execution omit known inherited account-authentication,
-  identity, endpoint and billing overrides and receive exactly one pinned
-  `CODEX_HOME`. Legacy machine connections retain their environment behavior.
-- Fake agents verify simultaneous same-kind accounts and restart without
-  cross-account writes or supervisor replacement. Installed-version checks,
-  account probes and registry/session routing remain required before exposing
-  this configuration in live Settings.
+## Native isolation
 
-## Claude child environment
+The native adapters accept explicit connection configuration instead of changing
+process-global environment variables or `HOME`. Constructors, history readers,
+execution, helper commands and recovery use the selected account consistently.
 
-`claudeprovider.Options.ConnectionAccount` adds an opt-in provider boundary, not
-an application-level named constructor. Before opening the transcript index,
-the provider validates and canonicalizes the selected configuration directory.
-Session spawning and provider-owned account/catalog probes then share
-`claudecli.AccountEnvironment`. It removes inherited Anthropic overrides and
-Claude cloud-service/OAuth selectors while retaining the SDK markers, session
-working directory, `HOME` and unrelated tool environment. Default machine
-construction is unchanged.
+| Native tool | Named configuration | Verified inspection modes |
+| --- | --- | --- |
+| Claude Code | Explicit canonical `CLAUDE_CONFIG_DIR`; scoped index, rules, ownership, usage, launch file and plugin marketplace | Claude 2.1.268+ within the 2.1 series; initialized native configuration and subscription login |
+| Codex | Explicit canonical `CODEX_HOME`; scoped rules and supervisor state | Codex 0.164.x/0.165.x; file-stored native ChatGPT login |
+| OpenCode | Explicit database and separate config/data/state/cache/runtime paths; private native server and API authentication | Verified OpenCode 2.1.x active saved key/OAuth metadata |
 
-Native settings and profile fallback can still affect authentication. Setup
-account inspection, account-scoped persistence and project recovery, and
-transport-level helper/plugin wiring remain required. No production caller opts
-into the policy yet.
+Unknown versions, authentication modes and effective configuration overrides fail
+closed. These version ranges are conservative validation gates, not statements
+that other native versions cannot support isolation.
+
+### Claude Code
+
+Named sessions and helpers use filtered authentication environments and user-only
+native settings. `apiKeyHelper`, authentication overrides and ambiguous managed
+or remote policies are unsupported. Inspection requires an initialized
+`.claude.json`: the native status command can create it otherwise, so setup asks
+the user to sign in rather than silently initializing it during inspection.
+
+Supervisor records are keyed by connection ID, native platform and project root.
+Owner-wide short socket parents, MCP bearer tokens and child/helper slot budgets
+remain shared. Naming, judging and plugin commands select the same account as
+the session they support.
+
+### Codex
+
+History app-server, supervisor reader and ACP execution share the pinned home
+and filtered environment. Private runtime roots do not fold to a surrounding Git
+checkout and are rejected if retargeted before ensure/recovery.
+
+Inspection uses effective native configuration layers and account metadata with
+token refresh disabled. Profiles, custom providers, keyring storage and unknown
+layers are unsupported. Actual project `.codex/config.toml` overrides are rejected
+before backend create, resume or send. Named runtime identities replace older
+supervisors that lack this policy.
+
+### OpenCode
+
+Named connections never adopt the default registered background service. Only the
+original migrated machine integration may reuse its matching service. Named
+HTTP/SSE clients, catalogue and dialect caches, prompt-request bindings and live
+discovery/status registries are account-private.
+
+Inspection uses `/api/info` and `/api/integration`, not the credential-secret
+endpoint. It follows the verified native active-first credential ordering and
+rejects environment/external authentication. Pre-save inspection can initialize
+the selected private database using a uniquely named no-model metadata server.
+An ephemeral filtered store and bounded cancellation cleanup stop only the
+process launched for that inspection.
+
+## Owner API and browser
+
+`/api/platform-connections?remoteId=<owner>` resolves an explicit owner. Localhost
+mutation guards protect setup, Save, default/enable/rename, cancellation, removal
+and onboarding. A bare Host without injected configuration and lifecycle policy
+reports unsupported rather than presenting an empty working setup.
+
+The owner commits a durable `stp_<uuid>` receipt before directory preparation.
+Private preparation rejects symlinks and permissive directories and copies no
+credentials. Check, retry, Back and browser reload retain that receipt. Save
+consumes its preassigned connection identity transactionally. Cancel retains
+possible credentials and cannot delete a configuration after a lost successful
+Save. Login instructions and shell-quoted commands come from the owner, not the
+browser. The application does not perform interactive login for the user.
+
+Settings and onboarding share the same controller and dialog. Loading, errors,
+unsupported owners and successfully empty inventory remain distinct. The
+composer preserves the selected account across model changes and reports an
+unavailable selection rather than switching to a sibling.
+
+## Remote trust
+
+Authenticated `ConnectionPlatforms` metadata carries exact routing keys, native
+kind, display/default/selection metadata and physical source proof. Source paths
+remain backend-only and are not published through frontend capabilities.
+Legacy-peer fallback applies only to original non-connection platform keys.
+
+The authenticated backend-only `sourceKeys` set records retained read provenance,
+including the active source. It does not grant execution authority. Mutations
+still require the exact active source and connection admission; historical
+sources cannot borrow the active runtime. Singular-source peers remain supported.
+
+Uncached canonical remote identities are authenticated by their owner before the
+hub mirrors them. Single/batch lookups and restart routing retain native kind in
+the catalogue and select the exact physical source, including when the caller
+omits a platform scope. Disconnected explicit owners never fall back locally.
+
+Tests use disposable stores, fake agents and private runtimes. Setup readiness is
+a local native login/configuration snapshot, not proof of network access, model
+availability or quota.
