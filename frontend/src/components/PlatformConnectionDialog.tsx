@@ -35,6 +35,10 @@ function saveLabel(editing: boolean, check: ConnectionCheck | null) {
   return check.status === 'ready' ? 'Add platform' : 'Save for later';
 }
 
+function setupKey(input: ConnectionInput) {
+  return JSON.stringify([input.kind, input.configuration, input.directory.trim()]);
+}
+
 export function PlatformConnectionDialog({ platforms, connections, connection, onCheck, onSave, onClose }: Props) {
   const [initial] = useState(() => initialInput(connection, platforms));
   const [input, setInput] = useState<ConnectionInput>(initial);
@@ -42,6 +46,7 @@ export function PlatformConnectionDialog({ platforms, connections, connection, o
   const [operation, setOperation] = useState<'checking' | 'saving' | null>(null);
   const busy = operation !== null;
   const lock = useRef(false);
+  const reservation = useRef<string | undefined>(undefined);
   const [error, setError] = useState('');
   const platform = platforms.find(value => value.id === input.kind);
   const dirty = JSON.stringify(input) !== JSON.stringify(initial);
@@ -51,9 +56,25 @@ export function PlatformConnectionDialog({ platforms, connections, connection, o
   async function close() { if (!lock.current && await confirmDiscard()) onClose(); }
 
   function update(patch: Partial<ConnectionInput>) {
+    if (setupKey({ ...input, ...patch }) !== setupKey(input)) reservation.current = undefined;
     setInput(value => ({ ...value, ...patch }));
     setCheck(null);
     setError('');
+  }
+
+  function requestInput(): ConnectionInput {
+    const value = { ...input, name: input.name.trim(), directory: input.directory.trim() };
+    return reservation.current ? { ...value, reservationId: reservation.current } : value;
+  }
+
+  async function checkSetup(value: ConnectionInput) {
+    const result = await onCheck(value);
+    if (value.reservationId && result.reservationId !== value.reservationId) {
+      setCheck(null);
+      throw new Error('The setup reservation changed. Retry the check or close this dialog and start again.');
+    }
+    reservation.current = result.reservationId;
+    setCheck(result);
   }
 
   async function submit() {
@@ -62,12 +83,12 @@ export function PlatformConnectionDialog({ platforms, connections, connection, o
     setOperation(connection || check ? 'saving' : 'checking');
     setError('');
     try {
-      const value = { ...input, name: input.name.trim(), directory: input.directory.trim() };
+      const value = requestInput();
       if (connection || check) {
         // Account/status observations are not client-authoritative save fields.
         await onSave(value, connection?.id);
         onClose();
-      } else setCheck(await onCheck(value));
+      } else await checkSetup(value);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save platform connection. Try again.');
     } finally { lock.current = false; setOperation(null); }
@@ -78,7 +99,7 @@ export function PlatformConnectionDialog({ platforms, connections, connection, o
     lock.current = true;
     setOperation('checking');
     setError('');
-    try { setCheck(await onCheck({ ...input, name: input.name.trim(), directory: input.directory.trim() })); }
+    try { await checkSetup(requestInput()); }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not check platform setup. Try again.'); }
     finally { lock.current = false; setOperation(null); }
   }

@@ -20,9 +20,13 @@ export type ConnectionPlatform = {
   isolationNote: string;
 };
 
-export type ConnectionInput = Pick<PlatformConnection, 'kind' | 'name' | 'configuration' | 'directory' | 'enabled'>;
+export type ConnectionInput = Pick<PlatformConnection, 'kind' | 'name' | 'configuration' | 'directory' | 'enabled'> & {
+  /** Owner-issued setup identity. Never replace it with an observed path/account. */
+  reservationId?: string;
+};
 
 export type ConnectionCheck = {
+  reservationId?: string;
   status: PlatformConnection['status'];
   account?: string;
   directory?: string;
