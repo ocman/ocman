@@ -131,6 +131,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 type capabilityEntry struct {
 	ID           string                 `json:"id"`
+	Kind         string                 `json:"kind,omitempty"`
 	DisplayName  string                 `json:"displayName"`
 	Available    bool                   `json:"available"`
 	Capabilities platforms.Capabilities `json:"capabilities"`
@@ -153,13 +154,25 @@ type hostCapabilityEntry struct {
 func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	out := make([]capabilityEntry, 0)
-	for _, p := range s.registry.Platforms() {
-		remoteID, _ := platforms.SplitPlatformID(string(p.ID()))
+	for _, entry := range s.registry.Entries() {
+		p := entry.Platform
+		remoteID, _ := platforms.SplitPlatformID(string(entry.Key))
+		name, available := p.DisplayName(), p.Available(ctx)
+		kind := p.ID()
+		if native, ok := p.(interface{ NativeKind() platforms.ID }); ok {
+			kind = native.NativeKind()
+		}
+		if s.connections != nil && remoteID == "" {
+			if c, err := s.connectionStore.Get(ctx, string(entry.Key)); err == nil {
+				name, available = c.Name, available && c.Enabled && !c.Removed
+			}
+		}
 		out = append(out, capabilityEntry{
-			ID:           string(p.ID()),
+			ID:           string(entry.Key),
+			Kind:         string(kind),
 			RemoteID:     remoteID,
-			DisplayName:  p.DisplayName(),
-			Available:    p.Available(ctx),
+			DisplayName:  name,
+			Available:    available,
 			Capabilities: p.Capabilities(),
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -18,7 +19,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/gui"
 	"github.com/ocman/ocman/internal/mcpauth"
-	"github.com/ocman/ocman/internal/opencodeskills"
+	"github.com/ocman/ocman/internal/platformconnections"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/claude/transport"
 	codextransport "github.com/ocman/ocman/internal/platforms/codex/transport"
@@ -37,10 +38,6 @@ import (
 
 var version = "dev"
 var skillCatalog map[string][]byte
-
-func embeddedSkills() map[string][]byte {
-	return skillCatalog
-}
 
 // Run starts ocman with the build version and skills embedded by its entrypoint.
 func Run(buildVersion string, skills map[string][]byte) {
@@ -178,6 +175,11 @@ func run() {
 	serve := func(ctx context.Context, listener net.Listener, reload func()) error {
 		ctx, cancel := context.WithCancel(ctx)
 		stateDBPath := state.DefaultDBPath()
+		existed, err := existingInstallation(stateDBPath)
+		if err != nil {
+			cancel()
+			return err
+		}
 		stateDB, err := state.Open(stateDBPath, server.ModuleSchemas()...)
 		if err != nil {
 			fatal("Failed to open state database: %v", err)
@@ -196,61 +198,52 @@ func run() {
 		if *platformsFlag, err = platformsettings.Resolve(ctx, stateDB, *platformsFlag, platformsExplicit); err != nil {
 			fatal("Failed to load platform settings: %v", err)
 		}
-		// Parse and validate the selected platforms.
-		enabledPlatforms := map[string]bool{}
-		for _, name := range strings.Split(*platformsFlag, ",") {
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			if knownPlatforms[name] == nil {
-				fatal("Unknown platform: %q (known: %s)", name, knownPlatformNames)
-			}
-			enabledPlatforms[name] = true
-		}
-		if len(enabledPlatforms) == 0 {
-			fatal("No platforms enabled. Use -platforms with at least one of: %s", knownPlatformNames)
+		enabledPlatforms, err := selectedPlatforms(*platformsFlag, knownPlatformNames)
+		if err != nil {
+			fatal("%v", err)
 		}
 		var startupIssues []server.StartupIssue
-		if issue := requireOpenCodeV2(enabledPlatforms); issue != nil {
-			startupIssues = append(startupIssues, *issue)
-		}
-
-		// OpenCode's skill directory is touched only when OpenCode is enabled (FR-1).
-		if enabledPlatforms[string(opencodeplatform.PlatformID)] {
-			if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
-				log.WithError(err).Warn("removing retired ocman session-splitting skill")
-			}
-			if err := opencodeskills.Remove("ocman-workflows"); err != nil {
-				log.WithError(err).Warn("removing retired ocman workflows skill")
-			}
-			if err := opencodeskills.Install(embeddedSkills()); err != nil {
-				log.WithError(err).Warn("installing embedded ocman skills")
+		if platformsExplicit {
+			if issue := requireOpenCodeV2(enabledPlatforms); issue != nil {
+				startupIssues = append(startupIssues, *issue)
 			}
 		}
 
-		// Open the OpenCode database only when the opencode platform is enabled.
+		configs := connectionConfigurations()
+		var connections *platformconnections.Store
+		if !platformsExplicit {
+			connections, err = initializeConnections(ctx, stateDB, existed, enabledPlatforms, configs)
+			if err != nil {
+				cancel()
+				return err
+			}
+		}
 		var database *db.DB
-		openCodeDBPath := ""
+		openCodeDBPath := *dbPath
 		dbExplicit := false
 		flag.Visit(func(f *flag.Flag) { dbExplicit = dbExplicit || f.Name == "db" })
-		if enabledPlatforms[string(opencodeplatform.PlatformID)] {
-			*dbPath = pinOpenCodeDB(*dbPath, dbExplicit)
+		if !dbExplicit && os.Getenv("OPENCODE_DB") != "" {
+			openCodeDBPath = os.Getenv("OPENCODE_DB")
+		}
+		if openCodeDBPath == "" {
+			openCodeDBPath = db.DefaultDBPath()
+		}
+		if platformsExplicit && enabledPlatforms["opencode"] {
+			openCodeDBPath = pinOpenCodeDB(openCodeDBPath, dbExplicit)
 			var issue *server.StartupIssue
-			database, issue, err = openOpenCodeDB(*dbPath)
+			database, issue, err = openOpenCodeDB(openCodeDBPath)
 			if err != nil {
-				fatal("%v", err)
+				cancel()
+				return err
 			}
 			if issue != nil {
-				// Run as if opencode were omitted from -platforms.
-				log.Warnf("%s; starting without the OpenCode platform. %s", issue.Message, issue.Hint)
 				startupIssues = append(startupIssues, *issue)
-				delete(enabledPlatforms, string(opencodeplatform.PlatformID))
+				delete(enabledPlatforms, "opencode")
 			}
-		}
-		if database != nil {
-			defer database.Close()
-			openCodeDBPath = *dbPath
+			if database != nil {
+				defer database.Close()
+			}
+			installLegacyOpenCodeSkills()
 		}
 
 		// Before anything inherits from it: Claude approvals recorded before
@@ -259,8 +252,8 @@ func run() {
 			fatal("Failed to upgrade Claude approval patterns: %v", err)
 		}
 
-		useService := database != nil && sharesServiceDB(openCodeDBPath)
-		opencodePassword, err := startupOpenCodePassword(ctx, stateDB, startupPassword, enabledPlatforms[string(opencodeplatform.PlatformID)], useService)
+		useService := platformsExplicit && database != nil && sharesServiceDB(openCodeDBPath)
+		opencodePassword, err := startupOpenCodePassword(ctx, stateDB, startupPassword, platformsExplicit && enabledPlatforms["opencode"], useService)
 		if err != nil {
 			fatal("Failed to configure OpenCode v2 server auth: %v", err)
 		}
@@ -277,36 +270,68 @@ func run() {
 		if err := enableRemoteManaged(ctx, stateDB, *remoteManaged); err != nil {
 			fatal("Failed to load managed remote settings: %v", err)
 		}
+		if connections != nil {
+			if err := bindMigratedHistorySources(ctx, connections, historyDB, ident.InstanceID); err != nil {
+				cancel()
+				return err
+			}
+		}
 
 		// Pre-warm the pricing table in the background so the first metrics request
 		// doesn't block on a remote fetch.
 		go pricing.Load()
 
-		// Register only the platform adapters requested via -platforms.
-		// The OpenCode adapter takes the pricing table so SessionInfo can
-		// estimate cost for sessions whose upstream `cost` field is zero
-		// (subscription-plan accounts). pricing.Load() is async-safe — it
-		// returns the same Table even if the background fetch is still
-		// running; calls into it just see an empty table until then.
+		// Saved named connections are authoritative unless -platforms overrides.
 		registry := platforms.NewRegistry()
 		var integrations []platforms.Integration
-		for id, enabled := range enabledPlatforms {
-			if enabled {
-				platform := knownPlatforms[id](ctx, database, stateDB, opencodeAuth)
-				integrations = append(integrations, platform)
-				if closer, ok := platform.(interface{ Close() }); ok {
-					// Runs after cancel (deferred later): joins the platform's
-					// goroutines before state.db closes.
-					defer closer.Close()
+		var keys []platforms.ID
+		factory := connectionFactory{state: stateDB, dataDir: filepath.Dir(stateDBPath), mcpAddr: *mcpAddr, openCodeDB: openCodeDBPath, legacyAuth: opencodeAuth}
+		if connections != nil {
+			blocked, issues, checkErr := blockedConnectionKinds(ctx, connections)
+			if checkErr != nil {
+				cancel()
+				return checkErr
+			}
+			factory.blockedKinds = blocked
+			startupIssues = append(startupIssues, issues...)
+		}
+		if platformsExplicit {
+			for id, enabled := range enabledPlatforms {
+				if enabled {
+					if p := knownPlatforms[id](ctx, database, stateDB, opencodeAuth); p != nil {
+						integrations = append(integrations, p)
+					}
 				}
 			}
+		} else {
+			integrations, keys, err = factory.buildCollection(ctx, connections)
+			if err != nil {
+				cancel()
+				return err
+			}
 		}
-		preparation, err := composeCanonicalSessionCore(ctx, stateDB, historyDB, registry, integrations, ident.InstanceID)
+		for _, p := range integrations {
+			if closer, ok := p.(interface{ Close() }); ok {
+				defer closer.Close()
+			}
+		}
+		var connectionRouter *platformconnections.Router
+		if connections != nil {
+			connectionRouter = platformconnections.NewRouter(connections)
+		}
+		preparation, err := composeConnectionSessionCore(ctx, stateDB, historyDB, registry, integrations, ident.InstanceID, keys, connections, connectionRouter)
 		if err != nil {
 			startupErr := canonicalStartupError(ctx, err)
 			cancel()
 			return startupErr
 		}
+		if connections != nil {
+			if err := registerRetainedConnections(ctx, stateDB, historyDB, registry, connectionRouter, connections, ident.InstanceID); err != nil {
+				cancel()
+				return err
+			}
+		}
+		lifecycle := connectionLifecycle(factory, connectionRouter, keys, integrations)
 		auth, err := buildAuth(ctx, stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 		if err != nil {
 			fatal("Failed to configure auth: %v", err)
@@ -316,6 +341,7 @@ func run() {
 		// is only reachable from the Wails WebView proxy.  In headless mode
 		// it listens on *addr as before.
 		srv := server.New(database, stateDB, listener.Addr().String(), registry, auth).
+			WithPlatformConnections(connectionRouter, connections, ident.InstanceID, lifecycle, configs).
 			WithSessionPreparation(preparation).
 			WithConversationHistory(historyDB, ident.InstanceID).
 			WithOpenCodeAuth(opencodeAuth).

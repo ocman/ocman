@@ -16,6 +16,8 @@ import (
 	"github.com/ocman/ocman/internal/state"
 )
 
+func embeddedSkills() map[string][]byte { return skillCatalog }
+
 // knownPlatforms lists the valid values for the -platforms flag.
 var knownPlatforms = map[string]func(context.Context, *db.DB, *state.DB, ocapi.Auth) platforms.Integration{
 	string(opencodeplatform.PlatformID): func(_ context.Context, database *db.DB, stateDB *state.DB, auth ocapi.Auth) platforms.Integration {

@@ -14,6 +14,8 @@ type callHandler func(*Server, context.Context, *pb.CallReq) (*pb.JsonResp, erro
 
 // callHandlers is the closed set of unary operations served by Call.
 var callHandlers = map[string]callHandler{
+	"ConnectionPlatforms":     (*Server).ConnectionPlatforms,
+	"PlatformConnections":     (*Server).PlatformConnections,
 	"ApplicationTasks":        (*Server).ApplicationTasks,
 	"PullRequestOperation":    (*Server).PullRequestOperation,
 	"SessionLifecycle":        (*Server).SessionLifecycle,

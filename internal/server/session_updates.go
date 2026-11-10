@@ -32,6 +32,9 @@ func (s *Server) sessionUpdatesModule() *sessionupdates.Module {
 				if err := s.enrichSidebarCreators(ctx, rows); err != nil {
 					return nil, err
 				}
+				// The adapter keeps its native identity for enrichment and hooks.
+				// Only the published row carries the immutable registry key.
+				rows[0].Platform = key.Platform
 				return &rows[0], nil
 			},
 			Publish: func(update sessionupdates.Update) {
@@ -51,6 +54,11 @@ func (s *Server) enqueueSidebarChange(platform, id string) bool {
 		return false
 	}
 	if s.registry == nil {
+		return false
+	}
+	var resolved bool
+	platform, resolved = s.publicSessionPlatform(platform, id)
+	if !resolved {
 		return false
 	}
 	adapter, ok := s.registry.Get(platforms.ID(platform))

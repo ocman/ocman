@@ -116,7 +116,11 @@ func (s *Server) fanOutSessionsResult(ctx context.Context, dir string, since int
 				results[i].err = &sessionListFailure{platform: adapter.ID(), err: err}
 				return
 			}
-			results[i] = result{id: adapter.ID(), sessions: sessions}
+			key, _ := s.registry.KeyFor(adapter)
+			for j := range sessions {
+				sessions[j].Platform = string(key)
+			}
+			results[i] = result{id: key, sessions: sessions}
 			if !adapter.Available(callCtx) {
 				results[i].err = fmt.Errorf("platform %s became unavailable", adapter.ID())
 			}

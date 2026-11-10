@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
@@ -13,7 +14,11 @@ import (
 // reference's prefix, else the owner's default) and qualifies it with the
 // authoritative owner.
 func (s *Server) createPlatform(ctx context.Context, host hostsvc.Host, requested, model string) (string, string, error) {
-	requested, err := platforms.PlatformForModel(requested, model)
+	_, baseRequested := platforms.SplitPlatformID(requested)
+	var err error
+	if !strings.HasPrefix(baseRequested, "cnx_") {
+		requested, err = platforms.PlatformForModel(requested, model)
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -35,6 +40,26 @@ func (s *Server) createPlatform(ctx context.Context, host hostsvc.Host, requeste
 // owning machine has enabled: the local registry for the hub, the remote's
 // advertised adapters for a remote (FR-1/2).
 func (s *Server) defaultPlatformFor(ctx context.Context, host hostsvc.Host) (string, error) {
+	if s.connections != nil {
+		if host.RemoteID() == "" || host.RemoteID() == "local" {
+			return s.connectionDefault(ctx)
+		}
+		if connections, ok := host.(hostsvc.ConnectionHost); ok {
+			inventory, err := connections.InventoryPlatformConnections(ctx)
+			if err != nil {
+				return "", err
+			}
+			for _, c := range inventory.Connections {
+				if c.IsDefault {
+					if !c.Enabled {
+						return "", platforms.ErrPlatformUnreachable
+					}
+					return c.ID, nil
+				}
+			}
+		}
+		return "", platforms.ErrPlatformUnreachable
+	}
 	preferred, err := s.stateDB.DefaultPlatform(ctx)
 	id := host.RemoteID()
 	if err != nil || id == "" || id == "local" || s.registry == nil {

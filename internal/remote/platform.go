@@ -22,8 +22,12 @@ import (
 // onto returned sessions (AD-7) and keeps a cache-only ownership map
 // (AD-2b) so Owns never makes a gRPC call.
 type remotePlatform struct {
-	conn *RemoteConn
-	base string // base platform id, e.g. "opencode"
+	conn           *RemoteConn
+	base           string // base platform id, e.g. "opencode"
+	kind           string
+	connectionName string
+	sourceKey      string
+	sourceKeys     []string
 
 	// nameFn returns the current display name for the remote (the
 	// hub-assigned label, or hostname when unnamed). Looked up live so a
@@ -41,11 +45,25 @@ type remotePlatform struct {
 
 // newRemotePlatform builds an adapter for a remote's base platform.
 func newRemotePlatform(conn *RemoteConn, base string, nameFn func() string) *remotePlatform {
+	kind, name, sourceKey := base, "", ""
+	var sourceKeys []string
+	for _, entry := range conn.ConnectionPlatforms() {
+		if entry.ID == base {
+			kind, name = entry.Kind, entry.DisplayName
+			sourceKey = entry.SourceKey
+			sourceKeys = append([]string(nil), entry.SourceKeys...)
+			break
+		}
+	}
 	return &remotePlatform{
-		conn:   conn,
-		base:   base,
-		nameFn: nameFn,
-		owned:  make(map[string]struct{}),
+		conn:           conn,
+		base:           base,
+		kind:           kind,
+		connectionName: name,
+		sourceKey:      sourceKey,
+		sourceKeys:     sourceKeys,
+		nameFn:         nameFn,
+		owned:          make(map[string]struct{}),
 	}
 }
 
@@ -58,7 +76,18 @@ func (p *remotePlatform) ID() platforms.ID {
 func (p *remotePlatform) DisplayName() string {
 	// Display name is the platform's, not the host's; the host badge is
 	// rendered separately from RemoteName.
-	return platforms.DisplayName(platforms.ID(p.base))
+	if p.connectionName != "" && p.base != string(p.NativeKind()) {
+		return p.connectionName
+	}
+	return platforms.DisplayName(p.NativeKind())
+}
+
+// NativeKind is the model namespace, not this adapter's remote routing key.
+func (p *remotePlatform) NativeKind() platforms.ID {
+	if p.kind != "" {
+		return platforms.ID(p.kind)
+	}
+	return platforms.ID(p.base)
 }
 
 func (p *remotePlatform) Available(_ context.Context) bool {
@@ -101,7 +130,7 @@ func (p *remotePlatform) loadCapabilities(ctx context.Context) (platforms.Capabi
 	if err := unmarshalJSON(payload, &caps); err != nil {
 		return platforms.Capabilities{}, err
 	}
-	if p.base == string(platforms.OpenCodeID) {
+	if p.NativeKind() == platforms.OpenCodeID {
 		// Remotes predating these flags always supported both on OpenCode.
 		caps.Revert, caps.RuntimeRestart, caps.ForkAtMessage = true, true, true
 	}
@@ -164,7 +193,7 @@ func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset i
 // a provider reports per session, so a terminal-started Claude session stays
 // read-only from the hub too (FR-4).
 func (p *remotePlatform) live(owner bool) bool {
-	return owner || p.base == string(platforms.OpenCodeID)
+	return owner || p.NativeKind() == platforms.OpenCodeID
 }
 
 // Owns is cache-only: it consults the ownership map populated by

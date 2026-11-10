@@ -40,6 +40,10 @@ func (h startupAddressHook) Fire(entry *log.Entry) error {
 
 type startupPlatform struct{ platforms.Platform }
 
+type savedStartupPlatform struct{ startupPlatform }
+
+func (savedStartupPlatform) ID() platforms.ID { return "claudecode" }
+
 func (startupPlatform) ID() platforms.ID                     { return "test-provider" }
 func (startupPlatform) DisplayName() string                  { return "Test provider" }
 func (startupPlatform) Available(context.Context) bool       { return false }
@@ -79,7 +83,9 @@ func TestStartupWithoutOpenCode(t *testing.T) {
 			if err := store.Close(); err != nil {
 				t.Fatal(err)
 			}
-			knownPlatforms["claudecode"] = knownPlatforms["test-provider"]
+			knownPlatforms["claudecode"] = func(context.Context, *db.DB, *state.DB, ocapi.Auth) platforms.Integration {
+				return savedStartupPlatform{}
+			}
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 		}
 		go func() {

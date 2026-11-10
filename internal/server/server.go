@@ -27,6 +27,7 @@ import (
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/notifications"
 	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platformconnections"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platformsettings"
 	"github.com/ocman/ocman/internal/pluginsmod"
@@ -55,22 +56,26 @@ const (
 
 // Server serves the web UI and API.
 type Server struct {
-	sessionPreparation *sessionPreparation
-	tasks              lazy[*tasksvc.Manager]
-	historyIngest      *conversationingest.Module
-	historyAnalytics   *analytics.HistoryAnalytics
-	historyOwner       string
-	historyCommits     *historyCommits
-	db                 *db.DB
-	stateDB            *state.DB
-	addr               string
-	registry           *platforms.Registry
-	sessions           *sessionsvc.Service
-	auth               *Auth
-	integrations       *sourcecontrol.Clients
-	startTime          time.Time
-	projects           projectsIndexState
-	autoApproveDefault bool
+	sessionPreparation       *sessionPreparation
+	tasks                    lazy[*tasksvc.Manager]
+	historyIngest            *conversationingest.Module
+	historyAnalytics         *analytics.HistoryAnalytics
+	historyOwner             string
+	historyCommits           *historyCommits
+	db                       *db.DB
+	stateDB                  *state.DB
+	addr                     string
+	registry                 *platforms.Registry
+	sessions                 *sessionsvc.Service
+	connections              *platformconnections.Router
+	connectionStore          *platformconnections.Store
+	connectionLifecycle      hostsvc.ConnectionLifecycle
+	connectionConfigurations map[string]hostsvc.ConnectionConfiguration
+	auth                     *Auth
+	integrations             *sourcecontrol.Clients
+	startTime                time.Time
+	projects                 projectsIndexState
+	autoApproveDefault       bool
 	// publicBaseURL is the externally reachable base URL used to build
 	// absolute share links (e.g. "https://ocman.example.com"). Empty
 	// means "derive from the incoming request's scheme + Host header",

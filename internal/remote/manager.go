@@ -376,8 +376,15 @@ func (m *Manager) publishAdapters(localID int64, mr *managedRemote, adapters []*
 	// concurrent Stop()/disconnect() must never observe a half-written
 	// adapter pair.
 	mr.platforms, mr.host = adapters, host
-	for _, platform := range adapters {
-		m.registry.Register(platform)
+	for i, platform := range adapters {
+		if err := m.registry.RegisterConnection(platform.ID(), platform); err != nil {
+			for _, registered := range adapters[:i] {
+				m.registry.Unregister(registered.ID())
+			}
+			mr.platforms, mr.host = nil, nil
+			log.WithError(err).Warn("remote: connection registration refused")
+			return false
+		}
 	}
 	m.router.RegisterRemote(rid, host)
 	return true
@@ -746,10 +753,14 @@ func (m *Manager) EnabledRemotes() []TargetCandidate {
 			continue
 		}
 		rid := mr.conn.RemoteID()
+		platform := ""
+		if key := mr.conn.creationPlatform(m.base); key != "" {
+			platform = platforms.CompoundPlatformID(rid, key)
+		}
 		out = append(out, TargetCandidate{
 			RemoteID:   rid,
 			RemoteName: m.nameForRemoteIDLocked(rid),
-			Platform:   platforms.CompoundPlatformID(rid, selectPlatform(mr.conn.Platforms(), m.base)),
+			Platform:   platform,
 		})
 	}
 	return out
@@ -772,8 +783,11 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 		name := m.nameForRemoteID(remoteID)
 		for _, p := range idents {
 			base := p.Platform
+			var platform string
 			if base == "" {
-				base = selectPlatform(m.remotePlatforms(remoteID), m.base)
+				platform = m.remoteCreationPlatform(remoteID, m.base)
+			} else {
+				platform = platforms.CompoundPlatformID(remoteID, base)
 			}
 			out = append(out, db.ProjectStats{
 				AssociatedDirectory: p.AssociatedDirectory,
@@ -787,7 +801,7 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 				TotalCost:           p.TotalCost,
 				RemoteID:            remoteID,
 				RemoteName:          name,
-				Platform:            platforms.CompoundPlatformID(remoteID, base),
+				Platform:            platform,
 			})
 		}
 	}

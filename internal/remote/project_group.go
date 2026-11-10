@@ -142,13 +142,26 @@ func (m *Manager) ResolveProjectTargets(source db.ProjectStats, localProjects []
 			if preferred == "" {
 				preferred = m.base
 			}
-			candidate.Platform = platforms.CompoundPlatformID(p.RemoteID, selectPlatform(m.remotePlatforms(p.RemoteID), preferred))
+			candidate.Platform = m.remoteCreationPlatform(p.RemoteID, preferred)
 			candidate.RemoteName = m.nameForRemoteID(p.RemoteID)
 		}
 		seen[p.RemoteID] = len(out)
 		out = append(out, candidate)
 	}
 	return out
+}
+
+func (m *Manager) remoteCreationPlatform(remoteID, preferred string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, mr := range m.remotes {
+		if mr.host != nil && mr.conn != nil && mr.conn.RemoteID() == remoteID && mr.conn.Health() == HealthConnected {
+			if key := mr.conn.creationPlatform(preferred); key != "" {
+				return platforms.CompoundPlatformID(remoteID, key)
+			}
+		}
+	}
+	return ""
 }
 
 func (m *Manager) remotePlatforms(remoteID string) []string {
@@ -171,6 +184,13 @@ func (m *Manager) localDefault() string {
 			preferred = saved
 		}
 	}
+	if m.registry != nil {
+		for _, entry := range m.registry.Entries() {
+			if string(entry.Key) != string(entry.Platform.ID()) {
+				return ""
+			}
+		}
+	}
 	return selectPlatform(m.localPlatforms(), preferred)
 }
 
@@ -180,8 +200,8 @@ func (m *Manager) localPlatforms() []string {
 	if m.registry == nil {
 		return out
 	}
-	for _, p := range m.registry.Platforms() {
-		if owner, base := platforms.SplitPlatformID(string(p.ID())); owner == "" {
+	for _, entry := range m.registry.Entries() {
+		if owner, base := platforms.SplitPlatformID(string(entry.Key)); owner == "" {
 			out = append(out, base)
 		}
 	}

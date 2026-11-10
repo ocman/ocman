@@ -15,7 +15,7 @@ func (p *remotePlatform) CanonicalSessionIDs() bool {
 }
 
 func (p *remotePlatform) canonicalIdentity(info platforms.SessionIdentity) bool {
-	return info.OwnerID == p.conn.RemoteID() && info.Platform == p.base && sessioncatalog.IsID(info.ID) &&
+	return info.OwnerID == p.conn.RemoteID() && info.Platform == string(p.NativeKind()) && sessioncatalog.IsID(info.ID) &&
 		(info.ParentID == "" || sessioncatalog.IsID(info.ParentID)) && info.NativeID == "" && info.NativeParentID == "" && info.SourceKey != "" && info.CreationState == "ready"
 }
 

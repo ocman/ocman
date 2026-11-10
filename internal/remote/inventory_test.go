@@ -281,7 +281,9 @@ func TestManager_ResolveTargets(t *testing.T) {
 		}
 		if c.RemoteID == "abc" {
 			haveRemote = true
-			if c.Platform != "r-abc:opencode" {
+			// Cached project inventory is not an authenticated live account
+			// advertisement. A disconnected owner must not invent a platform.
+			if c.Platform != "" {
 				t.Errorf("remote candidate platform = %q", c.Platform)
 			}
 		}
@@ -323,8 +325,8 @@ func TestManager_RemoteProjects(t *testing.T) {
 		if p.RemoteID != "abc" {
 			t.Errorf("RemoteID = %q, want abc", p.RemoteID)
 		}
-		if p.Platform != "r-abc:opencode" {
-			t.Errorf("Platform = %q, want r-abc:opencode", p.Platform)
+		if p.Platform != "" {
+			t.Errorf("Platform = %q, want no invented disconnected account", p.Platform)
 		}
 		// nameForRemoteID falls back to the id when not connected.
 		if p.RemoteName != "abc" {

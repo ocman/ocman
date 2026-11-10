@@ -43,16 +43,17 @@ type RemoteConn struct {
 	address string
 	token   string
 
-	mu               sync.RWMutex
-	conn             *grpc.ClientConn
-	client           pb.OcmanClient
-	health           Health
-	remoteID         string
-	hostname         string
-	protocolVersion  int
-	requireCanonical bool
-	lastSeen         time.Time
-	platforms        []string
+	mu                  sync.RWMutex
+	conn                *grpc.ClientConn
+	client              pb.OcmanClient
+	health              Health
+	remoteID            string
+	hostname            string
+	protocolVersion     int
+	requireCanonical    bool
+	lastSeen            time.Time
+	platforms           []string
+	connectionPlatforms []ConnectionPlatformMetadata
 }
 
 // NewRemoteConn creates a RemoteConn for the given address and token.
@@ -130,6 +131,15 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 		c.setHealth(HealthIncompatible)
 		return fmt.Errorf("remote: incompatible protocol version %d (hub requires %d); upgrade ocman on both machines", hello.ProtocolVersion, ProtocolVersion)
 	}
+	metadata, err := loadConnectionPlatforms(ctx, client, hello.Platforms)
+	if err == nil && c.RemoteID() == hello.InstanceId {
+		err = validateConnectionSourceContinuity(c.ConnectionPlatforms(), metadata)
+	}
+	if err != nil {
+		conn.Close()
+		c.setHealth(classifyHandshakeError(err))
+		return fmt.Errorf("remote connection metadata: %w", err)
+	}
 
 	c.mu.Lock()
 	c.conn = conn
@@ -139,6 +149,7 @@ func (c *RemoteConn) Connect(ctx context.Context) error {
 	c.hostname = hello.Hostname
 	c.protocolVersion = int(hello.ProtocolVersion)
 	c.platforms = hello.Platforms
+	c.connectionPlatforms = metadata
 	c.lastSeen = time.Now()
 	c.mu.Unlock()
 	return nil

@@ -49,7 +49,7 @@ func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.sessions != nil {
 			for i := range resp.Models {
-				if t := s.sessions.CooldownUntil(resp.Models[i].Provider); !t.IsZero() {
+				if t := s.sessions.SessionCooldownUntil(r.Context(), sessionID, resp.Models[i].Provider); !t.IsZero() {
 					resp.Models[i].CooldownUntil = &t
 				}
 			}

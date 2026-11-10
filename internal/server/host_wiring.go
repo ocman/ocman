@@ -21,22 +21,23 @@ func (s *Server) newLocalHost() hostsvc.Host {
 	runtimes := map[string]func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error){}
 	namers := map[string]func(context.Context, string, string) (string, error){}
 	if s.registry != nil {
-		for _, adapter := range s.registry.Platforms() {
+		for _, entry := range s.registry.Entries() {
+			adapter := entry.Platform
 			if provider, ok := adapter.(hostsvc.PlatformServiceProvider); ok {
 				services := provider.HostServices()
 				if services.Runtime != nil {
-					runtimes[string(adapter.ID())] = services.Runtime.EnsureRuntime
+					runtimes[string(entry.Key)] = services.Runtime.EnsureRuntime
 				}
 				if services.Namer != nil {
-					namers[string(adapter.ID())] = services.Namer.WorktreeName
+					namers[string(entry.Key)] = services.Namer.WorktreeName
 				}
 				continue
 			}
 			if runtime, ok := adapter.(hostsvc.RuntimeEnsurer); ok {
-				runtimes[string(adapter.ID())] = runtime.EnsureRuntime
+				runtimes[string(entry.Key)] = runtime.EnsureRuntime
 			}
 			if namer, ok := adapter.(hostsvc.WorktreeNamer); ok {
-				namers[string(adapter.ID())] = namer.WorktreeName
+				namers[string(entry.Key)] = namer.WorktreeName
 			}
 		}
 	}
@@ -45,11 +46,14 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		openCodeService = ocv2.RunningService
 	}
 	host := hostlocal.New(hostlocal.Deps{
-		CheckWorktreeTerminals: term.CheckWorktreeIdle,
-		DefaultPlatform:        s.stateDB.DefaultPlatform,
-		Runtimes:               runtimes,
-		WorktreeNamers:         namers,
-		HookPlugin:             func() hostsvc.HookPluginManager { return s.hookPlugin() },
+		CheckWorktreeTerminals:   term.CheckWorktreeIdle,
+		DefaultPlatform:          s.connectionDefault,
+		ConnectionStore:          s.connectionStore,
+		ConnectionLifecycle:      s.connectionLifecycle,
+		ConnectionConfigurations: s.connectionConfigurations,
+		Runtimes:                 runtimes,
+		WorktreeNamers:           namers,
+		HookPlugin:               func() hostsvc.HookPluginManager { return s.hookPlugin() },
 		PlatformEnabled: func(id string) bool {
 			if s.registry == nil {
 				return false

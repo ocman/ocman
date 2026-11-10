@@ -128,25 +128,26 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			wg.Wait()
 			return nil, err
 		}
-		all = append(all, rows...)
-		for _, a := range adapters {
-			if isLocalAdapter(a) {
-				owned := []db.Session{}
-				for _, row := range rows {
-					if row.Platform == string(a.ID()) {
-						owned = append(owned, row)
-					}
+		for i := range rows {
+			if adapter, ok := s.registry.PlatformForSession(ctx, rows[i].ID); ok {
+				if key, ok := s.registry.KeyFor(adapter); ok {
+					rows[i].Platform = string(key)
+					s.registry.RememberSessions(key, rows[i:i+1])
 				}
-				s.registry.RememberSessions(a.ID(), owned)
 			}
 		}
+		all = append(all, rows...)
 	}
 	wg.Wait()
 	for i, rows := range results {
 		if failures[i] != nil {
 			continue
 		}
-		s.registry.RememberSessions(adapters[i].ID(), rows)
+		key, _ := s.registry.KeyFor(adapters[i])
+		for j := range rows {
+			rows[j].Platform = string(key)
+		}
+		s.registry.RememberSessions(key, rows)
 		if !isLocalAdapter(adapters[i]) && s.stateDB != nil {
 			applyRemoteSidebarFlags(rows, remoteFlags)
 		}

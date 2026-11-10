@@ -118,9 +118,9 @@ func (s *Server) Hello(_ context.Context, _ *pb.HelloReq) (*pb.HelloResp, error)
 		protocol = legacySessionProtocol
 	}
 	var enabled []string
-	for _, p := range s.registry.Platforms() {
-		if owner, _ := platforms.SplitPlatformID(string(p.ID())); owner == "" {
-			enabled = append(enabled, string(p.ID()))
+	for _, entry := range s.registry.Entries() {
+		if owner, _ := platforms.SplitPlatformID(string(entry.Key)); owner == "" {
+			enabled = append(enabled, string(entry.Key))
 		}
 	}
 	return &pb.HelloResp{ProtocolVersion: protocol, InstanceId: s.instanceID, Hostname: hostname, OcmanVersion: s.version, Platforms: enabled}, nil

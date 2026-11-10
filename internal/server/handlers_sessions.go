@@ -197,6 +197,14 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if key, ok := s.registry.KeyFor(adapter); ok {
+		if detail.Session != nil {
+			detail.Session.Platform = string(key)
+		}
+		for i := range detail.SessionTree {
+			detail.SessionTree[i].Platform = string(key)
+		}
+	}
 	body := map[string]interface{}{
 		"session":           detail.Session,
 		"sessionTree":       detail.SessionTree,

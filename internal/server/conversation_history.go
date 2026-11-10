@@ -33,24 +33,26 @@ func (s *Server) WithConversationHistory(store *statev2.DB, ownerID string) *Ser
 		catalogue, _ := sessioncatalog.New(s.stateDB)
 		s.sessions.WithSessionCatalogue(catalogue, ownerID)
 	}
-	for _, adapter := range s.registry.Platforms() {
-		if remoteID, _ := platforms.SplitPlatformID(string(adapter.ID())); remoteID != "" {
+	for _, entry := range s.registry.Entries() {
+		adapter := entry.Platform
+		if remoteID, _ := platforms.SplitPlatformID(string(entry.Key)); remoteID != "" {
 			continue
 		}
 		if reader, ok := adapter.(platforms.HistoryReader); ok {
-			deps.Sources = append(deps.Sources, conversationingest.Source{AdapterID: string(adapter.ID()), Label: adapter.DisplayName(), Reader: reader})
+			deps.Sources = append(deps.Sources, conversationingest.Source{AdapterID: string(entry.Key), Label: adapter.DisplayName(), Reader: reader})
 		}
 	}
 	s.historyIngest = conversationingest.NewModule(deps)
-	for _, adapter := range s.registry.Platforms() {
+	for _, entry := range s.registry.Entries() {
+		adapter := entry.Platform
 		if binder, ok := adapter.(platforms.StoredHistoryBinder); ok {
 			binder.BindStoredHistory(platforms.StoredHistoryHooks{
-				Notify: func(id string) { s.historyIngest.Notify(string(adapter.ID()), id) },
+				Notify: func(id string) { s.historyIngest.Notify(string(entry.Key), id) },
 				Await: func(ctx context.Context, id string) bool {
-					return s.historyIngest.AwaitStored(ctx, string(adapter.ID()), id)
+					return s.historyIngest.AwaitStored(ctx, string(entry.Key), id)
 				},
 				Refresh: func(ctx context.Context, id string) error {
-					return s.historyIngest.RefreshStored(ctx, string(adapter.ID()), id)
+					return s.historyIngest.RefreshStored(ctx, string(entry.Key), id)
 				},
 			})
 		}
@@ -59,13 +61,13 @@ func (s *Server) WithConversationHistory(store *statev2.DB, ownerID string) *Ser
 		ids, complete := s.historyIngest.AnalyticsInstances()
 		// Only local adapters contribute to owner-local history. Remote
 		// discovery must not invalidate an otherwise completed local import.
-		for _, adapter := range s.registry.Platforms() {
-			if remoteID, _ := platforms.SplitPlatformID(string(adapter.ID())); remoteID != "" {
+		for _, entry := range s.registry.Entries() {
+			if remoteID, _ := platforms.SplitPlatformID(string(entry.Key)); remoteID != "" {
 				continue
 			}
 			found := false
 			for _, source := range deps.Sources {
-				found = found || source.AdapterID == string(adapter.ID())
+				found = found || source.AdapterID == string(entry.Key)
 			}
 			if !found {
 				return ids, false

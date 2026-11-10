@@ -10,6 +10,7 @@ import (
 	"github.com/ocman/ocman/internal/analytics"
 	"github.com/ocman/ocman/internal/artifacts"
 	"github.com/ocman/ocman/internal/composerattachments"
+	"github.com/ocman/ocman/internal/connectionsmod"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/factorymod"
 	"github.com/ocman/ocman/internal/hostsvc"
@@ -50,7 +51,7 @@ func (s *Server) modules() []module.Module {
 		ResolveOwner: s.resolveOwner,
 		Sessions:     s.resourceSessions,
 	})
-	mods = append(mods, &keybindings.Module{}, s.sourceControlModule(), s.prWorkflowModule())
+	mods = append(mods, &keybindings.Module{}, s.sourceControlModule(), s.prWorkflowModule(), connectionsmod.NewModule(connectionsmod.Deps{ResolveOwner: s.resolveConnectionOwner}))
 	mods = append(mods, s.worktreeCleanupModule())
 	mods = append(mods, s.sidebarModules()...)
 	mods = append(mods, s.sessionUpdatesModule())

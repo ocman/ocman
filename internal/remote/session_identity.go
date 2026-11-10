@@ -20,7 +20,7 @@ func (p *remotePlatform) SessionIdentity(ctx context.Context, req platforms.Sess
 	if err := unmarshalJSON(payload, &info); err != nil {
 		return nil, err
 	}
-	if info.OwnerID != p.conn.RemoteID() || info.Platform != p.base ||
+	if info.OwnerID != p.conn.RemoteID() || info.Platform != string(p.NativeKind()) ||
 		(req.ID != "" && info.ID != req.ID) || (!p.CanonicalSessionIDs() && req.NativeID != "" && info.NativeID != req.NativeID) ||
 		(p.CanonicalSessionIDs() && !p.canonicalIdentity(info)) {
 		return nil, fmt.Errorf("%w: remote session identity mismatch", platforms.ErrPlatformUnreachable)
@@ -52,7 +52,7 @@ func (p *remotePlatform) SessionIdentities(ctx context.Context, ids []string) ([
 		return nil, err
 	}
 	for _, row := range rows {
-		if row.OwnerID != p.conn.RemoteID() || row.Platform != p.base || (p.CanonicalSessionIDs() && !p.canonicalIdentity(row)) {
+		if row.OwnerID != p.conn.RemoteID() || row.Platform != string(p.NativeKind()) || (p.CanonicalSessionIDs() && !p.canonicalIdentity(row)) {
 			return nil, platforms.ErrPlatformUnreachable
 		}
 	}

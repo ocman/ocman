@@ -13,7 +13,7 @@ func invalidCanonicalResponse() error {
 }
 
 func (p *remotePlatform) canonicalSession(row db.Session) bool {
-	return identity.IsSessionID(row.ID) && (row.ParentID == "" || identity.IsSessionID(row.ParentID)) && (row.Platform == "" || row.Platform == p.base || row.Platform == string(p.ID()))
+	return identity.IsSessionID(row.ID) && (row.ParentID == "" || identity.IsSessionID(row.ParentID)) && (row.Platform == "" || row.Platform == string(p.NativeKind()) || row.Platform == p.base || row.Platform == string(p.ID()))
 }
 
 func (p *remotePlatform) checkedSessions(rows []db.Session, dir string, since int64) ([]db.Session, error) {

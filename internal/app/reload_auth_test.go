@@ -26,6 +26,8 @@ import (
 
 type reloadAuthPlatform struct{ startupPlatform }
 
+func (reloadAuthPlatform) ID() platforms.ID { return "claudecode" }
+
 func (reloadAuthPlatform) HistoryIdentity(context.Context) (platforms.HistoryIdentity, error) {
 	return platforms.HistoryIdentity{Platform: "claudecode", SourceKey: "auth-test"}, nil
 }
