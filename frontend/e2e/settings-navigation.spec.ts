@@ -48,10 +48,21 @@ test('reviewer edits survive switching settings categories', async ({ mockedPage
 for (const width of [1280, 390]) {
   test(`platform selection is available in Settings at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
-    let enabled = ['opencode', 'claudecode'];
-    await page.route('/api/settings/platforms', (route) => {
-      if (route.request().method() === 'POST') enabled = route.request().postDataJSON().enabled;
-      return route.fulfill({ json: { platforms: MOCK_PLATFORM_OPTIONS, enabled } });
+    const connections = [
+      { id: 'cnx_open', kind: 'opencode', name: 'OpenCode Personal', configuration: 'existing', directory: '/config/open', enabled: true, isDefault: true, status: 'ready' },
+      { id: 'cnx_claude', kind: 'claudecode', name: 'Claude Work', configuration: 'existing', directory: '/config/claude', enabled: true, isDefault: false, status: 'ready' },
+    ];
+    const updates: unknown[] = [];
+    await page.route('**/api/platform-connections**', route => {
+      expect(new URL(route.request().url()).searchParams.get('remoteId')).toBe('local');
+      if (route.request().method() === 'PATCH') {
+        expect(new URL(route.request().url()).pathname).toBe('/api/platform-connections/cnx_open');
+        const body = route.request().postDataJSON();
+        updates.push(body);
+        connections[0].enabled = body.enabled;
+        return route.fulfill({ json: { saved: true } });
+      }
+      return route.fulfill({ json: { supported: true, onboardingComplete: true, platforms: MOCK_PLATFORM_OPTIONS.map(option => ({ ...option, existingDirectory: '/config', supportsIsolation: false, isolationNote: '' })), connections } });
     });
     const openPlatforms = async () => {
       await page.goto('/settings');
@@ -59,17 +70,18 @@ for (const width of [1280, 390]) {
       else await page.getByRole('button', { name: 'Agents & models', exact: true }).click();
     };
     await openPlatforms();
-    const openCode = page.getByRole('checkbox', { name: 'OpenCode', exact: true });
-    const claude = page.getByRole('checkbox', { name: 'Claude Code', exact: true });
-    await expect(openCode).toBeChecked();
-    await expect(claude).toBeChecked();
-    await openCode.uncheck();
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Platform changes applied.', { exact: true })).toBeVisible();
-    expect(enabled).toEqual(['claudecode']);
+    await expect(page.getByRole('button', { name: 'OpenCode Personal', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Claude Work', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Disable OpenCode Personal', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Disable Claude Work', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Disable OpenCode Personal', exact: true }).click();
+    await expect(page.getByText('OpenCode Personal disabled.', { exact: true })).toBeVisible();
+    expect(updates).toEqual([{ enabled: false }]);
+    expect(connections.map(connection => connection.enabled)).toEqual([false, true]);
     await openPlatforms();
-    await expect(openCode).not.toBeChecked();
-    await expect(claude).toBeChecked();
+    await expect(page.getByRole('button', { name: 'Enable OpenCode Personal', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Disable Claude Work', exact: true })).toBeEnabled();
+    await expect(page.getByText('Default (disabled)', { exact: true })).toBeVisible();
   });
   test(`Remotes table scrolls inside Settings at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });

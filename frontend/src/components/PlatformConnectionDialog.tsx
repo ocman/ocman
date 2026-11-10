@@ -11,6 +11,9 @@ import { ModalFooter } from './ModalFooter';
 import styles from './PlatformConnections.module.css';
 
 type Props = {
+
+  recoveredInput?: ConnectionInput;
+  onAbandon?: () => Promise<void>;
   platforms: ConnectionPlatform[];
   connections: PlatformConnection[];
   connection?: PlatformConnection;
@@ -39,24 +42,31 @@ function setupKey(input: ConnectionInput) {
   return JSON.stringify([input.kind, input.configuration, input.directory.trim()]);
 }
 
-export function PlatformConnectionDialog({ platforms, connections, connection, onCheck, onSave, onClose }: Props) {
-  const [initial] = useState(() => initialInput(connection, platforms));
+export function PlatformConnectionDialog({ platforms, connections, connection, recoveredInput, onAbandon, onCheck, onSave, onClose }: Props) {
+  const [initial] = useState(() => !connection && recoveredInput ? recoveredInput : initialInput(connection, platforms));
   const [input, setInput] = useState<ConnectionInput>(initial);
   const [check, setCheck] = useState<ConnectionCheck | null>(null);
   const [operation, setOperation] = useState<'checking' | 'saving' | null>(null);
   const busy = operation !== null;
   const lock = useRef(false);
-  const reservation = useRef<string | undefined>(undefined);
+  const reservation = useRef<string | undefined>(initial.reservationId);
   const [error, setError] = useState('');
   const platform = platforms.find(value => value.id === input.kind);
   const dirty = JSON.stringify(input) !== JSON.stringify(initial);
   const { confirmDiscard } = useUnsavedChangesGuard(dirty);
   const duplicate = connections.some(value => value.id !== connection?.id && value.name.toLocaleLowerCase() === input.name.trim().toLocaleLowerCase());
   const valid = !!platform && !!input.name.trim() && !duplicate;
-  async function close() { if (!lock.current && await confirmDiscard()) onClose(); }
+  async function close() {
+    if (lock.current || !await confirmDiscard()) return;
+    try { await onAbandon?.(); onClose(); }
+    catch { setError('Could not cancel setup. Retry when the owner is connected.'); }
+  }
 
   function update(patch: Partial<ConnectionInput>) {
-    if (setupKey({ ...input, ...patch }) !== setupKey(input)) reservation.current = undefined;
+    if (setupKey({ ...input, ...patch }) !== setupKey(input)) {
+      reservation.current = undefined;
+      patch = { ...patch, reservationId: undefined };
+    }
     setInput(value => ({ ...value, ...patch }));
     setCheck(null);
     setError('');
@@ -64,11 +74,12 @@ export function PlatformConnectionDialog({ platforms, connections, connection, o
 
   function requestInput(): ConnectionInput {
     const value = { ...input, name: input.name.trim(), directory: input.directory.trim() };
+    delete value.reservationId;
     return reservation.current ? { ...value, reservationId: reservation.current } : value;
   }
 
   async function checkSetup(value: ConnectionInput) {
-    const result = await onCheck(value);
+    const result = await onCheck(connection ? { ...value, connectionId: connection.id } : value);
     if (value.reservationId && result.reservationId !== value.reservationId) {
       setCheck(null);
       throw new Error('The setup reservation changed. Retry the check or close this dialog and start again.');

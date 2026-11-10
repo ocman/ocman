@@ -1,6 +1,10 @@
 import { useUiStore } from '../lib/uiStore';
 import { Button } from './Control';
 import styles from './GettingStartedEmpty.module.css';
+import { useQuery } from '@tanstack/react-query';
+import { queryClient } from '../lib/queryClient';
+import { fetchJSON } from '../lib/api.requests';
+import { OwnerConnectionSettings, type ConnectionInventory } from './PlatformConnectionSettings';
 
 /**
  * First-run / empty-state guidance. Shown wherever the session or
@@ -13,6 +17,8 @@ import styles from './GettingStartedEmpty.module.css';
  */
 export function GettingStartedEmpty({ compact = false }: { compact?: boolean }) {
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
+  const connections = useQuery({ queryKey: ['platform-connections', 'local'], queryFn: () => fetchJSON<ConnectionInventory>('/api/platform-connections?remoteId=local'), enabled: !compact, retry: false }, queryClient);
+  if (!compact && connections.data?.supported && !connections.data.onboardingComplete) return <OwnerConnectionSettings owner="local" />;
 
   return (
     <div

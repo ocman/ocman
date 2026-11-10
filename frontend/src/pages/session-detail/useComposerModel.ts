@@ -6,7 +6,8 @@ import { getSessionModel, saveSessionModel } from '../../lib/sessionModel';
 import { agentModelRef, deriveActiveModelAndAgent, formatModelRef } from '../../lib/sessionStatus';
 import { computeTurnStats, latestTurnModel, messageModelRef } from '../../lib/turnStats';
 import { startModels } from './startHandoffs';
-import { modelRefForSession } from '../../lib/modelRef';
+import { basePlatform, modelRefForSession } from '../../lib/modelRef';
+import { useCapabilities } from '../../lib/useCapabilities';
 
 export interface UseComposerModelOptions {
   /** Route id — the seed is keyed on this, not on `session.id`. */
@@ -49,6 +50,8 @@ export function useComposerModel({
   setSelectedAgent,
   setSelectedReasoning,
 }: UseComposerModelOptions): UseComposerModelResult {
+  const capabilities = useCapabilities();
+  const modelKind = capabilities?.platforms?.find(entry => entry.id === session?.platform)?.kind ?? (session?.platform ? basePlatform(session.platform) : undefined);
   const seededSessionRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     seededSessionRef.current = undefined;
@@ -65,7 +68,7 @@ export function useComposerModel({
       const latestUser = messages.findLast((message) => message.data?.role === 'user');
       // New-conversation and project picks may name their platform; this
       // session takes only its own platform's (prefix stripped).
-      const own = (ref: string | undefined) => formatModelRef(undefined, modelRefForSession(ref || '', session?.platform));
+      const own = (ref: string | undefined) => formatModelRef(undefined, modelRefForSession(ref || '', modelKind));
       const projectModel = own(session?.projectDefaultModel) || own(getProjectModel(session?.directory || ''));
       return own(session?.id === id && id ? startModels.get(id) : '') ||
         own(sessionModel) ||
@@ -76,7 +79,7 @@ export function useComposerModel({
         projectModel ||
         '';
     },
-    [id, sessionModel, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel, session?.platform],
+    [id, sessionModel, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel, modelKind],
   );
 
   useEffect(() => {

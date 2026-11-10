@@ -51,11 +51,20 @@ for (const width of [1280, 390]) test(`clone confirmation, reload and first subm
   await page.getByRole('option', { name: 'Build box · no matching project' }).click();
   await expect(dialog.getByLabel('Destination directory')).toHaveValue('/remote/src/repo');
   await dialog.getByLabel('Destination directory').fill(destination);
+  // Text and route metadata are debounced saves. A rendered textarea is not
+  // a durable acknowledgement, especially on the fast mobile interaction path.
+  const persisted = page.waitForResponse(response => {
+    const request = response.request();
+    if (request.method() !== 'PUT' || !new URL(request.url()).pathname.startsWith('/api/session-drafts/')) return false;
+    const body = request.postDataJSON();
+    return response.ok() && body.text === 'Continue on the build box' && body.directory === destination && body.remoteId === target.remoteId && body.clone?.url === url;
+  });
   await dialog.getByRole('button', { name: 'Use machine and clone on submit' }).click();
   await expect(page).toHaveURL(/remoteId=clone-box/);
   await expect(composer).toHaveValue('Continue on the build box');
   expect(page.url()).not.toContain('cloneUrl');
   expect(starts).toHaveLength(0);
+  await (await persisted).finished();
   await page.reload();
   const draftId = new URL(page.url()).searchParams.get('draftId')!;
   await expect(composer).toHaveValue('Continue on the build box');

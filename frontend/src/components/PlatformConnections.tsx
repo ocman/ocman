@@ -12,6 +12,8 @@ import { PlatformLogo } from './PlatformBadge';
 import styles from './PlatformConnections.module.css';
 
 export type PlatformConnectionsProps = {
+  recoveredInput?: ConnectionInput;
+  onAbandon?: () => Promise<void>;
   /** Null means initial loading, not an empty installation. */
   connections: PlatformConnection[] | null;
   platforms: ConnectionPlatform[];
@@ -30,7 +32,7 @@ export type PlatformConnectionsProps = {
 };
 
 /** Shared by Settings and first-run onboarding; runtime and owner calls stay outside the view. */
-export function PlatformConnections({ connections, platforms, machineName, error, readOnlyReason, onboarding = false, onRetry, onSave, onCheck, onRemove, onDefault, onEnabledChange, onSkip, onContinue }: PlatformConnectionsProps) {
+export function PlatformConnections({ connections, platforms, machineName, error, readOnlyReason, onboarding = false, recoveredInput, onAbandon, onRetry, onSave, onCheck, onRemove, onDefault, onEnabledChange, onSkip, onContinue }: PlatformConnectionsProps) {
   const [editor, setEditor] = useState<PlatformConnection | 'new' | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const lock = useRef(false);
@@ -64,6 +66,7 @@ export function PlatformConnections({ connections, platforms, machineName, error
       <div><strong>{onboarding ? 'Connect your first platform' : 'Platform connections'}</strong><p className={styles.hint}>{machineName} · Keep work and personal accounts separate.</p></div>
       {connections.length > 0 && <Button variant="accent" disabled={!writable || platforms.length === 0} onClick={() => setEditor('new')}>Add platform</Button>}
     </div>
+    {recoveredInput && <InlineAlert>Unfinished platform setup <Button onClick={() => setEditor('new')}>Resume setup</Button></InlineAlert>}
     {readOnlyReason && <InlineAlert>{readOnlyReason}</InlineAlert>}
     {error && <InlineAlert>{error} <Button onClick={onRetry} size="small">Retry</Button></InlineAlert>}
     {connections.length === 0 ? <PageState compact icon="bi-plug" title="No platforms connected"
@@ -88,12 +91,12 @@ export function PlatformConnections({ connections, platforms, machineName, error
     {actionError && <InlineAlert>{actionError}</InlineAlert>}
     {notice && <p role="status">{notice}</p>}
     {onboarding && <div className={styles.onboardingActions}>
-      <span className={styles.hint}>You can add more platforms in Settings at any time.</span>
+      <span className={styles.hint}>Set a ready connection as the default before choosing a project. You can add more platforms in Settings at any time.</span>
       <ButtonGroup label="Onboarding actions">
         {onSkip && <Button onClick={onSkip}>Set up later</Button>}
-        {onContinue && <Button variant="accent" disabled={!connections.some(value => value.enabled && value.status === 'ready')} onClick={onContinue}>Choose a project</Button>}
+        {onContinue && <Button variant="accent" disabled={!connections.some(value => value.isDefault && value.enabled && value.status === 'ready')} onClick={onContinue}>Choose a project</Button>}
       </ButtonGroup>
     </div>}
-    {editor && <PlatformConnectionDialog platforms={platforms} connections={connections} connection={editor === 'new' ? undefined : editor} onCheck={onCheck} onSave={onSave} onClose={() => setEditor(null)} />}
+    {editor && <PlatformConnectionDialog platforms={platforms} connections={connections} connection={editor === 'new' ? undefined : editor} recoveredInput={recoveredInput} onAbandon={editor === 'new' ? onAbandon : undefined} onCheck={onCheck} onSave={onSave} onClose={() => setEditor(null)} />}
   </section>;
 }

@@ -41,7 +41,7 @@ const ModelFallbackSettings = lazyComponent<SectionProps>(() => sessionAgentSett
 const WorktreePermissionSettings = lazyComponent<SectionProps>(() => sessionAgentSettings().then((m) => m.WorktreePermissionSettings));
 const BetaFeaturesSettings = lazyComponent<SectionProps>(() => import('../components/BetaFeaturesSettings').then((m) => m.BetaFeaturesSettings));
 const SpeechSettings = lazyComponent<SectionProps>(() => import('../components/SpeechSettings').then((m) => m.SpeechSettings));
-const PlatformSettings = lazyComponent<SectionProps>(() => import('../components/PlatformSettings').then((m) => m.PlatformSettings));
+const PlatformSettings = lazyComponent<SectionProps>(() => import('../components/PlatformConnectionSettings').then((m) => m.PlatformConnectionSettings));
 const ProviderAccountSettings = lazyComponent<SectionProps>(() => import('../pages/dashboard/ProviderAccountSettings').then((m) => m.ProviderAccountSettings));
 const HookPluginSettings = lazyComponent<SectionProps>(() => import('../components/HookPluginSettings').then((m) => m.HookPluginSettings));
 const AutoApproveSection = lazyComponent<SectionProps>(() => import('../pages/dashboard/AutoApproveSection').then((m) => m.AutoApproveSection));

@@ -1185,6 +1185,8 @@ export interface PermissionRule {
 
 export interface PlatformCapabilityEntry {
   id: string;
+  /** Native model namespace. Present when id is a named connection. */
+  kind?: string;
   displayName: string;
   available: boolean;
   capabilities: PlatformCapabilities;

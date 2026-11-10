@@ -26,6 +26,14 @@ async function checkInitial(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('platform setup receipts', () => {
+  it('drops a recovered receipt when configuration changes', async () => {
+    const onCheck = vi.fn().mockResolvedValue({ ...checked, reservationId: 'stp_new' });
+    render(<MemoryRouter><ConfirmProvider><PlatformConnectionDialog platforms={platforms} connections={[]} recoveredInput={{ ...input, configuration: 'existing', reservationId: 'stp_old' }} onCheck={onCheck} onSave={vi.fn()} onClose={vi.fn()} /></ConfirmProvider></MemoryRouter>);
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Configuration' }), 'isolated');
+    await user.click(screen.getByRole('button', { name: 'Check setup' }));
+    expect(onCheck).toHaveBeenCalledWith({ ...input, configuration: 'isolated' });
+  });
   it('passes the owner receipt through Check again and Save, without replacing input with observed paths', async () => {
     const { user, onCheck, onSave } = mount();
     await checkInitial(user);

@@ -9,6 +9,7 @@ import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { getSessionModel } from '../../lib/sessionModel';
 import { useComposerModel, type UseComposerModelOptions } from './useComposerModel';
 import { startModels } from './startHandoffs';
+import { queryClient } from '../../lib/queryClient';
 
 const session = { id: 's1', directory: '/repo', defaultModel: 'prov/default' } as SessionMetadata;
 const turnOn = (model: string): Message[] => [
@@ -35,6 +36,17 @@ function opts(over: Partial<UseComposerModelOptions> = {}): UseComposerModelOpti
 }
 
 describe('useComposerModel', () => {
+  it('uses the native model kind for a named account without changing its routing key', () => {
+    queryClient.setQueryData(['capabilities'], { platforms: [{ id: 'r-box:cnx_work', kind: 'claudecode' }] });
+    const o = opts({ session: { ...session, platform: 'r-box:cnx_work' } });
+    startModels.set('s1', 'claudecode:anthropic/opus');
+    const view = renderHook(() => useComposerModel(o));
+    expect(view.result.current.activeModel).toBe('anthropic/opus');
+    expect(o.setSelectedModel).toHaveBeenCalledWith('anthropic/opus');
+    expect(o.session?.platform).toBe('r-box:cnx_work');
+    view.unmount();
+    queryClient.clear();
+  });
   beforeEach(() => { localStorage.clear(); startModels.clear(); });
 
   it('seeds the composer once from the session default and dedupes the model list', () => {

@@ -21,6 +21,7 @@ export type ConnectionPlatform = {
 };
 
 export type ConnectionInput = Pick<PlatformConnection, 'kind' | 'name' | 'configuration' | 'directory' | 'enabled'> & {
+  connectionId?: string;
   /** Owner-issued setup identity. Never replace it with an observed path/account. */
   reservationId?: string;
 };

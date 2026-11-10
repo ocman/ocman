@@ -12,8 +12,9 @@ import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSetti
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
-import { useMachinePlatforms, useWorktreeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
-import { basePlatform, modelRefPlatform, qualifyModelRef } from '../../lib/modelRef';
+import { useWorktreeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
+import { basePlatform, qualifyModelRef } from '../../lib/modelRef';
+import { useConnectionSelection } from './useConnectionSelection';
 import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { randomId } from '../../lib/randomId';
@@ -165,13 +166,8 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   }, [activeModel, catalog]);
   const agents = useMemo(() => catalog?.agents ?? [], [catalog]);
 
-  // The model's platform is the conversation's: picking another platform's
-  // model re-points the route, which loads that platform's agents and commands.
-  const machinePlatforms = useMachinePlatforms(remoteId);
-  const platformForModel = useCallback((model: string) => {
-    const base = modelRefPlatform(model);
-    return machinePlatforms.find((p) => basePlatform(p.id) === base)?.id;
-  }, [machinePlatforms]);
+  const selectConnection = useCallback((id: string) => navigate(newSessionPath({ directory, remoteId, platform: id, title, draftId })), [directory, remoteId, title, draftId, navigate]);
+  const { platformForModel, selector: connectionSelector, named: namedConnections } = useConnectionSelection(remoteId, platform, selectConnection, durable.submitted);
   // Re-points the route when model runs on another platform; reports whether it did.
   const repoint = useCallback((model: string) => {
     if (durable.submitted) return false;
@@ -186,12 +182,13 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     if (catalogReady && !selectedModel && activeModel) repoint(activeModel);
   }, [catalogReady, selectedModel, activeModel, repoint]);
   const handleModelChange = useCallback((model: string) => {
+    if (namedConnections && !platformForModel(model)) { setError('Choose a connection for this model before changing platforms.'); return; }
     if (durable.submitted && platformForModel(model) && platformForModel(model) !== durable.record?.request?.platform) { setError('The platform cannot change after the first prompt is submitted.'); return; }
     setSelectedModel(model);
     setSelectedReasoning('');
     saveProjectModel(directory, model);
     if (repoint(model)) setSelectedAgent(''); // agents belong to a platform
-  }, [directory, repoint, durable.submitted, durable.record?.request?.platform, platformForModel]);
+  }, [directory, repoint, durable.submitted, durable.record?.request?.platform, platformForModel, namedConnections]);
   const handleAgentChange = useCallback((agent: string) => {
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
@@ -365,6 +362,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress platform={platform} prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
       </div>
       <div className="oc-viewport-footer" data-testid="conversation-composer">
+        {connectionSelector}
         {cloneURL && <p role="status">On first submission, clone {cloneURL} into {directory} on the selected machine. Local changes will not transfer.</p>}
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}

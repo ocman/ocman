@@ -67,6 +67,11 @@ describe('PlatformConnections', () => {
     expect(onContinue).toHaveBeenCalledOnce();
   });
 
+  it('requires an explicit default before the onboarding project step', () => {
+    mount({ connections: [work], onboarding: true, onContinue: vi.fn() });
+    expect(screen.getByRole('button', { name: 'Choose a project' })).toBeDisabled();
+  });
+
   it('creates an isolated OpenCode connection without trusting client account observations', async () => {
     const { user, props } = mount();
     await user.click(screen.getByRole('button', { name: 'Add platform' }));
