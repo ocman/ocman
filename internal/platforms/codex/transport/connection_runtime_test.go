@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/ocman/ocman/internal/gitexec"
 	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/platforms"
@@ -19,6 +18,10 @@ import (
 
 func TestNamedCodexAccountsExecuteAndRecoverSeparately(t *testing.T) {
 	r := newRig(t)
+	project := t.TempDir()
+	if err := os.Mkdir(filepath.Join(project, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	// The state root deliberately lives in a repository. Account runtime keys
 	// must not collapse to the checkout as ordinary project supervisors do.
 	if out, err := gitexec.Command(t.Context(), "init", "--quiet", r.data).CombinedOutput(); err != nil {
@@ -39,7 +42,7 @@ func TestNamedCodexAccountsExecuteAndRecoverSeparately(t *testing.T) {
 		if err := os.Mkdir(home, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		cfg := Config{DataDir: r.data, State: r.store, Version: "test", Connection: &ConnectionConfig{ID: "cnx_" + uuid.NewString(), Home: home}}
+		cfg := Config{DataDir: r.data, State: r.store, Version: "test", Connection: storedConnection(t, r, home)}
 		p, err := newPlatform(ctx, cfg, launcher{exe: r.exe, cli: r.exe, acp: r.exe})
 		if err != nil {
 			t.Fatal(err)
@@ -58,13 +61,16 @@ func TestNamedCodexAccountsExecuteAndRecoverSeparately(t *testing.T) {
 			t.Fatal(err)
 		}
 		endpoints = append(endpoints, res.Endpoint)
-		created, err := p.CreateSession(ctx, platforms.CreateSessionRequest{Directory: "/repo"})
+		created, err := p.CreateSession(ctx, platforms.CreateSessionRequest{Directory: project})
 		if err != nil || created.ID == "" {
 			t.Fatalf("named ACP execution failed account isolation: %+v %v", created, err)
 		}
-		row, exists, err := r.store.GetManagedProvider(ctx, "codex", p.root)
+		row, exists, err := p.mgr.State.GetManagedProvider(ctx, "codex", p.root)
 		if err != nil || !exists || row.Endpoint != res.Endpoint {
 			t.Fatalf("account-scoped runtime not persisted: %+v %v %v", row, exists, err)
+		}
+		if _, exists, err := r.store.GetManagedProvider(ctx, "codex", p.root); err != nil || exists {
+			t.Fatal("named supervisor polluted legacy runtime state")
 		}
 	}
 	if endpoints[0] == endpoints[1] || accounts[0].root == accounts[1].root {
@@ -75,7 +81,7 @@ func TestNamedCodexAccountsExecuteAndRecoverSeparately(t *testing.T) {
 	}
 	for _, p := range accounts {
 		state := acptest.ReadState(filepath.Join(p.home, "fixture-account-state.json"))
-		if state.Home != p.home || state.CLI != r.exe || state.Directory != "/repo" {
+		if state.Home != p.home || state.CLI != r.exe || state.Directory != project {
 			t.Fatalf("ACP did not use the pinned account configuration: %+v", state)
 		}
 	}
@@ -125,7 +131,7 @@ func TestNamedCodexAccountsExecuteAndRecoverSeparately(t *testing.T) {
 
 func TestNamedCodexPreservesOwnerMCPAndShortSockets(t *testing.T) {
 	r := newRig(t)
-	cfg := Config{DataDir: r.data, Connection: &ConnectionConfig{ID: "cnx_" + uuid.NewString(), Home: t.TempDir()}}
+	cfg := Config{DataDir: r.data, State: r.store, Connection: storedConnection(t, r, t.TempDir())}
 	p, err := newPlatform(t.Context(), cfg, launcher{exe: r.exe, cli: r.exe, acp: r.exe})
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +145,7 @@ func TestNamedCodexPreservesOwnerMCPAndShortSockets(t *testing.T) {
 	if p.mgr.Runtime.Directory != filepath.Join(r.data, "p") {
 		t.Fatal("opaque connection IDs were expanded into the short socket parent")
 	}
-	if !strings.HasSuffix(p.mgr.Runtime.Identity(), "\x00connection-account/v1") {
+	if !strings.HasSuffix(p.mgr.Runtime.Identity(), "\x00connection-account/v2-project-policy") {
 		t.Fatal("unfiltered supervisors could be recovered as a named account")
 	}
 	originalHome := p.home
@@ -157,7 +163,7 @@ func TestNamedCodexRefusesRuntimeRootRetargeting(t *testing.T) {
 	var accounts []*Platform
 	var endpoints []string
 	for range 2 {
-		cfg := Config{DataDir: r.data, State: r.store, Connection: &ConnectionConfig{ID: "cnx_" + uuid.NewString(), Home: t.TempDir()}}
+		cfg := Config{DataDir: r.data, State: r.store, Connection: storedConnection(t, r, t.TempDir())}
 		p, err := newPlatform(ctx, cfg, launcher{exe: r.exe, cli: r.exe, acp: r.exe})
 		if err != nil {
 			t.Fatal(err)
@@ -186,7 +192,7 @@ func TestNamedCodexRefusesRuntimeRootRetargeting(t *testing.T) {
 		t.Fatal("recovery accepted a retargeted account runtime root")
 	}
 	for i, p := range accounts {
-		row, exists, err := r.store.GetManagedProvider(ctx, "codex", p.root)
+		row, exists, err := p.mgr.State.GetManagedProvider(ctx, "codex", p.root)
 		if err != nil || !exists || row.Endpoint != endpoints[i] {
 			t.Fatalf("root refusal changed a runtime record: %+v %v %v", row, exists, err)
 		}

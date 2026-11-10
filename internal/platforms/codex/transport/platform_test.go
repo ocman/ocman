@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/platformconnections"
 	"github.com/ocman/ocman/internal/platforms"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
 	"github.com/ocman/ocman/internal/platforms/codex/appserver/codextest"
@@ -47,7 +48,7 @@ func newRig(t *testing.T) *rig {
 	t.Setenv("FAKE_CODEX_ACP_STATE", filepath.Join(t.TempDir(), "state.json"))
 	t.Setenv("CODEX_HOME", t.TempDir())
 	t.Setenv("FAKE_CODEX_LAUNCHES", filepath.Join(data, "launches"))
-	store, err := state.Open(statetest.Path(t))
+	store, err := state.Open(statetest.Path(t, platformconnections.Schema), platformconnections.Schema)
 	if err != nil {
 		t.Fatal(err)
 	}

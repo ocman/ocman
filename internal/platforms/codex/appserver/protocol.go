@@ -73,7 +73,9 @@ type AccountResponse struct {
 	Account *struct {
 		Type     string `json:"type"`
 		PlanType string `json:"planType,omitempty"`
+		Email    string `json:"email,omitempty"`
 	} `json:"account"`
+	RequiresOpenaiAuth *bool `json:"requiresOpenaiAuth,omitempty"`
 }
 
 type RateLimitsResponse struct {

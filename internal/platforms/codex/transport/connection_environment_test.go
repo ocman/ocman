@@ -9,7 +9,7 @@ import (
 )
 
 func TestConnectionEnvironment(t *testing.T) {
-	base := []string{"HOME=/user", "PATH=/bin", "KEEP=value=with=equals", "CODEX_HOME=/personal",
+	base := []string{"HOME=/user", "PATH=/bin", "KEEP=value=with=equals", "CODEX_HOME=/personal", "CODEX_PROFILE=owner", "OPENAI_FUTURE_AUTH=owner",
 		"OPENAI_API_KEY=test-override", "CODEX_API_KEY=another-override", "CODEX_ACCESS_TOKEN=test-access",
 		"OPENAI_IDENTITY_TOKEN_FILE=/identity", "OPENAI_FEDERATION_RULE_ID=rule", "OPENAI_BASE_URL=https://other.invalid",
 		"OPENAI_ORG_ID=other-org", "OPENAI_PROJECT_ID=other-project", "CODEX_HOME=/duplicate", "MCP_VARIABLE=keep"}

@@ -10,10 +10,7 @@ func connectionEnvironment(base []string, home string) []string {
 	env := make([]string, 0, len(base)+1)
 	for _, entry := range base {
 		key, _, _ := strings.Cut(entry, "=")
-		switch key {
-		case "CODEX_HOME", "CODEX_API_KEY", "OPENAI_API_KEY", "CODEX_ACCESS_TOKEN",
-			"OPENAI_IDENTITY_TOKEN_FILE", "OPENAI_FEDERATION_RULE_ID", "OPENAI_BASE_URL",
-			"OPENAI_ORG_ID", "OPENAI_PROJECT_ID":
+		if strings.HasPrefix(key, "CODEX_") || strings.HasPrefix(key, "OPENAI_") {
 			continue
 		}
 		env = append(env, entry)

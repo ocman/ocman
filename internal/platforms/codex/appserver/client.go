@@ -195,7 +195,9 @@ func (c *Client) ListSkills(ctx context.Context, cwds ...string) ([]SkillsEntry,
 
 func (c *Client) ReadAccount(ctx context.Context) (*AccountResponse, error) {
 	var out AccountResponse
-	return &out, c.Call(ctx, MethodAccountRead, struct{}{}, &out)
+	return &out, c.Call(ctx, MethodAccountRead, struct {
+		RefreshToken bool `json:"refreshToken"`
+	}{false}, &out)
 }
 
 func (c *Client) ReadRateLimits(ctx context.Context) (*RateLimitSnapshot, error) {

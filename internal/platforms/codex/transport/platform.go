@@ -18,6 +18,7 @@ import (
 	"github.com/ocman/ocman/internal/hostsvc/local"
 	"github.com/ocman/ocman/internal/mcpauth"
 	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platformconnections"
 	"github.com/ocman/ocman/internal/platforms"
 	codexprovider "github.com/ocman/ocman/internal/platforms/codex/provider"
 	"github.com/ocman/ocman/internal/platforms/provider"
@@ -108,7 +109,31 @@ func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error)
 		addr, _ := p.mcpAddr.Load().(string)
 		return paths.runtimeIdentity(strings.Join([]string{l.cli, l.acp, paths.home, supervisorIdentity, addr}, "\x00"))
 	}
-	p.mgr = &local.ProviderManager{Runtime: runtime, State: cfg.State, OnDrain: p.onDrain, CanonicalRoots: paths.named}
+	var runtimeState local.ProviderState
+	if cfg.State != nil {
+		runtimeState = cfg.State
+	}
+	if paths.named {
+		if cfg.State == nil {
+			stop()
+			return nil, fmt.Errorf("named Codex requires owner state")
+		}
+		connection, err := platformconnections.New(cfg.State).Get(ctx, cfg.Connection.ID)
+		if err != nil {
+			stop()
+			return nil, err
+		}
+		if connection.Kind != "codex" || connection.Directory != paths.home {
+			stop()
+			return nil, fmt.Errorf("named Codex persisted home differs from selected home")
+		}
+		runtimeState, err = platformconnections.NewRuntimeStore(ctx, cfg.State, connection)
+		if err != nil {
+			stop()
+			return nil, err
+		}
+	}
+	p.mgr = &local.ProviderManager{Runtime: runtime, State: runtimeState, OnDrain: p.onDrain, CanonicalRoots: paths.named}
 	if cfg.State != nil {
 		p.wg.Go(p.recover)
 	}

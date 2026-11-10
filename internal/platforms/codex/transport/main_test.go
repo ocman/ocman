@@ -26,7 +26,11 @@ func TestMain(m *testing.M) {
 		requireFakeStoredAccount()
 		acptest.Serve(os.Stdin, os.Stdout, acptest.Config{State: fakeAccountState(), Permission: os.Getenv("FAKE_CODEX_APPROVAL") != ""})
 	case len(os.Args) > 1 && os.Args[1] == "--version":
-		fmt.Println("codex-cli 9.9.9")
+		if os.Getenv("FAKE_CODEX_INSPECTION") != "" {
+			fmt.Println("codex-cli 0.164.0")
+		} else {
+			fmt.Println("codex-cli 9.9.9")
+		}
 	case len(os.Args) > 1 && os.Args[1] == "app-server":
 		requireFakeStoredAccount()
 		if path := os.Getenv("FAKE_CODEX_LAUNCHES"); path != "" {
@@ -39,6 +43,9 @@ func TestMain(m *testing.M) {
 		}
 		s := codextest.Serve(os.Stdin, os.Stdout, func(s *codextest.Server) {
 			fakeCodex(s)
+			if os.Getenv("FAKE_CODEX_INSPECTION") != "" {
+				fakeInspection(s)
+			}
 			if path := fakeAccountState(); path != "" {
 				acptest.ConfigureNative(s, path)
 			}
@@ -48,6 +55,19 @@ func TestMain(m *testing.M) {
 		os.Exit(2)
 	}
 	os.Exit(0)
+}
+
+func fakeInspection(s *codextest.Server) {
+	home := os.Getenv("CODEX_HOME")
+	s.Handle("initialize", func(json.RawMessage) (any, error) {
+		return codexappserver.InitializeResponse{UserAgent: "ocman/1", CodexHome: home}, nil
+	})
+	s.Handle("config/read", func(json.RawMessage) (any, error) {
+		return map[string]any{"config": map[string]any{}, "layers": []any{map[string]any{"name": map[string]any{"type": "user", "file": filepath.Join(home, "config.toml")}, "config": map[string]any{}}}}, nil
+	})
+	s.Handle("account/read", func(json.RawMessage) (any, error) {
+		return map[string]any{"account": map[string]any{"type": "chatgpt", "email": "person@example.invalid", "planType": "plus"}, "requiresOpenaiAuth": true}, nil
+	})
 }
 
 func fakeAccountState() string {

@@ -29,7 +29,13 @@ func (a *acpExecution) send(ctx context.Context, id string, req platforms.SendMe
 	}
 	a.b.mu.Lock()
 	s := a.b.sessionLocked(id)
+	directory := s.dir
 	a.b.mu.Unlock()
+	if directory != "" {
+		if err := a.checkConnectionProject(directory); err != nil {
+			return err
+		}
+	}
 	if !s.sendMu.TryLock() {
 		return platforms.ErrBusy
 	}

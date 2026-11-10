@@ -101,7 +101,7 @@ func privateRuntimeDirectory(root *os.Root, name string) (*os.Root, error) {
 
 func (p connectionPaths) runtimeIdentity(base string) string {
 	if p.named {
-		return base + "\x00connection-account/v1"
+		return base + "\x00connection-account/v2-project-policy"
 	}
 	return base
 }

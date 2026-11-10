@@ -25,7 +25,7 @@ func TestExtraMethods(t *testing.T) {
 		t.Fatalf("skills = %+v %v", skills, err)
 	}
 	account, err := c.ReadAccount(ctx(t))
-	if err != nil || account.Account == nil || account.Account.PlanType != "pro" {
+	if err != nil || account.Account == nil || account.Account.PlanType != "pro" || account.Account.Email != "x" || account.RequiresOpenaiAuth == nil || !*account.RequiresOpenaiAuth {
 		t.Fatalf("account = %+v %v", account, err)
 	}
 	limits, err := c.ReadRateLimits(ctx(t))
@@ -34,7 +34,7 @@ func TestExtraMethods(t *testing.T) {
 	}
 	want := map[string]string{
 		"skills/list":  `{"cwds":["/r"]}`,
-		"account/read": `{}`,
+		"account/read": `{"refreshToken":false}`,
 	}
 	for _, call := range s.Calls() {
 		if w, ok := want[call.Method]; ok && string(call.Params) != w {

@@ -17,13 +17,14 @@ import (
 
 // Options configures a Codex supervisor.
 type Options struct {
-	CLI        string          // codex executable
-	Env        []string        // child environment; nil inherits this process's
-	Dir        string          // app-server working directory, the project root
-	Version    string          // ocman version reported as clientInfo
-	ACPCommand acpexec.Command // installed adapter; empty uses codex-acp
-	Home       string          // canonical Codex home shared with native history
-	MCPAddr    string          // bound ocman MCP listener
+	ConnectionAccount bool            // named accounts reject project configuration at execution admission
+	CLI               string          // codex executable
+	Env               []string        // child environment; nil inherits this process's
+	Dir               string          // app-server working directory, the project root
+	Version           string          // ocman version reported as clientInfo
+	ACPCommand        acpexec.Command // installed adapter; empty uses codex-acp
+	Home              string          // canonical Codex home shared with native history
+	MCPAddr           string          // bound ocman MCP listener
 	// MCPTokenFile holds that listener's bearer token (mcpauth), read for
 	// each session so a regenerated token is picked up.
 	MCPTokenFile string

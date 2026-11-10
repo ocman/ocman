@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/ocman/ocman/internal/platformconnections"
 )
 
 func TestNamedConnectionPinsHomeAndRuntimeState(t *testing.T) {
@@ -15,8 +16,8 @@ func TestNamedConnectionPinsHomeAndRuntimeState(t *testing.T) {
 	defer cancel()
 	var accounts []*Platform
 	for range 2 {
-		connection := ConnectionConfig{ID: "cnx_" + uuid.NewString(), Home: t.TempDir()}
-		p, err := newPlatform(ctx, Config{DataDir: r.data, Connection: &connection}, launcher{exe: r.exe, cli: r.exe, acp: r.exe})
+		connection := storedConnection(t, r, t.TempDir())
+		p, err := newPlatform(ctx, Config{State: r.store, DataDir: r.data, Connection: connection}, launcher{exe: r.exe, cli: r.exe, acp: r.exe})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -40,6 +41,23 @@ func TestNamedConnectionPinsHomeAndRuntimeState(t *testing.T) {
 	if os.Getenv("CODEX_HOME") == accounts[0].home || os.Getenv("CODEX_HOME") == accounts[1].home {
 		t.Fatal("constructor changed the process-global account")
 	}
+}
+
+func storedConnection(t *testing.T, r *rig, home string) *ConnectionConfig {
+	t.Helper()
+	s := platformconnections.New(r.store)
+	if _, err := s.Initialize(t.Context(), platformconnections.Seed{}); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Create(t.Context(), platformconnections.Input{Kind: "codex", Name: "Test account", Configuration: "isolated", Directory: canonical, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &ConnectionConfig{ID: c.ID, Home: home}
 }
 
 func TestNamedConnectionNeverFallsBack(t *testing.T) {
@@ -66,5 +84,17 @@ func TestNamedConnectionNeverFallsBack(t *testing.T) {
 				t.Fatal("invalid named connection fell back to the machine account")
 			}
 		})
+	}
+}
+
+func TestLegacyCodexWithoutStateKeepsNilProviderStore(t *testing.T) {
+	r := newRig(t)
+	p, err := newPlatform(t.Context(), Config{DataDir: r.data}, launcher{exe: r.exe, cli: r.exe, acp: r.exe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if p.mgr.State != nil {
+		t.Fatal("nil owner DB became a non-nil provider state interface")
 	}
 }

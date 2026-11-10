@@ -172,6 +172,9 @@ func (a *acpExecution) create(ctx context.Context, req platforms.CreateSessionRe
 	if err := absoluteACPDirectory(req.Directory); err != nil {
 		return nil, errors.Join(platforms.ErrCreationRejected, providersupervisor.WithStatus(http.StatusBadRequest, err))
 	}
+	if err := a.checkConnectionProject(req.Directory); err != nil {
+		return nil, errors.Join(platforms.ErrCreationRejected, err)
+	}
 	c, err := a.conn(ctx)
 	if err != nil {
 		return nil, errors.Join(platforms.ErrCreationRejected, err)
@@ -223,7 +226,10 @@ func (a *acpExecution) resume(ctx context.Context, c *acpexec.Client, id string)
 	loaded := a.loaded[id]
 	a.mu.Unlock()
 	if loaded {
-		return nil
+		a.b.mu.Lock()
+		dir := s.dir
+		a.b.mu.Unlock()
+		return a.checkConnectionProject(dir)
 	}
 	native, _, err := a.b.conn(ctx)
 	if err != nil {
@@ -238,6 +244,12 @@ func (a *acpExecution) resume(ctx context.Context, c *acpexec.Client, id string)
 	}
 	if thread.ParentThreadID != "" {
 		return platforms.ErrUnsupported
+	}
+	if err := a.checkConnectionProject(thread.Cwd); err != nil {
+		return err
+	}
+	if a.b.opts.ConnectionAccount && thread.ModelProvider != "" && thread.ModelProvider != "openai" {
+		return fmt.Errorf("named Codex cannot resume a custom-provider session")
 	}
 	a.mu.Lock()
 	a.loading[id] = true

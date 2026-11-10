@@ -62,6 +62,7 @@ func (a supervisorArgs) options() codexprovider.Options {
 		opts.Env = append(os.Environ(), "CODEX_HOME="+a.Home)
 	}
 	if a.ConnectionAccount {
+		opts.ConnectionAccount = true
 		opts.Env = connectionEnvironment(os.Environ(), a.Home)
 	}
 	return opts
