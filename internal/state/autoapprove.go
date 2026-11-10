@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -202,6 +203,15 @@ func (d *DB) GetPromptSections(ctx context.Context) ([]PromptSection, error) {
 	if s := d.managedSnapshot(); s != nil {
 		return append([]PromptSection{}, s.PromptSections...), nil
 	}
+	if d.fileConfig.Load() != nil {
+		value, ok, err := d.GetSetting(ctx, managedPromptSectionsKey)
+		if err != nil || !ok {
+			return []PromptSection{}, err
+		}
+		var sections []PromptSection
+		err = json.Unmarshal([]byte(value), &sections)
+		return sections, err
+	}
 	var sectionsJSON string
 	err := d.db.QueryRowContext(ctx, `SELECT sections_json FROM judge_prompt_sections WHERE id = 1`).Scan(&sectionsJSON)
 	if err == sql.ErrNoRows {
@@ -235,6 +245,9 @@ func (d *DB) SetPromptSections(ctx context.Context, sections []PromptSection) (e
 	if err != nil {
 		return fmt.Errorf("encoding prompt sections: %w", err)
 	}
+	if d.fileConfig.Load() != nil {
+		return d.SetSetting(ctx, managedPromptSectionsKey, string(b))
+	}
 	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO judge_prompt_sections (id, sections_json, updated_at)
 		VALUES (1, ?, ?)
@@ -257,6 +270,13 @@ const DefaultJudgeDelayMs = 5000
 func (d *DB) GetJudgeDelayMs(ctx context.Context) (int64, error) {
 	if s := d.managedSnapshot(); s != nil {
 		return s.JudgeDelayMs, nil
+	}
+	if d.fileConfig.Load() != nil {
+		value, ok, err := d.GetSetting(ctx, managedJudgeDelayKey)
+		if err != nil || !ok {
+			return DefaultJudgeDelayMs, err
+		}
+		return strconv.ParseInt(value, 10, 64)
 	}
 	var ms int64
 	err := d.db.QueryRowContext(ctx, `SELECT delay_ms FROM judge_settings WHERE id = 1`).Scan(&ms)
@@ -282,6 +302,9 @@ func (d *DB) SetJudgeDelayMs(ctx context.Context, ms int64) (err error) {
 	}()
 	if ms < 0 {
 		ms = 0
+	}
+	if d.fileConfig.Load() != nil {
+		return d.SetSetting(ctx, managedJudgeDelayKey, strconv.FormatInt(ms, 10))
 	}
 	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO judge_settings (id, delay_ms) VALUES (1, ?)

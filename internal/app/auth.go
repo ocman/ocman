@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"net"
 	"net/url"
@@ -108,7 +109,7 @@ func baseURLIsLoopback(raw string) bool {
 
 // resolveAuthPassword uses env > file > flag, preserving leading whitespace.
 func resolveAuthPassword(flagValue, fileValue string) (string, error) {
-	if v := strings.TrimRight(os.Getenv(authPasswordEnv), "\r\n"); v != "" {
+	if v := authPasswordFromEnvironment(); v != "" {
 		return v, nil
 	}
 	if fileValue != "" {
@@ -121,6 +122,10 @@ func resolveAuthPassword(flagValue, fileValue string) (string, error) {
 	return flagValue, nil
 }
 
+func authPasswordFromEnvironment() string {
+	return strings.TrimRight(os.Getenv(authPasswordEnv), "\r\n")
+}
+
 func buildAuth(ctx context.Context, stateDB *state.DB, flagValue, fileValue string, ttl time.Duration, addr string, trustLocalhostFlag bool) (*server.Auth, error) {
 	password, err := resolveAuthPassword(flagValue, fileValue)
 	if err != nil {
@@ -129,7 +134,7 @@ func buildAuth(ctx context.Context, stateDB *state.DB, flagValue, fileValue stri
 	if password == "" {
 		return nil, nil
 	}
-	if flagValue != "" && os.Getenv(authPasswordEnv) == "" && fileValue == "" {
+	if flagValue != "" && authPasswordFromEnvironment() == "" && fileValue == "" && flagPresent(flag.CommandLine, os.Args[1:], "auth-password") {
 		log.Warn("-auth-password exposes the password to other local users via ps; " + "prefer " + authPasswordEnv + " or -auth-password-file")
 	}
 	hash, err := server.HashPassword(password)

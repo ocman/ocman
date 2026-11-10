@@ -308,6 +308,10 @@ func (m *Module) handleJudgeEndpoint(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := m.Store.SetSetting(r.Context(), JudgeEndpointSettingKey, string(value)); err != nil {
+			if errors.Is(err, state.ErrExternalSecret) {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
 			httpx.ServerError(w, "saving reviewer endpoint", err)
 			return
 		}

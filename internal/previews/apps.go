@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/state"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -209,6 +210,10 @@ func (m *Module) editPreviewApps(w http.ResponseWriter, r *http.Request, change 
 	}
 	value, _ := json.Marshal(apps)
 	if err := m.Store.SetSecretSetting(r.Context(), previewAppsKey, string(value)); err != nil {
+		if errors.Is(err, state.ErrExternalSecret) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		httpx.ServerError(w, "saving preview apps", err)
 		return
 	}

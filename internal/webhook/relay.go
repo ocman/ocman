@@ -1,9 +1,11 @@
 package webhook
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/ocman/ocman/internal/httpx"
+	"github.com/ocman/ocman/internal/state"
 	"net/url"
 	"strings"
 )
@@ -70,20 +72,25 @@ func (m *Module) handleRelaySetting(w http.ResponseWriter, r *http.Request) {
 		if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &body) {
 			return
 		}
+		updates := map[string]string{}
 		if body.RelayURL != nil {
 			relay := strings.TrimRight(strings.TrimSpace(*body.RelayURL), "/")
 			if u, err := url.Parse(relay); relay != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
 				http.Error(w, "relay URL must be an http(s) URL", http.StatusBadRequest)
 				return
 			}
-			if err := m.store.SetSetting(r.Context(), settingWebhookRelayURL, relay); err != nil {
-				httpx.ServerError(w, "saving webhook relay", err)
-				return
-			}
+			updates[settingWebhookRelayURL] = relay
 		}
 		if body.EnrollmentToken != nil {
-			if err := m.store.SetSetting(r.Context(), settingWebhookEnrollmentToken, strings.TrimSpace(*body.EnrollmentToken)); err != nil {
-				httpx.ServerError(w, "saving webhook enrollment token", err)
+			updates[settingWebhookEnrollmentToken] = strings.TrimSpace(*body.EnrollmentToken)
+		}
+		if len(updates) > 0 {
+			if err := m.store.SetSettings(r.Context(), updates); err != nil {
+				if errors.Is(err, state.ErrExternalSecret) {
+					http.Error(w, err.Error(), http.StatusConflict)
+					return
+				}
+				httpx.ServerError(w, "saving webhook relay settings", err)
 				return
 			}
 		}

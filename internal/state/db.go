@@ -34,7 +34,8 @@ type DB struct {
 	// ponytail: serialize plugin file changes per DB; shard by plugin if contention matters.
 	pluginMu sync.Mutex
 	// previewKeyMu serializes first-use generation of the preview credential key.
-	previewKeyMu sync.Mutex
+	previewKeyMu   sync.Mutex
+	configSecretMu sync.Mutex
 	// artifactMu orders blob writes, artifact inserts and blob GC so a delete
 	// never removes a blob a concurrent create is about to reference.
 	artifactMu sync.Mutex
@@ -45,6 +46,7 @@ type DB struct {
 	// otherwise. See EnableManagedSettings.
 	managed        atomic.Pointer[managedLayer]
 	managedChanged atomic.Pointer[func()]
+	fileConfig     atomic.Pointer[fileConfig]
 }
 
 // DefaultDBPath returns OCMAN_STATE_DB when set, otherwise the default state path.

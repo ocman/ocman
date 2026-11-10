@@ -4,12 +4,36 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 type appsResp struct {
 	Apps []previewAppView
+}
+
+func TestPreviewAppsFileConfigurationRefusesExternalUpdates(t *testing.T) {
+	s := newHarness(t)
+	t.Setenv("PREVIEW_CONFIG_TEST", `[{"kind":"github","clientId":"id","clientSecret":"external-preview-secret"}]`)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("version: 1\nsettings:\n  preview_apps: secret://env/PREVIEW_CONFIG_TEST\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.EnableFileConfig(t.Context(), path); err != nil {
+		t.Fatal(err)
+	}
+	b := newBrowser()
+	for _, edit := range []struct{ path, body string }{
+		{"/api/previews/apps/save", `{"kind":"github","clientId":"id","clientSecret":"replacement"}`},
+		{"/api/previews/apps/remove", `{"id":"github"}`},
+	} {
+		rr := b.do(t, s, http.MethodPost, edit.path, edit.body)
+		if rr.Code != http.StatusConflict || strings.Contains(rr.Body.String(), "external-preview-secret") {
+			t.Fatalf("external edit = %d %s", rr.Code, rr.Body.String())
+		}
+	}
 }
 
 func appsOf(t *testing.T, rr *httptest.ResponseRecorder) map[string]previewAppView {

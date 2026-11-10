@@ -34,7 +34,8 @@ flowchart LR
     Ocman -->|HTTP/SSE or CLI protocols| Platforms[Local OpenCode, Claude Code<br/>and opt-in Codex]
     Platforms --> Native[(Native databases,<br/>transcripts and rollouts)]
     Native -->|owner-local ingestion| Ocman
-    Ocman --> Stores[(state.db + state_conv.db<br/>application state and retained history)]
+    Ocman --> Stores[(state.db + state_conv.db<br/>runtime state, encrypted secrets and history)]
+    Ocman <-->|startup migration and setting reads/writes| Config[config.yaml<br/>declarative settings and secret references]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
     Browser -->|virtual one-off project or Option+O, then normal draft| Ocman
     Browser -->|Activity: 1s resource polling,<br/>process tree and session context| Ocman
@@ -67,6 +68,16 @@ flowchart LR
   or provider fallthrough. Other tools remain
   denied. Creation receipts, platforms and the completion outbox are reused;
   the host does not interpret the source or its output schema.
+- **Configuration.** `internal/configfile` owns the versioned YAML document,
+  comment-preserving atomic edits and provider-based secret resolution.
+  `internal/app` applies startup options before CLI parsing; `internal/state`
+  migrates allowlisted settings once and routes existing setting APIs to the
+  file while preserving old database rows as a backup.
+  Canonical adapters pass an effective archive-policy loader to the compact
+  sidebar reader, so local and remote views do not use the retained preference.
+  Encrypted ocman-managed secret slots and their stable key remain owner-local database
+  state; external credentials are never copied there. Dedicated feature tables
+  still need provisioning adapters. See [configuration file](../configuration/file.md).
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.

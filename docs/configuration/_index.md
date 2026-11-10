@@ -77,7 +77,9 @@ its provider.
   probabilities, not measured error-rate guarantees. The static hard denylist
   still runs before the reviewer; Jev does not override manual permission rules.
 
-Endpoint settings and keys persist in this instance's owner-only `state.db`.
+Endpoint settings persist in the [configuration file](file.md); UI-managed keys
+remain encrypted in this instance's owner-only `state.db` and are referenced from
+the file. External secret references are read-only through the UI.
 Settings responses never return a saved key. Leave the key field blank to keep
 it, or use **Remove stored API key** and save to delete it. Changing the URL
 clears the old key unless you supply a replacement. Keys are sent only as
@@ -95,6 +97,11 @@ API calls use that provider's billing, independently of any ChatGPT subscription
 
 ## Running ocman
 
+Startup options and supported saved settings can also be managed through the
+[configuration file](file.md). On first startup, ocman migrates supported saved
+settings into YAML and retains the database rows as a backup. The UI writes
+supported settings back to that file.
+
 ```sh
 ./ocman                                      # default: listens on 127.0.0.1:8228
 ./ocman -addr localhost:9090                 # custom listen address
@@ -104,7 +111,7 @@ API calls use that provider's billing, independently of any ChatGPT subscription
 ./ocman -platforms opencode,codex           # OpenCode and Codex
 ```
 
-Ocman's own state (archived/seen flags, auth secret, favorites and settings) lives in
+Ocman's own runtime state (archived/seen flags, auth secret, favorites and managed credentials) lives in
 `~/.local/share/ocman/state.db`, created on first run and migrated automatically. Startup
 enforces owner-only permissions, `0700` for the directory and `0600` for the database and
 SQLite sidecars, and fails rather than continuing if existing paths cannot be secured.
@@ -207,6 +214,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-addr` | `127.0.0.1:8228` | Listen address. |
+| `-config` | XDG config path, or beside an explicitly isolated state DB | YAML configuration file; also `OCMAN_CONFIG`. See [configuration file](file.md). |
 | `-db` | `~/.local/share/opencode/opencode.db` | Path to OpenCode's SQLite DB. Opened read-only. |
 | `-conversations-db` | `state_conv.db` beside `state.db` | Retained conversation store. Also `OCMAN_CONVERSATIONS_DB`; deprecated alias `-statev2-db`. |
 | `-gui` | Auto-enabled in an app bundle, otherwise `false` | Open a native Wails desktop window. Only the desktop build (`make build-desktop`) includes it; headless builds exit with an error. |

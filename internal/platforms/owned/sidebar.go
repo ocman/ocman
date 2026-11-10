@@ -39,6 +39,7 @@ func (a *Adapter) openSidebar(ctx context.Context) (*sidebar.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.WithArchiveResurfaceMode(a.sidebarArchiveMode)
 	a.sidebarGeneration = uuid.NewString()
 	if a.source.SourceKey != "" {
 		if err := a.history.BeginSidebarGeneration(ctx, a.observationScope(), a.sidebarGeneration); err != nil {

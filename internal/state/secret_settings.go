@@ -9,6 +9,9 @@ import (
 // SetSecretSetting stores value under key sealed with the same AES-GCM key
 // that protects remote tokens, so a copied setting row alone reveals nothing.
 func (d *DB) SetSecretSetting(ctx context.Context, key, value string) error {
+	if d.fileConfig.Load() != nil && isFileSecret(key) {
+		return d.SetSetting(ctx, key, value)
+	}
 	sealed, err := d.encryptToken(ctx, value)
 	if err != nil {
 		return err
@@ -18,6 +21,9 @@ func (d *DB) SetSecretSetting(ctx context.Context, key, value string) error {
 
 // GetSecretSetting opens a value written by SetSecretSetting.
 func (d *DB) GetSecretSetting(ctx context.Context, key string) (string, bool, error) {
+	if d.fileConfig.Load() != nil && isFileSecret(key) {
+		return d.GetSetting(ctx, key)
+	}
 	stored, ok, err := d.GetSetting(ctx, key)
 	if err != nil || !ok {
 		return "", ok, err

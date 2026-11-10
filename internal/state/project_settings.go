@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+
+	"github.com/ocman/ocman/internal/configfile"
 )
 
 // ProjectSettings is a project's ordered model list. Models[0] is the
@@ -83,6 +85,12 @@ func (d *DB) SetProjectSettings(ctx context.Context, dir string, ps ProjectSetti
 	}
 	key := projectSettingKey(dir)
 	if len(ps.Models) == 0 {
+		if f := d.fileConfig.Load(); f != nil {
+			return f.file.Update(func(doc *configfile.Document) error {
+				doc.Delete("settings", key)
+				return nil
+			})
+		}
 		if _, err := d.db.ExecContext(ctx, `DELETE FROM setting WHERE key = ?`, key); err != nil {
 			return fmt.Errorf("deleting setting %q: %w", key, err)
 		}

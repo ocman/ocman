@@ -25,25 +25,26 @@ type sourceReader interface {
 // Remote adapters already receive canonical IDs from their authenticated owner
 // and must never allocate a second identity on a hub.
 type Adapter struct {
-	native            platforms.Integration
-	store             *sessioncatalog.Store
-	owner             string
-	source            platforms.HistoryIdentity
-	sourceScoped      bool
-	readSources       map[string]bool
-	legacyReadiness   bool
-	reader            sourceReader
-	unavailable       error
-	byID              sync.Map
-	lifecycle         lifecycleEvents
-	history           *statev2.DB
-	historyWait       func(context.Context, string) bool
-	historyNotify     func(string)
-	historyRefresh    func(context.Context, string) error
-	sidebarMu         sync.Mutex
-	sidebarReader     *sidebar.Reader
-	sidebarGeneration string
-	background        backgroundState
+	native             platforms.Integration
+	store              *sessioncatalog.Store
+	owner              string
+	source             platforms.HistoryIdentity
+	sourceScoped       bool
+	readSources        map[string]bool
+	legacyReadiness    bool
+	reader             sourceReader
+	unavailable        error
+	byID               sync.Map
+	lifecycle          lifecycleEvents
+	history            *statev2.DB
+	historyWait        func(context.Context, string) bool
+	historyNotify      func(string)
+	historyRefresh     func(context.Context, string) error
+	sidebarMu          sync.Mutex
+	sidebarReader      *sidebar.Reader
+	sidebarGeneration  string
+	sidebarArchiveMode func(context.Context) (string, error)
+	background         backgroundState
 }
 
 // New binds one owner-local integration to its catalogue and persisted read

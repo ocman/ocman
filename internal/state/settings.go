@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -14,6 +15,9 @@ import (
 func (d *DB) GetSetting(ctx context.Context, key string) (value string, ok bool, err error) {
 	if value, ok, managed := d.managedSettingValue(key); managed {
 		return value, ok, nil
+	}
+	if f := d.fileConfig.Load(); f != nil && isFileSetting(key) {
+		return f.get(ctx, key)
 	}
 	err = d.reader().QueryRowContext(ctx, `SELECT value FROM setting WHERE key = ?`, key).Scan(&value)
 	if err == sql.ErrNoRows {
@@ -62,7 +66,13 @@ func (d *DB) SetSetting(ctx context.Context, key, value string) error {
 	if err := d.rejectManagedWrite(key); err != nil {
 		return err
 	}
-	if err := d.setSetting(ctx, key, value); err != nil {
+	var err error
+	if d.fileConfig.Load() != nil && isFileSetting(key) {
+		err = d.writeFileSetting(ctx, key, value)
+	} else {
+		err = d.setSetting(ctx, key, value)
+	}
+	if err != nil {
 		return err
 	}
 	if key == JudgeModelSettingKey {
@@ -81,6 +91,43 @@ func (d *DB) setSetting(ctx context.Context, key, value string) error {
 	`, key, value, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("setting %q: %w", key, err)
+	}
+	return nil
+}
+
+// SetSettings saves one settings form atomically. Runtime rows cannot be mixed
+// with file-backed settings, since SQLite and the filesystem share no transaction.
+func (d *DB) SetSettings(ctx context.Context, values map[string]string) error {
+	for key := range values {
+		if err := d.rejectManagedWrite(key); err != nil {
+			return err
+		}
+		if d.fileConfig.Load() != nil && !isFileSetting(key) {
+			return errors.New("cannot mix runtime state with file-backed settings")
+		}
+	}
+	if d.fileConfig.Load() != nil {
+		if err := d.writeFileSettings(ctx, values); err != nil {
+			return err
+		}
+	} else {
+		tx, err := d.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		for key, value := range values {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO setting(key,value,updated_at) VALUES(?,?,?)
+				ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, time.Now().UnixMilli()); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	if _, changed := values[JudgeModelSettingKey]; changed {
+		d.notifyManagedSettingsChange()
 	}
 	return nil
 }

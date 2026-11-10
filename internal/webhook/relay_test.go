@@ -4,9 +4,35 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestWebhookFileConfigurationRefusesExternalTokenUpdates(t *testing.T) {
+	m, handler := testModule(t)
+	t.Setenv("WEBHOOK_CONFIG_TEST", "external-enrollment-secret")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("version: 1\nsettings:\n  webhook.enrollment_token: secret://env/WEBHOOK_CONFIG_TEST\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.EnableFileConfig(t.Context(), path); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{`{"enrollmentToken":"replacement"}`, `{"enrollmentToken":""}`} {
+		rr := do(t, handler, http.MethodPost, "/api/settings/webhook-relay", body)
+		if rr.Code != http.StatusConflict || strings.Contains(rr.Body.String(), "external-enrollment-secret") {
+			t.Fatalf("external token edit = %d %s", rr.Code, rr.Body.String())
+		}
+	}
+	before, _ := os.ReadFile(path)
+	rr := do(t, handler, http.MethodPost, "/api/settings/webhook-relay", `{"relayUrl":"https://new-relay.example","enrollmentToken":"replacement"}`)
+	after, _ := os.ReadFile(path)
+	if rr.Code != http.StatusConflict || string(before) != string(after) {
+		t.Fatal("refused secret update partially saved the relay URL")
+	}
+}
 
 func TestWebhookRelaySettingFeedsRegistration(t *testing.T) {
 	var gotAuth string

@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -69,6 +70,7 @@ func run() {
 	toolPathErr := toolpath.Ensure()
 
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
+	configPath := flag.String("config", defaultConfigPath(), "configuration file (also OCMAN_CONFIG; migrated from saved settings on first startup)")
 	guiMode := flag.Bool("gui", isAppBundle(), "open a native desktop window (Wails) instead of just serving HTTP")
 	guiBootTimeout := flag.Duration("gui-boot-timeout", 10*time.Second, "how long --gui waits for the backend to answer before showing an error")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:0", "listen address for the backend when --gui is set (default picks an ephemeral port)")
@@ -99,6 +101,11 @@ func run() {
 	remoteManaged := flag.Bool("remote-managed", false, "run as a managed remote: auto-approve settings come from the connected hub instead of this machine (requires -remote-listen)")
 	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow a non-loopback -addr/-gui-addr or a public -public-base-url with no password configured (also "+insecureNoAuthEnv+"=1)")
 	logFile := flag.String("log-file", "", "log file path in addition to stderr (empty = ~/Library/Logs/ocman/ocman.log on macOS, else $XDG_STATE_HOME/ocman/ocman.log; \"-\" or \"off\" = stderr only)")
+	resolvedConfigPath, configErr := prepareFileConfig(flag.CommandLine, os.Args[1:], *configPath)
+	if configErr != nil {
+		setupFailedConfigDiagnostics(flag.CommandLine, os.Args[1:])
+		gui.Fatalf("Failed to load configuration: %v", configErr)
+	}
 	flag.Parse()
 	home, _ := os.UserHomeDir()
 	logPath := setupLogFile(resolveLogPath(*logFile, runtime.GOOS, home, os.Getenv("XDG_STATE_HOME")))
@@ -110,6 +117,9 @@ func run() {
 		log.WithError(toolPathErr).Warn("login shell PATH unavailable; tools may look missing")
 	}
 	fatal := gui.Fatalf
+	if err := resolveConfigAuth(flag.CommandLine, os.Args[1:]); err != nil {
+		fatal("Failed to load authentication configuration: %v", err)
+	}
 	if err := validateRemoteTransport(*remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay); err != nil {
 		fatal("%v", err)
 	}
@@ -185,6 +195,10 @@ func run() {
 			fatal("Failed to open state database: %v", err)
 		}
 		defer stateDB.Close()
+		if err := stateDB.EnableFileConfig(ctx, resolvedConfigPath); err != nil {
+			cancel()
+			return fmt.Errorf("loading file configuration: %w", err)
+		}
 		historyDB, err := openApplicationHistory(ctx, stateDB, stateDBPath, *historyPath, os.Getenv)
 		if err != nil {
 			cancel()

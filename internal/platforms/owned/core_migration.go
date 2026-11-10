@@ -36,6 +36,10 @@ func BuildCore(ctx context.Context, core *state.DB, history *statev2.DB, catalog
 			}
 			a = newAdapter(p, catalogue, history, owner, platforms.HistoryIdentity{Platform: string(p.ID())}, nil, err)
 		}
+		a.sidebarArchiveMode = func(ctx context.Context) (string, error) {
+			value, _, err := core.GetSetting(ctx, "session.archive_resurface")
+			return value, err
+		}
 		adapters = append(adapters, a)
 	}
 	return adapters, nil

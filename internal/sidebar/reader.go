@@ -40,9 +40,10 @@ type Scope struct {
 	Sources                             []string
 }
 type Reader struct {
-	db        *sql.DB
-	dsn       string
-	snapshots func(bool) string
+	db          *sql.DB
+	dsn         string
+	snapshots   func(bool) string
+	archiveMode func(context.Context) (string, error)
 }
 
 // Open attaches both files read-only. Catalogue publication and purge checks
@@ -73,6 +74,13 @@ func Open(history, core string) (*Reader, error) {
 }
 
 func (r *Reader) Close() error { err := r.db.Close(); attached.Delete(r.dsn); return err }
+
+// WithArchiveResurfaceMode supplies the effective owner-local policy instead of
+// the legacy SQL preference. Configure the reader before sharing it with callers.
+func (r *Reader) WithArchiveResurfaceMode(load func(context.Context) (string, error)) *Reader {
+	r.archiveMode = load
+	return r
+}
 
 func (r *Reader) Sessions(ctx context.Context, scope Scope, q platforms.SidebarQuery) ([]db.Session, error) {
 	return r.SessionsFor(ctx, []Scope{scope}, q)
@@ -120,6 +128,16 @@ func (r *Reader) sessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 	if limit == 0 {
 		limit = -1
 	}
+	effectiveMode := "halt"
+	if r.archiveMode != nil {
+		value, err := r.archiveMode(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("sidebar: loading archive resurfacing preference: %w", err)
+		}
+		if value == "activity" {
+			effectiveMode = value
+		}
+	}
 	query, args := r.liveQuery(statement, []any{string(raw), string(included), time.Now().UnixMilli(), scope.Owner,
 		q.Directory, q.Directory, q.Since, q.Since, q.Origin, q.Origin, q.OriginID, q.OriginID, limit, q.Offset})
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -146,6 +164,9 @@ func (r *Reader) sessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		}
 		row.Status = status
 		platforms.OverlaySessionObservation(&row, &platforms.LiveState{Status: liveStatus, PendingPermission: row.PendingPermission, PendingQuestion: row.PendingQuestion, BackgroundTaskCount: row.BackgroundTaskCount, BackgroundServiceCount: row.BackgroundServiceCount}, row.LiveConnection)
+		if r.archiveMode != nil {
+			mode = effectiveMode
+		}
 		ApplyFlags(&row, Flags{Seen: hasSeen, SeenInterrupted: seenInterrupted, Archived: hasArchive, ArchivedAt: archiveAt, Mode: mode, ProjectArchivedAt: projectArchiveAt})
 		row.RemoteID, row.RemoteName = "local", "This machine"
 		out = append(out, row)

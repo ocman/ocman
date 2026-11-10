@@ -43,5 +43,18 @@ func (d *DB) SidebarFlags(ctx context.Context) (SidebarFlags, error) {
 			f.Mode = value
 		}
 	}
-	return f, rows.Err()
+	if err := rows.Err(); err != nil {
+		return f, err
+	}
+	if config := d.fileConfig.Load(); config != nil {
+		value, ok, err := config.get(ctx, "session.archive_resurface")
+		if err != nil {
+			return f, err
+		}
+		f.Mode = "halt"
+		if ok {
+			f.Mode = value
+		}
+	}
+	return f, nil
 }

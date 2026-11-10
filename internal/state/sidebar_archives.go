@@ -34,5 +34,18 @@ func (d *DB) SidebarArchives(ctx context.Context, keys []Key) (map[Key]int64, st
 			archives[key] = at
 		}
 	}
-	return archives, mode, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	if config := d.fileConfig.Load(); config != nil {
+		value, ok, err := config.get(ctx, "session.archive_resurface")
+		if err != nil {
+			return nil, "", err
+		}
+		mode = "halt"
+		if ok {
+			mode = value
+		}
+	}
+	return archives, mode, nil
 }
