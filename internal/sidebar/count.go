@@ -37,6 +37,9 @@ func (r *Reader) RunningCount(ctx context.Context, scopes []Scope, q platforms.S
 			return 0, fmt.Errorf("sidebar: invalid count scope")
 		}
 	}
+	if err := validateRoutingScopes(scopes); err != nil {
+		return 0, err
+	}
 	raw, err := json.Marshal(scopes)
 	if err != nil {
 		return 0, err

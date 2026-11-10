@@ -55,14 +55,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if len(preserved) > 0 {
 		have := make(map[state.Key]bool, len(all))
 		for _, sess := range all {
-			have[state.Key{Platform: sess.Platform, SessionID: sess.ID}] = true
+			have[state.Key{Platform: s.sessionStatePlatform(sess.Platform), SessionID: sess.ID}] = true
 		}
 		for key := range preserved {
 			if have[key] {
 				continue
 			}
-			adapter, ok := s.registry.Get(platforms.ID(key.Platform))
-			if !ok || !adapter.Available(ctx) {
+			route, proven := s.publicSessionPlatform(key.Platform, key.SessionID)
+			adapter, ok := s.registry.Get(platforms.ID(route))
+			if !proven || !ok || !adapter.Available(ctx) {
 				continue
 			}
 			row, err := platforms.ReadSessionSummary(ctx, adapter, key.SessionID)
@@ -72,6 +73,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			if dir != "" && row.Directory != dir {
 				continue
 			}
+			row.Platform = route
 			all = append(all, *row)
 		}
 	}
@@ -145,6 +147,11 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 	s.enrichSessionCreator(r.Context(), string(adapter.ID()), sessionID, detail)
+	routeKey := adapter.ID()
+	if key, ok := s.registry.KeyFor(adapter); ok {
+		routeKey = key
+	}
+	statePlatform := s.sessionStatePlatform(string(routeKey))
 	peek := r.URL.Query().Get("peek") == "1"
 	var snoozed map[state.Key]int64
 	if s.stateDB != nil && !peek {
@@ -157,7 +164,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if detail.Session != nil {
 		detail.Session.ProjectDefaultModel = s.projectDefaultModel(r.Context(), detail.Session.Directory)
 		if !peek || s.stateDB == nil {
-			detail.Session.FactoryAttemptID, err = s.factoryAttemptID(r.Context(), string(adapter.ID()), sessionID, detail.Session.ParentID)
+			detail.Session.FactoryAttemptID, err = s.factoryAttemptID(r.Context(), string(routeKey), sessionID, detail.Session.ParentID)
 			if err != nil {
 				httpx.ServerError(w, "fetching Factory session tag", err)
 				return
@@ -174,8 +181,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// and resurface policy as the session list (remote sessions included,
 	// keyed by their compound platform), so an archived session stays
 	// archived while it is still working.
-	if s.stateDB != nil && detail.Session != nil && (peek || snoozed[state.Key{Platform: string(adapter.ID()), SessionID: sessionID}] > 0) {
+	if s.stateDB != nil && detail.Session != nil && (peek || snoozed[state.Key{Platform: statePlatform, SessionID: sessionID}] > 0) {
 		row := []db.Session{*detail.Session}
+		row[0].Platform = string(routeKey)
 		if err := s.applySessionState(r.Context(), row); err != nil {
 			httpx.ServerError(w, "applying session state on peek", err)
 			return
@@ -187,7 +195,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		detail.Session.RoutineID = row[0].RoutineID
 		detail.Session.FactoryAttemptID = row[0].FactoryAttemptID
 	} else if s.stateDB != nil && detail.Session != nil && !remote {
-		if err := s.stateDB.UnarchiveSession(r.Context(), string(adapter.ID()), sessionID); err != nil {
+		if err := s.stateDB.UnarchiveSession(r.Context(), statePlatform, sessionID); err != nil {
 			log.Printf("unarchiving session on open: %v", err)
 		}
 		// Local-only path (remote sessions are skipped above), so the

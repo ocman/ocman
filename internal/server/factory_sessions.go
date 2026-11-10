@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-
-	"github.com/ocman/ocman/internal/state"
 )
 
 // factoryAttemptID tags one session detail the way applySessionState tags the
@@ -16,8 +14,8 @@ func (s *Server) factoryAttemptID(ctx context.Context, platform, sessionID, pare
 	if err != nil {
 		return "", err
 	}
-	if attemptID := tags[state.Key{Platform: platform, SessionID: sessionID}]; attemptID != "" {
+	if attemptID := s.sessionAssociationID(tags, platform, sessionID); attemptID != "" {
 		return attemptID, nil
 	}
-	return tags[state.Key{Platform: platform, SessionID: parentID}], nil
+	return s.sessionAssociationID(tags, platform, parentID), nil
 }

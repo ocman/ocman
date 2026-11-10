@@ -71,7 +71,7 @@ func (s sessionMCPService) SetSessionArchived(ctx context.Context, platform, id 
 	if isRemotePlatformID(platform) {
 		return internalmcp.ArchivedSession{}, internalmcp.ErrArchiveBusyRemote
 	}
-	s.server.deferredArchives.add(platform, id)
+	s.server.deferredArchives.add(s.server.sessionStatePlatform(platform), id)
 	// The turn may have ended between the status read and add, so its idle
 	// edge has passed: archive now instead of waiting for the next turn.
 	if detail, err := s.readTarget(ctx, platform, id); err == nil && detail.Session.Status != db.StatusBusy {
@@ -95,6 +95,7 @@ func (s *Server) applyDeferredArchive(platform, sessionID string) {
 // applyPendingArchive claims and writes a pending archive under one lock,
 // stamped past the idle edge. It reports whether an archive was pending.
 func (s *Server) applyPendingArchive(ctx context.Context, platform, sessionID string) (bool, error) {
+	platform = s.sessionStatePlatform(platform)
 	unlock := s.deferredArchives.lock()
 	defer unlock()
 	if !s.deferredArchives.cancelLocked(platform, sessionID) {

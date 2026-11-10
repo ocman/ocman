@@ -9,10 +9,13 @@ import (
 
 // Remote execution observations belong to their owner. Display flags belong to
 // the hub where the user viewed, pinned, snoozed or archived that remote row.
-func applyRemoteSidebarFlags(rows []db.Session, flags state.SidebarFlags) {
+func applyRemoteSidebarFlags(rows []db.Session, flags state.SidebarFlags, durablePlatform ...string) {
 	for i := range rows {
 		row := &rows[i]
 		key := state.Key{Platform: row.Platform, SessionID: row.ID}
+		if len(durablePlatform) > 0 {
+			key.Platform = durablePlatform[0]
+		}
 		seen, known := flags.Seen[key]
 		row.SeenTimeUpdated = seen.TimeUpdated
 		row.PinnedAt = flags.Pinned[key]

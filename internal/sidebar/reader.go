@@ -35,6 +35,7 @@ func init() {
 
 type Scope struct {
 	Owner, Platform, Source, Generation string
+	RoutingKey                          string
 	Scoped                              bool
 	Sources                             []string
 }
@@ -103,6 +104,9 @@ func (r *Reader) sessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 		if other.Owner != scope.Owner || other.Platform == "" {
 			return nil, fmt.Errorf("sidebar: mixed owner scope")
 		}
+	}
+	if err := validateRoutingScopes(scopes); err != nil {
+		return nil, err
 	}
 	raw, err := json.Marshal(scopes)
 	if err != nil {

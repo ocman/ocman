@@ -25,14 +25,22 @@ func (s *Server) resolvePlatformIDForState(w http.ResponseWriter, r *http.Reques
 			http.Error(w, "unknown platform", http.StatusBadRequest)
 			return "", false
 		}
-		return platform, true
+		statePlatform := s.sessionStatePlatform(platform)
+		if statePlatform != platform {
+			if _, ok := s.publicSessionPlatform(platform, sessionID); !ok {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return "", false
+			}
+		}
+		return statePlatform, true
 	}
 	p, ok := s.registry.PlatformForSession(r.Context(), sessionID)
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return "", false
 	}
-	return string(p.ID()), true
+	key, _ := s.registry.KeyFor(p)
+	return s.sessionStatePlatform(string(key)), true
 }
 
 // validateStateRequest is the shared preamble of the session state
@@ -107,6 +115,7 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 // pending deferred archive, in the same step as the write so a deferred
 // archive claimed concurrently cannot land after it.
 func (s *Server) setSessionArchived(ctx context.Context, platform, sessionID string, timeUpdated int64, archived bool) error {
+	platform = s.sessionStatePlatform(platform)
 	unlock := s.deferredArchives.lock()
 	defer unlock()
 	s.deferredArchives.cancelLocked(platform, sessionID)
@@ -116,6 +125,7 @@ func (s *Server) setSessionArchived(ctx context.Context, platform, sessionID str
 // writeSessionArchived persists and broadcasts archive state. Callers hold
 // the deferredArchives lock; it does not take it again.
 func (s *Server) writeSessionArchived(ctx context.Context, platform, sessionID string, timeUpdated int64, archived bool) error {
+	platform = s.sessionStatePlatform(platform)
 	var err error
 	if archived {
 		// The client's timeUpdated comes from its cached sidebar row,
@@ -254,7 +264,7 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 			sessions[i].RemoteName = "This machine"
 		}
 
-		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
+		key := state.Key{Platform: s.sessionStatePlatform(sessions[i].Platform), SessionID: sessions[i].ID}
 
 		seenState, ok := seen[key]
 		seenAtUpdate := seenState.TimeUpdated
@@ -269,20 +279,21 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 			sessions[i].Pinned = true
 			sessions[i].PinnedAt = pinnedAt
 		}
-		if !isRemotePlatformID(sessions[i].Platform) || routineSessions[key] != "" {
-			sessions[i].RoutineID = routineSessions[key]
+		routineID := s.sessionAssociationID(routineSessions, sessions[i].Platform, sessions[i].ID)
+		if !isRemotePlatformID(sessions[i].Platform) || routineID != "" {
+			sessions[i].RoutineID = routineID
 		}
 		if sessions[i].RoutineID == "" && sessions[i].ParentID != "" {
 			// A subagent of a routine run belongs to the routine too, like
 			// factory attempts below.
-			sessions[i].RoutineID = routineSessions[state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ParentID}]
+			sessions[i].RoutineID = s.sessionAssociationID(routineSessions, sessions[i].Platform, sessions[i].ParentID)
 		}
 		sessions[i].SnoozedUntil = snoozed[key]
-		sessions[i].FactoryAttemptID = factorySessions[key]
+		sessions[i].FactoryAttemptID = s.sessionAssociationID(factorySessions, sessions[i].Platform, sessions[i].ID)
 		if sessions[i].FactoryAttemptID == "" && sessions[i].ParentID != "" {
 			// A subagent of an attempt session belongs to the attempt too, even
 			// when its parent row is outside this list.
-			sessions[i].FactoryAttemptID = factorySessions[state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ParentID}]
+			sessions[i].FactoryAttemptID = s.sessionAssociationID(factorySessions, sessions[i].Platform, sessions[i].ParentID)
 		}
 
 		archivedAtUpdate, ok := archived[key]
@@ -339,7 +350,7 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 		return err
 	}
 	for i := range sessions {
-		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
+		key := state.Key{Platform: s.sessionStatePlatform(sessions[i].Platform), SessionID: sessions[i].ID}
 
 		if seenState, ok := seen[key]; ok {
 			seenAtUpdate := seenState.TimeUpdated

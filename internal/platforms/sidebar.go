@@ -36,6 +36,7 @@ type RunningSessionGroupCounter interface {
 // SidebarGroupReader combines the owner's enabled local platforms in one query.
 type SidebarSource struct {
 	Owner, Platform, Source, Generation string
+	RoutingKey                          string
 	Scoped                              bool
 	Sources                             []string
 }

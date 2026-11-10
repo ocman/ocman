@@ -34,6 +34,8 @@ func (s *Server) runningSessionCount(ctx context.Context, q platforms.SidebarQue
 				return 0, platforms.ErrUnsupported
 			}
 		}
+		key, _ := s.registry.KeyFor(a)
+		source.RoutingKey = string(key)
 		sources = append(sources, source)
 	}
 	for _, a := range adapters {
@@ -59,12 +61,12 @@ func (s *Server) runningSessionCount(ctx context.Context, q platforms.SidebarQue
 		page := q
 		page.IncludeIDs = append([]string(nil), q.IncludeIDs...)
 		for key := range flags.Pinned {
-			if key.Platform == string(a.ID()) {
+			if key.Platform == s.sessionStatePlatform(string(a.ID())) {
 				page.IncludeIDs = append(page.IncludeIDs, key.SessionID)
 			}
 		}
 		for key, until := range flags.Snoozed {
-			if until > 0 && key.Platform == string(a.ID()) {
+			if until > 0 && key.Platform == s.sessionStatePlatform(string(a.ID())) {
 				page.IncludeIDs = append(page.IncludeIDs, key.SessionID)
 			}
 		}

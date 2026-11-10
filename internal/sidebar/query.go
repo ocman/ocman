@@ -7,7 +7,7 @@ package sidebar
 // Background completion gates survive a foreground lease expiring, but never
 // cross an adapter generation or borrow another source's task ownership.
 const observationsCTE = `WITH RECURSIVE runtime AS (
- SELECT json_extract(value,'$.Owner') AS owner,json_extract(value,'$.Platform') AS platform,json_extract(value,'$.Source') AS source,json_extract(value,'$.Generation') AS generation,COALESCE(json_extract(value,'$.Scoped'),0) AS scoped,json_extract(value,'$.Sources') AS sources FROM json_each(?)
+ SELECT json_extract(value,'$.Owner') AS owner,json_extract(value,'$.Platform') AS platform,json_extract(value,'$.Source') AS source,json_extract(value,'$.Generation') AS generation,COALESCE(json_extract(value,'$.Scoped'),0) AS scoped,json_extract(value,'$.Sources') AS sources,json_extract(value,'$.RoutingKey') AS routing_key FROM json_each(?)
 ), requested AS (SELECT value AS id FROM json_each(?)), connections AS (
  SELECT x.* FROM main.sidebar_connection x JOIN runtime r ON r.owner=x.owner_id AND r.platform=x.platform AND r.source=x.source_key AND r.generation=x.generation WHERE x.expires_at>?
 ), live AS (
@@ -40,7 +40,8 @@ const haltsCTE = `, halt_settings AS MATERIALIZED (
  WHERE c.creation_state='ready' AND c.purged=0
   ), halt_flags AS (SELECT id,max(at) AS at FROM halted GROUP BY id)`
 
-const sessionColumns = ` SELECT s.id,i.platform,s.project_id,s.parent_id,s.source_child,s.title,s.directory,s.created_at,s.updated_at,s.last_message_at,
+const sessionColumns = ` SELECT s.id,COALESCE((SELECT NULLIF(r.routing_key,'') FROM runtime r WHERE r.owner=i.owner_id AND r.platform=i.platform
+ AND (r.scoped=0 OR r.source=i.source_key OR i.source_key IN (SELECT value FROM json_each(r.sources)))),i.platform),s.project_id,s.parent_id,s.source_child,s.title,s.directory,s.created_at,s.updated_at,s.last_message_at,
    max(COALESCE(att.last_turn_completed_at,0),COALESCE(bgc.completed_at,0)),COALESCE(att.last_user_prompt_at,0),COALESCE(hlt.at,0),
  COALESCE(b.branch,''),c.origin,c.origin_id,
  CASE WHEN c.origin='routine' THEN c.origin_id WHEN pc.origin='routine' THEN pc.origin_id ELSE '' END,

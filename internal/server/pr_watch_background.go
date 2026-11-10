@@ -56,7 +56,7 @@ func (s *Server) overlayPRWatchTasks(ctx context.Context, sessions []db.Session)
 	wg.Wait()
 	var watched []int
 	for i := range sessions {
-		count := counts[state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}]
+		count := max(counts[state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}], counts[state.Key{Platform: s.sessionStatePlatform(sessions[i].Platform), SessionID: sessions[i].ID}])
 		if owner, _ := platforms.SplitPlatformID(sessions[i].Platform); owner != "" {
 			ownerCount := sessions[i].ApplicationBackgroundTaskCount
 			if result := remoteCounts[sessions[i].Platform]; result != nil && result.counts != nil {
@@ -78,7 +78,7 @@ func (s *Server) overlayPRWatchTasks(ctx context.Context, sessions []db.Session)
 	}
 	keys := make([]state.Key, 0, len(watched))
 	for _, i := range watched {
-		keys = append(keys, state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID})
+		keys = append(keys, state.Key{Platform: s.sessionStatePlatform(sessions[i].Platform), SessionID: sessions[i].ID})
 	}
 	archives, mode, err := s.stateDB.SidebarArchives(ctx, keys)
 	if err != nil {
@@ -88,7 +88,7 @@ func (s *Server) overlayPRWatchTasks(ctx context.Context, sessions []db.Session)
 	// watches were added. Reapply only the completion hold, preserving other flags.
 	for _, i := range watched {
 		row := &sessions[i]
-		if at, archived := archives[state.Key{Platform: row.Platform, SessionID: row.ID}]; archived && !db.ShouldResurfaceSession(*row, at, mode) {
+		if at, archived := archives[state.Key{Platform: s.sessionStatePlatform(row.Platform), SessionID: row.ID}]; archived && !db.ShouldResurfaceSession(*row, at, mode) {
 			row.Archived = true
 		}
 	}

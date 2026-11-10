@@ -76,7 +76,7 @@ func (a *Adapter) SidebarSessionsFor(ctx context.Context, sources []platforms.Si
 		if s.Owner != a.owner {
 			return nil, platforms.ErrHistoryUnavailable
 		}
-		scopes = append(scopes, sidebar.Scope{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation, Scoped: s.Scoped, Sources: s.Sources})
+		scopes = append(scopes, sidebar.Scope{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation, Scoped: s.Scoped, Sources: s.Sources, RoutingKey: s.RoutingKey})
 	}
 	return r.SessionsFor(ctx, scopes, q)
 }

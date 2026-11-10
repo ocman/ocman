@@ -76,6 +76,8 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			if local == nil {
 				local = reader
 			}
+			key, _ := s.registry.KeyFor(a)
+			source.RoutingKey = string(key)
 			sources = append(sources, source)
 		}
 	}
@@ -107,14 +109,15 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 				return
 			}
 			remotePage := page
+			statePlatform := s.sessionStatePlatform(string(a.ID()))
 			remotePage.IncludeIDs = append([]string(nil), page.IncludeIDs...)
 			for key := range remoteFlags.Pinned {
-				if key.Platform == string(a.ID()) {
+				if key.Platform == statePlatform {
 					remotePage.IncludeIDs = append(remotePage.IncludeIDs, key.SessionID)
 				}
 			}
 			for key, until := range remoteFlags.Snoozed {
-				if until > 0 && key.Platform == string(a.ID()) {
+				if until > 0 && key.Platform == statePlatform {
 					remotePage.IncludeIDs = append(remotePage.IncludeIDs, key.SessionID)
 				}
 			}
@@ -129,12 +132,7 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			return nil, err
 		}
 		for i := range rows {
-			if adapter, ok := s.registry.PlatformForSession(ctx, rows[i].ID); ok {
-				if key, ok := s.registry.KeyFor(adapter); ok {
-					rows[i].Platform = string(key)
-					s.registry.RememberSessions(key, rows[i:i+1])
-				}
-			}
+			s.registry.RememberSessions(platforms.ID(rows[i].Platform), rows[i:i+1])
 		}
 		all = append(all, rows...)
 	}
@@ -149,7 +147,7 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 		}
 		s.registry.RememberSessions(key, rows)
 		if !isLocalAdapter(adapters[i]) && s.stateDB != nil {
-			applyRemoteSidebarFlags(rows, remoteFlags)
+			applyRemoteSidebarFlags(rows, remoteFlags, s.sessionStatePlatform(string(key)))
 		}
 		if q.Since > 0 {
 			kept := rows[:0]

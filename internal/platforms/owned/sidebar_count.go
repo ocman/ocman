@@ -25,7 +25,7 @@ func (a *Adapter) RunningSessionCountFor(ctx context.Context, sources []platform
 		if s.Owner != a.owner {
 			return 0, platforms.ErrHistoryUnavailable
 		}
-		scopes = append(scopes, sidebar.Scope{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation})
+		scopes = append(scopes, sidebar.Scope{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation, Scoped: s.Scoped, Sources: s.Sources, RoutingKey: s.RoutingKey})
 	}
 	return r.RunningCount(ctx, scopes, q)
 }
