@@ -7,7 +7,7 @@ package sidebar
 // Background completion gates survive a foreground lease expiring, but never
 // cross an adapter generation or borrow another source's task ownership.
 const observationsCTE = `WITH RECURSIVE runtime AS (
- SELECT json_extract(value,'$.Owner') AS owner,json_extract(value,'$.Platform') AS platform,json_extract(value,'$.Source') AS source,json_extract(value,'$.Generation') AS generation FROM json_each(?)
+ SELECT json_extract(value,'$.Owner') AS owner,json_extract(value,'$.Platform') AS platform,json_extract(value,'$.Source') AS source,json_extract(value,'$.Generation') AS generation,COALESCE(json_extract(value,'$.Scoped'),0) AS scoped,json_extract(value,'$.Sources') AS sources FROM json_each(?)
 ), requested AS (SELECT value AS id FROM json_each(?)), connections AS (
  SELECT x.* FROM main.sidebar_connection x JOIN runtime r ON r.owner=x.owner_id AND r.platform=x.platform AND r.source=x.source_key AND r.generation=x.generation WHERE x.expires_at>?
 ), live AS (
@@ -78,7 +78,7 @@ const sessionFilters = `
  LEFT JOIN core.archived_session a ON a.platform=i.platform AND a.session_id=s.id
  LEFT JOIN core.archived_project ap ON ap.remote_id='local' AND ap.project_root=COALESCE(NULLIF(s.project_directory,''),s.directory)
  LEFT JOIN core.seen_session v ON v.platform=i.platform AND v.session_id=s.id
- WHERE i.owner_id=? AND i.platform IN (SELECT platform FROM runtime) AND c.creation_state='ready' AND c.purged=0
+ WHERE i.owner_id=? AND EXISTS(SELECT 1 FROM runtime r WHERE r.platform=i.platform AND (r.scoped=0 OR r.source=i.source_key OR i.source_key IN (SELECT value FROM json_each(r.sources)))) AND c.creation_state='ready' AND c.purged=0
  AND (s.source_deleted=0 OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested)
  AND (s.is_subagent=0 OR s.source_child=1 OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested)
  AND (s.source_child=0 OR pin.session_id IS NOT NULL OR COALESCE(a.snoozed_until,0)>0 OR s.id IN requested OR (o.status='busy' AND COALESCE(f.permission,0)=0 AND COALESCE(f.question,0)=0))

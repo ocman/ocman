@@ -42,7 +42,7 @@ func (s *Module) OnSessionRetry(platformID, sessionID string, nextAttempt int64,
 		return
 	}
 	if msg, ok := s.latestAssistant(ctx, platformID, sessionID); ok {
-		s.recordCooldown(ctx, msg.ProviderID, wait)
+		s.recordCooldown(ctx, sessionID, msg.ProviderID, wait)
 		s.abortParkedRetry(ctx, platformID, sessionID, msg.ProviderID)
 	}
 }
@@ -61,13 +61,19 @@ func (s *Module) recordQuotaCooldown(ctx context.Context, platformID, sessionID 
 	if t, ok := next.(time.Time); ok && d <= 0 {
 		d = time.Until(t)
 	}
-	s.recordCooldown(ctx, msg.ProviderID, d)
+	s.recordCooldown(ctx, sessionID, msg.ProviderID, d)
 	return msg.ProviderID
 }
 
-func (s *Module) recordCooldown(ctx context.Context, provider string, d time.Duration) {
+func (s *Module) recordCooldown(ctx context.Context, sessionID, provider string, d time.Duration) {
 	if svc := s.d.Sessions(); svc != nil && provider != "" {
-		svc.RecordCooldown(ctx, provider, d)
+		if scoped, ok := svc.(interface {
+			RecordSessionCooldown(context.Context, string, string, time.Duration)
+		}); ok {
+			scoped.RecordSessionCooldown(ctx, sessionID, provider, d)
+		} else {
+			svc.RecordCooldown(ctx, provider, d)
+		}
 	}
 }
 

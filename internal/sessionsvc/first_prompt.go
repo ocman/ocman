@@ -65,7 +65,7 @@ func (s *Service) PrepareSendMessage(ctx context.Context, platformID string, req
 			return err
 		}
 		defer activityDone()
-		finish, err := s.admit(delivery, p)
+		finish, err := s.admit(delivery, p, req.SessionID)
 		if err != nil {
 			return err
 		}

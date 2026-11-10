@@ -6,11 +6,20 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 )
 
-func (s *Service) admit(ctx context.Context, p platforms.Platform) (func(), error) {
-	if s.hooks.BeginTurn == nil {
-		return func() {}, nil
+func (s *Service) admit(ctx context.Context, p platforms.Platform, sessionID string) (func(), error) {
+	release, err := s.beginConnection(ctx, p, sessionID)
+	if err != nil {
+		return nil, err
 	}
-	return s.hooks.BeginTurn(ctx, p.ID())
+	if s.hooks.BeginTurn == nil {
+		return release, nil
+	}
+	finish, err := s.hooks.BeginTurn(ctx, p.ID())
+	if err != nil {
+		release()
+		return nil, err
+	}
+	return func() { finish(); release() }, nil
 }
 
 func (s *Service) beginActivity(ctx context.Context, p platforms.Platform, id string) (context.Context, func(), error) {
@@ -34,7 +43,7 @@ func (s *Service) resolveTurn(ctx context.Context, sessionID, platformID string)
 	if err != nil {
 		return ctx, nil, nil, err
 	}
-	finish, err := s.admit(ctx, p)
+	finish, err := s.admit(ctx, p, sessionID)
 	if err != nil {
 		activityDone()
 		return ctx, nil, nil, err

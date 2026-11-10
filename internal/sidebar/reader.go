@@ -33,7 +33,11 @@ func init() {
 	})
 }
 
-type Scope struct{ Owner, Platform, Source, Generation string }
+type Scope struct {
+	Owner, Platform, Source, Generation string
+	Scoped                              bool
+	Sources                             []string
+}
 type Reader struct {
 	db        *sql.DB
 	dsn       string

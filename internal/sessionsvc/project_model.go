@@ -56,6 +56,10 @@ func (s *Service) CooldownUntil(provider string) time.Time {
 // threshold: that floor is what bounds the fallthrough chain to one
 // attempt per model, with no counter and no per-session state.
 func (s *Service) RecordCooldown(ctx context.Context, provider string, d time.Duration) {
+	s.recordCooldownKey(ctx, provider, d)
+}
+
+func (s *Service) recordCooldownKey(ctx context.Context, key string, d time.Duration) {
 	patience, fallback := DefaultPatience, DefaultCooldownFallback
 	if s.hooks.CooldownTimes != nil {
 		patience, fallback = s.hooks.CooldownTimes(ctx)
@@ -70,7 +74,7 @@ func (s *Service) RecordCooldown(ctx context.Context, provider string, d time.Du
 	if c.until == nil {
 		c.until = map[string]time.Time{}
 	}
-	c.until[provider] = c.clock().Add(d)
+	c.until[key] = c.clock().Add(d)
 }
 
 // modelProvider is the provider half of a provider/model id.
@@ -93,6 +97,9 @@ func modelProvider(model string) string {
 // is refused, and a project model for another platform is skipped.
 func (s *Service) sessionModel(ctx context.Context, p platforms.Platform, sessionID, requested string) (string, error) {
 	base := p.ID().Base()
+	if native, ok := p.(interface{ NativeKind() platforms.ID }); ok {
+		base = native.NativeKind()
+	}
 	model, err := platforms.ModelFor(base, requested)
 	if err != nil {
 		return "", validation(err.Error())
@@ -111,10 +118,10 @@ func (s *Service) selectModel(ctx context.Context, p platforms.Platform, session
 	if model == "" && len(models) > 0 {
 		model = models[0]
 	}
-	if off || model == "" || !s.cooldowns.cooled(modelProvider(model)) {
+	if off || model == "" || s.SessionCooldownUntil(ctx, sessionID, modelProvider(model)).IsZero() {
 		return model
 	}
-	if m := s.firstUsable(models); m != "" {
+	if m := s.firstUsable(ctx, sessionID, models); m != "" {
 		return m
 	}
 	return model
@@ -149,9 +156,9 @@ func (s *Service) projectModels(ctx context.Context, p platforms.Platform, sessi
 	return models, off, true
 }
 
-func (s *Service) firstUsable(models []string) string {
+func (s *Service) firstUsable(ctx context.Context, sessionID string, models []string) string {
 	for _, m := range models {
-		if !s.cooldowns.cooled(modelProvider(m)) {
+		if s.SessionCooldownUntil(ctx, sessionID, modelProvider(m)).IsZero() {
 			return m
 		}
 	}
@@ -171,14 +178,11 @@ func (s *Service) Fallthrough(ctx context.Context, platformID, sessionID string)
 	if !found || off || len(models) == 0 {
 		return "", time.Time{}, false
 	}
-	if m := s.firstUsable(models); m != "" {
+	if m := s.firstUsable(ctx, sessionID, models); m != "" {
 		return m, time.Time{}, true
 	}
-	c := &s.cooldowns
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	for _, m := range models {
-		if t := c.until[modelProvider(m)]; recovers.IsZero() || t.Before(recovers) {
+		if t := s.SessionCooldownUntil(ctx, sessionID, modelProvider(m)); !t.IsZero() && (recovers.IsZero() || t.Before(recovers)) {
 			recovers = t
 		}
 	}

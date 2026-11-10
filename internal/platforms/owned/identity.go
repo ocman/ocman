@@ -29,6 +29,9 @@ type Adapter struct {
 	store             *sessioncatalog.Store
 	owner             string
 	source            platforms.HistoryIdentity
+	sourceScoped      bool
+	readSources       map[string]bool
+	legacyReadiness   bool
 	reader            sourceReader
 	unavailable       error
 	byID              sync.Map

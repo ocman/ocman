@@ -38,6 +38,9 @@ func (a *Adapter) validateStoredIdentity(id string, row sessioncatalog.Session) 
 	if row.Platform != a.source.Platform {
 		return row, platforms.ErrHistoryUnavailable
 	}
+	if !a.allowsReadSource(row.SourceKey) {
+		return row, platforms.ErrNotFound
+	}
 	if row.CreationState != sessioncatalog.Ready {
 		return row, sessioncatalog.ErrCreating
 	}
@@ -66,6 +69,19 @@ func (a *Adapter) storedKey(ctx context.Context, id string) (statev2.Key, error)
 // fallback; a specific session resolves to its own physical source.
 func (a *Adapter) storedReadInstances(ctx context.Context, id string) ([]statev2.Instance, error) {
 	if id == "" {
+		if a.sourceScoped {
+			instances, err := a.history.Instances(ctx, a.owner, a.source.Platform)
+			if err != nil {
+				return nil, err
+			}
+			kept := instances[:0]
+			for _, instance := range instances {
+				if a.allowsReadSource(instance.SourceKey) {
+					kept = append(kept, instance)
+				}
+			}
+			return kept, nil
+		}
 		return a.history.Instances(ctx, a.owner, a.source.Platform)
 	}
 	key, err := a.storedKey(ctx, id)

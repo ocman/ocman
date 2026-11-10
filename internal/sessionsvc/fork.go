@@ -26,6 +26,9 @@ func (s *Service) Fork(ctx context.Context, platformID string, req platforms.For
 	if intent.Creation.Configured || len(intent.Creation.PermissionRules) > 0 {
 		return nil, validation("fork configuration is inherited from its parent")
 	}
+	if err := s.pinForkConnection(ctx, req.SessionID, &intent); err != nil {
+		return nil, err
+	}
 	unlock, err := s.lockCreation(ctx, p.ID(), intent.Creation.RequestKey)
 	if err != nil {
 		return nil, err

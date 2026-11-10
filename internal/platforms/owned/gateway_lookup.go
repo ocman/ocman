@@ -27,19 +27,19 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 			return nil, err
 		}
 		if platformID == "" && err == nil {
-			if record.OwnerID == g.owner {
-				platformID = record.Platform
-			} else {
-				for _, p := range g.registry().Platforms() {
-					resolver, ok := p.(platforms.SessionIdentityResolver)
-					_, base := platforms.SplitPlatformID(string(p.ID()))
-					if ok && resolver.SessionOwnerID() == record.OwnerID && base == record.Platform {
-						platformID = string(p.ID())
-						break
-					}
+			if resolver, ok := g.registry().(interface {
+				PlatformForCanonicalSource(context.Context, string, string, string) (platforms.Platform, platforms.ID, bool)
+			}); ok {
+				if _, key, found := resolver.PlatformForCanonicalSource(ctx, record.OwnerID, record.Platform, record.SourceKey); found {
+					platformID = string(key)
 				}
-				if platformID == "" {
-					return nil, platforms.ErrPlatformUnreachable
+			}
+			if platformID == "" {
+				// Only the original legacy registration is a valid fallback.
+				// Never choose the first same-kind account on a remote owner.
+				platformID = record.Platform
+				if record.OwnerID != g.owner {
+					platformID = platforms.CompoundPlatformID(record.OwnerID, record.Platform)
 				}
 			}
 		}
@@ -50,7 +50,7 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 			}
 			// The cache supplies only a routing candidate. Its owner must
 			// authenticate this canonical identity below before it is mirrored.
-			platformID = string(candidate.ID())
+			platformID = registryPlatformKey(g.registry(), candidate)
 		}
 	}
 	if req.NativeID != "" && platformID == "" {
@@ -58,7 +58,16 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 		if err != nil {
 			return nil, err
 		}
-		platformID = string(p.ID())
+		platformID = registryPlatformKey(g.registry(), p)
+	}
+	if resolver, ok := g.registry().(interface {
+		ResolveLegacyScope(context.Context, string) (platforms.ID, error)
+	}); ok {
+		key, err := resolver.ResolveLegacyScope(ctx, platformID)
+		if err != nil {
+			return nil, err
+		}
+		platformID = string(key)
 	}
 	p, err := g.pick(ctx, platformID)
 	if err != nil {
@@ -67,7 +76,8 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 	if !CanonicalSessionIDs(p) {
 		return nil, platforms.ErrUnsupported
 	}
-	if remote, base := platforms.SplitPlatformID(string(p.ID())); remote != "" {
+	if remote, _ := platforms.SplitPlatformID(string(p.ID())); remote != "" {
+		base := nativePlatformKind(p)
 		resolver, ok := p.(platforms.SessionIdentityResolver)
 		if !ok {
 			return nil, platforms.ErrUnsupported
@@ -101,6 +111,11 @@ func (g *IdentityGateway) Lookup(ctx context.Context, platformID string, req pla
 	}
 	if record.CreationState != sessioncatalog.Ready {
 		return nil, sessioncatalog.ErrCreating
+	}
+	if reader, ok := p.(interface {
+		StoredSessionIdentity(context.Context, string) (*platforms.SessionIdentity, error)
+	}); ok {
+		return reader.StoredSessionIdentity(ctx, record.ID)
 	}
 	source, err := physicalSource(ctx, p)
 	if err != nil {

@@ -34,7 +34,11 @@ type RunningSessionGroupCounter interface {
 }
 
 // SidebarGroupReader combines the owner's enabled local platforms in one query.
-type SidebarSource struct{ Owner, Platform, Source, Generation string }
+type SidebarSource struct {
+	Owner, Platform, Source, Generation string
+	Scoped                              bool
+	Sources                             []string
+}
 type SidebarGroupReader interface {
 	SidebarSource(context.Context) (SidebarSource, error)
 	SidebarSessionsFor(context.Context, []SidebarSource, SidebarQuery) ([]db.Session, error)

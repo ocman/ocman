@@ -10,7 +10,7 @@ import (
 // WithSessionCatalogue installs metadata and legacy-link compatibility before
 // serving. Native bindings and pre-cutover receipt handling belong to owned.
 func (s *Service) WithSessionCatalogue(store *sessioncatalog.Store, ownerID string) {
-	s.identities = owned.NewIdentityGateway(store, ownerID, func() owned.IdentityRegistry { return s.registry }, s.pickAdapter, validation)
+	s.identities = owned.NewIdentityGateway(store, ownerID, func() owned.IdentityRegistry { return s.registry }, s.identityReadAdapter, validation)
 }
 
 func prepareCreationIdentity(req *platforms.CreateSessionRequest, routineID string) error {

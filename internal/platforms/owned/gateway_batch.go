@@ -26,7 +26,11 @@ func (g *IdentityGateway) lookupNative(ctx context.Context, platformID string, i
 			continue
 		}
 		seen[id] = true
-		info, err := g.Lookup(ctx, platformID, platforms.SessionIdentityRequest{NativeID: id})
+		request := platforms.SessionIdentityRequest{NativeID: id}
+		if sessioncatalog.IsID(id) {
+			request = platforms.SessionIdentityRequest{ID: id}
+		}
+		info, err := g.Lookup(ctx, platformID, request)
 		if errors.Is(err, sessioncatalog.ErrCreating) {
 			continue
 		}

@@ -41,8 +41,25 @@ func (g *IdentityGateway) OwnerPlatform(ctx context.Context, id, scope string) (
 		return nil, sessioncatalog.ErrCreating
 	}
 	expected := row.Platform
-	if row.OwnerID != g.owner {
+	var selected platforms.Platform
+	if resolver, ok := g.registry().(interface {
+		PlatformForCanonicalSource(context.Context, string, string, string) (platforms.Platform, platforms.ID, bool)
+	}); ok {
+		if p, key, found := resolver.PlatformForCanonicalSource(ctx, row.OwnerID, row.Platform, row.SourceKey); found {
+			selected, expected = p, string(key)
+		}
+	}
+	if selected == nil && row.OwnerID != g.owner {
 		expected = platforms.CompoundPlatformID(row.OwnerID, row.Platform)
+	}
+	if scope != "" {
+		if resolver, ok := g.registry().(interface {
+			ResolveLegacyScope(context.Context, string) (platforms.ID, error)
+		}); ok {
+			if key, err := resolver.ResolveLegacyScope(ctx, scope); err == nil {
+				scope = string(key)
+			}
+		}
 	}
 	if scope != "" && scope != expected {
 		return nil, platforms.ErrNotFound

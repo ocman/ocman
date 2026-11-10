@@ -76,6 +76,7 @@ type Service struct {
 	routinePublication routinePublication
 	firstPrompts       sync.Map
 	identities         *owned.IdentityGateway
+	connections        *connectionRouting
 	creations          creationLocks
 }
 
@@ -97,6 +98,10 @@ func (s *Service) KnownPlatform(platformID string) bool {
 	}
 	if s == nil || s.registry == nil {
 		return false
+	}
+	if s.connections != nil && localConnectionScope(platformID) {
+		_, err := s.connections.router.Resolve(context.Background(), connectionReference(platformID))
+		return err == nil
 	}
 	_, ok := s.registry.Get(platforms.ID(platformID))
 	return ok
@@ -131,6 +136,9 @@ func (e *ConfiguredSessionCleanupError) Unwrap() error { return e.Err }
 func (s *Service) resolve(ctx context.Context, sessionID, platformID string) (platforms.Platform, error) {
 	if identity.IsPendingReference(sessionID) {
 		return nil, platforms.ErrPlatformUnreachable
+	}
+	if s.connections != nil {
+		return s.resolveConnectionSession(ctx, sessionID, platformID)
 	}
 	if s.registry.CanonicalSessionIDs() {
 		return s.identities.OwnerPlatform(ctx, sessionID, platformID)

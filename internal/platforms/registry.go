@@ -16,12 +16,14 @@ import (
 // lookup from session ID to owning platform for endpoints that don't
 // carry the ?platform= query param.
 type Registry struct {
-	mu        sync.RWMutex
-	order     []ID // registration order for stable Platforms() output
-	byID      map[ID]Platform
-	bySID     map[string]ID // session-id -> owning platform (populated by RememberSessions)
-	sink      SessionEventSink
-	canonical bool
+	mu             sync.RWMutex
+	order          []ID // registration order for stable Platforms() output
+	byID           map[ID]Platform
+	bySID          map[string]ID // session-id -> owning platform (populated by RememberSessions)
+	sink           SessionEventSink
+	canonical      bool
+	sourceResolver func(context.Context, string, string, string) (ID, error)
+	legacyResolver func(context.Context, string) (ID, error)
 }
 
 // NewRegistry returns an empty registry.
@@ -38,13 +40,28 @@ func (r *Registry) Register(p Platform) {
 	if p == nil {
 		return
 	}
+	_ = r.register(p.ID(), p, true)
+}
+
+// RegisterConnection registers an immutable routing key without changing the
+// adapter's native kind. A live connection cannot be silently replaced.
+func (r *Registry) RegisterConnection(key ID, p Platform) error {
+	if key == "" || p == nil {
+		return fmt.Errorf("invalid connection registration")
+	}
+	return r.register(key, p, false)
+}
+
+func (r *Registry) register(id ID, p Platform, replace bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := p.ID()
+	if _, exists := r.byID[id]; exists && !replace {
+		return fmt.Errorf("connection %s already registered", id)
+	}
 	if r.canonical && !CanonicalAdapter(p) {
 		log.WithField("platform", id).Error("refusing non-canonical session adapter after identity cutover")
-		return
+		return fmt.Errorf("connection %s has no canonical session boundary", id)
 	}
 	if _, exists := r.byID[id]; !exists {
 		r.order = append(r.order, id)
@@ -53,6 +70,7 @@ func (r *Registry) Register(p Platform) {
 	if source, ok := p.(SessionEventSource); ok {
 		source.SetSessionEventSink(r.sink)
 	}
+	return nil
 }
 
 // SessionRegistry is the routing contract shared by session services. Wrappers
@@ -207,13 +225,14 @@ func (r *Registry) PlatformForSession(ctx context.Context, sessionID string) (Pl
 	// we know which case we're in — in practice that means measuring
 	// the work with time.Since on a small stack-local start time.
 	start := time.Now()
-	for _, p := range r.Platforms() {
-		if !p.Available(ctx) {
+	for _, entry := range r.Entries() {
+		p := entry.Platform
+		if !r.CanonicalSessionIDs() && !p.Available(ctx) {
 			continue
 		}
 		if p.Owns(ctx, sessionID) {
 			r.mu.Lock()
-			r.bySID[sessionID] = p.ID()
+			r.bySID[sessionID] = entry.Key
 			r.mu.Unlock()
 			srvtiming.Record(ctx, "resolve_owns", time.Since(start), "cold-cache Owns fan-out")
 			return p, true

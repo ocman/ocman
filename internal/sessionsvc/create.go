@@ -58,6 +58,10 @@ type routineCreation struct {
 
 // pickAdapter auto-picks when exactly one platform is available.
 func (s *Service) pickAdapter(ctx context.Context, platformID string) (platforms.Platform, error) {
+	if s.connections != nil && localConnectionScope(platformID) {
+		route, err := s.connections.router.Resolve(ctx, connectionReference(platformID))
+		return route.Platform, connectionDispatchError(err)
+	}
 	if platformID != "" {
 		p, ok := s.registry.Get(platforms.ID(platformID))
 		if !ok {
@@ -83,6 +87,10 @@ func (s *Service) pickAdapter(ctx context.Context, platformID string) (platforms
 
 // ResolvePlatformID returns the platform Create would use.
 func (s *Service) ResolvePlatformID(ctx context.Context, platformID string) (string, error) {
+	if s.connections != nil && localConnectionScope(platformID) {
+		route, err := s.connections.router.Resolve(ctx, connectionReference(platformID))
+		return route.Connection.ID, connectionDispatchError(err)
+	}
 	adapter, err := s.pickAdapter(ctx, platformID)
 	if err != nil {
 		return "", err
@@ -95,12 +103,12 @@ func (s *Service) DirectoryCatalog(ctx context.Context, platformID string, req p
 	if req.Directory == "" {
 		return nil, "", validation("directory is required")
 	}
-	adapter, err := s.pickAdapter(ctx, platformID)
+	adapter, routeID, err := s.catalogAdapter(ctx, platformID)
 	if err != nil {
 		return nil, "", err
 	}
 	catalog, err := adapter.DirectoryCatalog(ctx, req)
-	return catalog, string(adapter.ID()), err
+	return catalog, routeID, err
 }
 
 func (s *Service) create(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule, routine routineCreation) (*platforms.CreateSessionResponse, error) {
@@ -122,7 +130,7 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if rules != nil {
 		req.Creation.Configured, req.Creation.PermissionRules = true, rules
 	}
-	adapter, err := s.pickAdapter(ctx, platformID)
+	adapter, err := s.creationAdapter(ctx, platformID, &req)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +147,7 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		return nil, err
 	}
 	defer unlock()
-	finish, err := s.admit(ctx, adapter)
+	finish, err := s.admit(ctx, adapter, req.Creation.SessionID)
 	if err != nil {
 		return nil, err
 	}

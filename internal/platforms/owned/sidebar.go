@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,7 +17,12 @@ import (
 )
 
 func (a *Adapter) sidebarScope() sidebar.Scope {
-	return sidebar.Scope{Owner: a.owner, Platform: a.source.Platform, Source: a.source.SourceKey, Generation: a.sidebarGeneration}
+	sources := make([]string, 0, len(a.readSources))
+	for source := range a.readSources {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+	return sidebar.Scope{Owner: a.owner, Platform: a.source.Platform, Source: a.source.SourceKey, Generation: a.sidebarGeneration, Scoped: a.sourceScoped, Sources: sources}
 }
 
 func (a *Adapter) openSidebar(ctx context.Context) (*sidebar.Reader, error) {
@@ -57,7 +63,7 @@ func (a *Adapter) SidebarSource(ctx context.Context) (platforms.SidebarSource, e
 		return platforms.SidebarSource{}, err
 	}
 	s := a.sidebarScope()
-	return platforms.SidebarSource{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation}, nil
+	return platforms.SidebarSource{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation, Scoped: s.Scoped, Sources: s.Sources}, nil
 }
 
 func (a *Adapter) SidebarSessionsFor(ctx context.Context, sources []platforms.SidebarSource, q platforms.SidebarQuery) ([]db.Session, error) {
@@ -70,7 +76,7 @@ func (a *Adapter) SidebarSessionsFor(ctx context.Context, sources []platforms.Si
 		if s.Owner != a.owner {
 			return nil, platforms.ErrHistoryUnavailable
 		}
-		scopes = append(scopes, sidebar.Scope{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation})
+		scopes = append(scopes, sidebar.Scope{Owner: s.Owner, Platform: s.Platform, Source: s.Source, Generation: s.Generation, Scoped: s.Scoped, Sources: s.Sources})
 	}
 	return r.SessionsFor(ctx, scopes, q)
 }
