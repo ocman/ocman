@@ -12,7 +12,6 @@ import (
 // helpers and legacy adapter's process-default clients without copying caches.
 type httpState struct {
 	api, llm *http.Client
-	events   *http.Client
 	catalog  *httpCache
 	stream   http.RoundTripper
 }
@@ -25,7 +24,6 @@ func newHTTPState(auth ocapi.Auth) *httpState {
 	return &httpState{
 		api:     &http.Client{Timeout: 10 * time.Second, Transport: transport},
 		llm:     &http.Client{Transport: transport},
-		events:  &http.Client{Transport: stream},
 		catalog: newHTTPCacheNamed(30*time.Second, "opencode.connection_catalog_http"),
 		stream:  stream,
 	}

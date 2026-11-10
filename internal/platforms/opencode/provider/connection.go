@@ -66,15 +66,6 @@ func (a *Adapter) CloseConnection() error {
 	return a.connection.closeErr
 }
 
-// HTTPClient returns this account's unbounded helper/event client. Callers own
-// request deadlines and must not mutate the returned client.
-func (a *Adapter) HTTPClient() *http.Client {
-	if a.httpState != nil {
-		return a.events
-	}
-	return a.llmClient()
-}
-
 func (a *Adapter) transport() http.RoundTripper {
 	if a.connection != nil {
 		return a.stream
