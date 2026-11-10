@@ -361,7 +361,7 @@ export function Composer({
             ) : <HostBadge showIcon alwaysShow={!!remoteId && remoteId !== 'local'}
               remoteId={remoteId} remoteName={remoteName} stale={remoteStale} />}
             effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded} agents={agents} agentSelection={agentSelection}
-            selectorsLoading={newConversation && !agentsLoaded && !modelPicker}
+            selectorsLoading={newConversation && !agentsLoaded && !modelPicker?.tabs}
             openAgentPicker={() => { if (!uiDisabled) openAgentPicker(); }} hasModels={hasModels} modelUnavailable={modelUnavailable}
             openModelPicker={() => { if (!uiDisabled) openModelPicker(); }} modelButtonLabel={modelButtonLabel} effectiveModel={effectiveModel}
             hasReasoning={hasReasoning} openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}

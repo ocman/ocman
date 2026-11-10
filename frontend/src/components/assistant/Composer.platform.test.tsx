@@ -53,3 +53,11 @@ it('opens named model tabs even before the selected account catalog is ready', a
   fireEvent.mouseDown(screen.getByRole('tab', { name: 'Personal' }), { button: 0 });
   expect(onChange).toHaveBeenCalledWith('personal');
 });
+
+it('keeps selector skeletons while loading a catalog without named platform tabs', () => {
+  render(<Composer isRunning={false} newConversation agentsLoaded={false}
+    modelPicker={{ status: <div role="status">Loading models...</div> }} />);
+  expect(screen.getByRole('status', { name: 'Loading agents and models' })).toHaveAttribute('aria-busy', 'true');
+  expect(screen.queryByRole('button', { name: 'Model' })).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox')).toBeEnabled();
+});
