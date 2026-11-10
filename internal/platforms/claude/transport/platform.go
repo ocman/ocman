@@ -46,6 +46,14 @@ func New(ctx context.Context, stateDB *state.DB, skills map[string][]byte, mcpAd
 // unregistered rather than failing startup.
 func newClaudePlatformAt(ctx context.Context, stateDB *state.DB, dataDir, exe string, skills map[string][]byte, mcpAddr string) *claudePlatform {
 	opts := claudeprovider.DefaultOptions(dataDir)
+	var store local.ProviderState
+	if stateDB != nil {
+		store = stateDB
+	}
+	return buildClaudePlatform(ctx, store, dataDir, dataDir, exe, skills, mcpAddr, opts)
+}
+
+func buildClaudePlatform(ctx context.Context, store local.ProviderState, dataDir, ownerDir, exe string, skills map[string][]byte, mcpAddr string, opts claudeprovider.Options) *claudePlatform {
 	// Project supervisors run under tmux, whose server environment may
 	// predate this process: they get the resolved CLI and the active
 	// CLAUDE_CONFIG_DIR explicitly (FR-3/4), never by re-resolving them.
@@ -53,6 +61,9 @@ func newClaudePlatformAt(ctx context.Context, stateDB *state.DB, dataDir, exe st
 		opts.CLI = cli
 	}
 	configEnv := os.Getenv("CLAUDE_CONFIG_DIR")
+	if opts.ConnectionAccount {
+		configEnv = opts.ConfigDir
+	}
 	// Status hooks need ocman's listener; history hooks only need the journal,
 	// so terminal sessions are recorded even while ocman is stopped.
 	journal, err := historyjournal.Dir(string(claudeprovider.PlatformID))
@@ -92,11 +103,14 @@ func newClaudePlatformAt(ctx context.Context, stateDB *state.DB, dataDir, exe st
 		return nil
 	}
 	adapter.SetRules(rules)
-	p := &claudePlatform{Adapter: adapter, cli: opts.CLI, configDir: opts.ConfigDir, marketplace: marketplace, hooks: statusAddr != "", journal: journal, launchPath: opts.LaunchPath, slots: opts.SlotDir}
+	p := &claudePlatform{Adapter: adapter, cli: opts.CLI, configDir: opts.ConfigDir, marketplace: marketplace, hooks: statusAddr != "", journal: journal, launchPath: opts.LaunchPath, slots: opts.SlotDir, connectionAccount: opts.ConnectionAccount}
 	p.history = history
-	runtime := ocruntime.NewBackendRuntime(claudeprovider.PlatformID, exe, filepath.Join(dataDir, "p"))
+	runtime := ocruntime.NewBackendRuntime(claudeprovider.PlatformID, exe, filepath.Join(ownerDir, "p"))
 	runtime.Args = func() []string {
 		args := []string{"--data-dir", dataDir, "--plugin-dir", pluginDir, "--claude-cli", opts.CLI, "--claude-config-dir", configEnv}
+		if opts.ConnectionAccount {
+			args = append(args, "--connection-account", "--owner-data-dir", ownerDir)
+		}
 		if addr, _ := p.mcpAddr.Load().(string); addr != "" {
 			args = append(args, "--mcp-addr", addr)
 		}
@@ -105,13 +119,13 @@ func newClaudePlatformAt(ctx context.Context, stateDB *state.DB, dataDir, exe st
 	// Include SDK compatibility so pre-SDK supervisors drain before replacement.
 	// The MCP address is not part of this identity (WriteLaunchConfig).
 	runtime.Identity = func() string {
-		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00child-sessions/v2\x00native-permissions/v1\x00mcp-token/v1\x00sdk-py/" + claudecli.SDKVersion
+		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00child-sessions/v2\x00native-permissions/v1\x00mcp-token/v1\x00sdk-py/" + claudecli.SDKVersion + connectionIdentity(opts, dataDir)
 	}
 	projectsCtx, stop := context.WithCancel(ctx)
-	p.projects = &claudeProjects{ctx: projectsCtx, stop: stop, mgr: &local.ProviderManager{Runtime: runtime, State: stateDB}, rules: rules,
+	p.projects = &claudeProjects{ctx: projectsCtx, stop: stop, mgr: &local.ProviderManager{Runtime: runtime, State: store}, rules: rules,
 		statePath: opts.StatePath, roots: map[string]*claudeProject{}, draining: map[string]*drained{}, attached: make(chan struct{})}
 	p.projects.mgr.OnDrain = p.projects.onDrain
-	if stateDB != nil {
+	if store != nil {
 		p.projects.recover(projectsCtx)
 	}
 	if pluginDir != "" {
@@ -127,7 +141,7 @@ func (p *claudePlatform) ensurePlugin(ctx context.Context) {
 		return
 	}
 	p.pluginSync.Go(func() {
-		action, err := claudeprovider.EnsurePlugin(ctx, p.cli, p.configDir, p.marketplace)
+		action, err := p.ensureAccountPlugin(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:
 			log.WithError(err).Warn("installing ocman's Claude plugin; terminal sessions sync only at startup")
@@ -154,16 +168,17 @@ type claudePlatform struct {
 	history *claudeprovider.HistoryReader
 	pricing CostCalculator
 	*provider.Adapter
-	projects    *claudeProjects
-	mcpAddr     atomic.Value // string: ocman's bound MCP listener
-	launchPath  string       // where running supervisors read it
-	cli         string
-	configDir   string
-	marketplace string // local marketplace holding ocman's plugin (AD-11)
-	hooks       bool   // the plugin carries status hooks: the MCP listener is enabled
-	journal     string // history journal the plugin's hooks append to
-	slots       string // machine-wide claude process slots (claudeprovider.HelperSlot)
-	pluginSync  sync.WaitGroup
+	projects          *claudeProjects
+	mcpAddr           atomic.Value // string: ocman's bound MCP listener
+	launchPath        string       // where running supervisors read it
+	cli               string
+	configDir         string
+	marketplace       string // local marketplace holding ocman's plugin (AD-11)
+	hooks             bool   // the plugin carries status hooks: the MCP listener is enabled
+	journal           string // history journal the plugin's hooks append to
+	slots             string // machine-wide claude process slots (claudeprovider.HelperSlot)
+	pluginSync        sync.WaitGroup
+	connectionAccount bool
 }
 
 func (p *claudePlatform) RuntimeAvailable() bool {
@@ -177,24 +192,38 @@ func (p *claudePlatform) HookPlugin() (available, installed bool) {
 }
 
 func (p *claudePlatform) InstallHookPlugin(ctx context.Context) error {
+	if p.connectionAccount {
+		return claudeprovider.InstallAccountPlugin(ctx, p.cli, p.configDir, p.marketplace)
+	}
 	return claudeprovider.InstallPlugin(ctx, p.cli, p.marketplace)
 }
 
 func (p *claudePlatform) UninstallHookPlugin(ctx context.Context) error {
+	if p.connectionAccount {
+		return claudeprovider.UninstallAccountPlugin(ctx, p.cli, p.configDir)
+	}
 	return claudeprovider.UninstallPlugin(ctx, p.cli)
 }
 
 // WorktreeName names automatic worktrees with a short `claude -p` Haiku call.
 func (p *claudePlatform) WorktreeName(ctx context.Context, dir, prompt string) (string, error) {
+	if p.connectionAccount {
+		return claudeprovider.AccountWorktreeName(ctx, p.slots, p.cli, p.configDir, dir, prompt)
+	}
 	return claudeprovider.WorktreeName(ctx, p.slots, p.cli, dir, prompt)
 }
 
 // PermissionJudge judges permissions when no OpenCode instance is reachable
 // (AD-8), bounded by the machine-wide helper budget.
 func (p *claudePlatform) PermissionJudge() autoapprove.Judge {
-	return autoapprove.ClaudeJudge{CLI: p.cli, Slot: func(ctx context.Context) (func(), error) {
+	judge := autoapprove.ClaudeJudge{CLI: p.cli, Slot: func(ctx context.Context) (func(), error) {
 		return claudeprovider.HelperSlot(ctx, p.slots)
 	}}
+	if p.connectionAccount {
+		judge.SettingsSources = "user"
+		judge.Environment = func(dir string) []string { return claudecli.AccountEnvironment(p.configDir, dir) }
+	}
+	return judge
 }
 
 func startClaudeBrowser(ctx context.Context, opts claudeprovider.Options) (*provider.Adapter, error) {

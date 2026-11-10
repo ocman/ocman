@@ -92,6 +92,9 @@ func (l *live) launchArgs(id string, o owned, model, effort, mcp string) []strin
 		// Every tool call the CLI does not settle from the user's own Claude
 		// settings is asked of ocman over the control protocol (AD-7).
 		"--permission-mode", nativeMode(o.NativeMode), "--permission-prompt-tool", "stdio"}
+	if l.opts.ConnectionAccount {
+		args = append(args, "--setting-sources", "user")
+	}
 	if model != "" {
 		args = append(args, "--model", model)
 	}

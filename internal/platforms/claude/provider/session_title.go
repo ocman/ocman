@@ -16,6 +16,15 @@ import (
 // SessionTitle runs a tool-free Haiku helper without saving a transcript or
 // taking one of the interactive session slots. The original turn is untouched.
 func SessionTitle(ctx context.Context, slots, cli, dir, prompt string) (string, error) {
+	return sessionTitle(ctx, slots, cli, dir, prompt, claudecli.Environment(nil, dir), false)
+}
+
+// AccountSessionTitle uses only the selected account's child environment.
+func AccountSessionTitle(ctx context.Context, slots, cli, config, dir, prompt string) (string, error) {
+	return sessionTitle(ctx, slots, cli, dir, prompt, claudecli.AccountEnvironment(config, dir), true)
+}
+
+func sessionTitle(ctx context.Context, slots, cli, dir, prompt string, env []string, named bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	release, err := HelperSlot(ctx, slots)
@@ -28,10 +37,13 @@ func SessionTitle(ctx context.Context, slots, cli, dir, prompt string) (string, 
 		runes = append(runes[:1500], runes[len(runes)-500:]...)
 	}
 	args := append(append([]string{}, worktreeNameArgs...), "--system-prompt", sessionTitlePrompt)
+	if named {
+		args = append(args, "--setting-sources", "user")
+	}
 	cmd := exec.CommandContext(ctx, cli, args...)
 	cmd.WaitDelay = 100 * time.Millisecond
 	cmd.Dir = dir
-	cmd.Env = claudecli.Environment(nil, dir)
+	cmd.Env = env
 	// JSON quoting prevents prompt content from closing the data wrapper.
 	content, _ := json.Marshal(string(runes))
 	cmd.Stdin = strings.NewReader("<session>\n" + string(content) + "\n</session>\nWrite the title in the predominant language of the session; keep technical terms and code identifiers in their original form.")

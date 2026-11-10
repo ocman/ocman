@@ -23,8 +23,10 @@ type providerArgs struct {
 	// The dashboard's claude executable and CLAUDE_CONFIG_DIR, carried
 	// explicitly: tmux starts the supervisor with its server's environment,
 	// which may predate the dashboard's.
-	CLI       string
-	ConfigEnv *string // nil when not passed (inherit)
+	CLI               string
+	ConfigEnv         *string // nil when not passed (inherit)
+	ConnectionAccount bool
+	OwnerDataDir      string
 }
 
 func claudeSupervisor(ctx context.Context, a providerArgs) (*providersupervisor.Supervisor, error) {
@@ -40,6 +42,11 @@ func claudeProjectOptions(a providerArgs) claudeprovider.Options {
 		dataDir = state.DefaultDataDir()
 	}
 	opts := claudeprovider.DefaultOptions(dataDir)
+	if a.ConnectionAccount {
+		opts.ConnectionAccount = true
+		owner := claudeprovider.DefaultOptions(a.OwnerDataDir)
+		opts.SlotDir, opts.MCPTokenPath = owner.SlotDir, owner.MCPTokenPath
+	}
 	opts.NoSync = true
 	opts.ProjectRoot = a.Repo
 	opts.PluginDir = a.PluginDir
@@ -76,6 +83,8 @@ func providerCommand(ctx context.Context, args []string) error {
 	flags.StringVar(&a.MCPAddr, "mcp-addr", "", "ocman's bound MCP listener address")
 	flags.StringVar(&a.PluginDir, "plugin-dir", "", "ocman's skills plugin directory")
 	flags.StringVar(&a.CLI, "claude-cli", "", "the dashboard's claude executable")
+	flags.BoolVar(&a.ConnectionAccount, "connection-account", false, "use an explicit named account")
+	flags.StringVar(&a.OwnerDataDir, "owner-data-dir", "", "owner-wide MCP token and process slots")
 	configEnv := flags.String("claude-config-dir", "", "the dashboard's CLAUDE_CONFIG_DIR; empty unsets it")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
@@ -87,6 +96,9 @@ func providerCommand(ctx context.Context, args []string) error {
 	})
 	if flags.NArg() != 0 || !filepath.IsAbs(*socket) || !filepath.IsAbs(a.Spool) || !filepath.IsAbs(a.Repo) {
 		return fmt.Errorf("provider requires absolute socket, spool and repo paths")
+	}
+	if a.ConnectionAccount && (a.ConfigEnv == nil || *a.ConfigEnv == "" || !filepath.IsAbs(a.OwnerDataDir) || !filepath.IsAbs(a.DataDir)) {
+		return fmt.Errorf("named Claude provider requires explicit config, data and owner paths")
 	}
 	factory := providerFactories[args[0]]
 	if factory == nil {

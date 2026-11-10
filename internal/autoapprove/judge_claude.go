@@ -20,6 +20,11 @@ type ClaudeJudge struct {
 	// Slot, when set, takes a machine-wide helper slot for the call: judges
 	// are bounded but never wait behind the pooled session children.
 	Slot func(context.Context) (func(), error)
+	// Environment selects a named account for the neutral helper directory.
+	// Nil preserves the legacy inherited Claude configuration.
+	Environment func(string) []string
+	// SettingsSources, when set, excludes project/local configuration for named accounts.
+	SettingsSources string
 
 	// output is a test seam for controlling process timing without changing
 	// the production timeout or pipe-drain delay.
@@ -50,12 +55,19 @@ func (j ClaudeJudge) JudgeWithCallback(ctx context.Context, _, permission string
 		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
 	defer func() { _ = os.RemoveAll(neutral) }()
-	cmd := exec.CommandContext(ctx, j.CLI, ClaudeJudgeArgs...)
+	args := append([]string{}, ClaudeJudgeArgs...)
+	if j.SettingsSources != "" {
+		args = append(args, "--setting-sources", j.SettingsSources)
+	}
+	cmd := exec.CommandContext(ctx, j.CLI, args...)
 	cmd.Dir = neutral
 	// A child that exits but leaves stdout open (a backgrounded grandchild)
 	// must not hold the judge, and its helper slot, past the timeout.
 	cmd.WaitDelay = 2 * time.Second
 	cmd.Env = claudecli.Environment(nil, cmd.Dir)
+	if j.Environment != nil {
+		cmd.Env = j.Environment(cmd.Dir)
+	}
 	cmd.Stdin = strings.NewReader(judgePrompt(permission, patterns, metadata, customSections))
 	output := j.output
 	if output == nil {

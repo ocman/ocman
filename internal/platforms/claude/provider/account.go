@@ -38,6 +38,7 @@ const (
 var usageWindows = map[string]string{"five_hour": "five_hour", "seven_day": "weekly"}
 
 type account struct {
+	named     bool
 	cli       string
 	env       func() []string
 	usagePath string
@@ -58,7 +59,7 @@ type usageScope struct {
 }
 
 func newAccount(opts Options) *account {
-	return &account{cli: opts.CLI, env: opts.childEnv, usagePath: opts.UsagePath, config: opts.ConfigDir, slots: opts.SlotDir}
+	return &account{cli: opts.CLI, env: opts.childEnv, usagePath: opts.UsagePath, config: opts.ConfigDir, slots: opts.SlotDir, named: opts.ConnectionAccount}
 }
 
 // get returns the subscription type and every unexpired observed window.
@@ -107,7 +108,11 @@ func (a *account) subscription(ctx context.Context) (string, []providerprotocol.
 		return a.plan, a.limits, nil
 	}
 	var usage *cliUsage
-	res, err := handshake(ctx, a.slots, a.cli, os.TempDir(), a.env(), &usage) // no project settings or hooks
+	var args []string
+	if a.named {
+		args = []string{"--setting-sources", "user"}
+	}
+	res, err := handshake(ctx, a.slots, a.cli, os.TempDir(), a.env(), &usage, args...) // no project settings or hooks
 	if err != nil {
 		return "", nil, err
 	}

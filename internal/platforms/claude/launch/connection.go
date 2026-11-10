@@ -15,8 +15,8 @@ func AccountEnvironment(config, directory string) []string {
 		// gateway, profile and billing overrides. Account-local native settings
 		// remain authoritative. Cloud credentials stay available to user tools,
 		// but cannot select a model service through inherited Claude flags.
-		if strings.HasPrefix(key, "ANTHROPIC_") || strings.HasPrefix(key, "CLAUDE_CODE_USE_") ||
-			strings.HasPrefix(key, "CLAUDE_CODE_OAUTH_") || key == "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR" {
+		fixed := key == "CLAUDE_CONFIG_DIR" || key == "CLAUDE_CODE_ENTRYPOINT" || key == "CLAUDE_AGENT_SDK_VERSION" || key == "CLAUDE_CODE_SDK_READS_SESSION_STATE"
+		if strings.HasPrefix(key, "ANTHROPIC_") || (strings.HasPrefix(key, "CLAUDE_") && !fixed) {
 			continue
 		}
 		env = append(env, entry)

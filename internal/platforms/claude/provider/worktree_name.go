@@ -20,6 +20,15 @@ var worktreeNameArgs = []string{"-p", "--model", "haiku", "--no-session-persiste
 // on Haiku titles the task, slugged into a branch name. The caller keeps the
 // provisional name on any error. It takes a helper slot under slots.
 func WorktreeName(ctx context.Context, slots, cli, dir, prompt string) (string, error) {
+	return worktreeName(ctx, slots, cli, dir, prompt, claudecli.Environment(nil, dir), false)
+}
+
+// AccountWorktreeName pins the helper to a named account without owner auth.
+func AccountWorktreeName(ctx context.Context, slots, cli, config, dir, prompt string) (string, error) {
+	return worktreeName(ctx, slots, cli, dir, prompt, claudecli.AccountEnvironment(config, dir), true)
+}
+
+func worktreeName(ctx context.Context, slots, cli, dir, prompt string, env []string, named bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	release, err := HelperSlot(ctx, slots)
@@ -31,9 +40,13 @@ func WorktreeName(ctx context.Context, slots, cli, dir, prompt string) (string, 
 	if len(runes) > 2000 {
 		runes = runes[:2000]
 	}
-	cmd := exec.CommandContext(ctx, cli, worktreeNameArgs...)
+	args := append([]string{}, worktreeNameArgs...)
+	if named {
+		args = append(args, "--setting-sources", "user")
+	}
+	cmd := exec.CommandContext(ctx, cli, args...)
 	cmd.Dir = dir
-	cmd.Env = claudecli.Environment(nil, dir)
+	cmd.Env = env
 	cmd.Stdin = strings.NewReader("Reply with only a short title (3 to 6 words) for this task, nothing else.\n\nTask:\n" + string(runes))
 	out, err := cmd.Output()
 	if err != nil {

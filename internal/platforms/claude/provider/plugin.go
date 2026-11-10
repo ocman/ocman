@@ -135,9 +135,15 @@ func PluginVersion(marketplace string) string {
 // InstallPlugin registers the local marketplace and installs the plugin at
 // user scope through the CLI (FR-6); ocman never edits ~/.claude itself.
 func InstallPlugin(ctx context.Context, cli, marketplace string) error {
+	return installPlugin(ctx, cli, marketplace, runCLI)
+}
+
+type pluginRunner func(context.Context, string, ...string) error
+
+func installPlugin(ctx context.Context, cli, marketplace string, run pluginRunner) error {
 	// Registering twice fails; the install below reports a real problem.
-	added := runCLI(ctx, cli, "plugin", "marketplace", "add", marketplace)
-	if err := runCLI(ctx, cli, "plugin", "install", PluginID, "--scope", "user"); err != nil {
+	added := run(ctx, cli, "plugin", "marketplace", "add", marketplace)
+	if err := run(ctx, cli, "plugin", "install", PluginID, "--scope", "user"); err != nil {
 		return errors.Join(added, err)
 	}
 	return nil
@@ -171,28 +177,36 @@ func InstalledVersion(configDir string) string {
 // Claude's cached copy when marketplace holds a different version, so hook
 // changes reach sessions started in a terminal. It reports what it did.
 func EnsurePlugin(ctx context.Context, cli, configDir, marketplace string) (string, error) {
+	return ensurePlugin(ctx, cli, configDir, marketplace, runCLI)
+}
+
+func ensurePlugin(ctx context.Context, cli, configDir, marketplace string, run pluginRunner) (string, error) {
 	want := PluginVersion(marketplace)
 	if want == "" {
 		return "", fmt.Errorf("ocman's Claude plugin has not been written")
 	}
 	if !PluginInstalled(configDir) {
-		return "installed", InstallPlugin(ctx, cli, marketplace)
+		return "installed", installPlugin(ctx, cli, marketplace, run)
 	}
 	if InstalledVersion(configDir) == want {
 		return "", nil
 	}
-	if err := runCLI(ctx, cli, "plugin", "marketplace", "update", marketplaceName); err != nil {
+	if err := run(ctx, cli, "plugin", "marketplace", "update", marketplaceName); err != nil {
 		return "", err
 	}
-	return "updated", runCLI(ctx, cli, "plugin", "update", PluginID, "--scope", "user")
+	return "updated", run(ctx, cli, "plugin", "update", PluginID, "--scope", "user")
 }
 
 // UninstallPlugin removes the plugin and its marketplace through the CLI.
 func UninstallPlugin(ctx context.Context, cli string) error {
-	if err := runCLI(ctx, cli, "plugin", "uninstall", PluginID, "--scope", "user"); err != nil {
+	return uninstallPlugin(ctx, cli, runCLI)
+}
+
+func uninstallPlugin(ctx context.Context, cli string, run pluginRunner) error {
+	if err := run(ctx, cli, "plugin", "uninstall", PluginID, "--scope", "user"); err != nil {
 		return err
 	}
-	return runCLI(ctx, cli, "plugin", "marketplace", "remove", marketplaceName)
+	return run(ctx, cli, "plugin", "marketplace", "remove", marketplaceName)
 }
 
 // PluginInstalled reports whether the user's settings enable the plugin.

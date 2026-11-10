@@ -7,5 +7,8 @@ import (
 )
 
 func (p *claudePlatform) GenerateSessionTitle(ctx context.Context, directory, prompt string) (string, error) {
+	if p.connectionAccount {
+		return claudeprovider.AccountSessionTitle(ctx, p.slots, p.cli, p.configDir, directory, prompt)
+	}
 	return claudeprovider.SessionTitle(ctx, p.slots, p.cli, directory, prompt)
 }

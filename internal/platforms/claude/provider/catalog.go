@@ -43,6 +43,7 @@ type commands struct {
 	mu                  sync.Mutex
 	dirs                map[string]cachedCommands
 	skills              map[string]map[string]bool
+	named               bool
 }
 
 type cachedCommands struct {
@@ -62,7 +63,7 @@ type initModel struct {
 }
 
 func newCommands(opts Options) *commands {
-	return &commands{cli: opts.CLI, plugin: opts.PluginDir, config: opts.ConfigDir, slots: opts.SlotDir, env: opts.childEnv, dirs: map[string]cachedCommands{}, skills: map[string]map[string]bool{}}
+	return &commands{cli: opts.CLI, plugin: opts.PluginDir, config: opts.ConfigDir, slots: opts.SlotDir, env: opts.childEnv, named: opts.ConnectionAccount, dirs: map[string]cachedCommands{}, skills: map[string]map[string]bool{}}
 }
 
 func (c *commands) list(ctx context.Context, dir string) (cachedCommands, error) {
@@ -75,6 +76,9 @@ func (c *commands) list(ctx context.Context, dir string) (cachedCommands, error)
 		return cached, nil
 	}
 	var args []string
+	if c.named {
+		args = append(args, "--setting-sources", "user")
+	}
 	if c.plugin != "" {
 		args = append(args, "--plugin-dir", c.plugin)
 	}

@@ -12,6 +12,7 @@ func TestAccountEnvironment(t *testing.T) {
 		t.Setenv(key, "test-owner-override")
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", "/inherited")
+	t.Setenv("CLAUDE_CODE_PROFILE", "owner-profile")
 	t.Setenv("AWS_ACCESS_KEY_ID", "test-tool-credential")
 	t.Setenv("CLAUDECODE", "1")
 	t.Setenv("MCP_VARIABLE", "keep=equals")
@@ -35,6 +36,9 @@ func TestAccountEnvironment(t *testing.T) {
 		}
 		if _, exists := values["CLAUDECODE"]; exists {
 			t.Fatal("nested Claude marker inherited")
+		}
+		if _, exists := values["CLAUDE_CODE_PROFILE"]; exists {
+			t.Fatal("future native auth/profile selector inherited")
 		}
 	}
 	if !reflect.DeepEqual(before, os.Environ()) {
