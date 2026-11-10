@@ -480,7 +480,7 @@ func worktreeInheritTestServer(t *testing.T, capture *[]platforms.SetPermissionR
 	srv, reg := newSessionsTestServer(t)
 	fake := &fakePlatform{
 		PlatformID:  "opencode",
-		SessionList: []db.Session{mkSession("opencode", "ses_wt_inh", "t", 1000)},
+		SessionList: []db.Session{mkSession("opencode", "ses_wt_inh", "t", 1000), mkSession("opencode", "parent-wt", "parent", 1000)},
 		SetPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
 			*capture = append(*capture, req)
 			return nil
