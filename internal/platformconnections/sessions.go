@@ -33,8 +33,15 @@ func (s *Store) BindSession(ctx context.Context, sessionID, connectionID string)
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := bindSession(ctx, tx, sessionID, connectionID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func bindSession(ctx context.Context, tx *sql.Tx, sessionID, connectionID string) error {
 	var previous string
-	err = tx.QueryRowContext(ctx, `SELECT connection_id FROM platform_connection_session WHERE session_id=?`, sessionID).Scan(&previous)
+	err := tx.QueryRowContext(ctx, `SELECT connection_id FROM platform_connection_session WHERE session_id=?`, sessionID).Scan(&previous)
 	if err == nil {
 		if previous != connectionID {
 			return ErrSessionConflict
@@ -54,7 +61,7 @@ func (s *Store) BindSession(ctx context.Context, sessionID, connectionID string)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO platform_connection_session(session_id,connection_id) VALUES(?,?)`, sessionID, connectionID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 // SessionConnection reads only a durable binding, never the current default or

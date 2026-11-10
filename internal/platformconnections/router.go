@@ -33,12 +33,13 @@ type Route struct {
 // a disconnected remote must never be sent to a local router as fallback.
 //
 // Adapters are built and owned by the composition layer. Bind neither launches
-// nor closes them and cannot prove native credential isolation. This router is
-// not yet wired into application startup or the session registry.
+// nor closes them and cannot prove native credential isolation. Startup and the
+// session registry share these immutable bindings for the current composition.
 type Router struct {
 	store *Store
 	mu    sync.RWMutex
 	bound map[string]platforms.Platform
+	lifecycle connectionLifecycle
 }
 
 func NewRouter(store *Store) *Router {
