@@ -46,6 +46,12 @@ changing their platform or native session identity. This is tested against
 disposable stores and fake adapters, not yet used by application startup or
 session services. The platform-kind registry remains unchanged.
 
+Owner-local canonical sessions can now be durably pinned to a connection before
+native side effects. The append-only connection schema retains these bindings
+through removal and restart. Shared admission uses a pinned account on retry,
+even after the default changes. Session-service and canonical-adapter wiring is
+still required before this persistence affects live traffic.
+
 **Only the schema is wired into startup.** The repository initializer and
 mutations have no production callers yet. Existing platform settings remain
 authoritative. Native authentication, runtime isolation and routing have not
@@ -291,6 +297,25 @@ commands displayed in the browser fixture are examples, not executable setup.
   alongside durable session bindings. Canonical session/source identities must
   not be rewritten as connection IDs. Production activation remains gated on
   native isolation, connection-aware composition and owner/API integration.
+
+### Durable session routing
+
+- `Store.BindSession` records only canonical `ocm_<uuid>` session IDs and refuses
+  reassignment to another connection. The caller must first establish canonical
+  owner/source authority. Repeating an existing binding is idempotent even after
+  removal; creating a new binding requires an enabled, nonremoved connection.
+- The `platform_connection_session` table references only this module's
+  connection table. It does not change session-catalogue or physical history
+  keys. Removal retains routing evidence; native IDs alone are never accepted.
+- `Router.AdmitSession` resolves and pins an account before creation/adoption.
+  A retry with no explicit reference uses its durable connection, not the
+  current default. An explicit different connection returns a conflict.
+- `Router.ResolveSession` requires a durable binding and rechecks connection
+  availability. An imported or unknown session cannot silently acquire the
+  current default. Migration/import wiring must establish provenance first.
+- Tests cover concurrent account claims, retry after default changes, disabled
+  accounts, retained tombstones, schema upgrade and database reopen. These are
+  persistence/admission tests, not application-level routing activation.
 
 ### Claude child-environment checkpoint
 

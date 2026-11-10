@@ -10,7 +10,7 @@ import (
 
 var Schema = state.ModuleSchema{
 	Module: "platform-connections",
-	Tables: []string{"platform_connection", "platform_connection_collection", "platform_connection_setup"},
+	Tables: []string{"platform_connection", "platform_connection_collection", "platform_connection_setup", "platform_connection_session"},
 	Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 		_, err := tx.Exec(`CREATE TABLE platform_connection (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -29,7 +29,7 @@ var Schema = state.ModuleSchema{
 			default_id TEXT REFERENCES platform_connection(id)
 		);`)
 		return err
-	}, migrateSetupReservations},
+	}, migrateSetupReservations, migrateSessionConnections},
 }
 
 func migrateSetupReservations(tx *sql.Tx) error {

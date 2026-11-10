@@ -92,6 +92,15 @@ flowchart LR
   coordinate removal with draining. Existing-session execution still needs a
   durable connection binding separate from its physical history identity.
 
+`platform_connection_session` now supplies that durable owner-local binding.
+`Router.AdmitSession` pins a canonical session before native side effects;
+`ResolveSession` requires the pinned connection on later operations. A retry
+without an explicit selection keeps its account even after a default change.
+Reassignment conflicts, and disabled/removed accounts do not fall back. These
+methods do not establish session-catalogue owner/source authority themselves;
+the session integration must verify it before using them. Production creation,
+import and session routing still need to consume this seam.
+
 ## Explicit Codex runtime configuration
 
 The Codex constructor accepts an optional named connection with an immutable ID
