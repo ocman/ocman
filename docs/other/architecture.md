@@ -14,9 +14,9 @@ flow](architecture-events.md) and [Conversation history and session
 identity](architecture-history.md) expand on the core data paths, and
 feature-specific designs live on their feature pages.
 
-[Named platform connection persistence](architecture-platform-connections.md)
-describes the new owner-local repository. Its schema is registered, but the
-collection is not yet used by Settings, startup selection or runtime routing.
+[Named platform connections](architecture-platform-connections.md) describes
+owner-local persistence, setup, startup composition and connection-scoped session
+routing.
 
 New conversations persist an application draft and accepted first prompt before
 native setup. The same Ocman ID stays in the route and sidebar when the owner

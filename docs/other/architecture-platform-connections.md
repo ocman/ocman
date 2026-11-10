@@ -28,6 +28,13 @@ flowchart LR
   Remote routing keys are owner-qualified, such as `r-owner:cnx_<uuid>`; native
   model references retain their original platform namespace.
 - Physical source keys and canonical `ocm_<uuid>` session IDs are not rewritten.
+- Durable session flags keep their owner/native-kind/canonical-ID keys. Routing
+  aliases are normalized at state reads and writes, never persisted as new flag
+  namespaces. Grouped sidebar SQL projects each connection key from its frozen
+  source scope while joining flags on the native kind, without per-row catalogue
+  lookups. Conflicting source scopes fail closed.
+  Routine and Factory associations may explicitly pin a connection and retain
+  that routing identity, with compatibility for migrated native-key associations.
   Source provenance selects an exact account, never the first account of a kind.
 - Creation receipts atomically pin the retry key, generated canonical ID and
   connection before native side effects. Forks inherit their parent's account.
@@ -68,6 +75,8 @@ Explicit `-platforms` remains a legacy CLI composition override. It does not
 rewrite the saved collection, register duplicate aliases or advertise named
 onboarding for that run. Original migrated machine configurations retain their
 legacy environment, physical source and recovery behavior.
+Their inventory readiness also follows that proven migration provenance; it does
+not claim the strict isolation verification required for newly added accounts.
 
 ## Native isolation
 
