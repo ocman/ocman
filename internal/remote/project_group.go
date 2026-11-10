@@ -164,17 +164,6 @@ func (m *Manager) remoteCreationPlatform(remoteID, preferred string) string {
 	return ""
 }
 
-func (m *Manager) remotePlatforms(remoteID string) []string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	for _, mr := range m.remotes {
-		if mr.host != nil && mr.conn != nil && mr.conn.RemoteID() == remoteID {
-			return mr.conn.Platforms()
-		}
-	}
-	return []string{"opencode"}
-}
-
 // localDefault is the saved default platform when this machine enabled it,
 // else one it did enable.
 func (m *Manager) localDefault() string {

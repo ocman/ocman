@@ -197,20 +197,27 @@ func (c *RemoteConn) WaitForDrop(ctx context.Context) {
 		case <-ticker.C:
 			pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			hello, err := client.Hello(pctx, &pb.HelloReq{ProtocolVersion: ProtocolVersion})
-			cancel()
 			if err != nil {
-				c.markOffline()
+				cancel()
+				c.markMetadataOffline(conn)
 				return
 			}
 			if !c.acceptsSessionProtocol(hello.ProtocolVersion) {
+				cancel()
 				c.setHealth(HealthIncompatible)
 				return
 			}
 			if hello.InstanceId != wantID || !slices.Equal(hello.Platforms, wantPlatforms) {
+				cancel()
 				// Remote restarted with a new identity.
 				return
 			}
-			c.markSeen()
+			err = c.refreshConnectionMetadata(pctx, conn, client, wantID, wantPlatforms)
+			cancel()
+			if err != nil {
+				c.markMetadataOffline(conn)
+				return
+			}
 		}
 	}
 }

@@ -272,8 +272,10 @@ func TestPublishAdapters_RejectsDuplicateRemoteIdentity(t *testing.T) {
 		t.Errorf("surviving remote health = %q, want %q", got, HealthConnected)
 	}
 	for range 100 {
-		if got := m.remotePlatforms("shared-id"); len(got) != 2 || got[0] != "opencode" {
-			t.Fatalf("rejected remote influenced platform selection: %v", got)
+		for _, kind := range []string{"opencode", "claudecode"} {
+			if got := m.remoteCreationPlatform("shared-id", kind); got != platforms.CompoundPlatformID("shared-id", kind) {
+				t.Fatalf("rejected remote influenced %s selection: %v", kind, got)
+			}
 		}
 	}
 	m.unregisterAdapters(second)
