@@ -6,8 +6,17 @@ The first implementation checkpoint is a UI review, requested before completing
 the feature. `PlatformConnections` and `PlatformConnectionDialog` are reusable
 production components, but are **not registered in Settings or onboarding yet**.
 Their callbacks currently run only in unit tests and the browser review fixture.
-No connection persistence, native authentication, runtime isolation or routing
-has changed. Do not describe this checkpoint as working multi-account support.
+The next backend checkpoint adds `internal/platformconnections`, a tested
+owner-local repository with its schema registered in `server.ModuleSchemas`.
+It persists immutable connection IDs and configuration metadata, display names,
+enabled intent, explicit default preference, removal tombstones and onboarding
+completion. Its transactional initializer can record legacy mappings once and
+distinguishes missing configuration from an intentionally empty collection.
+
+**Only the schema is wired into startup.** The repository initializer and
+mutations have no production callers yet. Existing platform settings remain
+authoritative. Native authentication, runtime isolation and routing have not
+changed. Do not describe either checkpoint as working multi-account support.
 
 Run the isolated browser review:
 
@@ -52,10 +61,13 @@ commands displayed in the browser fixture are examples, not executable setup.
 
 ## Backend implementation still required
 
-1. Persist the connection collection and onboarding completion on the owner.
-   Distinguish an explicitly empty collection from missing legacy configuration.
-   Migrate existing enabled platforms without forcing existing users through
-   onboarding. Detect a new installation before startup creates its state.
+1. Activate the persisted collection on the owner once runtime routing can
+   consume it. The repository and atomic legacy initializer are implemented;
+   startup still needs to capture installation state before creating native
+   state, resolve persisted legacy selections without transient CLI overrides,
+   and supply the initial default preference. Legacy configurations, including
+   disabled ones with saved references, must migrate without forcing existing
+   users through onboarding.
 2. Separate platform kind, connection routing ID and physical source identity.
    Keep existing source keys and canonical session IDs stable. Existing default
    connections need compatibility mappings for platform-keyed settings and
@@ -96,7 +108,44 @@ commands displayed in the browser fixture are examples, not executable setup.
   per connection. Existing-service adoption remains only for the connection
   matching that service's database and credentials. A separate database alone
   does not isolate credentials; a new connection must not borrow the registered
-  default service. Read the OpenCode skill before changing its runtime behavior.
+   default service. Read the OpenCode skill before changing its runtime behavior.
+
+### Connection repository contract
+
+- Each owner keeps its own collection in its own `state.db`. There is no hub
+  mirror or remote mutation API yet.
+- `Initialize` takes an explicit owner-supplied installation snapshot. It commits
+  metadata and legacy mappings together, or nothing. Once initialized it ignores
+  later seeds, including after every connection is removed. Schema migration
+  alone never guesses whether this is a new installation.
+- Legacy enabled intent and the selected default are preserved even when the
+  preferred legacy connection is disabled. Migration does not pick another
+  account to make that preference available.
+- New IDs use `cnx_<uuid>` and never replace platform IDs or canonical session
+  IDs. A migrated connection has a unique `LegacyKind` mapping for existing
+  platform-keyed references. Removal retains that mapping permanently; adding
+  another connection of the same kind or name cannot claim it.
+- Kind, configuration mode and directory cannot be edited through the store.
+  Renaming affects only presentation. New directories must be owner-local
+  absolute paths. Migrated legacy configurations may have an empty directory
+  until the owner resolves their effective configuration. The store neither
+  creates directories nor verifies credential isolation.
+- Reads exclude removed connections from choices, but lookup by ID and legacy
+  kind still returns their tombstones. `Default` returns an error for a disabled
+  or removed preference, not another account. Disabling and removal do not
+  change the saved default ID. A replacement becomes the default only through
+  an explicit selection.
+- Enabled state is intent, not readiness. Readiness and account observations are
+  not persisted as authorization. The future owner service must verify setup
+  before setting a default, recheck admission before execution, and drain work
+  before recording removal. Direct repository calls do not stop runtimes.
+- The store admits up to 64 nonremoved connections atomically, including across
+  separate store instances. Tombstones do not consume active connection slots.
+- Tests cover restart, multiple same-kind connections, default disable/enable,
+  removal and replacement, concurrent initialization and capacity admission,
+  failed migration rollback, missing versus empty configuration, and additive
+  schema migration preserving legacy settings. They use disposable state stores
+  and never launch native agents or inspect real credentials.
 
 ## Completion gates
 

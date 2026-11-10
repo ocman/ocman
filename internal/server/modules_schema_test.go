@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"github.com/ocman/ocman/internal/platformconnections"
 	"github.com/ocman/ocman/internal/sessioncatalog"
 	"github.com/ocman/ocman/internal/state"
 	"github.com/ocman/ocman/internal/state/statetest"
@@ -21,6 +22,10 @@ func TestModuleSchemasOpen(t *testing.T) {
 	}
 	if rows, err := catalogue.List(t.Context(), "owner", 10, 0); err != nil || len(rows) != 0 {
 		t.Fatalf("catalogue schema not registered: %+v %v", rows, err)
+	}
+	connections, err := platformconnections.New(db).Read(t.Context())
+	if err != nil || connections.Initialized || len(connections.Connections) != 0 {
+		t.Fatalf("connection schema must be registered but not initialized: %+v %v", connections, err)
 	}
 	_ = db.Close()
 }
