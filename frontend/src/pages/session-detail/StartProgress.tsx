@@ -12,7 +12,8 @@ export function StartProgress({ prompt, images, steps, platform, timestamp, comp
   return <>
     <TimelineMarker timestamp={timestamp ?? startedAt} testId="launch-timestamp" />
     <div className="oc-msg oc-msg-user" data-testid="pending-prompt">
-      <div className="oc-msg-body oc-md">{prompt}
+      <div className="oc-msg-body oc-md">
+        <span style={{ whiteSpace: 'pre-wrap' }}>{prompt}</span>
         {images?.map((image, index) => <ImageDisplay key={index} image={image.url} />)}
       </div>
     </div>
