@@ -50,6 +50,15 @@ func (a Auth) Transport(base http.RoundTripper) http.RoundTripper {
 	return ocv2.Wrap(a.basic(base))
 }
 
+// IsolatedTransport never shares dialect-discovery cache entries with another
+// account or with the legacy machine service.
+func (a Auth) IsolatedTransport(base http.RoundTripper) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return ocv2.WrapIsolated(a.basic(base))
+}
+
 func (a Auth) basic(base http.RoundTripper) http.RoundTripper {
 	return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		clone := req.Clone(req.Context())

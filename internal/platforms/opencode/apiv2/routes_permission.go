@@ -21,9 +21,16 @@ func init() {
 // streamed. ponytail: unbounded, entries are small and prompts rare.
 var promptSessions sync.Map // request id -> session id
 
-func rememberPrompt(id, sessionID string) {
+func (c *compat) promptStore() *sync.Map {
+	if c != nil && c.prompts != nil {
+		return c.prompts
+	}
+	return &promptSessions
+}
+
+func (c *compat) rememberPrompt(id, sessionID string) {
 	if id != "" && sessionID != "" {
-		promptSessions.Store(id, sessionID)
+		c.promptStore().Store(id, sessionID)
 	}
 }
 
@@ -32,7 +39,7 @@ func (c *compat) permissionRequests(ctx context.Context, dir string) ([]any, err
 	err := c.call(ctx, http.MethodGet, "/api/permission/request", location(dir), nil, &resp)
 	for _, p := range resp.Data {
 		m, _ := p.(map[string]any)
-		rememberPrompt(str(m, "id"), str(m, "sessionID"))
+		c.rememberPrompt(str(m, "id"), str(m, "sessionID"))
 	}
 	return resp.Data, err
 }
@@ -44,7 +51,7 @@ func (c *compat) questionForms(ctx context.Context, dir string) ([]map[string]an
 	for _, f := range resp.Data {
 		m, _ := f.(map[string]any)
 		if IsQuestionForm(m) {
-			rememberPrompt(str(m, "id"), str(m, "sessionID"))
+			c.rememberPrompt(str(m, "id"), str(m, "sessionID"))
 			out = append(out, m)
 		}
 	}
@@ -74,7 +81,7 @@ func listQuestions(c *compat, r *http.Request, _ []string) (*http.Response, erro
 // directory's list on a miss. "" with a nil error means a successful list
 // proved the prompt is gone; a failed list is an error, never "gone".
 func (c *compat) promptSession(ctx context.Context, id, dir string, question bool) (string, error) {
-	if s, ok := promptSessions.Load(id); ok {
+	if s, ok := c.promptStore().Load(id); ok {
 		return s.(string), nil
 	}
 	var err error
@@ -86,7 +93,7 @@ func (c *compat) promptSession(ctx context.Context, id, dir string, question boo
 	if err != nil {
 		return "", err
 	}
-	if s, ok := promptSessions.Load(id); ok {
+	if s, ok := c.promptStore().Load(id); ok {
 		return s.(string), nil
 	}
 	return "", nil

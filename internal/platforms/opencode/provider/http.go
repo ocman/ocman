@@ -23,14 +23,14 @@ const (
 // Port and path keys isolate instances and directory-scoped v2 catalogs.
 var catalogCache = newHTTPCacheNamed(30*time.Second, "opencode.catalog_http")
 
-func getJSON(ctx context.Context, port, path string) ([]byte, error) {
-	return apiv1.GetJSON(ctx, openCodeClient, port, path)
+func (h *httpState) getJSON(ctx context.Context, port, path string) ([]byte, error) {
+	return apiv1.GetJSON(ctx, h.client(), port, path)
 }
 
 // getJSONCached leaves failures uncached so subsequent requests can retry.
-func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
+func (h *httpState) getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
 	var fetchErr error
-	body, ok := catalogCache.getOrFetchContext(ctx, port, path, func() ([]byte, bool) {
+	body, ok := h.cache().getOrFetchContext(ctx, port, path, func() ([]byte, bool) {
 		fetchCtx := ctx
 		endpoint, _, _ := strings.Cut(path, "?")
 		if endpoint == "/agent" {
@@ -47,7 +47,7 @@ func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
 			fetchCtx, cancelFetch = context.WithTimeout(queueCtx, 2*time.Second)
 			defer cancelFetch()
 		}
-		b, err := getJSON(fetchCtx, port, path)
+		b, err := h.getJSON(fetchCtx, port, path)
 		fetchErr = err
 		return b, err == nil
 	})
@@ -63,32 +63,32 @@ func getJSONCached(ctx context.Context, port, path string) ([]byte, error) {
 	return body, nil
 }
 
-func postJSON(ctx context.Context, port, path string, payload []byte) error {
-	return apiv1.SendJSON(ctx, openCodeClient, http.MethodPost, port, path, payload)
+func (h *httpState) postJSON(ctx context.Context, port, path string, payload []byte) error {
+	return apiv1.SendJSON(ctx, h.client(), http.MethodPost, port, path, payload)
 }
 
 // postJSONLLM leaves the deadline to the caller for model-dependent requests.
-func postJSONLLM(ctx context.Context, port, path string, payload []byte) error {
-	return apiv1.SendJSON(ctx, openCodeLLMClient, http.MethodPost, port, path, payload)
+func (h *httpState) postJSONLLM(ctx context.Context, port, path string, payload []byte) error {
+	return apiv1.SendJSON(ctx, h.llmClient(), http.MethodPost, port, path, payload)
 }
 
-func postJSONForDirectory(ctx context.Context, port, path, directory string, payload []byte) error {
-	return postJSON(ctx, port, path+"?directory="+url.QueryEscape(directory), payload)
+func (h *httpState) postJSONForDirectory(ctx context.Context, port, path, directory string, payload []byte) error {
+	return h.postJSON(ctx, port, path+"?directory="+url.QueryEscape(directory), payload)
 }
 
-func patchJSON(ctx context.Context, port, path string, payload []byte) error {
-	return sendJSON(ctx, http.MethodPatch, port, path, payload)
+func (h *httpState) patchJSON(ctx context.Context, port, path string, payload []byte) error {
+	return h.sendJSON(ctx, http.MethodPatch, port, path, payload)
 }
 
-func postJSONReturning(ctx context.Context, port, path string, payload []byte) ([]byte, error) {
-	return apiv1.PostJSONReturning(ctx, openCodeClient, port, path, payload)
+func (h *httpState) postJSONReturning(ctx context.Context, port, path string, payload []byte) ([]byte, error) {
+	return apiv1.PostJSONReturning(ctx, h.client(), port, path, payload)
 }
 
 // postJSONReturningLLM leaves the deadline to the caller for helper requests.
-func postJSONReturningLLM(ctx context.Context, port, path string, payload []byte) ([]byte, error) {
-	return apiv1.PostJSONReturning(ctx, openCodeLLMClient, port, path, payload)
+func (h *httpState) postJSONReturningLLM(ctx context.Context, port, path string, payload []byte) ([]byte, error) {
+	return apiv1.PostJSONReturning(ctx, h.llmClient(), port, path, payload)
 }
 
-func sendJSON(ctx context.Context, method, port, path string, payload []byte) error {
-	return apiv1.SendJSON(ctx, openCodeClient, method, port, path, payload)
+func (h *httpState) sendJSON(ctx context.Context, method, port, path string, payload []byte) error {
+	return apiv1.SendJSON(ctx, h.client(), method, port, path, payload)
 }

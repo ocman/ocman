@@ -51,7 +51,7 @@ func (d *Discovery) resolveSessionPortCtx(ctx context.Context, id, directory str
 		candidate := d.discoverOpenCodePortCtx(ctx, directory)
 		if candidate != "" {
 			var found bool
-			found, err = probeSessionPort(ctx, candidate, id)
+			found, err = d.probeSessionPort(ctx, candidate, id)
 			if found {
 				port = candidate
 			}
@@ -67,8 +67,8 @@ func (d *Discovery) resolveSessionPortCtx(ctx context.Context, id, directory str
 	return port, nil
 }
 
-func probeSessionPort(ctx context.Context, port, id string) (bool, error) {
-	client := http.Client{Timeout: 500 * time.Millisecond, Transport: openCodeClient.Transport}
+func (h *httpState) probeSessionPort(ctx context.Context, port, id string) (bool, error) {
+	client := http.Client{Timeout: 500 * time.Millisecond, Transport: h.client().Transport}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%s/session/%s", port, url.PathEscape(id)), nil)
 	if err != nil {
 		return false, err

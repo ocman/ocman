@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Wrap returns a RoundTripper that serves ocman's v1-shaped OpenCode routes
@@ -23,13 +24,29 @@ func Wrap(inner http.RoundTripper) http.RoundTripper {
 	return &transport{inner: inner}
 }
 
-type transport struct{ inner http.RoundTripper }
+// WrapIsolated keeps dialect discovery private to one account's transport.
+func WrapIsolated(inner http.RoundTripper) http.RoundTripper {
+	if inner == nil {
+		inner = http.DefaultTransport
+	}
+	return &transport{inner: inner, hosts: &sync.Map{}, prompts: &sync.Map{}}
+}
+
+type transport struct {
+	inner   http.RoundTripper
+	hosts   *sync.Map
+	prompts *sync.Map
+}
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if strings.HasPrefix(req.URL.Path, "/api/") || req.URL.Path == "/openapi.json" {
 		return t.inner.RoundTrip(req)
 	}
-	v2, err := detect(req.Context(), t.inner, req.URL.Scheme, req.URL.Host)
+	cache := t.hosts
+	if cache == nil {
+		cache = &hosts
+	}
+	v2, err := detectWithCache(req.Context(), t.inner, req.URL.Scheme, req.URL.Host, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -40,14 +57,15 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Body != nil {
 		defer req.Body.Close()
 	}
-	c := &compat{rt: t.inner, base: req.URL.Scheme + "://" + req.URL.Host}
+	c := &compat{rt: t.inner, base: req.URL.Scheme + "://" + req.URL.Host, prompts: t.prompts}
 	return c.serve(req)
 }
 
 // compat answers one v1 request with v2 calls.
 type compat struct {
-	rt   http.RoundTripper
-	base string
+	rt      http.RoundTripper
+	base    string
+	prompts *sync.Map
 }
 
 type routeFn func(c *compat, r *http.Request, m []string) (*http.Response, error)

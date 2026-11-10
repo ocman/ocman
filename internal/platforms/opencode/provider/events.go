@@ -31,7 +31,7 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 	// error — flooding Grafana with false positives. The parent
 	// connection-lifetime span of the conversation stream already covers
 	// the full SSE session and handles context.Canceled correctly.
-	sseClient := &http.Client{Transport: a.auth.Transport(http.DefaultTransport)}
+	sseClient := &http.Client{Transport: a.transport()}
 	resp, err := sseClient.Do(httpReq)
 	if err != nil {
 		a.rt.forgetSessionPort(sessionID, port)

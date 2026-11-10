@@ -19,7 +19,7 @@ func (a *Adapter) NativeQueued(ctx context.Context, sessionID string) ([]platfor
 	if err != nil {
 		return nil, err
 	}
-	body, err := getJSON(ctx, port, "/api/session/"+url.PathEscape(sessionID)+"/inbox")
+	body, err := a.getJSON(ctx, port, "/api/session/"+url.PathEscape(sessionID)+"/inbox")
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (a *Adapter) CancelNativeQueued(ctx context.Context, req platforms.CancelNa
 	if err != nil {
 		return err
 	}
-	err = sendJSON(ctx, http.MethodDelete, port,
+	err = a.sendJSON(ctx, http.MethodDelete, port,
 		"/api/session/"+url.PathEscape(req.SessionID)+"/inbox/"+url.PathEscape(req.ID), nil)
 	if isUpstreamNotFound(err) {
 		return nil // already delivered or cancelled

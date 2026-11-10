@@ -423,9 +423,9 @@ func contextLimitFor(modelRef string, prov *OpenCodeProvidersResponse) int64 {
 // "no servers" from "couldn't ask". The caller surfaces that ambiguity
 // at panel level — when the port is unreachable we already return
 // ErrUnsupported earlier.
-func fetchOpenCodeMCP(port string) map[string]rawMCPEntry {
+func (h *httpState) fetchOpenCodeMCP(port string) map[string]rawMCPEntry {
 	out := map[string]rawMCPEntry{}
-	if !getInto(port, "/mcp", &out) {
+	if !h.getInto(port, "/mcp", &out) {
 		return map[string]rawMCPEntry{}
 	}
 	return out
@@ -434,9 +434,9 @@ func fetchOpenCodeMCP(port string) map[string]rawMCPEntry {
 // fetchOpenCodeLSP calls GET /lsp on the running OpenCode instance
 // and returns the configured language servers. Returns an empty slice
 // on failure for the same reason as fetchOpenCodeMCP.
-func fetchOpenCodeLSP(port string) []rawLSPEntry {
+func (h *httpState) fetchOpenCodeLSP(port string) []rawLSPEntry {
 	out := []rawLSPEntry{}
-	if !getInto(port, "/lsp", &out) {
+	if !h.getInto(port, "/lsp", &out) {
 		return []rawLSPEntry{}
 	}
 	return out

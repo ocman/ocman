@@ -40,11 +40,13 @@ type CostCalculator interface {
 
 // Adapter implements platforms.Platform for OpenCode.
 type Adapter struct {
-	db        *db.DB
-	favorites FavoritesReader
-	pricing   CostCalculator
-	auth      ocapi.Auth
-	prompts   *livePromptRegistry
+	*httpState
+	connection *connectionOwner
+	db         *db.DB
+	favorites  FavoritesReader
+	pricing    CostCalculator
+	auth       ocapi.Auth
+	prompts    *livePromptRegistry
 	// turns is the live view of which sessions are running a turn, fed
 	// from each instance's /session/status snapshot and session.status
 	// events. See live_status.go.
@@ -62,12 +64,20 @@ type Adapter struct {
 // subscription-plan sessions); auth is the host-local OpenCode API credential.
 func New(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
 	configureHTTPAuth(auth)
+	return newAdapter(database, favorites, pricing, auth, nil)
+}
+
+func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth, http *httpState) *Adapter {
 	prompts := newLivePromptRegistry()
 	prompts.haltStore, _ = favorites.(*state.DB)
 	rt := newAdapterDiscovery()
+	if http != nil {
+		rt = NewDiscovery()
+	}
+	rt.httpState = http
 	turns := newLiveStatusRegistry()
 	turns.disc = rt
-	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, prompts: prompts, turns: turns, rt: rt}
+	return &Adapter{httpState: http, db: database, favorites: favorites, pricing: pricing, auth: auth, prompts: prompts, turns: turns, rt: rt}
 }
 
 // newAdapterDiscovery builds each adapter's discovery. A seam so this

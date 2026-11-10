@@ -35,9 +35,9 @@ func (a *Adapter) InfoFromStored(ctx context.Context, detail *platforms.SessionD
 	var hasProviders bool
 	if port != "" {
 		var wg sync.WaitGroup
-		wg.Go(func() { mcp = fetchOpenCodeMCP(port) })
-		wg.Go(func() { lsp = fetchOpenCodeLSP(port) })
-		wg.Go(func() { providers, hasProviders = fetchOpenCodeProviders(ctx, port, detail.Session.Directory) })
+		wg.Go(func() { mcp = a.fetchOpenCodeMCP(port) })
+		wg.Go(func() { lsp = a.fetchOpenCodeLSP(port) })
+		wg.Go(func() { providers, hasProviders = a.fetchOpenCodeProviders(ctx, port, detail.Session.Directory) })
 		wg.Wait()
 	}
 	if ctx.Err() != nil {

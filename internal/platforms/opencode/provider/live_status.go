@@ -288,7 +288,7 @@ func (d *Discovery) portForDirectory(ports map[string]string, directory string) 
 // directory; worktree sessions need their own directory-scoped read. The
 // bool reports whether the snapshot can be trusted; on false the caller must
 // not mark the port seeded, or every session on it would read as settled.
-func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (map[string]liveSessionStatus, bool) {
+func (h *httpState) fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (map[string]liveSessionStatus, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, statusSnapshotTimeout)
 	defer cancel()
 	endpoint := fmt.Sprintf("http://127.0.0.1:%s/session/status", port)
@@ -299,7 +299,7 @@ func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (ma
 	if err != nil {
 		return nil, false
 	}
-	resp, err := openCodeClient.Do(req)
+	resp, err := h.client().Do(req)
 	if err != nil {
 		return nil, false
 	}
@@ -376,7 +376,7 @@ func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string
 	// Capture the sequence first: everything an event writes from here on
 	// is newer than the snapshot we are about to read.
 	seq := a.statusSeq()
-	statuses, ok := fetchSessionStatusSnapshot(ctx, port, "")
+	statuses, ok := a.fetchSessionStatusSnapshot(ctx, port, "")
 	if !ok {
 		return false
 	}
@@ -386,7 +386,7 @@ func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string
 	}
 	// ponytail: sequential reads; candidates are only recently active directories.
 	for _, directory := range candidates {
-		scoped, ok := fetchSessionStatusSnapshot(ctx, port, directory)
+		scoped, ok := a.fetchSessionStatusSnapshot(ctx, port, directory)
 		if !ok {
 			return false
 		}

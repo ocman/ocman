@@ -15,5 +15,5 @@ func (a *Adapter) stopBackgroundTask(ctx context.Context, req platforms.AbortReq
 		return err
 	}
 	path := fmt.Sprintf("/session/%s/background/%s/stop?directory=%s", url.PathEscape(req.SessionID), url.PathEscape(req.TaskID), url.QueryEscape(session.Directory))
-	return sendJSON(ctx, http.MethodPost, port, path, nil)
+	return a.sendJSON(ctx, http.MethodPost, port, path, nil)
 }

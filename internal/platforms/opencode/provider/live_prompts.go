@@ -126,7 +126,7 @@ func (a *Adapter) startPromptReconciliation(ctx context.Context, port string, di
 				case <-ctx.Done():
 					return
 				}
-				prompts, ok := fetchPromptSnapshotWithRetry(ctx, port, directory, kind)
+				prompts, ok := a.fetchPromptSnapshotWithRetry(ctx, port, directory, kind)
 				var callback func(platforms.LivePrompt)
 				if kind == "permission" && len(onPermission) > 0 {
 					callback = onPermission[0]
@@ -151,7 +151,7 @@ func (a *Adapter) ClearPromptsForPort(port string) {
 		return
 	}
 	a.rt.forgetSessionsForPort(port)
-	catalogCache.invalidatePort(port)
+	a.cache().invalidatePort(port)
 	fetchFailureLogs.invalidatePort(port)
 	a.prompts.mu.Lock()
 	a.prompts.portGen[port]++
@@ -240,9 +240,9 @@ func (r *livePromptRegistry) directoriesForPort(port string) []string {
 	return out
 }
 
-func fetchPromptSnapshotWithRetry(ctx context.Context, port, directory, kind string) ([]platforms.LivePrompt, bool) {
+func (h *httpState) fetchPromptSnapshotWithRetry(ctx context.Context, port, directory, kind string) ([]platforms.LivePrompt, bool) {
 	for attempt := 0; attempt < 3; attempt++ {
-		if prompts, ok := fetchPromptSnapshot(ctx, port, directory, kind); ok {
+		if prompts, ok := h.fetchPromptSnapshot(ctx, port, directory, kind); ok {
 			return prompts, true
 		}
 		if attempt == 2 {
@@ -257,7 +257,7 @@ func fetchPromptSnapshotWithRetry(ctx context.Context, port, directory, kind str
 	return nil, false
 }
 
-func fetchPromptSnapshot(ctx context.Context, port, directory, kind string) ([]platforms.LivePrompt, bool) {
+func (h *httpState) fetchPromptSnapshot(ctx context.Context, port, directory, kind string) ([]platforms.LivePrompt, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 	endpoint := fmt.Sprintf("http://127.0.0.1:%s/%s?directory=%s", port, kind, url.QueryEscape(directory))
@@ -265,7 +265,7 @@ func fetchPromptSnapshot(ctx context.Context, port, directory, kind string) ([]p
 	if err != nil {
 		return nil, false
 	}
-	resp, err := openCodeClient.Do(req)
+	resp, err := h.client().Do(req)
 	if err != nil {
 		return nil, false
 	}

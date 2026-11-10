@@ -21,10 +21,10 @@ func (a *Adapter) DirectoryCatalogFromStored(ctx context.Context, req platforms.
 	models, _ := a.modelsFromHistory(ctx, req.Directory, port, recents, defaults)
 	out := &platforms.DirectoryCatalog{Agents: []platforms.AgentCatalogEntry{}, Commands: []platforms.SlashCommandEntry{}, Models: models, DefaultAgent: defaults.Agent, DefaultModel: defaults.Model, LiveConnection: port != ""}
 	if port != "" {
-		if agents := agentCatalogAt(ctx, port, "", req.Directory); agents != nil {
+		if agents := a.agentCatalogAt(ctx, port, "", req.Directory); agents != nil {
 			out.Agents = agents
 		}
-		if commands := slashCommandsAt(ctx, port, "", req.Directory); commands != nil {
+		if commands := a.slashCommandsAt(ctx, port, "", req.Directory); commands != nil {
 			out.Commands = commands
 		}
 	}
@@ -46,7 +46,7 @@ func (a *Adapter) modelsFromHistory(ctx context.Context, directory, port string,
 	hasProviders := false
 	if port != "" {
 		phase := srvtiming.Begin(ctx, "http_provider")
-		providers, hasProviders = fetchOpenCodeProviders(ctx, port, directory)
+		providers, hasProviders = a.fetchOpenCodeProviders(ctx, port, directory)
 		phase.EndWithDesc("GET /provider")
 	}
 	entries := buildSessionModelEntries(recents, favorites, providers, hasProviders, defaults.Model)

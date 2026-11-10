@@ -251,7 +251,7 @@ func (t *translator) handle(ev v2Event) error {
 		"session.compaction.started", "session.compaction.ended", "session.compaction.failed":
 		return t.emitRecent(sessionID, dir)
 	case "permission.asked":
-		rememberPrompt(str(d, "id"), sessionID)
+		t.c.rememberPrompt(str(d, "id"), sessionID)
 		return emit("permission.asked", V1Permission(d))
 	case "permission.replied":
 		return emit("permission.replied", map[string]any{"requestID": str(d, "requestID"), "reply": str(d, "reply")})
@@ -260,7 +260,7 @@ func (t *translator) handle(ev v2Event) error {
 		if !IsQuestionForm(form) {
 			return nil
 		}
-		rememberPrompt(str(form, "id"), str(form, "sessionID"))
+		t.c.rememberPrompt(str(form, "id"), str(form, "sessionID"))
 		return t.emit(str(form, "sessionID"), dir, "question.asked", V1Question(form))
 	case "form.replied", "form.cancelled":
 		typ := "question.replied"

@@ -12,13 +12,13 @@ import (
 
 // AgentNames reads only the agent catalog, scoped to the project directory.
 // agentCatalogAt logs fetch/decode failures and returns no options on failure.
-func AgentNames(ctx context.Context, port, directory string) []string {
+func (h *httpState) AgentNames(ctx context.Context, port, directory string) []string {
 	// Shared fetches outlive a canceled caller but are independently bounded.
 	ready := make(chan []platforms.AgentCatalogEntry, 1)
 	go func() {
 		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
-		ready <- agentCatalogAt(fetchCtx, port, "", directory)
+		ready <- h.agentCatalogAt(fetchCtx, port, "", directory)
 	}()
 	var agents []platforms.AgentCatalogEntry
 	select {
@@ -48,6 +48,11 @@ func knownAgentOptions(ctx context.Context, disc *Discovery, directories []strin
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	portsFn, portFn := defaultAgentPorts, defaultAgentPort
+	catalogFn := defaultAgentCatalog
+	if disc != nil && disc.httpState != nil {
+		portsFn, portFn = disc.DiscoverOpenCodePortsContext, disc.DiscoverOpenCodePortContext
+		catalogFn = disc.AgentNames
+	}
 	if portsFn == nil {
 		portsFn = disc.DiscoverOpenCodePortsContext
 	}
@@ -77,7 +82,7 @@ func knownAgentOptions(ctx context.Context, disc *Discovery, directories []strin
 					return
 				}
 				targetCtx, cancelTarget := context.WithTimeout(ctx, defaultAgentTargetTimeout)
-				agents := defaultAgentCatalog(targetCtx, targets[directory], directory)
+				agents := catalogFn(targetCtx, targets[directory], directory)
 				cancelTarget()
 				mu.Lock()
 				for _, agent := range agents {

@@ -101,7 +101,11 @@ func ResetHostCache() { hosts.Clear() }
 // without the route (a test fake serving the v1-shaped routes directly)
 // gets requests unchanged.
 func detect(ctx context.Context, rt http.RoundTripper, scheme, host string) (bool, error) {
-	if v, ok := hosts.Load(host); ok {
+	return detectWithCache(ctx, rt, scheme, host, &hosts)
+}
+
+func detectWithCache(ctx context.Context, rt http.RoundTripper, scheme, host string, cache *sync.Map) (bool, error) {
+	if v, ok := cache.Load(host); ok {
 		if e := v.(hostEntry); time.Since(e.at) < hostTTL {
 			return e.v2, nil
 		}
@@ -123,7 +127,7 @@ func detect(ctx context.Context, rt http.RoundTripper, scheme, host string) (boo
 	v2 := resp.StatusCode == http.StatusOK &&
 		strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") &&
 		json.NewDecoder(resp.Body).Decode(&info) == nil && Major(info.Version) >= 2
-	hosts.Store(host, hostEntry{v2: v2, at: time.Now()})
+	cache.Store(host, hostEntry{v2: v2, at: time.Now()})
 	return v2, nil
 }
 

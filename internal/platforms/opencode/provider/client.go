@@ -43,18 +43,18 @@ func configureHTTPAuth(auth ocapi.Auth) {
 
 // rawGet performs a plain GET against the OpenCode instance and
 // returns the response body if the status is 200.
-func rawGet(port, path string) ([]byte, bool) {
-	return rawGetContext(context.Background(), port, path)
+func (h *httpState) rawGet(port, path string) ([]byte, bool) {
+	return h.rawGetContext(context.Background(), port, path)
 }
 
 // rawGetContext is rawGet bound to ctx, so a cancelled caller stops the
 // upstream read instead of letting it run to completion.
-func rawGetContext(ctx context.Context, port, path string) ([]byte, bool) {
+func (h *httpState) rawGetContext(ctx context.Context, port, path string) ([]byte, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%s%s", port, path), nil)
 	if err != nil {
 		return nil, false
 	}
-	resp, err := openCodeClient.Do(req)
+	resp, err := h.client().Do(req)
 	if err != nil {
 		return nil, false
 	}
@@ -75,8 +75,8 @@ func rawGetContext(ctx context.Context, port, path string) ([]byte, bool) {
 // getInto performs a plain GET against the OpenCode instance and
 // unmarshals a 200 JSON response into v. Returns false on any
 // transport, status, or decode failure.
-func getInto(port, path string, v interface{}) bool {
-	body, ok := rawGet(port, path)
+func (h *httpState) getInto(port, path string, v interface{}) bool {
+	body, ok := h.rawGet(port, path)
 	if !ok {
 		return false
 	}
@@ -84,11 +84,11 @@ func getInto(port, path string, v interface{}) bool {
 }
 
 // fetchOpenCodeSmallModel fetches the resolved OpenCode config and extracts small_model.
-func fetchOpenCodeSmallModel(port string) (providerID, modelID string, ok bool) {
+func (h *httpState) fetchOpenCodeSmallModel(port string) (providerID, modelID string, ok bool) {
 	var cfg struct {
 		SmallModel string `json:"small_model"`
 	}
-	if !getInto(port, "/config", &cfg) {
+	if !h.getInto(port, "/config", &cfg) {
 		return "", "", false
 	}
 	slash := strings.IndexByte(cfg.SmallModel, '/')
@@ -134,9 +134,9 @@ type OpenCodeProvidersResponse struct {
 
 // fetchOpenCodeProviders calls GET /provider on the running OpenCode
 // instance, scoped to directory.
-func fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCodeProvidersResponse, bool) {
+func (h *httpState) fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCodeProvidersResponse, bool) {
 	var empty OpenCodeProvidersResponse
-	body, err := getJSONCached(ctx, port, scopedPath(ctx, port, "/provider", directory))
+	body, err := h.getJSONCached(ctx, port, scopedPath(ctx, port, "/provider", directory))
 	if err != nil {
 		logFetchFailure(err, log.Fields{"port": port, "endpoint": "/provider"},
 			"opencode: provider catalog fetch failed")

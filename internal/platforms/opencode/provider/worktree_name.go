@@ -14,11 +14,11 @@ import (
 
 // WorktreeName uses the owner's small model in a temporary, tool-denied session.
 // The caller adds a unique suffix and can fall back when naming is unavailable.
-func WorktreeName(ctx context.Context, port, directory, prompt string) (string, error) {
+func (h *httpState) WorktreeName(ctx context.Context, port, directory, prompt string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	query := "?directory=" + url.QueryEscape(directory)
-	config, err := getJSON(ctx, port, "/config"+query)
+	config, err := h.getJSON(ctx, port, "/config"+query)
 	if err != nil {
 		return "", err
 	}
@@ -41,7 +41,7 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 	}
 	// The " subagent)" title suffix hides a parentless internal session from
 	// every listing (db.scanSessionRow), like the auto-approve judge's.
-	created, err := postJSONReturningLLM(ctx, port, "/session"+query, []byte(`{"title":"(worktree-name subagent)","permission":[{"permission":"*","pattern":"*","action":"deny"}]}`))
+	created, err := h.postJSONReturningLLM(ctx, port, "/session"+query, []byte(`{"title":"(worktree-name subagent)","permission":[{"permission":"*","pattern":"*","action":"deny"}]}`))
 	if err != nil {
 		return "", err
 	}
@@ -58,8 +58,8 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
-		_ = postJSON(cleanup, port, path+"/abort"+query, nil)
-		_ = sendJSON(cleanup, http.MethodDelete, port, path+query, nil)
+		_ = h.postJSON(cleanup, port, path+"/abort"+query, nil)
+		_ = h.sendJSON(cleanup, http.MethodDelete, port, path+query, nil)
 	}()
 	// Delimit the task so the title agent names the work, not these instructions.
 	runes := []rune(prompt)
@@ -83,7 +83,7 @@ Examples: a vague diagnosis request -> diagnose-issue; a Slack link to investiga
 	if err != nil {
 		return "", err
 	}
-	answer, err := postJSONReturningLLM(ctx, port, path+"/message"+query, payload)
+	answer, err := h.postJSONReturningLLM(ctx, port, path+"/message"+query, payload)
 	if err != nil {
 		return "", err
 	}

@@ -23,6 +23,7 @@ import (
 // owns one, so a backend reload (a new adapter) starts from nothing and
 // two servers in one process never share routing state.
 type Discovery struct {
+	*httpState
 	// portCache holds cached port discovery results with a single mutex
 	// for simplicity; port discovery is infrequent enough that read/write
 	// contention is not a concern.
@@ -67,14 +68,14 @@ var discoverPortsOverride atomic.Pointer[func(context.Context) map[string]string
 var discoverServersOverride atomic.Pointer[func() []openCodeServer]
 
 func (d *Discovery) discoverPortsImpl(ctx context.Context) map[string]string {
-	if fn := discoverPortsOverride.Load(); fn != nil {
+	if fn := discoverPortsOverride.Load(); fn != nil && d.httpState == nil {
 		return (*fn)(ctx)
 	}
 	return d.discoverOpenCodePortsUncachedContext(ctx)
 }
 
 func (d *Discovery) discoverServersImpl() []openCodeServer {
-	if fn := discoverServersOverride.Load(); fn != nil {
+	if fn := discoverServersOverride.Load(); fn != nil && d.httpState == nil {
 		return (*fn)()
 	}
 	return d.discoverOpenCodeServersUncached()
