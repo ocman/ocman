@@ -1,9 +1,7 @@
 package git
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/ocman/ocman/internal/gitexec"
@@ -59,15 +57,13 @@ func TestWorktreeFetchFailureAndReuse(t *testing.T) {
 	if reused, err := CreateWorktree(t.Context(), req); err != nil || !reused.Reused {
 		t.Fatalf("reuse should not fetch: %+v, %v", reused, err)
 	}
-	req.Branch = "must-not-exist"
-	if _, err := CreateWorktree(t.Context(), req); err == nil || !strings.Contains(err.Error(), "refresh worktree base") {
-		t.Fatalf("expected visible refresh failure, got %v", err)
+	req.Branch = "offline"
+	created, err := CreateWorktree(t.Context(), req)
+	if err != nil {
+		t.Fatalf("refresh failure blocked creation: %v", err)
 	}
-	if _, err := os.Stat(WorktreePathFor(repo, req.Branch)); !os.IsNotExist(err) {
-		t.Fatalf("failed fetch created worktree: %v", err)
-	}
-	if branchExists(t.Context(), repo, req.Branch) {
-		t.Fatal("failed fetch created branch")
+	if got, want := freshGitOut(t, created.Path, "rev-parse", "HEAD"), freshGitOut(t, res.Path, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("offline HEAD = %s, want cached commit %s", got, want)
 	}
 	if got := freshGitOut(t, res.Path, "rev-parse", "HEAD"); got == "" {
 		t.Fatal("existing worktree lost its commit")
@@ -95,10 +91,12 @@ func TestWorktreeExplicitRemoteFailure(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "checkout")
 	gitRun(t, upstream, "clone", upstream, repo)
 	gitRun(t, repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing"))
-	for _, base := range []string{"refs/remotes/origin/main", "refs/remotes/missing/main"} {
-		if _, err := freshWorktreeBase(t.Context(), repo, base); err == nil {
-			t.Fatalf("expected refresh failure for %s", base)
-		}
+	base := "refs/remotes/origin/main"
+	if got, err := freshWorktreeBase(t.Context(), repo, base); err != nil || got != base {
+		t.Fatalf("cached explicit base = %q, %v", got, err)
+	}
+	if _, err := freshWorktreeBase(t.Context(), repo, "refs/remotes/missing/main"); err == nil {
+		t.Fatal("missing explicit base must still fail")
 	}
 	// A local choice remains usable offline, including an existing branch that
 	// the form originally requested as new.
@@ -113,8 +111,8 @@ func TestWorktreeUnnamedRemoteDefault(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "checkout")
 	gitRun(t, upstream, "clone", upstream, repo)
 	gitRun(t, upstream, "checkout", "--detach")
-	if _, err := freshWorktreeBase(t.Context(), repo, ""); err == nil || !strings.Contains(err.Error(), "select an explicit base") {
-		t.Fatalf("unnamed default = %v", err)
+	if got, err := freshWorktreeBase(t.Context(), repo, ""); err != nil || got != "refs/remotes/origin/main" {
+		t.Fatalf("unnamed default fallback = %q, %v", got, err)
 	}
 }
 
@@ -131,7 +129,7 @@ func TestWorktreeNonOriginRemote(t *testing.T) {
 		}
 	}
 	gitRun(t, repo, "remote", "add", "other", upstream)
-	if _, err := freshWorktreeBase(t.Context(), repo, ""); err == nil || !strings.Contains(err.Error(), "multiple remotes") {
-		t.Fatalf("ambiguous default = %v", err)
+	if got, err := freshWorktreeBase(t.Context(), repo, ""); err != nil || got != "refs/heads/main" {
+		t.Fatalf("ambiguous default fallback = %q, %v", got, err)
 	}
 }

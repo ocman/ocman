@@ -23,9 +23,11 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   Legacy recovery uses the same preparation.
 - New worktree branches discover and fetch the origin default at creation when
   no base is selected. Explicit remote-tracking bases are fetched too. Fetch
-  failures block creation; explicit local refs/commits and existing branches or
-  worktrees are never updated automatically. Local-only repositories need no fetch.
-  Without origin, use the sole remote or require an explicit base if ambiguous.
+  failures fall back to the locally available base; explicit local refs/commits
+  and existing branches or worktrees are never updated automatically. Local-only
+  repositories need no fetch.
+  Without origin, use the sole remote or skip refreshing if ambiguous. Explicit
+  remote-tracking bases must still exist locally when refreshing fails.
 - Machine selection changes the route only. Each draft retains its `draftId`
   query parameter and `draftKey`. Prepared local conversations appear in the
   sidebar, first within their project in grouped view, before sessions exist.

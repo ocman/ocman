@@ -13,6 +13,7 @@ const worktreeFetchTimeout = 60 * time.Second
 
 // freshWorktreeBase refreshes remote bases without moving any local branch.
 // Explicit local refs and commits are deliberate snapshots and stay unchanged.
+// Refresh failures use the selected cached ref or resolve a local default.
 func freshWorktreeBase(ctx context.Context, repo, base string) (string, error) {
 	if base != "" && !strings.HasPrefix(base, "refs/remotes/") {
 		return base, nil
@@ -21,8 +22,32 @@ func freshWorktreeBase(ctx context.Context, repo, base string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	ref, err := refreshWorktreeRemoteBase(ctx, repo, base, strings.Fields(remotes))
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if base == "" {
+			return ResolveBaseRef(ctx, repo)
+		}
+		valid, probeErr := verifyBaseCommit(ctx, repo, base)
+		if probeErr != nil {
+			return "", probeErr
+		}
+		if !valid {
+			return "", err
+		}
+		return base, nil
+	}
+	if ref == "" {
+		return "", nil
+	}
+	// Pin this creation to the fetched commit, even if another fetch updates refs.
+	return optionalBaseOutput(ctx, repo, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}")
+}
+
+func refreshWorktreeRemoteBase(ctx context.Context, repo, base string, names []string) (string, error) {
 	remote := ""
-	names := strings.Fields(remotes)
 	for _, name := range names {
 		if base == "" && name == "origin" || strings.HasPrefix(base, "refs/remotes/"+name+"/") && len(name) > len(remote) {
 			remote = name
@@ -62,7 +87,5 @@ func freshWorktreeBase(ctx context.Context, repo, base string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("refresh worktree base: fetch %s: %w: %s", base, err, strings.TrimSpace(string(out)))
 	}
-	// Pin this creation to the fetched commit, even if another fetch updates refs.
-	commit, err := optionalBaseOutput(ctx, repo, "rev-parse", "--verify", "--end-of-options", base+"^{commit}")
-	return commit, err
+	return base, nil
 }
