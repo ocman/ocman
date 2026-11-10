@@ -155,21 +155,6 @@ func (d *Document) Set(section, key string, value any) error {
 	return nil
 }
 
-func preserveComments(next, old *yaml.Node) {
-	next.HeadComment, next.LineComment, next.FootComment = old.HeadComment, old.LineComment, old.FootComment
-	if next.Kind == yaml.MappingNode && old.Kind == yaml.MappingNode {
-		for i := 0; i < len(next.Content); i += 2 {
-			for j := 0; j < len(old.Content); j += 2 {
-				if next.Content[i].Value == old.Content[j].Value {
-					preserveComments(next.Content[i], old.Content[j])
-					preserveComments(next.Content[i+1], old.Content[j+1])
-					break
-				}
-			}
-		}
-	}
-}
-
 func (d *Document) Bytes() ([]byte, error) {
 	var b bytes.Buffer
 	e := yaml.NewEncoder(&b)

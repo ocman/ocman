@@ -66,6 +66,10 @@ startup options, unknown settings, duplicate keys, multiple YAML documents,
 anchors, aliases and unsupported schema versions are rejected. The file has a
 4 MiB size limit.
 
+Free-text settings, including forge prompt templates, remain literal strings
+during migration and UI saves. JSON-looking text is not parsed or reformatted.
+Only settings with an explicit structured contract become YAML objects or arrays.
+
 Startup precedence is explicit CLI flags, supported environment overrides, file
 values, then built-in defaults. Existing password precedence remains environment,
 password-file flag, then password flag or its file-configured value. In YAML,
@@ -138,7 +142,9 @@ resolved values are not copied into the managed secret store.
 ## UI saves and scope
 
 UI saves preserve document comments and unrelated fields, though YAML formatting
-may change. Writes are atomic, use owner-only permissions, and serialize
+may change. No-op saves retain sequence nodes; surviving named entries keep
+their comments across edits and reordering when their identity is unambiguous.
+Writes are atomic, use owner-only permissions, and serialize
 cooperating ocman writers. An external content change detected during a save
 rejects the save. External tools should use atomic file replacement; the lock is
 not a transaction with editors that ignore it. Read-only configs can be used

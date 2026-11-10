@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"sort"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/ocman/ocman/internal/configfile"
@@ -84,21 +82,14 @@ func (d *DB) applyFileSetting(ctx context.Context, f *fileConfig, doc *configfil
 	if err != nil {
 		return err
 	}
-	var next any = value
+	var next any
 	switch {
 	case isFileSecret(key):
 		next, err = d.replaceFileSecret(ctx, f, old, value)
 	case key == "judge_endpoint":
 		next, err = d.replaceEndpointSecret(ctx, f, old, value)
 	default:
-		// Existing setting interfaces use strings, with JSON for structured
-		// values. Keep objects/arrays editable as native YAML.
-		if strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[") {
-			var decoded any
-			if json.Unmarshal([]byte(value), &decoded) == nil {
-				next = decoded
-			}
-		}
+		next = fileSettingValue(key, value)
 	}
 	if err != nil {
 		return err

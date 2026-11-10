@@ -46,7 +46,7 @@ func (d *DB) migrateFileConfig(ctx context.Context) (*configfile.Document, error
 	sort.Strings(keys)
 	for _, key := range keys {
 		value := values[key]
-		var next any = value
+		var next any
 		switch {
 		case isFileSecret(key) && value != "":
 			if key == "preview_apps" {
@@ -70,13 +70,7 @@ func (d *DB) migrateFileConfig(ctx context.Context) (*configfile.Document, error
 				next = fields
 			}
 		default:
-			var structured any
-			if json.Unmarshal([]byte(value), &structured) == nil {
-				switch structured.(type) {
-				case map[string]any, []any:
-					next = structured
-				}
-			}
+			next = fileSettingValue(key, value)
 		}
 		if err != nil {
 			return nil, err

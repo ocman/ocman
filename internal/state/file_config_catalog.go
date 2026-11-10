@@ -1,6 +1,9 @@
 package state
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // The allowlist separates deployment/user configuration from generated keys,
 // per-session policy snapshots, checkpoints and other runtime settings. Dedicated
@@ -36,4 +39,24 @@ func isFileSetting(key string) bool {
 
 func isFileSecret(key string) bool {
 	return key == "preview_apps" || key == "webhook.enrollment_token"
+}
+
+// fileSettingValue decodes only settings whose public contract is structured
+// JSON. Templates and other text remain strings even if they look like JSON.
+func fileSettingValue(key, value string) any {
+	structured := strings.HasPrefix(key, "project:") || strings.HasPrefix(key, "project-defaults:")
+	switch key {
+	case "auto_archive", "model_fallthrough", "notifications.badge", "link_preview_rules", "prompt_sections":
+		structured = true
+	}
+	if structured {
+		var decoded any
+		if json.Unmarshal([]byte(value), &decoded) == nil {
+			switch decoded.(type) {
+			case map[string]any, []any:
+				return decoded
+			}
+		}
+	}
+	return value
 }
