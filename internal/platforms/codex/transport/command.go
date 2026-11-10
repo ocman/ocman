@@ -25,6 +25,7 @@ type supervisorArgs struct {
 	MCPTokenFile        string // file holding that listener's bearer token
 	Version             string
 	ACPCLI              string
+	ConnectionAccount   bool
 }
 
 func parseSupervisorArgs(args []string) (supervisorArgs, error) {
@@ -36,6 +37,7 @@ func parseSupervisorArgs(args []string) (supervisorArgs, error) {
 	flags.StringVar(&a.CLI, "codex-cli", "codex", "the dashboard's codex executable")
 	flags.StringVar(&a.ACPCLI, "codex-acp-cli", "codex-acp", "installed Codex ACP adapter executable")
 	flags.StringVar(&a.Home, "codex-home", "", "the dashboard's canonical Codex home")
+	flags.BoolVar(&a.ConnectionAccount, "connection-account", false, "use only this named connection's stored account")
 	flags.StringVar(&a.MCPAddr, "mcp-addr", "", "ocman's bound MCP listener address")
 	flags.StringVar(&a.MCPTokenFile, "mcp-token-file", "", "file holding the MCP listener's bearer token")
 	flags.StringVar(&a.Version, "ocman-version", "dev", "ocman version reported to Codex")
@@ -44,6 +46,9 @@ func parseSupervisorArgs(args []string) (supervisorArgs, error) {
 	}
 	if flags.NArg() != 0 || !filepath.IsAbs(a.Socket) || !filepath.IsAbs(a.Spool) || !filepath.IsAbs(a.Repo) {
 		return a, fmt.Errorf("provider codex requires absolute socket, spool and repo paths")
+	}
+	if a.ConnectionAccount && !filepath.IsAbs(a.Home) {
+		return a, fmt.Errorf("named Codex connection requires an explicit absolute home")
 	}
 	return a, nil
 }
@@ -55,6 +60,9 @@ func (a supervisorArgs) options() codexprovider.Options {
 		ACPCommand: acpexec.Command{Executable: a.ACPCLI}, Home: a.Home, MCPAddr: a.MCPAddr, MCPTokenFile: a.MCPTokenFile}
 	if a.Home != "" {
 		opts.Env = append(os.Environ(), "CODEX_HOME="+a.Home)
+	}
+	if a.ConnectionAccount {
+		opts.Env = connectionEnvironment(os.Environ(), a.Home)
 	}
 	return opts
 }

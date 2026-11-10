@@ -37,6 +37,8 @@ type Config struct {
 	State   *state.DB
 	DataDir string
 	Version string // ocman's version, reported to Codex as its client
+	// Connection pins a named account. Nil preserves the legacy machine account.
+	Connection *ConnectionConfig
 }
 
 // New composes the Codex platform. Nothing is launched here: the supervisor
@@ -78,29 +80,25 @@ func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error)
 			l.acp = path
 		}
 	}
-	home, err := codexHome()
-	if err != nil {
-		return nil, fmt.Errorf("codex home unavailable: %w", err)
-	}
-	root := filepath.Join(cfg.DataDir, "codex-supervisor")
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return nil, err
-	}
-	// The key Ensure derives (symlinks resolved), so Recover finds its row.
-	root, err = local.ProviderRoot(ctx, root)
+	paths, err := resolvePlatformPaths(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 	var rules *provider.Rules
-	rules, err = provider.OpenRules(filepath.Join(cfg.DataDir, "codex-rules.json"))
+	rules, err = provider.OpenRules(filepath.Join(paths.data, "codex-rules.json"))
 	if err != nil {
 		return nil, fmt.Errorf("permission rules unreadable: %w", err) // never start without the saved denies
 	}
 	ctx, stop := context.WithCancel(ctx)
-	p := &Platform{ctx: ctx, stop: stop, cli: l.cli, acpCLI: l.acp, root: root, home: home, rules: rules, history: newHistory(l.cli, cfg.Version, home)}
+	p := &Platform{ctx: ctx, stop: stop, cli: l.cli, acpCLI: l.acp, root: paths.root, home: paths.home, rules: rules, history: newHistory(l.cli, cfg.Version, paths.home, paths.named)}
+	// Keep sockets short. Their per-instance names include the scoped root hash;
+	// MCP authentication still belongs to this owner, not a named account.
 	runtime := ocruntime.NewBackendRuntime(codexprovider.PlatformID, l.exe, filepath.Join(cfg.DataDir, "p"))
 	runtime.Args = func() []string {
-		args := []string{"--codex-cli", l.cli, "--codex-acp-cli", l.acp, "--codex-home", home, "--ocman-version", cfg.Version}
+		args := []string{"--codex-cli", l.cli, "--codex-acp-cli", l.acp, "--codex-home", paths.home, "--ocman-version", cfg.Version}
+		if paths.named {
+			args = append(args, "--connection-account")
+		}
 		if addr, _ := p.mcpAddr.Load().(string); addr != "" {
 			args = append(args, "--mcp-addr", addr, "--mcp-token-file", mcpauth.TokenPath(cfg.DataDir))
 		}
@@ -108,9 +106,9 @@ func newPlatform(ctx context.Context, cfg Config, l launcher) (*Platform, error)
 	}
 	runtime.Identity = func() string {
 		addr, _ := p.mcpAddr.Load().(string)
-		return strings.Join([]string{l.cli, l.acp, home, supervisorIdentity, addr}, "\x00")
+		return paths.runtimeIdentity(strings.Join([]string{l.cli, l.acp, paths.home, supervisorIdentity, addr}, "\x00"))
 	}
-	p.mgr = &local.ProviderManager{Runtime: runtime, State: cfg.State, OnDrain: p.onDrain}
+	p.mgr = &local.ProviderManager{Runtime: runtime, State: cfg.State, OnDrain: p.onDrain, CanonicalRoots: paths.named}
 	if cfg.State != nil {
 		p.wg.Go(p.recover)
 	}

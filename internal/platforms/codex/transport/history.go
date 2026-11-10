@@ -44,9 +44,13 @@ var historyTimeout = 30 * time.Second
 
 func (c cached[T]) fresh() bool { return !c.at.IsZero() && time.Since(c.at) < catalogTTL }
 
-func newHistory(cli, version, home string) *history {
+func newHistory(cli, version, home string, named bool) *history {
 	return &history{start: func(ctx context.Context) (*codexappserver.Client, error) {
-		return codexappserver.Start(ctx, codexappserver.Options{CLI: cli, Env: append(os.Environ(), "CODEX_HOME="+home),
+		env := append(os.Environ(), "CODEX_HOME="+home)
+		if named {
+			env = connectionEnvironment(os.Environ(), home)
+		}
+		return codexappserver.Start(ctx, codexappserver.Options{CLI: cli, Env: env,
 			Client: codexappserver.ClientInfo{Name: "ocman", Title: "ocman history", Version: version}})
 	}}
 }

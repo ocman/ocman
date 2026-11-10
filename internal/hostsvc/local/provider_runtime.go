@@ -27,12 +27,22 @@ type ProviderManager struct {
 	// with whether it still speaks a supported protocol, so the dashboard
 	// keeps a route that answers its pending prompts until it settles.
 	OnDrain func(root, endpoint string, compatible bool)
-	mu      sync.Mutex
-	roots   map[string]*sync.Mutex
+	// CanonicalRoots is for owner-allocated runtime roots, not project paths.
+	// They must not collapse to a surrounding repository's main checkout or
+	// follow aliases introduced after the owning integration prepared them.
+	CanonicalRoots bool
+	mu             sync.Mutex
+	roots          map[string]*sync.Mutex
 }
 
 func (m *ProviderManager) Ensure(ctx context.Context, directory string) (*hostsvc.EnsureRuntimeResult, error) {
-	root, err := ProviderRoot(ctx, directory)
+	var root string
+	var err error
+	if m.CanonicalRoots {
+		root, err = strictRuntimeRoot(directory)
+	} else {
+		root, err = ProviderRoot(ctx, directory)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +56,12 @@ func ProviderRoot(ctx context.Context, directory string) (string, error) {
 	if root, err := gitpkg.ResolveMainRepoRoot(ctx, directory); err == nil {
 		return root, nil
 	}
+	return CanonicalProviderRoot(directory)
+}
+
+// CanonicalProviderRoot resolves an explicit runtime directory without treating
+// it as a project. Named machine supervisors use it for account-scoped keys.
+func CanonicalProviderRoot(directory string) (string, error) {
 	if !filepath.IsAbs(directory) {
 		return "", fmt.Errorf("provider directory must be absolute: %q", directory)
 	}
@@ -59,12 +75,25 @@ func ProviderRoot(ctx context.Context, directory string) (string, error) {
 	return root, nil
 }
 
+func strictRuntimeRoot(directory string) (string, error) {
+	root, err := CanonicalProviderRoot(directory)
+	if err == nil && root != filepath.Clean(directory) {
+		return "", fmt.Errorf("provider runtime directory no longer matches its canonical root")
+	}
+	return root, err
+}
+
 // Recover reattaches a persisted supervisor after a dashboard restart
 // without launching one: a healthy row is reused, an out-of-range one is
 // drained and replaced (AD-5), and a dead one is left for the next Ensure.
 func (m *ProviderManager) Recover(ctx context.Context, root string) (*hostsvc.EnsureRuntimeResult, bool, error) {
 	if m.Runtime == nil || m.State == nil {
 		return nil, false, fmt.Errorf("provider manager requires runtime and state")
+	}
+	if m.CanonicalRoots {
+		if _, err := strictRuntimeRoot(root); err != nil {
+			return nil, false, err
+		}
 	}
 	row, exists, err := m.State.GetManagedProvider(ctx, m.Runtime.PlatformID, root)
 	if err != nil || !exists {

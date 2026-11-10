@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ocman/ocman/internal/platforms/codex/acptest"
@@ -22,10 +23,12 @@ func TestMain(m *testing.M) {
 	case os.Getenv("FAKE_CODEX") == "":
 		os.Exit(m.Run())
 	case len(os.Args) == 1 && os.Getenv("FAKE_CODEX_ACP_STATE") != "":
-		acptest.Serve(os.Stdin, os.Stdout, acptest.Config{State: os.Getenv("FAKE_CODEX_ACP_STATE"), Permission: os.Getenv("FAKE_CODEX_APPROVAL") != ""})
+		requireFakeStoredAccount()
+		acptest.Serve(os.Stdin, os.Stdout, acptest.Config{State: fakeAccountState(), Permission: os.Getenv("FAKE_CODEX_APPROVAL") != ""})
 	case len(os.Args) > 1 && os.Args[1] == "--version":
 		fmt.Println("codex-cli 9.9.9")
 	case len(os.Args) > 1 && os.Args[1] == "app-server":
+		requireFakeStoredAccount()
 		if path := os.Getenv("FAKE_CODEX_LAUNCHES"); path != "" {
 			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 			if err != nil {
@@ -36,7 +39,7 @@ func TestMain(m *testing.M) {
 		}
 		s := codextest.Serve(os.Stdin, os.Stdout, func(s *codextest.Server) {
 			fakeCodex(s)
-			if path := os.Getenv("FAKE_CODEX_ACP_STATE"); path != "" {
+			if path := fakeAccountState(); path != "" {
 				acptest.ConfigureNative(s, path)
 			}
 		})
@@ -45,6 +48,25 @@ func TestMain(m *testing.M) {
 		os.Exit(2)
 	}
 	os.Exit(0)
+}
+
+func fakeAccountState() string {
+	if os.Getenv("FAKE_CODEX_CONNECTION_ACCOUNT") != "" {
+		return filepath.Join(os.Getenv("CODEX_HOME"), "fixture-account-state.json")
+	}
+	return os.Getenv("FAKE_CODEX_ACP_STATE")
+}
+
+func requireFakeStoredAccount() {
+	if os.Getenv("FAKE_CODEX_CONNECTION_ACCOUNT") == "" {
+		return
+	}
+	for _, key := range []string{"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_IDENTITY_TOKEN_FILE", "OPENAI_FEDERATION_RULE_ID", "OPENAI_BASE_URL"} {
+		if _, exists := os.LookupEnv(key); exists {
+			fmt.Fprintln(os.Stderr, "named account inherited an authentication override:", key)
+			os.Exit(97)
+		}
+	}
 }
 
 func thread(id string) map[string]any {

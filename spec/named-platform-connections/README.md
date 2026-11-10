@@ -23,6 +23,14 @@ The dialog callback contract carries the owner's `reservationId` through Check
 again, Back, renaming and Save retries. It rejects a response that changes or
 drops a pinned receipt. This is tested with callback mocks, not a live owner API.
 
+The Codex runtime checkpoint adds an explicit `Config.Connection` constructor
+option. It pins a canonical account home, scopes rules and supervisor recovery
+keys to the connection ID, and filters inherited owner authentication overrides
+for history readers, supervisor readers and ACP execution. Two fake accounts in
+the same project execute and recover independently, including when the owner
+state directory is itself inside a Git checkout. Default machine construction
+is unchanged. No startup caller selects named Codex connections yet.
+
 **Only the schema is wired into startup.** The repository initializer and
 mutations have no production callers yet. Existing platform settings remain
 authoritative. Native authentication, runtime isolation and routing have not
@@ -85,11 +93,14 @@ commands displayed in the browser fixture are examples, not executable setup.
 3. Refactor integration constructors to accept explicit connection configuration.
    Never change process-global environment variables while constructing adapters.
    Audit native environment inheritance so an API token cannot override the
-   intended subscription account silently.
+   intended subscription account silently. Codex has the explicit constructor
+   and filtered child environments; Claude and OpenCode still need this work.
 4. Scope supervisors, runtime records, rules, launch files, sockets, spools,
    discovery and recovery to connections. Claude currently persists supervisors
    by `(provider, repo_root)`; Codex currently has one machine supervisor root.
-   These keys must not collide for two accounts in the same repository.
+   These keys must not collide for two accounts in the same repository. Explicit
+   named Codex constructors now use separate roots, rules and instance names;
+   the default constructor retains its existing machine-wide root.
 5. Preserve the canonical wrapper's optional capabilities and source checks.
    A shallow interface wrapper that loses optional interfaces is not sufficient.
    Browsing must remain source-scoped: the retained-history fallback must not
@@ -116,7 +127,10 @@ commands displayed in the browser fixture are examples, not executable setup.
   environments, indexing, plugin installation and per-project supervisors.
   Verify effective credential isolation, including OS credential stores.
 - **Codex:** explicit `CODEX_HOME` for both execution and the read-only
-  app-server, with separate supervisor roots and recovery records.
+   app-server, with separate supervisor roots and recovery records. This is
+   implemented behind the explicit constructor and tested with fake processes,
+   but registry routing, setup account probes and installed-version/credential-
+   store validation still gate user-facing isolation support.
 - **OpenCode:** isolated configuration, authentication, data/database and server
   per connection. Existing-service adoption remains only for the connection
   matching that service's database and credentials. A separate database alone
@@ -194,6 +208,47 @@ commands displayed in the browser fixture are examples, not executable setup.
   owner response that changes or drops a receipt clears the successful check
   and blocks Save until a matching check succeeds. Readiness observations and
   returned paths are not copied into authoritative save fields.
+
+### Codex runtime contract
+
+- `codextransport.Config.Connection` requires a canonical `cnx_<uuid>` ID, an
+  explicit absolute existing Codex home, and an explicit absolute owner state
+  directory. Missing or invalid inputs return an error; they never fall back to
+  `CODEX_HOME` or the machine account. A symlink to an account home resolves to
+  that home's physical identity, as native history ingestion already expects.
+- Rules and the logical supervisor root live under
+  `<state>/platform-connections/<connection-id>/runtime/`. Rooted preparation
+  refuses symlink aliases, files and nonprivate directories. Runtime keys do not
+  fold to a surrounding Git checkout, even when state is stored inside it.
+  Ensure and recovery also refuse roots retargeted after construction, before
+  looking up or replacing a runtime. This is a preflight, not containment against
+  another process running as the same user.
+- Socket/spool instance directories retain the short `<state>/p` parent to fit
+  Unix socket limits. Their existing instance names include the hash of the
+  connection-scoped root and launch identity, so siblings cannot reuse them.
+  MCP still uses the owning Ocman's listener and bearer-token file.
+- Named child environments replace `CODEX_HOME` and omit known inherited
+  authentication, identity, endpoint and billing overrides. The same policy is
+  used by the dashboard's history app-server and the supervisor's native reader
+  and ACP execution. `HOME` and process-global environment variables do not
+  change. Legacy machine construction retains its original environment policy.
+- The supervisor's `--connection-account` flag requires an explicit absolute
+  home and participates in runtime identity. Recovery cannot mistake a legacy
+  unfiltered supervisor for a named-account supervisor.
+- Fake-process tests cover two same-kind accounts with the same native thread ID
+  in one project, a turn written to only one account, retained runtime recovery
+  without replacing the sibling, and authentication-override rejection in both
+  native readers and ACP execution. A runtime-root retargeting regression was
+  observed failing before the admission guard and passing afterward. Tests do
+  not contact real model services,
+  read real credentials or establish compatibility with every installed Codex
+  version or credential-store configuration.
+- Native keyring namespacing is [documented upstream](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/storage.rs)
+  as a hash of canonical `CODEX_HOME`. Owner setup still needs to verify supported
+  native versions and
+  effective account identity before advertising isolation. The registry remains
+  platform-kind keyed; these native constructors are not yet new-session routing
+  or a completed multi-account feature.
 
 ## Completion gates
 
