@@ -92,6 +92,9 @@ func validateGraph(messages []map[string]any) error {
 			if kind == "updateComponents" {
 				for _, item := range body["components"].([]any) {
 					component := item.(map[string]any)
+					if err := validateChart(component); err != nil {
+						return err
+					}
 					components[component["id"].(string)] = component
 				}
 			}
@@ -103,7 +106,7 @@ func validateGraph(messages []map[string]any) error {
 	if components["root"] == nil {
 		return fmt.Errorf("a root component is required")
 	}
-	visits := 0
+	visits, charts := 0, 0
 	var walk func(string, map[string]bool, int) error
 	walk = func(id string, ancestors map[string]bool, depth int) error {
 		visits++
@@ -113,6 +116,11 @@ func validateGraph(messages []map[string]any) error {
 		component := components[id]
 		if component == nil {
 			return fmt.Errorf("missing child component %q", id)
+		}
+		if canvasCharts[component["component"].(string)] {
+			if charts++; charts > MaxCharts {
+				return fmt.Errorf("at most %d PieChart, MultiBarChart, LineChart or ScatterChart renders are allowed", MaxCharts)
+			}
 		}
 		ancestors[id] = true
 		defer delete(ancestors, id)
@@ -135,7 +143,7 @@ func validateGraph(messages []map[string]any) error {
 	}
 	// Validate disconnected definitions too, not just the visible root.
 	for id := range components {
-		visits = 0
+		visits, charts = 0, 0
 		if err := walk(id, map[string]bool{}, 0); err != nil {
 			return err
 		}

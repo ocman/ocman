@@ -1,14 +1,24 @@
 import { useContext, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { buildSurface, parseA2UIResult, resolveValue } from '../../lib/a2ui';
-import type { A2UIAction, A2UIResult as Result } from '../../lib/a2ui';
+import { buildSurface, isCanvasChart, parseA2UIResult, resolveValue } from '../../lib/a2ui';
+import type { A2UIAction, Component, A2UIResult as Result } from '../../lib/a2ui';
+import { assignSlots } from '../../lib/a2uiCharts';
 import { A2UIActionContext } from '../../lib/a2uiActionContext';
 import { Button, CheckboxField, SubmitButton, TextField } from '../Control';
 import { Modal } from '../Modal';
 import { ModalFooter } from '../ModalFooter';
 import { ModalHeader } from '../ModalHeader';
-import { ResultBarChart, ResultTable } from './A2UIWidgets';
+import { ResultBarChart, ResultStat, ResultTable } from './A2UIWidgets';
+import { lazyComponent } from '../lazyComponent';
 import styles from './A2UIResult.module.css';
+
+// chart.js loads with the first chart, not with every conversation.
+const ResultChart = lazyComponent(() => import('./A2UICharts').then(m => m.ResultChart), 'Loading chart…');
+
+/** Charts and stat tiles in a Row grow to share its width. */
+function rowCell(c: Component) {
+  return isCanvasChart(c) || c.component === 'Stat' ? styles.figureCell : undefined;
+}
 
 export function A2UIToolResult({ toolName, argsText = '', result }: { toolName: string; argsText?: string; result: unknown }) {
   const context = useContext(A2UIActionContext);
@@ -29,8 +39,10 @@ function ResultBody({ result, surface }: { result: Result; surface: NonNullable<
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
   const lock = useRef(false);
+  const slots = useMemo(() => assignSlots(surface.components.values()), [surface]);
   function render(id: string): ReactNode {
     const c = surface.components.get(id)!; // graph validated before rendering
+    if (isCanvasChart(c)) return <ResultChart chart={c} slots={slots} />;
     switch (c.component) {
       case 'Text': {
         const text = String(resolveValue(c.text, data) ?? '');
@@ -39,7 +51,8 @@ function ResultBody({ result, surface }: { result: Result; surface: NonNullable<
         return <p className={c.variant === 'caption' ? styles.caption : undefined}>{text}</p>;
       }
       case 'Column':
-      case 'Row': return <div className={c.component === 'Row' ? styles.row : styles.column}>{c.children.map(child => <div key={child}>{render(child)}</div>)}</div>;
+      case 'Row': return <div className={c.component === 'Row' ? styles.row : styles.column}>{c.children.map(child =>
+        <div key={child} className={c.component === 'Row' ? rowCell(surface.components.get(child)!) : undefined}>{render(child)}</div>)}</div>;
       case 'Card': return <div className={styles.card}>{render(c.child)}</div>;
       case 'Divider': return <hr className={styles.divider} />;
       case 'TextField': return <label className={styles.field}>
@@ -53,7 +66,8 @@ function ResultBody({ result, surface }: { result: Result; surface: NonNullable<
         <span>{c.label}</span>
       </label>;
       case 'Table': return <ResultTable columns={c.columns} rows={c.rows} />;
-      case 'BarChart': return <ResultBarChart label={c.label} data={c.data} />;
+      case 'BarChart': return <ResultBarChart label={c.label} data={c.data} unit={c.unit} format={c.format} />;
+      case 'Stat': return <ResultStat stat={c} />;
       case 'Button': return <Button type="button" disabled={!send} title={!send ? 'This conversation is read-only or disconnected' : 'Review before sending to the agent'} onClick={() => {
         const context = Object.fromEntries(Object.entries(c.action.event.context ?? {}).map(([key, value]) => [key, resolveValue(value, data) ?? null]));
         setSent(false);

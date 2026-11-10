@@ -22,6 +22,7 @@ func TestRenderUITool(t *testing.T) {
 	}{
 		{"help", map[string]any{"action": "help"}, false},
 		{"render", help()["example"].(map[string]any), false},
+		{"render charts", help()["chartExample"].(map[string]any), false},
 		{"invalid", map[string]any{"action": "render", "title": "x", "summary": "fallback", "messages": []any{}}, true},
 		{"unknown", map[string]any{"action": "execute"}, true},
 		{"missing action", map[string]any{}, true},
@@ -31,7 +32,7 @@ func TestRenderUITool(t *testing.T) {
 			if res.IsError != tc.wantError {
 				t.Fatalf("error=%v: %s", res.IsError, testutil.ResultText(res))
 			}
-			if tc.name == "render" {
+			if !tc.wantError && tc.name != "help" {
 				var out map[string]json.RawMessage
 				if err := json.Unmarshal([]byte(testutil.ResultText(res)), &out); err != nil {
 					t.Fatal(err)

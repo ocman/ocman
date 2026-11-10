@@ -13,7 +13,25 @@ export type Component =
   | { id: string; component: 'TextField' | 'CheckBox'; label: string; value: Binding }
   | { id: string; component: 'Button'; child: string; action: { event: { name: string; context?: Record<string, Scalar | Binding> } } }
   | { id: string; component: 'Table'; columns: string[]; rows: Scalar[][] }
-  | { id: string; component: 'BarChart'; label: string; data: { label: string; value: number }[] };
+  | ({ id: string; component: 'BarChart'; label: string; data: { label: string; value: number }[] } & ValueHint)
+  | ({ id: string; component: 'PieChart'; label: string; variant?: 'donut' | 'pie'; data: { label: string; value: number }[] } & ValueHint)
+  | ({ id: string; component: 'MultiBarChart'; label: string; mode?: 'grouped' | 'stacked'; orientation?: 'vertical' | 'horizontal';
+    categories: string[]; series: Series[] } & AxisLabels & ValueHint)
+  | ({ id: string; component: 'LineChart'; label: string; area?: boolean; series: Series[];
+    x: { type: 'category' | 'date'; values: string[] } | { type: 'number'; values: number[] } } & AxisLabels & ValueHint)
+  | ({ id: string; component: 'ScatterChart'; label: string; xUnit?: string; series: { name: string; points: [number, number][] }[] } & AxisLabels & ValueHint)
+  | ({ id: string; component: 'Stat'; label: string; value: number; delta?: number; deltaLabel?: string; better?: 'up' | 'down' | 'neither' } & ValueHint);
+
+export type ValueFormat = 'number' | 'compact' | 'percent' | 'bytes';
+export type ValueHint = { unit?: string; format?: ValueFormat };
+type AxisLabels = { xLabel?: string; yLabel?: string };
+export type Series = { name: string; values: (number | null)[] };
+export type ChartComponent = Extract<Component, { component: 'PieChart' | 'MultiBarChart' | 'LineChart' | 'ScatterChart' }>;
+/** Canvas charts per rendered result; mirrors agentui.MaxCharts. */
+export const MAX_CHARTS = 12;
+export function isCanvasChart(c: Component): c is ChartComponent {
+  return c.component === 'PieChart' || c.component === 'MultiBarChart' || c.component === 'LineChart' || c.component === 'ScatterChart';
+}
 
 type Message = { version: 'v0.9.1' } & (
   | { createSurface: { surfaceId: string; catalogId: string } }
@@ -36,17 +54,19 @@ export function buildSurface(value: unknown): Surface | null {
       const update = 'updateComponents' in message ? message.updateComponents : message.updateDataModel;
       if (!id || id !== update.surfaceId) return null;
       if ('components' in update) {
+        if (!update.components.every(validChart)) return null;
         for (const c of update.components) components.set(c.id, c);
       } else data = update.value;
     }
   }
   if (!components.has('root') || components.size > 100) return null;
-  let visits = 0;
+  let visits = 0, charts = 0;
   function walk(key: string, ancestors: Set<string>, depth: number): boolean {
     visits++;
     if (depth > 16 || visits > 500 || ancestors.has(key)) return false;
     const c = components.get(key);
     if (!c) return false;
+    if (isCanvasChart(c) && ++charts > MAX_CHARTS) return false;
     const next = new Set(ancestors).add(key);
     if ('child' in c) {
       if (!walk(c.child, next, depth + 1)) return false;
@@ -56,9 +76,39 @@ export function buildSurface(value: unknown): Surface | null {
   }
   for (const key of components.keys()) {
     visits = 0;
+    charts = 0;
     if (!walk(key, new Set(), 0)) return null;
   }
   return { id, components, data };
+}
+
+/** Cross-field chart rules JSON Schema cannot express; mirrors agentui.validateChart. */
+function validChart(c: Component): boolean {
+  const unique = (names: string[]) => new Set(names).size === names.length;
+  const lengths = (series: Series[], length: number) => series.every(s => s.values.length === length);
+  switch (c.component) {
+    case 'PieChart': return unique(c.data.map(item => item.label));
+    case 'MultiBarChart': return unique(c.series.map(s => s.name)) && lengths(c.series, c.categories.length);
+    case 'ScatterChart': return unique(c.series.map(s => s.name));
+    case 'LineChart': {
+      if (!unique(c.series.map(s => s.name)) || !lengths(c.series, c.x.values.length)) return false;
+      if (c.x.type === 'category') return true;
+      const points = c.x.type === 'date' ? c.x.values.map(parseChartDate) : c.x.values;
+      return points.every((point, i) => !Number.isNaN(point) && (i === 0 || point > points[i - 1]));
+    }
+    default: return true;
+  }
+}
+
+/** Milliseconds for the catalog's ISO 8601 subset, or NaN. Times without a zone are UTC,
+ * and impossible calendar dates are rejected as Go's time.Parse does. */
+export function parseChartDate(value: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})?)?$/.exec(value);
+  if (!match) return NaN;
+  const [, year, month, day, hour, minute, second] = match.map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return NaN;
+  if (match[4] && (hour > 23 || minute > 59 || second > 59)) return NaN;
+  return Date.parse(match[4] && !match[7] ? `${value}Z` : value);
 }
 
 function object(value: unknown): value is Record<string, unknown> {

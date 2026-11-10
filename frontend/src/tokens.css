@@ -70,6 +70,21 @@
   /* Brand: OpenCode signature orange (PlatformBadge). */
   --brand-opencode: #d97757;
 
+  /* Categorical chart series for agent-generated results, assigned in this
+   * order. The order is the colorblind-safety mechanism: adjacent slots stay
+   * distinguishable under protan, deutan and tritan simulation (OKLab ΔE >= 8)
+   * and all clear 3:1 against --bg-card. Only slots 1-3 are mutually distinct
+   * when every pair is compared, which is why scatter plots take 3 series. */
+  --series-1: #3987e5; /* blue */
+  --series-2: #d95926; /* orange */
+  --series-3: #199e70; /* aqua */
+  --series-4: #c98500; /* yellow */
+  --series-5: #d55181; /* magenta */
+  --series-6: #1f9a1f; /* green */
+  --series-7: #9085e9; /* violet */
+  --series-8: #e66767; /* red */
+  --series-other: #7f849c; /* folded "Other", alias of --overlay1 */
+
   --heatmap-0-bg: #2a2b3d;
   --heatmap-1: rgba(203, 166, 247, 0.25);
   --heatmap-2: rgba(203, 166, 247, 0.50);

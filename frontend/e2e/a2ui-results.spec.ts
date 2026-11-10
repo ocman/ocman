@@ -1,19 +1,37 @@
+import type { Page } from '@playwright/test';
 import { test, expect, MOCK_SESSION } from './fixtures';
-import { sampleResult } from '../src/test/a2uiFixture';
+import { chartResult, sampleResult } from '../src/test/a2uiFixture';
+
+/** Serve the session with one completed render_ui call under the Go server's CSP. */
+async function mockResult(page: Page, sample: ReturnType<typeof sampleResult>) {
+  // Vite preview does not set the Go server's CSP. Enforce its script policy
+  // here so runtime schema compilation cannot accidentally pass the test.
+  await page.route(/\/session\/[^/?]+(?:\?.*)?$/, async route => {
+    if (route.request().resourceType() !== 'document') return route.fallback();
+    const response = await route.fetch();
+    await route.fulfill({ response, headers: {
+      ...response.headers(),
+      'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'",
+    } });
+  });
+  const output = JSON.stringify({ ocmanA2ui: sample });
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
+    session: { ...MOCK_SESSION, status: 'done', liveConnection: true },
+    liveConnection: true, platform: 'opencode',
+    messages: [{ id: 'a', sessionId: MOCK_SESSION.id, timeCreated: 2000, data: {
+      role: 'assistant', finish: 'stop', time: { created: 2000, completed: 2001 },
+    } }],
+    parts: [{ id: 'p', messageId: 'a', sessionId: MOCK_SESSION.id, data: {
+      type: 'tool', tool: 'ocman_render_ui', callID: 'render-result',
+      state: { status: 'completed', input: { action: 'render', intent: 'Show the CI investigation' }, output, time: { start: 2000, end: 2001 } },
+    } }],
+    totalMessages: 1,
+  } }));
+}
 
 for (const width of [1280, 390]) {
   test(`A2UI result renders under strict CSP and confirms responses at ${width}px`, async ({ mockedPage: page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
-    // Vite preview does not set the Go server's CSP. Enforce its script policy
-    // here so runtime schema compilation cannot accidentally pass the test.
-    await page.route(/\/session\/[^/?]+(?:\?.*)?$/, async route => {
-      if (route.request().resourceType() !== 'document') return route.fallback();
-      const response = await route.fetch();
-      await route.fulfill({ response, headers: {
-        ...response.headers(),
-        'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'",
-      } });
-    });
     const sample = sampleResult();
     for (const message of sample.messages) {
       if ('updateComponents' in message) {
@@ -21,19 +39,7 @@ for (const width of [1280, 390]) {
         if (table?.component === 'Table') table.columns[0] = 'Sample observation';
       }
     }
-    const output = JSON.stringify({ ocmanA2ui: sample });
-    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
-      session: { ...MOCK_SESSION, status: 'done', liveConnection: true },
-      liveConnection: true, platform: 'opencode',
-      messages: [{ id: 'a', sessionId: MOCK_SESSION.id, timeCreated: 2000, data: {
-        role: 'assistant', finish: 'stop', time: { created: 2000, completed: 2001 },
-      } }],
-      parts: [{ id: 'p', messageId: 'a', sessionId: MOCK_SESSION.id, data: {
-        type: 'tool', tool: 'ocman_render_ui', callID: 'render-result',
-        state: { status: 'completed', input: { action: 'render', intent: 'Show the CI investigation' }, output, time: { start: 2000, end: 2001 } },
-      } }],
-      totalMessages: 1,
-    } }));
+    await mockResult(page, sample);
     const sends: { url: string; message: string }[] = [];
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}/message`), route => {
       sends.push({ url: route.request().url(), message: route.request().postDataJSON().message });
@@ -78,3 +84,29 @@ for (const width of [1280, 390]) {
     await result.screenshot({ path: testInfo.outputPath('a2ui-result.png'), animations: 'disabled' });
   });
 }
+
+test('A2UI charts render under strict CSP with legends, tooltips and data tables', async ({ mockedPage: page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  await mockResult(page, chartResult());
+  await page.goto(`/session/${MOCK_SESSION.id}`);
+  const result = page.getByRole('region', { name: 'Cluster resources' });
+  const pie = result.getByRole('img', { name: /^CPU requested\. Donut chart with 4 slices/ });
+  await expect(pie).toBeVisible();
+  await expect(result.getByRole('img', { name: /^CPU used per day\./ })).toBeVisible();
+  await expect(result.getByRole('img', { name: /^CPU by app\./ })).toBeVisible();
+  await expect(result.getByRole('img', { name: /^Requested vs used\./ })).toBeVisible();
+  expect(await pie.evaluate(canvas => (canvas as HTMLCanvasElement).width)).toBeGreaterThan(0);
+  // filter({ has }) resolves relative to each figure, so start from the page.
+  const figure = result.locator('figure').filter({ has: page.getByRole('img', { name: /^CPU requested\./ }) });
+  await expect(figure.getByRole('list', { name: 'Legend' }).getByRole('listitem')).toHaveText(['api', 'worker', 'web', 'cron']);
+  await figure.getByText('Data table').click();
+  await expect(figure.getByRole('row').nth(1)).toContainText('api');
+  await expect(result.getByText('+0.8 cores vs last week')).toBeVisible();
+  // Hovering the largest slice shows its exact value.
+  const box = (await pie.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 - 70);
+  await result.screenshot({ path: testInfo.outputPath('a2ui-charts.png'), animations: 'disabled' });
+  expect(errors.filter(text => /Content Security Policy|chart/i.test(text))).toEqual([]);
+});

@@ -149,7 +149,7 @@ in `tools.ocman` calls; variables and computed values are not evaluated for disp
 | `sessions` | Session listing, search, detail inspection, creation, messaging, and archiving. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With `content: true` it also scans user and assistant message text (not tool output) from the last `since_days` (default 7). Each hit returns up to five `{partId, messageId, role, snippet}` matches. Content search reads this machine's retained conversation history across platforms and never covers remote owners. Results depend on history ingestion progress. `get` and `send` need the recipient's `session_id`; pass `platform` when that ID is ambiguous. `create` starts a new session. `send` delivers `prompt` to an existing session. `archive` and `unarchive` take a `session_id` and optional `platform` and resolve the session's update time on the server. An idle session is archived immediately. A busy session on this machine, including one archiving itself, returns `deferred: true` and is archived when its current turn finishes, because activity after the archive time would resurface it; a restart before then drops the deferred archive. A busy remote session is rejected. The tool cannot cancel sessions. |
 | `models` | Read the model catalog for an absolute `directory`, with optional `platform`. Pass the target's compound platform ID for a remote machine; omit it only when one platform is available. Returns `platform`, `models`, defaults, `hasProviders`, and `liveConnection`. Each model includes `provider`, `model`, `isAvailable`, and any reasoning variants. Use `provider/model` with `sessions` creation. Reads an existing instance without launching one; historical entries remain visible when live provider data is unavailable. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
-| `render_ui` | Render a structured result directly below the tool call using A2UI v0.9.1 and Ocman's custom catalog. Call `action: "help"` for the catalog, schemas and example, then `action: "render"` with `title`, `summary` and `messages`. Supports text, layouts, sortable tables, bar charts, text fields, checkboxes and buttons. See [Agent-generated results](#agent-generated-results). |
+| `render_ui` | Render a structured result directly below the tool call using A2UI v0.9.1 and Ocman's custom catalog. Call `action: "help"` for the catalog, schemas and examples, then `action: "render"` with `title`, `summary` and `messages`. Supports text, layouts, sortable tables, charts, stat tiles, text fields, checkboxes and buttons. See [Agent-generated results](#agent-generated-results). |
 | `plugin_session_tool` | Dispatcher for tools a plugin grants to a private session it started. Only usable with that session's binding. See [Plugin session tools](../session-tools/). |
 | Plugin agent tools | Tools declared by enabled plugins on this machine and approved with `tool.agent`, listed under their declared names. Arguments are validated against each tool's schema. Requests needing consent return `confirmation_required` until the user approves them in ocman; repeat the call with `confirmation_id`. See [Plugin agent tools](../plugin-agent-tools/). |
 
@@ -179,7 +179,7 @@ is unconfirmed and the list falls back to historical models and favorites.
 
 The `render_ui` tool advertises A2UI support in its description. Agents call
 `{"action":"help"}` to discover the supported protocol version, catalog ID,
-JSON schemas, limits and a complete form example. This works through the existing
+JSON schemas, limits, a complete form example and a chart example. This works through the existing
 MCP connection; no A2A or AG-UI server is required. Agents should use it when a
 table, chart or form communicates better than prose, and keep a short text summary
 for clients without Ocman's renderer.
@@ -192,7 +192,8 @@ identifier, not a URL the renderer fetches. This is a restricted custom catalog,
 not support for the complete A2UI basic catalog.
 
 Supported components are `Text`, `Column`, `Row`, `Card`, `Divider`, `Table`,
-`BarChart`, `TextField`, `CheckBox` and `Button`. Bindings reference a single
+`BarChart`, `PieChart`, `MultiBarChart`, `LineChart`, `ScatterChart`, `Stat`,
+`TextField`, `CheckBox` and `Button`. Bindings reference a single
 top-level data field, such as `{"path":"/job"}`. See the tool's help for exact
 properties. HTML, scripts, external resources, functions, templates, theme
 overrides, `deleteSurface` and updates to earlier calls are not supported.
@@ -200,7 +201,7 @@ overrides, `deleteSurface` and updates to earlier calls are not supported.
 The Go tool and browser validate against the same schemas. Results are limited
 to 64 KiB, 32 messages, 100 components, depth 16 and 500 rendered nodes. Tables
 have at most 200 rows and 12 columns; bar charts have at most 50 non-negative
-values. Invalid results remain available as ordinary tool output rather than
+values. See [Charts](#charts) for the other chart limits. Invalid results remain available as ordinary tool output rather than
 being partially rendered. Tool validation errors use `VALIDATION_FAILED` so the
 agent can correct its payload.
 
@@ -215,6 +216,48 @@ component IDs, timestamp and resolved context. Rendering never performs an
 operation, and sending an action does not bypass session permissions. Read-only,
 shared and disconnected conversations disable form editing and action delivery.
 Tables can still be sorted locally.
+
+### Charts
+
+Charts take data, never colors or styles. Each chart has a `label`, used as its
+caption and accessible name, and optional `unit` (a short suffix such as
+`cores` or `MiB`) and `format` hints. `format` is `number` (the default),
+`compact` (`1.2K`), `percent` (values already on a 0–100 scale) or `bytes` (raw
+bytes shown as KiB, MiB or GiB).
+
+| Component | Data | Limits |
+| --- | --- | --- |
+| `BarChart` | One series of labelled values | 50 non-negative values |
+| `PieChart` | Labelled slices; `variant` is `donut` (default, with the total in the middle) or `pie` | 1–50 non-negative slices with unique labels |
+| `MultiBarChart` | `categories` plus `series`; `mode` is `grouped` or `stacked`, `orientation` is `vertical` or `horizontal` | 1–50 categories, 1–8 series of non-negative values or `null` |
+| `LineChart` | `x` of type `category`, `number` or `date`, plus `series`; `area` fills to zero | 2–366 x values, 1–8 series of numbers or `null` gaps |
+| `ScatterChart` | `series` of `[x, y]` points, with `xUnit` for the x axis | 1–3 series of up to 200 points |
+| `Stat` | One headline `value`, optional `delta`, `deltaLabel` and `better` (`up`, `down` or `neither`) | — |
+
+Every series has one value per category or x value, and series names are unique
+within a chart. Numeric and date x values must strictly increase. Dates are
+`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM[:SS[.sss]]` with an optional `Z` or `±HH:MM`
+offset; times without a zone are UTC. A result renders at most 12 pie, multi-bar,
+line or scatter charts.
+
+Pies sort slices largest first and show at most eight. The rest, and slices under
+2% of the total when there are at least two of them, fold into a neutral
+**Other** slice. The data table still lists every slice.
+
+Colors come from a fixed colorblind-safe palette of eight `--series-*` tokens,
+chosen so neighboring slots stay distinguishable under common color-vision
+deficiencies. Each distinct series or slice name keeps one color in every chart
+of a result, in order of first appearance. A pie of per-app CPU and a pie of
+per-app memory therefore color the same app the same way. A chart that includes
+a name past the first eight colors its series in its own order instead. Names
+called `Other` are always neutral. Scatter charts are capped at three series
+because only the first three palette colors stay distinct when every pair is
+compared.
+
+Charts show exact values in hover tooltips, add a legend for two or more series,
+and include a collapsible data table. The canvas has an accessible name
+describing the chart. Stat deltas show an arrow and a sign, and screen readers
+also get "better" or "worse", so color never carries the meaning on its own.
 
 ### How results are rendered
 
@@ -235,7 +278,8 @@ flowchart LR
   restricted A2UI v0.9.1 result catalog. It has no database tables, network fetches
   or session-mutation endpoints. Each call is an independent snapshot.
 - The browser revalidates retained tool output against the same schemas using
-  Ajv, then renders shared Ocman controls, tables and an accessible bar chart.
+  Ajv, then renders shared Ocman controls and tables. Charts use the
+  dashboard's chart.js setup, loaded with the first chart a conversation shows.
   The catalog allows no generated code or external resources. Graph validation
   bounds recursion and rendered node counts on both sides.
 - Action callbacks are scoped by `OcmanRuntimeProvider` to the owning platform

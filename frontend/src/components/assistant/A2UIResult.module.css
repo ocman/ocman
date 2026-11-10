@@ -98,14 +98,14 @@
   margin: 0;
 }
 
-.chart ul {
+.bars {
   display: grid;
   gap: 8px;
   padding: 0;
   list-style: none;
 }
 
-.chart li {
+.bars li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(40px, 2fr) auto;
   align-items: center;
@@ -131,4 +131,103 @@
   font-family: var(--font-conversation-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Charts and stat tiles share a Row by wrapping at a readable minimum width. */
+.row > .figureCell {
+  flex: 1 1 220px;
+}
+
+.chart figcaption,
+.stat figcaption {
+  font-weight: 600;
+}
+
+.canvas {
+  position: relative;
+  height: 260px;
+  margin-top: 8px;
+}
+
+.pie {
+  position: relative;
+  height: 220px;
+  margin-top: 8px;
+}
+
+.pieTotal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--subtext1);
+  font-size: 0.85em;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.dataTable {
+  margin-top: 8px;
+}
+
+.dataTable summary {
+  color: var(--text-dim);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.dataTable .table {
+  margin-top: 8px;
+}
+
+.stat {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+}
+
+.statValue {
+  font-size: 1.6em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.better {
+  color: var(--green);
+}
+
+.worse {
+  color: var(--danger);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

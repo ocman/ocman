@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildSurface, parseA2UIResult, resolveValue } from './a2ui';
-import { sampleResult } from '../test/a2uiFixture';
+import { buildSurface, parseA2UIResult, parseChartDate, resolveValue } from './a2ui';
+import { chartResult, sampleResult } from '../test/a2uiFixture';
 
 describe('A2UI validation', () => {
   it('accepts the supported catalog and resolves scalar bindings', () => {
@@ -84,6 +84,61 @@ describe('A2UI validation', () => {
     const value = mutable();
     mutate(value);
     expect(buildSurface(value)).toBeNull();
+  });
+});
+
+describe('A2UI chart validation', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const charts = (): any => structuredClone(chartResult());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const get = (v: any, id: string) => v.messages[1].updateComponents.components.find((c: { id: string }) => c.id === id);
+
+  it('accepts every chart component', () => {
+    expect(buildSurface(chartResult())?.components.size).toBe(12);
+  });
+
+  it.each([
+    ['negative slice', (v: ReturnType<typeof charts>) => { get(v, 'cpuUsed').data[0].value = -1; }],
+    ['duplicate slice', (v: ReturnType<typeof charts>) => { get(v, 'cpuUsed').data[0].label = 'web'; }],
+    ['slice color', (v: ReturnType<typeof charts>) => { get(v, 'cpuUsed').data[0].color = '#f00'; }],
+    ['chart style', (v: ReturnType<typeof charts>) => { get(v, 'cpuUsed').style = { fill: 'red' }; }],
+    ['multiline unit', (v: ReturnType<typeof charts>) => { get(v, 'cpuUsed').unit = 'a\nb'; }],
+    ['unknown format', (v: ReturnType<typeof charts>) => { get(v, 'cpuUsed').format = 'currency'; }],
+    ['series length mismatch', (v: ReturnType<typeof charts>) => { get(v, 'usage').series[0].values.pop(); }],
+    ['duplicate series', (v: ReturnType<typeof charts>) => { get(v, 'usage').series[1].name = 'worker'; }],
+    ['nine series', (v: ReturnType<typeof charts>) => { get(v, 'usage').series = Array.from({ length: 9 }, (_, i) => ({ name: `s${i}`, values: [1, 2, 3] })); }],
+    ['decreasing dates', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[2] = '2026-10-01'; }],
+    ['repeated dates', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[1] = '2026-11-01T00:00Z'; }],
+    ['impossible date', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[1] = '2026-02-30'; }],
+    ['decreasing numbers', (v: ReturnType<typeof charts>) => { get(v, 'usage').x = { type: 'number', values: [3, 2, 1] }; }],
+    ['duplicate categories', (v: ReturnType<typeof charts>) => { get(v, 'usage').x = { type: 'category', values: ['a', 'a', 'b'] }; }],
+    ['negative bar', (v: ReturnType<typeof charts>) => { get(v, 'bars').series[0].values[0] = -1; }],
+    ['bar length mismatch', (v: ReturnType<typeof charts>) => { get(v, 'bars').series[0].values.push(1); }],
+    ['four scatter series', (v: ReturnType<typeof charts>) => { get(v, 'scatter').series = ['a', 'b', 'c', 'd'].map(name => ({ name, points: [[1, 2]] })); }],
+    ['duplicate scatter series', (v: ReturnType<typeof charts>) => { get(v, 'scatter').series[1].name = 'api'; }],
+    ['stat string value', (v: ReturnType<typeof charts>) => { get(v, 'cpu').value = '6.4'; }],
+    ['too many rendered charts', (v: ReturnType<typeof charts>) => {
+      // The fixture renders 6 charts; each repeated pies row renders 3 more.
+      for (const id of ['again0', 'again1', 'again2']) {
+        get(v, 'root').children.push(id);
+        v.messages[1].updateComponents.components.push({ id, component: 'Card', child: 'pies' });
+      }
+    }],
+  ])('rejects %s', (_, mutate) => {
+    const value = charts();
+    mutate(value);
+    expect(buildSurface(value)).toBeNull();
+  });
+
+  it('parses the catalog date subset as UTC unless a zone is given', () => {
+    expect(parseChartDate('2026-11-01')).toBe(Date.UTC(2026, 10, 1));
+    expect(parseChartDate('2026-11-01T10:30')).toBe(Date.UTC(2026, 10, 1, 10, 30));
+    expect(parseChartDate('2026-11-01T10:30:15.5Z')).toBe(Date.UTC(2026, 10, 1, 10, 30, 15, 500));
+    expect(parseChartDate('2026-11-01T12:00+01:00')).toBe(Date.UTC(2026, 10, 1, 11));
+    expect(parseChartDate('2024-02-29')).toBe(Date.UTC(2024, 1, 29));
+    for (const bad of ['2026-02-29', '2026-13-01', '2026-11-00', '2026-11-01T24:00', '2026-11-01T10:60', '2026-11-01T10:00:60', 'Nov 1']) {
+      expect(parseChartDate(bad)).toBeNaN();
+    }
   });
 });
 
