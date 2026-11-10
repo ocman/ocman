@@ -246,13 +246,14 @@ Pies sort slices largest first and show at most eight. The rest, and slices unde
 
 Colors come from a fixed colorblind-safe palette of eight `--series-*` tokens,
 chosen so neighboring slots stay distinguishable under common color-vision
-deficiencies. Each distinct series or slice name keeps one color in every chart
+deficiencies. Except in scatter charts, each distinct series or slice name keeps one color in every chart
 of a result, in order of first appearance. A pie of per-app CPU and a pie of
 per-app memory therefore color the same app the same way. A chart that includes
 a name past the first eight colors its series in its own order instead. Names
 called `Other` are always neutral. Scatter charts are capped at three series
 because only the first three palette colors stay distinct when every pair is
-compared.
+compared. Scatter always assigns those colors in its own series order, ahead of
+cross-chart name consistency. `Other` stays neutral.
 
 Charts show exact values in hover tooltips, add a legend for two or more series,
 and include a collapsible data table. The canvas has an accessible name

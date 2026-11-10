@@ -110,6 +110,10 @@ describe('A2UI chart validation', () => {
     ['decreasing dates', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[2] = '2026-10-01'; }],
     ['repeated dates', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[1] = '2026-11-01T00:00Z'; }],
     ['impossible date', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[1] = '2026-02-30'; }],
+    ['offset hour 24', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[0] = '2026-11-01T00:00+24:00'; }],
+    ['negative offset hour 24', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[0] = '2026-11-01T00:00-24:00'; }],
+    ['offset minute 60', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[0] = '2026-11-01T00:00+00:60'; }],
+    ['negative offset minute 60', (v: ReturnType<typeof charts>) => { get(v, 'usage').x.values[0] = '2026-11-01T00:00-00:60'; }],
     ['decreasing numbers', (v: ReturnType<typeof charts>) => { get(v, 'usage').x = { type: 'number', values: [3, 2, 1] }; }],
     ['duplicate categories', (v: ReturnType<typeof charts>) => { get(v, 'usage').x = { type: 'category', values: ['a', 'a', 'b'] }; }],
     ['negative bar', (v: ReturnType<typeof charts>) => { get(v, 'bars').series[0].values[0] = -1; }],
@@ -139,6 +143,13 @@ describe('A2UI chart validation', () => {
     for (const bad of ['2026-02-29', '2026-13-01', '2026-11-00', '2026-11-01T24:00', '2026-11-01T10:60', '2026-11-01T10:00:60', 'Nov 1']) {
       expect(parseChartDate(bad)).toBeNaN();
     }
+  });
+
+  it('accepts the Gregorian leap day in year zero on a date axis', () => {
+    expect(parseChartDate('0000-02-29')).toBe(Date.parse('0000-02-29'));
+    const value = charts();
+    get(value, 'usage').x.values = ['0000-02-28', '0000-02-29', '0000-03-01'];
+    expect(buildSurface(value)).not.toBeNull();
   });
 });
 

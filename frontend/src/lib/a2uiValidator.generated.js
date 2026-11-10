@@ -19,10 +19,10 @@ const schema42 = {"type":"string","minLength":1,"maxLength":80};
 const schema43 = {"type":"number","minimum":0,"maximum":1000000000000};
 const schema46 = {"type":"string","minLength":1,"maxLength":80};
 const schema60 = {"type":"number","minimum":-1000000000000,"maximum":1000000000000};
-const schema61 = {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-][0-9]{2}:[0-9]{2})?)?$"};
+const schema61 = {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?$"};
 const pattern3 = new RegExp("^/[A-Za-z][A-Za-z0-9_]{0,63}$", "u");
 const pattern18 = new RegExp("^[^\\r\\n]{1,16}$", "u");
-const pattern25 = new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-][0-9]{2}:[0-9]{2})?)?$", "u");
+const pattern25 = new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?$", "u");
 const schema19 = {"anyOf":[{"type":"string","maxLength":8000},{"$ref":"#/$defs/Binding"}]};
 
 function validate15(data, {instancePath="", parentData, parentDataProperty, rootData=data}={}){
@@ -4142,7 +4142,7 @@ const _errs252 = errors;
 if(errors === _errs252){
 if(typeof data85 === "string"){
 if(!pattern25.test(data85)){
-const err227 = {instancePath:instancePath+"/x/values/" + i12,schemaPath:"common_types.json#/$defs/IsoDate/pattern",keyword:"pattern",params:{pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-][0-9]{2}:[0-9]{2})?)?$"},message:"must match pattern \""+"^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-][0-9]{2}:[0-9]{2})?)?$"+"\""};
+const err227 = {instancePath:instancePath+"/x/values/" + i12,schemaPath:"common_types.json#/$defs/IsoDate/pattern",keyword:"pattern",params:{pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?$"},message:"must match pattern \""+"^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,3})?)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?)?$"+"\""};
 if(vErrors === null){
 vErrors = [err227];
 }

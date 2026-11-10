@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BarElement, Interaction } from 'chart.js';
+import type { Chart, ChartEvent } from 'chart.js';
 import { A2UIResult } from './A2UIResult';
 import { chartResult } from '../../test/a2uiFixture';
 
@@ -62,7 +64,7 @@ describe('A2UI charts', () => {
     expect(within(within(container).getByText('CPU used per day', { selector: 'figcaption' }).closest('figure')!).queryByRole('list', { name: 'Legend' })).toBeNull();
   });
 
-  it('gives each entity the same palette color in every chart, whatever its slice order', async () => {
+  it('shares entity colors except for scatter, which uses the pairwise-safe trio', async () => {
     await renderCharts();
     const colorsByName = (chart: Captured) => Object.fromEntries((chart.props.data.labels as string[])
       .map((label, i) => [label, chart.props.data.datasets[0].backgroundColor[i]]));
@@ -72,7 +74,7 @@ describe('A2UI charts', () => {
     const series = (label: string) => Object.fromEntries(last(label).props.data.datasets.map((d: { label: string; borderColor: string; backgroundColor: string }) =>
       [d.label, label === 'CPU used per day' ? d.borderColor : d.backgroundColor]));
     expect(series('CPU used per day')).toEqual({ worker: PALETTE[1], api: PALETTE[0] });
-    expect(series('Requested vs used')).toEqual({ api: PALETTE[0], web: PALETTE[2] });
+    expect(series('Requested vs used')).toEqual({ api: PALETTE[0], web: PALETTE[1] });
     // Series names new to the result take the next free slots.
     expect(series('CPU by app')).toEqual({ requested: PALETTE[4], used: PALETTE[5] });
     const swatches = screen.getByText('CPU by app', { selector: 'figcaption' }).closest('figure')!.querySelectorAll('li > span');
@@ -80,6 +82,32 @@ describe('A2UI charts', () => {
     expect(last('CPU used per day').props.data.datasets[0].fill).toBe('origin');
     expect(last('CPU used per day').props.data.datasets[1].backgroundColor).toBe(`${PALETTE[0]}2e`);
     expect(last('CPU used per day').props.plugins).toHaveLength(1);
+  });
+
+  it('keeps scatter colors pairwise safe after earlier charts allocate six slots', async () => {
+    const result = chartResult();
+    const components = (result.messages[1] as { updateComponents: { components: Record<string, unknown>[] } }).updateComponents.components;
+    components.find(c => c.id === 'scatter')!.series = ['cron', 'used', 'Other'].map(name => ({ name, points: [[1, 2]] }));
+    await renderCharts(result);
+    expect(last('Requested vs used').props.data.datasets.map((d: { backgroundColor: string }) => d.backgroundColor)).toEqual([PALETTE[0], PALETTE[1], '#7f849c']);
+    const figure = screen.getByText('Requested vs used', { selector: 'figcaption' }).closest('figure')!;
+    expect([...figure.querySelectorAll('li > span')].map(s => (s as HTMLElement).style.background)).toEqual(['var(--series-1)', 'var(--series-2)', 'var(--series-other)']);
+  });
+
+  it.each(['horizontal', 'vertical'])('selects tooltip categories along the %s index axis', async orientation => {
+    const result = chartResult();
+    const components = (result.messages[1] as { updateComponents: { components: Record<string, unknown>[] } }).updateComponents.components;
+    Object.assign(components.find(c => c.id === 'bars')!, { orientation, categories: ['A', 'B'], series: [{ name: 'used', values: [100, 10] }] });
+    await renderCharts(result);
+    const horizontal = orientation === 'horizontal';
+    const data = [100, 10].map((value, i) => new BarElement({
+      x: horizontal ? value : 20 + i * 40, y: horizontal ? 20 + i * 40 : value,
+      base: 0, width: horizontal ? value : 20, height: horizontal ? 20 : value, horizontal,
+    }));
+    const chart = { getSortedVisibleDatasetMetas: () => [{ index: 0, data, controller: { _cachedMeta: { iScale: { axis: horizontal ? 'y' : 'x' } } } }], isPointInArea: () => true } as unknown as Chart;
+    const event = { native: {}, x: horizontal ? 10 : 20, y: horizontal ? 20 : 10 } as ChartEvent;
+    const selected = Interaction.modes.index(chart, event, last('CPU by app').props.options.interaction, false);
+    expect(selected.map(item => item.index)).toEqual([0]);
   });
 
   it('formats tooltips and axes with the unit and skips null gaps', async () => {

@@ -58,8 +58,11 @@ func TestValidateAcceptsChartVariants(t *testing.T) {
 		{"category x", map[string]any{"id": "c", "component": "LineChart", "label": "Line",
 			"x": map[string]any{"type": "category", "values": []any{"Mon", "Tue"}}, "series": []any{map[string]any{"name": "a", "values": []any{1, 2}}}}},
 		{"datetime x with zones", map[string]any{"id": "c", "component": "LineChart", "label": "Line",
-			"x": map[string]any{"type": "date", "values": []any{"2026-11-01T10:00", "2026-11-01T10:30:15.5Z", "2026-11-01T12:00+01:00", "2026-11-01T12:00:01+01:00"}},
+			"x":      map[string]any{"type": "date", "values": []any{"2026-11-01T10:00", "2026-11-01T10:30:15.5Z", "2026-11-01T12:00+01:00", "2026-11-01T12:00:01+01:00"}},
 			"series": []any{map[string]any{"name": "a", "values": []any{1, 2, 3, 4}}}}},
+		{"year zero leap day", map[string]any{"id": "c", "component": "LineChart", "label": "Line",
+			"x":      map[string]any{"type": "date", "values": []any{"0000-02-28", "0000-02-29", "0000-03-01"}},
+			"series": []any{map[string]any{"name": "a", "values": []any{1, 2, 3}}}}},
 		{"scatter", map[string]any{"id": "c", "component": "ScatterChart", "label": "Scatter", "xLabel": "Requested", "yLabel": "Used", "xUnit": "cores", "unit": "cores",
 			"series": []any{map[string]any{"name": "a", "points": []any{[]any{1, 2}, []any{-1, 0}}}}}},
 		{"stat", map[string]any{"id": "c", "component": "Stat", "label": "Errors", "value": -3, "format": "percent", "delta": -1.5, "deltaLabel": "vs yesterday", "better": "neither"}},
@@ -77,8 +80,12 @@ func TestValidateAcceptsChartVariants(t *testing.T) {
 func TestValidateRejectsInvalidCharts(t *testing.T) {
 	series := func(d map[string]any, id string) []any { return chartComponent(d, id)["series"].([]any) }
 	usage := func(d map[string]any) map[string]any { return series(d, "usage")[0].(map[string]any) }
-	dates := func(d map[string]any) []any { return chartComponent(d, "usage")["x"].(map[string]any)["values"].([]any) }
-	slice := func(d map[string]any) map[string]any { return chartComponent(d, "cpuUsed")["data"].([]any)[0].(map[string]any) }
+	dates := func(d map[string]any) []any {
+		return chartComponent(d, "usage")["x"].(map[string]any)["values"].([]any)
+	}
+	slice := func(d map[string]any) map[string]any {
+		return chartComponent(d, "cpuUsed")["data"].([]any)[0].(map[string]any)
+	}
 	for _, tc := range []struct {
 		name, want string
 		edit       func(map[string]any)
@@ -116,6 +123,10 @@ func TestValidateRejectsInvalidCharts(t *testing.T) {
 		{"repeated dates", "strictly increase", func(d map[string]any) { dates(d)[1] = "2026-11-01T00:00Z" }},
 		{"impossible date", "not a valid date", func(d map[string]any) { dates(d)[1] = "2026-02-30" }},
 		{"impossible time", "not a valid date", func(d map[string]any) { dates(d)[1] = "2026-11-02T25:00" }},
+		{"offset hour 24", "", func(d map[string]any) { dates(d)[0] = "2026-11-01T00:00+24:00" }},
+		{"negative offset hour 24", "", func(d map[string]any) { dates(d)[0] = "2026-11-01T00:00-24:00" }},
+		{"offset minute 60", "", func(d map[string]any) { dates(d)[0] = "2026-11-01T00:00+00:60" }},
+		{"negative offset minute 60", "", func(d map[string]any) { dates(d)[0] = "2026-11-01T00:00-00:60" }},
 		{"malformed date", "", func(d map[string]any) { dates(d)[1] = "Nov 2" }},
 		{"decreasing numbers", "strictly increase", func(d map[string]any) {
 			chartComponent(d, "usage")["x"] = map[string]any{"type": "number", "values": []any{3, 2, 1}}

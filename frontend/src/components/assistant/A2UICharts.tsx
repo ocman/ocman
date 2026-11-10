@@ -104,7 +104,8 @@ type Of<K extends ChartComponent['component']> = ViewProps<Extract<ChartComponen
 
 export function ResultChart({ chart, slots: shared }: { chart: ChartComponent; slots: Map<string, number> }) {
   const names = chartNames(chart);
-  const slots = chartSlots(names, shared);
+  // Scatter needs pairwise-distinct colors, ahead of cross-chart consistency.
+  const slots = chart.component === 'ScatterChart' ? chartSlots(names, new Map()) : chartSlots(names, shared);
   const props = { names, slots, colors: slots.map(slot => token(slotColor(slot))), value: (v: number) => formatValue(v, { unit: chart.unit, format: chart.format }) };
   switch (chart.component) {
     case 'PieChart': return <PieView chart={chart} {...props} />;
@@ -150,7 +151,7 @@ function BarsView({ chart, names, slots, colors, value }: Of<'MultiBarChart'>) {
           borderColor: surface, borderWidth: stacked ? 1 : 0, borderRadius: 4, borderSkipped: 'start' as const,
         })) }}
         options={options<'bar'>({ label: item => `${item.dataset.label}: ${value(Number(horizontal ? item.parsed.x : item.parsed.y))}` }, {
-          indexAxis: horizontal ? 'y' : 'x', interaction: { mode: 'index', intersect: false },
+          indexAxis: horizontal ? 'y' : 'x', interaction: { mode: 'index', intersect: false, axis: horizontal ? 'y' : 'x' },
           scales: horizontal ? { y: labelAxis, x: valueAxis } : { x: labelAxis, y: valueAxis },
         })} />
     </div>
