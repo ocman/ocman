@@ -42,7 +42,6 @@ const WorktreePermissionSettings = lazyComponent<SectionProps>(() => sessionAgen
 const BetaFeaturesSettings = lazyComponent<SectionProps>(() => import('../components/BetaFeaturesSettings').then((m) => m.BetaFeaturesSettings));
 const SpeechSettings = lazyComponent<SectionProps>(() => import('../components/SpeechSettings').then((m) => m.SpeechSettings));
 const PlatformSettings = lazyComponent<SectionProps>(() => import('../components/PlatformConnectionSettings').then((m) => m.PlatformConnectionSettings));
-const ProviderAccountSettings = lazyComponent<SectionProps>(() => import('../pages/dashboard/ProviderAccountSettings').then((m) => m.ProviderAccountSettings));
 const HookPluginSettings = lazyComponent<SectionProps>(() => import('../components/HookPluginSettings').then((m) => m.HookPluginSettings));
 const AutoApproveSection = lazyComponent<SectionProps>(() => import('../pages/dashboard/AutoApproveSection').then((m) => m.AutoApproveSection));
 const SourceControlSettings = lazyComponent<SectionProps>(() => import('../components/SourceControlSettings').then((m) => m.SourceControlSettings));
@@ -143,7 +142,6 @@ export const FEATURES: Feature[] = [
   { id: 'voice', settings: { id: 'voice', category: 'sessions', label: 'Voice', mount: 'active', Section: SpeechSettings } },
   { id: 'session-history', settings: { id: 'session-history', category: 'sessions', label: 'History & archiving', mount: 'always', Section: SessionsSection } },
   { id: 'platforms', settings: { id: 'platforms', category: 'agents', label: 'Platforms', mount: 'active', Section: PlatformSettings } },
-  { id: 'provider-accounts', settings: { id: 'provider-accounts', category: 'agents', label: 'Provider accounts', mount: 'active', Section: ProviderAccountSettings } },
   { id: 'hooks', settings: { id: 'hooks', category: 'agents', label: 'Hooks', mount: 'active', Section: HookPluginSettings, ownSections: true } },
   { id: 'model-fallback', settings: { id: 'model-fallback', category: 'agents', label: 'Model fallback', mount: 'active', Section: ModelFallbackSettings } },
   { id: 'auto-approve', settings: { id: 'auto-approve', category: 'permissions', label: 'Auto-approve', mount: 'always', Section: AutoApproveSection, ownSections: true } },

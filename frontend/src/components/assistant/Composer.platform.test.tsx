@@ -36,3 +36,20 @@ it('keeps the platform icon but removes unsupported agent selection and Tab cycl
   fireEvent.input(input, { target: { value: '/agent' } });
   expect(screen.queryByRole('option', { name: /agent/i })).not.toBeInTheDocument();
 });
+
+it('opens named model tabs even before the selected account catalog is ready', async () => {
+  Element.prototype.scrollIntoView = vi.fn();
+  const onChange = vi.fn();
+  render(<Composer isRunning={false} newConversation agentsLoaded={false} modelPicker={{
+    tabs: { label: 'Model platforms', value: 'work', items: [
+      { value: 'work', label: 'Work' }, { value: 'personal', label: 'Personal' },
+    ], onChange },
+    status: <div role="status">Loading models...</div>,
+  }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+  expect(await screen.findByRole('tab', { name: 'Work' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByText('Loading models...')).toBeVisible();
+  expect(screen.queryByText('No models found')).not.toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Personal' }), { button: 0 });
+  expect(onChange).toHaveBeenCalledWith('personal');
+});

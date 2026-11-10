@@ -150,8 +150,10 @@ browser. The application does not perform interactive login for the user.
 
 Settings and onboarding share the same controller and dialog. Loading, errors,
 unsupported owners and successfully empty inventory remain distinct. The
-composer preserves the selected account across model changes and reports an
-unavailable selection rather than switching to a sibling.
+composer's model picker uses named-account tabs from the explicit owner's
+inventory. Tab changes update the draft's connection route and prepare only
+that account's catalog. Picking a model preserves that account; unavailable
+tabs are disabled, and the connection is frozen after the first submission.
 
 ## Remote trust
 

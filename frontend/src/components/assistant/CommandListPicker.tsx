@@ -102,6 +102,7 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
   /** Backspace-on-empty handler (model picker uses it to step back). */
   onBack?: () => void;
   tabs?: PickerTabsConfig;
+  status?: ReactNode;
 }
 
 /**
@@ -113,6 +114,7 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
  * keyboard nav, Escape/Backspace handling, the portal shell) lives here.
  */
 export function CommandListPicker<T extends PickerEntryBase>({
+  status,
   open,
   entries,
   fuseKeys,
@@ -251,7 +253,8 @@ export function CommandListPicker<T extends PickerEntryBase>({
         aria-activedescendant={!searchable && activeItemIndex >= 0 ? optionId(activeItemIndex) : undefined}
         onKeyDown={searchable ? undefined : onInputKeyDown}
       >
-        {filteredEntries.length === 0 && (
+        {status}
+        {!status && filteredEntries.length === 0 && (
           <div className="oc-cmd-empty" role="presentation">{emptyMessage}</div>
         )}
         {items.map((it, i) => {

@@ -5,7 +5,7 @@ import './PickerTabs.css';
 export interface PickerTabsConfig {
   label: string;
   value: string;
-  items: { value: string; label: ReactNode }[];
+  items: { value: string; label: ReactNode; disabled?: boolean }[];
   onChange: (value: string) => void;
 }
 
@@ -18,7 +18,7 @@ export function PickerTabs({ tabs, onChange, children }: { tabs?: PickerTabsConf
       tabs.onChange(value);
     }}>
       <TabsList aria-label={tabs.label}>
-        {tabs.items.map((tab) => <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>)}
+        {tabs.items.map((tab) => <TabsTrigger key={tab.value} value={tab.value} disabled={tab.disabled}>{tab.label}</TabsTrigger>)}
       </TabsList>
       <TabsContent value={tabs.value}>{children}</TabsContent>
     </Tabs>

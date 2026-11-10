@@ -29,7 +29,7 @@ export type { ComposerHandle } from './composerTypes';
 export function Composer({
   onSend, onRetryChange, onCommand, onShell, shellExec, queuedShellCommand,
   onCancelQueuedShell, queuedMessages, onRemoveQueuedMessage, onMoveQueuedMessage,
-  onAbort, isRunning, disabled, models, modelEntries,
+  onAbort, isRunning, disabled, models, modelEntries, modelPicker,
   selectedModel, onModelChange, onToggleFavorite, onRefreshModels, activeAgent,
   selectedAgent, onAgentChange, agents, agentsLoaded, commands, contextTokens,
   activeDurationMs, timeCreated, durationMs, sessionId, platform, draftKey: draftKeyProp, tokensPerSecond, initialAttachments, onAttachmentsChange, onAttachmentProcessing,
@@ -96,7 +96,7 @@ export function Composer({
   const [isBashMode, setIsBashMode] = useState(false);
   const { revert, runtimeRestart, agentCatalog } = usePlatformCapabilities(platform);
   const agentSelection = agentCatalog !== false;
-  const hasModels = !!((models && models.length > 0) || (modelEntries && modelEntries.length > 0));
+  const hasModels = !!(modelPicker || (models && models.length > 0) || (modelEntries && modelEntries.length > 0));
   const hasAgents = agentSelection && !!(agents && agents.length > 0);
   const cyclableAgents = hasAgents
     ? (agents || []).filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => a.name)
@@ -313,7 +313,7 @@ export function Composer({
         onClick={disabled && onLaunchRequest ? onLaunchRequest : undefined}
         style={disabled && onLaunchRequest ? { cursor: 'pointer' } : undefined}>
         {draftWriteError && <InlineAlert compact>Draft not saved: {draftWriteError}. Your text is retained in this tab; editing retries the save.</InlineAlert>}
-        <ComposerDialogs pickers={pickers} models={models} modelEntries={modelEntries}
+        <ComposerDialogs pickers={pickers} models={models} modelEntries={modelEntries} modelPicker={modelPicker}
           effectiveModel={effectiveModel} onModelChange={onModelChange} onToggleFavorite={onToggleFavorite}
           agentOptions={agentOptions} agents={agents} activeAgent={activeAgent} effectiveAgent={effectiveAgent}
           onAgentChange={onAgentChange} commands={slash.commands} reasoningOptions={reasoningOptions}
@@ -361,7 +361,7 @@ export function Composer({
             ) : <HostBadge showIcon alwaysShow={!!remoteId && remoteId !== 'local'}
               remoteId={remoteId} remoteName={remoteName} stale={remoteStale} />}
             effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded} agents={agents} agentSelection={agentSelection}
-            selectorsLoading={newConversation && !agentsLoaded}
+            selectorsLoading={newConversation && !agentsLoaded && !modelPicker}
             openAgentPicker={() => { if (!uiDisabled) openAgentPicker(); }} hasModels={hasModels} modelUnavailable={modelUnavailable}
             openModelPicker={() => { if (!uiDisabled) openModelPicker(); }} modelButtonLabel={modelButtonLabel} effectiveModel={effectiveModel}
             hasReasoning={hasReasoning} openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}

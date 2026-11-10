@@ -40,7 +40,7 @@ runs several platforms appears once per platform (`r-<id>:opencode`,
 `r-<id>:claudecode`, `r-<id>:codex` when enabled); an older remote that does not advertise its platforms
 is treated as OpenCode-only. Things tied to the Claude install are per
 machine: the terminal-session hooks are installed from the remote machine's
-own ocman Settings, and Settings → Provider accounts on the hub lists only the hub's
+own ocman Settings, and Provider usage on the hub lists only the hub's
 own Claude account. Codex likewise runs with the remote's own installation,
 `CODEX_HOME` and login; enabling it only on the hub does not enable it remotely.
 See [Claude Code](claude-code.md) and [Codex](codex.md).

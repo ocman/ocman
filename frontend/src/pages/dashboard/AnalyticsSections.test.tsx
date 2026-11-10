@@ -13,7 +13,7 @@ vi.mock('react-chartjs-2', () => ({
     return <div data-testid="line-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />;
   },
 }));
-vi.mock('./ProviderAccountSettings', () => ({ ProviderLimitsCard: ({ days }: { days: number }) => <div>subscription burndown {days}</div> }));
+vi.mock('./ProviderLimitsCard', () => ({ ProviderLimitsCard: ({ days }: { days: number }) => <div>subscription burndown {days}</div> }));
 vi.mock('../../components/ProjectScopePicker', () => ({ ProjectScopePicker: () => <div>project scope</div> }));
 vi.mock('./context', () => ({ useDashboard: () => ({ projects: [], dirScope: '/repo', setDirScope: vi.fn() }) }));
 

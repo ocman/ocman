@@ -27,9 +27,11 @@ does not guarantee that a model request will succeed or that quota remains.
 
 ## Select an account
 
-The new-conversation composer selects a named connection on the chosen machine.
-Changing models does not automatically change accounts. Model references keep
-their normal native tool/provider namespace.
+Open the model picker in a new conversation. Its tabs use the names of the
+platforms configured on the chosen machine, such as "Claude Work" and
+"Claude Personal". Choose a tab, then a model from that account's catalog.
+Unavailable accounts cannot be selected. Model references keep their normal
+native tool/provider namespace.
 
 Every created conversation and fork keeps its connection. Changing the default,
 renaming an account or running out of quota cannot move that conversation to a

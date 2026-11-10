@@ -3,6 +3,7 @@ import type { AgentInfo, SessionModelEntry, SlashCommand } from '../../lib/api';
 import type { AttachedImage, AttachedFileRef } from './useComposerAttachments';
 import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 import type { TargetCandidate } from '../../lib/api.types';
+import type { ModelPickerContext } from './ModelPicker';
 
 export interface ComposerHandle {
   openModelPicker: (query?: string) => void;
@@ -32,6 +33,7 @@ export interface ComposerProps {
   onAttachmentProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void;
   models?: string[];
   modelEntries?: SessionModelEntry[];
+  modelPicker?: ModelPickerContext;
   selectedModel?: string;
   onModelChange?: (model: string) => void;
   onToggleFavorite?: (provider: string, model: string, nextFavorite: boolean) => void;

@@ -11,7 +11,7 @@ import { useDashboard } from './context';
 import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
 import { buildCostByModelDatasets } from './metricsChartData';
 import { DataTable } from '../../components/DataTable';
-import { ProviderLimitsCard } from './ProviderAccountSettings';
+import { ProviderLimitsCard } from './ProviderLimitsCard';
 
 export function ModelsTab() {
   const { dirScope } = useDashboard();

@@ -151,7 +151,8 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   }, [activeModel, catalog]);
   const agents = useMemo(() => catalog?.agents ?? [], [catalog]);
 
-  const { platformForModel, selector: connectionSelector, named: namedConnections } = useConnectionSelection(remoteId, platform, selectConnection, durable.submitted);
+  const { platformForModel, modelPicker, named: namedConnections } = useConnectionSelection(remoteId, platform, selectConnection, durable.submitted,
+    { ready: !!catalog, error: catalogError, retry: () => setCatalogAttempt((value) => value + 1) });
   // Re-points the route when model runs on another platform; reports whether it did.
   const repoint = useCallback((model: string) => {
     if (durable.submitted) return false;
@@ -346,7 +347,6 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress platform={platform} prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
       </div>
       <div className="oc-viewport-footer" data-testid="conversation-composer">
-        {connectionSelector}
         {cloneURL && <p role="status">On first submission, clone {cloneURL} into {directory} on the selected machine. Local changes will not transfer.</p>}
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
@@ -367,7 +367,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
            queuedMessages={durable.queue.queue} onRemoveQueuedMessage={durable.queue.remove} onMoveQueuedMessage={durable.queue.move}
           disabled={!!draftStart && !draftStart.sessionId && !draftStart.error}
           models={models}
-          modelEntries={catalog?.models.models ?? []}
+          modelEntries={catalog?.models.models ?? []} modelPicker={modelPicker}
           selectedModel={selectedModel || activeModel}
           onModelChange={handleModelChange}
           onToggleFavorite={handleToggleFavorite}

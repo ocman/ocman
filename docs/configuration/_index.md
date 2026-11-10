@@ -12,7 +12,7 @@ layer of tabs or collapsible panels.
 | --- | --- |
 | App & notifications | Notifications, This device, Account |
 | Sessions | New sessions, Conversation, Voice, History & archiving |
-| Agents & models | Platforms, Provider accounts, Hooks, Model fallback |
+| Agents & models | Platforms, Hooks, Model fallback |
 | Permissions | Auto-approve, AI reviewer, Worktrees |
 | Connections & sharing | Remotes, Link previews, Public sharing, Webhooks |
 | Plugins | Plugin management and per-plugin settings |

@@ -9,7 +9,7 @@ import { RoutinePicker } from './RoutinePicker';
 import { ReasoningPicker } from './ReasoningPicker';
 import { HelpDialog } from './HelpDialog';
 
-type Props = Pick<ComposerProps, 'models' | 'modelEntries' | 'onModelChange' | 'onToggleFavorite'
+type Props = Pick<ComposerProps, 'models' | 'modelEntries' | 'modelPicker' | 'onModelChange' | 'onToggleFavorite'
   | 'agents' | 'activeAgent' | 'onAgentChange' | 'selectedReasoning' | 'onReasoningChange'> & {
   pickers: ReturnType<typeof useComposerPickers>;
   effectiveModel: string;
@@ -20,12 +20,12 @@ type Props = Pick<ComposerProps, 'models' | 'modelEntries' | 'onModelChange' | '
 };
 
 export function ComposerDialogs({
-  pickers, models, modelEntries, effectiveModel, onModelChange, onToggleFavorite,
+  pickers, models, modelEntries, modelPicker, effectiveModel, onModelChange, onToggleFavorite,
   agentOptions, agents, activeAgent, effectiveAgent, onAgentChange, commands,
   reasoningOptions, selectedReasoning, onReasoningChange,
 }: Props) {
   return <>
-    {pickers.model.open && <ModelPicker open models={models || []} modelEntries={modelEntries}
+    {pickers.model.open && <ModelPicker open models={models || []} modelEntries={modelEntries} context={modelPicker}
       currentModel={effectiveModel} initialQuery={pickers.model.query} onSelect={(m) => onModelChange?.(m)}
       onToggleFavorite={onToggleFavorite} onClose={pickers.model.close}
       onBack={() => { pickers.model.setOpen(false); useUiStore.getState().openPalette('command'); }} />}

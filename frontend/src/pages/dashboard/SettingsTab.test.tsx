@@ -26,7 +26,6 @@ vi.mock('../../components/SourceControlSettings', () => ({ SourceControlSettings
 vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => <p>Sharing controls</p> }));
 vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
 vi.mock('../../components/WebhookRelaySettings', () => ({ WebhookRelaySettings: () => null }));
-vi.mock('./ProviderAccountSettings', () => ({ ProviderAccountSettings: () => null }));
 vi.mock('../../components/HookPluginSettings', () => ({ HookPluginSettings: () => null }));
 vi.mock('../../components/PlatformSettings', () => ({ PlatformSettings: () => null }));
 vi.mock('../../components/IdleProjectSettings', () => ({ IdleProjectSettings: () => null }));
@@ -69,6 +68,13 @@ function render(ui: ReactElement, url = '/settings') {
 }
 
 describe('SettingsTab actions', () => {
+  it('does not duplicate subscription usage as a Provider accounts settings section', () => {
+    render(<SettingsTab />, '/settings?tab=agents');
+    expect(screen.getByRole('heading', { name: 'Platforms', level: 3 })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Provider accounts' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Provider accounts' } });
+    expect(screen.queryByRole('button', { name: /Provider accounts/ })).not.toBeInTheDocument();
+  });
   it('offers a searchable, default-off Factory beta toggle in App settings', async () => {
     useBetaFeatures.setState({ factory: false, loaded: true, error: false });
     vi.mocked(postJSON).mockImplementation(async (_path, body) => body as never);

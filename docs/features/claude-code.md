@@ -224,7 +224,7 @@ Ocman installs the plugin automatically at startup. It writes the plugin to
 when it is missing, or `claude plugin marketplace update ocman` and
 `claude plugin update ocman@ocman --scope user` when Claude's cached copy is
 stale. This runs in the background and never edits `~/.claude` directly. Running
-Claude sessions load updated hooks after a restart. Settings → Provider accounts
+Claude sessions load updated hooks after a restart. Settings → Hooks
 still offers **Install** and **Uninstall**; uninstalling lasts until the next start.
 
 The plugin has two kinds of hooks, all running `ocman hook`, which gives up after
@@ -262,7 +262,7 @@ is incomplete; there is no native-database fallback. The retired
 `analytics-cache.db` is unused and can no longer supply these views.
 Analytics → Models & Cost also shows the subscription limits described below.
 
-Settings → Provider accounts shows the Claude account's subscription type and
+Provider usage shows the Claude account's subscription type and
 its 5-hour, weekly and per-model weekly utilisation. Ocman asks your `claude`
 binary for both in one startup handshake (no prompt is sent): the plan comes
 from the handshake and utilisation from the CLI's `get_usage` request, re-checked

@@ -94,7 +94,7 @@ account metadata and token accounting.
 - **Panels and usage.** The session changes panel lists every file Codex
   edited with its diff, and the session info panel shows token totals and how
   full the context was after the latest turn. Analytics counts Codex tokens.
-  Settings → Provider accounts shows the Codex plan and its usage windows.
+  Provider usage shows the Codex plan and its usage windows.
 - **Ocman's tools.** When ocman's MCP listener is enabled, Codex sessions ocman
   starts get it as an MCP server named `ocman`.
 

@@ -71,7 +71,15 @@ func (s *Server) withOwnedSessionPath(next http.HandlerFunc) http.HandlerFunc {
 			}
 			resolved := r.Clone(r.Context())
 			q := resolved.URL.Query()
-			q.Set("platform", info.Platform)
+			// Identity provenance carries the native kind, not a named
+			// connection's routing key. Resolve its authenticated physical
+			// source before dispatch instead of restoring the native kind.
+			route := info.Platform
+			_, kind := platforms.SplitPlatformID(info.Platform)
+			if _, key, ok := s.registry.PlatformForCanonicalSource(r.Context(), info.OwnerID, kind, info.SourceKey); ok {
+				route = string(key)
+			}
+			q.Set("platform", route)
 			resolved.URL.RawQuery = q.Encode()
 			resolved.SetPathValue("id", coreID)
 			w.Header().Set("X-Ocman-Session-ID", info.ID)

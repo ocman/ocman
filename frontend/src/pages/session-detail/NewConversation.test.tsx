@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from '../../components/assistant/composerTypes';
 import { clearDraft, getDraft, resetDraftTextsForTests, saveDraft } from '../../lib/composerDraft';
@@ -16,18 +17,20 @@ import type { Message } from '../../lib/api';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { getConversationDraft, rememberConversationDraft, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { transact } from '../../lib/draftDb';
+import { queryClient } from '../../lib/queryClient';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), baseRef: vi.fn(), post: vi.fn(), seed: vi.fn(),
   openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), settings: vi.fn(), caps: { shellExec: true },
   progress: new Set<(id: string, step: string, state: string) => void>(),
   selectConnection: undefined as undefined | ((id: string, compatible: boolean) => void),
+  namedPlatforms: false, showModelPicker: false,
 }));
 vi.mock('./useConnectionSelection', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./useConnectionSelection')>();
-  return { useConnectionSelection: (owner: string, selected: string, onSelect: (id: string, compatible: boolean) => void, frozen: boolean) => {
-    mocks.selectConnection = onSelect;
-    return actual.useConnectionSelection(owner, selected, onSelect, frozen);
+  return { useConnectionSelection: (...args: Parameters<typeof actual.useConnectionSelection>) => {
+    mocks.selectConnection = args[2];
+    return actual.useConnectionSelection(...args);
   } };
 });
 vi.mock('../../lib/useGlobalEvents', () => ({
@@ -55,12 +58,16 @@ vi.mock('../../lib/useCapabilities', () => ({
   useCapabilities: () => ({ platforms: [{ id: 'r-machine:opencode', displayName: 'OpenCode' }] }),
   useWorktreeLaunch: () => true,
   usePlatformCapabilities: () => mocks.caps,
-  useMachinePlatforms: (remoteId: string) => ['opencode', 'claudecode'].map((base) => ({ id: remoteId === 'local' ? base : `r-${remoteId}:${base}` })),
+  useMachinePlatforms: (remoteId: string) => mocks.namedPlatforms ? [{ id: 'r-machine:cnx_work', kind: 'codex' }] : ['opencode', 'claudecode'].map((base) => ({ id: remoteId === 'local' ? base : `r-${remoteId}:${base}` })),
 }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn(), warn: vi.fn() } }));
 let composer: ComposerProps;
 vi.mock('../../components/assistant/Composer', () => ({
-  Composer: (props: ComposerProps) => { composer = props; return <span>{props.target}:{String(props.disabled)}</span>; },
+  Composer: (props: ComposerProps) => {
+    composer = props;
+    return mocks.showModelPicker ? <ModelPicker open models={props.models ?? []} modelEntries={props.modelEntries}
+      context={props.modelPicker} onSelect={props.onModelChange!} onClose={vi.fn()} /> : <span>{props.target}:{String(props.disabled)}</span>;
+  },
 }));
 import { NewConversation } from './NewConversation';
 import { startHandoffs, startModels } from './startHandoffs';
@@ -79,6 +86,8 @@ const ready = () => waitFor(() => {
 describe('NewConversation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.namedPlatforms = false;
+    mocks.showModelPicker = false;
     startModels.clear();
     window.localStorage.clear();
     resetDraftTextsForTests();
@@ -100,6 +109,45 @@ describe('NewConversation', () => {
     mocks.baseRef.mockResolvedValue({ baseRef: 'main' });
     mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', branch: 'main', main: true }] });
     mocks.start.mockResolvedValue({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/worktrees/fix', firstMessageSent: true, firstMessageError: '' });
+  });
+
+  it('loads a named platform tab catalog and submits the picked model on that exact account', async () => {
+    mocks.namedPlatforms = true;
+    mocks.showModelPicker = true;
+    queryClient.clear();
+    Element.prototype.scrollIntoView = vi.fn();
+    const entries = ['work', 'personal'].map(name => ({ id: `cnx_${name}`, kind: 'codex', name, enabled: true, status: 'ready' }));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ supported: true, connections: entries }), { headers: { 'Content-Type': 'application/json' } })));
+    const catalog = (account: string) => ({ platform: `r-machine:cnx_${account}`, agents: [], commands: [],
+      defaultModel: `codex:openai/${account}`, models: { hasProviders: true, models: [{ platform: 'codex', provider: 'openai', model: account }] } });
+    mocks.prepare.mockResolvedValue(catalog('work'));
+    let view: ReturnType<typeof mount> | undefined;
+    try {
+      view = mount({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:cnx_work' });
+      await ready();
+      expect(await screen.findByRole('tab', { name: 'work' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.queryByText('Platform connection')).not.toBeInTheDocument();
+      await userEvent.setup().click(screen.getByRole('tab', { name: 'personal' }));
+      expect(navigate).toHaveBeenLastCalledWith(expect.stringContaining('platform=r-machine%3Acnx_personal'));
+      let finish!: (value: ReturnType<typeof catalog>) => void;
+      mocks.prepare.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+      view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'r-machine:cnx_personal', draftId: 'new' }}
+        composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+      expect(await screen.findByText('Loading models...')).toBeVisible();
+      expect(screen.queryByRole('option')).not.toBeInTheDocument();
+      await act(async () => finish(catalog('personal')));
+      expect(screen.getByRole('tab', { name: 'personal' })).toHaveAttribute('aria-selected', 'true');
+      expect(mocks.prepare).toHaveBeenLastCalledWith({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:cnx_personal' }, expect.any(AbortSignal));
+      await userEvent.setup().click(screen.getByRole('option'));
+      expect(composer.selectedModel).toBe('codex:openai/personal');
+      await act(() => composer.onSend!('Use my personal account'));
+      expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ platform: 'r-machine:cnx_personal',
+        send: expect.objectContaining({ model: 'codex:openai/personal' }) }));
+    } finally {
+      view?.unmount();
+      vi.unstubAllGlobals();
+      queryClient.clear();
+    }
   });
 
   it.each([false, true])('applies a chosen permission mode at creation, else keeps defaults (chosen=%s)', async (chosen) => {

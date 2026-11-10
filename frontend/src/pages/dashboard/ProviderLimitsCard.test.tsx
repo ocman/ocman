@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ProviderAccountSettings, ProviderLimitsCard } from './ProviderAccountSettings';
+import { ProviderLimitsCard } from './ProviderLimitsCard';
 import { useProviderUsageHistory } from '../../lib/providerUsageHistory';
 
 vi.mock('../../lib/api', () => ({ api: { providerAccounts: vi.fn() } }));
@@ -16,7 +16,7 @@ import { api } from '../../lib/api';
 
 const providerAccounts = vi.mocked(api.providerAccounts);
 
-function renderSettings(node = <ProviderAccountSettings />) {
+function renderSettings(node = <ProviderLimitsCard />) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
 }
@@ -31,54 +31,7 @@ const historyData = { sampleIntervalMs: 300000, samples: [0, 1].map(index => ({
   },
 })) };
 
-describe('ProviderAccountSettings', () => {
-  it('shows the subscription type and both limit windows from the provider', async () => {
-    providerAccounts.mockResolvedValue({
-      accounts: [
-        {
-          platform: 'claudecode', displayName: 'Claude Code', status: 'ok', subscriptionType: 'max',
-          rateLimits: [
-            { name: 'five_hour', utilization: 0.28, resetsAt: Date.now() + 2 * 3600_000 },
-            { name: 'weekly', utilization: 0.765, resetsAt: 0 },
-          ],
-        },
-        { platform: 'r-x:claudecode', displayName: 'Claude Code (x)', status: 'signed_out', subscriptionType: '', rateLimits: [] },
-      ],
-    });
-    renderSettings();
-
-    expect(await screen.findByText('Subscription: Max')).toBeInTheDocument();
-    expect(screen.getByText(/^5-hour: 28% used · resets in/)).toBeInTheDocument();
-    expect(screen.getByText('Weekly: 77% used')).toBeInTheDocument();
-    expect(screen.getByLabelText('Claude Code Weekly utilisation')).toHaveAttribute('value', '77');
-    expect(screen.getByText('Not signed in.')).toBeInTheDocument();
-  });
-
-  it('marks windows not reported yet, and says when no account exists', async () => {
-    providerAccounts.mockResolvedValueOnce({
-      accounts: [{
-        platform: 'claudecode', displayName: 'Claude Code', status: 'ok', subscriptionType: 'Claude Team',
-        rateLimits: [{ name: 'weekly', utilization: 0.76, resetsAt: 0 }],
-      }],
-    });
-    const { unmount } = renderSettings();
-    expect(await screen.findByText('Subscription: Claude Team')).toBeInTheDocument();
-    expect(screen.getByText('5-hour: not reported yet')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Claude Code 5-hour utilisation')).not.toBeInTheDocument();
-    expect(screen.getByText('Weekly: 76% used')).toBeInTheDocument();
-    unmount();
-
-    providerAccounts.mockResolvedValueOnce({ accounts: [] });
-    renderSettings();
-    expect(await screen.findByText('No enabled platform reports a subscription account.')).toBeInTheDocument();
-  });
-
-  it('shows a failed request', async () => {
-    providerAccounts.mockRejectedValueOnce(new Error('HTTP 403'));
-    renderSettings();
-    expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 403');
-  });
-
+describe('ProviderLimitsCard', () => {
   it('graphs observed usage in analytics only when an account exists', async () => {
     vi.mocked(useProviderUsageHistory).mockReturnValue({ data: historyData } as never);
     providerAccounts.mockResolvedValueOnce({
@@ -105,7 +58,7 @@ describe('ProviderAccountSettings', () => {
     await vi.waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
-  it('shows history loading and empty states without replacing account settings', async () => {
+  it('shows history loading and empty states in analytics', async () => {
     providerAccounts.mockResolvedValue({ accounts: [{ platform: 'claudecode', displayName: 'Claude Code', status: 'ok', subscriptionType: 'pro', rateLimits: [] }] });
     vi.mocked(useProviderUsageHistory).mockReturnValue({ isLoading: true } as never);
     const view = renderSettings(<ProviderLimitsCard />);

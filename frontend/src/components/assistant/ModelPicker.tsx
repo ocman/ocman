@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, type ReactNode } from 'react';
 import type { SessionModelEntry } from '../../lib/api';
 import { ModelLabel } from '../ModelLogo';
 import { PlatformLogo } from '../PlatformBadge';
@@ -6,9 +6,16 @@ import { CommandListPicker } from './CommandListPicker';
 import { buildModelEntries, isPinnedModel, modelSearchKeys, modelSectionOf, type ModelEntry } from './modelEntries';
 import { ModelBadges } from './ModelBadges';
 import { useModelPlatformTabs } from './useModelPlatformTabs';
+import type { PickerTabsConfig } from '../PickerTabs';
 import './ModelPicker.css';
 
+export interface ModelPickerContext {
+  tabs?: PickerTabsConfig;
+  status?: ReactNode;
+}
+
 export interface ModelPickerProps {
+  context?: ModelPickerContext;
   open: boolean;
   models: string[];
   // When provided, takes precedence over `models` and unlocks badges,
@@ -40,6 +47,7 @@ export function ModelPicker({
   onToggleFavorite,
   onClose,
   onBack,
+  context,
 }: ModelPickerProps) {
   const { rich: useRich, multiPlatform, entries } = buildModelEntries(models, modelEntries, currentModel);
   const { tabs, visibleEntries } = useModelPlatformTabs(entries);
@@ -94,8 +102,9 @@ export function ModelPicker({
   return (
     <CommandListPicker<ModelEntry>
       open={open}
-      entries={visibleEntries}
-      tabs={tabs}
+      entries={context?.status ? [] : context?.tabs ? entries : visibleEntries}
+      tabs={context?.tabs ?? tabs}
+      status={context?.status}
       fuseKeys={modelSearchKeys}
       pinned={isPinnedModel}
       // Section only when we have rich data (string fallback has no section

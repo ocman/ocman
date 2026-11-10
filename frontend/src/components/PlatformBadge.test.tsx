@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { useMultiPlatform } from '../lib/useCapabilities';
+import { useCapabilities, useMultiPlatform } from '../lib/useCapabilities';
 import { PlatformBadge, PlatformLogo } from './PlatformBadge';
 // @ts-expect-error Vitest runs in Node; application types intentionally exclude Node globals.
 import { readFileSync } from 'node:fs';
 
-vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: vi.fn() }));
+vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: vi.fn(), useCapabilities: vi.fn() }));
 
-beforeEach(() => vi.mocked(useMultiPlatform).mockReturnValue(true));
+beforeEach(() => {
+	vi.mocked(useMultiPlatform).mockReturnValue(true);
+	vi.mocked(useCapabilities).mockReturnValue(null);
+});
 
 it('keeps platform icon images at zero vertical offset', () => {
 	const style = document.createElement('style');
@@ -95,4 +98,43 @@ it('shows accessible icon-only indicators with a platform explanation', async ()
 	}
 	rerender(<PlatformBadge platform="custom" variant="icon" />);
 	expect(screen.getByLabelText('custom').querySelector('img')).toBeNull();
+});
+
+it.each(['cnx_work', 'r-owner:cnx_work'])('uses the named platform label and native icon for %s', async (platform) => {
+	vi.mocked(useCapabilities).mockReturnValue({ platforms: [{ id: platform, kind: 'claudecode', displayName: 'Claude Work' }] } as ReturnType<typeof useCapabilities>);
+	const label = platform.startsWith('r-') ? 'Claude Work (remote machine)' : 'Claude Work';
+	const { container, rerender } = render(<PlatformBadge platform={platform} variant="icon" alwaysShow />);
+	expect(screen.getByLabelText(label).querySelector('img')).toHaveAttribute('src', '/platform-claudecode.svg');
+	fireEvent.focus(screen.getByLabelText(label));
+	expect(await screen.findByRole('tooltip')).toHaveTextContent('Claude Work');
+	expect(screen.getByRole('tooltip')).not.toHaveTextContent('cnx_');
+	fireEvent.blur(screen.getByLabelText(label));
+	rerender(<PlatformBadge platform={platform} />);
+	expect(screen.getByLabelText('Claude Work')).toHaveTextContent('Claude Work');
+	expect(screen.getByLabelText('Claude Work')).toHaveClass('platform-claudecode');
+	rerender(<PlatformLogo platform={platform} />);
+	expect(container.querySelector('img')).toHaveAttribute('src', '/platform-claudecode.svg');
+});
+
+it('never shows an internal connection key while metadata is unavailable', async () => {
+	render(<PlatformBadge platform="cnx_missing" variant="icon" alwaysShow />);
+	const badge = screen.getByLabelText('Platform');
+	fireEvent.focus(badge);
+	expect(await screen.findByRole('tooltip')).not.toHaveTextContent('cnx_missing');
+});
+
+it('does not borrow a local account name for a remote connection and updates when its metadata arrives', () => {
+	vi.mocked(useCapabilities).mockReturnValue({ platforms: [
+		{ id: 'cnx_work', kind: 'codex', displayName: 'Local work' },
+	] } as ReturnType<typeof useCapabilities>);
+	const { container, rerender } = render(<PlatformLogo platform="r-owner:cnx_work" />);
+	expect(container).toBeEmptyDOMElement();
+	rerender(<PlatformBadge platform="r-owner:cnx_work" variant="icon" />);
+	expect(screen.getByLabelText('Platform (remote machine)')).toBeVisible();
+	expect(screen.queryByLabelText('Local work (remote machine)')).not.toBeInTheDocument();
+	vi.mocked(useCapabilities).mockReturnValue({ platforms: [
+		{ id: 'r-owner:cnx_work', kind: 'codex', displayName: 'Remote work' },
+	] } as ReturnType<typeof useCapabilities>);
+	rerender(<PlatformBadge platform="r-owner:cnx_work" variant="compact" />);
+	expect(screen.getByLabelText('Remote work')).toHaveTextContent('CX');
 });
