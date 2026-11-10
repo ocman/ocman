@@ -33,6 +33,8 @@ func (m *Module) Routes(r module.Router) {
 }
 func writeError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, platformconnections.ErrConfigurationOwned), status.Code(err) == codes.AlreadyExists:
+		http.Error(w, "native configuration is already owned by another connection", http.StatusConflict)
 	case errors.Is(err, platformconnections.ErrInvalid), status.Code(err) == codes.InvalidArgument:
 		http.Error(w, "invalid connection request", http.StatusBadRequest)
 	case errors.Is(err, platformconnections.ErrNotFound), status.Code(err) == codes.NotFound:

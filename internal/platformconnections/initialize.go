@@ -55,9 +55,13 @@ func (s *Store) Initialize(ctx context.Context, seed Seed) (bool, error) {
 		}
 		seen[input.Kind] = true
 		id := "cnx_" + uuid.NewString()
-		if _, err := tx.ExecContext(ctx, `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled,legacy_kind)
-			VALUES(?,?,?,?,?,?,?)`, id, input.Kind, input.Name, input.Configuration, input.Directory, input.Enabled, input.Kind); err != nil {
+		nativeDirectory, err := canonicalConfiguration(input.Kind, input.Directory)
+		if err != nil {
 			return false, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled,legacy_kind,native_directory)
+			VALUES(?,?,?,?,?,?,?,?)`, id, input.Kind, input.Name, input.Configuration, input.Directory, input.Enabled, input.Kind, nativeDirectory); err != nil {
+			return false, configurationWriteError(err)
 		}
 		if seed.DefaultKind == input.Kind {
 			defaultID = id

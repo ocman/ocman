@@ -91,7 +91,7 @@ func TestConnectionRPCSanitizesOwnerErrorsAndRejectsUnknownOperations(t *testing
 	for _, tt := range []struct {
 		err  error
 		code codes.Code
-	}{{platformconnections.ErrInvalid, codes.InvalidArgument}, {platformconnections.ErrNotFound, codes.NotFound}, {platformconnections.ErrUnavailable, codes.FailedPrecondition}, {platformconnections.ErrLimit, codes.FailedPrecondition}} {
+	}{{platformconnections.ErrInvalid, codes.InvalidArgument}, {platformconnections.ErrConfigurationOwned, codes.AlreadyExists}, {platformconnections.ErrNotFound, codes.NotFound}, {platformconnections.ErrUnavailable, codes.FailedPrecondition}, {platformconnections.ErrLimit, codes.FailedPrecondition}} {
 		owner.err = tt.err
 		for _, action := range []string{"prepare", "save", "cancel", "update", "remove", "onboarding", "check"} {
 			payload, _ := marshalJSON(connectionOperation{Action: action, ID: "cnx_work"})

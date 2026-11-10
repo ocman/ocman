@@ -91,9 +91,13 @@ func (s *Store) SaveReservation(ctx context.Context, id, name string, enabled bo
 		return c, err
 	}
 	c := Connection{ID: r.ConnectionID, Kind: r.Kind, Name: name, Configuration: r.Configuration, Directory: r.Directory, Enabled: enabled}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled)
-		VALUES(?,?,?,?,?,?)`, c.ID, c.Kind, c.Name, c.Configuration, c.Directory, c.Enabled); err != nil {
+	nativeDirectory, err := canonicalConfiguration(c.Kind, c.Directory)
+	if err != nil {
 		return Connection{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled,native_directory)
+		VALUES(?,?,?,?,?,?,?)`, c.ID, c.Kind, c.Name, c.Configuration, c.Directory, c.Enabled, nativeDirectory); err != nil {
+		return Connection{}, configurationWriteError(err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE platform_connection_setup SET status='saved' WHERE id=?`, id); err != nil {
 		return Connection{}, err

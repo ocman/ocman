@@ -144,12 +144,16 @@ func (s *Store) Create(ctx context.Context, input Input) (Connection, error) {
 	}
 	c := Connection{ID: "cnx_" + uuid.NewString(), Kind: input.Kind, Name: input.Name,
 		Configuration: input.Configuration, Directory: input.Directory, Enabled: input.Enabled}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled)
-		SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM platform_connection_collection WHERE id=1)
-		AND (SELECT count(*) FROM platform_connection WHERE removed=0)
-		+ (SELECT count(*) FROM platform_connection_setup WHERE status='pending')<?`, c.ID, c.Kind, c.Name, c.Configuration, c.Directory, c.Enabled, maxConnections)
+	nativeDirectory, err := canonicalConfiguration(c.Kind, c.Directory)
 	if err != nil {
 		return Connection{}, err
+	}
+	result, err := s.db.ExecContext(ctx, `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled,native_directory)
+		SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM platform_connection_collection WHERE id=1)
+		AND (SELECT count(*) FROM platform_connection WHERE removed=0)
+		+ (SELECT count(*) FROM platform_connection_setup WHERE status='pending')<?`, c.ID, c.Kind, c.Name, c.Configuration, c.Directory, c.Enabled, nativeDirectory, maxConnections)
+	if err != nil {
+		return Connection{}, configurationWriteError(err)
 	}
 	if n, err := result.RowsAffected(); err != nil || n != 0 {
 		return c, err

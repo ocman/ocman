@@ -157,7 +157,11 @@ func TestSessionSchemaUpgradeAndReopen(t *testing.T) {
 	}
 	s := New(db)
 	initialize(t, s)
-	c := create(t, s, "Retained")
+	// Seed the historical schema directly, not through today's Create contract.
+	c := Connection{ID: "cnx_" + uuid.NewString(), Kind: "claudecode", Name: "Retained", Configuration: "isolated", Directory: t.TempDir(), Enabled: true}
+	if _, err := db.SQL().ExecContext(t.Context(), `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled) VALUES(?,?,?,?,?,?)`, c.ID, c.Kind, c.Name, c.Configuration, c.Directory, c.Enabled); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}

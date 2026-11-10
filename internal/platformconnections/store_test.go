@@ -24,7 +24,9 @@ func input(name string) Input {
 
 func create(t *testing.T, s *Store, name string) Connection {
 	t.Helper()
-	c, err := s.Create(t.Context(), input(name))
+	v := input(name)
+	v.Directory = t.TempDir() // Repeated display names still represent distinct accounts.
+	c, err := s.Create(t.Context(), v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +218,9 @@ func TestConcurrentCreationAtLimit(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, maxConnections+8)
 	for range maxConnections + 8 {
-		wg.Go(func() { _, err := New(db).Create(t.Context(), input("Same name")); errs <- err })
+		v := input("Same name")
+		v.Directory = t.TempDir()
+		wg.Go(func() { _, err := New(db).Create(t.Context(), v); errs <- err })
 	}
 	wg.Wait()
 	close(errs)

@@ -13,6 +13,8 @@ import (
 func (s *Server) PlatformConnections(ctx context.Context, req *pb.CallReq) (response *pb.JsonResp, err error) {
 	defer func() {
 		switch {
+		case errors.Is(err, platformconnections.ErrConfigurationOwned):
+			err = status.Error(codes.AlreadyExists, "native configuration is already owned by another connection")
 		case errors.Is(err, platformconnections.ErrInvalid):
 			err = status.Error(codes.InvalidArgument, "invalid connection request")
 		case errors.Is(err, platformconnections.ErrNotFound):

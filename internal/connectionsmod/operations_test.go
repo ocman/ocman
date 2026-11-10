@@ -158,6 +158,7 @@ func TestConnectionErrorMappings(t *testing.T) {
 		want int
 	}{
 		{codes.InvalidArgument, 400}, {codes.NotFound, 404}, {codes.FailedPrecondition, 409}, {codes.Unimplemented, 501}, {codes.Unavailable, 503},
+		{codes.AlreadyExists, 409},
 	} {
 		t.Run(tc.code.String(), func(t *testing.T) {
 			m := moduletest.Mount(NewModule(Deps{ResolveOwner: func(*http.Request) (hostsvc.Host, error) { return nil, status.Error(tc.code, "private RPC detail") }}))
@@ -171,10 +172,14 @@ func TestConnectionErrorMappings(t *testing.T) {
 	if r := moduletest.Do(m, "GET", "/api/platform-connections?remoteId=legacy", "", ""); r.Code != http.StatusNotImplemented {
 		t.Fatal(r.Code)
 	}
-	for _, err := range []error{platformconnections.ErrNotFound, platformconnections.ErrLimit, platforms.ErrUnsupported} {
+	for _, err := range []error{platformconnections.ErrConfigurationOwned, platformconnections.ErrNotFound, platformconnections.ErrLimit, platforms.ErrUnsupported} {
 		m = moduletest.Mount(NewModule(Deps{ResolveOwner: func(*http.Request) (hostsvc.Host, error) { return nil, err }}))
-		if r := moduletest.Do(m, "GET", "/api/platform-connections?remoteId=local", "", ""); r.Code < 400 {
+		r := moduletest.Do(m, "GET", "/api/platform-connections?remoteId=local", "", "")
+		if r.Code < 400 {
 			t.Fatal(r.Code)
+		}
+		if errors.Is(err, platformconnections.ErrConfigurationOwned) && (r.Code != http.StatusConflict || !strings.Contains(r.Body.String(), "already owned")) {
+			t.Fatalf("ownership conflict not actionable: %d %s", r.Code, r.Body.String())
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -263,5 +264,51 @@ func TestConnectionSetupConcurrentPreparationsKeepEnvironment(t *testing.T) {
 	}
 	if !reflect.DeepEqual(os.Environ(), before) {
 		t.Fatal("preparation changed the process-global environment")
+	}
+}
+
+func TestConnectionSetupPreservesOwnerPathsWithCanonicalOwnership(t *testing.T) {
+	for _, mode := range []string{"existing", "isolated"} {
+		t.Run(mode, func(t *testing.T) {
+			h, store := connectionHost(t)
+			physicalRoot := h.deps.StateDir
+			ownerRoot := filepath.Join(t.TempDir(), "owner-state")
+			if err := os.Symlink(physicalRoot, ownerRoot); err != nil {
+				t.Fatal(err)
+			}
+			h.deps.StateDir = ownerRoot
+			existing := filepath.Join(ownerRoot, "existing")
+			if err := os.Mkdir(existing, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			h.deps.ConnectionConfigurations["codex"] = hostsvc.ConnectionConfiguration{ExistingDirectory: existing, SeparateConfiguration: true}
+			r, err := h.PreparePlatformConnection(t.Context(), hostsvc.ConnectionSetupRequest{Kind: "codex", Configuration: mode})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rel, err := filepath.Rel(ownerRoot, r.Directory); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) || (mode == "existing" && r.Directory != existing) {
+				t.Fatalf("receipt changed owner-pinned directory: %+v rel=%q err=%v", r, rel, err)
+			}
+			physical, err := filepath.EvalSymlinks(r.Directory)
+			if err != nil || physical == r.Directory {
+				t.Fatalf("test requires different owner/physical path spellings: %q %q %v", r.Directory, physical, err)
+			}
+			c, err := h.SavePlatformConnection(t.Context(), r.ID, "Account", false)
+			if err != nil || c.ID != r.ConnectionID || c.Directory != r.Directory {
+				t.Fatalf("save changed prepared identity: %+v %v", c, err)
+			}
+			h = New(h.deps)
+			resumed, err := h.PreparePlatformConnection(t.Context(), hostsvc.ConnectionSetupRequest{ReservationID: r.ID})
+			if err != nil || resumed.ID != r.ID || resumed.ConnectionID != r.ConnectionID || resumed.Directory != r.Directory || resumed.Status != "saved" {
+				t.Fatalf("restart changed pinned receipt: %+v %v", resumed, err)
+			}
+			duplicate, err := store.Reserve(t.Context(), "codex", "existing", physical)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.SaveReservation(t.Context(), duplicate.ID, "Alias", false); !errors.Is(err, platformconnections.ErrConfigurationOwned) {
+				t.Fatalf("physical alias bypassed exclusive ownership: %v", err)
+			}
+		})
 	}
 }

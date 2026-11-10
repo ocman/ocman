@@ -29,7 +29,7 @@ var Schema = state.ModuleSchema{
 			default_id TEXT REFERENCES platform_connection(id)
 		);`)
 		return err
-	}, migrateSetupReservations, migrateSessionConnections, migrateCreationConnections, migrateConnectionRuntimes, migrateConnectionSources},
+	}, migrateSetupReservations, migrateSessionConnections, migrateCreationConnections, migrateConnectionRuntimes, migrateConnectionSources, migrateNativeConfigurationOwnership},
 }
 
 func migrateSetupReservations(tx *sql.Tx) error {
