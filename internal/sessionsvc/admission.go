@@ -50,3 +50,19 @@ func (s *Service) resolveTurn(ctx context.Context, sessionID, platformID string)
 	}
 	return ctx, p, func() { finish(); activityDone() }, nil
 }
+
+// resolveMutation keeps both activity and connection admission alive through
+// non-turn native effects and their hooks. Abort and prompt answers deliberately
+// use resolveActivity instead so admitted work can settle during a drain.
+func (s *Service) resolveMutation(ctx context.Context, sessionID, platformID string) (context.Context, platforms.Platform, func(), error) {
+	ctx, p, activityDone, err := s.resolveActivity(ctx, sessionID, platformID)
+	if err != nil {
+		return ctx, nil, nil, err
+	}
+	finish, err := s.beginConnection(ctx, p, sessionID)
+	if err != nil {
+		activityDone()
+		return ctx, nil, nil, err
+	}
+	return ctx, p, func() { defer finish(); activityDone() }, nil
+}

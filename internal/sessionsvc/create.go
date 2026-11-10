@@ -87,15 +87,8 @@ func (s *Service) pickAdapter(ctx context.Context, platformID string) (platforms
 
 // ResolvePlatformID returns the platform Create would use.
 func (s *Service) ResolvePlatformID(ctx context.Context, platformID string) (string, error) {
-	if s.connections != nil && localConnectionScope(platformID) {
-		route, err := s.connections.router.Resolve(ctx, connectionReference(platformID))
-		return route.Connection.ID, connectionDispatchError(err)
-	}
-	adapter, err := s.pickAdapter(ctx, platformID)
-	if err != nil {
-		return "", err
-	}
-	return string(adapter.ID()), nil
+	_, id, err := s.catalogAdapter(ctx, platformID)
+	return id, err
 }
 
 // DirectoryCatalog resolves the platform the same way Create does.

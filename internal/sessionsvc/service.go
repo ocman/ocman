@@ -191,7 +191,7 @@ func (s *Service) Rename(ctx context.Context, platformID string, req platforms.R
 	if req.Title == "" {
 		return validation("title is required")
 	}
-	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveMutation(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -217,7 +217,7 @@ func (s *Service) Dispose(ctx context.Context, platformID string, req platforms.
 	if req.SessionID == "" {
 		return validation("session ID is required")
 	}
-	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveMutation(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -239,7 +239,7 @@ func (s *Service) Revert(ctx context.Context, platformID string, req platforms.R
 	if req.SessionID == "" || req.MessageID == "" {
 		return validation("session ID and message ID are required")
 	}
-	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveMutation(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (s *Service) Unrevert(ctx context.Context, platformID string, req platforms
 	if req.SessionID == "" {
 		return validation("session ID is required")
 	}
-	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveMutation(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 	if strings.TrimSpace(req.Directory) == "" {
 		return validation("directory is required")
 	}
-	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveMutation(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
@@ -317,7 +317,7 @@ func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req
 	if err := normalizePermissionRules(req.Rules); err != nil {
 		return err
 	}
-	ctx, p, finish, err := s.resolveActivity(ctx, req.SessionID, platformID)
+	ctx, p, finish, err := s.resolveMutation(ctx, req.SessionID, platformID)
 	if err != nil {
 		return err
 	}
