@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import babel from '@rolldown/plugin-babel';
+import { workerExecArgv } from './test/workerExecArgv.ts';
 
 // Vitest runs the unit-test suite (Zustand stores, pure helpers, small
 // hooks). Playwright specs live alongside under `e2e/**` — same
@@ -39,8 +40,8 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     // Node 25 ships a global `localStorage` that is unusable without
     // `--localstorage-file`, warns on first access, and shadows jsdom's
-    // working Storage. Turn it off so jsdom's own implementation is used.
-    execArgv: ['--no-experimental-webstorage'],
+    // working Storage. Turn it off where supported so jsdom's Storage is used.
+    execArgv: workerExecArgv(process.allowedNodeEnvironmentFlags),
     // The shared CI runner is CPU-starved while Go and Playwright jobs
     // run alongside; the 5s default let healthy tests time out.
     testTimeout: 15_000,
