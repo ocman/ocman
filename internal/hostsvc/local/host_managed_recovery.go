@@ -10,8 +10,8 @@ import (
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
 )
 
-func validateReplacementRoot(root string) error {
-	if filepath.Clean(root) != machineRoot() {
+func (h *Host) validateReplacementRoot(root string) error {
+	if filepath.Clean(root) != h.machineRoot() {
 		return fmt.Errorf("OpenCode replacement requires machine root, got %q", root)
 	}
 	return nil

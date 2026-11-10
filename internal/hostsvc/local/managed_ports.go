@@ -43,7 +43,7 @@ func (h *Host) RefreshManagedOpenCodePorts(ctx context.Context) map[string]strin
 			}
 		}
 	}
-	root := machineRoot()
+	root := h.machineRoot()
 	if candidate, ok := candidates[root]; ok {
 		if ctx.Err() != nil || !h.refreshInventoryCandidate(ctx, root, candidate) {
 			return nil
@@ -80,7 +80,7 @@ func (h *Host) refreshInventoryCandidate(ctx context.Context, root string, candi
 		case err == nil:
 			h.authorizeInstanceLocked(root, &candidate.instance)
 		}
-		if root == machineRoot() {
+		if root == h.machineRoot() {
 			h.publishMachineServer(h.authorized[root])
 		}
 	}

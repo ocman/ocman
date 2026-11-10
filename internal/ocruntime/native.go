@@ -33,6 +33,7 @@ type NativeRuntime struct {
 	// httpClient probes /config; nil uses the package default.
 	httpClient *http.Client
 	auth       ocapi.Auth
+	connection *NativeConnectionConfig
 }
 
 // NewNativeRuntime returns a NativeRuntime wired to the real tmux
@@ -73,10 +74,17 @@ func (r *NativeRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance,
 	// tmux panes inherit the tmux server's environment, not ocman's: carry
 	// an OPENCODE_DB override so ocman reads the database the server it
 	// launched writes.
-	if db := os.Getenv("OPENCODE_DB"); db != "" {
+	if db := os.Getenv("OPENCODE_DB"); db != "" && r.connection == nil {
 		env["OPENCODE_DB"] = db
 	}
 	command := tmux.OpencodeServeCommandForPort(spec.Port)
+	if r.connection != nil {
+		var err error
+		env, command, err = r.connection.launchEnvironment(r.auth, spec.Port)
+		if err != nil {
+			return nil, err
+		}
+	}
 	session, err := r.launch(ctx, spec.RepoRoot, command, env)
 	if err != nil {
 		return nil, fmt.Errorf("ocruntime: launch native tmux opencode: %w", err)
@@ -99,7 +107,11 @@ func (r *NativeRuntime) Probe(ctx context.Context, inst *Instance) error {
 	}
 	client := r.httpClient
 	if client == nil {
-		client = &http.Client{Timeout: defaultProbeClient.Timeout, Transport: r.auth.Transport(http.DefaultTransport)}
+		transport := r.auth.Transport(http.DefaultTransport)
+		if r.connection != nil {
+			transport = r.auth.IsolatedTransport(http.DefaultTransport)
+		}
+		client = &http.Client{Timeout: defaultProbeClient.Timeout, Transport: transport}
 	}
 	if err := probeConfig(ctx, client, inst.Endpoint); err != nil {
 		return err

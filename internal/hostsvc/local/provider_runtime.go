@@ -22,7 +22,7 @@ import (
 // must create a fresh provider adapter rather than carrying over its cursor.
 type ProviderManager struct {
 	Runtime *ocruntime.BackendRuntime
-	State   *state.DB
+	State   ProviderState
 	// OnDrain is called before a supervisor is drained for replacement,
 	// with whether it still speaks a supported protocol, so the dashboard
 	// keeps a route that answers its pending prompts until it settles.

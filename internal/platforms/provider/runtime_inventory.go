@@ -13,7 +13,10 @@ import (
 // PersistedRuntimeSessions reads every recorded supervisor without attaching,
 // launching, draining or adopting it. An unreadable endpoint is absent only
 // when the owner confirms its tracked process has stopped.
-func PersistedRuntimeSessions(ctx context.Context, platform string, store *state.DB, runtime interface {
+func PersistedRuntimeSessions(ctx context.Context, platform string, store interface {
+	ListManagedProviders(context.Context, string) ([]string, error)
+	GetManagedProvider(context.Context, string, string) (state.ManagedInstance, bool, error)
+}, runtime interface {
 	Alive(context.Context, *ocruntime.Instance) (bool, error)
 }) ([]db.Session, error) {
 	if store == nil {

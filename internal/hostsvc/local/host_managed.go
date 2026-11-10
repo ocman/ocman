@@ -81,7 +81,7 @@ func (h *Host) beforeReplace(ctx context.Context, root, reason string, inst *ocr
 }
 
 func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
-	if err := validateReplacementRoot(repoRoot); err != nil {
+	if err := h.validateReplacementRoot(repoRoot); err != nil {
 		return nil, err
 	}
 	if stopped, err := h.reconcileStopped(ctx, repoRoot, false); err != nil {
@@ -129,7 +129,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 }
 
 func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureRuntimeResult, error) {
-	if err := validateReplacementRoot(repoRoot); err != nil {
+	if err := h.validateReplacementRoot(repoRoot); err != nil {
 		return nil, err
 	}
 	if stopped, err := h.reconcileStopped(ctx, repoRoot, true); err != nil {
@@ -285,7 +285,7 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 	}
 	// Only the machine server itself is stopped; a project stop leaves the
 	// server shared by every other project running.
-	repoRoot := machineRoot()
+	repoRoot := h.machineRoot()
 	if filepath.Clean(req.ProjectDir) != repoRoot {
 		return nil
 	}
@@ -334,7 +334,7 @@ func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode,
 	if err != nil {
 		return nil, err
 	}
-	machine := machineRoot()
+	machine := h.machineRoot()
 	if _, ok := instances[machine]; !ok {
 		return nil, nil
 	}

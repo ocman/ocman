@@ -80,12 +80,25 @@ func (h *Host) SavePlatformConnection(ctx context.Context, receipt, name string,
 	if _, err := h.PreparePlatformConnection(ctx, hostsvc.ConnectionSetupRequest{ReservationID: receipt}); err != nil {
 		return platformconnections.Connection{}, err
 	}
-	return h.deps.ConnectionStore.SaveReservation(ctx, receipt, name, enabled)
+	c, err := h.deps.ConnectionStore.SaveReservation(ctx, receipt, name, enabled)
+	if err == nil && c.Enabled && h.deps.ConnectionLifecycle.Activate != nil {
+		err = h.deps.ConnectionLifecycle.Activate(ctx, c)
+	}
+	return c, err
 }
 
 func (h *Host) CancelPlatformConnectionSetup(ctx context.Context, receipt string) error {
 	if h.deps.ConnectionStore == nil {
 		return platforms.ErrUnsupported
+	}
+	r, err := h.deps.ConnectionStore.Reservation(ctx, receipt)
+	if err != nil {
+		return err
+	}
+	// Dismissing a setup after a lost Save response must not remove the saved
+	// account or trap the browser in an editor it can no longer cancel.
+	if r.Status == "saved" {
+		return nil
 	}
 	return h.deps.ConnectionStore.CancelReservation(ctx, receipt)
 }

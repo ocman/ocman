@@ -15,7 +15,7 @@ import (
 )
 
 func (h *Host) ReloadOpencode(ctx context.Context) error {
-	root := machineRoot()
+	root := h.machineRoot()
 	candidate := h.currentInstance(root)
 	if candidate == nil && h.store != nil {
 		inst, ok, err := h.store.Get(ctx, root)

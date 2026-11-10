@@ -46,6 +46,7 @@ type Deps struct {
 	// OpenCodeService reads OpenCode v2's registered background service;
 	// nil never uses one (ocman on another database, tests).
 	OpenCodeService         func() (ocv2.Service, error)
+	OpenCodeRoot            string
 	ManagedStore            ManagedStore
 	OpenCodeAuth            func() ocapi.Auth
 	OpenCodeReloaded        func(port string)
@@ -66,6 +67,7 @@ type Deps struct {
 	WorktreeLease           func(context.Context) (context.Context, func())
 
 	ConnectionStore          *platformconnections.Store
+	ConnectionLifecycle      hostsvc.ConnectionLifecycle
 	ConnectionConfigurations map[string]hostsvc.ConnectionConfiguration
 }
 

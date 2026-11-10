@@ -10,6 +10,7 @@ import (
 // browser. SeparateConfiguration permits preparing a directory, not execution
 // or a claim that the tool's credentials are isolated.
 type ConnectionConfiguration struct {
+	Label, IsolationNote  string
 	ExistingDirectory     string
 	SeparateConfiguration bool
 }
@@ -20,8 +21,8 @@ type ConnectionSetupRequest struct {
 	ReservationID string
 }
 
-// ConnectionSetupHost is an optional owner seam for resumable configuration
-// preparation. Remote forwarding and live Settings wiring are not enabled yet.
+// ConnectionSetupHost prepares resumable owner-local configuration. Remote
+// implementations forward the receipt unchanged to its issuing owner.
 type ConnectionSetupHost interface {
 	PreparePlatformConnection(context.Context, ConnectionSetupRequest) (platformconnections.Reservation, error)
 	SavePlatformConnection(context.Context, string, string, bool) (platformconnections.Connection, error)

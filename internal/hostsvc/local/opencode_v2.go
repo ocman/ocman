@@ -54,8 +54,12 @@ func machineRoot() string {
 // sessions or name worktrees keep working per project.
 func (h *Host) ensureMachine(ctx context.Context, projectDir string,
 	fn func(context.Context, string) (*hostsvc.EnsureRuntimeResult, error), operation string) (*hostsvc.EnsureRuntimeResult, error) {
-	root := machineRoot()
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	root := h.machineRoot()
+	mode := os.FileMode(0o755)
+	if h.deps.OpenCodeRoot != "" {
+		mode = 0o700
+	}
+	if err := os.MkdirAll(root, mode); err != nil {
 		return nil, fmt.Errorf("creating OpenCode v2 working directory: %w", err)
 	}
 	res, err := h.sfDoDetached(ctx, root, func(flightCtx context.Context, root string) (*hostsvc.EnsureRuntimeResult, error) {
@@ -116,7 +120,7 @@ func (h *Host) RunMachineSupervisor(ctx context.Context) {
 				h.reapNonMachineInstances(ctx)
 				reaped = true
 			}
-			if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: machineRoot()}); err != nil && ctx.Err() == nil {
+			if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: h.machineRoot()}); err != nil && ctx.Err() == nil {
 				module.ReportError(ctx, err)
 				log.WithError(err).Warn("host: OpenCode server unavailable")
 			}
@@ -143,7 +147,7 @@ func (h *Host) reapNonMachineInstances(ctx context.Context) {
 		log.WithError(err).Warn("host: listing managed opencode instances")
 		return
 	}
-	keep := machineRoot()
+	keep := h.machineRoot()
 	for root, mi := range rows {
 		if root == keep {
 			continue
