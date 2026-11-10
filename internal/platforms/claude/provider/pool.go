@@ -12,8 +12,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/ocman/ocman/internal/platforms/claude/launch"
 )
 
 // proc is one live claude child, driven over stream-json pipes (AD-6).
@@ -206,7 +204,7 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 	mcp := l.opts.mcpConfig()
 	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, l.opts.mcpConfigArg(mcp))...)
 	cmd.Dir = o.Directory
-	cmd.Env = claudecli.Environment(l.opts.ConfigEnv, o.Directory)
+	cmd.Env = l.opts.sessionEnv(o.Directory)
 	cmd.Env = append(cmd.Env, "OCMAN_MANAGED=1")
 	p := &proc{id: id, model: model, effort: effort, mcp: mcp, cmd: cmd, busy: true, pending: map[string]bool{}, conv: &Converter{SessionID: id},
 		children: map[string]*Converter{}, tasks: map[string]bool{}, controls: map[string]chan controlResult{}, dir: o.Directory, stderr: &tail{}, done: make(chan struct{})}

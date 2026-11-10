@@ -47,7 +47,10 @@ type Options struct {
 	// explicitly from the dashboard (an empty value unsets it); nil inherits
 	// this process's environment.
 	ConfigEnv *string
-	PluginDir string // --plugin-dir with ocman's skills; empty omits it
+	// ConnectionAccount pins children to ConfigDir and filters inherited auth.
+	// It does not isolate persistence or make a named integration routable.
+	ConnectionAccount bool
+	PluginDir         string // --plugin-dir with ocman's skills; empty omits it
 	// SlotDir holds the machine-wide child slots shared by every supervisor;
 	// empty caps this supervisor alone.
 	SlotDir string
@@ -89,6 +92,10 @@ func NewSupervisor(ctx context.Context, opts Options, spool string) (*providersu
 }
 
 func newSupervisor(ctx context.Context, opts Options, spool string) (*providersupervisor.Supervisor, *live, error) {
+	opts, err := prepareConnectionOptions(opts)
+	if err != nil {
+		return nil, nil, err
+	}
 	if opts.MaxProcs <= 0 {
 		opts.MaxProcs = DefaultMaxProcs
 	}

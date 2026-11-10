@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/mcpauth"
-	"github.com/ocman/ocman/internal/platforms/claude/launch"
 )
 
 // The ocman plugin lives in a local marketplace of the same name (AD-11);
@@ -288,5 +287,5 @@ func (o Options) mcpConfig() string {
 // childEnv is a claude child's environment: this process's, with the
 // dashboard's CLAUDE_CONFIG_DIR when one was carried (nil inherits).
 func (o Options) childEnv() []string {
-	return claudecli.Environment(o.ConfigEnv, "")
+	return o.sessionEnv("")
 }

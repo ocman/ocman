@@ -31,6 +31,14 @@ the same project execute and recover independently, including when the owner
 state directory is itself inside a Git checkout. Default machine construction
 is unchanged. No startup caller selects named Codex connections yet.
 
+Claude's provider now has an opt-in `Options.ConnectionAccount` environment
+policy. It requires an explicit existing absolute configuration directory before
+opening the index, freezes its canonical path, and filters inherited Anthropic
+credentials and Claude cloud-service selectors for session children and provider
+account/catalog probes. Fake-child tests cover the session launch path. This is
+not a named Claude constructor: project recovery keys, persistence directories,
+transport-level helpers and plugin management still need account-aware wiring.
+
 **Only the schema is wired into startup.** The repository initializer and
 mutations have no production callers yet. Existing platform settings remain
 authoritative. Native authentication, runtime isolation and routing have not
@@ -94,7 +102,8 @@ commands displayed in the browser fixture are examples, not executable setup.
    Never change process-global environment variables while constructing adapters.
    Audit native environment inheritance so an API token cannot override the
    intended subscription account silently. Codex has the explicit constructor
-   and filtered child environments; Claude and OpenCode still need this work.
+   and filtered child environments. Claude has a provider-level environment
+   policy, but not the named transport constructor; OpenCode still needs both.
 4. Scope supervisors, runtime records, rules, launch files, sockets, spools,
    discovery and recovery to connections. Claude currently persists supervisors
    by `(provider, repo_root)`; Codex currently has one machine supervisor root.
@@ -249,6 +258,34 @@ commands displayed in the browser fixture are examples, not executable setup.
   effective account identity before advertising isolation. The registry remains
   platform-kind keyed; these native constructors are not yet new-session routing
   or a completed multi-account feature.
+
+### Claude child-environment checkpoint
+
+- `claudeprovider.Options.ConnectionAccount` is opt-in. A missing, relative,
+  nonexistent or non-directory `ConfigDir` fails before opening an index or
+  probing the CLI. Valid directories resolve to a physical path shared by
+  history, ownership checks and child environments. Caller mutation of a
+  supplied `ConfigEnv` pointer cannot change that account.
+- Session execution and provider-owned account/catalog probes use the same
+  environment policy. It strips inherited `ANTHROPIC_*`, `CLAUDE_CODE_USE_*`,
+  `CLAUDE_CODE_OAUTH_*` and `CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR` values, pins
+  `CLAUDE_CONFIG_DIR`, and retains SDK markers and session `PWD`. This deliberately
+  removes inherited model/endpoint overrides too. `HOME`, generic tool
+  credentials and unrelated MCP variables stay unchanged. Legacy machine
+  options keep their existing inherited environment behavior.
+- The inherited-API-key regression test failed before the policy and passed
+  afterward. A fake Claude turn also verifies that session spawning uses it.
+  These tests do not read real credentials or contact model services.
+- This is not proof of effective subscription identity. Native settings can
+  reintroduce authentication through `env` or `apiKeyHelper`, and native profile
+  fallback also needs inspection. Setup must inspect the effective account and
+  supported installed version. Upstream [authentication documentation](https://code.claude.com/docs/en/authentication)
+  describes directory-scoped keychain entries for subscription logins, but warns
+  that Console sign-ins without API keys are not isolated by config directory.
+- Nothing enables this option in production. The named transport still needs
+  account-scoped index/rules/ownership/usage/launch state, separate project
+  supervisor recovery keys, account-aware plugin management and transport-level
+  naming/judging helpers before it is safe to route user-facing connections.
 
 ## Completion gates
 

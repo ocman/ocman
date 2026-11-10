@@ -94,3 +94,19 @@ flowchart LR
   cross-account writes or supervisor replacement. Installed-version checks,
   account probes and registry/session routing remain required before exposing
   this configuration in live Settings.
+
+## Claude child environment
+
+`claudeprovider.Options.ConnectionAccount` adds an opt-in provider boundary, not
+an application-level named constructor. Before opening the transcript index,
+the provider validates and canonicalizes the selected configuration directory.
+Session spawning and provider-owned account/catalog probes then share
+`claudecli.AccountEnvironment`. It removes inherited Anthropic overrides and
+Claude cloud-service/OAuth selectors while retaining the SDK markers, session
+working directory, `HOME` and unrelated tool environment. Default machine
+construction is unchanged.
+
+Native settings and profile fallback can still affect authentication. Setup
+account inspection, account-scoped persistence and project recovery, and
+transport-level helper/plugin wiring remain required. No production caller opts
+into the policy yet.
