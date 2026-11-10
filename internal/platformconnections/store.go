@@ -146,21 +146,26 @@ func (s *Store) Create(ctx context.Context, input Input) (Connection, error) {
 		Configuration: input.Configuration, Directory: input.Directory, Enabled: input.Enabled}
 	result, err := s.db.ExecContext(ctx, `INSERT INTO platform_connection(id,kind,name,configuration,directory,enabled)
 		SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM platform_connection_collection WHERE id=1)
-		AND (SELECT count(*) FROM platform_connection WHERE removed=0)<?`, c.ID, c.Kind, c.Name, c.Configuration, c.Directory, c.Enabled, maxConnections)
+		AND (SELECT count(*) FROM platform_connection WHERE removed=0)
+		+ (SELECT count(*) FROM platform_connection_setup WHERE status='pending')<?`, c.ID, c.Kind, c.Name, c.Configuration, c.Directory, c.Enabled, maxConnections)
 	if err != nil {
 		return Connection{}, err
 	}
 	if n, err := result.RowsAffected(); err != nil || n != 0 {
 		return c, err
 	}
+	return Connection{}, s.capacityError(ctx)
+}
+
+func (s *Store) capacityError(ctx context.Context) error {
 	var initialized bool
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM platform_connection_collection WHERE id=1)`).Scan(&initialized); err != nil {
-		return Connection{}, err
+		return err
 	}
 	if !initialized {
-		return Connection{}, ErrUninitialized
+		return ErrUninitialized
 	}
-	return Connection{}, ErrLimit
+	return ErrLimit
 }
 
 // Rename cannot change a connection's account, kind or source binding.

@@ -13,6 +13,16 @@ enabled intent, explicit default preference, removal tombstones and onboarding
 completion. Its transactional initializer can record legacy mappings once and
 distinguishes missing configuration from an intentionally empty collection.
 
+The setup checkpoint adds durable `stp_<uuid>` reservations and the optional
+`hostsvc.ConnectionSetupHost` seam. The local host can prepare private,
+owner-allocated configuration directories, resume the same receipt and save its
+preassigned connection ID atomically. Setup remains disabled unless composition
+explicitly supplies the store and per-integration configuration policy.
+
+The dialog callback contract carries the owner's `reservationId` through Check
+again, Back, renaming and Save retries. It rejects a response that changes or
+drops a pinned receipt. This is tested with callback mocks, not a live owner API.
+
 **Only the schema is wired into startup.** The repository initializer and
 mutations have no production callers yet. Existing platform settings remain
 authoritative. Native authentication, runtime isolation and routing have not
@@ -88,10 +98,13 @@ commands displayed in the browser fixture are examples, not executable setup.
    capabilities, session targets, drafts, defaults, routines, Factory, MCP,
    helper/title generation, usage and cooldowns. Explicit unavailable owners or
    connections fail closed; never fall back to a similarly named connection.
-7. Add owner-local setup inspection and resumable setup identity. A check that
-   prepares an isolated directory needs a durable reservation/receipt so Save,
-   Check again and the displayed login command all use the **same** directory.
-   The browser's account/status observations are never mutation authority.
+7. Wire the implemented owner-local setup reservations into setup inspection,
+   login instructions and the dialog's API controller. The dialog retains the
+   receipt during its lifetime; the controller still needs to cancel abandoned
+   reservations and decide how to resume setup after a browser reload. Add native account checks
+   and login commands that use that reserved configuration. The browser's
+   account/status observations are never mutation authority. Preparing a private
+   directory alone does not establish credential isolation.
 8. Replace `PlatformSettings` and the OpenCode-only getting-started empty state
    with an API controller around the approved components, then complete full-app
    end-to-end tests. Keep loading, failed requests and disconnected owners
@@ -139,13 +152,48 @@ commands displayed in the browser fixture are examples, not executable setup.
   not persisted as authorization. The future owner service must verify setup
   before setting a default, recheck admission before execution, and drain work
   before recording removal. Direct repository calls do not stop runtimes.
-- The store admits up to 64 nonremoved connections atomically, including across
-  separate store instances. Tombstones do not consume active connection slots.
+- The store admits up to 64 nonremoved connections and pending setup reservations
+  together, including across separate store instances. Tombstones and canceled
+  or saved receipts do not consume additional slots.
 - Tests cover restart, multiple same-kind connections, default disable/enable,
   removal and replacement, concurrent initialization and capacity admission,
   failed migration rollback, missing versus empty configuration, and additive
   schema migration preserving legacy settings. They use disposable state stores
   and never launch native agents or inspect real credentials.
+
+### Setup reservation contract
+
+- The owner selects existing configuration paths from integration metadata, or
+  allocates a separate path below its explicit state directory. The setup request
+  accepts a kind and mode, not a browser-supplied path. No shared-state fallback
+  is allowed when the state directory or integration policy is missing.
+- The reservation is committed before filesystem preparation. A preparation
+  failure returns the receipt as well as the error; retry resumes it. The receipt
+  pins kind, mode, directory and the future connection ID across server restart.
+- Preparing a separate directory uses rooted filesystem operations and rejects
+  symlinks, non-directories and directories with group/other permissions. Newly
+  created directories use mode 0700. It copies no existing account files and
+  launches no native tools. It is not a security boundary against the same user.
+- A missing directory belonging to an already-saved connection is an error, not
+  permission to silently create a new blank configuration for that identity.
+- Save takes a receipt, display name and enabled intent. It accepts no account
+  observations, kind or path. The connection insert and saved receipt commit in
+  one transaction. Retrying Save returns the existing connection without
+  duplicating it or overwriting subsequent edits. Removal cannot be resurrected
+  by retrying an old Save.
+- Cancellation releases pending capacity but retains the receipt and directory.
+  A partially completed login may already have stored credentials there. A saved
+  receipt cannot be canceled to bypass the connection removal/draining path.
+- The local Host has no configured setup store or preparation policy by default.
+  There are no setup HTTP routes, remote RPCs, login commands or account probes
+  for named connections yet. Runtime-level account isolation and admission are
+  still separate completion requirements.
+- The reusable dialog keeps the receipt out of editable form state and includes
+  it in callback requests. Name changes and Back do not start another setup;
+  kind, configuration mode and normalized directory changes invalidate it. An
+  owner response that changes or drops a receipt clears the successful check
+  and blocks Save until a matching check succeeds. Readiness observations and
+  returned paths are not copied into authoritative save fields.
 
 ## Completion gates
 

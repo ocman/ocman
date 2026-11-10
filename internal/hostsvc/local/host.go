@@ -15,6 +15,7 @@ import (
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/ocruntime"
+	"github.com/ocman/ocman/internal/platformconnections"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
@@ -63,6 +64,9 @@ type Deps struct {
 	WorktreeActivity        func(context.Context, string) (context.Context, func(), error)
 	AdmitWorktreeCleanup    func(context.Context, hostsvc.CleanupWorktreeRequest) (context.Context, func(), error)
 	WorktreeLease           func(context.Context) (context.Context, func())
+
+	ConnectionStore          *platformconnections.Store
+	ConnectionConfigurations map[string]hostsvc.ConnectionConfiguration
 }
 
 // ManagedInstance mirrors the durable runtime fields needed for recovery.

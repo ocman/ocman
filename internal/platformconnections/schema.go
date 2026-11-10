@@ -10,7 +10,7 @@ import (
 
 var Schema = state.ModuleSchema{
 	Module: "platform-connections",
-	Tables: []string{"platform_connection", "platform_connection_collection"},
+	Tables: []string{"platform_connection", "platform_connection_collection", "platform_connection_setup"},
 	Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 		_, err := tx.Exec(`CREATE TABLE platform_connection (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -29,5 +29,18 @@ var Schema = state.ModuleSchema{
 			default_id TEXT REFERENCES platform_connection(id)
 		);`)
 		return err
-	}},
+	}, migrateSetupReservations},
+}
+
+func migrateSetupReservations(tx *sql.Tx) error {
+	_, err := tx.Exec(`CREATE TABLE platform_connection_setup (
+		id TEXT PRIMARY KEY NOT NULL,
+		connection_id TEXT NOT NULL UNIQUE,
+		kind TEXT NOT NULL CHECK(kind IN ('opencode','claudecode','codex')),
+		configuration TEXT NOT NULL CHECK(configuration IN ('existing','isolated')),
+		directory TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','saved','canceled'))
+	);
+	CREATE INDEX platform_connection_setup_pending ON platform_connection_setup(status) WHERE status='pending';`)
+	return err
 }
