@@ -21,7 +21,7 @@ import { randomId } from '../../lib/randomId';
 import { draftDefaultModel, prepareDraftCatalog, type DraftCatalog } from './draftCatalog';
 import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
 import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
-import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
+import { useConversationSelections } from './useConversationSelections';
 import { InlineAlert } from '../../components/InlineAlert';
 import { useWorktreeEligibility } from './useWorktreeEligibility';
 import { startFirstSubmission } from './firstSubmission';
@@ -85,7 +85,6 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const openWorktreeForm = useUiStore((state) => state.openWorktreeForm);
   const worktreesCapable = useWorktreeLaunch(remoteId);
   const eligibility = useWorktreeEligibility(directory, remoteId, !!savedSelections?.clone);
-
   const catalogKey = JSON.stringify([remoteId, directory, params.platform]);
   const cachedCatalog = useMemo(() => getNewSessionCatalog(catalogKey), [catalogKey]);
   const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: DraftCatalog }>();
@@ -99,7 +98,6 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const catalogError = catalogFailure?.request === catalogRequest ? catalogFailure.message : '';
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
-
   // Prepare only reads catalogs (a running instance's, else history); it
   // never launches OpenCode, so picking a machine starts nothing there.
   useEffect(() => {
@@ -118,20 +116,8 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     });
     return () => controller.abort();
   }, [directory, remoteId, params.platform, catalogKey, catalogRequest]);
-
-  const [selectedModel, setSelectedModel] = useState(savedSelections?.model || '');
-  const [selectedAgent, setSelectedAgent] = useState(savedSelections?.agent || '');
-  const [selectedReasoning, setSelectedReasoning] = useState(savedSelections?.reasoning || '');
-  const [targetPick, setTarget] = useState<SessionTarget | undefined>(saved?.target as SessionTarget | undefined);
-  const [permissionMode, setPermissionMode] = useState(savedSelections?.permissionMode || 'default');
-  // A model pick re-points the platform, so selections survive a platform change.
-  const machineKey = JSON.stringify([remoteId, directory]);
-  const [selectionKey, setSelectionKey] = useState(machineKey);
-  if (selectionKey !== machineKey) {
-    setSelectionKey(machineKey);
-    setSelectedModel(''); setSelectedAgent(''); setSelectedReasoning('');
-    setTarget(saved?.target as SessionTarget | undefined);
-  }
+  const { selectedModel, setSelectedModel, selectedAgent, setSelectedAgent, selectedReasoning, setSelectedReasoning,
+    targetPick, setTarget, permissionMode, setPermissionMode, selectConnection } = useConversationSelections(params, savedSelections, navigate);
   const target = targetPick || catalog?.defaults?.worktree || 'worktree';
   const [error, setError] = useState('');
   // The submitted prompt, shown as the conversation's first message while
@@ -159,14 +145,12 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   // the last pick in this project, then the directory's most recent model.
   const activeModel = draftDefaultModel(catalog, getProjectModel(directory));
   const attachmentPayload = usePendingDraftPayload(draftId);
-
   const models = useMemo(() => {
     const entries = catalog?.models.models ?? [];
     return Array.from(new Set([activeModel, ...entries.map((m) => qualifyModelRef(m.platform, formatModelRef(m.provider, m.model)))].filter(Boolean)));
   }, [activeModel, catalog]);
   const agents = useMemo(() => catalog?.agents ?? [], [catalog]);
 
-  const selectConnection = useCallback((id: string) => navigate(newSessionPath({ directory, remoteId, platform: id, title, draftId })), [directory, remoteId, title, draftId, navigate]);
   const { platformForModel, selector: connectionSelector, named: namedConnections } = useConnectionSelection(remoteId, platform, selectConnection, durable.submitted);
   // Re-points the route when model runs on another platform; reports whether it did.
   const repoint = useCallback((model: string) => {
@@ -188,12 +172,12 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     setSelectedReasoning('');
     saveProjectModel(directory, model);
     if (repoint(model)) setSelectedAgent(''); // agents belong to a platform
-  }, [directory, repoint, durable.submitted, durable.record?.request?.platform, platformForModel, namedConnections]);
+  }, [directory, repoint, durable.submitted, durable.record?.request?.platform, platformForModel, namedConnections, setSelectedModel, setSelectedAgent, setSelectedReasoning]);
   const handleAgentChange = useCallback((agent: string) => {
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) { setSelectedModel(agentModel); setSelectedReasoning(''); }
-  }, [agents]);
+  }, [agents, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
   // Favorites belong to the platform the model runs on.
   const handleToggleFavorite = useCallback(async (provider: string, model: string, next: boolean, modelPlatform?: string) => {
     const owner = (modelPlatform && platformForModel(`${modelPlatform}:${provider}/${model}`)) || platform;

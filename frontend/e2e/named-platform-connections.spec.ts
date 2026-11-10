@@ -5,6 +5,35 @@ const personal: PlatformConnection = { id: 'cnx_personal', kind: 'opencode', nam
 const work: PlatformConnection = { ...personal, id: 'cnx_work', name: 'OpenCode Work', directory: '/config/work', configuration: 'isolated', isDefault: false };
 const platform = { id: 'opencode', label: 'OpenCode', existingDirectory: personal.directory, supportsIsolation: true, isolationNote: 'Separate configuration' };
 
+test('a failed disabled account remains removable beside healthy selectable accounts', async ({ mockedPage: page }) => {
+  const broken: PlatformConnection = { ...work, id: 'cnx_broken', name: 'Broken account', enabled: false, status: 'error' };
+  let connections = [personal, work, broken];
+  const capabilities = makeCapabilitiesWithPort();
+  capabilities.platforms = [personal, work].map(connection => ({ ...capabilities.platforms[0], id: connection.id, kind: connection.kind, displayName: connection.name }));
+  await page.route('**/api/capabilities', route => route.fulfill({ json: capabilities }));
+  await page.route('**/api/platform-connections**', route => {
+    if (route.request().method() === 'DELETE') {
+      expect(new URL(route.request().url()).pathname).toBe('/api/platform-connections/cnx_broken');
+      connections = [personal, work];
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({ json: { supported: true, onboardingComplete: true, platforms: [platform], connections } });
+  });
+  await page.route('**/api/sessions/resolve-targets', route => route.fulfill({ json: { candidates: [{ remoteId: 'local', remoteName: 'This machine', platform: personal.id, dir: MOCK_SESSION.directory }], remotes: [] } }));
+  await page.goto(`/session/new?dir=${encodeURIComponent(MOCK_SESSION.directory)}&platform=${personal.id}`);
+  const selector = page.getByRole('combobox', { name: 'Platform connection', exact: true });
+  await expect(selector.getByRole('option', { name: 'Broken account (Disabled · Check failed)', exact: true })).toHaveAttribute('disabled', '');
+  await expect(selector.getByRole('option', { name: work.name, exact: true })).not.toHaveAttribute('disabled');
+  await page.goto('/settings?tab=platforms');
+  await expect(page.getByText('Disabled · Check failed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: work.name, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove Broken account', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Remove Broken account?' }).getByRole('button', { name: 'Remove connection', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Broken account', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: personal.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: work.name, exact: true })).toBeVisible();
+});
+
 test('mounted Settings resumes the owner receipt after reload and retries without allocating a sibling', async ({ mockedPage: page }) => {
   const checks: Record<string, unknown>[] = [];
   const saves: Record<string, unknown>[] = [];
@@ -79,7 +108,7 @@ test('mounted composer keeps the chosen same-kind connection through model chang
   unavailable = true;
   await page.reload();
   await expect(selector).toHaveValue(work.id);
-  await expect(selector.getByRole('option', { name: /Work.*setup required/ })).toHaveAttribute('disabled', '');
+  await expect(selector.getByRole('option', { name: /Work.*Sign-in required/ })).toHaveAttribute('disabled', '');
   await expect(selector.getByRole('option', { name: personal.name, exact: true })).not.toHaveAttribute('disabled');
   await expect(page.getByRole('alert').filter({ hasText: 'Selected Work account requires sign-in' }).first()).toBeVisible();
   expect(new URL(page.url()).searchParams.get('platform')).toBe(work.id);

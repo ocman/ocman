@@ -34,6 +34,16 @@ describe('PlatformConnections', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
   });
 
+  it.each([false, true])('labels failed checks without hiding healthy siblings or removal controls (enabled=%s)', (enabled) => {
+    mount({ connections: [personal, { ...work, enabled, status: 'error' }] });
+    const broken = screen.getByRole('button', { name: 'Claude Work' }).closest('[role="listitem"]')! as HTMLElement;
+    expect(within(broken).getByText(enabled ? 'Check failed' : 'Disabled · Check failed')).toBeVisible();
+    expect(within(broken).getByRole('button', { name: 'Set default' })).toBeDisabled();
+    expect(within(broken).getByRole('button', { name: 'Remove Claude Work' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Claude Personal' })).toBeVisible();
+    expect(screen.getByText('Ready')).toBeVisible();
+  });
+
   it('distinguishes loading, initial failure, and successful empty onboarding', async () => {
     const { user, props } = mount({ connections: null, error: 'Owner disconnected' });
     expect(screen.getByRole('alert')).toHaveTextContent('Platforms unavailable');

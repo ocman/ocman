@@ -7,7 +7,7 @@ export type PlatformConnection = {
   directory: string;
   enabled: boolean;
   isDefault: boolean;
-  status: 'ready' | 'sign-in-required' | 'dependencies-missing' | 'unchecked';
+  status: 'ready' | 'sign-in-required' | 'dependencies-missing' | 'unchecked' | 'error';
   account?: string;
 };
 
@@ -41,4 +41,10 @@ export const connectionStatusLabel: Record<PlatformConnection['status'], string>
   'sign-in-required': 'Sign-in required',
   'dependencies-missing': 'Setup required',
   unchecked: 'Not checked',
+  error: 'Check failed',
 };
+
+export function connectionAvailabilityLabel(connection: PlatformConnection): string {
+  if (connection.enabled) return connectionStatusLabel[connection.status];
+  return connection.status === 'error' ? `Disabled · ${connectionStatusLabel.error}` : 'Disabled';
+}

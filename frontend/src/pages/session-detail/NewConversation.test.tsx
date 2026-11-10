@@ -21,7 +21,15 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), baseRef: vi.fn(), post: vi.fn(), seed: vi.fn(),
   openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), settings: vi.fn(), caps: { shellExec: true },
   progress: new Set<(id: string, step: string, state: string) => void>(),
+  selectConnection: undefined as undefined | ((id: string, compatible: boolean) => void),
 }));
+vi.mock('./useConnectionSelection', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./useConnectionSelection')>();
+  return { useConnectionSelection: (owner: string, selected: string, onSelect: (id: string, compatible: boolean) => void, frozen: boolean) => {
+    mocks.selectConnection = onSelect;
+    return actual.useConnectionSelection(owner, selected, onSelect, frozen);
+  } };
+});
 vi.mock('../../lib/useGlobalEvents', () => ({
   onSessionStartProgress: (cb: (id: string, step: string, state: string) => void) => {
     mocks.progress.add(cb);
@@ -177,6 +185,31 @@ describe('NewConversation', () => {
     expect(composer.machineSource).toEqual({ directory: '/repo', remoteId: 'machine' });
     expect(screen.getByRole('status')).toHaveTextContent('clone https://example.com/repo.git');
     expect(mocks.prepare).toHaveBeenLastCalledWith({ directory: '/clone', remoteId: 'box', platform: 'r-box:opencode' }, expect.any(AbortSignal));
+  });
+
+  it.each([false, true])('submits destination defaults after an explicit cross-kind switch, preserving same-kind picks (%s)', async (compatible) => {
+    const view = mount();
+    await ready();
+    act(() => {
+      composer.onModelChange!('codex:openai/gpt');
+      composer.onAgentChange!('build');
+      composer.onReasoningChange!('high');
+    });
+    await act(() => mocks.selectConnection!('cnx_destination', compatible));
+    mocks.prepare.mockResolvedValue({ platform: 'cnx_destination', defaultModel: compatible ? 'codex:openai/default' : 'claudecode:anthropic/sonnet', defaultAgent: compatible ? 'build' : 'assistant',
+      agents: [{ name: compatible ? 'build' : 'assistant' }], commands: [], liveConnection: true, models: { hasProviders: true, models: [compatible
+        ? { platform: 'codex', provider: 'openai', model: 'default' } : { platform: 'claudecode', provider: 'anthropic', model: 'sonnet' }] } });
+    view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'cnx_destination', draftId: 'new' }} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    await waitFor(() => expect(composer.platform).toBe('cnx_destination'));
+    const images = [{ id: 'image', url: 'data:image/png;base64,aW1hZ2U=', mime: 'image/png', name: 'Keep this image' }];
+    mocks.start.mockRejectedValueOnce(new Error('Temporary setup failure'));
+    await act(async () => { await expect(composer.onSend!('Keep this prompt', images)).rejects.toThrow('Temporary setup failure'); });
+    await act(() => composer.onSend!('Keep this prompt', images));
+    expect(mocks.start).toHaveBeenCalledTimes(2);
+    expect(mocks.start).toHaveBeenNthCalledWith(2, expect.objectContaining({ platform: compatible ? 'cnx_destination' : 'r-machine:claudecode', send: expect.objectContaining({
+      images,
+      model: compatible ? 'codex:openai/gpt' : 'claudecode:anthropic/sonnet', agent: compatible ? 'build' : 'assistant', reasoning: compatible ? 'high' : undefined,
+    }) }));
   });
 
   it('restores pending clone consent and clones only on first submission without probing the missing checkout', async () => {

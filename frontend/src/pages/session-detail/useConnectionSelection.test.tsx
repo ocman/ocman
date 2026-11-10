@@ -12,6 +12,9 @@ const connections = [
   { id: 'cnx_work', kind: 'codex', name: 'Work', enabled: true, status: 'ready' },
   { id: 'cnx_disabled', kind: 'codex', name: 'Disabled', enabled: false, status: 'ready' },
   { id: 'cnx_login', kind: 'codex', name: 'Login', enabled: true, status: 'sign-in-required' },
+  { id: 'cnx_error', kind: 'codex', name: 'Broken', enabled: true, status: 'error' },
+  { id: 'cnx_disabled_error', kind: 'codex', name: 'Disabled Broken', enabled: false, status: 'error' },
+  { id: 'cnx_claude', kind: 'claudecode', name: 'Claude', enabled: true, status: 'ready' },
 ];
 const inventory = { supported: true, connections };
 const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
@@ -33,10 +36,15 @@ describe('owner connection selection controls', () => {
     const selector = await screen.findByRole('combobox', { name: 'Platform connection' });
     expect(selector).toHaveValue('r-box:cnx_work');
     expect(screen.getByRole('status')).toHaveTextContent('r-box:cnx_work');
-    expect(screen.getByRole('option', { name: 'Disabled (disabled)' })).toBeDisabled();
-    expect(screen.getByRole('option', { name: 'Login (setup required)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Disabled (Disabled)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Login (Sign-in required)' })).toBeDisabled();
     await userEvent.setup().selectOptions(selector, 'r-box:cnx_personal');
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith('r-box:cnx_personal');
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('r-box:cnx_personal', true);
+    expect(screen.getByRole('option', { name: 'Broken (Check failed)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Disabled Broken (Disabled · Check failed)' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Work' })).not.toBeDisabled();
+    await userEvent.setup().selectOptions(selector, 'r-box:cnx_claude');
+    expect(onSelect).toHaveBeenLastCalledWith('r-box:cnx_claude', false);
     view.rerender(<Selection onSelect={onSelect} frozen />);
     expect(selector).toBeDisabled();
   });

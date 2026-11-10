@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { ConnectionCheck, ConnectionInput, ConnectionPlatform, PlatformConnection } from '../lib/platformConnections';
-import { connectionStatusLabel } from '../lib/platformConnections';
+import { connectionAvailabilityLabel } from '../lib/platformConnections';
 import { useConfirm } from '../lib/useConfirm';
 import { Button, ButtonGroup } from './Control';
 import { DataTableGroup, DataTableRow, DataTableRowButton } from './DataTable';
@@ -77,7 +77,7 @@ export function PlatformConnections({ connections, platforms, machineName, error
         primary={<div className={styles.name}><PlatformLogo platform={connection.kind} /><DataTableRowButton disabled={!writable} onClick={() => setEditor(connection)}>{connection.name}</DataTableRowButton>{connection.isDefault && <span className={styles.badge}>{connection.enabled ? 'Default' : 'Default (disabled)'}</span>}</div>}
         secondary={<div className={styles.details}><span>{platforms.find(value => value.id === connection.kind)?.label ?? connection.kind}</span><span>{connection.account ?? 'Account not verified'}</span><span className={styles.path} title={connection.directory}>{connection.configuration === 'isolated' ? 'Separate configuration' : 'Existing configuration'}{connection.directory ? ` · ${connection.directory}` : ''}</span></div>}
         meta={<div className={styles.rowMeta}>
-          <span className={styles.status} data-ready={connection.enabled && connection.status === 'ready' ? '' : undefined}>{!connection.enabled ? 'Disabled' : connectionStatusLabel[connection.status]}</span>
+          <span className={styles.status} data-ready={connection.enabled && connection.status === 'ready' ? '' : undefined}>{connectionAvailabilityLabel(connection)}</span>
           <ButtonGroup label={`${connection.name} actions`}>
             {!connection.isDefault && <Button size="small" disabled={!writable || !connection.enabled || connection.status !== 'ready'} onClick={() => { void mutate(connection.id, () => onDefault(connection.id), `${connection.name} is now the default.`); }}>Set default</Button>}
             <Button size="small" disabled={!writable} onClick={() => setEditor(connection)} aria-label={`Edit ${connection.name}`}>Edit</Button>
