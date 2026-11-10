@@ -14,6 +14,21 @@ function render(ui: ReactElement) { return renderUI(ui, { wrapper: MemoryRouter 
 describe('SubscriptionUsage', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  it.each([
+    [0, 'normal'], [80, 'normal'], [80.1, 'warning'],
+    [99.9, 'warning'], [100, 'danger'], [120, 'danger'],
+  ])('accents quota bars and percentages at %s percent as %s', (usedPercent, level) => {
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      data: { providers: [{ id: 'codex', name: 'Codex', status: 'ok', windows: [
+        { name: '5 hours', usedPercent },
+      ] }] },
+    } as never);
+    render(<SubscriptionUsageContent />);
+    const progress = screen.getByRole('progressbar', { name: 'Codex 5 hours usage' });
+    expect(progress.closest('.subscription-window')).toHaveAttribute('data-usage-level', level);
+    expect(screen.getByText(`${usedPercent}% used`).closest('.subscription-window')).toBe(progress.parentElement);
+  });
+
   it('keeps the selected view and unrelated parameters in the URL', async () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
     function Location() { return <output data-testid="view-location">{useLocation().search}</output>; }

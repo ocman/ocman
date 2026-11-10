@@ -9,6 +9,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ChartSkeleton } from './dashboard/shared';
 import { ProviderSpend } from './ProviderSpend';
 import { ProviderBudget } from './ProviderBudget';
+import { providerUsageLevel } from '../lib/providerUsageLevel';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import './SubscriptionUsage.css';
 
@@ -35,7 +36,7 @@ function ProviderCard({ provider, compact = false }: { provider: SubscriptionPro
       <div className="subscription-windows">
         {provider.budgets?.map((budget) => <ProviderBudget key={budget.id ?? budget.name} budget={budget} />)}
         {provider.windows.map((window) => (
-          <div className="subscription-window" key={`${window.name}-${window.resetsAt ?? ''}`}>
+          <div className="subscription-window" data-usage-level={providerUsageLevel(window.usedPercent)} key={`${window.name}-${window.resetsAt ?? ''}`}>
             <div className="subscription-window-label">
               <strong>{window.name}</strong>
               <span>{window.usedPercent}% used</span>
