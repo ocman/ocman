@@ -133,6 +133,28 @@ committing, collect coverage and compare it with the baseline as described in
 `.agents/testing.md`. Coverage must not drop. Documentation-only changes need
 link checks and `make docs-build` when published content changes.
 
+### Homepage browser checks
+
+The homepage has a separate Playwright suite. It starts only Hugo, not the
+application backend or any agent processes, and needs no databases.
+
+```sh
+cd frontend
+pnpm exec playwright test --config playwright.docs.config.ts
+```
+
+Install Chromium first with `pnpm exec playwright install chromium` if needed.
+The suite checks feature-tab switching, deep links, image and link targets, keyboard access,
+mobile layout, device motion preferences and navigation with JavaScript disabled.
+Homepage styles live in `site/assets/css/home.css` and `home-motion.css` and
+load only on the homepage. `site/assets/js/home-motion.js` updates the parallax
+transforms once per animation frame during scrolling, including on phones and
+shorter windows. Scroll-linked motion is always enabled, with no toggle or
+autoplay. Without JavaScript, content and navigation remain available without animation.
+`site/assets/js/home-tabs.js` turns the chapter links into accessible tabs.
+Only the selected feature is shown, without scrolling the page on selection.
+Without JavaScript, the same links navigate to the complete feature tour.
+
 ## Pull requests
 
 - Keep each pull request focused on one change and link the related issue.

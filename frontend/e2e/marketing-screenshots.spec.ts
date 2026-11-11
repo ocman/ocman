@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { test, expect, MOCK_SESSION, MOCK_PROJECT, type Page } from './fixtures';
 import { installChangesDemo, installAnalyticsDemo } from './marketing-extra-fixtures';
+import { installInlineChartsDemo } from './marketing-inline-charts';
 
 // Entirely fictional fixtures. Never connect this capture to a running backend.
 const now = Date.parse('2026-10-20T14:30:00Z');
@@ -95,7 +96,7 @@ async function installMarketingData(page: Page, changes: boolean) {
   }));
 }
 
-for (const screen of ['conversation', 'session-browser', 'changes', 'analytics'] as const) {
+for (const screen of ['conversation', 'session-browser', 'changes', 'analytics', 'inline-charts'] as const) {
   test(`marketing screenshot: ${screen} uses only fictional data`, async ({ mockedPage: page, context, baseURL }, info) => {
     const escapedRequests: string[] = [];
     const pageErrors: string[] = [];
@@ -114,6 +115,9 @@ for (const screen of ['conversation', 'session-browser', 'changes', 'analytics']
     if (screen === 'analytics') {
       await page.setViewportSize({ width: 1600, height: 1600 });
       await installAnalyticsDemo(page);
+    } else if (screen === 'inline-charts') {
+      await page.setViewportSize({ width: 1600, height: 1400 });
+      await installInlineChartsDemo(page, sessions);
     }
     await page.goto(screen === 'analytics' ? '/analytics/overview' : screen === 'session-browser' ? '/sessions' : `/session/${session.id}`);
     if (screen === 'conversation' || screen === 'changes') {
@@ -127,6 +131,13 @@ for (const screen of ['conversation', 'session-browser', 'changes', 'analytics']
         if (await edit.getAttribute('aria-expanded') !== 'true') await edit.click();
         await expect(page.getByTestId('conversation-viewport').getByText('restoreFocusOnClose', { exact: false }).first()).toBeVisible();
       }
+    } else if (screen === 'inline-charts') {
+      const result = page.getByRole('region', { name: 'Cluster resources' });
+      await expect(result).toBeVisible();
+      await expect(result.getByRole('img', { name: /^CPU requested\./ })).toBeVisible();
+      await expect(result.getByRole('img', { name: /^CPU used per day\./ })).toBeVisible();
+      await expect(result.getByRole('img')).toHaveCount(4);
+      await expect(result.getByText('6.4', { exact: false }).first()).toBeVisible();
     } else if (screen === 'analytics') {
       await expect(page.getByRole('heading', { name: 'Token Usage', exact: true })).toBeVisible();
       await expect(page.getByText('384', { exact: true })).toBeVisible();

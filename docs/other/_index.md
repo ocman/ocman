@@ -1,7 +1,10 @@
 ---
-title: Other
+title: Development
 weight: 5
 ---
+
+Build ocman from source, understand its architecture or investigate performance.
+For installing and using ocman, start with [First steps](../introduction/).
 
 {{< cards >}}
   {{< card link="architecture" title="Architecture" subtitle="How the backend, adapters and frontend fit together." >}}

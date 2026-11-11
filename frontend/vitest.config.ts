@@ -49,6 +49,7 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       'e2e/**',
+      'e2e-docs/**', // Hugo-only Playwright suite, never unit tests.
       'component-e2e/**', // Isolated Playwright UI reviews, never unit tests.
       'perf/**', // Playwright interaction bench (`pnpm perf`).
     ],

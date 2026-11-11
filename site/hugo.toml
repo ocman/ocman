@@ -82,12 +82,11 @@ enableGitInfo = false
   description = "One dashboard for every coding-agent session: browse and drive OpenCode, Claude Code and Codex sessions across projects, worktrees and machines."
   # Preview-card image (og:image / twitter:image); mounted from docs/ above.
   images = ["sessions.png"]
-  # ponytail: default "normal" caps the page at 80rem, which leaves ~670px for
-  # content once the two sidebars are subtracted — mermaid diagrams end up tiny.
+  # Leave room for both sidebars without stretching content across large screens.
   [params.page]
-    width = "full"
+    width = "wide"
   [params.navbar]
-    width = "full"
+    width = "wide"
     displayTitle = true
     displayLogo = true
     [params.navbar.logo]
@@ -95,6 +94,7 @@ enableGitInfo = false
       width = 28
       height = 28
   [params.footer]
+    width = "wide"
     displayCopyright = false
     displayPoweredBy = false
   [params.editURL]

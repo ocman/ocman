@@ -1,5 +1,13 @@
-/* ponytail: mermaid sets an inline max-width from its own layout, which
-   renders diagrams tiny. Force them to the content width. */
+/* Keep a bounded shell for reading, with full-width diagrams inside it. */
+.content {
+  line-height: 1.75;
+}
+
+.content :is(h2, h3) {
+  text-wrap: balance;
+}
+
+/* Mermaid sets an inline max-width from its own layout. */
 pre.mermaid {
   display: block;
   width: 100%;

@@ -5,6 +5,16 @@ sidebar:
   open: true
 ---
 
+Use this page as a reference for everyday session controls. For setup and
+task-specific instructions, choose a guide below.
+
+{{< cards >}}
+  {{< card link="platform-connections" title="Agents and accounts" subtitle="Connect OpenCode, Claude Code or Codex and manage named accounts." >}}
+  {{< card link="pull-requests" title="Pull requests" subtitle="Review a PR and follow its checks from a session." >}}
+  {{< card link="multi-remote" title="Remote machines" subtitle="Connect another machine and manage its sessions." >}}
+  {{< card link="routines" title="Routines" subtitle="Run a saved prompt now or on a schedule." >}}
+{{< /cards >}}
+
 ## Sessions
 
 **Session browser.** List, search, archive and replay every session. Sessions

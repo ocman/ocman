@@ -1,0 +1,12 @@
+/* Scroll-linked motion is always enabled with JS. Without JS the page stays
+   static, readable and navigable. No autoplay or scroll interception. */
+.oc-home[data-motion="on"] .oc-hero-window {
+  transform: rotateX(var(--oc-hero-tilt, 7deg)) translateY(var(--oc-hero-shift, 0px)) scale(var(--oc-hero-scale, 1));
+}
+.oc-home[data-motion="on"] .oc-aurora { transform: translateY(var(--oc-aurora-drift, 0px)); }
+.oc-home[data-motion="on"] .oc-scene-visual { transform: translateY(var(--oc-scene-shift, 0px)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-home .oc-button { transition: none; }
+  .oc-hero-window { transform: none; }
+}

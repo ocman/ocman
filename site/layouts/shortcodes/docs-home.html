@@ -1,0 +1,108 @@
+<div class="oc-home">
+  <section class="oc-hero" aria-labelledby="home-title">
+    <div class="oc-aurora" aria-hidden="true"></div>
+    <div class="oc-hero-copy">
+      <p class="oc-eyebrow"><span class="oc-status-dot" aria-hidden="true"></span> A home for your coding sessions</p>
+      <h1 id="home-title">Your coding agents.<br><span>One dashboard.</span></h1>
+      <p class="oc-lead">More projects. More agents. Less tab switching.<br>Keep every conversation and code change in view.</p>
+      <div class="oc-actions">
+        <a class="oc-button oc-button-primary" href="{{ "docs/introduction/" | relURL }}">Get started <span aria-hidden="true">↗</span></a>
+        <a class="oc-button" href="#product-tour">Take the tour <span aria-hidden="true">↓</span></a>
+      </div>
+      <p class="oc-meta">Runs locally · macOS &amp; Linux · Open source</p>
+    </div>
+
+    <div class="oc-hero-stage">
+      <figure class="oc-window oc-hero-window">
+        <div class="oc-window-bar"><span class="oc-window-dots" aria-hidden="true">● ● ●</span><span>ocman / atlas-web</span><span class="oc-window-live">LOCAL</span></div>
+        <img src="{{ "sessions.png" | relURL }}" alt="Ocman conversation showing project sessions, a coding task and the agent's response" width="1600" height="1000" fetchpriority="high">
+      </figure>
+    </div>
+    <p class="oc-demo-note">Product previews use fictional projects, conversations and metrics.</p>
+    <a class="oc-scroll-cue" href="#product-tour">Scroll to explore <span aria-hidden="true">↓</span></a>
+  </section>
+
+  <section class="oc-tour" id="product-tour" aria-labelledby="tour-title">
+    <header class="oc-tour-intro">
+      <p class="oc-eyebrow">The whole workflow, in view</p>
+      <h2 id="tour-title">Follow the work.<br><span>Not the windows.</span></h2>
+      <nav class="oc-chapters" aria-label="Product tour">
+        <a href="#sessions">01 / Sessions</a><a href="#changes">02 / Changes</a><a href="#analytics">03 / Insights</a><a href="#inline-charts">04 / Inline charts</a>
+      </nav>
+    </header>
+
+    <div class="oc-scenes">
+      <section class="oc-scene oc-scene-sessions" id="sessions" aria-labelledby="sessions-title">
+        <div class="oc-scene-copy">
+          <p class="oc-eyebrow">01 / Keep your bearings</p>
+          <h2 id="sessions-title">Parallel work.<br><span>Without the sprawl.</span></h2>
+          <p>One session fixing a bug. Another exploring an idea. Find them by project, follow their status and pick up where you left off.</p>
+          <ul class="oc-feature-list"><li>Search saved conversations</li><li>Separate tasks with Git worktrees</li><li>Bring remote machines into the same view</li></ul>
+          <a class="oc-text-link" href="{{ "docs/features/" | relURL }}">Explore sessions <span aria-hidden="true">↗</span></a>
+        </div>
+        <figure class="oc-scene-visual">
+          <div class="oc-window"><div class="oc-window-bar"><span class="oc-window-dots" aria-hidden="true">● ● ●</span><span>ocman / sessions</span><span>01</span></div><a href="{{ "screenshots/session-browser.png" | relURL }}" aria-label="View full session browser screenshot"><img src="{{ "screenshots/session-browser.png" | relURL }}" alt="Session browser with fictional tasks grouped across atlas-web, orbit-api and field-notes" width="1600" height="1000" loading="lazy"></a></div>
+          <figcaption>Different projects. One place to return to.</figcaption>
+        </figure>
+      </section>
+
+      <section class="oc-scene oc-scene-changes" id="changes" aria-labelledby="changes-title">
+        <div class="oc-scene-copy">
+          <p class="oc-eyebrow">02 / Stay close to the code</p>
+          <h2 id="changes-title">The conversation.<br><span>And what changed.</span></h2>
+          <p>Read the agent's reasoning beside the actual diff. Review changed files and follow the pull request without losing the thread.</p>
+          <ul class="oc-feature-list"><li>Inline code and working-tree diffs</li><li>Pull requests and CI status</li><li>Permission prompts you can answer in place</li></ul>
+          <a class="oc-text-link" href="{{ "docs/features/pull-requests/" | relURL }}">Follow a pull request <span aria-hidden="true">↗</span></a>
+        </div>
+        <figure class="oc-scene-visual">
+          <div class="oc-window"><div class="oc-window-bar"><span class="oc-window-dots" aria-hidden="true">● ● ●</span><span>ocman / review</span><span>02</span></div><a href="{{ "screenshots/changes.png" | relURL }}" aria-label="View full code review screenshot"><img src="{{ "screenshots/changes.png" | relURL }}" alt="Fictional keyboard navigation patch with inline code diff, changed files and a pull request with passing checks" width="1600" height="1000" loading="lazy"></a></div>
+          <figcaption>Prompt, patch and pull request, side by side.</figcaption>
+        </figure>
+      </section>
+
+      <section class="oc-scene oc-scene-analytics" id="analytics" aria-labelledby="analytics-title">
+        <div class="oc-scene-copy">
+          <p class="oc-eyebrow">03 / See the bigger picture</p>
+          <h2 id="analytics-title">Know where<br><span>the effort goes.</span></h2>
+          <p>Look across sessions instead of guessing. Explore request activity, token usage and costs by project, agent and model.</p>
+          <ul class="oc-feature-list"><li>Usage and cost breakdowns</li><li>Agent response and tool timing</li><li>Activity across parallel sessions</li></ul>
+          <a class="oc-text-link" href="{{ "docs/features/#sessions" | relURL }}">Explore the feature guide <span aria-hidden="true">↗</span></a>
+        </div>
+        <figure class="oc-scene-visual">
+          <div class="oc-window oc-analytics-window"><div class="oc-window-bar"><span class="oc-window-dots" aria-hidden="true">● ● ●</span><span>ocman / analytics</span><span>03</span></div><a href="{{ "screenshots/analytics.png" | relURL }}" aria-label="View full analytics screenshot"><img src="{{ "screenshots/analytics.png" | relURL }}" alt="Analytics dashboard with synthetic session counts, token usage, costs and activity charts" width="1600" height="1600" loading="lazy"></a></div>
+          <figcaption>Synthetic demo metrics, not measured results or pricing claims.</figcaption>
+        </figure>
+      </section>
+      <section class="oc-scene oc-scene-charts" id="inline-charts" aria-labelledby="inline-charts-title">
+        <div class="oc-scene-copy">
+          <p class="oc-eyebrow">04 / Answers you can see</p>
+          <h2 id="inline-charts-title">Ask a question.<br><span>See the answer.</span></h2>
+          <p>Agents can return charts, stat tiles and data tables directly in the thread. Compare distributions and trends without opening a separate report.</p>
+          <ul class="oc-feature-list"><li>Line, bar, pie and scatter charts</li><li>Stat tiles with values and deltas</li><li>Chart legends, tooltips and data tables</li></ul>
+          <a class="oc-text-link" href="{{ "docs/features/mcp/#agent-generated-results" | relURL }}">Explore inline results <span aria-hidden="true">↗</span></a>
+        </div>
+        <figure class="oc-scene-visual">
+          <div class="oc-window"><div class="oc-window-bar"><span class="oc-window-dots" aria-hidden="true">● ● ●</span><span>ocman / inline charts</span><span>04</span></div><a href="{{ "screenshots/inline-charts.png" | relURL }}" aria-label="View full inline charts screenshot"><img src="{{ "screenshots/inline-charts.png" | relURL }}" alt="Agent conversation rendering resource stat tiles, three pie and donut charts, and a two-series usage graph inline" width="1600" height="1400" loading="lazy"></a></div>
+          <figcaption>Actual inline chart rendering with fictional apps and synthetic values.</figcaption>
+        </figure>
+      </section>
+    </div>
+  </section>
+
+  <section class="oc-connections" aria-labelledby="connections-title">
+    <div><p class="oc-eyebrow">Beyond a single session</p><h2 id="connections-title">Your workflow.<br><span>Connected.</span></h2></div>
+    <div class="oc-connection-grid">
+      <a href="{{ "docs/features/multi-remote/" | relURL }}"><span class="oc-connection-icon" aria-hidden="true">⌘</span><h3>More than one machine <span aria-hidden="true">↗</span></h3><p>Attach remote instances. Keep the work on its owning machine and the controls in your browser.</p></a>
+      <a href="{{ "docs/features/routines/" | relURL }}"><span class="oc-connection-icon" aria-hidden="true">↻</span><h3>Work that comes around <span aria-hidden="true">↗</span></h3><p>Save a project prompt. Run it again when you need it, or let a schedule start a fresh session.</p></a>
+      <a href="{{ "docs/features/mcp/" | relURL }}"><span class="oc-connection-icon" aria-hidden="true">⌁</span><h3>Tools for your agents <span aria-hidden="true">↗</span></h3><p>Let agents inspect sessions, send messages, run routines and embed files through MCP.</p></a>
+    </div>
+  </section>
+
+  <section class="oc-finale" aria-labelledby="start-title">
+    <p class="oc-eyebrow">Less juggling. More doing.</p>
+    <h2 id="start-title">Give your agents<br><span>a place to work.</span></h2>
+    <p>Bring your installed, signed-in agent CLI.<br>Ocman runs locally. Your next session starts here.</p>
+    <div class="oc-actions"><a class="oc-button oc-button-primary" href="{{ "docs/introduction/installation/" | relURL }}">Install ocman <span aria-hidden="true">↗</span></a><a class="oc-button" href="{{ "docs/" | relURL }}">Read the docs</a></div>
+    <p class="oc-meta">Single binary · MIT licensed</p>
+  </section>
+</div>

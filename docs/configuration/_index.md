@@ -3,6 +3,14 @@ title: Configuration
 weight: 3
 ---
 
+Most preferences are available in **Settings**. For repeatable setup, use the
+[configuration file](file.md). Startup flags override the corresponding saved
+options.
+
+Jump to [running ocman](#running-ocman), [flags](#flags),
+[environment variables](#environment-variables), [authentication](#authentication)
+or [OpenCode setup](#opencode-enabling-interactive-features).
+
 ## Settings categories
 
 Settings uses seven categories. Each page has named sections rather than another

@@ -1,0 +1,10 @@
+{{- if .IsHome -}}
+  {{- range slice "css/home.css" "css/home-motion.css" -}}
+    {{- $style := resources.Get . | minify | fingerprint -}}
+    <link rel="stylesheet" href="{{ $style.RelPermalink }}" integrity="{{ $style.Data.Integrity }}">
+  {{- end -}}
+  {{- range slice "js/home-tabs.js" "js/home-motion.js" -}}
+    {{- $script := resources.Get . | minify | fingerprint -}}
+    <script src="{{ $script.RelPermalink }}" integrity="{{ $script.Data.Integrity }}" defer></script>
+  {{- end -}}
+{{- end -}}

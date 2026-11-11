@@ -27,6 +27,8 @@ Outputs:
 - `site/static/screenshots/session-browser.png`, the homepage session browser.
 - `site/static/screenshots/changes.png`, a fictional patch, file list and linked PR.
 - `site/static/screenshots/analytics.png`, synthetic usage and cost metrics.
+- `site/static/screenshots/inline-charts.png`, stat tiles, donut charts and a line
+  graph rendered by the real inline result component in a fictional conversation.
 
 Without `UPDATE_MARKETING_SCREENSHOTS=1`, tests write images only to ignored
 Playwright test results. Normal CI never rewrites the published assets.
