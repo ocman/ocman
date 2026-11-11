@@ -24,10 +24,11 @@ export function ResourceGraph({ title, history: allHistory, metric, processes, s
     const segments: number[][] = [];
     samples.forEach((sample, i) => {
       if (!sample.has(key)) return;
-      // Bridge normal two-second polling jitter, but leave longer collection gaps blank.
+      // Polls wait two seconds after completion, so collection and network time
+      // add to sample spacing. Tolerate brief missed polls, not longer outages.
       const previous = segments.at(-1);
       const previousIndex = previous?.at(-1);
-      if (previous && previousIndex !== undefined && history[i].timestamp - history[previousIndex].timestamp <= 3 * 1_000) previous.push(i);
+      if (previous && previousIndex !== undefined && history[i].timestamp - history[previousIndex].timestamp <= 10_000) previous.push(i);
       else segments.push([i]);
     });
     if (!segments.length) return null;

@@ -61,7 +61,7 @@ it('connects short missing-sample gaps but leaves longer collection gaps blank',
     { ...history[0], timestamp: 2000 },
     { ...history[1], timestamp: 3000 },
     { ...history[0], timestamp: 4000 },
-    { ...history[0], timestamp: 10000 },
+    { ...history[0], timestamp: 15000 },
   ];
   render(<ResourceGraph title="CPU" history={points} metric="cpuPercent" processes={[agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
   const area = screen.getByRole('button', { name: 'CPU: agent, PID 2' });
@@ -70,8 +70,8 @@ it('connects short missing-sample gaps but leaves longer collection gaps blank',
   expect(area.querySelector('polygon')?.getAttribute('points')?.split(' ')).toHaveLength(6);
 });
 
-it.each(['cpuPercent', 'memoryBytes'] as const)('connects %s samples only when at most three intervals apart', (metric) => {
-  const points = [1000, 4000, 7001, 8000, 9000, 10001].map((timestamp, i) => ({
+it.each(['cpuPercent', 'memoryBytes'] as const)('connects %s samples up to ten seconds apart but leaves longer gaps blank', (metric) => {
+  const points = [1000, 11000, 21001, 23000, 25000, 31001].map((timestamp, i) => ({
     ...history[i === 3 || i === 4 ? 1 : 0], timestamp,
   }));
   render(<ResourceGraph title="Resources" history={points} metric={metric} processes={[agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
@@ -79,7 +79,7 @@ it.each(['cpuPercent', 'memoryBytes'] as const)('connects %s samples only when a
   const polygons = area.querySelectorAll('polygon');
   expect(polygons).toHaveLength(2);
   expect(area.querySelectorAll('circle')).toHaveLength(0);
-  // Both a collection gap and missing process samples connect at exactly 3 seconds.
+  // Both a collection gap and missing process samples connect at exactly ten seconds.
   expect(polygons[0].getAttribute('points')?.split(' ')).toHaveLength(4);
   expect(polygons[1].getAttribute('points')?.split(' ')).toHaveLength(4);
 });
@@ -88,4 +88,12 @@ it('does not draw processes without samples or report missing values as zero', (
   render(<ResourceGraph title="CPU" history={[history[1]]} metric="cpuPercent" processes={[agent]} selected={processKey(agent)} onSelect={vi.fn()} />);
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
   expect(screen.getByText('No data')).toBeVisible();
+});
+
+it.each(['cpuPercent', 'memoryBytes'] as const)('keeps %s continuous when visible polling samples arrive more than three seconds apart', (metric) => {
+  const points = [1000, 4200, 7400, 10600].map((timestamp) => ({ ...history[0], timestamp }));
+  render(<ResourceGraph title="Resources" history={points} metric={metric} processes={[agent]} selected={null} onSelect={vi.fn()} />);
+  const area = screen.getByRole('button', { name: 'Resources: agent, PID 2' });
+  expect(area.querySelectorAll('polygon')).toHaveLength(1);
+  expect(area.querySelectorAll('circle')).toHaveLength(0);
 });
