@@ -7,18 +7,16 @@ import (
 )
 
 // RelayURLEnv supplies the share relay's base URL. Set it (or
-// -relay-url) to enable cross-machine conversation sharing; when unset,
-// share links stay local to this machine.
+// -relay-url) to override the built-in public relay.
 const RelayURLEnv = "OCMAN_RELAY_URL"
 
-// DefaultRelayURL is the relay baked into release builds. It is empty
-// until a relay is deployed, so cross-machine sharing is off by default
-// and existing installs are unchanged.
+// DefaultRelayURL is the public relay used by vanilla installations for
+// cross-machine sharing, webhook enrollment and opt-out usage reporting.
 //
 // Deliberately only a URL: no upload credential is baked in, because a
 // secret shipped inside a distributed binary is public. The relay is
 // protected by rate limits and size caps instead.
-const DefaultRelayURL = ""
+const DefaultRelayURL = "https://relay-ocman.stenic.io"
 
 // Where a resolved relay URL came from, reported to the Settings page so
 // an operator can tell a flag from an env var from the built-in default.

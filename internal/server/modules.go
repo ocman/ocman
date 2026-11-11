@@ -37,6 +37,7 @@ import (
 	"github.com/ocman/ocman/internal/tasksvc"
 	"github.com/ocman/ocman/internal/termmod"
 	"github.com/ocman/ocman/internal/tmuxmod"
+	"github.com/ocman/ocman/internal/usagecollection"
 	"github.com/ocman/ocman/internal/webhook"
 	"github.com/ocman/ocman/internal/worktreecleanup"
 )
@@ -53,6 +54,7 @@ func (s *Server) modules() []module.Module {
 	})
 	mods = append(mods, &keybindings.Module{}, s.sourceControlModule(), s.prWorkflowModule(), connectionsmod.NewModule(connectionsmod.Deps{ResolveOwner: s.resolveConnectionOwner}))
 	mods = append(mods, s.worktreeCleanupModule())
+	mods = append(mods, s.usageCollectionModule())
 	mods = append(mods, s.sidebarModules()...)
 	mods = append(mods, s.sessionUpdatesModule())
 	if s.historyIngest != nil {
@@ -122,7 +124,7 @@ func (s *Server) remotesModule() *remotesmod.Module {
 // them to state.Open, which migrates them in this order. A module that adds
 // a table declares a state.ModuleSchema in its package and appends it here.
 func ModuleSchemas() []state.ModuleSchema {
-	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema, sourcecontrol.Schema, prworkflow.Schema, worktreecleanup.Schema, sessionlifecycle.Schema, platformconnections.Schema}
+	return []state.ModuleSchema{notifications.Schema, pluginsmod.Schema, analytics.Schema, usagecollection.Schema, tasksvc.Schema, sessioncatalog.Schema, owned.ReferenceSchema, sourcecontrol.Schema, prworkflow.Schema, worktreecleanup.Schema, sessionlifecycle.Schema, platformconnections.Schema}
 }
 
 // projectForgeModule exists without a state DB too: templates then serve

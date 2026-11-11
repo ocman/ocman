@@ -13,6 +13,7 @@ import (
 	"github.com/ocman/ocman/internal/analytics"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/previews"
+	"github.com/ocman/ocman/internal/usagecollection"
 
 	"github.com/ocman/ocman/internal/artifacts"
 	"github.com/ocman/ocman/internal/autoapprove"
@@ -193,6 +194,7 @@ type Server struct {
 	startupIssues      []StartupIssue
 	factoryMod         lazy[*factorymod.Module]
 	analyticsMod       lazy[*analytics.Module]
+	usageCollectionMod lazy[*usagecollection.Module]
 
 	projectForgeMod     lazy[*projectforge.Module]
 	projectsMod         lazy[*projectsmod.Module]

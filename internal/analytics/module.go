@@ -37,6 +37,8 @@ type Deps struct {
 	SessionIdentity  func(context.Context, string, string) (string, error)
 	// Store is ocman's state database; may be nil.
 	Store *state.DB
+	// RecordActivity credits new foreground usage without making network calls.
+	RecordActivity func(context.Context)
 	// Version is the build version reported by /api/stats, read per request.
 	Version func() string
 	// TypeSafeConfigured reports a keyed, hosted reviewer at request time.

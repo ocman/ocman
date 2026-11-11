@@ -8,7 +8,7 @@ for (const width of [1024, 1440, 390]) {
     await page.route('**/api/settings/webhook-relay', route => route.fulfill({ json: {
       relayUrl, defaultRelayUrl: relayUrl, hasEnrollmentToken: true,
     } }));
-    await page.goto('/settings?tab=connections');
+    await page.goto('/settings?tab=relay');
     const row = page.locator('#setting-webhook-enrollment-token');
     await expect(row.getByRole('button', { name: 'Reconnect relay' })).toBeVisible();
     await row.scrollIntoViewIfNeeded();
@@ -36,7 +36,7 @@ test('every settings category fills the available desktop width', async ({ mocke
   await page.setViewportSize({ width, height: 1000 });
   await page.goto('/settings');
   const navigation = page.getByRole('navigation', { name: 'Settings groups' });
-  for (const name of ['App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'Plugins', 'System']) {
+  for (const name of ['App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections', 'Relay', 'Privacy & usage', 'Plugins', 'System']) {
     await navigation.getByRole('button', { name, exact: true }).click();
     const title = page.getByRole('heading', { level: 2, name, exact: true });
     await expect(title).toBeVisible();
@@ -51,7 +51,7 @@ test('long relay addresses wrap without widening phone settings', async ({ mocke
   await page.route('**/api/settings/webhook-relay', route => route.fulfill({ json: {
     relayUrl: '', defaultRelayUrl: longUrl, hasEnrollmentToken: false,
   } }));
-  await page.goto('/settings?tab=connections');
+  await page.goto('/settings?tab=relay');
   await expect(page.getByRole('button', { name: 'Connect relay', exact: true })).toBeVisible();
   const settings = page.getByTestId('webhook-relay-settings');
   expect(await settings.evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(390);

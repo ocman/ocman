@@ -4,8 +4,9 @@
 // The relay never sees plaintext. It holds ciphertext sealed by the
 // sharing ocman instance, and the key travels only in the viewer URL's
 // fragment, which browsers do not send to servers. A relay operator, or
-// anyone who compromises one, learns object sizes and timestamps and
-// nothing else.
+// anyone who compromises one, learns object sizes and timestamps, but no
+// conversation content. Separately, opt-out product usage reports are validated
+// and forwarded with separate IP security events to OTLP, never stored here.
 //
 // It also holds no credential it could replay: the delete token that
 // authorises appends and revocation is stored only as a SHA-256 hash.
@@ -64,6 +65,7 @@ type Store interface {
 
 // Config configures a relay server.
 type Config struct {
+	Usage UsageForwarder
 	// Store is the object storage backend. Required.
 	Store Store
 	// Assets is the embedded single-page app used to render a shared
@@ -110,6 +112,7 @@ type Config struct {
 
 // Server is the relay's HTTP handler.
 type Server struct {
+	usage       *usageCollector
 	cfg         Config
 	mux         *http.ServeMux
 	creates     *rateLimiter
@@ -182,11 +185,13 @@ func New(cfg Config) (*Server, error) {
 		creates:     newRateLimiter(cfg.CreatePerHour, cfg.CreateBurst, cfg.Now),
 		inboxIngest: newRateLimiter(cfg.InboxIngestPerHour, cfg.InboxIngestBurst, cfg.Now),
 	}
+	s.usage = newUsageCollector(s)
 	s.routes()
 	return s, nil
 }
 
 func (s *Server) routes() {
+	s.usage.routes(s.mux)
 	if s.cfg.EnrollmentAuth != nil {
 		s.cfg.EnrollmentAuth.Routes(s.mux)
 	}

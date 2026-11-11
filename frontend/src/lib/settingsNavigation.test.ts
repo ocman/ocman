@@ -3,6 +3,9 @@ import { SETTINGS_CATEGORIES, settingsCategory } from './settingsNavigation';
 import { SETTINGS } from './settingsCatalog';
 
 describe('settings categories', () => {
+  it.each(['sharing', 'webhooks'])('keeps legacy %s links in Relay', (tab) => {
+    expect(settingsCategory(tab)).toBe('relay');
+  });
   it.each(SETTINGS_CATEGORIES)('opens the $label category directly', ({ id }) => {
     expect(settingsCategory(id)).toBe(id);
   });

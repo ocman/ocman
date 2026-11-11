@@ -23,6 +23,7 @@ import (
 
 	"github.com/ocman/ocman/internal/relay"
 	"github.com/ocman/ocman/internal/share"
+	"github.com/ocman/ocman/internal/usageforward"
 	"github.com/ocman/ocman/internal/webui"
 )
 
@@ -59,9 +60,24 @@ func main() {
 	createBurst := flag.Float64("create-burst", relay.DefaultCreateBurst, "burst capacity for share creation")
 	trustProxy := flag.Bool("trust-proxy", false, "read X-Forwarded-For and X-Forwarded-Proto (only behind a proxy that overwrites them)")
 	noViewer := flag.Bool("no-viewer", false, "serve the API only, without the bundled viewer")
+	otelEndpoint := flag.String("otel", "", "usage forwarding OTLP/HTTP base URL; defaults to OTEL_EXPORTER_OTLP_LOGS_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	usage, err := usageforward.New(context.Background(), *otelEndpoint)
+	if err != nil {
+		log.Error("configuring usage forwarding", "error", err)
+		os.Exit(1)
+	}
+	if usage != nil {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+			defer cancel()
+			if err := usage.Shutdown(ctx); err != nil {
+				log.Error("closing usage forwarding", "error", err)
+			}
+		}()
+	}
 
 	backend, err := share.OpenStore(*store)
 	if err != nil {
@@ -92,6 +108,9 @@ func main() {
 	if err := configureSSO(&cfg); err != nil {
 		log.Error("configuring relay SSO", "error", err)
 		os.Exit(1)
+	}
+	if usage != nil {
+		cfg.Usage = usage
 	}
 	if !*noViewer {
 		assets, err := webui.FS()

@@ -49,6 +49,9 @@ func (m *Module) handleUIUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	telemetry.RecordUIUsage(r.Context(), credited)
+	if credited > 0 && m.deps.RecordActivity != nil {
+		m.deps.RecordActivity(r.Context())
+	}
 	httpx.WriteJSON(w, struct {
 		Now int64 `json:"now"`
 	}{now.UnixMilli()})

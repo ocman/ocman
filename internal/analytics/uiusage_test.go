@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -71,6 +72,24 @@ func TestUIUsageEmptyAndUnavailable(t *testing.T) {
 		if w.Code != 503 {
 			t.Fatal(w.Code)
 		}
+	}
+}
+
+func TestUIUsageNotifiesOnlyNewForegroundActivity(t *testing.T) {
+	m := newFixture(t)
+	notifications := 0
+	m.deps.RecordActivity = func(context.Context) { notifications++ }
+	now := time.Now().Add(-time.Second).UnixMilli()
+	body := fmt.Sprintf(`{"intervals":[{"start":%d,"end":%d}]}`, now-5_000, now)
+	for _, input := range []string{`{}`, body, body} {
+		w := httptest.NewRecorder()
+		m.handleUIUsage(w, httptest.NewRequest(http.MethodPost, "/api/ui-usage", strings.NewReader(input)))
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if notifications != 1 {
+		t.Fatalf("activity notifications = %d, want one for newly credited time only", notifications)
 	}
 }
 

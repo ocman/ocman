@@ -47,6 +47,7 @@ const AutoApproveSection = lazyComponent<SectionProps>(() => import('../pages/da
 const SourceControlSettings = lazyComponent<SectionProps>(() => import('../components/SourceControlSettings').then((m) => m.SourceControlSettings));
 const PluginSettings = lazyComponent<SectionProps>(() => import('../components/PluginSettings').then((m) => m.PluginSettings));
 const SharingSettings = lazyComponent<SectionProps>(() => import('../components/SharingSettings').then((m) => m.SharingSettings));
+const UsageCollectionSettings = lazyComponent<SectionProps>(() => import('../components/UsageCollectionSettings').then((m) => m.UsageCollectionSettings));
 const WebhookRelaySettings = lazyComponent<SectionProps>(() => import('../components/WebhookRelaySettings').then((m) => m.WebhookRelaySettings));
 const IdleProjectSettings = lazyComponent<SectionProps>(() => import('../components/IdleProjectSettings').then((m) => m.IdleProjectSettings));
 const ApplicationHealthSettings = lazyComponent<SectionProps>(() => import('../components/ApplicationHealthSettings').then((m) => m.ApplicationHealthSettings));
@@ -150,8 +151,9 @@ export const FEATURES: Feature[] = [
   { id: 'source-control', settings: { id: 'source-control', category: 'connections', label: 'Source control', mount: 'active', Section: SourceControlSettings } },
   { id: 'plugins', settings: { id: 'plugins', category: 'plugins', label: 'Plugins', mount: 'active', Section: PluginSettings, ownSections: true } },
   { id: 'link-previews', settings: { id: 'link-previews', category: 'connections', label: 'Link previews', mount: 'active', Section: LinkPreviewSection } },
-  { id: 'sharing', settings: { id: 'sharing', category: 'connections', label: 'Public sharing', mount: 'always', Section: SharingSettings } },
-  { id: 'webhooks', settings: { id: 'webhooks', category: 'connections', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },
+  { id: 'sharing', settings: { id: 'sharing', category: 'relay', label: 'Public sharing', mount: 'always', Section: SharingSettings } },
+  { id: 'webhooks', settings: { id: 'webhooks', category: 'relay', label: 'Webhooks', mount: 'active', Section: WebhookRelaySettings } },
+  { id: 'usage-collection', settings: { id: 'usage-collection', category: 'privacy', label: 'Usage collection', mount: 'active', Section: UsageCollectionSettings } },
   { id: 'idle-projects', settings: { id: 'idle-projects', category: 'system', label: 'Resource management', mount: 'active', Section: IdleProjectSettings } },
   { id: 'application-health', settings: { id: 'application-health', category: 'system', label: 'Application health', mount: 'active', Section: ApplicationHealthSettings } },
 ];

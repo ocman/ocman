@@ -232,7 +232,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `-mcp-addr` | `127.0.0.1:8227` | Loopback listen address for the MCP endpoint. Clients authenticate with the bearer token in `mcp-token` beside `state.db` (see [MCP authentication](../features/mcp.md#authentication)); non-loopback addresses are refused. Empty disables it. |
 | `-platforms` | Saved selection, otherwise `opencode,claudecode` | Override Settings → Platforms for this launch with a comma-separated list (`opencode`, `claudecode`, `codex`). Without `opencode`, the OpenCode binary and database are not needed. See [Claude Code](../features/claude-code.md) and [Codex](../features/codex.md). |
 | `-public-base-url` | _(unset)_ | Externally reachable base URL, e.g. `https://ocman.example.ts.net`. Used for the links ocman hands to readers elsewhere (share links, plugin attention notices) and for cookie/origin decisions. Falls back to the listen address, which only works locally. Also `OCMAN_PUBLIC_BASE_URL`. |
-| `-relay-url` | Built-in relay URL | Share relay base URL; overrides `OCMAN_RELAY_URL`. |
+| `-relay-url` | `https://relay-ocman.stenic.io` | Relay base URL for sharing, webhook enrollment and usage reports; overrides `OCMAN_RELAY_URL`. |
 | `-otel` | _(unset)_ | OTLP/HTTP endpoint; falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 | `-auto-approve` | `false` | Default new sessions to ocman's permission reviewer. |
 | `-auth-password` | _(unset)_ | Password to require. Prefer `OCMAN_AUTH_PASSWORD` or `-auth-password-file`. |
@@ -444,6 +444,11 @@ with no remotes is unchanged. See [multi-remote](../features/multi-remote.md)
 for the full step-by-step guide, security notes, and troubleshooting.
 
 ## OpenTelemetry (optional)
+
+Product [usage collection](../features/usage-collection.md) is separate from these
+diagnostics. It is enabled by default when a relay is configured. Opt out under
+**Settings → Privacy & usage**, or set `settings.usage.collection_enabled: false`
+in the configuration file. Relay controls live under **Settings → Relay**.
 
 Pass `--otel=<endpoint>` (or set `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces, metrics, and logs to
 an OTLP collector. Empty or unset disables telemetry export.

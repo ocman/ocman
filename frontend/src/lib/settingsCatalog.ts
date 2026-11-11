@@ -6,8 +6,11 @@
  * (e.g. "blocked by your browser").
  */
 
+import { RELAY_SETTINGS } from './relaySettingsCatalog';
+
 export type SettingsGroupId =
   | 'app' | 'sessions' | 'agents' | 'permissions' | 'connections' | 'plugins' | 'system'
+  | 'privacy' | 'relay'
   /** Per-project settings page; not part of the global Settings search. */
   | 'project';
 
@@ -28,6 +31,7 @@ export type SettingEntry = {
 };
 
 export const SETTINGS = {
+  ...RELAY_SETTINGS,
   'factory-beta': {
     group: 'app', title: 'Factory beta',
     description: 'Enable the experimental Factory workspace and MCP tools for this instance. Off by default. Disabling it hides its interface but does not stop existing jobs or delete data.',
@@ -260,41 +264,6 @@ export const SETTINGS = {
     description: 'Extra rules appended to the AI reviewer\'s prompt. Each section appears as a named block the model reads before deciding. Use this to allow or deny specific patterns your team knows are safe.',
     example: 'Title "Terraform", content "terraform plan is safe; never approve terraform apply or destroy."',
     keywords: 'auto-approve judge rules policy allow deny',
-  },
-  'public-sharing': {
-    group: 'connections',
-    title: 'Allow public sharing',
-    description: 'Let sessions be shared via public, read-only links. When off, no new share links can be created; existing links keep working until revoked below.',
-    example: 'Turn it on, then use Share on a session to send a read-only link to a colleague.',
-    keywords: 'share link public',
-  },
-  'share-relay': {
-    group: 'connections',
-    title: 'Share relay',
-    description: 'The relay that stores encrypted shared conversations so links open from another machine. Set with -relay-url or OCMAN_RELAY_URL; restart ocman to change it.',
-    example: 'Start ocman with "-relay-url https://relay.example.com" to share across machines.',
-    keywords: 'relay url OCMAN_RELAY_URL',
-  },
-  'shared-sessions': {
-    group: 'connections',
-    title: 'Shared sessions',
-    description: 'Every active public share link. Open the session to inspect it, or revoke a link to make it stop working immediately.',
-    example: 'Revoke the link you posted in a public channel by mistake; it stops working at once.',
-    keywords: 'revoke links',
-  },
-  'webhook-relay': {
-    group: 'connections',
-    title: 'Webhook relay',
-    description: 'Relay that receives provider webhooks for new inboxes. Leave empty to use the share relay. Existing inboxes keep their relay.',
-    example: 'Set https://relay.example.com so GitHub can deliver to an inbox while ocman runs behind a firewall.',
-    keywords: 'webhook inbox relay url',
-  },
-  'webhook-enrollment-token': {
-    group: 'connections',
-    title: 'Relay connection',
-    description: 'Sign in through the relay to authorize webhook inbox registration. The enrollment token stays on this machine. Self-hosted relays can also use manual enrollment.',
-    example: 'Connect the relay, choose GitHub or Google on its sign-in page, then return here to create an inbox.',
-    keywords: 'webhook relay token secret sso login google github',
   },
   'launch-prompt-templates': {
     group: 'sessions',

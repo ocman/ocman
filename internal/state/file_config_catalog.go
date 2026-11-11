@@ -23,6 +23,7 @@ var fileSettingKeys = map[string]bool{
 	"notifications.badge":           true,
 	"projects.idle_timeout_minutes": true,
 	"sharing_enabled":               true,
+	"usage.collection_enabled":      true,
 	"beta.factory":                  true,
 	"pr_prompt_template":            true,
 	"issue_prompt_template":         true,

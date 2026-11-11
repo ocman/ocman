@@ -1,6 +1,6 @@
 import { test, expect, MOCK_PLATFORM_OPTIONS } from './fixtures';
 
-test('seven settings categories contain named sections and keep legacy links working', async ({ mockedPage: page }) => {
+test('settings categories contain named sections and keep legacy links working', async ({ mockedPage: page }) => {
   await page.route('/api/settings/platforms', (route) => route.fulfill({ json: { platforms: MOCK_PLATFORM_OPTIONS, enabled: ['opencode', 'claudecode'] } }));
   await page.route('/api/settings/model-fallthrough', (route) => route.fulfill({ json: { patienceMinutes: 15, fallbackMinutes: 60 } }));
   await page.route('/api/settings/judge-endpoint', (route) => route.fulfill({ json: { format: '', endpoint: '', model: '', minSafeProbability: .99, apiKeySet: false } }));
@@ -8,7 +8,7 @@ test('seven settings categories contain named sections and keep legacy links wor
   await page.goto('/settings?tab=auto-approve');
   const navigation = page.getByRole('navigation', { name: 'Settings groups' });
   await expect(navigation.getByRole('button')).toHaveText([
-    'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'Plugins', 'System',
+    'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections', 'Relay', 'Privacy & usage', 'Plugins', 'System',
   ]);
   for (const name of ['Auto-approve', 'AI reviewer', 'Worktrees']) {
     await expect(page.getByRole('heading', { name, level: 3, exact: true })).toBeVisible();
@@ -87,7 +87,7 @@ for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/settings');
     if (width === 390) await page.getByRole('combobox', { name: 'Settings group', exact: true }).selectOption('connections');
-    else await page.getByRole('button', { name: 'Connections & sharing', exact: true }).click();
+    else await page.getByRole('button', { name: 'Connections', exact: true }).click();
     const settings = page.getByTestId('remote-settings');
     await expect(settings).toBeVisible();
     const bounds = await settings.boundingBox();

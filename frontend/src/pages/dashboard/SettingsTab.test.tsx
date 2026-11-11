@@ -26,6 +26,7 @@ vi.mock('../../components/SourceControlSettings', () => ({ SourceControlSettings
 vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => <p>Sharing controls</p> }));
 vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
 vi.mock('../../components/WebhookRelaySettings', () => ({ WebhookRelaySettings: () => null }));
+vi.mock('../../components/UsageCollectionSettings', () => ({ UsageCollectionSettings: () => <p>Usage opt-out controls</p> }));
 vi.mock('../../components/HookPluginSettings', () => ({ HookPluginSettings: () => null }));
 vi.mock('../../components/PlatformSettings', () => ({ PlatformSettings: () => null }));
 vi.mock('../../components/IdleProjectSettings', () => ({ IdleProjectSettings: () => null }));
@@ -99,26 +100,31 @@ describe('SettingsTab actions', () => {
     expect(screen.getByRole('heading', { name: 'Application health', level: 3 })).toBeVisible();
     expect(await screen.findByText('Application health controls')).toBeVisible();
   });
-  it('groups settings into seven categories with visible sections', () => {
+  it('separates relay and privacy settings from connections', () => {
     render(<SettingsTab />);
     const navigation = screen.getByRole('navigation', { name: 'Settings groups' });
     expect([...navigation.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-      'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'Plugins', 'System',
+      'App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections', 'Relay', 'Privacy & usage', 'Plugins', 'System',
     ]);
     expect(screen.getByRole('heading', { name: 'Notifications', level: 3 })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'This device', level: 3 })).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
-    for (const name of ['Remotes', 'Source control', 'Link previews', 'Public sharing', 'Webhooks']) {
+    fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
+    for (const name of ['Remotes', 'Source control', 'Link previews']) {
       expect(screen.getByRole('heading', { name, level: 3 })).toBeVisible();
     }
+    expect(screen.queryByRole('heading', { name: 'Webhooks' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
+    for (const name of ['Public sharing', 'Webhooks']) expect(screen.getByRole('heading', { name, level: 3 })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Privacy & usage' }));
+    expect(screen.getByRole('heading', { name: 'Usage collection', level: 3 })).toBeVisible();
   });
   it('restores the selected group and search from the URL after remounting', () => {
     const { router, unmount } = render(<SettingsTab />, '/settings?dir=project');
-    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space & diffs' } });
     const url = `/settings${router.state.location.search}`;
     const params = new URLSearchParams(router.state.location.search);
-    expect(params.get('tab')).toBe('connections');
+    expect(params.get('tab')).toBe('relay');
     expect(params.get('q')).toBe('disk space & diffs');
     expect(params.get('dir')).toBe('project');
     unmount();
@@ -160,7 +166,7 @@ describe('SettingsTab actions', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
     fireEvent.change(screen.getByRole('combobox', { name: 'Settings group' }), { target: { value: 'connections' } });
     expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
-    expect(screen.getByText('Sharing controls')).toBeVisible();
+    expect(screen.getByText('Source-control setup')).toBeVisible();
     expect(screen.getByRole('combobox', { name: 'Settings group' })).toHaveValue('connections');
   });
   it('opens plugin management from the Settings navigation', () => {
@@ -181,12 +187,12 @@ describe('SettingsTab actions', () => {
   it('lists only categories rather than individual feature sections', () => {
     render(<SettingsTab />);
     const groups = screen.getAllByRole('button').map((b) => b.textContent).filter((label) => label !== 'Install' && label !== 'Sign out');
-    expect(groups).toEqual(['App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections & sharing', 'Plugins', 'System']);
+    expect(groups).toEqual(['App & notifications', 'Sessions', 'Agents & models', 'Permissions', 'Connections', 'Relay', 'Privacy & usage', 'Plugins', 'System']);
   });
   it('keeps always-mounted feature sections mounted while hidden', () => {
     render(<SettingsTab />);
     expect(screen.getByText('Sharing controls')).not.toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Connections & sharing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Relay' }));
     expect(screen.getByRole('heading', { name: 'Public sharing' })).toBeVisible();
     expect(screen.getByText('Sharing controls')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Sessions' }));
@@ -268,7 +274,7 @@ describe('SettingsTab actions', () => {
     ['conversation', 'sessions'], ['templates', 'sessions'],
     ['platforms', 'agents'], ['provider-accounts', 'agents'],
     ['auto-approve', 'permissions'], ['remotes', 'connections'], ['plugins', 'plugins'],
-    ['sharing', 'connections'], ['webhooks', 'connections'], ['link-previews', 'connections'],
+    ['sharing', 'relay'], ['webhooks', 'relay'], ['link-previews', 'connections'],
     ['maintenance', 'system'], ['idle-projects', 'system'],
   ])('keeps the legacy %s link opening %s', (tab, category) => {
     render(<SettingsTab />, `/settings?tab=${tab}`);

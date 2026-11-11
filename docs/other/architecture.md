@@ -14,6 +14,26 @@ flow](architecture-events.md) and [Conversation history and session
 identity](architecture-history.md) expand on the core data paths, and
 feature-specific designs live on their feature pages.
 
+[Usage collection](../features/usage-collection.md) describes opt-out daily
+installation reporting, distinct from user-configured diagnostic OpenTelemetry.
+
+```mermaid
+flowchart LR
+    UI[Foreground UI time] --> Analytics[analytics credit]
+    Analytics --> Reporter[usagecollection worker]
+    Settings[Privacy settings] --> Reporter
+    Reporter -->|ID, UTC day, release version| Relay[relay /v1/usage]
+    Relay --> Forwarder[usageforward OTLP logs]
+    Forwarder --> Backend[Operator OTEL backend]
+```
+
+- `internal/usagecollection` owns the local ID, daily acknowledgement, pending
+  date and opt-out setting. It reads no conversation or account data.
+- `internal/usagewire` bounds and validates the three-field report.
+- `internal/relay` rate-limits requests and forwards usage and separate IP
+  security events through `internal/usageforward`, without local usage storage.
+  The OTEL backend owns distinct-installation queries, access and retention.
+
 [Named platform connections](architecture-platform-connections.md) describes
 owner-local persistence, setup, startup composition and connection-scoped session
 routing.

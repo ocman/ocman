@@ -2,6 +2,16 @@ package share
 
 import "testing"
 
+func TestVanillaInstallUsesDefaultRelay(t *testing.T) {
+	url, source, err := ResolveRelayURL("", "", DefaultRelayURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if url != "https://relay-ocman.stenic.io" || source != RelaySourceBuiltin {
+		t.Fatalf("vanilla relay = (%q, %q), want the public builtin relay", url, source)
+	}
+}
+
 func TestResolveRelayURL(t *testing.T) {
 	tests := []struct {
 		name       string
