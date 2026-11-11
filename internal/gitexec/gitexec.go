@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const maxConcurrentProcesses = 8
@@ -130,6 +131,13 @@ func (c *Cmd) Output() ([]byte, error) {
 // WithEnv adds operation-specific environment overrides after the hardened defaults.
 func (c *Cmd) WithEnv(entries ...string) *Cmd {
 	c.cmd.Env = append(c.cmd.Env, entries...)
+	return c
+}
+
+// WithWaitDelay bounds waiting for inherited output pipes after cancellation or
+// process exit. Network callers use it when transport helpers may outlive git.
+func (c *Cmd) WithWaitDelay(delay time.Duration) *Cmd {
+	c.cmd.WaitDelay = delay
 	return c
 }
 

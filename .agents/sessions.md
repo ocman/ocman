@@ -22,8 +22,10 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   from detached defaults to verified local `main`/`master` or explicit selection.
   Legacy recovery uses the same preparation.
 - New worktree branches discover and fetch the origin default at creation when
-  no base is selected. Explicit remote-tracking bases are fetched too. Fetch
-  failures fall back to the locally available base; explicit local refs/commits
+  no base is selected. Explicit remote-tracking bases are fetched too. Default
+  discovery and fetch share a two-second budget, fetching the cached default
+  concurrently with live default discovery. Slow or failed refreshes fall back
+  to the locally available base; explicit local refs/commits
   and existing branches or worktrees are never updated automatically. Local-only
   repositories need no fetch.
   Without origin, use the sole remote or skip refreshing if ambiguous. Explicit

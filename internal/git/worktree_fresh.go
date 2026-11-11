@@ -9,7 +9,11 @@ import (
 	"github.com/ocman/ocman/internal/gitexec"
 )
 
-const worktreeFetchTimeout = 60 * time.Second
+// Refresh is optional when a cached base exists. Share this small budget across
+// discovery and fetch so an offline remote cannot hold the first prompt for a minute.
+const worktreeFetchTimeout = 2 * time.Second
+
+const worktreeTransportWait = 100 * time.Millisecond
 
 // freshWorktreeBase refreshes remote bases without moving any local branch.
 // Explicit local refs and commits are deliberate snapshots and stay unchanged.
@@ -67,12 +71,33 @@ func refreshWorktreeRemoteBase(ctx context.Context, repo, base string, names []s
 	}
 	cctx, cancel := context.WithTimeout(ctx, worktreeFetchTimeout)
 	defer cancel()
+	// Usually origin/HEAD already names the default. Fetch that branch while
+	// checking the live default, saving a network round trip without trusting a
+	// stale symbolic ref when the remote default has changed.
+	var fetching chan error
+	var cancelFetch context.CancelFunc
+	cached := ""
 	if base == "" {
-		out, err := gitexec.Output(cctx, repo, "ls-remote", "--symref", "--", remote, "HEAD")
+		cached, _ = optionalBaseOutput(cctx, repo, "symbolic-ref", "--quiet", "refs/remotes/"+remote+"/HEAD")
+		if strings.HasPrefix(cached, "refs/remotes/"+remote+"/") {
+			fetching = make(chan error, 1)
+			fetchCtx, stop := context.WithCancel(cctx)
+			cancelFetch = stop
+			go func(result chan<- error) { result <- fetchWorktreeBase(fetchCtx, repo, remote, cached) }(fetching)
+			defer func() {
+				cancelFetch()
+				if fetching != nil {
+					<-fetching
+				}
+			}()
+		}
+	}
+	if base == "" {
+		out, err := gitexec.Command(cctx, "-C", repo, "ls-remote", "--symref", "--", remote, "HEAD").WithWaitDelay(worktreeTransportWait).Output()
 		if err != nil {
 			return "", fmt.Errorf("refresh worktree base: discover %s default: %w", remote, err)
 		}
-		for _, line := range strings.Split(out, "\n") {
+		for _, line := range strings.Split(string(out), "\n") {
 			if ref, ok := strings.CutPrefix(line, "ref: refs/heads/"); ok && strings.HasSuffix(ref, "\tHEAD") {
 				base = "refs/remotes/" + remote + "/" + strings.TrimSuffix(ref, "\tHEAD")
 				break
@@ -82,10 +107,24 @@ func refreshWorktreeRemoteBase(ctx context.Context, repo, base string, names []s
 			return "", fmt.Errorf("refresh worktree base: %s has no named default branch; select an explicit base", remote)
 		}
 	}
-	branch := strings.TrimPrefix(base, "refs/remotes/"+remote+"/")
-	out, err := gitexec.Command(cctx, "-C", repo, "fetch", "--no-tags", "--", remote, "+refs/heads/"+branch+":"+base).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("refresh worktree base: fetch %s: %w: %s", base, err, strings.TrimSpace(string(out)))
+	if fetching != nil && base == cached {
+		err := <-fetching
+		fetching = nil
+		return base, err
 	}
-	return base, nil
+	if fetching != nil {
+		cancelFetch()
+		<-fetching
+		fetching = nil
+	}
+	return base, fetchWorktreeBase(cctx, repo, remote, base)
+}
+
+func fetchWorktreeBase(ctx context.Context, repo, remote, base string) error {
+	branch := strings.TrimPrefix(base, "refs/remotes/"+remote+"/")
+	out, err := gitexec.Command(ctx, "-C", repo, "fetch", "--no-tags", "--", remote, "+refs/heads/"+branch+":"+base).WithWaitDelay(worktreeTransportWait).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("refresh worktree base: fetch %s: %w: %s", base, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
