@@ -3,27 +3,10 @@ package relayauth
 import (
 	"crypto/subtle"
 	"encoding/json"
-	"html/template"
 	"net/http"
 	"net/url"
 	"strings"
 )
-
-var page = template.Must(template.New("login").Parse(`<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>Connect ocman relay</title></head><body><h1>Connect ocman relay</h1>{{if .Providers}}<p>Sign in to connect your ocman installation. Only continue if you started this connection in ocman.</p>{{range .Providers}}<p><a href="/auth/login/{{$.ID}}/{{.ID}}">Continue with {{.Name}}</a></p>{{end}}{{else if .State}}<p>Allow the ocman installation that started this request to create webhook inboxes under your account?</p><form method="post" action="/auth/approve"><input type="hidden" name="state" value="{{.State}}"><button type="submit">Connect ocman</button></form>{{else}}<p>Connected. You can close this tab and return to ocman.</p>{{end}}</body></html>`))
-
-type pageData struct {
-	ID        string
-	Providers []Provider
-	State     string
-}
-
-func renderPage(w http.ResponseWriter, data pageData) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
-	_ = page.Execute(w, data)
-}
 
 func (s *Service) providers(w http.ResponseWriter, _ *http.Request) {
 	type choice struct {
@@ -117,7 +100,7 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.cleanupLocked()
 	l := s.logins[state]
-	if l == nil || l.provider != r.PathValue("provider") || l.user != "" || !matchesCookie(r, state) || r.URL.Query().Get("code") == "" {
+	if l == nil || l.provider != r.PathValue("provider") || !matchesCookie(r, state) || r.URL.Query().Get("code") == "" {
 		s.mu.Unlock()
 		http.Error(w, "invalid or expired login", http.StatusBadRequest)
 		return
@@ -133,7 +116,10 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 	p, _ := s.provider(copyLogin.provider)
 	user, err := s.identity(r.Context(), p, copyLogin.verifier, r.URL.Query().Get("code"))
 	if err != nil {
-		http.Error(w, "sign-in failed; restart the connection in ocman", http.StatusBadGateway)
+		s.mu.Lock()
+		delete(s.logins, state)
+		s.mu.Unlock()
+		renderPage(w, pageData{ID: copyLogin.connection, Failed: true})
 		return
 	}
 	s.mu.Lock()
@@ -142,36 +128,13 @@ func (s *Service) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "login expired", http.StatusGone)
 		return
 	}
-	l.user = digest(p.ID + ":" + user)
-	renderPage(w, pageData{State: state})
-}
-
-func (s *Service) approve(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
-		http.Error(w, "form required", http.StatusBadRequest)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
-	}
-	state := r.PostForm.Get("state")
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cleanupLocked()
-	l := s.logins[state]
-	if l == nil || l.user == "" || !matchesCookie(r, state) {
-		http.Error(w, "invalid approval", http.StatusBadRequest)
-		return
-	}
 	c := s.connections[l.connection]
-	if c == nil || c.token != "" {
+	if c == nil || c.token != "" || !s.cfg.Now().Before(c.expires) {
 		http.Error(w, "connection expired or completed", http.StatusGone)
 		return
 	}
 	token := randomToken()
-	b, _ := json.Marshal(credential{User: l.user, ExpiresAt: s.cfg.Now().Add(credentialTTL).UnixMilli()})
+	b, _ := json.Marshal(credential{User: digest(p.ID + ":" + user), ExpiresAt: s.cfg.Now().Add(credentialTTL).UnixMilli()})
 	if err := s.cfg.Store.Put(r.Context(), credentialKey(token), b); err != nil {
 		http.Error(w, "could not save enrollment", http.StatusInternalServerError)
 		return

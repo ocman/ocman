@@ -122,20 +122,14 @@ func TestProviderSignInAndEnrollment(t *testing.T) {
 				t.Fatal("unbound callback accepted")
 			}
 			w := h.request("GET", callback, "", "", cookie)
-			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Connect ocman</button>") || digest(verifier) != u.Query().Get("code_challenge") {
+			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Relay connected") || strings.Contains(w.Body.String(), "<form") || digest(verifier) != u.Query().Get("code_challenge") {
 				t.Fatalf("callback: %d %s", w.Code, w.Body)
 			}
 			if w := h.request("GET", callback, "", "", cookie); w.Code != http.StatusBadRequest {
 				t.Fatal("callback replay accepted")
 			}
-			if w := h.request("POST", "/auth/poll", "", poll); w.Code != http.StatusAccepted {
-				t.Fatal("enrollment issued without approval")
-			}
-			if w := h.request("POST", "/auth/approve", "state="+state, ""); w.Code != http.StatusBadRequest {
-				t.Fatal("unbound approval accepted")
-			}
-			if w := h.request("POST", "/auth/approve", "state="+state, "", cookie); w.Code != http.StatusOK {
-				t.Fatalf("approval: %d %s", w.Code, w.Body)
+			if cookies := w.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+				t.Fatal("completed login cookie not cleared")
 			}
 			w = h.request("POST", "/auth/poll", "", poll)
 			var result struct {

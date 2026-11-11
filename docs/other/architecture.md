@@ -396,7 +396,7 @@ flowchart LR
     Dashboard[Ocman dashboard] -->|start and poll connection| Owner[Owner-local webhook module]
     Owner -->|private polling credential| Relay[Relay relayauth]
     Dashboard -->|open sign-in link| Browser[Relay sign-in page]
-    Browser -->|choose provider and approve| Relay
+    Browser -->|choose provider and sign in| Relay
     Relay -->|OAuth code and PKCE| Identity[Configured GitHub or Google apps]
     Relay -->|hashed user and credential| Store[Relay disk store]
     Relay -->|enrollment token, once| Owner
@@ -404,7 +404,8 @@ flowchart LR
 ```
 
 `internal/relayauth` owns the relay's configurable provider list, short-lived
-connection requests, browser-bound OAuth state and PKCE, explicit approval,
+connection requests, browser-bound OAuth state and PKCE, automatic enrollment
+after successful sign-in,
 credential hashing, expiry, revocation and sign-in rate limits. It does not
 retain provider access tokens. `internal/relay` accepts either these credentials
 or the operator's legacy enrollment token when registering an inbox.

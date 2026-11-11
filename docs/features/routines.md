@@ -98,7 +98,8 @@ and author-only GitHub PR filters.
 
 1. Configure the relay URL under **Settings → Webhooks**, then choose
    **Connect relay → Sign in to relay**. Choose a provider offered by the relay
-   and approve the connection. Ocman saves your enrollment token automatically.
+   to complete the connection. Ocman saves your enrollment token automatically,
+   without a second confirmation on the relay.
    An empty relay URL falls back to the share relay. Self-hosted relays without
    SSO can use **Manual enrollment** with an operator-provided token instead.
 2. Open **Routines → Webhook inboxes → New inbox**, name it, and optionally set

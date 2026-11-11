@@ -54,11 +54,8 @@ func TestLoginBindingsAndExpiry(t *testing.T) {
 	if w := h.request("GET", "/auth/callback/google?state="+state+"&code=x", "", "", cookie); w.Code != http.StatusBadRequest {
 		t.Fatal("provider substitution accepted")
 	}
-	if w := h.request("POST", "/auth/approve", "state="+state, "", cookie); w.Code != http.StatusBadRequest {
-		t.Fatal("approval without identity accepted")
-	}
-	if w := h.request("POST", "/auth/approve", "", "", cookie); w.Code != http.StatusBadRequest {
-		t.Fatal("approval without form accepted")
+	if w := h.request("POST", "/auth/approve", "state="+state, "", cookie); w.Code != http.StatusNotFound {
+		t.Fatal("removed approval endpoint still available")
 	}
 	h.now = h.now.Add(connectTTL)
 	if w := h.request("GET", "/auth/callback/github?state="+state+"&code=x", "", "", cookie); w.Code != http.StatusBadRequest {
@@ -114,13 +111,14 @@ func TestCredentialExpiryAndStorageFailures(t *testing.T) {
 	}
 }
 
-func TestApprovalStorageFailureDoesNotCompleteConnection(t *testing.T) {
+func TestCallbackStorageFailureDoesNotCompleteConnection(t *testing.T) {
 	h := newHarness(t)
 	id, poll := h.connect(t)
 	state := randomToken()
-	h.s.logins[state] = &login{connection: id, user: "user", expires: h.now.Add(connectTTL)}
+	h.s.logins[state] = &login{connection: id, provider: "github", verifier: "verifier", expires: h.now.Add(connectTTL)}
+	useSuccessfulProvider(t, h)
 	h.s.cfg.Store = failingStore{h.s.cfg.Store}
-	w := h.request("POST", "/auth/approve", "state="+state, "", &http.Cookie{Name: "relay_login", Value: state})
+	w := h.request("GET", "/auth/callback/github?state="+state+"&code=code", "", "", &http.Cookie{Name: "relay_login", Value: state})
 	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "user") {
 		t.Fatalf("storage failure: %d %s", w.Code, w.Body)
 	}
@@ -145,16 +143,14 @@ func TestPendingLoginFailures(t *testing.T) {
 	defer provider.Close()
 	h.s.endpoints["github"] = endpoints{provider.URL, provider.URL, provider.URL}
 	w := h.request("GET", "/auth/callback/github?state="+state+"&code=bad", "", "", cookie)
-	if w.Code != http.StatusBadGateway || strings.Contains(w.Body.String(), "private-provider-error") {
+	if w.Code != http.StatusBadRequest || strings.Contains(w.Body.String(), "private-provider-error") {
 		t.Fatalf("provider failure: %d %s", w.Code, w.Body)
 	}
-	h.s.logins[state].user = "user"
+	h.s.logins[state] = &login{connection: id, provider: "github", verifier: "verifier", expires: h.now.Add(connectTTL)}
+	useSuccessfulProvider(t, h)
 	h.s.connections[id].token = "already-completed"
-	if w := h.request("POST", "/auth/approve", "state="+state, "", cookie); w.Code != http.StatusGone {
-		t.Fatal("completed connection approved again")
-	}
-	if w := h.request("POST", "/auth/approve", "state=%invalid", "", cookie); w.Code != http.StatusBadRequest {
-		t.Fatal("malformed approval accepted")
+	if w := h.request("GET", "/auth/callback/github?state="+state+"&code=code", "", "", cookie); w.Code != http.StatusGone {
+		t.Fatal("completed connection enrolled again")
 	}
 	for i := range maxPending {
 		h.s.logins[string(rune(i))] = &login{expires: h.now.Add(connectTTL)}

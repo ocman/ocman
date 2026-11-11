@@ -4,9 +4,10 @@ import { useWebhookRelaySettings } from '../lib/settingsQueries';
 import { api } from '../lib/api';
 import type { WebhookRelaySettings as View } from '../lib/api.types';
 import { useSettingSave } from '../lib/useSaveStatus';
-import { Button } from './Control';
+import { Button, ButtonGroup } from './Control';
 import { SettingRow, SettingText } from './SettingRow';
 import { WebhookRelayConnect } from './WebhookRelayConnect';
+import styles from './WebhookRelaySettings.module.css';
 
 /** Relay host and enrollment token used when creating webhook inboxes. */
 export function WebhookRelaySettings() {
@@ -32,12 +33,17 @@ export function WebhookRelaySettings() {
       <SettingRow setting="webhook-relay" detail={view.defaultRelayUrl ? <>Share relay: <code>{view.defaultRelayUrl}</code></> : undefined}>
         <SettingText type="url" ariaLabel="Webhook relay" value={view.relayUrl} placeholder={view.defaultRelayUrl || 'https://relay.example.com'} save={relaySave} onSave={(relayUrl) => save({ relayUrl })} />
       </SettingRow>
-      <SettingRow setting="webhook-enrollment-token">
-        <WebhookRelayConnect key={view.relayUrl || view.defaultRelayUrl} configured={Boolean(view.relayUrl || view.defaultRelayUrl)} connected={view.hasEnrollmentToken} />
-        <details><summary>Manual enrollment</summary>
-        <SettingText key={tokenKey} type="password" ariaLabel="Enrollment token" value="" placeholder={view.hasEnrollmentToken ? 'Saved; type to replace' : 'Not set'} save={tokenSave} onSave={(enrollmentToken) => (enrollmentToken ? save({ enrollmentToken }).then(() => setTokenKey((k) => k + 1)) : undefined)} />
-        {view.hasEnrollmentToken && <Button type="button" size="small" variant="ghost" onClick={() => void tokenSave.track(() => save({ enrollmentToken: '' })).catch(() => {})}>Clear</Button>}
-        </details>
+      <SettingRow block setting="webhook-enrollment-token">
+        <div className={styles.connection}>
+          <WebhookRelayConnect key={view.relayUrl || view.defaultRelayUrl} configured={Boolean(view.relayUrl || view.defaultRelayUrl)} connected={view.hasEnrollmentToken} />
+          <details className={styles.manual}>
+            <summary>Manual enrollment</summary>
+            <ButtonGroup label="Manual relay enrollment" className={styles.manualControls}>
+              <SettingText key={tokenKey} type="password" ariaLabel="Enrollment token" value="" placeholder={view.hasEnrollmentToken ? 'Saved; type to replace' : 'Not set'} save={tokenSave} onSave={(enrollmentToken) => (enrollmentToken ? save({ enrollmentToken }).then(() => setTokenKey((k) => k + 1)) : undefined)} />
+              {view.hasEnrollmentToken && <Button type="button" size="small" variant="ghost" onClick={() => void tokenSave.track(() => save({ enrollmentToken: '' })).catch(() => {})}>Clear</Button>}
+            </ButtonGroup>
+          </details>
+        </div>
       </SettingRow>
     </div>
   );

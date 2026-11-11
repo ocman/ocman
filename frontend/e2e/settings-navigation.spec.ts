@@ -83,7 +83,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('button', { name: 'Disable Claude Work', exact: true })).toBeEnabled();
     await expect(page.getByText('Default (disabled)', { exact: true })).toBeVisible();
   });
-  test(`Remotes table scrolls inside Settings at ${width}px`, async ({ mockedPage: page }) => {
+  test(`Remotes table uses available Settings width without page overflow at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/settings');
     if (width === 390) await page.getByRole('combobox', { name: 'Settings group', exact: true }).selectOption('connections');
@@ -92,9 +92,10 @@ for (const width of [1280, 390]) {
     await expect(settings).toBeVisible();
     const bounds = await settings.boundingBox();
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-    expect(bounds!.width).toBeLessThanOrEqual(640);
+    if (width > 640) expect(bounds!.width).toBeGreaterThan(640);
     const frame = page.getByRole('table', { name: 'Machines' }).locator('..');
-    expect(await frame.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    await expect(frame).toHaveCSS('overflow-x', 'auto');
+    if (width <= 640) expect(await frame.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   });
   test(`settings group navigation and search share the same selection at ${width}px`, async ({ mockedPage: page }) => {

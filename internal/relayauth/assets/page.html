@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect ocman relay</title>
+  <link rel="icon" href="/auth/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/auth/assets/style.css">
+</head>
+<body>
+  <main>
+    <header><img src="/auth/assets/logo.svg" width="48" height="48" alt=""><span>ocman relay</span></header>
+    {{if .Failed}}
+    <h1>Sign-in unavailable</h1>
+    <p>We couldn't complete sign-in with your provider. Try again or choose another provider.</p>
+    <a class="button" href="/auth/connect/{{.ID}}">Try again</a>
+    <p class="note">If this keeps happening, contact the relay administrator. If your connection has expired, restart it in ocman.</p>
+    {{else if .Providers}}
+    <h1>Connect ocman relay</h1>
+    <p>Sign in to connect your ocman installation. Only continue if you started this connection in ocman.</p>
+    <nav aria-label="Sign-in providers">
+      {{range .Providers}}<a class="button" href="/auth/login/{{$.ID}}/{{.ID}}">Continue with {{.Name}}</a>{{end}}
+    </nav>
+    <p class="note">Your provider is used to identify your relay account. Existing inboxes are not changed.</p>
+    {{else}}
+    <h1>Relay connected</h1>
+    <p>Connected. You can close this tab and return to ocman.</p>
+    {{end}}
+    <footer>Encrypted webhook inboxes for your ocman installation.</footer>
+  </main>
+</body>
+</html>

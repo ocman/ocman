@@ -49,8 +49,8 @@ type connection struct {
 }
 
 type login struct {
-	connection, provider, verifier, user string
-	expires                              time.Time
+	connection, provider, verifier string
+	expires                        time.Time
 }
 
 type Service struct {
@@ -95,13 +95,13 @@ func New(cfg Config) (*Service, error) {
 }
 
 func (s *Service) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /auth/assets/{asset}", servePageAsset)
 	mux.HandleFunc("GET /auth/providers", s.limited("providers", 120, s.providers))
 	mux.HandleFunc("POST /auth/connect", s.limited("connect", 10, s.connect))
 	mux.HandleFunc("POST /auth/poll", s.limited("poll", 120, s.poll))
 	mux.HandleFunc("GET /auth/connect/{id}", s.limited("choose", 60, s.choose))
 	mux.HandleFunc("GET /auth/login/{id}/{provider}", s.limited("login", 20, s.startLogin))
 	mux.HandleFunc("GET /auth/callback/{provider}", s.limited("callback", 20, s.callback))
-	mux.HandleFunc("POST /auth/approve", s.limited("approve", 20, s.approve))
 	mux.HandleFunc("DELETE /auth/enrollment", s.limited("revoke", 20, s.revoke))
 }
 

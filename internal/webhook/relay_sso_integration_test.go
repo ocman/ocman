@@ -84,9 +84,8 @@ func TestRelaySSOConnectionCreatesRealInbox(t *testing.T) {
 	if callback.Code != http.StatusOK {
 		t.Fatalf("callback: %d %s", callback.Code, callback.Body)
 	}
-	approval := browser(http.MethodPost, "/auth/approve", "state="+cookie.Value, cookie)
-	if approval.Code != http.StatusOK {
-		t.Fatalf("approve: %d %s", approval.Code, approval.Body)
+	if !strings.Contains(callback.Body.String(), "Relay connected") || strings.Contains(callback.Body.String(), "<form") {
+		t.Fatal("callback did not complete enrollment immediately")
 	}
 	w = do(t, owner, http.MethodPost, "/api/settings/webhook-relay/connect/poll", "")
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"hasEnrollmentToken":true`) {
