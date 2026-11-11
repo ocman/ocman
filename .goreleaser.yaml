@@ -1,0 +1,64 @@
+version: 2
+project_name: ocman
+
+builds:
+  - id: cli
+    main: .
+    binary: ocman
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+
+archives:
+  - id: cli
+    ids: [cli]
+    formats: [tar.gz]
+    # Keep download URLs compatible with the shell installer.
+    name_template: ocman-{{ .Os }}-{{ .Arch }}
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: ocman
+    name: ocman
+  prerelease: auto
+  make_latest: '{{ if .Prerelease }}false{{ else }}true{{ end }}'
+  mode: replace
+  replace_existing_artifacts: true
+  extra_files:
+    - glob: .release/ocman-darwin-arm64.dmg
+
+homebrew_casks:
+  - name: '{{ if .Prerelease }}ocman-nightly{{ else }}ocman{{ end }}'
+    ids: [cli]
+    binaries: [ocman]
+    homepage: https://github.com/ocman/ocman
+    description: Web dashboard for coding-agent sessions
+    # Nightlies must publish too, rather than using skip_upload: auto.
+    skip_upload: false
+    repository:
+      owner: ocman
+      name: homebrew-tap
+      branch: main
+      token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
+    commit_msg_template: 'chore(homebrew): update {{ .ProjectName }} to {{ .Tag }}'
+    dependencies:
+      - formula: tmux
+    conflicts:
+      - cask: '{{ if .Prerelease }}ocman{{ else }}ocman-nightly{{ end }}'
+    hooks:
+      post:
+        # The CLI is not notarized. Scope quarantine removal to this binary.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-d", "com.apple.quarantine", "{{ .StagedPath }}/ocman"]
+          end

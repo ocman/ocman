@@ -122,7 +122,10 @@ download_binary() {
 	info "downloading $TAG ($os/$arch) from GitHub"
 	curl -fsSL --connect-timeout 10 --max-time 300 "$DOWNLOAD/$TAG/$asset.tar.gz" -o "$WORK/binary.tar.gz" || return 1
 	# Extract only the expected file, never arbitrary paths from the archive.
-	tar -xOzf "$WORK/binary.tar.gz" "$asset" >"$WORK/ocman" || return 1
+	# GoReleaser uses ocman; older releases used a platform-suffixed name.
+	if ! tar -xOzf "$WORK/binary.tar.gz" ocman >"$WORK/ocman" 2>/dev/null; then
+		tar -xOzf "$WORK/binary.tar.gz" "$asset" >"$WORK/ocman" || return 1
+	fi
 	[ -s "$WORK/ocman" ]
 }
 

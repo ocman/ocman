@@ -374,6 +374,7 @@ lint-fuzz-scripts:
 
 # Self-tests for the app and SDK release tag calculation, against throwaway repos.
 lint-release-scripts:
+	python3 scripts/test_goreleaser.py
 	./scripts/release-tag_test.sh
 	./scripts/sdk-next-tag_test.sh
 	python3 scripts/test_tag_selection.py

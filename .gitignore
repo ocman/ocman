@@ -3,6 +3,7 @@ node_modules/
 tmp/
 .dev/
 dist/
+.release/
 # Build cache and artifacts
 .cache/
 ocman-desktop

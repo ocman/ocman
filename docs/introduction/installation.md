@@ -3,7 +3,54 @@ title: Installation
 weight: 2
 ---
 
-## Install a release
+## Homebrew
+
+Tap [ocman/homebrew-tap](https://github.com/ocman/homebrew-tap). Homebrew
+downloads the GitHub release binary for macOS or Linux, on arm64 or amd64,
+and verifies its SHA-256 checksum. Use Homebrew 7.0.11 or newer for the
+generated casks. No Go, Node.js or local build is needed.
+
+```sh
+brew tap ocman/tap
+brew install --cask ocman/tap/ocman-nightly
+ocman
+# Open http://localhost:8228
+```
+
+`ocman-nightly` follows published nightly builds. The stable cask,
+`ocman/tap/ocman`, becomes available when the first stable GitHub release
+is published. Once available, install it with:
+
+```sh
+brew install --cask ocman/tap/ocman
+```
+
+Both casks install a binary named `ocman`, so install only one channel.
+To switch from nightly to stable:
+
+```sh
+brew uninstall --cask ocman/tap/ocman-nightly
+brew install --cask ocman/tap/ocman
+```
+
+Update with `brew update` followed by
+`brew upgrade --cask ocman/tap/ocman-nightly`, or use the stable cask name.
+GoReleaser updates the tap when it publishes each release. Restart any running
+ocman process after upgrading. Homebrew does not start ocman automatically or
+install `ocman-ctl`. Run `ocman` directly and configure agent CLIs separately.
+See the [runtime requirements](_index.md#requirements).
+
+The CLI is not signed with an Apple developer certificate or notarized.
+On macOS, the cask removes the quarantine attribute from the installed CLI
+binary so it can run. This bypasses Gatekeeper verification for that binary;
+install only if you trust the release. It does not change system-wide settings.
+
+If switching from the shell installer, stop its process with `ocman-ctl stop`
+first. Remove the old installation with `ocman-ctl uninstall` without
+`--purge` to keep application data, and check `command -v ocman` resolves
+to Homebrew's binary. Do not use `ocman-ctl update` for a Homebrew installation.
+
+## Shell installer
 
 The installer supports macOS and Linux. It prefers GitHub release binaries
 for amd64 and arm64 and builds the selected tag locally when the download

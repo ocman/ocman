@@ -94,6 +94,15 @@ class InstallTest(unittest.TestCase):
         self.assertTrue(os.access(self.prefix / 'bin/ocman-ctl', os.X_OK))
         self.assertFalse((self.base / 'run').exists())
 
+    def test_goreleaser_archive_installs_without_build(self):
+        with tarfile.open(self.env['ARCHIVE'], 'w:gz') as tar:
+            member = tarfile.TarInfo('ocman')
+            member.size = len(b'release binary')
+            tar.addfile(member, io.BytesIO(b'release binary'))
+        self.run_install('install', '--no-start')
+        self.assertEqual((self.prefix / 'bin/ocman').read_text(), 'release binary')
+        self.assertNotIn('go ', self.calls())
+
     def test_nightly_and_saved_update(self):
         self.run_install('install', 'nightly', '--no-start')
         self.run_install('update', '--no-start')

@@ -17,6 +17,7 @@ cat >"$tmp/repo/mise.toml" <<'EOF'
 node = "25"
 nodemon = "3"
 hugo = "0.164.0"
+goreleaser = "2.20.1"
 EOF
 cat >"$tmp/repo/frontend/package.json" <<'EOF'
 {
@@ -25,7 +26,7 @@ cat >"$tmp/repo/frontend/package.json" <<'EOF'
 }
 EOF
 
-want="$(printf 'node=25\nhugo=0.164.0\npnpm=10.11.1')"
+want="$(printf 'node=25\nhugo=0.164.0\npnpm=10.11.1\ngoreleaser=2.20.1')"
 got="$(GITHUB_OUTPUT="$tmp/output" "$script" "$tmp/repo")"
 [ "$got" = "$want" ] || fail "stdout = $got"
 [ "$(cat "$tmp/output")" = "$want" ] || fail "GITHUB_OUTPUT = $(cat "$tmp/output")"

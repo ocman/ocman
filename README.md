@@ -29,6 +29,21 @@ Supports [OpenCode](https://github.com/anomalyco/opencode),
 
 ## Quick start
 
+### Homebrew
+
+```sh
+brew tap ocman/tap
+brew install --cask ocman/tap/ocman-nightly
+ocman
+```
+
+This installs the GitHub binary for macOS or Linux, on Apple Silicon/arm64
+or Intel/amd64. Use `brew upgrade` for updates. The stable cask,
+`ocman/tap/ocman`, becomes available after the first stable GitHub release.
+See [Installation](docs/introduction/installation.md#homebrew) for channel switching.
+
+### Shell installer
+
 ```sh
 curl -fsSL https://forgejo.nousefreak.be/dries/ocman/raw/branch/main/install.sh | bash -s -- install
 # Open http://localhost:8228

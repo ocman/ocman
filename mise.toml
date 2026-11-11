@@ -2,6 +2,7 @@
 air = "latest"
 caddy = "latest"
 git-cliff = "2.13.1"
+goreleaser = "2.20.1"
 golangci-lint = "2.11.4"
 node = "25"
 pnpm = "10.11.1"
