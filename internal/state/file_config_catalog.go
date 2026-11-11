@@ -31,6 +31,7 @@ var fileSettingKeys = map[string]bool{
 	"preview_apps":                  true,
 	"webhook.relay_url":             true,
 	"webhook.enrollment_token":      true,
+	"webhook.enrollment_relay_url":  true,
 }
 
 func isFileSetting(key string) bool {

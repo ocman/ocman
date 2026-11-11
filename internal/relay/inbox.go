@@ -70,7 +70,11 @@ type inboxDeliveryPage struct {
 }
 
 func (s *Server) handleRegisterInbox(w http.ResponseWriter, r *http.Request) {
-	if !tokenAuthorises(hashToken(s.cfg.EnrollmentToken), bearerToken(r)) {
+	if !s.creates.allow("inbox:" + s.clientKey(r)) {
+		http.Error(w, "too many inbox registrations", http.StatusTooManyRequests)
+		return
+	}
+	if !s.authorizeEnrollment(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

@@ -291,10 +291,10 @@ export const SETTINGS = {
   },
   'webhook-enrollment-token': {
     group: 'connections',
-    title: 'Enrollment token',
-    description: 'Authorizes inbox registration on the relay. Stored on this machine and never shown again.',
-    example: 'Paste the token your relay operator gave you, then create a webhook inbox.',
-    keywords: 'webhook relay token secret',
+    title: 'Relay connection',
+    description: 'Sign in through the relay to authorize webhook inbox registration. The enrollment token stays on this machine. Self-hosted relays can also use manual enrollment.',
+    example: 'Connect the relay, choose GitHub or Google on its sign-in page, then return here to create an inbox.',
+    keywords: 'webhook relay token secret sso login google github',
   },
   'launch-prompt-templates': {
     group: 'sessions',

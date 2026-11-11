@@ -90,6 +90,10 @@ type Config struct {
 	// EnrollmentToken authorizes webhook inbox registration. An empty token
 	// disables registration while leaving existing inboxes usable.
 	EnrollmentToken string
+	EnrollmentAuth  interface {
+		Routes(*http.ServeMux)
+		Authorize(context.Context, string) bool
+	}
 	// MaxInboxBodyBytes caps one webhook request body.
 	MaxInboxBodyBytes         int64
 	MaxInboxHeaderBytes       int64
@@ -183,6 +187,9 @@ func New(cfg Config) (*Server, error) {
 }
 
 func (s *Server) routes() {
+	if s.cfg.EnrollmentAuth != nil {
+		s.cfg.EnrollmentAuth.Routes(s.mux)
+	}
 	s.mux.HandleFunc("POST /s", s.handleCreate)
 	s.mux.HandleFunc("GET /s/{id}", s.handleRead)
 	s.mux.HandleFunc("PUT /s/{id}/{seq}", s.handleAppend)

@@ -23,6 +23,12 @@ export function settingsApi(get: typeof fetchJSON, post: typeof postJSON) {
       get<WebhookRelaySettings>('/api/settings/webhook-relay', signal),
     setWebhookRelay: (input: { relayUrl?: string; enrollmentToken?: string }) =>
       post<WebhookRelaySettings>('/api/settings/webhook-relay', input),
+    connectWebhookRelay: () =>
+      post<{ authorizationUrl: string; expiresAt: number }>('/api/settings/webhook-relay/connect', {}),
+    pollWebhookRelay: () =>
+      post<{ pending: boolean; settings?: WebhookRelaySettings }>('/api/settings/webhook-relay/connect/poll', {}),
+    cancelWebhookRelayConnect: () =>
+      post<void>('/api/settings/webhook-relay/connect', undefined, { method: 'DELETE', parseJSON: false }),
     getWorktreeInheritPermissions: (signal?: AbortSignal) =>
       get<{ enabled: boolean }>('/api/settings/worktree-inherit-permissions', signal),
     setWorktreeInheritPermissions: (enabled: boolean) =>

@@ -14,6 +14,7 @@ import { WebhookDeliveryLog } from './WebhookDeliveryLog';
 import { WebhookInboxSettings } from './WebhookInboxSettings';
 import { describeFilters } from '../lib/webhookFilters';
 import styles from './WebhookInboxDrawer.module.css';
+import { WebhookRelayConnect } from '../components/WebhookRelayConnect';
 
 type Props = {
   inbox: WebhookInbox | null;
@@ -87,8 +88,9 @@ export function WebhookInboxDrawer({ inbox, routines, onClose, onChange, onEditR
         </> : <>
           <p>An inbox captures deliveries from a provider. Routines subscribe to it and filter which deliveries run them.</p>
           <label className={styles.field}>Name<TextField required value={name} placeholder="forgejo" onChange={(e) => setName(e.target.value)} /></label>
-          <p>Relay: <code>{relay?.relayUrl || relay?.defaultRelayUrl || 'not configured'}</code>. {storedToken ? 'Using the enrollment token from' : 'Save the relay and enrollment token once in'} <Link to="/settings">Settings → Webhooks</Link>.</p>
-          {!storedToken && <label className={styles.field}>Relay enrollment token<SecretField required autoComplete="off" value={enrollmentToken} onChange={(e) => setEnrollmentToken(e.target.value)} /></label>}
+          <p>Relay: <code>{relay?.relayUrl || relay?.defaultRelayUrl || 'not configured'}</code>. Configure it in <Link to="/settings">Settings → Webhooks</Link>.</p>
+          {!storedToken && <WebhookRelayConnect key={relay?.relayUrl || relay?.defaultRelayUrl} configured={Boolean(relay?.relayUrl || relay?.defaultRelayUrl)} connected={false} onConnected={setRelay} />}
+          {!storedToken && <details><summary>Manual enrollment</summary><label className={styles.field}>Relay enrollment token<SecretField autoComplete="off" value={enrollmentToken} onChange={(e) => setEnrollmentToken(e.target.value)} /></label></details>}
           <label className={styles.field}>Shared secret<SecretField value={secret} onChange={(e) => setSecret(e.target.value)} /><small>Optional. The relay rejects requests whose header doesn&apos;t carry this exact value. Leave blank to rely on the URL alone.</small></label>
           {secret && <label className={styles.field}>Secret header<TextField required value={secretHeader} onChange={(e) => setSecretHeader(e.target.value)} /><small>For Forgejo, keep Authorization and use a &quot;Bearer …&quot; secret. Use another header name for providers that send one.</small></label>}
           <ModalFooter label="Webhook inbox actions"><Button type="submit" variant="accent" disabled={busy || !name.trim() || (!storedToken && !enrollmentToken)}>Create inbox</Button><Button type="button" disabled={busy} onClick={onClose}>Cancel</Button></ModalFooter>

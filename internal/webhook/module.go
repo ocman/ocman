@@ -38,9 +38,10 @@ type Deps struct {
 // Module mounts webhook inboxes: their REST routes and relay setting, one
 // poller per inbox, delivery-history expiry, and the webhooks MCP tool.
 type Module struct {
-	store    *state.DB
-	routines Routines
-	relayURL func() string
+	store      *state.DB
+	routines   Routines
+	relayURL   func() string
+	connection relayConnection
 
 	// keyMu serializes relay-side inbox mutations (key resets, secret
 	// changes) with their local record.
@@ -74,6 +75,7 @@ func (m *Module) Name() string { return "webhooks" }
 func (m *Module) Routes(r module.Router) {
 	m.routes(r.Local)
 	r.LocalSetting("/api/settings/webhook-relay", m.handleRelaySetting)
+	m.connectionRoutes(r)
 }
 
 // Start loads the inboxes so a broken store fails startup, not a poller.

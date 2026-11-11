@@ -89,6 +89,10 @@ func main() {
 		TrustProxy:                *trustProxy,
 		EnrollmentToken:           os.Getenv("OCMAN_RELAY_INBOX_ENROLLMENT_TOKEN"),
 	}
+	if err := configureSSO(&cfg); err != nil {
+		log.Error("configuring relay SSO", "error", err)
+		os.Exit(1)
+	}
 	if !*noViewer {
 		assets, err := webui.FS()
 		if err != nil {

@@ -13,6 +13,7 @@ import (
 const (
 	settingWebhookRelayURL        = "webhook.relay_url"
 	settingWebhookEnrollmentToken = "webhook.enrollment_token"
+	settingWebhookEnrollmentRelay = "webhook.enrollment_relay_url"
 )
 
 type relayView struct {
@@ -30,7 +31,15 @@ func (m *Module) relayView(r *http.Request) (relayView, error) {
 	if err != nil {
 		return relayView{}, err
 	}
-	return relayView{RelayURL: relay, DefaultRelayURL: m.relayURL(), HasEnrollmentToken: token != ""}, nil
+	boundRelay, _, err := m.store.GetSetting(r.Context(), settingWebhookEnrollmentRelay)
+	if err != nil {
+		return relayView{}, err
+	}
+	effective := relay
+	if effective == "" {
+		effective = m.relayURL()
+	}
+	return relayView{RelayURL: relay, DefaultRelayURL: m.relayURL(), HasEnrollmentToken: token != "" && (boundRelay == "" || boundRelay == effective)}, nil
 }
 
 // resolveRelay picks the relay for a new inbox (saved setting, then the
@@ -50,6 +59,11 @@ func (m *Module) resolveRelay(w http.ResponseWriter, r *http.Request, token *str
 		return "", false
 	}
 	if *token == "" {
+		boundRelay, _, err := m.store.GetSetting(r.Context(), settingWebhookEnrollmentRelay)
+		if err != nil || (boundRelay != "" && boundRelay != relay) {
+			http.Error(w, "relay changed; connect again", http.StatusConflict)
+			return "", false
+		}
 		if *token, _, err = m.store.GetSetting(r.Context(), settingWebhookEnrollmentToken); err != nil {
 			httpx.ServerError(w, "reading webhook enrollment token", err)
 			return "", false
@@ -65,6 +79,8 @@ func (m *Module) handleRelaySetting(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 	case http.MethodPost:
+		m.connection.mu.Lock()
+		defer m.connection.mu.Unlock()
 		var body struct {
 			RelayURL        *string `json:"relayUrl"`
 			EnrollmentToken *string `json:"enrollmentToken"`
@@ -80,9 +96,19 @@ func (m *Module) handleRelaySetting(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			updates[settingWebhookRelayURL] = relay
+			previous, _, err := m.store.GetSetting(r.Context(), settingWebhookRelayURL)
+			if err != nil {
+				httpx.ServerError(w, "reading webhook relay", err)
+				return
+			}
+			if previous != relay {
+				updates[settingWebhookEnrollmentToken] = ""
+				m.connection.pollToken = ""
+			}
 		}
 		if body.EnrollmentToken != nil {
 			updates[settingWebhookEnrollmentToken] = strings.TrimSpace(*body.EnrollmentToken)
+			updates[settingWebhookEnrollmentRelay] = ""
 		}
 		if len(updates) > 0 {
 			if err := m.store.SetSettings(r.Context(), updates); err != nil {

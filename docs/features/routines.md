@@ -96,8 +96,11 @@ Agents can also create inboxes and subscribe routines through the `webhooks`
 MCP tool. See [Webhook triggers](../mcp/#webhook-triggers) for the setup sequence
 and author-only GitHub PR filters.
 
-1. Save the relay URL and enrollment token once under **Settings → Webhooks**.
-   An empty relay URL falls back to the share relay.
+1. Configure the relay URL under **Settings → Webhooks**, then choose
+   **Connect relay → Sign in to relay**. Choose a provider offered by the relay
+   and approve the connection. Ocman saves your enrollment token automatically.
+   An empty relay URL falls back to the share relay. Self-hosted relays without
+   SSO can use **Manual enrollment** with an operator-provided token instead.
 2. Open **Routines → Webhook inboxes → New inbox**, name it, and optionally set
    a shared secret and the header that carries it. Forgejo can send an
    `Authorization` header: use `Authorization` with a `Bearer …` secret.

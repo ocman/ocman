@@ -33,6 +33,76 @@ durable delivery record and cannot schedule the same routine occurrence twice.
 
 ## Operations
 
+### Connect an owner
+
+Under **Settings → Webhooks**, set the relay URL and select **Connect relay**,
+then **Sign in to relay**. The relay lists its configured login providers.
+Sign in and explicitly approve the connection, then return to ocman. The
+backend retrieves and saves a user-bound enrollment token. Neither the polling
+credential nor the enrollment token is returned to the dashboard.
+
+The connection request expires after ten minutes. Enrollment credentials expire
+after 90 days; reconnect to obtain a new credential. Existing inbox credentials
+are independent, so reconnecting does not reset inbox keys or interrupt polling.
+Changing the saved relay URL clears the old enrollment token. SSO credentials
+are bound to the relay origin to prevent sending them to a different relay.
+**New webhook inbox** also offers the connection flow when no token is saved.
+
+For a relay without SSO, use **Manual enrollment** and paste the token supplied
+by its operator. See [relay sign-in configuration](#relay-sign-in-configuration).
+
+### Relay sign-in configuration
+
+Set `OCMAN_RELAY_PUBLIC_URL` to the relay's public HTTPS origin and
+`OCMAN_RELAY_SSO_CONFIG` to a JSON file containing the enabled providers:
+
+```json
+[
+  {
+    "id": "github",
+    "name": "GitHub",
+    "kind": "github",
+    "clientId": "your-github-client-id",
+    "clientSecretEnv": "RELAY_GITHUB_CLIENT_SECRET"
+  },
+  {
+    "id": "google",
+    "name": "Google",
+    "kind": "google",
+    "clientId": "your-google-client-id",
+    "clientSecretEnv": "RELAY_GOOGLE_CLIENT_SECRET"
+  }
+]
+```
+
+Populate the referenced secret environment variables on the relay. Register
+`<public origin>/auth/callback/github` in the GitHub OAuth app and
+`<public origin>/auth/callback/google` in the Google web OAuth client.
+The callback suffix is the configured provider `id`, not its `kind`. A relay
+may configure multiple providers of either supported kind. Keep IDs stable;
+account identity is the provider ID plus its stable user ID. Accounts from
+different providers are not linked by email.
+
+SSO uses authorization codes with PKCE, browser-bound state, and an explicit
+approval form. Provider access tokens are discarded after reading the identity.
+Only hashed enrollment credentials and hashed account identities persist in the
+relay's existing disk store. Each approval issues an independent credential,
+so connecting another installation does not invalidate an earlier one.
+An authenticated `DELETE /auth/enrollment` revokes the presented enrollment
+credential without deleting existing inboxes.
+
+Run one relay process per store. Pending sign-ins are bounded in memory and
+are lost on restart; users can connect again. Sign-in routes have per-client
+rate limits, and inbox registration uses the relay's creation rate limits.
+Set `-trust-proxy` only behind a proxy that overwrites forwarded headers.
+HTTP origins are allowed only for loopback development. Provider applications
+and secrets must be configured before enabling hosted sign-in; this does not
+provision them or choose a default public relay URL.
+
+Without `OCMAN_RELAY_SSO_CONFIG`, SSO routes are disabled. The existing
+`OCMAN_RELAY_INBOX_ENROLLMENT_TOKEN` remains an optional manual alternative
+even when SSO is enabled.
+
 Configure relay enrollment and limits before registration. Body size, retained
 header size, pending delivery count/bytes, ingest rate, inbox TTL, and relay
 storage TTL are enforced. Expiry and revocation delete the relay metadata and

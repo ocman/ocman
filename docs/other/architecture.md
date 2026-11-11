@@ -389,6 +389,31 @@ project response requires the browser to reconstruct upstream or manual merges.
   timestamps let the relay expire unacknowledged ciphertext after 48 hours;
   acknowledgment removes ciphertext and its timestamp immediately.
 
+### Relay enrollment
+
+```mermaid
+flowchart LR
+    Dashboard[Ocman dashboard] -->|start and poll connection| Owner[Owner-local webhook module]
+    Owner -->|private polling credential| Relay[Relay relayauth]
+    Dashboard -->|open sign-in link| Browser[Relay sign-in page]
+    Browser -->|choose provider and approve| Relay
+    Relay -->|OAuth code and PKCE| Identity[Configured GitHub or Google apps]
+    Relay -->|hashed user and credential| Store[Relay disk store]
+    Relay -->|enrollment token, once| Owner
+    Owner -->|token and relay binding| State[Owner state.db or configured secret storage]
+```
+
+`internal/relayauth` owns the relay's configurable provider list, short-lived
+connection requests, browser-bound OAuth state and PKCE, explicit approval,
+credential hashing, expiry, revocation and sign-in rate limits. It does not
+retain provider access tokens. `internal/relay` accepts either these credentials
+or the operator's legacy enrollment token when registering an inbox.
+`internal/webhook` starts and polls enrollment through owner-local guarded routes
+and persists the returned credential with its relay binding. The dashboard sees
+only the sign-in link, expiry and connection status, never the polling or
+enrollment token. Relay SSO providers do not depend on the owner's coding-tool
+accounts or link-preview grants.
+
 Remotes advertise enabled local platform ids in `Hello`. The hub registers
 one adapter per platform under `r-<instanceId>:<platform>`, sharing one host
 adapter and connection. Older remotes without the list remain OpenCode-only.
