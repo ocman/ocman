@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/db"
-	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -29,7 +28,7 @@ func (w *autoApproveWatcher) handleSessionDataChanged(sessionID string) {
 	if w.svc != nil {
 		payload, _ := json.Marshal(map[string]any{
 			"sessionID":   sessionID,
-			"platform":    opencode.PlatformID,
+			"platform":    w.platformID(),
 			"timeUpdated": time.Now().UnixMilli(),
 		})
 		w.svc.broadcastGlobalEvent("ocman.session.activity", payload)
@@ -50,9 +49,9 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 	}
 	w.seenSessions[sessionID] = struct{}{}
 	w.seenMu.Unlock()
-	if w.svc != nil && w.svc.deps.RefreshSession != nil {
+	if w.svc != nil && w.engine().RefreshSession != nil {
 		go func() {
-			err := w.svc.deps.RefreshSession(ctx, sessionID)
+			err := w.engine().RefreshSession(ctx, sessionID)
 			if ctx.Err() != nil {
 				w.forgetSession(sessionID)
 				return
@@ -67,14 +66,14 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh new session")
 				w.forgetSession(sessionID)
 			}
-			if w.svc.deps.BroadcastSessionChanged != nil {
-				w.svc.deps.BroadcastSessionChanged(sessionID)
+			if w.engine().BroadcastSessionChanged != nil {
+				w.engine().BroadcastSessionChanged(sessionID)
 			}
 		}()
 		return
 	}
-	if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
-		w.svc.deps.BroadcastSessionChanged(sessionID)
+	if w.svc != nil && w.engine().BroadcastSessionChanged != nil {
+		w.engine().BroadcastSessionChanged(sessionID)
 	}
 }
 
@@ -88,11 +87,11 @@ func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, 
 	prev, known := w.titles[sessionID]
 	w.titles[sessionID] = title
 	w.seenMu.Unlock()
-	if (known && prev == title) || w.svc == nil || w.svc.deps.BroadcastSessionTitle == nil {
+	if (known && prev == title) || w.svc == nil || w.engine().BroadcastSessionTitle == nil {
 		return
 	}
 	go func() {
-		if refresh := w.svc.deps.RefreshSession; refresh != nil {
+		if refresh := w.engine().RefreshSession; refresh != nil {
 			if err := refresh(ctx, sessionID); err != nil && ctx.Err() == nil {
 				if errors.Is(err, db.ErrSessionNotFound) {
 					// Keep the title deduplicated for deleted/hidden rows.
@@ -118,7 +117,7 @@ func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, 
 		w.seenMu.Lock()
 		defer w.seenMu.Unlock()
 		if latest := w.titles[sessionID]; latest != "" {
-			w.svc.deps.BroadcastSessionTitle(sessionID, latest)
+			w.engine().BroadcastSessionTitle(sessionID, latest)
 		}
 	}()
 }

@@ -33,10 +33,15 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 		Session:        s.resolvePlatformForSession,
 		DefaultEnabled: s.AutoApproveDefault,
 		OpenCode:       s.openCodeEnabled,
+		Watchers:       s.openCodeWatchers,
 	})
 }
 
 func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
+	return s.autoapproveEngineDepsFor(opencode.PlatformID, s.legacyOpenCodePlatform)
+}
+
+func (s *Server) autoapproveEngineDepsFor(platformID platforms.ID, resolve func() platforms.Platform) autoapprove.Deps {
 	deps := autoapprove.Deps{
 		JudgeUserMessages: s.permissionJudgeUserMessages,
 		RecentUserMessages: func(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
@@ -53,21 +58,13 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		SessionDir:       s.autoApproveSessionDir,
 		PermissionParent: permissionPolicyParent,
 		ParentSessionID: func(ctx context.Context, childID string) (string, bool) {
-			session, err := s.sessionMetadata(ctx, string(opencode.PlatformID), childID)
+			session, err := s.sessionMetadata(ctx, string(platformID), childID)
 			if err != nil || session == nil || session.ParentID == "" {
 				return "", false
 			}
 			return session.ParentID, true
 		},
-		OpencodePlatform: func() platforms.Platform {
-			if s.registry == nil {
-				return nil
-			}
-			if p, ok := s.registry.Get(opencode.PlatformID); ok {
-				return p
-			}
-			return nil
-		},
+		OpencodePlatform: resolve,
 		BroadcastPermissionResolved: func(platform, session, request, reason string) {
 			s.onAgentPromptResolved(platform, session, "permission", request)
 			s.broadcastPermissionResolved(platform, session, request, reason)
@@ -89,30 +86,28 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 		},
 		// The retry, change and title hooks fire from the OpenCode watcher only.
 		SessionRetry: func(session string, status autoapprove.SessionStatus) {
-			s.onSessionRetry(string(opencode.PlatformID), session, status)
+			s.onSessionRetry(string(platformID), session, status)
 		},
 		BroadcastSessionChanged: func(session string) {
-			s.broadcastSessionChanged(string(opencode.PlatformID), session)
+			s.broadcastSessionChanged(string(platformID), session)
 		},
-		BroadcastSessionStatus: s.onLocalSessionStatus,
+		BroadcastSessionStatus: func(session string, status db.SessionStatus) {
+			s.sessionEventSink().OnSessionStatus(string(platformID), session, status, 0)
+		},
 		BroadcastSessionTitle: func(session, title string) {
-			s.broadcastSessionTitle(string(opencode.PlatformID), session, title)
+			s.broadcastSessionTitle(string(platformID), session, title)
 		},
 		BroadcastGlobalEvent: s.broadcastGlobalEvent,
 		BroadcastGitCommand: func(sessionID, action string) {
 			// broadcastGitCommand bounds its own reads.
-			s.broadcastGitCommand(s.lifetime(), string(opencode.PlatformID), sessionID, action)
+			s.broadcastGitCommand(s.lifetime(), string(platformID), sessionID, action)
 		},
 		DefaultEnabled:     s.autoApproveDefault,
 		DefaultEnabledFunc: s.AutoApproveDefault,
 	}
 	deps.RefreshSession = func(ctx context.Context, sessionID string) error {
-		if s.registry != nil {
-			if adapter, ok := s.registry.Get(opencode.PlatformID); ok {
-				if cache, ok := adapter.(platforms.SessionCacheMaintainer); ok {
-					return cache.RefreshSession(ctx, sessionID)
-				}
-			}
+		if cache, ok := resolve().(platforms.SessionCacheMaintainer); ok {
+			return cache.RefreshSession(ctx, sessionID)
 		}
 		return platforms.ErrUnsupported
 	}
@@ -125,7 +120,7 @@ func (s *Server) autoapproveEngineDeps() autoapprove.Deps {
 	}
 	// Without a reachable OpenCode instance, a platform's own judge decides (AD-8).
 	if s.registry != nil {
-		deps.OpenCodeDisabled = !s.openCodeEnabled()
+		deps.OpenCodeDisabled = resolve() == nil
 		for _, p := range s.registry.Platforms() {
 			if j, ok := p.(interface{ PermissionJudge() autoapprove.Judge }); ok {
 				deps.FallbackJudge = j.PermissionJudge()
@@ -170,8 +165,12 @@ func (s *Server) openCodeEnabled() bool {
 	if s.registry == nil {
 		return true
 	}
-	_, ok := s.registry.Get(opencode.PlatformID)
-	return ok
+	for _, entry := range s.registry.Entries() {
+		if isLocalAdapter(entry.Platform) && entry.Platform.ID() == opencode.PlatformID {
+			return true
+		}
+	}
+	return false
 }
 
 // autoApproveSessionDir reads OpenCode sessions from its database and any
@@ -183,8 +182,4 @@ func (s *Server) autoApproveSessionDir(sessionID string) (string, error) {
 		return row.Directory, nil
 	}
 	return "", errors.New("session not found")
-}
-
-func (s *Server) onLocalSessionStatus(sessionID string, status db.SessionStatus) {
-	s.sessionEventSink().OnSessionStatus(string(opencode.PlatformID), sessionID, status, 0)
 }

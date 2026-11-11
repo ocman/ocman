@@ -13,7 +13,6 @@ import (
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
-	"github.com/ocman/ocman/internal/platforms/opencode/provider"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -53,7 +52,8 @@ const (
 type autoApproveWatcher struct {
 	// svc is the parent Service. May be nil in tests that drive
 	// onPermission manually.
-	svc *Service
+	svc   *Service
+	scope *WatcherConfig
 
 	// discoverPorts returns the directory -> port map for all
 	// running OpenCode instances. Seam for tests; defaults to
@@ -168,7 +168,9 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 			if reply == "reject" {
 				reason = "rejected"
 			}
-			svc.broadcastPermissionResolved(opencode.PlatformID, sessionID, permissionID, reason)
+			if notify := w.engine().BroadcastPermissionResolved; notify != nil {
+				notify(string(w.platformID()), sessionID, permissionID, reason)
+			}
 		}
 	}
 	return w
@@ -202,7 +204,7 @@ func (w *autoApproveWatcher) tick(parentCtx context.Context) {
 	for port, cancel := range w.subs {
 		if _, stillUp := live[port]; !stillUp {
 			cancel()
-			if adapter := platforms.OpenCodeObserver(w.svc.OpencodeAdapter()); adapter != nil {
+			if adapter := platforms.OpenCodeObserver(w.adapter()); adapter != nil {
 				adapter.ClearPromptsForPort(port)
 				// Forget this instance's turn states too: sessions it
 				// was running are now unobservable, which is what
@@ -286,17 +288,22 @@ func (w *autoApproveWatcher) subscribe(ctx context.Context, port string) {
 }
 
 func (w *autoApproveWatcher) recordTerminalPart(ctx context.Context, part terminalPart) {
-	if w.svc == nil || w.svc.deps.CommitStore == nil {
+	if w.svc == nil || w.engine().CommitStore == nil {
 		return
 	}
 	inserted, failed := false, false
+	commitPlatform := w.platformID()
+	if adapter := w.adapter(); adapter != nil {
+		// Durable commit rows use the native kind; events use the routing key.
+		commitPlatform = adapter.ID()
+	}
 	for _, summary := range parseGitCommitSummaries(part.Output, part.Command) {
 		sourceCallID := part.CallID
 		if sourceCallID == "" {
 			sourceCallID = part.PartID
 		}
-		ok, err := w.svc.deps.CommitStore.RecordSessionCommit(ctx, state.SessionCommit{
-			Platform: string(opencode.PlatformID), SessionID: part.SessionID,
+		ok, err := w.engine().CommitStore.RecordSessionCommit(ctx, state.SessionCommit{
+			Platform: string(commitPlatform), SessionID: part.SessionID,
 			SHA: summary.SHA, Branch: summary.Branch, Subject: summary.Subject,
 			SourceMessageID: part.MessageID, ToolPartID: part.PartID,
 			ToolCallID: part.CallID, SourceCallID: sourceCallID,
@@ -311,14 +318,14 @@ func (w *autoApproveWatcher) recordTerminalPart(ctx context.Context, part termin
 	if inserted && !failed {
 		payload, _ := json.Marshal(map[string]string{"sessionID": part.SessionID})
 		w.svc.emitSessionSseEventAsync(part.SessionID, "ocman.session.changed", payload)
-		if w.svc.deps.BroadcastSessionChanged != nil {
-			w.svc.deps.BroadcastSessionChanged(part.SessionID)
+		if w.engine().BroadcastSessionChanged != nil {
+			w.engine().BroadcastSessionChanged(part.SessionID)
 		}
 	}
 }
 
 func (w *autoApproveWatcher) broadcastSessionStatus(adapter platforms.OpenCodeEventObserver, port, sessionID, statusType string) {
-	if w.svc == nil || w.svc.deps.BroadcastSessionStatus == nil {
+	if w.svc == nil || w.engine().BroadcastSessionStatus == nil {
 		return
 	}
 	status := db.StatusBusy
@@ -326,13 +333,13 @@ func (w *autoApproveWatcher) broadcastSessionStatus(adapter platforms.OpenCodeEv
 		var err error
 		status, err = adapter.SessionStatusOnPort(sessionID, port)
 		if err != nil {
-			if w.svc.deps.BroadcastSessionChanged != nil {
-				w.svc.deps.BroadcastSessionChanged(sessionID)
+			if w.engine().BroadcastSessionChanged != nil {
+				w.engine().BroadcastSessionChanged(sessionID)
 			}
 			return
 		}
 	}
-	w.svc.deps.BroadcastSessionStatus(sessionID, status)
+	w.engine().BroadcastSessionStatus(sessionID, status)
 }
 
 func (w *autoApproveWatcher) directoriesForPort(port string) []string {

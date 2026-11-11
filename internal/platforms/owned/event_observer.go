@@ -3,10 +3,19 @@ package owned
 import (
 	"context"
 	"maps"
+	"net/http"
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 )
+
+// OpenCodeEventClient never borrows another account's native credentials.
+func (a *Adapter) OpenCodeEventClient() *http.Client {
+	if source, ok := a.native.(platforms.OpenCodeEventClientProvider); ok {
+		return source.OpenCodeEventClient()
+	}
+	return nil
+}
 
 // The embedded observer forwards port-only fencing and seeding unchanged.
 // Session-bearing calls translate before accessing the integration's caches.

@@ -3,9 +3,16 @@ package platforms
 import (
 	"context"
 	"io"
+	"net/http"
 
 	"github.com/ocman/ocman/internal/db"
 )
+
+// OpenCodeEventClientProvider supplies an owner-local account's authenticated
+// streaming transport without exposing its credentials to the composition root.
+type OpenCodeEventClientProvider interface {
+	OpenCodeEventClient() *http.Client
+}
 
 // SessionEventProjector normalizes an integration's owner-global stream before
 // application observers see session references. Opaque provider data is retained.

@@ -3,6 +3,7 @@ package autoapprove
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
@@ -29,6 +30,8 @@ type ModuleDeps struct {
 	// OpenCode reports whether this machine runs OpenCode; without it the
 	// headless watcher and model discovery stay off. Nil means enabled.
 	OpenCode func() bool
+	// Watchers supplies owner-local account scopes. Nil preserves legacy wiring.
+	Watchers func() []WatcherConfig
 }
 
 // Module owns the auto-approve routes, the judge settings, the judge delay
@@ -90,7 +93,13 @@ func (m *Module) Start(ctx context.Context) error {
 // event stream so permission prompts are judged with no browser open.
 // It then joins the background judges.
 func (m *Module) Run(ctx context.Context) {
-	if m.openCode() {
+	if m.Watchers != nil {
+		var workers sync.WaitGroup
+		for _, config := range m.Watchers() {
+			workers.Go(func() { m.svc.runConnectionWatcher(ctx, config) })
+		}
+		workers.Wait()
+	} else if m.openCode() {
 		m.svc.RunWatcher(ctx)
 	}
 	<-ctx.Done()

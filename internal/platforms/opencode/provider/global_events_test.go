@@ -48,3 +48,42 @@ func TestGlobalEventsTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGlobalEventClientsKeepAccountAuthenticationIsolated(t *testing.T) {
+	for _, account := range []string{"work", "personal"} {
+		connection, config := accountConfig(t, account)
+		adapter, err := NewConnection(connection, config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = adapter.CloseConnection() })
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, password, ok := r.BasicAuth()
+			if !ok || user != "opencode" || password != account+"-password" {
+				t.Error("event client used another account's credentials")
+				http.Error(w, "wrong account", http.StatusUnauthorized)
+				return
+			}
+			if r.URL.Path == "/api/info" {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = io.WriteString(w, "data: {}\n\n")
+		}))
+		t.Cleanup(server.Close)
+		u, _ := url.Parse(server.URL)
+		client := adapter.OpenCodeEventClient()
+		if client.Timeout != 0 {
+			t.Fatal("long-lived event client has a request timeout")
+		}
+		body, err := OpenGlobalEvents(t.Context(), client, u.Port())
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = io.ReadAll(body)
+		_ = body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

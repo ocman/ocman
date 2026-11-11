@@ -7,6 +7,12 @@ import (
 	"net/http"
 )
 
+// OpenCodeEventClient retains this account's authentication and v2 translation.
+// Event streams have no request timeout; their owner watches stream silence.
+func (a *Adapter) OpenCodeEventClient() *http.Client {
+	return &http.Client{Transport: a.transport()}
+}
+
 // OpenGlobalEvents connects the owner-local native event transport. Callers own
 // cancellation and stream silence detection, including the wait for headers.
 // Canonical adapters project these frames before application callbacks run.

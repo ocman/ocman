@@ -20,6 +20,8 @@ flowchart LR
     Canonical --> Native[Account-configured native adapter]
     Canonical --> History[(Retained canonical history)]
     Native --> Runtime[Connection-scoped native runtime]
+    Native -->|account-authenticated SSE| Watcher[Per-connection headless watcher]
+    Watcher -->|live lifecycle checkpoint| History
 ```
 
 - `cnx_<uuid>` is an immutable owner-local connection ID. Names are presentation
@@ -27,6 +29,12 @@ flowchart LR
 - Registry entries retain their connection key separately from `Platform.ID()`.
   Remote routing keys are owner-qualified, such as `r-owner:cnx_<uuid>`; native
   model references retain their original platform namespace.
+- Each local OpenCode registry entry gets its own headless watcher, using that
+  account's discovery and authenticated transport. Status, prompt, queue and
+  title events retain the connection routing key. The watcher fills the native
+  lifecycle cache that feeds the compact sidebar, independently of open browser
+  tabs. Remote owners run their own watchers; retained offline adapters cannot
+  start one. Shutdown joins every connection's watcher before stores close.
 - Physical source keys and canonical `ocm_<uuid>` session IDs are not rewritten.
 - Durable session flags keep their owner/native-kind/canonical-ID keys. Routing
   aliases are normalized at state reads and writes, never persisted as new flag

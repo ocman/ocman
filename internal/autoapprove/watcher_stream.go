@@ -32,7 +32,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	}
 	defer body.Close()
 
-	adapter := w.svc.OpencodeAdapter()
+	adapter := w.adapter()
 	ocAdapter := platforms.OpenCodeObserver(adapter)
 	portGeneration := uint64(0)
 	statusGeneration := uint64(0)
@@ -50,7 +50,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		}
 		idle.Touch()
 		onPermission := func(prompt platforms.LivePrompt) {
-			w.svc.ObservePermissionPrompt(opencode.PlatformID, "", prompt)
+			w.svc.ObservePermissionPrompt(w.platformID(), "", prompt)
 			if w.onPermission == nil {
 				return
 			}
@@ -60,9 +60,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			metadata, _ := prompt["metadata"].(map[string]any)
 			patterns := prompt.StringsField("patterns")
 			if sessionID != "" && permissionID != "" {
-				w.onPermission(opencode.PlatformID, adapter, sessionID, permissionID, permission, patterns, metadata)
-				if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
-					w.svc.deps.BroadcastSessionChanged(sessionID)
+				w.onPermission(w.platformID(), adapter, sessionID, permissionID, permission, patterns, metadata)
+				if w.svc != nil && w.engine().BroadcastSessionChanged != nil {
+					w.engine().BroadcastSessionChanged(sessionID)
 				}
 			}
 		}
@@ -99,7 +99,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		W: io.Discard,
 		OnPermission: func(sessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
 			if w.onPermission != nil {
-				w.onPermission(opencode.PlatformID, adapter, sessionID, permissionID, permission, patterns, metadata)
+				w.onPermission(w.platformID(), adapter, sessionID, permissionID, permission, patterns, metadata)
 			}
 		},
 		OnPermissionReplied: func(sessionID, permissionID, reply string) {
@@ -109,19 +109,19 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		},
 		OnPromptAsked: func(directory, kind string, prompt platforms.LivePrompt) {
 			if kind == "permission" {
-				w.svc.ObservePermissionPrompt(opencode.PlatformID, "", prompt)
+				w.svc.ObservePermissionPrompt(w.platformID(), "", prompt)
 			}
 			if kind == "question" {
 				// A question is never auto-answered, so asking it already
 				// settles that the user has to.
-				w.svc.ObserveQuestionPrompt(opencode.PlatformID, prompt)
+				w.svc.ObserveQuestionPrompt(w.platformID(), prompt)
 			}
 			if ocAdapter != nil {
 				ocAdapter.ObservePromptAskedFromPort(port, portGeneration, directory, kind, prompt)
 			}
 			sessionID, _ := prompt["sessionID"].(string)
-			if sessionID != "" && w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
-				w.svc.deps.BroadcastSessionChanged(sessionID)
+			if sessionID != "" && w.svc != nil && w.engine().BroadcastSessionChanged != nil {
+				w.engine().BroadcastSessionChanged(sessionID)
 			}
 			if requestID, _ := prompt["id"].(string); kind == "permission" && w.svc != nil {
 				w.svc.SurfacePermissionNotification(sessionID, requestID)
@@ -131,20 +131,20 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			if ocAdapter != nil {
 				ocAdapter.ObservePromptResolved(directory, kind, sessionID, requestID)
 			}
-			if sessionID != "" && w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
-				w.svc.deps.BroadcastSessionChanged(sessionID)
+			if sessionID != "" && w.svc != nil && w.engine().BroadcastSessionChanged != nil {
+				w.engine().BroadcastSessionChanged(sessionID)
 			}
 		},
 		OnQuestionResolved: func(sessionID, requestID, reason string) {
 			if w.svc != nil {
-				w.svc.broadcastQuestionResolved(opencode.PlatformID, sessionID, requestID, reason)
+				w.svc.broadcastQuestionResolved(w.platformID(), sessionID, requestID, reason)
 			}
 		},
 		OnSessionStatus: func(sessionID string, status SessionStatus) {
 			statusType := status.Type
 			w.markSessionDirtyIfKnown(sessionID)
-			if statusType == "retry" && w.svc != nil && w.svc.deps.SessionRetry != nil {
-				w.svc.deps.SessionRetry(sessionID, status)
+			if statusType == "retry" && w.svc != nil && w.engine().SessionRetry != nil {
+				w.engine().SessionRetry(sessionID, status)
 			}
 			if statusType == "idle" {
 				idleStatusBroadcast[sessionID] = true
@@ -169,8 +169,8 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.broadcastSessionStatus(ocAdapter, port, sessionID, "idle")
 			}
 			delete(idleStatusBroadcast, sessionID)
-			if w.svc != nil && w.svc.deps.BroadcastSessionIdle != nil {
-				w.svc.deps.BroadcastSessionIdle(string(opencode.PlatformID), sessionID)
+			if w.svc != nil && w.engine().BroadcastSessionIdle != nil {
+				w.engine().BroadcastSessionIdle(string(w.platformID()), sessionID)
 			}
 		},
 		OnSessionChanged: func(sessionID string) {
@@ -182,19 +182,19 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		OnSessionDataChanged: w.handleSessionDataChanged,
 		OnUserPrompt: func(sessionID string, at int64) {
 			if w.svc != nil {
-				payload, _ := json.Marshal(map[string]any{"sessionID": sessionID, "platform": opencode.PlatformID,
+				payload, _ := json.Marshal(map[string]any{"sessionID": sessionID, "platform": w.platformID(),
 					"patch": map[string]any{"lastUserPromptAt": at}})
 				w.svc.broadcastGlobalEvent("ocman.session.changed", payload)
 			}
 		},
 		OnGitCommand: func(sessionID, action string) {
-			if w.svc != nil && w.svc.deps.BroadcastGitCommand != nil {
-				w.svc.deps.BroadcastGitCommand(sessionID, action)
+			if w.svc != nil && w.engine().BroadcastGitCommand != nil {
+				w.engine().BroadcastGitCommand(sessionID, action)
 			}
 		},
 		OnQueueChanged: func(sessionID string) {
-			if w.svc != nil && w.svc.deps.BroadcastQueueChanged != nil {
-				w.svc.deps.BroadcastQueueChanged(string(opencode.PlatformID), sessionID)
+			if w.svc != nil && w.engine().BroadcastQueueChanged != nil {
+				w.engine().BroadcastQueueChanged(string(w.platformID()), sessionID)
 			}
 		},
 		OnTerminalPart: func(part terminalPart) {
