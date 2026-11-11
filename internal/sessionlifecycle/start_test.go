@@ -29,8 +29,9 @@ func (s *startSessions) CreateConfigured(_ context.Context, _ string, req platfo
 
 type startHost struct {
 	hostsvc.Host
-	steps *[]string
-	rules []platforms.PermissionRule
+	steps     *[]string
+	rules     []platforms.PermissionRule
+	selection *platforms.CreationIdentity
 }
 
 func (h *startHost) EnsureRuntime(_ context.Context, backend, dir string) (*hostsvc.EnsureRuntimeResult, error) {
@@ -38,6 +39,9 @@ func (h *startHost) EnsureRuntime(_ context.Context, backend, dir string) (*host
 	return &hostsvc.EnsureRuntimeResult{}, nil
 }
 func (h *startHost) CreateWorktreeSession(_ context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
+	if h.selection != nil && (req.Creation == nil || req.Creation.Agent != h.selection.Agent || req.Creation.Model != h.selection.Model || req.Creation.Reasoning != h.selection.Reasoning) {
+		return nil, errors.New("worktree creation lost initial selections")
+	}
 	if req.Platform != "claudecode" || !req.AutoName || req.Prompt != "first" || !reflect.DeepEqual(req.PermissionRules, h.rules) {
 		return nil, errors.New("incorrect worktree request")
 	}
@@ -53,8 +57,11 @@ func TestStartFirstDeliveryOrderingAndFailureReceipt(t *testing.T) {
 			t.Run(strings.Join([]string{map[bool]string{false: "checkout", true: "worktree"}[worktree], map[bool]string{false: "sent", true: "failed"}[fail]}, "/"), func(t *testing.T) {
 				var steps, progress []string
 				rules := []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}
-				host := &startHost{steps: &steps, rules: rules}
+				host := &startHost{steps: &steps, rules: rules, selection: &platforms.CreationIdentity{Agent: "plan", Model: "claudecode:acme/m", Reasoning: "high"}}
 				svc := &startSessions{create: func(req platforms.CreateSessionRequest, got []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+					if req.Creation == nil || req.Creation.Agent != "plan" || req.Creation.Model != "claudecode:acme/m" || req.Creation.Reasoning != "high" {
+						t.Fatal("checkout creation lost initial selections")
+					}
 					if req.Directory != "/repo" || !reflect.DeepEqual(got, rules) {
 						t.Fatal("creation lost permission defaults or directory")
 					}

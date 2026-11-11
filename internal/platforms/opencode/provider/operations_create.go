@@ -38,12 +38,15 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	}
 	createPhase := srvtiming.Begin(ctx, "http_create")
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session", port)
-	create := map[string]string{}
+	create := map[string]any{}
 	if req.NativeID != "" {
 		create["id"] = req.NativeID
 	}
 	if req.Title != "" {
 		create["title"] = req.Title
+	}
+	if err := configureCreation(create, req.Creation); err != nil {
+		return nil, err
 	}
 	createBody, err := marshalRequest(create)
 	if err != nil {
@@ -68,8 +71,9 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		return nil, fmt.Errorf("opencode create-session: upstream HTTP %d", resp.StatusCode)
 	}
 	var parsed struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
+		ID                   string `json:"id"`
+		Title                string `json:"title"`
+		ConfigurationApplied bool   `json:"configurationApplied"`
 	}
 	body, readErr := apiv1.ReadLimited(resp.Body, maxUpstreamErrorBytes)
 	if readErr != nil {
@@ -92,7 +96,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		}
 	}
 	a.rt.rememberSessionPort(parsed.ID, port)
-	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
+	return &platforms.CreateSessionResponse{ID: parsed.ID, ConfigurationApplied: parsed.ConfigurationApplied}, nil
 }
 
 func (h *httpState) setSessionTitle(ctx context.Context, port, sessionID, title string) error {

@@ -10,7 +10,10 @@ import (
 
 // HandlePrepareSession reads catalogs without launching an instance.
 func (m *Module) HandlePrepareSession(w http.ResponseWriter, r *http.Request) {
-	var req Target
+	var req struct {
+		Target
+		SelectedOnly bool `json:"selectedOnly"`
+	}
 	if !httpx.ReadJSON(w, r, httpx.MaxRequestBody, &req) || !req.Validate(w) {
 		return
 	}
@@ -43,7 +46,11 @@ func (m *Module) HandlePrepareSession(w http.ResponseWriter, r *http.Request) {
 		writeSessionError(w, "resolving model namespace", err)
 		return
 	}
-	catalog.Models.Models = m.machineModels(r.Context(), platformID, kind, req.Directory, catalog.Models.Models)
+	if req.SelectedOnly {
+		catalog.Models.Models = tagCatalogModels(kind, catalog.Models.Models)
+	} else {
+		catalog.Models.Models = m.machineModels(r.Context(), platformID, kind, req.Directory, catalog.Models.Models)
+	}
 	if sessions != nil {
 		for i := range catalog.Models.Models {
 			catalog.Models.Models[i].CooldownUntil = nil
@@ -61,7 +68,22 @@ func (m *Module) HandlePrepareSession(w http.ResponseWriter, r *http.Request) {
 		"defaultModel":        platforms.QualifyModel(kind, catalog.DefaultModel),
 		"projectDefaultModel": m.d.ProjectDefaultModel(r.Context(), req.Directory),
 		"liveConnection":      catalog.LiveConnection,
+		"additionalModels":    req.SelectedOnly && m.hasAdditionalModels(platformID, kind),
 	})
+}
+
+// This is an in-memory eligibility check only. Availability probes belong to
+// optional discovery, not the selected platform's preparation gate.
+func (m *Module) hasAdditionalModels(selected string, kind platforms.ID) bool {
+	if platforms.ID(selected).Base() != kind || m.d.Platforms == nil {
+		return false
+	}
+	for _, p := range m.d.Platforms() {
+		if p.ID() != platforms.ID(selected) && remoteIDForPlatform(string(p.ID())) == remoteIDForPlatform(selected) && p.Capabilities().Composer {
+			return true
+		}
+	}
+	return false
 }
 
 // MachineModels tags models from composer-capable platforms on the selected machine.
@@ -75,14 +97,7 @@ func (m *Module) MachineModels(ctx context.Context, selected, directory string, 
 }
 
 func (m *Module) machineModels(ctx context.Context, selected string, kind platforms.ID, directory string, own []platforms.SessionModel) []platforms.SessionModel {
-	tag := func(id platforms.ID, models []platforms.SessionModel) []platforms.SessionModel {
-		base := id.Base()
-		for i := range models {
-			models[i].Platform, models[i].PlatformName = string(base), platforms.DisplayName(base)
-		}
-		return models
-	}
-	out := tag(kind, own)
+	out := tagCatalogModels(kind, own)
 	// A named connection's catalogue is account-specific. Do not merge a
 	// sibling's models or use its credentials to broaden the selected account.
 	if platforms.ID(selected).Base() != kind || m.d.Platforms == nil {
@@ -97,7 +112,15 @@ func (m *Module) machineModels(ctx context.Context, selected string, kind platfo
 		if err != nil || catalog == nil || catalog.Models == nil {
 			continue // another platform's catalog is optional
 		}
-		out = append(out, tag(p.ID(), catalog.Models.Models)...)
+		out = append(out, tagCatalogModels(p.ID(), catalog.Models.Models)...)
 	}
 	return out
+}
+
+func tagCatalogModels(id platforms.ID, models []platforms.SessionModel) []platforms.SessionModel {
+	base := id.Base()
+	for i := range models {
+		models[i].Platform, models[i].PlatformName = string(base), platforms.DisplayName(base)
+	}
+	return models
 }

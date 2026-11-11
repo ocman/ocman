@@ -113,11 +113,13 @@ func (c *compat) session(ctx context.Context, id string) (map[string]any, error)
 
 func createSession(c *compat, r *http.Request, _ []string) (*http.Response, error) {
 	var in struct {
-		ID         string `json:"id"`
-		Title      string `json:"title"`
-		Directory  string `json:"directory"`
-		ParentID   string `json:"parentID"`
-		Permission []any  `json:"permission"`
+		ID         string      `json:"id"`
+		Title      string      `json:"title"`
+		Directory  string      `json:"directory"`
+		ParentID   string      `json:"parentID"`
+		Permission []any       `json:"permission"`
+		Agent      string      `json:"agent"`
+		Model      *v1ModelRef `json:"model"`
 	}
 	if err := readBody(r, &in); err != nil {
 		return nil, err
@@ -129,8 +131,18 @@ func createSession(c *compat, r *http.Request, _ []string) (*http.Response, erro
 	if in.Title != "" {
 		body["title"] = in.Title
 	}
-	if len(in.Permission) > 0 {
+	if in.Permission != nil {
 		body["permissions"] = V2Rules(in.Permission)
+	}
+	if in.Agent != "" {
+		body["agent"] = in.Agent
+	}
+	if in.Model != nil && in.Model.ModelID != "" {
+		model := map[string]any{"providerID": in.Model.ProviderID, "id": in.Model.ModelID}
+		if variant := normVariant(in.Model.Variant); variant != "" {
+			model["variant"] = variant
+		}
+		body["model"] = model
 	}
 	if in.ParentID != "" {
 		body["parentID"] = in.ParentID
@@ -139,7 +151,11 @@ func createSession(c *compat, r *http.Request, _ []string) (*http.Response, erro
 	}
 	var resp data[map[string]any]
 	err := c.call(r.Context(), http.MethodPost, "/api/session", nil, body, &resp)
-	return finish(r, http.StatusOK, V1Session(resp.Data), err)
+	result := V1Session(resp.Data)
+	if in.Permission != nil {
+		result["configurationApplied"] = true
+	}
+	return finish(r, http.StatusOK, result, err)
 }
 
 func getSession(c *compat, r *http.Request, m []string) (*http.Response, error) {

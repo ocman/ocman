@@ -22,6 +22,7 @@ type identityOwnerPlatform struct {
 	rules     atomic.Int32
 	disposes  atomic.Int32
 	forks     atomic.Int32
+	creation  atomic.Pointer[platforms.CreationIdentity]
 }
 
 func (p *identityOwnerPlatform) HistoryIdentity(context.Context) (platforms.HistoryIdentity, error) {
@@ -37,6 +38,7 @@ func (p *identityOwnerPlatform) CreateSession(ctx context.Context, req platforms
 		return nil, fmt.Errorf("owner origin not reserved before execution: %+v", rows)
 	}
 	p.creates.Add(1)
+	p.creation.Store(req.Creation)
 	return &platforms.CreateSessionResponse{ID: "native"}, nil
 }
 
@@ -96,7 +98,7 @@ func TestRemoteCreationReservesAndBindsOnOwnerOnly(t *testing.T) {
 	hubSessions := sessionsvc.New(hubRegistry, sessionsvc.Hooks{})
 	// A missing hub catalogue must not affect owner-local reservation.
 	hubSessions.WithSessionCatalogue(nil, "hub-instance")
-	req := platforms.CreateSessionRequest{Directory: "/repo", Creation: &platforms.CreationIdentity{RequestKey: "run", Origin: "routine", OriginID: "routine", Configured: true, PermissionRules: []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}}}}
+	req := platforms.CreateSessionRequest{Directory: "/repo", Creation: &platforms.CreationIdentity{RequestKey: "run", Origin: "routine", OriginID: "routine", Configured: true, PermissionRules: []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}}, Agent: "plan", Model: "opencode:openai/gpt", Reasoning: "high"}}
 	var created string
 	for range 2 {
 		resp, err := hubSessions.Create(t.Context(), string(remote.ID()), req)
@@ -107,6 +109,9 @@ func TestRemoteCreationReservesAndBindsOnOwnerOnly(t *testing.T) {
 	}
 	if p.creates.Load() != 1 || p.rules.Load() != 1 {
 		t.Fatalf("replayed owner side effects: creates=%d rules=%d", p.creates.Load(), p.rules.Load())
+	}
+	if got := p.creation.Load(); got == nil || got.Agent != "plan" || got.Model != "opencode:openai/gpt" || got.Reasoning != "high" {
+		t.Fatalf("remote creation lost first-turn selections: %+v", got)
 	}
 	rows, err := catalogue.List(t.Context(), "owner-instance", 10, 0)
 	if err != nil || len(rows) != 1 || rows[0].ID != created || rows[0].NativeID != "native" || rows[0].CreationState != sessioncatalog.Ready || rows[0].SourceKey != "owner-source" {

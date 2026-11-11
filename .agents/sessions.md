@@ -13,6 +13,9 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   owner-routed through the remote `Call` RPC. It never launches OpenCode:
   use an existing instance or historical models. Submission waits for catalog
   preparation; failures have a visible retry.
+  The composer requests `selectedOnly` for this gate, then loads the full model
+  inventory independently. Optional results enrich the picker without changing
+  the prepared defaults or blocking submission; owner changes cancel both reads.
 - Worktree eligibility reads git info, the owner's worktrees and verified base
   ref. Linked worktrees, non-repositories and repositories without a usable
   commit use the current checkout. Prefer the remote-tracking default, then its
@@ -54,6 +57,9 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   `permissionRules` from the composer's mode picker replaces them, and its
   absence means Default. Selecting YOLO or saving it as a project default needs
   no extra confirmation; existing sessions keep their rules.
+  Initial agent/model/reasoning travel in `CreationIdentity` across owner routing.
+  OpenCode applies these and configured permissions in its native create call;
+  only an acknowledged `ConfigurationApplied` receipt skips the rules fallback.
 - Worktree starts create owner-local `session-<id8>` without an LLM in the first
   message path. Current-checkout starts use the directory's project instance.
   Plain prompts deliver server-side in the same request, returning

@@ -72,6 +72,12 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	if req.DraftID != "" {
 		creation = &platforms.CreationIdentity{SessionID: req.DraftID, RequestKey: "draft:" + req.DraftID, Origin: "user"}
 	}
+	if req.Send != nil {
+		if creation == nil {
+			creation = &platforms.CreationIdentity{Origin: "user"}
+		}
+		creation.Agent, creation.Model, creation.Reasoning = req.Send.Agent, req.Send.Model, req.Send.Reasoning
+	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
 	ctx := r.Context()
 	permissionRules, err := m.startPermissionRules(ctx, req)

@@ -232,7 +232,7 @@ describe('NewConversation', () => {
     expect(composer.target).toBe('current');
     expect(composer.machineSource).toEqual({ directory: '/repo', remoteId: 'machine' });
     expect(screen.getByRole('status')).toHaveTextContent('clone https://example.com/repo.git');
-    expect(mocks.prepare).toHaveBeenLastCalledWith({ directory: '/clone', remoteId: 'box', platform: 'r-box:opencode' }, expect.any(AbortSignal));
+    expect(mocks.prepare).toHaveBeenLastCalledWith({ directory: '/clone', remoteId: 'box', platform: 'r-box:opencode', selectedOnly: true }, expect.any(AbortSignal));
   });
 
   it.each([false, true])('submits destination defaults after an explicit cross-kind switch, preserving same-kind picks (%s)', async (compatible) => {

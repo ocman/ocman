@@ -54,7 +54,7 @@ export const sessionApi = {
     fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models${queryString({ platform })}`),
   resolveTargets: (dir: string, remoteId?: string) =>
     postJSON<ResolveTargetsResponse>('/api/sessions/resolve-targets', { dir, ...(remoteId ? { remoteId } : {}) }),
-  prepareSession: (target: NewSessionTarget, signal?: AbortSignal) =>
+  prepareSession: (target: NewSessionTarget & { selectedOnly?: boolean }, signal?: AbortSignal) =>
     postJSON<PrepareSessionResponse>('/api/sessions/prepare', target, { signal }),
   startSession: (req: StartSessionRequest) => postJSON<StartSessionResponse>('/api/sessions/start', req),
   /** parentSessionId seeds the child's permission posture. */

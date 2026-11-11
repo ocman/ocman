@@ -147,6 +147,15 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('submits without waiting for optional sibling-platform model discovery', async () => {
+    vi.mocked(api.prepareSession).mockImplementation((target) =>
+      (target as { selectedOnly?: boolean }).selectedOnly ? Promise.resolve(prepared) : new Promise(() => {}));
+    render(<NewConversation params={{ directory: '/repo', platform: 'opencode', draftId: 'new' }} composerRef={null} navigate={vi.fn()} navigateToSession={vi.fn()} />);
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'start before sibling models arrive' } });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
+  });
+
   it.each(['settings-platform', 'prepare-platform', 'settings-machine', 'prepare-machine'])('filters incompatible implicit defaults on %s while retaining the rendered draft', async (source) => {
     clearSettingsCache();
     const settings = { models: [], off: false, defaultAgent: 'plan', defaults: { model: source.startsWith('settings') ? 'openai/gpt-4.1' : '', agent: 'plan', worktree: 'current' } };
@@ -515,7 +524,7 @@ describe('new-conversation submission lifecycle', () => {
     render(<Flow params={{ directory: '/repo', remoteId: 'box' }} />);
     const input = screen.getByRole('textbox');
     await waitFor(() => expect(input).not.toBeDisabled());
-    expect(api.prepareSession).toHaveBeenCalledWith({ directory: '/repo', remoteId: 'box', platform: undefined }, expect.any(AbortSignal));
+    expect(api.prepareSession).toHaveBeenCalledWith({ directory: '/repo', remoteId: 'box', platform: undefined, selectedOnly: true }, expect.any(AbortSignal));
     const file = new File(['note'], 'note.txt', { type: 'text/plain' });
     fireEvent.drop(input, { dataTransfer: { files: [file] } });
     await screen.findByText('note.txt');

@@ -1292,6 +1292,7 @@ export interface NewSessionTarget {
 /** Response from POST /api/sessions/prepare: the composer catalog for a directory without a session. */
 export interface PrepareSessionResponse {
   platform: string;
+  additionalModels?: boolean;
   agents: AgentInfo[];
   commands: SlashCommand[];
   models: SessionModelsResponse;

@@ -11,6 +11,10 @@ type CreationIdentity struct {
 	ParentID        string           `json:"parentId,omitempty"`
 	Configured      bool             `json:"configured,omitempty"`
 	PermissionRules []PermissionRule `json:"permissionRules,omitempty"`
+	// Initial selections avoid separate native switches before the first send.
+	Agent     string `json:"agent,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
 	// Archived hides the session from the sidebar from creation onwards. The
 	// caller decides; origin never implies it.
 	Archived bool `json:"archived,omitempty"`

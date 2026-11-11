@@ -1752,7 +1752,27 @@ flowchart LR
   `/session/new?dir=…&remoteId=…&platform=…&draftId=…`, until its first prompt: no
   session, worktree or placeholder exists before that. `NewConversation`
   calls `POST /api/sessions/prepare`, which reads the directory's agent, command and model
-  catalogs (`Platform.DirectoryCatalog`, routed over gRPC for remotes), and
+  catalogs (`Platform.DirectoryCatalog`, routed over gRPC for remotes). The
+  composer's `useDraftCatalog` requests `selectedOnly` to open the submission
+  gate, then loads the full model inventory independently. Optional failures
+  cannot block submission, and late inventory only enriches the picker, never
+  replaces the prepared defaults. Changing owner or directory cancels both reads.
+  Native OpenCode creation receives permissions and initial agent/model/variant
+  together through the owner-routed `CreationIdentity`. Its acknowledged
+  configuration receipt avoids the permission PATCH/readback; the initial send
+  still checks live selections before prompting, skipping unchanged switches.
+  The preparation flow is:
+
+  ```mermaid
+  flowchart LR
+      Composer --> Selected[Selected catalog + project settings]
+      Selected --> Ready[Submission ready]
+      Ready --> Create[Owner-local configured creation]
+      Create --> Prompt[Live selection check + first prompt]
+      Selected --> Inventory[Optional full model inventory]
+      Inventory --> Picker[Model picker enrichment]
+  ```
+
   `useWorktreeEligibility` reads the git-info branch, the owner's worktree
   list, and its verified default base ref to decide whether "New worktree"
   is offered. A repository without a usable base commit uses the current

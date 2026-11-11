@@ -452,7 +452,7 @@ func TestCompatCreateSession(t *testing.T) {
 	}
 	var got any
 	_ = json.Unmarshal(b, &got)
-	cmpJSON(t, "session", got, cmpV1Session)
+	cmpJSON(t, "session", got, strings.TrimSuffix(cmpV1Session, "}")+`,"configurationApplied":true}`)
 	cmpJSON(t, "v2 body", f.one("POST /api/session").Body,
 		`{"title":"T","location":{"directory":"/tmp/my dir"},"permissions":[{"action":"shell","resource":"*","effect":"ask"}]}`)
 

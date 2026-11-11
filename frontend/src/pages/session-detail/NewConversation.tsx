@@ -5,10 +5,9 @@ import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
 import { beginConversationStart, completeConversationStart, endConversationStart, failConversationStart, forgetConversationDraft, getConversationDraft, retryConversationDraftSave, routeKeyOf, selectionsKey, useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { recordFailedSend } from '../../lib/failedSends';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
-import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { saveSessionModel } from '../../lib/sessionModel';
-import { loadProjectSettings, useSettingsRevision } from '../../lib/projectSettingsCache';
+import { useSettingsRevision } from '../../lib/projectSettingsCache';
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
@@ -18,7 +17,8 @@ import { useConnectionSelection } from './useConnectionSelection';
 import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { randomId } from '../../lib/randomId';
-import { draftDefaultModel, prepareDraftCatalog, type DraftCatalog } from './draftCatalog';
+import { draftDefaultModel } from './draftCatalog';
+import { useDraftCatalog } from './useDraftCatalog';
 import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
 import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
 import { useConversationSelections } from './useConversationSelections';
@@ -86,36 +86,12 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
   const worktreesCapable = useWorktreeLaunch(remoteId);
   const eligibility = useWorktreeEligibility(directory, remoteId, !!savedSelections?.clone);
   const catalogKey = JSON.stringify([remoteId, directory, params.platform]);
-  const cachedCatalog = useMemo(() => getNewSessionCatalog(catalogKey), [catalogKey]);
-  const [prepared, setPrepared] = useState<{ key: string; request: string; catalog: DraftCatalog }>();
-  // Keyed by request so a new request (route change, retry) clears it without an effect.
-  const [catalogFailure, setCatalogFailure] = useState<{ request: string; message: string }>();
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const settingsRevision = useSettingsRevision();
   const catalogRequest = JSON.stringify([catalogKey, catalogAttempt, settingsRevision]);
-  const catalog: DraftCatalog | undefined = prepared?.key === catalogKey ? prepared.catalog : cachedCatalog;
-  const catalogReady = prepared?.request === catalogRequest;
-  const catalogError = catalogFailure?.request === catalogRequest ? catalogFailure.message : '';
+  const { catalog, defaultCatalog, catalogReady, catalogError } = useDraftCatalog({ directory, remoteId, platform: params.platform }, catalogKey, catalogRequest);
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
-  // Prepare only reads catalogs (a running instance's, else history); it
-  // never launches OpenCode, so picking a machine starts nothing there.
-  useEffect(() => {
-    const controller = new AbortController();
-    Promise.all([
-      api.prepareSession({ directory, remoteId, platform: params.platform }, controller.signal),
-      loadProjectSettings(directory, remoteId),
-    ]).then(([result, settings]) => {
-      if (controller.signal.aborted) return;
-      const catalog = prepareDraftCatalog(result, settings);
-      cacheNewSessionCatalog(catalogKey, catalog);
-      setPrepared({ key: catalogKey, request: catalogRequest, catalog });
-    }).catch((err) => {
-      if (controller.signal.aborted) return;
-      setCatalogFailure({ request: catalogRequest, message: err instanceof Error ? err.message : String(err) });
-    });
-    return () => controller.abort();
-  }, [directory, remoteId, params.platform, catalogKey, catalogRequest]);
   const { selectedModel, setSelectedModel, selectedAgent, setSelectedAgent, selectedReasoning, setSelectedReasoning,
     targetPick, setTarget, permissionMode, setPermissionMode, selectConnection } = useConversationSelections(params, savedSelections, navigate);
   const target = targetPick || catalog?.defaults?.worktree || 'worktree';
@@ -143,7 +119,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
 
   // Same precedence as an existing empty session: project setting, then
   // the last pick in this project, then the directory's most recent model.
-  const activeModel = draftDefaultModel(catalog, getProjectModel(directory));
+  const activeModel = draftDefaultModel(defaultCatalog, getProjectModel(directory));
   const attachmentPayload = usePendingDraftPayload(draftId);
   const models = useMemo(() => {
     const entries = catalog?.models.models ?? [];
@@ -189,7 +165,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     } catch (err) {
       remoteLog.error('Failed to toggle favorite', err);
     }
-  }, [platform, platformForModel]);
+  }, [platform, platformForModel, setCatalogAttempt]);
 
   // 'default' and platforms without rule support keep the owner/project defaults.
   const permissionRules = caps.permissionRules && permissionMode !== 'default' ? PERMISSION_MODES.find((m) => m.id === permissionMode)?.rules : undefined;
