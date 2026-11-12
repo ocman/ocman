@@ -7,6 +7,7 @@ import { EmptyState } from '../components/EmptyState';
 import { InlineAlert } from '../components/InlineAlert';
 import { useProviderUsageHistory } from '../lib/providerUsageHistory';
 import { subscriptionHistorySeries } from '../lib/subscriptionHistorySeries';
+import { ProviderUsageSource } from './ProviderUsageSource';
 
 export function SubscriptionUsageHistory() {
   const [params, setParams] = useSearchParams();
@@ -32,7 +33,10 @@ export function SubscriptionUsageHistory() {
     {history.data && groups.length === 0 && <EmptyState>No quota windows or budgets recorded yet. History starts with the next successful platform reading.</EmptyState>}
     {groups.length > 0 && <div className="subscription-grid">
       {groups.map(group => <section key={group.id} className="subscription-card" aria-labelledby={`history-${group.id}`}>
-        <header className="subscription-card-header"><h2 id={`history-${group.id}`}>{group.name}</h2></header>
+        <header className="subscription-card-header"><div>
+          <h2 id={`history-${group.id}`}>{group.name}</h2>
+          <ProviderUsageSource platformName={group.platformName} machineName={group.machineName} />
+        </div></header>
         <ProviderUsageChart name={group.name} series={group.series} days={days} updatedAt={history.dataUpdatedAt} />
       </section>)}
     </div>}

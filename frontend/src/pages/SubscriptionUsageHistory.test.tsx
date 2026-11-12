@@ -20,6 +20,19 @@ const data = { sampleIntervalMs: 300000, samples: [{ sampledAt: 1793548800000, p
 describe('SubscriptionUsageHistory', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  it('labels separate named-account histories with their tool and machine', () => {
+    vi.mocked(useProviderUsageHistory).mockReturnValue({ data: { ...data, samples: ['Work', 'Personal'].map((name, index) => ({
+      sampledAt: data.samples[0].sampledAt,
+      provider: { ...data.samples[0].provider, id: `cnx_${name}`, name: `Claude ${name}`, platformName: 'Claude Code', machineName: 'This machine', windows: [{ name: '7 days', usedPercent: 25 + index * 50 }] },
+    })) } } as never);
+    mount();
+    expect(screen.getByRole('heading', { name: 'Claude Work' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Claude Personal' })).toBeInTheDocument();
+    expect(screen.getAllByText('Claude Code · This machine')).toHaveLength(2);
+    expect(screen.getByRole('img', { name: 'Claude Work subscription usage history' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Claude Personal subscription usage history' })).toBeInTheDocument();
+  });
+
   it('graphs observed utilization and preserves URL scope when changing period', () => {
     vi.mocked(useProviderUsageHistory).mockReturnValue({ data, refetch: vi.fn() } as never);
     mount('/provider-usage?view=history&days=30&remoteId=local');

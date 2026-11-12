@@ -78,7 +78,7 @@ func TestPlatformUsageCacheAndRegistryChanges(t *testing.T) {
 	unsupported := &subscriptionPlatform{id: "unsupported", err: platforms.ErrUnsupported}
 	var cache subscriptionUsageCache
 	for range 3 {
-		got := cache.get(t.Context(), []platforms.Platform{p, unsupported})
+		got := cache.get(t.Context(), usageSources(p, unsupported))
 		if len(got.Providers) != 1 {
 			t.Fatalf("providers = %+v", got)
 		}
@@ -89,17 +89,17 @@ func TestPlatformUsageCacheAndRegistryChanges(t *testing.T) {
 	entry := cache.entries[p.id]
 	entry.at = time.Now().Add(-subscriptionUsageTTL - time.Second)
 	cache.entries[p.id] = entry
-	got := cache.get(t.Context(), []platforms.Platform{p, q})
+	got := cache.get(t.Context(), usageSources(p, q))
 	if p.calls != 2 || q.calls != 1 || len(got.Providers) != 2 {
 		t.Fatalf("refresh = %+v, calls=%d/%d", got, p.calls, q.calls)
 	}
 	// Removed adapters must not survive in either the response or cache.
-	got = cache.get(t.Context(), []platforms.Platform{q})
+	got = cache.get(t.Context(), usageSources(q))
 	if len(got.Providers) != 1 || got.Providers[0].ID != "claudecode" || len(cache.entries) != 1 {
 		t.Fatalf("registry change = %+v", got)
 	}
 	// Platforms without account support never need credentials or another app.
-	got = cache.get(t.Context(), []platforms.Platform{&noAccountPlatform{}})
+	got = cache.get(t.Context(), usageSources(&noAccountPlatform{}))
 	if len(got.Providers) != 0 || len(cache.entries) != 0 {
 		t.Fatalf("unsupported = %+v", got)
 	}
@@ -107,19 +107,20 @@ func TestPlatformUsageCacheAndRegistryChanges(t *testing.T) {
 
 type noAccountPlatform struct{ platforms.Platform }
 
-func (*noAccountPlatform) ID() platforms.ID { return "no-account" }
+func (*noAccountPlatform) ID() platforms.ID    { return "no-account" }
+func (*noAccountPlatform) DisplayName() string { return "No account" }
 
 func TestPlatformUsageDoesNotCacheCanceledReads(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	p := &subscriptionPlatform{id: "codex", err: context.Canceled}
 	var cache subscriptionUsageCache
-	cache.get(ctx, []platforms.Platform{p})
+	cache.get(ctx, usageSources(p))
 	if len(cache.entries) != 0 {
 		t.Fatal("canceled platform read was cached")
 	}
 	p.err, p.account = nil, &providerprotocol.Account{SubscriptionType: "pro"}
-	got := cache.get(t.Context(), []platforms.Platform{p})
+	got := cache.get(t.Context(), usageSources(p))
 	if p.calls != 2 || got.Providers[0].Status != "ok" {
 		t.Fatalf("retry=%+v, calls=%d", got, p.calls)
 	}
@@ -161,6 +162,14 @@ func (p *subscriptionPlatform) DisplayName() string { return string(p.id) }
 func (p *subscriptionPlatform) Account(context.Context) (*providerprotocol.Account, error) {
 	p.calls++
 	return p.account, p.err
+}
+
+func usageSources(adapters ...platforms.Platform) []SubscriptionSource {
+	sources := make([]SubscriptionSource, 0, len(adapters))
+	for _, p := range adapters {
+		sources = append(sources, SubscriptionSource{Key: p.ID(), Name: p.DisplayName(), Platform: p})
+	}
+	return sources
 }
 
 func TestProviderUsageReadsPlatformAccount(t *testing.T) {

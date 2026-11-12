@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render as renderUI, screen } from '@testing-library/react';
+import { fireEvent, render as renderUI, screen, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +29,26 @@ describe('SubscriptionUsage', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps named accounts of the same tool separate and preserves cards on rename', () => {
+    const providers = [
+      { id: 'cnx_work', name: 'Claude Work', platformName: 'Claude Code', machineName: 'This machine', status: 'ok', windows: [{ name: '7 days', usedPercent: 25 }] },
+      { id: 'cnx_personal', name: 'Claude Personal', platformName: 'Claude Code', machineName: 'This machine', status: 'signed_out', windows: [] },
+    ];
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers } } as never);
+    const view = render(<SubscriptionUsageContent />);
+    const work = screen.getByRole('region', { name: 'Claude Work' });
+    expect(within(work).getByText('Claude Code · This machine')).toBeInTheDocument();
+    expect(within(work).getByRole('progressbar', { name: 'Claude Work 7 days usage' })).toHaveValue(25);
+    const personal = screen.getByRole('region', { name: 'Claude Personal' });
+    expect(within(personal).getByText('Sign in using the platform app to view usage.')).toBeInTheDocument();
+    expect(within(personal).queryByRole('progressbar')).not.toBeInTheDocument();
+    providers[0] = { ...providers[0], name: 'Claude Office' };
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers } } as never);
+    view.rerender(<SubscriptionUsageContent />);
+    expect(screen.getByRole('region', { name: 'Claude Office' })).toBe(work);
+    expect(screen.getByRole('progressbar', { name: 'Claude Office 7 days usage' })).toHaveValue(25);
   });
 
   it.each([

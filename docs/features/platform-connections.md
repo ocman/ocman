@@ -40,6 +40,22 @@ different account. An unavailable selection reports an error instead.
 Defaults are explicit. A disabled or removed default remains the saved
 preference until you choose another one; Ocman does not silently select a sibling.
 
+## View account usage
+
+**Provider usage** and its header popover show each enabled connection on this
+machine under its configured name, with the native tool and machine underneath.
+Each reading comes from that connection's account. Connections using the same
+underlying account may share a quota; the cards are not additive capacity.
+Tools that do not report usage are omitted. Local API cost estimates remain
+separate from subscription quotas.
+
+The **History** tab and analytics subscription charts keep samples under stable
+connection IDs. Renaming changes the current label without splitting history.
+Disabling or removing a connection hides its current card but retains its history.
+Older tool-level samples remain separate because their account cannot be inferred.
+Subscription reporting remains local to the owning Ocman instance, not a combined
+view of remote machines.
+
 ## Disable or remove
 
 Disabling prevents new work without deleting credentials or history. Removal

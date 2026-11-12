@@ -6,6 +6,7 @@ import { RefreshButton } from '../../components/RefreshButton';
 import { useProviderUsageHistory } from '../../lib/providerUsageHistory';
 import { subscriptionHistorySeries } from '../../lib/subscriptionHistorySeries';
 import { ProviderUsageChart } from '../ProviderUsageChart';
+import { ProviderUsageSource } from '../ProviderUsageSource';
 
 function useProviderAccounts() {
   return useQuery({
@@ -35,6 +36,7 @@ export function ProviderLimitsCard({ days = 7 }: { days?: number }) {
         <div className="subscription-grid">
           {groups.map(group => <section key={group.id} aria-label={`${group.name} subscription burndown`}>
             <h4>{group.name}</h4>
+            <ProviderUsageSource platformName={group.platformName} machineName={group.machineName} />
             <ProviderUsageChart name={group.name} series={group.series} days={days} updatedAt={history.dataUpdatedAt} />
           </section>)}
         </div>

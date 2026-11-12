@@ -11,6 +11,7 @@ import { ProviderSpend } from './ProviderSpend';
 import { ProviderBudget } from './ProviderBudget';
 import { UsageWindowProgress } from './UsageWindowProgress';
 import { providerUsageLevel } from '../lib/providerUsageLevel';
+import { ProviderUsageSource } from './ProviderUsageSource';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import './SubscriptionUsage.css';
 
@@ -28,7 +29,10 @@ function ProviderCard({ provider, compact = false }: { provider: SubscriptionPro
   return (
     <section className="subscription-card" aria-labelledby={`subscription-${provider.id}`}>
       <header className="subscription-card-header">
-        <h2 id={`subscription-${provider.id}`}>{provider.name}</h2>
+        <div>
+          <h2 id={`subscription-${provider.id}`}>{provider.name}</h2>
+          <ProviderUsageSource platformName={provider.platformName} machineName={provider.machineName} />
+        </div>
         {provider.plan && <span className="subscription-plan">{provider.plan.charAt(0).toUpperCase() + provider.plan.slice(1)}</span>}
       </header>
       {provider.status !== 'ok' && <p className="subscription-status">{STATUS_LABELS[provider.status] ?? 'Usage unavailable'}</p>}
@@ -68,7 +72,7 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
       <div className="subscription-page-heading">
         <div>
           {compact ? <h2>Provider usage</h2> : <h1>Provider usage</h1>}
-          <p>Subscription limits and budgets reported by enabled platform apps. Local API estimates are listed separately. Dots mark elapsed time in known quota periods.</p>
+          <p>Subscription limits and budgets for each enabled connection on this machine. Connections using the same account may share limits. Local API estimates are listed separately. Dots mark elapsed time in known quota periods.</p>
         </div>
         <RefreshButton size="small" variant="default" onClick={() => void usage.refetch()} loading={usage.isFetching} />
       </div>

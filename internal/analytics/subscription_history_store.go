@@ -29,7 +29,7 @@ func createSubscriptionUsageHistory(tx *sql.Tx) error {
 	return err
 }
 
-// Store normalized account data only. One row per platform and five-minute
+// Store normalized account data only. One row per connection and five-minute
 // bucket keeps restarts and duplicate collectors from accumulating samples.
 func recordSubscriptionUsage(ctx context.Context, db *sql.DB, now time.Time, providers []subscriptionProviderUsage) error {
 	tx, err := db.BeginTx(ctx, nil)

@@ -786,6 +786,8 @@ export interface SubscriptionUsageWindow {
 export interface SubscriptionProviderUsage {
   id: string;
   name: string;
+  platformName?: string;
+  machineName?: string;
   plan?: string;
   status: SubscriptionProviderStatus;
   windows: SubscriptionUsageWindow[];

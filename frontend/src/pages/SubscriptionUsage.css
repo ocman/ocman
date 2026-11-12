@@ -5,6 +5,7 @@
 .subscription-card { padding: 20px; border: 1px solid var(--border); background: var(--bg-card); }
 .subscription-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .subscription-card-header h2 { margin: 0; font-size: 18px; }
+.subscription-source { margin: 4px 0 0; color: var(--text-dim); font-size: 12px; }
 .subscription-plan { padding: 3px 8px; border: 1px solid var(--accent); color: var(--accent); font-size: 11px; text-transform: capitalize; }
 .subscription-status, .subscription-reset { color: var(--text-dim); font-size: 12px; }
 .subscription-reset-in { opacity: .7; }

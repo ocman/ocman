@@ -190,6 +190,33 @@ inventory. Tab changes update the draft's connection route and prepare only
 that account's catalog. Picking a model preserves that account; unavailable
 tabs are disabled, and the connection is frozen after the first submission.
 
+## Subscription usage identity
+
+```mermaid
+flowchart LR
+    Browser[Provider usage, popover and analytics] --> Usage[Analytics usage endpoints]
+    Usage --> Sources[Current local registry entries and saved names]
+    Sources --> Account[Exact connection adapter Account]
+    Account --> Cache[Quota cache keyed by connection ID]
+    Sources --> Sampler[Five-minute sampler]
+    Sampler --> Account
+    Sampler --> Samples[(Connection-keyed usage samples)]
+    Usage --> Samples
+```
+
+- Server composition supplies exact registry routing keys, current saved names
+  and enabled intent to analytics. Remote entries are excluded; account reads
+  remain owner-local. Inventory failures fail closed without borrowing another
+  connection or reverting to native-kind names.
+- Current quotas cache by immutable connection ID. Labels resolve outside the
+  quota cache, so renames appear without another account probe. The sampler uses
+  the same identity, preventing same-tool connections from overwriting a bucket.
+- History responses overlay current labels for matching connection IDs only.
+  Removed or disabled connections retain their stored samples. Legacy native-kind
+  samples are not attributed to a named account. The existing sample table accepts
+  routing keys without a schema change, and the TypeSafe estimate ledger stays
+  separate.
+
 ## Remote trust
 
 Authenticated `ConnectionPlatforms` metadata carries exact routing keys, native

@@ -17,13 +17,15 @@ type subscriptionUsageResponse struct {
 }
 
 type subscriptionProviderUsage struct {
-	ID      string                     `json:"id"`
-	Name    string                     `json:"name"`
-	Plan    string                     `json:"plan,omitempty"`
-	Status  string                     `json:"status"`
-	Windows []subscriptionUsageWindow  `json:"windows"`
-	Budgets []platforms.ProviderBudget `json:"budgets,omitempty"`
-	Spend   *providerSpend             `json:"spend,omitempty"`
+	ID           string                     `json:"id"`
+	Name         string                     `json:"name"`
+	PlatformName string                     `json:"platformName,omitempty"`
+	MachineName  string                     `json:"machineName,omitempty"`
+	Plan         string                     `json:"plan,omitempty"`
+	Status       string                     `json:"status"`
+	Windows      []subscriptionUsageWindow  `json:"windows"`
+	Budgets      []platforms.ProviderBudget `json:"budgets,omitempty"`
+	Spend        *providerSpend             `json:"spend,omitempty"`
 }
 
 type subscriptionUsageWindow struct {
@@ -50,7 +52,7 @@ type subscriptionUsageEntry struct {
 	value subscriptionProviderUsage
 }
 
-func (c *subscriptionUsageCache) get(ctx context.Context, adapters []platforms.Platform) subscriptionUsageResponse {
+func (c *subscriptionUsageCache) get(ctx context.Context, sources []SubscriptionSource) subscriptionUsageResponse {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	usage := subscriptionUsageResponse{Providers: []subscriptionProviderUsage{}}
@@ -58,25 +60,27 @@ func (c *subscriptionUsageCache) get(ctx context.Context, adapters []platforms.P
 		c.entries = map[platforms.ID]subscriptionUsageEntry{}
 	}
 	active := map[platforms.ID]bool{}
-	for _, p := range adapters {
+	for _, source := range sources {
+		p := source.Platform
 		reader, ok := p.(subscriptionAccountReader)
 		if !ok {
 			continue
 		}
-		active[p.ID()] = true
-		entry, cached := c.entries[p.ID()]
+		active[source.Key] = true
+		entry, cached := c.entries[source.Key]
 		if !cached || time.Since(entry.at) >= subscriptionUsageTTL {
 			value, supported := fetchPlatformSubscription(ctx, p, reader)
 			if !supported {
-				delete(c.entries, p.ID())
+				delete(c.entries, source.Key)
 				continue
 			}
 			entry = subscriptionUsageEntry{at: time.Now(), value: value}
 			if ctx.Err() == nil {
-				c.entries[p.ID()] = entry
+				c.entries[source.Key] = entry
 			}
 		}
-		usage.Providers = append(usage.Providers, entry.value)
+		// Names are live metadata, not part of the cached account snapshot.
+		usage.Providers = append(usage.Providers, source.label(entry.value))
 	}
 	for id := range c.entries {
 		if !active[id] {
@@ -87,11 +91,12 @@ func (c *subscriptionUsageCache) get(ctx context.Context, adapters []platforms.P
 }
 
 func (m *Module) handleSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
-	var adapters []platforms.Platform
-	if m.deps.Platforms != nil {
-		adapters = m.deps.Platforms()
+	sources, err := m.subscriptionSources(r.Context())
+	if err != nil {
+		httpx.ServerError(w, "failed to read platform connections", err)
+		return
 	}
-	usage := m.subscriptionCache.get(r.Context(), adapters)
+	usage := m.subscriptionCache.get(r.Context(), sources)
 	// Local TypeSafe estimates are separate from platform-reported account usage.
 	if err := m.appendTypeSafeUsage(r.Context(), &usage); err != nil {
 		httpx.ServerError(w, "failed to read provider usage", err)

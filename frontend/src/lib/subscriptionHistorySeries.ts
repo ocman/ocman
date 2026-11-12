@@ -53,6 +53,7 @@ export function subscriptionHistorySeries(history: SubscriptionUsageHistory) {
       }
       return { key: metric.key, label: metric.label, data };
     });
-    return { id, name: samples[samples.length - 1].provider.name, series };
+    const latest = samples[samples.length - 1].provider;
+    return { id, name: latest.name, platformName: latest.platformName, machineName: latest.machineName, series };
   }).filter(group => group.series.length > 0);
 }

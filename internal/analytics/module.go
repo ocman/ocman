@@ -31,6 +31,8 @@ import (
 type Deps struct {
 	// Platforms resolves the current registry, including adapters added later.
 	Platforms func() []platforms.Platform
+	// SubscriptionSources retains connection keys and current configured names.
+	SubscriptionSources func(context.Context) ([]SubscriptionSource, error)
 	// HistoryAnalytics is resolved per request so startup wiring can finish
 	// before the module's lazy dependencies are used.
 	HistoryAnalytics func() *HistoryAnalytics

@@ -34,26 +34,29 @@ func (m *Module) collectSubscriptionUsage(ctx context.Context, now time.Time) er
 		return nil
 	}
 	providers := []subscriptionProviderUsage{}
-	if m.deps.Platforms != nil {
-		for _, p := range m.deps.Platforms() {
-			if remote, _ := platforms.SplitPlatformID(string(p.ID())); remote != "" {
-				continue
-			}
-			reader, ok := p.(subscriptionAccountReader)
-			if !ok {
-				continue
-			}
-			// Read each platform afresh. One unavailable platform cannot use the
-			// entire sampling interval or prevent other platforms from recording.
-			probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			provider, supported := fetchPlatformSubscription(probeCtx, p, reader)
-			cancel()
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if supported {
-				providers = append(providers, provider)
-			}
+	sources, err := m.subscriptionSources(ctx)
+	if err != nil {
+		return err
+	}
+	for _, source := range sources {
+		p := source.Platform
+		if remote, _ := platforms.SplitPlatformID(string(source.Key)); remote != "" {
+			continue
+		}
+		reader, ok := p.(subscriptionAccountReader)
+		if !ok {
+			continue
+		}
+		// Read each platform afresh. One unavailable platform cannot use the
+		// entire sampling interval or prevent other platforms from recording.
+		probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		provider, supported := fetchPlatformSubscription(probeCtx, p, reader)
+		cancel()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if supported {
+			providers = append(providers, source.label(provider))
 		}
 	}
 	return recordSubscriptionUsage(ctx, m.deps.Store.SQL(), now, providers)
@@ -77,6 +80,20 @@ func (m *Module) handleSubscriptionUsageHistory(w http.ResponseWriter, r *http.R
 	if err != nil {
 		httpx.ServerError(w, "failed to read subscription history", err)
 		return
+	}
+	sources, err := m.subscriptionSources(r.Context())
+	if err != nil {
+		httpx.ServerError(w, "failed to read platform connections", err)
+		return
+	}
+	labels := make(map[string]SubscriptionSource, len(sources))
+	for _, source := range sources {
+		labels[string(source.Key)] = source
+	}
+	for i := range history.Samples {
+		if source, ok := labels[history.Samples[i].Provider.ID]; ok {
+			history.Samples[i].Provider = source.label(history.Samples[i].Provider)
+		}
 	}
 	httpx.WriteJSON(w, history)
 }
