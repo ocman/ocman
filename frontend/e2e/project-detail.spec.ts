@@ -38,7 +38,7 @@ for (const width of [1280, 390]) {
     const dialog = page.getByRole('dialog', { name: 'Project quick settings' });
     await dialog.getByRole('combobox', { name: 'Default model', exact: true }).click();
     await expect(dialog.getByRole('option', { name: 'historical/model' })).toBeVisible();
-    await dialog.getByRole('option', { name: 'OpenAI / GPT-5', exact: true }).click();
+    await dialog.getByRole('option', { name: 'openai/gpt-5', exact: true }).click();
     const save = dialog.getByRole('button', { name: 'Save', exact: true });
     await save.scrollIntoViewIfNeeded();
     const saveBox = (await save.boundingBox())!;
@@ -56,7 +56,7 @@ for (const width of [1280, 390]) {
     await page.goBack();
     await expect(page.getByRole('tab', { name: 'Settings', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('button', { name: 'Project quick settings', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Project quick settings' }).getByRole('combobox', { name: 'Default model', exact: true })).toHaveText('OpenAI / GPT-5');
+    await expect(page.getByRole('dialog', { name: 'Project quick settings' }).getByRole('combobox', { name: 'Default model', exact: true })).toHaveText('openai/gpt-5');
   });
   test(`project session filters survive refresh at ${width}px`, async ({ mockedPage: page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
