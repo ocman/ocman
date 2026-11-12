@@ -62,7 +62,10 @@ accounts remain separate choices. Factory catalogs retain their project union.
 Project fallback lists are filtered to the current session's account; fallthrough
 never changes that session's account. A reviewer's explicit account selects only
 the judge's catalog and authenticated helper transport, not the watched session's
-owner or permission-reply transport.
+owner or permission-reply transport. Each judgment snapshots its account, port,
+authenticated client, identity projector and model through helper cleanup. Changes
+in Settings apply to the next judgment, including recovery from an unavailable
+reviewer without restarting the service.
 
 Before session consumers start, the server repairs obsolete native-kind model
 preferences in unbound routines, project defaults and fallback lists, reviewer

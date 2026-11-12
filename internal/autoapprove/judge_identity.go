@@ -10,7 +10,10 @@ import (
 // The OpenCode judge owns native execution and cleanup. Only its in-flight
 // application notification crosses the canonical identity boundary.
 func (s *Service) judgeSessionIdentity(ctx context.Context, native string) (string, error) {
-	adapter := s.reviewerAdapter()
+	return reviewerSessionIdentity(ctx, s.reviewerAdapter(), native)
+}
+
+func reviewerSessionIdentity(ctx context.Context, adapter platforms.Platform, native string) (string, error) {
 	if !platforms.CanonicalAdapter(adapter) {
 		return native, nil
 	}

@@ -54,6 +54,7 @@ type PermissionJudge struct {
 	openCodePort    func(directory string) string
 	httpClient      *http.Client
 	accountClient   func() *http.Client
+	reviewerRun     func(string) reviewerRun
 	store           judgeModelStore
 	recordUsage     func(context.Context, string, *int64, *int64) error
 	modelMu         sync.RWMutex
@@ -161,7 +162,8 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 	if j.openCodePort == nil {
 		return JudgeResult{Verdict: verdictNeedsUser}
 	}
-	port := j.openCodePort(directory)
+	run := j.snapshotReviewerRun(directory)
+	port := run.port
 	if port == "" {
 		log.WithField("directory", directory).Warn("auto-approve judge: no running OpenCode instance found, falling through to human")
 		return JudgeResult{Verdict: verdictNeedsUser}
@@ -172,7 +174,7 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
 	defer release()
-	sessionID, err := j.createSession(ctx, port, directory, "(auto-approve subagent)")
+	sessionID, err := run.createSession(ctx, port, directory, "(auto-approve subagent)")
 	if err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to create judge session")
 		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
@@ -182,13 +184,13 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 	defer func() {
 		delCtx, delCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer delCancel()
-		if err := j.deleteSession(delCtx, port, sessionID); err != nil {
+		if err := run.deleteSession(delCtx, port, sessionID); err != nil {
 			log.WithError(err).WithField("judgeSessionID", sessionID).Warn("auto-approve judge: failed to delete judge session")
 		}
 	}()
 	publicID := sessionID
-	if j.sessionIdentity != nil {
-		publicID, err = j.sessionIdentity(ctx, sessionID)
+	if run.sessionIdentity != nil {
+		publicID, err = run.sessionIdentity(ctx, sessionID)
 		if err != nil {
 			return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 		}
@@ -199,11 +201,11 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 	if onSessionCreated != nil {
 		onSessionCreated(publicID)
 	}
-	if err := j.sendPrompt(ctx, port, sessionID, permission, patterns, metadata, customSections); err != nil {
+	if err := run.sendPrompt(ctx, port, sessionID, permission, patterns, metadata, customSections); err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to send prompt")
 		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
-	text, err := j.collectResponse(ctx, port, sessionID)
+	text, err := run.collectResponse(ctx, port, sessionID)
 	if err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to collect response")
 		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}

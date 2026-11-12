@@ -241,12 +241,13 @@ func NewService(deps Deps) *Service {
 		safeCommandCache: make(map[string]map[string]string),
 		askedCache:       make(map[string]askedPermission),
 	}
-	if !deps.OpenCodeDisabled {
+	if !deps.OpenCodeDisabled || deps.ReviewerPlatform != nil {
 		judge.openCodePort = svc.reviewerPort
 	}
 	judge.sessionIdentity = svc.judgeSessionIdentity
 	if deps.ReviewerPlatform != nil {
 		judge.accountClient = svc.reviewerHTTPClient
+		judge.reviewerRun = svc.snapshotReviewer
 	}
 	return svc
 }
