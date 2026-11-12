@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { api } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
+import { registerAutomaticReloadGuard } from '../../lib/automaticReloadGuards';
 
 export interface AttachedImage {
   url: string;
@@ -15,6 +16,8 @@ export interface AttachedFileRef {
   /** No session exists yet; retain the browser file until the first start. */
   file?: File;
 }
+
+type AttachmentState = { images: AttachedImage[]; files: AttachedFileRef[]; pending: number };
 
 function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -34,18 +37,26 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
   initial?: { images: AttachedImage[]; files: AttachedFileRef[]; pending?: number },
   onProcessing?: () => (batch: { images: AttachedImage[]; files: AttachedFileRef[] }) => void,
   onChange?: (payload: { images: AttachedImage[]; files: AttachedFileRef[] }) => void) {
-  const [localImages, setImages] = useState<AttachedImage[]>(initial?.images || []);
-  const [localFiles, setFiles] = useState<AttachedFileRef[]>(initial?.files || []);
+  const [local, setLocal] = useState<AttachmentState>(() => ({ images: initial?.images || [], files: initial?.files || [], pending: 0 }));
+  const live = useRef(local);
+  // Update the guard's snapshot before React commits, including before the first
+  // FileReader/upload await. Never put these side effects in a state updater.
+  const updateLocal = useCallback((update: (state: AttachmentState) => AttachmentState) => {
+    live.current = update(live.current);
+    setLocal(live.current);
+  }, []);
   const controlled = !!onProcessing && !!onChange;
-  const images = controlled ? initial?.images || [] : localImages;
-  const files = controlled ? initial?.files || [] : localFiles;
-  const [localPending, setPending] = useState(0);
-  const pending = controlled ? initial?.pending || 0 : localPending;
+  const images = controlled ? initial?.images || [] : local.images;
+  const files = controlled ? initial?.files || [] : local.files;
+  const pending = controlled ? initial?.pending || 0 : local.pending;
+  // Controlled drafts retain their existing store ownership and lifetime.
+  useLayoutEffect(() => registerAutomaticReloadGuard(() => !controlled && Boolean(
+    live.current.images.length || live.current.files.length || live.current.pending)), [controlled]);
 
   const addFiles = useCallback(async (all: File[]) => {
     if (disabled) return;
     const publish = onProcessing?.();
-    setPending((count) => count + 1);
+    updateLocal(state => ({ ...state, pending: state.pending + 1 }));
     try {
       const imageFiles = all.filter((f) => f.type.startsWith('image/'));
       const newImages: AttachedImage[] = [];
@@ -57,7 +68,7 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
           remoteLog.error('Failed to read image', err);
         }
       }
-      if (!controlled && newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
+      if (!controlled && newImages.length > 0) updateLocal(state => ({ ...state, images: [...state.images, ...newImages] }));
 
       const otherFiles = all.filter((f) => !f.type.startsWith('image/'));
       if (otherFiles.length === 0) { publish?.({ images: newImages, files: [] }); return; }
@@ -65,7 +76,7 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
       if (!sid) {
         const deferred = otherFiles.map((file) => ({ path: '', name: file.name, mime: file.type || 'application/octet-stream', file }));
         publish?.({ images: newImages, files: deferred });
-        if (!controlled) setFiles((prev) => [...prev, ...deferred]);
+        if (!controlled) updateLocal(state => ({ ...state, files: [...state.files, ...deferred] }));
         return;
       }
       const newFiles: AttachedFileRef[] = [];
@@ -81,25 +92,25 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
           remoteLog.error('Failed to save attachment', err);
         }
       }
-      if (!controlled && newFiles.length > 0) setFiles((prev) => [...prev, ...newFiles]);
+      if (!controlled && newFiles.length > 0) updateLocal(state => ({ ...state, files: [...state.files, ...newFiles] }));
       publish?.({ images: newImages, files: newFiles });
     } finally {
-      setPending((count) => count - 1);
+      updateLocal(state => ({ ...state, pending: state.pending - 1 }));
     }
-  }, [sessionIdRef, disabled, platform, onProcessing, controlled]);
+  }, [sessionIdRef, disabled, platform, onProcessing, controlled, updateLocal]);
 
   const removeImage = useCallback((index: number) => {
     if (controlled) onChange!({ images: images.filter((_, i) => i !== index), files });
-    else setImages((prev) => prev.filter((_, i) => i !== index));
-  }, [controlled, images, files, onChange]);
+    else updateLocal(state => ({ ...state, images: state.images.filter((_, i) => i !== index) }));
+  }, [controlled, images, files, onChange, updateLocal]);
   const removeFile = useCallback((index: number) => {
     if (controlled) onChange!({ images, files: files.filter((_, i) => i !== index) });
-    else setFiles((prev) => prev.filter((_, i) => i !== index));
-  }, [controlled, images, files, onChange]);
+    else updateLocal(state => ({ ...state, files: state.files.filter((_, i) => i !== index) }));
+  }, [controlled, images, files, onChange, updateLocal]);
   const clear = useCallback(() => {
     if (controlled) onChange!({ images: [], files: [] });
-    else { setImages([]); setFiles([]); }
-  }, [controlled, onChange]);
+    else updateLocal(state => ({ ...state, images: [], files: [] }));
+  }, [controlled, onChange, updateLocal]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (disabled) return;

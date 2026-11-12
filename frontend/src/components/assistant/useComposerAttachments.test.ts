@@ -9,13 +9,57 @@ vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 
 import { api } from '../../lib/api';
 import { useComposerAttachments } from './useComposerAttachments';
-import { pendingAttachmentWriter, updateDraftAttachments, usePendingDraftPayload } from '../../lib/pendingDraftPayloads';
+import { pendingAttachmentWriter, resetDraftPayloadsForTests, updateDraftAttachments, usePendingDraftPayload } from '../../lib/pendingDraftPayloads';
+import { canAutomaticallyReload } from '../../lib/automaticReload';
 
 const img = new File(['x'], 'shot.png', { type: 'image/png' });
 const doc = new File(['y'], 'notes.txt', { type: 'text/plain' });
 
 describe('useComposerAttachments', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); resetDraftPayloadsForTests(); });
+
+  it('blocks synchronously before React commits and through upload completion and removal', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof api.uploadComposerAttachment>>) => void;
+    vi.mocked(api.uploadComposerAttachment).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const { result } = renderHook(() => useComposerAttachments({ current: 'existing' }, false));
+    let uploading!: Promise<void>;
+    act(() => {
+      uploading = result.current.addFiles([doc]);
+      expect(canAutomaticallyReload()).toBe(false);
+    });
+    act(() => result.current.clear());
+    expect(canAutomaticallyReload()).toBe(false);
+    await act(async () => {
+      resolve({ path: '/att/notes.txt', name: 'notes.txt', mime: 'text/plain', size: 1 });
+      await uploading;
+    });
+    expect(canAutomaticallyReload()).toBe(false);
+    act(() => result.current.removeFile(0));
+    expect(canAutomaticallyReload()).toBe(true);
+  });
+
+  it('releases a failed read without leaving an automatic reload blocker', async () => {
+    const read = vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
+      this.dispatchEvent(new ProgressEvent('error'));
+    });
+    try {
+      const { result } = renderHook(() => useComposerAttachments({ current: 'existing' }, false));
+      await act(() => result.current.addFiles([img]));
+      expect(result.current.pending).toBe(0);
+      expect(canAutomaticallyReload()).toBe(true);
+    } finally { read.mockRestore(); }
+  });
+
+  it('does not unregister controlled draft attachments when their composer unmounts', async () => {
+    const id = 'controlled-lifetime';
+    const { result, unmount } = renderHook(() => useComposerAttachments({ current: undefined }, false, undefined,
+      usePendingDraftPayload(id), () => pendingAttachmentWriter(id), payload => updateDraftAttachments(id, payload)));
+    await act(() => result.current.addFiles([img]));
+    unmount();
+    expect(canAutomaticallyReload()).toBe(false);
+    updateDraftAttachments(id, { images: [], files: [] });
+    expect(canAutomaticallyReload()).toBe(true);
+  });
 
   it('removes controlled attachments from the authoritative draft without restoring old snapshots', async () => {
     const id = 'controlled-attachments';

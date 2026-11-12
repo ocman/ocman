@@ -1573,7 +1573,7 @@ flowchart LR
     Probe --> Budget[sessionStorage retry budget]
     Budget --> Safety[automaticReload]
     Notice[BuildUpdateNotice countdown] --> Budget
-    Drafts[Live drafts and unsaved-editor guards] --> Safety
+    Drafts[Draft stores and automaticReloadGuards] --> Safety
     Safety -->|safe| Reload[Page reload]
 ```
 
@@ -1589,6 +1589,12 @@ flowchart LR
   pauses with a save/send reminder. Explicit Refresh now remains user-controlled.
   Recovery checks safety again after its asynchronous probe and leaves import
   errors visible to the existing ErrorBoundary when it cannot safely reload.
+  Mounted composers register live readers through `automaticReloadGuards`:
+  textarea values are checked before the autosave debounce, and existing-session
+  attachment snapshots update synchronously before reads/uploads or React
+  commits. Removal/send releases the attachment blocker; unmount unregisters
+  that local owner. Controlled prepared drafts keep their existing store-owned
+  lifetime, including protection after the composer unmounts.
 
 ```mermaid
 flowchart TD

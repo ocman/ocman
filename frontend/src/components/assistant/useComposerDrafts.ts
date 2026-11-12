@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react';
 import { discardDraft, getDraft, getDraftVersion, saveDraft, clearDraft, subscribeDraftTexts } from '../../lib/composerDraft';
+import { registerAutomaticReloadGuard } from '../../lib/automaticReloadGuards';
 
 /**
  * Owns per-session composer draft persistence: loading the saved draft
@@ -15,6 +16,7 @@ export function useComposerDrafts(
   /** Presentation only (bash mode, slash menu) for text synchronized from storage; never saves. */
   onSync?: (text: string) => void,
 ) {
+  useLayoutEffect(() => registerAutomaticReloadGuard(() => Boolean(inputRef.current?.value)), [inputRef]);
   const onSyncRef = useRef(onSync);
   // Latest callback, published at commit; it only runs from storage subscriptions.
   useLayoutEffect(() => { onSyncRef.current = onSync; });
