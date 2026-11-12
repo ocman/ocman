@@ -34,7 +34,7 @@ func TestActivityAdmissionFailsClosedWithoutRecoveryMetadata(t *testing.T) {
 			f.p.SessionFn = func(string) (*platforms.SessionDetail, error) { return nil, errors.New("history unavailable") }
 		}, false},
 		{"directory checkpoint unavailable", func(t *testing.T, f *fixture) { execFixtureSQL(t, f, "DROP TABLE worktree_cleanup_checkout") }, true},
-		{"directory activity write fails", func(t *testing.T, f *fixture) { execFixtureSQL(t, f, "DROP TABLE worktree_cleanup_activity") }, true},
+		{"directory activity write fails", func(t *testing.T, f *fixture) { execFixtureSQL(t, f, "DROP TABLE worktree_cleanup_directory_activity") }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)

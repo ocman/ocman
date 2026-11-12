@@ -11,7 +11,7 @@ import (
 
 var Schema = state.ModuleSchema{
 	Module: "worktreecleanup",
-	Tables: []string{"worktree_cleanup_activity", "worktree_cleanup_checkout"},
+	Tables: []string{"worktree_cleanup_activity", "worktree_cleanup_checkout", "worktree_cleanup_directory_activity"},
 	Migrations: []func(*sql.Tx) error{func(tx *sql.Tx) error {
 		_, err := tx.Exec(`CREATE TABLE worktree_cleanup_activity (
 			platform TEXT NOT NULL, session_id TEXT NOT NULL,
@@ -64,6 +64,11 @@ var Schema = state.ModuleSchema{
 		_, err = tx.Exec(`INSERT INTO worktree_cleanup_activity
 			(platform, session_id, activity_at, observed_updated)
 			SELECT platform, session_id, ?, session_time_updated FROM archived_session`, time.Now().UnixMilli())
+		return err
+	}, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`CREATE TABLE worktree_cleanup_directory_activity (
+			owner TEXT NOT NULL, path TEXT NOT NULL, activity_at INTEGER NOT NULL,
+			PRIMARY KEY(owner, path))`)
 		return err
 	}},
 }

@@ -75,14 +75,16 @@ checkouts. Unsafe checkouts are retried on later sweeps.
 
 ```mermaid
 flowchart LR
-    Archive[Archive and explicit activity] --> State[(state.db timestamps)]
+    Archive[Archive and session activity] --> State[(state.db timestamps)]
+    Resume[Session creation or terminal launch] --> Directory[Owner and directory activity watermark]
+    Directory --> State
     State --> Worker[worktreecleanup hourly worker]
     Worker --> Tasks[Recurring Background tasks receipt]
     Worker -->|owner-qualified request| Host[hostsvc local or remote owner]
     Host --> Fence[Activity fence and fresh safety checks]
     Fence --> Git[Guarded Git removal]
     Git --> Receipt[(Retained branch and recovery receipt)]
-    Resume[Session mutation or terminal launch] --> Receipt
+    Resume --> Receipt
     Receipt --> Restore[Recreate original checkout]
 ```
 
@@ -91,3 +93,9 @@ recovery receipts. `internal/state` owns archive persistence and the mutation
 fence. `internal/hostsvc/local` performs owner-side filesystem and terminal
 checks through `internal/git`. Dedicated authenticated gRPC operations preserve
 that boundary for remote owners and fail closed on older versions.
+
+Directory admission writes one owner-scoped activity watermark instead of loading
+session inventories or accounting summaries. Nested managed paths renew the whole
+checkout. Both the sweep and the owner's final removal check read that watermark
+under the mutation fence. Hidden children receive the same grace period without
+adding history reads to session startup.

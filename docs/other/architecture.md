@@ -547,6 +547,9 @@ worker uses persisted archive/activity timestamps, owner-side safety checks and
 the shared session mutation fence. Dedicated Host/gRPC cleanup and restoration
 operations retain branches and conversation history. See
 [archived worktree cleanup](../features/worktree-cleanup.md).
+Session/terminal directory admission records an owner-scoped directory watermark
+without reading platform inventories. The sweep and final owner-side removal
+check apply that watermark under the same fence.
 
 Native safety probes use `platforms.WorktreeRuntimeReader` through the canonical
 adapter, separately from startup identity migration. Missing native history or

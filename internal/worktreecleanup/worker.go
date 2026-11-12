@@ -99,7 +99,14 @@ func archiveFor(s session, rows []session, archives map[state.Key]state.Archived
 
 // eligible requires every session in the checkout or a nested directory to
 // be archived and quiet. A single unarchived sibling retains the whole tree.
-func (m *Module) eligible(ctx context.Context, path string, rows []session) ([]hostsvc.WorktreeSessionCheck, error) {
+func (m *Module) eligible(ctx context.Context, owner, path string, rows []session) ([]hostsvc.WorktreeSessionCheck, error) {
+	directoryAt, err := m.directoryActivity(ctx, owner, path)
+	if err != nil {
+		return nil, err
+	}
+	if directoryAt+retention.Milliseconds() > m.now().UnixMilli() {
+		return nil, fmt.Errorf("checkout is within its seven-day activity grace period")
+	}
 	archives, err := m.archives(ctx)
 	if err != nil {
 		return nil, err
@@ -238,7 +245,7 @@ func (m *Module) clean(ctx context.Context, host hostsvc.Host, maintenance hosts
 	defer cancel()
 	ctx, release := m.d.Store.WorktreeMaintenance(ctx)
 	defer release()
-	checks, err := m.eligible(ctx, path, rows)
+	checks, err := m.eligible(ctx, owner, path, rows)
 	if err != nil {
 		return false, err
 	}

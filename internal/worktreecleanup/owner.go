@@ -29,6 +29,13 @@ func (m *Module) AdmitCleanup(ctx context.Context, req hostsvc.CleanupWorktreeRe
 }
 
 func (m *Module) verifyOwner(ctx context.Context, req hostsvc.CleanupWorktreeRequest) error {
+	directoryAt, err := m.directoryActivity(ctx, state.LocalRemoteID, req.Path)
+	if err != nil {
+		return err
+	}
+	if directoryAt+retention.Milliseconds() > m.now().UnixMilli() {
+		return fmt.Errorf("recent owner-local directory activity")
+	}
 	if m.d.Idle != nil {
 		if err := m.d.Idle(ctx); err != nil {
 			return err

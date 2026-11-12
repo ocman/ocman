@@ -29,11 +29,13 @@ func TestNestedDirectoryActivityRenewsRootAndSiblingSessions(t *testing.T) {
 	release()
 	f.sweep(t, 0)
 	for _, id := range []string{"s1", "sibling"} {
-		var at int64
-		if err := f.store.SQL().QueryRow(`SELECT activity_at FROM worktree_cleanup_activity WHERE session_id = ?`, id).Scan(&at); err != nil || at != f.now.UnixMilli() {
+		at, err := f.m.directoryActivity(t.Context(), "local", testPath+"/"+id)
+		if err != nil || at != f.now.UnixMilli() {
 			t.Fatalf("%s grace not renewed: %d %v", id, at, err)
 		}
 	}
+	f.now = f.now.Add(retention)
+	f.sweep(t, 1)
 }
 
 type completeActivityInventory struct {
@@ -47,17 +49,21 @@ func (p *completeActivityInventory) WorktreeSessions(context.Context) ([]db.Sess
 
 func TestNestedDirectoryActivityIncludesHiddenMaintenanceRows(t *testing.T) {
 	f := newFixture(t)
-	p := &completeActivityInventory{Platform: f.p, rows: append(f.p.SessionList, db.Session{ID: "hidden", ParentID: "s1", Directory: testPath + "/sibling"})}
+	p := &completeActivityInventory{Platform: f.p, rows: append(f.p.SessionList, db.Session{ID: "hidden", ParentID: "s1", SourceChild: true, Directory: testPath + "/sibling", TimeUpdated: 100, Status: db.StatusDone})}
+	f.archive(t, "hidden", f.now.Add(-retention-time.Hour))
 	f.m.d.Platforms = func() []platforms.Platform { return []platforms.Platform{p} }
 	_, release, err := f.m.BeginDirectory(t.Context(), testPath+"/nested")
 	if err != nil {
 		t.Fatal(err)
 	}
 	release()
-	var at int64
-	if err := f.store.SQL().QueryRow(`SELECT activity_at FROM worktree_cleanup_activity WHERE session_id='hidden'`).Scan(&at); err != nil || at != f.now.UnixMilli() {
+	at, err := f.m.directoryActivity(t.Context(), "local", testPath+"/sibling")
+	if err != nil || at != f.now.UnixMilli() {
 		t.Fatalf("hidden sibling activity not renewed: %d %v", at, err)
 	}
+	f.sweep(t, 0)
+	f.now = f.now.Add(retention)
+	f.sweep(t, 1)
 }
 
 func TestFirstNativeObservationPreservesFreshActivity(t *testing.T) {

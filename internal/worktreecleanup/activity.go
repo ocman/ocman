@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state"
@@ -45,8 +44,8 @@ func (m *Module) BeginSession(ctx context.Context, p platforms.Platform, id stri
 	return ctx, release, nil
 }
 
-// BeginDirectory protects host-side launches/terminals and refreshes every
-// known session using that checkout. Restoring never creates a new session.
+// BeginDirectory protects host-side launches/terminals and renews the checkout's
+// grace period without reading session history. Restoring never creates a session.
 func (m *Module) BeginDirectory(ctx context.Context, dir string) (context.Context, func(), error) {
 	return m.BeginOwnerDirectory(ctx, state.LocalRemoteID, dir)
 }
@@ -64,31 +63,9 @@ func (m *Module) BeginOwnerDirectory(ctx context.Context, owner, dir string) (co
 		release()
 		return ctx, nil, err
 	}
-	for _, p := range m.d.Platforms() {
-		if remote, _ := platforms.SplitPlatformID(string(p.ID())); state.NormalizeRemoteID(remote) != owner {
-			continue
-		}
-		var sessions []db.Session
-		var err error
-		if reader, ok := p.(platforms.WorktreeSessionReader); ok {
-			sessions, err = reader.WorktreeSessions(ctx)
-		} else {
-			sessions, err = p.Sessions(ctx, "", 0)
-		}
-		if err != nil {
-			// An unrelated unavailable adapter must not block terminal/session
-			// creation. Its incomplete inventory already prevents cleanup.
-			continue
-		}
-		for _, s := range sessions {
-			if !within(dir, s.Directory) {
-				continue
-			}
-			if err := m.touch(ctx, state.Key{Platform: string(p.ID()), SessionID: s.ID}); err != nil {
-				release()
-				return ctx, nil, err
-			}
-		}
+	if err := m.touchDirectory(ctx, owner, dir); err != nil {
+		release()
+		return ctx, nil, err
 	}
 	return ctx, release, nil
 }
