@@ -48,6 +48,9 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
   const [error, setError] = useState('');
   const [review, setReview] = useState<'enable' | 'grants' | null>(null);
   const [configure, setConfigure] = useState(false);
+  const [configurationAttempt, setConfigurationAttempt] = useState(0);
+  const [configurationSaved, setConfigurationSaved] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PluginMutation | null>(null);
   const [remove, setRemove] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
   const d = p.description;
@@ -55,19 +58,23 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
 
   async function mutate(action: PluginMutation, input?: PluginInput) {
     setBusy(true);
+    setPendingAction(action);
     setError('');
+    setConfigurationSaved(false);
     try {
       await plugins.mutate(owner, d.id, action, input);
+      if (action === 'configuration') setConfigurationSaved(true);
       setReview(null); setConfigure(false); setRemove(false); setLogs(null);
     } catch {
       // Never echo an error body that could contain submitted configuration.
       setError(action === 'configuration'
-        ? 'Configuration was not activated. The server attempts to restore the last working configuration; check the current values and health below.'
+        ? 'Could not confirm configuration was saved and activated. After activation failure, the server attempts to restore the last working configuration. Review saved values and plugin health before retrying.'
         : `Could not ${action === 'grants' ? 'update grants for' : action} plugin. Check its health and retry.`);
-      if (action === 'configuration') setConfigure(false);
+      // Keep the failed operation visible, but discard candidate values and secrets.
+      if (action === 'configuration') setConfigurationAttempt((attempt) => attempt + 1);
     } finally {
-      await refresh();
-      setBusy(false);
+      try { await refresh(); }
+      finally { setBusy(false); setPendingAction(null); }
     }
   }
 
@@ -82,7 +89,8 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
 
   return <SettingsSection title={`${d.name} plugin`}>
     <PluginMetadata plugin={p} />
-    {error && <p role="alert">{error}</p>}
+    {configurationSaved && <p role="status">Configuration saved.</p>}
+    {error && !configure && <p role="alert">{error}</p>}
     <fieldset disabled={busy} className={styles.management}>
       <legend>Manage {d.name}</legend>
       <SettingRow label="Lifecycle" block>
@@ -92,7 +100,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
           <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
           <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</Button>
           <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('restart'); }}>Restart</Button>
-          <Button type="button" size="small" onClick={() => setConfigure(!configure)}>Configure</Button>
+          <Button type="button" size="small" onClick={() => { setConfigurationSaved(false); setConfigure(!configure); }}>Configure</Button>
           <Button type="button" size="small" variant="danger" disabled={!p.grants?.length} onClick={() => { void mutate('grants', { grants: [] }); }}>Revoke grants</Button>
           <Button type="button" size="small" variant="danger" disabled={p.enabled} onClick={() => setRemove(true)}>Remove data</Button>
         </ButtonGroup>
@@ -108,7 +116,8 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
           <Button type="button" onClick={() => setReview(null)}>Cancel approval</Button>
         </ButtonGroup>
       </SettingRow>}
-      {configure && <PluginConfiguration key={JSON.stringify(p.configuration)} plugin={p} save={(input) => mutate('configuration', input)} />}
+      {configure && <PluginConfiguration key={`${configurationAttempt}:${JSON.stringify(p.configuration)}`} plugin={p}
+        error={error} saving={pendingAction === 'configuration'} save={(input) => mutate('configuration', input)} />}
       {remove && <SettingRow label="Permanently remove plugin data" block>
         <p>Delete configuration, secrets, grants, and private data for {d.id} on {owner}. This cannot be undone. The executable is not deleted.</p>
         <ButtonGroup label="Plugin removal actions">

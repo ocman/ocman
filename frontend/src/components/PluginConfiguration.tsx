@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { basePlatform } from '../lib/modelRef';
 import { useProjects } from '../lib/queries';
 import { useMachinePlatforms } from '../lib/useCapabilities';
@@ -12,7 +12,11 @@ import styles from './PluginConfiguration.module.css';
 
 const emptyCatalog = { agents: [] as string[], models: [] as string[] };
 
-export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistration; save: (input: PluginInput) => Promise<void> }) {
+export function PluginConfiguration({ plugin, save, error = '', saving = false }: {
+  plugin: PluginRegistration; save: (input: PluginInput) => Promise<void>; error?: string; saving?: boolean;
+}) {
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (error && !saving) errorRef.current?.focus(); }, [error, saving]);
   const settings = plugin.description.settings ?? [];
   const [values, setValues] = useState<NonNullable<PluginInput['values']>>(() => {
     const initial = { ...plugin.configuration.values };
@@ -51,8 +55,9 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
     ...Array.from(new Set([...items, current].filter(Boolean))).map((value) => ({ value, label: value })),
   ];
 
-  return <form className={styles.form} aria-label="Plugin configuration" onSubmit={(event) => {
+  return <form className={styles.form} aria-label="Plugin configuration" aria-busy={saving} onSubmit={(event) => {
     event.preventDefault();
+    if (saving) return;
     const input = { values, secrets };
     setSecrets({});
     void save(input);
@@ -106,7 +111,8 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
         })} />}
     </SettingRow>)}
     {!settings.length && <p>No configuration settings.</p>}
-    <Button type="submit" variant="accent" className={styles.save}>Save configuration</Button>
+    {error && <p role="alert" tabIndex={-1} ref={errorRef}>{error}</p>}
+    <Button type="submit" variant="accent" disabled={saving} className={styles.save}>{saving ? 'Saving configuration…' : 'Save configuration'}</Button>
   </form>;
 }
 

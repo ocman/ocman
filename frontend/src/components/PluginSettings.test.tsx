@@ -370,10 +370,9 @@ it('shows configuration activation/rollback errors, reloads persisted values, an
   fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'bad' } });
   fireEvent.change(screen.getByLabelText('Token'), { target: { value: 'private-candidate' } });
   click('Save configuration');
-  expect(await screen.findByRole('alert')).toHaveTextContent('Configuration was not activated');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm configuration was saved and activated');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Configure' })).toBeEnabled());
   expect(screen.queryByText(/private-candidate/)).not.toBeInTheDocument();
-  click('Configure');
   expect(screen.getByLabelText('Mode')).toHaveValue('good');
   expect(screen.getByLabelText('Token')).toHaveValue('');
 });
@@ -449,7 +448,7 @@ it('handles owner disconnect and capability refresh without falling back to loca
   vi.mocked(plugins.list).mockRejectedValue(new Error('offline'));
   click('Refresh health');
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load plugins for this owner');
-  expect(screen.queryByRole('region', { name: 'Example plugin' })).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Example plugin' })).toBeVisible();
   vi.mocked(api.capabilities).mockResolvedValue({ platforms: [], hosts: [host('local')] });
   click('Refresh owners');
   expect(await screen.findByText('Plugin management is unavailable on this owner.')).toBeVisible();

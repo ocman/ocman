@@ -54,7 +54,6 @@ function PluginCatalog({ owner, ownerControls }: { owner: string; ownerControls:
       setError(false);
     } catch {
       setError(true);
-      setCatalog(null);
     } finally { setBusy(false); }
   }
 
@@ -73,6 +72,6 @@ function PluginCatalog({ owner, ownerControls }: { owner: string; ownerControls:
           : catalog.length === 0 ? <p role="status">No plugins discovered.</p>
             : null}
     </SettingsSection>
-    {!error && catalog?.map((plugin) => <PluginSettingsCard key={plugin.description.id} plugin={plugin} owner={owner} refresh={() => refresh()} />)}
+    {catalog?.map((plugin) => <PluginSettingsCard key={plugin.description.id} plugin={plugin} owner={owner} refresh={() => refresh()} />)}
   </>;
 }

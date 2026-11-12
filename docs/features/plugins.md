@@ -204,6 +204,13 @@ Check **Refresh health** after a failed save. An enabled unhealthy plugin must b
 disabled before repairing its configuration, then enabled again. Disabled plugins
 can be configured without starting a serve process.
 
+While saving, the configuration form shows **Saving configuration…** and blocks
+duplicate submissions. A rejected or unconfirmed save keeps the form open with
+an error beside Save, clears submitted secrets, and reloads saved values. A failed
+health refresh keeps the last loaded plugin details and save outcome visible;
+use **Refresh health** to retry. **Configuration saved.** appears only after the
+owner acknowledges the save.
+
 ## Process contract and lifecycle
 
 An executable accepts one argument, `describe` or `serve`. Stdout is strictly

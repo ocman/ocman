@@ -21,6 +21,7 @@ import { workerExecArgv } from './test/workerExecArgv.ts';
 // verified under the compiler; the goal is to compile everything.
 const compiledInTests = [
   /\/src\/components\/RelativeTime\.tsx$/,
+  /\/src\/components\/Plugin(Configuration|Settings|SettingsCard)\.tsx$/,
 ];
 
 export default defineConfig({
