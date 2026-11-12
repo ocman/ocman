@@ -152,7 +152,7 @@ func (s *Server) writeSessionArchived(ctx context.Context, platform, sessionID s
 		}
 		err = s.stateDB.ArchiveSession(ctx, platform, sessionID, ts)
 	} else {
-		err = s.stateDB.UnarchiveSession(ctx, platform, sessionID)
+		err = s.restoreSession(ctx, platform, sessionID)
 	}
 	if err != nil {
 		return err

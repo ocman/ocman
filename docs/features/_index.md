@@ -43,7 +43,10 @@ one hour, three hours, until tomorrow at 9:00 AM, or until next Monday at 9:00 A
 **Custom...** opens a date-and-time picker. Calendar times use your browser's local
 timezone. Snoozed conversations return automatically within a minute of their
 wake-up time, including after an ocman restart. Activity does not wake them early.
-Opening the conversation keeps it snoozed. Archiving it again cancels its snooze.
+Opening a conversation keeps its archive or snooze status. Use **Unarchive** or
+**Unsnooze** on its sidebar row to restore it explicitly. Restoring also clears
+the owning project's archive marker if it was hiding the conversation.
+Archiving a snoozed conversation again cancels its snooze.
 Snooze hides conversations even when they are pinned or awaiting input, keeping
 their pins for when they return. Enable **Show snoozed** in the sidebar filters
 to see them before their deadline. This filter defaults to off and is separate
