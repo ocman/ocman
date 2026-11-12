@@ -85,6 +85,7 @@ export function Composer({
     if (touchOnly) return;
     if (!disabled && inputRef.current) {
       const timer = setTimeout(() => {
+        if (document.activeElement?.closest('[role="dialog"]')) return;
         if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
           inputRef.current?.focus();
         }

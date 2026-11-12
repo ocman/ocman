@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Composer } from './Composer';
@@ -16,6 +16,26 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+it('does not steal focus from the usage popover when preparation enables the composer', () => {
+  vi.useFakeTimers();
+  try {
+    function View({ disabled }: { disabled: boolean }) {
+      return <>
+        <Composer isRunning={false} disabled={disabled} />
+        <div role="dialog" aria-label="Provider usage" tabIndex={-1}>Usage</div>
+      </>;
+    }
+    const { rerender } = render(<View disabled />);
+    const popover = screen.getByRole('dialog', { name: 'Provider usage' });
+    popover.focus();
+    rerender(<View disabled={false} />);
+    act(() => vi.advanceTimersByTime(1));
+    expect(popover).toHaveFocus();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 it('shows selector skeletons until the new conversation has a catalog', () => {
   const { rerender } = render(<Composer isRunning={false} newConversation agentsLoaded={false} models={['p/model']} />);
