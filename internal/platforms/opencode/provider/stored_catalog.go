@@ -18,20 +18,36 @@ func (a *Adapter) DirectoryCatalogFromStored(ctx context.Context, req platforms.
 			port = a.rt.discoverOpenCodePortCtx(ctx, req.Directory)
 		}
 	}
-	models, _ := a.modelsFromHistory(ctx, req.Directory, port, recents, defaults)
+	models, err := a.modelsFromHistory(ctx, req.Directory, port, recents, defaults)
+	if err != nil {
+		return nil, err
+	}
 	out := &platforms.DirectoryCatalog{Agents: []platforms.AgentCatalogEntry{}, Commands: []platforms.SlashCommandEntry{}, Models: models, DefaultAgent: defaults.Agent, DefaultModel: defaults.Model, LiveConnection: port != ""}
 	if port != "" {
-		if agents := a.agentCatalogAt(ctx, port, "", req.Directory); agents != nil {
-			out.Agents = agents
+		out.Agents, err = a.readAgentCatalog(ctx, port, "", req.Directory)
+		if err != nil {
+			return nil, err
 		}
-		if commands := a.slashCommandsAt(ctx, port, "", req.Directory); commands != nil {
-			out.Commands = commands
+		out.Commands, err = a.readSlashCommands(ctx, port, "", req.Directory)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return out, ctx.Err()
 }
 
-func (a *Adapter) modelsFromHistory(ctx context.Context, directory, port string, recents []db.RecentModel, defaults db.SessionDefaults) (*platforms.SessionModelsResponse, db.SessionDefaults) {
+func (a *Adapter) modelsFromHistory(ctx context.Context, directory, port string, recents []db.RecentModel, defaults db.SessionDefaults) (*platforms.SessionModelsResponse, error) {
+	var providers OpenCodeProvidersResponse
+	hasProviders := port != ""
+	if port != "" {
+		phase := srvtiming.Begin(ctx, "http_provider")
+		var err error
+		providers, err = a.readProviderCatalog(ctx, port, directory)
+		phase.EndWithDesc("GET /provider")
+		if err != nil {
+			return nil, err
+		}
+	}
 	var favorites []state.ModelFavorite
 	if a.favorites != nil {
 		phase := srvtiming.Begin(ctx, "db_favorites")
@@ -41,13 +57,6 @@ func (a *Adapter) modelsFromHistory(ctx context.Context, directory, port string,
 		if err != nil {
 			log.WithError(err).Warn("opencode: fetching model favorites")
 		}
-	}
-	var providers OpenCodeProvidersResponse
-	hasProviders := false
-	if port != "" {
-		phase := srvtiming.Begin(ctx, "http_provider")
-		providers, hasProviders = a.fetchOpenCodeProviders(ctx, port, directory)
-		phase.EndWithDesc("GET /provider")
 	}
 	entries := buildSessionModelEntries(recents, favorites, providers, hasProviders, defaults.Model)
 	var connectedDefaults map[string]string
@@ -59,5 +68,5 @@ func (a *Adapter) modelsFromHistory(ctx context.Context, directory, port string,
 			}
 		}
 	}
-	return &platforms.SessionModelsResponse{SessionDefault: defaults.Model, ProviderDefaults: connectedDefaults, HasProviders: hasProviders, Models: entries}, defaults
+	return &platforms.SessionModelsResponse{SessionDefault: defaults.Model, ProviderDefaults: connectedDefaults, HasProviders: hasProviders, Models: entries}, nil
 }

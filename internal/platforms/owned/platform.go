@@ -55,8 +55,21 @@ func (a *Adapter) SlashCommands(ctx context.Context, id string) ([]platforms.Sla
 
 func (a *Adapter) SessionModels(ctx context.Context, id string) (*platforms.SessionModelsResponse, error) {
 	catalog, err := a.storedSessionCatalog(ctx, id)
-	if err != nil || catalog == nil {
-		return nil, err
+	if err != nil {
+		// Live configuration is optional for browsing retained models. Use only
+		// this canonical identity's history, never another source or directory.
+		row, historyErr := a.storedMetadata(ctx, id)
+		if historyErr != nil {
+			return nil, historyErr
+		}
+		recents, defaults, historyErr := a.storedCatalogHistory(ctx, row.Directory, id)
+		if historyErr != nil {
+			return nil, historyErr
+		}
+		return historicalCatalog(recents, defaults).Models, nil
+	}
+	if catalog == nil {
+		return nil, nil
 	}
 	return catalog.Models, nil
 }

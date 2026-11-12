@@ -101,19 +101,24 @@ func (h *httpState) ProjectCatalog(ctx context.Context, endpoint, directory stri
 	return agents, models, nil
 }
 
-// agentCatalogAt returns nil on failure so the frontend renders no options.
+// agentCatalogAt is a best-effort lookup for optional agent-name suggestions.
 func (h *httpState) agentCatalogAt(ctx context.Context, port, sessionID, directory string) []platforms.AgentCatalogEntry {
+	entries, _ := h.readAgentCatalog(ctx, port, sessionID, directory)
+	return entries
+}
+
+func (h *httpState) readAgentCatalog(ctx context.Context, port, sessionID, directory string) ([]platforms.AgentCatalogEntry, error) {
 	body, fetchErr := h.getJSONCached(ctx, port, scopedPath(ctx, port, "/agent", directory))
 	if fetchErr != nil {
-		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/agent"},
+		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/agent", "directory": directory},
 			"opencode: agent catalog fetch failed; returning empty list")
-		return nil
+		return nil, catalogError(directory, "/agent", fetchErr)
 	}
 	var raw []map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "error": err}).
+		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "directory": directory, "error": err}).
 			Warn("opencode: agent catalog decode failed; returning empty list")
-		return nil
+		return nil, catalogError(directory, "/agent", err)
 	}
 	entries := make([]platforms.AgentCatalogEntry, 0, len(raw))
 	for _, r := range raw {
@@ -124,21 +129,26 @@ func (h *httpState) agentCatalogAt(ctx context.Context, port, sessionID, directo
 			Kind: mode, Mode: mode, Hidden: boolField(r, "hidden"), BuiltIn: boolField(r, "native"),
 		})
 	}
-	return entries
+	return entries, nil
 }
 
 func (h *httpState) slashCommandsAt(ctx context.Context, port, sessionID, directory string) []platforms.SlashCommandEntry {
+	entries, _ := h.readSlashCommands(ctx, port, sessionID, directory)
+	return entries
+}
+
+func (h *httpState) readSlashCommands(ctx context.Context, port, sessionID, directory string) ([]platforms.SlashCommandEntry, error) {
 	body, fetchErr := h.getJSONCached(ctx, port, scopedPath(ctx, port, "/command", directory))
 	if fetchErr != nil {
-		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/command"},
+		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/command", "directory": directory},
 			"opencode: slash commands fetch failed; returning empty list")
-		return nil
+		return nil, catalogError(directory, "/command", fetchErr)
 	}
 	var raw []map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "error": err}).
+		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "directory": directory, "error": err}).
 			Warn("opencode: slash commands decode failed; returning empty list")
-		return nil
+		return nil, catalogError(directory, "/command", err)
 	}
 	entries := make([]platforms.SlashCommandEntry, 0, len(raw))
 	for _, r := range raw {
@@ -147,7 +157,11 @@ func (h *httpState) slashCommandsAt(ctx context.Context, port, sessionID, direct
 			Template: stringField(r, "template"), Source: stringField(r, "source"),
 		})
 	}
-	return entries
+	return entries, nil
+}
+
+func catalogError(directory, endpoint string, err error) error {
+	return fmt.Errorf("OpenCode catalog %s for directory %q: %w", endpoint, directory, err)
 }
 
 func marshalRequest(v any) ([]byte, error) {

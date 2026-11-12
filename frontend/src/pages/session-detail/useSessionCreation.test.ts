@@ -89,11 +89,11 @@ describe('useSessionCreation', () => {
     expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
   });
 
-  it('falls back to the directory layout when the worktree lookup fails', async () => {
+  it('preserves the directory and owner when the worktree lookup fails', async () => {
     const o = opts({ session: { ...session, directory: '/src/.worktrees/repo/feat' } });
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession());
-    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/ocm_11111111-1111-4111-8111-111111111111?dir=%2Fsrc%2F.worktrees%2Frepo%2Ffeat&remoteId=r-x&platform=r-x%3Aopencode&draftId=ocm_11111111-1111-4111-8111-111111111111');
   });
 
   it('starts a new conversation beside the open session, with an optional title', async () => {

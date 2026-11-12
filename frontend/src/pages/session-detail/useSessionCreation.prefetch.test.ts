@@ -89,12 +89,12 @@ describe('new-session checkout prefetch', () => {
     expect(remoteLog.warn).not.toHaveBeenCalled();
   });
 
-  it('uses the layout fallback when no usable main worktree is returned', async () => {
+  it('keeps the requested directory when no usable main worktree is returned', async () => {
     list.mockResolvedValue({ worktrees: [{ path: '/bare', main: true, bare: true }] });
     const opts = { ...options(), session: { ...session, directory: '/src/.worktrees/repo/feature' } };
     const { result } = renderHook(() => useSessionCreation(opts));
     await act(() => result.current.handleNewSession());
-    expect(opts.navigate).toHaveBeenCalledWith(expect.stringContaining('dir=%2Fsrc%2Frepo&'));
+    expect(opts.navigate).toHaveBeenCalledWith(expect.stringContaining('dir=%2Fsrc%2F.worktrees%2Frepo%2Ffeature&'));
     expect(list).toHaveBeenCalledTimes(1);
   });
 });

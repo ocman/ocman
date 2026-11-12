@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -63,6 +64,9 @@ func WorktreePathFor(repoRoot, branch string) string {
 func ResolveRepoRoot(ctx context.Context, dir string) (string, error) {
 	if dir == "" {
 		return "", ErrNotARepo
+	}
+	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) && ctx.Err() == nil {
+		return "", fmt.Errorf("%w: %s", ErrNotARepo, dir)
 	}
 	cmd := gitexec.Command(ctx, "-C", dir, "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()

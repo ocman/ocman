@@ -135,18 +135,23 @@ type OpenCodeProvidersResponse struct {
 // fetchOpenCodeProviders calls GET /provider on the running OpenCode
 // instance, scoped to directory.
 func (h *httpState) fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCodeProvidersResponse, bool) {
+	providers, err := h.readProviderCatalog(ctx, port, directory)
+	return providers, err == nil
+}
+
+func (h *httpState) readProviderCatalog(ctx context.Context, port, directory string) (OpenCodeProvidersResponse, error) {
 	var empty OpenCodeProvidersResponse
 	body, err := h.getJSONCached(ctx, port, scopedPath(ctx, port, "/provider", directory))
 	if err != nil {
-		logFetchFailure(err, log.Fields{"port": port, "endpoint": "/provider"},
+		logFetchFailure(err, log.Fields{"port": port, "endpoint": "/provider", "directory": directory},
 			"opencode: provider catalog fetch failed")
-		return empty, false
+		return empty, catalogError(directory, "/provider", err)
 	}
 	var parsed OpenCodeProvidersResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return empty, false
+		return empty, catalogError(directory, "/provider", err)
 	}
-	return parsed, true
+	return parsed, nil
 }
 
 // scopedPath adds the directory scope to a catalog path: one OpenCode server

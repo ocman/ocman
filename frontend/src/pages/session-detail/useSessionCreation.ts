@@ -23,7 +23,7 @@ export interface UseSessionCreationOptions {
 /**
  * Resolves the session's main checkout from the owner's worktree list, so
  * worktrees outside ocman's `.worktrees/<repo>/<slug>` layout are covered.
- * A failed lookup (e.g. not a repository) keeps the layout-based guess.
+ * Without an owner-verified main checkout, retain the requested directory.
  */
 async function mainCheckout(directory: string, remoteId: string | undefined, signal: AbortSignal): Promise<string> {
   try {
@@ -31,9 +31,9 @@ async function mainCheckout(directory: string, remoteId: string | undefined, sig
     const main = worktrees.find((tree) => tree.main && !tree.bare)?.path;
     if (main) return main;
   } catch (e) {
-    if (!signal.aborted) remoteLog.warn('Resolving main checkout failed; using directory layout', e);
+    if (!signal.aborted) remoteLog.warn('Resolving main checkout failed; keeping requested directory', e);
   }
-  return projectRootForDirectory(directory);
+  return directory;
 }
 
 /** New-session and `/compact` actions for the open session. */

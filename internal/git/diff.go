@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -165,6 +166,9 @@ func GetDiff(ctx context.Context, dir string, opts DiffOptions) (*Diff, error) {
 		return nil, fmt.Errorf("git: dir must be absolute: %q", dir)
 	}
 	if _, err := os.Stat(dir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNotRepo
+		}
 		return nil, fmt.Errorf("git: dir not accessible: %w", err)
 	}
 	return defaultDiffCache.get(ctx, dir, opts.Force)

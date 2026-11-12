@@ -57,6 +57,10 @@ func TestStoredDirectoryCatalogUsesPinnedPort(t *testing.T) {
 			_, _ = io.WriteString(w, `[{"name":"build"}]`)
 			return
 		}
+		if r.URL.Path == "/provider" {
+			_, _ = io.WriteString(w, `{"all":[],"connected":[],"default":{}}`)
+			return
+		}
 		_, _ = io.WriteString(w, `[]`)
 	})
 	withTestPort(t, "/elsewhere", "1")
