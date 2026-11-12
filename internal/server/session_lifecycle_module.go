@@ -15,10 +15,11 @@ import (
 func (s *Server) sessionLifecycleModule() *sessionlifecycle.Module {
 	return s.sessionLifecycle.get(func() *sessionlifecycle.Module {
 		d := sessionlifecycle.Deps{
-			Archive:        s.setSessionArchived,
-			Sessions:       func() sessionlifecycle.Sessions { return s.sessions },
-			Owner:          s.resolveOwner,
-			CreatePlatform: s.createPlatform,
+			Archive:          s.setSessionArchived,
+			ArchiveWatermark: s.setupArchiveWatermark,
+			Sessions:         func() sessionlifecycle.Sessions { return s.sessions },
+			Owner:            s.resolveOwner,
+			CreatePlatform:   s.createPlatform,
 			PermissionDefaults: func(ctx context.Context, dir, owner string) ([]platforms.PermissionRule, error) {
 				defaults, err := projectsmod.LoadDefaults(ctx, s.stateDB, dir, owner)
 				if err != nil || defaults == nil {

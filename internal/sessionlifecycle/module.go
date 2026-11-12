@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ocman/ocman/internal/hostsvc"
@@ -37,6 +38,7 @@ type Sessions interface {
 type Deps struct {
 	DB                  *sql.DB
 	Archive             func(context.Context, string, string, int64, bool) error
+	ArchiveWatermark    func(context.Context, string, string) (int64, error)
 	Enqueue             func(context.Context, string, platforms.SendMessageRequest) error
 	DispatchQueued      func(context.Context, string, string)
 	QueueList           http.HandlerFunc
@@ -57,9 +59,10 @@ type Deps struct {
 }
 
 type Module struct {
-	d           Deps
-	workers     module.Workers
-	launchSlots chan struct{}
+	d                 Deps
+	workers           module.Workers
+	launchSlots       chan struct{}
+	draftOutcomeLocks [64]sync.Mutex
 }
 
 func NewModule(d Deps) *Module { return &Module{d: d, launchSlots: make(chan struct{}, 4)} }

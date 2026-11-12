@@ -18,7 +18,7 @@ func (m *Module) runDraftWorker(ctx context.Context, id string, work func()) {
 			log.WithField("stack", string(debug.Stack())).Error("conversation setup interrupted by panic")
 			write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			if err := (draftStore{m.d.DB}).finish(write, id, nil, "Setup was interrupted. The saved prompt has not been replayed."); err != nil {
+			if err := m.finishDraft(write, id, nil, "Setup was interrupted. The saved prompt has not been replayed."); err != nil {
 				log.WithError(err).Error("persisting interrupted setup")
 			}
 			m.draftChanged()

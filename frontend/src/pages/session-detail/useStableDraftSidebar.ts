@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '../../lib/api.types';
 import { useNewConversationDrafts, type ConversationDraft } from '../../lib/newConversationDrafts';
-import { archiveBackendDraft, discardBackendDraft, isBackendDraft, refreshBackendDrafts, retireBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
+import { archiveBackendDraft, discardBackendDraft, isBackendDraft, refreshBackendDrafts, retireBackendDraft, shouldArchiveBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 import { remoteLog } from '../../lib/remoteLog';
@@ -20,7 +20,7 @@ function draftSession(draft: ConversationDraft): Session {
     summaryAdditions: null, summaryDeletions: null, summaryFiles: null, shareUrl: null,
     messageCount: 0, durationMs: 0, activeDurationMs: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0,
     status: backend?.error ? 'error' : 'waiting', liveConnection: false,
-    pendingPermission: false, pendingQuestion: false, archived: !!backend?.archived && !backend?.error, seen: true,
+    pendingPermission: false, pendingQuestion: false, archived: !!backend?.archived && (!backend?.error || !!backend.errorAcknowledged), seen: true,
     pinned: false, pinnedAt: 0, seenTimeUpdated: 0, unreadCount: 0,
   };
 }
@@ -59,7 +59,7 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
   const derived = useMemo(() => {
     const pending = stable.filter((draft) => backend[draft.draftId]?.phase !== 'ready' || !known.has(draft.draftId));
     const ids = new Set(pending.map((draft) => draft.draftId));
-    const synthetic = pending.filter((draft) => showArchived || !backend[draft.draftId]?.archived || !!backend[draft.draftId]?.error).map(draftSession);
+    const synthetic = pending.map(draftSession).filter((row) => showArchived || !row.archived);
     const merge = (rows: Session[], extras: Session[]) => {
       return [...rows.filter((row) => !ids.has(row.id)), ...extras]
         .sort(compareSidebarCompletion);
@@ -85,7 +85,7 @@ export function useStableDraftSidebar(recent: Session[], groups: SidebarProjectG
     setDiscardError(undefined);
     // Unsubmitted/failed allocation can be discarded. Accepted work must keep running.
     const record = useBackendConversationDrafts.getState().drafts[id];
-    const archive = record && record.phase !== 'draft' && !(['failed', 'interrupted'].includes(record.phase) && record.result?.sessionId !== id);
+    const archive = shouldArchiveBackendDraft(record);
     const afterCommit = () => {
       if (currentId.current === id) navigateAfterDraftDiscard(id, navigate);
     };

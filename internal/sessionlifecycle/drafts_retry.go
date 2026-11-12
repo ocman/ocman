@@ -57,7 +57,7 @@ func (m *Module) retryDraftDelivery(w http.ResponseWriter, r *http.Request) {
 			raw, _ := json.Marshal(result)
 			write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			if err := store.finish(write, id, raw, message); err != nil {
+			if err := m.finishDraft(write, id, raw, message); err != nil {
 				log.WithError(err).Error("persisting first-delivery retry")
 			}
 			m.draftChanged()
@@ -66,7 +66,7 @@ func (m *Module) retryDraftDelivery(w http.ResponseWriter, r *http.Request) {
 			}
 		})
 	}) {
-		_ = store.finish(r.Context(), id, draft.Result, "Server stopped before retrying delivery.")
+		_ = m.finishDraft(r.Context(), id, draft.Result, "Server stopped before retrying delivery.")
 	}
 	w.WriteHeader(http.StatusAccepted)
 }

@@ -20,23 +20,30 @@ var Schema = state.ModuleSchema{
 			created_at INTEGER NOT NULL, submitted_at INTEGER NOT NULL DEFAULT 0
 		)`)
 		return err
+	}, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`ALTER TABLE conversation_draft ADD COLUMN error_version INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE conversation_draft ADD COLUMN archived_error_version INTEGER NOT NULL DEFAULT -1;
+			UPDATE conversation_draft SET error_version=1 WHERE error<>''`)
+		return err
 	}},
 }
 
 // ConversationDraft keeps the application identity before a native session exists.
 // Accepted prompts and setup receipts are durable; browser drafts are only a cache.
 type ConversationDraft struct {
-	ID          string            `json:"id"`
-	Metadata    json.RawMessage   `json:"metadata"`
-	Phase       string            `json:"phase"`
-	Request     json.RawMessage   `json:"request,omitempty"`
-	Result      json.RawMessage   `json:"result,omitempty"`
-	Steps       map[string]string `json:"steps"`
-	Error       string            `json:"error,omitempty"`
-	CreatedAt   int64             `json:"createdAt"`
-	SubmittedAt int64             `json:"submittedAt,omitempty"`
-	Revision    string            `json:"revision"`
-	Archived    bool              `json:"archived"`
+	ID                string            `json:"id"`
+	Metadata          json.RawMessage   `json:"metadata"`
+	Phase             string            `json:"phase"`
+	Request           json.RawMessage   `json:"request,omitempty"`
+	Result            json.RawMessage   `json:"result,omitempty"`
+	Steps             map[string]string `json:"steps"`
+	Error             string            `json:"error,omitempty"`
+	CreatedAt         int64             `json:"createdAt"`
+	SubmittedAt       int64             `json:"submittedAt,omitempty"`
+	Revision          string            `json:"revision"`
+	Archived          bool              `json:"archived"`
+	ErrorVersion      int64             `json:"errorVersion"`
+	ErrorAcknowledged bool              `json:"errorAcknowledged"`
 }
 
 type draftStore struct{ db *sql.DB }
@@ -45,7 +52,7 @@ var errDraftSubmissionConflict = errors.New("the first submission is already per
 
 func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 	var meta, request, result, steps string
-	err = scan(&d.ID, &meta, &d.Phase, &request, &result, &steps, &d.Error, &d.CreatedAt, &d.SubmittedAt, &d.Archived)
+	err = scan(&d.ID, &meta, &d.Phase, &request, &result, &steps, &d.Error, &d.CreatedAt, &d.SubmittedAt, &d.Archived, &d.ErrorVersion, &d.ErrorAcknowledged)
 	d.Metadata = json.RawMessage(meta)
 	d.Revision = draftVersion(d.Metadata)
 	if request != "" {
@@ -62,7 +69,7 @@ func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 
 // Ocman draft IDs are globally allocated, before an owner/native binding exists.
 const draftColumns = `id,metadata,phase,request,result,steps,error,created_at,submitted_at,
-	conversation_draft.id IN (SELECT session_id FROM archived_session)`
+	conversation_draft.id IN (SELECT session_id FROM archived_session), error_version, error_version<=archived_error_version`
 
 func (s draftStore) get(ctx context.Context, id string) (ConversationDraft, error) {
 	return scanDraft(s.db.QueryRowContext(ctx, `SELECT `+draftColumns+` FROM conversation_draft WHERE id=?`, id).Scan)
@@ -135,7 +142,8 @@ func (s draftStore) finish(ctx context.Context, id string, result []byte, messag
 	if message != "" {
 		phase = "failed"
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE conversation_draft SET phase=?,result=CASE WHEN ?='' THEN result ELSE ? END,error=? WHERE id=?`, phase, string(result), string(result), message, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE conversation_draft SET phase=?,result=CASE WHEN ?='' THEN result ELSE ? END,error=?,
+		error_version=error_version+CASE WHEN ?<>'' THEN 1 ELSE 0 END WHERE id=?`, phase, string(result), string(result), message, message, id)
 	return err
 }
 
@@ -156,6 +164,7 @@ func (s draftStore) recover(ctx context.Context) error {
 	done := `json_extract(steps,'$.prompt')='done' AND json_extract(CASE WHEN json_valid(result) THEN result ELSE '{}' END,'$.sessionId')=id`
 	_, err := s.db.ExecContext(ctx, `UPDATE conversation_draft SET
 		phase=CASE WHEN `+done+` THEN 'ready' ELSE 'interrupted' END,
+		error_version=error_version+CASE WHEN `+done+` THEN 0 ELSE 1 END,
 		error=CASE WHEN `+done+` THEN '' ELSE 'Setup was interrupted. The saved prompt has not been replayed.' END,
 		result=CASE WHEN `+done+` THEN json_set(result,'$.firstMessageSent',json('true'),'$.firstMessageError','') ELSE result END
 		WHERE phase IN ('accepted','starting','delivering')`)

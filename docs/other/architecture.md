@@ -811,7 +811,11 @@ flowchart TD
   `POST /api/session-drafts/{id}/archive` without discarding its payload or
   stopping its worker. An injected archive callback writes the normal session
   marker for the stable Ocman ID. Draft reads expose that marker across tabs
-  and reloads. Archive resurfacing checks setup admission before treating a
+  and reloads. A versioned failure acknowledgement allows an existing delivery
+  error to be dismissed without hiding a later identical error. Archival and
+  durable completion share bounded outcome locks; terminal sessions read their
+  update watermark from the owner rather than borrowing the hub's clock.
+  Archive resurfacing, including compact local and remote reads, checks setup admission before treating a
   newly bound idle session as complete; permission and question prompts still
   resurface immediately.
 - **Conversation stream** (`internal/convstream`). Serves

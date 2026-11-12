@@ -34,7 +34,7 @@ import { useDraftMachine } from './useDraftMachine';
 import { usePendingDraftPayload, pendingAttachmentWriter, rememberPendingDraftPayload, updateDraftAttachments } from '../../lib/pendingDraftPayloads';
 import { durableStartRequest, resolveTarget, type Ready, type Submission } from './newConversationSubmission';
 import { useDurableConversation } from './useDurableConversation';
-import { archiveBackendDraft, discardBackendDraft, isBackendDraft, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
+import { archiveBackendDraft, discardBackendDraft, isBackendDraft, shouldArchiveBackendDraft, useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 import { DurableDraftRecovery } from './DurableDraftRecovery';
 import { DraftSaveError } from './DraftSaveError';
 import { DraftPermissionMode } from '../../components/PermissionModeLock';
@@ -287,12 +287,13 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
 
   const onCommand = (command: string, args: string) => {
     if (command === 'archive') {
+      const archive = shouldArchiveBackendDraft(durable.record);
       const afterCommit = () => {
         if (active.current) navigateAfterDraftDiscard(draftId, navigate);
       };
-      return (durable.submitted ? archiveBackendDraft(draftId).then(afterCommit)
+      return (archive ? archiveBackendDraft(draftId).then(afterCommit)
         : (durable.enabled ? discardBackendDraft : forgetConversationDraft)(draftId, afterCommit)).catch((error: unknown) => {
-        if (active.current) setError(`Could not ${durable.submitted ? 'archive the session' : 'discard the draft'}: ${error instanceof Error ? error.message : String(error)}`);
+        if (active.current) setError(`Could not ${archive ? 'archive the session' : 'discard the draft'}: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
       });
     }

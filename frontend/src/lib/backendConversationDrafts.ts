@@ -20,6 +20,8 @@ export interface BackendConversationDraft {
   submittedAt?: number;
   revision?: string;
   archived?: boolean;
+  errorVersion?: number;
+  errorAcknowledged?: boolean;
 }
 
 export const useBackendConversationDrafts = create<{
@@ -135,8 +137,17 @@ export async function discardBackendDraft(id: string, afterCommit?: () => void) 
 }
 
 export async function archiveBackendDraft(id: string) {
+  const before = useBackendConversationDrafts.getState().drafts[id];
   await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}/archive`, undefined, { parseJSON: false });
-  useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: { ...state.drafts[id], archived: true } } }));
+  useBackendConversationDrafts.setState((state) => {
+    const current = state.drafts[id];
+    return { drafts: { ...state.drafts, [id]: { ...current, archived: true,
+      errorAcknowledged: current.errorVersion === before.errorVersion && current.error === before.error } } };
+  });
+}
+
+export function shouldArchiveBackendDraft(record?: BackendConversationDraft) {
+  return !!record && record.phase !== 'draft' && !(['failed', 'interrupted'].includes(record.phase) && record.result?.sessionId !== record.id);
 }
 
 export async function acceptBackendDraft(id: string, request: DurableStartRequest) {

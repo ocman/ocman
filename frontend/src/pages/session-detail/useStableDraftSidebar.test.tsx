@@ -86,6 +86,19 @@ it('retains setup and offers retry when archiving fails', async () => {
   expect(result.current.recent).toEqual([]);
 });
 
+it('dismisses an existing bound delivery failure but resurfaces a later failure', async () => {
+  const failed = { id, metadata: meta, phase: 'failed' as const, error: 'first delivery failed', errorVersion: 1,
+    result: { sessionId: id, platform: 'opencode', directory: '/repo', remoteId: 'local', firstMessageSent: false, firstMessageError: 'first delivery failed' }, createdAt: 100, steps: {} };
+  vi.mocked(fetchJSON).mockResolvedValue([failed]);
+  useBackendConversationDrafts.setState({ drafts: { [id]: failed } });
+  const { result } = renderHook(() => useStableDraftSidebar([], [group], vi.fn()));
+  await act(async () => {});
+  await act(async () => { result.current.discard(id); });
+  expect(result.current.recent).toEqual([]);
+  act(() => useBackendConversationDrafts.setState({ drafts: { [id]: { ...failed, archived: true, errorVersion: 2, errorAcknowledged: false } } }));
+  expect(result.current.recent[0]).toMatchObject({ id, archived: false, status: 'error' });
+});
+
 it('pauses hidden reads, reconciles on return and stops after unmount', async () => {
   vi.useFakeTimers();
   let hidden = true;

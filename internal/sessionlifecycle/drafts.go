@@ -179,7 +179,7 @@ func (m *Module) acceptDraft(w http.ResponseWriter, r *http.Request) {
 	if created {
 		// The body has committed. Work belongs to the module, not this HTTP client.
 		if !m.workers.Go(func(ctx context.Context) { m.runDraftWorker(ctx, id, func() { m.launchDraft(ctx, id, raw) }) }) {
-			_ = store.finish(r.Context(), id, nil, "Setup was not started because the server is stopping.")
+			_ = m.finishDraft(r.Context(), id, nil, "Setup was not started because the server is stopping.")
 		}
 	}
 	httpx.WriteJSONStatus(w, http.StatusAccepted, draft)
@@ -188,7 +188,6 @@ func (m *Module) acceptDraft(w http.ResponseWriter, r *http.Request) {
 // launchDraft uses the same creation orchestration as existing API callers.
 // Capture its typed JSON response without keeping an HTTP connection open.
 func (m *Module) launchDraft(ctx context.Context, id string, raw []byte) {
-	store := draftStore{m.d.DB}
 	select {
 	case m.launchSlots <- struct{}{}:
 		defer func() { <-m.launchSlots }()
@@ -213,7 +212,7 @@ func (m *Module) launchDraft(ctx context.Context, id string, raw []byte) {
 	}
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if err := store.finish(write, id, response.Body.Bytes(), message); err != nil {
+	if err := m.finishDraft(write, id, response.Body.Bytes(), message); err != nil {
 		log.WithError(err).Error("persisting session setup outcome")
 	}
 	m.draftChanged()

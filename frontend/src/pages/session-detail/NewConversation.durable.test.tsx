@@ -27,6 +27,7 @@ const queued: unknown[] = [];
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
 beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
   window.localStorage.clear();
   clearSettingsCache();
   resetDraftTextsForTests();
@@ -59,6 +60,18 @@ beforeEach(() => {
   }));
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it.each(['failed', 'interrupted'] as const)('/archive discards an unbound %s allocation', async (phase) => {
+  record = { ...record, phase, error: 'allocation failed', request: { directory: '/repo', platform: 'opencode', prompt: 'first', send: { message: 'first' } } };
+  const navigate = vi.fn();
+  render(<NewConversation params={record.metadata} composerRef={null} navigate={navigate} navigateToSession={vi.fn()} />);
+  const input = await screen.findByRole('textbox');
+  fireEvent.input(input, { target: { value: '/archive' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(`/api/session-drafts/${id}`, expect.objectContaining({ method: 'DELETE' })));
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/archive'))).toBe(false);
+  await waitFor(() => expect(navigate).toHaveBeenCalled());
+});
 
 it('waits for the chosen server route before mounting or autosaving recovered selections', async () => {
   vi.mocked(api.prepareSession).mockResolvedValue({ platform: 'opencode', agents: [{ name: 'peer-agent' }], commands: [],

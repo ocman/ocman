@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { applyBackendStartProgress, discardBackendDraft, fetchBackendDraft, loadBackendDraftConflict, resolveBackendDraftConflict, persistBackendDraft, queueBackendDraft, refreshBackendDrafts, retireBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts } from './backendConversationDrafts';
+import { applyBackendStartProgress, archiveBackendDraft, discardBackendDraft, fetchBackendDraft, loadBackendDraftConflict, resolveBackendDraftConflict, persistBackendDraft, queueBackendDraft, refreshBackendDrafts, retireBackendDraft, subscribeBackendDraftSync, useBackendConversationDrafts } from './backendConversationDrafts';
 import { APIError, fetchJSON, postJSON } from './api.requests';
 import { rememberConversationDraft, useNewConversationDrafts } from './newConversationDrafts';
 import { applyTexts, getDraft, saveDraft } from './composerDraft';
@@ -12,6 +12,18 @@ beforeEach(() => {
   useNewConversationDrafts.setState({ drafts: [], starts: {} });
   useBackendConversationDrafts.setState({ drafts: {}, saveErrors: {}, conflicts: {}, recovered: {}, recoveryTargets: {} });
   vi.mocked(postJSON).mockResolvedValue(undefined);
+});
+
+it('does not acknowledge a later identical failure when the archive response is delayed', async () => {
+  const failed = { id, metadata, phase: 'failed' as const, error: 'delivery failed', errorVersion: 1, steps: {}, createdAt: 1 };
+  useBackendConversationDrafts.setState({ drafts: { [id]: failed } });
+  let release!: () => void;
+  vi.mocked(postJSON).mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+  const pending = archiveBackendDraft(id);
+  useBackendConversationDrafts.setState({ drafts: { [id]: { ...failed, errorVersion: 2 } } });
+  release();
+  await pending;
+  expect(useBackendConversationDrafts.getState().drafts[id]).toMatchObject({ archived: true, errorAcknowledged: false, errorVersion: 2 });
 });
 
 it('restores backend drafts and unsent composer text without replacing existing local drafts', async () => {
