@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"testing"
 
@@ -50,5 +51,28 @@ func TestSkillsListAndRunOnV2(t *testing.T) {
 	hit, ok := f.find(http.MethodPost, "/api/session/"+sid+"/prompt")
 	if !ok || hit.body["text"] != "@review-pr 1118" {
 		t.Fatalf("prompt = %+v, want the @review-pr mention", hit.body)
+	}
+}
+
+func TestV2FakeReusedPortForgetsLegacyDialect(t *testing.T) {
+	legacy := newV2Fake(t, false, nil)
+	// A v1-shaped fake populates the process-wide dialect cache with false.
+	_, _ = getJSON(context.Background(), legacy.Port(), "/command")
+	address := legacy.server.Listener.Addr().String()
+	legacy.server.Close()
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newV2FakeWithListener(t, true, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path != "/api/command" {
+			return false
+		}
+		writeJSONBody(w, `{"data":[{"name":"init","description":"setup"}]}`)
+		return true
+	}, listener)
+	commands := slashCommandsAt(context.Background(), f.Port(), "s1", "/repo")
+	if len(commands) != 1 || commands[0].Name != "init" {
+		t.Fatalf("commands = %+v, want init after fake port reuse", commands)
 	}
 }

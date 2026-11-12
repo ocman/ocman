@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -35,8 +36,13 @@ type v2Fake struct {
 
 func newV2Fake(t *testing.T, v2 bool, handle func(w http.ResponseWriter, r *http.Request) bool) *v2Fake {
 	t.Helper()
+	return newV2FakeWithListener(t, v2, handle, nil)
+}
+
+func newV2FakeWithListener(t *testing.T, v2 bool, handle func(w http.ResponseWriter, r *http.Request) bool, listener net.Listener) *v2Fake {
+	t.Helper()
 	f := &v2Fake{t: t, handle: handle}
-	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hit := v2Hit{method: r.Method, path: r.URL.Path}
 		if b, _ := io.ReadAll(r.Body); len(b) > 0 {
 			_ = json.Unmarshal(b, &hit.body)
@@ -54,6 +60,14 @@ func newV2Fake(t *testing.T, v2 bool, handle func(w http.ResponseWriter, r *http
 		}
 		http.NotFound(w, r)
 	}))
+	if listener != nil {
+		_ = f.server.Listener.Close()
+		f.server.Listener = listener
+	}
+	f.server.Start()
+	// The OS can reuse a port previously occupied by a v1-shaped test server.
+	// Reset at startup too, before the first request consults the shared cache.
+	ocv2.ForgetHost("127.0.0.1:" + f.Port())
 	t.Cleanup(func() {
 		f.server.Close()
 		ocv2.ForgetHost("127.0.0.1:" + f.Port())
