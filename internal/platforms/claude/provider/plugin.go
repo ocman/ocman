@@ -263,7 +263,7 @@ func WriteLaunchConfig(path, mcpAddr string) error {
 // the token file whose ocman entry carries the listener's bearer token, so
 // the token never appears in argv. Without a readable token the config is
 // passed inline as before, and ocman's listener refuses the connection.
-func (o Options) mcpConfigArg(config string) string {
+func (o Options) mcpConfigArg(config, sessionID string) string {
 	token := mcpauth.ReadToken(o.MCPTokenPath)
 	if config == "" || token == "" {
 		return config
@@ -274,7 +274,7 @@ func (o Options) mcpConfigArg(config string) string {
 	if json.Unmarshal([]byte(config), &doc) != nil || doc.MCPServers["ocman"] == nil {
 		return config
 	}
-	doc.MCPServers["ocman"]["headers"] = mcpauth.Headers(token)
+	doc.MCPServers["ocman"]["headers"] = mcpauth.SessionHeaders(token, "claudecode", sessionID)
 	data, err := json.Marshal(doc)
 	if err != nil {
 		return config

@@ -24,7 +24,7 @@ func TestMCPConfigArgCarriesTokenInPrivateFile(t *testing.T) {
 	}
 	opts := Options{MCPTokenPath: tokenFile}
 	config := MCPConfig("127.0.0.1:8227")
-	arg := opts.mcpConfigArg(config)
+	arg := opts.mcpConfigArg(config, "session-one")
 	if strings.Contains(arg, "tok-123") || filepath.Dir(arg) != dir {
 		t.Fatalf("argv value %q leaks the token or is not a file beside it", arg)
 	}
@@ -47,8 +47,14 @@ func TestMCPConfigArgCarriesTokenInPrivateFile(t *testing.T) {
 	if server.URL != "http://127.0.0.1:8227/mcp" || server.Type != "http" || server.Headers["Authorization"] != "Bearer tok-123" {
 		t.Fatalf("config = %s", data)
 	}
-	if again := opts.mcpConfigArg(config); again != arg {
+	if server.Headers[mcpauth.CallerPlatformHeader] != "claudecode" || server.Headers[mcpauth.CallerSessionHeader] != "session-one" {
+		t.Fatalf("missing transport caller: %+v", server.Headers)
+	}
+	if again := opts.mcpConfigArg(config, "session-one"); again != arg {
 		t.Fatalf("same config wrote %q then %q", arg, again)
+	}
+	if other := opts.mcpConfigArg(config, "session-two"); other == arg {
+		t.Fatal("different sessions shared caller context")
 	}
 
 	for name, tc := range map[string]struct {
@@ -61,7 +67,7 @@ func TestMCPConfigArgCarriesTokenInPrivateFile(t *testing.T) {
 		"not JSON":       {opts, "nope"},
 		"no ocman entry": {opts, `{"mcpServers":{}}`},
 	} {
-		if got := tc.opts.mcpConfigArg(tc.config); got != tc.config {
+		if got := tc.opts.mcpConfigArg(tc.config, "session-one"); got != tc.config {
 			t.Errorf("%s: mcpConfigArg = %q, want the inline config", name, got)
 		}
 	}

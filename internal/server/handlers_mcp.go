@@ -238,7 +238,7 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 		if err != nil {
 			return nil, err
 		}
-		platform, id = info.Platform, s.server.sessions.CoreSessionReference(info)
+		platform, id = s.identityPlatform(ctx, info), s.server.sessions.CoreSessionReference(info)
 	}
 	var adapter platforms.Platform
 	var detail *platforms.SessionDetail
@@ -264,8 +264,7 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 		}
 		detail.Session = &sessions[0]
 	}
-	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
-	s.server.enrichSessionCreator(ctx, string(adapter.ID()), id, detail)
+	s.enrichDetail(ctx, adapter, id, detail)
 	return detail, nil
 }
 

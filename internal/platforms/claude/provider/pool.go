@@ -205,7 +205,7 @@ func (l *live) spawnLocked(id, model, effort string) (*proc, error) {
 		return nil, err
 	}
 	mcp := l.opts.mcpConfig()
-	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, l.opts.mcpConfigArg(mcp))...)
+	cmd := exec.Command(l.opts.CLI, l.launchArgs(id, *o, model, effort, l.opts.mcpConfigArg(mcp, id))...)
 	cmd.Dir = o.Directory
 	cmd.Env = l.opts.sessionEnv(o.Directory)
 	cmd.Env = append(cmd.Env, "OCMAN_MANAGED=1")

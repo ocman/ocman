@@ -14,10 +14,13 @@ import (
 
 func TestCreationReservesCanonicalIdentityBeforeNativeAllocation(t *testing.T) {
 	a, p, store := fixture(t)
-	p.beforeCreate = func(platforms.CreateSessionRequest) {
+	p.beforeCreate = func(native platforms.CreateSessionRequest) {
 		rows, err := store.List(t.Context(), "owner", 10, 0)
 		if err != nil || len(rows) != 1 || rows[0].CreationState != sessioncatalog.Creating || rows[0].NativeID != "" || rows[0].OriginID != "routine" {
 			t.Fatalf("native allocation preceded canonical intent: %+v %v", rows, err)
+		}
+		if native.Creation.SessionID != rows[0].ID {
+			t.Fatalf("native allocation has no canonical MCP caller: %+v", native.Creation)
 		}
 	}
 	req := platforms.CreateSessionRequest{Directory: "/repo", Creation: &platforms.CreationIdentity{RequestKey: "start", Origin: "routine", OriginID: "routine"}}
@@ -81,6 +84,9 @@ func TestForkRetainsCanonicalParentAndNativeForkPoint(t *testing.T) {
 	row, err := store.Get(t.Context(), response.ID)
 	if err != nil || row.ParentID != parent || row.NativeID != "forked-native" || row.CreationState != sessioncatalog.Configuring || p.forkRequest.SessionID != "native" || p.forkRequest.MessageID != "native-message" {
 		t.Fatalf("fork identity: %+v %+v %v", row, p.forkRequest, err)
+	}
+	if p.forkRequest.Creation.SessionID != response.ID {
+		t.Fatalf("fork MCP caller must be the child, not the parent: %+v", p.forkRequest.Creation)
 	}
 	if err := a.CommitCreation(t.Context(), response.ID); err != nil {
 		t.Fatal(err)

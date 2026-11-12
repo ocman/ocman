@@ -254,7 +254,7 @@ func TestACPStoppedSupervisorRejectsEveryNewOperation(t *testing.T) {
 	if _, err := a.create(t.Context(), platforms.CreateSessionRequest{Directory: "/repo"}); !errors.Is(err, platforms.ErrCreationRejected) {
 		t.Fatal(err)
 	}
-	if _, err := a.fork(t.Context(), "thr", ""); !errors.Is(err, platforms.ErrCreationRejected) {
+	if _, err := a.fork(t.Context(), "thr", "", ""); !errors.Is(err, platforms.ErrCreationRejected) {
 		t.Fatal(err)
 	}
 	a.close()

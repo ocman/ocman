@@ -82,6 +82,9 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	if !created {
 		return &platforms.CreateSessionResponse{ID: row.ID, ConfigurationApplied: req.Creation.Configured, Replayed: true}, nil
 	}
+	// Native MCP configuration needs this child's durable identity, including
+	// when the caller supplied only a request key rather than a draft ID.
+	req.Creation.SessionID = row.ID
 	row, err = a.planCreation(ctx, row, &req)
 	if err != nil {
 		return nil, &CreationPendingError{SessionID: row.ID, Err: err}
@@ -117,6 +120,7 @@ func (a *Adapter) ForkSession(ctx context.Context, req platforms.ForkSessionRequ
 		return &platforms.CreateSessionResponse{ID: row.ID, Replayed: true}, nil
 	}
 	req.SessionID = nativeID
+	req.Creation.SessionID = row.ID
 	response, err := a.native.ForkSession(ctx, req)
 	return a.finishNativeCreation(ctx, row, response, err, req.Creation)
 }

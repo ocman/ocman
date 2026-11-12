@@ -60,7 +60,7 @@ func (a *acpExecution) serve(w http.ResponseWriter, r *http.Request) bool {
 		var req platforms.ForkSessionRequest
 		var response *platforms.CreateSessionResponse
 		if err = providersupervisor.Decode(r, &req); err == nil {
-			response, err = a.fork(ctx, id, req.MessageID)
+			response, err = a.fork(ctx, id, req.MessageID, creationCaller(req.Creation))
 		}
 		reply(w, response, err)
 		return true
@@ -76,7 +76,7 @@ func (a *acpExecution) serve(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func (a *acpExecution) fork(ctx context.Context, id, messageID string) (*platforms.CreateSessionResponse, error) {
+func (a *acpExecution) fork(ctx context.Context, id, messageID, caller string) (*platforms.CreateSessionResponse, error) {
 	if messageID != "" {
 		return nil, errors.Join(platforms.ErrCreationRejected, platforms.ErrUnsupported)
 	}
@@ -91,7 +91,7 @@ func (a *acpExecution) fork(ctx context.Context, id, messageID string) (*platfor
 	dir := a.b.sessionLocked(id).dir
 	a.b.mu.Unlock()
 	var servers []acp.UnstableMcpServer
-	raw, err := json.Marshal(a.servers())
+	raw, err := json.Marshal(a.servers(caller))
 	if err != nil {
 		return nil, err
 	}

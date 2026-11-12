@@ -108,12 +108,20 @@ uncertain delivery failure.
 
 `{"action":"send","intent":"Send the test results to the review session","session_id":"ses_recipient","platform":"opencode","prompt":"The tests passed. Continue with the review."}`
 
-Use `create` only when the user asks for a separate session. Pass optional
-`model` (`provider/model`), `agent` (e.g. `build`, `plan`), and `title`. Pass
-your own `platform` and `session_id` so the new session starts in your project
-root on your machine, or pass an absolute `directory`:
+Use `create` only when the user asks for a separate session. OpenCode and managed
+Claude/Codex calls carry caller identity outside the agent's arguments. Do not
+search for your own ID just to create a session. With that transport context,
+`prompt` alone uses your project root and account. Optional `model`
+(`provider/model`), `agent` and `title` override defaults. Use `platform` and an
+absolute `directory` only to select another destination; they never remove your
+creator link. Invalid or ambiguous caller context is a blocker, not a reason to
+retry as an unbound client.
 
-`{"action":"create","intent":"Start the requested PR review in a separate session","prompt":"Review the open PR","model":"anthropic/claude-sonnet-4","agent":"plan","platform":"opencode","session_id":"ses_caller"}`
+`{"action":"create","intent":"Start the requested PR review in a separate session","prompt":"Review the open PR","agent":"plan"}`
+
+For an external client without transport context, supply verified caller
+`platform` and `session_id`, or all of target `platform`, `model` and absolute
+`directory`. Only the latter intentionally creates an unrelated session.
 
 It returns the new `platform` and `session_id`; follow up with `get`. The new
 session uses default permissions and runs independently of yours.

@@ -459,15 +459,22 @@ changing its held queue. The response
 `get` to inspect replies. Do not blindly retry a failed request whose delivery is
 uncertain, since that can send the same prompt twice.
 
-`create` sends `prompt` to the new session. Supply either the caller's `platform`
+`create` sends `prompt` to the new session. OpenCode supplies the invoking session
+through its per-call `_meta["ai.opencode/sessionID"]`, including in Code Mode.
+Managed Claude and Codex sessions receive caller headers through their MCP
+configuration when launched or resumed. The agent does not need to discover or
+repeat its identity. No prompt injection, extra process or polling is involved.
+
+Clients without transport context must supply either the caller's `platform`
 and `session_id`, or an explicit target `platform`, `model` (`provider/model`),
-and absolute `directory`. Directory-only requests are rejected rather than
-silently selecting defaults. This requirement applies only to MCP creation,
-not the plugin session API. Caller identity supplies inheritance context, not
-authorization. `agent`, `worktree`, and `title` are optional.
+and absolute `directory`. Directory-only requests from unbound clients are
+rejected rather than silently selecting defaults. This requirement applies only
+to MCP creation, not the plugin session API. Caller context is correlation and
+inheritance context, not authentication or authorization. `agent`, `worktree`,
+and `title` are optional.
 With caller identity, an omitted model inherits the calling
-session's current model when `platform` and `session_id` are supplied, even with
-an explicit `directory`. Without a caller model, it uses the project's first
+session's current model when available, even with an explicit `directory`.
+Without an available caller model, it uses the project's first
 configured model, then the platform's default selection. An omitted agent uses
 Settings' default agent. Explicit model and agent values override those defaults.
 Like the new-conversation composer, an omitted `worktree` creates a fresh worktree
@@ -476,21 +483,42 @@ and repositories without a usable base use the current checkout. Set
 `worktree: false` to use the given directory, or `worktree: true` to require a
 fresh worktree. Git probe failures return an error rather than choosing a target.
 `directory` must be absolute. When omitted, the target is the project root of the
-calling session, identified with `platform` and `session_id`. `platform` also
+calling session, identified by transport context or `platform` and `session_id`. `platform` also
 selects the machine that runs the new session. Without caller identity, all three
 target fields are required even when `model` has a platform prefix.
 New sessions use the platform's
 default permissions and do not inherit the caller's rules.
 
-When supplied, caller identity is validated and saved as the new session's
+Caller context is resolved using indexed local catalogue lookups, not conversation
+history or native-runtime probes. Native IDs must match exactly one retained
+physical binding on this owner. Canonical IDs retain their exact account routing
+key. Unknown, ambiguous, purged, disconnected or conflicting transport context
+stops creation before allocating a child. An explicit destination never disables
+this check. Existing authentication remains required; caller metadata grants no
+additional permissions. Optional model inheritance may read the latest message,
+but a failed history read cannot erase the creator link.
+
+Validated caller identity is saved as the new session's
 creator in the MCP-serving instance's `state.db`, including launches in another
 project and on a remote machine. Both references retain their platform and
 machine scope. The link is saved before the first prompt and remains if prompt
 delivery fails. Failure to save the link stops prompt delivery and returns the
-created session's identity. Requests without caller identity have no creator
+created session's identity. Unbound external requests without caller identity have no creator
 link. This provenance is separate from native subagent ancestry and does not
 change session grouping, lifecycle, or permission inheritance. Older launches
 are not backfilled.
+
+```mermaid
+flowchart LR
+    OC[OpenCode per-call metadata] --> Resolve[Catalogue caller lookup]
+    Managed[Claude / Codex session headers] --> Resolve
+    Resolve -->|unique local owner and source| Caller[Canonical caller and account]
+    Resolve -->|unresolved or conflicting| Refuse[Refuse before launch]
+    Caller --> Launch[Owner-routed child creation]
+    Target[Explicit destination or caller defaults] --> Launch
+    Launch --> Link[Persist creator link]
+    Link --> Prompt[First prompt]
+```
 
 `sessions.get` and `GET /api/session/{id}` return a separate optional `creator`
 object with `platform`, `sessionId` and `createdAt` (Unix milliseconds), read from

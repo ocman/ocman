@@ -67,6 +67,11 @@ flowchart LR
     Ocman -.->|optional OTLP| Otel[Telemetry collector]
 ```
 
+- MCP session creation resolves hidden per-call caller context from the local
+  session catalogue, separately from destination routing. OpenCode supplies native
+  request metadata; managed Claude and Codex sessions use session-specific MCP
+  headers. Indexed identity reads avoid conversation scans and runtime probes.
+  Unproven context blocks creation. See [MCP caller provenance](../features/mcp.md#sessions).
 - **Plugin-owned session tools.** The session broker pins deny-all permissions
   with one MCP dispatcher exception. Short-lived bindings route bounded tool
   calls back to the owning plugin, rechecking grants before dispatch. Plugin

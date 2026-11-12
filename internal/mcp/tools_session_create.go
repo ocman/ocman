@@ -22,6 +22,7 @@ type CreateSessionRequest struct {
 	Directory                   string
 	Platform, SessionID         string
 	Worktree                    *bool
+	Caller                      *SessionCaller `json:"-"` // Hidden per-call transport context, never a tool argument.
 }
 
 // CreatedSession is the sessions create result.
@@ -46,6 +47,11 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 		Directory: strings.TrimSpace(req.GetString("directory", "")),
 		Platform:  strings.TrimSpace(req.GetString("platform", "")), SessionID: strings.TrimSpace(req.GetString("session_id", "")),
 	}
+	var err error
+	in.Caller, err = sessionCaller(req)
+	if err != nil {
+		return mcplib.NewToolResultError(err.Error())
+	}
 	if value, exists := req.GetArguments()["worktree"]; exists {
 		worktree, ok := value.(bool)
 		if !ok {
@@ -60,11 +66,11 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 		return mcplib.NewToolResultError("model must be provider/model")
 	case in.Directory != "" && !filepath.IsAbs(in.Directory):
 		return mcplib.NewToolResultError("directory must be absolute")
-	case in.SessionID != "" && in.Platform == "":
+	case in.SessionID != "" && in.Platform == "" && in.Caller == nil:
 		return mcplib.NewToolResultError("session_id requires platform")
-	case in.Directory == "" && in.SessionID == "":
+	case in.Directory == "" && in.SessionID == "" && in.Caller == nil:
 		return mcplib.NewToolResultError("directory or the calling session's platform and session_id is required")
-	case in.SessionID == "" && (in.Platform == "" || in.Model == ""):
+	case in.SessionID == "" && in.Caller == nil && (in.Platform == "" || in.Model == ""):
 		return mcplib.NewToolResultError("create requires caller platform and session_id, or explicit platform, model, and directory")
 	}
 	created, err := creator.CreateSession(ctx, in)

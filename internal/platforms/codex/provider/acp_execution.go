@@ -157,13 +157,15 @@ func (a *acpExecution) close() {
 	}
 }
 
-func (a *acpExecution) servers() []acp.McpServer {
+func (a *acpExecution) servers(sessionID string) []acp.McpServer {
 	if a.b.opts.MCPAddr == "" {
 		return []acp.McpServer{}
 	}
 	headers := []acp.HttpHeader{}
 	if token := mcpauth.ReadToken(a.b.opts.MCPTokenFile); token != "" {
-		headers = append(headers, acp.HttpHeader{Name: "Authorization", Value: mcpauth.Header(token)})
+		for name, value := range mcpauth.SessionHeaders(token, "codex", sessionID) {
+			headers = append(headers, acp.HttpHeader{Name: name, Value: value})
+		}
 	}
 	return []acp.McpServer{{Http: &acp.McpServerHttpInline{Name: "ocman", Url: "http://" + a.b.opts.MCPAddr + "/mcp", Headers: headers}}}
 }
@@ -179,7 +181,7 @@ func (a *acpExecution) create(ctx context.Context, req platforms.CreateSessionRe
 	if err != nil {
 		return nil, errors.Join(platforms.ErrCreationRejected, err)
 	}
-	resp, err := c.NewSession(ctx, acp.NewSessionRequest{Cwd: req.Directory, McpServers: a.servers()})
+	resp, err := c.NewSession(ctx, acp.NewSessionRequest{Cwd: req.Directory, McpServers: a.servers(creationCaller(req.Creation))})
 	if err != nil {
 		return nil, err // allocation may have happened; never replay
 	}
@@ -201,6 +203,13 @@ func (a *acpExecution) create(ctx context.Context, req platforms.CreateSessionRe
 	s.provider = "openai"
 	a.b.mu.Unlock()
 	return &platforms.CreateSessionResponse{ID: id}, nil
+}
+
+func creationCaller(creation *platforms.CreationIdentity) string {
+	if creation == nil {
+		return ""
+	}
+	return creation.SessionID
 }
 
 func (a *acpExecution) resume(ctx context.Context, c *acpexec.Client, id string) error {
@@ -255,7 +264,7 @@ func (a *acpExecution) resume(ctx context.Context, c *acpexec.Client, id string)
 	a.loading[id] = true
 	a.mu.Unlock()
 	defer func() { a.mu.Lock(); delete(a.loading, id); a.mu.Unlock() }()
-	_, err = c.ResumeSession(ctx, acp.ResumeSessionRequest{SessionId: acp.SessionId(id), Cwd: thread.Cwd, McpServers: a.servers()})
+	_, err = c.ResumeSession(ctx, acp.ResumeSessionRequest{SessionId: acp.SessionId(id), Cwd: thread.Cwd, McpServers: a.servers(id)})
 	if err != nil {
 		return threadLoadError(err) // ownership rejection never authorizes a native resume
 	}

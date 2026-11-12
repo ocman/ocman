@@ -3,10 +3,17 @@ package sessionsvc
 import (
 	"context"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/owned"
 	"github.com/ocman/ocman/internal/sessioncatalog"
 )
+
+// LookupLocalCaller proves an MCP transport's correlation hint without loading
+// history, contacting a runtime, or dispatching to a different owner.
+func (s *Service) LookupLocalCaller(ctx context.Context, kind, reference string) (*db.Session, error) {
+	return s.identities.LocalCaller(ctx, kind, reference)
+}
 
 // LookupSessionIdentity is the legacy-link transport entry point. All physical
 // source and native-reference handling stays in the owning integration.
