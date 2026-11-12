@@ -16,8 +16,8 @@ function renderQuestion(tool: string, completed: boolean) {
     state: {
       status: completed ? 'completed' : 'running',
       input: { questions: [
-        { question: 'Which marker?', header: 'Marker', options: [{ label: 'Alpha' }], multiSelect: false },
-        { question: 'Which checks?', header: 'Checks', options: [{ label: 'Unit' }, { label: 'Lint' }], multiSelect: true },
+        { question: 'Which marker?', header: 'Marker', options: [{ label: 'Alpha', description: 'Use the alpha marker.' }], multiSelect: false },
+        { question: 'Which checks?', header: 'Checks', options: [{ label: 'Unit', description: 'Run unit tests.' }, { label: 'Lint', description: 'Check code style.' }], multiSelect: true },
       ] },
       output: completed
         ? 'User has answered your questions: "Which marker?"="Alpha", "Which checks?"="Unit, Lint". You can now continue with the user\'s answers in mind.'
@@ -39,8 +39,12 @@ describe('question history', () => {
     renderQuestion(tool, true);
     expect(screen.getByText('Which marker?')).toBeVisible();
     expect(screen.getByText('Alpha')).toBeVisible();
+    expect(screen.getByText('Use the alpha marker.')).toBeVisible();
     expect(screen.getByText('Which checks?')).toBeVisible();
-    expect(screen.getByText('Unit, Lint')).toBeVisible();
+    expect(screen.getByText('Unit')).toBeVisible();
+    expect(screen.getByText('Run unit tests.')).toBeVisible();
+    expect(screen.getByText('Lint')).toBeVisible();
+    expect(screen.getByText('Check code style.')).toBeVisible();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
