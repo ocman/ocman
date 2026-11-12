@@ -5,11 +5,14 @@ import (
 	internalmcp "github.com/ocman/ocman/internal/mcp"
 )
 
+const prSessionIdentityGuidance = "For session actions, supply session_id and platform, or directory set to the current checkout's absolute path for automatic session lookup. Optional platform and remote_id narrow the lookup; supplied identity fields are never replaced. Only one exact-directory match is accepted. Ambiguous lookups return candidates without performing the PR action. Use sessions search/get to confirm a candidate against this conversation, then retry with its exact session_id and platform, including named-account or remote prefixes. Do not guess or choose the newest session; if still ambiguous, ask the user. Do not recreate an already-created PR."
+
 func prToolHelp() *mcplib.CallToolResult {
 	return internalmcp.ToolResultJSON(map[string]any{
 		"actions":          []string{"help", "upstreams", "list", "checks", "mergeability", "launch", "linked", "link", "unlink", "watch", "unwatch", "feedback", "checks_prompt", "conflicts_prompt"},
 		"project_inputs":   "upstreams, list, checks, mergeability and launch require absolute directory and explicit remote_id (local for this machine). Except upstreams, also require the upstream remote name.",
-		"session_inputs":   "linked, link, unlink, watch, unwatch and draft actions require session_id and platform, including the compound platform ID for remote sessions. Except linked, require a positive PR number. link requires either remote from the session checkout or explicit host and repo (owner/name), not both; other mutations and drafts require host and repo from linked output's remote.host and remote.repo.",
+		"session_inputs":   "linked, link, unlink, watch, unwatch and draft actions require session_id and platform, or an absolute directory resolving to exactly one session. Optional platform and remote_id scope directory lookup. Except linked, require a positive PR number. link requires either remote from the session checkout or explicit host and repo (owner/name), not both; other mutations and drafts require host and repo from linked output's remote.host and remote.repo.",
+		"session_identity": prSessionIdentityGuidance,
 		"upstreams":        "Returns supported upstream repositories for the directory and owner.",
 		"list":             "Returns prs, pagination and rate-limit metadata. Optional state: open|closed|all, mine: forge login, page: positive integer, refresh: boolean.",
 		"checks":           "Requires sha, the hexadecimal head commit ID. Returns check state, checks and rateLimit. Optional refresh.",
@@ -25,6 +28,7 @@ func prToolHelp() *mcplib.CallToolResult {
 		"checks_prompt":    "Returns an unsent prompt to investigate failing checks for the linked PR.",
 		"conflicts_prompt": "Returns an unsent prompt to resolve conflicts for the linked PR.",
 		"examples": []map[string]any{
+			{"action": "link", "directory": "/src/project", "remote_id": "local", "host": "github.com", "repo": "other/project", "number": 42},
 			{"action": "list", "directory": "/src/project", "remote_id": "local", "remote": "origin"},
 			{"action": "link", "platform": "opencode", "session_id": "ses_example", "remote": "origin", "number": 42},
 			{"action": "link", "platform": "opencode", "session_id": "ses_example", "host": "github.com", "repo": "other/project", "number": 42},

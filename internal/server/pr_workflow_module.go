@@ -24,6 +24,7 @@ func (s *Server) prWorkflowModule() *prworkflow.Module {
 	return s.prWorkflowMod.get(func() *prworkflow.Module {
 		return prworkflow.New(prworkflow.Deps{
 			ProjectHandler: s.projectForgeModule().PRToolHandler(),
+			FindSessions:   s.prToolSessions,
 			DB:             s.stateDB, Target: s.prTarget, Owner: s.prOwner, ResolveForge: s.resolveForge, Ready: s.prWatchReady,
 			Remote: s.remotePRWorkflow,
 			Changed: func(platform, sessionID string) {
@@ -79,11 +80,16 @@ func (s *Server) prTarget(w http.ResponseWriter, r *http.Request, id string) (pr
 		http.Error(w, "Session unavailable", http.StatusNotFound)
 		return prworkflow.Target{}, false
 	}
-	owner, _ := platforms.SplitPlatformID(string(p.ID()))
+	key, registered := s.registry.KeyFor(p)
+	if !registered {
+		http.Error(w, "Session owner disconnected", http.StatusServiceUnavailable)
+		return prworkflow.Target{}, false
+	}
+	owner, _ := platforms.SplitPlatformID(string(key))
 	if owner == "" {
 		owner = "local"
 	}
-	t := prworkflow.Target{Platform: string(p.ID()), SessionID: id, Directory: detail.Session.Directory, RemoteID: owner}
+	t := prworkflow.Target{Platform: string(key), SessionID: id, Directory: detail.Session.Directory, RemoteID: owner}
 	if _, err := s.prOwner(r.Context(), t); err != nil {
 		http.Error(w, "Session owner disconnected", http.StatusServiceUnavailable)
 		return prworkflow.Target{}, false

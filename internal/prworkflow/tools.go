@@ -26,15 +26,21 @@ func (m *Module) Tools() []server.ServerTool {
 		mux.Handle("/api/project/", m.d.ProjectHandler)
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("pull_requests",
-		mcplib.WithDescription("Browse PRs and checks, launch PR sessions, link PRs to sessions, watch changes, and prepare feedback/check/conflict task drafts. After creating a PR, use action link with host, repo and number to attach it to the current session, even when its project is another repository, then verify with action linked before reporting completion. Alternatively link by remote from the session checkout. If linking or verification fails, report the failure alongside the PR URL. Do not enable watching unless requested. Use action help for inputs and safety rules. Never merges or changes credentials."),
+		mcplib.WithDescription("Browse PRs and checks, launch PR sessions, link PRs to sessions, watch changes, and prepare feedback/check/conflict task drafts. After creating a PR, use action link with host, repo and number to attach it to the current session, even when its project is another repository, then verify with action linked before reporting completion. Alternatively link by remote from the session checkout. "+prSessionIdentityGuidance+" If linking or verification fails, report the failure alongside the PR URL. Do not enable watching unless requested. Use action help for inputs and safety rules. Never merges or changes credentials."),
 		mcplib.WithString("action", mcplib.Required()),
-		mcplib.WithString("directory"), mcplib.WithString("remote_id"), mcplib.WithString("remote"),
-		mcplib.WithString("session_id"), mcplib.WithString("platform"),
+		mcplib.WithString("directory", mcplib.Description("Absolute project path, or current checkout path for automatic session lookup when identity is missing.")),
+		mcplib.WithString("remote_id", mcplib.Description("Project owner, or optional owner scope for session lookup; local means this machine.")), mcplib.WithString("remote"),
+		mcplib.WithString("session_id", mcplib.Description("Session target. Omit with directory to look up a unique session automatically.")),
+		mcplib.WithString("platform", mcplib.Description("Exact session platform, including named-account or remote prefixes. Optional with directory; narrows automatic lookup.")),
 		mcplib.WithString("host"), mcplib.WithString("repo"), mcplib.WithNumber("number"),
 		mcplib.WithString("sha"), mcplib.WithString("state"), mcplib.WithString("mine"),
 		mcplib.WithNumber("page"), mcplib.WithBoolean("refresh"),
 		mcplib.WithString("mode"), mcplib.WithString("task")),
 		Handler: func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+			req, err := m.lookupToolSession(ctx, req)
+			if err != nil {
+				return mcplib.NewToolResultError(err.Error()), nil
+			}
 			return handlePRTool(ctx, mux, req), nil
 		}}}
 }

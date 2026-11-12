@@ -36,6 +36,12 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 		}
 	case "linked", "link", "unlink", "watch", "unwatch", "feedback", "checks_prompt", "conflicts_prompt":
 		required = []string{"session_id", "platform"}
+		for _, key := range required {
+			if value, e := req.RequireString(key); e != nil || strings.TrimSpace(value) == "" {
+				err = fmt.Errorf("%s is required. %s", key, prSessionIdentityGuidance)
+				return
+			}
+		}
 		id, e := req.RequireString("session_id")
 		if e != nil || id == "" || strings.ContainsAny(id, "/\\?#%") || strings.Contains(id, "..") || strings.TrimSpace(id) != id {
 			err = fmt.Errorf("session_id must be a nonempty path segment")

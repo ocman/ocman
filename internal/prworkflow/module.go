@@ -22,10 +22,13 @@ type Target struct{ Platform, SessionID, Directory, RemoteID string }
 type Deps struct {
 	// ProjectHandler serves only the project PR routes exposed to MCP.
 	ProjectHandler http.Handler
-	DB             *state.DB
-	Target         func(http.ResponseWriter, *http.Request, string) (Target, bool)
-	Owner          func(context.Context, Target) (hostsvc.Host, error)
-	ResolveForge   func(forge.Remote) (forge.Forge, bool)
+	// FindSessions returns all exact-directory candidates in the requested scope.
+	// An unavailable owner or incomplete read must return an error, not partial results.
+	FindSessions func(context.Context, string, string, string) ([]Target, error)
+	DB           *state.DB
+	Target       func(http.ResponseWriter, *http.Request, string) (Target, bool)
+	Owner        func(context.Context, Target) (hostsvc.Host, error)
+	ResolveForge func(forge.Remote) (forge.Forge, bool)
 	// Enqueue is the shared session queue, never a platform-specific send.
 	Enqueue func(context.Context, string, platforms.SendMessageRequest) error
 	Ready   func(context.Context, Target) bool

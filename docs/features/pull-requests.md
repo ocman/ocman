@@ -124,6 +124,16 @@ For example, to attach another repository's PR to the session that created it:
 After creating a PR, agents must link it and verify the repository and number
 with `action: "linked"` before reporting completion. Linking does not start a watch.
 
+If the session identity is missing, supply `directory` with the current checkout's
+absolute path. The tool looks up the session in the same call. Optional `platform`
+and `remote_id` narrow the lookup. It accepts exactly one exact-directory match,
+preserves supplied identity fields, and never picks by recency or status. Failed
+reads or disconnected explicit owners stop the action rather than using partial
+results. Multiple matches return candidate IDs and exact platforms without
+performing the PR action. Confirm a candidate against the conversation using
+`sessions` with `action: "get"`, or ask the user if still ambiguous, then retry.
+Never recreate an already-created PR to retry linking.
+
 Launches and watches require user authorization because they can consume model
 credits. Draft actions do not send messages or post comments. No action merges,
 force-pushes, archives sessions or changes credentials. Disconnected explicit
@@ -175,6 +185,9 @@ flowchart LR
   `projectforge` PR-only handler. MCP authentication precedes dispatch; existing
   owner checks and validation still apply. Draft actions return prompts without
   sending them, and cross-fork fetch confirmation remains dashboard-only.
+  Missing session identity can be resolved through a server-injected, uncapped
+  exact-directory lookup using the platform registry's connection keys. The tool
+  refuses ambiguous or incomplete reads before dispatching a session action.
 - Successful link/watch saves and removals publish an owner-qualified
   `ocman.session.changed` event on `/api/events`. The PR controls and background
   task notice refresh on matching events and SSE reconnects, alongside the
