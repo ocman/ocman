@@ -54,7 +54,8 @@ func WriteCancellation(w http.ResponseWriter, msg string, err error) bool {
 	if !errors.Is(err, context.Canceled) && status.Code(err) != codes.Canceled {
 		return false
 	}
-	log.WithError(err).Debug(msg)
+	// The error may wrap a URL with credentials or remote-controlled text.
+	log.Debug(msg)
 	http.Error(w, "request canceled", 499)
 	return true
 }

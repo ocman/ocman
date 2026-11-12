@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -78,8 +79,9 @@ func env() []string {
 
 // Cmd is a git subprocess whose execution shares the process-wide fork cap.
 type Cmd struct {
-	ctx context.Context
-	cmd *exec.Cmd
+	ctx      context.Context
+	cmd      *exec.Cmd
+	canceled atomic.Bool
 }
 
 // Command constructs a `git <args...>` command with the hardened
@@ -94,7 +96,16 @@ func Command(ctx context.Context, args ...string) *Cmd {
 			cmd.Env = append(cmd.Env, "GIT_WORK_TREE="+root)
 		}
 	}
-	return &Cmd{ctx: ctx, cmd: cmd}
+	c := &Cmd{ctx: ctx, cmd: cmd}
+	kill := cmd.Cancel
+	cmd.Cancel = func() error {
+		err := kill()
+		if err == nil {
+			c.canceled.Store(true)
+		}
+		return err
+	}
+	return c
 }
 
 func checkoutRoot(dir string) string {
@@ -125,7 +136,18 @@ func checkoutRoot(dir string) string {
 }
 
 func (c *Cmd) Output() ([]byte, error) {
-	return withSlot(c.ctx, c.cmd.Output)
+	out, err := withSlot(c.ctx, c.cmd.Output)
+	return out, c.commandError(err)
+}
+
+// Keep the process error as evidence, but retain the context cause when our
+// cancellation hook actually killed it. A signal or a canceled caller alone
+// must not relabel an unrelated process failure as harmless cancellation.
+func (c *Cmd) commandError(err error) error {
+	if err != nil && c.canceled.Load() && c.ctx.Err() != nil {
+		return errors.Join(err, c.ctx.Err())
+	}
+	return err
 }
 
 // WithEnv adds operation-specific environment overrides after the hardened defaults.
@@ -142,14 +164,15 @@ func (c *Cmd) WithWaitDelay(delay time.Duration) *Cmd {
 }
 
 func (c *Cmd) CombinedOutput() ([]byte, error) {
-	return withSlot(c.ctx, c.cmd.CombinedOutput)
+	out, err := withSlot(c.ctx, c.cmd.CombinedOutput)
+	return out, c.commandError(err)
 }
 
 func (c *Cmd) Run() error {
 	_, err := withSlot(c.ctx, func() (struct{}, error) {
 		return struct{}{}, c.cmd.Run()
 	})
-	return err
+	return c.commandError(err)
 }
 
 // ErrStopStream, returned by a Stream reader, ends the command early
@@ -179,7 +202,7 @@ func (c *Cmd) Stream(read func(io.Reader) error) error {
 		}
 		return struct{}{}, c.cmd.Wait()
 	})
-	return err
+	return c.commandError(err)
 }
 
 func withSlot[T any](ctx context.Context, run func() (T, error)) (T, error) {

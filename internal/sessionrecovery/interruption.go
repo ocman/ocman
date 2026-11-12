@@ -107,7 +107,11 @@ func (s *Service) EnrichInterruptionHistory(ctx context.Context, platform, sessi
 	}
 	notices, err := s.deps.State.SessionInterruptions(ctx, platform, sessionID)
 	if err != nil {
-		log.WithError(err).Warn("loading session interruptions")
+		level := log.WarnLevel
+		if errors.Is(err, context.Canceled) {
+			level = log.DebugLevel
+		}
+		log.WithError(err).Log(level, "loading session interruptions")
 		return
 	}
 	for _, notice := range notices {

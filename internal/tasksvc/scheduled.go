@@ -70,6 +70,10 @@ func (m *Manager) ObserveSchedule(caller context.Context, spec module.Schedule, 
 		m.observed.Done()
 	}()
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			log.WithField("job", spec.Name).Debug("scheduled task receipt canceled")
+			return err
+		}
 		log.WithError(err).WithField("job", spec.Name).Warn("scheduled task receipt unavailable; running maintenance without observation")
 		return runScheduledWork(caller, work)
 	}

@@ -75,6 +75,9 @@ func (m *Module) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := host.ListWorktrees(r.Context(), dir)
 	if err != nil {
+		if httpx.WriteCancellation(w, "worktree list canceled", err) {
+			return
+		}
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
 			return

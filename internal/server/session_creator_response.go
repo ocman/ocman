@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 
 	log "github.com/sirupsen/logrus"
 
@@ -16,7 +17,11 @@ func (s *Server) enrichSessionCreator(ctx context.Context, platform, sessionID s
 	// Use the compound platform key, never another machine's unscoped identity.
 	creator, err := s.stateDB.GetSessionCreator(ctx, platform, sessionID)
 	if err != nil {
-		log.WithError(err).Warn("reading session creator")
+		level := log.WarnLevel
+		if errors.Is(err, context.Canceled) {
+			level = log.DebugLevel
+		}
+		log.WithError(err).Log(level, "reading session creator")
 		return
 	}
 	// This is provenance held by the MCP-serving hub, not native owner ancestry.
