@@ -30,11 +30,16 @@ func (s *Server) PermissionNotificationDeferred(session, request string) bool {
 
 // Reuse the notification projection: it already folds child prompts into
 // visible parents, suppresses autoapproved permissions and routes remote owners.
-func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, error) {
+func (s *Server) pushSnapshot(ctx context.Context) (candidates []notifications.Candidate, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	phase, started := "session-rows", time.Now()
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("web push snapshot phase=%s elapsed=%s: %w", phase, time.Since(started), err)
+		}
+	}()
 	var all []db.Session
-	var err error
 	if s.supportsSidebar() {
 		all, err = s.sidebarSessionRows(ctx, platforms.SidebarQuery{Since: time.Now().Add(-7 * 24 * time.Hour).UnixMilli(), Limit: 500}, true)
 	} else {
@@ -43,10 +48,12 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 	if err != nil {
 		return nil, err
 	}
+	phase, started = "notification-entries", time.Now()
 	entries, err := s.notificationEntriesForSessions(ctx, sortAndLimitSessions(all, 500), true, true)
 	if err != nil {
 		return nil, err
 	}
+	phase, started = "badge-settings", time.Now()
 	settings, err := s.notificationsModule().BadgeSettings(ctx)
 	if err != nil {
 		return nil, err
@@ -94,6 +101,7 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 		if !ok {
 			continue
 		}
+		phase, started = "lifecycle", time.Now()
 		life, err := reader.SessionLifecycle(ctx, entry.ID)
 		if err != nil {
 			return nil, fmt.Errorf("reading notification lifecycle for %s/%s: %w", entry.platform, entry.ID, err)
@@ -124,6 +132,7 @@ func (s *Server) pushSnapshot(ctx context.Context) ([]notifications.Candidate, e
 	}
 	inboxAttention := false
 	if settings.Primary || settings.Factory || settings.Routines {
+		phase, started = "inbox-badge", time.Now()
 		inboxAttention, err = s.inboxModule().BadgeAttention(ctx, map[string]bool{
 			state.InboxGeneral: settings.Primary, state.InboxFactory: settings.Factory, state.InboxRoutine: settings.Routines,
 		})

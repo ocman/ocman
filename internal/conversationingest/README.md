@@ -47,6 +47,12 @@ Already committed snapshots keep their checkpoints if the worker is cancelled.
 A single snapshot still runs atomically, so its individual cost can cause a
 short burst before the importer yields.
 
+Live feed batches also serve queued explicit refreshes between sessions, rather
+than letting unrelated live reads starve a new-row or rename acknowledgement.
+Callers queued before a snapshot share its validation. Requests arriving during
+that snapshot still require a later read; neither older reads nor another
+source's receipts satisfy them. This does not preempt a single slow source read.
+
 Detailed multi-instance discovery/configuration and UI remain separate work.
 Current startup binds the local adapters already configured for this owner.
 

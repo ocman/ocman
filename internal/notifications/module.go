@@ -72,16 +72,7 @@ func (m *Module) run(ctx context.Context, interval time.Duration) {
 	var workers sync.WaitGroup
 	workers.Go(func() { m.runDelivery(ctx, interval, wake) })
 	defer workers.Wait()
-	module.Every(ctx, "web-push", interval, func(ctx context.Context) {
-		if err := m.tick(ctx); err != nil && ctx.Err() == nil {
-			module.ReportError(ctx, err)
-			log.WithError(err).Warn("checking Web Push notifications")
-		}
-		select {
-		case wake <- struct{}{}:
-		default:
-		}
-	})
+	m.runSnapshots(ctx, interval, wake)
 }
 
 func (m *Module) runDelivery(ctx context.Context, interval time.Duration, wake <-chan struct{}) {

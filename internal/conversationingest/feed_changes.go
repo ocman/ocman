@@ -24,6 +24,10 @@ func (w *sourceWorker) applyChanges(ctx context.Context, pending map[string]*pla
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		w.serveFeedRequests(ctx, pending, dirty)
+		if pending[id] == nil {
+			continue // a complete priority read already covered this event
+		}
 		if err := w.applyPendingChange(ctx, *pending[id], dirty[id]); err != nil {
 			failures = append(failures, err)
 			continue
@@ -38,6 +42,10 @@ func (w *sourceWorker) applyChanges(ctx context.Context, pending map[string]*pla
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		w.serveFeedRequests(ctx, pending, dirty)
+		if _, queued := dirty[id]; !queued {
+			continue
+		}
 		if err := w.refreshFeedSession(ctx, id, dirty[id]); err != nil {
 			failures = append(failures, err)
 			continue
@@ -45,6 +53,25 @@ func (w *sourceWorker) applyChanges(ctx context.Context, pending map[string]*pla
 		delete(dirty, id)
 	}
 	return errors.Join(failures...)
+}
+
+// Live batches, like backfill, yield between atomic source reads. Otherwise a
+// refresh admitted during one read waits behind every remaining live session.
+// Bound this boundary to the already queued demand so continuous callers cannot
+// prevent the detached batch from progressing.
+func (w *sourceWorker) serveFeedRequests(ctx context.Context, pending map[string]*platforms.HistoryChange, dirty map[string]bool) {
+	w.mu.Lock()
+	count := len(w.priority)
+	w.mu.Unlock()
+	for range count {
+		if id := w.servePriority(ctx); id != "" {
+			// This full snapshot started after the batch was detached, so it
+			// supersedes its older events and repair hints. New requests stay
+			// in w.dirty and retain their own pre-snapshot validation ticket.
+			delete(pending, id)
+			delete(dirty, id)
+		}
+	}
 }
 
 func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChange) error {
@@ -99,7 +126,7 @@ func (w *sourceWorker) applyChange(ctx context.Context, c platforms.HistoryChang
 		return w.approveRead(ctx, c.SessionID, version, ticket)
 	}
 	if _, err := store.ApplyStream(ctx, statev2.StreamUpdate{InstanceID: w.instance.ID,
-		Checkpoint: statev2.CheckpointUpdate{Stream: sequencePrefix + c.SessionID, ExpectedCursor: current, Cursor: version},
+		Checkpoint:  statev2.CheckpointUpdate{Stream: sequencePrefix + c.SessionID, ExpectedCursor: current, Cursor: version},
 		Batches:     []statev2.StreamBatch{{Session: &batch.Session, Messages: batch.Messages, Parts: batch.Parts}},
 		SourceState: map[string]string{readReadyPrefix + c.SessionID: version}}); err != nil {
 		return err
