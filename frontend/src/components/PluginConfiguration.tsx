@@ -7,15 +7,17 @@ import { plugins } from '../lib/plugins';
 import { initialPluginValues, pluginConfigurationErrors } from '../lib/pluginConfigurationValidation';
 import { SearchSelect } from './SearchSelect';
 import { SettingRow } from './SettingRow';
-import { Button, SelectField, TextareaField, TextField } from './Control';
+import { Button, ButtonGroup, SelectField, TextareaField, TextField } from './Control';
 import { SecretField } from './SecretField';
 import styles from './PluginConfiguration.module.css';
 
 const emptyCatalog = { agents: [] as string[], models: [] as string[] };
 
-export function PluginConfiguration({ plugin, save, error = '', saving = false, busy = saving, focusRequest = 0, enableNeedsConfiguration = false }: {
+export function PluginConfiguration({ plugin, save, error = '', saving = false, busy = saving, focusRequest = 0, enableNeedsConfiguration = false, onDirtyChange, onCancel }: {
   plugin: PluginRegistration; save: (input: PluginInput) => Promise<void>; error?: string; saving?: boolean;
   focusRequest?: number; enableNeedsConfiguration?: boolean; busy?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+  onCancel?: () => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const formId = useId();
@@ -32,6 +34,9 @@ export function PluginConfiguration({ plugin, save, error = '', saving = false, 
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const errors = pluginConfigurationErrors(plugin, { values, secrets });
   const invalid = Object.keys(errors).length > 0;
+  const [initialValues] = useState(() => JSON.stringify(values));
+  const dirty = JSON.stringify(values) !== initialValues || Object.keys(secrets).length > 0;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   const [catalog, setCatalog] = useState({ project: '', agents: [] as string[], models: [] as string[] });
   const slack = plugin.description.id === 'org.ocman.slack';
   // The catalog is tagged with the project it was fetched for, so options are
@@ -73,7 +78,7 @@ export function PluginConfiguration({ plugin, save, error = '', saving = false, 
       const message = errors[s.key];
       const errorId = `${formId}-${s.key}-error`;
       const validation = { 'aria-invalid': message ? true : undefined, 'aria-describedby': message ? errorId : undefined };
-      return <SettingRow key={s.key} label={s.label} desc={s.secret ? 'Write-only. Leave blank to keep the current secret.' : s.required ? 'Required' : undefined}>
+      return <SettingRow key={s.key} label={s.label} block desc={s.secret ? 'Write-only. Leave blank to keep the current secret.' : s.required ? 'Required' : undefined}>
       <div className={styles.field}>
       {s.secret ? <SecretField {...validation} wrapperClassName={styles.control} aria-label={s.label} autoComplete="new-password" value={secrets[s.key] ?? ''}
         protect={Boolean(plugin.configuration.secrets?.[s.key])} resetPending={secrets[s.key] === ''}
@@ -129,7 +134,10 @@ export function PluginConfiguration({ plugin, save, error = '', saving = false, 
     {!settings.length && <p>No configuration settings.</p>}
     {error && <p role="alert" tabIndex={-1} ref={errorRef}>{error}</p>}
     {(invalid || enableNeedsConfiguration) && <p role="status">{enableNeedsConfiguration ? 'Cannot enable plugin. Fix the highlighted settings and save configuration before enabling.' : 'Fix the highlighted settings before saving configuration.'}</p>}
-    <Button type="submit" variant="accent" disabled={busy || invalid} className={styles.save}>{saving ? 'Saving configuration…' : 'Save configuration'}</Button>
+    <ButtonGroup label="Plugin configuration actions" className={styles.actions}>
+      <Button type="submit" variant="accent" disabled={busy || invalid}>{saving ? 'Saving configuration…' : 'Save configuration'}</Button>
+      {onCancel && <Button type="button" disabled={busy} onClick={onCancel}>Cancel</Button>}
+    </ButtonGroup>
   </form>;
 }
 

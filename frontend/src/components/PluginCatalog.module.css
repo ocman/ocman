@@ -1,0 +1,30 @@
+.catalog { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; }
+.table tbody tr { cursor: pointer; }
+.table tbody tr:hover { background: var(--bg-hover); }
+.table td:first-child { min-width: 0; overflow-wrap: anywhere; }
+.table a { color: var(--accent); font-weight: 600; }
+.table small { display: block; margin-top: 4px; color: var(--subtext0); }
+.muted { color: var(--subtext0); font-size: 12px; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.status::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: currentColor; }
+.healthy { color: var(--accent2); }
+.attention { color: var(--warning); }
+.warning { padding: 12px; border: 1px solid var(--warning); border-radius: var(--radius); }
+.warning summary { cursor: pointer; color: var(--warning); }
+.detailSummary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.quickActions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.enableControl { display: flex; align-items: center; gap: 8px; color: var(--subtext0); font-size: 12px; }
+.pluginIdentity { display: flex; align-items: center; gap: 12px; }
+.pluginIdentity > div { min-width: 0; }
+.pluginIcon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--accent); font-size: 18px; }
+.skeleton { padding: 24px; border-radius: var(--radius); background: var(--bg-card); color: var(--subtext0); }
+.skeletonRow { height: 36px; margin-top: 12px; border-radius: var(--radius); background: var(--bg-hover); }
+
+@media (max-width: 640px) {
+  .table thead { display: none; }
+  .table tbody, .table tr, .table td { display: block; }
+  .table tbody tr { padding: 12px; border-bottom: 1px solid var(--border); }
+  .table td { padding: 4px 0; border: 0; }
+  .table td:last-child { display: none; }
+}

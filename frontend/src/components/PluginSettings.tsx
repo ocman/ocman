@@ -1,21 +1,31 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useHostCapabilities } from '../lib/settingsQueries';
 import { plugins, type PluginRegistration } from '../lib/plugins';
-import { SettingRow } from './SettingRow';
 import { SettingsSection } from './SettingsSection';
-import { PluginSettingsCard } from './PluginSettingsCard';
+import { SettingRow } from './SettingRow';
+import { PluginCatalogList } from './PluginCatalogList';
+import { PluginSettingsDrawer } from './PluginSettingsDrawer';
+import { PageState } from './PageState';
 import { Button, ButtonGroup, SelectField } from './Control';
+import styles from './PluginCatalog.module.css';
 
 export function PluginSettings() {
   const hostsQ = useHostCapabilities();
   const hosts = hostsQ.data ?? null;
   const error = hostsQ.isError;
-  const [owner, setOwner] = useState('');
+  const [params, setParams] = useSearchParams();
+  const owner = params.get('ownerId') || '';
   const selected = owner || hosts?.[0]?.remoteId || '';
   const host = hosts?.find((entry) => entry.remoteId === selected);
-  const ownerControls = <SettingRow setting="plugin-owner" block>
+  const ownerControls = <SettingRow setting="plugin-owner" label="Host" compact>
     <ButtonGroup label="Plugin owner controls">
-      <SelectField aria-label="Plugin owner" value={selected} onChange={(event) => setOwner(event.target.value)}>
+      <SelectField aria-label="Plugin owner" value={selected} onChange={(event) => setParams((previous) => {
+        const next = new URLSearchParams(previous);
+        next.set('ownerId', event.target.value);
+        next.delete('plugin'); next.delete('pluginTab');
+        return next;
+      })}>
         {hosts?.map((entry) => <option key={entry.remoteId} value={entry.remoteId}>{entry.remoteName}</option>)}
         {owner && !host && <option value={owner}>{owner} (unavailable)</option>}
       </SelectField>
@@ -23,7 +33,7 @@ export function PluginSettings() {
     </ButtonGroup>
   </SettingRow>;
   if (!error && host?.pluginManagement) {
-    return <PluginCatalog key={selected} owner={selected} ownerControls={ownerControls} />;
+    return <PluginCatalog key={selected} owner={selected} ownerName={host.remoteName} ownerControls={ownerControls} />;
   }
   return <SettingsSection title="Discovery">
     {ownerControls}
@@ -33,7 +43,8 @@ export function PluginSettings() {
   </SettingsSection>;
 }
 
-function PluginCatalog({ owner, ownerControls }: { owner: string; ownerControls: ReactNode }) {
+function PluginCatalog({ owner, ownerName, ownerControls }: { owner: string; ownerName: string; ownerControls: ReactNode }) {
+  const [params, setParams] = useSearchParams();
   const [catalog, setCatalog] = useState<PluginRegistration[] | null>(null);
   const [discovery, setDiscovery] = useState<{ filename: string; error: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -57,21 +68,32 @@ function PluginCatalog({ owner, ownerControls }: { owner: string; ownerControls:
     } finally { setBusy(false); }
   }
 
-  return <>
-    <SettingsSection title="Discovery">
+  const selected = catalog?.find((plugin) => plugin.description.id === params.get('plugin'));
+  return <div className={styles.catalog}>
+    <div className={styles.toolbar} aria-label="Plugin management">
       {ownerControls}
-      <SettingRow setting="plugin-discovery" block>
+      <SettingRow setting="plugin-discovery" label="Discovery" compact>
         <ButtonGroup label="Plugin discovery actions">
           <Button type="button" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(true); }}>Rescan plugins</Button>
           <Button type="button" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(); }}>Refresh health</Button>
         </ButtonGroup>
       </SettingRow>
+    </div>
+    {discovery.length > 0 && <details className={styles.warning}>
+      <summary>{discovery.length} plugin discovery {discovery.length === 1 ? 'issue' : 'issues'}</summary>
       {discovery.map((failure) => <p role="alert" key={failure.filename}>{failure.filename}: {failure.error}</p>)}
-      {error ? <p role="alert">Could not load plugins for this owner. Refresh health to retry.</p>
-        : catalog === null ? <p role="status">Loading plugins…</p>
-          : catalog.length === 0 ? <p role="status">No plugins discovered.</p>
-            : null}
-    </SettingsSection>
-    {catalog?.map((plugin) => <PluginSettingsCard key={plugin.description.id} plugin={plugin} owner={owner} refresh={() => refresh()} />)}
-  </>;
+    </details>}
+    {error && catalog === null ? <PageState error title="Plugins are unavailable" description="Could not load plugins for this owner. Refresh health to retry." onRetry={() => void refresh()} retrying={busy} />
+      : <>
+        {error && <p role="alert">Could not load plugins for this owner. Refresh health to retry.</p>}
+        {catalog === null ? <div role="status" aria-label="Loading plugins" className={styles.skeleton}>Loading plugins…
+          {[0, 1, 2, 3, 4].map((row) => <div key={row} className={styles.skeletonRow} aria-hidden="true" />)}
+        </div>
+          : <PluginCatalogList catalog={catalog} owner={owner} />}
+      </>}
+    {selected && <PluginSettingsDrawer key={selected.description.id} plugin={selected} owner={owner} ownerName={ownerName} refresh={() => refresh()} />}
+    {catalog && params.get('plugin') && !selected && <PageState compact title="Plugin is no longer available" description="It may have been removed from this host.">
+      <Button onClick={() => setParams((previous) => { const next = new URLSearchParams(previous); next.delete('plugin'); next.delete('pluginTab'); return next; })}>Dismiss</Button>
+    </PageState>}
+  </div>;
 }

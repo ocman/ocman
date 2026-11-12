@@ -1,3 +1,15 @@
 .checksum { overflow-wrap: anywhere; }
 .management { min-width: 0; border: 0; padding: 0; }
-.logs { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-conversation-mono); }
+.logs { box-sizing: border-box; min-height: 240px; max-height: 400px; margin: 12px 0 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--mantle); color: var(--subtext1); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 var(--font-conversation-mono); }
+.logSection { margin-top: 24px; }
+.logHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.logHeader h3 { margin: 0; font-size: 14px; }
+.logHeader p { margin: 4px 0 0; color: var(--subtext0); font-size: 12px; }
+.healthSummary { display: flex; gap: 32px; flex-wrap: wrap; margin: 16px 0; }
+.healthSummary dt { color: var(--subtext0); font-size: 12px; }
+.healthSummary dd { margin: 4px 0 0; font-size: 13px; }
+.healthError { display: flex; gap: 12px; padding: 14px; margin-bottom: 16px; border: 1px solid var(--danger); border-radius: var(--radius); color: var(--danger); background: color-mix(in srgb, var(--danger) 5%, var(--bg-card)); font-size: 13px; }
+.healthError p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.healthError button { margin-top: 12px; }
+.technical { margin-top: 20px; color: var(--subtext0); font-size: 13px; }
+.technical summary { cursor: pointer; }

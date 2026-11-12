@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { ConfirmContext, type Confirm, type ConfirmOptions } from '../lib/useConfirm';
 import { Button } from './Control';
 import { Modal } from './Modal';
@@ -24,12 +25,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   }), []);
   return <ConfirmContext.Provider value={confirm}>
     {children}
-    {pending && <Modal label={pending.title} onClose={() => pending.settle(false)}>
+    {pending && createPortal(<Modal label={pending.title} onClose={() => pending.settle(false)}>
       <ModalHeader title={pending.title} description={pending.description} onClose={() => pending.settle(false)} closeLabel="Close" />
       <ModalFooter label="Confirmation actions">
         <Button autoFocus={pending.destructive} onClick={() => pending.settle(false)}>{pending.cancelLabel ?? 'Cancel'}</Button>
         <Button autoFocus={!pending.destructive} variant={pending.destructive ? 'danger' : 'accent'} onClick={() => pending.settle(true)}>{pending.confirmLabel}</Button>
       </ModalFooter>
-    </Modal>}
+    </Modal>, document.body)}
   </ConfirmContext.Provider>;
 }

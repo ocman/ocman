@@ -5,6 +5,8 @@ import { api } from '../lib/api';
 import type { PluginRegistration } from '../lib/plugins';
 import { renderWithQuery } from '../test/renderWithQuery';
 import { PluginSettings } from './PluginSettings';
+import { MemoryRouter } from 'react-router-dom';
+import { ConfirmProvider } from './ConfirmDialog';
 
 let plugin: PluginRegistration;
 let posts: { path: string; body: unknown }[];
@@ -43,9 +45,15 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+const click = (name: string) => {
+  if (name === 'Configure') {
+    const tab = screen.getByRole('tab', { name: 'Settings' });
+    if (tab.getAttribute('aria-selected') !== 'true') fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+  } else if (name === 'Enable') fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Output' }));
+  else fireEvent.click(screen.getByRole('button', { name }));
+};
 async function open() {
-  renderWithQuery(<PluginSettings />);
+  renderWithQuery(<MemoryRouter initialEntries={[`/settings?tab=plugins&plugin=${plugin.description.id}&pluginTab=permissions`]}><ConfirmProvider><PluginSettings /></ConfirmProvider></MemoryRouter>);
   await screen.findByRole('region', { name: 'Output plugin' });
 }
 
@@ -100,7 +108,7 @@ it('accepts blank for an already configured required secret on save and enable',
   expect(screen.getByLabelText('ocman password')).toHaveValue('');
   expect(screen.getByLabelText('ocman password')).not.toHaveAttribute('aria-invalid', 'true');
   click('Save configuration');
-  await waitFor(() => expect(screen.queryByRole('form')).not.toBeInTheDocument());
+  await screen.findByText('Configuration saved.');
   expect(posts[0].body).toEqual({ values: { count: 1, mode: 'serial' }, secrets: {} });
   click('Enable');
   click('Approve grants and enable');
@@ -131,7 +139,7 @@ it('rechecks saved settings at approval after an async refresh makes them invali
   click('Enable');
   plugin.configuration.secrets = { sourcePassword: false };
   click('Refresh health');
-  await waitFor(() => expect(screen.getByText('Not configured')).toBeVisible());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh health' })).toBeEnabled());
   click('Approve grants and enable');
   expect(screen.getByLabelText('ocman password')).toHaveAttribute('aria-invalid', 'true');
   expect(screen.getByLabelText('ocman password')).toHaveFocus();

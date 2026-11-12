@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { renderWithQuery } from '../test/renderWithQuery';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderWithQuery as renderQuery } from '../test/renderWithQuery';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
+import { ConfirmProvider } from './ConfirmDialog';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { plugins, type PluginRegistration } from '../lib/plugins';
@@ -21,6 +24,9 @@ const host = (remoteId: string, pluginManagement = true): HostCapabilityEntry =>
   capabilities: { gitDiff: false, worktrees: false, tmux: false, projects: false, sessionLaunch: false, judgeModel: false, mcpConfig: false },
 });
 let plugin: PluginRegistration;
+function renderWithQuery(ui: ReactElement) {
+  return renderQuery(<MemoryRouter initialEntries={[`/settings?plugin=${plugin.description.id}&pluginTab=permissions`]}><ConfirmProvider>{ui}</ConfirmProvider></MemoryRouter>);
+}
 beforeEach(() => {
   vi.resetAllMocks();
   plugin = {
@@ -53,7 +59,21 @@ async function open() {
   renderWithQuery(<PluginSettings />);
   return screen.findByRole('region', { name: 'Example plugin' });
 }
-const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+const click = (name: string) => {
+  const tab = name === 'Configure' || name === 'Save configuration' ? 'Settings'
+    : ['Retry', 'Restart', 'Refresh logs'].includes(name) ? 'Diagnostics'
+      : ['Enable', 'Disable', 'Grant permissions', 'Remove data', 'Revoke grants'].includes(name) ? 'Permissions' : '';
+  if (tab) {
+    const trigger = screen.getByRole('tab', { name: tab });
+    if (trigger.getAttribute('aria-selected') !== 'true') fireEvent.mouseDown(trigger, { button: 0, ctrlKey: false });
+  }
+  if (name !== 'Configure') fireEvent.click(screen.getByRole('button', { name }));
+};
+async function reopen() {
+  fireEvent.click(await screen.findByRole('link', { name: plugin.description.name }));
+  await screen.findByRole('dialog', { name: plugin.description.name });
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Permissions' }), { button: 0, ctrlKey: false });
+}
 
 it('allows reviewing and restoring missing grants on an enabled plugin', async () => {
   plugin.description.name = 'Pentest';
@@ -72,19 +92,15 @@ it('allows reviewing and restoring missing grants on an enabled plugin', async (
   }));
 });
 
-it('separates discovery and each plugin into settings sections', async () => {
+it('shows the plugin list and only the selected plugin details', async () => {
   const second = structuredClone(plugin);
   second.description = { ...second.description, id: 'org.example.second', name: 'Second' };
   vi.mocked(plugins.list).mockResolvedValue([plugin, second]);
   await open();
-  const discovery = screen.getByRole('region', { name: 'Discovery' });
-  expect(within(discovery).getByLabelText('Plugin owner')).toBeVisible();
-  expect(within(discovery).getByRole('button', { name: 'Rescan plugins' })).toBeVisible();
-  for (const name of ['Example plugin', 'Second plugin']) {
-    const section = screen.getByRole('region', { name });
-    expect(within(section).getByRole('heading', { name, level: 3 })).toBeVisible();
-    expect(within(section).getByRole('button', { name: 'Configure' })).toBeVisible();
-  }
+  expect(screen.getByLabelText('Plugin owner')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Rescan plugins' })).toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Second plugin' })).not.toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Example' })).toBeVisible();
 });
 
 it.each(['conflict', 'removed', 'approved', 'none'])('blocks grant changes when %s', async (state) => {
@@ -100,6 +116,7 @@ it('grants permissions on the selected owner without enabling and sanitizes fail
   plugin.grants = null;
   await open();
   fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'remote' } });
+  await reopen();
   await screen.findByRole('region', { name: 'Example plugin' });
   vi.mocked(plugins.mutate).mockRejectedValue(new Error('private details'));
   click('Grant permissions');
@@ -127,6 +144,7 @@ it('uses shared controls for owner selection, lifecycle, configuration and confi
 it('shows rejected discovery diagnostics for the selected owner and clears them after rescan', async () => {
   vi.mocked(plugins.discovery).mockResolvedValue([{ filename: 'ocman-plugin-broken', error: 'invalid plugin message' }]);
   await open();
+  fireEvent.click(screen.getByText('1 plugin discovery issue'));
   expect(screen.getByRole('alert')).toHaveTextContent('ocman-plugin-broken: invalid plugin message');
   expect(plugins.discovery).toHaveBeenCalledWith('local', expect.any(AbortSignal));
   vi.mocked(plugins.discovery).mockResolvedValue([]);
@@ -142,7 +160,7 @@ it('shows owner and catalog loading, an empty state, and rescan results', async 
   expect(await screen.findByText('Loading plugins…')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Rescan plugins' })).toBeDisabled();
   await act(async () => resolve([]));
-  expect(screen.getByRole('status')).toHaveTextContent('No plugins discovered');
+  expect(screen.getByText('No plugins discovered.')).toBeVisible();
   vi.mocked(plugins.rescan).mockResolvedValue([plugin]);
   click('Rescan plugins');
   expect(await screen.findByRole('region', { name: 'Example plugin' })).toBeVisible();
@@ -152,13 +170,16 @@ it('shows owner and catalog loading, an empty state, and rescan results', async 
 it('displays metadata, conflicts and removed executables without allowing enable', async () => {
   plugin.health = { status: 'conflict', restartCount: 3, lastError: 'Duplicate immutable ID' };
   plugin.removed = true;
-  const card = await open();
+  await open();
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Diagnostics' }), { button: 0, ctrlKey: false });
+  fireEvent.click(screen.getByText('Technical details'));
   for (const text of ['org.example.test', '1.2.3', 'abc123', 'action v1.0', 'owner', 'Duplicate immutable ID', 'Configured']) {
-    expect(within(card).getByText(text)).toBeVisible();
+    expect(screen.getByRole('dialog')).toHaveTextContent(text);
   }
-  expect(within(card).getByText(/Disabled · conflict · Executable removed/)).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Enable' })).toBeDisabled();
+  expect(screen.getByRole('dialog')).toHaveTextContent('Disabled · conflict · Executable removed');
   expect(screen.getByRole('button', { name: 'Restart' })).toBeDisabled();
+  click('Grant permissions');
+  expect(screen.getByRole('button', { name: 'Enable' })).toBeDisabled();
 });
 
 it('requires explicit grant and checksum review before enabling', async () => {
@@ -174,7 +195,7 @@ it('requires explicit grant and checksum review before enabling', async () => {
   plugin.health.status = 'ready';
   click('Approve grants and enable');
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', plugin.description.id, 'enable', { approval: 'reviewed-registration', grants: ['context.project'] }));
-  expect(await screen.findByText('Enabled · ready')).toBeVisible();
+  await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Enabled · Healthy'));
 });
 
 it('supports enabling without grants and settings', async () => {
@@ -197,8 +218,9 @@ it.each(['Retry', 'Restart', 'Disable', 'Revoke grants'])('routes %s to the sele
   plugin.health = { status: 'unhealthy', restartCount: 4, lastError: 'Readiness failed' };
   await open();
   fireEvent.change(screen.getByRole('combobox', { name: 'Plugin owner' }), { target: { value: 'remote' } });
+  await reopen();
   await screen.findByRole('region', { name: 'Example plugin' });
-  expect(screen.getByText('Enabled · unhealthy')).toBeVisible();
+  expect(screen.getByRole('dialog')).toHaveTextContent('Enabled · unhealthy');
   click(action);
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('remote', plugin.description.id,
     action === 'Revoke grants' ? 'grants' : action.toLowerCase(), action === 'Revoke grants' ? { grants: [] } : undefined));
@@ -217,7 +239,7 @@ it('keeps secrets write-only, omits unchanged secrets, and sends typed configura
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', plugin.description.id, 'configuration', {
     values: { mode: 'good', name: 'example', active: false, count: 2, ratio: 1.5 }, secrets: {},
   }));
-  await waitFor(() => expect(screen.queryByRole('form')).not.toBeInTheDocument());
+  await screen.findByText('Configuration saved.');
   click('Configure');
   fireEvent.change(screen.getByLabelText('Token'), { target: { value: 'write-only-value' } });
   click('Save configuration');
@@ -371,7 +393,7 @@ it('shows configuration activation/rollback errors, reloads persisted values, an
   fireEvent.change(screen.getByLabelText('Token'), { target: { value: 'private-candidate' } });
   click('Save configuration');
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm configuration was saved and activated');
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Configure' })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save configuration' })).toBeEnabled());
   expect(screen.queryByText(/private-candidate/)).not.toBeInTheDocument();
   expect(screen.getByLabelText('Mode')).toHaveValue('good');
   expect(screen.getByLabelText('Token')).toHaveValue('');
@@ -381,7 +403,6 @@ it('renders defaults, required secrets and optional boolean/numeric omissions', 
   plugin.configuration = { values: {}, secrets: {} };
   plugin.description.settings![1].required = true;
   await open();
-  expect(screen.getByText('Not configured')).toBeVisible();
   click('Configure');
   expect(screen.getByLabelText('Mode')).toHaveValue('good');
   expect(screen.getByLabelText('Token')).toBeRequired();
@@ -397,15 +418,15 @@ it('renders defaults, required secrets and optional boolean/numeric omissions', 
 
 it('shows bounded text-only stderr, empty logs, refresh and errors', async () => {
   await open();
-  click('Load recent stderr');
-  expect(await screen.findByLabelText('Recent stderr')).toHaveTextContent('No recent stderr.');
+  click('Refresh logs');
+  await waitFor(() => expect(screen.getByLabelText('Recent stderr')).toHaveTextContent('No recent stderr.'));
   vi.mocked(plugins.stderr).mockResolvedValue({ stderr: 'old'.repeat(50000) + '<script>recent</script>' });
-  click('Load recent stderr');
+  click('Refresh logs');
   await waitFor(() => expect(screen.getByLabelText('Recent stderr')).toHaveTextContent('<script>recent</script>'));
   expect(screen.getByLabelText('Recent stderr').textContent).toHaveLength(128 * 1024);
   expect(screen.getByLabelText('Recent stderr').querySelector('script')).toBeNull();
   vi.mocked(plugins.stderr).mockRejectedValue(new Error('offline'));
-  click('Load recent stderr');
+  click('Refresh logs');
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load recent stderr');
 });
 
@@ -444,6 +465,7 @@ it('gates unsupported owners, clears old data on switching and ignores stale res
 it('handles owner disconnect and capability refresh without falling back to local', async () => {
   await open();
   fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'remote' } });
+  await reopen();
   await screen.findByRole('region', { name: 'Example plugin' });
   vi.mocked(plugins.list).mockRejectedValue(new Error('offline'));
   click('Refresh health');

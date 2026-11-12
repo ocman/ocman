@@ -1,12 +1,11 @@
-import { useState } from 'react';
-import { APIError } from '../lib/api.requests';
-import { hasConversationCapability, plugins, type PluginInput, type PluginMutation, type PluginRegistration } from '../lib/plugins';
-import { pluginConfigurationErrors } from '../lib/pluginConfigurationValidation';
+import type { PluginSettingsView } from './PluginSettingsDrawer';
+import { hasConversationCapability, type PluginRegistration } from '../lib/plugins';
+import { usePluginManagement, type PluginManagement } from '../lib/usePluginManagement';
 import { SettingRow } from './SettingRow';
-import { SettingsSection } from './SettingsSection';
 import { PluginConfiguration } from './PluginConfiguration';
 import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
 import { PluginAgentTools, PluginAgentToolsDisclosure } from './PluginAgentTools';
+import { PluginLogs } from './PluginLogs';
 import { Button, ButtonGroup } from './Control';
 import styles from './PluginSettingsCard.module.css';
 
@@ -43,97 +42,58 @@ function PluginUIDisclosure({ plugin: p, owner }: { plugin: PluginRegistration; 
   </div>;
 }
 
-export function PluginSettingsCard({ plugin: p, owner, refresh }: {
+type Props = {
   plugin: PluginRegistration; owner: string; refresh: () => Promise<void>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [review, setReview] = useState<'enable' | 'grants' | null>(null);
-  const [configure, setConfigure] = useState(false);
-  const [configurationAttempt, setConfigurationAttempt] = useState(0);
-  const [configurationSaved, setConfigurationSaved] = useState(false);
-  const [configurationFocus, setConfigurationFocus] = useState(0);
-  const [enableNeedsConfiguration, setEnableNeedsConfiguration] = useState(false);
-  const [pendingAction, setPendingAction] = useState<PluginMutation | null>(null);
-  const [remove, setRemove] = useState(false);
-  const [logs, setLogs] = useState<string | null>(null);
+  view?: PluginSettingsView; onDirtyChange?: (dirty: boolean) => void;
+  onCancel?: () => void;
+  onOpenSettings?: () => void;
+};
+
+export function PluginSettingsCard(props: Props) {
+  const management = usePluginManagement(props.plugin, props.owner, props.refresh, props.onOpenSettings);
+  return <PluginSettingsContent {...props} management={management} />;
+}
+
+export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', onDirtyChange, onCancel, onOpenSettings, management }: Omit<Props, 'refresh'> & { management: PluginManagement }) {
+  const { busy, error, review, setReview, reviewEnable, configurationAttempt, configurationSaved, configurationFocus, configurationRequested, enableNeedsConfiguration, pendingAction, remove, setRemove, mutate } = management;
   const d = p.description;
   const blocked = p.removed || p.health.status === 'conflict';
+  const permissions = view === 'permissions';
+  const diagnostics = view === 'diagnostics';
+  const configuration = view === 'settings' || (!onOpenSettings && configurationRequested);
 
-  function needsConfiguration(input?: PluginInput) {
-    if (!Object.keys(pluginConfigurationErrors(p, input)).length) return false;
-    setConfigure(true);
-    setReview(null);
-    setConfigurationSaved(false);
-    setConfigurationFocus((attempt) => attempt + 1);
-    return true;
-  }
-
-  function reviewEnable() {
-    if (needsConfiguration()) { setEnableNeedsConfiguration(true); return; }
-    setReview('enable');
-  }
-
-  async function mutate(action: PluginMutation, input?: PluginInput) {
-    if (busy) return;
-    if (action === 'enable' && needsConfiguration()) { setEnableNeedsConfiguration(true); return; }
-    if (action === 'configuration' && needsConfiguration(input)) return;
-    setBusy(true);
-    setPendingAction(action);
-    setError('');
-    setConfigurationSaved(false);
-    try {
-      await plugins.mutate(owner, d.id, action, input);
-      if (action === 'configuration') { setConfigurationSaved(true); setEnableNeedsConfiguration(false); }
-      setReview(null); setConfigure(false); setRemove(false); setLogs(null);
-    } catch (failure) {
-      // Never echo an error body that could contain submitted configuration.
-      const validationRejected = failure instanceof APIError && failure.status === 400;
-      let message = `Could not ${action === 'grants' ? 'update grants for' : action} plugin. Check its health and retry.`;
-      if (action === 'configuration') message = validationRejected
-        ? 'Configuration was rejected. Review the declared settings and saved values before retrying.'
-        : 'Could not confirm configuration was saved and activated. After activation failure, the server attempts to restore the last working configuration. Review saved values and plugin health before retrying.';
-      if (action === 'enable' && validationRejected) {
-        message = 'Could not enable plugin. The owner rejected its configuration or grants. Review settings and permissions before retrying.';
-        setConfigure(true); setReview(null);
-      }
-      setError(message);
-      // Keep the failed operation visible, but discard candidate values and secrets.
-      if (action === 'configuration') setConfigurationAttempt((attempt) => attempt + 1);
-    } finally {
-      try { await refresh(); }
-      finally { setBusy(false); setPendingAction(null); }
-    }
-  }
-
-  async function loadLogs() {
-    setBusy(true); setError('');
-    try {
-      const result = await plugins.stderr(owner, d.id);
-      setLogs(result.stderr.slice(-128 * 1024));
-    } catch { setError('Could not load recent stderr for this owner.'); }
-    finally { setBusy(false); }
-  }
-
-  return <SettingsSection title={`${d.name} plugin`}>
-    <PluginMetadata plugin={p} />
+  return <section aria-label={`${d.name} plugin`}>
+    {diagnostics && p.health.lastError && <div className={styles.healthError}><i className="bi bi-exclamation-triangle" aria-hidden="true" /><div>
+      <strong>Plugin reported an error</strong><p>{p.health.lastError}</p>
+      {onOpenSettings && <Button type="button" size="small" disabled={busy} onClick={onOpenSettings}>Open settings</Button>}
+    </div></div>}
+    {permissions && <>
+      <SettingRow label="Execution scope">{d.scope}</SettingRow>
+      <SettingRow label="Requested grants">{d.requestedGrants?.join(', ') || 'None'}</SettingRow>
+      <SettingRow label="Current grants">{p.grants?.join(', ') || 'None'}</SettingRow>
+      {d.ui && <SettingRow label="Interface">In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
+    </>}
     {configurationSaved && <p role="status">Configuration saved.</p>}
-    {error && !configure && <p role="alert">{error}</p>}
-    <fieldset disabled={busy} className={styles.management}>
-      <legend>Manage {d.name}</legend>
-      <SettingRow label="Lifecycle" block>
+    {error && !configuration && <p role="alert">{error}</p>}
+    <fieldset disabled={busy} className={styles.management} aria-label={`${view} for ${d.name}`}>
+      {(permissions || diagnostics) && <SettingRow label={diagnostics ? 'Recovery' : 'Lifecycle'} block>
         <ButtonGroup label="Plugin lifecycle actions">
-          <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={reviewEnable}>Enable</Button>
-          <Button type="button" size="small" disabled={blocked || !d.requestedGrants?.some((grant) => !p.grants?.includes(grant))} onClick={() => setReview('grants')}>Grant permissions</Button>
-          <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
-          <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</Button>
-          <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('restart'); }}>Restart</Button>
-          <Button type="button" size="small" onClick={() => { setConfigurationSaved(false); setConfigure(!configure); }}>Configure</Button>
-          <Button type="button" size="small" variant="danger" disabled={!p.grants?.length} onClick={() => { void mutate('grants', { grants: [] }); }}>Revoke grants</Button>
-          <Button type="button" size="small" variant="danger" disabled={p.enabled} onClick={() => setRemove(true)}>Remove data</Button>
+          {permissions && <>
+            <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={reviewEnable}>Enable</Button>
+            <Button type="button" size="small" disabled={blocked || !d.requestedGrants?.some((grant) => !p.grants?.includes(grant))} onClick={() => setReview('grants')}>Grant permissions</Button>
+            <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
+          </>}
+          {diagnostics && <>
+            <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</Button>
+            <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('restart'); }}>Restart</Button>
+          </>}
+          {permissions && <>
+            <Button type="button" size="small" variant="danger" disabled={!p.grants?.length} onClick={() => { void mutate('grants', { grants: [] }); }}>Revoke grants</Button>
+            <Button type="button" size="small" variant="danger" disabled={p.enabled} onClick={() => setRemove(true)}>Remove data</Button>
+          </>}
         </ButtonGroup>
-      </SettingRow>
-      {review && <SettingRow label={review === 'enable' ? 'Review grants before enabling' : 'Review grants'} block>
+      </SettingRow>}
+      {permissions && review && <SettingRow label={review === 'enable' ? 'Review grants before enabling' : 'Review grants'} block>
         <p>This native executable runs on {owner} with {d.scope} scope. Approve checksum <code>{p.checksum}</code> and these requested grants:</p>
         <ul>{(d.requestedGrants ?? []).map((grant) => <li key={grant}>{grant}</li>)}</ul>
         {!d.requestedGrants?.length && <p>No grants requested.</p>}
@@ -144,21 +104,23 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
           <Button type="button" onClick={() => setReview(null)}>Cancel approval</Button>
         </ButtonGroup>
       </SettingRow>}
-      {configure && <PluginConfiguration key={`${configurationAttempt}:${JSON.stringify(p.configuration)}`} plugin={p}
-        error={error} saving={pendingAction === 'configuration'} busy={busy} focusRequest={configurationFocus} enableNeedsConfiguration={enableNeedsConfiguration} save={(input) => mutate('configuration', input)} />}
-      {remove && <SettingRow label="Permanently remove plugin data" block>
+      {configuration && <PluginConfiguration key={`${configurationAttempt}:${JSON.stringify(p.configuration)}`} plugin={p}
+        onDirtyChange={onDirtyChange} onCancel={onCancel} error={error} saving={pendingAction === 'configuration'} busy={busy}
+        focusRequest={configurationFocus} enableNeedsConfiguration={enableNeedsConfiguration} save={(input) => mutate('configuration', input)} />}
+      {permissions && remove && <SettingRow label="Permanently remove plugin data" block>
         <p>Delete configuration, secrets, grants, and private data for {d.id} on {owner}. This cannot be undone. The executable is not deleted.</p>
         <ButtonGroup label="Plugin removal actions">
           <Button type="button" variant="danger" onClick={() => { void mutate('remove-data'); }}>Confirm permanent removal</Button>
           <Button type="button" onClick={() => setRemove(false)}>Cancel removal</Button>
         </ButtonGroup>
       </SettingRow>}
-      {hasConversationCapability(p) && <PluginDeliveryBacklog plugin={p} owner={owner} />}
-      <PluginAgentTools plugin={p} owner={owner} />
-      <SettingRow label="Recent stderr" desc="Bounded diagnostic output from the selected owner." block>
-        <Button type="button" size="small" onClick={() => { void loadLogs(); }}>Load recent stderr</Button>
-        {logs !== null && <pre aria-label="Recent stderr" className={styles.logs}>{logs || 'No recent stderr.'}</pre>}
-      </SettingRow>
+      {diagnostics && hasConversationCapability(p) && <PluginDeliveryBacklog plugin={p} owner={owner} />}
+      {permissions && <PluginAgentTools plugin={p} owner={owner} />}
     </fieldset>
-  </SettingsSection>;
+    {diagnostics && <>
+      <dl className={styles.healthSummary}><div><dt>Status</dt><dd>{p.health.status}</dd></div><div><dt>Restart count</dt><dd>{p.health.restartCount}</dd></div></dl>
+      <PluginLogs owner={owner} pluginId={d.id} />
+      <details className={styles.technical}><summary>Technical details</summary><PluginMetadata plugin={p} /></details>
+    </>}
+  </section>;
 }

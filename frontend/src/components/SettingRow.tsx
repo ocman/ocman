@@ -37,11 +37,14 @@ export function SettingRow({
   desc,
   detail,
   block,
+  compact = false,
   children,
 }: RowCopy & {
   /** Live status shown under the description, e.g. a path and size. */
   detail?: ReactNode;
   block?: boolean;
+  /** Toolbar layout keeps the catalog anchor and exposes help on hover. */
+  compact?: boolean;
   children: ReactNode;
 }) {
   const entry = setting ? settingEntry(setting) : undefined;
@@ -49,13 +52,14 @@ export function SettingRow({
   return (
     <div
       id={setting ? settingAnchor(setting) : undefined}
-      className={block ? `settings-row settings-row--block ${styles.row} ${styles.block}` : `settings-row ${styles.row}`}
+      title={compact ? entry?.description : undefined}
+      className={`${block ? `settings-row settings-row--block ${styles.row} ${styles.block}` : `settings-row ${styles.row}`}${compact ? ` ${styles.compact}` : ''}`}
     >
       <div className={styles.info}>
         <div className={styles.label}>{label ?? entry?.title}</div>
-        {description != null && <div className={styles.description}>{description}</div>}
-        {detail != null && <div className={styles.description}>{detail}</div>}
-        {entry && (
+        {!compact && description != null && <div className={styles.description}>{description}</div>}
+        {!compact && detail != null && <div className={styles.description}>{detail}</div>}
+        {!compact && entry && (
           <details className={styles.example}>
             <summary>Example</summary>
             <p>{entry.example}</p>

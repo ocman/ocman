@@ -1,6 +1,6 @@
 .form { min-width: 0; }
-.field { width: 50%; max-width: 320px; min-width: 0; }
+.field { width: 100%; min-width: 0; }
 .control { display: grid; gap: 8px; width: 100%; min-width: 0; }
-.save { margin-top: 14px; }
+.actions { margin-top: 14px; }
 .error { color: var(--danger); margin: 6px 0 0; font-size: 12px; }
 .list[aria-invalid="true"] { outline: 1px solid var(--danger); }

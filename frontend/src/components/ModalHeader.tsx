@@ -5,16 +5,17 @@ import './ModalHeader.css';
 interface Props {
   title: string;
   description?: ReactNode;
+  icon?: ReactNode;
   onClose: () => void;
   closeLabel: string;
   canClose?: boolean;
   className?: string;
 }
 
-export function ModalHeader({ title, description, onClose, closeLabel, canClose = true, className = '' }: Props) {
+export function ModalHeader({ title, description, icon, onClose, closeLabel, canClose = true, className = '' }: Props) {
   return (
     <header className={`oc-modal-header ${className}`} data-testid="modal-header">
-      <div><h2>{title}</h2>{description && <p>{description}</p>}</div>
+      <div className="oc-modal-heading">{icon && <span className="oc-modal-heading-icon" aria-hidden="true">{icon}</span>}<div><h2>{title}</h2>{description && <p>{description}</p>}</div></div>
       <IconButton icon="bi-x-lg" label={closeLabel} title="Close" variant="ghost" disabled={!canClose} onClick={onClose} />
     </header>
   );

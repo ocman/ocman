@@ -71,6 +71,14 @@ describe('SettingText', () => {
 });
 
 describe('SettingRow', () => {
+  it('keeps searchable anchors and help in a compact toolbar row', () => {
+    const { container } = render(<SettingRow setting="plugin-owner" compact label="Host"><span>Selected host</span></SettingRow>);
+    const row = container.querySelector('#setting-plugin-owner');
+    expect(row).toHaveAttribute('title', 'Plugins and their data belong to the selected machine.');
+    expect(screen.getByText('Host')).toBeVisible();
+    expect(screen.getByText('Selected host')).toBeVisible();
+    expect(screen.queryByText('Example')).not.toBeInTheDocument();
+  });
   it('shares descriptive copy while preserving paragraph semantics and attributes', () => {
     render(<SettingDescription role="status" className="extra">Loading providers</SettingDescription>);
     const description = screen.getByRole('status');

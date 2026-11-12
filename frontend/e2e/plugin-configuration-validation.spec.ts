@@ -22,7 +22,8 @@ test('missing required password opens a red, explained field without an enable r
   });
   await page.goto('/settings');
   await page.getByRole('button', { name: 'Plugins', exact: true }).click();
-  await page.getByRole('button', { name: 'Enable', exact: true }).click();
+  await page.getByRole('link', { name: 'Output', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Enable Output' }).click();
   const field = page.getByLabel('ocman password', { exact: true });
   await expect(field).toBeVisible();
   await expect(field).toBeFocused();
@@ -39,16 +40,15 @@ test('missing required password opens a red, explained field without an enable r
   });
   await expect(field).toHaveCSS('border-top-color', danger);
   await expect(page.getByRole('button', { name: 'Save configuration', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Refresh health' }).click();
+  await page.getByRole('tab', { name: 'Permissions', exact: true }).click();
+  await page.getByRole('tab', { name: 'Settings', exact: true }).click();
   await expect(field).toHaveAttribute('aria-invalid', 'true');
-  await page.getByRole('button', { name: 'Configure', exact: true }).click();
-  await page.getByRole('button', { name: 'Configure', exact: true }).click();
   await expect(field).toBeFocused();
   await field.fill('fixture-only-not-a-real-password');
   await expect(field).not.toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByRole('button', { name: 'Save configuration', exact: true })).toBeEnabled();
   // Draft credentials must be saved, not silently included in lifecycle approval.
-  await page.getByRole('button', { name: 'Enable', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Enable Output' }).click();
   await expect(page.getByRole('button', { name: 'Approve grants and enable' })).toHaveCount(0);
   await expect(page.getByRole('form')).toContainText('save configuration before enabling');
   expect(mutations).toBe(0);
@@ -79,7 +79,7 @@ test('public schema errors block save and a configured blank password stays vali
   });
   await page.goto('/settings');
   await page.getByRole('button', { name: 'Plugins', exact: true }).click();
-  await page.getByRole('button', { name: 'Configure', exact: true }).click();
+  await page.getByRole('link', { name: 'Output', exact: true }).click();
   const field = page.getByLabel('Count', { exact: true });
   await field.fill('1.5');
   await expect(field).toHaveAttribute('aria-invalid', 'true');

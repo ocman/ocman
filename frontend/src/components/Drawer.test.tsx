@@ -41,3 +41,10 @@ it('blocks close controls and backdrop dismissal while busy', () => {
   fireEvent.click(dialog.parentElement!);
   expect(onClose).not.toHaveBeenCalled();
 });
+
+it('renders a branded heading and supporting description without changing the accessible title', () => {
+  render(<Drawer title="Forgejo" icon={<span>Plugin icon</span>} description="1.8 · Host: local" onClose={vi.fn()}>Settings</Drawer>);
+  expect(screen.getByRole('dialog', { name: 'Forgejo' })).toBeVisible();
+  expect(screen.getByText('Plugin icon')).toBeVisible();
+  expect(screen.getByText('1.8 · Host: local')).toBeVisible();
+});

@@ -17,9 +17,24 @@ tools through ocman's MCP endpoint ([plugin agent tools](../plugin-agent-tools/)
 installations in **Settings → Plugins**, selecting the plugin owner before making
 changes.
 
-Plugins has its own Settings category. **Discovery** contains the owner selector,
-rescan controls and rejected executables. Each discovered plugin has a separate
-section for its grants, configuration, health and diagnostics.
+Plugins has its own Settings category. Select a host, search by plugin name or ID,
+and filter by enabled, disabled or needs-attention status. The compact list shows
+20 plugins per page. Discovery failures are grouped in an expandable notice.
+
+Plugin icons appear in the list and drawer header, with a puzzle fallback when
+an icon is absent or unavailable. The drawer's **Enabled** toggle disables a
+plugin immediately or opens explicit permission review before enabling it.
+**View logs** opens diagnostics directly from any tab.
+
+Open a plugin to manage it in a detail drawer. **Settings** contains its editable
+configuration, **Permissions** contains grant review and enable/disable controls,
+and **Diagnostics** contains retry/restart controls, recent stderr and expandable
+technical metadata. Diagnostics loads the bounded stderr log automatically and
+offers refresh and copy controls. A failed refresh keeps the last successful log
+visible. The drawer names the owning host. Unsaved configuration edits
+require confirmation before closing the drawer or switching tabs. Secrets remain
+write-only. Search, filters, pagination, host, selected plugin and detail tab are
+stored in the URL, without configuration values or secrets.
 
 ## Plugin workspaces
 

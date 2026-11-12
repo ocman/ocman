@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import { ConfirmProvider } from './ConfirmDialog';
 import { useConfirm, type ConfirmOptions } from '../lib/useConfirm';
+import { Drawer } from './Drawer';
 
 function Harness({ options, onResult }: { options: ConfirmOptions; onResult: (ok: boolean) => void }) {
   const confirm = useConfirm();
@@ -47,4 +48,17 @@ it('cancels an unanswered confirmation when a newer one opens', async () => {
 it('requires a provider', () => {
   function Orphan() { useConfirm(); return null; }
   expect(() => render(<Orphan />)).toThrow(/ConfirmProvider/);
+});
+
+it('keeps a confirmation opened from a portaled drawer outside inert content', async () => {
+  const results: boolean[] = [];
+  render(<ConfirmProvider><Drawer title="Editor" onClose={() => {}}>
+    <Harness options={{ title: 'Discard edits?', confirmLabel: 'Discard' }} onResult={(ok) => results.push(ok)} />
+  </Drawer></ConfirmProvider>);
+  fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
+  const dialog = screen.getByRole('dialog', { name: 'Discard edits?' });
+  expect(dialog.closest('[inert]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+  await waitFor(() => expect(results).toEqual([true]));
+  expect(screen.getByRole('dialog', { name: 'Editor' }).closest('[inert]')).toBeNull();
 });

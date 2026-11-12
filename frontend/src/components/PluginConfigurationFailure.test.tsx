@@ -5,6 +5,8 @@ import { api } from '../lib/api';
 import type { PluginRegistration } from '../lib/plugins';
 import { renderWithQuery } from '../test/renderWithQuery';
 import { PluginSettings } from './PluginSettings';
+import { MemoryRouter } from 'react-router-dom';
+import { ConfirmProvider } from './ConfirmDialog';
 
 const saved: PluginRegistration = {
   ownerId: 'local', approval: 'approved', checksum: 'fixture', enabled: true, removed: false, grants: [],
@@ -48,9 +50,8 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function submit() {
-  renderWithQuery(<PluginSettings />);
+  renderWithQuery(<MemoryRouter initialEntries={['/settings?plugin=org.example.output']}><ConfirmProvider><PluginSettings /></ConfirmProvider></MemoryRouter>);
   await screen.findByRole('region', { name: 'Output plugin' });
-  fireEvent.click(screen.getByRole('button', { name: 'Configure' }));
   fireEvent.change(screen.getByLabelText('Serial enabled'), { target: { value: 'true' } });
   fireEvent.change(screen.getByLabelText('Source password'), { target: { value: 'private-candidate' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }));
@@ -69,7 +70,7 @@ it('keeps a rejected activation visible beside Save after refreshing rolled-back
   expect(within(form).getByRole('alert')).toHaveTextContent(/restore.*last working configuration/i);
   expect(screen.getByLabelText('Serial enabled')).toHaveValue('false');
   expect(screen.getByLabelText('Source password')).toHaveValue('');
-  expect(screen.getByText('Enabled · ready')).toBeVisible();
+  expect(screen.getByRole('dialog')).toHaveTextContent('Enabled · Healthy');
   expect(screen.getByRole('button', { name: 'Save configuration' })).toBeEnabled();
   expect(within(form).getByRole('alert')).toHaveFocus();
   expect(document.body).not.toHaveTextContent('private-candidate');
@@ -110,18 +111,17 @@ it('shows pending until the response, blocks duplicate saves, and only then repo
   expect(screen.queryByText('Configuration saved.')).not.toBeInTheDocument();
   await act(async () => resolveSave());
   expect(screen.getByRole('status')).toHaveTextContent('Configuration saved.');
-  expect(screen.queryByRole('form')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Configure' }));
-  expect(screen.queryByText('Configuration saved.')).not.toBeInTheDocument();
+  expect(screen.getByRole('form')).toBeVisible();
+  expect(screen.getByLabelText('Serial enabled')).toHaveValue('false');
 });
 
 it('keeps the rejection visible when closing and reopening configuration', async () => {
   await submit();
   await act(async () => rejectSave());
-  fireEvent.click(screen.getByRole('button', { name: 'Configure' }));
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Diagnostics' }), { button: 0, ctrlKey: false });
   expect(screen.queryByRole('form')).not.toBeInTheDocument();
   expect(screen.getByRole('alert')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Configure' }));
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Settings' }), { button: 0, ctrlKey: false });
   expect(within(screen.getByRole('form')).getByRole('alert')).toHaveFocus();
   expect(screen.getByLabelText('Serial enabled')).toHaveValue('false');
   expect(screen.getByLabelText('Source password')).toHaveValue('');
@@ -130,11 +130,11 @@ it('keeps the rejection visible when closing and reopening configuration', async
 it('does not attach a late rejection from the previous owner to the newly selected owner', async () => {
   await submit();
   fireEvent.change(screen.getByLabelText('Plugin owner'), { target: { value: 'remote' } });
-  await screen.findByRole('region', { name: 'Output plugin' });
+  await screen.findByRole('link', { name: 'Output' });
   await act(async () => rejectSave());
   expect(screen.getByLabelText('Plugin owner')).toHaveValue('remote');
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-  expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(requests).toHaveLength(1);
 });
 
@@ -145,5 +145,5 @@ it('does not turn an acknowledged save into an activation failure when health re
   expect(screen.getByText('Configuration saved.')).toBeVisible();
   expect(screen.getByRole('alert')).toHaveTextContent('Could not load plugins for this owner');
   expect(screen.getByRole('region', { name: 'Output plugin' })).toBeVisible();
-  expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  expect(screen.getByRole('form')).toBeVisible();
 });
