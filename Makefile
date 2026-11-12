@@ -272,6 +272,7 @@ test: test-backend test-frontend test-dev-scripts
 
 test-dev-scripts: ## Test dev log streaming and shutdown without launching ocman
 	python3 scripts/dev_test.py
+	python3 scripts/air_config_test.py
 	python3 scripts/test_install.py
 
 # Run the backend, frontend and e2e suites in parallel. Each runner stops at

@@ -23,6 +23,7 @@ const listeners = new Set<() => void>();
 let snapshot: string | null = null;
 
 export const getDraft = (id: string) => texts.get(id)?.text || '';
+export const hasComposerDrafts = () => [...texts.values()].some(record => record.text);
 export const getDraftVersion = (id: string) => texts.get(id)?.revision || 0;
 /** Why the latest local write for `id` was not stored, if it failed. */
 export const getDraftWriteError = (id: string) => writeErrors.get(id);

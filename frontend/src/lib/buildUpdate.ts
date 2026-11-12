@@ -14,7 +14,7 @@ export async function deployedBuildHash(signal: AbortSignal): Promise<string | n
   }
 }
 
-export function watchBuildUpdate(currentHash: string, changed: () => void): () => void {
+export function watchBuildUpdate(currentHash: string, changed: (hash: string) => void): () => void {
   let stopped = false;
   let detected = false;
   let request: AbortController | undefined;
@@ -25,7 +25,7 @@ export function watchBuildUpdate(currentHash: string, changed: () => void): () =
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
       const hash = await deployedBuildHash(controller.signal);
-      if (!stopped && hash && hash !== currentHash) { detected = true; changed(); }
+      if (!stopped && hash && hash !== currentHash) { detected = true; changed(hash); }
     } finally {
       clearTimeout(timeout);
       request = undefined;

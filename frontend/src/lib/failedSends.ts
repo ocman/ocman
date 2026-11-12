@@ -46,6 +46,7 @@ export interface FailedSend {
 type Store = Record<string, FailedSend[]>;
 
 const live: Store = Object.create(null);
+export const hasLiveFailedSends = () => Object.values(live).some(entries => entries.length);
 const listeners = new Set<(sessionId: string) => void>();
 
 export function subscribeFailedSends(listener: (sessionId: string) => void) {

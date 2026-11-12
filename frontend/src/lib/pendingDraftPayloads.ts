@@ -16,6 +16,9 @@ export function getPendingDraftPayload(draftId: string) {
   return usePayloads.getState().payloads.get(draftId);
 }
 
+export const hasPendingDraftPayloads = () => [...usePayloads.getState().payloads.values()]
+  .some(payload => payload.images.length || payload.files.length || payload.pending);
+
 export const updateDraftAttachments = (draftId: string, payload: Payload) => usePayloads.setState((state) => ({ payloads: new Map(state.payloads).set(draftId, { ...state.payloads.get(draftId), ...payload }) }));
 export const forgetDraftAttachments = (draftId: string) => usePayloads.setState((state) => {
   const owner = owners.get(draftId);

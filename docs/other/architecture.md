@@ -1567,6 +1567,30 @@ A different valid hash opens a persistent update notice with Refresh now and a
 network errors do not trigger reloads. Development HMR does not run the checker.
 
 ```mermaid
+flowchart LR
+    Chunk[Failed lazy import] --> Recovery[preloadRecovery]
+    Recovery --> Probe[build-hash.json]
+    Probe --> Budget[sessionStorage retry budget]
+    Budget --> Safety[automaticReload]
+    Notice[BuildUpdateNotice countdown] --> Budget
+    Drafts[Live drafts and unsaved-editor guards] --> Safety
+    Safety -->|safe| Reload[Page reload]
+```
+
+- `preloadRecovery` probes the deployed hash after `vite:preloadError`. Only a
+  different valid build can trigger recovery. Its tab-local history keeps eight
+  attempts, refuses repeated source or target builds, and permits at most two
+  reloads per minute. Unavailable or malformed session storage fails closed.
+  The update countdown shares this budget so it cannot bypass loop protection.
+  The obsolete lifetime-wide `ocman:preload-reloaded` marker is ignored.
+- `automaticReload` blocks both chunk recovery and the update countdown while
+  composer text, prepared drafts, pending attachments, full failed-send payloads
+  or an unsaved-editor unload guard need the current page. The countdown then
+  pauses with a save/send reminder. Explicit Refresh now remains user-controlled.
+  Recovery checks safety again after its asynchronous probe and leaves import
+  errors visible to the existing ErrorBoundary when it cannot safely reload.
+
+```mermaid
 flowchart TD
     Shell[App routes, MainNav, routeTitle, Settings] -->|routes, navigation, settings sections by category| Features[features/<br/>static registry]
     Features --> Pages
