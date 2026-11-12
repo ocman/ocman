@@ -50,7 +50,9 @@ Tools that do not report usage are omitted. Local API cost estimates remain
 separate from subscription quotas.
 
 The **History** tab and analytics subscription charts keep samples under stable
-connection IDs. Renaming changes the current label without splitting history.
+connection IDs. While a connection is enabled and registered, history uses its
+current name without splitting samples. Disabled or removed connections retain
+the names recorded with their samples.
 Disabling or removing a connection hides its current card but retains its history.
 Older tool-level samples remain separate because their account cannot be inferred.
 Subscription reporting remains local to the owning Ocman instance, not a combined
