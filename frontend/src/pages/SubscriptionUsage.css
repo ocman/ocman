@@ -18,6 +18,9 @@
 .subscription-window progress::-webkit-progress-bar { background: var(--surface1); }
 .subscription-window progress::-webkit-progress-value { background: var(--subscription-usage-color, var(--accent)); }
 .subscription-window progress::-moz-progress-bar { background: var(--subscription-usage-color, var(--accent)); }
+.subscription-progress { position: relative; height: 8px; margin-inline: 5px; }
+.subscription-progress progress { display: block; }
+.subscription-progress-dot { position: absolute; top: 50%; width: 10px; height: 10px; box-sizing: border-box; border: 2px solid var(--bg-card); border-radius: 50%; background: var(--text); box-shadow: 0 0 0 1px var(--text-dim); transform: translate(-50%, -50%); }
 .subscription-history-chart { height: 300px; }
 .subscription-limits-history { margin-bottom: 24px; }
 .subscription-limits-history .metrics-chart-body { height: auto; }

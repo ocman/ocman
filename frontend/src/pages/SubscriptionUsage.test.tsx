@@ -14,6 +14,23 @@ function render(ui: ReactElement) { return renderUI(ui, { wrapper: MemoryRouter 
 describe('SubscriptionUsage', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  it.each([false, true])('shows elapsed-time dots in provider usage, compact=%s', (compact) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-12T12:00:00Z'));
+    try {
+      vi.mocked(useSubscriptionUsage).mockReturnValue({
+        data: { providers: [{ id: 'codex', name: 'Codex', status: 'ok', windows: [
+          { name: '5 hours', usedPercent: 70, resetsAt: '2026-11-12T14:30:00Z' },
+        ] }] },
+      } as never);
+      render(<SubscriptionUsageContent compact={compact} />);
+      expect(screen.getByRole('img', { name: '50% of period elapsed. Usage is above elapsed time.' })).toHaveStyle({ left: '50%' });
+      expect(screen.getByRole('progressbar', { name: 'Codex 5 hours usage' })).toHaveValue(70);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     [0, 'normal'], [80, 'normal'], [80.1, 'warning'],
     [99.9, 'warning'], [100, 'danger'], [120, 'danger'],
@@ -26,7 +43,7 @@ describe('SubscriptionUsage', () => {
     render(<SubscriptionUsageContent />);
     const progress = screen.getByRole('progressbar', { name: 'Codex 5 hours usage' });
     expect(progress.closest('.subscription-window')).toHaveAttribute('data-usage-level', level);
-    expect(screen.getByText(`${usedPercent}% used`).closest('.subscription-window')).toBe(progress.parentElement);
+    expect(screen.getByText(`${usedPercent}% used`).closest('.subscription-window')).toBe(progress.closest('.subscription-window'));
   });
 
   it('keeps the selected view and unrelated parameters in the URL', async () => {

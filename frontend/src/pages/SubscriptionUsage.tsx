@@ -9,6 +9,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ChartSkeleton } from './dashboard/shared';
 import { ProviderSpend } from './ProviderSpend';
 import { ProviderBudget } from './ProviderBudget';
+import { UsageWindowProgress } from './UsageWindowProgress';
 import { providerUsageLevel } from '../lib/providerUsageLevel';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import './SubscriptionUsage.css';
@@ -41,11 +42,7 @@ function ProviderCard({ provider, compact = false }: { provider: SubscriptionPro
               <strong>{window.name}</strong>
               <span>{window.usedPercent}% used</span>
             </div>
-            <progress
-              aria-label={`${provider.name} ${window.name} usage`}
-              max={100}
-              value={window.usedPercent}
-            />
+            <UsageWindowProgress label={`${provider.name} ${window.name} usage`} window={window} />
             {window.resetsAt && (
               <span className="subscription-reset">
                 {compact && timeUntilISO(window.resetsAt)
@@ -71,7 +68,7 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
       <div className="subscription-page-heading">
         <div>
           {compact ? <h2>Provider usage</h2> : <h1>Provider usage</h1>}
-          <p>Subscription limits and budgets reported by enabled platform apps. Local API estimates are listed separately.</p>
+          <p>Subscription limits and budgets reported by enabled platform apps. Local API estimates are listed separately. Dots mark elapsed time in known quota periods.</p>
         </div>
         <RefreshButton size="small" variant="default" onClick={() => void usage.refetch()} loading={usage.isFetching} />
       </div>
