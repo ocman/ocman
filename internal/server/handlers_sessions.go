@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/ocman/ocman/internal/convstream"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/httpx"
@@ -151,16 +149,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if key, ok := s.registry.KeyFor(adapter); ok {
 		routeKey = key
 	}
-	statePlatform := s.sessionStatePlatform(string(routeKey))
 	peek := r.URL.Query().Get("peek") == "1"
-	var snoozed map[state.Key]int64
-	if s.stateDB != nil && !peek {
-		snoozed, err = s.stateDB.SnoozedSessions(r.Context())
-		if err != nil {
-			httpx.ServerError(w, "fetching snoozed sessions on open", err)
-			return
-		}
-	}
 	if detail.Session != nil {
 		detail.Session.ProjectDefaultModel = s.projectDefaultModel(r.Context(), detail.Session.Directory)
 		if !peek || s.stateDB == nil {
@@ -172,20 +161,13 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Opening an unsnoozed session unarchives it (and its project) so the sidebar
-	// shows the project + session tile again and navigation stays
-	// consistent. The user can re-archive from the sidebar. Skipped for
-	// remote sessions (AD-14b): their archive state lives in the remote's
-	// state.db, not the hub's. A peek (the sidebar probing a session that
-	// just showed activity) is not an open: it applies the same hub overlay
-	// and resurface policy as the session list (remote sessions included,
-	// keyed by their compound platform), so an archived session stays
-	// archived while it is still working.
-	if s.stateDB != nil && detail.Session != nil && (peek || snoozed[state.Key{Platform: statePlatform, SessionID: sessionID}] > 0) {
+	// Browsing preserves archive/snooze state. Use the same overlay and
+	// activity-based resurface policy as the sidebar for local and remote rows.
+	if s.stateDB != nil && detail.Session != nil {
 		row := []db.Session{*detail.Session}
 		row[0].Platform = string(routeKey)
 		if err := s.applySessionState(r.Context(), row); err != nil {
-			httpx.ServerError(w, "applying session state on peek", err)
+			httpx.ServerError(w, "applying session state", err)
 			return
 		}
 		detail.Session.Archived = row[0].Archived
@@ -194,15 +176,6 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		detail.Session.SeenTimeUpdated = row[0].SeenTimeUpdated
 		detail.Session.RoutineID = row[0].RoutineID
 		detail.Session.FactoryAttemptID = row[0].FactoryAttemptID
-	} else if s.stateDB != nil && detail.Session != nil && !remote {
-		if err := s.stateDB.UnarchiveSession(r.Context(), statePlatform, sessionID); err != nil {
-			log.Printf("unarchiving session on open: %v", err)
-		}
-		// Local-only path (remote sessions are skipped above), so the
-		// project being unarchived is the hub's own copy.
-		if err := s.stateDB.UnarchiveProject(r.Context(), state.LocalRemoteID, projectRootForDirectory(detail.Session.Directory)); err != nil {
-			log.Printf("unarchiving project on open: %v", err)
-		}
 	}
 
 	if key, ok := s.registry.KeyFor(adapter); ok {

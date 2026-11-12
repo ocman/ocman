@@ -116,25 +116,22 @@ export async function resolveOpenSession(opts: {
  * The optimistic write still lights the badge instantly; the next poll
  * (≤3 s) is what turns it off.
  *
- * `activeId` is forced unarchived unless snoozed: opening a session unarchives it
- * server-side, so a poll that raced that write must not show it
- * archived.
+ * Archive/snooze state comes from the server, including for the active row.
  */
 export function mergeSidebarSessions(
   next: readonly Session[],
   current: readonly Session[],
-  activeId?: string,
+  _activeId?: string,
   requestStart?: readonly Session[],
   pendingReads?: Readonly<Record<string, { timeUpdated: number }>>,
   statusRevisions?: { started: Readonly<Record<string, number>>; current: Readonly<Record<string, number>> },
 ): Session[] {
   return next.map((s) => {
-    const unarchived = s.id === activeId && !s.snoozedUntil ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id && ls.platform === s.platform);
     const pending = pendingReads?.[`${s.platform}:${s.id}`];
     if (!live) return s.status === 'interrupted' && pending && pending.timeUpdated >= s.timeUpdated
-      ? { ...unarchived, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, pending.timeUpdated) }
-      : unarchived;
+      ? { ...s, seen: true, seenTimeUpdated: Math.max(s.seenTimeUpdated, pending.timeUpdated) }
+      : s;
     const started = requestStart?.find((ls) => ls.id === s.id && ls.platform === s.platform);
     const key = `${s.platform}:${s.id}`;
     const statusChangedDuringRequest = statusRevisions
@@ -145,7 +142,7 @@ export function mergeSidebarSessions(
       || (!!requestStart && live !== requestStart.find((ls) => ls.id === s.id && ls.platform === s.platform))
     );
     return {
-      ...unarchived,
+      ...s,
       ...(statusChangedDuringRequest ? { status: live.status, notice: live.notice } : {}),
       seen: s.seen || ((s.status !== 'interrupted' || readDuringRequest) && live.seen && live.seenTimeUpdated >= s.timeUpdated),
       seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),

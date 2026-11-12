@@ -85,13 +85,13 @@ describe('useSessionSeen', () => {
     unmount();
   });
 
-  it('does not optimistically reopen an archived session restored by a page reload', () => {
+  it('keeps an archived session open and archived after a page reload', () => {
     Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: vi.fn(() => [{ type: 'reload' }]) });
     const patchSession = vi.fn();
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
     const { unmount } = renderHook(() => useSessionSeen({ session: { ...session, archived: true }, patchSession }), { wrapper });
     expect(patchSession.mock.calls.some(([patch]) => patch.archived === false)).toBe(false);
-    expect(navigate).toHaveBeenCalledWith('/session/new', { replace: true });
+    expect(navigate).not.toHaveBeenCalled();
     unmount();
     Reflect.deleteProperty(performance, 'getEntriesByType');
   });
@@ -240,8 +240,8 @@ describe('useSessionSeen', () => {
     const patchSession = vi.fn();
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
 
-    expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false });
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false }, 'opencode');
+    expect(patchSession).toHaveBeenCalledWith({ seen: true });
+    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42 }, 'opencode');
     expect(markSessionSeen).toHaveBeenCalledWith('opencode', 's1', 42);
     await waitFor(() => expect(recheckNotifyData).toHaveBeenCalled());
     expect(useUiStore.getState().lastOpenedSessionId).toBe('s1');
@@ -254,8 +254,8 @@ describe('useSessionSeen', () => {
     expect(setInfo).toHaveBeenLastCalledWith({});
   });
 
-  it.each(['opencode', 'r-box:opencode'])('keeps a snoozed conversation snoozed when opened on %s', (platform) => {
-    const snoozed = { ...session, platform, archived: true, snoozedUntil: Date.now() + 60_000 };
+  it.each(['opencode', 'r-box:opencode'].flatMap(platform => [0, Date.now() + 60_000].map(snoozedUntil => [platform, snoozedUntil] as const)))('preserves archive/snooze when opened on %s with deadline %s', (platform, snoozedUntil) => {
+    const snoozed = { ...session, platform, archived: true, snoozedUntil };
     queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [snoozed]);
     cacheMock.spy = false;
     const patchSession = vi.fn();
@@ -266,10 +266,10 @@ describe('useSessionSeen', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('preserves snooze on page restore and reconnect', async () => {
+  it.each([0, 9999999999999])('preserves archive/snooze on page restore and reconnect, deadline=%s', async (snoozedUntil) => {
     vi.useFakeTimers();
     Object.defineProperty(performance, 'getEntriesByType', { configurable: true, value: vi.fn(() => [{ type: 'reload' }]) });
-    const snoozed = { ...session, archived: true, snoozedUntil: Date.now() + 60_000 };
+    const snoozed = { ...session, archived: true, snoozedUntil };
     const patchSession = vi.fn();
     useApiStore.setState({ peekSession: vi.fn(async () => ({ session: snoozed, messages: [], parts: [] })) });
     const { unmount } = renderHook(() => useSessionSeen({ session: snoozed, patchSession }), { wrapper });
@@ -279,6 +279,32 @@ describe('useSessionSeen', () => {
     expect(navigate).not.toHaveBeenCalled();
     unmount();
     Reflect.deleteProperty(performance, 'getEntriesByType');
+  });
+
+  it('keeps a browsed archive open on repeated events and clears its snooze on restore', () => {
+    const patchSession = vi.fn();
+    const snoozed = { ...session, archived: true, snoozedUntil: 9999999999999 };
+    renderHook(() => useSessionSeen({ session: snoozed, patchSession }), { wrapper });
+    act(() => { for (const cb of changedListeners) cb('s1', undefined, { archived: true, snoozedUntil: snoozed.snoozedUntil }, 'opencode'); });
+    expect(navigate).not.toHaveBeenCalled();
+    act(() => { for (const cb of changedListeners) cb('s1', undefined, { archived: false, snoozedUntil: 0 }, 'opencode'); });
+    expect(patchSession).toHaveBeenLastCalledWith({ archived: false, snoozedUntil: 0 });
+    expect(navigate).not.toHaveBeenCalled();
+    act(() => { for (const cb of changedListeners) cb('s1', undefined, { archived: true }, 'opencode'); });
+    expect(navigate).toHaveBeenCalledWith('/session/new', { replace: true });
+  });
+
+  it('preserves the archive loaded after a stale cached detail on reconnect', async () => {
+    vi.useFakeTimers();
+    const archived = { ...session, archived: true };
+    useApiStore.setState({ peekSession: vi.fn(async () => ({ session: archived, messages: [], parts: [] })) });
+    const { rerender } = renderHook(({ value }) => useSessionSeen({ session: value, patchSession: vi.fn() }), {
+      wrapper, initialProps: { value: { ...session, archived: false } },
+    });
+    rerender({ value: archived });
+    act(() => { for (const cb of connectListeners) cb(); });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it.each(['opencode', 'r-box:opencode'])('selects the next conversation after snoozing on %s', (platform) => {

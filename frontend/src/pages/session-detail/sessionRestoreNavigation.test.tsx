@@ -18,7 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('reopens the original session after a browser reload followed by a route unmount and remount', async () => {
+it('browses the original archived session after a reload and route remount without unarchiving', async () => {
   window.history.replaceState(null, '', '/session/original');
   Object.defineProperty(performance, 'getEntriesByType', {
     configurable: true, value: () => [{ type: 'reload', name: 'http://localhost/session/original' }],
@@ -26,8 +26,7 @@ it('reopens the original session after a browser reload followed by a route unmo
   vi.stubGlobal('EventSource', class { close() {} addEventListener() {} });
   let archived = false;
   const row = { id: 'original', platform: 'opencode', title: 'Original', directory: '/repo', timeUpdated: 42 } as Session;
-  const fetchSession = vi.fn<NonNullable<UseSessionOptions['fetchSession']>>(async (_id, _limit, _offset, _signal, _platform, peek) => {
-    if (!peek) archived = false;
+  const fetchSession = vi.fn<NonNullable<UseSessionOptions['fetchSession']>>(async () => {
     return { session: { ...row, archived }, messages: [], parts: [] } as SessionDetail;
   });
   queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, []);
@@ -53,6 +52,6 @@ it('reopens the original session after a browser reload followed by a route unmo
   await act(async () => fireEvent.click(screen.getByRole('link', { name: 'Open original' })));
   await waitFor(() => expect(fetchSession).toHaveBeenCalledTimes(2));
   expect(fetchSession.mock.calls[1][5]).toBe(false);
-  expect(archived).toBe(false);
+  expect(archived).toBe(true);
   expect(window.location.pathname).toBe('/session/original');
 });

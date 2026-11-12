@@ -8,6 +8,7 @@ import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { remoteLog } from '../../lib/remoteLog';
 import { ArchiveButton } from '../../components/ArchiveButton';
 import { SnoozeButton } from '../../components/SnoozeButton';
+import { SidebarRestoreButton } from './SidebarRestoreButton';
 import { HostBadge } from '../../components/HostBadge';
 import { useHoverPrefetch } from './sessionPrefetch';
 import { SidebarRow } from './SidebarRow';
@@ -192,8 +193,9 @@ export const SidebarSessionRow = memo(function SidebarSessionRow({
           >
             <i className={`bi ${sib.pinned ? 'bi-pin-fill' : 'bi-pin'}`} aria-hidden="true" />
           </button>
-          <ArchiveButton className="session-sidebar-archive-btn" label="Archive session"
-            onClick={(e) => onArchiveSession(e, sib)} disabled={archiving} />
+          {sib.archived || sib.snoozedUntil ? <SidebarRestoreButton session={sib} disabled={archiving || snoozing} onBusyChange={setSnoozing} /> :
+            <ArchiveButton className="session-sidebar-archive-btn" label="Archive session"
+              onClick={(e) => onArchiveSession(e, sib)} disabled={archiving} />}
         </span>
       </span>
     </SidebarRow>

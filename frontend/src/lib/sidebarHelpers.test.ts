@@ -491,10 +491,10 @@ describe('mergeSidebarSessions', () => {
     expect(merged[0].seen).toBe(true);
   });
 
-  it('forces the active session unarchived even with no store row', () => {
+  it('preserves the active session archive even with no store row', () => {
     const next = [makeSession({ id: 'a', archived: true }), makeSession({ id: 'b', archived: true })];
     const merged = mergeSidebarSessions(next, [], 'a');
-    expect(merged[0].archived).toBe(false);
+    expect(merged[0].archived).toBe(true);
     expect(merged[1].archived).toBe(true);
   });
 });

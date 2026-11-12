@@ -984,9 +984,7 @@ describe('SessionDetail — sidebar archive', () => {
     expect(handle.store.archiveSession).toHaveBeenCalled();
   });
 
-  it('optimistically unarchives the active session on open', async () => {
-    // Opening an archived session unarchives it server-side; the sidebar
-    // row must reflect that immediately instead of waiting for the next poll.
+  it('preserves the active session archive on open', async () => {
     const archived = makeSession({ id: 'sess_1', archived: true });
     const handle = renderSessionPage({
       sessionId: 'sess_1',
@@ -997,7 +995,7 @@ describe('SessionDetail — sidebar archive', () => {
     await waitFor(() => expect(handle.store.markSessionSeen).toHaveBeenCalled());
     await waitFor(() => {
       const row = getSidebarSessions().find((s) => s.id === 'sess_1');
-      expect(row?.archived).toBe(false);
+      expect(row?.archived).toBe(true);
     });
   });
 });

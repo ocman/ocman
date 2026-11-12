@@ -249,6 +249,7 @@ describe('SessionSidebar', () => {
       expect(row).toHaveClass('flat');
       expect(row).not.toHaveClass('in-group', 'session-sidebar-item-child');
     }
+    expect(within(screen.getByRole('region', { name: 'Background 1' })).getByRole('button', { name: 'Unarchive session' })).toBeInTheDocument();
     expect(screen.queryByText('Completed archive')).not.toBeInTheDocument();
     expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['normal', 'archive', 'routine', 'plugin']);
     fireEvent.click(within(drawers).getByRole('button', { name: 'Background 1' }));
@@ -289,6 +290,7 @@ describe('SessionSidebar', () => {
     fireEvent.click(toggle);
     const drawers = screen.getByRole('group', { name: 'Session drawers' });
     expect(within(drawers).getByText('Sleeping session')).toBeInTheDocument();
+    expect(within(drawers).getByRole('button', { name: 'Unsnooze session' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Background 1' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
     expect(screen.queryByRole('checkbox', { name: 'Show snoozed' })).not.toBeInTheDocument();

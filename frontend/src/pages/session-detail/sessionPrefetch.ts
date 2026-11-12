@@ -22,8 +22,7 @@ export async function prefetchSession(id: string, platform?: string): Promise<vo
   try {
     // Same routing rule as useSession: only remote owners need the hint.
     const routed = platform?.startsWith('r-') ? platform : undefined;
-    // peek: a hover is not an open, so it must not unarchive the session or
-    // its project; the real open still does when the user clicks.
+    // A hover only needs preview metadata, not full open-time enrichment.
     const detail = await api.session(id, PREFETCH_PAGE_SIZE, 0, undefined, routed, true);
     // An open session may have cached a newer view meanwhile; keep it.
     if (useApiStore.getState().getCachedSession(id)) return;

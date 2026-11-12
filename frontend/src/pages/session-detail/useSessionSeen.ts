@@ -10,7 +10,6 @@ import { remoteLog } from '../../lib/remoteLog';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { pickNextSessionAfterArchive, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
-import { isSessionPageRestore } from './sessionView';
 import { getSidebarSessions, patchSessionLists } from '../../lib/sessionsCache';
 
 export interface UseSessionSeenOptions {
@@ -36,15 +35,17 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const { setInfo } = useHeaderInfo();
   usePageTitle(cleanTitle(session?.title) || 'Session');
 
-  // Only navigation clears the archive. Visibility and read-watermark
-  // updates must preserve an archive made in another tab.
+  // Read acknowledgements never change archive or snooze state.
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
   const sessionSeenInterrupted = session?.status === 'interrupted';
   const sessionDirectory = session?.directory;
   const lastMarked = useRef(0);
-  const openedIdentity = useRef('');
+  const knownArchived = useRef(false);
+  useEffect(() => {
+    knownArchived.current = !!session?.archived;
+  }, [sessionSeenId, sessionSeenPlatform, session?.archived]);
   const pendingMark = useRef<(() => void) | null>(null);
   const closeArchivedSession = useCallback((snoozedUntil?: number) => {
     if (!sessionSeenId || !sessionSeenPlatform) return;
@@ -52,15 +53,16 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     const candidates = sidebarNavigableSessions(getSidebarSessions()).filter((row) => !row.archived || row.id === sessionSeenId);
     const next = pickNextSessionAfterArchive(candidates, { id: sessionSeenId, directory: sessionDirectory ?? '' }, useUiStore.getState().sidebarView);
     const patch = { archived: true, ...(snoozedUntil ? { snoozedUntil } : {}) };
+    knownArchived.current = true;
     patchSession(patch);
     patchSessionLists(sessionSeenId, patch, sessionSeenPlatform);
     store.updateCachedSession(sessionSeenId, (cached) => ({ ...cached, session: { ...cached.session, ...patch } }));
     navigate(next ? `/session/${next.id}` : '/session/new', { replace: true });
   }, [sessionSeenId, sessionSeenPlatform, sessionDirectory, patchSession, navigate]);
-  const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
+  const markSeen = useCallback((platform: string, id: string, updated: number) => {
     if (document.hidden) return;
     lastMarked.current = updated;
-    patchSessionLists(id, { seen: true, seenTimeUpdated: updated, ...(opening ? { archived: false } : {}) }, platform);
+    patchSessionLists(id, { seen: true, seenTimeUpdated: updated }, platform);
     const request = sessionSeenInterrupted
       ? markSessionSeen(platform, id, updated, true)
       : markSessionSeen(platform, id, updated);
@@ -73,14 +75,9 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
 
   useEffect(() => {
     if (!visible || !sessionSeenId || !sessionSeenPlatform) return;
-    const identity = `${sessionSeenPlatform}\0${sessionSeenId}`;
-    const restoring = openedIdentity.current === '' && isSessionPageRestore(sessionSeenId);
-    const opening = openedIdentity.current !== identity && !restoring && !session?.snoozedUntil;
-    openedIdentity.current = identity;
-    if (restoring && session?.archived && !session.snoozedUntil) { closeArchivedSession(); return; }
     recordOpenedSession(sessionSeenId);
-    patchSession({ seen: true, ...(opening ? { archived: false } : {}) });
-    markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated, opening);
+    patchSession({ seen: true });
+    markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated);
     return () => {
       // A quick departure still acknowledges the latest content actually shown.
       pendingMark.current?.();
@@ -127,8 +124,9 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
         peekSession(sessionSeenId, controller.signal, sessionSeenPlatform)
           .then(({ session: row }) => {
             if (requested !== revision) return;
-            if (row.archived && !row.snoozedUntil) closeArchivedSession();
+            if (row.archived && !row.snoozedUntil && !knownArchived.current) closeArchivedSession();
             else if (row.title) patchSession({ title: row.title });
+            knownArchived.current = !!row.archived;
           })
           .catch((err) => { if (!controller.signal.aborted) remoteLog.error('Failed to refresh session metadata', err); });
       }, 250);
@@ -139,8 +137,9 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
       if (platform && patch?.status) patchSession({ status: patch.status, resetsAt: patch.resetsAt ?? 0 });
       if (patch?.archived !== undefined) {
         revision++;
-        if (patch.archived) closeArchivedSession(patch.snoozedUntil);
-        else patchSession({ archived: false });
+        if (patch.archived && !knownArchived.current) closeArchivedSession(patch.snoozedUntil);
+        else patchSession({ archived: patch.archived, ...(patch.snoozedUntil !== undefined ? { snoozedUntil: patch.snoozedUntil } : {}) });
+        knownArchived.current = patch.archived;
         return;
       }
       if (patch?.title) {
