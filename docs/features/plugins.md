@@ -174,6 +174,14 @@ values. Public values are replaced when saved and declared defaults are applied.
 Secret inputs are write-only strings: omitting a secret preserves it, while an
 empty string clears an optional secret. Reads show only whether it is configured.
 
+Missing required settings and declared type or enum errors appear beside the
+affected field with a red border. Ocman focuses the first invalid field and
+blocks Save until those errors are fixed. Clicking **Enable** with invalid saved
+settings opens configuration instead of starting a process. Save the corrected
+configuration before enabling. A blank secret input keeps an already configured
+secret and is not an error. These checks cannot verify a password's correctness
+or constraints that the plugin has not declared.
+
 Configuration and health belong to the installation's owner. Public settings live
 in its `state.db`. Beside that database, ocman stores private plugin files under
 `plugin-data/<sha256(id)>/` and secret snapshots under
@@ -205,7 +213,7 @@ disabled before repairing its configuration, then enabled again. Disabled plugin
 can be configured without starting a serve process.
 
 While saving, the configuration form shows **Saving configuration…** and blocks
-duplicate submissions. A rejected or unconfirmed save keeps the form open with
+duplicate submissions. A server-rejected or unconfirmed save keeps the form open with
 an error beside Save, clears submitted secrets, and reloads saved values. A failed
 health refresh keeps the last loaded plugin details and save outcome visible;
 use **Refresh health** to retry. **Configuration saved.** appears only after the

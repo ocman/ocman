@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type AriaAttributes, type ReactNode } from 'react';
 import { useClickOutside } from '../lib/useClickOutside';
 import { fuzzyMatch } from '../lib/format';
 import { Button } from './Control';
@@ -15,7 +15,7 @@ export interface SearchSelectOption {
   disabled?: boolean;
 }
 
-interface SearchSelectProps {
+interface SearchSelectProps extends Pick<AriaAttributes, 'aria-invalid' | 'aria-describedby'> {
   value: string;
   options: SearchSelectOption[];
   ariaLabel: string;
@@ -49,6 +49,8 @@ export function SearchSelect({
   search: searchOptions,
   tabs,
   inTab,
+  'aria-invalid': invalid,
+  'aria-describedby': describedBy,
 }: SearchSelectProps) {
   const id = useId();
   const root = useRef<HTMLSpanElement>(null);
@@ -87,6 +89,8 @@ export function SearchSelect({
         type="button"
         role="combobox"
         aria-label={ariaLabel}
+        aria-invalid={invalid}
+        aria-describedby={describedBy}
         title={title}
         aria-expanded={open}
         aria-controls={id}

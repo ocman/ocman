@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { APIError } from '../lib/api.requests';
 import { hasConversationCapability, plugins, type PluginInput, type PluginMutation, type PluginRegistration } from '../lib/plugins';
+import { pluginConfigurationErrors } from '../lib/pluginConfigurationValidation';
 import { SettingRow } from './SettingRow';
 import { SettingsSection } from './SettingsSection';
 import { PluginConfiguration } from './PluginConfiguration';
@@ -50,26 +52,52 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
   const [configure, setConfigure] = useState(false);
   const [configurationAttempt, setConfigurationAttempt] = useState(0);
   const [configurationSaved, setConfigurationSaved] = useState(false);
+  const [configurationFocus, setConfigurationFocus] = useState(0);
+  const [enableNeedsConfiguration, setEnableNeedsConfiguration] = useState(false);
   const [pendingAction, setPendingAction] = useState<PluginMutation | null>(null);
   const [remove, setRemove] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
   const d = p.description;
   const blocked = p.removed || p.health.status === 'conflict';
 
+  function needsConfiguration(input?: PluginInput) {
+    if (!Object.keys(pluginConfigurationErrors(p, input)).length) return false;
+    setConfigure(true);
+    setReview(null);
+    setConfigurationSaved(false);
+    setConfigurationFocus((attempt) => attempt + 1);
+    return true;
+  }
+
+  function reviewEnable() {
+    if (needsConfiguration()) { setEnableNeedsConfiguration(true); return; }
+    setReview('enable');
+  }
+
   async function mutate(action: PluginMutation, input?: PluginInput) {
+    if (busy) return;
+    if (action === 'enable' && needsConfiguration()) { setEnableNeedsConfiguration(true); return; }
+    if (action === 'configuration' && needsConfiguration(input)) return;
     setBusy(true);
     setPendingAction(action);
     setError('');
     setConfigurationSaved(false);
     try {
       await plugins.mutate(owner, d.id, action, input);
-      if (action === 'configuration') setConfigurationSaved(true);
+      if (action === 'configuration') { setConfigurationSaved(true); setEnableNeedsConfiguration(false); }
       setReview(null); setConfigure(false); setRemove(false); setLogs(null);
-    } catch {
+    } catch (failure) {
       // Never echo an error body that could contain submitted configuration.
-      setError(action === 'configuration'
-        ? 'Could not confirm configuration was saved and activated. After activation failure, the server attempts to restore the last working configuration. Review saved values and plugin health before retrying.'
-        : `Could not ${action === 'grants' ? 'update grants for' : action} plugin. Check its health and retry.`);
+      const validationRejected = failure instanceof APIError && failure.status === 400;
+      let message = `Could not ${action === 'grants' ? 'update grants for' : action} plugin. Check its health and retry.`;
+      if (action === 'configuration') message = validationRejected
+        ? 'Configuration was rejected. Review the declared settings and saved values before retrying.'
+        : 'Could not confirm configuration was saved and activated. After activation failure, the server attempts to restore the last working configuration. Review saved values and plugin health before retrying.';
+      if (action === 'enable' && validationRejected) {
+        message = 'Could not enable plugin. The owner rejected its configuration or grants. Review settings and permissions before retrying.';
+        setConfigure(true); setReview(null);
+      }
+      setError(message);
       // Keep the failed operation visible, but discard candidate values and secrets.
       if (action === 'configuration') setConfigurationAttempt((attempt) => attempt + 1);
     } finally {
@@ -95,7 +123,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
       <legend>Manage {d.name}</legend>
       <SettingRow label="Lifecycle" block>
         <ButtonGroup label="Plugin lifecycle actions">
-          <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={() => setReview('enable')}>Enable</Button>
+          <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={reviewEnable}>Enable</Button>
           <Button type="button" size="small" disabled={blocked || !d.requestedGrants?.some((grant) => !p.grants?.includes(grant))} onClick={() => setReview('grants')}>Grant permissions</Button>
           <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
           <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</Button>
@@ -117,7 +145,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
         </ButtonGroup>
       </SettingRow>}
       {configure && <PluginConfiguration key={`${configurationAttempt}:${JSON.stringify(p.configuration)}`} plugin={p}
-        error={error} saving={pendingAction === 'configuration'} save={(input) => mutate('configuration', input)} />}
+        error={error} saving={pendingAction === 'configuration'} busy={busy} focusRequest={configurationFocus} enableNeedsConfiguration={enableNeedsConfiguration} save={(input) => mutate('configuration', input)} />}
       {remove && <SettingRow label="Permanently remove plugin data" block>
         <p>Delete configuration, secrets, grants, and private data for {d.id} on {owner}. This cannot be undone. The executable is not deleted.</p>
         <ButtonGroup label="Plugin removal actions">
