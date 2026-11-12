@@ -23,6 +23,12 @@ it('prepares feedback only for the selected linked PR', () => {
   prWorkflowApi.feedback('s1', 'r-box:opencode', link, 'feedback');
   expect(postJSON).toHaveBeenCalledWith('/api/session/s1/pull-request-feedback?platform=r-box%3Aopencode', { action: 'feedback', number: 42, host: 'github.com', repo: 'team/repo' });
 });
+
+it('reads durable background work without refreshing metadata and forwards cancellation', () => {
+  const signal = new AbortController().signal;
+  prWorkflowApi.background('s/1', 'r-box:opencode', signal);
+  expect(fetchJSON).toHaveBeenCalledWith('/api/session/s%2F1/pull-requests?platform=r-box%3Aopencode&background=true', signal);
+});
 it('loads checks by saved repository and session identity, not checkout remote', () => {
   const signal = new AbortController().signal;
   const link = { platform: 'r-box:opencode', sessionId: 's/1', number: 42, remote: { host: 'github.com', repo: 'other/project' }, pr: { headSha: 'abcdef' } } as PRLink;

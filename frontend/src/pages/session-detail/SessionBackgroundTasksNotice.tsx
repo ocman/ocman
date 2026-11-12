@@ -10,18 +10,15 @@ type Props = ComponentProps<typeof BackgroundTasksNotice> & { sessionId: string;
 export function SessionBackgroundTasksNotice({ sessionId, platform, ...props }: Props) {
   const query = useVisiblePollingQuery({
     queryKey: ['session-pr-background-tasks', platform, sessionId],
-    run: () => prWorkflowApi.links(sessionId, platform),
+    run: signal => prWorkflowApi.background(sessionId, platform, signal),
     intervalMs: 5_000, timeoutMs: 10_000,
   });
   useSessionLiveRefresh(sessionId, platform, query.refetch);
-  const watches = (query.data?.pullRequests ?? []).filter(link => link.watching);
-  const watching = watches.length === 1 ? `Watching ${watches[0].remote.repo}#${watches[0].number}` : `Watching ${watches.length} pull requests`;
-  const native = props.count > 0 ? `${props.count} background task${props.count === 1 ? '' : 's'} · ` : '';
+  const watches = (query.data?.pullRequests ?? []).filter(link => link.backgroundTask ?? link.watching);
   return <><BackgroundTasksNotice {...props} sessionId={sessionId} platform={platform}
-    summary={watches.length > 0 ? `${native}${watching}` : undefined}
     additionalTasks={watches.map(link => ({
       id: `pr-watch:${link.remote.host}/${link.remote.repo}#${link.number}`,
-      description: `Watching ${link.remote.repo}#${link.number}: ${link.pr.title}`,
+      description: `${link.watching ? 'Watching' : 'PR update awaiting delivery for'} ${link.remote.repo}#${link.number}: ${link.pr.title}`,
       onStop: async () => {
         await prWorkflowApi.change(sessionId, platform, {
           action: 'unwatch', host: link.remote.host, repo: link.remote.repo, number: link.number,

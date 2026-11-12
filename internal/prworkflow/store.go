@@ -33,6 +33,8 @@ type Link struct {
 	NextAt       int64        `json:"-"`
 	CommentWakes int          `json:"-"`
 	LastError    string       `json:"lastError,omitempty"`
+	// BackgroundTask is derived on read using the same lifecycle as BackgroundCounts.
+	BackgroundTask bool `json:"backgroundTask,omitempty"`
 	// Private durable fields are encoded separately, never sent to clients.
 }
 
@@ -43,6 +45,10 @@ type persisted struct {
 	Failures     int
 	NextAt       int64
 	CommentWakes int
+}
+
+func (l Link) hasBackgroundTask() bool {
+	return l.Watching || (l.Pending != "" && l.PR.Status != "merged" && l.PR.Status != "closed")
 }
 
 func (m *Module) put(ctx context.Context, l Link) error {
@@ -88,6 +94,7 @@ func (m *Module) links(ctx context.Context, platform, id string) ([]Link, error)
 		}
 		l := p.Link
 		l.Snapshot, l.Pending, l.Failures, l.NextAt, l.CommentWakes = p.Snapshot, p.Pending, p.Failures, p.NextAt, p.CommentWakes
+		l.BackgroundTask = l.hasBackgroundTask()
 		result = append(result, l)
 	}
 	return result, rows.Err()

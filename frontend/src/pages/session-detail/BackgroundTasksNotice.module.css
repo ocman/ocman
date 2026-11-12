@@ -6,6 +6,5 @@
 .content p { margin: 8px 0 0; font-size: 12px; color: var(--text-dim); }
 .content [role="alert"] { color: var(--danger); }
 .root { display: inline-flex; }
-.summary { overflow: hidden; text-overflow: ellipsis; max-width: min(360px, 50vw); }
 .root .trigger { gap: 4px; height: auto; padding: 0; border: none; background: none; color: var(--overlay0); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .root .trigger:hover:not(:disabled), .root .trigger[aria-expanded="true"] { border: none; background: none; color: var(--subtext0); }

@@ -6,7 +6,7 @@ export interface ForgeConnection {
 }
 export interface PRLink {
   platform: string; sessionId: string; remoteId: string; directory: string;
-  remote: Upstream; number: number; pr: PR; watching: boolean; lastError?: string;
+  remote: Upstream; number: number; pr: PR; watching: boolean; backgroundTask?: boolean; lastError?: string;
 }
 const target = (id: string) => `/api/session/${encodeURIComponent(id)}`;
 const query = (platform: string) => `?platform=${encodeURIComponent(platform)}`;
@@ -15,6 +15,7 @@ export const prWorkflowApi = {
   saveCredential: (host: string, provider: RemoteType, token: string) => postJSON<void>('/api/source-control/credentials', { host, provider, token }, { parseJSON: false }),
   recheck: () => postJSON<void>('/api/source-control/refresh', {}, { parseJSON: false }),
   links: (id: string, platform: string, refresh = false) => fetchJSON<{ pullRequests: PRLink[] }>(`${target(id)}/pull-requests${query(platform)}${refresh ? '&refresh=true' : ''}`),
+  background: (id: string, platform: string, signal: AbortSignal) => fetchJSON<{ pullRequests: PRLink[] }>(`${target(id)}/pull-requests${query(platform)}&background=true`, signal),
   checks: (link: PRLink, signal: AbortSignal, refresh = false) => {
     const q = new URLSearchParams({ platform: link.platform, host: link.remote.host, repo: link.remote.repo, number: String(link.number), sha: link.pr.headSha ?? '' });
     if (refresh) q.set('refresh', 'true');

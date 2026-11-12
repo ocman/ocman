@@ -15,13 +15,13 @@ it('identifies background agents without offering shell stop actions', () => {
   expect(screen.queryByRole('button', { name: 'Stop Review changes' })).not.toBeInTheDocument();
 });
 
-it('explains background activity with visible text only while tasks are running', () => {
+it('shows an icon with the task count only while tasks are running', () => {
   const { rerender } = render(<BackgroundTasksNotice count={0} />);
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   rerender(<BackgroundTasksNotice count={1} />);
-  expect(screen.getByRole('button', { name: '1 background task running' })).toHaveTextContent('1 background task running');
+  expect(screen.getByRole('button', { name: '1 background task running' })).toHaveTextContent(/^1$/);
   rerender(<BackgroundTasksNotice count={3} />);
-  expect(screen.getByRole('button', { name: '3 background tasks running' })).toHaveTextContent('3 background tasks running');
+  expect(screen.getByRole('button', { name: '3 background tasks running' })).toHaveTextContent(/^3$/);
   rerender(<BackgroundTasksNotice count={0} />);
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });

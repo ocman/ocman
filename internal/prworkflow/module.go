@@ -62,6 +62,17 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 	if m.forward(w, r, t, "list") {
 		return
 	}
+	// Composer counts read durable state, never forge metadata or the sweep's
+	// mutex. A slow forge must not hide work that the sidebar already counts.
+	if r.URL.Query().Get("background") == "true" {
+		links, err := m.links(r.Context(), t.Platform, t.SessionID)
+		if err != nil {
+			http.Error(w, "Could not load linked PRs", http.StatusInternalServerError)
+			return
+		}
+		httpx.WriteJSON(w, map[string]any{"pullRequests": links})
+		return
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	links, err := m.links(r.Context(), t.Platform, t.SessionID)
@@ -209,6 +220,7 @@ func (m *Module) change(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not save linked PR", http.StatusInternalServerError)
 		return
 	}
+	l.BackgroundTask = l.hasBackgroundTask()
 	httpx.WriteJSON(w, l)
 }
 

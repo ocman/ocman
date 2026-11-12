@@ -38,7 +38,7 @@ flowchart LR
     Ocman <-->|startup migration and setting reads/writes| Config[config.yaml<br/>declarative settings and secret references]
     Ocman -->|owner-routed execution| Tools[git, tmux and host tools]
     Browser -->|virtual one-off project or Option+O, then normal draft| Ocman
-    Browser -->|Activity: 1s resource polling,<br/>process tree and session context| Ocman
+    Browser -->|Activity resources and durable<br/>session background-count reads| Ocman
     Ocman <-->|supervised NDJSON,<br/>UI bundles, scoped sessions and tool callbacks| Plugins[Trusted native plugins]
     Plugins -.->|standard asset/read: inert SVG icons| Ocman
     Ocman -->|bounded HTTP + Web Push| Services[Forge, preview, reviewer<br/>and notification services]
@@ -113,8 +113,14 @@ flowchart LR
 - **Owner-local background work.** `prworkflow` routes session PR operations
   through the resolved Platform's optional `PullRequestWorkflow` interface.
   The session owner stores links, polls the forge and queues updates; the hub
-  reads watch counts by platform for session completion indicators. Legacy
-  hub links transfer with durable import receipts before polling, preserving
+  reads watch counts by platform for session completion indicators. Composer
+  counters use `GET /api/session/{id}/pull-requests?background=true`
+  for an owner-local database-only read, without forge refreshes or the sweep
+  mutex. Each link exposes a derived `backgroundTask` flag using the sidebar's
+  lifecycle: active watch or an undelivered update for a nonterminal PR, counted
+  once. Native task counts still come from the conversation stream. Details
+  distinguish watching from queued delivery; private prompt content stays hidden.
+  Legacy hub links transfer with durable import receipts before polling, preserving
   checkpoints and preventing retries from resurrecting owner-deleted links.
   Watch readiness and queue delivery resolve saved native-kind references to
   the session's recorded owner/source connection, never the current default.
