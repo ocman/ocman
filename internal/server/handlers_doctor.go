@@ -21,9 +21,10 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	var checks []hostsvc.DoctorCheck
 	if c, ok := s.openCodeVersionCheck(); ok {
 		checks = append(checks, c)
-	} else if db := s.openCodeDBCheck(); s.openCodeEnabled() || db.Hint != "" {
+	} else if db := s.openCodeDBCheck(); s.connections == nil && (s.openCodeEnabled() || db.Hint != "") {
 		// OpenCode's database is a prerequisite only when OpenCode was asked
 		// for: a Claude-only ocman must not be blocked on it (FR-1).
+		// Named connections own their databases; s.db is only the legacy handle.
 		checks = append(checks, db)
 	}
 	checks = append(checks, s.router().Local().Doctor(r.Context())...)

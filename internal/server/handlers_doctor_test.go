@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/platformconnections"
 )
 
 type doctorHost struct {
@@ -102,6 +103,34 @@ func TestDoctorWithoutOpenCodeSkipsItsDatabase(t *testing.T) {
 		if c.ID == "opencode-db" || (c.Required && !c.OK) {
 			t.Fatalf("blocking check without OpenCode: %+v", c)
 		}
+	}
+}
+
+func TestDoctorNamedConnectionsSkipLegacyDatabase(t *testing.T) {
+	for _, kind := range []string{"opencode", "claudecode", ""} {
+		t.Run(kind, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			if kind != "" {
+				if err := reg.RegisterConnection("cnx_work", &fakePlatform{PlatformID: kind}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			srv.connections = platformconnections.NewRouter(platformconnections.New(srv.stateDB))
+			srv.hostRouter = hostsvc.NewRouter(doctorHost{})
+			rr := httptest.NewRecorder()
+			srv.handleDoctor(rr, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
+			var got struct {
+				Checks []hostsvc.DoctorCheck `json:"checks"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range got.Checks {
+				if c.ID == "opencode-db" || (c.Required && !c.OK) {
+					t.Fatalf("named connections blocked by legacy prerequisite: %+v", c)
+				}
+			}
+		})
 	}
 }
 
