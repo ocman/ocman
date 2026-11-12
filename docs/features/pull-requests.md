@@ -188,6 +188,9 @@ flowchart LR
   Missing session identity can be resolved through a server-injected, uncapped
   exact-directory lookup using the platform registry's connection keys. The tool
   refuses ambiguous or incomplete reads before dispatching a session action.
+  Remote adapters implement `platforms.SessionInventoryReader` through the existing
+  inventory RPC without the cached fallback used for browsing. Failed remote
+  inventory reads, including those with an empty cache, block automatic selection.
 - Successful link/watch saves and removals publish an owner-qualified
   `ocman.session.changed` event on `/api/events`. The PR controls and background
   task notice refresh on matching events and SSE reconnects, alongside the

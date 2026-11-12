@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/prworkflow"
 )
@@ -31,7 +32,16 @@ func (s *Server) prToolSessions(ctx context.Context, directory, platform, owner 
 			continue
 		}
 		found = true
-		rows, err := entry.Platform.Sessions(ctx, directory, 0)
+		var rows []db.Session
+		var err error
+		if reader, ok := entry.Platform.(platforms.SessionInventoryReader); ok {
+			rows, err = reader.SessionInventory(ctx, directory)
+		} else if remote == "local" {
+			rows, err = entry.Platform.Sessions(ctx, directory, 0)
+		} else {
+			// Display-oriented remote Sessions may silently return stale data.
+			return nil, platforms.ErrUnsupported
+		}
 		if err != nil {
 			return nil, fmt.Errorf("reading session candidates: %w", err)
 		}

@@ -65,10 +65,16 @@ func TestPRTargetPreservesLookedUpConnection(t *testing.T) {
 	}
 }
 
+type inventoryLookupPlatform struct{ *fakePlatform }
+
+func (p inventoryLookupPlatform) SessionInventory(ctx context.Context, dir string) ([]db.Session, error) {
+	return p.Sessions(ctx, dir, 0)
+}
+
 func TestPRToolSessionLookupKeepsAllMatches(t *testing.T) {
 	s := &Server{registry: platforms.NewRegistry()}
 	for _, key := range []string{"cnx_one", "r-box:cnx_two"} {
-		if err := s.registry.RegisterConnection(platforms.ID(key), &fakePlatform{SessionList: []db.Session{{ID: key, Directory: "/repo"}}}); err != nil {
+		if err := s.registry.RegisterConnection(platforms.ID(key), inventoryLookupPlatform{&fakePlatform{SessionList: []db.Session{{ID: key, Directory: "/repo"}}}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -79,5 +85,9 @@ func TestPRToolSessionLookupKeepsAllMatches(t *testing.T) {
 	rows, err = s.prToolSessions(t.Context(), "/other", "", "")
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("wrong-directory matches: %+v %v", rows, err)
+	}
+	s.registry.Register(&fakePlatform{PlatformID: "r-legacy:opencode"})
+	if _, err := s.prToolSessions(t.Context(), "/repo", "", ""); !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatalf("remote without authoritative inventory accepted: %v", err)
 	}
 }
