@@ -38,6 +38,12 @@ describe('useSessionCreation', () => {
   });
 
   // A new conversation is a route: no session exists until the first prompt.
+  it('creates from the setup route without a native session or running platform', async () => {
+    const o = opts({ session: null, portAvailable: false, newConversation: { directory: '/repo/a', remoteId: 'box', platform: 'r-box:opencode' } });
+    const { result } = renderHook(() => useSessionCreation(o));
+    await act(() => result.current.handleNewSession());
+    expect(o.navigate).toHaveBeenCalledWith(expect.stringContaining('dir=%2Frepo%2Fa&remoteId=box&platform=r-box%3Aopencode'));
+  });
   it('keeps the project action stable across streamed metadata and tracks owner changes', () => {
     const options = opts();
     const { result, rerender } = renderHook(({ session }) => useSessionCreation({ ...options, session }), { initialProps: { session } });

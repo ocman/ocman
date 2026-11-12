@@ -7,8 +7,6 @@ export interface UseSessionShortcutsOptions {
   /** Page session — used by the enabled() guards to gate shortcuts
    *  that require an active session. */
   session: Session | null;
-  /** Whether the platform process is reachable (gates create). */
-  portAvailable: boolean;
   /** Navigate by `direction` in the recent-sessions list. */
   jumpToSession: (direction: 1 | -1) => void;
   /** Open the page directory in VS Code. */
@@ -28,7 +26,6 @@ export interface UseSessionShortcutsOptions {
  */
 export function useSessionShortcuts({
   session,
-  portAvailable,
   jumpToSession,
   handleVSCodeShortcut,
   handleNewSession,
@@ -43,7 +40,6 @@ export function useSessionShortcuts({
   const openMessageJumpPickerRef = useSyncRef(openMessageJumpPicker);
   const openModelPickerRef = useSyncRef(openModelPicker);
   const sessionRef = useSyncRef(session);
-  const portAvailableRef = useSyncRef(portAvailable);
 
   // Alt+J / Alt+K — navigate between recent sessions.
   const navNextShortcut = useMemo(() => ({
@@ -76,7 +72,6 @@ export function useSessionShortcuts({
     id: 'session.new-session',
     scope: 'session' as const,
     description: 'Create new session in current project',
-    enabled: () => !!sessionRef.current && portAvailableRef.current,
     handler: () => handleNewSessionRef.current(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);

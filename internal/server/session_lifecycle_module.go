@@ -15,6 +15,7 @@ import (
 func (s *Server) sessionLifecycleModule() *sessionlifecycle.Module {
 	return s.sessionLifecycle.get(func() *sessionlifecycle.Module {
 		d := sessionlifecycle.Deps{
+			Archive:        s.setSessionArchived,
 			Sessions:       func() sessionlifecycle.Sessions { return s.sessions },
 			Owner:          s.resolveOwner,
 			CreatePlatform: s.createPlatform,

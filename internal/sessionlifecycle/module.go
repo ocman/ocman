@@ -36,6 +36,7 @@ type Sessions interface {
 // callback is also used by the queue, without making queueing this module's job.
 type Deps struct {
 	DB                  *sql.DB
+	Archive             func(context.Context, string, string, int64, bool) error
 	Enqueue             func(context.Context, string, platforms.SendMessageRequest) error
 	DispatchQueued      func(context.Context, string, string)
 	QueueList           http.HandlerFunc

@@ -24,6 +24,15 @@ it('restores backend drafts and unsent composer text without replacing existing 
   expect(useNewConversationDrafts.getState().drafts[0].title).toBe('Newer local title');
 });
 
+it('refreshes archive state without dropping a completed setup receipt', async () => {
+  const request = { directory: '/repo', platform: 'opencode', prompt: 'first' };
+  const ready = { id, metadata, phase: 'ready' as const, createdAt: 1, steps: {}, request, archived: true };
+  useBackendConversationDrafts.setState({ drafts: { [id]: ready } });
+  vi.mocked(fetchJSON).mockResolvedValue([{ ...ready, request: undefined, archived: false }]);
+  await refreshBackendDrafts();
+  expect(useBackendConversationDrafts.getState().drafts[id]).toMatchObject({ request, archived: false });
+});
+
 it('keeps save errors visible and clears them only after persistence succeeds', async () => {
   rememberConversationDraft(metadata);
   vi.mocked(postJSON).mockRejectedValueOnce(new Error('disk full'));

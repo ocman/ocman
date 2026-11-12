@@ -508,6 +508,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   const { handleNewSessionInDirectory, handleNewSession, handleCompact } = useSessionCreation({
     session,
+    newConversation,
     portAvailable,
     caps,
     selectedModel,
@@ -622,7 +623,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   useSessionShortcuts({
     session,
-    portAvailable,
     jumpToSession,
     handleVSCodeShortcut,
     handleNewSession,

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ocman/ocman/internal/hostsvc"
+	"github.com/ocman/ocman/internal/module/moduletest"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
@@ -59,6 +60,9 @@ func TestDraftPayloadCommitsBeforeSetupAndKeepsIdentity(t *testing.T) {
 			}}
 			var sends atomic.Int32
 			m := NewModule(Deps{DB: db.SQL(), Sessions: func() Sessions { return svc },
+				Archive: func(ctx context.Context, platform, id string, updated int64, _ bool) error {
+					return db.ArchiveSession(ctx, platform, id, updated)
+				},
 				Owner: func(http.ResponseWriter, string, string) (hostsvc.Host, bool) { return host, true },
 				CreatePlatform: func(_ context.Context, _ hostsvc.Host, id, model string) (string, string, error) {
 					return id, model, nil
@@ -115,10 +119,17 @@ func TestDraftPayloadCommitsBeforeSetupAndKeepsIdentity(t *testing.T) {
 			if w := draftCall(m, "DELETE", "/api/session-drafts/"+draftID, ""); w.Code != http.StatusConflict {
 				t.Fatal("discarded submitted prompt")
 			}
+			archive := httptest.NewRecorder()
+			moduletest.Mount(m).ServeHTTP(archive, httptest.NewRequest(http.MethodPost, "/api/session-drafts/"+draftID+"/archive", nil))
+			if archive.Code != http.StatusNoContent {
+				close(release)
+				m.Finalize()
+				t.Fatal(archive.Code, archive.Body.String())
+			}
 			close(release)
 			m.Finalize()
 			stored, err := (draftStore{db.SQL()}).get(t.Context(), draftID)
-			if err != nil || calls.Load() != 1 || sends.Load() != 1 || (stored.Phase == "ready") == fail || m.QueueBlocked(t.Context(), draftID) != fail {
+			if err != nil || !stored.Archived || calls.Load() != 1 || sends.Load() != 1 || (stored.Phase == "ready") == fail || m.QueueBlocked(t.Context(), draftID) != fail {
 				t.Fatalf("final receipt: %+v creates=%d sends=%d err=%v", stored, calls.Load(), sends.Load(), err)
 			}
 			if !strings.Contains(string(stored.Result), draftID) {

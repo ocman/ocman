@@ -23,6 +23,7 @@ func (m *Module) draftRoutes(r module.Router) {
 	r.Local("GET /api/session-drafts/{id}", m.getDraft)
 	r.Local("PUT /api/session-drafts/{id}", m.saveDraft)
 	r.Local("DELETE /api/session-drafts/{id}", m.deleteDraft)
+	r.Local("POST /api/session-drafts/{id}/archive", m.archiveDraft)
 	r.Local("POST /api/session-drafts/{id}/start", m.acceptDraft)
 	r.Local("POST /api/session-drafts/{id}/messages", m.enqueueDraft)
 	r.Local("POST /api/session-drafts/{id}/attachment", m.draftAttachment)

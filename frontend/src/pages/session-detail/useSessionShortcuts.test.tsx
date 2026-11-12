@@ -8,11 +8,22 @@ import { useSessionShortcuts } from './useSessionShortcuts';
 afterEach(() => useShortcutRegistry.setState({ shortcuts: new Map() }));
 
 describe('useSessionShortcuts', () => {
+  it('allows creating a conversation before a native session or runtime exists', () => {
+    const create = vi.fn();
+    renderHook(() => useSessionShortcuts({
+      session: null, jumpToSession: vi.fn(),
+      handleVSCodeShortcut: vi.fn(), handleNewSession: create,
+      openMessageJumpPicker: vi.fn(), openModelPicker: vi.fn(),
+    }));
+    const shortcut = useShortcutRegistry.getState().shortcuts.get('session.new-session');
+    expect(shortcut?.enabled?.()).not.toBe(false);
+    shortcut?.handler(new KeyboardEvent('keydown'));
+    expect(create).toHaveBeenCalledOnce();
+  });
   it('registers Alt+M to open the composer model picker directly', () => {
     const openModelPicker = vi.fn();
     renderHook(() => useSessionShortcuts({
       session: null,
-      portAvailable: false,
       jumpToSession: vi.fn(),
       handleVSCodeShortcut: vi.fn(),
       handleNewSession: vi.fn(),
@@ -28,7 +39,6 @@ describe('useSessionShortcuts', () => {
     const openMessageJumpPicker = vi.fn();
     renderHook(() => useSessionShortcuts({
       session: null,
-      portAvailable: false,
       jumpToSession: vi.fn(),
       handleVSCodeShortcut: vi.fn(),
       handleNewSession: vi.fn(),
@@ -45,7 +55,6 @@ describe('useSessionShortcuts', () => {
   it('registers Alt+C and Alt+T for a new session', () => {
     renderHook(() => useSessionShortcuts({
       session: null,
-      portAvailable: false,
       jumpToSession: vi.fn(),
       handleVSCodeShortcut: vi.fn(),
       handleNewSession: vi.fn(),

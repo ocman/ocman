@@ -807,6 +807,13 @@ flowchart TD
   transport, auth, owner resolution, permission/question audit orchestration and
   queue/cooldown/idle ordering. Compatibility handler wrappers delegate to the
   module, whose routes are registered through `modules()`.
+  Submitted setup can be archived through
+  `POST /api/session-drafts/{id}/archive` without discarding its payload or
+  stopping its worker. An injected archive callback writes the normal session
+  marker for the stable Ocman ID. Draft reads expose that marker across tabs
+  and reloads. Archive resurfacing checks setup admission before treating a
+  newly bound idle session as complete; permission and question prompts still
+  resurface immediately.
 - **Conversation stream** (`internal/convstream`). Serves
   `GET /api/session/{id}/stream`, the Ocman conversation event (OCE) stream
   from `spec/conversation-events/design.md`. One `Hub` keeps one upstream per
@@ -1769,8 +1776,11 @@ flowchart LR
   flowchart LR
       Composer --> Selected[Selected catalog + project settings]
       Selected --> Ready[Submission ready]
-      Ready --> Create[Owner-local configured creation]
-      Create --> Prompt[Live selection check + first prompt]
+       Ready --> Create[Owner-local configured creation]
+       Create --> Prompt[Live selection check + first prompt]
+       Create -->|Archive during setup| Archive[Stable session archive marker]
+       Prompt -->|Completion or pending prompt| Resurface[Normal archive resurfacing]
+       Archive --> Resurface
       Selected --> Inventory[Optional full model inventory]
       Inventory --> Picker[Model picker enrichment]
   ```
@@ -1781,8 +1791,9 @@ flowchart LR
   checkout, and automatic creation rejects it before launching OpenCode.
   Named bases use fully qualified refs to avoid branch/tag name collisions.
   Git probe failures propagate to the eligibility retry controls.
-  `useSessionCreation` prefetches the owner's main checkout while an existing
-  session is open, reusing that promise for Option/Alt+C and Option/Alt+T rather
+   `useSessionCreation` prefetches the owner's main checkout while an existing
+   session or draft/setup route is open, reusing that promise for Option/Alt+C
+   and Option/Alt+T without requiring a native session or running platform, rather
   than starting a worktree-list request on each press. Directory or owner changes
   and unmounts cancel the lookup and suppress stale navigation; an early press
   shares the in-flight lookup so external worktree layouts still resolve correctly.

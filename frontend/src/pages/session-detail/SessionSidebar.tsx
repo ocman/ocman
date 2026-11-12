@@ -142,7 +142,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
-  const stableDrafts = useStableDraftSidebar(allRecentSessions, allProjectGroups, navigate, activeId);
+  const stableDrafts = useStableDraftSidebar(allRecentSessions, allProjectGroups, navigate, activeId, showArchivedRecent);
   const draftGroups = useSidebarDraftGroups(stableDrafts.groups, searchQuery);
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren } = useSessionListFilters();
   const listFilters = { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showArchived: showArchivedRecent, showChildren };

@@ -5,9 +5,11 @@ import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 import { useCallback, useEffect, useRef } from 'react';
+import type { NewSessionParams } from '../../lib/newSessionPath';
 
 export interface UseSessionCreationOptions {
   session: SessionMetadata | null;
+  newConversation?: NewSessionParams | null;
   portAvailable: boolean;
   caps: Pick<PlatformCapabilities, 'compact'>;
   selectedModel: string;
@@ -37,6 +39,7 @@ async function mainCheckout(directory: string, remoteId: string | undefined, sig
 /** New-session and `/compact` actions for the open session. */
 export function useSessionCreation({
   session,
+  newConversation,
   portAvailable,
   caps,
   selectedModel,
@@ -49,9 +52,9 @@ export function useSessionCreation({
   // A new conversation is a route, not a session: nothing is created until
   // its first prompt, so the machine and target can still change freely.
   const hasSession = !!session;
-  const sessionDirectory = session?.directory;
-  const sessionRemoteId = session?.remoteId;
-  const sessionPlatform = session?.platform;
+  const sessionDirectory = session?.directory ?? newConversation?.directory;
+  const sessionRemoteId = session?.remoteId ?? newConversation?.remoteId;
+  const sessionPlatform = session?.platform ?? newConversation?.platform;
   const checkout = useRef<{ controller: AbortController; directory: Promise<string> } | undefined>(undefined);
   useEffect(() => {
     if (!sessionDirectory) return;
@@ -84,12 +87,12 @@ export function useSessionCreation({
 
   const handleNewSession = async (title?: string) => {
     const resolved = checkout.current;
-    if (!session || !resolved) return;
+    if (!sessionDirectory || !resolved) return;
     // Start from the main checkout: a session already inside a linked worktree
     // would make the composer skip its "New worktree" target (the default).
     const directory = await resolved.directory;
     if (resolved.controller.signal.aborted) return;
-    handleNewSessionInDirectory(directory, session.remoteId, session.platform, title);
+    handleNewSessionInDirectory(directory, sessionRemoteId, sessionPlatform, title);
   };
 
   const handleCompact = async () => {

@@ -36,6 +36,7 @@ type ConversationDraft struct {
 	CreatedAt   int64             `json:"createdAt"`
 	SubmittedAt int64             `json:"submittedAt,omitempty"`
 	Revision    string            `json:"revision"`
+	Archived    bool              `json:"archived"`
 }
 
 type draftStore struct{ db *sql.DB }
@@ -44,7 +45,7 @@ var errDraftSubmissionConflict = errors.New("the first submission is already per
 
 func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 	var meta, request, result, steps string
-	err = scan(&d.ID, &meta, &d.Phase, &request, &result, &steps, &d.Error, &d.CreatedAt, &d.SubmittedAt)
+	err = scan(&d.ID, &meta, &d.Phase, &request, &result, &steps, &d.Error, &d.CreatedAt, &d.SubmittedAt, &d.Archived)
 	d.Metadata = json.RawMessage(meta)
 	d.Revision = draftVersion(d.Metadata)
 	if request != "" {
@@ -59,7 +60,9 @@ func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 	return
 }
 
-const draftColumns = `id,metadata,phase,request,result,steps,error,created_at,submitted_at`
+// Ocman draft IDs are globally allocated, before an owner/native binding exists.
+const draftColumns = `id,metadata,phase,request,result,steps,error,created_at,submitted_at,
+	conversation_draft.id IN (SELECT session_id FROM archived_session)`
 
 func (s draftStore) get(ctx context.Context, id string) (ConversationDraft, error) {
 	return scanDraft(s.db.QueryRowContext(ctx, `SELECT `+draftColumns+` FROM conversation_draft WHERE id=?`, id).Scan)

@@ -44,6 +44,48 @@ it('does not duplicate pending cleanup or leave a newer selection when it commit
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
+it('archives accepted setup without deleting its submitted prompt', async () => {
+  const starting = { id, metadata: meta, phase: 'starting' as const, createdAt: 100, steps: {} };
+  vi.mocked(fetchJSON).mockResolvedValue([starting]);
+  useBackendConversationDrafts.setState({ drafts: { [id]: starting } });
+  const navigate = vi.fn();
+  const { result } = renderHook(() => useStableDraftSidebar([], [group], navigate, id));
+  await act(async () => {});
+  await act(async () => { expect(result.current.discard(id)).toBe(true); });
+  expect(postJSON).toHaveBeenCalledWith(`/api/session-drafts/${id}/archive`, undefined, { parseJSON: false });
+  expect(useNewConversationDrafts.getState().drafts).toEqual([meta]);
+  expect(result.current.recent).toEqual([]);
+  expect(navigate).toHaveBeenCalled();
+});
+
+it('restores archive state on reload, exposes it in the archive view and resurfaces setup errors', async () => {
+  const starting = { id, metadata: meta, phase: 'starting' as const, archived: true, createdAt: 100, steps: {} };
+  vi.mocked(fetchJSON).mockResolvedValue([starting]);
+  const { result, rerender } = renderHook(({ archived }) => useStableDraftSidebar([], [group], vi.fn(), undefined, archived), { initialProps: { archived: false } });
+  await act(async () => {});
+  expect(result.current.recent).toEqual([]);
+  rerender({ archived: true });
+  expect(result.current.recent[0]).toMatchObject({ id, archived: true });
+  rerender({ archived: false });
+  act(() => useBackendConversationDrafts.setState({ drafts: { [id]: { ...starting, phase: 'failed', error: 'setup failed' } } }));
+  expect(result.current.recent[0]).toMatchObject({ id, archived: false, status: 'error' });
+});
+
+it('retains setup and offers retry when archiving fails', async () => {
+  const starting = { id, metadata: meta, phase: 'starting' as const, createdAt: 100, steps: {} };
+  vi.mocked(fetchJSON).mockResolvedValue([starting]);
+  vi.mocked(postJSON).mockRejectedValueOnce(new Error('offline'));
+  const navigate = vi.fn();
+  const { result } = renderHook(() => useStableDraftSidebar([], [group], navigate, id));
+  await act(async () => {});
+  await act(async () => { result.current.discard(id); });
+  expect(result.current.discardError).toContain('Could not archive the session: offline');
+  expect(result.current.recent).toHaveLength(1);
+  expect(navigate).not.toHaveBeenCalled();
+  await act(async () => { result.current.retryDiscard(); });
+  expect(result.current.recent).toEqual([]);
+});
+
 it('pauses hidden reads, reconciles on return and stops after unmount', async () => {
   vi.useFakeTimers();
   let hidden = true;

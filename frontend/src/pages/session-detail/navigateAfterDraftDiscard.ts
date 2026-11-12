@@ -3,10 +3,11 @@ import { useUiStore } from '../../lib/uiStore';
 import { useNewConversationDrafts } from '../../lib/newConversationDrafts';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { getSidebarSessions } from '../../lib/sessionsCache';
+import { useBackendConversationDrafts } from '../../lib/backendConversationDrafts';
 
 export function navigateAfterDraftDiscard(draftId: string, navigate: (path: string, options: { replace: boolean }) => void) {
-  const next = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId !== draftId);
-  const sessions = getSidebarSessions().filter((session) => !session.archived);
+  const next = useNewConversationDrafts.getState().drafts.find((entry) => entry.draftId !== draftId && !useBackendConversationDrafts.getState().drafts[entry.draftId]?.archived);
+  const sessions = getSidebarSessions().filter((session) => session.id !== draftId && !session.archived);
   const lastOpened = sessions.find((session) => session.id === useUiStore.getState().lastOpenedSessionId);
   const target = lastOpened ?? sessions.reduce<(typeof sessions)[number] | undefined>(
     (latest, session) => !latest || session.timeUpdated > latest.timeUpdated ? session : latest, undefined);

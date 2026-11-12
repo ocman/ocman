@@ -88,7 +88,7 @@ func (s *Server) overlayPRWatchTasks(ctx context.Context, sessions []db.Session)
 	// watches were added. Reapply only the completion hold, preserving other flags.
 	for _, i := range watched {
 		row := &sessions[i]
-		if at, archived := archives[state.Key{Platform: s.sessionStatePlatform(row.Platform), SessionID: row.ID}]; archived && !db.ShouldResurfaceSession(*row, at, mode) {
+		if at, archived := archives[state.Key{Platform: s.sessionStatePlatform(row.Platform), SessionID: row.ID}]; archived && !s.shouldResurfaceSession(ctx, *row, at, mode) {
 			row.Archived = true
 		}
 	}

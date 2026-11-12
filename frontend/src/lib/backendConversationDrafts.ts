@@ -19,6 +19,7 @@ export interface BackendConversationDraft {
   createdAt: number;
   submittedAt?: number;
   revision?: string;
+  archived?: boolean;
 }
 
 export const useBackendConversationDrafts = create<{
@@ -39,7 +40,7 @@ export function refreshBackendDrafts(): Promise<void> {
     try {
       const previous = useBackendConversationDrafts.getState().drafts;
       const next = Object.fromEntries(drafts.map((draft) => [draft.id,
-        draft.phase === 'ready' && previous[draft.id]?.phase === 'ready' && previous[draft.id]?.request ? previous[draft.id]
+        draft.phase === 'ready' && previous[draft.id]?.phase === 'ready' && previous[draft.id]?.request ? { ...previous[draft.id], archived: draft.archived }
           : draft.phase === 'draft' && previous[draft.id] ? { ...draft, revision: previous[draft.id].revision } : draft]));
       // A list captured before an acknowledgement cannot erase that save.
       for (const [id, draft] of Object.entries(previous)) if (draft !== started[id]) next[id] = draft;
@@ -131,6 +132,11 @@ export async function fetchBackendDraft(id: string) {
 export async function discardBackendDraft(id: string, afterCommit?: () => void) {
   if (isBackendDraft(id)) await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false });
   await forgetConversationDraft(id, afterCommit);
+}
+
+export async function archiveBackendDraft(id: string) {
+  await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}/archive`, undefined, { parseJSON: false });
+  useBackendConversationDrafts.setState((state) => ({ drafts: { ...state.drafts, [id]: { ...state.drafts[id], archived: true } } }));
 }
 
 export async function acceptBackendDraft(id: string, request: DurableStartRequest) {
