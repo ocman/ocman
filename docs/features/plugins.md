@@ -32,7 +32,9 @@ and **Diagnostics** contains retry/restart controls, recent stderr and expandabl
 technical metadata. Diagnostics loads the bounded stderr log automatically and
 offers refresh and copy controls. A failed refresh keeps the last successful log
 visible. The drawer names the owning host. Unsaved configuration edits
-require confirmation before closing the drawer or switching tabs. Secrets remain
+require confirmation before closing the drawer or switching tabs, including
+Back/Forward changes to the selected plugin, host or detail tab. Declining a
+history transition restores the original URL and keeps the draft mounted. Secrets remain
 write-only. Search, filters, pagination, host, selected plugin and detail tab are
 stored in the URL, without configuration values or secrets.
 

@@ -23,7 +23,7 @@ function registration(name: string, enabled = true, status = 'ready'): PluginReg
 function Location() {
   const location = useLocation();
   const navigate = useNavigate();
-  return <><output aria-label="Current URL">{location.search}</output><button onClick={() => navigate(-1)}>Back</button></>;
+  return <><output aria-label="Current URL">{location.search}</output><button onClick={() => navigate(-1)}>Back</button><button onClick={() => navigate(1)}>Forward</button></>;
 }
 function renderCatalog(query = '') {
   return renderWithQuery(<MemoryRouter initialEntries={[`/settings?group=plugins${query}`]}>
@@ -92,6 +92,10 @@ it('warns before discarding configuration on close or tab change', async () => {
   fireEvent.mouseDown(screen.getByRole('tab', { name: 'Diagnostics' }), { button: 0, ctrlKey: false });
   fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
   await waitFor(() => expect(screen.getByRole('tab', { name: 'Diagnostics' })).toHaveAttribute('aria-selected', 'true'));
+  fireEvent.click(screen.getByRole('button', { name: 'Close plugin details' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'sentry' } });
+  expect(screen.getByRole('link', { name: 'Sentry' })).toBeVisible();
 });
 
 it('paginates large lists and resets pagination when searching', async () => {
@@ -238,4 +242,43 @@ it.each(['conflict', 'removed'])('blocks the header enable toggle for a %s regis
   vi.mocked(plugins.list).mockResolvedValue([plugin]);
   renderCatalog('&plugin=org.example.forgejo');
   expect(await screen.findByRole('checkbox', { name: 'Enable Forgejo' })).toBeDisabled();
+});
+
+it('preserves settings and secrets when dirty Back is declined, then allows Back after discard', async () => {
+  const plugin = registration('Forgejo');
+  plugin.description.settings!.push({ key: 'token', label: 'Token', type: 'string', secret: true });
+  vi.mocked(plugins.list).mockResolvedValue([plugin]);
+  renderCatalog();
+  fireEvent.click(await screen.findByRole('link', { name: 'Forgejo' }));
+  fireEvent.change(screen.getByLabelText('Server URL'), { target: { value: 'https://draft.example.com' } });
+  fireEvent.change(screen.getByLabelText('Token'), { target: { value: 'unsaved-secret' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(await screen.findByRole('dialog', { name: 'Discard unsaved changes?' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  await waitFor(() => expect(screen.getByLabelText('Current URL')).toHaveTextContent('plugin=org.example.forgejo'));
+  expect(screen.getByLabelText('Server URL')).toHaveValue('https://draft.example.com');
+  expect(screen.getByLabelText('Token')).toHaveValue('unsaved-secret');
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+  await screen.findByRole('dialog', { name: 'Forgejo' });
+  expect(screen.getByLabelText('Server URL')).toHaveValue('https://example.com');
+  expect(screen.getByLabelText('Token')).toHaveValue('');
+});
+
+it('guards dirty Forward tab changes without losing the current editor on decline', async () => {
+  renderCatalog();
+  fireEvent.click(await screen.findByRole('link', { name: 'Forgejo' }));
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Diagnostics' }), { button: 0, ctrlKey: false });
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  await screen.findByLabelText('Server URL');
+  fireEvent.change(screen.getByLabelText('Server URL'), { target: { value: 'https://draft.example.com' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Keep editing' }));
+  await waitFor(() => expect(screen.getByLabelText('Current URL')).not.toHaveTextContent('pluginTab=diagnostics'));
+  expect(screen.getByLabelText('Server URL')).toHaveValue('https://draft.example.com');
+  fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
+  await waitFor(() => expect(screen.getByRole('tab', { name: 'Diagnostics' })).toHaveAttribute('aria-selected', 'true'));
 });

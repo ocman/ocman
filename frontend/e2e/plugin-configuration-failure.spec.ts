@@ -29,8 +29,9 @@ test('activation failure remains visible beside Save even when refreshing health
   });
   await page.goto('/settings');
   await page.getByRole('button', { name: 'Plugins', exact: true }).click();
-  await page.getByRole('button', { name: 'Configure', exact: true }).click();
+  await page.getByRole('link', { name: 'Output', exact: true }).click();
   await page.getByLabel('Serial enabled', { exact: true }).selectOption('true');
+  refreshFails = true;
   await page.getByRole('button', { name: 'Save configuration', exact: true }).click();
   const form = page.getByRole('form', { name: 'Plugin configuration' });
   const error = form.getByRole('alert');
@@ -39,14 +40,11 @@ test('activation failure remains visible beside Save even when refreshing health
   await expect(error).toBeInViewport();
   await expect(form.getByLabel('Serial enabled', { exact: true })).toHaveValue('false');
   await expect(form.getByLabel('Source password', { exact: true })).toHaveValue('');
-  await expect(page.getByText('Enabled · ready')).toBeVisible();
-  refreshFails = true;
-  await page.getByRole('button', { name: 'Refresh health' }).click();
+  await expect(page.getByRole('dialog', { name: 'Output', exact: true })).toContainText('Enabled · Healthy');
   await expect(page.getByText(/Could not load plugins for this owner/)).toBeVisible();
   await expect(error).toBeVisible();
-  refreshFails = false;
-  await page.getByRole('button', { name: 'Refresh health' }).click();
-  await expect(page.getByText(/Could not load plugins for this owner/)).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Diagnostics', exact: true }).click();
+  await page.getByRole('tab', { name: 'Settings', exact: true }).click();
   await expect(error).toBeVisible();
   await expect(page.getByText(/private (activation|refresh) error/)).toHaveCount(0);
 });

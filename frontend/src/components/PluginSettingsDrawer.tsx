@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { PluginRegistration } from '../lib/plugins';
 import { useUnsavedChangesGuard } from '../lib/useUnsavedChangesGuard';
@@ -15,12 +14,12 @@ import styles from './PluginCatalog.module.css';
 export type PluginSettingsView = 'settings' | 'permissions' | 'diagnostics';
 const views: PluginSettingsView[] = ['settings', 'permissions', 'diagnostics'];
 
-export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh }: {
+export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh, tab, dirty, onDirtyChange }: {
   plugin: PluginRegistration; owner: string; ownerName: string; refresh: () => Promise<void>;
+  tab: string | null; dirty: boolean; onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [params, setParams] = useSearchParams();
-  const [dirty, setDirty] = useState(false);
-  const requested = params.get('pluginTab') as PluginSettingsView;
+  const [, setParams] = useSearchParams();
+  const requested = tab as PluginSettingsView;
   const view = views.includes(requested) ? requested : 'settings';
   const management = usePluginManagement(plugin, owner, refresh, () => {
     if (view !== 'settings') setParams((previous) => { const next = new URLSearchParams(previous); next.set('pluginTab', 'settings'); return next; });
@@ -29,7 +28,7 @@ export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh }: {
   const { confirmDiscard } = useUnsavedChangesGuard(dirty);
   async function navigate(tab?: string) {
     if (busy || (dirty && !await confirmDiscard())) return false;
-    setDirty(false);
+    onDirtyChange(false);
     setParams((previous) => {
       const next = new URLSearchParams(previous);
       if (tab) next.set('pluginTab', tab);
@@ -59,7 +58,7 @@ export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh }: {
         {views.map((tab) => <TabsTrigger key={tab} value={tab} disabled={busy}>{tab[0].toUpperCase() + tab.slice(1)}</TabsTrigger>)}
       </TabsList>
       <TabsContent value={view}>
-        <PluginSettingsContent plugin={plugin} owner={owner} management={management} view={view} onDirtyChange={setDirty} onCancel={() => void navigate()} onOpenSettings={() => void navigate('settings')} />
+        <PluginSettingsContent plugin={plugin} owner={owner} management={management} view={view} onDirtyChange={onDirtyChange} onCancel={() => void navigate()} onOpenSettings={() => void navigate('settings')} />
       </TabsContent>
     </Tabs>
     <p className={styles.muted}>Actions affect {plugin.description.name} on {ownerName} only.</p>

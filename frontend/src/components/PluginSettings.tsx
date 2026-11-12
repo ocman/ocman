@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useHostCapabilities } from '../lib/settingsQueries';
+import { usePluginSettingsLocation } from '../lib/usePluginSettingsLocation';
 import { plugins, type PluginRegistration } from '../lib/plugins';
 import { SettingsSection } from './SettingsSection';
 import { SettingRow } from './SettingRow';
@@ -14,7 +15,8 @@ export function PluginSettings() {
   const hostsQ = useHostCapabilities();
   const hosts = hostsQ.data ?? null;
   const error = hostsQ.isError;
-  const [params, setParams] = useSearchParams();
+  const [, setParams] = useSearchParams();
+  const { params, dirty, setDirty } = usePluginSettingsLocation();
   const owner = params.get('ownerId') || '';
   const selected = owner || hosts?.[0]?.remoteId || '';
   const host = hosts?.find((entry) => entry.remoteId === selected);
@@ -33,7 +35,7 @@ export function PluginSettings() {
     </ButtonGroup>
   </SettingRow>;
   if (!error && host?.pluginManagement) {
-    return <PluginCatalog key={selected} owner={selected} ownerName={host.remoteName} ownerControls={ownerControls} />;
+    return <PluginCatalog key={selected} owner={selected} ownerName={host.remoteName} ownerControls={ownerControls} params={params} dirty={dirty} onDirtyChange={setDirty} />;
   }
   return <SettingsSection title="Discovery">
     {ownerControls}
@@ -43,8 +45,10 @@ export function PluginSettings() {
   </SettingsSection>;
 }
 
-function PluginCatalog({ owner, ownerName, ownerControls }: { owner: string; ownerName: string; ownerControls: ReactNode }) {
-  const [params, setParams] = useSearchParams();
+function PluginCatalog({ owner, ownerName, ownerControls, params, dirty, onDirtyChange }: {
+  owner: string; ownerName: string; ownerControls: ReactNode; params: URLSearchParams; dirty: boolean; onDirtyChange: (dirty: boolean) => void;
+}) {
+  const [, setParams] = useSearchParams();
   const [catalog, setCatalog] = useState<PluginRegistration[] | null>(null);
   const [discovery, setDiscovery] = useState<{ filename: string; error: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -91,7 +95,7 @@ function PluginCatalog({ owner, ownerName, ownerControls }: { owner: string; own
         </div>
           : <PluginCatalogList catalog={catalog} owner={owner} />}
       </>}
-    {selected && <PluginSettingsDrawer key={selected.description.id} plugin={selected} owner={owner} ownerName={ownerName} refresh={() => refresh()} />}
+    {selected && <PluginSettingsDrawer key={selected.description.id} plugin={selected} owner={owner} ownerName={ownerName} refresh={() => refresh()} tab={params.get('pluginTab')} dirty={dirty} onDirtyChange={onDirtyChange} />}
     {catalog && params.get('plugin') && !selected && <PageState compact title="Plugin is no longer available" description="It may have been removed from this host.">
       <Button onClick={() => setParams((previous) => { const next = new URLSearchParams(previous); next.delete('plugin'); next.delete('pluginTab'); return next; })}>Dismiss</Button>
     </PageState>}
