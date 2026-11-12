@@ -49,11 +49,12 @@ export function runningSidebarDrawers(sessions: Session[], query: string, infos:
 export function useSidebarDrawers(sessions: Session[], query: string, infos: Record<string, GitInfo>, activeId?: string, activePlatform?: string, alwaysShowPrompts = true) {
   const drawers = runningSidebarDrawers(sessions, query, infos, activeId, activePlatform, alwaysShowPrompts);
   const activeDrawer = drawers.find(drawer => drawer.active)?.id;
-  const selection = JSON.stringify([activePlatform, activeId, activeDrawer]);
-  const [state, setState] = useState(() => ({ selection, expanded: new Set<SidebarDrawerId>(activeDrawer ? [activeDrawer] : []) }));
-  // Reveal navigation changes once, without reopening manually collapsed drawers
-  // on status updates or adding a post-render effect that moves the selection.
-  if (state.selection !== selection) setState(current => ({ selection,
+  const selection = JSON.stringify([activePlatform, activeId]);
+  const awaitingRow = !!activeId && !sessions.some(row => row.id === activeId && (!activePlatform || row.platform === activePlatform));
+  const [state, setState] = useState(() => ({ selection, awaitingRow, expanded: new Set<SidebarDrawerId>(activeDrawer ? [activeDrawer] : []) }));
+  // Reveal navigation once the selected row loads. Moving the same session into
+  // a drawer after archive/snooze is not navigation and must not open it.
+  if (state.selection !== selection || state.awaitingRow && !awaitingRow) setState(current => ({ selection, awaitingRow,
     expanded: activeDrawer ? new Set([...current.expanded, activeDrawer]) : current.expanded }));
   const expanded = state.expanded;
   const toggle = (id: SidebarDrawerId) => setState((current) => {

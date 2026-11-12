@@ -46,14 +46,15 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const lastMarked = useRef(0);
   const openedIdentity = useRef('');
   const pendingMark = useRef<(() => void) | null>(null);
-  const closeArchivedSession = useCallback(() => {
+  const closeArchivedSession = useCallback((snoozedUntil?: number) => {
     if (!sessionSeenId || !sessionSeenPlatform) return;
     const store = useApiStore.getState();
     const candidates = sidebarNavigableSessions(getSidebarSessions()).filter((row) => !row.archived || row.id === sessionSeenId);
     const next = pickNextSessionAfterArchive(candidates, { id: sessionSeenId, directory: sessionDirectory ?? '' }, useUiStore.getState().sidebarView);
-    patchSession({ archived: true });
-    patchSessionLists(sessionSeenId, { archived: true }, sessionSeenPlatform);
-    store.updateCachedSession(sessionSeenId, (cached) => ({ ...cached, session: { ...cached.session, archived: true } }));
+    const patch = { archived: true, ...(snoozedUntil ? { snoozedUntil } : {}) };
+    patchSession(patch);
+    patchSessionLists(sessionSeenId, patch, sessionSeenPlatform);
+    store.updateCachedSession(sessionSeenId, (cached) => ({ ...cached, session: { ...cached.session, ...patch } }));
     navigate(next ? `/session/${next.id}` : '/session/new', { replace: true });
   }, [sessionSeenId, sessionSeenPlatform, sessionDirectory, patchSession, navigate]);
   const markSeen = useCallback((platform: string, id: string, updated: number, opening = false) => {
@@ -138,8 +139,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
       if (platform && patch?.status) patchSession({ status: patch.status, resetsAt: patch.resetsAt ?? 0 });
       if (patch?.archived !== undefined) {
         revision++;
-        if (patch.archived && !patch.snoozedUntil) closeArchivedSession();
-        else if (patch.snoozedUntil) patchSession({ archived: patch.archived, snoozedUntil: patch.snoozedUntil });
+        if (patch.archived) closeArchivedSession(patch.snoozedUntil);
         else patchSession({ archived: false });
         return;
       }

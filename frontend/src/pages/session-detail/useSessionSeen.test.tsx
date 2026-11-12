@@ -281,13 +281,23 @@ describe('useSessionSeen', () => {
     Reflect.deleteProperty(performance, 'getEntriesByType');
   });
 
-  it('applies snooze events without navigating away', () => {
+  it.each(['opencode', 'r-box:opencode'])('selects the next conversation after snoozing on %s', (platform) => {
+    cacheMock.spy = false;
     const patchSession = vi.fn();
-    renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
+    const current = { ...session, platform };
+    queryClient.setQueryData(SIDEBAR_SESSIONS_KEY, [current, { ...current, id: 'next' }]);
+    renderHook(() => useSessionSeen({ session: current, patchSession }), { wrapper });
     const patch = { archived: true, snoozedUntil: Date.now() + 60_000 };
-    act(() => { for (const cb of changedListeners) cb('s1', undefined, patch, 'opencode'); });
+    act(() => { for (const cb of changedListeners) cb('s1', undefined, patch, platform); });
     expect(patchSession).toHaveBeenLastCalledWith(patch);
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/session/next', { replace: true });
+    expect(getSidebarSessions().find(row => row.id === 's1')).toMatchObject(patch);
+  });
+
+  it('selects the empty conversation view when snoozing the last conversation', () => {
+    renderHook(() => useSessionSeen({ session, patchSession: vi.fn() }), { wrapper });
+    act(() => { for (const cb of changedListeners) cb('s1', undefined, { archived: true, snoozedUntil: Date.now() + 60_000 }, 'opencode'); });
+    expect(navigate).toHaveBeenCalledWith('/session/new', { replace: true });
   });
 
   it('labels a worktree session with its project, not the worktree', () => {

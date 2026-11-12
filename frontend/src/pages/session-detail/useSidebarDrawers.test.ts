@@ -10,6 +10,27 @@ const session = (id: string, patch: Partial<Session> = {}) => ({
 }) as Session;
 
 describe('running sidebar drawers', () => {
+  it('reveals a selected drawer session once its row loads', () => {
+    const { result, rerender } = renderHook(({ rows }) => useSidebarDrawers(rows, '', {}, 'current', 'local'),
+      { initialProps: { rows: [] as Session[] } });
+    rerender({ rows: [session('current', { archived: true })] });
+    expect(result.current.expanded.has('archived')).toBe(true);
+  });
+
+  it.each([
+    ['archived', { archived: true }],
+    ['snoozed', { archived: true, snoozedUntil: 9999999999999 }],
+  ] as const)('does not open the %s drawer when the current session is dismissed', (drawer, patch) => {
+    const row = session('current');
+    const { result, rerender } = renderHook(({ rows, activeId }) => useSidebarDrawers(rows, '', {}, activeId),
+      { initialProps: { rows: [row, session('next')], activeId: 'current' } });
+    rerender({ rows: [{ ...row, ...patch }, session('next')], activeId: 'current' });
+    expect(result.current.drawers.find(d => d.id === drawer)?.active).toBe(true);
+    expect(result.current.expanded.has(drawer)).toBe(false);
+    rerender({ rows: [{ ...row, ...patch }, session('next')], activeId: 'next' });
+    expect(result.current.expanded.has(drawer)).toBe(false);
+  });
+
   it('opens and highlights only the selected owner across same-ID categories', () => {
     const rows = [session('shared', { factoryAttemptId: 'attempt' }),
       session('shared', { platform: 'remote', routineId: 'routine' })];
