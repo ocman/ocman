@@ -15,7 +15,10 @@ export function SessionBackgroundTasksNotice({ sessionId, platform, ...props }: 
   });
   useSessionLiveRefresh(sessionId, platform, query.refetch);
   const watches = (query.data?.pullRequests ?? []).filter(link => link.watching);
+  const watching = watches.length === 1 ? `Watching ${watches[0].remote.repo}#${watches[0].number}` : `Watching ${watches.length} pull requests`;
+  const native = props.count > 0 ? `${props.count} background task${props.count === 1 ? '' : 's'} · ` : '';
   return <><BackgroundTasksNotice {...props} sessionId={sessionId} platform={platform}
+    summary={watches.length > 0 ? `${native}${watching}` : undefined}
     additionalTasks={watches.map(link => ({
       id: `pr-watch:${link.remote.host}/${link.remote.repo}#${link.number}`,
       description: `Watching ${link.remote.repo}#${link.number}: ${link.pr.title}`,

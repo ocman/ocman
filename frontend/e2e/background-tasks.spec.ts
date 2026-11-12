@@ -1,6 +1,29 @@
 import { test, expect, MOCK_SESSION, mockStream, makeCapabilitiesWithPort } from './fixtures';
 
 for (const width of [1280, 390]) {
+  test(`idle session explains its PR watch in the composer at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
+      session: { ...MOCK_SESSION, status: 'done', liveConnection: true }, messages: [], parts: [],
+    } }));
+    await page.route(`/api/session/${MOCK_SESSION.id}/pull-requests*`, route => route.fulfill({ json: {
+      pullRequests: [{ watching: true, number: 42, remote: { host: 'forge.example', repo: 'team/repo' },
+        pr: { title: 'Fix login' } }],
+    } }));
+    await mockStream(page, MOCK_SESSION.id, []);
+    await page.goto(`/session/${MOCK_SESSION.id}`);
+    const trigger = page.getByRole('button', { name: '1 background task running: Watching team/repo#42' });
+    await expect(trigger).toBeVisible();
+    await expect(trigger).toHaveText('Watching team/repo#42');
+    await expect(page.getByTestId('running-dots')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Background tasks' })).toHaveCount(0);
+    const bounds = (await trigger.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    await trigger.click();
+    await expect(page.getByRole('dialog', { name: 'Background tasks' }).getByText('Watching team/repo#42: Fix login')).toBeVisible();
+  });
+
   test(`background task lifecycle can be overridden at ${width}px`, async ({ mockedPage: page }, testInfo) => {
     await page.setViewportSize({ width, height: 800 });
     const capabilities = makeCapabilitiesWithPort();
@@ -51,7 +74,7 @@ for (const width of [1280, 390]) {
     }]);
     await page.goto(`/session/${MOCK_SESSION.id}`);
     const trigger = page.getByRole('button', { name: '2 background agents running' });
-    await expect(trigger).toHaveText('2');
+    await expect(trigger).toHaveText('2 background agents running');
     await trigger.click();
     const panel = page.getByRole('dialog', { name: 'Background tasks' });
     await expect(panel.getByText('Review changes')).toBeVisible();
@@ -69,7 +92,7 @@ for (const width of [1280, 390]) {
     }]);
     await page.goto(`/session/${MOCK_SESSION.id}`);
     const trigger = page.getByRole('button', { name: '1 background task running' });
-    await expect(trigger).toHaveText('1');
+    await expect(trigger).toHaveText('1 background task running');
     await expect(page.locator('.oc-composer-footer-right').getByRole('button', { name: '1 background task running' })).toBeVisible();
     await expect(page.getByTestId('composer-notices').getByRole('button', { name: '1 background task running' })).toHaveCount(0);
     await trigger.click();

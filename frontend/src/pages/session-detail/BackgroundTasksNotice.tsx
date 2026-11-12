@@ -10,6 +10,7 @@ interface NoticeTask extends BackgroundTask { onStop?: () => Promise<unknown> }
 interface Props {
   count: number; tasks?: BackgroundTask[]; sessionId?: string; platform?: string; canStop?: boolean; canClassify?: boolean;
   additionalTasks?: NoticeTask[];
+  summary?: string;
 }
 
 export function BackgroundTasksNotice({ additionalTasks = [], ...props }: Props) {
@@ -20,7 +21,7 @@ export function BackgroundTasksNotice({ additionalTasks = [], ...props }: Props)
 // Matches the .oc-popover width.
 const PANEL_WIDTH = 340;
 
-function RunningBackgroundTasksNotice({ count, tasks: nativeTasks = [], additionalTasks = [], sessionId = '', platform = '', canStop = false, canClassify = false }: Props) {
+function RunningBackgroundTasksNotice({ count, tasks: nativeTasks = [], additionalTasks = [], summary, sessionId = '', platform = '', canStop = false, canClassify = false }: Props) {
   const tasks: NoticeTask[] = [...nativeTasks, ...additionalTasks];
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
@@ -76,16 +77,18 @@ function RunningBackgroundTasksNotice({ count, tasks: nativeTasks = [], addition
   };
   const noun = agentsOnly ? 'agent' : 'task';
   const label = `${count} background ${noun}${count === 1 ? '' : 's'} running`;
+  const text = summary || label;
+  const accessibleLabel = summary ? `${label}: ${summary}` : label;
   return (
     <span className={styles.root} role="status">
-      <Button ref={trigger} variant="ghost" size="compact" className={styles.trigger} title={label} aria-label={label}
+      <Button ref={trigger} variant="ghost" size="compact" className={styles.trigger} title={accessibleLabel} aria-label={accessibleLabel}
         aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
         onClick={() => { if (open) close(); else show(); }}
         onKeyDown={event => {
           if (event.key === 'Tab' && !event.shiftKey && open) { event.preventDefault(); document.getElementById(id)?.focus(); }
         }}>
         <i className="bi bi-list-task" aria-hidden="true" />
-        <span>{count}</span>
+        <span className={styles.summary}>{text}</span>
       </Button>
       <Popover open={open} onClose={close} triggerRef={trigger} id={id} label="Background tasks" style={position ?? undefined} autoFocus={false}>
         <div className={styles.content}>
