@@ -116,6 +116,8 @@ flowchart LR
   reads watch counts by platform for session completion indicators. Legacy
   hub links transfer with durable import receipts before polling, preserving
   checkpoints and preventing retries from resurrecting owner-deleted links.
+  Watch readiness and queue delivery resolve saved native-kind references to
+  the session's recorded owner/source connection, never the current default.
   `taskmod` aggregates read-only `tasksvc.Reader` observations through the
   owning Host's optional `BackgroundTaskHost` interface. Remote RPCs expose
   only closed PR operations and task reads, never arbitrary HTTP forwarding or

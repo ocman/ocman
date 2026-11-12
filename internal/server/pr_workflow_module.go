@@ -30,9 +30,13 @@ func (s *Server) prWorkflowModule() *prworkflow.Module {
 				s.broadcastSessionPatch(platform, sessionID, nil)
 			},
 			Enqueue: func(ctx context.Context, platform string, req platforms.SendMessageRequest) error {
+				route, err := s.prWatchRoute(ctx, platform, req.SessionID)
+				if err != nil {
+					return err
+				}
 				// Readiness already waits for completion. Let the queue deliver now
 				// rather than holding the notice for an idle edge that may never come.
-				return s.queueSvc().Enqueue(ctx, platform, false, req)
+				return s.queueSvc().Enqueue(ctx, route, false, req)
 			},
 		})
 	})
@@ -112,7 +116,11 @@ func (s *Server) prWatchReady(ctx context.Context, t prworkflow.Target) bool {
 			return false
 		}
 	}
-	p, ok := s.registry.Get(platforms.ID(t.Platform))
+	route, err := s.prWatchRoute(ctx, t.Platform, t.SessionID)
+	if err != nil {
+		return false
+	}
+	p, ok := s.registry.Get(platforms.ID(route))
 	if !ok {
 		return false
 	}
