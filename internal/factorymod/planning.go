@@ -33,7 +33,7 @@ func (l PlanningLauncher) launchReadOnlySession(ctx context.Context, req factory
 		}
 	}
 	host := l.m.deps.Router().Local()
-	platformID, base, err := l.m.deps.CreatePlatform(ctx, host, req.Platform, req.Model)
+	platformID, base, err := l.m.deps.CreatePlatform(ctx, host, factoryModelPlatform(req.Platform, req.Model), req.Model)
 	if err != nil {
 		return factory.PlanningSession{}, err
 	}

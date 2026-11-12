@@ -34,8 +34,8 @@ export function basePlatform(id: string): string {
 
 /** A reference usable on a session of platformId: its own prefix is
  *  stripped, another platform's model is dropped. */
-export function modelRefForSession(ref: string, platformId: string | undefined): string {
+export function modelRefForSession(ref: string, platformId: string | undefined, connectionId?: string): string {
   const { platform, model } = splitModelRef(ref);
   if (!platform) return ref;
-  return platformId && platform === basePlatform(platformId) ? model : '';
+  return (platformId && platform === basePlatform(platformId)) || (connectionId && platform === basePlatform(connectionId)) ? model : '';
 }

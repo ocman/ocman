@@ -32,6 +32,8 @@ func (s *Service) judgePermission(ctx context.Context, platformID platforms.ID, 
 		backend = s.judge
 	} else if s.deps.SelectJudge != nil {
 		backend = s.deps.SelectJudge(platformID, directory)
+	} else if s.namedReviewerConfigured(ctx) {
+		backend = s.judge // an unavailable explicit account must fail, not fall back
 	} else if s.judge != nil && s.judge.openCodePort != nil && s.judge.openCodePort(directory) != "" {
 		backend = s.judge
 	} else if s.deps.FallbackJudge != nil {

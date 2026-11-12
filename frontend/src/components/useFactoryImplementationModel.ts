@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { api, type FactoryEpic } from '../lib/api';
 import { availabilityUnknown } from '../lib/modelCatalogCache';
 import type { FactoryEpicWithModels } from './useFactoryEpicModels';
+import { useNamedModelCatalog } from '../lib/useNamedModelCatalog';
+import { qualifyModelRef } from '../lib/modelRef';
 
 export function implementationModelTier(model: string) {
 	if (/fable|astra/i.test(model)) return 'Strong';
@@ -21,10 +23,12 @@ export function useFactoryImplementationModel(epic?: FactoryEpic) {
 		staleTime: 60_000,
 		retry: false,
 	});
-	const entries = catalog.data?.hasProviders
+  const sessionEntries = catalog.data?.hasProviders
 		? catalog.data.models.filter((model) => model.isAvailable !== false)
 		: availabilityUnknown(catalog.data?.models ?? []);
-	const models = entries.filter((model) => !model.hidden).map((model) => `${model.provider}/${model.model}`);
+  const named = useNamedModelCatalog(epic?.initialProject ?? '', 'local', sessionEntries);
+  const entries = named.entries;
+  const models = entries.filter((model) => !model.hidden).map((model) => qualifyModelRef(model.platform, `${model.provider}/${model.model}`));
 	const suggested = models.find((model) => implementationModelTier(model) === 'Balanced') ?? models.find((model) => implementationModelTier(model) === 'Fast') ?? '';
 	const [selection, setSelection] = useState<{ gate: string; model: string }>();
 	const gate = `${id}/${planGate?.proposalHash}`;
@@ -32,7 +36,7 @@ export function useFactoryImplementationModel(epic?: FactoryEpic) {
 	const retained = planGate?.implementationModel ?? (epic?.proposal?.manifest?.baseRevision ? '' : suggested);
 	const { model, locked } = resolveImplementationModel(epic, selected ? selection.model : retained);
 	const approvalModel = model ? { implementationModel: model } : selected && !locked ? { useDefaultImplementationModel: true } : {};
-	return { model, models, entries, approvalModel, setModel: (model: string) => setSelection({ gate, model }), loading: catalog.isFetching, error: catalog.isError, locked };
+  return { model, models, entries, approvalModel, setModel: (model: string) => setSelection({ gate, model }), loading: catalog.isFetching || named.loading, error: catalog.isError || named.error, locked };
 }
 
 // An epic-level implementation model wins at claim time, so the approval picker just mirrors it.

@@ -17,6 +17,9 @@ import (
 // Only legacy owners infer an omitted platform from the model prefix.
 func (s *Server) createPlatform(ctx context.Context, host hostsvc.Host, requested, model string) (string, string, error) {
 	var err error
+	if prefix, _ := platforms.SplitModel(model); requested == "" && strings.HasPrefix(string(prefix), "cnx_") {
+		requested = string(prefix)
+	}
 	if requested == "" {
 		inventory, named, modeErr := s.ownerConnectionMode(ctx, host)
 		if modeErr != nil {
@@ -52,7 +55,7 @@ func (s *Server) createPlatform(ctx context.Context, host hostsvc.Host, requeste
 		if err != nil {
 			return "", "", err
 		}
-		if _, err := platforms.ModelFor(kind, model); err != nil {
+		if _, err := platforms.ModelForConnection(platforms.ID(id), kind, model); err != nil {
 			return "", "", err
 		}
 	}

@@ -96,15 +96,11 @@ func modelProvider(model string) string {
 // prefix (platforms.SplitModel): a request naming another platform's model
 // is refused, and a project model for another platform is skipped.
 func (s *Service) sessionModel(ctx context.Context, p platforms.Platform, sessionID, requested string) (string, error) {
-	base := p.ID().Base()
-	if native, ok := p.(interface{ NativeKind() platforms.ID }); ok {
-		base = native.NativeKind()
-	}
-	model, err := platforms.ModelFor(base, requested)
+	model, err := s.modelForAdapter(p, requested)
 	if err != nil {
 		return "", validation(err.Error())
 	}
-	if model, err = platforms.ModelFor(base, s.selectModel(ctx, p, sessionID, model)); err != nil {
+	if model, err = s.modelForAdapter(p, s.selectModel(ctx, p, sessionID, model)); err != nil {
 		return "", nil // the project's model runs elsewhere; the session keeps its own
 	}
 	return model, nil
@@ -153,7 +149,13 @@ func (s *Service) projectModels(ctx context.Context, p platforms.Platform, sessi
 		s.sessionDirs.Store(sessionCacheKey{p.ID(), sessionID}, dir)
 	}
 	models, off := s.hooks.ProjectModels(ctx, dir.(string))
-	return models, off, true
+	var compatible []string
+	for _, model := range models {
+		if _, err := s.modelForAdapter(p, model); err == nil {
+			compatible = append(compatible, model)
+		}
+	}
+	return compatible, off, true
 }
 
 func (s *Service) firstUsable(ctx context.Context, sessionID string, models []string) string {

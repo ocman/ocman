@@ -127,6 +127,13 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if err != nil {
 		return nil, err
 	}
+	model, err := s.modelForAdapter(adapter, req.Creation.Model)
+	if err != nil {
+		return nil, validation(err.Error())
+	}
+	if prefix, _ := platforms.SplitModel(req.Creation.Model); strings.HasPrefix(string(prefix), "cnx_") {
+		req.Creation.Model = model
+	}
 	if s.hooks.BeginDirectory != nil {
 		activityCtx, done, err := s.hooks.BeginDirectory(ctx, adapter, req.Directory)
 		if err != nil {

@@ -19,6 +19,18 @@ function mount(ui: React.ReactNode) {
 
 describe('epic models', () => {
 	beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.prepareSession).mockResolvedValue(catalog); });
+	it('keeps identical models from separate named platforms selectable', async () => {
+		vi.mocked(api.prepareSession).mockResolvedValue({ ...catalog, models: { hasProviders: true, models: [
+			{ platform: 'cnx_work', platformName: 'Work', provider: 'p', model: 'same' },
+			{ platform: 'cnx_home', platformName: 'Home', provider: 'p', model: 'same' },
+		] } });
+		mount(<FactoryEpicModels epic={epic} />);
+		const user = userEvent.setup();
+		await user.click(screen.getByRole('combobox', { name: 'Implementation model' }));
+		await user.click(await screen.findByRole('tab', { name: 'Home' }));
+		await user.click(screen.getByRole('option', { name: /p\/same/ }));
+		expect(postJSON).toHaveBeenCalledWith('/api/factory/epics/epic%2F1/models', { plan: 'p/fable', implementation: 'cnx_home:p/same' });
+	});
 
 	it('saves a per-phase model and keeps the others', async () => {
 		vi.mocked(postJSON).mockResolvedValue({});

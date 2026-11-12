@@ -27,6 +27,7 @@ type ModuleDeps struct {
 	// ModelOptions lists selectable judge models; nil asks the running
 	// OpenCode instances.
 	ModelOptions func(context.Context) []string
+	ModelEntries func(context.Context) []platforms.SessionModel
 	// OpenCode reports whether this machine runs OpenCode; without it the
 	// headless watcher and model discovery stay off. Nil means enabled.
 	OpenCode func() bool

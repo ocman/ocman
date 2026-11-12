@@ -30,9 +30,22 @@ continues stay yours and are not tagged.
 
 Open **Routines** from the main navigation, then select **New routine**. Enter
 a unique name, the prompt, the target project, session behavior, and a schedule.
-The searchable agent and model lists use values seen in that project. Select
-the default option to let OpenCode choose. You can also disable a routine
-without deleting it.
+The model selector shares the session composer's search, ranking, badges, and
+named-platform tabs. For new sessions, selecting a model also selects its
+platform and loads that platform's agents. Existing sessions use their own
+catalog. Select the default option to let the platform choose. You can also
+disable a routine without deleting it.
+
+If a run reports that its platform is disabled after a platform rename, open
+**Settings → Session and model**, select the model under the intended platform,
+and **Save changes**. Future runs use that platform. Saving other settings
+preserves the platform of an existing model selection.
+
+Startup also repairs obsolete legacy platform references for routines that have
+not bound a reused or existing session. The first enabled platform on the same
+machine with the same native tool and saved model is selected. Explicit named
+platform choices and historical runs remain unchanged; a model absent from every
+eligible catalog still needs manual selection.
 
 Select **Choose when running** to leave the project unset. **Run now** then asks
 for a known project on the routine's machine. Each run records its own project;

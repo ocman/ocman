@@ -397,7 +397,7 @@ describe('Routines', () => {
     expect(screen.queryByRole('combobox', { name: 'Platform' })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).toBeEnabled());
     await user.click(screen.getByRole('combobox', { name: 'Model' }));
-    await user.click(await screen.findByRole('option', { name: 'claudecode:anthropic/sonnet' }));
+    await user.click(await screen.findByRole('option', { name: /anthropic\/sonnet/ }));
     // The agents come from the model's platform.
     await waitFor(() => expect(api.prepareSession).toHaveBeenLastCalledWith({ directory: '/repo', remoteId: 'local', platform: 'claudecode' }));
     await user.click(screen.getByRole('button', { name: 'Create routine' }));
@@ -444,9 +444,9 @@ describe('Routines', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Agent' })).toBeEnabled());
     await user.click(screen.getByRole('combobox', { name: 'Model' }));
     if (hasProviders) {
-      expect(screen.queryByRole('option', { name: 'p/sol' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: /p\/sol/ })).not.toBeInTheDocument();
     } else {
-      expect(screen.getByRole('option', { name: 'p/sol' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /p\/sol/ })).toBeInTheDocument();
     }
   });
 

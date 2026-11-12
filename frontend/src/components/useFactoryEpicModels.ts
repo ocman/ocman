@@ -1,6 +1,8 @@
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { api, postJSON, type FactoryEpic, type SessionModelEntry } from '../lib/api';
 import { availabilityUnknown } from '../lib/modelCatalogCache';
+import { qualifyModelRef } from '../lib/modelRef';
+import { useNamedModelCatalog } from '../lib/useNamedModelCatalog';
 
 export interface FactoryEpicModels { plan?: string; implementation?: string; verification?: string }
 export type FactoryEpicWithModels = FactoryEpic & { models?: FactoryEpicModels };
@@ -21,10 +23,11 @@ export function useFactoryEpicModels(epic?: FactoryEpicWithModels) {
 		retry: false,
 	})) });
 	// Availability is project-specific; this union is for selection, not a guarantee for every project.
-	const allEntries = catalogs.flatMap((catalog) => availabilityUnknown(catalog.data?.models.models ?? []));
+  const named = useNamedModelCatalog(projects, 'local', []);
+  const allEntries = named.named ? named.entries : catalogs.flatMap((catalog) => availabilityUnknown(catalog.data?.models.models ?? []));
 	const merged = new Map<string, SessionModelEntry>();
 	for (const entry of allEntries) {
-		const key = `${entry.provider}/${entry.model}`;
+    const key = qualifyModelRef(entry.platform, `${entry.provider}/${entry.model}`);
 		const previous = merged.get(key);
 		merged.set(key, { ...entry, modelName: entry.modelName || previous?.modelName, providerName: entry.providerName || previous?.providerName });
 	}
@@ -36,11 +39,11 @@ export function useFactoryEpicModels(epic?: FactoryEpicWithModels) {
 	const models = epic?.models ?? {};
 	return {
 		models,
-		options: entries.map((entry) => `${entry.provider}/${entry.model}`),
+    options: entries.map((entry) => qualifyModelRef(entry.platform, `${entry.provider}/${entry.model}`)),
 		entries,
-		loading: catalogs.some((catalog) => catalog.isFetching),
-		error: catalogs.some((catalog) => catalog.isError),
-		refresh: () => { for (const catalog of catalogs) void catalog.refetch(); },
+    loading: named.loading || catalogs.some((catalog) => catalog.isFetching),
+    error: named.error || catalogs.some((catalog) => catalog.isError),
+    refresh: () => { named.refresh(); for (const catalog of catalogs) void catalog.refetch(); },
 		save,
 		setModel: (phase: keyof FactoryEpicModels, value: string) => save.mutate({ ...models, [phase]: value }),
 	};

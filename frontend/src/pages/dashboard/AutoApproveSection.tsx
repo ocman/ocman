@@ -4,10 +4,11 @@
  */
 import { useState, useEffect } from 'react';
 import { SaveStatus } from '../../components/SaveStatus';
-import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../components/SettingRow';
+import { SettingRow, SettingToggle, SettingNumber } from '../../components/SettingRow';
+import { SettingModelSelect } from '../../components/SettingModelSelect';
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
-import { api } from '../../lib/api';
+import { api, type SessionModelEntry } from '../../lib/api';
 import { useHostCapability } from '../../lib/useCapabilities';
 import { Button } from '../../components/Control';
 import { ReviewerPromptSectionEditor, type PromptSection } from './ReviewerPromptSectionEditor';
@@ -35,7 +36,7 @@ export function AutoApproveSection() {
   const [judgeModel, setJudgeModel] = useState('');
   // The reviewer model picks an OpenCode model; the Claude judge is fixed.
   const judgeModelSelectable = useHostCapability('judgeModel');
-  const [modelCatalog, setModelCatalog] = useState({ models: [] as string[], default: '' });
+  const [modelCatalog, setModelCatalog] = useState({ models: [] as string[], entries: [] as SessionModelEntry[], default: '' });
   const { getPromptSections, getJudgeDelay } = api;
 
   // Settings keeps this section mounted while open: load what the backend
@@ -51,7 +52,7 @@ export function AutoApproveSection() {
     // missing catalog must degrade to "Default" rather than crash Settings.
     getJudgeModel().then((model) => setJudgeModel(model ?? '')).catch(() => { /* best-effort */ });
     getJudgeModelOptions(controller.signal)
-      .then((catalog) => setModelCatalog({ models: catalog?.models ?? [], default: catalog?.default ?? '' }))
+      .then((catalog) => setModelCatalog({ models: catalog?.models ?? [], entries: catalog?.entries ?? [], default: catalog?.default ?? '' }))
       .catch(() => { /* best-effort */ });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -59,10 +60,6 @@ export function AutoApproveSection() {
 
   // "" is the stored value meaning "use the built-in default", so it is a
   // real option rather than an empty placeholder.
-  const modelOptions = [
-    { value: '', label: modelCatalog.default ? `Default (${modelCatalog.default})` : 'Default' },
-    ...modelCatalog.models.map((value) => ({ value, label: value })),
-  ];
 
   const saveSections = (next: PromptSection[]) => {
     setPromptSections(next);
@@ -99,12 +96,12 @@ export function AutoApproveSection() {
       <SettingsSection title="AI reviewer">
       <JudgeEndpointSettings />
       {judgeModelSelectable && <SettingRow setting="reviewer-model" desc="Model used when Reviewer API is OpenCode. Custom endpoints use their own model ID.">
-        <SettingSelect
+        <SettingModelSelect
           ariaLabel="Auto-approve reviewer model"
-          placeholder="Default"
-          searchLabel="Search models"
+          defaultLabel={modelCatalog.default ? `Default (${modelCatalog.default})` : 'Default'}
           value={judgeModel}
-          options={modelOptions}
+          models={modelCatalog.models}
+          modelEntries={modelCatalog.entries}
           save={modelSave}
           onSave={(next) => {
             setJudgeModel(next);

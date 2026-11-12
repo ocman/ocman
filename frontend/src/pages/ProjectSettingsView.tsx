@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, type SessionModelEntry } from '../lib/api';
+import { useNamedModelCatalog } from '../lib/useNamedModelCatalog';
+import { qualifyModelRef } from '../lib/modelRef';
+import { SettingModelSelect } from '../components/SettingModelSelect';
 import { useSettingSave } from '../lib/useSaveStatus';
-import { SettingRow, SettingSelect, SettingToggle } from '../components/SettingRow';
+import { SettingRow, SettingToggle } from '../components/SettingRow';
 import { SaveStatus } from '../components/SaveStatus';
 import { InlineAlert } from '../components/InlineAlert';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
 import { Button, ButtonGroup } from '../components/Control';
 import { IconButton } from '../components/IconButton';
-import type { SearchSelectOption } from '../components/SearchSelect';
 import styles from './ProjectSettingsView.module.css';
 import { ProjectShell } from './ProjectShell';
 import { ProjectQuickSettings } from '../components/ProjectQuickSettings';
@@ -36,7 +38,8 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [options, setOptions] = useState<SearchSelectOption[]>([]);
+  const [options, setOptions] = useState<SessionModelEntry[]>([]);
+  const catalog = useNamedModelCatalog(directory, remoteId, options);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const listSave = useSettingSave();
@@ -69,7 +72,7 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
     const controller = new AbortController();
     api.prepareSession({ directory, remoteId }, controller.signal).then((catalog) => {
       if (controller.signal.aborted) return;
-      setOptions(catalog.models.models.map((model) => ({ value: `${model.provider}/${model.model}`, label: `${model.providerName ?? model.provider} / ${model.modelName ?? model.model}` })));
+      setOptions(catalog.models.models);
       setCatalogError(null);
     }).catch((err) => { if (!controller.signal.aborted) setCatalogError(err instanceof Error ? err.message : String(err)); });
     return () => controller.abort();
@@ -169,16 +172,17 @@ function ProjectSettingsContent({ directory, remoteId }: { directory: string; re
       </td></tr>
       </tbody></DataTable>
       <SettingRow setting="project-add-model">
-        <SettingSelect
+        <SettingModelSelect
           value=""
-          options={options.filter((o) => !models.includes(o.value))}
+          models={[]}
+          modelEntries={catalog.entries.filter((model) => !models.includes(qualifyModelRef(model.platform, `${model.provider}/${model.model}`)))}
           save={addSave}
           onSave={(next) => persist([...models, next], off)}
           ariaLabel="Add model"
-          placeholder="Add a model…"
-          searchLabel="Search models"
-          disabled={fallbackDisabled || models.length >= 10}
+          defaultLabel="Add a model…"
+          disabled={fallbackDisabled || catalog.loading || models.length >= 10}
         />
+        {catalog.error && <small role="alert">Some platform model catalogs could not be loaded.</small>}
       </SettingRow>
     </div>
   );

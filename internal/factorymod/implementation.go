@@ -265,7 +265,7 @@ func (l ImplementationLauncher) LaunchImplementationSession(ctx context.Context,
 			return factory.PlanningSession{}, err
 		}
 	}
-	platformID, base, err := l.m.deps.CreatePlatform(ctx, owner, req.Platform, req.Model)
+	platformID, base, err := l.m.deps.CreatePlatform(ctx, owner, factoryModelPlatform(req.Platform, req.Model), req.Model)
 	if err != nil {
 		return factory.PlanningSession{}, err
 	}

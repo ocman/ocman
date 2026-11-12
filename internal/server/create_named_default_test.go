@@ -67,6 +67,12 @@ func TestOmittedNamedConnectionResolvesSavedAccountBeforeModelNamespace(t *testi
 	if _, _, err := s.createPlatform(t.Context(), local, work.ID, "codex:openai/model"); err == nil {
 		t.Fatal("explicit account accepted a different native model kind")
 	}
+	if id, _, err := s.createPlatform(t.Context(), local, "", work.ID+":anthropic/opus"); err != nil || id != work.ID {
+		t.Fatalf("named model did not select its account: %q %v", id, err)
+	}
+	if _, _, err := s.createPlatform(t.Context(), local, work.ID, "cnx_other:anthropic/opus"); err == nil {
+		t.Fatal("explicit account accepted a sibling model reference")
+	}
 }
 
 func TestRemoteDefaultSupportIsPerOwnerAndOnlyExplicitUnsupportedAllowsLegacy(t *testing.T) {

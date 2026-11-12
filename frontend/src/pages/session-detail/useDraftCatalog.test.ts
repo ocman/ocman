@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type PrepareSessionResponse } from '../../lib/api';
 import { useDraftCatalog } from './useDraftCatalog';
+import { loadProjectSettings } from '../../lib/projectSettingsCache';
 
 vi.mock('../../lib/api', () => ({ api: { prepareSession: vi.fn() } }));
 vi.mock('../../lib/projectSettingsCache', () => ({ loadProjectSettings: vi.fn(async () => ({ models: [], off: false })) }));
@@ -22,9 +23,25 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
+beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); vi.mocked(loadProjectSettings).mockResolvedValue({ models: [], off: false, defaultAgent: '' }); });
 
 describe('independent draft catalogs', () => {
+  it('uses the first named fallback model as the project default when no startup override exists', async () => {
+    vi.mocked(api.prepareSession).mockImplementation(async (target) => ({ ...selected, platform: target.platform || 'cnx_home', projectDefaultModel: 'cnx_work:openai/gpt', additionalModels: false }));
+    const { result } = renderHook(() => useDraftCatalog({ directory: '/repo' }, 'key', 'request'));
+    await waitFor(() => expect(result.current.catalogReady).toBe(true));
+    expect(result.current.catalog?.platform).toBe('cnx_work');
+    expect(result.current.catalog?.projectDefaultModel).toBe('cnx_work:openai/gpt');
+  });
+  it.each([undefined, 'local', 'box'])('prepares a saved named-account default on its owner: %s', async (remoteId) => {
+    const platform = !remoteId || remoteId === 'local' ? 'cnx_work' : 'r-box:cnx_work';
+    vi.mocked(loadProjectSettings).mockResolvedValue({ models: [], off: false, defaultAgent: '', defaults: { model: 'cnx_work:openai/gpt', agent: '', worktree: '' } });
+    vi.mocked(api.prepareSession).mockImplementation(async (target) => ({ ...selected, platform: target.platform || 'cnx_home', additionalModels: false }));
+    const { result } = renderHook(() => useDraftCatalog({ directory: '/repo', remoteId }, 'key', 'request'));
+    await waitFor(() => expect(result.current.catalogReady).toBe(true));
+    expect(api.prepareSession).toHaveBeenLastCalledWith({ directory: '/repo', remoteId, platform, selectedOnly: true }, expect.any(AbortSignal));
+    expect(result.current.catalog?.projectDefaultModel).toBe('cnx_work:openai/gpt');
+  });
   it('does not repeat catalog reads when the selected inventory is complete', async () => {
     vi.mocked(api.prepareSession).mockResolvedValue({ ...selected, additionalModels: false });
     const { result } = renderHook(() => useDraftCatalog({ directory: '/repo' }, 'key', 'request'));

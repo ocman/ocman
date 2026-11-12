@@ -9,6 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/platforms/opencode/api"
 	"github.com/ocman/ocman/internal/state"
 )
@@ -38,6 +39,7 @@ func loadJudgeModel(ctx context.Context, db judgeModelStore) (provider, modelID 
 	if err != nil || !found {
 		return "", "", false
 	}
+	_, val = platforms.SplitModel(val)
 	i := strings.IndexByte(val, '/')
 	if i <= 0 || i == len(val)-1 {
 		return "", "", false
@@ -51,6 +53,7 @@ type PermissionJudge struct {
 	sessionIdentity func(context.Context, string) (string, error)
 	openCodePort    func(directory string) string
 	httpClient      *http.Client
+	accountClient   func() *http.Client
 	store           judgeModelStore
 	recordUsage     func(context.Context, string, *int64, *int64) error
 	modelMu         sync.RWMutex

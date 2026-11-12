@@ -93,6 +93,7 @@ type Deps struct {
 	// OpencodePlatform resolves the OpenCode platform adapter for the
 	// headless watcher. May be nil / return nil; Ensure fails safe.
 	OpencodePlatform func() platforms.Platform
+	ReviewerPlatform func() platforms.Platform // judge account only; never changes the watched session's owner
 
 	// PermissionAsked records every prompt, independently of judge enablement.
 	PermissionAsked func(state.InboxPermission)
@@ -241,9 +242,12 @@ func NewService(deps Deps) *Service {
 		askedCache:       make(map[string]askedPermission),
 	}
 	if !deps.OpenCodeDisabled {
-		judge.openCodePort = svc.openCodePort
+		judge.openCodePort = svc.reviewerPort
 	}
 	judge.sessionIdentity = svc.judgeSessionIdentity
+	if deps.ReviewerPlatform != nil {
+		judge.accountClient = svc.reviewerHTTPClient
+	}
 	return svc
 }
 

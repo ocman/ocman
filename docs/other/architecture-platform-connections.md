@@ -11,10 +11,10 @@ can use the same project without sharing execution state.
 
 ```mermaid
 flowchart LR
-    Browser[Settings, onboarding and composer] --> Owner[Explicit owner resolution]
+    Browser[Settings, routines, Factory, plugins and composer] --> Owner[Explicit owner resolution]
     Owner --> Setup[ConnectionHost setup and inspection]
     Setup --> Store[(Owner state.db: connections,<br/>receipts and source bindings)]
-    Owner --> Sessions[Shared session service]
+    Owner -->|account-scoped catalogs and session operations| Sessions[Shared session service]
     Sessions --> Router[Connection router and admission leases]
     Router --> Canonical[Source-scoped canonical adapter]
     Canonical --> Native[Account-configured native adapter]
@@ -27,8 +27,10 @@ flowchart LR
 - `cnx_<uuid>` is an immutable owner-local connection ID. Names are presentation
   only. Native kinds remain `opencode`, `claudecode` and `codex`.
 - Registry entries retain their connection key separately from `Platform.ID()`.
-  Remote routing keys are owner-qualified, such as `r-owner:cnx_<uuid>`; native
-  model references retain their original platform namespace.
+  Remote routing keys are owner-qualified, such as `r-owner:cnx_<uuid>`. Saved
+  model choices can use `cnx_<uuid>:provider/model` to select an account. Native
+  model namespaces remain supported for legacy choices. The session service
+  validates the selected connection before stripping a model prefix for native IO.
 - Each local OpenCode registry entry gets its own headless watcher, using that
   account's discovery and authenticated transport. Status, prompt, queue and
   title events retain the connection routing key. The watcher fills the native
@@ -49,6 +51,28 @@ flowchart LR
   Changing a default cannot retarget an existing session or retry.
 - Defaults are explicit. Disabled, removed, missing, unavailable and disconnected
   selections fail closed, without borrowing another account or owner.
+
+## Model selection and legacy preference repair
+
+Model controls share `ModelSelect` or the composer's `ModelPicker`. Named-account
+catalogs are read separately through owner-routed preparation; a catalog for one
+account never supplies another account's credentials or availability. Saved
+references retain connection IDs, and identical provider/model IDs on different
+accounts remain separate choices. Factory catalogs retain their project union.
+Project fallback lists are filtered to the current session's account; fallthrough
+never changes that session's account. A reviewer's explicit account selects only
+the judge's catalog and authenticated helper transport, not the watched session's
+owner or permission-reply transport.
+
+Before session consumers start, the server repairs obsolete native-kind model
+preferences in unbound routines, project defaults and fallback lists, reviewer
+settings, and open Factory epics. It chooses the first available enabled named
+connection of the same native kind on the same owner whose catalog contains the
+model. No match leaves the preference unchanged. This is persisted preference
+repair, not runtime fallback. Explicit named references, bound sessions, claimed
+attempt policies, and historical runs are not retargeted. Compare-and-swap writes
+preserve concurrent edits and unknown configuration fields, including file-backed
+settings.
 
 ## Persistence and lifecycle
 

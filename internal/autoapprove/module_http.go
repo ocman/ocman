@@ -262,7 +262,11 @@ func (m *Module) handleJudgeModelOptions(w http.ResponseWriter, r *http.Request)
 	if models == nil {
 		models = []string{}
 	}
-	httpx.WriteJSON(w, map[string]any{"models": models, "default": DefaultJudgeModel})
+	var entries []platforms.SessionModel
+	if m.ModelEntries != nil {
+		entries = m.ModelEntries(r.Context())
+	}
+	httpx.WriteJSON(w, map[string]any{"models": models, "entries": entries, "default": DefaultJudgeModel})
 }
 
 // handleJudgeEndpoint serves GET/POST /api/settings/judge-endpoint. The API

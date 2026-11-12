@@ -198,7 +198,7 @@ export const api = {
   setJudgeDelay: (delayMs: number): Promise<void> => postJSON<void>('/api/settings/judge-delay', { delayMs }, { parseJSON: false }),
   getJudgeModel: () => fetchJSON<{ model: string }>('/api/settings/judge-model').then((r) => r.model),
   setJudgeModel: (model: string): Promise<void> => postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
-  getJudgeModelOptions: (signal?: AbortSignal) => fetchJSON<{ models: string[]; default: string }>('/api/settings/judge-model/options', signal),
+  getJudgeModelOptions: (signal?: AbortSignal) => fetchJSON<{ models: string[]; entries?: import('./api.types').SessionModelEntry[]; default: string }>('/api/settings/judge-model/options', signal),
 };
 
 export type RoutineStatsData = {

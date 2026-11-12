@@ -208,7 +208,7 @@ describe('ProjectSettingsView', () => {
     expect(await screen.findByTestId('project-models-empty')).toBeInTheDocument();
     expect((screen.getByTestId('project-fallthrough-off') as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('combobox', { name: 'Add model' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'anthropic / Claude' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'anthropic/claude' }));
     await waitFor(() => expect(m.setProjectSettings).toHaveBeenCalledWith(DIR, ['anthropic/claude'], false, 'local'));
     expect(items()).toEqual(['anthropic/claude']);
     expect(within(screen.getAllByRole('listitem')[0]).getByTestId('project-default-badge')).toHaveTextContent('Project default');
@@ -219,7 +219,7 @@ describe('ProjectSettingsView', () => {
     m.prepareSession.mockResolvedValue({ models: { hasProviders: false, models: [{ provider: 'hist', model: 'old' }] } });
     renderUI();
     fireEvent.click(await screen.findByRole('combobox', { name: 'Add model' }));
-    expect(await screen.findByRole('option', { name: 'hist / old' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'hist/old' })).toBeInTheDocument();
   });
 
   it('reorders, moving the project default label with the first entry', async () => {

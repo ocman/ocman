@@ -68,7 +68,7 @@ export function useComposerModel({
       const latestUser = messages.findLast((message) => message.data?.role === 'user');
       // New-conversation and project picks may name their platform; this
       // session takes only its own platform's (prefix stripped).
-      const own = (ref: string | undefined) => formatModelRef(undefined, modelRefForSession(ref || '', modelKind));
+      const own = (ref: string | undefined) => formatModelRef(undefined, modelRefForSession(ref || '', modelKind, session?.platform));
       const projectModel = own(session?.projectDefaultModel) || own(getProjectModel(session?.directory || ''));
       return own(session?.id === id && id ? startModels.get(id) : '') ||
         own(sessionModel) ||
@@ -79,7 +79,7 @@ export function useComposerModel({
         projectModel ||
         '';
     },
-    [id, sessionModel, messages, turnStatsMap, session?.id, session?.directory, session?.projectDefaultModel, session?.defaultModel, modelKind],
+    [id, sessionModel, messages, turnStatsMap, session?.id, session?.platform, session?.directory, session?.projectDefaultModel, session?.defaultModel, modelKind],
   );
 
   useEffect(() => {

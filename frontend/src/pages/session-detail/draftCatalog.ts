@@ -2,7 +2,7 @@ import type { PrepareSessionResponse, SessionModelEntry } from '../../lib/api';
 import { availabilityUnknown } from '../../lib/modelCatalogCache';
 import type { CachedProjectSettings, ProjectDefaults } from '../../lib/projectSettingsCache';
 import { formatModelRef } from '../../lib/sessionStatus';
-import { qualifyModelRef } from '../../lib/modelRef';
+import { basePlatform, qualifyModelRef, splitModelRef } from '../../lib/modelRef';
 
 export type DraftCatalog = PrepareSessionResponse & { defaults?: ProjectDefaults };
 
@@ -26,8 +26,13 @@ export function draftDefaultModel(catalog: DraftCatalog | undefined, remembered:
 export function prepareDraftCatalog(result: PrepareSessionResponse, settings: CachedProjectSettings): DraftCatalog {
   // Catalogs can contain aliases rather than every supported custom model.
   // Only implicit defaults need this provider check; explicit picks stay intact.
-  const compatibleModel = (model: string | undefined) => eligibleDefault(result, model) && model && result.models.models.some((entry) =>
-    model.startsWith(qualifyModelRef(entry.platform, `${entry.provider}/`)) && entry.isAvailable !== false) ? model : '';
+  const compatibleModel = (model: string | undefined) => {
+    if (!model) return '';
+    const ref = splitModelRef(model);
+    const own = ref.platform === basePlatform(result.platform) ? qualifyModelRef(result.models.models[0]?.platform, ref.model) : model;
+    return eligibleDefault(result, own) && result.models.models.some((entry) =>
+      own.startsWith(qualifyModelRef(entry.platform, `${entry.provider}/`)) && entry.isAvailable !== false) ? model : '';
+  };
   const compatibleAgent = (name: string | undefined) => name && result.agents.some((agent) =>
     agent.name === name && agent.mode !== 'subagent') ? name : '';
   return {

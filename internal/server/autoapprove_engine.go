@@ -34,6 +34,7 @@ func (s *Server) newAutoapproveModule(engine autoapprove.Deps) *autoapprove.Modu
 		DefaultEnabled: s.AutoApproveDefault,
 		OpenCode:       s.openCodeEnabled,
 		Watchers:       s.openCodeWatchers,
+		ModelEntries:   s.reviewerModelEntries,
 	})
 }
 
@@ -65,6 +66,7 @@ func (s *Server) autoapproveEngineDepsFor(platformID platforms.ID, resolve func(
 			return session.ParentID, true
 		},
 		OpencodePlatform: resolve,
+		ReviewerPlatform: func() platforms.Platform { return s.reviewerPlatform(resolve) },
 		BroadcastPermissionResolved: func(platform, session, request, reason string) {
 			s.onAgentPromptResolved(platform, session, "permission", request)
 			s.broadcastPermissionResolved(platform, session, request, reason)
@@ -120,7 +122,7 @@ func (s *Server) autoapproveEngineDepsFor(platformID platforms.ID, resolve func(
 	}
 	// Without a reachable OpenCode instance, a platform's own judge decides (AD-8).
 	if s.registry != nil {
-		deps.OpenCodeDisabled = resolve() == nil
+		deps.OpenCodeDisabled = s.reviewerPlatform(resolve) == nil
 		for _, p := range s.registry.Platforms() {
 			if j, ok := p.(interface{ PermissionJudge() autoapprove.Judge }); ok {
 				deps.FallbackJudge = j.PermissionJudge()

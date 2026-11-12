@@ -3,6 +3,7 @@ import { api, type NewSessionTarget, type SessionModelsResponse } from '../../li
 import { cacheNewSessionCatalog, getNewSessionCatalog } from '../../lib/newSessionCatalogCache';
 import { loadProjectSettings } from '../../lib/projectSettingsCache';
 import { prepareDraftCatalog, type DraftCatalog } from './draftCatalog';
+import { basePlatform, splitModelRef } from '../../lib/modelRef';
 
 // Optional model discovery enriches the picker, never the submission gate.
 export function useDraftCatalog(target: NewSessionTarget, key: string, request: string): {
@@ -19,7 +20,10 @@ export function useDraftCatalog(target: NewSessionTarget, key: string, request: 
     Promise.all([
       api.prepareSession({ ...target, selectedOnly: true }, controller.signal),
       loadProjectSettings(directory, remoteId),
-    ]).then(([result, settings]) => {
+    ]).then(async ([initial, settings]) => {
+      const preferred = splitModelRef(settings.defaults?.model || initial.projectDefaultModel || '').platform;
+      const selected = preferred && preferred.startsWith('cnx_') && !platform && basePlatform(initial.platform) !== preferred;
+      const result = selected ? await api.prepareSession({ ...target, platform: !remoteId || remoteId === 'local' ? preferred : `r-${remoteId}:${preferred}`, selectedOnly: true }, controller.signal) : initial;
       if (controller.signal.aborted) return;
       const catalog = prepareDraftCatalog(result, settings);
       cacheNewSessionCatalog(key, catalog);

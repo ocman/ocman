@@ -5,15 +5,17 @@ import { Drawer } from '../components/Drawer';
 import { InlineAlert } from '../components/InlineAlert';
 import { ModalFooter } from '../components/ModalFooter';
 import { SearchSelect } from '../components/SearchSelect';
+import { ModelSelect } from '../components/ModelSelect';
 import { PermissionRulesEditor } from '../components/PermissionRulesEditor';
 import { useMachinePlatforms } from '../lib/useCapabilities';
-import { basePlatform, modelRefPlatform, qualifyModelRef } from '../lib/modelRef';
+import { basePlatform, modelRefPlatform, qualifyModelRef, splitModelRef } from '../lib/modelRef';
 import { WebhookTriggerFields } from '../components/WebhookTriggerFields';
-import { api, type PermissionRule, type Routine, type RoutineInput, type RoutineScheduleKind, type RoutineSessionMode } from '../lib/api';
+import { api, type PermissionRule, type Routine, type RoutineInput, type RoutineScheduleKind, type RoutineSessionMode, type SessionModelEntry } from '../lib/api';
 import type { WebhookInbox } from '../lib/api.types';
 import { saveTrigger, triggerFor, type Trigger } from '../lib/webhookFilters';
 import { cleanTitle } from '../lib/format';
 import { useRoutineFormLookups } from '../lib/routineQueries';
+import { useNamedModelCatalog } from '../lib/useNamedModelCatalog';
 import styles from './RoutineEditorDrawer.module.css';
 
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -34,7 +36,8 @@ const emptyForm = (): FormState => ({
 function formFor(routine: Routine): FormState {
   const config = JSON.parse(routine.scheduleConfigJSON || '{}') as { at?: number; cron?: string; timezone?: string };
   return {
-    name: routine.name, prompt: routine.prompt, directory: routine.directory, agent: routine.agent, model: routine.model,
+    name: routine.name, prompt: routine.prompt, directory: routine.directory, agent: routine.agent,
+    model: splitModelRef(routine.model).platform ? routine.model : qualifyModelRef(basePlatform(routine.platform || ''), routine.model),
     sessionMode: routine.sessionMode, sessionId: routine.sessionId, remoteId: routine.remoteId, kind: routine.scheduleKind,
     worktree: routine.worktree ?? false, cleanupWorktree: routine.cleanupWorktree ?? false,
     timeoutMinutes: String(Math.max(1, Math.round((routine.nextDueAt - routine.updatedAt) / 60_000))),
@@ -85,7 +88,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const [editing, setEditing] = useState(routine?.id);
   const [rules, setRules] = useState(() => routine ? parsePermissionRules(routine.permissionRulesJSON) : []);
   const [trigger, setTrigger] = useState<Trigger>(() => triggerFor(routine?.id, inboxes));
-  const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as string[], platform: '' });
+  const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as SessionModelEntry[], platform: '' });
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -99,10 +102,12 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   // offers every platform's models on the machine, and the model's platform
   // supplies the agents (the backend runs the routine on the model's platform).
   const machinePlatforms = useMachinePlatforms(form.remoteId || 'local');
+  const namedCatalog = useNamedModelCatalog(form.sessionMode === 'existing' ? '' : form.directory, form.remoteId || 'local', catalog.models);
+  const modelEntries = form.sessionMode === 'existing' ? catalog.models : namedCatalog.entries;
   const modelPlatform = machinePlatforms.find((p) => basePlatform(p.id) === modelRefPlatform(form.model))?.id;
   useEffect(() => {
     let active = true;
-    const done = (agents: string[], models: string[], platform = '') => { if (active) setCatalog({ agents, models, platform }); };
+    const done = (agents: string[], models: SessionModelEntry[], platform = '') => { if (active) setCatalog({ agents, models, platform }); };
     const load = () => {
       if (!form.directory) { done([], []); return; }
       setCatalogLoading(true);
@@ -110,11 +115,11 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
       if (form.sessionMode === 'existing') {
         const source = sessions.find((session) => session.id === form.sessionId) ?? sessions.find((session) => session.directory === form.directory && (session.remoteId || 'local') === (form.remoteId || 'local') && !session.parentId && !session.stale);
         loading = !source ? Promise.resolve(done([], [])) : Promise.all([api.agents(source.id, undefined, source.platform), api.sessionModels(source.id, source.platform)]).then(
-          ([agents, models]) => done(agents.map((agent) => agent.name), models.models.filter((model) => !model.hidden && (!models.hasProviders || model.isAvailable !== false)).map((model) => `${model.provider}/${model.model}`)));
+          ([agents, models]) => done(agents.map((agent) => agent.name), models.models.filter((model) => !model.hidden && (!models.hasProviders || model.isAvailable !== false))));
       } else {
         loading = api.prepareSession({ directory: form.directory, remoteId: form.remoteId || 'local', platform: modelPlatform }).then((prepared) => done(
           prepared.agents.filter((agent) => agent.mode !== 'subagent').map((agent) => agent.name),
-          prepared.models.models.filter((model) => !model.hidden && (!prepared.models.hasProviders || model.isAvailable !== false)).map((model) => qualifyModelRef(model.platform, `${model.provider}/${model.model}`)), prepared.platform));
+          prepared.models.models.filter((model) => !model.hidden && (!prepared.models.hasProviders || model.isAvailable !== false)), prepared.platform));
       }
       loading.catch(() => done([], [])).finally(() => { if (active) setCatalogLoading(false); });
     };
@@ -152,7 +157,6 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
   const selectedSessionKey = form.sessionId ? sessionKey(form.remoteId, form.sessionId) : '';
   if (selectedSessionKey && !sessionOptions.some((option) => option.value === selectedSessionKey)) sessionOptions.unshift({ value: selectedSessionKey, label: form.sessionId });
   const agentOptions = ['', ...new Set([...catalog.agents, form.agent].filter(Boolean))].map((value) => ({ value, label: value || 'Default agent' }));
-  const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((value) => ({ value, label: value || 'Default model' }));
 
   return <form onSubmit={submit}>
       {shownError && <InlineAlert>{shownError}</InlineAlert>}
@@ -190,7 +194,7 @@ export function RoutineEditorForm({ routine, inboxes, onClose, onSaved, onRefres
               if (session) setForm({ ...form, sessionId: session.id, remoteId: session.remoteId || 'local' });
             }} /></div>}
             <div className={styles.field}><span>Agent</span><SearchSelect value={form.agent} options={agentOptions} ariaLabel="Agent" placeholder="Default agent" searchLabel="Search agents" disabled={busy || catalogLoading || !form.directory} onChange={(agent) => setForm({ ...form, agent })} /></div>
-            <div className={styles.field}><span>Model</span><SearchSelect value={form.model} options={modelOptions} ariaLabel="Model" placeholder="Default model" searchLabel="Search models" disabled={busy || catalogLoading || !form.directory} onChange={(model) => setForm({ ...form, model, agent: !model || !catalog.platform || modelRefPlatform(model) === basePlatform(catalog.platform) ? form.agent : '' })} /></div>
+            <div className={styles.field}><span>Model</span><ModelSelect value={form.model} models={[]} modelEntries={modelEntries} disabled={busy || catalogLoading || namedCatalog.loading || !form.directory} onChange={(model) => setForm({ ...form, model, agent: !model || !catalog.platform || modelRefPlatform(model) === basePlatform(catalog.platform) ? form.agent : '' })} />{namedCatalog.error && <small role="alert">Some platform model catalogs could not be loaded.</small>}</div>
           </div>
         </details>
         <details className={styles.group}>

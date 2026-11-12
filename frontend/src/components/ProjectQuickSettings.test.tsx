@@ -31,7 +31,7 @@ it('loads on demand, saves only defaults, and invalidates cached settings', asyn
   expect(api.prepareSession).toHaveBeenCalledWith({ directory: '/src/.worktrees/repo/wt', remoteId: 'machine' }, expect.any(AbortSignal));
   expect(fetchJSON).toHaveBeenCalledWith('/api/project/settings?dir=%2Fsrc%2Frepo&remoteId=machine');
   await userEvent.click(screen.getByRole('combobox', { name: 'Default model' }));
-  await userEvent.click(screen.getByRole('option', { name: 'p / m' }));
+  await userEvent.click(screen.getByRole('option', { name: 'p/m' }));
   await userEvent.click(screen.getByRole('combobox', { name: 'Default agent' }));
   expect(screen.queryByRole('option', { name: 'helper' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('option', { name: 'plan' }));
@@ -149,10 +149,10 @@ it.each([true, false])('keeps a reopened form and its edits when an earlier dism
   await userEvent.keyboard('{Escape}');
   await open();
   await userEvent.click(screen.getByRole('combobox', { name: 'Default model' }));
-  await userEvent.click(screen.getByRole('option', { name: 'p / m' }));
+  await userEvent.click(screen.getByRole('option', { name: 'p/m' }));
   await act(async () => finish());
   expect(screen.getByRole('dialog')).toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: 'Default model' })).toHaveTextContent('p / m');
+  expect(screen.getByRole('combobox', { name: 'Default model' })).toHaveTextContent('p/m');
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   // The persisted mutation still invalidates cached preferences after dismissal.
   await loadProjectSettings('/repo');

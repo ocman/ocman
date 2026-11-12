@@ -12,6 +12,9 @@ import (
 // watchers, archive jobs and feature workers cannot accidentally bypass
 // the preparation fence even though the HTTP application is already serving.
 func (s *Server) startSessionServices(ctx context.Context, workers *sync.WaitGroup) error {
+	if err := s.repairModelConfigurations(ctx); err != nil && ctx.Err() == nil {
+		return err
+	}
 	if err := s.startModules(ctx, workers); err != nil {
 		return err
 	}

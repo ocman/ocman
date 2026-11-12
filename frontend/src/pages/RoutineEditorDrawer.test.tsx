@@ -4,10 +4,11 @@ import { screen, waitFor } from '@testing-library/react';
 import { renderWithQuery } from '../test/renderWithQuery';
 import userEvent from '@testing-library/user-event';
 import { api, type Routine } from '../lib/api';
+import { useMachinePlatforms } from '../lib/useCapabilities';
 import { RoutineEditorForm } from './RoutineEditorDrawer';
 
 vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), prepareSession: vi.fn(), routines: { create: vi.fn(), update: vi.fn() }, webhookInboxes: { subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
-vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: () => [] }));
+vi.mock('../lib/useCapabilities', () => ({ useMachinePlatforms: vi.fn(() => []) }));
 
 const routine: Routine = {
   id: 'r', name: 'Check', prompt: 'Inspect', directory: '/repo', remoteId: 'local', agent: '', model: '',
@@ -18,10 +19,46 @@ const routine: Routine = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(useMachinePlatforms).mockReturnValue([]);
   vi.mocked(api.projects).mockResolvedValue([]);
   vi.mocked(api.sessions).mockResolvedValue([]);
   vi.mocked(api.prepareSession).mockResolvedValue({ agents: [], commands: [], models: { models: [] } } as never);
   vi.mocked(api.routines.update).mockResolvedValue(routine);
+});
+
+it('repairs a retired platform by selecting a model from a named platform tab', async () => {
+  vi.mocked(useMachinePlatforms).mockReturnValue([{ id: 'work', displayName: 'Work' }, { id: 'personal', displayName: 'Personal' }] as never);
+  vi.mocked(api.prepareSession).mockResolvedValue({
+    platform: 'work', agents: [{ name: 'reviewer', mode: 'primary' }],
+    models: { hasProviders: true, models: [
+      { platform: 'work', platformName: 'Work', provider: 'openai', model: 'gpt-review', modelName: 'Review model', isAvailable: true },
+      { platform: 'personal', platformName: 'Personal', provider: 'openai', model: 'gpt-review', isAvailable: true },
+      { platform: 'work', provider: 'openai', model: 'hidden', hidden: true },
+      { platform: 'work', provider: 'openai', model: 'unavailable', isAvailable: false },
+    ] },
+  } as never);
+  const user = userEvent.setup();
+  editor({ ...routine, platform: 'opencode', model: 'openai/gpt-review', agent: 'old-reviewer' });
+  await user.click(screen.getByText('Session and model'));
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).not.toBeDisabled());
+  await user.click(screen.getByRole('combobox', { name: 'Model' }));
+  await user.click(screen.getByRole('tab', { name: 'Personal' }));
+  expect(screen.queryByRole('option', { name: /hidden|unavailable/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('option', { name: /openai\/gpt-review/ }));
+  await waitFor(() => expect(api.prepareSession).toHaveBeenLastCalledWith({ directory: '/repo', remoteId: 'local', platform: 'personal' }));
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith('r', expect.objectContaining({ model: 'personal:openai/gpt-review', agent: '' })));
+});
+
+it.each([
+  ['work', 'openai/gpt-review', 'work:openai/gpt-review'],
+  ['r-box:work', 'openai/gpt-review', 'work:openai/gpt-review'],
+  ['work', 'work:openai/gpt-review', 'work:openai/gpt-review'],
+  ['opencode', 'openai/gpt-review', 'openai/gpt-review'],
+])('preserves the saved model platform: %s, %s', async (platform, model, expected) => {
+  editor({ ...routine, platform, model });
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith('r', expect.objectContaining({ model: expected })));
 });
 
 function editor(value = routine) {

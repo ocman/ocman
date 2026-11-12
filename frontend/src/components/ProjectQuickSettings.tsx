@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { api, postJSON } from '../lib/api';
+import { api, postJSON, type SessionModelEntry } from '../lib/api';
+import { ModelSelect } from './ModelSelect';
+import { useNamedModelCatalog } from '../lib/useNamedModelCatalog';
 import { clearSettingsCache, loadProjectSettings, type ProjectDefaults } from '../lib/projectSettingsCache';
 import { Button, SelectField } from './Control';
 import { SearchSelect, type SearchSelectOption } from './SearchSelect';
@@ -33,7 +35,8 @@ export function ProjectQuickSettings({ directory, remoteId = 'local', children, 
 
 function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: string; remoteId: string; onClose: () => void }) {
   const [defaults, setDefaults] = useState<ProjectDefaults>();
-  const [models, setModels] = useState<SearchSelectOption[]>([]);
+  const [models, setModels] = useState<SessionModelEntry[]>([]);
+  const catalog = useNamedModelCatalog(directory, remoteId, models);
   const [agents, setAgents] = useState<SearchSelectOption[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -50,7 +53,7 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
       .then(([settings, catalog]) => {
         if (controller.signal.aborted) return;
         setDefaults(settings.defaults || { model: '', agent: '', worktree: '' });
-        setModels(catalog.models.models.map((m) => ({ value: `${m.provider}/${m.model}`, label: `${m.providerName || m.provider} / ${m.modelName || m.model}` })));
+        setModels(catalog.models.models);
         const primaryAgents = catalog.agents.filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => a.name);
         const names = primaryAgents.length ? primaryAgents : [...new Set(['build', 'plan', settings.defaultAgent].filter(Boolean))];
         setAgents(names.map((name) => ({ value: name, label: name })));
@@ -78,7 +81,8 @@ function ProjectDefaultsForm({ directory, remoteId, onClose }: { directory: stri
     {!defaults ? <>{!error ? <p role="status">Loading…</p> : <Button type="button" onClick={() => { setError(''); setAttempt(attempt + 1); }}>Retry</Button>}</> : <>
       <fieldset disabled={saving}>
         <SettingRow block label="Default model">
-          <SearchSelect value={defaults.model} options={options(models, defaults.model)} ariaLabel="Default model" placeholder="Use inherited default" searchLabel="Search models" disabled={saving} onChange={(model) => setDefaults({ ...defaults, model })} />
+          <ModelSelect value={defaults.model} models={[]} modelEntries={catalog.entries} ariaLabel="Default model" defaultLabel="Use inherited default" disabled={saving || catalog.loading} onChange={(model) => setDefaults({ ...defaults, model })} />
+          {catalog.error && <small role="alert">Some platform model catalogs could not be loaded.</small>}
         </SettingRow>
         <SettingRow block label="Default agent">
           <SearchSelect value={defaults.agent} options={options(agents, defaults.agent)} ariaLabel="Default agent" placeholder="Use inherited default" searchLabel="Search agents" disabled={saving} onChange={(agent) => setDefaults({ ...defaults, agent })} />
