@@ -150,6 +150,34 @@ describe('NewConversation', () => {
     }
   });
 
+  it('routes a cross-platform model pick to the sole matching named connection', async () => {
+    mocks.namedPlatforms = true;
+    queryClient.clear();
+    const connections = [
+      { id: 'cnx_work', kind: 'codex', name: 'Work', enabled: true, status: 'ready' },
+      { id: 'cnx_claude', kind: 'claudecode', name: 'Claude', enabled: true, status: 'ready' },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ supported: true, connections }), { headers: { 'Content-Type': 'application/json' } })));
+    mocks.prepare.mockResolvedValue({ platform: 'r-machine:cnx_work', agents: [], commands: [],
+      defaultModel: 'codex:openai/model', models: { hasProviders: true, models: [{ platform: 'codex', provider: 'openai', model: 'model' }] } });
+    const view = mount({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:cnx_work' });
+    try {
+      await ready();
+      await waitFor(() => expect(composer.modelPicker?.tabs).toBeDefined());
+      act(() => composer.onModelChange!('claudecode:anthropic/sonnet'));
+      expect(screen.queryByText('Choose a connection for this model before changing platforms.')).not.toBeInTheDocument();
+      expect(navigate).toHaveBeenLastCalledWith(expect.stringContaining('platform=r-machine%3Acnx_claude'));
+      expect(composer.selectedModel).toBe('claudecode:anthropic/sonnet');
+      await act(() => composer.onSend!('Use Claude'));
+      expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ platform: 'r-machine:cnx_claude',
+        send: expect.objectContaining({ model: 'claudecode:anthropic/sonnet' }) }));
+    } finally {
+      view.unmount();
+      vi.unstubAllGlobals();
+      queryClient.clear();
+    }
+  });
+
   it.each([false, true])('applies a chosen permission mode at creation, else keeps defaults (chosen=%s)', async (chosen) => {
     mocks.caps = { shellExec: true, permissionRules: true } as typeof mocks.caps;
     try {

@@ -14,7 +14,20 @@ describe('model and connection routing', () => {
     expect(connectionForModel('codex:openai/gpt', 'cnx_work', 'local', connections, [])).toBe('cnx_work');
     expect(connectionForModel('codex:openai/gpt', 'r-box:cnx_work', 'box', connections, [])).toBe('r-box:cnx_work');
   });
-  it('never invents a sibling default or switches kind in named mode', () => {
+  it('switches kind only when the destination account is unambiguous and ready', () => {
+    const claude: PlatformConnection = { ...connections[0], id: 'cnx_claude', kind: 'claudecode' };
+    for (const owner of ['local', 'box']) {
+      const prefix = owner === 'local' ? '' : 'r-box:';
+      expect(connectionForModel('claudecode:anthropic/opus', `${prefix}cnx_work`, owner, [...connections, claude], [])).toBe(`${prefix}cnx_claude`);
+    }
+    for (const unavailable of [{ ...claude, enabled: false }, { ...claude, status: 'error' as const }]) {
+      expect(connectionForModel('claudecode:anthropic/opus', 'cnx_work', 'local', [...connections, unavailable], [])).toBeUndefined();
+    }
+    const sibling = { ...claude, id: 'cnx_other', enabled: false };
+    expect(connectionForModel('claudecode:anthropic/opus', 'cnx_work', 'local', [...connections, claude, sibling], [])).toBeUndefined();
+    expect(connectionForModel('codex:openai/gpt', claude.id, 'local', [...connections, claude], [])).toBeUndefined();
+  });
+  it('never invents an account for a missing selection or unavailable kind', () => {
     expect(connectionForModel('codex:openai/gpt', undefined, 'local', connections, [])).toBeUndefined();
     expect(connectionForModel('claudecode:anthropic/opus', 'cnx_work', 'local', connections, [{ id: 'claudecode' }])).toBeUndefined();
     expect(connectionForModel('codex:openai/gpt', 'cnx_removed', 'local', connections, [])).toBeUndefined();
