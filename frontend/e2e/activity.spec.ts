@@ -160,20 +160,31 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 
   });
 }
 
-test('task rows stay compact and open details without closing the activity modal', async ({ mockedPage: page }) => {
+test('task rows stay compact and expand run history without closing the activity modal', async ({ mockedPage: page }) => {
   await page.route('/api/background-tasks?*', (route) => route.fulfill({ json: [{
     id: 'sync', title: 'Sync history', kind: 'conversation.history', ownerId: 'local', status: 'running',
     progress: { phase: 'Checking sessions', completed: 3, total: 5, unit: 'sessions', counters: { imported: 2 } },
-    createdAt: 1000, updatedAt: 2000,
+    createdAt: 3000, updatedAt: 4000,
+  }, {
+    id: 'sync-old', title: 'Sync history', kind: 'conversation.history', ownerId: 'local', status: 'failed',
+    progress: { phase: 'Checking sessions', completed: 0, total: null, counters: {} },
+    createdAt: 1000, updatedAt: 2000, error: 'Previous scan failed',
   }] }));
   await page.goto('/sessions?activity=tasks');
   const row = page.getByRole('button', { name: /Sync history/ });
   await expect(row).toBeVisible();
   await expect(page.getByRole('list', { name: 'Background tasks' })).toHaveCount(1);
+  await expect(row).toContainText('2 runs');
+  await expect(row).toHaveAttribute('aria-expanded', 'false');
   await expect(row.getByRole('progressbar')).toHaveAttribute('value', '3');
   expect((await row.boundingBox())!.height).toBeLessThanOrEqual(32);
   await row.click();
-  const details = page.getByRole('dialog', { name: 'Details for Sync history' });
+  const details = page.getByRole('region', { name: 'History for Sync history' });
+  await expect(row).toHaveAttribute('aria-expanded', 'true');
+  const runs = details.getByRole('listitem');
+  await expect(runs).toHaveCount(2);
+  await expect(runs.nth(0)).toContainText('Running');
+  await expect(runs.nth(1)).toContainText('Previous scan failed');
   await expect(details.getByText('imported: 2')).toBeVisible();
   await expect(details.getByRole('progressbar')).toHaveAttribute('value', '3');
   expect(await details.evaluate((panel) => {
@@ -181,8 +192,10 @@ test('task rows stay compact and open details without closing the activity modal
     return panel.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
   })).toBe(true);
   await details.getByText('imported: 2').click({ trial: true });
-  await page.keyboard.press('Escape');
+  await row.focus();
+  await row.press('Enter');
   await expect(details).not.toBeVisible();
+  await expect(row).toHaveAttribute('aria-expanded', 'false');
   await expect(row).toBeFocused();
   await expect(page.getByRole('dialog', { name: 'Activity', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
