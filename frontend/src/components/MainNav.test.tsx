@@ -2,7 +2,8 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
-import type { NotifyEntry } from '../lib/api';
+import type { NotifyEntry, Session } from '../lib/api';
+import { useSidebarSessionList } from '../lib/sessionsCache';
 import { useNotifySnapshot } from '../lib/useNotifyData';
 import { useUiStore } from '../lib/uiStore';
 import { MainNav } from './MainNav';
@@ -10,6 +11,7 @@ import { useInbox } from '../lib/queries';
 
 vi.mock('../lib/queries', () => ({ useInbox: vi.fn() }));
 vi.mock('../lib/useNotifyData', () => ({ useNotifySnapshot: vi.fn() }));
+vi.mock('../lib/sessionsCache', () => ({ useSidebarSessionList: vi.fn() }));
 vi.mock('../pages/SubscriptionUsage', () => ({ SubscriptionUsageContent: () => null }));
 vi.mock('../features', () => ({ featureNav: [], featureNavigation: [], featureFooterNavigation: [] }));
 vi.mock('./PhoneNavigation', () => ({ PhoneNavigation: ({ unreadSessions, unreadTotal }: { unreadSessions: number; unreadTotal: number }) => <><output aria-label="Phone unread sessions">{unreadSessions}</output><output aria-label="Phone unread inbox">{unreadTotal}</output></> }));
@@ -27,7 +29,8 @@ function mount(onMobileClose?: () => void) {
 }
 beforeEach(() => {
   vi.mocked(useInbox).mockReturnValue({ data: { items: [{ id: 'new' }], unreadTotal: 7 } } as never);
-  useUiStore.setState({ mainNavCollapsed: false });
+  useUiStore.setState({ mainNavCollapsed: false, sidebarView: 'projects' });
+  vi.mocked(useSidebarSessionList).mockReturnValue([]);
   snapshot([]);
 });
 
@@ -107,4 +110,50 @@ it('updates and clears the badge when sessions are acknowledged, preserving Home
   snapshot([]);
   page.rerender(<MemoryRouter><MainNav /></MemoryRouter>);
   expect(screen.getByRole('link', { name: 'Home' })).toHaveTextContent(/^Home$/);
+});
+
+it('does not count notification-only history hidden from the recent sidebar', () => {
+  useUiStore.setState({ sidebarView: 'recent' });
+  snapshot([{ ...unread, id: 'old-factory', status: 'interrupted' }]);
+  vi.mocked(useSidebarSessionList).mockReturnValue([
+    { ...unread, id: 'running', status: 'busy' },
+    { ...unread, id: 'viewed', seen: true },
+  ] as Session[]);
+  mount();
+  expect(screen.getByRole('link', { name: 'Home' })).toHaveTextContent(/^Home$/);
+  expect(screen.getByLabelText('Phone unread sessions')).toHaveTextContent('0');
+});
+
+it('counts only actionable recent sidebar rows using their current state', () => {
+  useUiStore.setState({ sidebarView: 'recent' });
+  snapshot([unread, ...['stale', 'viewed', 'factory', 'child', 'routine', 'plugin', 'archive', 'sleeping']
+    .map(id => ({ ...unread, id, status: 'interrupted' })),
+  { ...unread, id: 'prompt', seen: true, pendingQuestion: true }]);
+  vi.mocked(useSidebarSessionList).mockReturnValue([
+    unread,
+    { ...unread, id: 'stale', status: 'busy' },
+    { ...unread, id: 'viewed', seen: true },
+    { ...unread, id: 'factory', factoryAttemptId: 'attempt' },
+    { ...unread, id: 'child', parentId: 'factory' },
+    { ...unread, id: 'routine', routineId: 'run' },
+    { ...unread, id: 'plugin', origin: 'plugin' },
+    { ...unread, id: 'archive', archived: true },
+    { ...unread, id: 'sleeping', snoozedUntil: Date.now() + 60_000 },
+    { ...unread, id: 'prompt', seen: true, pendingQuestion: true },
+  ] as Session[]);
+  mount();
+  expect(screen.getByRole('link', { name: 'Home, 2 unread sessions' })).toHaveTextContent('2');
+  expect(screen.getByLabelText('Phone unread sessions')).toHaveTextContent('2');
+});
+
+it('clears recent badges on a sidebar update without waiting for the notify poll', () => {
+  useUiStore.setState({ sidebarView: 'recent' });
+  snapshot([unread]);
+  vi.mocked(useSidebarSessionList).mockReturnValue([unread] as Session[]);
+  const page = mount();
+  expect(screen.getByRole('link', { name: 'Home, 1 unread sessions' })).toBeInTheDocument();
+  vi.mocked(useSidebarSessionList).mockReturnValue([{ ...unread, status: 'busy' }] as Session[]);
+  page.rerender(<MemoryRouter><MainNav /></MemoryRouter>);
+  expect(screen.getByRole('link', { name: 'Home' })).toHaveTextContent(/^Home$/);
+  expect(screen.getByLabelText('Phone unread sessions')).toHaveTextContent('0');
 });

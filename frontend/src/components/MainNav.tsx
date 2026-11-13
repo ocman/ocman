@@ -3,7 +3,10 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useInbox } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { useNotifySnapshot } from '../lib/useNotifyData';
-import { attentionSessionEntries } from '../lib/sessionAttention';
+import { attentionSessionEntries, recentSessionAttentionEntries } from '../lib/sessionAttention';
+import { useSidebarSessionList } from '../lib/sessionsCache';
+import { useSessionListFilters } from '../lib/useSessionListFilters';
+import { SESSION_FILTER_DEFAULTS } from '../lib/sessionListFilters';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import { Popover } from './Popover';
 import { featureNav, featureNavigation, featureFooterNavigation } from '../features';
@@ -34,7 +37,12 @@ export function MainNav({
   const toggleCollapsed = useUiStore((state) => state.toggleMainNav);
   const inbox = useInbox();
   const notify = useNotifySnapshot();
-  const unreadSessions = attentionSessionEntries(notify?.entries ?? []).length;
+  const sessions = useSidebarSessionList();
+  const sidebarView = useUiStore((state) => state.sidebarView);
+  const { alwaysShowPrompts, showChildren } = useSessionListFilters();
+  const unreadSessions = (sidebarView === 'recent'
+    ? recentSessionAttentionEntries(notify?.entries ?? [], sessions, { ...SESSION_FILTER_DEFAULTS, alwaysShowPrompts, showChildren })
+    : attentionSessionEntries(notify?.entries ?? [])).length;
   const homeLabel = unreadSessions ? `Home, ${unreadSessions} unread sessions` : 'Home';
   const usageTrigger = useRef<HTMLButtonElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);

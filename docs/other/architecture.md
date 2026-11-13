@@ -1626,6 +1626,7 @@ flowchart TD
     Stores -->|visible pane reads; session rows carry Factory tags| API[lib/ API client]
     Stores --> SSE[SSE subscription]
     Stores -->|shared notify snapshot: badge + grouped-view attention| Comp
+    Stores -->|recent Home badge: intersect notify with current eligible sidebar rows| Shell
     Pages --> Scopes[Ref-counted activity scopes]
     Comp --> Scopes
     Scopes --> Reporter[Client activity lease reporter]
@@ -1689,6 +1690,10 @@ flowchart LR
   never injects notification-only rows. Attention rows in grouped view bypass history filters and collapsed
   projects. Sessions already visible in ordinary rows are not repeated; hidden
   rows leave the group when the shared snapshot acknowledges or resolves them.
+  In recent view, desktop and phone Home badges intersect that snapshot with
+  the current owner-qualified sidebar rows and shared visibility filters. Missing,
+  hidden, viewed or now-running rows cannot leave an orphaned completion count.
+  Finite background tasks defer completion counts; declared services do not.
 - **Feature registry.** `src/features/index.tsx` is a static list in which
   Factory, routines and artifacts contribute their routes, with layout tier and
   header titles, plus their main-nav link. Plugins, auto-approve, sharing and
