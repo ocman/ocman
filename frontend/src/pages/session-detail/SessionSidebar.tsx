@@ -151,11 +151,13 @@ export const SessionSidebar = memo(function SessionSidebar({
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
   const draftSessionIds = useDraftSessionIds();
+  // Keep ancestry even when a parent is filtered out or in another section.
+  const sessionDepths = new Map(nestSessions([...stableDrafts.recent, ...stableDrafts.groups.flatMap(group => group.sessions)])
+    .map(({ session, depth }) => [sessionAttentionKey(session), depth]));
   // Sessions hidden by the Factory/routine/plugin filters, including descendants.
   const hiddenSessions = hiddenSessionOrigins(
     [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)], listFilters,
   );
-
   // Reveal the selection on navigation or initial load. Live activity must
   // not repeatedly pull the user away from a manually scrolled position.
   useEffect(() => {
@@ -176,7 +178,6 @@ export const SessionSidebar = memo(function SessionSidebar({
     });
     return () => cancelAnimationFrame(raf);
   }, [activeId, activePlatform, sidebarView, loadingRecentSessions]);
-
   // Share live status, archive and navigation across every session view.
   const navigateRow = useCallback((id: string, platform?: string) => {
     if (stableDrafts.open(id)) return;
@@ -197,7 +198,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       session={sib}
       inGroup={inGroup}
       flat={flat}
-      depth={depth}
+      depth={Math.max(depth, sessionDepths.get(sessionAttentionKey(sib)) ?? 0)}
       active={sib.id === activeId && (!activePlatform || sib.platform === activePlatform)}
       activeId={activeId}
       activeDisplayStatus={stableDrafts.ids.has(sib.id) || sib.id !== activeId ? sib.status : activeDisplayStatus}

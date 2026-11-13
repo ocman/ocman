@@ -112,10 +112,49 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it.each(['recent', 'projects'] as const)('keeps active child indentation when its parent is outside the %s section', (sidebarView) => {
+    const parent = session({ id: 'parent', title: 'Archived parent', archived: true });
+    const child = session({ id: 'child', title: 'Active child', parentId: parent.id, status: 'busy' });
+    const group: SidebarProjectGroup = { directory: '/repo', sessions: [child, parent], lastUpdated: 1, aggregate: { kind: 'busy', count: 1 } };
+    const view = renderSidebar(group, {}, undefined, undefined, undefined, sidebarView);
+    const expectIndented = () => {
+      const row = screen.getByText(child.title).closest('[aria-selected]') as HTMLElement;
+      expect(row).toHaveClass('session-sidebar-item-child');
+      expect(within(row).getByText('└─')).toHaveStyle({ '--depth': '1' });
+    };
+    expectIndented();
+    view.update({ activeId: child.id, activeDisplayStatus: 'busy' });
+    expectIndented();
+    const archivedChild = { ...child, archived: true };
+    view.update({ activeId: child.id, activeDisplayStatus: 'busy', recentSessions: [archivedChild, parent],
+      sidebarProjectGroups: [{ ...group, sessions: [archivedChild, parent] }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Background 1' }));
+    expectIndented();
+    expect(screen.getByText(child.title).closest('[aria-selected]')).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('does not show a system stats footer', () => {
     renderSidebar({ directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'busy', count: 1 } }, {});
     expect(screen.queryByRole('button', { name: /system stats/i })).not.toBeInTheDocument();
   });
+  it.each(['parent', 'creator'] as const)('preserves full %s ancestry when search reveals only the selected grandchild', (link) => {
+    const parent = session({ id: 'parent', title: 'Parent' });
+    const child = session({ id: 'child', title: 'Child', parentId: parent.id });
+    const grandchild = session({ id: 'grandchild', title: 'Selected grandchild', sourceChild: true,
+      ...(link === 'parent' ? { parentId: child.id } : { creator: { platform: child.platform, sessionId: child.id, createdAt: 1 } }) });
+    const group: SidebarProjectGroup = { directory: '/repo', sessions: [grandchild, child, parent], lastUpdated: 1, aggregate: { kind: 'none' } };
+    const view = renderSidebar(group, {}, undefined, undefined, undefined, 'recent');
+    view.update({ activeId: grandchild.id });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no match' } });
+    expect(screen.queryByText(parent.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(child.title)).not.toBeInTheDocument();
+    const row = screen.getByText(grandchild.title).closest('[aria-selected]') as HTMLElement;
+    expect(row).toHaveAttribute('aria-selected', 'true');
+    expect(row).toHaveClass('session-sidebar-item-child');
+    expect(row).not.toHaveClass('flat');
+    expect(within(row).getByText('└─')).toHaveStyle({ '--depth': '2' });
+  });
+
   it('nests cross-project subsession cards with compact native agents in visible navigation order', () => {
     const parent = session({ id: 'ocm_parent', title: 'Implement authentication' });
     const child = session({ id: 'ocm_child', platform: 'another-tool', parentId: parent.id,
