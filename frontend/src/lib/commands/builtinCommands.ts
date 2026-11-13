@@ -25,8 +25,7 @@ export function modelHasVariants(
  * so they exist regardless of whether the platform is live.
  *
  * The fetch path merges this list with platform-provided commands:
- * platform commands always win on conflicts, so a project-supplied
- * `/agent` command can override the built-in description.
+ * Ocman commands always win on conflicts, matching local command dispatch.
  */
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'agent', description: 'Change the active agent (opens a picker)' },

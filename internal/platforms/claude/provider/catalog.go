@@ -44,6 +44,7 @@ type commands struct {
 	dirs                map[string]cachedCommands
 	skills              map[string]map[string]bool
 	named               bool
+	observed            map[string][]string // additional commands reported by system/init
 }
 
 type cachedCommands struct {
@@ -63,7 +64,34 @@ type initModel struct {
 }
 
 func newCommands(opts Options) *commands {
-	return &commands{cli: opts.CLI, plugin: opts.PluginDir, config: opts.ConfigDir, slots: opts.SlotDir, env: opts.childEnv, named: opts.ConnectionAccount, dirs: map[string]cachedCommands{}, skills: map[string]map[string]bool{}}
+	return &commands{cli: opts.CLI, plugin: opts.PluginDir, config: opts.ConfigDir, slots: opts.SlotDir, env: opts.childEnv, named: opts.ConnectionAccount, dirs: map[string]cachedCommands{}, skills: map[string]map[string]bool{}, observed: map[string][]string{}}
+}
+
+func (c *commands) observeCommands(dir string, names []string) {
+	if names == nil {
+		return // older CLIs omit the field
+	}
+	c.mu.Lock()
+	c.observed[dir] = names
+	c.mu.Unlock()
+}
+
+func (c *commands) withObserved(dir string, list []initCommand) []initCommand {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := append([]initCommand{}, list...)
+	seen := map[string]bool{}
+	for _, command := range list {
+		seen[strings.TrimPrefix(command.Name, "/")] = true
+	}
+	for _, name := range c.observed[dir] {
+		name = strings.TrimPrefix(name, "/")
+		if name != "" && !seen[name] {
+			seen[name] = true
+			out = append(out, initCommand{Name: name})
+		}
+	}
+	return out
 }
 
 func (c *commands) list(ctx context.Context, dir string) (cachedCommands, error) {
@@ -141,7 +169,6 @@ func (l *live) catalog(ctx context.Context, dir string) platforms.DirectoryCatal
 	cached, err := l.cmds.list(ctx, dir)
 	if err != nil {
 		log.WithError(err).WithField("directory", dir).Debug("claude command catalog")
-		return cat
 	}
 	if len(cached.models) > 0 {
 		models.Models = nil
@@ -162,7 +189,7 @@ func (l *live) catalog(ctx context.Context, dir string) platforms.DirectoryCatal
 			cat.Agents = append(cat.Agents, platforms.AgentCatalogEntry{Name: a.Name, Description: a.Description, Model: a.Model, Mode: "subagent", Kind: "subagent"})
 		}
 	}
-	for _, c := range cached.list {
+	for _, c := range l.cmds.withObserved(dir, cached.list) {
 		name := strings.TrimPrefix(c.Name, "/")
 		if name == "" {
 			continue

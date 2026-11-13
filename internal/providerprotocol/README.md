@@ -82,9 +82,13 @@ Composer gates creation and sending; rename and account have additional
 protocol capability flags. Rulesets live in ocman (`provider.Rules`), not in
 backends, and no backend holds a native follow-up queue: `SendMessageRequest`
 with a `Delivery` is unsupported. Lifecycle reads are required. Browsing reads
-(`GET /sessions?directory=`, `GET /sessions/{id}` and `GET /catalog`) are served
+(`GET /sessions?directory=` and `GET /sessions/{id}`) are served
 only by backends whose platform browses through the adapter; Codex reads its
-own app-server instead and answers them 501.
+own app-server instead and answers them 501. Codex's `GET /catalog` returns only
+cached ACP command announcements for the requested directory; it never starts
+execution. A null command list means no announcement yet, while an empty list
+means the adapter explicitly cleared it. Models and skills still come from the
+read-only app-server.
 
 Busy responses preserve the backend's user-facing message. A 409 with code
 `session_owned_elsewhere` is a definite rejection before turn admission. It

@@ -17,6 +17,8 @@ func (b *backend) serveRead(ctx context.Context, w http.ResponseWriter, r *http.
 	var v any
 	var err error
 	switch {
+	case path == "/catalog":
+		v = &platforms.DirectoryCatalog{Commands: b.acp.directoryCommands(q.Get("directory"))}
 	case path == "/sessions" && q.Get("live") != "":
 		v = b.statuses()
 	case path == "/sessions" && q.Get("runtime") != "":

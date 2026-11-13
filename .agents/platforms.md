@@ -88,9 +88,10 @@ prompt/settings preset.
 one machine-wide supervisor (keyed by `<data>/codex-supervisor`) hosting the
 installed `codex-acp` adapter for execution by default. `CODEX_PATH` pins its
 execution CLI to the native reader's CLI and `CODEX_HOME` is shared explicitly.
-Never fall back to native execution after an ACP error. History, the model and command catalog
-and the account use a separate read-only app-server, so browsing never
-launches the supervisor. Token usage is the one value read from rollout files.
+Never fall back to native execution after an ACP error. History, models, skills
+and the account use a separate read-only app-server. Command catalogs also read
+cached ACP announcements from an already-attached supervisor; browsing never
+launches or resumes execution. Token usage is the one value read from rollout files.
 Native reader connections have no execution handlers or execution mutation helpers.
 Ownership conflicts fail closed, including conflicts with older Ocman supervisors.
 When Codex is enabled, host Doctor checks the CLI, Node.js and installed adapter;

@@ -117,6 +117,11 @@ fail visibly, and process shutdown allows stdin EOF, then SIGTERM, then SIGKILL.
   error instead of waiting. A command
   whose only output is its result text (for example `/cost`) shows that text as
   the reply.
+- **Slash-command discovery.** The menu combines the directory's CLI command
+  catalog with commands reported by an already-running session. Opening `/`
+  refreshes the list. Ocman's built-ins override matching platform names in
+  both descriptions and behavior. Commands that require Claude's terminal UI
+  are not available through its SDK.
 - **Reasoning effort.** The composer offers the effort levels your Claude CLI
   reports for the selected model. Selecting an effort passes `--effort` to Claude;
   selecting default leaves the CLI's configured default in effect. Changing it

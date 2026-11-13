@@ -31,7 +31,7 @@ import (
 // with another CLI or an older backend is drained and replaced.
 // mcp-token/v1: supervisors from before the MCP bearer token drain and are
 // replaced, so no session keeps connecting without it.
-const supervisorIdentity = "codex-supervisor/acp-v1-subagents/mcp-token-v1"
+const supervisorIdentity = "codex-supervisor/acp-v1-subagents/mcp-token-v1/command-catalog-v1"
 
 // Config is what New needs from the application.
 type Config struct {

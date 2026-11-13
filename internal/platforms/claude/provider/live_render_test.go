@@ -221,14 +221,14 @@ func TestDirectoryCatalogFromCLI(t *testing.T) {
 	h := serveLive(t, initFixture(t, commands), func(o *Options) { o.PluginDir, o.ConfigDir = plugin, config })
 	cwds := filepath.Join(t.TempDir(), "cwd.log")
 	t.Setenv("FAKE_CLAUDE_CWD_LOG", cwds)
-	h.live.system(&proc{dir: h.dir}, []byte(`{"type":"system","subtype":"init","skills":["ocman:ocman-sessions"],"slash_commands":["review"]}`))
+	h.live.system(&proc{dir: h.dir}, []byte(`{"type":"system","subtype":"init","skills":["ocman:ocman-sessions"],"slash_commands":["review","context"]}`))
 	cat, err := h.adapter.LiveDirectoryCatalog(t.Context(), platforms.DirectoryCatalogRequest{Directory: h.dir})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []platforms.SlashCommandEntry{{Name: "review", Description: "Review the diff", Source: "command"},
 		{Name: "ocman:ocman-sessions", Description: "ocman sessions", Source: "skill"}, {Name: "compact", Source: "command"},
-		{Name: "ocman:ocman-routines", Description: "ocman routines", Source: "skill"}, {Name: "user-skill", Source: "skill"}}
+		{Name: "ocman:ocman-routines", Description: "ocman routines", Source: "skill"}, {Name: "user-skill", Source: "skill"}, {Name: "context", Source: "command"}}
 	if len(cat.Models.Models) != 3 || len(cat.Commands) != len(want) {
 		t.Fatalf("catalog = %+v", cat)
 	}

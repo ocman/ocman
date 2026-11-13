@@ -61,3 +61,16 @@ it('keeps selector skeletons while loading a catalog without named platform tabs
   expect(screen.queryByRole('button', { name: 'Model' })).not.toBeInTheDocument();
   expect(screen.getByRole('textbox')).toBeEnabled();
 });
+
+it('keeps typed /variants local even when the platform advertises the same command', () => {
+  Element.prototype.scrollIntoView = vi.fn();
+  const onCommand = vi.fn();
+  render(<Composer isRunning={false} onCommand={onCommand}
+    selectedModel="test/model" modelEntries={[{ provider: 'test', model: 'model', reasoning: ['high'] }]}
+    commands={[{ name: 'variants', description: 'Platform variants', source: 'command' }]} />);
+  const input = screen.getByRole('textbox');
+  fireEvent.input(input, { target: { value: '/variants ' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(onCommand).not.toHaveBeenCalled();
+  expect(screen.getByText('high')).toBeInTheDocument();
+});

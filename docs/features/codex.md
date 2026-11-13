@@ -85,8 +85,12 @@ account metadata and token accounting.
   and accounting before idle. File edits show as patches.
 - **Slash commands.** `/review` reviews your uncommitted changes, or follows
   the instructions you type after it; `/compact` summarizes the conversation
-  to free context. Every enabled skill Codex reports for the session's
-  directory is offered too: `/<skill> <prompt>` sends the prompt with that
+  to free context. After a session starts or resumes, the menu also includes
+  every command advertised by the installed ACP adapter. Opening the `/` menu
+  refreshes this list. Terminal-only commands not exposed by ACP are unavailable.
+  Ocman's own commands take precedence over platform commands with the same name,
+  including their descriptions and behavior. Every enabled skill Codex reports
+  for the session's directory is offered too: `/<skill> <prompt>` sends the prompt with that
   skill attached. Compaction and reviews run as turns, so the session shows as
   busy until they finish.
 - **Fork.** `/fork` copies the whole thread through ACP. Forking at a selected

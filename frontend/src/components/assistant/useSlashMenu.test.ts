@@ -47,15 +47,33 @@ describe('useSlashMenu', () => {
     expect(result.current.commands.some((c) => c.name === 'old-skill')).toBe(false);
   });
 
-  it('merges platform commands over built-ins and filters on input', async () => {
+  it('refreshes live announcements when the menu opens, not on each keystroke', async () => {
+    commands.mockResolvedValue([]);
+    const { result } = renderHook(() => useSlashMenu('s1', vis, undefined, 'owner:platform'));
+    await waitFor(() => expect(commands).toHaveBeenCalled());
+    commands.mockClear();
+    commands.mockResolvedValue([{ name: 'status', source: 'command' }]);
+    act(() => result.current.syncToInput('/'));
+    await waitFor(() => expect(result.current.commands.some((c) => c.name === 'status')).toBe(true));
+    expect(commands).toHaveBeenCalledTimes(1);
+    expect(commands).toHaveBeenCalledWith('s1', undefined, 'owner:platform');
+    act(() => result.current.syncToInput('/st'));
+    expect(commands).toHaveBeenCalledTimes(1);
+    act(() => result.current.close());
+    act(() => result.current.syncToInput('/'));
+    await waitFor(() => expect(commands).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps Ocman built-ins over platform commands and filters on input', async () => {
     commands.mockResolvedValue([
-      { name: 'model', description: 'platform model' } as SlashCommand,
+      { name: 'model', description: 'platform model', source: 'skill' } as SlashCommand,
       { name: 'my-skill', description: 'x', source: 'skill' } as SlashCommand,
     ]);
     const { result } = renderHook(() => useSlashMenu('s1', vis));
     await waitFor(() => expect(result.current.commands.some((c) => c.name === 'my-skill')).toBe(true));
     expect(result.current.commands.filter((c) => c.name === 'model')).toHaveLength(1);
-    expect(result.current.commands.find((c) => c.name === 'model')?.description).toBe('platform model');
+    expect(result.current.commands.find((c) => c.name === 'model')?.description).toBe('Change the active model (opens a picker)');
+    expect(result.current.commands.find((c) => c.name === 'model')?.source).toBeUndefined();
     expect(result.current.filtered.some((c) => c.name === 'skills')).toBe(true);
     expect(result.current.filtered.some((c) => c.name === 'variants')).toBe(false);
 

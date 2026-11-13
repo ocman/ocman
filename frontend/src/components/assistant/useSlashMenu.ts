@@ -14,7 +14,7 @@ export interface SlashMenuVisibility {
   runtimeRestart?: boolean;
 }
 
-export function reloadSlashCommands(sessionId: string, platform: string) {
+export function reloadSlashCommands(sessionId: string, platform?: string) {
   window.dispatchEvent(new CustomEvent('oc-slash-commands-reload', { detail: { sessionId, platform } }));
 }
 
@@ -54,12 +54,19 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
     };
   }, [sessionId, platform]);
 
+  // A platform may advertise commands only after its first turn starts.
+  // Refresh on opening the menu, not on every keystroke or via polling.
+  useEffect(() => {
+    if (open && sessionId) reloadSlashCommands(sessionId, platform);
+  }, [open, sessionId, platform]);
+
   // Platform commands come from the session's catalog, or from the caller
-  // when there is no session yet; built-ins fill the rest.
+  // when there is no session yet. Ocman owns conflicting names, including
+  // their descriptions and source, to match the command dispatch path.
   const platformCommands = provided ?? fetched;
   const commands = [
-    ...BUILTIN_COMMANDS.filter((b) => !platformCommands.some((f) => f.name === b.name)),
-    ...platformCommands,
+    ...BUILTIN_COMMANDS,
+    ...platformCommands.filter((f) => !BUILTIN_COMMANDS.some((b) => b.name === f.name)),
   ];
 
   const hasSkills = commands.some((c) => c.source === 'skill');

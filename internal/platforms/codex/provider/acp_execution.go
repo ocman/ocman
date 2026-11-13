@@ -30,8 +30,10 @@ type acpExecution struct {
 	fresh        map[string]bool
 	generation   uint64
 	turns        map[string]*acpTurn
-	children     map[string]acpChild // ACP ID to proven native identity
-	childChanged chan struct{}       // wakes interactions queued behind native identity proof
+	children     map[string]acpChild           // ACP ID to proven native identity
+	childChanged chan struct{}                 // wakes interactions queued behind native identity proof
+	commands     map[string]advertisedCommands // latest commands by ACP root session
+	commandSeq   uint64
 }
 
 type acpTurn struct {
@@ -57,7 +59,7 @@ type acpTurn struct {
 }
 
 func newACPExecution(b *backend) *acpExecution {
-	return &acpExecution{b: b, loaded: map[string]bool{}, loading: map[string]bool{}, fresh: map[string]bool{}, turns: map[string]*acpTurn{}, children: map[string]acpChild{}, childChanged: make(chan struct{})}
+	return &acpExecution{b: b, loaded: map[string]bool{}, loading: map[string]bool{}, fresh: map[string]bool{}, turns: map[string]*acpTurn{}, children: map[string]acpChild{}, childChanged: make(chan struct{}), commands: map[string]advertisedCommands{}}
 }
 
 func (a *acpExecution) conn(ctx context.Context) (*acpexec.Client, error) {
@@ -95,6 +97,7 @@ func (a *acpExecution) conn(ctx context.Context) (*acpexec.Client, error) {
 	}
 	a.mu.Lock()
 	a.generation++
+	a.commands = map[string]advertisedCommands{}
 	generation := a.generation
 	a.mu.Unlock()
 	current := func() bool { a.mu.Lock(); defer a.mu.Unlock(); return a.generation == generation }

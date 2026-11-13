@@ -119,7 +119,7 @@ func buildClaudePlatform(ctx context.Context, store local.ProviderState, dataDir
 	// Include SDK compatibility so pre-SDK supervisors drain before replacement.
 	// The MCP address is not part of this identity (WriteLaunchConfig).
 	runtime.Identity = func() string {
-		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00child-sessions/v2\x00native-permissions/v1\x00mcp-token/v1\x00sdk-py/" + claudecli.SDKVersion + connectionIdentity(opts, dataDir)
+		return opts.CLI + "\x00" + configEnv + "\x00" + pluginDir + "\x00child-sessions/v2\x00native-permissions/v1\x00mcp-token/v1\x00command-catalog/v1\x00sdk-py/" + claudecli.SDKVersion + connectionIdentity(opts, dataDir)
 	}
 	projectsCtx, stop := context.WithCancel(ctx)
 	p.projects = &claudeProjects{ctx: projectsCtx, stop: stop, mgr: &local.ProviderManager{Runtime: runtime, State: store}, rules: rules,

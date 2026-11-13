@@ -44,7 +44,7 @@ func TestNativeReadRoutes(t *testing.T) {
 		t.Fatalf("%d %+v", code, life)
 	}
 	// Browsing reads come from the history app-server, never the supervisor.
-	for _, path := range []string{"/sessions", "/sessions?directory=/repo", "/sessions/thr", "/catalog", "/unknown"} {
+	for _, path := range []string{"/sessions", "/sessions?directory=/repo", "/sessions/thr", "/unknown"} {
 		if code := h.call("GET", path, nil, nil); code != 501 {
 			t.Fatal(path, code)
 		}

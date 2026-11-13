@@ -25,6 +25,10 @@ type acpItem struct {
 
 func (a *acpExecution) update(ctx context.Context, p acp.SessionNotification) error {
 	id := string(p.SessionId)
+	if commands := p.Update.AvailableCommandsUpdate; commands != nil {
+		a.observeCommands(id, commands.AvailableCommands)
+		return nil
+	}
 	a.mu.Lock()
 	turn := a.turns[id]
 	a.mu.Unlock()

@@ -113,6 +113,11 @@ func (a *agent) handle(ctx context.Context, method string, raw json.RawMessage) 
 			_, _ = fmt.Fprintf(f, "%s ACP %s\n", os.Getenv("CODEX_HOME"), raw)
 			_ = f.Close()
 		}
+		_ = a.conn.SendNotification(ctx, "session/update", acp.SessionNotification{SessionId: "thr", Update: acp.SessionUpdate{
+			AvailableCommandsUpdate: &acp.SessionAvailableCommandsUpdate{AvailableCommands: []acp.AvailableCommand{
+				{Name: "status", Description: "Show Codex status"}, {Name: "compact", Description: "Compact Codex history"},
+			}},
+		}})
 		return map[string]any{"sessionId": "thr"}, nil
 	case "session/resume", "session/load", "session/set_config_option", "authenticate":
 		if os.Getenv("FAKE_CODEX_OWNERSHIP_CONFLICT") != "" && method == "session/resume" {

@@ -158,8 +158,9 @@ func (l *live) system(p *proc, raw []byte) {
 	l.subagentEvent(p, raw)
 	l.sdkSystem(p, raw)
 	var s struct {
-		Subtype string   `json:"subtype"`
-		Skills  []string `json:"skills"`
+		Subtype  string   `json:"subtype"`
+		Skills   []string `json:"skills"`
+		Commands []string `json:"slash_commands"`
 	}
 	if json.Unmarshal(raw, &s) != nil {
 		return
@@ -167,6 +168,7 @@ func (l *live) system(p *proc, raw []byte) {
 	switch s.Subtype {
 	case "init":
 		l.cmds.observeSkills(p.dir, s.Skills)
+		l.cmds.observeCommands(p.dir, s.Commands)
 	}
 }
 

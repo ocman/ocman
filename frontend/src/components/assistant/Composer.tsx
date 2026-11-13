@@ -203,13 +203,14 @@ export function Composer({
   };
 
   const openClientCommand = (command: string, args: string) => {
-    if (!['model', 'agent', 'agents', 'help', 'skills', 'routines'].includes(command)) return false;
+    if (!['model', 'agent', 'agents', 'help', 'skills', 'routines', 'variants'].includes(command)) return false;
     clearComposerInput();
     setIsBashMode(false);
     if (command === 'model') openModelPicker(args);
     else if (command === 'agent' || command === 'agents') openAgentPicker(args);
     else if (command === 'help') pickers.help.setOpen(true);
     else if (command === 'skills') openSkillPicker(args);
+    else if (command === 'variants') pickers.reasoning.setOpen(true);
     else openRoutinePicker(args);
     return true;
   };

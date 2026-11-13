@@ -1464,10 +1464,19 @@ flowchart LR
     Reader --> Converter
     Converter --> Spool[Existing supervisor spool]
     ACP -->|verified native child identities + live status| Spool
+    ACP -->|available_commands_update| Executor
 ```
 
 - `platforms/acp` launches an explicit executable, negotiates capabilities and
   supports new/load/resume, prompts and cancellation. It preserves native IDs.
+- Slash-command catalogs stay owner-routed through the Platform. Codex's existing
+  supervisor caches ACP command announcements, scoped to loaded sessions and
+  their directory; transport merges these with read-only skills without starting
+  execution for browsing. Claude prefers an attached supervisor for a directory
+  to include its session-init command names, otherwise using the browsing probe.
+  OpenCode supplies its command and skill APIs. The composer refreshes on menu
+  open and reserves Ocman built-in names, descriptions and execution over all
+  platform catalogs. Terminal-only commands are not synthesized.
 - Its event callback must finish recording each update before returning. A failed
   callback disconnects execution; permissions fail closed without a handler.
 - The wire dispatcher retains session/tool fields on form elicitation requests

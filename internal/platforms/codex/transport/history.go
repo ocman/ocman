@@ -262,7 +262,48 @@ func (p *Platform) LiveDirectoryCatalog(ctx context.Context, req platforms.Direc
 	if out.Commands == nil {
 		out.Commands = codexprovider.Commands(nil)
 	}
+	// Read only the existing supervisor's cached ACP announcements. Catalog
+	// browsing must never launch or resume an execution connection.
+	if adapter := p.current(); adapter != nil {
+		catalog, err := adapter.LiveDirectoryCatalog(ctx, req)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		// A dead or older execution supervisor must not break native model
+		// and skill browsing, or cause a replacement launch from this read.
+		if err == nil && catalog != nil && catalog.Commands != nil {
+			out.Commands = mergeAdvertisedCommands(out.Commands, catalog.Commands)
+		}
+	}
 	return &out, nil
+}
+
+func mergeAdvertisedCommands(base, advertised []platforms.SlashCommandEntry) []platforms.SlashCommandEntry {
+	// The adapter's list is authoritative for built-ins. Keep the read-only
+	// skill catalog's classification and skills absent from the announcement.
+	skills := map[string]platforms.SlashCommandEntry{}
+	for _, command := range base {
+		if command.Source == "skill" {
+			skills[command.Name] = command
+		}
+	}
+	out := make([]platforms.SlashCommandEntry, 0, len(advertised)+len(skills))
+	for _, command := range advertised {
+		if skill, ok := skills[command.Name]; ok {
+			command.Source = "skill"
+			if command.Description == "" {
+				command.Description = skill.Description
+			}
+		}
+		delete(skills, command.Name)
+		out = append(out, command)
+	}
+	for _, command := range base {
+		if _, ok := skills[command.Name]; ok {
+			out = append(out, command)
+		}
+	}
+	return out
 }
 
 // Account reports the signed-in Codex account and its usage windows for
