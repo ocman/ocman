@@ -3,7 +3,9 @@ package statev2
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +32,15 @@ func TestRecentUserMessagesUsesStoredScopeOrderAndProse(t *testing.T) {
 			t.Fatalf("%v %v want %v", got, err, tc.want)
 		}
 	}
+	if got, err := d.ReviewUserMessages(t.Context(), "owner", "opencode", "session", 17); err != nil || got.Limited || !reflect.DeepEqual(got.Messages, []string{"first", "second piece"}) {
+		t.Fatalf("complete prose: %v %v", got, err)
+	}
+	if got, err := d.ReviewUserMessages(t.Context(), "owner", "opencode", "session", 16); err != nil || !got.Limited || !reflect.DeepEqual(got.Messages, []string{"irst", "second piece"}) {
+		t.Fatalf("windowed prose: %v %v", got, err)
+	}
+	if _, err := d.ReviewUserMessages(t.Context(), "owner", "opencode", "session", 0); err == nil {
+		t.Fatal("invalid byte budget accepted")
+	}
 	for _, scope := range [][3]string{{"other", "opencode", "session"}, {"owner", "other", "session"}, {"owner", "opencode", "missing"}} {
 		if _, err := d.RecentUserMessages(t.Context(), scope[0], scope[1], scope[2], 6); !errors.Is(err, ErrNotFound) {
 			t.Fatal(err)
@@ -54,5 +65,34 @@ func TestRecentUserMessagesUsesStoredScopeOrderAndProse(t *testing.T) {
 	_ = d.Close()
 	if _, err := d.RecentUserMessages(t.Context(), "owner", "opencode", "session", 6); err == nil {
 		t.Fatal("closed DB accepted")
+	}
+}
+
+func TestReviewUserMessagesBoundsBytesNotCount(t *testing.T) {
+	d := openTestDB(t)
+	b := fixture("first")
+	b.Checkpoint = nil
+	b.Messages, b.Parts = nil, nil
+	for i := range 150 {
+		id := fmt.Sprintf("u%03d", i)
+		b.Messages = append(b.Messages, Message{ID: id, Role: "user", Position: int64(i)})
+		b.Parts = append(b.Parts, Part{ID: "p" + id, MessageID: id, Kind: "text", Text: "é"})
+	}
+	b.Parts[0].Text = "Do not push."
+	b.Parts[len(b.Parts)-1].Text = "Still do not push."
+	commit(t, d, b)
+	bytes := len(b.Parts[0].Text) + 148*len("é") + len(b.Parts[149].Text)
+	userContext, err := d.ReviewUserMessages(t.Context(), "owner", "opencode", "session", bytes)
+	if err != nil || userContext.Limited || len(userContext.Messages) != 150 || userContext.Messages[0] != "Do not push." || userContext.Messages[149] != "Still do not push." {
+		t.Fatalf("lost restrictions: %v %v", userContext, err)
+	}
+	if got, err := d.ReviewUserMessages(t.Context(), "owner", "opencode", "session", bytes-1); err != nil || !got.Limited || got.Digest != userContext.Digest || len(strings.Join(got.Messages, "")) != bytes-1 {
+		t.Fatalf("limited UTF-8 history: %v %v", got, err)
+	}
+	b.Parts[0].Text = strings.Repeat("x", 32_001)
+	b.ExpectedRevision = 1
+	commit(t, d, b)
+	if got, err := d.ReviewUserMessages(t.Context(), "owner", "opencode", "session", 32_000); err != nil || !got.Limited || got.Digest == userContext.Digest || len(strings.Join(got.Messages, "")) != 32_000 {
+		t.Fatalf("oversized earlier restriction: %v %v", got, err)
 	}
 }

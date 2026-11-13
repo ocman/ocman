@@ -80,6 +80,9 @@ func judgeEndpoint(ctx context.Context, config JudgeEndpoint, directory, permiss
 		payload["messages"] = []map[string]string{{"role": "user", "content": judgePrompt(permission, patterns, metadata, sections)}}
 		payload["stream"] = false
 	} else {
+		if _, issue := typeSafeContext(directory, sections); issue != "" {
+			return endpointFailure(issue)
+		}
 		payload, rules, contextAvailable = typeSafePayload(directory, permission, patterns, metadata, sections)
 	}
 	if config.Model != "" {
@@ -115,6 +118,9 @@ func judgeEndpoint(ctx context.Context, config JudgeEndpoint, directory, permiss
 	}
 	if config.Format == "typesafe" {
 		result := parseTypeSafeRules(body, rules, config.MinSafeProbability, contextAvailable)
+		if userContext, _ := typeSafeContext(directory, sections); userContext.Limited && !result.EvaluationFailed {
+			result.Reasoning += " Limited-context review; earlier user instructions may be omitted."
+		}
 		result.usage = readTypeSafeUsage(body)
 		return result
 	}

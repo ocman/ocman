@@ -328,10 +328,16 @@ flowchart LR
   and fall through to human review on failures. TypeSafe requests separate
   environment facts, retained user messages, and untrusted tool input. Named
   Noul probabilities feed a Go rule evaluator with hard-deny precedence and
-  soft-deny exceptions or exact consent. Missing or oversized user history
-  requires human review. Jev bypasses command-cache reuse and rechecks context
+  soft-deny exceptions or exact consent. Missing context or failed history reads
+  require human review before sending any endpoint request, with a specific
+  context failure reason. Stored user prose is scanned without a message-count
+  cutoff. A 32,000-byte window keeps the newest text for oversized histories and
+  explicitly marks omissions. Limited-context reviews may grant approval under
+  the same rules; their explanations warn that earlier instructions may be omitted.
+  Jev bypasses command-cache reuse and rechecks context
   before approval. Each authorization read awaits a bounded session-specific
-  ingestion refresh receipt; missing ingestion or refresh failure cannot reuse
+  ingestion refresh receipt. A full-history digest detects changes outside the
+  submitted window; missing ingestion or refresh failure cannot reuse
   retained consent. Other endpoint verdicts retain their configuration-scoped cache.
   Jev approval records are context-bound, so worktree inheritance does not turn
   them into standing allow rules. Existing approvals retain their previous behavior.
@@ -339,8 +345,10 @@ flowchart LR
   ```mermaid
   flowchart LR
       Call[Pending tool call] --> Rules[Static and manual rules]
-      History[Freshness receipt<br/>and stored user prose] --> Jev[Named Noul questions]
-      Rules --> Jev
+      History[Freshness receipt<br/>and stored user prose] --> Context[Context and byte-budget check]
+      Rules --> Context
+      Context -->|Complete or explicitly windowed| Jev[Named Noul questions]
+      Context -->|Unavailable| Human[Human review with reason]
       Jev --> Policy[Go precedence evaluator]
       Policy --> Check[Recheck current context]
       Check --> Decision[Approve once<br/>or human review]

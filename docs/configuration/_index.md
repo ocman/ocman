@@ -50,9 +50,17 @@ returns a single answer letter are not automatically compatible.
 
 Reviewer requests include tool input and configured custom rules. OpenAI-compatible
 requests include up to six recent user-message excerpts. TypeSafe-compatible
-requests include the project directory and retained user prose without excerpt
-truncation, limited to fewer than 100 messages and 32,000 bytes. Missing or oversized
-context requires human review. Each Jev authorization read, including the final
+requests include the project directory and up to 32,000 bytes of retained user
+text across all messages, not a message-count or token limit. Exactly 32,000
+bytes is accepted in full. Larger histories use the most recent text within that
+budget, oldest first, with UTF-8-safe clipping of the oldest included message.
+The request marks this context as incomplete. Limited-context reviews can grant
+automatic approval under the same deny rules and confidence thresholds, and their
+explanations identify the limited context. Earlier user restrictions may be omitted;
+the reviewer must not invent consent from omitted messages.
+Missing project or user context, policy-loading failure, and history-refresh failure
+or timeout stop the review before any endpoint request, with a specific explanation. Each Jev
+authorization read, including the final
 recheck, waits up to five seconds for a session-specific ingestion refresh.
 Unavailable ingestion or a failed refresh requires human review rather than
 using stale consent. Choosing a hosted endpoint sends that context to
@@ -95,7 +103,8 @@ clears the old key unless you supply a replacement. Keys are sent only as
 
 Endpoint failures leave the permission for human review. Jev judgments are never
 reused from the command cache or a parent's cache. Policy and user context are
-checked again before applying an in-flight approval. New Jev approvals remain
+checked again before applying an in-flight approval. A digest of all retained user
+prose also invalidates approval when omitted messages change. New Jev approvals remain
 visible in the audit history but cannot become inherited allow rules in child
 sessions. Other reviewers' cached safe
 judgments remain scoped to the endpoint configuration that produced them,

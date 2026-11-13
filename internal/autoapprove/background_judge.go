@@ -66,7 +66,7 @@ func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Pl
 				sections = append(sections, PromptSection{Title: section.Title, Content: section.Content, Enabled: section.Enabled})
 			}
 		} else {
-			sections = append(sections, PromptSection{contextUnavailable: true})
+			sections = append(sections, PromptSection{contextIssue: "Reviewer policy could not be loaded. Retry review or approve manually."})
 		}
 	}
 	var messages []string
@@ -78,17 +78,20 @@ func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Pl
 		}
 	}
 	judgeMessages := messages
+	var userContext JudgeUserContext
 	if config, err := LoadJudgeEndpoint(ctx, s.deps.Store); err == nil && config.Format == "typesafe" && s.deps.JudgeUserMessages != nil && adapter != nil {
-		judgeMessages, err = s.deps.JudgeUserMessages(ctx, adapter.ID(), sessionID)
+		userContext, err = s.deps.JudgeUserMessages(ctx, adapter.ID(), sessionID)
+		judgeMessages = userContext.Messages
 		if err != nil {
 			judgeMessages = nil
+			sections = append(sections, PromptSection{contextIssue: judgeHistoryIssue(err)})
 		}
 	}
 	if len(messages) == 0 {
 		if len(judgeMessages) == 0 {
 			return sections
 		}
-		return append(sections, PromptSection{userIntent: true, messages: judgeMessages})
+		return append(sections, PromptSection{userIntent: true, messages: judgeMessages, contextLimited: userContext.Limited, contextDigest: userContext.Digest})
 	}
 	var content strings.Builder
 	content.WriteString("The user recently sent these messages (oldest first):\n")
@@ -99,7 +102,7 @@ func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Pl
 		content.WriteString("  - " + message + "\n")
 	}
 	content.WriteString("\nIf the permission request is a direct and proportionate consequence of what the user asked for, lean toward SAFE.")
-	return append(sections, PromptSection{Title: "Recent user intent", Content: content.String(), userIntent: true, messages: judgeMessages})
+	return append(sections, PromptSection{Title: "Recent user intent", Content: content.String(), userIntent: true, messages: judgeMessages, contextLimited: userContext.Limited, contextDigest: userContext.Digest})
 }
 
 func (s *Service) emitChecking(sessionID, permissionID string) func(string) {

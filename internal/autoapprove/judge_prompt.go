@@ -46,9 +46,11 @@ type PromptSection struct {
 	Content string `json:"content"`
 	Enabled *bool  `json:"enabled,omitempty"`
 	// Only application-collected messages may supply consent evidence to Jev.
-	userIntent         bool
-	messages           []string
-	contextUnavailable bool
+	userIntent     bool
+	messages       []string
+	contextIssue   string
+	contextLimited bool
+	contextDigest  string
 }
 
 func judgePrompt(permission string, patterns []string, metadata map[string]any, customSections []PromptSection) string {

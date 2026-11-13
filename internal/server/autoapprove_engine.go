@@ -133,30 +133,23 @@ func (s *Server) autoapproveEngineDepsFor(platformID platforms.ID, resolve func(
 	return deps
 }
 
-func (s *Server) permissionJudgeUserMessages(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
+func (s *Server) permissionJudgeUserMessages(ctx context.Context, platform platforms.ID, id string) (autoapprove.JudgeUserContext, error) {
 	if !s.hasStoredHistory() || s.historyIngest == nil {
-		return nil, platforms.ErrHistoryUnavailable
+		return autoapprove.JudgeUserContext{}, platforms.ErrHistoryUnavailable
 	}
 	owner, kind := platforms.SplitPlatformID(string(platform))
 	if owner != "" {
-		return nil, platforms.ErrUnsupported
+		return autoapprove.JudgeUserContext{}, platforms.ErrUnsupported
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	// Every authorization read, including the final recheck, needs its own
 	// session-specific receipt. Equal retained snapshots may both be stale.
 	if err := s.historyIngest.RefreshStored(ctx, string(platform), id); err != nil {
-		return nil, err
+		return autoapprove.JudgeUserContext{}, err
 	}
-	messages, err := s.historyAnalytics.Store.RecentUserMessages(ctx, s.historyOwner, kind, id, 100)
-	if err != nil {
-		return nil, err
-	}
-	// At the query limit we cannot prove earlier restrictions were retained.
-	if len(messages) >= 100 {
-		return nil, platforms.ErrHistoryUnavailable
-	}
-	return messages, nil
+	userContext, err := s.historyAnalytics.Store.ReviewUserMessages(ctx, s.historyOwner, kind, id, autoapprove.MaxJudgeUserMessageBytes)
+	return autoapprove.JudgeUserContext{Messages: userContext.Messages, Limited: userContext.Limited, Digest: userContext.Digest}, err
 }
 
 // openCodeEnabled reports whether this machine runs the OpenCode platform.

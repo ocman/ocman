@@ -45,6 +45,7 @@ func TestHostedTypeSafeUsageThroughJudge(t *testing.T) {
 		{"missing usage", `{"model":"jev-1.14.0"}`, 200, 1, nil},
 		{"malformed", `{`, 200, 1, nil},
 		{"rejected", `{}`, 401, 0, nil},
+		{"missing context", `{}`, 200, 0, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			http.DefaultTransport = roundTripperFunc(func(r *http.Request) (*http.Response, error) {
@@ -66,7 +67,11 @@ func TestHostedTypeSafeUsageThroughJudge(t *testing.T) {
 				}
 				return nil
 			}})
-			s.judgePermission(t.Context(), "opencode", "/project", "read", nil, nil, nil, nil)
+			sections := typeSafeTestIntent()
+			if tc.name == "missing context" {
+				sections = nil
+			}
+			s.judgePermission(t.Context(), "opencode", "/project", "read", nil, nil, sections, nil)
 			if calls != tc.calls {
 				t.Fatalf("recorded calls = %d, want %d", calls, tc.calls)
 			}

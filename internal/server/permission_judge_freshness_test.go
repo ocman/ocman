@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/analytics"
+	"github.com/ocman/ocman/internal/autoapprove"
 	"github.com/ocman/ocman/internal/conversationingest"
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
@@ -96,7 +97,7 @@ func permissionJudgeFreshnessFixture(t *testing.T, messages []string) (*Server, 
 func TestPermissionJudgeWaitsForNewRestrictionBeforeEachRead(t *testing.T) {
 	s, source := permissionJudgeFreshnessFixture(t, []string{"Push origin topic."})
 	first, err := s.permissionJudgeUserMessages(t.Context(), "test", "session")
-	if err != nil || len(first) != 1 {
+	if err != nil || len(first.Messages) != 1 {
 		t.Fatalf("initial consent: %v %v", first, err)
 	}
 	select {
@@ -106,7 +107,7 @@ func TestPermissionJudgeWaitsForNewRestrictionBeforeEachRead(t *testing.T) {
 	release := make(chan struct{})
 	source.set([]string{"Push origin topic.", "Do not push until I review."}, release, nil)
 	type result struct {
-		messages []string
+		messages autoapprove.JudgeUserContext
 		err      error
 	}
 	done := make(chan result, 1)
@@ -130,7 +131,7 @@ func TestPermissionJudgeWaitsForNewRestrictionBeforeEachRead(t *testing.T) {
 	}
 	close(release)
 	got := <-done
-	if got.err != nil || len(got.messages) != 2 || got.messages[1] != "Do not push until I review." {
+	if got.err != nil || len(got.messages.Messages) != 2 || got.messages.Messages[1] != "Do not push until I review." {
 		t.Fatalf("restriction omitted: %+v", got)
 	}
 }
@@ -140,7 +141,7 @@ func TestPermissionJudgeFailsClosedWhenFreshnessCannotBeEstablished(t *testing.T
 	source.set([]string{"Push origin topic."}, nil, errors.New("source unavailable"))
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
-	if messages, err := s.permissionJudgeUserMessages(ctx, "test", "session"); err == nil || len(messages) != 0 {
+	if messages, err := s.permissionJudgeUserMessages(ctx, "test", "session"); err == nil || len(messages.Messages) != 0 {
 		t.Fatalf("used stale consent after failed refresh: %v %v", messages, err)
 	}
 }

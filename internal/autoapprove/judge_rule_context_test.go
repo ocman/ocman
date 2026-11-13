@@ -47,7 +47,9 @@ func TestTypeSafeContextAndPolicyChangesInvalidateInflightReview(t *testing.T) {
 	var historyErr error
 	s := NewService(Deps{Store: store,
 		RecentUserMessages: func(context.Context, platforms.ID, string) ([]string, error) { return []string{"recent"}, nil },
-		JudgeUserMessages:  func(context.Context, platforms.ID, string) ([]string, error) { return full, historyErr },
+		JudgeUserMessages: func(context.Context, platforms.ID, string) (JudgeUserContext, error) {
+			return JudgeUserContext{Messages: full}, historyErr
+		},
 	})
 	p := &fakePlatform{id: "test"}
 	sections := s.resolveJudgeSections(t.Context(), p, "/repo", "session")
@@ -97,7 +99,9 @@ func TestTypeSafeContextAndPolicyChangesInvalidateInflightReview(t *testing.T) {
 
 func TestTypeSafeFullContextWithoutRecentExcerpts(t *testing.T) {
 	store := &metricsStore{value: `{"format":"typesafe","endpoint":"https://example.com","minSafeProbability":0.99}`}
-	s := NewService(Deps{Store: store, JudgeUserMessages: func(context.Context, platforms.ID, string) ([]string, error) { return []string{"Do not deploy."}, nil }})
+	s := NewService(Deps{Store: store, JudgeUserMessages: func(context.Context, platforms.ID, string) (JudgeUserContext, error) {
+		return JudgeUserContext{Messages: []string{"Do not deploy."}}, nil
+	}})
 	sections := s.resolveJudgeSections(t.Context(), &fakePlatform{id: "test"}, "/repo", "session")
 	if len(sections) != 1 || sections[0].Content != "" || !sections[0].userIntent {
 		t.Fatalf("%+v", sections)
@@ -111,9 +115,9 @@ func TestTypeSafeFullContextWithoutRecentExcerpts(t *testing.T) {
 }
 
 func TestTypeSafePipelineRechecksContextBeforeReply(t *testing.T) {
-	for _, scenario := range []string{"unchanged", "new user restriction", "refresh failed"} {
+	for _, scenario := range []string{"unchanged", "limited unchanged", "omitted history changed", "new user restriction", "refresh failed"} {
 		t.Run(scenario, func(t *testing.T) {
-			changed := scenario != "unchanged"
+			changed := scenario != "unchanged" && scenario != "limited unchanged"
 			var evaluated atomic.Bool
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,12 +138,20 @@ func TestTypeSafePipelineRechecksContextBeforeReply(t *testing.T) {
 			}
 			freshReads := 0
 			s := NewService(Deps{Store: store, DefaultEnabled: true, SessionDir: func(string) (string, error) { return "/repo", nil }, RecentUserMessages: read,
-				JudgeUserMessages: func(ctx context.Context, platform platforms.ID, id string) ([]string, error) {
+				JudgeUserMessages: func(ctx context.Context, platform platforms.ID, id string) (JudgeUserContext, error) {
 					freshReads++
 					if scenario == "refresh failed" && evaluated.Load() {
-						return nil, errors.New("fresh history unavailable")
+						return JudgeUserContext{}, errors.New("fresh history unavailable")
 					}
-					return read(ctx, platform, id)
+					messages, err := read(ctx, platform, id)
+					collected := JudgeUserContext{Messages: messages}
+					if scenario == "limited unchanged" || scenario == "omitted history changed" {
+						collected.Limited, collected.Digest = true, "all-history-before"
+						if scenario == "omitted history changed" && evaluated.Load() {
+							collected.Digest = "all-history-after"
+						}
+					}
+					return collected, err
 				},
 			})
 			metadata := map[string]any{"command": "go test ./..."}

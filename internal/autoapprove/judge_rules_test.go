@@ -160,8 +160,8 @@ func TestTypeSafeCustomSectionsAndContext(t *testing.T) {
 	}
 	sections[3].messages = []string{strings.Repeat("x", 32_001)}
 	payload, _, available = typeSafePayload("/repo", "bash", nil, nil, sections)
-	if available || len(payload["state"].(map[string]any)["user_messages"].([]string)) != 0 {
-		t.Fatal("oversized context accepted")
+	if !available || len(payload["state"].(map[string]any)["user_messages"].([]string)[0]) != MaxJudgeUserMessageBytes || payload["state"].(map[string]any)["user_messages_complete"] != false {
+		t.Fatal("oversized context was not explicitly windowed")
 	}
 	if _, _, available = typeSafePayload("", "read", nil, nil, typeSafeTestIntent()); available {
 		t.Fatal("missing directory accepted")
