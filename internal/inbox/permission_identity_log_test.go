@@ -41,7 +41,7 @@ func TestPermissionIdentityWarningIdentifiersAndReasons(t *testing.T) {
 }
 
 func TestMissingPermissionResolverDoesNotMintIdentity(t *testing.T) {
-	if key, _, err := NewModule(Deps{}).permissionKey(t.Context(), "opencode", "native", "request"); key != "" || !errors.Is(err, platforms.ErrHistoryUnavailable) {
-		t.Fatalf("missing resolver minted identity: %q, %v", key, err)
+	if identity, err := NewModule(Deps{}).permissionKey(t.Context(), "opencode", "native", "request"); identity.key != "" || !errors.Is(err, platforms.ErrHistoryUnavailable) {
+		t.Fatalf("missing resolver minted identity: %+v, %v", identity, err)
 	}
 }

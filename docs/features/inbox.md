@@ -68,8 +68,9 @@ source and session binding before issuing a key. The key keeps the native platfo
 namespace and existing legacy correlations, so named and kind-based callbacks
 deduplicate and resolve the same request. Missing adapters and stale or purged
 identities cannot mint replacement keys. Unavailable owners do not resolve requests.
-New messages store the exact connection key so their session links and reply
-controls target the same account that supplied the permission.
+New messages store the exact connection key separately from the native-kind
+audit platform. Inbox responses use the connection for session links and reply
+controls; policy Requests and lifecycle joins keep their existing audit identity.
 Identity warnings record the operation, platform scope, session ID, permission ID
 and failure reason without logging permission contents.
 

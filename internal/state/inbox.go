@@ -28,8 +28,11 @@ const (
 type InboxPermission struct {
 	// ItemID is an adapter-provided opaque deduplication identity during
 	// native-key cutover. It is never accepted from or returned in JSON.
-	ItemID       string         `json:"-"`
-	Platform     string         `json:"platform"`
+	ItemID   string `json:"-"`
+	Platform string `json:"platform"`
+	// ConnectionID routes Inbox actions without changing the native-kind audit
+	// namespace in Platform. Empty retains legacy kind-based routing.
+	ConnectionID string         `json:"connectionId,omitempty"`
 	SessionID    string         `json:"sessionId"`
 	PermissionID string         `json:"permissionId"`
 	Permission   string         `json:"permission"`
@@ -74,6 +77,14 @@ func scanInboxItem(scanner interface{ Scan(...any) error }) (InboxItem, error) {
 	}
 	if err == nil && sessionJSON != "" {
 		err = json.Unmarshal([]byte(sessionJSON), &item.Session)
+	}
+	if item.Permission != nil && item.Permission.ConnectionID != "" {
+		// Inbox responses use the exact account; audit/history readers consume
+		// the unmodified stored payload and retain its native platform kind.
+		item.Permission.Platform = item.Permission.ConnectionID
+		if item.Session != nil && item.Session.SessionID == item.Permission.SessionID {
+			item.Session.Platform = item.Permission.ConnectionID
+		}
 	}
 	if item.Session == nil && item.Permission != nil {
 		item.Session = &InboxSession{Platform: item.Permission.Platform, SessionID: item.Permission.SessionID}
@@ -160,16 +171,22 @@ func (d *DB) ResolvePermissionInboxItem(ctx context.Context, platform, sessionID
 // ResolvePermissionInboxItemKey preserves an adapter's stable opaque key while
 // storing only the canonical session reference in the notification itself.
 func (d *DB) ResolvePermissionInboxItemKey(ctx context.Context, key, platform, sessionID, permissionID string) error {
+	return d.ResolvePermissionInboxItemScopes(ctx, key, platform, platform, sessionID, permissionID)
+}
+
+// ResolvePermissionInboxItemScopes keeps tombstone navigation in the exact
+// connection while lifecycle facts retain the native-kind audit namespace.
+func (d *DB) ResolvePermissionInboxItemScopes(ctx context.Context, key, routePlatform, auditPlatform, sessionID, permissionID string) error {
 	if key == "" {
 		return errors.New("permission Inbox key is required")
 	}
 	now := time.Now().UnixMilli()
 	_, err := d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, 'Permission resolved', 'This permission request has been handled.', ?, NULL, ?, 'permission', '', json_object('platform', ?, 'sessionId', ?))
-		ON CONFLICT(id) DO UPDATE SET archived_at = COALESCE(inbox_item.archived_at, excluded.archived_at)`, key, now, now, platform, sessionID)
+		ON CONFLICT(id) DO UPDATE SET archived_at = COALESCE(inbox_item.archived_at, excluded.archived_at)`, key, now, now, routePlatform, sessionID)
 	if err != nil {
 		return err
 	}
-	return d.UpsertPermissionLifecycle(ctx, PermissionLifecycle{Platform: platform, SessionID: sessionID, PermissionID: permissionID, ResolvedAt: now})
+	return d.UpsertPermissionLifecycle(ctx, PermissionLifecycle{Platform: auditPlatform, SessionID: sessionID, PermissionID: permissionID, ResolvedAt: now})
 }
 
 // ListInboxItems returns active items newest first.

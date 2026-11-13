@@ -18,13 +18,17 @@ func (m *Module) NotifyPermission(permission state.InboxPermission) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), permissionCallTimeout)
 	defer cancel()
-	key, scope, err := m.permissionKey(ctx, permission.Platform, permission.SessionID, permission.PermissionID)
+	identity, err := m.permissionKey(ctx, permission.Platform, permission.SessionID, permission.PermissionID)
 	if err != nil {
 		permissionIdentityWarning(err, "notify", permission.Platform, permission.SessionID, permission.PermissionID)
 		return
 	}
-	permission.ItemID = key
-	permission.Platform = scope
+	permission.ItemID = identity.key
+	permission.Platform = identity.platform
+	permission.ConnectionID = ""
+	if identity.route != identity.platform {
+		permission.ConnectionID = identity.route
+	}
 	if err := m.Store.EnsurePermissionInboxItem(ctx, permission); err != nil {
 		log.WithError(err).Warn("creating permission Inbox item")
 		return
@@ -39,32 +43,34 @@ func (m *Module) ResolvePermission(ctx context.Context, platform, sessionID, per
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), permissionCallTimeout)
 	defer cancel()
-	key, scope, err := m.permissionKey(ctx, platform, sessionID, permissionID)
+	identity, err := m.permissionKey(ctx, platform, sessionID, permissionID)
 	if err != nil {
 		permissionIdentityWarning(err, "resolve", platform, sessionID, permissionID)
 		return
 	}
-	if err := m.Store.ResolvePermissionInboxItemKey(ctx, key, scope, sessionID, permissionID); err != nil {
+	if err := m.Store.ResolvePermissionInboxItemScopes(ctx, identity.key, identity.route, identity.platform, sessionID, permissionID); err != nil {
 		log.WithError(err).Warn("archiving resolved permission Inbox item")
 		return
 	}
 	m.changed()
 }
 
-func (m *Module) permissionKey(ctx context.Context, scope, session, permission string) (string, string, error) {
+type permissionIdentity struct{ key, platform, route string }
+
+func (m *Module) permissionKey(ctx context.Context, scope, session, permission string) (permissionIdentity, error) {
 	if m.Platform == nil {
-		return "", "", fmt.Errorf("%w: %w", platforms.ErrHistoryUnavailable, errPermissionAdapterUnavailable)
+		return permissionIdentity{}, fmt.Errorf("%w: %w", platforms.ErrHistoryUnavailable, errPermissionAdapterUnavailable)
 	}
 	adapter, route, ok := m.Platform(ctx, platforms.ID(scope), session)
 	if !ok || adapter == nil {
-		return "", "", fmt.Errorf("%w: %w", platforms.ErrHistoryUnavailable, errPermissionAdapterUnavailable)
+		return permissionIdentity{}, fmt.Errorf("%w: %w", platforms.ErrHistoryUnavailable, errPermissionAdapterUnavailable)
 	}
 	// Connection keys select the account, not the notification namespace.
 	// Canonical IDs distinguish accounts; using the native kind preserves
 	// existing keys, including pre-cutover native-ID correlations.
 	scope = string(adapter.ID())
 	key, err := platforms.PermissionNotificationKey(ctx, adapter, scope, session, permission)
-	return key, string(route), err
+	return permissionIdentity{key: key, platform: scope, route: string(route)}, err
 }
 
 // Reconcile recovers missed replies, aborted turns and requests resolved while ocman was down.
@@ -78,7 +84,11 @@ func (m *Module) Reconcile(ctx context.Context) {
 	type sessionKey struct{ platform, sessionID string }
 	pending := make(map[sessionKey]map[string]bool)
 	for _, permission := range permissions {
-		key := sessionKey{permission.Platform, permission.SessionID}
+		scope := permission.Platform
+		if permission.ConnectionID != "" {
+			scope = permission.ConnectionID
+		}
+		key := sessionKey{scope, permission.SessionID}
 		ids, loaded := pending[key]
 		if !loaded {
 			pending[key] = nil
