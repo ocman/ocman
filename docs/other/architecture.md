@@ -1472,8 +1472,10 @@ flowchart LR
 - Slash-command catalogs stay owner-routed through the Platform. Codex's existing
   supervisor caches ACP command announcements, scoped to loaded sessions and
   their directory; transport merges these with read-only skills without starting
-  execution for browsing. Claude prefers an attached supervisor for a directory
-  to include its session-init command names, otherwise using the browsing probe.
+  execution for browsing. Claude uses an attached supervisor verified against
+  the session's recorded execution owner to include its session-init command
+  names; shared runtime-directory membership alone never grants ownership.
+  Without an attached owner it uses the browsing probe.
   OpenCode supplies its command and skill APIs. The composer refreshes on menu
   open and reserves Ocman built-in names, descriptions and execution over all
   platform catalogs. Terminal-only commands are not synthesized.

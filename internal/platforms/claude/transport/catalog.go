@@ -21,7 +21,9 @@ func (p *claudePlatform) LiveDirectoryCatalog(ctx context.Context, req platforms
 				continue // dead execution does not prevent a configuration probe
 			}
 			for _, row := range rows {
-				if row.Directory == req.Directory {
+				// Shared ownership/transcript stores can make another project's
+				// runtime inventory list this directory, including on older peers.
+				if row.Directory == req.Directory && p.projects.owner(row.ID) == adapter {
 					return adapter.LiveDirectoryCatalog(ctx, req)
 				}
 			}
