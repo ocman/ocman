@@ -75,7 +75,7 @@ enableGitInfo = false
     weight = 2
   [[menu.main]]
     name = "Source"
-    url = "https://forgejo.nousefreak.be/dries/ocman"
+    url = "https://github.com/ocman/ocman"
     weight = 3
 
 [params]
