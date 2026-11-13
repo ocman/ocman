@@ -1,7 +1,6 @@
-import { useId, useRef, useState, type CSSProperties } from 'react';
+import { useId, useState } from 'react';
 import { Button, SelectField } from '../components/Control';
 import { Spinner } from '../components/Spinner';
-import { Popover } from '../components/Popover';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
 import { HostBadge } from '../components/HostBadge';
@@ -46,53 +45,62 @@ function TaskProgress({ task }: { task: BackgroundTask }) {
   </div>;
 }
 
-type TaskSelection = { selected: string | null; onSelect: (id: string | null) => void };
+function groupTasks(tasks: BackgroundTask[]) {
+  const groups = new Map<string, BackgroundTask[]>();
+  for (const task of tasks) {
+    const key = JSON.stringify([task.ownerId, task.kind, task.key || task.title, task.scope ?? '']);
+    const group = groups.get(key);
+    if (group) group.push(task);
+    else groups.set(key, [task]);
+  }
+  return Array.from(groups, ([key, runs]) => ({
+    key, runs: runs.sort((a, b) => b.createdAt - a.createdAt),
+  }));
+}
 
-function TaskRow({ task, selected, onSelect }: { task: BackgroundTask } & TaskSelection) {
-  const trigger = useRef<HTMLButtonElement>(null);
+function TaskRow({ runs }: { runs: BackgroundTask[] }) {
+  const task = runs[0];
   const id = useId();
-  const [position, setPosition] = useState<CSSProperties>();
-  const open = selected === id && !!position;
+  const [open, setOpen] = useState(false);
   return <div role="listitem">
-    <Button ref={trigger} variant="ghost" size="compact" className="background-task-row"
-      aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
-      onClick={() => {
-        const rect = trigger.current!.getBoundingClientRect();
-        onSelect(open ? null : id);
-        setPosition({
-          left: Math.max(12, Math.min(rect.left, window.innerWidth - 364)),
-          ...(rect.bottom < window.innerHeight / 2 ? { top: rect.bottom + 4 } : { bottom: window.innerHeight - rect.top + 4 }),
-          maxHeight: Math.max(100, window.innerHeight / 2 - 24),
-        });
-      }}>
+    <Button variant="ghost" size="compact" className="background-task-row"
+      aria-expanded={open} aria-controls={open ? id : undefined}
+      onClick={() => setOpen(!open)}>
       <strong>{task.title}</strong>
       <span className="background-task-state" data-status={task.status}>
         {task.status === 'running' && <Spinner />}{labels[task.status]}
       </span>
       <HostBadge alwaysShow remoteId={task.ownerId} remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} />
+      {task.scope && task.scope !== 'local' && <span className="background-task-scope">{task.scope}</span>}
+      <span className="background-task-count">{runs.length} {runs.length === 1 ? 'run' : 'runs'}</span>
       <span className="background-task-phase">{task.progress.phase}</span>
       <TaskProgressBar task={task} />
-      <i className="bi bi-info-circle" aria-hidden="true" />
+      <i className={`bi bi-chevron-${open ? 'down' : 'right'}`} aria-hidden="true" />
     </Button>
-    <Popover open={open} onClose={() => onSelect(null)} triggerRef={trigger}
-      id={id} label={`Details for ${task.title}`} className="background-task-details" style={position}>
-      <strong>{task.title}</strong>
-      <TaskProgress task={task} />
-      <p>Updated <time dateTime={new Date(task.updatedAt).toISOString()}>{formatExactDate(task.updatedAt)}</time></p>
-    </Popover>
+    {open && <section id={id} aria-label={`History for ${task.title}`} className="background-task-history">
+      <ol aria-label={`Runs for ${task.title}`}>
+        {runs.map((run) => <li key={run.id}>
+          <div className="background-task-counters">
+            <span className="background-task-state" data-status={run.status}>{labels[run.status]}</span>
+            <span>Created <time dateTime={new Date(run.createdAt).toISOString()}>{formatExactDate(run.createdAt)}</time></span>
+            <span>Updated <time dateTime={new Date(run.updatedAt).toISOString()}>{formatExactDate(run.updatedAt)}</time></span>
+          </div>
+          <TaskProgress task={run} />
+        </li>)}
+      </ol>
+    </section>}
   </div>;
 }
 
 export function BackgroundTasks() {
   const [status, setStatus] = useState<BackgroundTaskStatus | ''>('');
-  const [selected, setSelected] = useState<string | null>(null);
   const query = useVisiblePollingQuery({
     queryKey: ['background-tasks', status], intervalMs: 2_000, timeoutMs: 10_000,
     run: (signal) => backgroundTasks(status, signal),
   });
   const tasks = query.data ?? [];
   return <section className="background-tasks" aria-label="Ocman background tasks">
-    <p>Background work on this machine and connected remotes. Select a task for progress and schedule details.</p>
+    <p>Background work on this machine and connected remotes. Expand a task for its run history, progress and schedule details.</p>
     <div className="background-tasks-controls">
       <SelectField aria-label="Task status" value={status} onChange={(event) => setStatus(event.target.value as BackgroundTaskStatus | '')}>
         <option value="">All statuses</option>
@@ -104,7 +112,7 @@ export function BackgroundTasks() {
     {query.error && <p role="alert">Could not load background tasks: {query.error.message}</p>}
     {!query.isPending && !query.error && tasks.length === 0 && <EmptyState>No background tasks match this view.</EmptyState>}
     {tasks.length > 0 && <div role="list" aria-label="Background tasks">
-      {tasks.map((task) => <TaskRow key={`${task.ownerId}:${task.id}`} task={task} selected={selected} onSelect={setSelected} />)}
+      {groupTasks(tasks).map(({ key, runs }) => <TaskRow key={key} runs={runs} />)}
     </div>}
     {tasks.length >= 200 && <p>Showing up to 200 matching tasks, active work first.</p>}
   </section>;

@@ -23,6 +23,36 @@ describe('Background tasks', () => {
     vi.mocked(useDocumentVisible).mockReturnValue(true);
   });
 
+  it('groups runs by task identity and expands newest-first history inline', async () => {
+    vi.mocked(backgroundTasks).mockResolvedValue([
+      task('old', { key: 'scan', title: 'History scan', status: 'failed', createdAt: 1000, error: 'Previous scan failed' }),
+      task('new', { key: 'scan', title: 'History scan', createdAt: 3000 }),
+      task('remote', { key: 'scan', title: 'History scan', ownerId: 'remote' }),
+      task('scoped', { key: 'scan', title: 'History scan', scope: 'Other project' }),
+      task('kind', { key: 'scan', title: 'History scan', kind: 'other.kind' }),
+      task('other-key', { key: 'other', title: 'History scan' }),
+    ]);
+    renderWithQuery(<BackgroundTasks />);
+    const list = await screen.findByRole('list', { name: 'Background tasks' });
+    const rows = within(list).getAllByRole('listitem');
+    expect(rows).toHaveLength(5);
+    const toggle = within(rows[0]).getByRole('button');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveTextContent('Running');
+    expect(screen.queryByText('Previous scan failed')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const history = within(rows[0]).getByRole('region', { name: 'History for History scan' });
+    expect(history).toHaveAttribute('id', toggle.getAttribute('aria-controls'));
+    const runs = within(history).getAllByRole('listitem');
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toHaveTextContent('Running');
+    expect(runs[1]).toHaveTextContent('Previous scan failed');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('region', { name: 'History for History scan' })).not.toBeInTheDocument();
+  });
+
   it('shows active progress, unknown totals, and failed scans without implying hydration succeeded', async () => {
     vi.mocked(backgroundTasks).mockResolvedValue([
       task('running'),
@@ -44,7 +74,7 @@ describe('Background tasks', () => {
     expect(screen.getByRole('button', { name: /Task failed/ }).querySelector('.oc-loading-spinner')).toBeNull();
     expect(within(running).getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('value', '3');
     fireEvent.click(screen.getByRole('button', { name: /Task running/ }));
-    const details = within(screen.getByRole('dialog', { name: 'Details for Task running' }));
+    const details = within(screen.getByRole('region', { name: 'History for Task running' }));
     expect(details.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('value', '3');
     expect(details.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('max', '5');
     expect(screen.getByText('imported: 2')).toBeVisible();
@@ -55,9 +85,8 @@ describe('Background tasks', () => {
     expect(screen.getAllByRole('alert').map((element) => element.textContent)).toContain('2 sessions failed; history was not fully verified');
     expect(within(list).getByText('Cancelled')).toBeVisible();
     expect(within(list).getByText('Interrupted')).toBeVisible();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Task failed/ })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: /Task failed/ }));
+    expect(screen.queryByRole('region', { name: 'History for Task failed' })).not.toBeInTheDocument();
   });
 
   it('filters by status and refreshes without accepting work submissions', async () => {
@@ -92,7 +121,7 @@ describe('Background tasks', () => {
     expect(rows[1].querySelector('.oc-loading-spinner')).toBeInTheDocument();
     expect(rows[2].querySelector('.oc-loading-spinner')).toBeInTheDocument();
     fireEvent.click(within(rows[1]).getByRole('button'));
-    expect(within(screen.getByRole('dialog')).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'History for Task unknown' })).queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   it('distinguishes local and remote tasks even when their IDs collide', async () => {

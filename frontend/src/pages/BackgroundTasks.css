@@ -48,8 +48,12 @@
   overflow-wrap: anywhere;
 }
 
-/* The shared popover portals to body, outside Activity's modal layer at 1000. */
-.background-task-details.oc-popover { z-index: 1010; }
+.background-task-history { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+.background-task-history ol { display: grid; gap: 1rem; margin: 0; padding-left: 1rem; }
+.background-task-history li { padding-left: 0.25rem; }
+.background-task-history .background-task-state { margin: 0; }
+.background-task-count { flex-shrink: 0; color: var(--text-dim); }
+.background-task-scope { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
 
 .background-task-row.oc-button {
   display: flex;
