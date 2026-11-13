@@ -49,6 +49,30 @@ reply keeps the message available for retry. A background check every 30 seconds
 archives requests that disappeared after an aborted turn or a missed event;
 failed checks against an unavailable owner leave the message intact.
 
+### Permission identity routing
+
+```mermaid
+flowchart LR
+    Prompt[Permission callback] --> Inbox[Inbox module]
+    Inbox --> Registry[Permission platform resolver]
+    Registry --> Adapter[Canonical owner adapter]
+    Adapter --> Catalogue[Session catalogue]
+    Adapter --> Key[Stable permission key]
+    Key --> State[Inbox rows in state.db]
+```
+
+An explicit connection ID selects only that registered account. Callbacks that
+carry a native platform kind use the canonical session's owning adapter, never
+the first account of that kind. The adapter validates the owner, current physical
+source and session binding before issuing a key. The key keeps the native platform
+namespace and existing legacy correlations, so named and kind-based callbacks
+deduplicate and resolve the same request. Missing adapters and stale or purged
+identities cannot mint replacement keys. Unavailable owners do not resolve requests.
+New messages store the exact connection key so their session links and reply
+controls target the same account that supplied the permission.
+Identity warnings record the operation, platform scope, session ID, permission ID
+and failure reason without logging permission contents.
+
 Permission toast and system-notification links open the permission-filtered
 Inbox. Question notifications still open the session.
 

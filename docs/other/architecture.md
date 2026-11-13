@@ -227,7 +227,9 @@ flowchart LR
   Factory records, Inbox items, artifact metadata, remote tokens, and canonical
   session identity bindings. Artifact file bytes sit beside it in a
   SHA-256 content-addressed `artifacts/blobs/` directory. Inbox sends are owner-local and persist until recalled or archived
-  by the user. Legacy `workflow_*` rows remain inert for manual recovery.
+  by the user. [Permission Inbox routing](../features/inbox.md#permission-identity-routing)
+  resolves named connections separately from the stable notification namespace.
+  Legacy `workflow_*` rows remain inert for manual recovery.
 - **state_conv.db.** `internal/statev2` owns a separate
   conversation schema with immutable platform-instance identities, historical
   sessions/messages/parts, ingestion checkpoints and a change outbox. Storage, ingestion and historical reads are always enabled;

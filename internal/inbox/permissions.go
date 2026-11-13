@@ -2,6 +2,7 @@ package inbox
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -17,12 +18,13 @@ func (m *Module) NotifyPermission(permission state.InboxPermission) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), permissionCallTimeout)
 	defer cancel()
-	key, err := m.permissionKey(ctx, permission.Platform, permission.SessionID, permission.PermissionID)
+	key, scope, err := m.permissionKey(ctx, permission.Platform, permission.SessionID, permission.PermissionID)
 	if err != nil {
-		log.WithError(err).Warn("resolving permission Inbox identity")
+		permissionIdentityWarning(err, "notify", permission.Platform, permission.SessionID, permission.PermissionID)
 		return
 	}
 	permission.ItemID = key
+	permission.Platform = scope
 	if err := m.Store.EnsurePermissionInboxItem(ctx, permission); err != nil {
 		log.WithError(err).Warn("creating permission Inbox item")
 		return
@@ -37,24 +39,32 @@ func (m *Module) ResolvePermission(ctx context.Context, platform, sessionID, per
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), permissionCallTimeout)
 	defer cancel()
-	key, err := m.permissionKey(ctx, platform, sessionID, permissionID)
+	key, scope, err := m.permissionKey(ctx, platform, sessionID, permissionID)
 	if err != nil {
-		log.WithError(err).Warn("resolving permission Inbox identity")
+		permissionIdentityWarning(err, "resolve", platform, sessionID, permissionID)
 		return
 	}
-	if err := m.Store.ResolvePermissionInboxItemKey(ctx, key, platform, sessionID, permissionID); err != nil {
+	if err := m.Store.ResolvePermissionInboxItemKey(ctx, key, scope, sessionID, permissionID); err != nil {
 		log.WithError(err).Warn("archiving resolved permission Inbox item")
 		return
 	}
 	m.changed()
 }
 
-func (m *Module) permissionKey(ctx context.Context, scope, session, permission string) (string, error) {
-	var adapter platforms.Platform
-	if m.Platform != nil {
-		adapter, _ = m.Platform(platforms.ID(scope))
+func (m *Module) permissionKey(ctx context.Context, scope, session, permission string) (string, string, error) {
+	if m.Platform == nil {
+		return "", "", fmt.Errorf("%w: %w", platforms.ErrHistoryUnavailable, errPermissionAdapterUnavailable)
 	}
-	return platforms.PermissionNotificationKey(ctx, adapter, scope, session, permission)
+	adapter, route, ok := m.Platform(ctx, platforms.ID(scope), session)
+	if !ok || adapter == nil {
+		return "", "", fmt.Errorf("%w: %w", platforms.ErrHistoryUnavailable, errPermissionAdapterUnavailable)
+	}
+	// Connection keys select the account, not the notification namespace.
+	// Canonical IDs distinguish accounts; using the native kind preserves
+	// existing keys, including pre-cutover native-ID correlations.
+	scope = string(adapter.ID())
+	key, err := platforms.PermissionNotificationKey(ctx, adapter, scope, session, permission)
+	return key, string(route), err
 }
 
 // Reconcile recovers missed replies, aborted turns and requests resolved while ocman was down.
@@ -72,7 +82,7 @@ func (m *Module) Reconcile(ctx context.Context) {
 		ids, loaded := pending[key]
 		if !loaded {
 			pending[key] = nil
-			adapter, ok := m.Platform(platforms.ID(key.platform))
+			adapter, _, ok := m.Platform(ctx, platforms.ID(key.platform), key.sessionID)
 			// Push-only platforms settle Inbox items from replayed reply events.
 			if !ok || adapter.Capabilities().PushPrompts {
 				continue

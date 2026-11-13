@@ -224,7 +224,7 @@ func (s *Server) newInboxModule(remotes func() inbox.Remotes) *inbox.Module {
 		FactoryEnabled: s.factoryBetaEnabled,
 		Store:          s.stateDB,
 		Remotes:        remotes,
-		Platform:       func(id platforms.ID) (platforms.Platform, bool) { return s.registry.Get(id) },
+		Platform:       s.registry.PermissionPlatform,
 		EnsurePending: func(adapter platforms.Platform, sessionID string, prompts []platforms.LivePrompt) {
 			s.autoapproveModule().EnsurePending(adapter, sessionID, prompts)
 		},

@@ -42,8 +42,8 @@ type Deps struct {
 	Store          *state.DB
 	// Remotes is nil on a single-host install; the Inbox is then local only.
 	Remotes func() Remotes
-	// Platform finds the adapter that owns a pending permission.
-	Platform func(platforms.ID) (platforms.Platform, bool)
+	// Platform finds the owning adapter and its exact registration key.
+	Platform func(context.Context, platforms.ID, string) (platforms.Platform, platforms.ID, bool)
 	// EnsurePending re-raises live prompts the server has not tracked yet.
 	EnsurePending func(platforms.Platform, string, []platforms.LivePrompt)
 	// SessionTitle is a local session's title, "" when unknown.
