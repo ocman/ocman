@@ -11,6 +11,13 @@ import styles from './PluginSettingsCard.module.css';
 
 const UI_GRANT = 'ui.app';
 
+function PluginGrants({ grants, label }: { grants?: string[] | null; label: string }) {
+  if (!grants?.length) return <span className={styles.emptyGrants}>None</span>;
+  return <ul className={styles.grants} aria-label={label}>
+    {grants.map((grant) => <li key={grant}><code>{grant}</code></li>)}
+  </ul>;
+}
+
 function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
   const d = p.description;
   return <>
@@ -19,9 +26,9 @@ function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
     <SettingRow label="Checksum" block><code className={styles.checksum}>{p.checksum}</code></SettingRow>
     <SettingRow label="Capabilities">{d.capabilities?.map((c) => `${c.name} v${c.version.major}.${c.version.minor}`).join(', ') || 'None'}</SettingRow>
     <SettingRow label="Execution scope">{d.scope}</SettingRow>
-    {d.ui && <SettingRow label="Interface">In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
-    <SettingRow label="Requested grants">{d.requestedGrants?.join(', ') || 'None'}</SettingRow>
-    <SettingRow label="Current grants">{p.grants?.join(', ') || 'None'}</SettingRow>
+    {d.ui && <SettingRow label="Interface" block>In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
+    <SettingRow label="Requested grants" block><PluginGrants grants={d.requestedGrants} label="Requested grants" /></SettingRow>
+    <SettingRow label="Current grants" block><PluginGrants grants={p.grants} label="Current grants" /></SettingRow>
     <SettingRow label="Status">{p.enabled ? 'Enabled' : 'Disabled'} · {p.health.status}{p.removed ? ' · Executable removed' : ''}</SettingRow>
     <SettingRow label="Restart count">{p.health.restartCount}</SettingRow>
     <SettingRow label="Last error" block>{p.health.lastError || 'None'}</SettingRow>
@@ -69,9 +76,9 @@ export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', 
     </div></div>}
     {permissions && <>
       <SettingRow label="Execution scope">{d.scope}</SettingRow>
-      <SettingRow label="Requested grants">{d.requestedGrants?.join(', ') || 'None'}</SettingRow>
-      <SettingRow label="Current grants">{p.grants?.join(', ') || 'None'}</SettingRow>
-      {d.ui && <SettingRow label="Interface">In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
+      <SettingRow label="Requested grants" block><PluginGrants grants={d.requestedGrants} label="Requested grants" /></SettingRow>
+      <SettingRow label="Current grants" block><PluginGrants grants={p.grants} label="Current grants" /></SettingRow>
+      {d.ui && <SettingRow label="Interface" block>In-app UI · @ocman/plugin-ui {d.ui.sdk}</SettingRow>}
     </>}
     {configurationSaved && <p role="status">Configuration saved.</p>}
     {error && !configuration && <p role="alert">{error}</p>}
@@ -94,11 +101,13 @@ export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', 
         </ButtonGroup>
       </SettingRow>}
       {permissions && review && <SettingRow label={review === 'enable' ? 'Review grants before enabling' : 'Review grants'} block>
-        <p>This native executable runs on {owner} with {d.scope} scope. Approve checksum <code>{p.checksum}</code> and these requested grants:</p>
-        <ul>{(d.requestedGrants ?? []).map((grant) => <li key={grant}>{grant}</li>)}</ul>
-        {!d.requestedGrants?.length && <p>No grants requested.</p>}
-        <PluginAgentToolsDisclosure plugin={p} owner={owner} />
-        <PluginUIDisclosure plugin={p} owner={owner} />
+        <div className={styles.review}>
+          <p>This native executable runs on {owner} with {d.scope} scope.</p>
+          <p>Approve checksum <code className={styles.reviewChecksum}>{p.checksum}</code> and these requested grants:</p>
+          {d.requestedGrants?.length ? <PluginGrants grants={d.requestedGrants} label="Grants to approve" /> : <p>No grants requested.</p>}
+          <PluginAgentToolsDisclosure plugin={p} owner={owner} />
+          <PluginUIDisclosure plugin={p} owner={owner} />
+        </div>
         <ButtonGroup label="Plugin approval actions">
           <Button type="button" variant="accent" onClick={() => { void mutate(review, { ...(review === 'enable' ? { approval: p.approval } : {}), grants: d.requestedGrants ?? [] }); }}>{review === 'enable' ? 'Approve grants and enable' : 'Approve grants'}</Button>
           <Button type="button" onClick={() => setReview(null)}>Cancel approval</Button>

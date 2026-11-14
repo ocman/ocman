@@ -1,4 +1,12 @@
 .checksum { overflow-wrap: anywhere; }
+.grants { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; margin: 0; padding: 0; list-style: none; }
+.grants li { min-width: 0; max-width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text); font: 12px/1.5 var(--font-conversation-mono); overflow-wrap: anywhere; }
+.grants code { font: inherit; }
+.emptyGrants { color: var(--text-dim); font-size: 13px; }
+.review { min-width: 0; max-width: 100%; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.review p { margin: 0 0 12px; }
+.review .grants { margin-bottom: 16px; }
+.reviewChecksum { display: block; margin: 6px 0; overflow-wrap: anywhere; font: 12px/1.6 var(--font-conversation-mono); }
 .management { min-width: 0; border: 0; padding: 0; }
 .logs { box-sizing: border-box; min-height: 240px; max-height: 400px; margin: 12px 0 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--mantle); color: var(--subtext1); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.7 var(--font-conversation-mono); }
 .logSection { margin-top: 24px; }

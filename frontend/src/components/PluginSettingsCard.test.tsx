@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import type { PluginRegistration } from '../lib/plugins';
 import { PluginSettingsCard } from './PluginSettingsCard';
@@ -31,4 +31,28 @@ it('shows no disclosure for plugins without UI', () => {
   render(<PluginSettingsCard plugin={plugin(false)} owner="local" refresh={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
   expect(screen.queryByRole('note')).toBeNull();
+});
+
+it('renders each requested, current, and reviewed grant as a separate list item', () => {
+  const p = plugin(true);
+  p.description.requestedGrants = ['ui.app', 'session.run', 'pentest.configure'];
+  p.grants = ['session.run'];
+  render(<PluginSettingsCard plugin={p} owner="local" refresh={vi.fn()} />);
+  expect(within(screen.getByRole('list', { name: 'Requested grants' })).getAllByRole('listitem').map((item) => item.textContent))
+    .toEqual(p.description.requestedGrants);
+  expect(within(screen.getByRole('list', { name: 'Current grants' })).getAllByRole('listitem')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+  expect(within(screen.getByRole('list', { name: 'Grants to approve' })).getAllByRole('listitem').map((item) => item.textContent))
+    .toEqual(p.description.requestedGrants);
+});
+
+it('keeps the no-grants state explicit without empty lists', () => {
+  const p = plugin(false);
+  delete p.description.requestedGrants;
+  p.grants = null;
+  render(<PluginSettingsCard plugin={p} owner="local" refresh={vi.fn()} />);
+  expect(screen.getAllByText('None', { exact: true })).toHaveLength(2);
+  expect(screen.queryByRole('list')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+  expect(screen.getByText('No grants requested.')).toBeInTheDocument();
 });
