@@ -36,7 +36,7 @@ export function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose,
               <IconButton label="Zoom out" icon="bi-dash-lg" variant="ghost" onClick={() => zoomOut(0.25, 0)} />
               <span>{Math.round(zoom * 100)}%</span>
               <IconButton label="Zoom in" icon="bi-plus-lg" variant="ghost" onClick={() => zoomIn(0.25, 0)} />
-              <IconButton label="Reset view" icon="bi-arrows-fullscreen" variant="ghost" onClick={() => centerView(1, 0)} />
+              <IconButton label="Reset view" icon="bi-arrows-fullscreen" variant="ghost" onClick={() => centerView(1)} />
               <IconButton label={closeLabel} icon="bi-x-lg" variant="ghost" onClick={onClose} />
             </div>
             <TransformComponent

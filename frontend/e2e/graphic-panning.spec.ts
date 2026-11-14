@@ -25,6 +25,9 @@ for (const graphic of [
       return { x: matrix.m41, y: matrix.m42, scale: matrix.a };
     });
     await expect(viewport).toBeVisible();
+    // Reset before the next inertia frame, then advance it to catch stale motion.
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
     const initial = await position();
     for (const zoom of ['100%', '75%', '125%']) {
       if (zoom === '75%') await dialog.getByRole('button', { name: 'Zoom out' }).click();
@@ -36,7 +39,10 @@ for (const graphic of [
       const box = (await viewport.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 60, { steps: 8 });
+      for (let step = 1; step <= 8; step++) {
+        await page.clock.runFor(16);
+        await page.mouse.move(box.x + box.width / 2 + step * 10, box.y + box.height / 2 + step * 7.5);
+      }
       await expect.poll(async () => (await position()).x - before.x).toBeGreaterThan(60);
       await expect.poll(async () => (await position()).y - before.y).toBeGreaterThan(40);
       await page.mouse.up();
@@ -45,6 +51,7 @@ for (const graphic of [
       expect((await position()).scale).toBe(before.scale);
       await expect(dialog).toBeVisible();
       await dialog.getByRole('button', { name: 'Reset view' }).click();
+      await page.clock.runFor(1000);
       await expect.poll(position).toEqual(initial);
       await expect(dialog.getByText('100%', { exact: true })).toBeVisible();
     }

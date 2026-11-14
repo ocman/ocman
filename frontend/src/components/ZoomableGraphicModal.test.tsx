@@ -35,7 +35,7 @@ describe('ZoomableGraphicModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Simulate transform' }));
     expect(screen.getByText('150%')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
-    expect(controls.centerView).toHaveBeenCalledWith(1, 0);
+    expect(controls.centerView).toHaveBeenCalledWith(1);
     fireEvent.click(screen.getByRole('button', { name: 'Close diagram' }));
     expect(onClose).toHaveBeenCalledOnce();
   });
