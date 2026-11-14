@@ -144,11 +144,11 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	composed := read.Compose(detail, limit, offset)
 	s.conversationReadHeader(w, adapter, detail)
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
-	s.enrichSessionCreator(r.Context(), string(adapter.ID()), sessionID, detail)
 	routeKey := adapter.ID()
 	if key, ok := s.registry.KeyFor(adapter); ok {
 		routeKey = key
 	}
+	s.enrichSessionCreator(r.Context(), string(routeKey), sessionID, detail)
 	peek := r.URL.Query().Get("peek") == "1"
 	if detail.Session != nil {
 		detail.Session.ProjectDefaultModel = s.projectDefaultModel(r.Context(), detail.Session.Directory)
@@ -281,6 +281,10 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			sessionID, platform = s.sessions.CoreSessionReference(identity), identity.Platform
+			_, kind := platforms.SplitPlatformID(identity.Platform)
+			if _, key, ok := s.registry.PlatformForCanonicalSource(r.Context(), identity.OwnerID, kind, identity.SourceKey); ok {
+				platform = string(key)
+			}
 		}
 		var adapter platforms.Platform
 		var ok bool
@@ -328,7 +332,11 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 		if detail.Session != nil {
 			status = detail.Session.Status
 		}
-		result[taskID] = taskData{Platform: string(adapter.ID()), Status: status, Messages: msgsJSON, Parts: ptsJSON}
+		routeKey := adapter.ID()
+		if key, ok := s.registry.KeyFor(adapter); ok {
+			routeKey = key
+		}
+		result[taskID] = taskData{Platform: string(routeKey), Status: status, Messages: msgsJSON, Parts: ptsJSON}
 	}
 
 	httpx.WriteJSON(w, map[string]interface{}{"tasks": result})
