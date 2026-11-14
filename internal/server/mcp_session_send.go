@@ -33,7 +33,7 @@ func (s sessionMCPService) resolveTarget(ctx context.Context, platform, id strin
 		if err != nil {
 			return "", "", nil, err
 		}
-		platform, id = info.Platform, s.server.sessions.CoreSessionReference(info)
+		platform, id = s.identityPlatform(ctx, info), s.server.sessions.CoreSessionReference(info)
 	}
 	if platform == "" {
 		adapter, detail, err := s.findSession(ctx, id, 0)
