@@ -23,8 +23,7 @@ func TestConcurrentRefreshesBypassUnrelatedLiveFeedBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	started, release, blocked := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	var unblock sync.Once
-	defer unblock.Do(func() { close(blocked) })
+	var releaseFirst, unblock sync.Once
 	f.onRead = func(id string) {
 		switch id {
 		case "session-0":
@@ -34,30 +33,52 @@ func TestConcurrentRefreshesBypassUnrelatedLiveFeedBatch(t *testing.T) {
 			<-blocked
 		}
 	}
-	drained := make(chan error, 1)
+	drained := make(chan struct{})
+	var drainErr error
 	go func() {
-		drained <- w.applyChanges(t.Context(), map[string]*platforms.HistoryChange{
+		defer close(drained)
+		drainErr = w.applyChanges(t.Context(), map[string]*platforms.HistoryChange{
 			"session-0": {SessionID: "session-0", Seq: 3, Resync: true},
 			"session-1": {SessionID: "session-1", Seq: 3, Resync: true},
 		}, map[string]bool{})
 	}()
+	ctx, cancel := context.WithCancel(t.Context())
+	var callers sync.WaitGroup
+	defer func() {
+		cancel()
+		releaseFirst.Do(func() { close(release) })
+		unblock.Do(func() { close(blocked) })
+		<-drained
+		callers.Wait()
+	}()
 	<-started
-	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
-	defer cancel()
+	queued := make(chan struct{}, 2)
 	results := make(chan error, 2)
 	for range 2 {
-		go func() { results <- m.RefreshStored(ctx, "bulk", "session-2") }()
+		callers.Go(func() {
+			results <- m.RefreshStored(&queuedRefreshContext{Context: ctx, queued: queued}, "bulk", "session-2")
+		})
 	}
-	eventually(t, "both callers did not request validation", func() bool { return m.readTicket("bulk", "session-2") == 2 })
-	close(release)
+	// Ticket allocation precedes requestRead. Reaching RefreshStored's wait
+	// select proves each caller has actually published its priority request.
+	eventually(t, "both callers did not queue validation", func() bool { return len(queued) == 2 })
+	releaseFirst.Do(func() { close(release) })
+	watchdog := time.NewTimer(5 * time.Second)
+	defer watchdog.Stop()
 	for range 2 {
-		if err := <-results; err != nil {
-			t.Errorf("refresh starved behind unrelated live batch: %v", err)
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Errorf("refresh failed: %v", err)
+			}
+		case <-watchdog.C:
+			t.Fatal("refresh starved behind unrelated live batch")
 		}
 	}
 	unblock.Do(func() { close(blocked) })
-	if err := <-drained; err != nil {
-		t.Fatal(err)
+	<-drained
+	if drainErr != nil {
+		t.Fatal(drainErr)
 	}
 	reads := 0
 	for _, id := range f.order {
@@ -68,6 +89,19 @@ func TestConcurrentRefreshesBypassUnrelatedLiveFeedBatch(t *testing.T) {
 	if reads != 1 {
 		t.Errorf("two queued callers need one post-request snapshot, got %d", reads)
 	}
+}
+
+// RefreshStored first consults Done in its receipt wait, after requestRead.
+// Observe that boundary without adding production hooks or polling tickets.
+type queuedRefreshContext struct {
+	context.Context
+	queued chan<- struct{}
+	once   sync.Once
+}
+
+func (c *queuedRefreshContext) Done() <-chan struct{} {
+	c.once.Do(func() { c.queued <- struct{}{} })
+	return c.Context.Done()
 }
 
 func TestPriorityRefreshDoesNotAcknowledgeCallerArrivingDuringSnapshot(t *testing.T) {

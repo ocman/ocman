@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -78,20 +79,21 @@ func HelperSlot(ctx context.Context, dir string) (release func(), err error) {
 
 // waitSlotLocked blocks until a slot may have been freed. With machine slots
 // it announces the wait and polls, since another process frees the slot.
-func (l *live) waitSlotLocked(ctx context.Context, waiter **os.File) {
+func (l *live) waitSlotLocked(ctx context.Context, waiter **slotWaiter) error {
 	if l.opts.SlotDir == "" {
 		l.slots.Wait()
-		return
+		return nil
 	}
 	if *waiter == nil {
-		if f, err := os.CreateTemp(l.opts.SlotDir, "wait-"); err == nil {
-			if syscall.Flock(int(f.Fd()), syscall.LOCK_EX) == nil {
-				*waiter = f
-			} else {
-				_ = os.Remove(f.Name())
-				_ = f.Close()
-			}
+		w, err := prepareSlotWaiter(l.opts.SlotDir)
+		if err != nil {
+			return err
 		}
+		if err := w.publish(); err != nil {
+			dropWaiter(w)
+			return err
+		}
+		*waiter = w
 	}
 	l.mu.Unlock()
 	select {
@@ -99,12 +101,39 @@ func (l *live) waitSlotLocked(ctx context.Context, waiter **os.File) {
 	case <-time.After(slotPoll):
 	}
 	l.mu.Lock()
+	return nil
 }
 
-func dropWaiter(f *os.File) {
-	if f != nil {
-		_ = os.Remove(f.Name())
-		_ = f.Close()
+type slotWaiter struct {
+	file *os.File
+	path string
+}
+
+func prepareSlotWaiter(dir string) (*slotWaiter, error) {
+	// Stale scans only inspect wait-*. Keep the inode private until locked.
+	f, err := os.CreateTemp(dir, ".wait-")
+	if err != nil {
+		return nil, fmt.Errorf("claude slot waiter: %w", err)
+	}
+	return &slotWaiter{file: f, path: f.Name()}, nil
+}
+
+func (w *slotWaiter) publish() error {
+	if err := syscall.Flock(int(w.file.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("claude slot waiter lock: %w", err)
+	}
+	path := filepath.Join(filepath.Dir(w.path), strings.TrimPrefix(filepath.Base(w.path), "."))
+	if err := os.Rename(w.path, path); err != nil {
+		return fmt.Errorf("claude slot waiter publish: %w", err)
+	}
+	w.path = path // cleanup must unlink the public name, not file.Name()
+	return nil
+}
+
+func dropWaiter(w *slotWaiter) {
+	if w != nil {
+		_ = os.Remove(w.path)
+		_ = w.file.Close()
 	}
 }
 

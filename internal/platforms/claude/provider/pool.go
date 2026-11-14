@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -136,7 +135,7 @@ func (l *live) acquire(ctx context.Context, id, model, effort, input string, w *
 	defer stop()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	var waiter *os.File
+	var waiter *slotWaiter
 	defer func() { dropWaiter(waiter) }()
 	for {
 		if w.cancelled {
@@ -182,7 +181,9 @@ func (l *live) acquire(ctx context.Context, id, model, effort, input string, w *
 			}
 		}
 		if !evicted || l.exitingLocked() {
-			l.waitSlotLocked(ctx, &waiter) // the evicted child frees its slot when reaped
+			if err := l.waitSlotLocked(ctx, &waiter); err != nil { // the evicted child frees its slot when reaped
+				return nil, err
+			}
 		}
 	}
 }
