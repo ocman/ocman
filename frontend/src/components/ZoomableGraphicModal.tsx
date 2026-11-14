@@ -20,7 +20,7 @@ export function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose,
         minScale={0.25}
         maxScale={maxScale}
         centerOnInit
-        centerZoomedOut
+        limitToBounds={false}
         disablePadding
         smooth={false}
         wheel={{ step: 0.01 }}
@@ -29,13 +29,14 @@ export function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose,
         doubleClick={{ disabled: true }}
         onTransform={(_, state) => setZoom(state.scale)}
       >
-        {({ zoomIn, zoomOut }) => (
+        {({ zoomIn, zoomOut, centerView }) => (
           <>
             <div className="oc-mermaid-modal-toolbar">
               {navigation}
               <IconButton label="Zoom out" icon="bi-dash-lg" variant="ghost" onClick={() => zoomOut(0.25, 0)} />
               <span>{Math.round(zoom * 100)}%</span>
               <IconButton label="Zoom in" icon="bi-plus-lg" variant="ghost" onClick={() => zoomIn(0.25, 0)} />
+              <IconButton label="Reset view" icon="bi-arrows-fullscreen" variant="ghost" onClick={() => centerView(1, 0)} />
               <IconButton label={closeLabel} icon="bi-x-lg" variant="ghost" onClick={onClose} />
             </div>
             <TransformComponent
