@@ -766,7 +766,8 @@ flowchart LR
 `internal/tasksvc` runs bounded owner-local work inside Ocman's process.
 `internal/taskmod` exposes authenticated, read-only list and detail APIs at
 `/api/background-tasks`. A compact `bgt` counter beside total active sessions
-opens Activity's Background tasks view. Its
+links to the standalone `/background-tasks` page. Activity also exposes the same
+task view in its modal. The counter's
 `view=active-count` request counts queued/running rows without loading task
 payloads or applying list limits. Both counter and page pause polling while hidden.
 
@@ -776,7 +777,7 @@ flowchart LR
     Prepare[Historical identity preparation] -->|typed work + phase counters| Manager
     Schedule[Existing maintenance loops] -->|inline observation via module<br/>in-memory overlap guard| Manager
     Manager -->|durable receipts<br/>module-owned schema| State[(state.db<br/>task records)]
-    Browser[Sidebar task counter<br/>and Activity task view] -->|authenticated GET| API[taskmod]
+    Browser[Sidebar task counter<br/>standalone and Activity task views] -->|authenticated GET| API[taskmod]
     API --> State
     API -->|authenticated gRPC| Remote[Remote owner task readers]
     Manager -->|snapshots and repairs| History[(state_conv.db)]
