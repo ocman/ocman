@@ -69,6 +69,45 @@ func TestSessionChangesCarryCompactRows(t *testing.T) {
 	}
 }
 
+func TestNamedConnectionChangesPreserveCreator(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	eventConnection(t, reg, "cnx_work", "local", "work")
+	id := eventCatalogueRow(t, srv, "local", "work")
+	if err := srv.stateDB.RecordSessionCreator(t.Context(), state.SessionCreator{
+		Platform: "claudecode", SessionID: id, CreatorPlatform: "claudecode", CreatorSessionID: "unrelated", CreatedAt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.stateDB.RecordSessionCreator(t.Context(), state.SessionCreator{
+		Platform: "cnx_work", SessionID: id, CreatorPlatform: "cnx_work", CreatorSessionID: "parent", CreatedAt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	updates := srv.sessionUpdatesModule()
+	if err := updates.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); updates.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	sub, unsub := srv.broadcastHub.subscribe()
+	defer unsub()
+	srv.broadcastSidebarChanged("cnx_work", id)
+	select {
+	case event := <-sub.ch:
+		var payload struct{ Session *db.Session }
+		if err := json.Unmarshal(event.data, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Session == nil || payload.Session.Platform != "cnx_work" || payload.Session.Creator == nil || payload.Session.Creator.SessionID != "parent" || payload.Session.Creator.Platform != "cnx_work" {
+			t.Fatalf("child lost nesting in named connection update: %s", event.data)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no compact event")
+	}
+}
+
 func TestParkedSnapshotCannotOverwriteNewerStatusRevision(t *testing.T) {
 	h := newBroadcastHub()
 	sub, stop := h.subscribe()

@@ -29,12 +29,12 @@ func (s *Server) sessionUpdatesModule() *sessionupdates.Module {
 				if err := s.overlayPRWatchTasks(ctx, rows); err != nil {
 					return nil, err
 				}
+				// Creator provenance is keyed by the public connection, not the
+				// adapter's native kind. Match the sidebar list's lookup identity.
+				rows[0].Platform = key.Platform
 				if err := s.enrichSidebarCreators(ctx, rows); err != nil {
 					return nil, err
 				}
-				// The adapter keeps its native identity for enrichment and hooks.
-				// Only the published row carries the immutable registry key.
-				rows[0].Platform = key.Platform
 				return &rows[0], nil
 			},
 			Publish: func(update sessionupdates.Update) {
