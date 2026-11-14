@@ -160,7 +160,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 
   });
 }
 
-test('task rows stay compact and expand run history without closing the activity modal', async ({ mockedPage: page }) => {
+test('task rows show progress and expand history without closing the activity modal', async ({ mockedPage: page }) => {
   await page.route('/api/background-tasks?*', (route) => route.fulfill({ json: [{
     id: 'sync', title: 'Sync history', kind: 'conversation.history', ownerId: 'local', status: 'running',
     progress: { phase: 'Checking sessions', completed: 3, total: 5, unit: 'sessions', counters: { imported: 2 } },
@@ -172,12 +172,14 @@ test('task rows stay compact and expand run history without closing the activity
   }] }));
   await page.goto('/sessions?activity=tasks');
   const row = page.getByRole('button', { name: /Sync history/ });
+  const summary = page.getByLabel('Current progress for Sync history');
   await expect(row).toBeVisible();
   await expect(page.getByRole('list', { name: 'Background tasks' })).toHaveCount(1);
   await expect(row).toContainText('2 runs');
   await expect(row).toHaveAttribute('aria-expanded', 'false');
-  await expect(row.getByRole('progressbar')).toHaveAttribute('value', '3');
-  expect((await row.boundingBox())!.height).toBeLessThanOrEqual(32);
+  await expect(summary.getByRole('progressbar')).toHaveAttribute('value', '3');
+  await expect(summary.getByText('3 / 5 sessions')).toBeVisible();
+  await expect(summary.getByText('imported: 2')).toBeVisible();
   await row.click();
   const details = page.getByRole('region', { name: 'History for Sync history' });
   await expect(row).toHaveAttribute('aria-expanded', 'true');
@@ -199,11 +201,55 @@ test('task rows stay compact and expand run history without closing the activity
   await expect(row).toBeFocused();
   await expect(page.getByRole('dialog', { name: 'Activity', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(row.getByRole('progressbar')).toBeInViewport();
-  expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(summary.getByRole('progressbar')).toBeInViewport();
+  expect(await summary.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await row.click();
   await expect(details.getByRole('progressbar')).toBeVisible();
 });
+
+for (const width of [1280, 390]) {
+  test(`background task progress updates without shuffling rows at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const scan = { id: 'sync', key: 'sync', title: 'Sync history', kind: 'history', ownerId: 'local', status: 'running',
+      progress: { phase: 'Checking sessions', completed: 3, total: 5, unit: 'sessions', counters: { imported: 2 } },
+      createdAt: 3000, updatedAt: 4000 };
+    const cleanup = { ...scan, id: 'cleanup', key: 'cleanup', title: 'Clean archived worktrees', kind: 'cleanup', status: 'succeeded',
+      schedule: { intervalMillis: 3_600_000, nextRunAt: Date.now() + 3_600_000, runs: 42 },
+      progress: { phase: 'Checked safety', completed: 5, total: 5, unit: 'checkouts', counters: { retained: 5 } } };
+    let updated = false;
+    await page.route('/api/background-tasks?*', route => route.fulfill({ json: updated
+      ? [cleanup, { ...scan, id: 'new-sync', createdAt: 5000,
+        progress: { ...scan.progress, completed: 4 } }, { ...scan, status: 'failed', error: 'Earlier attempt failed' }]
+      : [scan, cleanup] }));
+    await page.goto('/sessions?activity=tasks');
+    const list = page.getByRole('list', { name: 'Background tasks' });
+    const rows = list.getByRole('listitem').filter({ has: page.getByRole('button', { expanded: false }) });
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText('Clean archived worktrees');
+    await expect(rows.nth(0)).toContainText('Waiting for next run');
+    await expect(rows.nth(0)).toContainText('42 runs');
+    const toggle = page.getByRole('button', { name: /Sync history/ });
+    await toggle.click();
+    updated = true;
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    const summary = page.getByLabel('Current progress for Sync history');
+    await expect(summary.getByText('4 / 5 sessions')).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(list.getByRole('listitem').nth(0)).toContainText('Clean archived worktrees');
+    await expect(page.getByRole('region', { name: 'History for Sync history' }).getByText('Earlier attempt failed')).toBeVisible();
+    expect(await list.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await toggle.click();
+    await page.screenshot({ path: testInfo.outputPath('task-progress.png') });
+    await page.getByRole('combobox', { name: 'Task status' }).selectOption('waiting');
+    await expect(list.getByRole('listitem')).toHaveCount(1);
+    await expect(page).toHaveURL(/taskStatus=waiting/);
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'Task status' })).toHaveValue('waiting');
+    await expect(list.getByRole('listitem')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(list.getByRole('listitem')).toHaveCount(2);
+  });
+}
 
 test('resource machine selector reads a connected remote and survives reload', async ({ mockedPage: page }) => {
   await page.route('/api/remotes', (route) => route.fulfill({ json: [

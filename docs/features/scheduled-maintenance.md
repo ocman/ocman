@@ -3,12 +3,27 @@ title: Scheduled maintenance
 weight: 49
 ---
 
-The Background tasks page shows Ocman's owner-local scheduled maintenance alongside
-history imports and preparation work. Open it through the `bgt` counter. Connected
-remote owners contribute their own records and owner badges.
+The Background tasks view shows Ocman's owner-local scheduled maintenance alongside
+history imports and preparation work. Open Activity and select Background tasks,
+or use the `bgt` counter. Connected remote owners contribute their own records
+and owner badges.
+
+Each task has a stable row with its phase, completed/total counts, progress bar,
+counters and errors visible without expanding it. Rows use task identity order,
+so polling and new runs do not reorder existing tasks. Unknown totals use an
+indeterminate bar only while running, never an invented percentage. Expand the
+row to inspect available runs newest first. Machines, kinds, keys and scopes
+remain separate. An active run takes precedence over a newer finished run in the
+overview. Status filters apply to that current task state, not older run history,
+and survive reloads and browser Back through the URL.
 
 Each recurring job keeps one entry with its latest result, progress counters,
 cadence, run count and next-check hint. An idle recurring job is not running work.
+After a successful pass, a job with a next-check hint shows "Waiting for next run"
+and its last result. Failures remain visible even when another check is scheduled.
+The run count comes from the schedule, not the number of retained history records.
+Recurring jobs retain only their latest run. The list and expanded history are
+limited to the API's 200 available records; older tasks and runs may not appear.
 The counter counts only queued/running entries. Restarting Ocman clears stale
 next-check hints until the loops run again. Jobs that stop also clear their hints.
 The hint is approximate: slow passes, event-triggered runs and timer alignment can

@@ -766,7 +766,7 @@ flowchart LR
 `internal/tasksvc` runs bounded owner-local work inside Ocman's process.
 `internal/taskmod` exposes authenticated, read-only list and detail APIs at
 `/api/background-tasks`. A compact `bgt` counter beside total active sessions
-links to the Background tasks page instead of a main navigation entry. Its
+opens Activity's Background tasks view. Its
 `view=active-count` request counts queued/running rows without loading task
 payloads or applying list limits. Both counter and page pause polling while hidden.
 
@@ -776,7 +776,7 @@ flowchart LR
     Prepare[Historical identity preparation] -->|typed work + phase counters| Manager
     Schedule[Existing maintenance loops] -->|inline observation via module<br/>in-memory overlap guard| Manager
     Manager -->|durable receipts<br/>module-owned schema| State[(state.db<br/>task records)]
-    Browser[Sidebar task counter<br/>and Background tasks page] -->|authenticated GET| API[taskmod]
+    Browser[Sidebar task counter<br/>and Activity task view] -->|authenticated GET| API[taskmod]
     API --> State
     API -->|authenticated gRPC| Remote[Remote owner task readers]
     Manager -->|snapshots and repairs| History[(state_conv.db)]
@@ -798,6 +798,13 @@ flowchart LR
   aggregates owner-local tasks over authenticated gRPC, omitting remote readers
   that fail. Explicit owner queries fail closed, and local read failures remain
   errors even during aggregation.
+- The task view groups returned records by owner, kind, key or title, and scope.
+  Identity ordering keeps progress updates from shuffling rows. Each group shows
+  its running execution, then queued execution, then latest run, with counters
+  and errors visible. History remains newest first. URL-backed status filters
+  apply after grouping to current state, including a waiting display state for
+  successful scheduled receipts with a next-check hint. Grouping does not expand
+  the API's record limit or change backend execution and retention.
 - History ingestion and initial session identity preparation use the bounded manager.
   Producers own durable resume checkpoints; task records do not replay closures.
 - `module.Every` observes scheduled iterations through a lifetime-context observer.

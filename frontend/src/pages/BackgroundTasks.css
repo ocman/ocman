@@ -4,6 +4,7 @@
 }
 
 .background-tasks > p,
+.background-task-summary,
 .background-task-progress,
 .background-task-state {
   color: var(--text-dim);
@@ -14,17 +15,29 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem 0.75rem;
+}
+
+.background-task {
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+
+.background-task-summary {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .background-task-progress {
   display: grid;
   gap: 0.4rem;
-  padding-top: 0.3rem;
 }
 
-.background-task-progress progress,
-.background-task-row progress {
+.background-task-progress progress {
   width: 100%;
   max-width: 28rem;
   accent-color: var(--accent);
@@ -34,7 +47,6 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  margin-left: 0.5rem;
 }
 
 .background-task-state[data-status="failed"],
@@ -43,41 +55,31 @@
   color: var(--danger);
 }
 
-.background-task-error {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.background-task-history { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+.background-task-error { margin: 0; overflow-wrap: anywhere; }
+.background-task-history { padding: 0.75rem 1rem 0; }
+.background-task-history > p { color: var(--text-dim); font-size: 12px; }
 .background-task-history ol { display: grid; gap: 1rem; margin: 0; padding-left: 1rem; }
 .background-task-history li { padding-left: 0.25rem; }
-.background-task-history .background-task-state { margin: 0; }
-.background-task-count { flex-shrink: 0; color: var(--text-dim); }
-.background-task-scope { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.background-task-count { margin-left: auto; flex-shrink: 0; color: var(--text-dim); }
 
 .background-task-row.oc-button {
   display: flex;
   width: 100%;
-  height: 30px;
+  height: auto;
+  min-height: 30px;
+  flex-wrap: wrap;
   justify-content: flex-start;
   gap: 8px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 6px 8px;
   text-align: left;
   font-size: 12px;
 }
 
-.background-task-row strong,
-.background-task-phase { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.background-task-row strong { min-width: 0; }
-.background-task-row .background-task-state { margin: 0; flex-shrink: 0; }
-.background-task-phase { margin-left: auto; color: var(--text-dim); }
+.background-task-row strong { min-width: 0; overflow-wrap: anywhere; }
 .background-task-row > i { flex-shrink: 0; }
-.background-task-row progress { width: 6rem; flex-shrink: 0; }
 .background-task-row .oc-loading-spinner { width: 12px; height: 12px; }
+
 @media (max-width: 600px) {
-  .background-task-row.oc-button { flex-wrap: wrap; height: auto; min-height: 30px; padding-block: 6px; }
-  .background-task-row progress { order: 1; width: 100%; max-width: none; }
-  .background-task-phase { display: none; }
-  .background-task-row > i { margin-left: auto; }
+  .background-task-row strong { flex-basis: 100%; }
+  .background-task-history { padding-inline: 0.5rem; }
 }
