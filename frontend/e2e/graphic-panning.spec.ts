@@ -15,6 +15,7 @@ for (const graphic of [
       contentType: 'image/svg+xml',
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480"><rect width="800" height="480" fill="blue"/></svg>',
     }));
+    await page.clock.install({ time: new Date('2026-11-14T08:00:00Z') });
     await page.goto(`/session/${session.id}`);
     await page.getByRole('button', { name: `Expand ${graphic.label}` }).click();
     const dialog = page.getByRole('dialog', { name: graphic.label });
@@ -26,8 +27,7 @@ for (const graphic of [
     });
     await expect(viewport).toBeVisible();
     // Reset before the next inertia frame, then advance it to catch stale motion.
-    await page.clock.install();
-    await page.clock.pauseAt(new Date());
+    await page.clock.pauseAt(new Date('2026-11-14T10:00:00Z'));
     const initial = await position();
     for (const zoom of ['100%', '75%', '125%']) {
       if (zoom === '75%') await dialog.getByRole('button', { name: 'Zoom out' }).click();
