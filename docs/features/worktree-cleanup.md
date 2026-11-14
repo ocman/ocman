@@ -22,8 +22,37 @@ Open Background tasks through the `bgt` counter to inspect cleanup. Its recurrin
 entry shows the latest result, hourly cadence, run count and next-check hint.
 Progress counts checked checkouts, with counters for removed, retained,
 already-removed checkouts and unavailable owners. Retained checkouts are normal
-safety decisions, not failed cleanup jobs. Detailed reasons remain in debug logs
-and checkout recovery records.
+safety decisions, not failed cleanup jobs.
+
+## Inspecting cleanup logs
+
+At the normal INFO log level, filter on `component=worktreecleanup`. Each sweep
+has a `sweep_id` shared by its checkout outcomes and unavailable-owner records.
+
+- `worktree cleanup sweep` reports `status`, `duration_ms`, `targets`, `checked`,
+  `removed`, `retained`, `already-removed`, `unavailable-owners` and
+  `retained_by_reason`. Empty sweeps also produce a summary. A cancelled sweep
+  reports `status=cancelled` and only counts checkouts it actually checked.
+- `worktree cleanup checkout` identifies the `owner` and checkout `path`, with
+  an `outcome` and bounded `reason_code`.
+- `worktree cleanup owner unavailable` identifies an owner skipped because its
+  inventory is unavailable, it is disconnected, or it cannot perform cleanup.
+
+Common retention codes are `session_not_archived`, `session_grace_period`,
+`directory_grace_period` and `session_pending_work`. Checkouts can also be
+retained for `unsafe_worktree_identity`, `worktree_inventory_failed`,
+`eligibility_read_failed`, `receipt_write_failed` or `owner_check_failed`.
+`owner_check_failed` includes owner-side filesystem, terminal and session
+rechecks. Raw error details remain at DEBUG level rather than exposing arbitrary
+owner or Git error text in INFO logs.
+
+A completed sweep with `removed=0` means nothing was removed, not that cleanup
+failed. Compare its retention counts and unavailable owners across successive
+sweep IDs. Logs provide run history only for as long as your log storage retains
+them; the Background tasks entry and checkout recovery records are not a complete
+run-history archive.
+
+## Eligibility
 
 Unarchiving cancels eligibility. Archiving again starts another seven-day
 period. Snoozing is not archival for cleanup purposes. When several sessions use
@@ -68,8 +97,9 @@ recovery failures block the operation instead of silently switching directories
 or losing history.
 
 Cleanup attempts retain their latest removal failure in the application's
-`worktree_cleanup_checkout` records and write structured debug logs for skipped
-checkouts. Unsafe checkouts are retried on later sweeps.
+`worktree_cleanup_checkout` records once they reach owner-side removal admission.
+Earlier eligibility skips are visible in the INFO outcome logs even when no
+recovery receipt was created. Unsafe checkouts are retried on later sweeps.
 
 ## Implementation
 
