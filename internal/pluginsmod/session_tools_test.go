@@ -130,7 +130,7 @@ func TestSessionToolMCPAndPermissionPolicy(t *testing.T) {
 		t.Fatal("non-object admitted")
 	}
 	rules := toolSessionRules()
-	if len(rules) != 3 || rules[0].Action != "deny" || rules[0].Permission != "*" {
+	if len(rules) != 4 || rules[0].Action != "deny" || rules[0].Permission != "*" {
 		t.Fatal(rules)
 	}
 	for _, rule := range rules[1:] {

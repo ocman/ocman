@@ -30,6 +30,7 @@ func toolSessionRules() []platforms.PermissionRule {
 	return []platforms.PermissionRule{
 		{Permission: "*", Pattern: "*", Action: "deny"},
 		{Permission: "mcp_plugin_session_tool", Pattern: "plugin_session_tool", Action: "allow"},
+		{Permission: "ocman_plugin_session_tool", Pattern: "*", Action: "allow"},
 		{Permission: "mcp__ocman__plugin_session_tool", Pattern: "*", Action: "allow"},
 	}
 }
@@ -51,13 +52,7 @@ func (m *Module) openSessionTools(pluginID, platformID, sessionID string, params
 		b.ctx, b.cancel = context.WithTimeout(lifetime, time.Duration(params.TimeoutSeconds)*time.Second)
 		m.sessionTools.Store(b.token, b)
 		close(ready)
-		select {
-		case <-b.ctx.Done():
-			if m.closeSessionToolBinding(b) {
-				m.abortToolSession(b)
-			}
-		case <-b.done:
-		}
+		m.watchToolSession(lifetime, b)
 		b.cancel()
 	}) {
 		return "", plugins.ErrUnavailable

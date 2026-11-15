@@ -586,6 +586,16 @@ after reopening the state database. Consumers must durably deduplicate that ID
 with their effect, or use an idempotent provider operation. The SDK does not
 make consumer effects transactional.
 
+Active tool sessions also check for completed turns once per second until their
+binding closes or expires. This uses the existing lifecycle gate and durable
+outbox, so a missed idle edge or delayed history projection does not leave a
+finished turn waiting for the slower global recovery sweep. Busy turns and
+sessions without assistant text are not delivered. The recovery worker is joined
+at shutdown and grants no additional tools. The deny-all tool policy allows the
+exact `ocman_plugin_session_tool` action used by OpenCode, plus the existing
+runtime callback aliases, without allowing shell, filesystem or unrelated MCP
+operations.
+
 **Recovery limitation:** after six failed attempts a session completion becomes
 a retained dead letter. Unlike the conversation outbox, session completions
 currently have no Settings inspection or supported retry/discard action.

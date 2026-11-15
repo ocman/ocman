@@ -73,10 +73,10 @@ func (m *Module) ReplyToSession(ctx context.Context, platformID, sessionID strin
 	if detail.Session == nil || !conversationReplyReady(detail.Session.Status) {
 		return
 	}
-	m.revokeSessionTools(platformID, sessionID)
 	if text == "" {
 		return
 	}
+	m.revokeSessionTools(platformID, sessionID)
 	// The message ID keys the append, so a repeated idle edge for the same
 	// completed turn adds no second delivery.
 	usage := completedUsage(detail.Messages, messageID)
