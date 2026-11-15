@@ -2,6 +2,7 @@ import { useId, type ReactNode } from 'react';
 import { Button } from '../../components/Control';
 import type { Session } from '../../lib/api';
 import type { SidebarDrawer, SidebarDrawerId } from './useSidebarDrawers';
+import { nestSessions } from '../../lib/nestSessions';
 import './SidebarDrawers.css';
 
 interface Props {
@@ -30,7 +31,8 @@ export function SidebarDrawers({ drawers, expanded, onToggle, renderRow }: Props
               <span className="session-sidebar-drawer-count">{drawer.sessions.length}</span>
             </Button>
             <div id={id} role="region" aria-labelledby={`${id}-toggle`} hidden={!open}>
-              {open && drawer.sessions.map((session) => renderRow(session, false, 0, true))}
+              {open && (drawer.id === 'archived' ? nestSessions(drawer.sessions)
+                : drawer.sessions.map(session => ({ session, depth: 0 }))).map(({ session, depth }) => renderRow(session, false, depth, true))}
             </div>
           </section>
         );

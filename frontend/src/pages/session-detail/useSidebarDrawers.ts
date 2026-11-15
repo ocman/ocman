@@ -6,6 +6,7 @@ import { compareSidebarCompletion } from '../../lib/sidebarHelpers';
 import { matchesSessionSearch } from './sidebarSessionSearch';
 import { hasBackgroundWork, hasPendingPrompt } from '../../lib/sessionVisibility';
 import { sessionAttentionKey } from '../../lib/sessionAttention';
+import { nestSessions } from '../../lib/nestSessions';
 
 const DRAWERS = [
   { id: 'archived', label: 'Background', icon: 'bi-archive' },
@@ -29,6 +30,20 @@ export function runningSidebarDrawers(sessions: Session[], query: string, infos:
   const routineKeys = hiddenSessionOrigins(sessions, { showFactory: true, showRoutines: false, showPlugins: true });
   const pluginKeys = hiddenSessionOrigins(sessions, { showFactory: true, showRoutines: true, showPlugins: false });
   const factoryKeys = hiddenSessionOrigins(sessions, { showFactory: false, showRoutines: true, showPlugins: true });
+  const byKey = new Map(sessions.map(session => [`${session.platform}\0${session.id}`, session]));
+  const parents = new Map(sessions.map(session => [`${session.platform}\0${session.id}`, session.parentId
+    ? `${session.platform}\0${session.parentId}` : session.creator && `${session.creator.platform}\0${session.creator.sessionId}`]));
+  const archivedKeys = new Set(sessions.filter(session => session.archived).map(session => `${session.platform}\0${session.id}`));
+  const children = new Map<string, string[]>();
+  for (const [key, parent] of parents) {
+    if (!parent) continue;
+    const siblings = children.get(parent) ?? [];
+    siblings.push(key);
+    children.set(parent, siblings);
+  }
+  for (const key of archivedKeys) {
+    for (const child of children.get(key) ?? []) archivedKeys.add(child);
+  }
   const rows: Record<SidebarDrawerId, Session[]> = { archived: [], factory: [], routines: [], plugins: [], snoozed: [] };
   const seen = new Set<string>();
   for (const session of sessions) {
@@ -39,8 +54,18 @@ export function runningSidebarDrawers(sessions: Session[], query: string, infos:
     if (!reveal && (!session.snoozedUntil && session.status !== 'busy' && !hasBackgroundWork(session)
       || query && !matchesSessionSearch(query, session, infos[checkoutKey(session.directory, session.remoteId)] ?? infos[session.directory]))) continue;
     // Snoozing wins over origin and archive, so each session has one drawer.
-    const category = session.snoozedUntil ? 'snoozed' : factoryKeys.has(key) ? 'factory' : routineKeys.has(key) ? 'routines' : pluginKeys.has(key) ? 'plugins' : session.archived ? 'archived' : undefined;
+    const category = session.snoozedUntil ? 'snoozed' : factoryKeys.has(key) ? 'factory' : routineKeys.has(key) ? 'routines' : pluginKeys.has(key) ? 'plugins' : archivedKeys.has(key) ? 'archived' : undefined;
     if (category) rows[category].push(session);
+  }
+  // Keep settled ancestors as context for their visible background descendants.
+  const backgroundKeys = new Set(rows.archived.map(session => `${session.platform}\0${session.id}`));
+  for (const key of backgroundKeys) {
+    const parentKey = parents.get(key);
+    const parent = parentKey && byKey.get(parentKey);
+    if (!parent || !archivedKeys.has(parentKey) || backgroundKeys.has(parentKey) || parent.snoozedUntil
+      || factoryKeys.has(parentKey) || routineKeys.has(parentKey) || pluginKeys.has(parentKey)) continue;
+    backgroundKeys.add(parentKey);
+    rows.archived.push(parent);
   }
   return DRAWERS.flatMap((drawer) => rows[drawer.id].length
     ? [{ ...drawer, sessions: rows[drawer.id].sort(compareSidebarCompletion), active: rows[drawer.id].some(isActive) }] : []);
@@ -64,5 +89,6 @@ export function useSidebarDrawers(sessions: Session[], query: string, infos: Rec
     return { ...current, expanded: next };
   });
   return { drawers, expanded, toggle, keys: new Set(drawers.flatMap(drawer => drawer.sessions.map(sessionAttentionKey))),
-    sections: drawers.filter((drawer) => expanded.has(drawer.id)).map((drawer) => drawer.sessions) };
+    sections: drawers.filter((drawer) => expanded.has(drawer.id)).map((drawer) => drawer.id === 'archived'
+      ? nestSessions(drawer.sessions).map(({ session }) => session) : drawer.sessions) };
 }

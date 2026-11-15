@@ -10,6 +10,40 @@ const session = (id: string, patch: Partial<Session> = {}) => ({
 }) as Session;
 
 describe('running sidebar drawers', () => {
+  it.each(['parent', 'creator'] as const)('inherits Background through %s links and retains settled ancestors', (link) => {
+    const parent = session('parent', { archived: true, status: 'done' });
+    const child = session('child', link === 'parent' ? { parentId: parent.id }
+      : { platform: 'other-tool', creator: { platform: parent.platform, sessionId: parent.id, createdAt: 1 } });
+    const grandchild = session('grandchild', { platform: child.platform, parentId: child.id });
+    const unrelated = session('parent', { platform: 'remote' });
+    const { result } = renderHook(() => useSidebarDrawers([grandchild, unrelated, child, parent], '', {}, grandchild.id, grandchild.platform));
+    expect(result.current.drawers).toMatchObject([{ id: 'archived', active: true }]);
+    expect(result.current.drawers[0].sessions.map(row => row.id).sort()).toEqual(['child', 'grandchild', 'parent']);
+    expect(result.current.keys.has('remote:parent')).toBe(false);
+    expect(result.current.expanded.has('archived')).toBe(true);
+  });
+
+  it('does not move descendants of another owner into Background', () => {
+    const rows = [session('parent', { archived: true }), session('child', { platform: 'remote', parentId: 'parent' })];
+    expect(runningSidebarDrawers(rows, '', {})[0].sessions.map(row => row.id)).toEqual(['parent']);
+  });
+
+  it('keeps snooze and origin precedence for descendants of archived sessions', () => {
+    const rows = [session('parent', { archived: true }),
+      session('snoozed', { parentId: 'parent', snoozedUntil: 9999999999999 }),
+      session('routine', { parentId: 'parent', routineId: 'routine' })];
+    expect(runningSidebarDrawers(rows, '', {}).map(drawer => [drawer.id, drawer.sessions.map(row => row.id)])).toEqual([
+      ['archived', ['parent']], ['routines', ['routine']], ['snoozed', ['snoozed']],
+    ]);
+  });
+
+  it('drops settled descendants and terminates cyclic archive ancestry', () => {
+    const rows = [session('parent', { archived: true, parentId: 'child', status: 'done' }),
+      session('child', { parentId: 'parent', status: 'done' })];
+    expect(runningSidebarDrawers(rows, '', {})).toEqual([]);
+    expect(runningSidebarDrawers(rows, '', {}, 'child')[0].sessions.map(row => row.id)).toEqual(['child', 'parent']);
+  });
+
   it('reveals a selected drawer session once its row loads', () => {
     const { result, rerender } = renderHook(({ rows }) => useSidebarDrawers(rows, '', {}, 'current', 'local'),
       { initialProps: { rows: [] as Session[] } });

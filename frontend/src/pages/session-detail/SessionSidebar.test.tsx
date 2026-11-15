@@ -112,25 +112,43 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
-  it.each(['recent', 'projects'] as const)('keeps active child indentation when its parent is outside the %s section', (sidebarView) => {
+  it('orders an archived subagent below its running archived parent in Background', () => {
+    const parent = session({ id: 'parent', title: 'Background parent', archived: true, status: 'busy', timeUpdated: 1 });
+    const child = session({ id: 'child', title: 'Archived subagent', parentId: parent.id, sourceChild: true,
+      archived: true, status: 'busy', timeUpdated: 2 });
+    const group: SidebarProjectGroup = { directory: '/repo', sessions: [child, parent], lastUpdated: 2, aggregate: { kind: 'busy', count: 2 } };
+    const view = renderSidebar(group, {}, undefined, undefined, undefined, 'recent');
+    view.update({ activeId: child.id, activeDisplayStatus: 'busy' });
+    const background = screen.getByRole('region', { name: 'Background 2' });
+    const rows = within(background).getAllByRole('button', { name: /Session status: Busy/ });
+    expect(rows[0]).toHaveTextContent(parent.title);
+    expect(rows[1]).toHaveTextContent(child.title);
+    expect(within(rows[1]).getByText('└─')).toHaveStyle({ '--depth': '1' });
+    expect(visibleSidebarSessions.current?.map(({ id }) => id)).toEqual([parent.id, child.id]);
+  });
+
+  it.each(['recent', 'projects'] as const)('keeps an active child under its archived parent in Background in %s view', (sidebarView) => {
     const parent = session({ id: 'parent', title: 'Archived parent', archived: true });
     const child = session({ id: 'child', title: 'Active child', parentId: parent.id, status: 'busy' });
     const group: SidebarProjectGroup = { directory: '/repo', sessions: [child, parent], lastUpdated: 1, aggregate: { kind: 'busy', count: 1 } };
     const view = renderSidebar(group, {}, undefined, undefined, undefined, sidebarView);
-    const expectIndented = () => {
+    view.update({ activeId: child.id, activeDisplayStatus: 'busy' });
+    const expectNested = () => {
+      const background = screen.getByRole('region', { name: 'Background 2' });
+      expect(within(background).getByText(parent.title)).toBeInTheDocument();
+      expect(within(background).getByText(child.title)).toBeInTheDocument();
+      expect(screen.getAllByText(child.title)).toHaveLength(1);
+      expect(visibleSidebarSessions.current?.map(({ id }) => id)).toEqual([parent.id, child.id]);
       const row = screen.getByText(child.title).closest('[aria-selected]') as HTMLElement;
+      expect(row).toHaveAttribute('aria-selected', 'true');
       expect(row).toHaveClass('session-sidebar-item-child');
       expect(within(row).getByText('└─')).toHaveStyle({ '--depth': '1' });
     };
-    expectIndented();
-    view.update({ activeId: child.id, activeDisplayStatus: 'busy' });
-    expectIndented();
+    expectNested();
     const archivedChild = { ...child, archived: true };
     view.update({ activeId: child.id, activeDisplayStatus: 'busy', recentSessions: [archivedChild, parent],
       sidebarProjectGroups: [{ ...group, sessions: [archivedChild, parent] }] });
-    fireEvent.click(screen.getByRole('button', { name: 'Background 1' }));
-    expectIndented();
-    expect(screen.getByText(child.title).closest('[aria-selected]')).toHaveAttribute('aria-selected', 'true');
+    expectNested();
   });
 
   it('does not show a system stats footer', () => {
