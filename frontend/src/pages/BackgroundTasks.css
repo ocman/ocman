@@ -1,85 +1,58 @@
-.background-tasks {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.background-tasks > p,
-.background-task-summary,
-.background-task-progress,
-.background-task-state {
-  color: var(--text-dim);
-}
-
+.background-tasks { display: grid; gap: 14px; min-width: 0; }
+.background-tasks > p { margin: 0; color: var(--text-dim); font-size: 12px; }
 .background-tasks-controls,
-.background-task-counters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-}
-
-.background-task {
-  min-width: 0;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.75rem;
-}
-
-.background-task-summary {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0 0.5rem;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.background-task-progress {
-  display: grid;
-  gap: 0.4rem;
-}
-
-.background-task-progress progress {
-  width: 100%;
-  max-width: 28rem;
-  accent-color: var(--accent);
-}
-
-.background-task-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
+.background-task-counters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.background-tasks-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.background-tasks-workspace[data-details="true"] { grid-template-columns: minmax(0, 1fr) minmax(280px, 36%); }
+.background-tasks-overview { min-width: 0; }
+.background-tasks-overview .oc-data-table { table-layout: fixed; }
+.background-tasks-overview th:first-child { width: 48%; }
+.background-tasks-overview th { text-transform: none; letter-spacing: normal; }
+.background-tasks-overview td { font-size: 12px; height: 62px; overflow-wrap: anywhere; }
+.background-tasks-overview tr[data-selected="true"] { background: color-mix(in srgb, var(--accent) 8%, var(--bg)); box-shadow: inset 2px 0 var(--accent); }
+.background-tasks-overview td .oc-button { padding: 0; white-space: normal; text-align: left; height: auto; font-weight: 600; }
+.background-task-owner { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; color: var(--text-dim); font-size: 11px; }
+.background-tasks-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; color: var(--text-dim); font-size: 11px; }
+.background-tasks-pagination > span:first-child { margin-right: auto; }
+.background-task-details { display: grid; gap: 14px; min-width: 0; padding: 16px; border-left: 1px solid var(--border); overflow-wrap: anywhere; font-size: 12px; }
+.background-task-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.background-task-detail-heading h3 { margin: 0; font-size: 14px; }
+.background-task-details p { margin: 0; color: var(--text-dim); }
+.background-task-progress { display: grid; gap: 8px; }
+.background-task-progress progress { width: 100%; accent-color: var(--accent); }
+.background-task-counters { color: var(--text-dim); font-size: 11px; }
+.background-task-state { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); }
+.background-task-state[data-status="running"] { color: var(--accent); }
+.background-task-state[data-status="succeeded"] { color: var(--accent2); }
+.background-task-state .oc-loading-spinner { width: 12px; height: 12px; }
 .background-task-state[data-status="failed"],
 .background-task-state[data-status="interrupted"],
-.background-task-progress .background-task-error {
-  color: var(--danger);
-}
-
+.background-task-progress .background-task-error { color: var(--danger); }
 .background-task-error { margin: 0; overflow-wrap: anywhere; }
-.background-task-history { padding: 0.75rem 1rem 0; }
-.background-task-history > p { color: var(--text-dim); font-size: 12px; }
-.background-task-history ol { display: grid; gap: 1rem; margin: 0; padding-left: 1rem; }
-.background-task-history li { padding-left: 0.25rem; }
-.background-task-count { margin-left: auto; flex-shrink: 0; color: var(--text-dim); }
+.background-task-history { border-top: 1px solid var(--border); padding-top: 14px; }
+.background-task-history h4 { margin: 0 0 8px; font-size: 12px; }
+.background-task-history > p { font-size: 11px; margin-bottom: 12px; }
+.background-task-history ol { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.background-task-history summary { cursor: pointer; }
+.background-task-history details[open] { display: grid; gap: 10px; }
+.background-tasks-skeleton { display: grid; gap: 1px; }
+.background-tasks-skeleton > div { height: 62px; background: var(--bg-card); }
 
-.background-task-row.oc-button {
-  display: flex;
-  width: 100%;
-  height: auto;
-  min-height: 30px;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 6px 8px;
-  text-align: left;
-  font-size: 12px;
+@media (max-width: 1000px) {
+  .background-tasks-workspace[data-details="true"] { grid-template-columns: minmax(0, 1fr); }
+  .background-task-details { border-left: 0; border-top: 1px solid var(--border); padding-inline: 0; }
 }
-
-.background-task-row strong { min-width: 0; overflow-wrap: anywhere; }
-.background-task-row > i { flex-shrink: 0; }
-.background-task-row .oc-loading-spinner { width: 12px; height: 12px; }
 
 @media (max-width: 600px) {
-  .background-task-row strong { flex-basis: 100%; }
-  .background-task-history { padding-inline: 0.5rem; }
+  .background-tasks-overview .oc-data-table-frame { overflow-x: visible; }
+  .background-tasks-overview table,
+  .background-tasks-overview tbody,
+  .background-tasks-overview tr,
+  .background-tasks-overview td { display: block; width: 100%; }
+  .background-tasks-overview thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .background-tasks-overview td { height: auto; border-bottom: 0; padding: 6px 12px; }
+  .background-tasks-overview td:first-child { padding-top: 12px; }
+  .background-tasks-overview td:last-child { padding-bottom: 12px; }
+  .background-tasks-overview td[data-label]::before { content: attr(data-label) ': '; color: var(--text-dim); }
+  .background-tasks-overview tr + tr { border-top: 1px solid var(--border); }
 }

@@ -172,8 +172,9 @@ flowchart LR
    selection, sorting and the flat/tree toggle are URL-backed. Tree mode keeps
    parents above children and sorts siblings; missing parents become roots and
    cyclic ancestry is broken so every sampled process appears once.
-   Background tasks use compact rows with
-   progress, counters and schedule details in the shared popover.
+   Background tasks use a stable five-group table with URL-backed pagination,
+   status filters and selection. A selected group's adjacent panel holds progress,
+   counters, schedules and recent run details, stacking below the table on phones.
    The Resources tab polls once per second only while mounted and the
   document is visible. A URL-backed machine selector, shown when remotes are
   configured, sends an explicit `remoteId`; switching machines clears its

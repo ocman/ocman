@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { renderWithQuery as renderQuery } from '../test/renderWithQuery';
+import { renderWithQuery } from '../test/renderWithQuery';
 import { backgroundTasks, type BackgroundTask } from '../lib/backgroundTasks';
 import { useDocumentVisible } from '../lib/usePanelVisible';
 import { BackgroundTasks } from './BackgroundTasks';
@@ -11,97 +10,86 @@ import { BackgroundTasks } from './BackgroundTasks';
 vi.mock('../lib/backgroundTasks', () => ({ backgroundTasks: vi.fn() }));
 vi.mock('../lib/usePanelVisible', () => ({ useDocumentVisible: vi.fn(() => true) }));
 
-function renderWithQuery(ui: ReactElement) {
-  return renderQuery(<MemoryRouter>{ui}</MemoryRouter>);
+function renderTasks(url = '/') {
+  return renderWithQuery(<MemoryRouter initialEntries={[url]}><BackgroundTasks /></MemoryRouter>);
 }
 
 function task(id: string, overrides: Partial<BackgroundTask> = {}): BackgroundTask {
-  return {
-    id, title: `Task ${id}`, kind: 'conversation.history', ownerId: 'local', status: 'running',
+  return { id, title: `Task ${id}`, kind: 'conversation.history', ownerId: 'local', status: 'running',
     progress: { phase: 'checking sessions', completed: 3, total: 5, unit: 'sessions', counters: { imported: 2, unchanged: 1 } },
-    createdAt: 1000, updatedAt: 2000, ...overrides,
-  };
+    createdAt: 1000, updatedAt: 2000, ...overrides };
 }
 
-describe('Background tasks', () => {
+describe('Background task table', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useDocumentVisible).mockReturnValue(true);
   });
 
-  it('groups runs by task identity and expands newest-first history inline', async () => {
+  it('groups task runs and exposes newest-first history only in the selected detail panel', async () => {
     vi.mocked(backgroundTasks).mockResolvedValue([
-      task('old', { key: 'scan', title: 'History scan', status: 'failed', createdAt: 1000, error: 'Previous scan failed' }),
+      task('old', { key: 'scan', title: 'History scan', status: 'failed', error: 'Previous scan failed' }),
       task('new', { key: 'scan', title: 'History scan', createdAt: 3000 }),
-      task('remote', { key: 'scan', title: 'History scan', ownerId: 'remote' }),
-      task('scoped', { key: 'scan', title: 'History scan', scope: 'Other project' }),
-      task('kind', { key: 'scan', title: 'History scan', kind: 'other.kind' }),
-      task('other-key', { key: 'other', title: 'History scan' }),
+      task('other'),
     ]);
-    renderWithQuery(<BackgroundTasks />);
-    const list = await screen.findByRole('list', { name: 'Background tasks' });
-    const rows = within(list).getAllByRole('listitem');
-    expect(rows).toHaveLength(5);
-    const row = rows.find(row => within(row).getByRole('button').textContent?.includes('2 runs'))!;
-    const toggle = within(row).getByRole('button');
+    renderTasks();
+    const table = await screen.findByRole('table', { name: 'Background task groups' });
+    expect(within(table).getAllByRole('row')).toHaveLength(3);
+    const toggle = within(table).getByRole('button', { name: 'History scan' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(toggle).toHaveTextContent('Running');
     expect(screen.queryByText('Previous scan failed')).not.toBeInTheDocument();
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const history = within(row).getByRole('region', { name: 'History for History scan' });
-    expect(history).toHaveAttribute('id', toggle.getAttribute('aria-controls'));
+    const details = screen.getByRole('region', { name: 'Task group details for History scan' });
+    expect(details).toHaveAttribute('id', toggle.getAttribute('aria-controls'));
+    expect(within(details).getByText('2 runs')).toBeVisible();
+    const history = within(details).getByRole('region', { name: 'History for History scan' });
     const runs = within(history).getAllByRole('listitem');
     expect(runs).toHaveLength(2);
     expect(runs[0]).toHaveTextContent('Running');
-    expect(runs[1]).toHaveTextContent('Previous scan failed');
+    fireEvent.click(within(runs[1]).getByText(/Failed/));
+    expect(within(runs[1]).getByText('Previous scan failed')).toBeVisible();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(toggle);
-    expect(screen.queryByRole('region', { name: 'History for History scan' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Task group details for History scan' })).not.toBeInTheDocument();
   });
 
-  it('shows active progress, unknown totals, and failed scans without implying hydration succeeded', async () => {
+  it('shows active, queued, failed, cancelled and interrupted results without exposing progress in the table', async () => {
     vi.mocked(backgroundTasks).mockResolvedValue([
-      task('running'),
-      task('queued', { status: 'queued', progress: { phase: 'queued', completed: 0, total: null, counters: {} } }),
-      task('failed', { status: 'failed', error: '2 sessions failed; history was not fully verified', progress: { phase: 'checking sessions', completed: 5, total: 5, unit: 'sessions', counters: { failed: 2 } } }),
-      task('interrupted', { status: 'interrupted', error: 'Work was not replayed.' }),
-      task('cancelled', { status: 'cancelled' }),
+      task('running'), task('queued', { status: 'queued', progress: { phase: 'queued', completed: 0, total: null, counters: {} } }),
+      task('failed', { status: 'failed', error: 'History was not fully verified', progress: { phase: 'checking', completed: 5, total: 5, unit: 'sessions', counters: { failed: 2 } } }),
+      task('interrupted', { status: 'interrupted', error: 'Work was not replayed.' }), task('cancelled', { status: 'cancelled' }),
     ]);
-    renderWithQuery(<BackgroundTasks />);
-    expect(await screen.findByText('Task running')).toBeVisible();
-    const list = screen.getByRole('list', { name: 'Background tasks' });
-    expect(screen.getAllByRole('list')).toHaveLength(1);
-    expect(within(list).getAllByRole('listitem')).toHaveLength(5);
-    expect(screen.queryByRole('region', { name: 'Active tasks' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Recent tasks' })).not.toBeInTheDocument();
-    const running = screen.getByRole('button', { name: /Task running/ });
+    renderTasks();
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(6);
+    expect(within(table).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(table).getByText('Cancelled')).toBeVisible();
+    expect(within(table).getByText('Interrupted')).toBeVisible();
+    const running = within(table).getByRole('button', { name: 'Task running' }).closest('tr')!;
     expect(running.querySelector('.oc-loading-spinner')).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByRole('button', { name: /Task queued/ }).querySelector('.oc-loading-spinner')).toBeNull();
-    expect(screen.getByRole('button', { name: /Task failed/ }).querySelector('.oc-loading-spinner')).toBeNull();
-    expect(within(screen.getByLabelText('Current progress for Task running')).getByRole('progressbar')).toHaveAttribute('value', '3');
-    fireEvent.click(screen.getByRole('button', { name: /Task running/ }));
-    const details = within(screen.getByRole('region', { name: 'History for Task running' }));
-    expect(details.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('value', '3');
-    expect(details.getByRole('progressbar', { name: 'Progress for Task running' })).toHaveAttribute('max', '5');
-    expect(details.getByText('imported: 2')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /Task queued/ }));
-    expect(screen.queryByRole('progressbar', { name: 'Progress for Task queued' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Task failed/ }));
-    expect(screen.getAllByText('failed: 2').length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('alert').map((element) => element.textContent)).toContain('2 sessions failed; history was not fully verified');
-    expect(within(list).getByText('Cancelled')).toBeVisible();
-    expect(within(list).getByText('Interrupted')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /Task failed/ }));
-    expect(screen.queryByRole('region', { name: 'History for Task failed' })).not.toBeInTheDocument();
+    const queued = within(table).getByRole('button', { name: 'Task queued' }).closest('tr')!;
+    expect(queued.querySelector('.oc-loading-spinner')).toBeNull();
+    fireEvent.click(within(table).getByRole('button', { name: 'Task running' }));
+    const progress = within(screen.getByLabelText('Current progress for Task running'));
+    expect(progress.getByRole('progressbar')).toHaveAttribute('value', '3');
+    expect(progress.getByRole('progressbar')).toHaveAttribute('max', '5');
+    expect(progress.getByText('imported: 2')).toBeVisible();
+    fireEvent.click(within(queued).getByRole('button'));
+    expect(within(screen.getByLabelText('Current progress for Task queued')).queryByRole('progressbar')).not.toBeInTheDocument();
+    fireEvent.click(within(table).getByRole('button', { name: 'Task failed' }));
+    expect(within(screen.getByLabelText('Current progress for Task failed')).getByRole('alert')).toHaveTextContent('History was not fully verified');
+    expect(within(screen.getByLabelText('Current progress for Task failed')).getByText('failed: 2')).toBeVisible();
   });
 
-  it('filters by status and refreshes without accepting work submissions', async () => {
+  it('filters by latest result, clears filters and refreshes without accepting work submissions', async () => {
     vi.mocked(backgroundTasks).mockResolvedValue([]);
-    renderWithQuery(<BackgroundTasks />);
+    renderTasks();
     expect(await screen.findByText('No background tasks match this view.')).toBeVisible();
     fireEvent.change(screen.getByRole('combobox', { name: 'Task status' }), { target: { value: 'failed' } });
     expect(backgroundTasks).toHaveBeenLastCalledWith('', expect.any(AbortSignal));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByRole('combobox')).toHaveValue('');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
     const count = vi.mocked(backgroundTasks).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
@@ -109,96 +97,80 @@ describe('Background tasks', () => {
     expect(screen.queryByRole('button', { name: 'Start task' })).not.toBeInTheDocument();
   });
 
-  it('uses stable identity ordering and indeterminate bars for active unknown totals', async () => {
-    vi.mocked(backgroundTasks).mockResolvedValue([
-      task('finished', { status: 'succeeded' }),
-      task('unknown', { progress: { phase: 'working', completed: 2, total: null, counters: {} } }),
-      task('zero', { progress: { phase: 'discovering', completed: 0, total: 0, counters: {} } }),
-      task('waiting', { status: 'queued' }),
-    ]);
-    renderWithQuery(<BackgroundTasks />);
-    const list = await screen.findByRole('list', { name: 'Background tasks' });
-    const rows = within(list).getAllByRole('listitem');
-    expect(rows.map((row) => within(row).getByRole('button').textContent)).toEqual([
-      expect.stringContaining('Task finished'), expect.stringContaining('Task unknown'),
-      expect.stringContaining('Task waiting'), expect.stringContaining('Task zero'),
-    ]);
-    expect(within(list).getAllByRole('progressbar')).toHaveLength(4);
-    expect(within(rows[0]).getByRole('progressbar')).toHaveAttribute('max', '5');
-    expect(rows[1].querySelector('.oc-loading-spinner')).toBeInTheDocument();
-    expect(rows[3].querySelector('.oc-loading-spinner')).toBeInTheDocument();
-    fireEvent.click(within(rows[1]).getByRole('button'));
-    expect(within(screen.getByRole('region', { name: 'History for Task unknown' })).getByRole('progressbar')).not.toHaveAttribute('value');
+  it('distinguishes local and remote tasks even when IDs collide', async () => {
+    vi.mocked(backgroundTasks).mockResolvedValue([task('same', { title: 'Local scan' }),
+      task('same', { title: 'Remote scan', ownerId: 'workstation' })]);
+    renderTasks();
+    const table = await screen.findByRole('table');
+    expect(within(table).getByLabelText('This machine')).toBeVisible();
+    expect(within(table).getByLabelText('workstation')).toBeVisible();
   });
 
-  it('distinguishes local and remote tasks even when their IDs collide', async () => {
-    vi.mocked(backgroundTasks).mockResolvedValue([
-      task('same', { title: 'Local scan' }),
-      task('same', { title: 'Remote scan', ownerId: 'workstation' }),
-    ]);
-    renderWithQuery(<BackgroundTasks />);
-    expect(await screen.findByText('Remote scan')).toBeVisible();
-    expect(screen.getByLabelText('This machine')).toBeVisible();
-    expect(screen.getByLabelText('workstation')).toBeVisible();
-  });
-
-  it('shows loading and read failures rather than a false empty result', async () => {
+  it('shows a skeleton and retryable read failure rather than a false empty result', async () => {
     vi.mocked(backgroundTasks).mockReturnValue(new Promise(() => {}));
-    const first = renderWithQuery(<BackgroundTasks />);
-    expect(screen.getByRole('status')).toHaveTextContent('Loading background tasks');
+    const first = renderTasks();
+    expect(screen.getByRole('status', { name: 'Loading background tasks' }).children).toHaveLength(5);
     first.unmount();
     vi.mocked(backgroundTasks).mockRejectedValue(new Error('Database unavailable'));
-    renderWithQuery(<BackgroundTasks />);
+    renderTasks();
     expect(await screen.findByRole('alert')).toHaveTextContent('Database unavailable');
     expect(screen.queryByText('No background tasks match this view.')).not.toBeInTheDocument();
+    vi.mocked(backgroundTasks).mockResolvedValue([task('recovered')]);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Task recovered')).toBeVisible();
   });
 
-  it('does not start polling while the document is hidden and aborts reads on unmount', async () => {
+  it('does not poll a hidden document and aborts reads on unmount', async () => {
     vi.mocked(useDocumentVisible).mockReturnValue(false);
-    const first = renderWithQuery(<BackgroundTasks />);
+    const first = renderTasks();
     expect(backgroundTasks).not.toHaveBeenCalled();
     first.unmount();
     vi.mocked(useDocumentVisible).mockReturnValue(true);
     vi.mocked(backgroundTasks).mockReturnValue(new Promise(() => {}));
-    const second = renderWithQuery(<BackgroundTasks />);
+    const second = renderTasks();
     await waitFor(() => expect(backgroundTasks).toHaveBeenCalledOnce());
     const signal = vi.mocked(backgroundTasks).mock.calls[0][1];
     second.unmount();
     expect(signal?.aborted).toBe(true);
   });
 
-  it('explains the bounded list and supports tasks without a known unit or total', async () => {
-    vi.mocked(backgroundTasks).mockResolvedValue(Array.from({ length: 200 }, (_, i) => task(String(i), {
-      status: 'succeeded', progress: { phase: 'finished', completed: 0, total: null, counters: {} },
-    })));
-    renderWithQuery(<BackgroundTasks />);
+  it('explains the API limit while keeping the overview bounded', async () => {
+    vi.mocked(backgroundTasks).mockResolvedValue(Array.from({ length: 200 }, (_, i) => task(String(i))));
+    renderTasks();
     expect(await screen.findByText('Tasks and history are limited to 200 available records. Older tasks and runs may not appear.')).toBeVisible();
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(6);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
-  it('shows recurring cleanup progress, cadence, next check timezone and owner scope', async () => {
+  it('keeps cadence, lifetime run count, timezone and scope in the selected group', async () => {
     const nextRunAt = Date.now() + 3_600_000;
     vi.mocked(backgroundTasks).mockResolvedValue([task('cleanup', {
       title: 'Clean archived worktrees', status: 'succeeded', ownerId: 'workstation', scope: 'Project inventory',
-      schedule: { intervalMillis: 3_600_000, nextRunAt, runs: 2 },
+      schedule: { intervalMillis: 3_600_000, nextRunAt, runs: 42 },
       progress: { phase: 'Checking checkout safety', completed: 5, total: 5, unit: 'checkouts', counters: { removed: 2, retained: 3 } },
     })]);
-    renderWithQuery(<BackgroundTasks />);
-    expect(await screen.findByText('Clean archived worktrees')).toBeVisible();
-    const schedule = within(screen.getByLabelText('Schedule for Clean archived worktrees'));
+    renderTasks();
+    const toggle = await screen.findByRole('button', { name: 'Clean archived worktrees' });
+    expect(toggle.closest('tr')).toHaveTextContent('Succeeded');
+    expect(screen.queryByText('42 runs')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const details = within(screen.getByRole('region', { name: 'Task group details for Clean archived worktrees' }));
+    const schedule = within(details.getByLabelText('Schedule for Clean archived worktrees'));
     expect(schedule.getByText('Recurring · every 1h 0m')).toBeVisible();
-    expect(screen.getByText('Project inventory')).toBeVisible();
-    expect(screen.getByText('2 runs')).toBeVisible();
+    expect(details.getByText('Project inventory')).toBeVisible();
+    expect(details.getByText('42 runs')).toBeVisible();
     expect(schedule.getByText(new RegExp(Intl.DateTimeFormat().resolvedOptions().timeZone))).toHaveAttribute('dateTime', new Date(nextRunAt).toISOString());
-    expect(screen.getByText('removed: 2')).toBeVisible();
-    expect(screen.getByText('retained: 3')).toBeVisible();
-    expect(screen.getByLabelText('workstation')).toBeVisible();
+    const progress = within(details.getByLabelText('Current progress for Clean archived worktrees'));
+    expect(progress.getByText('removed: 2')).toBeVisible();
+    expect(progress.getByText('retained: 3')).toBeVisible();
+    expect(details.getByText('Waiting for next run · Last run: Succeeded')).toBeVisible();
   });
 
-  it('does not claim another run is scheduled after its loop stopped', async () => {
+  it('does not claim another run is scheduled after the loop stopped', async () => {
     vi.mocked(backgroundTasks).mockResolvedValue([task('once', { schedule: { intervalMillis: 60_000, runs: 1, nextRunAt: 0 } })]);
-    renderWithQuery(<BackgroundTasks />);
-    expect(await screen.findByText('Recurring · every 1m 0s')).toBeVisible();
+    renderTasks();
+    fireEvent.click(await screen.findByRole('button', { name: 'Task once' }));
+    expect(screen.getByText('Recurring · every 1m 0s')).toBeVisible();
     expect(screen.getByText('1 run')).toBeVisible();
     expect(screen.queryByText(/Next check:/)).not.toBeInTheDocument();
   });

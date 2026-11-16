@@ -160,7 +160,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 
   });
 }
 
-test('task rows show progress and expand history without closing the activity modal', async ({ mockedPage: page }) => {
+test('task table opens progress and run details without closing the activity modal', async ({ mockedPage: page }) => {
   await page.route('/api/background-tasks?*', (route) => route.fulfill({ json: [{
     id: 'sync', title: 'Sync history', kind: 'conversation.history', ownerId: 'local', status: 'running',
     progress: { phase: 'Checking sessions', completed: 3, total: 5, unit: 'sessions', counters: { imported: 2 } },
@@ -172,28 +172,31 @@ test('task rows show progress and expand history without closing the activity mo
   }] }));
   await page.goto('/sessions?activity=tasks');
   const row = page.getByRole('button', { name: /Sync history/ });
-  const summary = page.getByLabel('Current progress for Sync history');
   await expect(row).toBeVisible();
-  await expect(page.getByRole('list', { name: 'Background tasks' })).toHaveCount(1);
-  await expect(row).toContainText('2 runs');
+  const table = page.getByRole('table', { name: 'Background task groups' });
+  await expect(table.getByRole('row')).toHaveCount(2);
   await expect(row).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
+  await row.click();
+  const summary = page.getByLabel('Current progress for Sync history');
   await expect(summary.getByRole('progressbar')).toHaveAttribute('value', '3');
   await expect(summary.getByText('3 / 5 sessions')).toBeVisible();
   await expect(summary.getByText('imported: 2')).toBeVisible();
-  await row.click();
   const details = page.getByRole('region', { name: 'History for Sync history' });
   await expect(row).toHaveAttribute('aria-expanded', 'true');
   const runs = details.getByRole('listitem');
   await expect(runs).toHaveCount(2);
   await expect(runs.nth(0)).toContainText('Running');
+  await runs.nth(1).locator('summary').click();
   await expect(runs.nth(1)).toContainText('Previous scan failed');
-  await expect(details.getByText('imported: 2')).toBeVisible();
-  await expect(details.getByRole('progressbar')).toHaveAttribute('value', '3');
+  await runs.nth(0).locator('summary').click();
+  await expect(runs.nth(0).getByText('imported: 2')).toBeVisible();
+  await expect(runs.nth(0).getByRole('progressbar')).toHaveAttribute('value', '3');
   expect(await details.evaluate((panel) => {
     const rect = panel.getBoundingClientRect();
     return panel.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
   })).toBe(true);
-  await details.getByText('imported: 2').click({ trial: true });
+  await runs.nth(0).getByText('imported: 2').click({ trial: true });
   await row.focus();
   await row.press('Enter');
   await expect(details).not.toBeVisible();
@@ -201,10 +204,9 @@ test('task rows show progress and expand history without closing the activity mo
   await expect(row).toBeFocused();
   await expect(page.getByRole('dialog', { name: 'Activity', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(summary.getByRole('progressbar')).toBeInViewport();
-  expect(await summary.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await row.click();
-  await expect(details.getByRole('progressbar')).toBeVisible();
+  await expect(summary.getByRole('progressbar')).toBeVisible();
+  expect(await summary.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 for (const width of [1280, 390]) {
@@ -222,12 +224,12 @@ for (const width of [1280, 390]) {
         progress: { ...scan.progress, completed: 4 } }, { ...scan, status: 'failed', error: 'Earlier attempt failed' }]
       : [scan, cleanup] }));
     await page.goto('/sessions?activity=tasks');
-    const list = page.getByRole('list', { name: 'Background tasks' });
-    const rows = list.getByRole('listitem').filter({ has: page.getByRole('button', { expanded: false }) });
+    const list = page.getByRole('table', { name: 'Background task groups' });
+    const rows = list.getByRole('row').filter({ has: page.getByRole('button') });
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText('Clean archived worktrees');
-    await expect(rows.nth(0)).toContainText('Waiting for next run');
-    await expect(rows.nth(0)).toContainText('42 runs');
+    await expect(rows.nth(0)).toContainText('Succeeded');
+    await expect(list.getByText('42 runs')).toHaveCount(0);
     const toggle = page.getByRole('button', { name: /Sync history/ });
     await toggle.click();
     updated = true;
@@ -235,19 +237,21 @@ for (const width of [1280, 390]) {
     const summary = page.getByLabel('Current progress for Sync history');
     await expect(summary.getByText('4 / 5 sessions')).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(list.getByRole('listitem').nth(0)).toContainText('Clean archived worktrees');
-    await expect(page.getByRole('region', { name: 'History for Sync history' }).getByText('Earlier attempt failed')).toBeVisible();
+    await expect(rows.nth(0)).toContainText('Clean archived worktrees');
+    const failedRun = page.getByRole('region', { name: 'History for Sync history' }).getByRole('listitem').filter({ hasText: 'Earlier attempt failed' });
+    await failedRun.locator('summary').click();
+    await expect(failedRun.getByText('Earlier attempt failed')).toBeVisible();
     expect(await list.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await toggle.click();
     await page.screenshot({ path: testInfo.outputPath('task-progress.png') });
-    await page.getByRole('combobox', { name: 'Task status' }).selectOption('waiting');
-    await expect(list.getByRole('listitem')).toHaveCount(1);
-    await expect(page).toHaveURL(/taskStatus=waiting/);
+    await page.getByRole('combobox', { name: 'Task status' }).selectOption('succeeded');
+    await expect(rows).toHaveCount(1);
+    await expect(page).toHaveURL(/taskStatus=succeeded/);
     await page.reload();
-    await expect(page.getByRole('combobox', { name: 'Task status' })).toHaveValue('waiting');
-    await expect(list.getByRole('listitem')).toHaveCount(1);
+    await expect(page.getByRole('combobox', { name: 'Task status' })).toHaveValue('succeeded');
+    await expect(rows).toHaveCount(1);
     await page.getByRole('button', { name: 'Clear filters' }).click();
-    await expect(list.getByRole('listitem')).toHaveCount(2);
+    await expect(rows).toHaveCount(2);
   });
 }
 

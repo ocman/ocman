@@ -1,7 +1,7 @@
-import { useId, useState } from 'react';
 import { Button } from '../components/Control';
 import { Spinner } from '../components/Spinner';
 import { HostBadge } from '../components/HostBadge';
+import { RelativeTimestamp } from '../components/RelativeTime';
 import type { BackgroundTask } from '../lib/backgroundTasks';
 import { taskDisplayStatus, taskStatusLabels } from '../lib/backgroundTaskGroups';
 import { formatDuration, formatExactDate } from '../lib/format';
@@ -36,43 +36,58 @@ function TaskProgress({ task }: { task: BackgroundTask }) {
   </div>;
 }
 
-export function BackgroundTaskRow({ runs, current: task }: { runs: BackgroundTask[]; current: BackgroundTask }) {
-  const id = useId();
-  const [open, setOpen] = useState(false);
-  const status = taskDisplayStatus(task);
-  const count = task.schedule?.runs ?? runs.length;
-  return <div role="listitem" className="background-task" aria-label={task.title}>
-    <Button variant="ghost" size="compact" className="background-task-row"
-      aria-expanded={open} aria-controls={open ? id : undefined}
-      onClick={() => setOpen(!open)}>
-      <strong>{task.title}</strong>
-      <span className="background-task-state" data-status={status}>
-        {status === 'running' && <Spinner />}{taskStatusLabels[status]}
-      </span>
-      <span className="background-task-count">{count} {count === 1 ? 'run' : 'runs'}</span>
-      <i className={`bi bi-chevron-${open ? 'down' : 'right'}`} aria-hidden="true" />
-    </Button>
-    <div className="background-task-summary" aria-label={`Current progress for ${task.title}`}>
-      <div className="background-task-counters">
-        <HostBadge alwaysShow remoteId={task.ownerId} remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} />
-        {task.scope && task.scope !== 'local' && <span className="background-task-scope">{task.scope}</span>}
-        {status === 'waiting' && <span>Last run: {taskStatusLabels[task.status]}</span>}
+function TaskState({ task }: { task: BackgroundTask }) {
+  return <span className="background-task-state" data-status={task.status}>
+    {task.status === 'running' && <Spinner />}{taskStatusLabels[task.status]}
+  </span>;
+}
+
+export function BackgroundTaskRow({ task, selected, onSelect, detailsId }: {
+  task: BackgroundTask; selected: boolean; onSelect: () => void; detailsId: string;
+}) {
+  return <tr data-selected={selected} onClick={event => {
+    if (!(event.target as HTMLElement).closest('button, a, time') && !window.getSelection()?.toString()) onSelect();
+  }}>
+    <td><Button variant="link" size="compact" aria-expanded={selected}
+      aria-controls={selected ? detailsId : undefined} onClick={onSelect}>{task.title}</Button>
+      <div className="background-task-owner"><HostBadge alwaysShow remoteId={task.ownerId}
+        remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} />
+        {task.scope && task.scope !== 'local' && <span>{task.scope}</span>}
       </div>
-      <TaskProgress task={task} />
-      <TaskSchedule task={task} />
+    </td>
+    <td data-label="Latest status"><TaskState task={task} /></td>
+    <td data-label="Last run"><RelativeTimestamp value={task.startedAt ?? task.createdAt} /></td>
+  </tr>;
+}
+
+export function BackgroundTaskDetails({ runs, current: task, id, onClose }: {
+  runs: BackgroundTask[]; current: BackgroundTask; id: string; onClose: () => void;
+}) {
+  const count = task.schedule?.runs ?? runs.length;
+  return <section id={id} aria-label={`Task group details for ${task.title}`} className="background-task-details">
+    <div className="background-task-detail-heading"><h3>{task.title}</h3>
+      <Button variant="ghost" size="compact" onClick={onClose} aria-label="Close task details"><i className="bi bi-x-lg" aria-hidden="true" /></Button>
     </div>
-    {open && <section id={id} aria-label={`History for ${task.title}`} className="background-task-history">
+    <div className="background-task-counters"><TaskState task={task} />
+      <HostBadge alwaysShow remoteId={task.ownerId} remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} />
+      {task.scope && task.scope !== 'local' && <span>{task.scope}</span>}
+      <span>{count} {count === 1 ? 'run' : 'runs'}</span>
+    </div>
+    <div aria-label={`Current progress for ${task.title}`}><TaskProgress task={task} /></div>
+    {taskDisplayStatus(task) === 'waiting' && <p>Waiting for next run · Last run: {taskStatusLabels[task.status]}</p>}
+    <TaskSchedule task={task} />
+    <section aria-label={`History for ${task.title}`} className="background-task-history">
+      <h4>Recent runs</h4>
       <p>Available run history{task.schedule ? '. Recurring jobs retain only their latest run.' : '.'}</p>
+      {runs.length > 5 && <p>Showing the latest 5 of {runs.length} available runs.</p>}
       <ol aria-label={`Runs for ${task.title}`}>
-        {runs.map((run) => <li key={run.id}>
-          <div className="background-task-counters">
-            <span className="background-task-state" data-status={run.status}>{taskStatusLabels[run.status]}</span>
-            <span>Created <time dateTime={new Date(run.createdAt).toISOString()}>{formatExactDate(run.createdAt)}</time></span>
-            <span>Updated <time dateTime={new Date(run.updatedAt).toISOString()}>{formatExactDate(run.updatedAt)}</time></span>
-          </div>
-          <TaskProgress task={run} />
+        {runs.slice(0, 5).map(run => <li key={run.id}>
+          <details><summary><TaskState task={run} /> · {formatExactDate(run.createdAt)}</summary>
+            <p>Updated <time dateTime={new Date(run.updatedAt).toISOString()}>{formatExactDate(run.updatedAt)}</time></p>
+            <TaskProgress task={run} />
+          </details>
         </li>)}
       </ol>
-    </section>}
-  </div>;
+    </section>
+  </section>;
 }
