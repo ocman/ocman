@@ -20,6 +20,10 @@ import (
 
 type provenanceNative struct{ *fakePlatform }
 
+func (p *provenanceNative) LiveDirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	return p.DirectoryCatalog(ctx, req)
+}
+
 func (*provenanceNative) HistoryIdentity(context.Context) (platforms.HistoryIdentity, error) {
 	return platforms.HistoryIdentity{Platform: "opencode", SourceKey: "source"}, nil
 }
@@ -39,7 +43,7 @@ func provenanceFixture(t *testing.T) (*Server, string, *mcpCreateHost) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	native := &provenanceNative{&fakePlatform{PlatformID: "opencode", SessionFn: func(string) (*platforms.SessionDetail, error) {
+	native := &provenanceNative{&fakePlatform{PlatformID: "opencode", DirectoryCatalogFn: mcpTestCatalog("p/model"), SessionFn: func(string) (*platforms.SessionDetail, error) {
 		t.Fatal("provenance must not load conversation history")
 		return nil, platforms.ErrHistoryUnavailable
 	}}}
@@ -62,7 +66,7 @@ func provenanceFixture(t *testing.T) (*Server, string, *mcpCreateHost) {
 		return &hostsvc.EnsureRuntimeResult{}, nil
 	}}}
 	s.hostRouter = hostsvc.NewRouter(host)
-	reg.Register(&fakePlatform{PlatformID: "claudecode", SessionFn: func(id string) (*platforms.SessionDetail, error) {
+	reg.Register(&fakePlatform{PlatformID: "claudecode", DirectoryCatalogFn: mcpTestCatalog("p/model"), SessionFn: func(id string) (*platforms.SessionDetail, error) {
 		return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/another/project"}}, nil
 	}, SendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
 	return s, row.ID, host
@@ -204,6 +208,10 @@ func TestMCPHiddenCallerKeepsAccountWithExplicitModel(t *testing.T) {
 
 type provenanceTarget struct{ *fakePlatform }
 
+func (p *provenanceTarget) LiveDirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	return p.DirectoryCatalog(ctx, req)
+}
+
 func (*provenanceTarget) HistoryIdentity(context.Context) (platforms.HistoryIdentity, error) {
 	return platforms.HistoryIdentity{Platform: "claudecode", SourceKey: "target-source"}, nil
 }
@@ -233,7 +241,7 @@ func TestMCPCreateRecordsResolvedDestinationAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter, err := owned.New(t.Context(), &provenanceTarget{&fakePlatform{PlatformID: "claudecode"}}, store, statev2test.Open(t), "owner")
+	adapter, err := owned.New(t.Context(), &provenanceTarget{&fakePlatform{PlatformID: "claudecode", DirectoryCatalogFn: mcpTestCatalog("p/model")}}, store, statev2test.Open(t), "owner")
 	if err != nil {
 		t.Fatal(err)
 	}

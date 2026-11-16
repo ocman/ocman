@@ -25,6 +25,9 @@ type SendMessageRequest struct {
 	// Model is a "provider/model" string (platforms that don't use
 	// providers may interpret it as just the model).
 	Model string
+	// ExactModel forbids project defaults and cooldown fallthrough from replacing
+	// an explicit model. Used when launching a user-requested model via MCP.
+	ExactModel bool `json:",omitempty"`
 	// Agent is the composer-level role (OpenCode: "build", "plan",
 	// subagent name). Empty = platform default. Platforms without a
 	// composer-agent concept ignore this field.

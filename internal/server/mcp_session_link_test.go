@@ -23,6 +23,7 @@ func TestMCPCreateSessionLinkUsesDashboardOrigin(t *testing.T) {
 				return &hostsvc.EnsureRuntimeResult{Endpoint: "http://127.0.0.1:6620", RepoRoot: "/repo"}, nil
 			}})
 			reg.Register(&fakePlatform{PlatformID: "opencode",
+				DirectoryCatalogFn: mcpTestCatalog("p/m"),
 				CreateSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					return &platforms.CreateSessionResponse{ID: "ses-new"}, nil
 				},

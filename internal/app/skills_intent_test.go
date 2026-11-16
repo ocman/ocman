@@ -56,3 +56,15 @@ func TestSessionsSkillTeachesArchive(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionsSkillRequiresRequestedSelectionAndStartupVerification(t *testing.T) {
+	text := string(skillCatalog["ocman-sessions"])
+	for _, guidance := range []string{
+		"ask the user", "Do not drop", "unknown platform", "requested platform and model",
+		"assistant message", "Admission is not execution", "Do not send a nudge",
+	} {
+		if !strings.Contains(text, guidance) {
+			t.Errorf("missing launch safety guidance: %s", guidance)
+		}
+	}
+}

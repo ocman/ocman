@@ -103,6 +103,7 @@ func TestCreatePathsCarryPlatform(t *testing.T) {
 			srv.hostRouter = hostsvc.NewRouter(host)
 			var created platforms.CreateSessionRequest
 			reg.Register(&fakePlatform{PlatformID: "fake-provider", Caps: platforms.Capabilities{PermissionRules: true},
+				DirectoryCatalogFn: mcpTestCatalog("anthropic/claude"),
 				SendMessageFn: func(platforms.SendMessageRequest) error { return nil },
 				CreateSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 					created = req

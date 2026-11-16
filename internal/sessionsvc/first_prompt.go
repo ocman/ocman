@@ -39,6 +39,9 @@ func (s *Service) PrepareSendMessage(ctx context.Context, platformID string, req
 	if req.Message == "" && len(req.Images) == 0 {
 		return nil, validation("message or images required")
 	}
+	if req.ExactModel && req.Model == "" {
+		return nil, validation("exact model requires an explicit model")
+	}
 	p, err := s.resolve(ctx, req.SessionID, platformID)
 	if err != nil {
 		return nil, err
@@ -46,6 +49,10 @@ func (s *Service) PrepareSendMessage(ctx context.Context, platformID string, req
 	if req.PreserveSelections {
 		if req.Model != "" || req.Agent != "" || req.Reasoning != "" {
 			return nil, validation("preserved selections cannot be overridden")
+		}
+	} else if req.ExactModel {
+		if req.Model, err = s.modelForAdapter(p, req.Model); err != nil {
+			return nil, validation(err.Error())
 		}
 	} else {
 		if req.Model, err = s.sessionModel(ctx, p, req.SessionID, req.Model); err != nil {

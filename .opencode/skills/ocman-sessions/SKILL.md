@@ -117,14 +117,28 @@ absolute `directory` only to select another destination; they never remove your
 creator link. Invalid or ambiguous caller context is a blocker, not a reason to
 retry as an unbound client.
 
+Honor the requested platform and model separately. A Claude model available in
+OpenCode does not select the Claude Code platform. Use the destination's catalog
+and configured connection identity, not a guessed name. On `unknown platform`,
+an unresolved or unavailable model, or ambiguous accounts, ask the user which
+configured destination to use. Do not drop the platform/model argument, switch
+platforms, or substitute defaults to make a retry succeed. Only the user can
+authorize that change.
+
 `{"action":"create","intent":"Start the requested PR review in a separate session","prompt":"Review the open PR","agent":"plan"}`
 
 For an external client without transport context, supply verified caller
 `platform` and `session_id`, or all of target `platform`, `model` and absolute
 `directory`. Only the latter intentionally creates an unrelated session.
 
-It returns the new `platform` and `session_id`; follow up with `get`. The new
-session uses default permissions and runs independently of yours.
+It returns the new `platform` and `session_id`; follow up with `get`. Verify the
+actual platform and the model on an assistant message against the request before
+claiming it started with that selection. Admission is not execution. A stored
+user prompt or `defaultModel` alone does not prove the agent started or which
+model executed. If there is no assistant message yet, report creation and
+startup as unverified, not success. Do not send a nudge or repeat the prompt to
+force startup without the user's approval; an uncertain delivery could execute
+twice. The new session uses default permissions and runs independently of yours.
 
 For parallel work inside your own turn, use OpenCode's native Task subagents
 instead. Choose the appropriate `subagent_type` and give it a complete task.

@@ -21,7 +21,7 @@ func TestMCPCreateRecordsCreatorBeforeSending(t *testing.T) {
 					return &hostsvc.EnsureRuntimeResult{}, nil
 				}}}
 				srv.hostRouter = hostsvc.NewRouter(host)
-				reg.Register(&fakePlatform{PlatformID: "opencode",
+				reg.Register(&fakePlatform{PlatformID: "opencode", DirectoryCatalogFn: mcpTestCatalog("p/model"),
 					SessionFn: func(id string) (*platforms.SessionDetail, error) {
 						return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: "/source/project"}}, nil
 					},
@@ -59,7 +59,7 @@ func TestMCPCreateCreatorValidationAndStorageFailure(t *testing.T) {
 				return &hostsvc.EnsureRuntimeResult{}, nil
 			}}})
 			created, sent := false, false
-			reg.Register(&fakePlatform{PlatformID: "opencode",
+			reg.Register(&fakePlatform{PlatformID: "opencode", DirectoryCatalogFn: mcpTestCatalog("p/model"),
 				SessionFn: func(id string) (*platforms.SessionDetail, error) {
 					if scenario == "missing caller" {
 						return nil, platforms.ErrNotFound

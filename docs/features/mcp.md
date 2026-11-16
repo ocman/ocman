@@ -483,6 +483,21 @@ session's current model when available, even with an explicit `directory`.
 Without an available caller model, it uses the project's first
 configured model, then the platform's default selection. An omitted agent uses
 Settings' default agent. Explicit model and agent values override those defaults.
+Explicit models are checked against the destination catalog before launching a
+runtime, worktree or session. An unknown platform, unavailable model or failed
+catalog lookup returns an error instructing the agent to ask for clarification,
+not to remove the requested selection or substitute a default. Initial model
+and agent selections also travel with owner-routed creation.
+For the first prompt, an explicit MCP model bypasses project defaults and provider
+cooldown fallthrough. A failing requested model must not silently become another
+model. Ordinary composer sends retain their existing fallthrough behavior.
+
+Creation acknowledges prompt admission, not execution. Verify the actual platform
+and an assistant message's model using `get` before reporting that the requested
+agent started. A stored user prompt or default model is not evidence of execution.
+When startup remains unverified, report it without automatically resending the
+prompt or sending a nudge.
+
 Like the new-conversation composer, an omitted `worktree` creates a fresh worktree
 when the directory is eligible. Non-repositories, existing linked worktrees,
 and repositories without a usable base use the current checkout. Set
@@ -520,8 +535,10 @@ flowchart LR
     Managed[Claude / Codex session headers] --> Resolve
     Resolve -->|unique local owner and source| Caller[Canonical caller and account]
     Resolve -->|unresolved or conflicting| Refuse[Refuse before launch]
-    Caller --> Launch[Owner-routed child creation]
-    Target[Explicit destination or caller defaults] --> Launch
+    Caller --> Selection[Validate explicit selection]
+    Target[Explicit destination or caller defaults] --> Selection
+    Selection -->|unresolved| Refuse
+    Selection --> Launch[Owner-routed child creation]
     Launch --> Link[Persist creator link]
     Link --> Prompt[First prompt]
 ```

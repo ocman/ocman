@@ -51,7 +51,7 @@ func TestMCPCreateSession(t *testing.T) {
 	callerModel := ""
 	sendErr := error(nil)
 	reg := platforms.NewRegistry()
-	reg.Register(&fakePlatform{PlatformID: "opencode",
+	reg.Register(&fakePlatform{PlatformID: "opencode", DirectoryCatalogFn: mcpTestCatalog("p/override", "p/m", "p/explicit"),
 		SessionFn: func(id string) (*platforms.SessionDetail, error) {
 			if id != "ses-caller" {
 				return nil, platforms.ErrNotFound

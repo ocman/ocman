@@ -18,12 +18,13 @@ import (
 // CreateSession uses the same defaults and owner-local launch paths as the
 // new-conversation composer. Explicit options win over defaults.
 func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.CreateSessionRequest) (internalmcp.CreatedSession, error) {
+	exactModel := in.Model != ""
 	platformID, err := platforms.PlatformForModel(in.Platform, in.Model)
 	if err != nil {
-		return internalmcp.CreatedSession{}, fmt.Errorf("%w: %s", internalmcp.ErrInvalidSessionCreate, err.Error())
+		return internalmcp.CreatedSession{}, mcpSelectionError("%s", err.Error())
 	}
 	if in.Platform != "" && !s.server.sessions.KnownPlatform(platformID) {
-		return internalmcp.CreatedSession{}, fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate)
+		return internalmcp.CreatedSession{}, mcpSelectionError("unknown platform %q", in.Platform)
 	}
 	dir := in.Directory
 	caller, err := s.createCaller(ctx, in)
@@ -57,7 +58,12 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		}
 	}
 	if !s.server.sessions.KnownPlatform(platformID) {
-		return internalmcp.CreatedSession{}, fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate)
+		return internalmcp.CreatedSession{}, mcpSelectionError("unknown platform %q", platformID)
+	}
+	if in.Model != "" {
+		if err := s.validateCreateModel(ctx, platformID, dir, in.Model); err != nil {
+			return internalmcp.CreatedSession{}, err
+		}
 	}
 	remoteID, base := platforms.SplitPlatformID(platformID)
 	owner := remoteIDForPlatform(platformID)
@@ -99,8 +105,10 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		}
 	}
 	created := internalmcp.CreatedSession{Platform: platformID, Directory: dir}
+	creation := &platforms.CreationIdentity{Origin: "user", Model: in.Model, Agent: in.Agent}
 	if worktree {
 		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
+			Creation: creation,
 			Platform: base, ProjectDir: dir, AutoName: true, Prompt: in.Prompt, Title: in.Title,
 		})
 		if err != nil {
@@ -116,7 +124,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		case err == nil:
 			port = ensured.Port()
 		} // A local ensure failure falls back to port discovery, as in handleCreateSession.
-		resp, err := s.server.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Title: in.Title, Port: port})
+		resp, err := s.server.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Title: in.Title, Port: port, Creation: creation})
 		var ve *sessionsvc.ValidationError
 		if errors.As(err, &ve) {
 			return internalmcp.CreatedSession{}, fmt.Errorf("%w: %s", internalmcp.ErrInvalidSessionCreate, ve.Error())
@@ -136,7 +144,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		}
 		platformID = created.Platform
 	}
-	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: created.SessionID, Message: in.Prompt, Model: in.Model, Agent: in.Agent}); err != nil {
+	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: created.SessionID, Message: in.Prompt, Model: in.Model, Agent: in.Agent, ExactModel: exactModel}); err != nil {
 		return created, err
 	}
 	return created, nil
