@@ -160,6 +160,12 @@ is `ocman.sessions`, not an authenticated sending-session ID, and the message
 does not carry user authority. Older plain-text deliveries remain unchanged
 because they have no reliable agent-origin marker.
 
+Session creation returns `platform`, `session_id`, `directory`, and a browser-ready
+`url`. Render `url` as a clickable Markdown link for the user. The link includes
+the owning platform or connection, including remote sessions, and uses the
+configured public dashboard URL. If creation succeeds but setup or prompt
+delivery fails, the error also includes a link to the created session.
+
 To create a session on a specific platform, pass an absolute `directory` and
 `platform`, such as `claudecode` or `r-machine:claudecode`. No caller `session_id`
 is needed. Supply both `platform` and `session_id` only when using an existing

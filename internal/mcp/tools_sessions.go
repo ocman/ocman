@@ -37,7 +37,10 @@ func (e AmbiguousSessionError) Error() string {
 	return "session_id exists on multiple platforms (" + strings.Join(e.Platforms, ", ") + "); pass platform"
 }
 
-type sessionTools struct{ svc sessionService }
+type sessionTools struct {
+	svc       sessionService
+	publicURL func(string) string
+}
 
 type sessionAction struct {
 	name, description, example string
@@ -53,7 +56,7 @@ var sessionActions = []sessionAction{
 	{name: "send", description: "Sends prompt to an existing session immediately, including mid-turn, without waiting for its reply. session_id identifies the recipient, not the caller. Omit platform only when the recipient is unambiguous. Uses normal project/session model selection and the recipient's permissions; does not create a session or modify its held queue.", example: `{"action":"send","session_id":"ses_recipient","platform":"opencode","prompt":"The tests passed; continue with the review."}`, required: []string{"session_id", "prompt"}, optional: []string{"platform"}, output: "{platform, session_id, sent: true}"},
 	{name: "archive", description: "Archives a session, hiding it from the sidebar, for example after its pull request merged. session_id identifies the target, which may be the calling session. An idle session is archived immediately. A busy session on this machine is archived when its current turn finishes (deferred: true), because activity after the archive time resurfaces it; this covers a session archiving itself. A deferred archive is held in memory and dropped if ocman restarts first. A busy session on a remote machine is rejected; retry after its turn finishes. Later activity, such as a new prompt, resurfaces an archived session.", example: `{"action":"archive","session_id":"ses_1","platform":"opencode"}`, required: []string{"session_id"}, optional: []string{"platform"}, output: "{platform, session_id, archived, deferred?}"},
 	{name: "unarchive", description: "Unarchives a session and cancels any pending deferred archive for it.", example: `{"action":"unarchive","session_id":"ses_1"}`, required: []string{"session_id"}, optional: []string{"platform"}, output: "{platform, session_id, archived: false}"},
-	{name: "create", description: "Starts a new top-level session and sends it prompt. OpenCode request metadata and managed Claude/Codex MCP configuration supply caller context automatically. Other clients supply their own platform and session_id, or explicit platform, model and absolute directory. With caller context, an omitted model inherits the caller's current model when available, then falls back to project and platform defaults; an omitted directory uses the caller's project root. Explicit destination fields never remove the creator link. Omitted agent uses the configured default. Omitted worktree creates a fresh worktree when eligible, otherwise uses the current checkout; set worktree false to use the given directory.", example: `{"action":"create","prompt":"Review the open PR"}`, required: []string{"prompt"}, optional: []string{"model", "agent", "worktree", "title", "directory", "platform", "session_id"}, output: "{platform, session_id, directory}"},
+	{name: "create", description: "Starts a new top-level session and sends it prompt. Render the returned url as a clickable Markdown link for the user. OpenCode request metadata and managed Claude/Codex MCP configuration supply caller context automatically. Other clients supply their own platform and session_id, or explicit platform, model and absolute directory. With caller context, an omitted model inherits the caller's current model when available, then falls back to project and platform defaults; an omitted directory uses the caller's project root. Explicit destination fields never remove the creator link. Omitted agent uses the configured default. Omitted worktree creates a fresh worktree when eligible, otherwise uses the current checkout; set worktree false to use the given directory.", example: `{"action":"create","prompt":"Review the open PR"}`, required: []string{"prompt"}, optional: []string{"model", "agent", "worktree", "title", "directory", "platform", "session_id"}, output: "{platform, session_id, directory, url}"},
 }
 
 func sessionServerTools(tools *sessionTools) []server.ServerTool {
@@ -61,7 +64,7 @@ func sessionServerTools(tools *sessionTools) []server.ServerTool {
 		return nil
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("sessions",
-		mcplib.WithDescription("Inspect, search, create, message, and archive sessions (actions: help, list, search, get, create, send, archive, unarchive). Use action help for schemas and examples."),
+		mcplib.WithDescription("Inspect, search, create, message, and archive sessions (actions: help, list, search, get, create, send, archive, unarchive). After creating a session, render the returned url as a clickable Markdown link for the user. Use action help for schemas and examples."),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("session_id"), mcplib.WithString("platform"),
 		mcplib.WithString("directory"), mcplib.WithString("query"), mcplib.WithNumber("limit"), mcplib.WithNumber("message_limit"),
 		mcplib.WithString("prompt"), mcplib.WithString("model", mcplib.Description("provider/model")), mcplib.WithString("agent"), mcplib.WithString("title"),

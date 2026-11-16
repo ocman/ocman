@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -74,10 +75,18 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 		return mcplib.NewToolResultError("create requires caller platform and session_id, or explicit platform, model, and directory")
 	}
 	created, err := creator.CreateSession(ctx, in)
+	link := ""
+	if created.SessionID != "" && t.publicURL != nil {
+		link = t.publicURL("/session/" + url.PathEscape(created.SessionID) + "?platform=" + url.QueryEscape(created.Platform))
+	}
 	switch {
 	case err != nil && created.SessionID != "":
 		// Don't hide the session: the agent can retry the prompt in the UI or inspect it.
-		return mcplib.NewToolResultError("session " + created.SessionID + " was created on " + created.Platform + " but setup or prompt delivery failed")
+		message := "session " + created.SessionID + " was created on " + created.Platform + " but setup or prompt delivery failed"
+		if link != "" {
+			message += "\n" + link
+		}
+		return mcplib.NewToolResultError(message)
 	case errors.Is(err, ErrInvalidSessionCreate):
 		return mcplib.NewToolResultError(err.Error())
 	case errors.Is(err, platforms.ErrNotFound):
@@ -85,5 +94,8 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 	case err != nil:
 		return mcplib.NewToolResultError("session request failed")
 	}
-	return toolResultJSON(created)
+	return toolResultJSON(struct {
+		CreatedSession
+		URL string `json:"url,omitempty"`
+	}{created, link})
 }
