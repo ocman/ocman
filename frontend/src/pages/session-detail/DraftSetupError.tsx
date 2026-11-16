@@ -21,7 +21,8 @@ export function DraftSetupError({ record, retry }: { record: BackendConversation
   };
   return <>
     <InlineAlert onRetry={canRetry ? () => { void runRetry(); } : undefined} retrying={retrying}>
-      {retryError || 'Session setup failed. Your submitted message is saved above.'}
+      {retryError || record.error?.split('\n', 1)[0] || 'Session setup failed.'}
+      {' Your submitted message is saved above.'}
       {!canRetry && ' Session creation may have started, so setup cannot be safely repeated.'}
       {prompt && <CopyButton text={prompt} label="Copy submitted message" size="small" variant="ghost" />}
     </InlineAlert>

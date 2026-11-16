@@ -14,6 +14,8 @@ const record: BackendConversationDraft = {
 it('keeps the failure compact and offers a copy of the saved message', () => {
   render(<DraftSetupError record={record} retry={vi.fn()} />);
   expect(screen.getByRole('alert')).toHaveTextContent('Your submitted message is saved above.');
+  expect(screen.getByRole('alert')).toHaveTextContent('git worktree add: context deadline exceeded');
+  expect(screen.getByRole('alert')).not.toHaveTextContent('Updating files: 99%');
   expect(screen.getByRole('button', { name: 'Copy submitted message' })).toBeInTheDocument();
   const summary = screen.getByText('Error details');
   expect(summary.closest('details')).not.toHaveAttribute('open');
@@ -60,6 +62,7 @@ it('preserves access to saved text without replaying uncertain allocation', () =
 });
 
 it('handles image-only submissions without offering an empty text copy', () => {
-  render(<DraftSetupError record={{ ...record, request: undefined }} retry={vi.fn()} />);
+  render(<DraftSetupError record={{ ...record, request: undefined, error: undefined }} retry={vi.fn()} />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Session setup failed.');
   expect(screen.queryByRole('button', { name: 'Copy submitted message' })).toBeNull();
 });
