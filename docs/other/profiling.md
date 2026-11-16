@@ -25,9 +25,12 @@ Fixes:
 - The session page requests `limit=500&sticky=1`. A sticky first page adds
   every older row that must stay visible: pinned, snoozed, busy, background
   work, pending prompts with their bubbled ancestors, and requested IDs. Those
-  rows come from sparse sources and are read by identity. Older unarchived
-  sessions beyond the newest 500 no longer appear; the open session is still
-  fetched by ID. Remote owners that predate `Sticky` return their plain page.
+  rows come from sparse sources and are read by identity. Hub-owned PR watches
+  and pending deliveries are invisible to owner pages, so the hub reads those
+  local sessions by ID and passes remote ones as requested IDs. Older
+  unarchived sessions beyond the newest 500 no longer appear; the open session
+  is still fetched by ID. Remote owners that predate `Sticky` return their
+  plain page.
 - Single and sticky rows start at their catalogue identity, with the join
   order pinned from the requested IDs.
 

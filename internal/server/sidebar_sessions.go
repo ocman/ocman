@@ -13,6 +13,7 @@ import (
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/prworkflow"
 	"github.com/ocman/ocman/internal/state"
 )
 
@@ -82,6 +83,10 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 			sources = append(sources, source)
 		}
 	}
+	watches, err := s.stickyWatches(ctx, q)
+	if err != nil {
+		return nil, err
+	}
 	results := make([][]db.Session, len(adapters))
 	failures := make([]error, len(adapters))
 	page := q
@@ -122,12 +127,22 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 					remotePage.IncludeIDs = append(remotePage.IncludeIDs, key.SessionID)
 				}
 			}
+			for key := range watches {
+				if key.Platform == statePlatform || key.Platform == string(a.ID()) {
+					remotePage.IncludeIDs = append(remotePage.IncludeIDs, key.SessionID)
+				}
+			}
 			results[i], failures[i] = reader.SidebarSessions(ctx, remotePage)
 		}(i, a, ctx)
 	}
 	if local != nil {
 		rows, err := local.SidebarSessionsFor(ctx, sources, page)
 		if err != nil {
+			cancel()
+			wg.Wait()
+			return nil, err
+		}
+		if rows, err = s.appendWatchedRows(ctx, rows, adapters, watches, q.Since); err != nil {
 			cancel()
 			wg.Wait()
 			return nil, err
@@ -190,6 +205,55 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 		return nil, err
 	}
 	return all, nil
+}
+
+// stickyWatches lists hub-owned PR watches and pending deliveries. Owner pages
+// cannot see this background work, so a sticky first page asks for it by ID.
+func (s *Server) stickyWatches(ctx context.Context, q platforms.SidebarQuery) (map[state.Key]int, error) {
+	if !q.Sticky || q.Limit == 0 || q.Offset > 0 || s.stateDB == nil {
+		return nil, nil
+	}
+	return prworkflow.BackgroundCounts(ctx, s.stateDB)
+}
+
+// appendWatchedRows reads watched local sessions missing from a page by
+// identity. The time window applies as it does to every other row; the
+// watch overlay later restores their background work and archive hold.
+func (s *Server) appendWatchedRows(ctx context.Context, rows []db.Session, adapters []platforms.Platform, watches map[state.Key]int, since int64) ([]db.Session, error) {
+	if len(watches) == 0 {
+		return rows, nil
+	}
+	present := map[string]bool{}
+	for _, row := range rows {
+		present[row.Platform+"\x00"+row.ID] = true
+	}
+	for _, a := range adapters {
+		reader, ok := a.(platforms.SidebarSessionReader)
+		if !isLocalAdapter(a) || !ok {
+			continue
+		}
+		key, _ := s.registry.KeyFor(a)
+		route, statePlatform := string(key), s.sessionStatePlatform(string(key))
+		for watch := range watches {
+			if watch.Platform != route && watch.Platform != statePlatform || present[route+"\x00"+watch.SessionID] {
+				continue
+			}
+			row, err := reader.SidebarSession(ctx, watch.SessionID)
+			if errors.Is(err, platforms.ErrNotFound) || err == nil && row == nil {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			if since > 0 && row.Archived && row.TimeUpdated < since && row.Status != db.StatusBusy && !row.Pinned && row.SnoozedUntil == 0 && !row.PendingPermission && !row.PendingQuestion {
+				continue
+			}
+			row.Platform = route
+			present[route+"\x00"+row.ID] = true
+			rows = append(rows, *row)
+		}
+	}
+	return rows, nil
 }
 
 // trimSidebarPage cuts a merged page to its limit. A sticky first page keeps
