@@ -44,6 +44,7 @@ type ConversationDraft struct {
 	Archived          bool              `json:"archived"`
 	ErrorVersion      int64             `json:"errorVersion"`
 	ErrorAcknowledged bool              `json:"errorAcknowledged"`
+	SetupRetryable    bool              `json:"setupRetryable"`
 }
 
 type draftStore struct{ db *sql.DB }
@@ -63,6 +64,9 @@ func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 	}
 	if err == nil {
 		err = json.Unmarshal([]byte(steps), &d.Steps)
+	}
+	if err == nil {
+		d.SetupRetryable = canRetryDraftSetup(d)
 	}
 	return
 }

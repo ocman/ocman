@@ -39,6 +39,7 @@ import { DurableDraftRecovery } from './DurableDraftRecovery';
 import { DraftSaveError } from './DraftSaveError';
 import { DraftPermissionMode } from '../../components/PermissionModeLock';
 import { PERMISSION_MODES } from '../../lib/permissionModes';
+import { DraftSetupError } from './DraftSetupError';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -321,7 +322,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
     // to the bottom with the thread's padding.
     <div className="oc-thread" data-testid="new-conversation">
       <div className="oc-thread-viewport">
-        {durable.submitted && <StartProgress platform={durable.record?.request?.platform} prompt={durable.record?.request?.prompt || ''} images={durable.record?.request?.send?.images} steps={durable.record?.steps ?? {}} timestamp={durable.record?.submittedAt} complete={durable.record?.phase === 'ready'} />}
+        {durable.submitted && <StartProgress platform={durable.record?.request?.platform} prompt={durable.record?.request?.prompt || durable.record?.request?.send?.message || ''} images={durable.record?.request?.send?.images} steps={durable.record?.steps ?? {}} timestamp={durable.record?.submittedAt} complete={durable.record?.phase === 'ready'} />}
         {pending?.key === routeKey && <StartProgress platform={platform} prompt={pending.text} images={pending.images} steps={pending.steps} />}
         {pending?.key !== routeKey && draftStart && !draftStart.sessionId && !draftStart.error && <StartProgress platform={platform} prompt={draftStart.text} images={attachmentPayload.images} steps={{}} />}
       </div>
@@ -331,7 +332,7 @@ function PreparedConversation({ params, composerRef, navigate }: NewConversation
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {saveError && <InlineAlert onRetry={() => retryConversationDraftSave(draftId)}>Draft selections not saved: {saveError}</InlineAlert>}
         <DraftSaveError id={draftId} error={durable.saveError} retry={durable.retrySave} navigate={navigate} getLocalText={() => localComposer.current?.getText?.()} />
-        {(error || draftStart?.error || durable.record?.error) && <InlineAlert onRetry={durable.record?.error && durable.record.result?.sessionId === draftId ? durable.retry : undefined}>{error || draftStart?.error || durable.record?.error}</InlineAlert>}
+        {durable.record?.error ? <DraftSetupError record={durable.record} retry={durable.retry} /> : (error || draftStart?.error) && <InlineAlert>{error || draftStart?.error}</InlineAlert>}
         <Composer
           key={recoveryKey}
           composerRef={localComposer}

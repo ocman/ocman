@@ -22,6 +22,7 @@ export interface BackendConversationDraft {
   archived?: boolean;
   errorVersion?: number;
   errorAcknowledged?: boolean;
+  setupRetryable?: boolean;
 }
 
 export const useBackendConversationDrafts = create<{

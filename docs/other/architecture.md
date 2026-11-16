@@ -1872,12 +1872,23 @@ flowchart LR
       Selected --> Ready[Submission ready]
        Ready --> Create[Owner-local configured creation]
        Create --> Prompt[Live selection check + first prompt]
+       Create -->|Proven pre-allocation failure| Saved[Saved message + explicit retry]
+       Saved -->|retry-setup, same ID and payload| Create
        Create -->|Archive during setup| Archive[Stable session archive marker]
        Prompt -->|Completion or pending prompt| Resurface[Normal archive resurfacing]
        Archive --> Resurface
       Selected --> Inventory[Optional full model inventory]
       Inventory --> Picker[Model picker enrichment]
   ```
+
+  Durable setup failures keep the submitted message and attachments visible,
+  with long error details collapsed and a copy action for the message text.
+  `POST /api/session-drafts/{id}/retry-setup` atomically claims an explicit retry
+  only after a persisted clone, worktree or runtime failure proves native
+  allocation was not reached. It preserves the ID, complete request and held
+  queue; duplicate retries cannot start a second worker. Aggregate remote
+  worktree errors and uncertain allocation are not replayed. A confirmed session
+  instead uses `retry-delivery`, so first-message retry never allocates again.
 
   `useWorktreeEligibility` reads the git-info branch, the owner's worktree
   list, and its verified default base ref to decide whether "New worktree"

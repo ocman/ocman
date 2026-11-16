@@ -61,6 +61,37 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+it('shows the saved message after a failed setup even when only send.message was persisted', async () => {
+  record = { ...record, phase: 'failed', error: 'Session setup failed. git worktree add: context deadline exceeded',
+    request: { directory: '/repo', platform: 'opencode', send: { message: 'do not lose my investigation' } } };
+  render(<NewConversation params={record.metadata} composerRef={null} navigate={vi.fn()} navigateToSession={vi.fn()} />);
+  expect(await screen.findByTestId('pending-prompt')).toHaveTextContent('do not lose my investigation');
+});
+
+it('offers retry for failed setup without a native session and preserves the accepted payload', async () => {
+  record = { ...record, phase: 'failed', setupRetryable: true, error: 'Session setup failed. checkout timed out',
+    request: { directory: '/repo', platform: 'opencode', prompt: 'saved investigation', send: { message: 'saved investigation' } } };
+  const request = record.request;
+  const fetcher = vi.mocked(fetch);
+  const original = fetcher.getMockImplementation()!;
+  let finish!: (response: Response) => void;
+  fetcher.mockImplementation(async (url, options) => {
+    if (String(url).endsWith('/retry-setup')) return new Promise<Response>((resolve) => { finish = resolve; });
+    return original(url, options);
+  });
+  render(<NewConversation params={record.metadata} composerRef={null} navigate={vi.fn()} navigateToSession={vi.fn()} />);
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+  expect(screen.getByTestId('pending-prompt')).toHaveTextContent('saved investigation');
+  fireEvent.click(retry);
+  await waitFor(() => expect(retry).toBeDisabled());
+  record = { ...record, phase: 'accepted', error: '', setupRetryable: false };
+  await act(async () => finish(new Response(null, { status: 202 })));
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(`/api/session-drafts/${id}/retry-setup`, expect.objectContaining({ method: 'POST' })));
+  expect(useBackendConversationDrafts.getState().drafts[id].request).toEqual(request);
+  expect(screen.getByTestId('pending-prompt')).toHaveTextContent('saved investigation');
+  expect(api.startSession).not.toHaveBeenCalled();
+});
+
 it.each(['failed', 'interrupted'] as const)('/archive discards an unbound %s allocation', async (phase) => {
   record = { ...record, phase, error: 'allocation failed', request: { directory: '/repo', platform: 'opencode', prompt: 'first', send: { message: 'first' } } };
   const navigate = vi.fn();

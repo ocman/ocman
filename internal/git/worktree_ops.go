@@ -12,10 +12,13 @@ import (
 	"github.com/ocman/ocman/internal/gitexec"
 )
 
-// worktreeCommandTimeout bounds each git invocation. Worktree operations
-// touch the filesystem and may be slower than a plain rev-parse, so
-// give them more headroom than the 2s status ceiling in info.go.
+// worktreeCommandTimeout bounds worktree probes and metadata operations.
 const worktreeCommandTimeout = 15 * time.Second
+
+// A full checkout can take much longer on large repositories or slow disks,
+// including filters and post-checkout hooks after file progress reaches 100%.
+// Keep it bounded without applying the short metadata-command budget.
+const worktreeCheckoutTimeout = 2 * time.Minute
 
 // addRetryMax is the number of times CreateWorktree will retry a `git worktree
 // add` that fails due to a git index lock held by a concurrent git
@@ -242,7 +245,7 @@ func CreateWorktree(ctx context.Context, req CreateWorktreeRequest) (*CreateWork
 			}
 		}
 
-		cctx, cancel := context.WithTimeout(ctx, worktreeCommandTimeout)
+		cctx, cancel := context.WithTimeout(ctx, worktreeCheckoutTimeout)
 		out, err := gitexec.Command(cctx, args...).CombinedOutput()
 		cancel()
 		if err == nil {

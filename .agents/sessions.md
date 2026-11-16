@@ -62,6 +62,8 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   only an acknowledged `ConfigurationApplied` receipt skips the rules fallback.
 - Worktree starts create owner-local `session-<id8>` without an LLM in the first
   message path. Current-checkout starts use the directory's project instance.
+  Full Git checkouts have a separate two-minute budget, not the 15-second
+  worktree metadata-command limit; caller cancellation still applies.
   Plain prompts deliver server-side in the same request, returning
   `firstMessageSent`/`firstMessageError`. Custom slash commands and shell inputs
   run client-side on the created session; ocman built-ins need an existing one.
@@ -75,6 +77,10 @@ Read `internal/sessionlifecycle` for prepare/start and first delivery, and
   target after admission. Queue drains, including idle events, must respect the
   setup/first-delivery gate. Never replay uncertain setup after restart. An
   explicit first-delivery retry uses the confirmed session, never allocation.
+  Explicit setup retry requires a persisted pre-allocation failure checkpoint
+  and keeps the same ID, submitted payload and held queue. Remote worktree
+  aggregate errors do not prove allocation was avoided. Failed messages stay
+  visible and copyable; long error details start collapsed.
   Legacy browser start claims still prevent duplicate submission across tabs.
 - Keep one sidebar row keyed by the Ocman ID through draft, setup and native
   binding. Render timestamp, prompt, Setup, then conversation. Setup is expanded

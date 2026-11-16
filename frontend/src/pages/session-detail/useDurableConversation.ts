@@ -105,7 +105,8 @@ export function useDurableConversation(params: NewConversationProps['params'], n
       await admitInitial(request);
     },
     async retry() {
-      await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}/retry-delivery`, undefined, { parseJSON: false });
+      const action = useBackendConversationDrafts.getState().drafts[id]?.setupRetryable ? 'retry-setup' : 'retry-delivery';
+      await postJSON<void>(`/api/session-drafts/${encodeURIComponent(id)}/${action}`, undefined, { parseJSON: false });
       await refreshBackendDrafts();
     },
   };

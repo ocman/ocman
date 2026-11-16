@@ -61,6 +61,14 @@ it('requests explicit delivery retry and exposes save retry', async () => {
   expect(postJSON).toHaveBeenCalledWith(`/api/session-drafts/${id}/retry-delivery`, undefined, { parseJSON: false });
 });
 
+it('requests setup retry only when the server confirms allocation was not reached', async () => {
+  useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase: 'failed', setupRetryable: true,
+    request: { directory: '/repo', send: { message: 'first' } }, createdAt: 1, steps: { worktree: 'error' } } } });
+  const { result } = renderHook(() => useDurableConversation(params, vi.fn()));
+  await act(async () => { await result.current.retry(); });
+  expect(postJSON).toHaveBeenCalledWith(`/api/session-drafts/${id}/retry-setup`, undefined, { parseJSON: false });
+});
+
 it('keeps navigation unchanged when retiring local metadata fails', async () => {
   vi.mocked(retireBackendDraft).mockRejectedValueOnce(new Error('storage unavailable'));
   useBackendConversationDrafts.setState({ drafts: { [id]: { id, metadata: params, phase: 'ready', createdAt: 1, steps: {},
