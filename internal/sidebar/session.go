@@ -11,9 +11,7 @@ import (
 // Session reads one eligible compact row, using requested only as an identity
 // filter, not as permission to surface deleted or otherwise hidden history.
 func (r *Reader) Session(ctx context.Context, scope Scope, id string) (*db.Session, error) {
-	query := strings.Replace(selectSessions, "WHERE i.owner_id=?", "WHERE s.id IN requested AND i.owner_id=?", 1)
-	query = strings.ReplaceAll(query, " OR s.id IN requested", "")
-	rows, err := r.sessionsFor(ctx, []Scope{scope}, platforms.SidebarQuery{IncludeIDs: []string{id}}, query)
+	rows, err := r.sessionsFor(ctx, []Scope{scope}, platforms.SidebarQuery{IncludeIDs: []string{id}}, singleSessionQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -21,4 +19,10 @@ func (r *Reader) Session(ctx context.Context, scope Scope, id string) (*db.Sessi
 		return nil, platforms.ErrNotFound
 	}
 	return &rows[0], nil
+}
+
+// Requested is only an identity filter here, never permission to surface
+// deleted or otherwise hidden history.
+func singleSessionQuery() string {
+	return strings.ReplaceAll(selectByIdentity("requested", ""), " OR s.id IN requested", "")
 }

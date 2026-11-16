@@ -26,6 +26,13 @@ import { SIDEBAR_SESSIONS_KEY, getSidebarSessions, patchSessionLists, setSidebar
  */
 const SIDEBAR_REFRESH_MS = 3 * 60 * 1000;
 
+/**
+ * Newest rows per refresh. Sticky asks the backend to add older rows that must
+ * stay visible: pinned, snoozed, busy, background work and pending prompts.
+ * An unbounded read visits every retained session on each refresh.
+ */
+const SIDEBAR_PAGE = { limit: 500, sticky: 1 } as const;
+
 export interface UseSidebarSessionsOptions {
   enabled?: boolean;
   /** The active session id from the URL. */
@@ -148,11 +155,11 @@ export function useSidebarSessions({
       try {
         // /api/sessions can serialize a Go nil slice as JSON `null`;
         // coerce here so .find() / filterVisibleSessions never see null.
-        const result = (await getSessions({ sinceHours: sidebarRecentHoursRef.current, limit: 0, view: 'sidebar' }, signal)) ?? [];
+        const result = (await getSessions({ sinceHours: sidebarRecentHoursRef.current, ...SIDEBAR_PAGE, view: 'sidebar' }, signal)) ?? [];
         if (signal?.aborted || !force && (!enabledRef.current || document.hidden)) return;
         // Hide settled native agents, but retain independent subsessions.
         const rooted = filterInactiveChildren(result, id);
-        // When the open session is older than the recent window, fetch it once
+        // When the open session is outside the recent window or page, fetch it once
         // by id so it is always present in the sidebar.
         const fallback = openSessionFallbackRef.current;
         const liveFallback = fallback && getSidebarSessions().find(s => s.id === fallback.id && s.platform === fallback.platform);
@@ -253,7 +260,7 @@ export function useSidebarSessions({
     staleTime: 0,
     refetchOnMount: false, // The session-change effect owns the first load.
     refetchOnWindowFocus: 'always',
-    refetchInterval: () => snapshotPollingDelay('/api/sessions', { sinceHours: sidebarRecentHoursRef.current, limit: 0, view: 'sidebar' }, SIDEBAR_REFRESH_MS),
+    refetchInterval: () => snapshotPollingDelay('/api/sessions', { sinceHours: sidebarRecentHoursRef.current, ...SIDEBAR_PAGE, view: 'sidebar' }, SIDEBAR_REFRESH_MS),
     retry: false,
   }, queryClient);
 

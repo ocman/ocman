@@ -3,6 +3,59 @@ title: Profiling
 weight: 8
 ---
 
+## Bounded sidebar and identity reads, November 16, 2026
+
+Two sidebar reads scaled with retained history rather than with the rows they
+returned. Measured on a live-shaped disposable fixture: 20,000 sessions ten
+minutes apart, 90% archived.
+
+- **The session-page sidebar read every retained session.** It requested
+  `limit=0`. The time window hides only archived sessions that are unchanged
+  since archiving, so every unarchived session matched regardless of age. The
+  read ran on reconnect, on the three-minute poll and after change events
+  the client cannot patch in place.
+- **A single-session read walked the whole history.** It reused the paged
+  statement, whose `CROSS JOIN` pins the global recency index. Without that
+  pin, SQLite still started from every catalogue row of the owner. These
+  reads serve the server's per-session change flush and the client's lookups
+  after a turn completes.
+
+Fixes:
+
+- The session page requests `limit=500&sticky=1`. A sticky first page adds
+  every older row that must stay visible: pinned, snoozed, busy, background
+  work, pending prompts with their bubbled ancestors, and requested IDs. Those
+  rows come from sparse sources and are read by identity. Older unarchived
+  sessions beyond the newest 500 no longer appear; the open session is still
+  fetched by ID. Remote owners that predate `Sticky` return their plain page.
+- Single and sticky rows start at their catalogue identity, with the join
+  order pinned from the requested IDs.
+
+Apple M4 Max, production driver, three runs:
+
+| Read | Before | After |
+|---|---:|---:|
+| Session-page sidebar | 120–132 ms, 2,407 rows | 14.2–14.7 ms, 518 rows |
+| Single session | 14.6–15.7 ms | 1.7–2.2 ms |
+
+The sticky page is a plain 500-row page (10.7–11.2 ms) plus the sticky query
+(3.4–3.7 ms). These are read timings, not a measured backend CPU reduction.
+
+A parity test compares sticky pages with the unbounded inventory across six
+owner, platform and source scopes, SQL and live-snapshot observations, time
+windows, filters and requested IDs. The single-session plan test and the
+sticky parity test failed before the change, as did the server and client
+request tests.
+
+Open question: about 88% of the unbounded read went to page reads that a
+larger page cache, memory-mapped I/O, in-memory temporary storage and a
+shared read transaction did not reduce. The cause is not yet understood.
+
+```sh
+go test ./internal/sidebar -run 'TestSticky|TestIdentityReads|TestDirectoryPages' -count=1
+go test ./internal/sidebar -run '^$' -bench '^BenchmarkSidebarIdentityReads$' -benchtime=20x -count=3
+```
+
 ## Per-commit analytics rebuild, November 16, 2026
 
 The local backend averaged about 100% of one core over 30 s, with peaks of

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ import (
 // handleSidebarSessions deliberately bypasses summary fanout and applySessionState.
 // Each owner returns filtered metadata, flags and observations in one SQL query.
 func (s *Server) handleSidebarSessions(w http.ResponseWriter, r *http.Request) {
-	q := platforms.SidebarQuery{Directory: r.URL.Query().Get("dir"), Since: sidebarSince(r), Limit: httpx.QueryInt(r, "limit", 500), Offset: httpx.QueryInt(r, "offset", 0), Origin: r.URL.Query().Get("origin"), OriginID: r.URL.Query().Get("originId")}
+	q := platforms.SidebarQuery{Directory: r.URL.Query().Get("dir"), Since: sidebarSince(r), Limit: httpx.QueryInt(r, "limit", 500), Offset: httpx.QueryInt(r, "offset", 0), Origin: r.URL.Query().Get("origin"), OriginID: r.URL.Query().Get("originId"), Sticky: r.URL.Query().Get("sticky") == "1"}
 	if q.Limit < 0 || q.Offset < 0 {
 		http.Error(w, "invalid sidebar page", http.StatusBadRequest)
 		return
@@ -182,13 +183,29 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 	} else {
 		all = all[q.Offset:]
 		if q.Limit > 0 && len(all) > q.Limit {
-			all = all[:q.Limit]
+			all = trimSidebarPage(all, q)
 		}
 	}
 	if err := s.enrichSidebarCreators(ctx, all); err != nil {
 		return nil, err
 	}
 	return all, nil
+}
+
+// trimSidebarPage cuts a merged page to its limit. A sticky first page keeps
+// older rows that must stay visible regardless of recency.
+func trimSidebarPage(rows []db.Session, q platforms.SidebarQuery) []db.Session {
+	if !q.Sticky || q.Offset > 0 {
+		return rows[:q.Limit]
+	}
+	kept := rows[:q.Limit]
+	for _, row := range rows[q.Limit:] {
+		if row.Pinned || row.SnoozedUntil > 0 || row.Status == db.StatusBusy || row.PendingPermission || row.PendingQuestion ||
+			row.BackgroundTaskCount > 0 || row.BackgroundServiceCount > 0 || slices.Contains(q.IncludeIDs, row.ID) {
+			kept = append(kept, row)
+		}
+	}
+	return kept
 }
 
 func (s *Server) supportsSidebar() bool {

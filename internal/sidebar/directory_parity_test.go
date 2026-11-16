@@ -12,6 +12,42 @@ import (
 )
 
 func TestDirectoryPagesMatchGlobalScan(t *testing.T) {
+	r, history, scopes := parityFixture(t)
+	for _, live := range []bool{false, true} {
+		reader := *r
+		if live {
+			reader.snapshots = history.SidebarLiveJSON
+		}
+		for i, scope := range scopes {
+			for j, q := range []platforms.SidebarQuery{
+				{Directory: "/one", Limit: 50},
+				{Directory: "/two", Limit: 7, Offset: 3, Since: 150},
+				{Directory: "/one", Limit: 50, Origin: "routine", OriginID: "r"},
+				{Directory: "/two", Limit: 50, IncludeIDs: []string{"ocm_00000013-0000-0000-0000-000000000013"}},
+				{Directory: "/one", Limit: 5, Offset: 1000},
+				{Directory: "/missing", Limit: 5},
+				{Directory: "/one' OR 1=1 --", Limit: 5},
+			} {
+				t.Run(fmt.Sprintf("live=%v/scope=%d/query=%d", live, i, j), func(t *testing.T) {
+					want, err := reader.sessionsFor(t.Context(), scope, q, selectSessions)
+					if err != nil {
+						t.Fatal(err)
+					}
+					got, err := reader.SessionsFor(t.Context(), scope, q)
+					if err != nil || !reflect.DeepEqual(want, got) {
+						t.Fatalf("directory page changed rows or ordering: want=%d got=%d err=%v", len(want), len(got), err)
+					}
+				})
+			}
+		}
+	}
+}
+
+// parityFixture spreads archived, pinned, seen, snoozed, purged, deleted,
+// subagent, child, busy, pending and background rows across owners,
+// platforms and sources.
+func parityFixture(t *testing.T) (*Reader, *statev2.DB, [][]Scope) {
+	t.Helper()
 	r, core, history := sidebarInventory(t, 200)
 	conn, err := sql.Open("sqlite", history.FilePath())
 	if err != nil {
@@ -58,44 +94,17 @@ func TestDirectoryPagesMatchGlobalScan(t *testing.T) {
 	if err := history.ReplaceSidebarObservations(t.Context(), instance, "g", time.Now().Add(time.Hour).UnixMilli(), map[string]statev2.SidebarObservation{
 		"native-17": {Status: "busy"}, "native-34": {Status: "busy", PendingQuestion: true},
 		"native-52": {Status: "waiting", PendingPermission: true},
+		"native-61": {Status: "waiting", BackgroundTasks: 1},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	primary := Scope{Owner: "owner", Platform: "test", Source: "source", Generation: "g"}
-	scopes := [][]Scope{
+	return r, history, [][]Scope{
 		{primary},
 		{primary, {Owner: "owner", Platform: "test", Source: "second", Generation: "g"}},
 		{primary, {Owner: "owner", Platform: "other", Source: "other", Generation: "g"}},
 		{{Owner: "foreign", Platform: "test", Source: "foreign", Generation: "g"}},
 		{{Owner: "missing", Platform: "test"}},
 		{{Owner: "owner", Platform: "test", Source: "source", Generation: "old"}},
-	}
-	for _, live := range []bool{false, true} {
-		reader := *r
-		if live {
-			reader.snapshots = history.SidebarLiveJSON
-		}
-		for i, scope := range scopes {
-			for j, q := range []platforms.SidebarQuery{
-				{Directory: "/one", Limit: 50},
-				{Directory: "/two", Limit: 7, Offset: 3, Since: 150},
-				{Directory: "/one", Limit: 50, Origin: "routine", OriginID: "r"},
-				{Directory: "/two", Limit: 50, IncludeIDs: []string{"ocm_00000013-0000-0000-0000-000000000013"}},
-				{Directory: "/one", Limit: 5, Offset: 1000},
-				{Directory: "/missing", Limit: 5},
-				{Directory: "/one' OR 1=1 --", Limit: 5},
-			} {
-				t.Run(fmt.Sprintf("live=%v/scope=%d/query=%d", live, i, j), func(t *testing.T) {
-					want, err := reader.sessionsFor(t.Context(), scope, q, selectSessions)
-					if err != nil {
-						t.Fatal(err)
-					}
-					got, err := reader.SessionsFor(t.Context(), scope, q)
-					if err != nil || !reflect.DeepEqual(want, got) {
-						t.Fatalf("directory page changed rows or ordering: want=%d got=%d err=%v", len(want), len(got), err)
-					}
-				})
-			}
-		}
 	}
 }

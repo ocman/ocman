@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
@@ -146,5 +148,43 @@ func TestSidebarKeepsRemoteUnarchivedAndRunningSessionsOutsideRecentWindow(t *te
 	var rows []db.Session
 	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil || w.Code != 200 || len(rows) != 2 || rows[0].ID != "done" || rows[1].ID != "running" {
 		t.Fatalf("running rows=%+v err=%v status=%d", rows, err, w.Code)
+	}
+}
+
+func TestSidebarStickyPageKeepsVisibleRowsBeyondLimit(t *testing.T) {
+	s, reg := newSessionsTestServer(t)
+	p := &compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}, rows: []db.Session{
+		{ID: "newest", TimeUpdated: 30, Status: db.StatusDone},
+		{ID: "newer", TimeUpdated: 20, Status: db.StatusDone},
+		{ID: "old", TimeUpdated: 10, Status: db.StatusDone},
+		{ID: "pinned", TimeUpdated: 9, Status: db.StatusDone, Pinned: true},
+		{ID: "busy", TimeUpdated: 8, Status: db.StatusBusy},
+		{ID: "snoozed", TimeUpdated: 7, Status: db.StatusDone, SnoozedUntil: 99},
+		{ID: "permission", TimeUpdated: 6, Status: db.StatusWaiting, PendingPermission: true},
+		{ID: "question", TimeUpdated: 5, Status: db.StatusWaiting, PendingQuestion: true},
+		{ID: "background", TimeUpdated: 4, Status: db.StatusDone, BackgroundTaskCount: 1},
+		{ID: "older", TimeUpdated: 3, Status: db.StatusDone},
+	}}
+	reg.Register(p)
+	for query, want := range map[string][]string{
+		"limit=2&sticky=1": {"newest", "newer", "pinned", "busy", "snoozed", "permission", "question", "background"},
+		"limit=2":          {"newest", "newer"},
+	} {
+		w := httptest.NewRecorder()
+		s.handleSessions(w, httptest.NewRequest(http.MethodGet, "/api/sessions?view=sidebar&"+query, nil))
+		var rows []db.Session
+		if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil || w.Code != 200 {
+			t.Fatalf("%s: status=%d err=%v", query, w.Code, err)
+		}
+		got := make([]string, len(rows))
+		for i, row := range rows {
+			got[i] = row.ID
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s rows = %v, want %v", query, got, want)
+		}
+		if p.query.Sticky != strings.Contains(query, "sticky") {
+			t.Errorf("%s owner query sticky=%v", query, p.query.Sticky)
+		}
 	}
 }

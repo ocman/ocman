@@ -3,6 +3,7 @@
 package sidebar
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -87,7 +89,37 @@ func (r *Reader) Sessions(ctx context.Context, scope Scope, q platforms.SidebarQ
 }
 
 func (r *Reader) SessionsFor(ctx context.Context, scopes []Scope, q platforms.SidebarQuery) ([]db.Session, error) {
-	return r.sessionsFor(ctx, scopes, q, sessionStatement(q))
+	rows, err := r.sessionsFor(ctx, scopes, q, sessionStatement(q))
+	if err != nil || !q.Sticky || q.Limit == 0 || q.Offset > 0 {
+		return rows, err
+	}
+	all := q
+	all.Limit, all.Offset = 0, 0
+	sticky, err := r.sessionsFor(ctx, scopes, all, selectSticky)
+	if err != nil {
+		return nil, err
+	}
+	return mergeSticky(rows, sticky), nil
+}
+
+// mergeSticky adds sticky rows missing from a page and keeps recency order.
+func mergeSticky(page, sticky []db.Session) []db.Session {
+	seen := make(map[string]bool, len(page))
+	for _, row := range page {
+		seen[row.ID] = true
+	}
+	for _, row := range sticky {
+		if !seen[row.ID] {
+			page = append(page, row)
+		}
+	}
+	slices.SortStableFunc(page, func(a, b db.Session) int {
+		if c := cmp.Compare(b.TimeUpdated, a.TimeUpdated); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	return page
 }
 
 func sessionStatement(q platforms.SidebarQuery) string {

@@ -16,7 +16,7 @@ export const sessionApi = {
     postJSON<void>(`/api/session/${encodeURIComponent(sessionId)}/background/${encodeURIComponent(taskId)}/stop${queryString({ platform })}`, undefined, { parseJSON: false }),
   runningSessionCount: (signal?: AbortSignal) =>
     fetchJSON<{ count: number }>('/api/sessions?view=running-count', signal),
-  sessions: (params?: { dir?: string; since?: number; sinceHours?: number; limit?: number; view?: 'sidebar'; origin?: string; originId?: string; offset?: number }, signal?: AbortSignal) =>
+  sessions: (params?: { dir?: string; since?: number; sinceHours?: number; limit?: number; sticky?: 1; view?: 'sidebar'; origin?: string; originId?: string; offset?: number }, signal?: AbortSignal) =>
     (params?.view === 'sidebar' ? snapshotJSON<Session[]> : fetchJSON<Session[]>)(`/api/sessions${queryString(params)}`, signal),
   sessionsNotify: (params?: { since?: number; sinceHours?: number; limit?: number; includeDone?: 1 }, signal?: AbortSignal) =>
     snapshotJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),

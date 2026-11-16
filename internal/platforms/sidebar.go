@@ -13,6 +13,10 @@ type SidebarQuery struct {
 	Limit, Offset    int
 	Origin, OriginID string
 	IncludeIDs       []string `json:",omitempty"`
+	// Sticky extends a bounded first page with every row that must stay
+	// visible regardless of recency: pinned, snoozed, busy, background work,
+	// pending prompts and IncludeIDs. Older owners ignore it.
+	Sticky bool `json:",omitempty"`
 }
 
 type SidebarReader interface {

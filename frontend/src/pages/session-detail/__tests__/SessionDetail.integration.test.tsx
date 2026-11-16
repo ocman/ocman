@@ -353,14 +353,15 @@ describe('SessionDetail — sidebar polling', () => {
     });
   });
 
-  it('passes the configured time window without capping project sessions', async () => {
+  it('passes the configured time window with a bounded sticky page', async () => {
     useUiStore.getState().setSidebarView('projects');
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.store.getSessions).toHaveBeenCalled());
-    const [params] = handle.store.getSessions.mock.calls[0] as [{ sinceHours?: number; limit?: number }];
+    const [params] = handle.store.getSessions.mock.calls[0] as [{ sinceHours?: number; limit?: number; sticky?: number }];
     expect(params.sinceHours).toBe(useUiStore.getState().sidebarRecentHours);
-    expect(params.limit).toBe(0);
+    expect(params.limit).toBe(500);
+    expect(params.sticky).toBe(1);
   });
 });
 

@@ -59,6 +59,33 @@ const selectSessions = observationsCTE + haltsCTE + sessionColumns + `
  FROM main.session_sidebar s CROSS JOIN main.instance i ON i.id=s.instance_id
  CROSS JOIN core.session_catalog c ON c.id=s.id AND c.owner_id=i.owner_id AND c.platform=i.platform AND c.source_key=i.source_key` + sessionFilters
 
+// Identity reads start at the listed catalogue rows. CROSS JOIN pins that
+// order; otherwise SQLite walks the recency index or every catalogue row of
+// the owner, which scales with retained history.
+func selectByIdentity(ids, cte string) string {
+	return observationsCTE + haltsCTE + cte + sessionColumns + `
+ FROM ` + ids + ` r CROSS JOIN core.session_catalog c ON c.id=r.id
+ CROSS JOIN main.instance i ON i.owner_id=c.owner_id AND i.platform=c.platform AND i.source_key=c.source_key
+ CROSS JOIN main.session_sidebar s ON s.instance_id=i.id AND s.id=c.id` + sessionFilters
+}
+
+// stickyCTE lists rows a bounded page must keep regardless of recency. Each
+// source is sparse: pins, snoozes, live busy rows, background work and
+// pending prompts with their bubbled ancestors. Visibility filters still apply.
+const stickyCTE = `, sticky(id) AS (
+ SELECT id FROM requested
+ UNION SELECT session_id FROM core.pinned_session
+ UNION SELECT session_id FROM core.archived_session WHERE snoozed_until>0
+ UNION SELECT id FROM flags
+ UNION SELECT c.id FROM live o JOIN core.session_catalog c ON c.owner_id=o.owner_id AND c.platform=o.platform AND c.source_key=o.source_key AND c.native_id=o.native_id AND c.native_id<>''
+ WHERE o.status='busy'
+ UNION SELECT c.id FROM main.sidebar_observation bg JOIN runtime r ON r.owner=bg.owner_id AND r.platform=bg.platform AND r.source=bg.source_key AND r.generation=bg.generation
+ JOIN core.session_catalog c ON c.owner_id=bg.owner_id AND c.platform=bg.platform AND c.source_key=bg.source_key AND c.native_id=bg.native_id AND c.native_id<>''
+ WHERE bg.background_tasks>0 OR bg.background_services>0
+)`
+
+var selectSticky = selectByIdentity("sticky", stickyCTE)
+
 const selectInventory = observationsCTE + haltsCTE + sessionColumns + `
  FROM main.session_sidebar s JOIN main.instance i ON i.id=s.instance_id
  JOIN core.session_catalog c ON c.id=s.id AND c.owner_id=i.owner_id AND c.platform=i.platform AND c.source_key=i.source_key` + sessionFilters
