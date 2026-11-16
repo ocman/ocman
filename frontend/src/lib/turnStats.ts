@@ -31,7 +31,7 @@ import { parsePart } from './parsePart';
  *   message completion metadata for views without a live session status.
  */
 export interface TurnAggregate {
-  /** Ms from user message creation to last assistant message completion. */
+  /** Ms from the earliest loaded turn message to last assistant completion. */
   wallClockMs: number | null;
   /** Sum of output tokens across all assistant messages in the turn. */
   tokensOut: number;
@@ -47,7 +47,7 @@ export interface TurnAggregate {
   isLive: boolean;
   /** True when this completed turn likely rebuilt a previously used prompt cache. */
   promptCacheRebuilt: boolean;
-  /** Unix ms when the user message was sent (turn start). */
+  /** Unix ms of the prompt, or earliest loaded reply when the prompt is absent. */
   startedAt: number;
   /**
    * Raw `provider/model` reference for the turn, taken from the last
@@ -165,7 +165,13 @@ export function computeTurnStats(
       if (isTurnNotification(m, partsByMsg[m.id] ?? [])) continue;
       current = { userMsg: m, assistantMsgs: [] };
       turns.push(current);
-    } else if (m.data.role === 'assistant' && current) {
+    } else if (m.data.role === 'assistant') {
+      // A paginated window may omit the prompt. Keep its visible replies
+      // together, using the earliest loaded reply as the available start.
+      if (!current) {
+        current = { userMsg: m, assistantMsgs: [] };
+        turns.push(current);
+      }
       current.assistantMsgs.push(m);
     }
   }
