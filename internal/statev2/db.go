@@ -44,7 +44,10 @@ func Open(path string) (*DB, error) {
 		return nil, err
 	}
 	u := url.URL{Scheme: "file", Path: abs}
-	q := url.Values{"_pragma": {"busy_timeout(5000)", "journal_mode(WAL)", "foreign_keys(1)", "synchronous(FULL)"}}
+	// temp_store keeps statement journals, temporary tables and sorter spills
+	// in memory. They only roll back or stage work inside an open transaction;
+	// committed history is durable in the synchronous WAL either way.
+	q := url.Values{"_pragma": {"busy_timeout(5000)", "journal_mode(WAL)", "foreign_keys(1)", "synchronous(FULL)", "temp_store(MEMORY)"}}
 	u.RawQuery = q.Encode()
 	conn, err := telemetry.OpenSQL(u.String(), "statev2")
 	if err != nil {

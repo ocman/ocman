@@ -3,6 +3,57 @@ title: Profiling
 weight: 8
 ---
 
+## Per-commit analytics rebuild, November 16, 2026
+
+The local backend averaged about 100% of one core over 30 s, with peaks of
+260–340%. Bursts began within a second of session events: a session was
+created, a prompt was sent or a turn completed. Between events it used 0–38%,
+with dashboards open. OS samples put about 80% of on-CPU leaves in SQLite
+execution and page I/O. They could not attribute callers, because `sample`
+truncates most Go stacks.
+
+A disposable reproduction found the per-event cost in `statev2.DB.Commit`.
+Every journaled history read commits a partial batch, and each commit rebuilt
+the whole session's analytics summary. That made a one-message append scale
+with retained history. The rebuild inserted one fact per message. Each insert
+wrote its statement journal to a temporary file, and these writes took about
+two thirds of the rebuild's CPU.
+
+Two changes:
+
+- Partial commits refresh only the messages and parts they touch, as
+  `ApplyStream` already did. Authoritative snapshots still rebuild, because
+  they can drop records. A parity test compares partial commits with a full
+  rebuild after appends, edits that move hour buckets, part-only changes and
+  metadata-only batches.
+- The writer connection uses `temp_store(MEMORY)`. This holds statement
+  journals, temporary tables and sorter spills only while a transaction is
+  open. Committed history stays in the synchronous WAL. A crash test kills a
+  child process while uncommitted pages sit in the WAL. Committed history
+  survived, the open transaction left no rows and `integrity_check` passed.
+
+Apple M4 Max, production driver, one appended message, interleaved runs:
+
+| Retained messages | Before | After |
+|---:|---:|---:|
+| 200 | 5.5 ms | 2.1 ms |
+| 1,000 | 57–64 ms | 4.9–6.3 ms |
+| 4,000 | 269–272 ms | 16.0–16.6 ms |
+
+These are commit timings, not a measured backend CPU reduction. Live session
+lengths were not measured. The remaining linear step refreshes sidebar
+attention over every message in the session; it costs about 8 ms at 4,000
+messages.
+
+The partial-commit and writer-pragma tests failed before the changes. The
+parity and crash tests also pass on the old code, since they guard properties
+that must not regress.
+
+```sh
+go test ./internal/statev2 -run 'TestPartialCommit|TestCompleteCommitRebuilds|TestWriterKeepsDurable|TestCrashKeeps' -count=1
+go test ./internal/statev2 -run '^$' -bench '^BenchmarkPartialCommit$' -benchtime=30x
+```
+
 ## Directory-filtered pages, November 8, 2026
 
 Spike-triggered OS samples still included sidebar reads and SQLite execution.

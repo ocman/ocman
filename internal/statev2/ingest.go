@@ -57,7 +57,7 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 	if err := projectAnalytics(ctx, tx, batch); err != nil {
 		return CommitResult{}, err
 	}
-	if err := rebuildAnalyticsSummary(ctx, tx, s.Key); err != nil {
+	if err := refreshCommittedAnalytics(ctx, tx, batch); err != nil {
 		return CommitResult{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO change_outbox(instance_id,session_id,revision,kind) VALUES(?,?,?,'updated')`,
@@ -80,6 +80,17 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 	}
 	d.notifyCommitted(s.Key, result.Revision)
 	return result, nil
+}
+
+// refreshCommittedAnalytics rebuilds a session summary only for an
+// authoritative snapshot, which can drop records. Partial batches never
+// remove anything, so only the messages they touch can change.
+func refreshCommittedAnalytics(ctx context.Context, tx *sql.Tx, batch Batch) error {
+	if batch.Complete {
+		return rebuildAnalyticsSummary(ctx, tx, batch.Session.Key)
+	}
+	changed := StreamBatch{Messages: batch.Messages, Parts: batch.Parts}
+	return refreshAnalyticsSummary(ctx, tx, batch.Session.Key, changedAnalyticsMessages(changed))
 }
 
 func markSnapshotContent(ctx context.Context, tx *sql.Tx, key Key) error {
