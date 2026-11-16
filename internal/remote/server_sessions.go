@@ -27,6 +27,14 @@ func (s *Server) Sessions(ctx context.Context, req *pb.SessionsReq) (*pb.JsonRes
 		if !ok {
 			return nil, status.Error(codes.Unimplemented, "compact sidebar unavailable")
 		}
+		// PR watches persist with this owner; the hub cannot name them.
+		if query.Sticky && query.Limit > 0 && query.Offset == 0 && s.sidebarWatches != nil {
+			watched, err := s.sidebarWatches(ctx, req.Platform)
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, "sidebar watches unavailable")
+			}
+			query.StickyIDs = append(query.StickyIDs, watched...)
+		}
 		rows, err := reader.SidebarSessions(ctx, query)
 		return jsonResp(rows, err)
 	}

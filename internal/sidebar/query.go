@@ -71,9 +71,11 @@ func selectByIdentity(ids, cte string) string {
 
 // stickyCTE lists rows a bounded page must keep regardless of recency. Each
 // source is sparse: pins, snoozes, live busy rows, background work and
-// pending prompts with their bubbled ancestors. Visibility filters still apply.
+// pending prompts with their bubbled ancestors, plus StickyIDs the caller
+// knows about, such as application background work. Visibility filters apply.
 const stickyCTE = `, sticky(id) AS (
  SELECT id FROM requested
+ UNION SELECT value FROM json_each(?)
  UNION SELECT session_id FROM core.pinned_session
  UNION SELECT session_id FROM core.archived_session WHERE snoozed_until>0
  UNION SELECT id FROM flags

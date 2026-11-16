@@ -189,45 +189,38 @@ func TestSidebarStickyPageKeepsVisibleRowsBeyondLimit(t *testing.T) {
 	}
 }
 
-// boundedTestPlatform pages like an owner and serves identity reads, so rows
-// beyond a limit are only visible if the hub asks for them by ID.
-type boundedTestPlatform struct {
-	compactTestPlatform
-	reads []string
-}
+// boundedTestPlatform pages like an owner: rows beyond the limit return only
+// when the hub names them as sticky identities.
+type boundedTestPlatform struct{ compactTestPlatform }
 
 func (p *boundedTestPlatform) SidebarSessionsFor(ctx context.Context, sources []platforms.SidebarSource, q platforms.SidebarQuery) ([]db.Session, error) {
 	rows, err := p.compactTestPlatform.SidebarSessionsFor(ctx, sources, q)
-	if q.Limit > 0 && len(rows) > q.Limit {
-		rows = rows[:q.Limit]
+	if q.Limit == 0 || len(rows) <= q.Limit {
+		return rows, err
 	}
-	return rows, err
-}
-
-func (p *boundedTestPlatform) SidebarSession(_ context.Context, id string) (*db.Session, error) {
-	p.reads = append(p.reads, id)
-	for _, row := range p.rows {
-		if row.ID == id {
-			return &row, nil
+	page := slices.Clone(rows[:q.Limit])
+	for _, row := range rows[q.Limit:] {
+		if slices.Contains(q.StickyIDs, row.ID) {
+			page = append(page, row)
 		}
 	}
-	return nil, platforms.ErrNotFound
+	return page, err
 }
 
-// PR watches are hub-owned background work that owner pages cannot see.
+// PR watches are application background work that owner SQL cannot see.
 func TestSidebarStickyPageKeepsWatchedSessionsBeyondLimit(t *testing.T) {
 	s, reg := newSessionsTestServer(t)
-	p := &boundedTestPlatform{compactTestPlatform: compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}, rows: []db.Session{
-		{ID: "newest", TimeUpdated: 30, Status: db.StatusDone},
-		{ID: "newer", TimeUpdated: 20, Status: db.StatusDone},
-		{ID: "watched", TimeUpdated: 10, Status: db.StatusDone},
-		{ID: "old", TimeUpdated: 5, Status: db.StatusDone},
+	p := &boundedTestPlatform{compactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}, rows: []db.Session{
+		{ID: "newest", Platform: "test", TimeUpdated: 30, Status: db.StatusDone},
+		{ID: "newer", Platform: "test", TimeUpdated: 20, Status: db.StatusDone},
+		{ID: "watched", Platform: "test", TimeUpdated: 10, Status: db.StatusDone},
+		{ID: "old", Platform: "test", TimeUpdated: 5, Status: db.StatusDone},
 	}}}
 	reg.Register(p)
 	remote := &remoteCompactTestPlatform{fakePlatform: &fakePlatform{PlatformID: "r-remote:test"}}
 	reg.Register(remote)
 	seedPRWatch(t, s, "test", "watched", true)
-	seedPRWatch(t, s, "test", "missing", true)
+	seedPRWatch(t, s, "other", "foreign", true)
 	seedPRWatch(t, s, "r-remote:test", "remote-watched", true)
 	rows, err := s.sidebarSessionRows(t.Context(), platforms.SidebarQuery{Limit: 2, Sticky: true}, false)
 	if err != nil {
@@ -240,19 +233,17 @@ func TestSidebarStickyPageKeepsWatchedSessionsBeyondLimit(t *testing.T) {
 	if len(rows) != 3 || got["watched"] != 1 {
 		t.Fatalf("rows = %v, want newest, newer and watched with its watch", got)
 	}
-	if !slices.Contains(remote.query.IncludeIDs, "remote-watched") {
-		t.Fatalf("remote page lost hub watch: %+v", remote.query)
+	// Watches are identities, never IncludeIDs: they must not bypass filters.
+	if !slices.Equal(p.query.StickyIDs, []string{"watched"}) || len(p.query.IncludeIDs) != 0 {
+		t.Fatalf("local page = %+v", p.query)
 	}
-	// The time window still hides archived sessions unchanged before it.
-	p.rows = append(p.rows, db.Session{ID: "archived-watched", TimeUpdated: 4, Status: db.StatusDone, Archived: true})
-	seedPRWatch(t, s, "test", "archived-watched", true)
-	rows, err = s.sidebarSessionRows(t.Context(), platforms.SidebarQuery{Limit: 2, Sticky: true, Since: 8}, false)
-	if err != nil || len(rows) != 3 || slices.ContainsFunc(rows, func(row db.Session) bool { return row.ID == "archived-watched" }) {
-		t.Fatalf("windowed sticky page = %+v, %v", rows, err)
+	if !slices.Equal(remote.query.StickyIDs, []string{"remote-watched"}) || len(remote.query.IncludeIDs) != 0 {
+		t.Fatalf("remote page = %+v", remote.query)
 	}
-	// Plain pages keep their cut and never read beyond it.
-	p.reads = nil
-	if rows, err := s.sidebarSessionRows(t.Context(), platforms.SidebarQuery{Limit: 2}, false); err != nil || len(rows) != 2 || len(p.reads) != 0 {
-		t.Fatalf("plain page = %d rows, reads %v, %v", len(rows), p.reads, err)
+	if rows, err := s.sidebarSessionRows(t.Context(), platforms.SidebarQuery{Limit: 2}, false); err != nil || len(rows) != 2 || len(p.query.StickyIDs) != 0 {
+		t.Fatalf("plain page = %d rows, query %+v, %v", len(rows), p.query, err)
+	}
+	if ids, err := s.SidebarWatchIDs(t.Context(), "test"); err != nil || !slices.Equal(ids, []string{"watched"}) {
+		t.Fatalf("owner watch IDs = %v, %v", ids, err)
 	}
 }

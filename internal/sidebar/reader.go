@@ -170,8 +170,17 @@ func (r *Reader) sessionsFor(ctx context.Context, scopes []Scope, q platforms.Si
 			effectiveMode = value
 		}
 	}
-	query, args := r.liveQuery(statement, []any{string(raw), string(included), time.Now().UnixMilli(), scope.Owner,
-		q.Directory, q.Directory, q.Since, q.Since, q.Origin, q.Origin, q.OriginID, q.OriginID, limit, q.Offset})
+	args := []any{string(raw), string(included), time.Now().UnixMilli(), scope.Owner,
+		q.Directory, q.Directory, q.Since, q.Since, q.Origin, q.Origin, q.OriginID, q.OriginID, limit, q.Offset}
+	if statement == selectSticky {
+		// The sticky CTE's parameter follows the observation CTE's.
+		sticky, err := json.Marshal(q.StickyIDs)
+		if err != nil {
+			return nil, err
+		}
+		args = slices.Insert(args, 3, any(string(sticky)))
+	}
+	query, args := r.liveQuery(statement, args)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

@@ -127,22 +127,18 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 					remotePage.IncludeIDs = append(remotePage.IncludeIDs, key.SessionID)
 				}
 			}
-			for key := range watches {
-				if key.Platform == statePlatform || key.Platform == string(a.ID()) {
-					remotePage.IncludeIDs = append(remotePage.IncludeIDs, key.SessionID)
-				}
-			}
+			// Remote owners add their own watches; these are legacy hub rows.
+			remotePage.StickyIDs = append(slices.Clone(page.StickyIDs), watchedSessions(watches, string(a.ID()), statePlatform)...)
 			results[i], failures[i] = reader.SidebarSessions(ctx, remotePage)
 		}(i, a, ctx)
 	}
 	if local != nil {
-		rows, err := local.SidebarSessionsFor(ctx, sources, page)
-		if err != nil {
-			cancel()
-			wg.Wait()
-			return nil, err
+		localPage := page
+		for _, source := range sources {
+			localPage.StickyIDs = append(localPage.StickyIDs, watchedSessions(watches, source.RoutingKey, s.sessionStatePlatform(source.RoutingKey))...)
 		}
-		if rows, err = s.appendWatchedRows(ctx, rows, adapters, watches, q.Since); err != nil {
+		rows, err := local.SidebarSessionsFor(ctx, sources, localPage)
+		if err != nil {
 			cancel()
 			wg.Wait()
 			return nil, err
@@ -207,8 +203,9 @@ func (s *Server) sidebarSessionRows(ctx context.Context, q platforms.SidebarQuer
 	return all, nil
 }
 
-// stickyWatches lists hub-owned PR watches and pending deliveries. Owner pages
-// cannot see this background work, so a sticky first page asks for it by ID.
+// stickyWatches lists PR watches and pending deliveries held in this
+// process's state. Owner pages cannot see this application background work,
+// so a sticky first page passes it as sticky identities.
 func (s *Server) stickyWatches(ctx context.Context, q platforms.SidebarQuery) (map[state.Key]int, error) {
 	if !q.Sticky || q.Limit == 0 || q.Offset > 0 || s.stateDB == nil {
 		return nil, nil
@@ -216,44 +213,27 @@ func (s *Server) stickyWatches(ctx context.Context, q platforms.SidebarQuery) (m
 	return prworkflow.BackgroundCounts(ctx, s.stateDB)
 }
 
-// appendWatchedRows reads watched local sessions missing from a page by
-// identity. The time window applies as it does to every other row; the
-// watch overlay later restores their background work and archive hold.
-func (s *Server) appendWatchedRows(ctx context.Context, rows []db.Session, adapters []platforms.Platform, watches map[state.Key]int, since int64) ([]db.Session, error) {
-	if len(watches) == 0 {
-		return rows, nil
-	}
-	present := map[string]bool{}
-	for _, row := range rows {
-		present[row.Platform+"\x00"+row.ID] = true
-	}
-	for _, a := range adapters {
-		reader, ok := a.(platforms.SidebarSessionReader)
-		if !isLocalAdapter(a) || !ok {
-			continue
-		}
-		key, _ := s.registry.KeyFor(a)
-		route, statePlatform := string(key), s.sessionStatePlatform(string(key))
-		for watch := range watches {
-			if watch.Platform != route && watch.Platform != statePlatform || present[route+"\x00"+watch.SessionID] {
-				continue
-			}
-			row, err := reader.SidebarSession(ctx, watch.SessionID)
-			if errors.Is(err, platforms.ErrNotFound) || err == nil && row == nil {
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			if since > 0 && row.Archived && row.TimeUpdated < since && row.Status != db.StatusBusy && !row.Pinned && row.SnoozedUntil == 0 && !row.PendingPermission && !row.PendingQuestion {
-				continue
-			}
-			row.Platform = route
-			present[route+"\x00"+row.ID] = true
-			rows = append(rows, *row)
+// watchedSessions returns watched session IDs stored under either identity
+// of one platform: its route or its session-state platform.
+func watchedSessions(watches map[state.Key]int, route, statePlatform string) []string {
+	var ids []string
+	for key := range watches {
+		if key.Platform == route || key.Platform == statePlatform {
+			ids = append(ids, key.SessionID)
 		}
 	}
-	return rows, nil
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// SidebarWatchIDs serves an owner's sticky sidebar pages requested by a hub.
+// Watches live with the session's owner, which the hub cannot read.
+func (s *Server) SidebarWatchIDs(ctx context.Context, platform string) ([]string, error) {
+	watches, err := s.stickyWatches(ctx, platforms.SidebarQuery{Sticky: true, Limit: 1})
+	if err != nil {
+		return nil, err
+	}
+	return watchedSessions(watches, platform, s.sessionStatePlatform(platform)), nil
 }
 
 // trimSidebarPage cuts a merged page to its limit. A sticky first page keeps

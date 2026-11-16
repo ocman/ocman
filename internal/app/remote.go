@@ -76,7 +76,7 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 	}
 	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version).
 		UseInboxStore(stateDB).UsePlugins(srv.RemotePluginOperation).UseSessions(srv.SessionService()).
-		UsePullRequests(srv.RemotePullRequestOperation).UseBackgroundTasks(srv.BackgroundTaskReader()).
+		UsePullRequests(srv.RemotePullRequestOperation).UseSidebarWatches(srv.SidebarWatchIDs).UseBackgroundTasks(srv.BackgroundTaskReader()).
 		UseSessionEnricher(srv.EnrichRemoteSessionDetail).UseEventProxy(srv.ProxyRemoteSessionEvents).
 		UsePermissionNotificationDeferrer(srv.PermissionNotificationDeferred).UsePermissionPolicy(srv.SessionPermissionPolicy).
 		UseAutoApprove(srv.SessionAutoApprove).UseManagedSettings(stateDB).

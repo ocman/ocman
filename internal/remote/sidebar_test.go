@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -79,5 +80,41 @@ func TestRemoteSidebarKeepsPinnedRowsOutsideWindow(t *testing.T) {
 	}
 	if _, err := newRemotePlatform(&RemoteConn{}, "opencode", nil).SidebarSessions(t.Context(), q); err == nil {
 		t.Fatal("disconnected owner accepted")
+	}
+}
+
+// Watches persist with the owner, so a hub's sticky page cannot name them.
+func TestOwnerSidebarRPCAddsOwnerWatchesToStickyPages(t *testing.T) {
+	reg := platforms.NewRegistry()
+	p := &sidebarRPCPlatform{fakePlatform: &fakePlatform{id: "opencode"}}
+	reg.Register(p)
+	var asked []string
+	s := NewServer(reg, localStubHost{}, "owner", "test").UseSidebarWatches(func(_ context.Context, platform string) ([]string, error) {
+		asked = append(asked, platform)
+		return []string{"watched"}, nil
+	})
+	for _, tc := range []struct {
+		query platforms.SidebarQuery
+		want  []string
+	}{
+		{platforms.SidebarQuery{Limit: 500, Sticky: true, StickyIDs: []string{"hub"}}, []string{"hub", "watched"}},
+		{platforms.SidebarQuery{Limit: 500}, nil},
+		{platforms.SidebarQuery{Limit: 500, Offset: 500, Sticky: true}, nil},
+	} {
+		raw, _ := json.Marshal(tc.query)
+		if _, err := s.Sessions(t.Context(), &pb.SessionsReq{Platform: "opencode", SidebarQuery: raw}); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(p.query.StickyIDs, tc.want) {
+			t.Fatalf("%+v reached the owner with sticky IDs %v, want %v", tc.query, p.query.StickyIDs, tc.want)
+		}
+	}
+	if !reflect.DeepEqual(asked, []string{"opencode"}) {
+		t.Fatalf("watch reads = %v", asked)
+	}
+	s.UseSidebarWatches(func(context.Context, string) ([]string, error) { return nil, errors.New("down") })
+	raw, _ := json.Marshal(platforms.SidebarQuery{Limit: 500, Sticky: true})
+	if _, err := s.Sessions(t.Context(), &pb.SessionsReq{Platform: "opencode", SidebarQuery: raw}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("watch failure = %v", err)
 	}
 }

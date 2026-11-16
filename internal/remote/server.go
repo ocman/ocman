@@ -37,6 +37,7 @@ type Server struct {
 	autoApprove                    AutoApproveHandler
 	managedSettings                ManagedSettingsStore
 	pullRequests                   PullRequestHandler
+	sidebarWatches                 SidebarWatchReader
 	backgroundTasks                tasksvc.Reader
 	publishedResources             http.HandlerFunc
 	sessionChanges                 func(context.Context, func(string, string) error) error

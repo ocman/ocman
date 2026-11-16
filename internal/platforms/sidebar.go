@@ -17,6 +17,10 @@ type SidebarQuery struct {
 	// visible regardless of recency: pinned, snoozed, busy, background work,
 	// pending prompts and IncludeIDs. Older owners ignore it.
 	Sticky bool `json:",omitempty"`
+	// StickyIDs are further identities a sticky page keeps, such as sessions
+	// with application background work the owner's SQL cannot see. Unlike
+	// IncludeIDs they never bypass visibility filters.
+	StickyIDs []string `json:",omitempty"`
 }
 
 type SidebarReader interface {

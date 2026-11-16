@@ -11,6 +11,15 @@ import (
 
 type PullRequestHandler func(context.Context, string, platforms.PullRequestRequest) platforms.PullRequestResponse
 
+// SidebarWatchReader lists an owner's watched session IDs for one platform.
+type SidebarWatchReader func(context.Context, string) ([]string, error)
+
+// UseSidebarWatches supplies the owner's PR watches to sticky sidebar pages.
+func (s *Server) UseSidebarWatches(reader SidebarWatchReader) *Server {
+	s.sidebarWatches = reader
+	return s
+}
+
 func (s *Server) UsePullRequests(handler PullRequestHandler) *Server {
 	s.pullRequests = handler
 	return s

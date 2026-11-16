@@ -17,6 +17,8 @@ import (
 func TestStickyPageKeepsVisibleRowsBeyondLimit(t *testing.T) {
 	r, history, scopes := parityFixture(t)
 	old := "ocm_00000013-0000-0000-0000-000000000013"
+	// Visible rows matching no other sticky rule, in /two and /one.
+	plainTwo, plainOne := "ocm_00000023-0000-0000-0000-000000000023", "ocm_00000038-0000-0000-0000-000000000038"
 	beyond := 0
 	for _, live := range []bool{false, true} {
 		reader := *r
@@ -31,6 +33,8 @@ func TestStickyPageKeepsVisibleRowsBeyondLimit(t *testing.T) {
 				{Limit: 10, Directory: "/one"},
 				{Limit: 10, Origin: "routine", OriginID: "r"},
 				{Limit: 500},
+				{Limit: 10, StickyIDs: []string{plainTwo}},
+				{Limit: 10, Directory: "/one", StickyIDs: []string{plainTwo, plainOne}},
 			} {
 				t.Run(fmt.Sprintf("live=%v/scope=%d/query=%d", live, i, j), func(t *testing.T) {
 					all := q
@@ -41,7 +45,7 @@ func TestStickyPageKeepsVisibleRowsBeyondLimit(t *testing.T) {
 					}
 					var want []string
 					for index, row := range inventory {
-						if index < q.Limit || stickyRow(row, q.IncludeIDs) {
+						if index < q.Limit || stickyRow(row, append(slices.Clone(q.IncludeIDs), q.StickyIDs...)) {
 							want = append(want, row.ID)
 							beyond += min(1, max(0, index-q.Limit+1))
 						}
@@ -57,6 +61,9 @@ func TestStickyPageKeepsVisibleRowsBeyondLimit(t *testing.T) {
 					}
 					if !slices.Equal(want, got) {
 						t.Fatalf("sticky page:\n got %v\nwant %v", got, want)
+					}
+					if q.Directory != "" && slices.Contains(got, plainTwo) {
+						t.Fatalf("sticky identity bypassed the directory filter: %v", got)
 					}
 				})
 			}
@@ -95,6 +102,9 @@ func TestIdentityReadsSeekRequestedRows(t *testing.T) {
 		args := sparseArgs(false)
 		args[1] = `["ocm_00000100-0000-0000-0000-000000000100"]`
 		args[len(args)-2] = -1
+		if statement == selectSticky {
+			args = slices.Insert(args, 3, any(`["ocm_00000200-0000-0000-0000-000000000200"]`))
+		}
 		plan := strings.Join(queryPlan(t, r, statement, args), "\n")
 		for _, scan := range []string{"SCAN s ", "session_catalog_legacy_binding (owner_id=?)"} {
 			if strings.Contains(plan, scan) {
