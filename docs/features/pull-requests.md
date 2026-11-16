@@ -86,6 +86,22 @@ acceptance but before the notification receipt is saved can repeat a notice.
 **Stop watching** prevents future watch deliveries but does not retract a message
 already accepted by the session queue. Ocman never automatically merges a PR.
 
+## Merge a green linked PR
+
+An open, mergeable linked PR shows **Merge** when its checks are green.
+Confirm the action to merge with the forge's default method. Forgejo uses the
+repository's configured default merge style; GitHub uses the authenticated
+user's default merge method for that repository. Ocman does not choose a
+fallback if the default is unavailable or refused.
+
+Before merging, Ocman rereads the PR and checks without using stale results.
+The head must still match the displayed commit, all checks must pass, and the
+forge must report the PR as mergeable. The merge request pins that head commit
+and leaves permission, review and branch-protection enforcement to the forge.
+It never force-merges or schedules an automatic merge. Success stops the watch
+and moves the PR into the merged group. This action is dashboard-only, not an
+MCP tool action.
+
 ## Prepare a feedback task
 
 **Address feedback**, **Fix failing checks**, and **Resolve conflicts** fetch fresh
@@ -156,6 +172,7 @@ flowchart LR
     Workflow -->|session invalidation: local SSE or owner gRPC to hub SSE| UI
     Workflow -->|owner check; checkout upstream when needed| Host[Owning Host]
     Workflow -->|cached metadata and checks; selective feedback| Forge[GitHub or Forgejo API]
+    Workflow -->|confirmed merge: fresh checks, expected head, forge default| Forge
     Setup --> Forge
     Workflow -->|changed checks or feedback| Queue[Shared session queue]
     Queue --> Platform[Owning Platform]
@@ -170,7 +187,7 @@ flowchart LR
 - `prworkflow` owns session-qualified links, feedback-task drafts and its joined
   two-minute watch worker. It persists snapshots and pending notices separately
   from conversations. The hub reads forge metadata; owner disconnection never
-  routes checkout or session work to another machine.
+   routes checkout or session work to another machine.
 - Explicit `host` and `repo` links resolve through configured hub forge clients
   without consulting the session checkout's upstreams. The session retains its
   owning project and directory; links can refer to multiple other repositories.

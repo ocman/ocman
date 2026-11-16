@@ -69,7 +69,11 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0, o
         <IconButton variant="ghost" icon="bi-x-lg" label="Unlink" disabled={busy} onClick={() => void run(() => change(link, 'unlink'))} />
       </ButtonGroup>
       </div>
-      <LinkedPRStatus link={link} />
+      <LinkedPRStatus link={link} busy={busy} onMerge={() => void run(async () => {
+        if (!await confirm({ title: `Merge PR #${link.number}?`, description: `Merge "${link.pr.title}" using the forge's default merge method. Current checks will be verified again before merging.`, confirmLabel: 'Merge PR' })) return;
+        await prWorkflowApi.change(sessionId, platform, { action: 'merge', number: link.number, host: link.remote.host, repo: link.remote.repo, headSha: link.pr.headSha });
+        await load(true);
+      }, false)} />
       {link.lastError && <p role="status">{link.lastError}</p>}
       <ButtonGroup label={`PR #${link.number} feedback`}>
         <DropdownMenu>

@@ -103,11 +103,12 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 }
 
 type changeRequest struct {
-	Remote string `json:"remote"`
-	Number int    `json:"number"`
-	Action string `json:"action"`
-	Host   string `json:"host"`
-	Repo   string `json:"repo"`
+	Remote  string `json:"remote"`
+	Number  int    `json:"number"`
+	Action  string `json:"action"`
+	Host    string `json:"host"`
+	Repo    string `json:"repo"`
+	HeadSHA string `json:"headSha"`
 }
 
 func (m *Module) change(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +182,9 @@ func (m *Module) change(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch req.Action {
+		case "merge":
+			m.merge(w, r, l, req.HeadSHA)
+			return
 		case "unlink":
 			if err := m.remove(r.Context(), l); err != nil {
 				http.Error(w, "Could not unlink PR", http.StatusInternalServerError)

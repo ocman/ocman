@@ -21,6 +21,6 @@ export const prWorkflowApi = {
     if (refresh) q.set('refresh', 'true');
     return fetchJSON<PRChecks>(`${target(link.sessionId)}/pull-request-checks?${q}`, signal);
   },
-  change: (id: string, platform: string, input: { action: string; number: number; remote?: string; host?: string; repo?: string }) => postJSON<PRLink | undefined>(`${target(id)}/pull-requests${query(platform)}`, input, { parseJSON: input.action !== 'unlink' }),
+  change: (id: string, platform: string, input: { action: string; number: number; remote?: string; host?: string; repo?: string; headSha?: string }) => postJSON<PRLink | undefined>(`${target(id)}/pull-requests${query(platform)}`, input, { parseJSON: input.action !== 'unlink' }),
   feedback: (id: string, platform: string, link: PRLink, action: string) => postJSON<{ prompt: string }>(`${target(id)}/pull-request-feedback${query(platform)}`, { action, number: link.number, host: link.remote.host, repo: link.remote.repo }),
 };

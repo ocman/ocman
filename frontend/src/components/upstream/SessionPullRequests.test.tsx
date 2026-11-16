@@ -8,8 +8,10 @@ import { ConfirmContext } from '../../lib/useConfirm';
 import { prWorkflowApi, type PRLink } from '../../lib/prWorkflowApi';
 import { SessionPullRequests } from './SessionPullRequests';
 import { __handleSessionChangedForTests } from '../../lib/useGlobalEvents';
+import { usePRChecks } from '../../lib/usePRChecks';
 
 vi.mock('../../lib/prWorkflowApi', () => ({ prWorkflowApi: { links: vi.fn(), change: vi.fn(), feedback: vi.fn() } }));
+vi.mock('../../lib/usePRChecks', async (original) => ({ ...await original<typeof import('../../lib/usePRChecks')>(), usePRChecks: vi.fn() }));
 const confirm = vi.fn();
 const upstream = { remote: 'origin', host: 'github.com', type: 'github' as const, repo: 'team/repo' };
 const link: PRLink = { platform: 'r-box:opencode', sessionId: 's1', remoteId: 'box', directory: '/repo', remote: upstream, number: 42, watching: false, pr: { number: 42, title: 'Improve authentication', body: '', author: 'dries', status: 'open', url: 'https://github.com/team/repo/pull/42', branch: 'feature', updatedAt: '', host: 'github.com', repo: 'team/repo', labels: [], assignees: [], requestedReviewers: [], crossFork: false } };
@@ -17,6 +19,44 @@ function mount() { return render(<MemoryRouter><ConfirmContext.Provider value={c
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [link] }); vi.mocked(prWorkflowApi.change).mockResolvedValue(link); vi.mocked(prWorkflowApi.feedback).mockResolvedValue({ prompt: 'Investigate the failed tests. Do not merge.' }); confirm.mockResolvedValue(true); });
 
 describe('SessionPullRequests', () => {
+  beforeEach(() => { vi.mocked(usePRChecks).mockReturnValue({ state: 'unknown', checks: [], loaded: true, loading: false, error: false }); });
+  function greenPR() {
+    vi.mocked(usePRChecks).mockReturnValue({ state: 'success', checks: [], loaded: true, loading: false, error: false });
+    const ready = { ...link, pr: { ...link.pr, mergeable: true, headSha: 'abc' } };
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [ready] });
+    return ready;
+  }
+  it('confirms merging with the forge default and refreshes the linked status', async () => {
+    const ready = greenPR();
+    mount();
+    const merge = await screen.findByRole('button', { name: 'Merge' });
+    vi.mocked(prWorkflowApi.links).mockResolvedValue({ pullRequests: [{ ...ready, pr: { ...ready.pr, status: 'merged' } }] });
+    fireEvent.click(merge);
+    await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalledWith('s1', link.platform, { action: 'merge', number: 42, host: 'github.com', repo: 'team/repo', headSha: 'abc' }));
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Merge PR #42?', confirmLabel: 'Merge PR', description: expect.stringContaining("forge's default merge method") }));
+    expect(await screen.findByRole('button', { name: 'Merged PRs (1)' })).toBeInTheDocument();
+    expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', link.platform, true);
+    expect(screen.queryByRole('button', { name: 'Merge' })).not.toBeInTheDocument();
+  });
+  it('does not merge when confirmation is cancelled', async () => {
+    greenPR(); confirm.mockResolvedValue(false); mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Merge' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Merge' })).toBeEnabled());
+    expect(prWorkflowApi.change).not.toHaveBeenCalled();
+  });
+  it('disables actions during merging and preserves the PR on failure', async () => {
+    greenPR();
+    let reject!: (error: Error) => void;
+    vi.mocked(prWorkflowApi.change).mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+    mount(); fireEvent.click(await screen.findByRole('button', { name: 'Merge' }));
+    await waitFor(() => expect(prWorkflowApi.change).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unlink' })).toBeDisabled();
+    await act(async () => { reject(new Error('Forge refused the merge')); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Forge refused the merge');
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeEnabled();
+    expect(screen.getByRole('link', { name: '#42 Improve authentication' })).toBeVisible();
+  });
   it('keeps unmerged PRs visible and puts merged PRs in a collapsed drawer', async () => {
     const merged = { ...link, number: 43, pr: { ...link.pr, number: 43, title: 'Already shipped', status: 'merged' as const } };
     const closed = { ...link, number: 44, pr: { ...link.pr, number: 44, title: 'Not merged', status: 'closed' as const } };
