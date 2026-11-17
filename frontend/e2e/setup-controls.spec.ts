@@ -10,9 +10,15 @@ for (const width of [1280, 390]) {
       : { id: 'tmux', label: 'tmux', required: false, ok: false, detail: 'tmux is not on PATH.', hint: 'Install tmux to enable terminal sessions.' },
     ] } }));
     await page.goto('/sessions');
-    await expect(page.getByTestId('setup-banner')).toBeVisible();
-    await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
+    // Optional checks are a chip inside the header; nothing covers the page.
+    const chip = page.getByRole('button', { name: 'Optional setup: 1 check needs attention' });
+    await expect(page.locator('.app-header').getByTestId('setup-status-trigger')).toBeVisible();
     await expect(page.getByTestId('setup-banner')).toBeHidden();
+    await page.getByTestId('header-breadcrumb').click({ trial: true, timeout: 2_000 });
+    await chip.click();
+    await expect(page.getByRole('dialog', { name: 'Optional setup' })).toContainText('tmux is not on PATH.');
+    await page.getByRole('button', { name: 'Hide until something changes', exact: true }).click();
+    await expect(chip).toBeHidden();
     required = true;
     await page.reload();
     await expect(page.getByRole('alertdialog', { name: 'Setup required' })).toBeVisible();

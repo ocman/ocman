@@ -39,7 +39,7 @@ Optional:
 
 Apps launched from Finder get a minimal PATH. Ocman merges in your login
 shell's PATH at startup; when that fails (the shell exits with an error or
-takes longer than 10 seconds) the setup banner shows the reason. Fix the
+takes longer than 10 seconds) the Setup chip in the header shows the reason. Fix the
 shell or install tools in /usr/local/bin or /opt/homebrew/bin, then restart
 ocman.
 

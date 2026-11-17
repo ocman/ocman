@@ -9,6 +9,7 @@ import { AppHeader } from './AppHeader';
 import checkboxStyles from './CheckboxField.module.css';
 
 // Shiki highlighting is not the subject here.
+vi.mock('./SetupPrompt', () => ({ SetupStatus: () => null }));
 vi.mock('@pierre/diffs/react', () => ({
   File: ({ file }: { file: { name: string; contents: string } }) => <pre>{file.contents}</pre>,
 }));

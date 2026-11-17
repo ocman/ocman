@@ -11,6 +11,7 @@ const plugins = vi.hoisted(() => ({ pages: [] as { ownerId: string; pluginId: st
 vi.mock('../lib/pluginUI', async (original) => ({ ...await original<typeof import('../lib/pluginUI')>(), usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
 vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(), usePluginPages: () => ({ pages: plugins.pages }) }));
 vi.mock('../lib/queries', () => ({ useProjects: () => ({ data: inventory.projects }) }));
+vi.mock('./SetupPrompt', () => ({ SetupStatus: () => null }));
 vi.mock('../lib/useCapabilities', () => ({ useMultiPlatform: () => true, useMultiHost: () => false }));
 beforeEach(() => { inventory.projects = []; plugins.pages = []; });
 

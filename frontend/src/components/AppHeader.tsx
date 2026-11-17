@@ -9,6 +9,7 @@ import { HostBadge } from './HostBadge';
 import { IconButton } from './IconButton';
 import { lazyComponent } from './lazyComponent';
 import { ProjectQuickSettings } from './ProjectQuickSettings';
+import { SetupStatus } from './SetupPrompt';
 import { useProjects } from '../lib/queries';
 import { useBetaFeatures } from '../lib/betaFeatures';
 import './AppHeader.css';
@@ -79,6 +80,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
         <span className="header-breadcrumb" data-testid="header-breadcrumb">{breadcrumb}</span>
       </h1>
       <div className="header-right" data-testid="header-actions-row">
+        <SetupStatus />
         {projectDir && <ProjectMachinePill remoteId={projectOwner} />}
         {exploreDir && (
           <IconButton icon="bi-folder2-open" label="Explore files" variant="ghost" size="compact" onClick={() => setExploring(true)} />
