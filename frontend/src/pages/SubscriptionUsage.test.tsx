@@ -31,6 +31,21 @@ describe('SubscriptionUsage', () => {
     }
   });
 
+  it.each([false, true])('rounds displayed percentages to whole numbers, compact=%s', (compact) => {
+    const percentages = [25.00000005, 25.49, 25.5, 0, 100];
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      data: { providers: [{ id: 'codex', name: 'Codex', status: 'ok', windows: percentages.map((usedPercent, index) => ({
+        name: `Window ${index}`, usedPercent,
+      })) }] },
+    } as never);
+    render(<SubscriptionUsageContent compact={compact} />);
+    for (const [index, expected] of [25, 25, 26, 0, 100].entries()) {
+      const progress = screen.getByRole('progressbar', { name: `Codex Window ${index} usage` });
+      expect(within(progress.closest('.subscription-window') as HTMLElement).getByText(`${expected}% used`)).toBeInTheDocument();
+      expect(progress).toHaveValue(percentages[index]);
+    }
+  });
+
   it('keeps named accounts of the same tool separate and preserves cards on rename', () => {
     const providers = [
       { id: 'cnx_work', name: 'Claude Work', platformName: 'Claude Code', machineName: 'This machine', status: 'ok', windows: [{ name: '7 days', usedPercent: 25 }] },
@@ -63,7 +78,7 @@ describe('SubscriptionUsage', () => {
     render(<SubscriptionUsageContent />);
     const progress = screen.getByRole('progressbar', { name: 'Codex 5 hours usage' });
     expect(progress.closest('.subscription-window')).toHaveAttribute('data-usage-level', level);
-    expect(screen.getByText(`${usedPercent}% used`).closest('.subscription-window')).toBe(progress.closest('.subscription-window'));
+    expect(screen.getByText(`${Math.round(usedPercent)}% used`).closest('.subscription-window')).toBe(progress.closest('.subscription-window'));
   });
 
   it('keeps the selected view and unrelated parameters in the URL', async () => {

@@ -23,11 +23,11 @@ export function ProviderUsageChart({ name, series, days = 7, updatedAt }: {
       interaction: LINE_INTERACTION,
       scales: {
         x: { type: 'linear', bounds: 'data', min: days > 0 ? now - days * 86400000 : undefined, max: now, grid: { display: false }, ticks: { maxTicksLimit: 5, callback: value => new Date(Number(value)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } },
-        y: { min: 0, max: 100, ticks: { callback: value => `${value}%` } },
+        y: { min: 0, max: 100, ticks: { callback: value => `${Math.round(Number(value))}%` } },
       },
       plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: {
         title: items => items.length ? new Date(Number(items[0].parsed.x)).toLocaleString() : '',
-        label: item => `${item.dataset.label}: ${item.parsed.y}% used`,
+        label: item => `${item.dataset.label}: ${Math.round(Number(item.parsed.y))}% used`,
       } } },
     }} />
   </div>;

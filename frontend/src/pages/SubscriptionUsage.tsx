@@ -44,7 +44,7 @@ function ProviderCard({ provider, compact = false }: { provider: SubscriptionPro
           <div className="subscription-window" data-usage-level={providerUsageLevel(window.usedPercent)} key={`${window.name}-${window.resetsAt ?? ''}`}>
             <div className="subscription-window-label">
               <strong>{window.name}</strong>
-              <span>{window.usedPercent}% used</span>
+              <span>{Math.round(window.usedPercent)}% used</span>
             </div>
             <UsageWindowProgress label={`${provider.name} ${window.name} usage`} window={window} />
             {window.resetsAt && (

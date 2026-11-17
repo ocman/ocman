@@ -41,4 +41,11 @@ describe('ProviderUsageChart', () => {
     view.rerender(<ProviderUsageChart name="Codex" series={[]} days={7} updatedAt={now + 300000} />);
     expect(chart.mock.lastCall?.[0].options.scales.x).toMatchObject({ min: now + 300000 - 7 * 86400000, max: now + 300000 });
   });
+
+  it.each([[25.00000005, 25], [25.49, 25], [25.5, 26], [0, 0], [100, 100]])('rounds %s percent in history labels to %s', (value, expected) => {
+    render(<ProviderUsageChart name="Codex" series={[]} />);
+    const props = chart.mock.lastCall?.[0];
+    expect(props.options.scales.y.ticks.callback(value)).toBe(`${expected}%`);
+    expect(props.options.plugins.tooltip.callbacks.label({ dataset: { label: '5 hours' }, parsed: { y: value } })).toBe(`5 hours: ${expected}% used`);
+  });
 });
