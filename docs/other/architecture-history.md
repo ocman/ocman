@@ -376,8 +376,8 @@ flowchart LR
     Core --> Count
     Count -->|owner-routed scalar| UI
     Query -->|metadata + native-child marker| UI[Conversation sidebar]
-    Query -->|compact rows| Project[Project session list]
-    Accounting[Full accounting API] -->|message counts and duration only<br/>non-blocking| Project
+    Query -->|compact rows| Project[Sessions and project session lists]
+    Accounting[Full accounting API] -->|prompts, duration, cost<br/>non-blocking| Project
 ```
 
 - Sidebar reads do not invoke accounting summaries or platform/supervisor RPCs.
@@ -418,10 +418,14 @@ flowchart LR
 - Conversation headers reuse already-loaded metadata and totals. Full accounting
   summaries remain separate, for views that actually display them. Cached native
   child prompts bubble to the same root in conversation and sidebar reads.
-- Project session lists render compact rows without waiting for accounting.
-  Message counts and durations fill in separately, matched by platform and
-  session ID with a freshness check. Accounting cannot replace titles, live
-  status or archive flags. Both queries retain shared caching and polling.
+- The Sessions page and project session lists render compact rows without
+  waiting for accounting. Prompt counts, durations, cost and tokens fill in
+  separately through `useSessionAccounting`, matched by platform and session ID
+  with a freshness check. The compact list's time window hides only unchanged
+  archived rows, so the accounting read reaches back to the oldest displayed row.
+  Accounting cannot replace titles, live status or archive flags; its failures
+  show a warning with Retry and keep the rows. Both queries retain shared
+  caching and polling.
 - Interactive history reads use a separate read-only pool from ingestion's
   serialized writer. A long import cannot reserve their database connection;
   they see a consistent committed WAL snapshot while ingestion is in flight.

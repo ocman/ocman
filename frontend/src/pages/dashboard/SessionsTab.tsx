@@ -29,7 +29,7 @@ export function SessionsTab() {
   const { sessions: compactSessions, projects, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
   const [search, setSearch] = useState('');
-  const { sessions, pendingKeys: activityPendingKeys } = useSessionAccounting(compactSessions, { sinceHours: timeRange > 0 ? timeRange : undefined });
+  const { sessions, pendingKeys: activityPendingKeys, ...activityQ } = useSessionAccounting(compactSessions, { sinceHours: timeRange > 0 ? timeRange : undefined });
   const phone = useIsPhone();
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
     showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed } = useSessionListFilters();
@@ -56,6 +56,11 @@ export function SessionsTab() {
       {sessionsError && (
         <InlineAlert onRetry={() => loadSessions()} retrying={sessionsLoading}>
           {sessionsError}
+        </InlineAlert>
+      )}
+      {activityQ.error && (
+        <InlineAlert onRetry={activityQ.retry} retrying={activityQ.retrying}>
+          Could not load session activity: {activityQ.error}
         </InlineAlert>
       )}
       {phone ? <PhoneSessionsToolbar projects={projects} dirScope={dirScope} setDirScope={setDirScope}

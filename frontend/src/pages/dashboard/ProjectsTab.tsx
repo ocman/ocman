@@ -130,7 +130,8 @@ export function ProjectsTab() {
             <td className="list-numeric">{p.sessionCount}</td>
             <td className="list-numeric" title={projectActivityDetails(p)}>{p.messageCount.toLocaleString('en-US')}</td>
             <td className="mono list-numeric">{formatCost(p.totalCost ?? 0)}</td>
-            <td><span title={formatExactDate(p.lastUsed)}>{relativeTime(p.lastUsed)}</span></td>
+            <td>{p.lastUsed > 0 ? <span title={formatExactDate(p.lastUsed)}>{relativeTime(p.lastUsed)}</span>
+              : <span title="No sessions yet">—</span>}</td>
             <td className="project-action-cell"><Button type="button" size="small" variant="ghost" className="project-merge-btn"
               aria-label={`Merge ${p.directory}`} title="Merge this project's sessions into another project"
               onClick={event => { event.stopPropagation(); setMergeSource(p); }}><i className="bi bi-sign-merge-left" aria-hidden="true" /><span className="project-merge-label"> Merge…</span></Button></td>

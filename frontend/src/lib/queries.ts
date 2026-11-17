@@ -143,6 +143,8 @@ export const SESSIONS_POLL_MS = 5000;
 
 type SessionsParams = {
   accounting?: boolean;
+  /** Absolute lower bound (ms); overrides `sinceHours`. Must be stable across renders. */
+  since?: number;
   dir?: string;
   /**
    * Lookback window in hours. Preferred over a raw `since` timestamp
@@ -176,17 +178,17 @@ export function useSessions(
   // Build a stable query key from the params. `sinceHours` is a stable
   // number (e.g. 12, 168) rather than a moving timestamp.
   const key = params?.dir
-    ? ['sessions', { dir: params.dir, sinceHours: params.sinceHours, limit: params.limit, ...(params.accounting ? { accounting: true } : {}) }]
-    : ['sessions', { sinceHours: params?.sinceHours, limit: params?.limit, ...(params?.accounting ? { accounting: true } : {}) }];
+    ? ['sessions', { dir: params.dir, sinceHours: params.sinceHours, limit: params.limit, ...(params.since ? { since: params.since } : {}), ...(params.accounting ? { accounting: true } : {}) }]
+    : ['sessions', { sinceHours: params?.sinceHours, limit: params?.limit, ...(params?.since ? { since: params.since } : {}), ...(params?.accounting ? { accounting: true } : {}) }];
 
   return useQuery<Session[]>({
     queryKey: key,
     queryFn: ({ signal }) => {
       // Compute the actual `since` timestamp at fetch time so the query
       // key stays stable across renders.
-      const since = params?.sinceHours
+      const since = params?.since ?? (params?.sinceHours
         ? Date.now() - params.sinceHours * 60 * 60 * 1000
-        : undefined;
+        : undefined);
       return readSessionInventory(appQueryClient, key, () => api.sessions({ dir: params?.dir, ...(params?.accounting ? { since } : { sinceHours: params?.sinceHours }), limit: params?.limit, view: params?.accounting ? undefined : 'sidebar' }, signal), signal);
     },
     refetchInterval: options?.poll ? () => params?.accounting ? SESSIONS_POLL_MS : snapshotPollingDelay('/api/sessions',

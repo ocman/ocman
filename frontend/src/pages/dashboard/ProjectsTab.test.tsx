@@ -77,6 +77,12 @@ describe('ProjectsTab', () => {
     expect(rows()[0]).toContain('cheap');
   });
 
+  it('never renders an unused project timestamp as a date', () => {
+    renderTab({ projects: [makeProject({ directory: '/remote', remoteId: 'box', sessionCount: 0, lastUsed: 0 })] });
+    expect(screen.getByTitle('No sessions yet')).toHaveTextContent('—');
+    expect(document.body).not.toHaveTextContent(/1969|1970/);
+  });
+
   it('labels the merge action with visible text, not just an icon', () => {
     renderTab({ projects: [makeProject({ directory: '/source' })] });
     expect(screen.getByRole('button', { name: 'Merge /source' })).toHaveTextContent('Merge…');

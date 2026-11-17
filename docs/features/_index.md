@@ -145,7 +145,10 @@ preference does not change the project's model fallback list.
 
 Project pages share **Sessions**, **Worktrees**, and **Settings** tabs. Switching
 tabs preserves the selected machine, session search, time range, and archived
-filter in the URL. Settings shows inherited defaults and project overrides in
+filter in the URL. The project and global session lists share one filter model:
+they start at your default time range and hide archived sessions until you turn
+on **Show archived**. Their Prompts, Duration, Cost and Started columns sort
+when you click the header, and the order is kept in the URL. Settings shows inherited defaults and project overrides in
 a table; **Edit defaults** opens the same editor as the project name. The ordered
 fallback model list remains separate, with reorder, remove, clear, and fallthrough
 controls. Wide tables scroll within the page on phones.

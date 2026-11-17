@@ -10,6 +10,7 @@ import { useProjects, useSessions } from '../lib/queries';
 import { useProjectIdentityIndex } from '../lib/useProjectIdentityIndex';
 import { useSessionAccounting } from '../lib/useSessionAccounting';
 import { SearchField } from '../components/Control';
+import { InlineAlert } from '../components/InlineAlert';
 import styles from './ProjectDetail.module.css';
 import { ProjectShell } from './ProjectShell';
 
@@ -31,7 +32,7 @@ export function ProjectDetail() {
   );
   const identity = useProjectIdentityIndex(projectsQ.data ?? [], [...(sessionsQ.data ?? []), { directory: directory ?? '', remoteId: ownerId ?? undefined }]);
   const projectKey = identity(directory ?? '', ownerId ?? undefined).key;
-  const { sessions, pendingKeys: activityPendingKeys } = useSessionAccounting(
+  const { sessions, pendingKeys: activityPendingKeys, ...activityQ } = useSessionAccounting(
     (sessionsQ.data ?? []).filter(s => identity(s.directory || '', s.remoteId).key === projectKey),
     { sinceHours }, !!directory);
   const sessionsLoaded = !sessionsQ.isLoading && !projectsQ.isLoading;
@@ -72,6 +73,11 @@ export function ProjectDetail() {
       </div>
       <SessionRangeFilters label="Project session filters" className={styles.range} timeRange={timeRange} onTimeRangeChange={setTimeRange}
         showArchived={showArchived} onShowArchivedChange={setShowArchived} />
+      {activityQ.error && (
+        <InlineAlert onRetry={activityQ.retry} retrying={activityQ.retrying}>
+          Could not load session activity: {activityQ.error}
+        </InlineAlert>
+      )}
       <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={showArchived} activityPendingKeys={activityPendingKeys} />
     </ProjectShell>
   );

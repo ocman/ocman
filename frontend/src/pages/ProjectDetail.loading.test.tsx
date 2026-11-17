@@ -80,3 +80,13 @@ it('shows an empty project without waiting for accounting', async () => {
   renderProject();
   expect(await screen.findByText('No active sessions found')).toBeInTheDocument();
 });
+
+it('keeps project sessions visible and offers Retry when activity totals fail', async () => {
+  vi.mocked(api.sessions).mockImplementation(params => params?.view === 'sidebar'
+    ? Promise.resolve([session()]) : Promise.reject(new Error('accounting unavailable')));
+  renderProject();
+  expect(await screen.findByRole('link', { name: /Ready session/ })).toBeInTheDocument();
+  const alert = await screen.findByRole('alert', {}, { timeout: 9000 });
+  expect(alert).toHaveTextContent('Could not load session activity: accounting unavailable');
+  expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+}, 15000);

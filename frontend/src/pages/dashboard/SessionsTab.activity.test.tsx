@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -43,3 +43,30 @@ it('fills the global list activity from accounting instead of the compact zero p
   expect(await within(tr).findByTitle('14 prompts')).toHaveTextContent('14');
   expect(within(tr).getByText('2h 37m')).toBeInTheDocument();
 });
+
+it('reads totals for older unarchived rows that the compact list keeps outside the time window', async () => {
+  const old = Date.now() - 30 * 24 * 3_600_000;
+  vi.mocked(api.sessions).mockImplementation(params => params?.view === 'sidebar'
+    ? Promise.resolve([row({ timeCreated: old, timeUpdated: old })])
+    // Like the backend, accounting reads drop rows updated before `since`.
+    : Promise.resolve([row({ timeCreated: old, timeUpdated: old, messageCount: 5, durationMs: 4000 })]
+      .filter(r => !params?.since || r.timeUpdated >= params.since)));
+  renderSessions();
+  const tr = (await screen.findByRole('link', { name: /Diagnose CPU/ })).closest('tr')!;
+  expect(await within(tr).findByTitle('5 prompts')).toHaveTextContent('5');
+});
+
+it('keeps the list and offers Retry when activity totals fail to load', async () => {
+  let fail = true;
+  vi.mocked(api.sessions).mockImplementation(params => params?.view === 'sidebar'
+    ? Promise.resolve([row()])
+    : fail ? Promise.reject(new Error('accounting unavailable')) : Promise.resolve([row({ messageCount: 3 })]));
+  renderSessions();
+  expect(await screen.findByRole('link', { name: /Diagnose CPU/ })).toBeInTheDocument();
+  const alert = await screen.findByRole('alert', {}, { timeout: 8000 });
+  expect(alert).toHaveTextContent('Could not load session activity: accounting unavailable');
+  fail = false;
+  fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByTitle('3 prompts')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+}, 15000);

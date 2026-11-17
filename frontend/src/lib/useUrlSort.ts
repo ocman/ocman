@@ -30,7 +30,5 @@ export function useUrlSort<K extends string>(keys: readonly K[]): UrlSort<K> {
 export function sortBy<T, K extends string>(rows: readonly T[], sort: Pick<UrlSort<K>, 'key' | 'desc'>, value: (row: T, key: K) => number): T[] {
   const { key, desc } = sort;
   if (!key) return [...rows];
-  return rows.map((row, i) => ({ row, i, v: value(row, key) }))
-    .sort((a, b) => (desc ? b.v - a.v : a.v - b.v) || a.i - b.i)
-    .map(({ row }) => row);
+  return rows.toSorted((a, b) => desc ? value(b, key) - value(a, key) : value(a, key) - value(b, key));
 }
