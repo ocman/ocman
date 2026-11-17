@@ -6,7 +6,7 @@
 // tells a user with dozens of projects that they have none.
 
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { api } from '../../lib/api';
 import { MemoryRouter } from 'react-router-dom';
 import type { Project } from '../../lib/api';
@@ -60,6 +60,21 @@ describe('ProjectsTab', () => {
     const link = screen.getByRole('link', { name: /source/ });
     expect(link).toHaveAttribute('href', `/project/%2Frepo%2Fsource${remoteId ? '?remoteId=remote%20box' : ''}`);
     fireEvent.click(link);
+  });
+
+  it('shows cost instead of the cache-free token pair and sorts numeric columns', () => {
+    renderTab({ projects: [
+      makeProject({ directory: '/cheap', messageCount: 900, totalCost: 1.5 }),
+      makeProject({ directory: '/dear', messageCount: 40, totalCost: 16.2 }),
+    ] });
+    expect(screen.queryByRole('columnheader', { name: /Tokens/ })).not.toBeInTheDocument();
+    expect(screen.getByText('$16.20')).toBeInTheDocument();
+    const rows = () => screen.getAllByRole('row').slice(1).map(row => row.textContent);
+    fireEvent.click(within(screen.getByRole('columnheader', { name: /Cost/ })).getByRole('button'));
+    expect(rows()[0]).toContain('dear');
+    fireEvent.click(within(screen.getByRole('columnheader', { name: /Messages/ })).getByRole('button'));
+    expect(screen.getByRole('columnheader', { name: /Messages/ })).toHaveAttribute('aria-sort', 'descending');
+    expect(rows()[0]).toContain('cheap');
   });
 
   it('labels the merge action with visible text, not just an icon', () => {

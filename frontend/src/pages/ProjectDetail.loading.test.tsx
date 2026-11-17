@@ -52,7 +52,7 @@ it('fills in totals without replacing compact status, titles or archive flags', 
   renderProject();
   await screen.findByRole('link', { name: /Ready session/ });
   await act(async () => finish([session({ title: 'Old title', status: 'done', archived: true, messageCount: 42, durationMs: 60000 })]));
-  expect(await screen.findByText(/42 prompts/)).toHaveTextContent('42 prompts · 1m');
+  expect(await screen.findByTitle('42 prompts')).toHaveTextContent('42');
   expect(screen.getByRole('link', { name: /Ready session/ })).toBeInTheDocument();
   expect(screen.queryByText('Old title')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Session status: Busy')).toBeInTheDocument();
@@ -66,12 +66,12 @@ it('does not show outdated totals or borrow totals from another owner with the s
     : [session({ timeUpdated: 1000, messageCount: 10 }), session({ id: 'second', platform: 'remote:opencode', messageCount: 20 }),
       session({ id: 'third', messageCount: 30 })]));
   renderProject();
-  await screen.findByText(/30 prompts/);
+  await screen.findByTitle('30 prompts');
   for (const id of ['session', 'second']) {
     const row = screen.getByText(id).closest('tr')!;
     expect(within(row).getByText('Loading activity…')).toBeInTheDocument();
   }
-  expect(screen.queryByText(/10 prompts|20 prompts/)).not.toBeInTheDocument();
+  expect(screen.queryByTitle(/10 prompts|20 prompts/)).not.toBeInTheDocument();
 });
 
 it('shows an empty project without waiting for accounting', async () => {

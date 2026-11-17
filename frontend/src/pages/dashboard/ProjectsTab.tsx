@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { formatNumber, formatProjectActivity, fuzzyMatch, relativeTime } from '../../lib/format';
+import { formatExactDate, formatProjectActivity, fuzzyMatch, relativeTime } from '../../lib/format';
+import { ACTIVITY_DEFINITIONS, formatCost, projectActivityDetails } from '../../lib/listActivity';
+import { sortBy, useUrlSort } from '../../lib/useUrlSort';
+import { SortableHeader } from '../../components/SortableHeader';
 import { ProjectLabel } from '../../components/ProjectLabel';
 import { usePageTitle } from '../../lib/headerContext';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
@@ -20,6 +23,11 @@ import '../../components/PhoneTables.css';
 // Projects tab
 // ---------------------------------------------------------------------------
 
+const PROJECT_SORT_KEYS = ['sessions', 'messages', 'cost', 'active'] as const;
+type ProjectSortKey = typeof PROJECT_SORT_KEYS[number];
+const projectSortValue = (p: Project, key: ProjectSortKey) =>
+  ({ sessions: p.sessionCount, messages: p.messageCount, cost: p.totalCost ?? 0, active: p.lastUsed })[key];
+
 export function ProjectsTab() {
   usePageTitle('Projects');
   const {
@@ -29,6 +37,7 @@ export function ProjectsTab() {
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
   const [search, setSearch] = useState('');
   const [mergeSource, setMergeSource] = useState<Project | null>(null);
+  const sort = useUrlSort(PROJECT_SORT_KEYS);
 
   // The picker is sourced from the full project list (so the user can
   // navigate up/down the tree); the table itself is filtered to the
@@ -80,10 +89,10 @@ export function ProjectsTab() {
       <thead>
         <tr>
           <th>Project</th>
-          <th>Sessions</th>
-          <th>Messages</th>
-          <th>Tokens (in/out)</th>
-          <th>Last Active</th>
+          <SortableHeader column="sessions" sort={sort} numeric description="Sessions: top-level sessions, excluding helpers">Sessions</SortableHeader>
+          <SortableHeader column="messages" sort={sort} numeric description={ACTIVITY_DEFINITIONS.messages}>Messages</SortableHeader>
+          <SortableHeader column="cost" sort={sort} numeric description={ACTIVITY_DEFINITIONS.cost}>Cost</SortableHeader>
+          <SortableHeader column="active" sort={sort}>Last active</SortableHeader>
           <th aria-label="Actions" />
         </tr>
       </thead>
@@ -100,7 +109,7 @@ export function ProjectsTab() {
               )}
             </td>
           </tr>
-        ) : visibleProjects.map((p) => (
+        ) : sortBy(visibleProjects, sort, projectSortValue).map((p) => (
           <tr
             key={`${p.remoteId ?? 'local'}:${p.directory}`}
             onClick={() =>
@@ -118,10 +127,10 @@ export function ProjectsTab() {
               <span className="phone-project-meta">{formatProjectActivity(p.sessionCount, p.lastUsed)}</span>
               </Link>
             </td>
-            <td>{p.sessionCount}</td>
-            <td>{p.messageCount}</td>
-            <td className="mono">{formatNumber(p.totalTokensIn)} / {formatNumber(p.totalTokensOut)}</td>
-            <td>{relativeTime(p.lastUsed)}</td>
+            <td className="list-numeric">{p.sessionCount}</td>
+            <td className="list-numeric" title={projectActivityDetails(p)}>{p.messageCount.toLocaleString('en-US')}</td>
+            <td className="mono list-numeric">{formatCost(p.totalCost ?? 0)}</td>
+            <td><span title={formatExactDate(p.lastUsed)}>{relativeTime(p.lastUsed)}</span></td>
             <td className="project-action-cell"><Button type="button" size="small" variant="ghost" className="project-merge-btn"
               aria-label={`Merge ${p.directory}`} title="Merge this project's sessions into another project"
               onClick={event => { event.stopPropagation(); setMergeSource(p); }}><i className="bi bi-sign-merge-left" aria-hidden="true" /><span className="project-merge-label"> Merge…</span></Button></td>

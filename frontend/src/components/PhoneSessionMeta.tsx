@@ -6,7 +6,7 @@ import { useIsPhone } from '../lib/useIsPhone';
 import { projectRootForDirectory } from '../lib/worktrees';
 
 /** Phone-only context, alongside the desktop table's unchanged columns. */
-export function PhoneSessionMeta({ session }: { session: Session }) {
+export function PhoneSessionMeta({ session, activity }: { session: Session; activity?: string }) {
   const phone = useIsPhone();
   const { infos } = useGitInfo([session.directory], session.remoteId || 'local', phone);
   const branch = infos[session.directory]?.branch;
@@ -27,5 +27,6 @@ export function PhoneSessionMeta({ session }: { session: Session }) {
     </span>
     {status && <span className="phone-session-pending">{status}</span>}
     <time dateTime={new Date(session.timeUpdated).toISOString()}>{relativeTime(session.timeUpdated)}</time>
+    {phone && activity && <span className="phone-session-activity">{activity}</span>}
   </span>;
 }

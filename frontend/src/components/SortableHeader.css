@@ -1,0 +1,29 @@
+/* Header buttons keep the table header's typography. */
+.oc-button.sortable-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.oc-button.sortable-header:hover:not(:disabled) { border-color: transparent; background: none; color: var(--text); }
+.sortable-header:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sortable-header .bi { font-size: 9px; opacity: 0.6; }
+th[aria-sort='ascending'] .sortable-header,
+th[aria-sort='descending'] .sortable-header { color: var(--text); }
+th[aria-sort='ascending'] .sortable-header .bi,
+th[aria-sort='descending'] .sortable-header .bi { opacity: 1; color: var(--accent); }
+
+.oc-data-table th.sortable-header-numeric,
+.list-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.list-numeric-pending { color: var(--text-dim); text-align: right; }

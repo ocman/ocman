@@ -66,6 +66,11 @@ describe('session rows are keyboard reachable', () => {
     const link = screen.getByRole('link', { name: /Fix the login bug/ });
     expect(link).toHaveAttribute('href', '/session/ses_1');
 
+    // The four sortable column headers come first in tab order.
+    for (const name of ['Prompts', 'Duration', 'Cost', 'Started']) {
+      await user.tab();
+      expect(screen.getByRole('button', { name })).toHaveFocus();
+    }
     await user.tab();
     expect(link).toHaveFocus();
 

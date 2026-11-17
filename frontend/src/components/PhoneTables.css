@@ -66,6 +66,7 @@
   .phone-session-branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .phone-session-meta time { margin-left: auto; }
   .phone-session-pending { color: var(--peach); }
+  .phone-session-activity { flex-basis: 100%; font-variant-numeric: tabular-nums; }
   .phone-project-link { display: block; padding: 18px 0; min-height: 80px; }
   .phone-project-link > div > span { overflow-wrap: anywhere; }
   .phone-project-meta { display: block; margin-top: 7px; font-size: 12px; color: var(--subtext0); }

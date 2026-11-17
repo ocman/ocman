@@ -8,6 +8,13 @@ import { DataTable } from './DataTable';
 import { SessionTableRow } from './SessionTableRow';
 import { useSessionTableArchive } from './useSessionTableArchive';
 import { InlineAlert } from './InlineAlert';
+import { SortableHeader } from './SortableHeader';
+import { ACTIVITY_DEFINITIONS, sessionCost } from '../lib/listActivity';
+import { sortBy, useUrlSort } from '../lib/useUrlSort';
+
+const SORT_KEYS = ['prompts', 'duration', 'cost', 'started'] as const;
+type SortKey = typeof SORT_KEYS[number];
+const sortValue = (s: Session, key: SortKey) => ({ prompts: s.messageCount, duration: s.durationMs, cost: sessionCost(s), started: s.timeCreated })[key];
 export { ShortPath, GitStatusLine } from './SessionTableDetails';
 
 interface Props {
@@ -23,12 +30,13 @@ interface Props {
 
 export function SessionTable({ sessions, showProject, loading, includeArchived, prefiltered, activityPendingKeys }: Props) {
   const { archivingSessionIds, locallyArchivedSessionIds, archiveError, handleArchiveSession } = useSessionTableArchive();
+  const sort = useUrlSort(SORT_KEYS);
 
   if (loading) {
-    return <SkeletonTable columns={showProject ? ['Session', 'Project', 'Activity', 'Started', ''] : ['Session', 'Activity', 'Started', '']} label="Loading sessions" />;
+    return <SkeletonTable columns={[...(showProject ? ['Session', 'Project'] : ['Session']), 'Prompts', 'Duration', 'Cost', 'Started', '']} label="Loading sessions" />;
   }
 
-  const colCount = showProject ? 5 : 4;
+  const colCount = showProject ? 7 : 6;
   const visibleSessions = (includeArchived || prefiltered ? sessions : filterVisibleSessions(sessions))
     .filter(session => !archivingSessionIds.has(session.id))
     .filter(session => includeArchived || !locallyArchivedSessionIds.has(session.id));
@@ -55,13 +63,15 @@ export function SessionTable({ sessions, showProject, loading, includeArchived, 
         <tr>
           <th>Session</th>
           {showProject && <th>Project</th>}
-          <th>Activity</th>
-          <th>Started</th>
+          <SortableHeader column="prompts" sort={sort} numeric description={ACTIVITY_DEFINITIONS.prompts}>Prompts</SortableHeader>
+          <SortableHeader column="duration" sort={sort} numeric description={ACTIVITY_DEFINITIONS.duration}>Duration</SortableHeader>
+          <SortableHeader column="cost" sort={sort} numeric description={ACTIVITY_DEFINITIONS.cost}>Cost</SortableHeader>
+          <SortableHeader column="started" sort={sort}>Started</SortableHeader>
           <th style={{ width: 44 }} />
         </tr>
       </thead>
       <tbody>
-        {nestSessions(visibleSessions).map(({ session, depth }) => <SessionTableRow
+        {nestSessions(sortBy(visibleSessions, sort, sortValue)).map(({ session, depth }) => <SessionTableRow
           key={session.id} session={session} depth={depth} showProject={showProject}
           activityPending={activityPendingKeys?.has(`${session.platform}:${session.id}`)}
           archiving={archivingSessionIds.has(session.id)} onArchive={(event, row) => { void handleArchiveSession(event, row); }} />)}

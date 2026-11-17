@@ -40,5 +40,6 @@ it('fills the global list activity from accounting instead of the compact zero p
   expect(within(tr).queryByText(/^0 /)).not.toBeInTheDocument();
   expect(within(tr).queryByText(/< 1s/)).not.toBeInTheDocument();
   await act(async () => finish([row({ messageCount: 14, durationMs: 9_420_000 })]));
-  expect(await within(tr).findByText(/14 prompts/)).toHaveTextContent('14 prompts · 2h 37m');
+  expect(await within(tr).findByTitle('14 prompts')).toHaveTextContent('14');
+  expect(within(tr).getByText('2h 37m')).toBeInTheDocument();
 });
