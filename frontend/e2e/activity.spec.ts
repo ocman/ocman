@@ -174,7 +174,8 @@ test('task table opens progress and run details without closing the activity mod
   const row = page.getByRole('button', { name: /Sync history/ });
   await expect(row).toBeVisible();
   const table = page.getByRole('table', { name: 'Background task groups' });
-  await expect(table.getByRole('row')).toHaveCount(2);
+  await expect(table.getByRole('row').filter({ has: page.getByRole('button') })).toHaveCount(1);
+  await expect(table.getByRole('heading', { name: 'History synchronization 1' })).toBeVisible();
   await expect(row).toHaveAttribute('aria-expanded', 'false');
   await expect(page.getByRole('progressbar')).toHaveCount(0);
   await row.click();
