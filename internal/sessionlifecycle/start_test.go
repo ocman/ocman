@@ -88,6 +88,9 @@ func TestStartFirstDeliveryOrderingAndFailureReceipt(t *testing.T) {
 					},
 					SendNow: func(_ context.Context, platform string, req platforms.SendMessageRequest) error {
 						steps = append(steps, "send")
+						if !req.FirstPrompt {
+							t.Fatal("initial delivery lost its cold-start budget")
+						}
 						if platform != "r-box:claudecode" || req.SessionID != "child" || req.Message != "first" || req.Model != "claudecode:acme/m" || req.Agent != "plan" || req.Reasoning != "high" || !reflect.DeepEqual(req.Images, []platforms.ImageAttachment{{URL: "data:image/png;base64,a", Mime: "image/png"}}) {
 							t.Fatalf("first payload changed: %+v", req)
 						}

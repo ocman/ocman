@@ -84,6 +84,9 @@ sequenceDiagram
     S->>I: validate admission and read/edit held queue with committed platform
     S->>E: step progress via hostsvc.WithProgress
     E-->>B: SSE (ocman.session.start.progress)
+    S->>R: deliver first prompt with FirstPrompt marker
+    R->>A: preserve marker through owner routing
+    A->>D: submit prompt, cold-start budget up to 60 seconds
     R->>O: replace managed OpenCode server
     O->>I: prepare a hidden interruption batch
     O->>O: stop the owned server
@@ -91,6 +94,10 @@ sequenceDiagram
     O->>E: ocman.session.changed for affected sessions
 ```
 
+- Initial prompt delivery carries a `FirstPrompt` marker through local and remote
+  platform routing. OpenCode allows up to 60 seconds for cold project initialization,
+  bounded by caller cancellation. Reads and follow-ups retain their 10-second
+  timeout. Cancelled or timed-out prompts are not automatically resubmitted.
 - Sidebar git reads batch directories per owner, independently of the active
   conversation. Query caches keep identical paths on different machines separate
   and retain still-requested same-owner labels while a directory-set refresh is

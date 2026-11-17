@@ -20,7 +20,7 @@ func (m *Module) deliverFirst(ctx context.Context, req startRequest, platform, s
 		for _, img := range req.Send.Images {
 			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
 		}
-		err = m.d.SendNow(ctx, platform, platforms.SendMessageRequest{SessionID: sessionID, Message: req.Send.Message, Images: images,
+		err = m.d.SendNow(ctx, platform, platforms.SendMessageRequest{SessionID: sessionID, Message: req.Send.Message, Images: images, FirstPrompt: true,
 			Model: req.Send.Model, Agent: req.Send.Agent, Reasoning: req.Send.Reasoning})
 	}
 	hostsvc.FinishStep(ctx, hostsvc.StepPrompt, err)

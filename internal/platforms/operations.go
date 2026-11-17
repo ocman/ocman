@@ -22,6 +22,9 @@ type SendMessageRequest struct {
 	SessionID string
 	Message   string
 	Images    []ImageAttachment
+	// FirstPrompt allows cold project initialization during initial delivery.
+	// Follow-ups leave it false and retain the adapter's ordinary timeout.
+	FirstPrompt bool `json:",omitempty"`
 	// Model is a "provider/model" string (platforms that don't use
 	// providers may interpret it as just the model).
 	Model string

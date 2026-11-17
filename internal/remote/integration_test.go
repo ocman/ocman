@@ -317,11 +317,11 @@ func TestRemotePlatform_MutationsAndCreateRoundTrip(t *testing.T) {
 
 	// SendMessage routes over gRPC to the remote adapter.
 	if err := rp.SendMessage(context.Background(), platforms.SendMessageRequest{
-		SessionID: "s1", Message: "drive remotely", Model: "anthropic/opus", ExactModel: true,
+		SessionID: "s1", Message: "drive remotely", Model: "anthropic/opus", ExactModel: true, FirstPrompt: true,
 	}); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
-	if fp.sent == nil || fp.sent.Message != "drive remotely" || fp.sent.SessionID != "s1" || fp.sent.Model != "anthropic/opus" || !fp.sent.ExactModel {
+	if fp.sent == nil || fp.sent.Message != "drive remotely" || fp.sent.SessionID != "s1" || fp.sent.Model != "anthropic/opus" || !fp.sent.ExactModel || !fp.sent.FirstPrompt {
 		t.Fatalf("remote did not receive message: %+v", fp.sent)
 	}
 

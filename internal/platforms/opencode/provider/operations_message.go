@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ocman/ocman/internal/platforms"
 )
@@ -28,7 +29,7 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 		return nil
 	}
 	var upstream *platforms.UpstreamError
-	if errors.As(err, &upstream) || errors.Is(err, platforms.ErrUnsupported) {
+	if errors.As(err, &upstream) || errors.Is(err, platforms.ErrUnsupported) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return err
 	}
 	a.rt.forgetSessionPort(req.SessionID, port)
@@ -79,6 +80,13 @@ func (h *httpState) sendMessageLegacy(ctx context.Context, port string, req plat
 		return err
 	}
 	path := fmt.Sprintf("/session/%s/prompt_async", req.SessionID)
+	if req.FirstPrompt {
+		// Project plugins and MCP connections can initialize on the first prompt.
+		// Keep this separate from the short read/follow-up timeout.
+		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+		return h.postJSONLLM(ctx, port, path, payload)
+	}
 	if err := h.postJSON(ctx, port, path, payload); err != nil {
 		return err
 	}
