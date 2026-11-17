@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ocman/ocman/internal/module"
 	"github.com/ocman/ocman/internal/state"
+	log "github.com/sirupsen/logrus"
 )
 
 type Manager struct {
@@ -150,6 +152,11 @@ func (m *Manager) execute(lifetime, caller context.Context, run *execution, work
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			// Do not retain panic values, which can contain arbitrary task input.
+			log.WithFields(log.Fields{
+				"task_id": run.task.ID,
+				"kind":    run.task.Kind,
+				"stack":   string(debug.Stack()),
+			}).Error("background task panicked")
 			workErr = errors.New("background task panicked")
 		}
 		m.finish(run, workErr, ctx.Err())

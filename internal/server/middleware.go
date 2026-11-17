@@ -17,9 +17,7 @@ import (
 )
 
 // slowRequestThreshold is the wall-clock duration above which a request
-// is logged at INFO instead of DEBUG. The intent is "show in normal
-// production logs without manual filtering" — anything elevated to
-// INFO is worth an operator's attention. Set above the p99 of healthy
+// includes detailed phase timings at DEBUG. Set above the p99 of healthy
 // session-list builds (which can spend ~2-3s in db_get_sessions on
 // large OpenCode databases) so the steady-state idle dashboard polls
 // stay at DEBUG.
@@ -313,9 +311,8 @@ func noiseSkip(path string) bool {
 }
 
 // withRequestTiming wraps an http.Handler with structured per-request
-// timing logs. Fast requests log at DEBUG (so they're invisible in a
-// normal `logrus` configuration) and slow requests log at INFO so they
-// appear in default production logs without operator action.
+// timing logs. Server failures log at WARN so their request context is visible
+// without debug logging. Other responses stay at DEBUG to avoid polling noise.
 //
 // Also attaches a per-request srvtiming.Collector to the request context
 // and emits the accumulated entries as a Server-Timing response
@@ -327,9 +324,10 @@ func noiseSkip(path string) bool {
 //   - method      — HTTP method ("GET", "POST", ...)
 //   - path        — URL path *without* query string (low cardinality
 //     so the log can be aggregated by endpoint)
+//   - route       — matched mux pattern, when available, for endpoint aggregation
 //   - status      — HTTP status code as an int (200, 500, ...)
 //   - duration_ms — handler wall-clock latency in milliseconds
-//   - timings     — pipe-separated "phase=ms" pairs for slow
+//   - timings     — pipe-separated "phase=ms" pairs for failed or slow
 //     requests, useful when devtools isn't available
 //     (e.g. cron-driven calls or curl)
 //
@@ -358,13 +356,23 @@ func withRequestTimingClock(next http.Handler, now func() time.Time) http.Handle
 			"status":      rec.status,
 			"duration_ms": dur.Milliseconds(),
 		}
+		if r.Pattern != "" {
+			fields["route"] = r.Pattern
+		}
 		msg := "request served"
-		if dur >= slowRequestThreshold {
+		level := log.DebugLevel
+		if dur >= slowRequestThreshold || rec.status >= http.StatusInternalServerError {
 			if t := collector.Header(); t != "" {
 				fields["timings"] = t
 			}
+		}
+		if dur >= slowRequestThreshold {
 			msg = fmt.Sprintf("slow endpoint: %s", r.URL.Path)
 		}
-		log.WithFields(fields).Debug(msg)
+		if rec.status >= http.StatusInternalServerError {
+			level = log.WarnLevel
+			msg = "request failed"
+		}
+		log.WithFields(fields).Log(level, msg)
 	})
 }

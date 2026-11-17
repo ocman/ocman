@@ -73,6 +73,17 @@ after quota cooldown recording and follow-up flush admission. Factory's
 subscriber only signals dispatch. Plugin reply reads run under their own panic
 recovery because the bus cannot recover a panic in a separate goroutine.
 
+## Diagnostic logging
+
+- Log unexpected failures where they are handled, with the operation, underlying
+  error and relevant session, task, platform or owner IDs as structured fields.
+  An error without an identifiable operation or resource is not enough to debug.
+- Keep server failures visible without DEBUG. Routine polls, expected client
+  errors and ordinary cancellation must not generate warning/error noise.
+- Recovered panics need a stack and operation identity. Never log the panic value,
+  which can contain arbitrary input. Keep stacks out of client responses and task
+  receipts. Do not log request bodies, prompts, auth headers or URL query strings.
+
 ## Persistence
 
 Queries own persistence. Existing tables stay in `internal/state` and its

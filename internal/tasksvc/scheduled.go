@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/ocman/ocman/internal/module"
@@ -75,20 +76,22 @@ func (m *Manager) ObserveSchedule(caller context.Context, spec module.Schedule, 
 			return err
 		}
 		log.WithError(err).WithField("job", spec.Name).Warn("scheduled task receipt unavailable; running maintenance without observation")
-		return runScheduledWork(caller, work)
+		return runScheduledWork(caller, spec.Name, work)
 	}
 	ctx := caller
 	run := &execution{task: task}
 	reporter := &Reporter{manager: m, run: run, ctx: ctx}
 	ctx = module.WithProgressReporter(ctx, reporter)
-	workErr := runScheduledWork(ctx, work)
+	workErr := runScheduledWork(ctx, spec.Name, work)
 	m.finish(run, workErr, ctx.Err())
 	return run.err
 }
 
-func runScheduledWork(ctx context.Context, work func(context.Context) error) (err error) {
+func runScheduledWork(ctx context.Context, name string, work func(context.Context) error) (err error) {
 	defer func() {
 		if recover() != nil {
+			// Keep the call site, never the panic value or arbitrary task input.
+			log.WithFields(log.Fields{"job": name, "stack": string(debug.Stack())}).Error("scheduled task panicked")
 			err = errors.New("scheduled task panicked")
 		}
 	}()
