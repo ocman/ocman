@@ -37,10 +37,14 @@ func (w *sourceWorker) servePriority(ctx context.Context) string {
 		err = w.requireComplete(w.execute(ctx, pass{full: w.explicitReadPending(id), reads: []db.HistoryEntry{{ID: id, Version: w.versions[id]}}}, nil))
 	}
 	if err != nil {
-		if w.failing[id] != err.Error() {
-			w.module.report(w.instance.ID, id, err)
+		// A snapshot read records and reports the session's own cause; keep it
+		// rather than the aggregate pass error, so retries stay recognisable.
+		if _, recorded := w.failing[id]; w.feed != nil || !recorded {
+			if w.failing[id] != err.Error() {
+				w.module.report(w.instance.ID, id, err)
+			}
+			w.failing[id] = err.Error()
 		}
-		w.failing[id] = err.Error()
 		return ""
 	}
 	return id
