@@ -18,6 +18,7 @@ import { useSessionFilterPreference } from '../../lib/useSessionFilterPreference
 import { SESSION_FILTER_DEFAULTS, SESSION_FILTER_FIELDS, hiddenSessionOrigins, matchesSessionListFilters } from '../../lib/sessionListFilters';
 import { hasPendingPrompt } from '../../lib/sessionVisibility';
 import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
+import { useSessionAccounting } from '../../lib/useSessionAccounting';
 
 // ---------------------------------------------------------------------------
 // Sessions tab
@@ -25,9 +26,10 @@ import { useProjectIdentityIndex } from '../../lib/useProjectIdentityIndex';
 
 export function SessionsTab() {
   usePageTitle('Sessions');
-  const { sessions, projects, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
+  const { sessions: compactSessions, projects, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
   const [search, setSearch] = useState('');
+  const { sessions, pendingKeys: activityPendingKeys } = useSessionAccounting(compactSessions, { sinceHours: timeRange > 0 ? timeRange : 30 * 24 });
   const phone = useIsPhone();
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
     showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed } = useSessionListFilters();
@@ -88,6 +90,7 @@ export function SessionsTab() {
         loading={sessionsLoading && sessions.length === 0}
         includeArchived={phone ? filters.showArchived : showArchived}
         prefiltered={phone}
+        activityPendingKeys={activityPendingKeys}
       />
     </>
   );

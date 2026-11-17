@@ -7,6 +7,7 @@ import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { useProjects, useSessions } from '../lib/queries';
 import { useProjectIdentityIndex } from '../lib/useProjectIdentityIndex';
+import { useSessionAccounting } from '../lib/useSessionAccounting';
 import { Button, ButtonGroup, SearchField } from '../components/Control';
 import styles from './ProjectDetail.module.css';
 import { ProjectShell } from './ProjectShell';
@@ -50,27 +51,11 @@ export function ProjectDetail() {
     { sinceHours, limit: 0 },
     { poll: true, enabled: !!directory },
   );
-  // Accounting can involve slow platform enrichment. Never gate browsing on it.
-  const accountingQ = useSessions(
-    { sinceHours, limit: 0, accounting: true },
-    { poll: true, enabled: !!directory },
-  );
   const identity = useProjectIdentityIndex(projectsQ.data ?? [], [...(sessionsQ.data ?? []), { directory: directory ?? '', remoteId: ownerId ?? undefined }]);
   const projectKey = identity(directory ?? '', ownerId ?? undefined).key;
-  const accounting = new Map((accountingQ.data ?? []).map(s => [`${s.platform}:${s.id}`, s]));
-  const activityPendingKeys = new Set<string>();
-  const sessions = (sessionsQ.data ?? [])
-    .filter(s => identity(s.directory || '', s.remoteId).key === projectKey)
-    .map(s => {
-      const key = `${s.platform}:${s.id}`;
-      const totals = accounting.get(key);
-      if (!totals || totals.timeUpdated < s.timeUpdated) {
-        activityPendingKeys.add(key);
-        return s;
-      }
-      // Compact rows remain authoritative for status, archive flags and titles.
-      return { ...s, messageCount: totals.messageCount, durationMs: totals.durationMs };
-    });
+  const { sessions, pendingKeys: activityPendingKeys } = useSessionAccounting(
+    (sessionsQ.data ?? []).filter(s => identity(s.directory || '', s.remoteId).key === projectKey),
+    { sinceHours }, !!directory);
   const sessionsLoaded = !sessionsQ.isLoading && !projectsQ.isLoading;
   const search = searchParams.get('q') || '';
   const q = search.trim();

@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Session } from '../lib/api';
-import { cleanTitle, formatDuration, relativeTime } from '../lib/format';
+import { cleanTitle, formatCount, formatDuration, relativeTime } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import { useIsPhone } from '../lib/useIsPhone';
 import { useSessionSwipe } from '../lib/useSessionSwipe';
@@ -46,7 +46,7 @@ export function SessionTableRow({ session, depth, showProject, archiving, onArch
       </Link>
     </td>
     {showProject && <td className="mono"><ShortPath path={session.directory} /></td>}
-    <td className="mono">{activityPending ? 'Loading activity…' : <>{session.messageCount} msgs &middot; {formatDuration(session.durationMs)}</>}</td>
+    <td className="mono">{activityPending ? 'Loading activity…' : <>{formatCount(session.messageCount, 'prompt')} &middot; {formatDuration(session.durationMs)}</>}</td>
     <td><span title={new Date(session.timeCreated).toLocaleString()}>{relativeTime(session.timeCreated)}</span></td>
     <td className="session-action-cell session-swipe-actions">
       {phone && <SnoozeButton session={session} disabled={archiving} open={snoozeOpen} onOpenChange={setSnoozeOpen} onBusyChange={setSnoozing} />}

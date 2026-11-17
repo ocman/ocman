@@ -316,6 +316,23 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.resolveProjectIdentities).not.toHaveBeenCalled();
   });
 
+  it('describes an unused one-off project without an epoch date', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.apiState.getProjects.mockResolvedValue([]);
+    renderPalette();
+    const option = (await screen.findByText('one-off')).closest('[role="option"]') as HTMLElement;
+    expect(option).toHaveTextContent('No sessions yet');
+    expect(option).not.toHaveTextContent('1970');
+  });
+
+  it('pluralises project session counts', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.apiState.getProjects.mockResolvedValue([{ directory: '/repo/solo', sessionCount: 1, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: Date.now() - 60_000 }]);
+    renderPalette();
+    const option = (await screen.findByText('repo/solo')).closest('[role="option"]') as HTMLElement;
+    expect(option).toHaveTextContent('1 session · 1m ago');
+  });
+
   it('keeps the one-off choice visible with more than twenty recent projects', async () => {
     mocks.uiState.paletteMode = 'project-session';
     mocks.apiState.getProjects.mockResolvedValue(Array.from({ length: 25 }, (_, index) => ({

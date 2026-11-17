@@ -5,6 +5,8 @@ it('labels temporary one-off projects without their random workspace name', () =
 import {
   cleanTitle,
   formatCompactNumber,
+  formatCount,
+  formatProjectActivity,
   formatDuration,
   formatNumber,
   formatSeconds,
@@ -313,5 +315,20 @@ describe('formatExactDate', () => {
   });
   it('returns an empty string for invalid input', () => {
     expect(formatExactDate('not a date', now)).toBe('');
+  });
+});
+
+describe('formatCount and formatProjectActivity', () => {
+  it('pluralises with grouping', () => {
+    expect(formatCount(1, 'prompt')).toBe('1 prompt');
+    expect(formatCount(0, 'prompt')).toBe('0 prompts');
+    expect(formatCount(1204, 'session')).toBe('1,204 sessions');
+    expect(formatCount(2, 'child', 'children')).toBe('2 children');
+    expect(formatCount(undefined, 'session')).toBe('0 sessions');
+  });
+  it('never renders the zero timestamp as a date', () => {
+    expect(formatProjectActivity(0, 0)).toBe('No sessions yet');
+    expect(formatProjectActivity(2, 0)).toBe('2 sessions');
+    expect(formatProjectActivity(1, 940_000, 1_000_000)).toBe('1 session · 1m ago');
   });
 });

@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useProjects, useSessions } from '../lib/queries';
 import { useUiStore } from '../lib/uiStore';
 import { useWorktreeLaunch } from '../lib/useCapabilities';
-import { cleanTitle, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
+import { cleanTitle, formatProjectActivity, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { api } from '../lib/api';
@@ -788,7 +788,7 @@ export function CommandPalette() {
                     <span className="oc-cmd-meta">
                       {proj.remoteId
                         ? proj.remoteName
-                        : `${proj.sessionCount} session${proj.sessionCount !== 1 ? 's' : ''} \u00b7 ${relativeTime(proj.lastUsed)}`}
+                        : formatProjectActivity(proj.sessionCount, proj.lastUsed)}
                     </span>
                   </div>
                 </div>

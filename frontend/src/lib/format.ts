@@ -56,6 +56,18 @@ export function formatCompactNumber(n: number): string {
   return n.toLocaleString();
 }
 
+/** "1 prompt", "2 prompts", "1,204 sessions". */
+export function formatCount(n: number | undefined, singular: string, plural = `${singular}s`): string {
+  const count = n ?? 0; // Inventory-only rows can omit aggregates.
+  return `${count.toLocaleString('en-US')} ${count === 1 ? singular : plural}`;
+}
+
+/** Project picker summary; a never-used project has no meaningful timestamp. */
+export function formatProjectActivity(sessionCount: number | undefined, lastUsed: number, now = Date.now()): string {
+  if (!(lastUsed > 0)) return sessionCount ? formatCount(sessionCount, 'session') : 'No sessions yet';
+  return `${formatCount(sessionCount, 'session')} · ${relativeTime(lastUsed, now)}`;
+}
+
 export function formatDuration(ms: number): string {
   if (ms < 1000) return '< 1s';
   const s = Math.floor(ms / 1000);

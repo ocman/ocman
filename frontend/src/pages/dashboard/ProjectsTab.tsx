@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { formatNumber, fuzzyMatch, relativeTime } from '../../lib/format';
+import { formatNumber, formatProjectActivity, fuzzyMatch, relativeTime } from '../../lib/format';
 import { ProjectLabel } from '../../components/ProjectLabel';
 import { usePageTitle } from '../../lib/headerContext';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
@@ -115,7 +115,7 @@ export function ProjectsTab() {
                   <span className="oc-cmd-badge" title={`On remote ${p.remoteName}`}>{p.remoteName}</span>
                 ) : null}
               </div>
-              <span className="phone-project-meta">{p.sessionCount} sessions · {relativeTime(p.lastUsed)}</span>
+              <span className="phone-project-meta">{formatProjectActivity(p.sessionCount, p.lastUsed)}</span>
               </Link>
             </td>
             <td>{p.sessionCount}</td>
