@@ -13,11 +13,22 @@ import (
 	internalmcp "github.com/ocman/ocman/internal/mcp"
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/sessionsvc"
+	log "github.com/sirupsen/logrus"
 )
 
 // CreateSession uses the same defaults and owner-local launch paths as the
 // new-conversation composer. Explicit options win over defaults.
-func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.CreateSessionRequest) (internalmcp.CreatedSession, error) {
+func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.CreateSessionRequest) (result internalmcp.CreatedSession, createErr error) {
+	stage := "target selection"
+	dir, platformID := in.Directory, in.Platform
+	defer func() {
+		if createErr != nil {
+			log.WithContext(ctx).WithError(createErr).WithFields(log.Fields{
+				"stage": stage, "directory": dir, "platform": platformID,
+				"created_session_id": result.SessionID, "created_platform": result.Platform,
+			}).Error("MCP session creation failed")
+		}
+	}()
 	exactModel := in.Model != ""
 	platformID, err := platforms.PlatformForModel(in.Platform, in.Model)
 	if err != nil {
@@ -26,7 +37,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 	if in.Platform != "" && !s.server.sessions.KnownPlatform(platformID) {
 		return internalmcp.CreatedSession{}, mcpSelectionError("unknown platform %q", in.Platform)
 	}
-	dir := in.Directory
+	stage = "caller resolution"
 	caller, err := s.createCaller(ctx, in)
 	if err != nil {
 		return internalmcp.CreatedSession{}, err
@@ -57,6 +68,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 			return internalmcp.CreatedSession{}, err
 		}
 	}
+	stage = "target validation"
 	if !s.server.sessions.KnownPlatform(platformID) {
 		return internalmcp.CreatedSession{}, mcpSelectionError("unknown platform %q", platformID)
 	}
@@ -72,6 +84,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		return internalmcp.CreatedSession{}, fmt.Errorf("%w: remote %s is not connected", internalmcp.ErrInvalidSessionCreate, owner)
 	}
 	if in.Model == "" && caller != nil {
+		stage = "model inheritance"
 		// Only optional model inheritance needs history. Provenance and explicit
 		// targets never depend on its availability or read the conversation.
 		if len(caller.Messages) == 0 && caller.DefaultModel == "" {
@@ -88,6 +101,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		}
 	}
 	if in.Agent == "" && s.server.stateDB != nil {
+		stage = "agent defaults"
 		var err error
 		in.Agent, err = s.server.defaultAgent(ctx)
 		if err != nil {
@@ -95,6 +109,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		}
 	}
 	var worktree bool
+	stage = "worktree eligibility"
 	if in.Worktree != nil {
 		worktree = *in.Worktree
 	} else {
@@ -107,6 +122,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 	created := internalmcp.CreatedSession{Platform: platformID, Directory: dir}
 	creation := &platforms.CreationIdentity{Origin: "user", Model: in.Model, Agent: in.Agent}
 	if worktree {
+		stage = "worktree setup"
 		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
 			Creation: creation,
 			Platform: base, ProjectDir: dir, AutoName: true, Prompt: in.Prompt, Title: in.Title,
@@ -116,6 +132,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		}
 		created.SessionID, created.Directory = res.SessionID, res.WorktreePath
 	} else {
+		stage = "runtime preparation"
 		var port string
 		ensured, err := host.EnsureRuntime(ctx, base, projectRootForDirectory(dir))
 		switch {
@@ -124,6 +141,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		case err == nil:
 			port = ensured.Port()
 		} // A local ensure failure falls back to port discovery, as in handleCreateSession.
+		stage = "session allocation"
 		resp, err := s.server.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Title: in.Title, Port: port, Creation: creation})
 		var ve *sessionsvc.ValidationError
 		if errors.As(err, &ve) {
@@ -135,6 +153,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		created.SessionID = resp.ID
 	}
 	if caller != nil {
+		stage = "creator recording"
 		if caller.Session.Platform == "" {
 			caller.Session.Platform = in.Platform
 		}
@@ -144,6 +163,7 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 		}
 		platformID = created.Platform
 	}
+	stage = "first prompt"
 	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: created.SessionID, Message: in.Prompt, Model: in.Model, Agent: in.Agent, ExactModel: exactModel}); err != nil {
 		return created, err
 	}
