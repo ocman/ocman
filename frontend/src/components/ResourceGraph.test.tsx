@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { TOOLTIP_DELAY_MS } from './Tooltip';
 import { ResourceGraph } from './ResourceGraph';
 import { processColor, processKey } from '../lib/resourcePresentation';
 import type { ResourcePoint } from '../lib/resources';
@@ -11,6 +12,48 @@ const history: ResourcePoint[] = [
   { timestamp: 1000, cpuPercent: 100, memoryBytes: 1025 * 1024 ** 2, processes: [ocman, agent] },
   { timestamp: 2000, cpuPercent: 25, memoryBytes: 1024 ** 3, processes: [ocman] },
 ];
+
+afterEach(() => { vi.useRealTimers(); });
+
+it('shows process details on hover without selecting the process', () => {
+  vi.useFakeTimers();
+  const process = { ...ocman, command: '/usr/bin/ocman serve', projectName: 'ocman project', sessionTitle: 'Improve graphs' };
+  const select = vi.fn();
+  render(<ResourceGraph title="CPU" history={history} metric="cpuPercent" processes={[process]} selected={null} onSelect={select} />);
+  const area = screen.getByRole('button', { name: 'CPU: ocman, PID 1' });
+  fireEvent.pointerMove(area, { pointerType: 'mouse' });
+  act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+  const tooltip = screen.getByRole('tooltip');
+  expect(tooltip).toHaveTextContent('ocman');
+  expect(tooltip).toHaveTextContent('PID 1');
+  expect(tooltip).toHaveTextContent('Parent PID 0');
+  expect(tooltip).toHaveTextContent('Latest CPU: 25.0%');
+  expect(tooltip).toHaveTextContent('/usr/bin/ocman serve');
+  expect(tooltip).toHaveTextContent('ocman project');
+  expect(tooltip).toHaveTextContent('Improve graphs');
+  expect(area).toHaveAttribute('aria-describedby', tooltip.id);
+  expect(select).not.toHaveBeenCalled();
+  fireEvent.click(area);
+  expect(select).toHaveBeenCalledWith(process);
+});
+
+it.each(['cpuPercent', 'memoryBytes'] as const)('shows %s details on keyboard focus and dismisses on Escape', (metric) => {
+  render(<ResourceGraph title="Resources" history={history} metric={metric} processes={[ocman, agent]} selected={null} onSelect={vi.fn()} />);
+  const area = screen.getByRole('button', { name: 'Resources: ocman, PID 1' });
+  fireEvent.focus(area);
+  expect(screen.getByRole('tooltip')).toHaveTextContent(metric === 'cpuPercent' ? '25.0%' : '1.00 GiB');
+  expect(screen.getByRole('tooltip')).not.toHaveTextContent(/Project:|Session:/);
+  fireEvent.keyDown(area, { key: 'Escape' });
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+});
+
+it('does not present an exited process value as a current measurement', () => {
+  render(<ResourceGraph title="CPU" history={history} metric="cpuPercent" processes={[agent]} selected={null} onSelect={vi.fn()} />);
+  fireEvent.focus(screen.getByRole('button', { name: 'CPU: agent, PID 2' }));
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Latest CPU: No data');
+  fireEvent.blur(screen.getByRole('button'));
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+});
 
 it('stacks actual per-process samples and retains the area of a process that exited', () => {
   const select = vi.fn();

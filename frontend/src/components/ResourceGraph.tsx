@@ -1,5 +1,7 @@
 import type { ResourcePoint, ResourceProcess } from '../lib/resources';
 import { processKey, processColor, formatMemory } from '../lib/resourcePresentation';
+import { Tooltip } from './Tooltip';
+import './ResourceGraph.css';
 
 export function ResourceGraph({ title, history: allHistory, metric, processes, selected, onSelect }: {
   title: string; history: ResourcePoint[]; metric: 'cpuPercent' | 'memoryBytes';
@@ -33,15 +35,21 @@ export function ResourceGraph({ title, history: allHistory, metric, processes, s
     });
     if (!segments.length) return null;
     const latest = samples.at(-1)?.get(key);
-    return <g key={key} fill={processColor(process)}
+    return <Tooltip key={key} content={<div className="resource-process-tooltip">
+      <strong>{process.name}</strong>
+      <div>PID {process.pid} · Parent PID {process.parentPid}</div>
+      <div>Latest {metric === 'cpuPercent' ? 'CPU' : 'memory'}: {latest === undefined ? 'No data' : format(latest)}</div>
+      {process.command && <div>{process.command}</div>}
+      {process.projectName && <div>Project: {process.projectName}</div>}
+      {process.sessionTitle && <div>Session: {process.sessionTitle}</div>}
+    </div>}><g fill={processColor(process)}
       role="button" tabIndex={0} aria-label={`${title}: ${process.name}, PID ${process.pid}`}
       aria-pressed={selected === processKey(process)} onClick={() => onSelect(process)}
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(process); } }}>
-      <title>{process.name} · PID {process.pid} · {latest === undefined ? 'No data' : format(latest)}</title>
       {segments.map((indices) => indices.length === 1
         ? <circle key={indices[0]} cx={x(indices[0])} cy={y(top[indices[0]])} r="2" />
         : <polygon key={indices[0]} points={[...indices.map((i) => `${x(i)},${y(top[i])}`), ...indices.map((i) => `${x(i)},${y(bottom[i])}`).reverse()].join(' ')} />)}
-    </g>;
+    </g></Tooltip>;
   });
   return <figure className="resource-graph">
     <figcaption><span>{title}</span><strong>{values.at(-1) === undefined ? 'No data' : format(values.at(-1)!)}</strong></figcaption>
