@@ -9,12 +9,13 @@ import { getDraft } from '../lib/composerDraft';
 import type { SharedConversation } from '../lib/api.types';
 
 const navigate = vi.fn();
+let searchParams = new URLSearchParams({ url: 'https://relay.test/v/share-1#k=key' });
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
     useNavigate: () => navigate,
-    useSearchParams: () => [new URLSearchParams({ url: 'https://relay.test/v/share-1#k=key' })],
+    useSearchParams: () => [searchParams],
   };
 });
 
@@ -49,6 +50,7 @@ describe('ImportSharedConversation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    searchParams = new URLSearchParams({ url: 'https://relay.test/v/share-1#k=key' });
     readRelayShare.mockResolvedValue({ chunks: [conversation], last: 0 });
     vi.spyOn(api, 'projects').mockResolvedValue([
       { directory: '/local/repo' },
@@ -135,5 +137,26 @@ describe('ImportSharedConversation', () => {
     await waitFor(() =>
       expect(api.createSession).toHaveBeenCalledWith('/local/repo', undefined, 'Forked conversation'),
     );
+  });
+});
+
+describe('ImportSharedConversation without a usable link', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(api, 'projects').mockResolvedValue([{ directory: '/local/repo' }] as never);
+  });
+
+  it.each([
+    ['missing', new URLSearchParams()],
+    ['malformed', new URLSearchParams({ url: 'not a url' })],
+  ])('explains a %s share link instead of a raw parser error', async (_name, params) => {
+    searchParams = params;
+    renderPage();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/share link/i);
+    expect(alert).not.toHaveTextContent(/Invalid URL|Failed to construct/);
+    expect(readRelayShare).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /create local fork/i })).toBeNull();
   });
 });

@@ -133,6 +133,8 @@ describe('parseRelayShareURL', () => {
     ['https://relay.test/v/share-1', 'no key in the fragment'],
     ['https://relay.test/share-1#k=abc', 'not a viewer path'],
     ['https://relay.test/v/a/b#k=abc', 'nested viewer path'],
+    ['', 'missing URL'],
+    ['not a url', 'unparseable URL'],
   ])('rejects %s (%s)', (url) => {
     expect(() => parseRelayShareURL(url)).toThrow('Not an ocman relay share URL');
   });

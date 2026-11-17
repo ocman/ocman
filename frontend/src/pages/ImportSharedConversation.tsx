@@ -6,6 +6,17 @@ import { mergeRelayChunks, parseRelayShareURL, readRelayShare } from '../lib/rel
 import { saveDraft } from '../lib/composerDraft';
 import { usePageTitle } from '../lib/headerContext';
 
+/** Plain-language reason a share link cannot be opened, or '' when it parses. */
+function shareLinkProblem(shareURL: string): string {
+  if (!shareURL) return 'This page needs a share link. Open the link you were sent to fork its conversation.';
+  try {
+    parseRelayShareURL(shareURL);
+    return '';
+  } catch {
+    return 'This share link is not valid. Check that you copied the whole link, including the part after #.';
+  }
+}
+
 function transcript(conversation: SharedConversation): string {
   const partsByMessage = new Map<string, string[]>();
   for (const part of conversation.parts) {
@@ -40,9 +51,11 @@ export function ImportSharedConversation() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const conversation = projectsQuery.data ? shared : null;
-  const loadError = error || (projectsQuery.error ? projectsQuery.error.message || 'Failed to import share' : '');
+  const linkProblem = shareLinkProblem(shareURL);
+  const loadError = linkProblem || error || (projectsQuery.error ? projectsQuery.error.message || 'Failed to import share' : '');
 
   useEffect(() => {
+    if (shareLinkProblem(shareURL)) return;
     const controller = new AbortController();
     (async () => {
       const parsed = parseRelayShareURL(shareURL);

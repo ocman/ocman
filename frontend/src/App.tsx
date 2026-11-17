@@ -59,6 +59,7 @@ const WorktreesView = lazyComponent(() => import('./pages/WorktreesView').then((
 const ProjectSettingsView = lazyComponent(() => import('./pages/ProjectSettingsView').then((m) => m.ProjectSettingsView));
 const ProjectDetail = lazyComponent(() => import('./pages/ProjectDetail').then((m) => m.ProjectDetail));
 const ImportSharedConversation = lazyComponent(() => import('./pages/ImportSharedConversation').then((m) => m.ImportSharedConversation));
+const NotFound = lazyComponent(() => import('./pages/NotFound').then((m) => m.NotFound));
 const Inbox = lazyComponent(() => import('./pages/Inbox').then((m) => m.Inbox), 'Loading inbox…');
 const SharedConversationView = lazyComponent(() => import('./pages/SharedConversationView').then((m) => m.SharedConversationView), 'Loading conversation…');
 
@@ -369,6 +370,7 @@ export function AppRoutes() {
         {featureRoutes('page').map((r) => <Route key={r.path} path={r.path} element={r.element} />)}
         <Route path="/project/:dir" element={<ProjectDetail />} />
         <Route path="/import-share" element={<ImportSharedConversation />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="/inbox" element={<Inbox />} />
       <Route path="/session/:id" element={<SessionDetail />} />

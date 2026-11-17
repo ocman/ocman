@@ -105,7 +105,12 @@ export async function readRelayShare(
 export { POLL_MS as relayPollMs };
 
 export function parseRelayShareURL(raw: string): { origin: string; id: string; key: string } {
-  const url = new URL(raw);
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('Not an ocman relay share URL');
+  }
   const match = url.pathname.match(/^\/v\/([^/]+)$/);
   const key = new URLSearchParams(url.hash.replace(/^#/, '')).get('k') ?? '';
   if (!match || !key) throw new Error('Not an ocman relay share URL');
