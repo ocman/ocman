@@ -158,6 +158,9 @@ describe('Inbox', () => {
     renderInbox();
     const row = (await screen.findByRole('button', { name: /Build.*finished/ })).closest('article')!;
     await within(screen.getByRole('region', { name: 'Message body' })).findByTestId('inbox-message-header');
+    // Reader markup can appear before the auto-selection effects settle.
+    // Wait for the selection's read mutation, as the keyboard test does.
+    await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('1', 'local'));
     fireEvent.click(within(row).getByRole('button', { name: 'Archive' }));
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
     await screen.findByRole('heading', { name: 'Remote note' });
