@@ -11,7 +11,7 @@ import { DashboardToolbar } from './DashboardToolbar';
 import { DataTable } from '../../components/DataTable';
 import { LoadingState } from '../../components/LoadingState';
 import { InlineAlert } from '../../components/InlineAlert';
-import { IconButton } from '../../components/IconButton';
+import { Button } from '../../components/Control';
 import type { Project } from '../../lib/api';
 import { MergeProjectModal } from './MergeProjectModal';
 import '../../components/PhoneTables.css';
@@ -122,8 +122,9 @@ export function ProjectsTab() {
             <td>{p.messageCount}</td>
             <td className="mono">{formatNumber(p.totalTokensIn)} / {formatNumber(p.totalTokensOut)}</td>
             <td>{relativeTime(p.lastUsed)}</td>
-            <td><IconButton icon="bi-sign-merge-left" label={`Merge ${p.directory}`} variant="ghost"
-              onClick={event => { event.stopPropagation(); setMergeSource(p); }} /></td>
+            <td className="project-action-cell"><Button type="button" size="small" variant="ghost" className="project-merge-btn"
+              aria-label={`Merge ${p.directory}`} title="Merge this project's sessions into another project"
+              onClick={event => { event.stopPropagation(); setMergeSource(p); }}><i className="bi bi-sign-merge-left" aria-hidden="true" /><span className="project-merge-label"> Merge…</span></Button></td>
           </tr>
         ))}
       </tbody>

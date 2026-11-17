@@ -43,6 +43,9 @@
   .phone-session-table .session-title { color: var(--text); font-size: 15px; font-weight: 550; }
   .phone-session-table .session-action-cell .session-archive-btn,
   .phone-project-table td:last-child .oc-icon-button { width: 44px; height: 44px; }
+  .phone-project-table td:last-child .project-merge-btn { width: 44px; height: 44px; }
+  /* The stacked row keeps only the icon; the button's name still says Merge. */
+  .phone-project-table .project-merge-label { display: none; }
   .phone-session-table .session-child-branch { max-width: 20px; overflow: hidden; }
   .phone-session-table .session-row-child { padding-left: 26px; }
   .phone-session-table tr.no-port { opacity: 1; }

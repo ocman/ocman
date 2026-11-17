@@ -62,6 +62,11 @@ describe('ProjectsTab', () => {
     fireEvent.click(link);
   });
 
+  it('labels the merge action with visible text, not just an icon', () => {
+    renderTab({ projects: [makeProject({ directory: '/source' })] });
+    expect(screen.getByRole('button', { name: 'Merge /source' })).toHaveTextContent('Merge…');
+  });
+
   it('disables target selection when no other projects are available', () => {
     renderTab({ projects: [makeProject({ directory: '/source' })] });
     fireEvent.click(screen.getByRole('button', { name: 'Merge /source' }));

@@ -1036,6 +1036,8 @@ export interface Project {
   messageCount: number;
   totalTokensIn: number;
   totalTokensOut: number;
+  /** Summed session cost; absent for inventory-only remote projects. */
+  totalCost?: number;
   lastUsed: number;
   /** True when the project's folded root is archived (set server-side). */
   archived?: boolean;
