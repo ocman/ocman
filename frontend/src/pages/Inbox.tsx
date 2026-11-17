@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Button, SearchField } from '../components/Control';
+import { Button, RouteButton, SearchField } from '../components/Control';
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
@@ -52,6 +52,17 @@ function InboxPermissionActions({ permission }: { permission: NonNullable<InboxI
       onReply={(reply) => respond.mutate({ permission, reply })} />
     {respond.isSuccess && <p role="status">Response sent. Waiting for the request to close.</p>}
   </section>;
+}
+
+/** Reader pane without an open message. An empty inbox says what arrives here and how to start. */
+function ReaderPlaceholder({ loaded, count, archived }: { loaded: boolean; count: number; archived: boolean }) {
+  if (loaded && count === 0 && !archived) return <div className="inbox-reader-empty">
+    <i className="bi bi-inbox" aria-hidden="true" />
+    <h3>Nothing needs you right now</h3>
+    <p>Permission requests, routine results and notes your sessions send to you will appear here.</p>
+    <RouteButton to="/routines">Set up a routine</RouteButton>
+  </div>;
+  return <div className="inbox-reader-empty"><i className="bi bi-envelope-open" aria-hidden="true" /><h3>Select a message</h3><p>Choose a message from your inbox to read it here.</p></div>;
 }
 
 export function Inbox() {
@@ -237,7 +248,7 @@ export function Inbox() {
             <div className="inbox-body"><MarkdownContent text={activeItem.body} preserveLineBreaks /></div>
             {activeItem.permission && !activeItem.archivedAt && <InboxPermissionActions permission={activeItem.permission} />}
           </article>
-        </> : <div className="inbox-reader-empty"><i className="bi bi-envelope-open" aria-hidden="true" /><h3>Select a message</h3><p>Choose a message from your inbox to read it here.</p></div>}
+        </> : <ReaderPlaceholder loaded={inbox.isSuccess} count={items.length} archived={archived} />}
       </section>
     </div>
   </main>;

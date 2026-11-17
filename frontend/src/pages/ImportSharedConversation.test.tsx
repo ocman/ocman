@@ -160,3 +160,34 @@ describe('ImportSharedConversation without a usable link', () => {
     expect(screen.queryByRole('button', { name: /create local fork/i })).toBeNull();
   });
 });
+
+describe('ImportSharedConversation recovery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(api, 'projects').mockResolvedValue([{ directory: '/local/repo' }] as never);
+  });
+
+  it('opens a pasted share link and rejects one that is not a share link', async () => {
+    searchParams = new URLSearchParams();
+    renderPage();
+    const field = await screen.findByRole('textbox', { name: 'Share link' });
+    fireEvent.change(field, { target: { value: 'https://example.com/elsewhere' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open link' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('not an ocman share link');
+    expect(navigate).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: ' https://relay.test/v/share-2#k=key ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open link' }));
+    expect(navigate).toHaveBeenCalledWith(`/import-share?url=${encodeURIComponent('https://relay.test/v/share-2#k=key')}`);
+  });
+
+  it('retries a share that could not be read', async () => {
+    searchParams = new URLSearchParams({ url: 'https://relay.test/v/share-1#k=key' });
+    readRelayShare.mockRejectedValueOnce(new Error('relay share: 503')).mockResolvedValue({ chunks: [conversation], last: 0 });
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('relay share: 503');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('button', { name: /create local fork/i })).toBeInTheDocument();
+    expect(readRelayShare).toHaveBeenCalledTimes(2);
+  });
+});

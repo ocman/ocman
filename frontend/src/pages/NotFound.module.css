@@ -1,0 +1,2 @@
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; max-width: 420px; font-size: 13px; }

@@ -426,6 +426,15 @@ describe('Inbox', () => {
     expect(inboxAction('Archive all read')).toBeDisabled();
   });
 
+  it('says what arrives in an empty inbox instead of asking to select a message', async () => {
+    vi.mocked(api.inbox).mockResolvedValue({ items: [], unreadTotal: 0 });
+    renderInbox();
+    const reader = await screen.findByRole('region', { name: 'Message body' });
+    expect(await within(reader).findByRole('heading', { name: 'Nothing needs you right now' })).toBeInTheDocument();
+    expect(within(reader).getByRole('link', { name: 'Set up a routine' })).toHaveAttribute('href', '/routines');
+    expect(within(reader).queryByText('Select a message')).not.toBeInTheDocument();
+  });
+
   it('treats older messages without a category as general', async () => {
     vi.mocked(api.inbox).mockResolvedValue({ items: [{ ...items[0], category: undefined }], unreadTotal: 1 });
     renderInbox();
@@ -498,7 +507,7 @@ describe('Inbox', () => {
     expect(screen.getByRole('heading', { name: 'Remote note' })).toBeInTheDocument();
     vi.mocked(api.inbox).mockResolvedValue({ items: [], unreadTotal: 0 });
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
-    await screen.findByText('Select a message');
+    await screen.findByText('Nothing needs you right now');
     expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
   });
 

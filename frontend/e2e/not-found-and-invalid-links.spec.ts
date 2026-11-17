@@ -19,3 +19,9 @@ test('a missing share link reads as one column with a plain explanation', async 
   // The error spans the page column instead of sitting in a narrow side column.
   expect(alertBox!.width).toBeGreaterThan(viewBox!.width * 0.6);
 });
+
+test('a guessed /activity route offers the Activity panel', async ({ mockedPage: page }) => {
+  await page.goto('/activity');
+  await page.getByRole('region', { name: 'Page not found' }).getByRole('link', { name: 'Open Activity' }).click();
+  await expect(page.getByRole('dialog', { name: 'Activity', exact: true })).toBeVisible();
+});
