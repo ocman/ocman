@@ -179,3 +179,16 @@ it('keeps each session model list attached to its row when sessions reorder', ()
   expect(screen.getByRole('tooltip')).toBe(tooltip);
   expect(tooltip.closest('tr')).toHaveTextContent('Parent');
 });
+
+describe('Missing timestamps', () => {
+  it('shows a dash instead of the Unix epoch when a row has no recorded time', () => {
+    const metrics = makeMetrics();
+    renderTable(<SessionLogTable sessions={[{ ...metrics.sessions[0], lastRequestTime: 0 }]} pageOffset={0} />);
+    expect(screen.getByRole('row', { name: /Example session/ })).not.toHaveTextContent(/1970/);
+  });
+
+  it('shows a dash for a request without a creation time', () => {
+    renderTable(<RequestLogTable requests={[{ ...makeMetrics().requests[0], timeCreated: 0 }]} pageOffset={0} />);
+    expect(screen.getAllByRole('row')[1]).not.toHaveTextContent(/01\/01/);
+  });
+});

@@ -253,7 +253,9 @@ export function SessionLogTable({
                   {session.directory && <ProjectLabel className="metrics-session-project" path={session.directory} />}
                 </Link>
               </td>
-              <td title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
+              {session.lastRequestTime > 0
+                ? <td title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
+                : <td>{dash}</td>}
               <MetricsRowCells e={session} />
             </tr>
           ))}
@@ -336,7 +338,7 @@ export function RequestLogTable({
           ) : requests.map((request, idx) => (
             <tr key={JSON.stringify([request.sessionId, request.id])} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
               <td>{pageOffset + idx + 1}</td>
-              <td>{formatDateTimeShort(request.timeCreated)}</td>
+              <td>{request.timeCreated > 0 ? formatDateTimeShort(request.timeCreated) : dash}</td>
               <td className="mono">
                 <Link className="metrics-row-link" to={`/session/${encodeURIComponent(request.sessionId)}`}>
                   {shortSessionID(request.sessionId)}

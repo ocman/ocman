@@ -84,17 +84,26 @@ export function formatDuration(ms: number): string {
 export function formatSeconds(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0s';
   if (seconds < 10) return seconds.toFixed(1) + 's';
-  if (seconds < 60) return Math.round(seconds) + 's';
-  const totalMins = Math.floor(seconds / 60);
-  if (totalMins < 60) {
-    return totalMins + 'm ' + Math.round(seconds % 60) + 's';
-  }
+  // Round once, before splitting into units, so 239.6s carries to "4m 0s"
+  // instead of rendering a "3m 60s" remainder.
+  const total = Math.round(seconds);
+  if (total < 60) return total + 's';
+  const totalMins = Math.floor(total / 60);
+  if (totalMins < 60) return totalMins + 'm ' + (total % 60) + 's';
   const totalHours = Math.floor(totalMins / 60);
-  if (totalHours < 24) {
-    return totalHours + 'h ' + (totalMins % 60) + 'm';
-  }
+  if (totalHours < 24) return totalHours + 'h ' + (totalMins % 60) + 'm';
   const days = Math.floor(totalHours / 24);
   return days + 'd ' + (totalHours % 24) + 'h';
+}
+
+/**
+ * Axis unit for a duration chart whose largest value is `maxSeconds`, so a
+ * day with 23 seconds of use plots as seconds, not 0.006 hours.
+ */
+export function durationScale(maxSeconds: number): { unit: 'Seconds' | 'Minutes' | 'Hours'; divisor: 1 | 60 | 3600 } {
+  if (maxSeconds >= 2 * 3600) return { unit: 'Hours', divisor: 3600 };
+  if (maxSeconds >= 2 * 60) return { unit: 'Minutes', divisor: 60 };
+  return { unit: 'Seconds', divisor: 1 };
 }
 
 // timeUntilISO renders how long is left until an ISO-8601 timestamp, e.g.
@@ -108,8 +117,23 @@ export function timeUntilISO(iso: string, now = Date.now()): string {
   return formatSeconds((t - now) / 1000);
 }
 
-export function formatPercent(value: number, digits = 0): string {
-  return `${(value * 100).toFixed(digits)}%`;
+/**
+ * Render a 0..1 ratio as a percentage. With explicit `digits` the value is
+ * fixed-precision. Otherwise whole percents are used unless rounding would
+ * misreport the rate: 1 error in 449 is "0.2%", never "0%", and an
+ * incomplete rate never shows as "100%".
+ */
+export function formatPercent(value: number, digits?: number): string {
+  if (digits !== undefined) return `${(value * 100).toFixed(digits)}%`;
+  if (!Number.isFinite(value) || value <= 0) return '0%';
+  if (value >= 1) return '100%';
+  const pct = value * 100;
+  const whole = Math.round(pct);
+  if (whole > 0 && whole < 100) return `${whole}%`;
+  const tenth = pct.toFixed(1);
+  if (tenth === '0.0') return '<0.1%';
+  if (tenth === '100.0') return '>99.9%';
+  return `${tenth}%`;
 }
 
 /**

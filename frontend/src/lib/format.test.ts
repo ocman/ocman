@@ -9,7 +9,9 @@ import {
   formatProjectActivity,
   formatDuration,
   formatNumber,
+  formatPercent,
   formatSeconds,
+  durationScale,
   formatSubscriptionResetDate,
   timeUntilISO,
   formatTokensPerSecond,
@@ -330,5 +332,45 @@ describe('formatCount and formatProjectActivity', () => {
     expect(formatProjectActivity(0, 0)).toBe('No sessions yet');
     expect(formatProjectActivity(2, 0)).toBe('2 sessions');
     expect(formatProjectActivity(1, 940_000, 1_000_000)).toBe('1 session · 1m ago');
+  });
+});
+
+describe('formatSeconds rounding carries', () => {
+  it.each([
+    [239.6, '4m 0s'],
+    [59.6, '1m 0s'],
+    [3599.7, '1h 0m'],
+    [119.5, '2m 0s'],
+  ])('normalises %s seconds to %s instead of a 60s remainder', (seconds, expected) => {
+    expect(formatSeconds(seconds)).toBe(expected);
+  });
+});
+
+describe('formatPercent', () => {
+  it.each([
+    [0, '0%'],
+    [1 / 449, '0.2%'],
+    [0.00001, '<0.1%'],
+    [0.98, '98%'],
+    [0.9996, '>99.9%'],
+    [0.996, '99.6%'],
+    [1, '100%'],
+    [Number.NaN, '0%'],
+  ])('formats rate %s as %s', (value, expected) => {
+    expect(formatPercent(value)).toBe(expected);
+  });
+  it('keeps explicit precision', () => {
+    expect(formatPercent(0.1234, 2)).toBe('12.34%');
+  });
+});
+
+describe('durationScale', () => {
+  it.each([
+    [0, 'Seconds', 1],
+    [23, 'Seconds', 1],
+    [600, 'Minutes', 60],
+    [7200, 'Hours', 3600],
+  ])('picks a readable axis unit for a %s second maximum', (max, unit, divisor) => {
+    expect(durationScale(max)).toEqual({ unit, divisor });
   });
 });

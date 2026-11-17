@@ -2,26 +2,29 @@ import { Bar } from 'react-chartjs-2';
 import './chartSetup';
 import { InlineAlert } from '../../components/InlineAlert';
 import { BAR_OPTIONS_HOURLY, CHART_COLORS } from '../../lib/chartConfig';
+import { durationScale, formatSeconds } from '../../lib/format';
 import { useAgentRunHours, useUIUsage } from '../../lib/queries';
 import { ChartCard, ChartSlot } from './shared';
 
 export function RunTimeCharts({ days, dir }: { days: number; dir?: string }) {
   const usage = useUIUsage(days);
   const agents = useAgentRunHours({ days: days || undefined, dir });
-  const totalHours = (usage.data ?? []).reduce((sum, day) => sum + day.activeSeconds / 3600, 0);
-  const average = totalHours / (usage.data?.length || 1);
+  const seconds = usage.data?.map((day) => day.activeSeconds) ?? [];
+  const totalSeconds = seconds.reduce((sum, value) => sum + value, 0);
+  const average = totalSeconds / (seconds.length || 1);
+  const scale = durationScale(Math.max(0, ...seconds));
   return <>
     {[usage.error, agents.error].filter((error): error is Error => error instanceof Error)
       .map((error, index) => <InlineAlert key={index}>{error.message}</InlineAlert>)}
-    <p className="analytics-scope-note">{totalHours.toFixed(1)} hours in ocman · {average.toFixed(1)} hours per day</p>
+    <p className="analytics-scope-note">{formatSeconds(totalSeconds)} in ocman · {formatSeconds(average)} per day</p>
     <ChartSlot isLoading={usage.isLoading} label="Loading active time in ocman">
       <ChartCard title="Active Time in Ocman per Day">
-        <Bar aria-label="Active hours in ocman per day" role="img" data={{
+        <Bar aria-label={`Active ${scale.unit.toLowerCase()} in ocman per day`} role="img" data={{
           labels: usage.data?.map((day) => day.date) ?? [],
-          datasets: [{ label: 'Hours', data: usage.data?.map((day) => day.activeSeconds / 3600) ?? [], backgroundColor: CHART_COLORS[0] }],
+          datasets: [{ label: scale.unit, data: seconds.map((value) => value / scale.divisor), backgroundColor: CHART_COLORS[0] }],
         }} options={{ ...BAR_OPTIONS_HOURLY, scales: {
           ...BAR_OPTIONS_HOURLY.scales,
-          y: { beginAtZero: true, title: { display: true, text: 'Hours' } },
+          y: { beginAtZero: true, title: { display: true, text: scale.unit } },
         } }} />
       </ChartCard>
     </ChartSlot>

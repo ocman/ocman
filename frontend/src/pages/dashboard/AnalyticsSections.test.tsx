@@ -156,13 +156,22 @@ describe('analytics sections', () => {
     renderTab(<ActivityTab />);
     expect(useUIUsage).toHaveBeenCalledWith(30);
     expect(useAgentRunHours).toHaveBeenCalledWith({ days: 30, dir: '/repo' });
-    expect(screen.getByText('2.0 hours in ocman · 1.0 hours per day')).toBeInTheDocument();
+    expect(screen.getByText('2h 0m in ocman · 1h 0m per day')).toBeInTheDocument();
     const usageCard = screen.getByText('Active Time in Ocman per Day').closest('.chart-card') as HTMLElement;
     const usage = JSON.parse(within(usageCard).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
     expect(usage.datasets[0].data).toEqual([2, 0]);
     const agentCard = screen.getByText('Agent Run Minutes per Hour').closest('.chart-card') as HTMLElement;
     const agents = JSON.parse(within(agentCard).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
     expect(agents.datasets[0].data).toEqual([{ x: 3_600_000, y: 90 }, { x: 7_200_000, y: 0 }]);
+  });
+
+  it('plots short daily ocman use in seconds instead of fractional hours', () => {
+    useUIUsage.mockReturnValue(query([{ date: '2026-09-01', activeSeconds: 0 }, { date: '2026-09-02', activeSeconds: 23 }]));
+    renderTab(<ActivityTab />);
+    expect(screen.getByText('23s in ocman · 12s per day')).toBeInTheDocument();
+    const usageCard = screen.getByText('Active Time in Ocman per Day').closest('.chart-card') as HTMLElement;
+    const usage = JSON.parse(within(usageCard).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
+    expect(usage.datasets[0]).toMatchObject({ label: 'Seconds', data: [0, 23] });
   });
 
   it('plots only the selected daily activity range', () => {
