@@ -10,7 +10,7 @@ for (const width of [1280, 390]) {
     ] } }));
     await page.route('**/api/worktree/remove', route => route.fulfill({ status: 409, json: { error: 'Worktree has uncommitted changes' } }));
     await page.goto(`/project/${encodeURIComponent(project)}`);
-    await expect(page.getByRole('button', { name: 'Exclude archived' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show archived' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Worktrees', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Worktrees', exact: true }).click();
     await expect(page.getByText('chore/shared-controls', { exact: true })).toBeVisible();

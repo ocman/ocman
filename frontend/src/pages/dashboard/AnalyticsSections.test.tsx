@@ -96,7 +96,7 @@ describe('analytics sections', () => {
     const activity = screen.getByRole('region', { name: 'Request activity' });
     expect(within(inventory).getByText('Factory attempts')).toBeInTheDocument();
     expect(within(inventory).getByText('8')).toBeInTheDocument();
-    expect(within(inventory).getByText('2 subagent sessions')).toBeInTheDocument();
+    expect(within(inventory).getByText('All time, incl. archived · excl. 2 subagent sessions')).toBeInTheDocument();
     expect(within(inventory).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(activity).getByText('Total Cost')).toBeInTheDocument();
     expect(within(activity).getByRole('combobox', { name: 'Last' })).toBeInTheDocument();

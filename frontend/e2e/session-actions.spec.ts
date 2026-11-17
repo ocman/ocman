@@ -275,13 +275,13 @@ test('project detail shows sessions from the mocked sessions API', async ({ mock
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible({ timeout: 5_000 });
 });
 
-test('project detail shows "No sessions found" when API returns empty', async ({ mockedPage: page }) => {
+test('project detail shows the shared empty state when API returns empty', async ({ mockedPage: page }) => {
   await page.route('/api/sessions*', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
   );
 
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-  await expect(page.locator('td').filter({ hasText: /No sessions found/ })).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('td').filter({ hasText: /No active sessions found/ })).toBeVisible({ timeout: 5_000 });
 });
 
 test('clicking a session row in project detail navigates to session', async ({ mockedPage: page }) => {
@@ -298,21 +298,19 @@ test('clicking a session row in project detail navigates to session', async ({ m
   await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
 });
 
-test('project detail shows time-range filter buttons and "Exclude archived" toggle', async ({ mockedPage: page }) => {
-  await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-
-  const timeRange = page.getByRole('radiogroup', { name: 'Time range' });
-  await expect(timeRange).toBeVisible({ timeout: 5_000 });
-  // 12h / 24h / 7d / 30d / All.
-  await expect(timeRange.getByRole('radio')).toHaveCount(5);
-  // 7d is the default for project detail.
-  await expect(timeRange.getByRole('radio', { name: '7d' })).toBeChecked();
-  // Archived is included by default ⇒ the toggle is NOT active.
-  await expect(page.getByRole('button', { name: 'Exclude archived' })).not.toHaveClass(/active/);
+test('project detail uses the same time-range and "Show archived" defaults as the Sessions page', async ({ mockedPage: page }) => {
+  for (const path of [`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`, '/sessions']) {
+    await page.goto(path);
+    const timeRange = page.getByRole('radiogroup', { name: 'Time range' });
+    await expect(timeRange).toBeVisible({ timeout: 5_000 });
+    // The configured 72h default is shown as its own choice beside 12h / 24h / 7d / 30d / All.
+    await expect(timeRange.getByRole('radio')).toHaveCount(6);
+    await expect(timeRange.getByRole('radio', { name: '3d' })).toBeChecked();
+    await expect(page.getByRole('button', { name: 'Show archived', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  }
 });
 
-test('project detail "Exclude archived" toggle hides locally-archived sessions', async ({ mockedPage: page }) => {
-  // Mark MOCK_SESSION_2 as archived in the response.
+test('project detail "Show archived" toggle reveals archived sessions', async ({ mockedPage: page }) => {
   const archivedSession = { ...MOCK_SESSION_2, archived: true };
   await page.route('/api/sessions*', (route) =>
     route.fulfill({
@@ -323,14 +321,13 @@ test('project detail "Exclude archived" toggle hides locally-archived sessions',
   );
 
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-  // Both visible by default (archived included).
+  // Archived sessions are hidden by default, as on the Sessions page.
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible({ timeout: 5_000 });
-  await expect(page.locator('.session-title', { hasText: MOCK_SESSION_2.title })).toBeVisible();
-
-  // Click the toggle — archived row disappears.
-  await page.getByRole('button', { name: 'Exclude archived', exact: true }).click();
-  await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible();
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION_2.title })).not.toBeVisible();
+
+  await page.getByRole('button', { name: 'Show archived', exact: true }).click();
+  await expect(page.locator('.session-title', { hasText: MOCK_SESSION_2.title })).toBeVisible();
+  await expect(page).toHaveURL(/[?&]a=1/);
 });
 
 // ===========================================================================

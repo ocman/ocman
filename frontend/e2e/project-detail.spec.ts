@@ -66,10 +66,10 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('banner').getByTitle(MOCK_PROJECT.directory)).toHaveCount(1);
     await expect(page.getByRole('banner').getByLabel('Local', { exact: true })).toHaveCSS('border-radius', '999px');
     await expect(page.getByRole('searchbox', { name: 'Search sessions' })).toHaveValue('login');
-    await expect(page.getByRole('button', { name: 'Exclude archived' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'Show archived' })).toHaveAttribute('aria-pressed', 'true');
     await page.reload();
     await expect(page.getByRole('searchbox', { name: 'Search sessions' })).toHaveValue('login');
-    await expect(page.getByRole('button', { name: 'Exclude archived' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'Show archived' })).toHaveAttribute('aria-pressed', 'true');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({ path: testInfo.outputPath('project-sessions.png') });
   });

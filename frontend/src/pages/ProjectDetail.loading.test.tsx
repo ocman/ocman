@@ -42,7 +42,7 @@ it('shows project sessions without waiting for slow accounting reads', async () 
   expect(screen.queryByLabelText('Loading sessions')).not.toBeInTheDocument();
   expect(screen.getByText('Loading activity…')).toBeInTheDocument();
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'missing' } });
-  expect(screen.getByText('No sessions found')).toBeInTheDocument();
+  expect(screen.getByText('No active sessions found')).toBeInTheDocument();
 });
 
 it('fills in totals without replacing compact status, titles or archive flags', async () => {
@@ -56,7 +56,7 @@ it('fills in totals without replacing compact status, titles or archive flags', 
   expect(screen.getByRole('link', { name: /Ready session/ })).toBeInTheDocument();
   expect(screen.queryByText('Old title')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Session status: Busy')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Exclude archived' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Show archived' }));
   expect(screen.getByRole('link', { name: /Ready session/ })).toBeInTheDocument();
 });
 
@@ -78,5 +78,5 @@ it('shows an empty project without waiting for accounting', async () => {
   vi.mocked(api.sessions).mockImplementation(params => params?.view === 'sidebar'
     ? Promise.resolve([]) : new Promise(() => {}));
   renderProject();
-  expect(await screen.findByText('No sessions found')).toBeInTheDocument();
+  expect(await screen.findByText('No active sessions found')).toBeInTheDocument();
 });

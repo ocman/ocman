@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import type { Project, Session } from '../lib/api';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { useUiStore } from '../lib/uiStore';
+import { useSessionListUrlFilters } from '../lib/useSessionListUrlFilters';
 import { useSessions as useTQSessions, useProjects as useTQProjects } from '../lib/queries';
 import { DashboardContext, type DashboardCtx } from './dashboard/context';
 
@@ -24,23 +24,8 @@ export function DashboardLayout() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname.startsWith('/analytics') || location.pathname === '/routines' || location.pathname === '/settings';
 
-  const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
-  const tParam = searchParams.get('t');
-  const timeRange = tParam !== null ? parseInt(tParam, 10) : dashboardTimeRangeDefault;
-  const showArchived = searchParams.get('a') === '1';
+  const { timeRange, sinceHours, setTimeRange, showArchived, setShowArchived } = useSessionListUrlFilters();
   const dirScope = searchParams.get('dir') ?? '';
-
-  const setTimeRange = (v: number) => {
-    setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
-  };
-
-  const setShowArchived = (v: boolean) => {
-    setSearchParams((p) => {
-      if (v) p.set('a', '1');
-      else p.delete('a');
-      return p;
-    }, { replace: true });
-  };
 
   // setDirScope writes the chosen scope to the URL so it survives refresh
   // and is preserved when the user switches between Analytics and Projects
@@ -54,11 +39,6 @@ export function DashboardLayout() {
     }, { replace: true });
   };
 
-  // TanStack Query handles dedup, cancellation, stale-while-revalidate,
-  // and visibility pausing automatically (Wave 3 / P4+P5 fix).
-  // sinceHours produces a stable query key; the actual timestamp is
-  // computed inside the queryFn at fetch time.
-  const sinceHours = timeRange > 0 ? timeRange : 30 * 24;
   const sessionsQ = useTQSessions(
     { sinceHours },
     { poll: isOnDashboard },

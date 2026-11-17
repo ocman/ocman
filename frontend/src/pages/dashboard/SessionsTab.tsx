@@ -8,7 +8,7 @@ import { matchesScope } from '../../lib/projectTree';
 import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
-import { Button, ButtonGroup } from '../../components/Control';
+import { SessionRangeFilters } from '../../components/SessionRangeFilters';
 import { useIsPhone } from '../../lib/useIsPhone';
 import styles from './SessionsTab.module.css';
 import { PhoneSessionsToolbar } from './PhoneSessionsToolbar';
@@ -29,7 +29,7 @@ export function SessionsTab() {
   const { sessions: compactSessions, projects, sessionsLoading, sessionsError, loadSessions, timeRange, setTimeRange, showArchived, setShowArchived, dirScope, setDirScope } = useDashboardCtx();
   const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
   const [search, setSearch] = useState('');
-  const { sessions, pendingKeys: activityPendingKeys } = useSessionAccounting(compactSessions, { sinceHours: timeRange > 0 ? timeRange : 30 * 24 });
+  const { sessions, pendingKeys: activityPendingKeys } = useSessionAccounting(compactSessions, { sinceHours: timeRange > 0 ? timeRange : undefined });
   const phone = useIsPhone();
   const { alwaysShowPrompts, setAlwaysShowPrompts, showChildren, setShowChildren, showFactory, setShowFactory,
     showRoutines, setShowRoutines, showPlugins, setShowPlugins, showSnoozed, setShowSnoozed } = useSessionListFilters();
@@ -38,11 +38,8 @@ export function SessionsTab() {
   const hidden = hiddenSessionOrigins(sessions, filters);
 
   const filterControls = <>
-    <ButtonGroup label="Session filters" className={styles.filters}>
-      <TimeRangeControl value={timeRange} onChange={setTimeRange} />
-      <Button type="button" size="small" variant={showArchived ? 'accent' : 'default'} aria-pressed={showArchived}
-        onClick={() => setShowArchived(!showArchived)}>Include archived</Button>
-    </ButtonGroup>
+    <SessionRangeFilters label="Session filters" className={styles.filters} timeRange={timeRange} onTimeRangeChange={setTimeRange}
+      showArchived={showArchived} onShowArchivedChange={setShowArchived} />
   </>;
 
   const q = search.trim();

@@ -67,7 +67,7 @@ it('restores search from the URL', () => {
   </MemoryRouter>);
   expect(screen.getByRole('searchbox', { name: 'Search sessions' })).toHaveValue('search');
   expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Add search']);
-  expect(screen.getByRole('button', { name: 'Exclude archived' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Show archived' })).toHaveAttribute('aria-pressed', 'true');
 });
 
 it('includes manually merged sessions under the target while preserving their directories', () => {

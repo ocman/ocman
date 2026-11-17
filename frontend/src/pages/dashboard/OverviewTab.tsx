@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { InlineAlert } from '../../components/InlineAlert';
 import type { DatabaseSizeSample } from '../../lib/api';
 import { BAR_OPTIONS_STACKED, CHART_COLORS, LINE_OPTIONS_DATABASE_SIZE } from '../../lib/chartConfig';
-import { formatNumber } from '../../lib/format';
+import { formatCount, formatNumber } from '../../lib/format';
 import { useAnalyticsOverview, useDatabaseSizes, useMetrics } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
@@ -69,7 +69,7 @@ export function OverviewTab() {
               label="Sessions"
               value={formatNumber(overview.totalSessions - overview.subagentSessions)}
               tone="blue"
-              subvalue={`${formatNumber(overview.subagentSessions)} subagent session${overview.subagentSessions === 1 ? '' : 's'}`}
+              subvalue={`All time, incl. archived · excl. ${formatCount(overview.subagentSessions, 'subagent session')}`}
             />
             <MetricCard label="Projects" value={formatNumber(overview.totalProjects)} tone="blue" />
             <MetricCard label="Routines" value={formatNumber(overview.totalRoutines)} tone="green" />

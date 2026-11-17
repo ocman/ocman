@@ -68,6 +68,9 @@ export function formatProjectActivity(sessionCount: number | undefined, lastUsed
   return `${formatCount(sessionCount, 'session')} · ${relativeTime(lastUsed, now)}`;
 }
 
+/** Lookback window label: 72 → "3d", 36 → "36h". */
+export const timeRangeLabel = (hours: number) => hours % 24 === 0 ? `${hours / 24}d` : `${hours}h`;
+
 export function formatDuration(ms: number): string {
   if (ms < 1000) return '< 1s';
   const s = Math.floor(ms / 1000);
