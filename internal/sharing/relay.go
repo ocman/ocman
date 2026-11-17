@@ -31,7 +31,7 @@ func (m *Module) createRelayShare(ctx context.Context, link state.ShareLink, ada
 		return link, err
 	}
 	key := share.NewKey()
-	detail, err := adapter.Session(ctx, link.SessionID, exportFetchLimit, 0)
+	detail, err := refreshedShareDetail(ctx, adapter, link.SessionID)
 	if err != nil {
 		_ = client.Delete(ctx, allocation)
 		return link, err
@@ -109,7 +109,7 @@ func (m *Module) PublishCompletedTurn(ctx context.Context, adapter platforms.Pla
 		// Unshared sessions need no transcript, including deleted helpers.
 		return nil
 	}
-	detail, err := adapter.Session(ctx, sessionID, exportFetchLimit, 0)
+	detail, err := refreshedShareDetail(ctx, adapter, sessionID)
 	if err != nil {
 		return err
 	}
@@ -146,6 +146,17 @@ func (m *Module) PublishCompletedTurn(ctx context.Context, adapter platforms.Pla
 		}
 	}
 	return nil
+}
+
+// An idle event can arrive before ingestion commits the final streaming answer.
+// Wait for a fresh retained read before sealing a permanent relay chunk.
+func refreshedShareDetail(ctx context.Context, adapter platforms.Platform, sessionID string) (*platforms.SessionDetail, error) {
+	if history, ok := adapter.(platforms.SessionCacheMaintainer); ok {
+		if err := history.RefreshSession(ctx, sessionID); err != nil {
+			return nil, fmt.Errorf("refreshing shared session history: %w", err)
+		}
+	}
+	return adapter.Session(ctx, sessionID, exportFetchLimit, 0)
 }
 
 func latestCompletedTurn(session *db.Session, messages []db.Message, parts []db.Part) relayChunk {
