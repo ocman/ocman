@@ -1,1 +1,5 @@
 .analytics-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.analytics-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 8px 8px 8px 12px; border: 1px solid var(--border); background: var(--bg-card); }
+.analytics-filter-summary { overflow: hidden; color: var(--text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.analytics-filter-bar .oc-button { flex-shrink: 0; min-height: 44px; }
+.analytics-filter-sheet { display: grid; gap: 16px; }

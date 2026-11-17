@@ -5,5 +5,7 @@
 
 @media (width <= 640px) {
   .metrics-log-header { flex-wrap: wrap; align-items: stretch; gap: 12px; }
-  .metrics-log-tabs { flex: 1 1 100%; min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  /* Outranks the phone-wide .app-shell .oc-tabs-list wrap: three short tabs scroll instead. */
+  .metrics-log-header .metrics-log-tabs.oc-tabs-list { flex: 1 1 100%; min-width: 0; max-width: 100%; flex-wrap: nowrap; gap: 0; overflow-x: auto; }
+  .metrics-log-tabs .oc-tabs-trigger { white-space: nowrap; }
 }

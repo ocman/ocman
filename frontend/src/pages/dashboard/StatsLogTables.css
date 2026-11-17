@@ -32,6 +32,29 @@
 .metrics-chart-grid-top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .metrics-chart-grid-bottom { grid-template-columns: minmax(0, 1fr) 420px; }
 .metrics-session-project { font-size: 11px; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; margin-top: 2px; }
-.metrics-cost-detail { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .metrics-stop-pill { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 0; border: 1px solid var(--border); background: rgba(166, 227, 161, .08); color: var(--accent2); font-size: 12px; line-height: 1; }
 @media (max-width: 1100px) { .metrics-chart-grid-top, .metrics-chart-grid-bottom { grid-template-columns: minmax(0, 1fr); } }
+.metrics-log-table th, .metrics-log-table td { white-space: nowrap; }
+.metrics-log-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* The identity column stays in view while the metrics scroll sideways. */
+.metrics-log-table .metrics-sticky { position: sticky; left: 0; z-index: 1; background: var(--bg-card); box-shadow: 1px 0 0 var(--border); }
+.metrics-log-table tbody tr:hover .metrics-sticky { background: var(--bg-hover); }
+.metrics-log-table .metrics-sticky > .metrics-row-link { display: inline-block; max-width: 280px; vertical-align: middle; }
+.metrics-log-table .metrics-row-link > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metrics-rank { display: inline-block; min-width: 24px; margin-right: 8px; color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; vertical-align: middle; }
+.metrics-approx { margin-right: 2px; color: var(--text-dim); }
+
+/* Phones: each row becomes a card with labelled key figures. */
+@media (width <= 640px) {
+  .metrics-log-table, .metrics-log-table tbody { display: block; }
+  .metrics-log-table thead { display: none; }
+  .metrics-log-table tbody tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .metrics-log-table tbody td { padding: 0; border: 0; white-space: normal; }
+  .metrics-log-table .num { text-align: left; }
+  .metrics-log-table td.metrics-sticky, .metrics-log-table td[colspan] { grid-column: 1 / -1; position: static; box-shadow: none; background: none; }
+  .metrics-log-table .metrics-sticky > .metrics-row-link { max-width: calc(100% - 32px); font-weight: 550; }
+  .metrics-log-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; color: var(--text-dim); font-size: 11px; letter-spacing: .4px; text-transform: uppercase; }
+  .metrics-log-table td.metrics-secondary { display: none; }
+  .metrics-log-table td.metrics-models { grid-column: span 2; }
+  .metrics-log-table tbody tr:hover { background: none; }
+}

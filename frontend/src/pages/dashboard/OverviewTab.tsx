@@ -9,7 +9,8 @@ import { formatCount, formatNumber } from '../../lib/format';
 import { useAnalyticsOverview, useDatabaseSizes, useMetrics } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard, ChartSkeleton, ChartSkeletons, MetricCard, MetricCardsSkeleton } from './shared';
+import { ChartCard, ChartSkeleton, ChartSkeletons, MetricCardsSkeleton } from './shared';
+import { KpiStrip } from './KpiStrip';
 import { MetricsSummaryCards } from './StatsLogTables';
 import { useBetaFeatures } from '../../lib/betaFeatures';
 
@@ -64,22 +65,17 @@ export function OverviewTab() {
         {overview && (
           <>
           <div className="analytics-scope-note">Inventory totals are scoped to this {overview.inventoryScope} ocman instance.</div>
-          <div className="metrics-summary-grid">
-            <MetricCard
-              label="Sessions"
-              value={formatNumber(overview.totalSessions - overview.subagentSessions)}
-              tone="blue"
-              subvalue={`All time, incl. archived · excl. ${formatCount(overview.subagentSessions, 'subagent session')}`}
-            />
-            <MetricCard label="Projects" value={formatNumber(overview.totalProjects)} tone="blue" />
-            <MetricCard label="Routines" value={formatNumber(overview.totalRoutines)} tone="green" />
-            <MetricCard label="Routine runs" value={formatNumber(total(overview.routineRunsByStatus))} tone="purple" subvalue={breakdown(overview.routineRunsByStatus)} />
-            {factoryEnabled && <>
-            <MetricCard label="Factory epics" value={formatNumber(total(overview.factoryEpicsByStatus))} tone="orange" subvalue={breakdown(overview.factoryEpicsByStatus)} />
-            <MetricCard label="Factory issues" value={formatNumber(total(overview.factoryIssuesByStatus))} tone="orange" subvalue={breakdown(overview.factoryIssuesByStatus)} />
-            <MetricCard label="Factory attempts" value={formatNumber(total(overview.factoryAttemptsByPhase))} tone="purple" subvalue={breakdown(overview.factoryAttemptsByTerminalOutcome)} />
-            </>}
-          </div>
+          <KpiStrip label="Inventory" items={[
+            { label: 'Sessions', value: formatNumber(overview.totalSessions - overview.subagentSessions), detail: `All time, incl. archived · excl. ${formatCount(overview.subagentSessions, 'subagent session')}` },
+            { label: 'Projects', value: formatNumber(overview.totalProjects) },
+            { label: 'Routines', value: formatNumber(overview.totalRoutines) },
+            { label: 'Routine runs', value: formatNumber(total(overview.routineRunsByStatus)), detail: breakdown(overview.routineRunsByStatus) || undefined },
+            ...(factoryEnabled ? [
+              { label: 'Factory epics', value: formatNumber(total(overview.factoryEpicsByStatus)), detail: breakdown(overview.factoryEpicsByStatus) || undefined },
+              { label: 'Factory issues', value: formatNumber(total(overview.factoryIssuesByStatus)), detail: breakdown(overview.factoryIssuesByStatus) || undefined },
+              { label: 'Factory attempts', value: formatNumber(total(overview.factoryAttemptsByPhase)), detail: breakdown(overview.factoryAttemptsByTerminalOutcome) || undefined },
+            ] : []),
+          ]} />
           </>
         )}
       </section>

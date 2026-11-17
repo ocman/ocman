@@ -181,10 +181,6 @@ export function formatDayLabel(isoDate: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-export function formatTokenCache(read: number, write: number): string {
-  return `${formatCompactNumber(read)}r/${formatCompactNumber(write)}w`;
-}
-
 export function formatDateTimeShort(ts: number): string {
   return new Date(ts).toLocaleString('en-US', {
     month: '2-digit',

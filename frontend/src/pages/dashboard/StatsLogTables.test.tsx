@@ -15,7 +15,7 @@ vi.mock('react-chartjs-2', () => ({
   Doughnut: () => <div data-testid="chart-doughnut" />,
 }));
 
-import { ProjectLogTable, RequestLogTable, SessionLogTable } from './StatsLogTables';
+import { LogRange, ProjectLogTable, RequestLogTable, SessionLogTable } from './StatsLogTables';
 
 const NUMBERS = {
   requests: 5,
@@ -133,15 +133,32 @@ describe('Subscription-backed cost', () => {
     const rows = screen.getAllByRole('row');
     const billed = rows.find((row) => row.textContent?.includes('Example session'))!;
     const claude = rows.find((row) => row.textContent?.includes('Claude session'))!;
-    expect(claude).toHaveTextContent('$1.2500 API-equivalent');
-    expect(claude.querySelector('[title^="API-equivalent cost"]')).not.toBeNull();
-    expect(billed).not.toHaveTextContent('API-equivalent');
+    expect(claude.querySelector('[title^="API-equivalent cost"]')).toHaveTextContent('≈$1.25');
+    expect(billed).toHaveTextContent('$0.80');
+    expect(billed).not.toHaveTextContent('≈');
+    expect(screen.queryByText(/Reported/)).not.toBeInTheDocument();
   });
 
   it('labels subscription requests too', () => {
     const request = { ...makeMetrics().requests[0], cost: 0, calcCost: 0.3, effectiveCost: 0.3 };
     renderTable(<RequestLogTable requests={[request]} pageOffset={0} />);
-    expect(screen.getByTitle(/^API-equivalent cost/)).toHaveTextContent('API-equivalent');
+    expect(screen.getByTitle(/^API-equivalent cost/)).toHaveTextContent('≈$0.30');
+  });
+
+  it('notes billed amounts on rows that mix billed and estimated cost', () => {
+    const request = { ...makeMetrics().requests[0], cost: 0.1, calcCost: 0.3, effectiveCost: 0.3 };
+    renderTable(<RequestLogTable requests={[request]} pageOffset={0} />);
+    expect(screen.getByTitle(/\(\$0\.10 billed\)$/)).toHaveTextContent('≈$0.30');
+  });
+
+  it('labels each cell for phone card rows and keeps the rank in the sticky cell', () => {
+    const project = { ...makeMetrics().projects[0], cost: 0, calcCost: 0, effectiveCost: 0, errorCount: 2 };
+    renderTable(<ProjectLogTable projects={[project]} pageOffset={20} />);
+    const row = screen.getAllByRole('row')[1];
+    expect(row.querySelector('.metrics-sticky')).toHaveTextContent('21');
+    expect(row.querySelector('[data-label="Cache read"]')).toHaveAttribute('title', '500 read · 200 written');
+    expect(row.querySelector('[data-label="Cost"]')).toHaveTextContent('—');
+    expect(row.querySelector('[data-label="Errors"]')).toHaveTextContent('2');
   });
 });
 
@@ -191,4 +208,11 @@ describe('Missing timestamps', () => {
     renderTable(<RequestLogTable requests={[{ ...makeMetrics().requests[0], timeCreated: 0 }]} pageOffset={0} />);
     expect(screen.getAllByRole('row')[1]).not.toHaveTextContent(/01\/01/);
   });
+});
+
+it('shows the visible log range and nothing for an empty log', () => {
+  const { container, rerender } = render(<LogRange page={1} pageSize={20} total={27} />);
+  expect(container).toHaveTextContent('21–27 of 27');
+  rerender(<LogRange page={0} pageSize={20} total={0} />);
+  expect(container).toBeEmptyDOMElement();
 });

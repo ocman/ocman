@@ -98,7 +98,9 @@ describe('analytics sections', () => {
     expect(within(inventory).getByText('8')).toBeInTheDocument();
     expect(within(inventory).getByText('All time, incl. archived · excl. 2 subagent sessions')).toBeInTheDocument();
     expect(within(inventory).queryByRole('combobox')).not.toBeInTheDocument();
-    expect(within(activity).getByText('Total Cost')).toBeInTheDocument();
+    expect(within(activity).getByLabelText('Request summary')).toHaveTextContent('10 in · 5 out');
+    expect(within(activity).getByLabelText('Request summary')).toHaveTextContent('Billed by the provider');
+    expect(within(activity).getByText('Cost')).toBeInTheDocument();
     expect(within(activity).getByRole('combobox', { name: 'Last' })).toBeInTheDocument();
     expect(useMetrics).toHaveBeenCalledWith({ days: 30, dir: '/repo' });
     expect(useDatabaseSizes).toHaveBeenCalledWith({ days: 30 });
@@ -322,6 +324,16 @@ describe('analytics sections', () => {
     expect(screen.getByText('Error Rate')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Agent' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
+  });
+
+  it('summarises rare errors and subscription cost without rounding them away', () => {
+    useMetrics.mockReturnValue(query({ ...metrics, summary: { ...metrics.summary, completedRequests: 449, successfulRequests: 448, errorRequests: 1, errorRate: 1 / 449, totalCost: 0, totalEffectiveCost: 35.4777, costPerSuccessfulRequest: 0.0792 } }));
+    renderTab(<PerformanceTab />);
+    const summary = screen.getByLabelText('Performance summary');
+    expect(summary).toHaveTextContent('0.2%');
+    expect(summary).toHaveTextContent('1 of 449 failed');
+    expect(summary).toHaveTextContent('$0.079');
+    expect(summary).toHaveTextContent('API-equivalent estimate · $0 billed');
   });
 
   it('stacks total waiting time by agent and tools in seconds', () => {

@@ -14,7 +14,7 @@ import {
   formatNumber,
   formatPercent,
   formatSeconds,
-  formatTokenCache,
+  formatTokensPerSecond,
   relativeTime,
   renderModel,
   shortSessionID,
@@ -29,41 +29,39 @@ import {
   DOUGHNUT_OPTIONS,
   STOP_REASON_COLORS,
 } from '../../lib/chartConfig';
-import { MetricCard, ChartCard } from './shared';
+import { ChartCard } from './shared';
+import { KpiStrip } from './KpiStrip';
+import { COST_HELP, cacheBreakdown, costBasis, costNote, errorDetail, tokenBreakdown, tokensProcessed } from './metricsSummary';
 import { ModelLabel } from '../../components/ModelLogo';
 import { DataTable } from '../../components/DataTable';
-import { ApiEquivalentCost } from '../../components/ApiEquivalentCost';
+import { API_EQUIVALENT_TITLE } from '../../components/ApiEquivalentCost';
 import { EmptyState } from '../../components/EmptyState';
 
 const dim = { color: 'var(--text-dim)' } as const;
 const dash = <span style={dim}>—</span>;
 
-/** Summary metric cards shown on the analytics overview. */
+/** Headline request figures on the analytics overview. */
 export function MetricsSummaryCards({ metrics }: { metrics: MetricsPerformance }) {
-  return (
-    <div className="metrics-summary-grid">
-      <MetricCard label="Requests" value={formatNumber(metrics.summary.requests)} tone="blue" />
-      <MetricCard label="Total Tokens" value={formatCompactNumber(metrics.summary.totalTokens)} tone="blue" subvalue={`${formatCompactNumber(metrics.summary.inputTokens)} in / ${formatCompactNumber(metrics.summary.outputTokens)} out`} />
-      <MetricCard label="Avg Tok/s" value={metrics.summary.avgTokensPerSec.toFixed(1)} tone="orange" />
-      <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
-      <MetricCard label="Total Wall Clock" value={formatSeconds(metrics.summary.totalDurationMs / 1000)} tone="blue" subvalue="sum of response times" />
-      <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
-      <MetricCard label="Total Cost" value={formatCost(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, API-equivalent when plan reports $0" />
-      <MetricCard label="Reported / API-eq." value={`${formatCost(metrics.summary.totalCost)} / ${formatCost(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / API-equivalent estimate" />
-    </div>
-  );
+  const s = metrics.summary;
+  return <KpiStrip label="Request summary" items={[
+    { label: 'Requests', value: formatNumber(s.requests), detail: errorDetail(s.errorRequests, s.completedRequests) },
+    { label: 'Tokens', value: formatCompactNumber(tokensProcessed(s)), detail: tokenBreakdown(s), help: 'All tokens the model processed, including cache reads and writes.' },
+    { label: 'Cache hit rate', value: formatPercent(s.cacheHitRate), detail: cacheBreakdown(s.cacheReadTokens, s.cacheWriteTokens), help: 'Share of input tokens served from the prompt cache.' },
+    { label: 'Cost', value: formatCost(s.totalEffectiveCost), detail: costNote(s.totalCost, s.totalEffectiveCost), help: COST_HELP },
+    { label: 'Avg response', value: formatSeconds(s.avgDurationMs / 1000), detail: `${formatTokensPerSecond(s.avgTokensPerSec)} tok/s output` },
+    { label: 'Response time', value: formatSeconds(s.totalDurationMs / 1000), detail: 'Sum of response times', help: 'Total time spent answering requests. Parallel requests add together, so this can exceed elapsed time.' },
+  ]} />;
 }
 
 export function PerformanceSummaryCards({ metrics }: { metrics: MetricsPerformance }) {
-  return (
-    <div className="metrics-summary-grid">
-      <MetricCard label="Completed requests" value={formatNumber(metrics.summary.completedRequests)} tone="blue" />
-      <MetricCard label="Error rate" value={formatPercent(metrics.summary.errorRate)} tone="orange" subvalue={`${formatNumber(metrics.summary.errorRequests)} errors`} />
-      <MetricCard label="P50 latency" value={formatSeconds(metrics.summary.p50DurationMs / 1000)} tone="purple" />
-      <MetricCard label="P95 latency" value={formatSeconds(metrics.summary.p95DurationMs / 1000)} tone="purple" />
-      <MetricCard label="Cost / successful request" value={formatCost(metrics.summary.costPerSuccessfulRequest)} tone="green" subvalue={`${formatNumber(metrics.summary.successfulRequests)} successful`} />
-    </div>
-  );
+  const s = metrics.summary;
+  return <KpiStrip label="Performance summary" items={[
+    { label: 'Completed', value: formatNumber(s.completedRequests), detail: `${formatNumber(s.successfulRequests)} succeeded` },
+    { label: 'Error rate', value: formatPercent(s.errorRate), detail: errorDetail(s.errorRequests, s.completedRequests) },
+    { label: 'P50 latency', value: formatSeconds(s.p50DurationMs / 1000), detail: 'Median response' },
+    { label: 'P95 latency', value: formatSeconds(s.p95DurationMs / 1000), detail: 'Slowest 5% start here' },
+    { label: 'Cost per success', value: formatCost(s.costPerSuccessfulRequest), detail: costNote(s.totalCost, s.totalEffectiveCost), help: COST_HELP },
+  ]} />;
 }
 
 export function PerformanceCharts({ metrics }: { metrics: MetricsPerformance }) {
@@ -139,25 +137,33 @@ export function PerformanceCharts({ metrics }: { metrics: MetricsPerformance }) 
 function MetricsRowCells({ e }: { e: SessionOrProject }) {
   return (
     <>
-      <td>{formatNumber(e.requests)}</td>
-      <td>{formatNumber(e.inputTokens)}</td>
-      <td>{formatNumber(e.outputTokens)}</td>
-      <td className="mono">{formatTokenCache(e.cacheReadTokens, e.cacheWriteTokens)}</td>
-      <td>{e.avgTokensPerSec > 0 ? e.avgTokensPerSec.toFixed(1) : '-'}</td>
-      <td>{e.totalDurationMs > 0 ? formatSeconds(e.totalDurationMs / 1000) : '-'}</td>
-      <td><ApiEquivalentCost reported={e.cost} effective={e.effectiveCost} fallback={dash} /></td>
-      <td className="metrics-cost-detail">
-        <span title="Platform-reported (billed)">{e.cost > 0 ? formatCost(e.cost) : dash}</span>
-        <span style={dim}> / </span>
-        <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{e.calcCost > 0 ? formatCost(e.calcCost) : '—'}</span>
-      </td>
-      <td>{renderModels(e.models)}</td>
-      <td>{e.errorCount > 0
-        ? <span style={{ color: 'var(--accent3, #f38ba8)' }}>{e.errorCount}</span>
+      <td className="num" data-label="Requests">{formatNumber(e.requests)}</td>
+      <td className="num metrics-secondary" data-label="Input">{formatNumber(e.inputTokens)}</td>
+      <td className="num" data-label="Output">{formatNumber(e.outputTokens)}</td>
+      <td className="num metrics-secondary" data-label="Cache read" title={cacheBreakdown(e.cacheReadTokens, e.cacheWriteTokens)}>{formatCompactNumber(e.cacheReadTokens)}</td>
+      <td className="num metrics-secondary" data-label="Tok/s">{e.avgTokensPerSec > 0 ? e.avgTokensPerSec.toFixed(1) : dash}</td>
+      <td className="num" data-label="Duration">{e.totalDurationMs > 0 ? formatSeconds(e.totalDurationMs / 1000) : dash}</td>
+      <td className="num" data-label="Cost"><CostCell reported={e.cost} effective={e.effectiveCost} /></td>
+      <td className="metrics-models" data-label="Models">{renderModels(e.models)}</td>
+      <td className="num" data-label="Errors">{e.errorCount > 0
+        ? <span style={{ color: 'var(--danger)' }}>{e.errorCount}</span>
         : dash}</td>
     </>
   );
 }
+
+/**
+ * One cost figure per row; "≈" marks an API-equivalent estimate (the
+ * platform billed $0), explained in the column header and hover text.
+ */
+function CostCell({ reported, effective }: { reported: number; effective: number }) {
+  const basis = costBasis(reported, effective);
+  if (basis === 'none') return dash;
+  if (basis === 'billed') return <span title="Billed by the provider">{formatCost(effective)}</span>;
+  return <span title={`${API_EQUIVALENT_TITLE}${basis === 'mixed' ? ` (${formatCost(reported)} billed)` : ''}`}><span className="metrics-approx" aria-label="approximately">≈</span>{formatCost(effective)}</span>;
+}
+
+const COST_HEADER = <th className="num" title="Billed cost; ≈ marks an API-equivalent estimate where the platform billed $0 (subscription)">Cost</th>;
 
 function renderModels(models: string[]) {
   if (models.length === 0) return dash;
@@ -190,16 +196,15 @@ type SessionOrProject = {
 
 const ENTITY_HEADERS = (
   <>
-    <th>Requests</th>
-    <th>Input</th>
-    <th>Output</th>
-    <th>Cache</th>
-    <th title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
-    <th>Duration</th>
-    <th title="Platform-billed cost; when the plan reports $0 (subscription) it is the API-equivalent token estimate">Cost</th>
-    <th title="Platform-reported (billed) / API-equivalent token estimate">Reported / API-eq.</th>
+    <th className="num">Requests</th>
+    <th className="num metrics-secondary">Input</th>
+    <th className="num">Output</th>
+    <th className="num metrics-secondary" title="Tokens read from the prompt cache; hover a value for cache writes">Cache read</th>
+    <th className="num metrics-secondary" title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
+    <th className="num">Duration</th>
+    {COST_HEADER}
     <th>Models</th>
-    <th title="Assistant messages that finished with an error">Errors</th>
+    <th className="num" title="Assistant messages that finished with an error">Errors</th>
   </>
 );
 
@@ -230,22 +235,21 @@ export function SessionLogTable({
   const navigate = useNavigate();
   return (
     <div className="metrics-table-wrap">
-      <DataTable>
+      <DataTable className="metrics-log-table">
         <thead>
           <tr>
-            <th>#</th>
-            <th>Title</th>
+            <th className="metrics-sticky">Title</th>
             <th>Last Activity</th>
             {ENTITY_HEADERS}
           </tr>
         </thead>
         <tbody>
           {sessions.length === 0 ? (
-            <EmptyRow colSpan={13} label="No sessions matched the current filters" />
+            <EmptyRow colSpan={11} label="No sessions matched the current filters" />
           ) : sessions.map((session, idx) => (
             <tr key={session.id} onClick={() => navigate(`/session/${encodeURIComponent(session.id)}`)}>
-              <td>{pageOffset + idx + 1}</td>
-              <td title={cleanTitle(session.title)}>
+              <td className="metrics-sticky" title={cleanTitle(session.title)}>
+                <span className="metrics-rank">{pageOffset + idx + 1}</span>
                 {/* The row-wide onClick is mouse-only; this link is the
                     keyboard/AT path into the session. */}
                 <Link className="metrics-row-link" to={`/session/${encodeURIComponent(session.id)}`}>
@@ -254,8 +258,8 @@ export function SessionLogTable({
                 </Link>
               </td>
               {session.lastRequestTime > 0
-                ? <td title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
-                : <td>{dash}</td>}
+                ? <td data-label="Last activity" title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
+                : <td data-label="Last activity">{dash}</td>}
               <MetricsRowCells e={session} />
             </tr>
           ))}
@@ -275,27 +279,26 @@ export function ProjectLogTable({
   const navigate = useNavigate();
   return (
     <div className="metrics-table-wrap">
-      <DataTable>
+      <DataTable className="metrics-log-table">
         <thead>
           <tr>
-            <th>#</th>
-            <th>Project</th>
-            <th>Sessions</th>
+            <th className="metrics-sticky">Project</th>
+            <th className="num">Sessions</th>
             {ENTITY_HEADERS}
           </tr>
         </thead>
         <tbody>
           {projects.length === 0 ? (
-            <EmptyRow colSpan={13} label="No projects matched the current filters" />
+            <EmptyRow colSpan={11} label="No projects matched the current filters" />
           ) : projects.map((project: ProjectLogEntry, idx: number) => (
             <tr key={project.directory} onClick={() => navigate(`/project/${encodeURIComponent(project.directory)}`)}>
-              <td>{pageOffset + idx + 1}</td>
-              <td title={project.directory}>
+              <td className="metrics-sticky" title={project.directory}>
+                <span className="metrics-rank">{pageOffset + idx + 1}</span>
                 <Link className="metrics-row-link" to={`/project/${encodeURIComponent(project.directory)}`}>
                   <ProjectLabel path={project.directory} style={{ color: 'var(--accent)', fontWeight: 500 }} />
                 </Link>
               </td>
-              <td>{formatNumber(project.sessions)}</td>
+              <td className="num" data-label="Sessions">{formatNumber(project.sessions)}</td>
               <MetricsRowCells e={project} />
             </tr>
           ))}
@@ -315,48 +318,40 @@ export function RequestLogTable({
   const navigate = useNavigate();
   return (
     <div className="metrics-table-wrap">
-      <DataTable>
+      <DataTable className="metrics-log-table">
         <thead>
           <tr>
-            <th>#</th>
-            <th>Time</th>
+            <th className="metrics-sticky">Time</th>
             <th>Session</th>
             <th>Model</th>
-            <th>Input</th>
-            <th>Output</th>
-            <th>Cache</th>
-            <th title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
-            <th>Duration</th>
-            <th title="Platform-billed cost; when the plan reports $0 (subscription) it is the API-equivalent token estimate">Cost</th>
-            <th title="Platform-reported (billed) / API-equivalent token estimate">Reported / API-eq.</th>
+            <th className="num metrics-secondary">Input</th>
+            <th className="num">Output</th>
+            <th className="num metrics-secondary" title="Tokens read from the prompt cache; hover a value for cache writes">Cache read</th>
+            <th className="num metrics-secondary" title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
+            <th className="num">Duration</th>
+            {COST_HEADER}
             <th>Stop</th>
           </tr>
         </thead>
         <tbody>
           {requests.length === 0 ? (
-            <EmptyRow colSpan={12} label="No requests matched the current filters" />
+            <EmptyRow colSpan={10} label="No requests matched the current filters" />
           ) : requests.map((request, idx) => (
             <tr key={JSON.stringify([request.sessionId, request.id])} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
-              <td>{pageOffset + idx + 1}</td>
-              <td>{request.timeCreated > 0 ? formatDateTimeShort(request.timeCreated) : dash}</td>
-              <td className="mono">
+              <td className="metrics-sticky"><span className="metrics-rank">{pageOffset + idx + 1}</span>{request.timeCreated > 0 ? formatDateTimeShort(request.timeCreated) : dash}</td>
+              <td className="mono" data-label="Session">
                 <Link className="metrics-row-link" to={`/session/${encodeURIComponent(request.sessionId)}`}>
                   {shortSessionID(request.sessionId)}
                 </Link>
               </td>
-              <td><ModelLabel model={request.model}>{renderModel(request.model)}</ModelLabel></td>
-              <td>{formatNumber(request.inputTokens)}</td>
-              <td>{formatNumber(request.outputTokens)}</td>
-              <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>
-              <td>{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : '-'}</td>
-              <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
-              <td><ApiEquivalentCost reported={request.cost} effective={request.effectiveCost} fallback={dash} /></td>
-              <td className="metrics-cost-detail">
-                <span title="Platform-reported (billed)">{request.cost > 0 ? formatCost(request.cost) : dash}</span>
-                <span style={dim}> / </span>
-                <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{request.calcCost > 0 ? formatCost(request.calcCost) : '—'}</span>
-              </td>
-              <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
+              <td data-label="Model"><ModelLabel model={request.model}>{renderModel(request.model)}</ModelLabel></td>
+              <td className="num metrics-secondary" data-label="Input">{formatNumber(request.inputTokens)}</td>
+              <td className="num" data-label="Output">{formatNumber(request.outputTokens)}</td>
+              <td className="num metrics-secondary" data-label="Cache read" title={cacheBreakdown(request.cacheReadTokens, request.cacheWriteTokens)}>{formatCompactNumber(request.cacheReadTokens)}</td>
+              <td className="num metrics-secondary" data-label="Tok/s">{request.tokensPerSecond > 0 ? request.tokensPerSecond.toFixed(1) : dash}</td>
+              <td className="num" data-label="Duration">{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : dash}</td>
+              <td className="num" data-label="Cost"><CostCell reported={request.cost} effective={request.effectiveCost} /></td>
+              <td data-label="Stop"><span className="metrics-stop-pill">{request.stopReason}</span></td>
             </tr>
           ))}
         </tbody>
