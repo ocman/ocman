@@ -600,7 +600,7 @@ flowchart TD
     Recovery -->|owner-local lifecycle reads| Registry
     Recovery --> State
     Modules --> Routines[internal/routines<br/>saved prompts + schedules<br/>fixed or launch-time project]
-    Server -->|injects final project catalog callback| Routines
+    Server -->|injects project catalog + owner/account selection| Routines
     Modules -->|"factorymod: routes, tools, launchers, control sessions"| Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory -->|graph + action Inbox reconciliation| State

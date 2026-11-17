@@ -162,7 +162,8 @@ func InputFromRoutine(routine state.Routine, now time.Time) (Input, error) {
 		schedule.Timeout = time.UnixMilli(config.DueAt).Sub(now)
 	}
 	return Input{
-		Name: routine.Name, Prompt: routine.Prompt, Directory: routine.Directory, RemoteID: routine.RemoteID,
+		Platform: routine.Platform,
+		Name:     routine.Name, Prompt: routine.Prompt, Directory: routine.Directory, RemoteID: routine.RemoteID,
 		Agent: routine.Agent, Model: routine.Model, SessionMode: routine.SessionMode, SessionID: routine.SessionID,
 		Worktree: routine.Worktree, CleanupWorktree: routine.CleanupWorktree,
 		Schedule: schedule, Enabled: routine.Enabled, DeleteAfterSuccess: routine.DeleteAfterSuccess,

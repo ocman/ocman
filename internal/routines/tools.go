@@ -171,6 +171,7 @@ func routineHelp() map[string]any {
 		help[action.name] = map[string]any{"required": append([]string{}, action.required...), "optional": append([]string{}, action.optional...), "action": action.description, "example": action.example, "output_schema": action.output}
 	}
 	help["actions"] = actions
+	help["launch_defaults"] = "Omitted platform uses the target machine's configured default connection. New sessions resolve omitted model and agent from that connection's directory catalog before allocation. Patch preserves the saved connection unless platform is supplied."
 	help["errors"] = []string{"action is required", "unknown action", "invalid routine", "routine not found", "routine name already exists", "routine already has an active shared-session run", "routine request failed"}
 	help["rules"] = []string{"directory must be absolute when set; omit it to choose a known project at launch. Unbound routines require session_mode=new and schedule_kind=none", "session_mode is new, reuse, or existing; existing requires session_id", "schedule_kind is none, timeout, once, or cron", "timeout_ms is a positive millisecond delay", "at is a future Unix timestamp in milliseconds", "cron is a five-field expression and timezone is an IANA timezone", `permission_rules is a JSON array of {permission, pattern, action} objects; action is "allow", "deny", or "ask"; omit or pass [] for platform defaults`}
 	return help

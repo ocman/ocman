@@ -36,6 +36,13 @@ platform and loads that platform's agents. Existing sessions use their own
 catalog. Select the default option to let the platform choose. You can also
 disable a routine without deleting it.
 
+When no platform is supplied, new routines use the target machine's configured
+default connection. Before allocating a session, ocman resolves omitted model
+and agent selections from that connection's directory catalog and applies them
+at creation. A live catalog reporting an unavailable selected model fails the run
+before creating a session. MCP patches preserve the saved connection unless
+`platform` is explicitly changed.
+
 If a run reports that its platform is disabled after a platform rename, open
 **Settings → Session and model**, select the model under the intended platform,
 and **Save changes**. Future runs use that platform. Saving other settings

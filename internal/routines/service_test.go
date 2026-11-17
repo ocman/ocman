@@ -78,6 +78,9 @@ func (p *testPlatform) ID() platforms.ID {
 }
 func (p *testPlatform) Available(context.Context) bool    { return true }
 func (p *testPlatform) Owns(context.Context, string) bool { return true }
+func (p *testPlatform) DirectoryCatalog(context.Context, platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	return nil, nil
+}
 func (p *testPlatform) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

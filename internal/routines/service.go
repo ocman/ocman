@@ -81,6 +81,7 @@ type Deps struct {
 	NewID             func(prefix string) string
 	NormalizeUpstream func(string) string
 	ProjectCatalog    func(context.Context) ([]db.ProjectStats, error)
+	ResolvePlatform   func(context.Context, string, string, string) (string, error)
 }
 
 type Service struct {
@@ -92,6 +93,7 @@ type Service struct {
 	newID             func(string) string
 	normalizeUpstream func(string) string
 	projectCatalog    func(context.Context) ([]db.ProjectStats, error)
+	resolvePlatform   func(context.Context, string, string, string) (string, error)
 }
 
 func New(deps Deps) *Service {
@@ -101,7 +103,7 @@ func New(deps Deps) *Service {
 	if deps.NewID == nil {
 		deps.NewID = randomID
 	}
-	return &Service{store: deps.Store, router: deps.Router, sessions: deps.Sessions, platforms: deps.Platforms, now: deps.Now, newID: deps.NewID, normalizeUpstream: deps.NormalizeUpstream, projectCatalog: deps.ProjectCatalog}
+	return &Service{store: deps.Store, router: deps.Router, sessions: deps.Sessions, platforms: deps.Platforms, now: deps.Now, newID: deps.NewID, normalizeUpstream: deps.NormalizeUpstream, projectCatalog: deps.ProjectCatalog, resolvePlatform: deps.ResolvePlatform}
 }
 
 func randomID(prefix string) string {
@@ -115,7 +117,7 @@ func randomID(prefix string) string {
 // runs on its model's platform (platforms.PlatformForModel).
 func (s *Service) targetPlatform(ctx context.Context, input *Input) error {
 	if input.SessionMode != SessionExisting {
-		platform, err := platforms.PlatformForModel(input.Platform, input.Model)
+		platform, err := s.resolveTargetPlatform(ctx, input)
 		if err != nil {
 			return fmt.Errorf("%s: %w", err.Error(), ErrValidation)
 		}
@@ -134,6 +136,9 @@ func (s *Service) targetPlatform(ctx context.Context, input *Input) error {
 // defaultPlatform resolves the create default against the platforms the
 // target machine runs: a remote's advertised adapters, else this machine's.
 func (s *Service) defaultPlatform(ctx context.Context, remoteID string) (string, error) {
+	if s.resolvePlatform != nil {
+		return s.resolvePlatform(ctx, remoteID, "", "")
+	}
 	preferred, err := s.store.DefaultPlatform(ctx)
 	if err != nil || remoteID == "" || remoteID == state.LocalRemoteID || s.platforms == nil {
 		return preferred, err
@@ -343,6 +348,9 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 	}
 	if !s.sessions.KnownPlatform(platformID) {
 		return s.failDispatch(ctx, run, fmt.Errorf("routine platform %q is unavailable", platformID))
+	}
+	if err := s.prepareLaunchSelections(ctx, platformID, &run); err != nil {
+		return s.failDispatch(ctx, run, err)
 	}
 	ensured, err := host.EnsureRuntime(ctx, base, run.Directory)
 	if err != nil {

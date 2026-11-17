@@ -21,7 +21,7 @@ func (s *Service) createRunSession(ctx context.Context, host hostsvc.Host, ensur
 	if label != "" {
 		title += " " + label
 	}
-	creation := &platforms.CreationIdentity{RequestKey: "routine/" + run.ID, Origin: "routine", OriginID: run.RoutineID}
+	creation := &platforms.CreationIdentity{RequestKey: "routine/" + run.ID, Origin: "routine", OriginID: run.RoutineID, Model: run.Model, Agent: run.Agent}
 	if !run.Worktree {
 		result, err := s.sessions.CreateRoutine(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: title, Port: ensured.Port(), Creation: creation}, rules, run.RoutineID, link)
 		if err != nil {

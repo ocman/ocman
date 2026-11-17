@@ -289,6 +289,7 @@ func (s *Server) routinesModule() *routines.Module {
 		}
 		return routines.NewModule(routines.Deps{
 			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,
+			ResolvePlatform:   s.routinePlatform,
 			NormalizeUpstream: remote.NormalizeUpstream,
 			ProjectCatalog:    func(ctx context.Context) ([]db.ProjectStats, error) { return s.projectsModule().Catalog(ctx) },
 		})
