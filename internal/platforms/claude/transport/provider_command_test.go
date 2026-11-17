@@ -55,7 +55,7 @@ func TestProviderCommandUsesRegisteredSupervisor(t *testing.T) {
 // bound MCP listener and skills.
 func TestClaudeProjectOptions(t *testing.T) {
 	opts := claudeProjectOptions(providerArgs{DataDir: "/data", MCPAddr: "127.0.0.1:41234", PluginDir: "/data/plugin"})
-	if opts.MaxProcs != 4 || opts.IdleTimeout != 600*time.Second || opts.SlotDir != "/data/claude-slots" || !opts.NoSync ||
+	if opts.MaxProcs != 20 || opts.IdleTimeout != 600*time.Second || opts.SlotDir != "/data/claude-slots" || !opts.NoSync ||
 		opts.StatePath != "/data/claude-sessions.json" || opts.IndexPath != "/data/claude-index.db" || opts.PluginDir != "/data/plugin" ||
 		!strings.Contains(opts.MCPConfig, "http://127.0.0.1:41234/mcp") {
 		t.Fatalf("%+v", opts)

@@ -46,7 +46,7 @@ and capabilities, and OpenCode v1 event shapes plus `limited` with `resetsAt`.
 - Launched/adopted sessions use one tmux-hosted supervisor per repository root,
   through `ocruntime.BackendRuntime` and `hostsvc/local.ProviderManager`, persisted
   in `managed_provider`. Children run in their session worktrees.
-- Machine-wide flock slots cap children at four under `<data>/claude-slots`.
+- Machine-wide flock slots cap children at 20 under `<data>/claude-slots`.
   Helpers for probes, judging and naming have a separate cap of two through
   `claudeprovider.HelperSlot`. Slot-store I/O errors fail the turn, not wait.
 - `claude-sessions.json` ownership uses a shared file lock. Sessions record their

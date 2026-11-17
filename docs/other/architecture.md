@@ -1044,7 +1044,7 @@ flowchart TD
   by directory watches plus a 5 s mtime sweep. Detail pages read only their byte
   range through the single Claude to v1 converter; subagents are child sessions
   linked from their Task/Agent part. Sessions ocman launches are driven by pooled
-  `claude` children in the project supervisors (pipes, cap 4 across the
+  `claude` children in the project supervisors (pipes, cap 20 across the
   machine, 10 min idle, `--resume` on the next send)
   started with `--permission-prompt-tool stdio`: each `can_use_tool` becomes a v1
   `permission.asked`/`question.asked`, decided first by the adapter's ocman-side

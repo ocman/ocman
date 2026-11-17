@@ -59,9 +59,9 @@ type Options struct {
 	NoSync bool
 }
 
-// Spike-measured defaults: ~400 MiB per child, cache survives a resume.
+// Allow 20 concurrent sessions machine-wide; idle children yield under contention.
 const (
-	DefaultMaxProcs    = 4
+	DefaultMaxProcs    = 20
 	DefaultIdleTimeout = 10 * time.Minute
 )
 
