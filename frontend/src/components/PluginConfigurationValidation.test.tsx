@@ -124,10 +124,12 @@ it('retains missing-secret guidance through a changed configuration remount with
   expect(field).not.toHaveAttribute('aria-invalid', 'true');
   plugin.configuration.values = { count: 2, mode: 'http' };
   click('Refresh health');
-  await waitFor(() => expect(screen.getByLabelText('Count')).toHaveValue(2));
+  await waitFor(() => {
+    expect(screen.getByLabelText('Count')).toHaveValue(2);
+    expect(screen.getByLabelText('ocman password')).toHaveFocus();
+  });
   expect(screen.getByLabelText('ocman password')).toHaveValue('');
   expect(screen.getByLabelText('ocman password')).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByLabelText('ocman password')).toHaveFocus();
   expect(screen.getByLabelText('ocman password')).toHaveAccessibleDescription('ocman password is required and is not configured.');
   expect(document.body).not.toHaveTextContent('fixture-draft-only');
   expect(posts).toEqual([]);
