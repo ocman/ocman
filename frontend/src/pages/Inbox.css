@@ -56,7 +56,11 @@
 .inbox-reader-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; color: var(--text-dim); }
 .inbox-reader-empty > i { font-size: 32px; opacity: .5; }
 .inbox-reader-empty h3 { margin: 16px 0 8px; color: var(--text); font-size: 16px; font-weight: 500; }
-.inbox-reader-empty p { max-width: 420px; margin: 0 0 16px; font-size: 13px; }
+.inbox-reader-empty p { margin: 0; font-size: 13px; }
+.inbox-first-use { display: grid; justify-items: center; gap: 8px; padding: 0 24px 24px; color: var(--text-dim); font-size: 13px; text-align: center; }
+.inbox-first-use .oc-empty { padding-bottom: 8px; }
+.inbox-first-use strong { color: var(--text); }
+.inbox-first-use p { max-width: 320px; margin: 0 0 8px; }
 @media (max-width: 1000px) {
   .inbox-workspace { grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); }
   .inbox-letter { --inbox-letter-padding: 24px; }

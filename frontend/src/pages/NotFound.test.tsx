@@ -24,7 +24,7 @@ describe('suggestDestination', () => {
     expect(suggestDestination(path, destinations)?.label).toBe(label);
   });
 
-  it.each(['/', '/xy', '/does-not-exist'])('suggests nothing for %s', (path) => {
+  it.each(['/', '/xy', '/does-not-exist', '/%FF', '/routines%E0%A4%A'])('suggests nothing for %s', (path) => {
     expect(suggestDestination(path, destinations)).toBeUndefined();
   });
 });
@@ -35,6 +35,12 @@ describe('NotFound', () => {
   function renderAt(path: string) {
     render(<MemoryRouter initialEntries={[path]}><NotFound /></MemoryRouter>);
   }
+
+  it('stays usable on a path with malformed percent-encoding', () => {
+    renderAt('/%FF');
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Home' })).toHaveAttribute('href', '/');
+  });
 
   it('opens the Activity panel for a guessed /activity route', () => {
     renderAt('/activity');

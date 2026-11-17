@@ -429,10 +429,11 @@ describe('Inbox', () => {
   it('says what arrives in an empty inbox instead of asking to select a message', async () => {
     vi.mocked(api.inbox).mockResolvedValue({ items: [], unreadTotal: 0 });
     renderInbox();
-    const reader = await screen.findByRole('region', { name: 'Message body' });
-    expect(await within(reader).findByRole('heading', { name: 'Nothing needs you right now' })).toBeInTheDocument();
-    expect(within(reader).getByRole('link', { name: 'Set up a routine' })).toHaveAttribute('href', '/routines');
-    expect(within(reader).queryByText('Select a message')).not.toBeInTheDocument();
+    // The mailbox is the only pane phones show without an open message.
+    const mailbox = await screen.findByRole('region', { name: 'Inbox messages' });
+    expect(await within(mailbox).findByText('Nothing needs you right now')).toBeInTheDocument();
+    expect(within(mailbox).getByRole('link', { name: 'Set up a routine' })).toHaveAttribute('href', '/routines');
+    expect(screen.queryByText('Select a message')).not.toBeInTheDocument();
   });
 
   it('treats older messages without a category as general', async () => {

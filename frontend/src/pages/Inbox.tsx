@@ -54,14 +54,21 @@ function InboxPermissionActions({ permission }: { permission: NonNullable<InboxI
   </section>;
 }
 
-/** Reader pane without an open message. An empty inbox says what arrives here and how to start. */
-function ReaderPlaceholder({ loaded, count, archived }: { loaded: boolean; count: number; archived: boolean }) {
-  if (loaded && count === 0 && !archived) return <div className="inbox-reader-empty">
-    <i className="bi bi-inbox" aria-hidden="true" />
-    <h3>Nothing needs you right now</h3>
+/** List message when nothing is visible. A first-use inbox explains what arrives there; phones show only this pane. */
+function InboxEmpty({ filtered, archived }: { filtered: boolean; archived: boolean }) {
+  if (filtered) return <EmptyState>No messages match these filters.</EmptyState>;
+  if (archived) return <EmptyState>No archived messages.</EmptyState>;
+  return <div className="inbox-first-use">
+    <EmptyState>Your inbox is empty.</EmptyState>
+    <strong>Nothing needs you right now</strong>
     <p>Permission requests, routine results and notes your sessions send to you will appear here.</p>
-    <RouteButton to="/routines">Set up a routine</RouteButton>
+    <RouteButton to="/routines" size="small">Set up a routine</RouteButton>
   </div>;
+}
+
+/** Reader pane without an open message. An empty inbox has nothing to select, so it stays quiet. */
+function ReaderPlaceholder({ empty }: { empty: boolean }) {
+  if (empty) return <div className="inbox-reader-empty"><i className="bi bi-inbox" aria-hidden="true" /></div>;
   return <div className="inbox-reader-empty"><i className="bi bi-envelope-open" aria-hidden="true" /><h3>Select a message</h3><p>Choose a message from your inbox to read it here.</p></div>;
 }
 
@@ -198,7 +205,7 @@ export function Inbox() {
         <div className="inbox-list">
           {inbox.isLoading && <LoadingState>Loading inbox…</LoadingState>}
           {inbox.isError && <InlineAlert onRetry={() => { void inbox.refetch(); }} retrying={inbox.isFetching}>Could not load inbox.</InlineAlert>}
-          {inbox.isSuccess && !visibleItems.length && <EmptyState>{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</EmptyState>}
+          {inbox.isSuccess && !visibleItems.length && <InboxEmpty filtered={items.length > 0} archived={archived} />}
           {visibleItems.map((item) => <article key={itemKey(item)} className={`inbox-message${item.readAt ? '' : ' unread'}${activeKey === itemKey(item) ? ' active' : ''}`}>
             {/* The category icon doubles as the selection checkbox: clicking it
                 swaps in a check mark, so no separate checkbox column is needed. */}
@@ -248,7 +255,7 @@ export function Inbox() {
             <div className="inbox-body"><MarkdownContent text={activeItem.body} preserveLineBreaks /></div>
             {activeItem.permission && !activeItem.archivedAt && <InboxPermissionActions permission={activeItem.permission} />}
           </article>
-        </> : <ReaderPlaceholder loaded={inbox.isSuccess} count={items.length} archived={archived} />}
+        </> : <ReaderPlaceholder empty={inbox.isSuccess && !items.length && !archived} />}
       </section>
     </div>
   </main>;
