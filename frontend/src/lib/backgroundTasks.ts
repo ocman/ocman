@@ -29,8 +29,8 @@ export interface BackgroundTask {
   };
 }
 
-export function backgroundTasks(status: BackgroundTaskStatus | '', signal?: AbortSignal) {
-  return fetchJSON<BackgroundTask[]>(`/api/background-tasks${queryString({ status: status || undefined, limit: 200 })}`, signal);
+export function backgroundTasks(status: BackgroundTaskStatus | '', signal?: AbortSignal, remoteId?: string) {
+  return fetchJSON<BackgroundTask[]>(`/api/background-tasks${queryString({ status: status || undefined, limit: 200, remoteId })}`, signal);
 }
 
 export function backgroundTaskCount(signal?: AbortSignal) {

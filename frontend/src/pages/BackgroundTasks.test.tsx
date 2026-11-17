@@ -8,6 +8,7 @@ import { useDocumentVisible } from '../lib/usePanelVisible';
 import { BackgroundTasks } from './BackgroundTasks';
 
 vi.mock('../lib/backgroundTasks', () => ({ backgroundTasks: vi.fn() }));
+vi.mock('../lib/settingsQueries', () => ({ useRemotes: () => ({ data: [] }) }));
 vi.mock('../lib/usePanelVisible', () => ({ useDocumentVisible: vi.fn(() => true) }));
 
 function renderTasks(url = '/') {
@@ -34,7 +35,7 @@ describe('Background task table', () => {
     ]);
     renderTasks();
     const table = await screen.findByRole('table', { name: 'Background task groups' });
-    expect(within(table).getAllByRole('row')).toHaveLength(3);
+    expect(within(table).getAllByRole('button')).toHaveLength(2);
     const toggle = within(table).getByRole('button', { name: 'History scan' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('Previous scan failed')).not.toBeInTheDocument();
@@ -62,7 +63,7 @@ describe('Background task table', () => {
     ]);
     renderTasks();
     const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(6);
+    expect(within(table).getAllByRole('button')).toHaveLength(5);
     expect(within(table).queryByRole('progressbar')).not.toBeInTheDocument();
     expect(within(table).getByText('Cancelled')).toBeVisible();
     expect(within(table).getByText('Interrupted')).toBeVisible();
@@ -87,7 +88,7 @@ describe('Background task table', () => {
     renderTasks();
     expect(await screen.findByText('No background tasks match this view.')).toBeVisible();
     fireEvent.change(screen.getByRole('combobox', { name: 'Task status' }), { target: { value: 'failed' } });
-    expect(backgroundTasks).toHaveBeenLastCalledWith('', expect.any(AbortSignal));
+    expect(backgroundTasks).toHaveBeenLastCalledWith('', expect.any(AbortSignal), 'local');
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(screen.getByRole('combobox')).toHaveValue('');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
@@ -97,13 +98,14 @@ describe('Background task table', () => {
     expect(screen.queryByRole('button', { name: 'Start task' })).not.toBeInTheDocument();
   });
 
-  it('distinguishes local and remote tasks even when IDs collide', async () => {
-    vi.mocked(backgroundTasks).mockResolvedValue([task('same', { title: 'Local scan' }),
-      task('same', { title: 'Remote scan', ownerId: 'workstation' })]);
+  it('keeps machine ownership in the details rather than repeating it in every row', async () => {
+    vi.mocked(backgroundTasks).mockResolvedValue([task('same', { title: 'Local scan' })]);
     renderTasks();
     const table = await screen.findByRole('table');
-    expect(within(table).getByLabelText('This machine')).toBeVisible();
-    expect(within(table).getByLabelText('workstation')).toBeVisible();
+    expect(within(table).queryByLabelText('This machine')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Task machine:/ })).not.toBeInTheDocument();
+    fireEvent.click(within(table).getByRole('button', { name: 'Local scan' }));
+    expect(screen.getByLabelText('This machine')).toBeVisible();
   });
 
   it('shows a skeleton and retryable read failure rather than a false empty result', async () => {
@@ -138,7 +140,7 @@ describe('Background task table', () => {
     vi.mocked(backgroundTasks).mockResolvedValue(Array.from({ length: 200 }, (_, i) => task(String(i))));
     renderTasks();
     expect(await screen.findByText('Tasks and history are limited to 200 available records. Older tasks and runs may not appear.')).toBeVisible();
-    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(6);
+    expect(within(screen.getByRole('table')).getAllByRole('button')).toHaveLength(200);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 

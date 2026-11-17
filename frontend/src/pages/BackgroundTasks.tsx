@@ -7,8 +7,10 @@ import { InlineAlert } from '../components/InlineAlert';
 import { PageState } from '../components/PageState';
 import { backgroundTasks } from '../lib/backgroundTasks';
 import { groupBackgroundTasks, taskStatusLabels } from '../lib/backgroundTaskGroups';
+import { categorizeBackgroundTasks } from '../lib/backgroundTaskCategories';
 import { useVisiblePollingQuery } from '../lib/useVisiblePollingQuery';
 import { BackgroundTaskDetails, BackgroundTaskRow } from './BackgroundTaskRow';
+import { BackgroundTaskMachineSelect } from './BackgroundTaskMachineSelect';
 import './BackgroundTasks.css';
 
 export function BackgroundTasks() {
@@ -16,6 +18,7 @@ export function BackgroundTasks() {
   const overview = useRef<HTMLDivElement>(null);
   const [params, setParams] = useSearchParams();
   const rawStatus = params.get('taskStatus') ?? '';
+  const machine = params.get('taskMachine') || 'local';
   const status = rawStatus !== 'waiting' && Object.hasOwn(taskStatusLabels, rawStatus) ? rawStatus : '';
   const update = (name: string, value: string, reset = false) => setParams(previous => {
     const next = new URLSearchParams(previous);
@@ -29,25 +32,24 @@ export function BackgroundTasks() {
     overview.current?.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')?.focus();
   };
   const query = useVisiblePollingQuery({
-    queryKey: ['background-tasks'], intervalMs: 2_000, timeoutMs: 10_000,
-    run: (signal) => backgroundTasks('', signal),
+    queryKey: ['background-tasks', machine], intervalMs: 2_000, timeoutMs: 10_000,
+    run: (signal) => backgroundTasks('', signal, machine),
   });
   const tasks = query.data ?? [];
   const groups = groupBackgroundTasks(tasks).filter(group => !status || group.current.status === status);
-  const pages = Math.max(1, Math.ceil(groups.length / 5));
-  const requestedPage = Number(params.get('taskPage') ?? 1);
-  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, pages) : 1;
+  const categories = categorizeBackgroundTasks(groups);
   const selected = params.get('taskGroup');
   const focused = groups.find(group => group.key === selected);
   return <section className="background-tasks" aria-label="Ocman background tasks">
-    <p>One row per task group. Latest status updates in place; select a group for progress and recent runs.</p>
-    <div className="background-tasks-controls">
+    <p>Tasks grouped by purpose and sorted by name. Select a task for progress and recent runs.</p>
+    <div className="background-tasks-controls" role="group" aria-label="Task controls">
       <SelectField aria-label="Task status" value={status} onChange={(event) => update('taskStatus', event.target.value, true)}>
         <option value="">All statuses</option>
         {Object.entries(taskStatusLabels).filter(([value]) => value !== 'waiting').map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </SelectField>
       {status && <Button variant="ghost" onClick={() => update('taskStatus', '', true)}>Clear filters</Button>}
       <Button variant="ghost" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh</Button>
+      <BackgroundTaskMachineSelect value={machine} onChange={owner => update('taskMachine', owner === 'local' ? '' : owner, true)} />
     </div>
     {query.isPending && !query.error && <div role="status" aria-label="Loading background tasks" className="background-tasks-skeleton">
       {Array.from({ length: 5 }, (_, index) => <div key={index} />)}
@@ -58,18 +60,20 @@ export function BackgroundTasks() {
     {!query.isPending && !query.error && groups.length === 0 && <EmptyState>No background tasks match this view.</EmptyState>}
     <div className="background-tasks-workspace" data-details={!!selected}>
       {groups.length > 0 && <div className="background-tasks-overview" ref={overview}>
-        <DataTable framed aria-label="Background task groups">
-          <thead><tr><th>Task group</th><th>Latest status</th><th>Last run</th></tr></thead>
-          <tbody>{groups.slice((page - 1) * 5, page * 5).map(({ key, current }) => <BackgroundTaskRow key={key}
-            task={current} selected={key === selected} detailsId={detailsId}
-            onSelect={() => update('taskGroup', key === selected ? '' : key)} />)}</tbody>
-        </DataTable>
-        <div className="background-tasks-pagination"><span>{groups.length} task {groups.length === 1 ? 'group' : 'groups'} · fixed order</span>
-          {pages > 1 && <><Button variant="ghost" size="compact" aria-label="Previous task groups" disabled={page === 1}
-            onClick={() => update('taskPage', String(page - 1), true)}>Previous</Button>
-            <span>Page {page} of {pages}</span><Button variant="ghost" size="compact" aria-label="Next task groups" disabled={page === pages}
-              onClick={() => update('taskPage', String(page + 1), true)}>Next</Button></>}
+        <div className="background-tasks-scroll" role="region" aria-label="Task list" tabIndex={0} key={machine}>
+          <DataTable framed aria-label="Background task groups">
+            <thead><tr><th>Task group</th><th>Latest status</th><th>Last run</th></tr></thead>
+            {categories.map(category => <tbody key={category.label} aria-label={category.label}>
+              <tr className="background-task-category"><th colSpan={3} scope="rowgroup">
+                <h3>{category.label} <span>{category.groups.length}</span></h3>
+              </th></tr>
+              {category.groups.map(({ key, current }) => <BackgroundTaskRow key={key}
+                task={current} selected={key === selected} detailsId={detailsId}
+                onSelect={() => update('taskGroup', key === selected ? '' : key)} />)}
+            </tbody>)}
+          </DataTable>
         </div>
+        <p className="background-tasks-count">{groups.length} task {groups.length === 1 ? 'group' : 'groups'}</p>
       </div>}
       {focused && <BackgroundTaskDetails key={focused.key} id={detailsId} current={focused.current} runs={focused.runs} onClose={closeDetails} />}
       {selected && !focused && query.data !== undefined && <div className="background-task-details">

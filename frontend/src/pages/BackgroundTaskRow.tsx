@@ -50,10 +50,6 @@ export function BackgroundTaskRow({ task, selected, onSelect, detailsId }: {
   }}>
     <td><Button variant="link" size="compact" aria-expanded={selected}
       aria-controls={selected ? detailsId : undefined} onClick={onSelect}>{task.title}</Button>
-      <div className="background-task-owner"><HostBadge alwaysShow remoteId={task.ownerId}
-        remoteName={task.ownerId === 'local' ? 'This machine' : task.ownerId} />
-        {task.scope && task.scope !== 'local' && <span>{task.scope}</span>}
-      </div>
     </td>
     <td data-label="Latest status"><TaskState task={task} /></td>
     <td data-label="Last run"><RelativeTimestamp value={task.startedAt ?? task.createdAt} /></td>

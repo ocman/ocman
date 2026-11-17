@@ -5,20 +5,40 @@ weight: 49
 
 The Background tasks view shows Ocman's owner-local scheduled maintenance alongside
 history imports and preparation work. Open Activity and select Background tasks,
-or use the `bgt` counter. Connected remote owners contribute their own records
-and owner badges.
+or use the `bgt` counter. The view defaults to this machine. When remotes exist,
+the tab-like machine control at the far right opens a chooser. Selecting a remote
+requests only that owner's tasks. Offline or unavailable owners show an error
+instead of falling back to this machine. Ownership and scope remain in task details.
 
-The overview is a compact table with five task groups per page. Each row shows
-the group, owning machine and scope, latest status and last-run time. Rows use
-task identity order, so polling and new runs do not reorder existing groups.
+The overview is a scrollable table without pagination. Tasks are grouped into
+Housekeeping, Session and runtime coordination, Notifications and plugins,
+Scheduled automation and synchronization, Metrics and accounting, and History
+synchronization. Unrecognized tasks appear under Other tasks. Empty categories
+are hidden. Within each category, tasks sort alphabetically by name, with task
+identity breaking ties. Each row shows the task, latest status and last-run time.
 Select a row to open its detail panel beside the table, or below it on narrow
 screens. Progress, counters, errors and the five latest available runs appear
 only in that panel. Expand a recent run to inspect its progress and error.
 Unknown totals use an indeterminate bar only while running, never an invented
 percentage. Machines, kinds, keys and scopes remain separate. An active run takes
 precedence over a newer finished run. Status filters apply to that current run's
-result, not older history. Filters, page and selected group survive reloads and
+result, not older history. Filters, machine and selected group survive reloads and
 browser Back through the URL. Text selection does not open a row.
+
+```mermaid
+flowchart LR
+    Selector[Machine tab and chooser] --> Request[Owner-scoped task query]
+    Request --> Hub[Hub task API]
+    Hub --> Local[Local task reader]
+    Hub --> Remote[Selected remote reader]
+    Local --> Groups[Category and name ordering]
+    Remote --> Groups
+    Groups --> Table[Scrollable task table and details]
+```
+
+The browser queries one owner with `remoteId`, and keys its polling cache by
+machine. Switching machines clears the selected task without discarding unrelated
+URL parameters. It never combines local and remote rows in the same overview.
 
 Each recurring job keeps one entry with its latest result, progress counters,
 cadence, run count and next-check hint. An idle recurring job is not running work.

@@ -13,6 +13,10 @@ describe('background task requests', () => {
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?limit=200', signal);
     await backgroundTasks('failed', signal);
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?status=failed&limit=200', signal);
+    await backgroundTasks('', signal, 'local');
+    expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?limit=200&remoteId=local', signal);
+    await backgroundTasks('failed', signal, 'remote/one');
+    expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?status=failed&limit=200&remoteId=remote%2Fone', signal);
     await backgroundTaskCount(signal);
     expect(fetchJSON).toHaveBeenLastCalledWith('/api/background-tasks?view=active-count', signal);
   });

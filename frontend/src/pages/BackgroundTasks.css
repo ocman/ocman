@@ -5,15 +5,22 @@
 .background-tasks-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .background-tasks-workspace[data-details="true"] { grid-template-columns: minmax(0, 1fr) minmax(280px, 36%); }
 .background-tasks-overview { min-width: 0; }
+.background-tasks-scroll { max-height: 65vh; overflow: auto; overscroll-behavior: contain; border-radius: 8px; }
+.background-tasks-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .background-tasks-overview .oc-data-table { table-layout: fixed; }
 .background-tasks-overview th:first-child { width: 48%; }
 .background-tasks-overview th { text-transform: none; letter-spacing: normal; }
 .background-tasks-overview td { font-size: 12px; height: 62px; overflow-wrap: anywhere; }
 .background-tasks-overview tr[data-selected="true"] { background: color-mix(in srgb, var(--accent) 8%, var(--bg)); box-shadow: inset 2px 0 var(--accent); }
 .background-tasks-overview td .oc-button { padding: 0; white-space: normal; text-align: left; height: auto; font-weight: 600; }
-.background-task-owner { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; color: var(--text-dim); font-size: 11px; }
-.background-tasks-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; color: var(--text-dim); font-size: 11px; }
-.background-tasks-pagination > span:first-child { margin-right: auto; }
+.background-tasks-count { margin: 10px 0 0; color: var(--text-dim); font-size: 11px; }
+.background-tasks-overview .background-task-category th { width: auto; background: var(--bg-card); }
+.background-task-category h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; }
+.background-task-category h3 span { color: var(--text-dim); font-weight: 400; }
+.background-task-machine { position: relative; margin-left: auto; min-width: 0; max-width: 100%; }
+.background-task-machine > .oc-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; border-radius: 6px 6px 0 0; border-bottom: 2px solid var(--accent); background: var(--bg-card); }
+.background-task-machine-menu { position: absolute; right: 0; top: 100%; z-index: 10; display: grid; gap: 8px; width: max-content; min-width: 200px; max-width: min(320px, 85vw); padding: 12px; border: 1px solid var(--border); border-radius: 6px 0 6px 6px; background: var(--bg-card); }
+.background-task-machine-menu .oc-field { width: 100%; min-width: 0; }
 .background-task-details { display: grid; gap: 14px; min-width: 0; padding: 16px; border-left: 1px solid var(--border); overflow-wrap: anywhere; font-size: 12px; }
 .background-task-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .background-task-detail-heading h3 { margin: 0; font-size: 14px; }
@@ -49,6 +56,7 @@
   .background-tasks-overview tbody,
   .background-tasks-overview tr,
   .background-tasks-overview td { display: block; width: 100%; }
+  .background-tasks-overview .background-task-category th { display: block; width: 100%; }
   .background-tasks-overview thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .background-tasks-overview td { height: auto; border-bottom: 0; padding: 6px 12px; }
   .background-tasks-overview td:first-child { padding-top: 12px; }

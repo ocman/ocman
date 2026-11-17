@@ -7,8 +7,9 @@ import { backgroundTasks, type BackgroundTask } from '../lib/backgroundTasks';
 import { BackgroundTasks } from './BackgroundTasks';
 
 vi.mock('../lib/backgroundTasks', () => ({ backgroundTasks: vi.fn() }));
+vi.mock('../lib/settingsQueries', () => ({ useRemotes: () => ({ data: [] }) }));
 
-it('keeps the overview a five-row table and opens progress only for the selected group', async () => {
+it('keeps every group in the table and opens progress only for the selected group', async () => {
   vi.mocked(backgroundTasks).mockResolvedValue(Array.from({ length: 8 }, (_, index): BackgroundTask => ({
     id: String(index), key: `group-${index}`, title: `Task group ${index}`, kind: 'scan', ownerId: 'local',
     status: 'running', createdAt: 1000, updatedAt: 2000,
@@ -16,15 +17,15 @@ it('keeps the overview a five-row table and opens progress only for the selected
   })));
   renderWithQuery(<MemoryRouter><BackgroundTasks /></MemoryRouter>);
   const table = await screen.findByRole('table', { name: 'Background task groups' });
-  expect(within(table).getAllByRole('row')).toHaveLength(6);
+  expect(within(table).getAllByRole('button')).toHaveLength(8);
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   expect(screen.queryByRole('region', { name: /Task group details/ })).not.toBeInTheDocument();
   fireEvent.click(within(table).getByRole('button', { name: 'Task group 0' }));
   const details = screen.getByRole('region', { name: 'Task group details for Task group 0' });
   expect(within(details).getByLabelText('Current progress for Task group 0')).toHaveTextContent('Working on 0');
   expect(within(table).queryByText('Working on 0')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Next task groups' }));
-  expect(within(table).getAllByRole('row')).toHaveLength(4);
+  fireEvent.click(within(table).getByRole('button', { name: 'Task group 0' }));
+  expect(within(table).getAllByRole('button')).toHaveLength(8);
   expect(screen.queryByRole('region', { name: /Task group details/ })).not.toBeInTheDocument();
 });
 
@@ -40,21 +41,19 @@ function task(index: number): BackgroundTask {
     progress: { phase: 'Done', completed: 0, total: null, counters: {} } };
 }
 
-it('restores pages and selected groups from the URL, preserves other parameters, and supports Back', async () => {
+it('restores selected groups from old paginated URLs, preserves other parameters, and supports Back', async () => {
   const group = JSON.stringify(['local', 'scan', 'group-6', '']);
   vi.mocked(backgroundTasks).mockResolvedValue(Array.from({ length: 8 }, (_, index) => task(index)));
   renderWithQuery(<MemoryRouter initialEntries={[`/?activity=tasks&keep=yes&taskPage=2&taskGroup=${encodeURIComponent(group)}`]}>
     <BackgroundTasks /><Location />
   </MemoryRouter>);
   expect(await screen.findByRole('region', { name: 'Task group details for Task group 6' })).toBeVisible();
-  expect(screen.getByText('Page 2 of 2')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Next task groups' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Next task groups' })).not.toBeInTheDocument();
+  expect(within(screen.getByRole('table')).getAllByRole('button')).toHaveLength(8);
   const toggle = screen.getByRole('button', { name: 'Task group 6' });
   expect(toggle.closest('tr')!.querySelector('time')).toHaveAttribute('dateTime', new Date(6100).toISOString());
-  fireEvent.click(screen.getByRole('button', { name: 'Previous task groups' }));
-  expect(screen.getByText('Page 1 of 2')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Previous task groups' })).toBeDisabled();
-  expect(screen.getByLabelText('URL')).toHaveTextContent('activity=tasks&keep=yes&taskPage=1');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Task status' }), { target: { value: 'failed' } });
+  expect(screen.getByLabelText('URL')).toHaveTextContent('activity=tasks&keep=yes&taskStatus=failed');
   expect(screen.queryByRole('region', { name: /Task group details/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Back' }));
   expect(screen.getByRole('region', { name: 'Task group details for Task group 6' })).toBeVisible();
