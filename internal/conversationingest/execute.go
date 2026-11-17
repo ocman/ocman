@@ -61,7 +61,8 @@ func (w *sourceWorker) execute(ctx context.Context, p pass, report func(tasksvc.
 				failed++
 				outcome, cause = "failed", err.Error()
 				w.withdraw(ctx, entry.ID)
-				if ctx.Err() == nil {
+				// Failed sessions are retried every pass; report new causes only.
+				if ctx.Err() == nil && w.failing[entry.ID] != cause {
 					w.module.report(w.instance.ID, entry.ID, err)
 				}
 			} else {

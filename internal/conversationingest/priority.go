@@ -37,8 +37,10 @@ func (w *sourceWorker) servePriority(ctx context.Context) string {
 		err = w.requireComplete(w.execute(ctx, pass{full: w.explicitReadPending(id), reads: []db.HistoryEntry{{ID: id, Version: w.versions[id]}}}, nil))
 	}
 	if err != nil {
+		if w.failing[id] != err.Error() {
+			w.module.report(w.instance.ID, id, err)
+		}
 		w.failing[id] = err.Error()
-		w.module.report(w.instance.ID, id, err)
 		return ""
 	}
 	return id

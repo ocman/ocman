@@ -42,6 +42,9 @@ type sourceWorker struct {
 	// independent of version hints, which a failure clears to force a retry,
 	// so retries of known failures do not record a new task each poll.
 	failing map[string]string
+	// reported is the last pass error reported, so a persistent failure is
+	// reported once rather than on every poll.
+	reported string
 	// feed is set for sources with a durable change feed; see feed.go.
 	feed      platforms.HistoryFeed
 	feedState feedState
@@ -127,7 +130,7 @@ func (w *sourceWorker) sweepWithInventory(ctx context.Context, inventory bool) e
 	}
 	w.readiness(complete && err == nil)
 	if ctx.Err() == nil {
-		w.module.report(w.instance.ID, "", err)
+		w.reportPass(err)
 	}
 	if err != nil {
 		// Keep explicit invalidations for the next poll, without a busy loop.
@@ -138,6 +141,17 @@ func (w *sourceWorker) sweepWithInventory(ctx context.Context, inventory bool) e
 		w.mu.Unlock()
 	}
 	return err
+}
+
+func (w *sourceWorker) reportPass(err error) {
+	if err == nil {
+		w.reported = ""
+		return
+	}
+	if err.Error() != w.reported {
+		w.reported = err.Error()
+		w.module.report(w.instance.ID, "", err)
+	}
 }
 
 // prepare resolves the source identity and compares its inventory with the
