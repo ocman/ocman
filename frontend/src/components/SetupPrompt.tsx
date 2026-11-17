@@ -69,6 +69,19 @@ export function SetupPrompt() {
   );
 }
 
+// Matches .oc-popover's width: min(340px, 100vw - 24px).
+const POPOVER_WIDTH = 340;
+const VIEWPORT_MARGIN = 12;
+
+/**
+ * Right-aligns the popover with the chip, but keeps it inside both viewport
+ * margins: on phones other header controls can follow the chip.
+ */
+function popoverLeft(anchorRight: number, viewportWidth: number) {
+  const width = Math.min(POPOVER_WIDTH, viewportWidth - 2 * VIEWPORT_MARGIN);
+  return Math.max(VIEWPORT_MARGIN, Math.min(anchorRight - width, viewportWidth - VIEWPORT_MARGIN - width));
+}
+
 /**
  * SetupStatus is a small warning chip in the app header for failing
  * optional checks. It takes no page space; its popover explains what each
@@ -91,7 +104,7 @@ export function SetupStatus() {
   const toggle = () => {
     if (open) return close();
     const rect = trigger.current?.getBoundingClientRect();
-    if (rect) setPosition({ top: rect.bottom + 6, right: Math.max(12, window.innerWidth - rect.right) });
+    if (rect) setPosition({ top: rect.bottom + 6, left: popoverLeft(rect.right, window.innerWidth) });
   };
   const optional = failing.filter((c) => c.id !== PATH_CHECK);
   const pathCheck = failing.find((c) => c.id === PATH_CHECK);

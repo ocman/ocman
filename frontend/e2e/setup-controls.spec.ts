@@ -1,4 +1,4 @@
-import { test, expect, MOCK_PLATFORM_OPTIONS } from './fixtures';
+import { test, expect, MOCK_PLATFORM_OPTIONS, MOCK_PROJECT } from './fixtures';
 
 for (const width of [1280, 390]) {
   test(`setup controls dismiss optional warnings and recover from required failures at ${width}px`, async ({ mockedPage: page }) => {
@@ -127,3 +127,19 @@ for (const width of [1280, 390]) {
     expect(saved).toEqual([{ reservationId: 'stp_codex', name: 'Codex Work', enabled: true }]);
   });
 }
+
+// On phone project pages the machine badge follows the chip, so the popover
+// must be placed within the viewport rather than right-aligned to the chip.
+test('optional setup popover stays inside a phone viewport on project pages', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('/api/doctor', route => route.fulfill({ json: { checks: [
+    { id: 'tmux', label: 'tmux', required: false, ok: false, detail: 'tmux is not on PATH.', hint: 'Install tmux to enable terminal sessions.' },
+  ] } }));
+  await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
+  await expect(page.locator('.header-machine-pill')).toBeVisible();
+  await page.getByTestId('setup-status-trigger').click();
+  const box = (await page.getByRole('dialog', { name: 'Optional setup' }).boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await page.getByRole('button', { name: 'Re-check', exact: true }).click({ trial: true, timeout: 2_000 });
+});
