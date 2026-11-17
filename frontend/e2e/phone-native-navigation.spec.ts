@@ -155,7 +155,7 @@ for (const width of [320, 390, 640, 641, 768, 1024, 1440]) {
       const table = page.getByRole('table');
       await expect(table).toHaveCSS('display', phone ? 'block' : 'table');
       await expect(table.getByRole('row').last()).toHaveCSS('display', phone ? 'grid' : 'table-row');
-      const heading = table.getByRole('columnheader', { name: path === '/sessions' ? 'Activity' : 'Messages', includeHidden: true });
+      const heading = table.getByRole('columnheader', { name: path === '/sessions' ? 'Prompts' : 'Messages', includeHidden: true });
       if (phone) await expect(heading).toBeHidden(); else await expect(heading).toBeVisible();
       const nav = page.getByRole('navigation', { name: 'Phone navigation' });
       if (phone) await expect(nav).toBeVisible(); else await expect(nav).toHaveCount(0);
