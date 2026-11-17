@@ -278,6 +278,25 @@ func (l *live) pending(indexed map[string]bool, dir string) []db.Session {
 	return l.overlayAndPending(nil, indexed, dir)
 }
 
+// runtimePending is the supervisor's runtime inventory. A started session
+// without a transcript had it pruned unless this process is tracking it:
+// every supervisor shares ownership, so listing it would claim it everywhere.
+func (l *live) runtimePending(dir string) []db.Session {
+	rows := l.pending(nil, dir)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := rows[:0]
+	for _, s := range rows {
+		if o := l.owned[s.ID]; o != nil && o.Started {
+			if _, tracked := l.status[s.ID]; !tracked {
+				continue
+			}
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 func (l *live) overlayAndPending(sessions []db.Session, indexed map[string]bool, dir string) []db.Session {
 	l.mu.Lock()
 	defer l.mu.Unlock()
