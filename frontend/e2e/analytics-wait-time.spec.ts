@@ -15,7 +15,7 @@ for (const width of [1280, 390]) {
       ],
     } }));
     await page.goto('/analytics/performance');
-    await expect(page.getByText('Waiting Time by Agent (s)', { exact: true })).toBeVisible();
+    await expect(page.getByText('Waiting Time by Agent', { exact: true })).toBeVisible();
     const chart = page.getByRole('img', { name: 'Total waiting time by agent, split into agent response, tools, and unknown timing' });
     await expect(chart).toBeVisible();
     expect((await chart.boundingBox())?.width).toBeGreaterThan(200);

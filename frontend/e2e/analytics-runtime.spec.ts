@@ -13,7 +13,7 @@ for (const width of [1280, 390]) {
       [0, 30, 90, 15, 0].map((minutes, index) => ({ timestamp: Date.UTC(2026, 9, 8, index), minutes })),
     }));
     await page.goto('/analytics/activity');
-    await expect(page.getByText('2.0 hours in ocman · 1.0 hours per day')).toBeVisible();
+    await expect(page.getByText('2h 0m in ocman · 1h 0m per day')).toBeVisible();
     for (const name of ['Active hours in ocman per day', 'Agent run minutes in each chronological hour']) {
       const chart = page.getByRole('img', { name });
       await chart.scrollIntoViewIfNeeded();

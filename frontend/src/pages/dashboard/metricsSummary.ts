@@ -28,7 +28,10 @@ export type CostBasis = 'billed' | 'estimate' | 'mixed' | 'none';
 export function costBasis(reported: number, effective: number): CostBasis {
   if (!(effective > 0)) return 'none';
   if (!(reported > 0)) return 'estimate';
-  return effective - reported >= 0.005 ? 'mixed' : 'billed';
+  // Only float noise counts as equal: backend totals keep sub-cent costs, so
+  // $0.001 billed + $0.004 estimated is still partly an estimate.
+  const tolerance = Number.EPSILON * Math.max(1, effective, reported) * 8;
+  return effective - reported > tolerance ? 'mixed' : 'billed';
 }
 
 export function costNote(reported: number, effective: number): string {

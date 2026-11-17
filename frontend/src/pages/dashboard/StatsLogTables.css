@@ -40,7 +40,8 @@
 .metrics-log-table .metrics-sticky { position: sticky; left: 0; z-index: 1; background: var(--bg-card); box-shadow: 1px 0 0 var(--border); }
 .metrics-log-table tbody tr:hover .metrics-sticky { background: var(--bg-hover); }
 .metrics-log-table .metrics-sticky > .metrics-row-link { display: inline-block; max-width: 280px; vertical-align: middle; }
-.metrics-log-table .metrics-row-link > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Block children so ellipsis applies to inline labels such as ProjectLabel. */
+.metrics-log-table .metrics-row-link > * { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .metrics-rank { display: inline-block; min-width: 24px; margin-right: 8px; color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; vertical-align: middle; }
 .metrics-approx { margin-right: 2px; color: var(--text-dim); }
 

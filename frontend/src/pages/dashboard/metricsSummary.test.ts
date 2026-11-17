@@ -23,6 +23,8 @@ describe('cost basis', () => {
     [12, 12, 'billed', 'Billed by the provider'],
     [12, 16.3, 'mixed', '$12.00 billed · rest API-equivalent'],
     [0, 0, 'none', 'No cost recorded'],
+    [0.001, 0.005, 'mixed', '$0.001 billed · rest API-equivalent'],
+    [0.3, 0.1 + 0.2, 'billed', 'Billed by the provider'],
   ] as const)('reported %s, effective %s is %s', (reported, effective, basis, note) => {
     expect(costBasis(reported, effective)).toBe(basis);
     expect(costNote(reported, effective)).toBe(note);

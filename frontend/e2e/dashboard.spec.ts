@@ -349,7 +349,7 @@ test('overview renders summary and scoped date filters', async ({ mockedPage: pa
   await expect(page.getByRole('combobox')).toHaveCount(2);
   await expect(page.getByRole('combobox', { name: 'Project scope' })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Last' })).toBeVisible();
-  await expect(page.getByText('Total Cost', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Request summary').getByText('Cost', { exact: true })).toBeVisible();
   await expect(page.getByText('Factory attempts', { exact: true })).toHaveCount(0);
 });
 
