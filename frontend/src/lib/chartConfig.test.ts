@@ -50,7 +50,7 @@ describe('chartConfig', () => {
 
   it('uses the shared x-tick configuration on time-series charts', () => {
     const ticks = BAR_OPTIONS_TOKS.scales.x.ticks;
-    expect(ticks).toEqual({ maxTicksLimit: 10, maxRotation: 45, minRotation: 45 });
+    expect(ticks).toEqual({ maxTicksLimit: 8, maxRotation: 0, autoSkip: true });
     expect(BAR_OPTIONS_DURATION.scales.x.ticks).toBe(ticks);
     expect(BAR_OPTIONS_COST_BY_MODEL.scales.x.ticks).toBe(ticks);
     expect(LINE_OPTIONS_CACHE.scales.x.ticks).toBe(ticks);
@@ -66,12 +66,14 @@ describe('chartConfig', () => {
     expect(cb(5)).toBe('5s');
   });
 
-  it('stacks waiting time and formats duration tooltips', () => {
+  it('stacks waiting time horizontally and formats durations', () => {
+    expect(BAR_OPTIONS_WAIT_TIME.indexAxis).toBe('y');
     expect(BAR_OPTIONS_WAIT_TIME.scales.x.stacked).toBe(true);
     expect(BAR_OPTIONS_WAIT_TIME.scales.y.stacked).toBe(true);
+    expect(BAR_OPTIONS_WAIT_TIME.scales.x.ticks.callback(5400)).toBe('1h 30m');
     const label = BAR_OPTIONS_WAIT_TIME.plugins.tooltip.callbacks.label;
-    expect(label({ dataset: { label: 'Tools' }, parsed: { y: 90 } })).toBe('Tools: 1m 30s');
-    expect(label({ dataset: {}, parsed: { y: null } })).toBe(': 0s');
+    expect(label({ dataset: { label: 'Tools' }, parsed: { x: 90 } })).toBe('Tools: 1m 30s');
+    expect(label({ dataset: {}, parsed: { x: null } })).toBe(': 0s');
   });
 
   it('caps cache-efficiency line chart at 100', () => {

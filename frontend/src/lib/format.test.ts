@@ -10,6 +10,8 @@ import {
   formatDuration,
   formatNumber,
   formatPercent,
+  formatCost,
+  formatDayLabel,
   formatSeconds,
   durationScale,
   formatSubscriptionResetDate,
@@ -172,6 +174,10 @@ describe('renderModel', () => {
   it('returns the trailing path segment for provider-prefixed ids', () => {
     expect(renderModel('anthropic/claude-opus-4')).toBe('claude-opus-4');
     expect(renderModel('openai/gpt-4o')).toBe('gpt-4o');
+  });
+
+  it('labels placeholder model ids instead of showing angle brackets', () => {
+    expect(renderModel('anthropic/<synthetic>')).toBe('synthetic (no model call)');
   });
 
   it('returns the input unchanged when there is no slash', () => {
@@ -372,5 +378,28 @@ describe('durationScale', () => {
     [7200, 'Hours', 3600],
   ])('picks a readable axis unit for a %s second maximum', (max, unit, divisor) => {
     expect(durationScale(max)).toEqual({ unit, divisor });
+  });
+});
+
+describe('formatCost', () => {
+  it.each([
+    [0, '$0'],
+    [Number.NaN, '$0'],
+    [35.4777, '$35.48'],
+    [1204.4, '$1,204'],
+    [0.6785, '$0.68'],
+    [0.5, '$0.50'],
+    [0.0792, '$0.079'],
+    [0.0002, '$0.0002'],
+    [0.00001, '<$0.0001'],
+  ])('formats %s as %s', (value, expected) => {
+    expect(formatCost(value)).toBe(expected);
+  });
+});
+
+describe('formatDayLabel', () => {
+  it('shortens ISO days and leaves unparseable labels alone', () => {
+    expect(formatDayLabel('2026-10-19')).toBe('Oct 19');
+    expect(formatDayLabel('day-1')).toBe('day-1');
   });
 });

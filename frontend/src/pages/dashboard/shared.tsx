@@ -24,11 +24,12 @@ export function MetricCard({ label, value, subvalue, tone }: { label: string; va
 // ChartCard
 // ---------------------------------------------------------------------------
 
-export function ChartCard({ title, children, style }: { title: string; children: ReactNode; style?: CSSProperties }) {
+/** `bodyHeight` sizes the plot to its content, e.g. one row per agent. */
+export function ChartCard({ title, children, style, bodyHeight }: { title: string; children: ReactNode; style?: CSSProperties; bodyHeight?: number }) {
   return (
-    <div className="chart-card metrics-chart-card" style={style}>
+    <div className={`chart-card metrics-chart-card${bodyHeight ? ' metrics-chart-card-auto' : ''}`} style={style}>
       <h3>{title}</h3>
-      <div className="metrics-chart-body">{children}</div>
+      <div className="metrics-chart-body" style={bodyHeight ? { height: bodyHeight } : undefined}>{children}</div>
     </div>
   );
 }

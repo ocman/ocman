@@ -12,6 +12,12 @@ describe('ChartCard', () => {
     expect(card).toHaveStyle({ marginBottom: '24px' });
     expect(screen.getByText('chart')).toHaveClass('metrics-chart-body');
   });
+
+  it('sizes the plot to its content when given a body height', () => {
+    render(<ChartCard title="Agents" bodyHeight={140}>bars</ChartCard>);
+    expect(screen.getByRole('heading', { name: 'Agents' }).parentElement).toHaveClass('metrics-chart-card-auto');
+    expect(screen.getByText('bars')).toHaveStyle({ height: '140px' });
+  });
 });
 
 describe('ChartSkeletons', () => {

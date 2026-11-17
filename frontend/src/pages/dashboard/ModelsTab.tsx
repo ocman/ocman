@@ -2,7 +2,7 @@ import { useState } from 'react';
 import './chartSetup';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKENS_BY_MODEL, CHART_COLORS, COST_DOUGHNUT_OPTIONS, DOUGHNUT_OPTIONS } from '../../lib/chartConfig';
-import { formatCompactNumber, formatCurrency, formatNumber, formatPercent, renderModel } from '../../lib/format';
+import { formatCompactNumber, formatCost, formatNumber, formatPercent, renderModel } from '../../lib/format';
 import { useHourlyTokens, useMetrics, useModels } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { InlineAlert } from '../../components/InlineAlert';
@@ -56,7 +56,7 @@ export function ModelsTab() {
             <div className="chart-card">
               <h3>Agent breakdown</h3>
               <div className="metrics-table-wrap"><DataTable><thead><tr><th>Agent</th><th>Requests</th><th>Errors</th><th>Tokens</th><th>Effective cost</th></tr></thead><tbody>
-                {metricsQ.data.agents.map((agent) => <tr key={agent.agent}><td>{agent.agent || 'Unknown'}</td><td>{formatNumber(agent.requests)}</td><td>{formatPercent(agent.errorRate)}</td><td>{formatCompactNumber(agent.totalTokens)}</td><td>{formatCurrency(agent.effectiveCost)}</td></tr>)}
+                {metricsQ.data.agents.map((agent) => <tr key={agent.agent}><td>{agent.agent || 'Unknown'}</td><td>{formatNumber(agent.requests)}</td><td>{formatPercent(agent.errorRate)}</td><td>{formatCompactNumber(agent.totalTokens)}</td><td>{formatCost(agent.effectiveCost)}</td></tr>)}
                 {metricsQ.data.agents.length === 0 && <tr><td colSpan={5}>No agents matched the current filters</td></tr>}
               </tbody></DataTable></div>
             </div>

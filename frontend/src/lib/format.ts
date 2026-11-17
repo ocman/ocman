@@ -158,6 +158,29 @@ export function formatCurrency(value: number, digits = 4): string {
   return `$${value.toFixed(digits)}`;
 }
 
+/**
+ * Money with precision that follows magnitude: "$1,204", "$35.48",
+ * "$0.68", "$0.079", "$0.0002". Sub-dollar amounts keep two significant
+ * digits so small per-request costs stay distinguishable without
+ * printing four decimals on every figure.
+ */
+export function formatCost(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '$0';
+  if (value >= 1000) return `$${Math.round(value).toLocaleString('en-US')}`;
+  if (value >= 1) return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (value < 0.0001) return '<$0.0001';
+  const significant = String(Number(value.toPrecision(2)));
+  const decimals = significant.split('.')[1]?.length ?? 0;
+  return `$${Number(significant).toFixed(Math.max(2, decimals))}`;
+}
+
+/** Short day label for chart axes: "2026-10-19" becomes "Oct 19". */
+export function formatDayLabel(isoDate: string): string {
+  const date = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 export function formatTokenCache(read: number, write: number): string {
   return `${formatCompactNumber(read)}r/${formatCompactNumber(write)}w`;
 }
@@ -288,7 +311,9 @@ export function cleanTitle(str: string | null | undefined): string {
  */
 export function renderModel(model: string): string {
   if (!model) return 'unknown';
-  return model.includes('/') ? model.split('/').slice(-1)[0] : model;
+  const name = model.includes('/') ? model.split('/').slice(-1)[0] : model;
+  // Placeholder ids such as "<synthetic>" mark locally generated replies.
+  return /^<[^<>]+>$/.test(name) ? `${name.slice(1, -1)} (no model call)` : name;
 }
 
 /**

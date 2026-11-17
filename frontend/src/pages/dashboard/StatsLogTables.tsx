@@ -9,7 +9,7 @@ import type { MetricsPerformance, ProjectLogEntry, RequestMetricsRow, SessionLog
 import {
   cleanTitle,
   formatCompactNumber,
-  formatCurrency,
+  formatCost,
   formatDateTimeShort,
   formatNumber,
   formatPercent,
@@ -48,8 +48,8 @@ export function MetricsSummaryCards({ metrics }: { metrics: MetricsPerformance }
       <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
       <MetricCard label="Total Wall Clock" value={formatSeconds(metrics.summary.totalDurationMs / 1000)} tone="blue" subvalue="sum of response times" />
       <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
-      <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, API-equivalent when plan reports $0" />
-      <MetricCard label="Reported / API-eq." value={`${formatCurrency(metrics.summary.totalCost)} / ${formatCurrency(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / API-equivalent estimate" />
+      <MetricCard label="Total Cost" value={formatCost(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, API-equivalent when plan reports $0" />
+      <MetricCard label="Reported / API-eq." value={`${formatCost(metrics.summary.totalCost)} / ${formatCost(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / API-equivalent estimate" />
     </div>
   );
 }
@@ -61,7 +61,7 @@ export function PerformanceSummaryCards({ metrics }: { metrics: MetricsPerforman
       <MetricCard label="Error rate" value={formatPercent(metrics.summary.errorRate)} tone="orange" subvalue={`${formatNumber(metrics.summary.errorRequests)} errors`} />
       <MetricCard label="P50 latency" value={formatSeconds(metrics.summary.p50DurationMs / 1000)} tone="purple" />
       <MetricCard label="P95 latency" value={formatSeconds(metrics.summary.p95DurationMs / 1000)} tone="purple" />
-      <MetricCard label="Cost / successful request" value={formatCurrency(metrics.summary.costPerSuccessfulRequest)} tone="green" subvalue={`${formatNumber(metrics.summary.successfulRequests)} successful`} />
+      <MetricCard label="Cost / successful request" value={formatCost(metrics.summary.costPerSuccessfulRequest)} tone="green" subvalue={`${formatNumber(metrics.summary.successfulRequests)} successful`} />
     </div>
   );
 }
@@ -71,7 +71,7 @@ export function PerformanceCharts({ metrics }: { metrics: MetricsPerformance }) 
   return (
     <>
       <div className="metrics-chart-grid">
-        <ChartCard title="Waiting Time by Agent (s)">
+        <ChartCard title="Waiting Time by Agent" bodyHeight={Math.max(140, 56 * metrics.agents.length + 72)}>
           {metrics.agents.some((agent) => agent.totalDurationMs > 0) ? <Bar
             role="img"
             aria-label="Total waiting time by agent, split into agent response, tools, and unknown timing"
@@ -147,9 +147,9 @@ function MetricsRowCells({ e }: { e: SessionOrProject }) {
       <td>{e.totalDurationMs > 0 ? formatSeconds(e.totalDurationMs / 1000) : '-'}</td>
       <td><ApiEquivalentCost reported={e.cost} effective={e.effectiveCost} fallback={dash} /></td>
       <td className="metrics-cost-detail">
-        <span title="Platform-reported (billed)">{e.cost > 0 ? formatCurrency(e.cost) : dash}</span>
+        <span title="Platform-reported (billed)">{e.cost > 0 ? formatCost(e.cost) : dash}</span>
         <span style={dim}> / </span>
-        <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{e.calcCost > 0 ? formatCurrency(e.calcCost) : '—'}</span>
+        <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{e.calcCost > 0 ? formatCost(e.calcCost) : '—'}</span>
       </td>
       <td>{renderModels(e.models)}</td>
       <td>{e.errorCount > 0
@@ -352,9 +352,9 @@ export function RequestLogTable({
               <td>{request.durationMs > 0 ? formatSeconds(request.durationMs / 1000) : '-'}</td>
               <td><ApiEquivalentCost reported={request.cost} effective={request.effectiveCost} fallback={dash} /></td>
               <td className="metrics-cost-detail">
-                <span title="Platform-reported (billed)">{request.cost > 0 ? formatCurrency(request.cost) : dash}</span>
+                <span title="Platform-reported (billed)">{request.cost > 0 ? formatCost(request.cost) : dash}</span>
                 <span style={dim}> / </span>
-                <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{request.calcCost > 0 ? formatCurrency(request.calcCost) : '—'}</span>
+                <span title="API-equivalent: token-based estimate at public API rates" style={{ color: 'var(--accent4)' }}>{request.calcCost > 0 ? formatCost(request.calcCost) : '—'}</span>
               </td>
               <td><span className="metrics-stop-pill">{request.stopReason}</span></td>
             </tr>

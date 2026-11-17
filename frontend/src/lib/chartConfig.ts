@@ -1,14 +1,13 @@
-import { formatCompactNumber, formatCurrency, formatSeconds } from './format';
+import { formatCompactNumber, formatCost, formatCurrency, formatSeconds } from './format';
 
 // responsive, maintainAspectRatio and animation are set once on
 // ChartJS.defaults in pages/dashboard/chartSetup.ts.
 
 /**
- * Time-series x-axis for the dashboard's bar / line charts. Limits the
- * number of labels to ten and rotates them 45° to avoid overlap on
- * dense buckets.
+ * Time-series x-axis for the dashboard's bar / line charts. Labels stay
+ * horizontal; Chart.js skips labels instead of rotating dense buckets.
  */
-const TIME_X = { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 45, minRotation: 45 } } as const;
+export const TIME_X = { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0, autoSkip: true } } as const;
 
 /**
  * Canvas charts cannot resolve var(), so colours are read from tokens.css
@@ -63,21 +62,25 @@ export const BAR_OPTIONS_DURATION = {
   },
 } as const;
 
+/**
+ * Horizontal stacked waiting time per agent. Agent names read along the
+ * category axis instead of as rotated tick labels.
+ */
 export const BAR_OPTIONS_WAIT_TIME = {
-  ...BAR_OPTIONS_DURATION,
-  interaction: stackedInteraction,
+  indexAxis: 'y' as const,
+  interaction: { mode: 'index' as const, axis: 'y' as const, intersect: false },
   plugins: {
     ...BAR_OPTIONS_DURATION.plugins,
     tooltip: {
       callbacks: {
-        label: (item: { dataset: { label?: string }; parsed: { y: number | null } }) =>
-          `${item.dataset.label ?? ''}: ${formatSeconds(Number(item.parsed.y ?? 0))}`,
+        label: (item: { dataset: { label?: string }; parsed: { x: number | null } }) =>
+          `${item.dataset.label ?? ''}: ${formatSeconds(Number(item.parsed.x ?? 0))}`,
       },
     },
   },
   scales: {
-    x: { ...BAR_OPTIONS_DURATION.scales.x, stacked: true },
-    y: { ...BAR_OPTIONS_DURATION.scales.y, stacked: true },
+    x: { stacked: true, beginAtZero: true, ticks: { maxTicksLimit: 6, callback: (v: string | number) => formatSeconds(Number(v)) } },
+    y: { stacked: true, grid: { display: false } },
   },
 } as const;
 
@@ -159,7 +162,7 @@ export const COST_DOUGHNUT_OPTIONS = {
     ...DOUGHNUT_OPTIONS.plugins,
     tooltip: {
       callbacks: {
-        label: (context: { label?: string; parsed: number }) => `${context.label ?? ''}: ${formatCurrency(context.parsed, 4)}`,
+        label: (context: { label?: string; parsed: number }) => `${context.label ?? ''}: ${formatCost(context.parsed)}`,
       },
     },
   },

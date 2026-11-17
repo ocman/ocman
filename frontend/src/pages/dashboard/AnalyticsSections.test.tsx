@@ -330,7 +330,7 @@ describe('analytics sections', () => {
       { ...metrics.agents[0], agent: '', agentDurationMs: 500, toolDurationMs: 0, unknownDurationMs: 0 },
     ] }));
     renderTab(<PerformanceTab />);
-    const card = screen.getByText('Waiting Time by Agent (s)').closest('.chart-card') as HTMLElement;
+    const card = screen.getByText('Waiting Time by Agent').closest('.chart-card') as HTMLElement;
     const chart = JSON.parse(within(card).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
     expect(chart.labels).toEqual(['build', 'Unknown agent']);
     expect(chart.datasets.map((dataset: { label: string; data: number[] }) => [dataset.label, dataset.data])).toEqual([

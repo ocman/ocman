@@ -2,7 +2,7 @@ import { Bar } from 'react-chartjs-2';
 import './chartSetup';
 import { InlineAlert } from '../../components/InlineAlert';
 import { BAR_OPTIONS_HOURLY, CHART_COLORS } from '../../lib/chartConfig';
-import { durationScale, formatSeconds } from '../../lib/format';
+import { durationScale, formatDayLabel, formatSeconds } from '../../lib/format';
 import { useAgentRunHours, useUIUsage } from '../../lib/queries';
 import { ChartCard, ChartSlot } from './shared';
 
@@ -20,10 +20,10 @@ export function RunTimeCharts({ days, dir }: { days: number; dir?: string }) {
     <ChartSlot isLoading={usage.isLoading} label="Loading active time in ocman">
       <ChartCard title="Active Time in Ocman per Day">
         <Bar aria-label={`Active ${scale.unit.toLowerCase()} in ocman per day`} role="img" data={{
-          labels: usage.data?.map((day) => day.date) ?? [],
+          labels: usage.data?.map((day) => formatDayLabel(day.date)) ?? [],
           datasets: [{ label: scale.unit, data: seconds.map((value) => value / scale.divisor), backgroundColor: CHART_COLORS[0] }],
         }} options={{ ...BAR_OPTIONS_HOURLY, scales: {
-          ...BAR_OPTIONS_HOURLY.scales,
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
           y: { beginAtZero: true, title: { display: true, text: scale.unit } },
         } }} />
       </ChartCard>

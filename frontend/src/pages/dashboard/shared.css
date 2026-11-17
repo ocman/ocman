@@ -17,3 +17,4 @@
 .metrics-pagination { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .metrics-pagination-info { font-size: 12px; color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; }
 @media (max-width: 1100px) { .analytics-chart-pair { grid-template-columns: minmax(0, 1fr); } }
+.metrics-chart-card-auto { min-height: 0; }
