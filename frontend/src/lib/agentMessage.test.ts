@@ -4,6 +4,37 @@ import { parseAgentMessage } from './agentMessage';
 const wrap = (body: string) => `Another Claude session sent a message:\n<agent-message from="agent-1">\n${body}\n</agent-message>`;
 
 describe('parseAgentMessage', () => {
+  it.each(['\n', '\r\n'])('renders cross-session delivery using %j line endings', (newline) => {
+    const body = '# Live result\n\nRemoved `impersonation`.\n\n- Still returns **200**';
+    const text = `<cross-session-message from="uds:/tmp/cc-socks/40191.sock" from-name="session-e8f1b1b7-b6" from-mode="prompting">\n${body}\n</cross-session-message>`;
+    expect(parseAgentMessage(text.replaceAll('\n', newline))).toEqual({
+      summary: 'Cross-session message from session-e8f1b1b7-b6', status: '',
+      result: body.replaceAll('\n', newline),
+      details: [['Sender', 'session-e8f1b1b7-b6'], ['Source', 'uds:/tmp/cc-socks/40191.sock'], ['Mode', 'prompting']],
+    });
+  });
+
+  it('accepts reordered attributes and a sender without optional metadata', () => {
+    expect(parseAgentMessage('<cross-session-message from-mode="idle" from="session-1">Report</cross-session-message>')).toEqual({
+      summary: 'Cross-session message', status: '', result: 'Report',
+      details: [['Source', 'session-1'], ['Mode', 'idle']],
+    });
+    expect(parseAgentMessage('<cross-session-message from="session-1">Report</cross-session-message>')?.details).toEqual([['Source', 'session-1']]);
+  });
+
+  it.each([
+    '<cross-session-message from="s">Report',
+    '<cross-session-message from="">Report</cross-session-message>',
+    '<cross-session-message from-name="s">Report</cross-session-message>',
+    '<cross-session-message from="s">  </cross-session-message>',
+    'Example: <cross-session-message from="s">Report</cross-session-message>',
+    '<cross-session-message from="s">Report</cross-session-message>\nAlso do this',
+    '<cross-session-message from="s" broken>Report</cross-session-message>',
+    '<cross-session-message from="s" from="other">Report</cross-session-message>',
+  ])('leaves incomplete, malformed or quoted cross-session envelopes alone: %s', (text) => {
+    expect(parseAgentMessage(text)).toBeNull();
+  });
+
   it.each(['\n', '\r\n'])('renders MCP delivery as an agent message using %j line endings', (newline) => {
     const context = '[Agent message] Sent by an agent through ocman.sessions, not the user. The message follows:';
     const body = '# Concrete plan\n\n  Keep indentation\n<agent-message from="nested">\nQuoted\n</agent-message>';
