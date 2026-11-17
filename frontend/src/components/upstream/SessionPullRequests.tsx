@@ -73,9 +73,7 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0, o
         if (!await confirm({ title: `Merge PR #${link.number}?`, description: `Merge "${link.pr.title}" using the forge's default merge method. Current checks will be verified again before merging.`, confirmLabel: 'Merge PR' })) return;
         await prWorkflowApi.change(sessionId, platform, { action: 'merge', number: link.number, host: link.remote.host, repo: link.remote.repo, headSha: link.pr.headSha });
         await load(true);
-      }, false)} />
-      {link.lastError && <p role="status">{link.lastError}</p>}
-      <ButtonGroup label={`PR #${link.number} feedback`}>
+      }, false)}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild disabled={busy}>
             <Button size="small" disabled={busy}>Fix <i className="bi bi-chevron-down" aria-hidden="true" /></Button>
@@ -86,7 +84,8 @@ function SessionLinks({ sessionId, platform, linksVersion, refreshVersion = 0, o
             <DropdownMenuItem disabled={busy} onSelect={() => void feedback(link, 'conflicts')}>Resolve conflicts</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </ButtonGroup>
+      </LinkedPRStatus>
+      {link.lastError && <p role="status">{link.lastError}</p>}
     </article>;
   return <section className="oc-session-prs" aria-label="Linked pull requests">
     {error && <p role="alert">{error} <Button variant="ghost" onClick={() => void run(load, false)}>Retry links</Button></p>}

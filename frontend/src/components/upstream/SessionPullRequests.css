@@ -13,4 +13,5 @@
 .oc-session-pr-link { display: grid; gap: 16px; }
 .oc-session-pr-link-field { display: grid; gap: 6px; font-size: 13px; }
 .oc-session-prs .oc-button-group { flex-wrap: wrap; }
+.oc-session-prs .oc-session-pr-feedback { flex-wrap: nowrap; }
 .oc-session-pr-merged { display: grid; gap: 8px; min-width: 0; }

@@ -38,6 +38,14 @@ describe('SessionPullRequests', () => {
     expect(prWorkflowApi.links).toHaveBeenCalledWith('s1', link.platform, true);
     expect(screen.queryByRole('button', { name: 'Merge' })).not.toBeInTheDocument();
   });
+  it('groups merge and fix together, separate from status text', async () => {
+    greenPR();
+    mount();
+    const actions = await screen.findByRole('group', { name: 'PR #42 merge and fix' });
+    expect(within(actions).getByRole('button', { name: 'Merge' })).toBeEnabled();
+    expect(within(actions).getByRole('button', { name: 'Fix' })).toBeEnabled();
+    expect(actions).not.toHaveTextContent('Not watching');
+  });
   it('does not merge when confirmation is cancelled', async () => {
     greenPR(); confirm.mockResolvedValue(false); mount();
     fireEvent.click(await screen.findByRole('button', { name: 'Merge' }));
