@@ -49,8 +49,9 @@ Uploaded files are immutable copies, and their source paths may no longer exist.
    origin to fetch its contents, not against the MCP listener's port. Ask for
    the dashboard origin if it is unknown. Keep URLs relative in user-facing
    Markdown so links stay on the viewer's current domain. External links stay
-   absolute. When password auth is enabled, `create`, `list`, and `get` return signed file URLs valid
-   for five minutes, without a login cookie. Call `get` again if a URL expires.
+   absolute. When password auth is enabled, `create`, `list`, and `get` return
+   signed file URLs valid for five minutes, without a login cookie. Call `get`
+   again if a URL expires.
 
 The top-level `url` opens the browser page and still requires login when
 password auth is enabled; it is not file content. A signed URL grants only
@@ -62,9 +63,9 @@ downloading images or PDFs if the reader requires a local file. If fetching
 fails or requires authentication, report that error instead of substituting
 a file from the original source directory.
 
-File URLs use `-public-base-url` / `OCMAN_PUBLIC_BASE_URL` when configured,
-otherwise the web listen address. Agents running elsewhere need a reachable
-public base URL. Treat signed URLs as temporary credentials.
+File URLs contain no domain or port. Agents fetching files must resolve these
+paths against a reachable dashboard origin, not the MCP listener. Ask for that
+origin if it is unknown. Treat signed URLs as temporary credentials.
 
 ## Storage
 
