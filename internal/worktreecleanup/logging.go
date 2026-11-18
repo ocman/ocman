@@ -60,7 +60,11 @@ func (r *sweepReport) checkout(owner, path string, removed bool, err error) {
 	}
 	r.checked++
 	r.counts[outcome]++
-	r.log.WithFields(log.Fields{"owner": owner, "path": path, "outcome": outcome, "reason_code": cleanupReason(err)}).Info("worktree cleanup checkout")
+	level := log.DebugLevel
+	if removed {
+		level = log.InfoLevel
+	}
+	r.log.WithFields(log.Fields{"owner": owner, "path": path, "outcome": outcome, "reason_code": cleanupReason(err)}).Log(level, "worktree cleanup checkout")
 	if err != nil {
 		r.log.WithFields(log.Fields{"owner": owner, "path": path}).WithError(err).Debug("worktree cleanup detail")
 	}

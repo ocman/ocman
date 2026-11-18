@@ -29,11 +29,11 @@ func cleanupLogEntry(t *testing.T, hook *logtest.Hook, message string) *log.Entr
 			return entry
 		}
 	}
-	t.Fatalf("missing INFO log %q: %+v", message, hook.AllEntries())
+	t.Fatalf("missing log %q: %+v", message, hook.AllEntries())
 	return nil
 }
 
-func TestCleanupLogsOutcomesAtInfo(t *testing.T) {
+func TestCleanupLogsOutcomeLevels(t *testing.T) {
 	for _, tc := range []struct {
 		name, outcome, reason string
 		setup                 func(*testing.T, *fixture)
@@ -63,11 +63,16 @@ func TestCleanupLogsOutcomesAtInfo(t *testing.T) {
 			f := newFixture(t)
 			tc.setup(t, f)
 			hook := cleanupLogHook(t)
+			log.SetLevel(log.DebugLevel)
 			if err := f.m.Sweep(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			checkout := cleanupLogEntry(t, hook, "worktree cleanup checkout")
-			if checkout.Level != log.InfoLevel || checkout.Data["outcome"] != tc.outcome || checkout.Data["reason_code"] != tc.reason || checkout.Data["path"] != testPath || checkout.Data["owner"] != "local" {
+			wantLevel := log.DebugLevel
+			if tc.outcome == "removed" {
+				wantLevel = log.InfoLevel
+			}
+			if checkout.Level != wantLevel || checkout.Data["outcome"] != tc.outcome || checkout.Data["reason_code"] != tc.reason || checkout.Data["path"] != testPath || checkout.Data["owner"] != "local" {
 				t.Fatalf("checkout outcome: %+v", checkout)
 			}
 			summary := cleanupLogEntry(t, hook, "worktree cleanup sweep")
@@ -82,12 +87,33 @@ func TestCleanupLogsOutcomesAtInfo(t *testing.T) {
 				t.Fatalf("missing reason counts: %+v", summary.Data)
 			}
 			for _, entry := range hook.AllEntries() {
+				if entry.Level == log.DebugLevel {
+					continue
+				}
 				text, _ := entry.String()
 				if strings.Contains(text, "private-error-canary") {
 					t.Fatal("INFO logs leaked raw owner errors")
 				}
 			}
 		})
+	}
+}
+
+func TestCleanupRetainedCheckoutsAreSilentAtInfo(t *testing.T) {
+	f := newFixture(t)
+	f.p.SessionList[0].Status = db.StatusBusy
+	hook := cleanupLogHook(t)
+	if err := f.m.Sweep(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range hook.AllEntries() {
+		if entry.Message == "worktree cleanup checkout" || entry.Message == "worktree cleanup detail" {
+			t.Fatalf("retained checkout logged at INFO: %+v", entry)
+		}
+	}
+	summary := cleanupLogEntry(t, hook, "worktree cleanup sweep")
+	if summary.Data["retained"] != int64(1) {
+		t.Fatalf("missing retained count: %+v", summary.Data)
 	}
 }
 
