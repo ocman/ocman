@@ -206,7 +206,8 @@ func moduleToolFilter(filters []module.ToolFilter) func(context.Context, []mcpli
 type sessionMCPService struct{ server *Server }
 
 func (s sessionMCPService) ListSessions(ctx context.Context, directory string) ([]db.Session, error) {
-	sessions := sortAndLimitSessions(s.server.fanOutSessions(ctx, directory, 0, s.server.registry.RememberSessions), 500)
+	// MCP applies its response limit after matching, so retain the full catalogue.
+	sessions := sortAndLimitSessions(s.server.fanOutSessions(ctx, directory, 0, s.server.registry.RememberSessions), -1)
 	if s.server.stateDB != nil {
 		if err := s.server.applySessionStateReadOnly(ctx, sessions); err != nil {
 			return nil, err
