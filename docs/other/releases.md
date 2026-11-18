@@ -77,6 +77,9 @@ flowchart LR
 - Casks install the CLI, not the desktop app, and conflict with the other
   channel. On macOS, a post-install hook removes quarantine from that CLI
   because it is not notarized. See the [installation security note](../introduction/installation.md#homebrew).
+- Casks depend only on `tmux`. Their caveats suggest the OpenCode, Claude
+  Code and Codex packages. They don't install them, because users pick their
+  own agents.
 
 ### One-time tap setup
 

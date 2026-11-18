@@ -69,6 +69,10 @@ class ReleaseConfigTest(unittest.TestCase):
             self.assertEqual(cask.count('sha256 "'), 4)
             self.assertIn('/usr/bin/xattr', cask)
             self.assertIn('com.apple.quarantine', cask)
+            self.assertIn('caveats <<~EOS', cask)
+            for package in ('brew install opencode', 'brew install --cask claude-code',
+                            'brew install --cask codex'):
+                self.assertIn(package, cask)
             self.assertEqual(len(list(dist.glob('ocman-*.tar.gz'))), 4)
             for os_name in ('linux', 'darwin'):
                 for arch in ('amd64', 'arm64'):

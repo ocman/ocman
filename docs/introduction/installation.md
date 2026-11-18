@@ -38,7 +38,9 @@ Update with `brew update` followed by
 GoReleaser updates the tap when it publishes each release. Restart any running
 ocman process after upgrading. Homebrew does not start ocman automatically or
 install `ocman-ctl`. Run `ocman` directly and configure agent CLIs separately.
-See the [runtime requirements](_index.md#requirements).
+After installing, Homebrew prints the commands that install OpenCode, Claude Code
+and Codex. Ocman doesn't install them for you. See the
+[runtime requirements](_index.md#requirements).
 
 The CLI is not signed with an Apple developer certificate or notarized.
 On macOS, the cask removes the quarantine attribute from the installed CLI
