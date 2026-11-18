@@ -102,7 +102,15 @@
     <p class="oc-eyebrow">Less juggling. More doing.</p>
     <h2 id="start-title">Give your agents<br><span>a place to work.</span></h2>
     <p>Bring your installed, signed-in agent CLI.<br>Ocman runs locally. Your next session starts here.</p>
-    <div class="oc-actions"><a class="oc-button oc-button-primary" href="{{ "docs/introduction/installation/" | relURL }}">Install ocman <span aria-hidden="true">↗</span></a><a class="oc-button" href="{{ "docs/" | relURL }}">Read the docs</a></div>
+    <figure class="oc-window oc-install">
+      <div class="oc-window-bar"><span class="oc-window-dots" aria-hidden="true">● ● ●</span><span>Install with Homebrew</span><span>macOS &amp; Linux</span></div>
+      <pre><code><span class="oc-prompt" aria-hidden="true">$ </span>brew tap ocman/tap
+<span class="oc-prompt" aria-hidden="true">$ </span>brew install --cask ocman/tap/ocman-nightly
+<span class="oc-prompt" aria-hidden="true">$ </span>ocman
+<span class="oc-comment"># Open http://localhost:8228</span></code></pre>
+      <figcaption>Needs Homebrew 7.0.11 or newer. Also available as a <a href="{{ "docs/introduction/installation/#desktop-app" | relURL }}">desktop app</a> for Apple Silicon or through the <a href="{{ "docs/introduction/installation/#shell-installer" | relURL }}">shell installer</a>.</figcaption>
+    </figure>
+    <div class="oc-actions"><a class="oc-button oc-button-primary" href="{{ "docs/introduction/installation/" | relURL }}">All install options <span aria-hidden="true">↗</span></a><a class="oc-button" href="{{ "docs/" | relURL }}">Read the docs</a></div>
     <p class="oc-meta">Single binary · MIT licensed</p>
   </section>
 </div>

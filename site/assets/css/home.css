@@ -158,6 +158,13 @@
 .oc-home-shell + .hextra-footer .oc-footer-credit { padding-block: 1rem; }
 .oc-finale .oc-eyebrow { justify-content: center; }
 .oc-finale > p:not(.oc-eyebrow, .oc-meta) { margin-block: 2rem; color: var(--oc-muted); }
+.oc-home .oc-install { max-width: 38rem; margin: 0 auto 2.5rem; text-align: left; }
+.oc-install pre { margin: 0; padding: 1.25rem 1.5rem; overflow-x: auto; background: transparent; color: #eef5fb; font: 0.85rem/1.9 ui-monospace, monospace; }
+.oc-install code { padding: 0; background: none; color: inherit; font: inherit; }
+.oc-install .oc-prompt { color: var(--oc-accent); user-select: none; }
+.oc-install .oc-comment { color: #7d8899; }
+.oc-install figcaption { padding: 0.75rem 1.5rem; border-top: 1px solid var(--oc-border); background: #111720; color: var(--oc-muted); font-size: 0.75rem; }
+.oc-install figcaption a { color: var(--oc-accent); }
 
 @media (max-width: 1000px) {
   .oc-scene { grid-template-columns: 1fr; gap: 2.5rem; padding: 2rem; }

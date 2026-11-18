@@ -14,7 +14,7 @@ you need to finish.
 
 {{< cards >}}
   {{< card link="introduction" title="First steps" subtitle="Check requirements, install ocman and launch your first session." >}}
-  {{< card link="introduction/installation" title="Installation and updates" subtitle="Choose a release, update the binary or manage the background process." >}}
+  {{< card link="introduction/installation" title="Installation and updates" subtitle="Install with Homebrew or the shell installer, choose a release and update." >}}
 {{< /cards >}}
 
 ## What do you want to do?
