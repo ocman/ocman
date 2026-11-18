@@ -60,6 +60,8 @@ flowchart LR
     Desktop --> GoReleaser
     GoReleaser --> Releases[GitHub archives, checksums and DMG]
     GoReleaser --> Tap[ocman/homebrew-tap<br/>Casks commits on main]
+    Releases --> DesktopCask[Desktop cask script]
+    DesktopCask --> Tap
     Tap --> Brew[Homebrew]
     Releases -->|SHA-256 verified download| Brew
 ```
@@ -74,12 +76,19 @@ flowchart LR
 - The release uses `GITHUB_TOKEN` to publish on `ocman/ocman` and the separate
   `HOMEBREW_TAP_TOKEN` to update the tap's `main` through GitHub's API.
   No scheduled refresh job or custom formula generator is needed.
-- Casks install the CLI, not the desktop app, and conflict with the other
-  channel. On macOS, a post-install hook removes quarantine from that CLI
+- The `ocman` and `ocman-nightly` casks install the CLI and conflict with the
+  other channel. On macOS, a post-install hook removes quarantine from that CLI
   because it is not notarized. See the [installation security note](../introduction/installation.md#homebrew).
 - Casks depend only on `tmux`. Their caveats suggest the OpenCode, Claude
   Code and Codex packages. They don't install them, because users pick their
   own agents.
+- GoReleaser OSS cannot build casks from a DMG it did not create, so after
+  GoReleaser publishes, `scripts/publish_desktop_cask.py` writes
+  `Casks/ocman-desktop.rb` for stable tags or `Casks/ocman-desktop-nightly.rb`
+  for nightlies. It uses the same `HOMEBREW_TAP_TOKEN` and the contents API,
+  and skips the commit when the cask is unchanged. These casks install
+  `ocman.app` from the arm64 DMG, conflict only with the other desktop channel,
+  and remove quarantine from the app.
 
 ### One-time tap setup
 
@@ -100,13 +109,16 @@ flowchart LR
    has an explicitly configured bypass. No force-push permission is required.
 5. Once this change has reached GitHub's `main`, cut a new nightly whose tag
    contains `.goreleaser.yaml`. Watch GitHub's **Release** workflow and confirm
-   it creates `Casks/ocman-nightly.rb` in the tap. The first stable release
-   creates `Casks/ocman.rb`. Actions need not be enabled in the tap itself.
+   it creates `Casks/ocman-nightly.rb` and `Casks/ocman-desktop-nightly.rb`
+   in the tap. The first stable release creates `Casks/ocman.rb` and
+   `Casks/ocman-desktop.rb`. Actions need not be enabled in the tap itself.
 
 Run `mise install goreleaser`, then `goreleaser check` to validate the config.
 `python3 scripts/test_goreleaser.py` exercises it against disposable Go fixtures
 with stable and nightly tags, without publishing. It checks all archives,
-checksums, version stamping and generated casks. `make lint-release-scripts`
+checksums, version stamping and generated casks.
+`python3 scripts/test_publish_desktop_cask.py` checks the desktop casks
+against a fake GitHub API. `make lint-release-scripts`
 also runs these tests when GoReleaser is installed; GitHub always runs them
 before publishing. See [installation](../introduction/installation.md#homebrew).
 

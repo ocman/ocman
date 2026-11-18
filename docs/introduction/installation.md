@@ -52,6 +52,28 @@ first. Remove the old installation with `ocman-ctl uninstall` without
 `--purge` to keep application data, and check `command -v ocman` resolves
 to Homebrew's binary. Do not use `ocman-ctl update` for a Homebrew installation.
 
+### Desktop app
+
+The desktop casks install `ocman.app` into `/Applications` from the same
+release's DMG. They need an Apple Silicon Mac.
+
+```sh
+brew tap ocman/tap
+brew install --cask ocman/tap/ocman-desktop-nightly
+```
+
+The stable `ocman/tap/ocman-desktop` cask appears with the first stable
+release. Install only one desktop channel. Update with `brew upgrade --cask`
+and the cask name, then reopen the app.
+
+If you installed `ocman.app` from the DMG before, quit it and move it to the
+Trash first, or Homebrew stops because an app is already there. The desktop
+app and the CLI use the same ocman data, so you can install both, but run
+one at a time.
+
+Like the CLI, the app is not signed or notarized. The cask removes the
+quarantine attribute from `ocman.app` so it opens without a Gatekeeper prompt.
+
 ## Shell installer
 
 The installer supports macOS and Linux. It prefers GitHub release binaries

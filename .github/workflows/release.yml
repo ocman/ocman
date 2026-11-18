@@ -142,9 +142,15 @@ jobs:
         run: |
           goreleaser check
           python3 scripts/test_goreleaser.py
+          python3 scripts/test_publish_desktop_cask.py
       - name: Build CLI, publish release and update Homebrew tap
         env:
           GITHUB_TOKEN: ${{ github.token }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ env.TAG }}
         run: goreleaser release --clean --release-notes=.release/changelog.md
+      # GoReleaser OSS cannot build casks from an externally built DMG.
+      - name: Update desktop Homebrew cask
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: python3 scripts/publish_desktop_cask.py "${TAG}" .release/ocman-darwin-arm64.dmg

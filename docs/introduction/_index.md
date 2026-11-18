@@ -45,6 +45,23 @@ ocman.
 
 ## Install
 
+With Homebrew 7.0.11 or newer, on macOS or Linux:
+
+```sh
+brew tap ocman/tap
+brew install --cask ocman/tap/ocman-nightly
+ocman
+# Open http://localhost:8228
+```
+
+Homebrew does not run ocman in the background or install `ocman-ctl`. See
+[Homebrew](installation.md#homebrew) for updates and switching channels.
+On an Apple Silicon Mac, install the desktop app instead with
+`brew install --cask ocman/tap/ocman-desktop-nightly`. See
+[Desktop app](installation.md#desktop-app).
+
+Or use the shell installer:
+
 ```sh
 curl -fsSL https://forgejo.nousefreak.be/dries/ocman/raw/branch/main/install.sh | bash -s -- install
 # Open http://localhost:8228
