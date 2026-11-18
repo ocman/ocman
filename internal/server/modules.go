@@ -261,7 +261,6 @@ func (s *Server) artifactsModule() *artifacts.Module {
 			Descendants:    s.sessionDescendants,
 			FileAuth:       s.requireArtifactFileAuth,
 			SignFileURL:    s.signArtifactFileURL,
-			PublicURL:      s.publicURL,
 			RelayURL:       func() string { return s.relayURL },
 			Broadcast:      s.broadcastGlobalEvent,
 		})

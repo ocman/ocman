@@ -16,13 +16,13 @@ import (
 	"github.com/ocman/ocman/internal/state"
 )
 
-// artifactService returns artifacts whose item URLs are already absolute.
+// artifactService returns artifacts with origin-relative file URLs.
 // Errors wrapping state.ErrArtifactInvalid are reported to the agent verbatim.
 type artifactService interface {
 	CreateArtifact(context.Context, Input) (state.Artifact, error)
 	ListArtifacts(context.Context, state.ArtifactFilter) ([]state.Artifact, string, error)
 	GetArtifact(context.Context, string) (state.Artifact, error)
-	// ArtifactPageURL is the absolute ocman UI URL for artifact id.
+	// ArtifactPageURL is the origin-relative ocman UI URL for artifact id.
 	ArtifactPageURL(id string) string
 }
 
@@ -34,7 +34,7 @@ type toolAction struct {
 	output                     string
 }
 
-// mcpService answers the tool with absolute, agent-fetchable file URLs.
+// mcpService answers the tool with origin-relative file URLs, signed when auth is on.
 type mcpService struct{ m *Module }
 
 func (s mcpService) CreateArtifact(ctx context.Context, in Input) (state.Artifact, error) {
@@ -62,14 +62,14 @@ func (s mcpService) GetArtifact(ctx context.Context, id string) (state.Artifact,
 }
 
 func (s mcpService) ArtifactPageURL(id string) string {
-	return s.m.PublicURL("/artifacts/" + url.PathEscape(id))
+	return "/artifacts/" + url.PathEscape(id)
 }
 
 var artifactActions = []toolAction{
 	{name: "help", description: "Describes every available artifact action.", example: `{"action":"help"}`, output: "Artifact action documentation"},
 	{name: "create", description: "Publishes an immutable artifact of files and links for a project. Pass your own platform and session_id to attach it to your session.", example: `{"action":"create","directory":"/repo","platform":"opencode","session_id":"ses_1","title":"Coverage report","files":[{"path":"/repo/coverage.html"},{"name":"notes.md","content":"# Notes"}],"links":[{"url":"https://example.com/pr/1","label":"PR"}]}`, required: []string{"directory", "title"}, optional: []string{"description", "platform", "session_id", "files", "links"}, output: "{id, url, items: {kind, name?, url, label?}[], markdown}"},
 	{name: "list", description: "Finds published artifacts newest first. Filter by the stored project root, not a worktree path; list without directory if unknown. Omit platform and session_id to include other sessions. Use get and fetch item URLs to read files, rather than scanning original folders.", example: `{"action":"list","directory":"/repo","limit":20}`, optional: []string{"directory", "platform", "session_id", "cursor", "limit"}, output: "{artifacts: Artifact[], next_cursor}"},
-	{name: "get", description: "Gets artifact metadata and items, not file contents. Fetch items[].url to read files. File URLs are absolute and, when password auth is enabled, signed for five minutes without needing a login cookie. Call get again to refresh an expired URL. The top-level url is the browser page.", example: `{"action":"get","artifact_id":"art_1"}`, required: []string{"artifact_id"}, output: "Artifact & {url}"},
+	{name: "get", description: "Gets artifact metadata and items, not file contents. File URLs are root-relative to the dashboard origin, not the MCP listener. Resolve items[].url against the dashboard origin to fetch files. When password auth is enabled, URLs are signed for five minutes without needing a login cookie. Call get again to refresh an expired URL. The top-level url is the browser page.", example: `{"action":"get","artifact_id":"art_1"}`, required: []string{"artifact_id"}, output: "Artifact & {url}"},
 }
 
 func artifactServerTools(tools *artifactTools) []server.ServerTool {
@@ -77,7 +77,7 @@ func artifactServerTools(tools *artifactTools) []server.ServerTool {
 		return nil
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("artifacts",
-		mcplib.WithDescription("Find, read, and publish project artifacts: reports, screenshots, generated files, and links (actions: help, create, list, get). To read earlier artifacts, list with the stored project root (omit directory if unknown), get by artifact_id, then fetch items[].url; get returns metadata, not file contents. File URLs are absolute and signed for five minutes when password auth is enabled; get again to refresh. Use MCP instead of scanning original folders or old worktrees. Use action help for schemas and examples."),
+		mcplib.WithDescription("Find, read, and publish project artifacts: reports, screenshots, generated files, and links (actions: help, create, list, get). To read earlier artifacts, list with the stored project root (omit directory if unknown), get by artifact_id, then resolve items[].url against the dashboard origin to fetch files; get returns metadata, not file contents. Internal URLs are root-relative, not on the MCP listener's port. File URLs are signed for five minutes when password auth is enabled; get again to refresh. Use MCP instead of scanning original folders or old worktrees. Use action help for schemas and examples."),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("directory"), mcplib.WithString("platform"), mcplib.WithString("session_id"),
 		mcplib.WithString("title"), mcplib.WithString("description"), mcplib.WithString("artifact_id"), mcplib.WithString("cursor"), mcplib.WithNumber("limit"),
 		mcplib.WithArray("files", mcplib.Items(map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "content": map[string]any{"type": "string"}, "mime": map[string]any{"type": "string"}}})),
@@ -226,7 +226,7 @@ func artifactHelp() map[string]any {
 		"list returns at most 200 artifacts per page; pass next_cursor as cursor for the next page",
 		"to find project artifacts, list with the stored project root and omit platform/session_id to include other sessions; if the root is unknown, list without directory and inspect returned directory fields; do not scan original folders, old worktrees, or blob storage",
 		"get returns metadata, not file contents; fetch items[].url to read the published immutable copy, or follow the external URL for kind=link",
-		"file URLs are absolute on the browser server's origin, not the MCP listener's port; when password auth is enabled they grant cookie-free GET access to one file for five minutes; get again to refresh an expired URL",
+		"internal URLs are root-relative to the dashboard origin, not the MCP listener's port; keep them relative in user-facing Markdown; for HTTP fetching resolve them against the known dashboard origin, and ask for that origin if unknown; when password auth is enabled file URLs grant cookie-free GET access to one file for five minutes; get again to refresh an expired URL",
 		"the top-level url is a browser permalink and still requires login when password auth is enabled; signed file URLs do not grant metadata, other files, or interactive preview access",
 		"use item name, mime, and size to select a reader; if fetching fails or needs authentication, report the error rather than guessing an original path",
 		"artifacts are local to the connected ocman instance and are not routed across remotes",

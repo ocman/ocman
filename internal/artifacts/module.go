@@ -24,10 +24,8 @@ type Deps struct {
 	Descendants func(ctx context.Context, sessionID string) ([]string, error)
 	// FileAuth guards the inert file route, which also accepts a signed URL.
 	FileAuth func(http.HandlerFunc) http.HandlerFunc
-	// SignFileURL makes a file route absolute, signed when auth is on.
+	// SignFileURL signs an origin-relative file route when auth is on.
 	SignFileURL func(path string) string
-	// PublicURL makes an in-app path absolute.
-	PublicURL func(path string) string
 	// RelayURL is the share relay; empty disables sharing.
 	RelayURL  func() string
 	Broadcast func(event string, data []byte)

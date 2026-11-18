@@ -57,8 +57,7 @@ func artifactServer(t *testing.T) (*Module, func(string, string) *httptest.Respo
 			return []string{id}, nil
 		},
 		FileAuth:    pass,
-		SignFileURL: func(path string) string { return "https://ocman.example" + path },
-		PublicURL:   func(path string) string { return "https://ocman.example" + path },
+		SignFileURL: func(path string) string { return path },
 		RelayURL:    func() string { return relayURL },
 		Broadcast:   func(string, []byte) {},
 	})

@@ -45,8 +45,11 @@ Uploaded files are immutable copies, and their source paths may no longer exist.
    in the project. Pass a nonempty `next_cursor` as `cursor` for the next page.
 2. Select an artifact by its title, description, and items, then call
    `{"action":"get","artifact_id":"art_1"}` for its metadata and file URLs.
-3. Fetch a file's absolute `items[].url` to read its contents. When password
-   auth is enabled, `create`, `list`, and `get` return signed file URLs valid
+3. Resolve a file's root-relative `items[].url` against the known dashboard
+   origin to fetch its contents, not against the MCP listener's port. Ask for
+   the dashboard origin if it is unknown. Keep URLs relative in user-facing
+   Markdown so links stay on the viewer's current domain. External links stay
+   absolute. When password auth is enabled, `create`, `list`, and `get` return signed file URLs valid
    for five minutes, without a login cookie. Call `get` again if a URL expires.
 
 The top-level `url` opens the browser page and still requires login when

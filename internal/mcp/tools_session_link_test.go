@@ -22,7 +22,6 @@ func TestCreateSessionDashboardLink(t *testing.T) {
 				}
 				srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{
 					SessionService: svc,
-					PublicURL:      func(path string) string { return "https://ocman.example/dashboard" + path },
 				})...)
 				if err != nil {
 					t.Fatal(err)
@@ -30,7 +29,7 @@ func TestCreateSessionDashboardLink(t *testing.T) {
 				t.Cleanup(srv.Close)
 				result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "platform": platform, "model": "p/m"})
 				text := testutil.ResultText(result)
-				wantURL := "https://ocman.example/dashboard/session/new%20%2F%3F%23?platform=" + strings.ReplaceAll(platform, ":", "%3A")
+				wantURL := "/session/new%20%2F%3F%23?platform=" + strings.ReplaceAll(platform, ":", "%3A")
 				if result.IsError != failed {
 					t.Fatalf("IsError = %v, text = %s", result.IsError, text)
 				}
@@ -60,10 +59,6 @@ func TestCreateSessionFailureWithoutSessionHasNoLink(t *testing.T) {
 	svc := &fakeSessionCreator{err: errors.New("creation failed")}
 	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{
 		SessionService: svc,
-		PublicURL: func(string) string {
-			t.Fatal("must not link a session that was not created")
-			return ""
-		},
 	})...)
 	if err != nil {
 		t.Fatal(err)

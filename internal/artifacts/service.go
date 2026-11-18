@@ -207,7 +207,7 @@ func view(a state.Artifact) state.Artifact {
 	return a
 }
 
-// mcpView is view with absolute file URLs an agent can fetch, signed when
+// mcpView is view with origin-relative file URLs, signed when
 // auth is on.
 func (m *Module) mcpView(a state.Artifact) state.Artifact {
 	a = view(a)

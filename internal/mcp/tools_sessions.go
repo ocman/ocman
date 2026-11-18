@@ -38,8 +38,7 @@ func (e AmbiguousSessionError) Error() string {
 }
 
 type sessionTools struct {
-	svc       sessionService
-	publicURL func(string) string
+	svc sessionService
 }
 
 type sessionAction struct {

@@ -11,10 +11,10 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 )
 
-func TestMCPCreateSessionLinkUsesDashboardOrigin(t *testing.T) {
+func TestMCPCreateSessionLinkIsOriginRelative(t *testing.T) {
 	for _, test := range []struct{ name, base, want string }{
-		{"public", "https://ocman.example/dashboard/", "https://ocman.example/dashboard/session/ses-new?platform=opencode"},
-		{"local", "", "http://localhost:9123/session/ses-new?platform=opencode"},
+		{"public", "https://ocman.example/dashboard/", "/session/ses-new?platform=opencode"},
+		{"local", "", "/session/ses-new?platform=opencode"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
@@ -36,6 +36,9 @@ func TestMCPCreateSessionLinkUsesDashboardOrigin(t *testing.T) {
 			srv.buildMCPHandler().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), test.want) || strings.Contains(rec.Body.String(), `"isError":true`) {
 				t.Fatalf("status = %d, body = %s, want dashboard link %s", rec.Code, rec.Body.String(), test.want)
+			}
+			if strings.Contains(rec.Body.String(), "http://") || strings.Contains(rec.Body.String(), "https://") {
+				t.Fatalf("session link includes an origin: %s", rec.Body.String())
 			}
 		})
 	}

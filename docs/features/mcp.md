@@ -167,9 +167,12 @@ because they have no reliable agent-origin marker.
 
 Session creation returns `platform`, `session_id`, `directory`, and a browser-ready
 `url`. Render `url` as a clickable Markdown link for the user. The link includes
-the owning platform or connection, including remote sessions, and uses the
-configured public dashboard URL. If creation succeeds but setup or prompt
-delivery fails, the error also includes a link to the created session.
+the owning platform or connection, including remote sessions. Internal MCP links
+are root-relative, such as `/session/…?platform=…`, so opening them keeps the
+viewer's current dashboard domain and port. Keep them relative in Markdown.
+External links, such as forge and relay URLs, remain absolute.
+If creation succeeds but setup or prompt delivery fails, the error also includes
+a link to the created session.
 
 To create a session on a specific platform, pass an absolute `directory` and
 `platform`, such as `claudecode` or `r-machine:claudecode`. No caller `session_id`

@@ -30,13 +30,13 @@ func (a *Auth) validArtifactURLToken(path, token string, now time.Time) bool {
 	return hmac.Equal([]byte(token), []byte(a.artifactURLToken(path, time.Unix(exp, 0))))
 }
 
-// signArtifactFileURL makes an artifact file route absolute and, when auth
+// signArtifactFileURL keeps the file route origin-relative and, when auth
 // is on, appends a short-lived token scoped to that one path.
 func (s *Server) signArtifactFileURL(path string) string {
 	if s.auth != nil {
 		path += "?token=" + url.QueryEscape(s.auth.artifactURLToken(path, time.Now().Add(artifactURLTTL)))
 	}
-	return s.publicURL(path)
+	return path
 }
 
 // Only the inert file route uses this wrapper. All other routes keep cookie auth.

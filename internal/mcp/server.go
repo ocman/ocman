@@ -25,8 +25,6 @@ type Deps struct {
 	// Optional: nil disables session tools. The create and send actions also
 	// need the service to implement CreateSession and SendSessionMessage.
 	SessionService sessionService
-	// PublicURL builds browser-reachable dashboard links. Optional.
-	PublicURL func(string) string
 	// Optional: reads an existing instance's directory catalog, without launching it.
 	ModelCatalog func(context.Context, string, platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, string, error)
 	// SignFile mints a browser-reachable URL for a file on disk, backing
@@ -84,7 +82,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
 	tools = append(tools, deps.Tools...)
-	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService, publicURL: deps.PublicURL})...)
+	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	tools = append(tools, modelServerTools(deps)...)
 	for i := range tools {
 		tools[i].Tool.InputSchema.Properties = maps.Clone(tools[i].Tool.InputSchema.Properties)

@@ -81,14 +81,22 @@ func TestArtifactMCPSignedURLs(t *testing.T) {
 		"links": []any{map[string]any{"url": "https://example.com"}},
 	})
 	id, _ := created["id"].(string)
-	if created["url"] != "https://ocman.example/artifacts/"+id {
+	if created["url"] != "/artifacts/"+id {
 		t.Fatalf("page url = %v", created["url"])
 	}
+	if markdown, _ := created["markdown"].(string); !strings.Contains(markdown, "[Report](/artifacts/"+id+")") || strings.Contains(markdown, "ocman.example") {
+		t.Fatalf("markdown must keep internal links relative: %s", markdown)
+	}
 	got := call(map[string]any{"action": "get", "artifact_id": id})
-	for _, view := range []map[string]any{created, got} {
+	if got["url"] != created["url"] {
+		t.Fatalf("get page url = %v", got["url"])
+	}
+	listed := call(map[string]any{"action": "list", "directory": "/repo"})
+	list := listed["artifacts"].([]any)
+	for _, view := range []map[string]any{created, got, list[0].(map[string]any)} {
 		u, err := url.Parse(itemURL(t, view, 0))
-		if err != nil || u.Host != "ocman.example" || u.Query().Get("token") == "" {
-			t.Fatalf("expected absolute signed URL, got %q", itemURL(t, view, 0))
+		if err != nil || u.IsAbs() || u.Host != "" || u.Path != artifacts.FilePath(id, 0) || u.Query().Get("token") == "" {
+			t.Fatalf("expected origin-relative signed URL, got %q", itemURL(t, view, 0))
 		}
 		rec := serve(httptest.NewRequest(http.MethodGet, u.RequestURI(), nil))
 		if rec.Code != http.StatusOK || rec.Body.String() != "# hi" {
@@ -149,6 +157,14 @@ func TestArtifactMCPSignedURLs(t *testing.T) {
 	}
 	if rec := serve(httptest.NewRequest(http.MethodGet, u.RequestURI(), nil)); rec.Code != http.StatusNotFound {
 		t.Fatalf("deleted artifact = %d", rec.Code)
+	}
+}
+
+func TestArtifactFileURLWithoutAuthIsOriginRelative(t *testing.T) {
+	srv := &Server{publicBaseURL: "https://ocman.example/dashboard", addr: ":9123"}
+	path := artifacts.FilePath("art /?#", 0)
+	if got := srv.signArtifactFileURL(path); got != path {
+		t.Fatalf("file URL = %q, want %q", got, path)
 	}
 }
 

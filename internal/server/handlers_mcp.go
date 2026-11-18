@@ -154,7 +154,6 @@ func (s *Server) buildMCPHandlerFor(sessionService sessionMCPService) http.Handl
 	deps := internalmcp.Deps{
 		SignFile:       s.FileURL,
 		SessionService: sessionService,
-		PublicURL:      s.publicURL,
 	}
 	if s.sessions != nil {
 		deps.ModelCatalog = s.sessions.DirectoryCatalog

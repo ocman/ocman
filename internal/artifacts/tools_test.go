@@ -26,8 +26,8 @@ func (f *fakeArtifacts) CreateArtifact(_ context.Context, in Input) (state.Artif
 		return state.Artifact{}, f.err
 	}
 	return state.Artifact{ID: "art1", Title: in.Title, Items: []state.ArtifactItem{
-		{Kind: state.ArtifactItemFile, Name: "shot.png", MIME: "image/png", URL: "http://o/api/artifacts/art1/files/0"},
-		{Kind: state.ArtifactItemFile, Name: "notes.md", MIME: "text/markdown", URL: "http://o/api/artifacts/art1/files/1"},
+		{Kind: state.ArtifactItemFile, Name: "shot.png", MIME: "image/png", URL: "/api/artifacts/art1/files/0"},
+		{Kind: state.ArtifactItemFile, Name: "notes.md", MIME: "text/markdown", URL: "/api/artifacts/art1/files/1"},
 		{Kind: state.ArtifactItemLink, URL: "https://example.com", Label: "PR"},
 	}}, nil
 }
@@ -44,7 +44,7 @@ func (f *fakeArtifacts) GetArtifact(_ context.Context, id string) (state.Artifac
 	return state.Artifact{ID: id, Title: "T"}, f.err
 }
 
-func (*fakeArtifacts) ArtifactPageURL(id string) string { return "http://o/artifacts/" + id }
+func (*fakeArtifacts) ArtifactPageURL(id string) string { return "/artifacts/" + id }
 
 func artifactTestServer(t *testing.T, svc *fakeArtifacts) *mcptest.Server {
 	t.Helper()
@@ -120,10 +120,10 @@ func TestArtifactToolCreate(t *testing.T) {
 	if err := json.Unmarshal([]byte(testutil.ResultText(result)), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.ID != "art1" || out.URL != "http://o/artifacts/art1" || len(out.Items) != 3 || out.Items[0].URL != "http://o/api/artifacts/art1/files/0" {
+	if out.ID != "art1" || out.URL != "/artifacts/art1" || len(out.Items) != 3 || out.Items[0].URL != "/api/artifacts/art1/files/0" {
 		t.Fatalf("out = %#v", out)
 	}
-	for _, line := range []string{"[Report](http://o/artifacts/art1)", "![shot.png](http://o/api/artifacts/art1/files/0)", "- [notes.md](http://o/api/artifacts/art1/files/1)", "- [PR](https://example.com)"} {
+	for _, line := range []string{"[Report](/artifacts/art1)", "![shot.png](/api/artifacts/art1/files/0)", "- [notes.md](/api/artifacts/art1/files/1)", "- [PR](https://example.com)"} {
 		if !strings.Contains(out.Markdown, line) {
 			t.Errorf("markdown missing %q: %s", line, out.Markdown)
 		}
@@ -150,7 +150,7 @@ func TestArtifactToolListAndGet(t *testing.T) {
 		t.Fatalf("filter = %#v", f)
 	}
 	got := testutil.ResultText(testutil.CallTool(t, srv, "artifacts", map[string]any{"action": "get", "artifact_id": "art1"}))
-	if !strings.Contains(got, `"url": "http://o/artifacts/art1"`) || !strings.Contains(got, `"title": "T"`) {
+	if !strings.Contains(got, `"url": "/artifacts/art1"`) || !strings.Contains(got, `"title": "T"`) {
 		t.Fatalf("get = %s", got)
 	}
 	svc.err = errors.New("boom")

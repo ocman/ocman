@@ -76,8 +76,8 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 	}
 	created, err := creator.CreateSession(ctx, in)
 	link := ""
-	if created.SessionID != "" && t.publicURL != nil {
-		link = t.publicURL("/session/" + url.PathEscape(created.SessionID) + "?platform=" + url.QueryEscape(created.Platform))
+	if created.SessionID != "" {
+		link = "/session/" + url.PathEscape(created.SessionID) + "?platform=" + url.QueryEscape(created.Platform)
 	}
 	switch {
 	case err != nil && created.SessionID != "":

@@ -27,7 +27,10 @@ immutable copies; the original paths may have changed or disappeared.
    Pass a nonempty `next_cursor` as `cursor` to read the next page.
 2. Read titles, descriptions, and `items` to select an artifact, then call
    `{"action":"get","intent":"Get download links for the selected report","artifact_id":"..."}`. This returns metadata, not file contents.
-3. Read files by fetching the absolute `items[].url` with an HTTP fetch tool.
+3. Read files by resolving root-relative `items[].url` against the known dashboard
+   origin and fetching it with an HTTP fetch tool. Do not use the MCP listener's
+   port. If the dashboard origin is unknown, ask for it. Keep internal URLs
+   relative in user-facing Markdown so links stay on the viewer's current domain.
    When password auth is enabled, file URLs are signed for five minutes and
    need no login cookie. Call `get` again to refresh an expired URL.
    The top-level `url` opens a browser page, not the file, and may require login.
