@@ -33,6 +33,21 @@ it('falls back to a generic title outside known plugins', () => {
   expect(screen.getByText('Plugin workspace')).toBeInTheDocument();
 });
 
+it('separates plugin links from main navigation with one horizontal rule', () => {
+  render(<MemoryRouter><nav><PluginPageNav /></nav></MemoryRouter>);
+  const separator = screen.getByRole('separator');
+  expect(separator).toHaveClass('main-nav-plugin-separator');
+  expect(separator.nextElementSibling).toBe(screen.getByRole('link', { name: 'Catalog (local)' }));
+  expect(screen.getAllByRole('separator')).toHaveLength(1);
+});
+
+it('omits the separator when there are no plugin links', () => {
+  mocks.uis = [];
+  mocks.pages = [];
+  render(<MemoryRouter><PluginPageNav /></MemoryRouter>);
+  expect(screen.queryByRole('separator')).not.toBeInTheDocument();
+});
+
 it('keeps declarative navigation for plugins whose interface cannot load', () => {
   mocks.uis = [{ ...(mocks.uis[0] as object), compatible: false }];
   render(<MemoryRouter><PluginPageNav /></MemoryRouter>);

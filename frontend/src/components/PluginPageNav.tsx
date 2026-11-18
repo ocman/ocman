@@ -40,7 +40,7 @@ export function PluginPageNav({ onNavigate, replace }: { onNavigate?: () => void
   const entries = usePluginNavEntries();
   const location = useLocation();
   const owner = new URLSearchParams(location.search).get('ownerId') || 'local';
-  return <>{entries.map((entry) => {
+  return <>{entries.length > 0 && <hr className="main-nav-plugin-separator" />}{entries.map((entry) => {
     const duplicate = entries.filter((e) => e.name === entry.name).length > 1;
     const label = duplicate ? `${entry.name} (${entry.ownerId})` : entry.name;
     const active = owner === entry.ownerId && `${location.pathname}/`.startsWith(`/plugins/${encodeURIComponent(entry.pluginId)}/`);

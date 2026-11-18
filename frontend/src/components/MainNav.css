@@ -35,6 +35,13 @@
 .main-nav.collapsed nav a span { opacity: 0; }
 .main-nav nav { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; padding: 10px 7px; overflow-y: auto; }
 .main-nav nav a.nav-bottom-start { margin-top: auto; }
+.main-nav-plugin-separator {
+  flex-shrink: 0;
+  height: 0;
+  margin: 6px 10px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
 .main-nav nav a {
   position: relative;
   height: 34px;
