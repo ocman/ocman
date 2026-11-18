@@ -64,7 +64,8 @@ brew install --cask ocman/tap/ocman-desktop-nightly
 
 The stable `ocman/tap/ocman-desktop` cask appears with the first stable
 release. Install only one desktop channel. Update with `brew upgrade --cask`
-and the cask name, then reopen the app.
+and the cask name, then reopen the app. Like the CLI casks, these print the
+commands that install the agent CLIs, but don't install them.
 
 If you installed `ocman.app` from the DMG before, quit it and move it to the
 Trash first, or Homebrew stops because an app is already there. The desktop

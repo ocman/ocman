@@ -98,6 +98,10 @@ class PublishDesktopCaskTest(unittest.TestCase):
         self.assertIn("depends_on arch: :arm64", cask)
         self.assertIn('depends_on formula: "tmux"', cask)
         self.assertIn('"-dr", "com.apple.quarantine", "{{appdir}}/ocman.app"', cask)
+        self.assertIn("caveats <<~EOS", cask)
+        for package in ("brew install opencode", "brew install --cask claude-code",
+                        "brew install --cask codex"):
+            self.assertIn(package, cask)
         self.assertEqual(FakeGitHub.puts, [])
 
     def test_nightly_cask(self):
