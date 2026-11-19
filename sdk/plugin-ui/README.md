@@ -19,6 +19,9 @@ for the component list and hooks, and
 
 ## Changes
 
+- **1.4.0**: Adds `Markdown` with a `text` prop. It uses ocman's prose renderer
+  and `.oc-md` styles for GFM and code blocks. Raw HTML stays inert. It does not
+  expand session-specific Factory cards or append link-preview strips.
 - **1.3.0**: Adds `PluginCallError` with HTTP status, safe error category and
   parsed `Retry-After` delay. Adds opt-in `retry` and `retryDelay` query options.
   Mutations explicitly disable retries, including retrying query-client defaults.

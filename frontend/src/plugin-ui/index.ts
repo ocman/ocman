@@ -1,6 +1,7 @@
 // Runtime implementation of @ocman/plugin-ui (sdk/plugin-ui/index.d.ts),
 // served to plugin bundles as /plugin-shared/ocman-plugin-ui.js.
-export const PLUGIN_UI_VERSION = '1.3.0';
+export const PLUGIN_UI_VERSION = '1.4.0';
+export { Markdown } from './Markdown';
 export { PluginCallError } from '../lib/pluginCallError';
 export { formatExactDate, useConfirm, usePageTitle, usePluginAction, usePluginCall, usePluginContext, usePluginMutation, useUnsavedChangesGuard } from './hooks';
 export { useSessionDraft } from './sessionDraft';

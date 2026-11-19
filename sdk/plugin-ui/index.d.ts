@@ -1,4 +1,4 @@
-// @ocman/plugin-ui 1.3.0: the public, semver-versioned surface a plugin UI
+// @ocman/plugin-ui 1.4.0: the public, semver-versioned surface a plugin UI
 // bundle may import. The host provides the implementation at runtime; plugin
 // builds keep this module external (see @ocman/plugin-vite). Additions are
 // minor releases; removals or changed meaning are major releases.
@@ -205,6 +205,11 @@ export declare function TabsTrigger(props: { value: string; disabled?: boolean; 
 export declare function TabsContent(props: { value: string; children: ReactNode }): JSX.Element;
 
 // --- Display --------------------------------------------------------------
+
+/** Host Markdown prose renderer, including GFM and code blocks. Raw HTML is inert.
+ * Does not expand session-specific Factory cards or link-preview strips. Since 1.4.0.
+ */
+export declare function Markdown(props: { text: string }): JSX.Element;
 
 /** ocman's session status badge, e.g. `busy`, `waiting`, `done`, `error`. */
 export declare function StatusBadge(props: { status: string; compact?: boolean }): JSX.Element;
