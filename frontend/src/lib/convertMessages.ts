@@ -233,7 +233,7 @@ function toolPartMatches(part: Part, approval: PartData, askedAt: number): boole
   const data = parsePart(part);
   const input = data.state?.input;
   const tool = (data.tool || '').toLowerCase().replace(/^mcp_/, '');
-  if (permissionTool && tool !== permissionTool) return false;
+  if (permissionTool && tool !== permissionTool && !(permissionTool === 'edit' && tool === 'write')) return false;
   if (permissionTool === 'bash') {
     const command = metadataLeaves(metadata).find((leaf) => canonicalMetadataKey(leaf.key) === 'command')?.value;
     return typeof command === 'string'

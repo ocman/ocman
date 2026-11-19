@@ -18,7 +18,25 @@ func injectApprovalNotices(ctx context.Context, platform, sessionID string, stat
 	if err != nil {
 		return
 	}
+	// History is paginated, but the approval audit covers the whole session.
+	// Keep older notices with their unloaded calls; the next history read will
+	// include them once that page is loaded. Existing notices do not widen it.
+	var oldestMessageAt int64
+	for _, msg := range *msgs {
+		var data struct {
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(msg.Data, &data) != nil || (data.Role != "user" && data.Role != "assistant") {
+			continue
+		}
+		if msg.TimeCreated > 0 && (oldestMessageAt == 0 || msg.TimeCreated < oldestMessageAt) {
+			oldestMessageAt = msg.TimeCreated
+		}
+	}
 	for _, p := range approved {
+		if p.ApprovedAt < oldestMessageAt {
+			continue
+		}
 		keyPart := p.PermissionID
 		if keyPart == "" {
 			keyPart = p.JudgeSessionID
