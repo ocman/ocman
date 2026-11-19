@@ -4,9 +4,8 @@
  * list is intentionally hand-curated; new entries land here when a
  * model becomes prominent enough to render in the picker.
  *
- * Entries should match the model id reported by the platform exactly
- * — the lookup function falls back to a longest-suffix match for the
- * cases where an adapter prefixes the id with a provider slug.
+ * Entries should match the model id reported by the platform exactly,
+ * excluding any provider prefix.
  */
 export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   'gpt-4o': 128_000,
@@ -51,26 +50,13 @@ export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 /**
  * Resolve the context-window size for a given model id.
  *
- * The lookup tries:
- *   1. Exact match on the input id.
- *   2. Longest-suffix or substring match on the lowercased id, so
- *      provider-prefixed ids like `anthropic/claude-opus-4` still
- *      resolve to the entry for `claude-opus-4`. The map is sorted
- *      longest-key-first to make sure `gpt-4.1-mini` wins over
- *      `gpt-4` when both are candidates.
- *
- * Returns `null` when no entry matches and the caller should hide
- * the context-window display.
+ * The final segment of a provider-qualified id must match a known model.
+ * A similar id may have a different limit, so don't guess from a substring.
  */
 export function getContextWindow(modelId: string | undefined): number | null {
   if (!modelId) return null;
-  if (MODEL_CONTEXT_WINDOWS[modelId]) return MODEL_CONTEXT_WINDOWS[modelId];
-  const lower = modelId.toLowerCase();
-  const sorted = Object.entries(MODEL_CONTEXT_WINDOWS).sort((a, b) => b[0].length - a[0].length);
-  for (const [key, value] of sorted) {
-    if (lower.endsWith(key) || lower.includes(key)) return value;
-  }
-  return null;
+  const key = modelId.slice(modelId.lastIndexOf('/') + 1).toLowerCase();
+  return Object.hasOwn(MODEL_CONTEXT_WINDOWS, key) ? MODEL_CONTEXT_WINDOWS[key] : null;
 }
 
 /**

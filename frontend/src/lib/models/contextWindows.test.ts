@@ -29,19 +29,19 @@ describe('getContextWindow', () => {
     expect(getContextWindow('OpenAI/gpt-4o-mini')).toBe(128_000);
   });
 
-  it('matches a substring when the id contains the model anywhere', () => {
-    expect(getContextWindow('claude-opus-4-FINETUNED')).toBe(200_000);
+  it('does not apply limits from a different model or variant', () => {
+    expect(getContextWindow('claude-opus-4-FINETUNED')).toBeNull();
+    expect(getContextWindow('anthropic/claude-opus-4-8')).toBeNull();
   });
 
-  it('prefers longer keys over shorter prefixes', () => {
-    // gpt-4.1-mini must win over gpt-4 (both could match a `gpt-4.1-mini`
-    // input via substring).
+  it('uses the full model id for variants with explicit entries', () => {
     expect(getContextWindow('gpt-4.1-mini')).toBe(1_047_576);
     expect(getContextWindow('openrouter/gpt-4.1-mini')).toBe(1_047_576);
   });
 
   it('returns null for unknown models', () => {
     expect(getContextWindow('made-up-model')).toBeNull();
+    expect(getContextWindow('constructor')).toBeNull();
   });
 });
 

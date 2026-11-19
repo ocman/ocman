@@ -498,8 +498,8 @@
   font-family: inherit;
 }
 .oc-context-usage:hover { color: var(--subtext0); }
-.oc-context-usage.oc-context-warn { color: var(--accent4); }
-.oc-context-usage.oc-context-warn:hover { color: var(--rosewater); }
+.oc-context-usage.oc-context-warn { color: var(--peach); }
+.oc-context-usage.oc-context-danger { color: var(--danger); }
 
 /* Token usage popover */
 .oc-token-popover {

@@ -63,6 +63,9 @@ export function ComposerFooter({
   const contextPercent = contextTokens && contextWindow
     ? Math.min(100, (contextTokens / contextWindow) * 100)
     : null;
+  const contextTone = contextPercent == null ? ''
+    : contextPercent > 40 ? ' oc-context-danger'
+    : contextPercent > 20 ? ' oc-context-warn' : '';
 
   useClickOutside(tokenPopoverRef, showTokenPopover, () => setShowTokenPopover(false));
   const effectiveCost = sessionTreeStats?.totalEffectiveCost ?? tokenStats?.totalCost ?? 0;
@@ -107,7 +110,7 @@ export function ComposerFooter({
             {contextTokens != null && contextTokens > 0 && (
               <button
                 type="button"
-                className={`oc-context-usage${contextPercent != null && contextPercent > 80 ? ' oc-context-warn' : ''}`}
+                className={`oc-context-usage${contextTone}`}
                 title="Click for token usage details"
                 onClick={() => setShowTokenPopover((value) => !value)}
               >
