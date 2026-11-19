@@ -59,6 +59,11 @@ catalogs are read separately through owner-routed preparation; a catalog for one
 account never supplies another account's credentials or availability. Saved
 references retain connection IDs, and identical provider/model IDs on different
 accounts remain separate choices. Factory catalogs retain their project union.
+Model favorites retain the native-platform namespace used by catalogs. The
+favorites API resolves registered connection keys to that namespace for reads,
+adds and removals, preserving existing favorites. Legacy native names remain
+accepted when a matching adapter is registered on the same owner; unknown or
+disconnected owner aliases do not fall back to another owner.
 Project fallback lists are filtered to the current session's account; fallthrough
 never changes that session's account. A reviewer's explicit account selects only
 the judge's catalog and authenticated helper transport, not the watched session's

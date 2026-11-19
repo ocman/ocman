@@ -30,8 +30,9 @@ type Store interface {
 type Deps struct {
 	// Store is nil without a state database; the routes then answer 503.
 	Store Store
-	// Registered reports whether a platform ID is registered.
-	Registered func(id string) bool
+	// ResolvePlatform validates a routing ID and returns the catalog's durable
+	// favorites namespace. Named connections do not create new namespaces.
+	ResolvePlatform func(id string) (string, bool)
 }
 
 // Module is stateless; routes share the durable store.
@@ -61,7 +62,11 @@ type entry struct {
 // no obvious default when several are registered.
 func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 	platform := strings.TrimSpace(r.URL.Query().Get("platform"))
-	if !m.available(w) || !m.validPlatform(w, platform) {
+	if !m.available(w) {
+		return
+	}
+	platform, ok := m.resolvePlatform(w, platform)
+	if !ok {
 		return
 	}
 	rows, err := m.d.Store.ModelFavorites(r.Context(), platform)
@@ -116,9 +121,11 @@ func (m *Module) readBody(w http.ResponseWriter, r *http.Request) (entry, bool) 
 	req.Platform = strings.TrimSpace(req.Platform)
 	req.Provider = strings.TrimSpace(req.Provider)
 	req.Model = strings.TrimSpace(req.Model)
-	if !m.validPlatform(w, req.Platform) {
+	platform, ok := m.resolvePlatform(w, req.Platform)
+	if !ok {
 		return entry{}, false
 	}
+	req.Platform = platform
 	if req.Model == "" {
 		http.Error(w, "model is required", http.StatusBadRequest)
 		return entry{}, false
@@ -136,16 +143,17 @@ func (m *Module) available(w http.ResponseWriter) bool {
 	return true
 }
 
-// validPlatform rejects empty and unregistered platform IDs, writing the
-// error response.
-func (m *Module) validPlatform(w http.ResponseWriter, platform string) bool {
+// resolvePlatform rejects empty and unregistered IDs and normalizes routing aliases.
+func (m *Module) resolvePlatform(w http.ResponseWriter, platform string) (string, bool) {
 	if platform == "" {
 		http.Error(w, "platform is required", http.StatusBadRequest)
-		return false
+		return "", false
 	}
-	if m.d.Registered == nil || !m.d.Registered(platform) {
-		http.Error(w, "unknown platform", http.StatusBadRequest)
-		return false
+	if m.d.ResolvePlatform != nil {
+		if namespace, ok := m.d.ResolvePlatform(platform); ok && namespace != "" {
+			return namespace, true
+		}
 	}
-	return true
+	http.Error(w, "unknown platform", http.StatusBadRequest)
+	return "", false
 }

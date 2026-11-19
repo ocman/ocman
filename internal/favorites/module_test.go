@@ -14,7 +14,7 @@ import (
 	"github.com/ocman/ocman/internal/state/statetest"
 )
 
-func registered(id string) bool { return id == "opencode" }
+func registered(id string) (string, bool) { return id, id == "opencode" }
 
 func call(m *Module, method, target, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
@@ -40,7 +40,7 @@ func list(t *testing.T, m *Module) []entry {
 }
 
 func TestAddListRemoveRoundTrip(t *testing.T) {
-	m := NewModule(Deps{Store: statetest.Open(t), Registered: registered})
+	m := NewModule(Deps{Store: statetest.Open(t), ResolvePlatform: registered})
 	if got := list(t, m); len(got) != 0 {
 		t.Fatalf("initial favorites = %+v", got)
 	}
@@ -63,7 +63,7 @@ func TestAddListRemoveRoundTrip(t *testing.T) {
 }
 
 func TestRejectsInvalidRequests(t *testing.T) {
-	m := NewModule(Deps{Store: statetest.Open(t), Registered: registered})
+	m := NewModule(Deps{Store: statetest.Open(t), ResolvePlatform: registered})
 	tests := []struct {
 		name, method, target, body string
 		want                       int
@@ -85,7 +85,7 @@ func TestRejectsInvalidRequests(t *testing.T) {
 }
 
 func TestWithoutStoreOrRegistry(t *testing.T) {
-	m := NewModule(Deps{Registered: registered})
+	m := NewModule(Deps{ResolvePlatform: registered})
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
 		if w := call(m, method, "/api/favorites?platform=opencode", `{"platform":"opencode","model":"m"}`); w.Code != http.StatusServiceUnavailable {
 			t.Errorf("%s without store = %d", method, w.Code)
@@ -94,6 +94,18 @@ func TestWithoutStoreOrRegistry(t *testing.T) {
 	m = NewModule(Deps{Store: statetest.Open(t)})
 	if w := call(m, http.MethodGet, "/api/favorites?platform=opencode", ""); w.Code != http.StatusBadRequest {
 		t.Fatalf("without registry = %d", w.Code)
+	}
+}
+
+func TestRejectsEmptyResolvedNamespace(t *testing.T) {
+	m := NewModule(Deps{
+		Store: statetest.Open(t),
+		ResolvePlatform: func(string) (string, bool) {
+			return "", true
+		},
+	})
+	if w := call(m, http.MethodPost, "/api/favorites", `{"platform":"cnx_work","model":"m"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("empty namespace = %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -112,7 +124,7 @@ func (failingStore) RemoveModelFavorite(context.Context, string, string, string)
 }
 
 func TestStoreErrorsAre500(t *testing.T) {
-	m := NewModule(Deps{Store: failingStore{}, Registered: registered})
+	m := NewModule(Deps{Store: failingStore{}, ResolvePlatform: registered})
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
 		if w := call(m, method, "/api/favorites?platform=opencode", `{"platform":"opencode","model":"m"}`); w.Code != http.StatusInternalServerError {
 			t.Errorf("%s = %d", method, w.Code)
