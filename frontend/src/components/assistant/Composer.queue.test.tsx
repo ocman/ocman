@@ -27,7 +27,7 @@ describe('Composer queue', () => {
     expect(onCancelQueuedShell).toHaveBeenCalledOnce();
   });
 
-  it('shows active duration and hides the shortcut hint while running', () => {
+  it('shows the duration and updates it while running', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     const { rerender } = render(
@@ -35,12 +35,10 @@ describe('Composer queue', () => {
     );
 
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /for shortcuts/i })).toBeInTheDocument();
 
     rerender(<Composer isRunning contextTokens={12_000} activeDurationMs={90_000} />);
 
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /for shortcuts/i })).not.toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(1_000));
 

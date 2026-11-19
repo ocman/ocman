@@ -148,8 +148,8 @@ test.describe('phone session actions', () => {
       session: { ...MOCK_SESSION, status: 'busy', liveConnection: true }, messages: [], parts: [],
     } }));
     await page.goto(`/session/${MOCK_SESSION.id}`);
-    await expect(page.getByText('Esc to interrupt', { exact: true })).toBeHidden();
     await expect(page.getByRole('button', { name: 'Stop generation (Esc)', exact: true })).toBeVisible();
+    await expect(page.getByText('Esc to interrupt', { exact: true })).toBeHidden();
     await page.setViewportSize({ width: 1024, height: 900 });
     await expect(page.getByText('Esc to interrupt', { exact: true })).toBeVisible();
   });

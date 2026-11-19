@@ -28,7 +28,7 @@
 
   .session-layout .oc-composer { border: 1px solid var(--border); border-radius: 0; }
   .session-layout .oc-composer-input { font-size: 16px; }
-  .session-layout .oc-stop-hint,
+  .session-layout .oc-stop-hint { display: none; }
   .session-layout .oc-composer-bar { padding: 6px 10px; gap: 8px; flex-wrap: wrap; row-gap: 12px; }
   .session-layout .oc-composer-bar-left { flex: 1; }
   .session-layout .oc-composer-bar-right { margin-left: auto; }
