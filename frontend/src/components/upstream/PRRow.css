@@ -31,3 +31,5 @@ a.oc-upstream-ci-check-name:hover { text-decoration: underline; }
   box-shadow: 0 0 0 1px var(--bg);
   transform: translate(-50%, -50%) rotate(-45deg);
 }
+.oc-upstream-session-link { color: var(--accent); overflow-wrap: anywhere; }
+.oc-upstream-session-link:hover { text-decoration: underline; }

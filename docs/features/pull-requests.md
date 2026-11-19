@@ -32,6 +32,11 @@ an upstream and enter the PR number. Links are persisted with the session's
 platform, owning machine, repository and PR number. Launching a session or
 worktree from a PR also saves its link. Multiple PRs can be linked to one session.
 
+Project PR rows show **Open session** for associated sessions on that machine,
+including sessions in sibling worktrees. If several sessions share a PR, each
+has its own link. These links preserve the session's platform and remote owner
+and support opening in a new tab. Refresh the sidebar to reload associations.
+
 Agents can also link PRs from other repositories through the MCP tool by supplying
 the forge `host`, `repo` in `owner/name` format, and PR `number`. The relationship
 stays attached to the originating session without moving it to another project.
@@ -174,6 +179,7 @@ flowchart LR
     MCP[Agent pull_requests tool] -->|session and optional explicit repository| Workflow
     MCP --> Launch
     Launch[projectforge lists and launches] --> Workflow
+    Workflow -->|owner-scoped session references on PR list rows| Launch
     UI -->|new link missing from matching list: refresh=1| Launch
     Setup --> Credentials[(Private credential overrides)]
     Workflow --> Links[(PR links and watch snapshots)]
@@ -196,7 +202,12 @@ flowchart LR
 - `prworkflow` owns session-qualified links, feedback-task drafts and its joined
   two-minute watch worker. It persists snapshots and pending notices separately
   from conversations. The hub reads forge metadata; owner disconnection never
-   routes checkout or session work to another machine.
+  routes checkout or session work to another machine.
+- Project PR lists join durable session links by forge host, repository and PR
+  number, scoped to the selected machine. The server reads each registered
+  platform's reverse index through `prworkflow`; remote reads use the owning
+  platform's authenticated PR-workflow RPC. Only platform and session IDs reach
+  the list response, never watch snapshots or pending prompts.
 - Explicit `host` and `repo` links resolve through configured hub forge clients
   without consulting the session checkout's upstreams. The session retains its
   owning project and directory; links can refer to multiple other repositories.

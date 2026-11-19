@@ -140,6 +140,8 @@ func (m *Module) Operation(ctx context.Context, platform string, req platforms.P
 	r.URL.RawQuery = q.Encode()
 	r.SetPathValue("id", req.SessionID)
 	switch req.Operation {
+	case "linked-sessions":
+		m.linkedSessionsOperation(w, r, platform)
 	case "counts":
 		counts, err := BackgroundCounts(ctx, m.d.DB)
 		if err != nil {

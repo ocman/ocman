@@ -54,6 +54,13 @@ type Deps struct {
 	Registered func(platformID string) bool
 	Sessions   Sessions
 	LinkPR     func(context.Context, string, string, string, string, string, int, *forge.PR)
+	PRSessions func(context.Context, string, string, string) (map[int][]SessionRef, error)
+}
+
+// SessionRef identifies a linked session using its owner-qualified platform.
+type SessionRef struct {
+	Platform  string `json:"platform"`
+	SessionID string `json:"sessionId"`
 }
 
 // Module serves /api/project/{upstreams,prs,issues,pr-checks,

@@ -11,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/forge/github"
 	"github.com/ocman/ocman/internal/git"
 	"github.com/ocman/ocman/internal/httpx"
+	log "github.com/sirupsen/logrus"
 )
 
 // forgeContext serves sidebar reads from the shared one-minute GitHub
@@ -40,7 +41,24 @@ func (m *Module) handlePRs(w http.ResponseWriter, r *http.Request) {
 	if opts.Mine != "" {
 		prs = filterPRsForUser(prs, opts.Mine)
 	}
-	writeListResponse(w, "prs", prs, rl, opts, hasMore)
+	linked := map[int][]SessionRef{}
+	if m.PRSessions != nil {
+		linked, err = m.PRSessions(r.Context(), r.URL.Query().Get("remoteId"), rem.Host, rem.Repo)
+		if err != nil {
+			log.WithError(err).WithFields(log.Fields{"remoteId": r.URL.Query().Get("remoteId"), "host": rem.Host, "repo": rem.Repo}).Warn("loading PR-linked sessions")
+			http.Error(w, "Could not load linked sessions", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	type sidebarPR struct {
+		forge.PR
+		Sessions []SessionRef `json:"sessions,omitempty"`
+	}
+	items := make([]sidebarPR, 0, len(prs))
+	for _, pr := range prs {
+		items = append(items, sidebarPR{PR: pr, Sessions: linked[pr.Number]})
+	}
+	writeListResponse(w, "prs", items, rl, opts, hasMore)
 }
 
 func (m *Module) handleIssues(w http.ResponseWriter, r *http.Request) {

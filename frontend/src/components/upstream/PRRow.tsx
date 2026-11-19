@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { CIState, PR } from '../../lib/upstreamApi';
 import { fetchPRChecks } from '../../lib/upstreamApi';
 import { prChecksCacheKey } from '../../lib/prChecksCache';
@@ -81,15 +82,27 @@ export function PRRow({ pr, directory, checksDirectory = directory ?? '', remote
       className={isCurrentBranch ? 'current-branch' : undefined}
       onVisibleChange={setVisible}
       summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} unmergeable={unmergeable} mergeLabel={mergeLabel} approved={approved === true} />}
-      summarySuffix={isCurrentBranch ? (
-        <span
-          className="oc-upstream-row-current-branch"
-          title={`Matches your current branch: ${pr.branch}`}
-          data-testid={`pr-row-${pr.number}-current-branch`}
-        >
-          current
-        </span>
-      ) : undefined}
+      summarySuffix={<>
+        {pr.sessions?.map(session => (
+          <Link
+            key={`${session.platform}:${session.sessionId}`}
+            className="oc-upstream-session-link"
+            to={`/session/${encodeURIComponent(session.sessionId)}?platform=${encodeURIComponent(session.platform)}`}
+            title={`${session.platform}: ${session.sessionId}`}
+          >
+            {(pr.sessions?.length ?? 0) > 1 ? `Open session ${session.sessionId}` : 'Open session'}
+          </Link>
+        ))}
+        {isCurrentBranch ? (
+          <span
+            className="oc-upstream-row-current-branch"
+            title={`Matches your current branch: ${pr.branch}`}
+            data-testid={`pr-row-${pr.number}-current-branch`}
+          >
+            current
+          </span>
+        ) : undefined}
+      </>}
       detailBeforeBody={pr.crossFork ? (
         <div className="oc-upstream-row-fork-note">
           Cross-fork PR — worktree launch will fetch the PR ref.

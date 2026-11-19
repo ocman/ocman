@@ -25,6 +25,7 @@ export interface ForgeUser {
 }
 
 export interface PR {
+  sessions?: { platform: string; sessionId: string }[];
   number: number;
   title: string;
   body: string;

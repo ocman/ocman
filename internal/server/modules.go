@@ -139,6 +139,7 @@ func (s *Server) projectForgeModule() *projectforge.Module {
 			Registered:     s.platformRegistered,
 			Sessions:       s.sessions,
 			LinkPR:         s.linkLaunchedPR,
+			PRSessions:     s.prLinkedSessions,
 		}
 		if s.stateDB != nil {
 			d.Store = s.stateDB // untyped nil otherwise
