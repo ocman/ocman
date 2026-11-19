@@ -169,8 +169,8 @@ the instance ocman starts, not the original terminal.
 
 ## Permissions
 
-Sessions ocman starts use Claude's `default` permission mode unless you enable
-native Auto. Tool calls the CLI still wants approved are asked of ocman. Ocman decides them the same way
+Sessions ocman starts use Claude's `default` permission mode unless native Auto
+is enabled. Tool calls the CLI still wants approved are asked of ocman. Ocman decides them the same way
 as for OpenCode: the session's permission mode (Default, Plan only, Auto-accept
 edits, YOLO or custom rules), rules a worktree session inherited from its parent,
 "Allow always" replies, then the auto-approve judge or you. Rulesets are stored by
@@ -194,6 +194,12 @@ classifier reviews tool calls. The selected model, account and provider must
 support Auto; Claude reports unavailable combinations rather than ocman guessing
 from model names. For an idle session, the menu marks Auto as **next turn** until
 a child accepts it. Running sessions change mode after Claude acknowledges it.
+
+To start new sessions in Auto, set `"permissions": {"defaultMode": "auto"}` in
+the Claude account's user `settings.json` on the session's owning machine. Ocman
+reads the selected account's config directory, normally `~/.claude`, when it
+creates the session. It does not inherit other modes or project settings for
+this default, and edits to the file do not change existing sessions.
 
 Native Auto is independent of ocman's rules and auto-approve toggle. Enabling or
 disabling it preserves both. On these CLI versions, ocman checks its restrictions

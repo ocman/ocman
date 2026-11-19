@@ -110,9 +110,10 @@ func (l *live) create(req platforms.CreateSessionRequest) (*platforms.CreateSess
 		return nil, errors.Join(platforms.ErrCreationRejected, providersupervisor.WithStatus(http.StatusBadRequest, errors.New("directory must be absolute")))
 	}
 	id := uuid.NewString() // claude's --session-id, so ocman and claude share the id
+	mode := l.newSessionNativeMode()
 	l.mu.Lock()
 	err := l.updateOwnedLocked(func() {
-		l.owned[id] = &owned{Directory: req.Directory, ProjectRoot: l.opts.ProjectRoot, Title: req.Title, Created: now(), Config: l.opts.ConfigDir}
+		l.owned[id] = &owned{Directory: req.Directory, ProjectRoot: l.opts.ProjectRoot, Title: req.Title, Created: now(), Config: l.opts.ConfigDir, NativeMode: mode}
 	})
 	l.mu.Unlock()
 	if err != nil {

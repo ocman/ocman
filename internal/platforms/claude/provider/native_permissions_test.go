@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -30,6 +31,43 @@ func TestSavedNativeAutoFailsClosedAfterCLIDowngrade(t *testing.T) {
 	l := &live{owned: map[string]*owned{"s": {NativeMode: "auto"}}}
 	if _, err := l.spawnLocked("s", "", ""); !errors.Is(err, platforms.ErrUnsupported) {
 		t.Fatalf("saved Auto must not launch without preflight support: %v", err)
+	}
+}
+
+func TestNewSessionInheritsUserNativeAuto(t *testing.T) {
+	for _, tc := range []struct {
+		name, settings, want string
+		capable              bool
+	}{
+		{"auto", `{"permissions":{"defaultMode":"auto"}}`, "auto", true},
+		{"older CLI", `{"permissions":{"defaultMode":"auto"}}`, "default", false},
+		{"disabled", `{"permissions":{"defaultMode":"auto","disableAutoMode":"disable"}}`, "default", true},
+		{"other mode", `{"permissions":{"defaultMode":"bypassPermissions"}}`, "default", true},
+		{"malformed", `{"permissions":{"defaultMode":"auto"}}junk`, "default", true},
+		{"missing", "", "default", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := t.TempDir()
+			if tc.settings != "" {
+				if err := os.WriteFile(filepath.Join(config, "settings.json"), []byte(tc.settings), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			l := &live{nativeAuto: tc.capable, opts: Options{ConfigDir: config, StatePath: filepath.Join(t.TempDir(), "sessions.json")}}
+			session, err := l.create(platforms.CreateSessionRequest{Directory: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			restarted := &live{opts: l.opts}
+			o, ok := restarted.ownedSession(session.ID)
+			if !ok {
+				t.Fatal("session creation was not persisted")
+			}
+			args := restarted.launchArgs(session.ID, o, "", "", "")
+			if i := slices.Index(args, "--permission-mode"); i < 0 || args[i+1] != tc.want {
+				t.Fatalf("launch args=%v, want permission mode %q", args, tc.want)
+			}
+		})
 	}
 }
 

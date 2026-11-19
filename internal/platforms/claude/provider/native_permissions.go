@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -35,6 +37,28 @@ func nativeMode(mode string) string {
 		return "default"
 	}
 	return mode
+}
+
+// Only inherit the account's Auto opt-in. Other modes must not change how
+// managed sessions route permission prompts, and Auto needs SDK preflight.
+func (l *live) newSessionNativeMode() string {
+	if !l.nativeAuto || l.opts.ConfigDir == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(l.opts.ConfigDir, "settings.json"))
+	if err != nil {
+		return ""
+	}
+	var settings struct {
+		Permissions struct {
+			DefaultMode     string `json:"defaultMode"`
+			DisableAutoMode string `json:"disableAutoMode"`
+		} `json:"permissions"`
+	}
+	if json.Unmarshal(raw, &settings) == nil && settings.Permissions.DefaultMode == "auto" && settings.Permissions.DisableAutoMode != "disable" {
+		return "auto"
+	}
+	return ""
 }
 
 func (l *live) checkSessionLaunch(o *owned) error {
