@@ -11,8 +11,10 @@ test('backend bindings replace defaults in dispatch and shortcut help', async ({
       'site.scroll-down': [{ code: 'KeyU', alt: true }],
     } });
   });
+  const bindings = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/keybindings' && response.ok());
   await page.goto('/');
-  await expect(page.getByRole('button', { name: /for shortcuts/ })).toBeVisible();
+  await bindings;
+  await expect(page.getByTestId('conversation-composer').getByRole('textbox')).toBeVisible();
   await page.keyboard.press('Alt+Shift+Slash');
   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(dialog).toBeVisible();

@@ -33,13 +33,13 @@ test('machine selection re-points the new conversation and the first prompt crea
   await page.goto(`/session/new?dir=${encodeURIComponent(source.directory)}&platform=${encodeURIComponent(source.platform)}`);
   const machine = page.getByRole('combobox', { name: 'Session machine' });
   await expect(machine).toHaveText('This machine');
-  const shortcuts = page.getByRole('button', { name: /for shortcuts/ });
+  const footer = page.getByTestId('conversation-composer').locator('.oc-composer-footer');
   for (const selector of [page.getByRole('combobox', { name: 'Session target' }), machine]) {
     await expect(selector).toHaveCSS('height', '18px');
     await expect(selector).toHaveCSS('padding-top', '0px');
     await expect(selector).toHaveCSS('padding-bottom', '0px');
     for (const property of ['font-family', 'font-size']) {
-      const footerFont = await shortcuts.evaluate((element, property) => getComputedStyle(element.parentElement!).getPropertyValue(property), property);
+      const footerFont = await footer.evaluate((element, property) => getComputedStyle(element).getPropertyValue(property), property);
       await expect(selector).toHaveCSS(property, footerFont);
     }
   }
