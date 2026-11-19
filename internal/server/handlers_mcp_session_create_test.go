@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ocman/ocman/internal/db"
@@ -90,8 +91,16 @@ func TestMCPCreateSession(t *testing.T) {
 	}
 	useWorktree = true
 	host.worktreeErr = errors.New("worktree failed")
-	if _, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "go", Directory: "/src/ocman", Worktree: &useWorktree}); !errors.Is(err, host.worktreeErr) {
+	var staged *internalmcp.SessionCreateStageError
+	if _, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "go", Directory: "/src/ocman", Worktree: &useWorktree}); !errors.Is(err, host.worktreeErr) || !errors.As(err, &staged) || staged.Stage != "worktree setup" {
 		t.Fatalf("worktree error = %v", err)
+	}
+	// A validation failure inside the owner's worktree launch (for example a
+	// rejected platform connection) is the caller-visible reason, as it already
+	// is for in-place creation; it must not collapse to an opaque failure.
+	_, host.worktreeErr = srv.sessions.Create(t.Context(), "opencode", platforms.CreateSessionRequest{})
+	if _, err := svc.CreateSession(t.Context(), internalmcp.CreateSessionRequest{Prompt: "go", Directory: "/src/ocman", Worktree: &useWorktree}); !errors.Is(err, internalmcp.ErrInvalidSessionCreate) || !strings.Contains(err.Error(), "directory is required") || !strings.Contains(err.Error(), "fails the same way") {
+		t.Fatalf("worktree validation error = %v", err)
 	}
 	host.capable = false
 

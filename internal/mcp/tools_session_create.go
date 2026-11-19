@@ -15,6 +15,47 @@ import (
 // input; its message is safe to return to the agent.
 var ErrInvalidSessionCreate = errors.New("invalid session request")
 
+// SessionCreateStageError marks an unexpected creation failure with the stage
+// that failed. The agent sees the stage and a classified cause, never Err's
+// text, which can contain host paths or command output.
+type SessionCreateStageError struct {
+	Stage string
+	Err   error
+}
+
+func (e *SessionCreateStageError) Error() string { return e.Stage + ": " + e.Err.Error() }
+func (e *SessionCreateStageError) Unwrap() error { return e.Err }
+
+// createFailure says which stage failed, why, and whether retrying can help.
+func createFailure(err error) string {
+	stage := "setup"
+	var staged *SessionCreateStageError
+	if errors.As(err, &staged) && staged.Stage != "" {
+		stage = staged.Stage
+	}
+	var busy *platforms.BusyError
+	var cause, advice string
+	switch {
+	case errors.Is(err, platforms.ErrRemoteOffline):
+		cause, advice = "the target machine is not connected", "Retry after it reconnects; ocman never falls back to another machine."
+	case errors.Is(err, platforms.ErrPlatformUnreachable):
+		cause, advice = "the target platform has no running, ready instance", "Retrying in a minute may succeed; if it keeps failing, ask the user to check the platform connection in ocman."
+	case errors.Is(err, platforms.ErrPlatformUnauthenticated):
+		cause, advice = "the target platform rejected ocman's credentials", "Do not retry; ask the user to sign in to the platform again."
+	case errors.As(err, &busy) || errors.Is(err, platforms.ErrBusy):
+		cause, advice = "the target is busy", "Retry shortly."
+	case errors.Is(err, context.DeadlineExceeded):
+		cause, advice = "the request timed out", "Check sessions list for a new session before retrying once, so a slow creation is not duplicated."
+	case errors.Is(err, context.Canceled):
+		cause, advice = "the request was cancelled", "Retry only if the session is still needed."
+	case errors.Is(err, platforms.ErrUnsupported):
+		cause, advice = "the target platform does not support this request", "Do not retry unchanged; ask the user which platform to use."
+	default:
+		cause, advice = "unexpected server error", `Retrying unchanged is unlikely to help; report this message to the user. Ocman logged the cause as "MCP session creation failed" with this stage.`
+	}
+	return "session creation failed during " + stage + ": " + cause + ". " + advice
+}
+
 // CreateSessionRequest starts a new session and sends it one prompt.
 // Directory wins; when empty the service resolves the project root of the
 // calling session (Platform + SessionID), which also picks the owner.
@@ -92,7 +133,7 @@ func (t *sessionTools) create(ctx context.Context, req mcplib.CallToolRequest) *
 	case errors.Is(err, platforms.ErrNotFound):
 		return mcplib.NewToolResultError("session not found")
 	case err != nil:
-		return mcplib.NewToolResultError("session request failed")
+		return mcplib.NewToolResultError(createFailure(err))
 	}
 	return toolResultJSON(struct {
 		CreatedSession

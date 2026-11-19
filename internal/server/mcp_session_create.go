@@ -22,12 +22,14 @@ func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.Cre
 	stage := "target selection"
 	dir, platformID := in.Directory, in.Platform
 	defer func() {
-		if createErr != nil {
-			log.WithContext(ctx).WithError(createErr).WithFields(log.Fields{
-				"stage": stage, "directory": dir, "platform": platformID,
-				"created_session_id": result.SessionID, "created_platform": result.Platform,
-			}).Error("MCP session creation failed")
+		if createErr == nil {
+			return
 		}
+		log.WithContext(ctx).WithError(createErr).WithFields(log.Fields{
+			"stage": stage, "directory": dir, "platform": platformID,
+			"created_session_id": result.SessionID, "created_platform": result.Platform,
+		}).Error("MCP session creation failed")
+		createErr = mcpCreateError(stage, result, createErr)
 	}()
 	exactModel := in.Model != ""
 	platformID, err := platforms.PlatformForModel(in.Platform, in.Model)
@@ -202,4 +204,17 @@ func mcpWorktreeEligible(ctx context.Context, host hostsvc.Host, dir string) (bo
 	}
 	base, err := host.WorktreeDefaultBaseRef(ctx, dir)
 	return base != "", err
+}
+
+// mcpCreateError keeps the cause classifiable by the tool: validation messages
+// are safe to show; anything else carries only its stage.
+func mcpCreateError(stage string, result internalmcp.CreatedSession, err error) error {
+	if result.SessionID != "" || errors.Is(err, internalmcp.ErrInvalidSessionCreate) {
+		return err
+	}
+	var ve *sessionsvc.ValidationError
+	if errors.As(err, &ve) {
+		return fmt.Errorf("%w: %s; retrying the same request fails the same way. Change the request, or report this error to the user if the request is correct", internalmcp.ErrInvalidSessionCreate, ve.Error())
+	}
+	return &internalmcp.SessionCreateStageError{Stage: stage, Err: err}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"unicode"
 
@@ -45,8 +46,13 @@ func creationSession(ctx context.Context, query interface {
 // still belong to the session catalogue; this receipt grants no execution by
 // itself. The caller must verify authority for any supplied existing session ID.
 func (r *Router) AdmitCreation(ctx context.Context, key, sessionID string, ref Reference) (CreationRoute, error) {
-	if r.store == nil || strings.TrimSpace(key) == "" || len(key) > 512 || strings.ContainsFunc(key, unicode.IsControl) || (sessionID != "" && !identity.IsSessionID(sessionID)) {
-		return CreationRoute{}, ErrInvalid
+	switch {
+	case r.store == nil:
+		return CreationRoute{}, fmt.Errorf("%w: connection routing is unavailable", ErrInvalid)
+	case strings.TrimSpace(key) == "" || len(key) > 512 || strings.ContainsFunc(key, unicode.IsControl):
+		return CreationRoute{}, fmt.Errorf("%w: creation request key is missing or malformed", ErrInvalid)
+	case sessionID != "" && !identity.IsSessionID(sessionID):
+		return CreationRoute{}, fmt.Errorf("%w: requested session ID is not a canonical session ID", ErrInvalid)
 	}
 	id, previous, err := creationSession(ctx, r.store.db, key)
 	if err != nil && !errors.Is(err, ErrNotFound) {

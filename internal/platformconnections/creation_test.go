@@ -118,14 +118,14 @@ func TestConcurrentCreationReceiptsAllocateOneIdentity(t *testing.T) {
 func TestCreationAdmissionValidationAndUnavailableStore(t *testing.T) {
 	r, a, _ := creationRouter(t)
 	for _, key := range []string{"", "  ", "control\nkey", strings.Repeat("x", 513)} {
-		if _, err := r.AdmitCreation(t.Context(), key, "", Reference{}); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("invalid key admitted: %v", err)
+		if _, err := r.AdmitCreation(t.Context(), key, "", Reference{}); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "request key") {
+			t.Fatalf("invalid key admitted or unexplained: %v", err)
 		}
 	}
-	if _, err := r.AdmitCreation(t.Context(), "request", "native-id", Reference{}); !errors.Is(err, ErrInvalid) {
+	if _, err := r.AdmitCreation(t.Context(), "request", "native-id", Reference{}); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "canonical session ID") {
 		t.Fatal(err)
 	}
-	if _, err := NewRouter(nil).AdmitCreation(t.Context(), "request", "", Reference{}); !errors.Is(err, ErrInvalid) {
+	if _, err := NewRouter(nil).AdmitCreation(t.Context(), "request", "", Reference{}); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "routing") {
 		t.Fatal(err)
 	}
 	if _, err := r.AdmitCreation(t.Context(), "request", "", Reference{ConnectionID: "missing"}); !errors.Is(err, ErrNotFound) {

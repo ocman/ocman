@@ -65,7 +65,7 @@ func TestCreateSessionFailureWithoutSessionHasNoLink(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 	result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "go", "directory": "/repo", "platform": "opencode", "model": "p/m"})
-	if !result.IsError || testutil.ResultText(result) != "session request failed" {
+	if !result.IsError || strings.Contains(testutil.ResultText(result), "/session/") || !strings.HasPrefix(testutil.ResultText(result), "session creation failed during setup") {
 		t.Fatalf("result = %s", testutil.ResultText(result))
 	}
 }

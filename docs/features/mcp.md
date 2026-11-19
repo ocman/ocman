@@ -517,6 +517,14 @@ agent started. A stored user prompt or default model is not evidence of executio
 When startup remains unverified, report it without automatically resending the
 prompt or sending a nudge.
 
+A failed creation that allocated no session names the stage that failed, such as
+`worktree setup`, `runtime preparation` or `session allocation`, a classified
+cause and whether a retry can help. For example, a disconnected machine or a
+platform without a ready instance can succeed later, while a rejected request or
+an unexpected server error fails the same way on an unchanged retry. Raw causes
+such as host paths and command output stay in the server log under
+`MCP session creation failed`, with the same stage.
+
 Like the new-conversation composer, an omitted `worktree` creates a fresh worktree
 when the directory is eligible. Non-repositories, existing linked worktrees,
 and repositories without a usable base use the current checkout. Set

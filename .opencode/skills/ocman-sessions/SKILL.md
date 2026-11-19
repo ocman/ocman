@@ -140,6 +140,10 @@ For an external client without transport context, supply verified caller
 `platform` and `session_id`, or all of target `platform`, `model` and absolute
 `directory`. Only the latter intentionally creates an unrelated session.
 
+A failed `create` names the stage and cause and says whether retrying can help.
+Follow that advice. Do not probe with changed arguments such as `worktree`. If
+it says retrying will not help, report the error to the user.
+
 It returns the new `platform` and `session_id`; follow up with `get`. Verify the
 actual platform and the model on an assistant message against the request before
 claiming it started with that selection. Admission is not execution. A stored

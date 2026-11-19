@@ -73,7 +73,7 @@ func TestCreateSessionTool(t *testing.T) {
 	}{
 		{err: fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate), want: "invalid session request: unknown platform"},
 		{err: platforms.ErrNotFound, want: "session not found"},
-		{err: errors.New("internal detail"), want: "session request failed"},
+		{err: errors.New("internal detail"), want: "session creation failed during setup: unexpected server error. Retrying unchanged is unlikely to help; report this message to the user. Ocman logged the cause as \"MCP session creation failed\" with this stage."},
 		{err: errors.New("send"), created: internalmcp.CreatedSession{Platform: "opencode", SessionID: "ses-half"}, want: "session ses-half was created on opencode but setup or prompt delivery failed\n/session/ses-half?platform=opencode"},
 	} {
 		svc.err, svc.created = test.err, test.created
@@ -149,5 +149,46 @@ func TestCreateSessionRequiresCallerOrExplicitTarget(t *testing.T) {
 				t.Fatalf("caller create rejected: %s", testutil.ResultText(result))
 			}
 		})
+	}
+}
+
+func TestCreateSessionToolExplainsFailures(t *testing.T) {
+	svc := &fakeSessionCreator{}
+	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{SessionService: svc})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+	for _, test := range []struct {
+		err  error
+		want []string
+	}{
+		{&internalmcp.SessionCreateStageError{Stage: "worktree setup", Err: errors.New("private git output")}, []string{"during worktree setup", "unexpected server error", "unlikely to help", "MCP session creation failed"}},
+		{&internalmcp.SessionCreateStageError{Stage: "runtime preparation", Err: platforms.ErrPlatformUnreachable}, []string{"during runtime preparation", "no running, ready instance", "Retrying in a minute may succeed"}},
+		{&internalmcp.SessionCreateStageError{Stage: "target validation", Err: platforms.ErrRemoteOffline}, []string{"machine is not connected", "Retry after it reconnects"}},
+		{&internalmcp.SessionCreateStageError{Stage: "first prompt", Err: platforms.ErrPlatformUnauthenticated}, []string{"rejected ocman's credentials", "Do not retry"}},
+		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: &platforms.BusyError{Message: "busy"}}, []string{"target is busy", "Retry shortly"}},
+		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: context.DeadlineExceeded}, []string{"timed out", "sessions list"}},
+		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: context.Canceled}, []string{"cancelled"}},
+		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: platforms.ErrUnsupported}, []string{"does not support", "Do not retry unchanged"}},
+	} {
+		svc.err = test.err
+		result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo", "platform": "opencode", "model": "p/m"})
+		text := testutil.ResultText(result)
+		if !result.IsError || strings.Contains(text, "private") {
+			t.Fatalf("err %v: result = %q", test.err, text)
+		}
+		for _, want := range test.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("err %v: %q lacks %q", test.err, text, want)
+			}
+		}
+	}
+}
+
+func TestSessionCreateStageErrorWrapsCause(t *testing.T) {
+	err := &internalmcp.SessionCreateStageError{Stage: "worktree setup", Err: platforms.ErrBusy}
+	if err.Error() != "worktree setup: "+platforms.ErrBusy.Error() || !errors.Is(err, platforms.ErrBusy) {
+		t.Fatalf("stage error = %q", err)
 	}
 }
