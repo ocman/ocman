@@ -12,13 +12,43 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 )
 
+const sessionIdentityField = "session_id and platform (or directory for automatic session lookup)"
+
+// sessionChecks reports whether checks targets a linked PR (host, repo and
+// number, like link and watch) rather than a project commit (remote and sha).
+func sessionChecks(args map[string]any) bool {
+	for _, key := range []string{"host", "repo", "session_id"} {
+		if _, ok := args[key]; ok {
+			return true
+		}
+	}
+	_, remote := args["remote"]
+	_, sha := args["sha"]
+	return !remote && !sha
+}
+
 func prToolRequest(action string, req mcplib.CallToolRequest) (method, path string, body []byte, err error) {
+	args := req.GetArguments()
+	present := func(key string) bool {
+		value, ok := args[key].(string)
+		return ok && strings.TrimSpace(value) != ""
+	}
 	q := url.Values{}
 	payload := map[string]any{}
 	var required []string
+	var missing []string
+	var numberRequired bool
 	method = http.MethodGet
-	switch action {
-	case "upstreams", "list", "checks", "mergeability", "launch":
+	switch {
+	case action == "checks" && sessionChecks(args):
+		numberRequired = true
+		required = []string{"host", "repo"}
+		if !present("session_id") || !present("platform") {
+			missing = append(missing, sessionIdentityField)
+		} else if path, err = sessionPath(req, "pull-request-checks"); err != nil {
+			return
+		}
+	case action == "upstreams" || action == "list" || action == "checks" || action == "mergeability" || action == "launch":
 		required = []string{"directory", "remote_id"}
 		path = "/api/project/" + map[string]string{"upstreams": "upstreams", "list": "prs", "checks": "pr-checks", "mergeability": "pr-mergeability", "launch": "handle"}[action]
 		if action != "upstreams" {
@@ -27,6 +57,7 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 		if action == "checks" {
 			required = append(required, "sha")
 		}
+		numberRequired = action == "mergeability" || action == "launch"
 		if action == "launch" {
 			method = http.MethodPost
 			required = append(required, "platform", "mode", "task")
@@ -34,25 +65,17 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 			// Cross-fork fetch approval stays in the dashboard. MCP never supplies
 			// fetchHead, and therefore cannot bypass the requires_fetch response.
 		}
-	case "linked", "link", "unlink", "watch", "unwatch", "feedback", "checks_prompt", "conflicts_prompt":
-		required = []string{"session_id", "platform"}
-		for _, key := range required {
-			if value, e := req.RequireString(key); e != nil || strings.TrimSpace(value) == "" {
-				err = fmt.Errorf("%s is required. %s", key, prSessionIdentityGuidance)
-				return
-			}
-		}
-		id, e := req.RequireString("session_id")
-		if e != nil || id == "" || strings.ContainsAny(id, "/\\?#%") || strings.Contains(id, "..") || strings.TrimSpace(id) != id {
-			err = fmt.Errorf("session_id must be a nonempty path segment")
+	case sessionPRAction(action, args):
+		numberRequired = action != "linked"
+		if !present("session_id") || !present("platform") {
+			missing = append(missing, sessionIdentityField)
+		} else if path, err = sessionPath(req, "pull-requests"); err != nil {
 			return
 		}
-		path = "/api/session/" + id + "/pull-requests"
 		if action != "linked" {
 			method = http.MethodPost
 			payload["action"] = action
 			if action == "link" {
-				args := req.GetArguments()
 				_, hasHost := args["host"]
 				_, hasRepo := args["repo"]
 				if hasHost || hasRepo {
@@ -65,7 +88,7 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 			}
 		}
 		if action == "feedback" || action == "checks_prompt" || action == "conflicts_prompt" {
-			path = "/api/session/" + id + "/pull-request-feedback"
+			path = strings.Replace(path, "/pull-requests", "/pull-request-feedback", 1)
 			payload["action"] = strings.TrimSuffix(action, "_prompt")
 		}
 	default:
@@ -73,13 +96,19 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 		return
 	}
 	for _, key := range required {
-		if value, e := req.RequireString(key); e != nil || strings.TrimSpace(value) == "" {
-			err = fmt.Errorf("%s is required", key)
-			return
+		if !present(key) {
+			missing = append(missing, key)
 		}
 	}
+	if _, ok := args["number"]; numberRequired && !ok {
+		missing = append(missing, "number")
+	}
+	if len(missing) > 0 {
+		err = missingFieldsError(action, missing)
+		return
+	}
 	for key, field := range map[string]string{"directory": "dir", "remote_id": "remoteId", "remote": "remote", "platform": "platform", "host": "host", "repo": "repo", "sha": "sha", "state": "state", "mine": "mine", "mode": "mode", "task": "action"} {
-		if _, ok := req.GetArguments()[key]; !ok {
+		if _, ok := args[key]; !ok {
 			continue
 		}
 		value, e := req.RequireString(key)
@@ -98,9 +127,7 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 		return
 	}
 	for _, key := range []string{"number", "page"} {
-		_, present := req.GetArguments()[key]
-		needsNumber := key == "number" && action != "upstreams" && action != "list" && action != "checks" && action != "linked"
-		if !present && !needsNumber {
+		if _, present := args[key]; !present {
 			continue
 		}
 		n, e := req.RequireFloat(key)
@@ -111,7 +138,7 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 		payload[key] = int(n)
 		q.Set(key, strconv.Itoa(int(n)))
 	}
-	if _, present := req.GetArguments()["refresh"]; present {
+	if _, present := args["refresh"]; present {
 		refresh, e := req.RequireBool("refresh")
 		if e != nil {
 			err = fmt.Errorf("refresh must be a boolean")
@@ -121,7 +148,37 @@ func prToolRequest(action string, req mcplib.CallToolRequest) (method, path stri
 			q.Set("refresh", "1")
 		}
 	}
+	if _, present := args["detail"]; present {
+		if _, ok := args["detail"].(bool); !ok {
+			err = fmt.Errorf("detail must be a boolean")
+			return
+		}
+	}
 	path += "?" + q.Encode()
 	body, err = json.Marshal(payload)
 	return
+}
+
+func sessionPath(req mcplib.CallToolRequest, route string) (string, error) {
+	id := req.GetString("session_id", "")
+	if id == "" || strings.ContainsAny(id, "/\\?#%") || strings.Contains(id, "..") || strings.TrimSpace(id) != id {
+		return "", fmt.Errorf("session_id must be a nonempty path segment")
+	}
+	return "/api/session/" + id + "/" + route, nil
+}
+
+// missingFieldsError names every absent field at once so one retry suffices.
+func missingFieldsError(action string, missing []string) error {
+	message := action + " is missing required fields: " + strings.Join(missing, "; ")
+	if action == "checks" {
+		if missing[0] == sessionIdentityField || missing[0] == "host" || missing[0] == "repo" {
+			message += ". For a linked PR pass host, repo and number like link and watch; the head commit is resolved automatically. For a project commit pass directory, remote_id, remote and sha instead"
+		} else {
+			message += ". Alternatively pass host, repo and number for a PR linked to the session; its head commit is resolved automatically"
+		}
+	}
+	if missing[0] == sessionIdentityField {
+		message += ". " + prSessionIdentityGuidance
+	}
+	return fmt.Errorf("%s", message)
 }

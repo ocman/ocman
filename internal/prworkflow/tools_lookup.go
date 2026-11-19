@@ -11,16 +11,18 @@ import (
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 )
 
-func sessionPRAction(action string) bool {
+func sessionPRAction(action string, args map[string]any) bool {
 	switch action {
 	case "linked", "link", "unlink", "watch", "unwatch", "feedback", "checks_prompt", "conflicts_prompt":
 		return true
+	case "checks":
+		return sessionChecks(args)
 	}
 	return false
 }
 
 func (m *Module) lookupToolSession(ctx context.Context, req mcplib.CallToolRequest) (mcplib.CallToolRequest, error) {
-	if !sessionPRAction(req.GetString("action", "")) {
+	if !sessionPRAction(req.GetString("action", ""), req.GetArguments()) {
 		return req, nil
 	}
 	id, platform := req.GetString("session_id", ""), req.GetString("platform", "")

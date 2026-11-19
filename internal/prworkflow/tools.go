@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
@@ -20,6 +21,7 @@ var _ module.ToolProvider = (*Module)(nil)
 func (m *Module) Tools() []server.ServerTool {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/session/{id}/pull-requests", m.list)
+	mux.HandleFunc("GET /api/session/{id}/pull-request-checks", m.checks)
 	mux.HandleFunc("POST /api/session/{id}/pull-requests", m.change)
 	mux.HandleFunc("POST /api/session/{id}/pull-request-feedback", m.feedback)
 	if m.d.ProjectHandler != nil {
@@ -35,7 +37,8 @@ func (m *Module) Tools() []server.ServerTool {
 		mcplib.WithString("host"), mcplib.WithString("repo"), mcplib.WithNumber("number"),
 		mcplib.WithString("sha"), mcplib.WithString("state"), mcplib.WithString("mine"),
 		mcplib.WithNumber("page"), mcplib.WithBoolean("refresh"),
-		mcplib.WithString("mode"), mcplib.WithString("task")),
+		mcplib.WithString("mode"), mcplib.WithString("task"),
+		mcplib.WithBoolean("detail", mcplib.Description("linked only: return full saved PR metadata instead of the compact default."))),
 		Handler: func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 			req, err := m.lookupToolSession(ctx, req)
 			if err != nil {
@@ -72,9 +75,51 @@ func handlePRTool(ctx context.Context, handler http.Handler, req mcplib.CallTool
 	if w.Code == http.StatusNoContent {
 		return internalmcp.ToolResultJSON(map[string]string{"status": "unlinked"})
 	}
+	if action == "linked" {
+		var linked struct {
+			PullRequests []Link `json:"pullRequests"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &linked); err != nil {
+			return mcplib.NewToolResultError("invalid PR response")
+		}
+		// Older remote owners ignore the filter query; apply it here as well.
+		u, _ := url.Parse(path)
+		links := filterLinks(linked.PullRequests, u.Query())
+		if req.GetBool("detail", false) {
+			return internalmcp.ToolResultJSON(map[string]any{"pullRequests": links})
+		}
+		return internalmcp.ToolResultJSON(map[string]any{"pullRequests": compactLinks(links)})
+	}
 	var result any
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		return mcplib.NewToolResultError("invalid PR response")
 	}
 	return internalmcp.ToolResultJSON(result)
+}
+
+type compactRemote struct {
+	Host string `json:"host"`
+	Repo string `json:"repo"`
+	Name string `json:"name,omitempty"`
+}
+
+// compactLink is the default linked shape. Full PR metadata grows with every
+// linked PR and is returned only when detail is requested.
+type compactLink struct {
+	Number         int           `json:"number"`
+	Title          string        `json:"title,omitempty"`
+	State          string        `json:"state,omitempty"`
+	URL            string        `json:"url,omitempty"`
+	Remote         compactRemote `json:"remote"`
+	Watching       bool          `json:"watching"`
+	BackgroundTask bool          `json:"backgroundTask,omitempty"`
+	LastError      string        `json:"lastError,omitempty"`
+}
+
+func compactLinks(links []Link) []compactLink {
+	out := make([]compactLink, 0, len(links))
+	for _, l := range links {
+		out = append(out, compactLink{Number: l.Number, Title: l.PR.Title, State: l.PR.Status, URL: l.PR.URL, Remote: compactRemote{Host: l.Remote.Host, Repo: l.Remote.Repo, Name: l.Remote.Name}, Watching: l.Watching, BackgroundTask: l.BackgroundTask, LastError: l.LastError})
+	}
+	return out
 }

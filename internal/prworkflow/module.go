@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,7 +72,7 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Could not load linked PRs", http.StatusInternalServerError)
 			return
 		}
-		httpx.WriteJSON(w, map[string]any{"pullRequests": links})
+		httpx.WriteJSON(w, map[string]any{"pullRequests": filterLinks(links, r.URL.Query())})
 		return
 	}
 	m.mu.Lock()
@@ -80,10 +82,13 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not load linked PRs", http.StatusInternalServerError)
 		return
 	}
+	// Filter before forge reads so one PR costs one lookup.
+	links = filterLinks(links, r.URL.Query())
+	refresh := refreshRequested(r.URL.Query())
 	for i := range links {
 		if f, ok := m.d.ResolveForge(links[i].Remote); ok {
 			ctx := github.WithCache(r.Context())
-			if r.URL.Query().Get("refresh") == "true" {
+			if refresh {
 				ctx = github.WithRefresh(ctx)
 			}
 			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -91,7 +96,7 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 			cancel()
 			if err == nil {
 				links[i].PR = pr
-				if r.URL.Query().Get("refresh") == "true" && links[i].Watching {
+				if refresh && links[i].Watching {
 					m.processLinks(r.Context(), links[i:i+1], true)
 				}
 			} else if links[i].LastError == "" {
@@ -100,6 +105,22 @@ func (m *Module) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.WriteJSON(w, map[string]any{"pullRequests": links})
+}
+
+// filterLinks narrows links by the optional number, host and repo query values.
+func filterLinks(links []Link, q url.Values) []Link {
+	number, _ := strconv.Atoi(q.Get("number"))
+	host, repo := q.Get("host"), q.Get("repo")
+	if number <= 0 && host == "" && repo == "" {
+		return links
+	}
+	out := make([]Link, 0, len(links))
+	for _, l := range links {
+		if (number <= 0 || l.Number == number) && (host == "" || l.Remote.Host == host) && (repo == "" || l.Remote.Repo == repo) {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 type changeRequest struct {

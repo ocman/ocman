@@ -35,7 +35,7 @@ func TestPRToolRoutes(t *testing.T) {
 	for _, tc := range []struct{ action, method, path, bodyAction string }{
 		{"upstreams", "GET", "/api/project/upstreams", ""},
 		{"list", "GET", "/api/project/prs", ""},
-		{"checks", "GET", "/api/project/pr-checks", ""},
+		{"checks", "GET", "/api/session/s1/pull-request-checks", ""},
 		{"mergeability", "GET", "/api/project/pr-mergeability", ""},
 		{"launch", "POST", "/api/project/handle", "review"},
 		{"linked", "GET", "/api/session/s1/pull-requests", ""},
@@ -106,7 +106,9 @@ func TestPRToolValidation(t *testing.T) {
 		{"negative number", "link", map[string]any{"session_id": "s1", "platform": "opencode", "remote": "origin", "number": -1.0}},
 		{"fraction number", "link", map[string]any{"session_id": "s1", "platform": "opencode", "remote": "origin", "number": 1.5}},
 		{"huge number", "link", map[string]any{"session_id": "s1", "platform": "opencode", "remote": "origin", "number": 1e50}},
-		{"bad task", "launch", map[string]any{"directory": "/repo", "remote_id": "local", "remote": "origin", "platform": "opencode", "mode": "session", "task": "merge"}},
+		{"bad task", "launch", map[string]any{"directory": "/repo", "remote_id": "local", "remote": "origin", "platform": "opencode", "mode": "session", "task": "merge", "number": float64(1)}},
+		{"checks session path", "checks", map[string]any{"session_id": "a/b", "platform": "opencode", "host": "github.com", "repo": "a/b", "number": float64(1)}},
+		{"detail", "linked", map[string]any{"session_id": "s1", "platform": "opencode", "detail": "yes"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, _, _, err := prToolRequest(tc.action, toolRequest(tc.args)); err == nil {
@@ -142,6 +144,10 @@ func TestPRToolResults(t *testing.T) {
 				t.Fatalf("result: %+v", result)
 			}
 		})
+	}
+	badLinked := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("not JSON")) })
+	if result := handlePRTool(t.Context(), badLinked, toolRequest(map[string]any{"action": "linked", "session_id": "s1", "platform": "opencode"})); !result.IsError {
+		t.Fatalf("invalid linked response accepted: %+v", result)
 	}
 	for _, args := range []map[string]any{nil, {"action": "bad"}, {"action": "help"}, {"action": "linked", "session_id": "s\n1", "platform": "opencode"}} {
 		result := handlePRTool(t.Context(), nil, toolRequest(args))

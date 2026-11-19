@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 // checks uses the saved repository identity, not the session checkout remote.
+// Without sha it reads the PR's current head commit from the forge.
 func (m *Module) checks(w http.ResponseWriter, r *http.Request) {
 	t, ok := m.d.Target(w, r, r.PathValue("id"))
 	if !ok {
@@ -25,8 +27,8 @@ func (m *Module) checks(w http.ResponseWriter, r *http.Request) {
 	number, err := strconv.Atoi(q.Get("number"))
 	sha := q.Get("sha")
 	_, shaErr := hex.DecodeString(sha)
-	if err != nil || number <= 0 || sha == "" || len(sha) > 64 || shaErr != nil {
-		http.Error(w, "A positive PR number and hexadecimal commit ID are required", http.StatusBadRequest)
+	if err != nil || number <= 0 || len(sha) > 64 || shaErr != nil {
+		http.Error(w, "A positive PR number and an optional hexadecimal commit ID are required", http.StatusBadRequest)
 		return
 	}
 	m.mu.Lock()
@@ -50,11 +52,19 @@ func (m *Module) checks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ctx := github.WithCache(r.Context())
-		if q.Get("refresh") == "true" {
+		if refreshRequested(q) {
 			ctx = github.WithRefresh(ctx)
 		}
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
+		if sha == "" {
+			pr, err := f.LookupPR(ctx, l.Remote.Repo, number)
+			if err != nil || pr.HeadSHA == "" {
+				http.Error(w, "Could not read the PR head commit", http.StatusBadGateway)
+				return
+			}
+			sha = pr.HeadSHA
+		}
 		ci, rl, err := f.Checks(ctx, l.Remote.Repo, sha)
 		if err != nil {
 			http.Error(w, "Could not read PR checks", http.StatusBadGateway)
@@ -63,8 +73,13 @@ func (m *Module) checks(w http.ResponseWriter, r *http.Request) {
 		if ci.Checks == nil {
 			ci.Checks = []forge.Check{}
 		}
-		httpx.WriteJSON(w, map[string]any{"state": ci.State, "checks": ci.Checks, "rateLimit": rl})
+		httpx.WriteJSON(w, map[string]any{"sha": sha, "state": ci.State, "checks": ci.Checks, "rateLimit": rl})
 		return
 	}
 	http.Error(w, "Linked PR not found", http.StatusNotFound)
+}
+
+// refreshRequested accepts the dashboard's "true" and the MCP tool's "1".
+func refreshRequested(q url.Values) bool {
+	return q.Get("refresh") == "true" || q.Get("refresh") == "1"
 }

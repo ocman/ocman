@@ -31,7 +31,9 @@ ambiguous, ask rather than linking to another session.
 
 `{"action":"link","intent":"Attach the created PR to this session","platform":"opencode","session_id":"ses_caller","host":"github.com","repo":"other/project","number":42}`
 
-Then verify with `{"action":"linked","intent":"Verify the created PR is linked to this session","platform":"opencode","session_id":"ses_caller"}`.
+Then verify with `{"action":"linked","intent":"Verify the created PR is linked to this session","platform":"opencode","session_id":"ses_caller","number":42}`.
+`linked` returns compact entries; `number` limits it to that PR and
+`detail: true` returns full metadata only when you need it.
 Confirm that the returned links contain the matching repository and PR number
 before reporting completion. If linking or verification fails, report that
 failure alongside the PR URL. Do not recreate an already-created PR to retry
@@ -52,6 +54,8 @@ Call `watch` with `session_id`, `platform`, the PR `number`, and `host` and
 state in the response or with `linked` before reporting success.
 
 Inspect current checks, unresolved comments and mergeability immediately.
+`checks` takes the same identity as `watch` (`session_id`, `platform`, `host`,
+`repo`, `number`) and reads the PR's head commit itself.
 Handle existing failures now, using the repository's verification and push
 rules. If only waiting remains, say the watch is active and end the turn.
 Ocman polls every two minutes and queues changed checks, comments or conflicts

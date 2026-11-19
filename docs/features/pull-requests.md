@@ -118,6 +118,10 @@ The `pull_requests` tool exposes these workflows to local agents. Start with
 - `upstreams`, `list`, `checks`, `mergeability` read project forge information.
   Supply an absolute `directory` and explicit `remote_id`, using `local` for
   this machine. Except `upstreams`, also supply the upstream `remote` name.
+- `checks` also accepts a linked PR's identity, like `watch`: the session
+  identifiers, `host`, `repo` and `number`. Ocman reads the PR's current head
+  commit unless `sha` is given and returns it as `sha`. Project checks keep
+  requiring `sha`.
 - `launch` starts a PR session or worktree. Supply the project inputs plus
   `number`, `platform`, `mode` (`session` or `worktree`) and `task` (`handle` or
   `review`). It does not create a PR. Cross-fork fetch confirmation stays in
@@ -127,9 +131,14 @@ The `pull_requests` tool exposes these workflows to local agents. Start with
   when applicable. Mutations also need `number`; `link` accepts either `remote`
   from the session's checkout or explicit `host` and `repo`, not both. Use the
   latter for a PR created in another repository. Other mutations use the `host`
-  and `repo` returned by `linked`.
+  and `repo` returned by `linked`. `linked` returns a compact entry per PR
+  (`number`, `title`, `state`, `url`, `remote`, `watching` and any
+  `lastError`). Optional `number`, `host` and `repo` filter it to matching PRs;
+  `detail: true` returns the full saved metadata.
 - `feedback`, `checks_prompt`, `conflicts_prompt` return unsent task prompts.
   Supply the session identifiers, `host`, `repo` and `number`.
+
+A validation error names every missing field at once.
 
 For example, to attach another repository's PR to the session that created it:
 

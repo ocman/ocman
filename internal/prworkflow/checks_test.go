@@ -54,7 +54,6 @@ func TestLinkedChecksFailures(t *testing.T) {
 		status      int
 	}{
 		{"number", "number=0&sha=abcdef", 400},
-		{"missing sha", "number=42", 400},
 		{"bad sha", "number=42&sha=bad/sha", 400},
 		{"unknown link", "number=43&sha=abcdef", 404},
 		{"other repository", "number=42&sha=abcdef&host=github.com&repo=other/project", 404},
