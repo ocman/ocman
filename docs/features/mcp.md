@@ -165,7 +165,7 @@ the full metadata, including costs, tokens and read state. `since_days` keeps
 sessions updated in the last 1–365 days. `origin` selects and `exclude_origin`
 drops comma-separated creation origins (`user`, `routine`, `plugin`, `factory`,
 `external`). For example, `exclude_origin: "plugin,routine"` hides automated
-sessions. Rows without a recorded origin count as `user`, or as `routine` or
+sessions. Owners report the origin recorded in their session catalogue, including remote machines. Rows without a recorded origin count as `user`, or as `routine` or
 `factory` when linked to one. Filters apply before `limit`, so automated sessions
 cannot push matching sessions past the cap.
 

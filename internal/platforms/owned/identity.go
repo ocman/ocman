@@ -195,6 +195,7 @@ func (a *Adapter) session(ctx context.Context, row db.Session) (db.Session, erro
 		return db.Session{}, err
 	}
 	row.ID, row.ParentID, row.Platform = identity.ID, identity.ParentID, string(a.ID())
+	row.Origin, row.OriginID = string(identity.Origin), identity.OriginID
 	if identity.Origin == sessioncatalog.Routine {
 		row.RoutineID = identity.OriginID
 	}

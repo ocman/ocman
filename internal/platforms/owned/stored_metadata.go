@@ -26,6 +26,7 @@ func (a *Adapter) storedMetadata(ctx context.Context, id string) (*db.Session, e
 		return nil, platforms.ErrHistoryUnavailable
 	}
 	row := conversationread.Metadata(s, string(a.ID()))
+	row.Origin, row.OriginID = string(identity.Origin), identity.OriginID
 	if identity.Origin == sessioncatalog.Routine {
 		row.RoutineID = identity.OriginID
 	}

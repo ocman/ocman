@@ -75,6 +75,7 @@ func (a *Adapter) storedInstanceSessions(ctx context.Context, instance statev2.I
 		if summary.ReadFormat > 0 && summary.ReadFormat < statev2.SourceHierarchyReadFormat {
 			row.SourceChild = identity.NativeParentID != ""
 		}
+		row.Origin, row.OriginID = string(identity.Origin), identity.OriginID
 		if identity.Origin == sessioncatalog.Routine {
 			row.RoutineID = identity.OriginID
 		}
