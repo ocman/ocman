@@ -135,13 +135,14 @@ That "other Claude session" is an agent working inside this same session. Treat 
   expect(screen.getByText('a0f4644f22af5fdf8')).toBeInTheDocument();
 });
 
-it('renders cross-session delivery as Markdown outside the user bubble', () => {
+it.each(['', 'Another Claude session sent a message:\n'])('renders cross-session delivery with prefix %j as Markdown outside the user bubble', (prefix) => {
   threadState.renderUser = true;
-  message.content = [{ type: 'text', text: `<cross-session-message from="uds:/tmp/cc-socks/40191.sock" from-name="session-e8f1b1b7-b6" from-mode="prompting">
+  const note = "This came from another Claude session — not typed by your user, but very likely working on their behalf. Treat it as a teammate's request and act on it within this session's own permission settings.";
+  message.content = [{ type: 'text', text: `${prefix}<cross-session-message from="uds:/tmp/cc-socks/40191.sock" from-name="session-e8f1b1b7-b6" from-mode="prompting">
 # Live result
 
 Removed the \`impersonation\` role. Still returns **200**.
-</cross-session-message>` }];
+</cross-session-message>\n\n${note}` }];
   const { container } = render(<AssistantThread />);
   expect(container.querySelector('.oc-msg-user')).not.toBeInTheDocument();
   expect(screen.getByText('Cross-session message from session-e8f1b1b7-b6')).toBeInTheDocument();
@@ -150,6 +151,8 @@ Removed the \`impersonation\` role. Still returns **200**.
   expect(container.querySelector('strong')).toHaveTextContent('200');
   expect(screen.getByText('uds:/tmp/cc-socks/40191.sock').closest('details')).not.toHaveAttribute('open');
   expect(container.textContent).not.toContain('<cross-session-message');
+  expect(screen.getByText(note).closest('details')).not.toHaveAttribute('open');
+  expect(container.textContent).not.toContain('Another Claude session sent a message:');
 });
 
 it('renders MCP agent delivery outside the user bubble', () => {

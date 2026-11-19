@@ -1,7 +1,7 @@
 // Display-only parsing. The stored user-role envelope and its safety context
 // remain unchanged; this does not authenticate the sender or grant authority.
 export function parseAgentMessage(text: string) {
-  if (text.trimStart().startsWith('<cross-session-message')) return parseCrossSessionMessage(text);
+  if (/^\s*(?:Another Claude session sent a message:\s*\n)?<cross-session-message/.test(text)) return parseCrossSessionMessage(text);
   const envelope = /^\s*(?:Another Claude session sent a message:\s*\n)?<agent-message from="([^"<>\r\n]+)">\r?\n([\s\S]*)\r?\n<\/agent-message>(?:\s*\n\s*\n(That "other Claude session" is an agent working inside this[\s\S]*))?\s*$/.exec(text);
   if (!envelope) return null;
 
@@ -26,7 +26,7 @@ export function parseAgentMessage(text: string) {
 }
 
 function parseCrossSessionMessage(text: string) {
-  const envelope = /^\s*<cross-session-message((?:\s+[\w-]+="[^"<>\r\n]*")+)\s*>([\s\S]*)<\/cross-session-message>\s*$/.exec(text);
+  const envelope = /^\s*(?:Another Claude session sent a message:\s*\n)?<cross-session-message((?:\s+[\w-]+="[^"<>\r\n]*")+)\s*>([\s\S]*)<\/cross-session-message>(?:\s*\n\s*\n(This came from another Claude session[\s\S]*))?\s*$/.exec(text);
   if (!envelope) return null;
   const attributes = new Map<string, string>();
   for (const match of envelope[1].matchAll(/([\w-]+)="([^"<>\r\n]*)"/g)) {
@@ -42,6 +42,7 @@ function parseCrossSessionMessage(text: string) {
   if (sender) details.push(['Sender', sender]);
   details.push(['Source', source]);
   if (mode) details.push(['Mode', mode]);
+  if (envelope[3]) details.push(['Delivery note', envelope[3].trim()]);
   return {
     summary: sender ? `Cross-session message from ${sender}` : 'Cross-session message',
     status: '', result, details,
