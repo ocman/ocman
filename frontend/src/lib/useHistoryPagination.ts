@@ -24,6 +24,17 @@ export function useHistoryPagination(
     if (!oldest) return;
     const key = oldestMessageId ?? oldest.dataset.messageId ?? '';
     let active = true;
+    const load = () => {
+      if (!active || attemptedRef.current === key) return;
+      // Do not loop on a failed request or a page that adds no history.
+      // Progress changes the key; leaving and re-entering permits retry.
+      attemptedRef.current = key;
+      onLoadMore();
+    };
+    const fillViewport = () => {
+      // A hidden viewport has no useful dimensions. Wait until it is shown.
+      if (viewport.clientHeight > 0 && viewport.scrollHeight <= viewport.clientHeight) load();
+    };
     const visible = new Set<Element>();
     const observer = new IntersectionObserver((entries) => {
       if (!active) return;
@@ -33,18 +44,17 @@ export function useHistoryPagination(
       }
       if (visible.size === 0) {
         attemptedRef.current = null;
-      } else if (attemptedRef.current !== key) {
-        // Do not loop on a failed request or a page that adds no history.
-        // Progress changes the key; leaving and re-entering permits retry.
-        attemptedRef.current = key;
-        onLoadMore();
-      }
+      } else load();
     }, { root: viewport });
     observer.observe(oldest);
     if (startRef.current && startRef.current !== oldest) observer.observe(startRef.current);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fillViewport);
+    resizeObserver?.observe(viewport);
+    fillViewport();
     return () => {
       active = false;
       observer.disconnect();
+      resizeObserver?.disconnect();
     };
   }, [viewportRef, oldestMessageId, hasMore, loadingMore, onLoadMore]);
 

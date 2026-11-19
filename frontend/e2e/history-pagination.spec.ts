@@ -1,5 +1,41 @@
 import { test, expect, MOCK_SESSION } from './fixtures';
 
+for (const resize of [false, true]) {
+  test(`fills the conversation viewport with older pages, resize=${resize}`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width: 1400, height: resize ? 700 : 8000 });
+    const offsets: number[] = [];
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) => {
+      const offset = Number(new URL(route.request().url()).searchParams.get('offset') || 0);
+      offsets.push(offset);
+      const messages = Array.from({ length: Math.min(30, 61 - offset) }, (_, index) => {
+        const position = Math.max(0, 61 - offset - 30) + index;
+        return {
+          id: `fill-${position}`, sessionId: MOCK_SESSION.id,
+          timeCreated: MOCK_SESSION.timeCreated + position * 1000,
+          data: { role: position === 0 ? 'user' : 'assistant', finish: 'stop' },
+        };
+      });
+      return route.fulfill({ json: {
+        session: { ...MOCK_SESSION, messageCount: 61 }, messages,
+        parts: messages.map(message => ({
+          id: `part-${message.id}`, messageId: message.id, sessionId: MOCK_SESSION.id,
+          data: { type: 'text', text: message.id === 'fill-0' ? 'Original prompt in older history' : 'Short reply for viewport filling' },
+        })),
+        totalMessages: 61,
+      } });
+    });
+    await page.goto(`/session/${MOCK_SESSION.id}`);
+    const viewport = page.getByTestId('conversation-viewport');
+    if (resize) {
+      await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+      expect(offsets.filter(offset => offset > 0)).toEqual([]);
+      await page.setViewportSize({ width: 1400, height: 8000 });
+    }
+    await expect(viewport.getByText('Original prompt in older history')).toBeAttached();
+    expect(offsets.filter(offset => offset > 0)).toEqual([30, 60]);
+  });
+}
+
 for (const hidden of [true, false]) {
   test(`loads earlier pages while the oldest message is visible, hidden=${hidden}`, async ({ mockedPage: page }) => {
     const messages = Array.from({ length: 61 }, (_, index) => ({

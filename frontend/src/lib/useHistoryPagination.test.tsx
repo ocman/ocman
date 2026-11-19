@@ -5,6 +5,17 @@ import { useRef } from 'react';
 import { useHistoryPagination } from './useHistoryPagination';
 
 const observers: FakeIntersectionObserver[] = [];
+const resizeObservers: FakeResizeObserver[] = [];
+class FakeResizeObserver {
+  observe = vi.fn();
+  disconnect = vi.fn();
+  callback: () => void;
+  constructor(callback: () => void) {
+    this.callback = callback;
+    resizeObservers.push(this);
+  }
+  emit() { this.callback(); }
+}
 class FakeIntersectionObserver {
   target: Element | null = null;
   disconnect = vi.fn();
@@ -23,12 +34,16 @@ class FakeIntersectionObserver {
 
 beforeEach(() => {
   observers.length = 0;
+  resizeObservers.length = 0;
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+  vi.stubGlobal('ResizeObserver', FakeResizeObserver);
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function setup() {
+function setup(height = 0, contentHeight = 0) {
   const viewport = document.createElement('div');
+  Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: height });
+  Object.defineProperty(viewport, 'scrollHeight', { configurable: true, value: contentHeight });
   const oldest = document.createElement('div');
   oldest.dataset.messageId = 'oldest';
   viewport.append(oldest);
@@ -39,6 +54,62 @@ function setup() {
 }
 
 describe('useHistoryPagination', () => {
+  it('fills an underfilled viewport page by page without waiting for intersection events', () => {
+    const { viewport, rerender, options } = setup(800, 200);
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    rerender({ ...options, loadingMore: true });
+    rerender({ ...options, oldestMessageId: 'page-2' });
+    expect(options.onLoadMore).toHaveBeenCalledTimes(2);
+    Object.defineProperty(viewport, 'scrollHeight', { value: 1000 });
+    rerender({ ...options, oldestMessageId: 'page-3' });
+    expect(options.onLoadMore).toHaveBeenCalledTimes(2);
+  });
+
+  it('rechecks after resizing without duplicating requests or retrying a failed page', () => {
+    const { viewport, options, rerender, unmount } = setup(400, 600);
+    expect(options.onLoadMore).not.toHaveBeenCalled();
+    expect(resizeObservers[0].observe).toHaveBeenCalledWith(viewport);
+    Object.defineProperty(viewport, 'clientHeight', { value: 800 });
+    act(() => resizeObservers[0].emit());
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    act(() => { resizeObservers[0].emit(); observers[0].emit(true); });
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    rerender({ ...options, loadingMore: true });
+    act(() => resizeObservers[0].emit());
+    rerender(options);
+    act(() => resizeObservers[1].emit());
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    unmount();
+    act(() => resizeObservers[1].emit());
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    expect(resizeObservers[1].disconnect).toHaveBeenCalled();
+  });
+
+  it('loads when content exactly fills the viewport, then stops when history is exhausted', () => {
+    const { options, rerender } = setup(600, 600);
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    rerender({ ...options, oldestMessageId: 'page-2', hasMore: false });
+    act(() => resizeObservers[0].emit());
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    expect(resizeObservers[0].disconnect).toHaveBeenCalled();
+  });
+
+  it('waits for a hidden viewport to acquire a height', () => {
+    const { options, viewport } = setup();
+    act(() => resizeObservers[0].emit());
+    expect(options.onLoadMore).not.toHaveBeenCalled();
+    Object.defineProperty(viewport, 'clientHeight', { value: 600 });
+    act(() => resizeObservers[0].emit());
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('still fills initially when ResizeObserver is unavailable', () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    const { options, unmount } = setup(600, 200);
+    expect(options.onLoadMore).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
   it('observes the oldest rendered message inside the conversation viewport', () => {
     const { viewport, oldest, options } = setup();
     expect(observers[0].target).toBe(oldest);
