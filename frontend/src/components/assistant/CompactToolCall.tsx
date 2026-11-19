@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { extractPatchPayload, parseJsonObject, splitToolArgs, type parseToolTime } from '../../lib/threadHelpers';
+import { extractPatchPayload, parseJsonObject, splitToolArgs, type parseToolTime, type ToolApproval } from '../../lib/threadHelpers';
 import { parsePatchSections } from '../../lib/applyPatch';
 import { relativizePath } from '../../lib/convertMessages';
 import { BashPrompt, ToolDuration } from './toolRenderers';
 import { Button } from '../Control';
+import { ToolApprovalHeader } from './ToolApprovalHeader';
 import './CompactToolCall.css';
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
   onToggle: () => void;
   timeInfo: ReturnType<typeof parseToolTime>;
   children: ReactNode;
+  approvals?: ToolApproval[];
 }
 
 function compactFilePaths(name: string, args: string, projectDirectory: string): string[] {
@@ -37,7 +39,7 @@ function compactSummary(name: string, args: string, paths: string[], description
   return paths.length ? `${action} ${paths.length} ${paths.length === 1 ? 'file' : 'files'}` : `${action} files`;
 }
 
-export function CompactToolCall({ toolName, args, description, projectDirectory = '', status, expanded, onToggle, timeInfo, children }: Props) {
+export function CompactToolCall({ toolName, args, description, projectDirectory = '', status, expanded, onToggle, timeInfo, children, approvals = [] }: Props) {
   const name = toolName.toLowerCase().replace(/^mcp_/, '');
   const describedShell = name === 'bash' && !!description?.trim();
   const paths = compactFilePaths(name, args, projectDirectory);
@@ -51,22 +53,28 @@ export function CompactToolCall({ toolName, args, description, projectDirectory 
     failed ? 'oc-tool-compact-error' : '',
     expanded ? 'oc-tool-compact-expanded' : '',
   ].filter(Boolean).join(' ');
+  const details = <>
+    {describedShell && <span className="oc-tool-compact-command"><span aria-hidden="true">└</span><BashPrompt running={running} /> <span className="oc-tool-compact-command-preview">{args.trim()}</span></span>}
+    {paths.map(path => <span className="oc-tool-compact-file" key={path}><span aria-hidden="true">└</span><span title={path}>{path}</span></span>)}
+  </>;
 
   return (
     <div className={className}>
-      <Button variant="ghost" type="button" className="oc-tool-compact-line" aria-expanded={expanded} onClick={onToggle}>
-        <span className="oc-read-arrow" aria-hidden="true" title={name === 'bash' && running ? undefined : statusTitle}>{failed ? '\u2717' : running && name !== 'bash' ? '\u223C' : '\u2192'}</span>
-        <span className="oc-tool-compact-content">
-          <span className="oc-tool-compact-heading">
-            {name === 'bash' && !describedShell
-              ? <span className="oc-tool-compact-summary oc-tool-compact-command"><BashPrompt running={running} /> <span className="oc-tool-compact-command-preview">{summary}</span></span>
-              : <span className="oc-tool-compact-summary">{summary}</span>}
-            {timeInfo && <>{' '}<ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={running} /></>}
+      <ToolApprovalHeader approvals={approvals}>
+        <Button variant="ghost" type="button" className="oc-tool-compact-line" aria-expanded={expanded} onClick={onToggle}>
+          <span className="oc-read-arrow" aria-hidden="true" title={name === 'bash' && running ? undefined : statusTitle}>{failed ? '\u2717' : running && name !== 'bash' ? '\u223C' : '\u2192'}</span>
+          <span className="oc-tool-compact-content">
+            <span className="oc-tool-compact-heading">
+              {name === 'bash' && !describedShell
+                ? <span className="oc-tool-compact-summary oc-tool-compact-command"><BashPrompt running={running} /> <span className="oc-tool-compact-command-preview">{summary}</span></span>
+                : <span className="oc-tool-compact-summary">{summary}</span>}
+              {timeInfo && <>{' '}<ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={running} /></>}
+            </span>
+            {!approvals.length && details}
           </span>
-          {describedShell && <span className="oc-tool-compact-command"><span aria-hidden="true">└</span><BashPrompt running={running} /> <span className="oc-tool-compact-command-preview">{args.trim()}</span></span>}
-          {paths.map(path => <span className="oc-tool-compact-file" key={path}><span aria-hidden="true">└</span><span title={path}>{path}</span></span>)}
-        </span>
-      </Button>
+        </Button>
+      </ToolApprovalHeader>
+      {approvals.length > 0 && <div className="oc-tool-compact-approved-details">{details}</div>}
       {expanded && <div className="oc-tool-compact-body">{children}</div>}
     </div>
   );

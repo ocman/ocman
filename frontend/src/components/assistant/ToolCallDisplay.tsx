@@ -1,7 +1,7 @@
 // Per-tool-call rendering: the ToolCallDisplay dispatcher. Output
 // renderers live in toolRenderers.tsx, subagent tasks in TaskToolCard.tsx,
 // and approval locks in ApprovalLock.tsx.
-import React, { useContext, useState } from 'react';
+import { useContext, useState } from 'react';
 import { type ToolCallMessagePartProps } from '@assistant-ui/react';
 import { parseTodos } from '../../lib/todos';
 import { parseShellEnvelope } from '../../lib/shellEnvelope';
@@ -28,6 +28,8 @@ import type { FC } from 'react';
 import { ArtifactToolCard } from './ArtifactToolCard';
 import { parseCreatedArtifact } from '../../lib/artifactsApi';
 import { ApprovalLock } from './ApprovalLock';
+import { toolApprovals } from './toolApprovals';
+import { ToolApprovalHeader } from './ToolApprovalHeader';
 import { TaskToolCard } from './TaskToolCard';
 import { FactoryMarkerCard } from '../FactoryMarkerCard';
 import { PluginToolConfirmationCard } from '../PluginToolConfirmation';
@@ -35,55 +37,31 @@ import { pluginToolConfirmationFromOutput } from '../../lib/pluginAgentTools';
 import { PreviewOwnerContext } from '../../lib/previews';
 import { useBetaFeatures } from '../../lib/betaFeatures';
 import { factoryCardFromToolResult } from '../factoryCards';
-import { AnsiText, BashPrompt, ToolDuration } from './toolRenderers';
+import { ToolDuration } from './toolRenderers';
 import { AnsweredQuestionBlock } from './AnsweredQuestionBlock';
 import { LazyInlineDiff } from './LazyInlineDiff';
-import { HighlightedCode } from './HighlightedCode';
+import { ShellToolCall } from './ShellToolCall';
 import { CompactToolCall } from './CompactToolCall';
 import { A2UIToolResult } from './A2UIResult';
-import { parseDiffPayload, renderOutput, renderPatch, shellOutputIsLong, shellOutputPreview, toolOutputPreview } from './toolOutputFormat';
+import { parseDiffPayload, renderOutput, renderPatch, toolOutputPreview } from './toolOutputFormat';
 /**
  * Tool-call renderer. Validated Ocman approval artifacts render as a lock
  * beside the tool row; argsText remains entirely user-visible and untrusted.
  */
 export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
   const approvals = toolApprovals(props.artifact);
-  let body: React.ReactNode;
-  if (approvals.length === 0) {
-    body = <ToolCallBody {...props} />;
-  } else {
-    body = (
-      <div className="oc-tool-with-approval">
-        <div className="oc-tool-with-approval-body"><ToolCallBody {...props} /></div>
-        <ApprovalLock approvals={approvals} />
-      </div>
-    );
-  }
   return (
     <div className="oc-tool-source" data-perf="tool-call" data-tool-call-id={props.toolCallId}>
-      {body}
+      {props.toolName === 'ocman:auto-approved'
+        ? approvals.length > 0 && <ApprovalLock approvals={approvals} />
+        : <ToolCallBody {...props} approvals={approvals} />}
       <A2UIToolResult toolName={props.toolName} argsText={props.argsText} result={props.result} />
     </div>
   );
 };
 
 
-function toolApprovals(artifact: unknown): ToolApproval[] {
-  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) return [];
-  const approvals = (artifact as { ocmanApprovals?: unknown }).ocmanApprovals;
-  if (!Array.isArray(approvals)) return [];
-  return approvals.filter((approval): approval is ToolApproval => {
-    if (!approval || typeof approval !== 'object' || Array.isArray(approval)) return false;
-    const value = approval as Partial<ToolApproval>;
-    return typeof value.permission === 'string'
-      && Array.isArray(value.patterns)
-      && value.patterns.every((pattern) => typeof pattern === 'string')
-      && typeof value.reasoning === 'string'
-      && (value.approvedBy === 'user' || value.approvedBy === 'ai');
-  });
-}
-
-const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolName, argsText: rawArgsText, artifact, result, full = false, ...props }) => {
+const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean; approvals?: ToolApproval[] }> = ({ toolName, argsText: rawArgsText, artifact, result, full = false, approvals = [], ...props }) => {
   const factoryEnabled = useBetaFeatures((s) => s.factory);
   const previewOwner = useContext(PreviewOwnerContext);
   const [expandedState, setExpanded] = useState(full);
@@ -116,21 +94,6 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   const userExecutedTool = shell?.userExecuted || argsLines.includes('@user-executed-tool');
   const argsText = argsLines.filter((line) => line !== '@user-executed-tool').join('\n');
 
-  if (toolName === 'ocman:auto-approved') {
-    let approval: Partial<ToolApproval> = toolApprovals(artifact)[0] || {};
-    if (!approval.permission) {
-      try { approval = JSON.parse(argsText) as Partial<ToolApproval>; } catch { /* legacy notice */ }
-    }
-    const approvedBy = approval.approvedBy === 'user' ? 'user' : 'AI';
-    return (
-      <div className="oc-read-line oc-approval-notice">
-        <span className="oc-read-arrow" aria-hidden="true">{`\u2713`}</span>
-        <span>{`Permission approved by ${approvedBy}`}</span>
-        {approval.permission && <span>{approval.permission}</span>}
-      </div>
-    );
-  }
-
   // File reads/greps and Skill loads render as a muted inline line
   // with an arrow icon. Skill is here (rather than in its own branch)
   // because its renderer is byte-for-byte identical to a read: a one
@@ -142,12 +105,13 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
       <div className="oc-read-line">
         <span className="oc-read-arrow">{'\u2192'}</span>
         <span>{argsText || 'Read'}</span>
+        {approvals.length > 0 && <ApprovalLock approvals={approvals} />}
       </div>
     );
   }
 
   // Subagent tasks render their final result as a short markdown preview.
-  if (toolName === '__task__') return <TaskToolCard argsText={argsText} result={result} timeInfo={timeInfo} />;
+  if (toolName === '__task__') return <ToolApprovalHeader approvals={approvals}><TaskToolCard argsText={argsText} result={result} timeInfo={timeInfo} /></ToolApprovalHeader>;
 
   // Questions are answered in the composer slot. While pending, show a muted
   // summary. Once answered, repeat the question and answer in a compact block.
@@ -173,7 +137,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   const toolStatus = lines[0] || 'running';
   const remainingArgs = lines.slice(1).join('\n');
   const createdArtifact = toolStatus === 'completed' ? parseCreatedArtifact(toolName, result) : null;
-  if (createdArtifact) return <ArtifactToolCard artifact={createdArtifact} intent={mcpToolIntent(toolName, remainingArgs)} />;
+  if (createdArtifact) return <ToolApprovalHeader approvals={approvals}><ArtifactToolCard artifact={createdArtifact} intent={mcpToolIntent(toolName, remainingArgs)} /></ToolApprovalHeader>;
 
   // Show tool calls that have content, are completed, or are actively running.
   // Only hide if there's truly nothing to show (no args, no result, no
@@ -239,6 +203,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
           <i className={`bi bi-check2-square oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
           <span className="oc-tool-label">{title && title !== toolName ? title : 'Task list'}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
+          {approvals.length > 0 && <ApprovalLock approvals={approvals} />}
         </div>
         <div className="oc-tool-content">
           <TodoList todos={todos} />
@@ -249,7 +214,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
 
   if (compactToolCalls && !userExecutedTool && (/^(?:mcp_)?(?:bash|edit|write)$/i.test(toolName) || toolName === 'apply_patch')) {
     const projectDirectory = artifact && typeof artifact === 'object' && 'projectDirectory' in artifact && typeof artifact.projectDirectory === 'string' ? artifact.projectDirectory : '';
-    return <CompactToolCall toolName={toolName} args={remainingArgs} description={shellDescription} projectDirectory={projectDirectory} status={toolStatus} expanded={expanded} onToggle={() => setExpanded(!expanded)} timeInfo={timeInfo}>
+    return <CompactToolCall toolName={toolName} args={remainingArgs} description={shellDescription} projectDirectory={projectDirectory} status={toolStatus} expanded={expanded} onToggle={() => setExpanded(!expanded)} timeInfo={timeInfo} approvals={approvals}>
       <ToolCallBody {...props} toolName={toolName} argsText={shell ? argsTextWithMeta : rawArgsText} artifact={artifact} result={result} full />
     </CompactToolCall>;
   }
@@ -262,16 +227,18 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
 
     return (
       <div className={`oc-tool oc-tool-patch ${statusClass} ${expanded ? 'oc-tool-expanded' : ''}`}>
-        <button
-          type="button"
-          className="oc-tool-header"
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
-          <span className="oc-tool-label">{patchSummary}</span>
-          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
-        </button>
+        <ToolApprovalHeader approvals={approvals}>
+          <button
+            type="button"
+            className="oc-tool-header"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            <span className={`oc-tool-icon ${statusClass}`} title={statusTitle}>{statusIcon}</span>
+            <span className="oc-tool-label">{patchSummary}</span>
+            {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
+          </button>
+        </ToolApprovalHeader>
         {expanded && patchBody && (
           <div className="oc-tool-content">
             {renderPatch(patchBody)}
@@ -288,16 +255,18 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
     const diffPayload = parseDiffPayload(result as string | null | undefined);
     return (
       <div className={`oc-tool oc-tool-edit ${statusClass} ${expanded || diffPayload ? 'oc-tool-expanded' : ''}`}>
-        <button
-          type="button"
-          className="oc-tool-header"
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <i className={`bi bi-pencil-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
-          <span className="oc-tool-label">{title || toolName}</span>
-          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
-        </button>
+        <ToolApprovalHeader approvals={approvals}>
+          <button
+            type="button"
+            className="oc-tool-header"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            <i className={`bi bi-pencil-fill oc-tool-icon ${statusClass}`} title={statusTitle} aria-hidden="true" />
+            <span className="oc-tool-label">{title || toolName}</span>
+            {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
+          </button>
+        </ToolApprovalHeader>
         {(diffPayload || outputDisplay) && (
           <div className="oc-tool-content" onClick={() => !expanded && !diffPayload && setExpanded(true)} style={!expanded && !diffPayload ? { cursor: 'pointer' } : undefined}>
             {diffPayload
@@ -316,43 +285,9 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
   // Shell commands get a terminal-style rendering
   const isBash = toolName === 'bash' || toolName === 'mcp_bash';
   if (isBash) {
-    // The command is whatever is left after the status/meta lines, kept
-    // verbatim — multi-line commands (heredocs) render as typed.
-    const command = remainingArgs.trim();
-    const description = shellDescription;
-    const bashOutput = outputDisplay;
-    const bashIsLong = shellOutputIsLong(bashOutput);
-    const forcePrintCollapse = isPrinting && printCollapse;
-    const bashExpanded = expanded || !bashIsLong;
-    const bashOutputDisplay = bashExpanded ? bashOutput : shellOutputPreview(bashOutput);
-    const toggleLabel = expanded ? 'Collapse output' : 'Show full output';
-    return (
-      <div className={`oc-tool oc-tool-shell ${bashExpanded ? 'oc-tool-expanded' : ''}`}>
-        {!forcePrintCollapse && (
-          <div className="oc-tool-content" onClick={() => !bashExpanded && setExpanded(true)} style={!bashExpanded ? { cursor: 'pointer' } : undefined}>
-            <pre className="oc-shell-block" data-testid="shell-output-block">
-{description && <><span className="oc-shell-description"># {description}</span>{'\n\n'}</>}{command && <><BashPrompt running={toolStatus === 'running'} /> <HighlightedCode className="oc-shell-cmd" code={command} language="bash" />{bashOutputDisplay ? '\n' : ''}</>}{bashOutputDisplay && <AnsiText text={bashOutputDisplay} />}
-              {bashIsLong && (
-                <button
-                  type="button"
-                  className="oc-tool-expand oc-shell-output-toggle"
-                  aria-expanded={expanded}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setExpanded(!expanded);
-                  }}
-                >
-                  {toggleLabel}
-                </button>
-              )}
-            </pre>
-            {userExecutedTool && (
-              <div className="oc-shell-attribution">The following tool was executed by the user</div>
-            )}
-          </div>
-        )}
-      </div>
-    );
+    return <ShellToolCall command={remainingArgs.trim()} description={shellDescription} output={outputDisplay} status={toolStatus}
+      expanded={expanded} onToggle={() => setExpanded(!expanded)} forcePrintCollapse={isPrinting && printCollapse}
+      userExecutedTool={userExecutedTool} timeInfo={timeInfo} approvals={approvals} />;
   }
 
   // Generic / MCP tool calls render as a single muted line by default,
@@ -385,19 +320,21 @@ const ToolCallBody: FC<ToolCallMessagePartProps & { full?: boolean }> = ({ toolN
     <div className={compactClass}>
       {/* A button only when there is something to reveal; an inert line
           otherwise, so nothing focusable does nothing. */}
-      {hasBody ? (
-        <button
-          type="button"
-          className="oc-tool-compact-line"
-          aria-expanded={expanded}
-          style={{ cursor: 'pointer' }}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {compactLine}
-        </button>
-      ) : (
-        <div className="oc-tool-compact-line">{compactLine}</div>
-      )}
+      <ToolApprovalHeader approvals={approvals}>
+        {hasBody ? (
+          <button
+            type="button"
+            className="oc-tool-compact-line"
+            aria-expanded={expanded}
+            style={{ cursor: 'pointer' }}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {compactLine}
+          </button>
+        ) : (
+          <div className="oc-tool-compact-line">{compactLine}</div>
+        )}
+      </ToolApprovalHeader>
       {expanded && hasBody && (
         <div className="oc-tool-compact-body">
           {detail && <pre className="oc-tool-pre">{detail}</pre>}

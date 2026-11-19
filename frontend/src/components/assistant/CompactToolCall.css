@@ -3,6 +3,14 @@
   min-width: 0;
 }
 
+.oc-tool-compact-approved-details {
+  padding-left: 12px;
+  color: var(--overlay0);
+  font-family: var(--font-conversation-mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .oc-tool-compact-heading {
   display: flex;
   align-items: baseline;

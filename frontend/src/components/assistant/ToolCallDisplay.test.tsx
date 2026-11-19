@@ -209,18 +209,18 @@ describe('ToolCallDisplay permission approval lock', () => {
     result: 'gone',
   });
 
-  it('renders a lock beside the tool row it unblocked', () => {
+  it('renders a lock after the shell command it unblocked', () => {
     const { container, queryByTestId } = renderTool(
       approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.', approvedBy: 'ai' }),
     );
 
-    expect(screen.getByTestId('shell-output-block').textContent).toBe('$ rm -rf /tmp/foo\ngone');
+    expect(screen.getByTestId('shell-output-block').textContent).toBe('$ rm -rf /tmp/foo \ngone');
     const lock = screen.getByRole('button', { name: 'Approved by AI' });
     expect(lock).toHaveClass('oc-approval-lock');
     expect(queryByTestId('ai-approval-detail')).toBeNull();
     const box = container.querySelector('.oc-tool-shell')!;
-    expect(box.contains(lock)).toBe(false);
-    expect(lock.parentElement).toHaveClass('oc-tool-with-approval');
+    expect(box.contains(lock)).toBe(true);
+    expect(lock.parentElement).toBe(screen.getByTestId('shell-output-block'));
     expect(assistantThreadCss).toContain('.oc-hide-tool-details .oc-tool-with-approval:has(> .oc-tool-with-approval-body > .oc-tool)');
   });
 
@@ -258,7 +258,7 @@ describe('ToolCallDisplay permission approval lock', () => {
     }
   });
 
-  it('renders an unmatched approval as a generic audit notice with a lock', async () => {
+  it('renders an unmatched approval as a lock without audit text', async () => {
     const user = userEvent.setup();
     renderTool({
       toolName: 'ocman:auto-approved',
@@ -266,7 +266,7 @@ describe('ToolCallDisplay permission approval lock', () => {
       artifact: { ocmanApprovals: [{ permission: 'edit', patterns: ['/repo/a.ts'], reasoning: 'Scoped edit.', approvedBy: 'ai' }] },
     });
 
-    expect(screen.getByText('Permission approved by AI')).toBeInTheDocument();
+    expect(screen.queryByText('Permission approved by AI')).not.toBeInTheDocument();
     await user.hover(screen.getByRole('button', { name: 'Approved by AI' }));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Scoped edit.');
   });
@@ -301,7 +301,7 @@ describe('ToolCallDisplay permission approval lock', () => {
     });
     expect(container.querySelector('.oc-read-line')!.textContent).toBe('→Read /etc/hosts');
     expect(container.querySelector('.oc-approval-lock')).not.toBeNull();
-    expect(container.querySelector('.oc-read-line')!.parentElement!.parentElement).toHaveClass('oc-tool-with-approval');
+    expect(container.querySelector('.oc-read-line')).toContainElement(screen.getByRole('button', { name: 'Approved by AI' }));
   });
 });
 
