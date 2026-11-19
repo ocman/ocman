@@ -79,3 +79,28 @@ func TestTurnNoteIsNotAGroupBoundary(t *testing.T) {
 		t.Fatalf("plain meta classified as %d, want skipLine", kind)
 	}
 }
+
+// Live stream-json sends a model-invoked skill's body as a synthetic user line
+// without isMeta or turnCompanion. It must not open a user message: the
+// frontend would draw it as a second Skill line next to the Skill call.
+func TestStreamSkillBodyIsNotAUserMessage(t *testing.T) {
+	c := &Converter{SessionID: "session"}
+	c.Add([]byte(`{"type":"assistant","message":{"id":"message","content":[{"type":"tool_use","id":"tool","name":"Skill","input":{"skill":"create-pr"}}]}}`))
+	c.Add([]byte(`{"type":"user","uuid":"result","parent_tool_use_id":null,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool","content":"Launching skill: create-pr"}]}}`))
+	c.Add([]byte(`{"type":"user","uuid":"body","isSynthetic":true,"parent_tool_use_id":null,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /home/u/.claude/skills/create-pr\n\nCreate the PR."}]}}`))
+	if got := toolOutput(t, c); got != "Launching skill: create-pr" {
+		t.Fatalf("output = %q", got)
+	}
+	if len(c.Messages) != 1 {
+		t.Fatalf("messages = %d, want only the assistant message", len(c.Messages))
+	}
+}
+
+func TestSyntheticUserPromptStillStartsAMessage(t *testing.T) {
+	c := &Converter{SessionID: "session"}
+	c.Add([]byte(`{"type":"user","uuid":"prompt","isSynthetic":true,"message":{"role":"user","content":"<task-notification>done</task-notification>"}}`))
+	c.Finish()
+	if len(c.Messages) != 1 {
+		t.Fatalf("messages = %d, want the synthetic prompt", len(c.Messages))
+	}
+}

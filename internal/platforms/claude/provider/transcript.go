@@ -18,6 +18,7 @@ type line struct {
 	Cwd           string `json:"cwd"`
 	Timestamp     string `json:"timestamp"`
 	IsMeta        bool   `json:"isMeta"`
+	IsSynthetic   bool   `json:"isSynthetic"`
 	TurnCompanion bool   `json:"turnCompanion"`
 	ParentUUID    string `json:"parentUuid"`
 	APIError      bool   `json:"isApiErrorMessage"`
@@ -114,6 +115,12 @@ func classify(l *line, current string) int {
 			if l.TurnCompanion {
 				return continueGroup
 			}
+			return skipLine
+		}
+		// Live stream-json sends companion notes, such as a model-invoked
+		// skill's body, as synthetic lines without isMeta. The transcript
+		// copy footnotes the tool output; the live copy stays hidden.
+		if _, note := keptTurnNote(l); l.IsSynthetic && note {
 			return skipLine
 		}
 		blocks := l.blocks()
