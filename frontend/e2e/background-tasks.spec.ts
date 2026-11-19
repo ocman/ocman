@@ -1,6 +1,48 @@
 import { test, expect, MOCK_SESSION, mockStream, makeCapabilitiesWithPort } from './fixtures';
 
 for (const width of [1280, 390]) {
+  test(`crowded background task list stays readable at ${width}px`, async ({ mockedPage: page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const capabilities = makeCapabilitiesWithPort();
+    await page.route('/api/capabilities', route => route.fulfill({ json: {
+      ...capabilities, platforms: capabilities.platforms.map(platform => ({ ...platform,
+        capabilities: { ...platform.capabilities, backgroundTaskStop: true },
+      })),
+    } }));
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
+      session: { ...MOCK_SESSION, status: 'busy', liveConnection: true }, messages: [], parts: [],
+    } }));
+    const descriptions = ['Watch PR #42 until all checks pass', 'Run frontend regression tests',
+      'Review background task lifecycle changes', 'Build the documentation site',
+      'S=/Users/dries/.agents/skills/forgejo-tea/scripts; for i in $(seq 1 90); do "$S/fj-runs" 12; sleep 30; done; '.repeat(5),
+      ...Array.from({ length: 12 }, (_, index) => `Verify integration test group ${index + 1}`)];
+    await mockStream(page, MOCK_SESSION.id, [{ type: 'background.changed', count: descriptions.length,
+      tasks: descriptions.map((description, index) => ({ id: `task-${index}`, description })),
+    }]);
+    await page.goto(`/session/${MOCK_SESSION.id}`);
+    await page.getByRole('button', { name: `${descriptions.length} background tasks running` }).click();
+    const panel = page.getByRole('dialog', { name: 'Background tasks' });
+    await expect(panel.getByText(`${descriptions.length} running`)).toBeVisible();
+    await expect(panel.getByRole('listitem')).toHaveCount(descriptions.length);
+    const box = (await panel.boundingBox())!;
+    expect(box.width).toBe(width === 1280 ? 600 : width - 24);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(await panel.evaluate(element => element.scrollWidth)).toBeLessThanOrEqual(await panel.evaluate(element => element.clientWidth));
+    const command = panel.locator('summary');
+    expect((await command.boundingBox())!.height).toBeLessThan(45);
+    const screenshot = testInfo.outputPath(`background-tasks-${width}.png`);
+    await page.screenshot({ path: screenshot });
+    await testInfo.attach('background-tasks', { path: screenshot, contentType: 'image/png' });
+    await command.click();
+    await expect(panel.locator('details')).toHaveAttribute('open', '');
+    expect((await command.boundingBox())!.height).toBeGreaterThan(45);
+    await command.click();
+    await panel.getByText('Verify integration test group 12', { exact: true }).scrollIntoViewIfNeeded();
+    await expect(panel.getByRole('heading', { name: 'Background tasks' })).toBeVisible();
+  });
+
   test(`idle session shows its PR watch count without forge metadata at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 800 });
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {

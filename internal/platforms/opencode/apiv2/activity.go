@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"path/filepath"
+	"strings"
 )
 
 // activity tracks foreground execution separately from background shells and
@@ -13,7 +14,7 @@ import (
 type activity struct {
 	foreground map[string]any
 	shells     map[string]string // shell ID -> session ID
-	commands   map[string]string
+	labels     map[string]string
 	lifecycles map[string]string
 	parents    map[string]string
 	titles     map[string]string
@@ -48,15 +49,25 @@ func (a *activity) addShell(info map[string]any) string {
 		return ""
 	}
 	a.shells[id] = owner
-	if a.commands == nil {
-		a.commands = map[string]string{}
+	if a.labels == nil {
+		a.labels = map[string]string{}
 	}
-	a.commands[id] = str(info, "command")
+	a.labels[id] = shellDescription(info)
 	if a.lifecycles == nil {
 		a.lifecycles = map[string]string{}
 	}
 	a.lifecycles[id] = str(obj(info, "metadata"), "lifecycle")
 	return owner
+}
+
+func shellDescription(info map[string]any) string {
+	metadata := obj(info, "metadata")
+	for _, key := range []string{"intent", "description"} {
+		if label := strings.TrimSpace(str(metadata, key)); label != "" {
+			return label
+		}
+	}
+	return str(info, "command")
 }
 
 func (c *compat) activity(ctx context.Context, directory string) (*activity, error) {

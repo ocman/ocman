@@ -61,8 +61,28 @@ it('anchors the list to the right edge of the trigger within the viewport', () =
   vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ left: 900, right: 920, top: 700, bottom: 716, width: 20, height: 16, x: 900, y: 700, toJSON: () => ({}) });
   fireEvent.click(trigger);
   const dialog = screen.getByRole('dialog');
-  expect(dialog.style.left).toBe(`${Math.max(12, Math.min(920 - 340, window.innerWidth - 352))}px`);
+  expect(dialog.style.width).toBe('600px');
+  expect(dialog.style.maxHeight).toBe('560px');
+  expect(dialog.style.left).toBe(`${Math.max(12, Math.min(920 - 600, window.innerWidth - 612))}px`);
   expect(dialog.style.bottom).toBe(`${window.innerHeight - 700 + 4}px`);
+});
+
+it('keeps long commands collapsed and lets users expand them', () => {
+  const command = 'pnpm test && '.repeat(40);
+  render(<BackgroundTasksNotice count={1} tasks={[{ id: 'long', description: command }]} />);
+  fireEvent.click(screen.getByRole('button', { name: '1 background task running' }));
+  const summary = screen.getByText(command.trim(), { selector: 'summary' });
+  expect(summary.closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(summary);
+  expect(summary.closest('details')).toHaveAttribute('open');
+});
+
+it('fits the panel to a narrow viewport', () => {
+  vi.stubGlobal('innerWidth', 390);
+  render(<BackgroundTasksNotice count={1} />);
+  fireEvent.click(screen.getByRole('button'));
+  expect(screen.getByRole('dialog')).toHaveStyle({ width: '366px', left: '12px' });
+  vi.unstubAllGlobals();
 });
 
 it('stops only the selected task with its owner and disables that row while pending', async () => {

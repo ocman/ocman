@@ -6,6 +6,38 @@ import (
 	"testing"
 )
 
+func TestBackgroundTaskLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name, metadata, want string
+	}{
+		{"intent", `"intent":"Watch pull request checks","description":"Run watcher"`, "Watch pull request checks"},
+		{"description", `"description":"Run regression tests"`, "Run regression tests"},
+		{"blank intent", `"intent":"  ","description":"Run regression tests"`, "Run regression tests"},
+		{"command fallback", `"description":"  "`, "pnpm test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := fakeServer(t)
+			info := `{"id":"one","command":"pnpm test","status":"running","metadata":{"sessionID":"s1",` + tc.metadata + `}}`
+			f.json("GET /api/debug/location", http.StatusOK, `[{"directory":"/repo"}]`)
+			f.json("GET /api/shell", http.StatusOK, `{"data":[`+info+`]}`)
+			f.events = []string{fakeEv("server.connected", 1, "", `{}`), fakeEv("shell.created", 2, "/repo", `{"info":`+info+`}`)}
+			events := cmpStream(t, f.URL+"/event")
+			for _, event := range events {
+				props := obj(event, "properties")
+				var tasks any
+				if str(event, "type") == "server.connected" {
+					tasks = obj(props, "backgroundTaskDetails")["s1"]
+				} else if str(event, "type") == "ocman.session.background" {
+					tasks = props["tasks"]
+				} else {
+					continue
+				}
+				cmpJSON(t, "task label", tasks, `[{"id":"one","description":"`+tc.want+`"}]`)
+			}
+		})
+	}
+}
+
 func TestBackgroundTaskCounts(t *testing.T) {
 	f := fakeServer(t)
 	f.events = []string{

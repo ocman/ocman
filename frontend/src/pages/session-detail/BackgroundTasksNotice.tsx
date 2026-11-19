@@ -17,8 +17,7 @@ export function BackgroundTasksNotice({ additionalTasks = [], ...props }: Props)
   return count > 0 ? <RunningBackgroundTasksNotice {...props} count={count} additionalTasks={additionalTasks} /> : null;
 }
 
-// Matches the .oc-popover width.
-const PANEL_WIDTH = 340;
+const PANEL_WIDTH = 600;
 
 function RunningBackgroundTasksNotice({ count, tasks: nativeTasks = [], additionalTasks = [], sessionId = '', platform = '', canStop = false, canClassify = false }: Props) {
   const tasks: NoticeTask[] = [...nativeTasks, ...additionalTasks];
@@ -47,7 +46,7 @@ function RunningBackgroundTasksNotice({ count, tasks: nativeTasks = [], addition
     const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
     setLifecycles(null);
     setError('');
-    setPosition({ left, bottom: window.innerHeight - rect.top + 4 });
+    setPosition({ width, left, bottom: window.innerHeight - rect.top + 4, maxHeight: Math.min(560, Math.max(100, rect.top - 16)) });
   };
   const stop = async (task: NoticeTask) => {
     setPending(previous => new Set(previous).add(task.id));
@@ -87,19 +86,26 @@ function RunningBackgroundTasksNotice({ count, tasks: nativeTasks = [], addition
         <i className="bi bi-list-task" aria-hidden="true" />
         <span>{count}</span>
       </Button>
-      <Popover open={open} onClose={close} triggerRef={trigger} id={id} label="Background tasks" style={position ?? undefined} autoFocus={false}>
+      <Popover open={open} onClose={close} triggerRef={trigger} id={id} label="Background tasks" className={styles.panel} style={position ?? undefined} autoFocus={false}>
         <div className={styles.content}>
-          <h2 className={styles.title}>Background tasks</h2>
+          <header className={styles.header}><h2 className={styles.title}>Background tasks</h2><span>{count} running</span></header>
           {tasks.length === 0 ? <p>Task details are unavailable from this backend.</p> : <ul className={styles.tasks}>
             {tasks.map(task => <li key={task.id} className={styles.task}>
-              <span className={styles.description} title={task.description || task.id}>{task.description || task.id}</span>
-              {canClassify && !task.onStop && <Button variant="ghost" size="small" disabled={lifecycles === null || pending.has(task.id)}
-                title="Tasks delay archive resurfacing until they finish. Persistent services do not."
-                aria-label={`Mark ${task.description || task.id} as ${(lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'task' : 'service'}`}
-                onClick={() => void classify(task, (lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'task' : 'service')}>
-                {(lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'Service' : 'Task'}</Button>}
-              {task.kind !== 'agent' && <Button variant="danger" size="small" disabled={(!canStop && !task.onStop) || pending.has(task.id)}
-                aria-label={`Stop ${task.description || task.id}`} onClick={() => void stop(task)}>{pending.has(task.id) ? 'Stopping…' : 'Stop'}</Button>}
+              <div className={styles.description}>
+                {(task.description || task.id).length > 160 ? <details className={styles.details}>
+                  <summary title="Expand or collapse full task description">{task.description || task.id}</summary>
+                  <span className={styles.collapseHint}>Select the description to collapse</span>
+                </details> : <span>{task.description || task.id}</span>}
+              </div>
+              <div className={styles.actions}>
+                {canClassify && !task.onStop && <Button variant="ghost" size="small" disabled={lifecycles === null || pending.has(task.id)}
+                  title="Tasks delay archive resurfacing until they finish. Persistent services do not."
+                  aria-label={`Mark ${task.description || task.id} as ${(lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'task' : 'service'}`}
+                  onClick={() => void classify(task, (lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'task' : 'service')}>
+                  {(lifecycles?.[task.id] ?? task.lifecycle) === 'service' ? 'Service' : 'Task'}</Button>}
+                {task.kind !== 'agent' && <Button variant="danger" size="small" disabled={(!canStop && !task.onStop) || pending.has(task.id)}
+                  aria-label={`Stop ${task.description || task.id}`} onClick={() => void stop(task)}>{pending.has(task.id) ? 'Stopping…' : 'Stop'}</Button>}
+              </div>
             </li>)}
           </ul>}
           {nativeTasks.length > 0 && !canStop && <p>Individual stopping is unavailable from this backend or connection.</p>}

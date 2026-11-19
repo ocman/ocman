@@ -197,7 +197,7 @@ func (t *translator) handle(ev v2Event) error {
 		id := str(d, "id")
 		owner := t.activity.shells[id]
 		delete(t.activity.shells, id)
-		delete(t.activity.commands, id)
+		delete(t.activity.labels, id)
 		delete(t.activity.lifecycles, id)
 		if owner != "" {
 			return t.emitBackgroundFamily(owner, dir)
@@ -229,7 +229,7 @@ func (t *translator) handle(ev v2Event) error {
 		for id, owner := range t.activity.shells {
 			if owner == sessionID {
 				delete(t.activity.shells, id)
-				delete(t.activity.commands, id)
+				delete(t.activity.labels, id)
 				delete(t.activity.lifecycles, id)
 			}
 		}
