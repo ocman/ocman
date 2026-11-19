@@ -23,6 +23,7 @@ type listedPluginUI struct {
 	PluginLabel string                     `json:"pluginLabel"`
 	Icon        *plugins.IconDescriptor    `json:"icon,omitempty"`
 	OwnerID     string                     `json:"ownerId"`
+	NavBadge    bool                       `json:"navBadge,omitempty"`
 	SDK         string                     `json:"sdk"`
 	HostSDK     string                     `json:"hostSdk"`
 	Compatible  bool                       `json:"compatible"`
@@ -55,7 +56,7 @@ func pluginUIDeclarations(registrations []state.PluginRegistration) []listedPlug
 			continue
 		}
 		entry := listedPluginUI{PluginID: d.ID, PluginLabel: d.Name, Icon: d.Icon, OwnerID: uiOwner, SDK: d.UI.SDK, HostSDK: plugins.UISDKVersion,
-			Compatible: d.UIAllowed(p.Grants), Actions: []plugins.ActionDescriptor{}}
+			NavBadge: d.NavBadgeAllowed(p.Grants), Compatible: d.UIAllowed(p.Grants), Actions: []plugins.ActionDescriptor{}}
 		// The UI runs actions through the palette dialog, so it may only see
 		// granted command-palette actions.
 		for _, a := range d.Actions {

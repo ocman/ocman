@@ -833,6 +833,31 @@ appear in responses; secret fields accept new input only. Writes are explicit
 and not automatically retried. Plugins should compare revisions and write
 atomically. Existing project actions provide consent, confirmations and downloads.
 
+## nav-badge.v1
+
+Declare capability `nav-badge` version `1.0` and request `nav.badge`. The
+host negotiates it only with that grant approved. A serve process can then
+replace its own installation's navigation badge with an event:
+
+```json
+{"type":"event","event":{"capability":"nav-badge","name":"set","data":{"kind":"dot"}}}
+{"type":"event","event":{"capability":"nav-badge","name":"set","data":{"kind":"count","count":7}}}
+{"type":"event","event":{"capability":"nav-badge","name":"set","data":{"kind":"clear"}}}
+```
+
+`count` must be an integer from 1 to 999,999 and is forbidden for other kinds.
+The schema is closed, with a 128-byte `data` limit. Malformed badge payloads
+are ignored; ordinary stream framing and negotiation rules still apply. There
+are no acknowledgment messages, plugin or owner selectors, or text fields.
+
+The supervisor keeps only the latest valid state for the current child.
+It drops the badge when the child disconnects, including on automatic restart.
+Disable and grant revocation hide it. The host does not persist or replay it.
+The browser reads `GET /api/plugins/nav-badges?ownerId=<owner>` for opted-in
+navigation entries. The response maps plugin IDs to dot or count payloads;
+missing IDs mean no badge. An offline owner fails closed without searching
+other owners for a matching plugin ID.
+
 ## pane.v1
 
 The `pane` capability, major 1 minor 0, contributes read-only project trees to

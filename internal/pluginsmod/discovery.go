@@ -134,10 +134,14 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
+		supported := []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.ToolSessionCapability, plugins.PaneCapability, plugins.PageTableCapability, plugins.UICapability, plugins.ToolCapability, plugins.AssetCapability}
+		if registration.Description.NavBadgeAllowed(registration.Grants) {
+			supported = append(supported, plugins.NavBadgeCapability)
+		}
 		process, err := plugins.StartProcess(m.ctx, plugins.LaunchConfig{
 			ReadyTimeout:  m.deps.ReadyTimeout,
 			Candidate:     plugins.Discovery{Path: registration.ExecutablePath, Checksum: registration.Checksum, Description: registration.Description},
-			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability, plugins.ToolSessionCapability, plugins.PaneCapability, plugins.PageTableCapability, plugins.UICapability, plugins.ToolCapability, plugins.AssetCapability},
+			Supported:     supported,
 			DataDir:       dir,
 			Configuration: configuration,
 			OnHealth: func(h plugins.Health) {

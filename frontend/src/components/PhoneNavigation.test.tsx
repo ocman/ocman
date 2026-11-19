@@ -5,10 +5,13 @@ import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes, useLoc
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhoneNavigation } from './PhoneNavigation';
 import { useBetaFeatures } from '../lib/betaFeatures';
+import { fetchJSON } from '../lib/api';
+import { renderWithQuery } from '../test/renderWithQuery';
 
-const plugins = vi.hoisted(() => ({ pages: [] as { ownerId: string; pluginId: string; page: { id: string; label: string } }[] }));
+const plugins = vi.hoisted(() => ({ pages: [] as { ownerId: string; pluginId: string; navBadge?: boolean; page: { id: string; label: string } }[] }));
 vi.mock('../lib/pluginUI', async (original) => ({ ...await original<typeof import('../lib/pluginUI')>(), usePluginUIs: () => ({ uis: [], loading: false, error: false }) }));
 vi.mock('../lib/pluginPages', async (original) => ({ ...await original<typeof import('../lib/pluginPages')>(), usePluginPages: () => ({ pages: plugins.pages }) }));
+vi.mock('../lib/api', async (original) => ({ ...await original<typeof import('../lib/api')>(), fetchJSON: vi.fn() }));
 
 let phone: boolean;
 let listeners: Set<() => void>;
@@ -74,6 +77,15 @@ describe('phone navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Forward' }));
     expect(screen.getByRole('status')).toHaveTextContent('/plugins/org.example.pentest/pentest?ownerId=machine');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows a backend badge on the plugin link in More', async () => {
+    plugins.pages = [{ ownerId: 'machine', pluginId: 'org.example.pentest', navBadge: true, page: { id: 'pentest', label: 'Pentest' } }];
+    vi.mocked(fetchJSON).mockResolvedValueOnce({ 'org.example.pentest': { kind: 'count', count: 3 } });
+    renderWithQuery(<MemoryRouter initialEntries={['/sessions']}><PhoneNavigation /></MemoryRouter>);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'More' }));
+    expect(await screen.findByRole('link', { name: 'Pentest, 3 notifications' })).toHaveTextContent('3');
+    expect(fetchJSON).toHaveBeenCalledWith('/api/plugins/nav-badges?ownerId=machine', expect.any(AbortSignal));
   });
 
   it('renders four destinations and marks the selected tab', () => {

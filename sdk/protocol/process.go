@@ -53,13 +53,13 @@ type Reply struct {
 }
 
 type invocation struct {
-	ctx       context.Context
-	call      Call
+	ctx  context.Context
+	call Call
 	// generation is the restart count the caller authorized, or -1 for any.
 	generation int
-	replies   chan Reply
-	bytes     int
-	cancelled time.Time
+	replies    chan Reply
+	bytes      int
+	cancelled  time.Time
 }
 
 type processPolicy struct {
@@ -84,6 +84,7 @@ type Process struct {
 	requests chan Request
 	mu       sync.Mutex
 	health   Health
+	navBadge NavBadge
 	stderr   []byte // Sensitive, bounded, memory-only; never exported or logged.
 	tokens   []string
 }

@@ -165,6 +165,7 @@ func (p *Process) serve(attempt int) error {
 	drainTimer := time.NewTimer(time.Hour)
 	drainTimer.Stop()
 	defer drainTimer.Stop()
+	defer p.setNavBadge(NavBadge{})
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -183,6 +184,7 @@ func (p *Process) serve(attempt int) error {
 			return ErrUnavailable
 		case <-exitSignal:
 			exitSignal = nil
+			p.setNavBadge(NavBadge{})
 			drainTimer.Reset(100 * time.Millisecond)
 			drain = drainTimer.C
 		case <-drain:
@@ -283,6 +285,14 @@ func (p *Process) serve(attempt int) error {
 					return err
 				}
 			case TypeEvent:
+				if e.Event.Capability == NavBadgeCapability.Name {
+					// Keep only the latest snapshot. Frames drained after exit
+					// cannot restore the badge of the dead child.
+					if badge, err := DecodeNavBadge(*e.Event); err == nil && exitSignal != nil {
+						p.setNavBadge(badge)
+					}
+					continue
+				}
 				select {
 				case p.events <- *e.Event:
 				default:

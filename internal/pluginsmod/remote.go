@@ -73,6 +73,11 @@ func pluginResponse(value any, err error) remote.PluginResponse {
 func (m *Module) localPluginOperation(ctx context.Context, req remote.PluginRequest, fromRemote bool) remote.PluginResponse {
 	ctx = context.WithValue(ctx, pluginExecutionKey{}, pluginExecution{remote: fromRemote, owner: req.Action.Context.OwnerID})
 	switch req.Operation {
+	case "nav-badges":
+		if !req.Read {
+			return pluginResponse(nil, plugins.ErrInvalidMessage)
+		}
+		return pluginResponse(m.localPluginNavBadges(ctx, fromRemote))
 	case "asset-read":
 		return pluginResponse(m.localPluginIcon(ctx, req.PluginID, req.Input.Values["asset"]))
 	case "model-catalog":

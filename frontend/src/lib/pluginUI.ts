@@ -11,6 +11,7 @@ export interface PluginUI {
   pluginLabel: string;
   ownerId: string;
   icon?: PluginIconDescriptor;
+  navBadge?: boolean;
   /** The @ocman/plugin-ui range the bundle was built against. */
   sdk: string;
   hostSdk: string;

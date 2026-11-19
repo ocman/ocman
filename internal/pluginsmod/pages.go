@@ -17,6 +17,7 @@ type listedPluginPage struct {
 	PluginLabel string                  `json:"pluginLabel"`
 	Icon        *plugins.IconDescriptor `json:"icon,omitempty"`
 	OwnerID     string                  `json:"ownerId"`
+	NavBadge    bool                    `json:"navBadge,omitempty"`
 	Page        plugins.PageDescriptor  `json:"page"`
 }
 
@@ -28,7 +29,8 @@ func pluginPageDeclarations(registrations []state.PluginRegistration, owner stri
 		}
 		for _, page := range p.Description.Pages {
 			if p.Description.PageAllowed(page.ID, p.Grants) {
-				pages = append(pages, listedPluginPage{PluginID: p.Description.ID, PluginLabel: p.Description.Name, Icon: p.Description.Icon, OwnerID: owner, Page: page})
+				pages = append(pages, listedPluginPage{PluginID: p.Description.ID, PluginLabel: p.Description.Name, Icon: p.Description.Icon, OwnerID: owner,
+					NavBadge: p.Description.NavBadgeAllowed(p.Grants), Page: page})
 			}
 		}
 	}

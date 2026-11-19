@@ -89,6 +89,32 @@ a cancelled or late read cannot replace the saved document. In the phone's More
 sheet a page link replaces the overlay's history entry, so the back gesture
 returns to the page you came from instead of unwinding a second entry.
 
+### Navigation badges
+
+A plugin can request `nav.badge` to show a red dot or notification count on its
+existing link in the sidebar and the phone's More menu. A badge belongs to one
+plugin installation. The same plugin on another machine can show a different
+badge. Opening the link does not clear it.
+
+```mermaid
+flowchart LR
+    Plugin[Plugin serve backend] -->|Badge event| Owner[Owner process supervisor]
+    Browser[Desktop or phone navigation] -->|Read by owner| Hub[Ocman hub]
+    Hub -->|Local read or authenticated RPC| Owner
+```
+
+- The backend publishes the badge without mounting a plugin page or UI bundle.
+  It sends a dot, an absolute count, or a clear event. It sends no text or
+  meeting data.
+- The owner keeps the badge in memory for that process. Disable, grant
+  revocation, or process restart clears it. A new process must publish again.
+- Navigation checks for updates every few seconds while active and hides the
+  badge when its owner cannot be reached. Remote badges work for declarative
+  plugin links; in-app UI remains hub-local.
+
+See the [Go SDK badge contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md#navigation-badges)
+for the backend API and recorder integration notes.
+
 ## In-app plugin UI
 
 `page.v1` and `pane.v1` are the declarative tier: the plugin returns typed data

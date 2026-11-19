@@ -149,6 +149,42 @@ must durably deduplicate operation IDs across retries and process restarts.
 See
 [the Slack plugin](../../examples/ocman-plugin-slack/main.go) for both directions.
 
+## Navigation badges
+
+Add `plugin.NavBadgeCapability` to `Description.Capabilities` and
+`plugin.NavBadgeGrant` (`nav.badge`) to `Description.RequestedGrants`. Once the
+owner approves the grant, the serve backend can update its existing workspace
+link even when no plugin UI is mounted. This works with `page.v1` and with a
+hub-local `ui.v1` index. It does not create a link or change where it opens.
+
+Build an event with `plugin.NewNavBadge` and send it on the backend event
+channel passed to `plugin.RunWithEvents` or `plugin.RunWithRequests`:
+
+```go
+plugin.NewNavBadge(plugin.NavBadge{Kind: plugin.NavBadgeDot})
+plugin.NewNavBadge(plugin.NavBadge{Kind: plugin.NavBadgeCount, Count: 7})
+plugin.NewNavBadge(plugin.NavBadge{Kind: plugin.NavBadgeClear})
+```
+
+Handle the constructor's error before enqueueing the event. Each event
+replaces the previous state; counts are absolute, not increments. Use
+`NavBadgeClear`, not a zero count, to remove it. Valid counts are 1 through
+`plugin.NavBadgeMaxCount` (999,999). Navigation displays `99+` above 99.
+Publish the initial state once the backend knows it, then publish on changes.
+The SDK drops events if the capability was not negotiated (older host or
+missing grant). Ocman holds the badge only for the current serve connection;
+after restart, the new backend must confirm state again before publishing.
+
+### Wiring the recorder
+
+Use the backend's confirmed live-capture state as the source of truth. Emit a
+dot only after capture is confirmed active. Clear on stop, failure, or loss of
+confirmation, including a disconnect from the capture service. A start request,
+pending or scheduled capture, and post-processing should not show a dot. On
+serve startup, default to no badge until live capture is confirmed. Use no
+count, meeting ID, title, participant, transcript, or other meeting content.
+None of this depends on visiting the recorder page or on its entry redirect.
+
 ## In-app UI
 
 `ui.v1` lets a plugin ship a routed React index built with

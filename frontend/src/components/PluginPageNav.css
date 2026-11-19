@@ -1,0 +1,11 @@
+.nav-unread-badge.plugin-nav-badge {
+  background: var(--danger-solid);
+  color: var(--white);
+}
+
+.nav-unread-badge.plugin-nav-badge--dot,
+.main-nav.collapsed:not(.mobile-open) .nav-unread-badge.plugin-nav-badge--dot {
+  min-width: 8px;
+  height: 8px;
+  padding: 0;
+}
