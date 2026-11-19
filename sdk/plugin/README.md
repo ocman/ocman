@@ -218,7 +218,9 @@ remove event. The rules are:
 - `Title` is required plain text of up to 80 characters. `Body` is optional,
   up to 240 characters. Neither may contain line breaks, `<`, `>` or `://`.
   The host renders both as text, never as HTML, markdown or links.
-- `StartedAt` is optional Unix milliseconds. The toast shows the elapsed time.
+- `StartedAt` is optional Unix milliseconds, up to
+  `plugin.NoticeMaxStartedAt` (the end of year 9999). The toast shows the
+  elapsed time.
 - `Actions` lists up to two action IDs the plugin declared through `action.v1`.
   The host shows each declared label and runs the action through the action
   broker, with its confirmation and operation-ID deduplication. Only granted

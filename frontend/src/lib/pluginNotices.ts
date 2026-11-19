@@ -32,7 +32,6 @@ export function pluginNoticeKey(ownerId: string, pluginId: string, noticeId: str
 /**
  * Polls every plugin-managing owner for its active notices. An owner that
  * fails to answer contributes none, so a stale toast never outlives its owner.
- * `reported` lists owners whose latest read succeeded.
  */
 export function usePluginNotices() {
   const hosts = useHostCapabilities();
@@ -49,16 +48,14 @@ export function usePluginNotices() {
     retry: false,
   })) });
   const notices: ListedPluginNotice[] = [];
-  const reported: string[] = [];
   owners.forEach((ownerId, i) => {
     const query = queries[i];
     if (query.isError || !query.data || typeof query.data !== 'object') return;
-    reported.push(ownerId);
     for (const [pluginId, entry] of Object.entries(query.data)) {
       for (const notice of Array.isArray(entry?.notices) ? entry.notices : []) {
         notices.push({ key: pluginNoticeKey(ownerId, pluginId, notice.id), ownerId, pluginId, pluginLabel: entry.pluginLabel, notice });
       }
     }
   });
-  return { notices, reported };
+  return { notices };
 }

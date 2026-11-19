@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -105,5 +106,35 @@ func TestProcessNoticesAreCopiedAndRequireAReadyChild(t *testing.T) {
 	p.setNotices(nil)
 	if p.Notices() != nil {
 		t.Fatal("cleared notices remain")
+	}
+}
+
+// Every snapshot the field limits allow must fit the byte limit, even when a
+// plugin escapes each character, or the host would keep stale notices.
+func TestDecodeNoticeSnapshotAdmitsTheLargestValidSnapshot(t *testing.T) {
+	// One emoji per rune, sent as a 12-byte escaped surrogate pair.
+	escaped := func(n int) string { return strings.Repeat("\\ud83d\\ude00", n) }
+	id := strings.Repeat("a", 64)
+	action := func(c string) string { return `{"actionId":"` + strings.Repeat(c, 128) + `"}` }
+	var notices []string
+	for _, prefix := range []string{"a", "b", "c"} {
+		notices = append(notices, `{"id":"`+prefix+id[1:]+`","tone":"critical","title":"`+escaped(NoticeMaxTitle)+`","body":"`+escaped(NoticeMaxBody)+
+			`","startedAt":`+strconv.FormatInt(NoticeMaxStartedAt, 10)+`,"actions":[`+action("x")+`,`+action("y")+`]}`)
+	}
+	raw := `{"notices":[` + strings.Join(notices, ",") + `]}`
+	if len(raw) < 12_000 {
+		t.Fatalf("worst case is only %d bytes", len(raw))
+	}
+	if _, err := DecodeNoticeSnapshot(noticeEvent(raw)); err != nil {
+		t.Fatalf("rejected a %d-byte valid snapshot: %v", len(raw), err)
+	}
+}
+
+func TestNoticeStartedAtStaysRenderable(t *testing.T) {
+	for at, ok := range map[int64]bool{1: true, NoticeMaxStartedAt: true, NoticeMaxStartedAt + 1: false, 8640000000000001: false} {
+		raw := `{"notices":[{"id":"a","tone":"info","title":"A","startedAt":` + strconv.FormatInt(at, 10) + `}]}`
+		if _, err := DecodeNoticeSnapshot(noticeEvent(raw)); (err == nil) != ok {
+			t.Errorf("startedAt %d: err = %v, want accepted %v", at, err, ok)
+		}
 	}
 }

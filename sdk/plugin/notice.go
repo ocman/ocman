@@ -21,6 +21,7 @@ const (
 	NoticeMaxActions   = protocol.NoticeMaxActions
 	NoticeMaxTitle     = protocol.NoticeMaxTitle
 	NoticeMaxBody      = protocol.NoticeMaxBody
+	NoticeMaxStartedAt = protocol.NoticeMaxStartedAt
 )
 
 var NoticeCapability = protocol.NoticeCapability
@@ -37,5 +38,10 @@ func NewNotices(notices ...Notice) (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
-	return Event{Capability: NoticeCapability.Name, Name: protocol.NoticeSetEvent, Data: data}, nil
+	event := Event{Capability: NoticeCapability.Name, Name: protocol.NoticeSetEvent, Data: data}
+	// Report failure here rather than let the host keep stale notices.
+	if _, err := protocol.DecodeNoticeSnapshot(event); err != nil {
+		return Event{}, err
+	}
+	return event, nil
 }

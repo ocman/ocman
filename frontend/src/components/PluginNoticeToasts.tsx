@@ -14,7 +14,10 @@ function Elapsed({ since }: { since: number }) {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  return <time className={styles.elapsed} dateTime={new Date(since).toISOString()}>{formatDuration(Math.max(0, now - since))}</time>;
+  // The host bounds startedAt; still never let a bad value throw during render.
+  const start = new Date(since);
+  if (!Number.isFinite(start.getTime())) return null;
+  return <time className={styles.elapsed} dateTime={start.toISOString()}>{formatDuration(Math.max(0, now - since))}</time>;
 }
 
 /**

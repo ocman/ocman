@@ -129,3 +129,11 @@ it('ignores a malformed owner response', async () => {
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
   expect(document.querySelectorAll('li')).toHaveLength(0);
 });
+
+it('renders a notice with an unrepresentable start time without crashing', async () => {
+  snapshots.local = { [recorder]: { pluginLabel: 'Meeting recorder', notices: [{ ...recording, startedAt: 8640000000000001 }] } };
+  mount();
+  const toast = (await screen.findByText('Recording meeting')).closest('li')!;
+  expect(within(toast).getByRole('button', { name: 'Stop recording' })).toBeInTheDocument();
+  expect(toast.querySelector('time')).toBeNull();
+});

@@ -27,9 +27,12 @@ const (
 	// NoticeMaxTitle and NoticeMaxBody are limits in characters (runes).
 	NoticeMaxTitle = 80
 	NoticeMaxBody  = 240
-	// noticeMaxData bounds the encoded snapshot. The other limits keep any
-	// valid snapshot well below it.
-	noticeMaxData = 4096
+	// NoticeMaxStartedAt is 9999-12-31T23:59:59.999Z, the last instant every
+	// renderer can represent.
+	NoticeMaxStartedAt = 253402300799999
+	// noticeMaxData bounds the encoded snapshot. It admits every snapshot the
+	// other limits allow, even with each character sent as a \u escape.
+	noticeMaxData = 16 << 10
 )
 
 // NoticeAction references an action.v1 action the plugin declared. The host
@@ -66,7 +69,7 @@ func noticeText(s string, limit int) bool {
 
 func (n Notice) Validate() error {
 	if !validName(n.ID) || len(n.ID) > 64 || !slices.Contains([]string{NoticeToneInfo, NoticeToneWarning, NoticeToneCritical}, n.Tone) ||
-		!noticeText(n.Title, NoticeMaxTitle) || (n.Body != "" && !noticeText(n.Body, NoticeMaxBody)) || n.StartedAt < 0 || len(n.Actions) > NoticeMaxActions {
+		!noticeText(n.Title, NoticeMaxTitle) || (n.Body != "" && !noticeText(n.Body, NoticeMaxBody)) || n.StartedAt < 0 || n.StartedAt > NoticeMaxStartedAt || len(n.Actions) > NoticeMaxActions {
 		return ErrInvalidMessage
 	}
 	seen := map[string]bool{}

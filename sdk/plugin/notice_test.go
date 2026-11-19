@@ -32,3 +32,24 @@ func TestNewNotices(t *testing.T) {
 		}
 	}
 }
+
+// A maximal multi-byte snapshot exceeded the original 4 KiB host limit.
+func TestNewNoticesAcceptsOnlyWhatTheHostAccepts(t *testing.T) {
+	emoji := func(n int) string { return strings.Repeat("😀&", n/2) }
+	var notices []Notice
+	for _, id := range []string{"a", "b", "c"} {
+		notices = append(notices, Notice{ID: id + strings.Repeat("x", 63), Tone: NoticeToneInfo, Title: emoji(NoticeMaxTitle), Body: emoji(NoticeMaxBody),
+			StartedAt: NoticeMaxStartedAt, Actions: []NoticeAction{{ActionID: strings.Repeat("s", 128)}, {ActionID: strings.Repeat("t", 128)}}})
+	}
+	event, err := NewNotices(notices...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := protocol.DecodeNoticeSnapshot(event); err != nil || len(event.Data) <= 4096 || !reflect.DeepEqual(got.Notices, notices) {
+		t.Fatalf("%d-byte snapshot: %v", len(event.Data), err)
+	}
+	notices[0].StartedAt = NoticeMaxStartedAt + 1
+	if _, err := NewNotices(notices...); err == nil {
+		t.Fatal("accepted an unrenderable start time")
+	}
+}

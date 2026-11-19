@@ -869,13 +869,15 @@ its installation's active toast notices with one event:
 {"type":"event","event":{"capability":"notice","name":"set","data":{"notices":[]}}}
 ```
 
-The schema is closed, with a 4,096-byte `data` limit. Field names match
+The schema is closed, with a 16 KiB `data` limit that admits every snapshot
+the field limits allow, even with each character sent as a `\u` escape. Field names match
 exactly, and unknown fields are rejected. Optional `body`, `startedAt` and
 `actions` must be omitted, not empty or null. `notices` holds at most 3
 entries with unique `id` values: lowercase identifiers of up to 64 bytes.
 `tone` is `info`, `warning` or `critical`. `title` (1–80 characters) and
 `body` (1–240 characters) are trimmed plain text without control characters,
-`<`, `>` or `://`. `startedAt` is a positive integer of Unix milliseconds.
+`<`, `>` or `://`. `startedAt` is a positive integer of Unix milliseconds, at most
+253402300799999 (the end of year 9999).
 `actions` holds 1–2 unique declared action IDs. The host ignores a malformed
 snapshot and keeps the previous one. There are no acknowledgment messages,
 URLs, routes, labels or owner selectors.
