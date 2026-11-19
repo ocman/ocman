@@ -257,7 +257,7 @@ describe('SessionSidebar', () => {
       expect(category.getByText('Selected automated session').closest('[aria-selected]')).toHaveAttribute('aria-selected', 'true');
       expect(toggle).toHaveAttribute('aria-current', 'true');
       expect(screen.getAllByText('Ordinary pinned session')).toHaveLength(1);
-      expect(visibleSidebarSessions.current?.map(row => row.id)).toEqual(['plain', 'pinned-child', 's']);
+      expect(visibleSidebarSessions.current?.map(row => row.id)).toEqual(['plain', 's', 'pinned-child']);
     });
   });
 

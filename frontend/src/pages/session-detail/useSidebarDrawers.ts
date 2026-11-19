@@ -89,6 +89,6 @@ export function useSidebarDrawers(sessions: Session[], query: string, infos: Rec
     return { ...current, expanded: next };
   });
   return { drawers, expanded, toggle, keys: new Set(drawers.flatMap(drawer => drawer.sessions.map(sessionAttentionKey))),
-    sections: drawers.filter((drawer) => expanded.has(drawer.id)).map((drawer) => drawer.id === 'archived'
-      ? nestSessions(drawer.sessions).map(({ session }) => session) : drawer.sessions) };
+    sections: drawers.filter((drawer) => expanded.has(drawer.id)).map((drawer) =>
+      nestSessions(drawer.sessions).map(({ session }) => session)) };
 }

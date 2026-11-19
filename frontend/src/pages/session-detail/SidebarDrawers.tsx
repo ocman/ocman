@@ -31,8 +31,7 @@ export function SidebarDrawers({ drawers, expanded, onToggle, renderRow }: Props
               <span className="session-sidebar-drawer-count">{drawer.sessions.length}</span>
             </Button>
             <div id={id} role="region" aria-labelledby={`${id}-toggle`} hidden={!open}>
-              {open && (drawer.id === 'archived' ? nestSessions(drawer.sessions)
-                : drawer.sessions.map(session => ({ session, depth: 0 }))).map(({ session, depth }) => renderRow(session, false, depth, true))}
+              {open && nestSessions(drawer.sessions).map(({ session, depth }) => renderRow(session, false, depth, true))}
             </div>
           </section>
         );

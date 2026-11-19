@@ -10,6 +10,22 @@ const session = (id: string, patch: Partial<Session> = {}) => ({
 }) as Session;
 
 describe('running sidebar drawers', () => {
+  it.each([
+    ['archived', { archived: true }],
+    ['factory', { factoryAttemptId: 'attempt' }],
+    ['routines', { routineId: 'routine' }],
+    ['plugins', { origin: 'plugin' }],
+    ['snoozed', { snoozedUntil: 9999999999999 }],
+  ] as const)('keeps %s keyboard navigation in parent-first display order', (drawer, patch) => {
+    const parent = session('parent', patch);
+    const child = session('child', { ...patch, parentId: parent.id });
+    const grandchild = session('grandchild', { ...patch, creator: { platform: child.platform, sessionId: child.id, createdAt: 1 } });
+    const { result } = renderHook(() => useSidebarDrawers([grandchild, child, parent], '', {}));
+    expect(result.current.sections).toEqual([]);
+    act(() => result.current.toggle(drawer));
+    expect(result.current.sections).toEqual([[parent, child, grandchild]]);
+  });
+
   it.each(['parent', 'creator'] as const)('inherits Background through %s links and retains settled ancestors', (link) => {
     const parent = session('parent', { archived: true, status: 'done' });
     const child = session('child', link === 'parent' ? { parentId: parent.id }
