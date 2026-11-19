@@ -115,8 +115,8 @@ class FrontendWatchTest(unittest.TestCase):
             shutil.copy(Path(__file__).with_name("watch-frontend-prod.sh"), root / "scripts")
             pnpm = root / "bin/pnpm"
             pnpm.write_text('#!/bin/sh\necho "$*" >> "$WATCH_LOG"\n'
-                            'if [ "$2" = tsrs ]; then touch "$WATCH_LOG.tsrs"; exit 1; fi\n'
-                            'while [ ! -f "$WATCH_LOG.tsrs" ]; do sleep 0.01; done\n')
+                            'if [ "$2" = tsc ]; then touch "$WATCH_LOG.tsc"; exit 1; fi\n'
+                            'while [ ! -f "$WATCH_LOG.tsc" ]; do sleep 0.01; done\n')
             pnpm.chmod(0o755)
             log = root / "commands"
             result = subprocess.run(["bash", "scripts/watch-frontend-prod.sh"], cwd=root,
@@ -124,7 +124,7 @@ class FrontendWatchTest(unittest.TestCase):
                                     capture_output=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(set(log.read_text().splitlines()), {
-                "exec tsrs -b --watch --preserveWatchOutput", "exec vite build --watch",
+                "exec tsc -b --watch --preserveWatchOutput", "exec vite build --watch",
             })
 
 
@@ -137,6 +137,7 @@ class DevLogsTest(unittest.TestCase):
         (self.root / "frontend").mkdir()
         (self.root / "bin").mkdir()
         shutil.copy(Path(__file__).with_name("dev.sh"), self.root / "scripts/dev.sh")
+        shutil.copy(Path(__file__).with_name("dev-reap.sh"), self.root / "scripts/dev-reap.sh")
         self.env = dict(os.environ, PATH=f'{self.root / "bin"}:{os.environ["PATH"]}',
                         DEV_TEST_ROOT=str(self.root))
         self.processes = []
@@ -221,6 +222,184 @@ exec {shutil.which("tail")} "$@"
         output = (self.root / "output").read_bytes()
         self.assertEqual(output.count(b"DEV_TEST_air"), 1)
         self.assertEqual(output.count(b"DEV_TEST_pnpm"), 1)
+
+
+class DevShutdownTest(unittest.TestCase):
+    """Every way a dev run ends must stop all of its jobs, including the
+    children of a frontend command whose own parent is already gone."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        for d in ("scripts", "frontend", "bin", "pids"):
+            (self.root / d).mkdir()
+        here = Path(__file__).resolve().parent
+        for name in ("dev.sh", "watch-frontend-prod.sh", "dev-reap.sh"):
+            if (here / name).exists():
+                shutil.copy(here / name, self.root / "scripts" / name)
+        self.env = dict(os.environ, PATH=f'{self.root / "bin"}:{os.environ["PATH"]}',
+                        DEV_TEST_ROOT=str(self.root))
+        # Each fake records itself and a child that ignores its parent's death,
+        # like `node vite.js` under a killed `pnpm exec`.
+        fake = '''#!/usr/bin/env python3
+import os, subprocess, sys, time
+from pathlib import Path
+pids = Path(os.environ["DEV_TEST_ROOT"], "pids")
+pids.joinpath(str(os.getpid())).write_text(" ".join(sys.argv))
+child = subprocess.Popen([sys.executable, "-c", "import time\\nwhile True: time.sleep(1)"])
+pids.joinpath(str(child.pid)).write_text("child")
+while True:
+    time.sleep(1)
+'''
+        for name in ("air", "pnpm"):
+            self.command(name, fake)
+        # Never let a test reclaim the real dev ports; only answer cwd lookups.
+        lsof = shutil.which("lsof")
+        self.command("lsof", f'#!/bin/sh\ncase " $* " in *" cwd "*) exec {lsof} "$@";; esac\n'
+                     if lsof else "#!/bin/sh\nexit 0\n")
+        self.processes = []
+        self.addCleanup(self.kill_recorded)
+
+    def command(self, name, text):
+        path = self.root / "bin" / name
+        path.write_text(text)
+        path.chmod(0o755)
+
+    def recorded(self):
+        return [int(p.name) for p in (self.root / "pids").iterdir()]
+
+    def alive(self, pid):
+        result = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                                capture_output=True, text=True, check=False)
+        return bool(result.stdout.strip()) and not result.stdout.strip().startswith("Z")
+
+    def kill_recorded(self):
+        for process in self.processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+        for pid in self.recorded():
+            self.kill_pid(pid)
+
+    @staticmethod
+    def kill_pid(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def wait_for(self, condition, message, timeout=10):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if condition():
+                return
+            time.sleep(0.05)
+        self.fail(message)
+
+    def start(self):
+        process = subprocess.Popen(
+            ["bash", "scripts/dev.sh", "prod-watch"], cwd=self.root, env=self.env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+        self.processes.append(process)
+        # air, pnpm preview, the type checker and vite, each with a child.
+        self.wait_for(lambda: len(self.recorded()) == 8, "dev jobs never started")
+        return process
+
+    def assert_all_stopped(self, message):
+        self.wait_for(lambda: not [p for p in self.recorded() if self.alive(p)],
+                      f"{message}: {[p for p in self.recorded() if self.alive(p)]}")
+
+    def test_terminal_hangup_stops_every_job(self):
+        # Closing the tmux pane or terminal hangs up the whole foreground group.
+        process = self.start()
+        os.killpg(process.pid, signal.SIGHUP)
+        process.wait(timeout=10)
+        self.assert_all_stopped("jobs outlived a terminal hangup")
+
+    def test_group_terminate_stops_every_job(self):
+        process = self.start()
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=10)
+        self.assert_all_stopped("jobs outlived SIGTERM to the process group")
+
+    def test_reaper_stops_jobs_of_a_killed_run(self):
+        # SIGKILL skips every trap; the next `make kill-dev` must clean up.
+        process = self.start()
+        process.kill()
+        process.wait()
+        subprocess.run(["bash", "scripts/dev-reap.sh"], cwd=self.root, env=self.env,
+                       check=True, capture_output=True, timeout=20)
+        self.assert_all_stopped("make kill-dev left jobs of a killed run")
+
+    def test_start_reaps_watchers_of_a_killed_run(self):
+        old = self.start()
+        old.kill()
+        old.wait()
+        stale = self.recorded()
+        (self.root / "pids").rename(self.root / "stale-pids")
+        (self.root / "pids").mkdir()
+        self.addCleanup(lambda: [self.kill_pid(p) for p in stale])
+        new = self.start()
+        self.wait_for(lambda: not [p for p in stale if self.alive(p)],
+                      "a new run kept the previous run's watchers alive")
+        self.assertIsNone(new.poll(), "reaping must spare the new run")
+
+    def test_reaper_spares_other_checkouts(self):
+        with tempfile.TemporaryDirectory() as other:
+            vite = Path(other) / "vite"
+            vite.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(60)\n")
+            vite.chmod(0o755)
+            stranger = subprocess.Popen([str(vite), "build", "--watch"], cwd=other)
+            self.addCleanup(stranger.wait)
+            self.addCleanup(stranger.kill)
+            subprocess.run(["bash", "scripts/dev-reap.sh"], cwd=self.root, env=self.env,
+                           check=True, capture_output=True, timeout=20)
+            self.assertIsNone(stranger.poll(), "reaper killed another checkout's watcher")
+
+
+class FrontendWatchSignalTest(unittest.TestCase):
+    def test_terminate_stops_wrapper_and_watchers_promptly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for d in ("scripts", "frontend", "bin"):
+                (root / d).mkdir()
+            shutil.copy(Path(__file__).with_name("watch-frontend-prod.sh"), root / "scripts")
+            pnpm = root / "bin/pnpm"
+            pnpm.write_text("#!/bin/sh\necho $$ >> \"$WATCH_LOG\"\nexec sleep 60\n")
+            pnpm.chmod(0o755)
+            log = root / "pids"
+            wrapper = subprocess.Popen(
+                ["bash", "scripts/watch-frontend-prod.sh"], cwd=root,
+                env=dict(os.environ, PATH=f'{root / "bin"}:{os.environ["PATH"]}',
+                         WATCH_LOG=str(log)),
+                start_new_session=True)
+            try:
+                deadline = time.monotonic() + 8
+                while time.monotonic() < deadline and not (
+                        log.exists() and len(log.read_text().split()) == 2):
+                    time.sleep(0.05)
+                wrapper.terminate()
+                # A trap deferred behind a foreground command never runs.
+                wrapper.wait(timeout=3)
+                for pid in map(int, log.read_text().split()):
+                    deadline = time.monotonic() + 3
+                    while time.monotonic() < deadline:
+                        try:
+                            os.kill(pid, 0)
+                        except ProcessLookupError:
+                            break
+                        time.sleep(0.05)
+                    else:
+                        self.fail(f"watcher {pid} outlived the wrapper")
+            finally:
+                try:
+                    os.killpg(wrapper.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                wrapper.wait()
 
 
 if __name__ == "__main__":

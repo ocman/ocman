@@ -16,13 +16,20 @@
 # The rest:
 #   - `< /dev/null` per job so a job that reads the tty doesn't SIGTTIN-suspend
 #     the run on a keypress.
-#   - bare `cmd & pid=$!` (no pipe/subshell wrapper) so `$!` is the REAL pid.
-#   - a `sleep` poll loop (not `wait`) as the foreground blocker: bash defers
-#     traps while blocked in `wait`, but a trapped signal interrupts `sleep`.
-#   - the trap clears itself (no re-entry), then TERMs each pid + its full
-#     descendant tree (air -> compiled binary; pnpm -> node/vite; watcher ->
-#     fswatch -> subshell), waits > air's 2s kill_delay, KILLs stragglers, and
-#     reclaims the ports.
+#   - bare `"${NEW_SESSION[@]}" cmd &` (no function, pipe or subshell wrapper)
+#     so `$!` is the REAL pid, which is also the job's process group id. A
+#     shell function here would fork a dev.sh subshell in OUR group: a terminal
+#     hangup kills it, and its job is left in its own session, out of reach.
+#   - a `sleep 1` poll loop as the foreground blocker: it notices any job
+#     exiting (macOS bash 3.2 has no `wait -n`). Bash runs a trap only after
+#     the current foreground command returns, so keep that command short.
+#   - the trap ignores further signals (no re-entry, no half-done cleanup on a
+#     second Ctrl+C), then TERMs each job's process group + descendant tree
+#     (air -> compiled binary; pnpm -> node/vite; watcher -> tsc/vite), waits >
+#     air's 2s kill_delay, KILLs stragglers, and reclaims the ports.
+#   - each group id is recorded in tmp/dev.pgids. A SIGKILLed dev.sh runs no
+#     trap, so scripts/dev-reap.sh (run at start and by `make kill-dev`) stops
+#     what an earlier run left behind.
 
 set -u
 
@@ -31,12 +38,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 mkdir -p tmp
 
-# Run "$@" in a new session so it can't steal the controlling terminal.
-# Prefer the setsid binary (Linux); fall back to python3 (macOS has no setsid).
+# Prefix for running a command in a new session so it can't steal the
+# controlling terminal. Prefer the setsid binary (Linux); fall back to python3
+# (macOS has no setsid). Both exec the command in place, keeping its pid.
 if command -v setsid >/dev/null 2>&1; then
-	new_session() { setsid "$@"; }
+	NEW_SESSION=(setsid)
 else
-	new_session() { python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"; }
+	NEW_SESSION=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])')
 fi
 
 # Echo a pid and all its descendants, recursively.
@@ -49,24 +57,38 @@ descendants() {
 }
 
 pids=""
+groups=""
 
-stop() {
-	trap - INT TERM EXIT
+# Track the job just started with `"${NEW_SESSION[@]}" cmd &`: its pid is also
+# its process group id.
+track_job() {
+	pids="$pids $1"
+	groups="$groups $1"
+	echo "$1" >> tmp/dev.pgids
+}
+
+# Signal every tracked process group, pid and descendant. The group reaches
+# children whose parent already exited; descendants catch any that left it.
+signal_all() {
 	local all="" p
 	for p in $pids; do all="$all $p $(descendants "$p")"; done
+	for p in $groups; do all="$all -$p"; done
 	# shellcheck disable=SC2086
-	kill -TERM $all 2>/dev/null
+	kill -"$1" -- $all 2>/dev/null
+}
+
+stop() {
+	trap '' INT TERM HUP
+	trap - EXIT
+	signal_all TERM
 	sleep 3
-	all=""
-	for p in $pids; do all="$all $p $(descendants "$p")"; done
-	# shellcheck disable=SC2086
-	kill -KILL $all 2>/dev/null
+	signal_all KILL
+	rm -f tmp/dev.pgids
 	lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null
 	lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null
 	lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null
 	exit 0
 }
-trap stop INT TERM EXIT
 
 case "$MODE" in
 	dev)             fe="pnpm dev";     felog="tmp/vite-dev.log" ;;
@@ -75,28 +97,34 @@ case "$MODE" in
 	*) echo "usage: dev.sh [dev|prod|prod-watch|remote]" >&2; exit 2 ;;
 esac
 
+# Stop whatever an earlier run of this checkout left behind before reusing
+# its ports and log files.
+./scripts/dev-reap.sh
+: > tmp/dev.pgids
+trap stop INT TERM HUP EXIT
+
 : > tmp/air.log
 
 if [ "$MODE" = "remote" ]; then
-	new_session env OTEL_EXPORTER_OTLP_ENDPOINT= air --build.full_bin "./tmp/ocman -addr 127.0.0.1:8229 -remote-listen 0.0.0.0:8230" < /dev/null >> tmp/air.log 2>&1 &
+	"${NEW_SESSION[@]}" env OTEL_EXPORTER_OTLP_ENDPOINT= air --build.full_bin "./tmp/ocman -addr 127.0.0.1:8229 -remote-listen 0.0.0.0:8230" < /dev/null >> tmp/air.log 2>&1 &
 else
-	new_session air < /dev/null >> tmp/air.log 2>&1 &
+	"${NEW_SESSION[@]}" air < /dev/null >> tmp/air.log 2>&1 &
 fi
-pids="$pids $!"
+track_job $!
 
 logs="tmp/air.log"
 
 if [ -n "$fe" ]; then
 	: > "$felog"
-	new_session sh -c "cd frontend && exec $fe" < /dev/null >> "$felog" 2>&1 &
-	pids="$pids $!"
+	"${NEW_SESSION[@]}" sh -c "cd frontend && exec $fe" < /dev/null >> "$felog" 2>&1 &
+	track_job $!
 	logs="$logs $felog"
 fi
 
 if [ "$MODE" = "prod-watch" ]; then
 	: > tmp/frontend-watch.log
-	new_session ./scripts/watch-frontend-prod.sh < /dev/null >> tmp/frontend-watch.log 2>&1 &
-	pids="$pids $!"
+	"${NEW_SESSION[@]}" ./scripts/watch-frontend-prod.sh < /dev/null >> tmp/frontend-watch.log 2>&1 &
+	track_job $!
 	logs="$logs tmp/frontend-watch.log"
 fi
 
@@ -118,9 +146,8 @@ stream_logs() {
 stream_logs "$$" $logs &
 pids="$pids $!"
 
-# Foreground blocker: poll until a job dies (or Ctrl+C interrupts the sleep and
-# fires the trap). `wait` can't be used — bash defers traps until it returns,
-# which never happens while the jobs are alive.
+# Foreground blocker: poll until a job dies. A signal's trap runs once the
+# current `sleep 1` returns.
 while :; do
 	for p in $pids; do
 		kill -0 "$p" 2>/dev/null || exit 0

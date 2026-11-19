@@ -34,9 +34,15 @@ Frontend dev targets install locked dependencies before starting. Direct
 `pnpm build` or watcher-script runs require `pnpm install --frozen-lockfile`
 in `frontend/` first after pulling dependency changes.
 
-Frontend builds, lint and production watching use the pinned `tsrs` compiler
-in its default compatibility mode. Keep `typescript` installed for tooling such
-as TypeScript ESLint and for comparison checks with `pnpm exec tsc -b --force`.
+Frontend builds and lint use the pinned `tsrs` compiler in its default
+compatibility mode. Keep `typescript` installed for tooling such as TypeScript
+ESLint, for comparison checks with `pnpm exec tsc -b --force`, and for the
+`make dev-prod-watch` type checker: `tsrs -b --watch` keeps memory from every
+full rebuild, so do not switch the watcher back without measuring it.
+
+`scripts/dev.sh` runs each job in its own session and process group and stops
+the groups on exit. `scripts/dev-reap.sh`, run at every start and by
+`make kill-dev`, stops what a killed run left behind in the same checkout.
 
 ```sh
 make dev              # Air backend :8229 and Vite frontend :8228, with HMR
@@ -45,7 +51,7 @@ make dev-prod-watch   # Air and Vite preview, automatic frontend rebuild
 make dev-backend      # Air only
 make dev-frontend     # Vite only
 make dev-remote       # backend plus remote gRPC listener :8230
-make kill-dev         # clean up development port occupants
+make kill-dev         # stop this checkout's leftover dev jobs, free the dev ports
 make build-desktop    # Wails desktop app in build/bin/
 make proto            # regenerate gRPC stubs, requires protoc
 make install-hooks    # pre-commit and pre-push hooks

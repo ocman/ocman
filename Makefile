@@ -134,11 +134,13 @@ restart-claude-supervisors: ## Stop managed Claude supervisors; next create/send
 		done || exit $$?; \
 	done
 
-# Emergency nuke: kill anything holding the dev ports. Use when a previous
-# `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
-# run even when nothing is listening — xargs is a no-op on empty stdin on
-# both BSD and GNU.
+# Emergency nuke: stop this checkout's leftover dev runs (including frontend
+# watchers, which hold no port), then kill anything holding the dev ports. Use
+# when a previous `make dev*` died badly and left orphans squatting on 8228 /
+# 8229. Safe to run even when nothing is listening — xargs is a no-op on empty
+# stdin on both BSD and GNU.
 kill-dev:
+	@./scripts/dev-reap.sh
 	@echo "Reclaiming dev ports 8228, 8229, 8230, and $(RELAY_PORT)..."
 	@for port in 8228 8229 8230 $(RELAY_PORT); do \
 		lsof -tiTCP:$$port -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true; \
