@@ -33,7 +33,12 @@ func createFailure(err error) string {
 	if errors.As(err, &staged) && staged.Stage != "" {
 		stage = staged.Stage
 	}
-	var busy *platforms.BusyError
+	// An uncertain allocation may already exist, whatever its underlying cause;
+	// a fresh create gets a new request key and would duplicate it.
+	var pending *platforms.CreationPendingError
+	if errors.As(err, &pending) {
+		return "session creation outcome is uncertain after " + stage + ": session " + pending.SessionID + " may exist. Do not create another session; check it with get, and ask the user before retrying."
+	}
 	var cause, advice string
 	switch {
 	case errors.Is(err, platforms.ErrRemoteOffline):
@@ -42,7 +47,7 @@ func createFailure(err error) string {
 		cause, advice = "the target platform has no running, ready instance", "Retrying in a minute may succeed; if it keeps failing, ask the user to check the platform connection in ocman."
 	case errors.Is(err, platforms.ErrPlatformUnauthenticated):
 		cause, advice = "the target platform rejected ocman's credentials", "Do not retry; ask the user to sign in to the platform again."
-	case errors.As(err, &busy) || errors.Is(err, platforms.ErrBusy):
+	case errors.Is(err, platforms.ErrBusy):
 		cause, advice = "the target is busy", "Retry shortly."
 	case errors.Is(err, context.DeadlineExceeded):
 		cause, advice = "the request timed out", "Check sessions list for a new session before retrying once, so a slow creation is not duplicated."

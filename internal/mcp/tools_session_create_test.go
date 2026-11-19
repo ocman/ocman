@@ -171,6 +171,8 @@ func TestCreateSessionToolExplainsFailures(t *testing.T) {
 		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: context.DeadlineExceeded}, []string{"timed out", "sessions list"}},
 		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: context.Canceled}, []string{"cancelled"}},
 		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: platforms.ErrUnsupported}, []string{"does not support", "Do not retry unchanged"}},
+		{&internalmcp.SessionCreateStageError{Stage: "session allocation", Err: &platforms.CreationPendingError{SessionID: "ocm_pending", Err: context.Canceled}}, []string{"outcome is uncertain after session allocation", "ocm_pending", "Do not create another session"}},
+		{&internalmcp.SessionCreateStageError{Stage: "worktree setup", Err: &platforms.CreationPendingError{SessionID: "ocm_pending", Err: platforms.ErrPlatformUnreachable}}, []string{"outcome is uncertain", "Do not create another session"}},
 	} {
 		svc.err = test.err
 		result := testutil.CallTool(t, srv, "sessions", map[string]any{"action": "create", "prompt": "x", "directory": "/repo", "platform": "opencode", "model": "p/m"})

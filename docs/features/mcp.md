@@ -523,7 +523,9 @@ cause and whether a retry can help. For example, a disconnected machine or a
 platform without a ready instance can succeed later, while a rejected request or
 an unexpected server error fails the same way on an unchanged retry. Raw causes
 such as host paths and command output stay in the server log under
-`MCP session creation failed`, with the same stage.
+`MCP session creation failed`, with the same stage. When allocation may already
+have happened, the error names the session that may exist and says not to
+create another, because a new request would not deduplicate against it.
 
 Like the new-conversation composer, an omitted `worktree` creates a fresh worktree
 when the directory is eligible. Non-repositories, existing linked worktrees,
