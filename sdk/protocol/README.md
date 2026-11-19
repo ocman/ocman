@@ -858,6 +858,41 @@ navigation entries. The response maps plugin IDs to dot or count payloads;
 missing IDs mean no badge. An offline owner fails closed without searching
 other owners for a matching plugin ID.
 
+## notice.v1
+
+Declare capability `notice` version `1.0` and request `notice.toast`. The host
+negotiates it only with that grant approved. A serve process can then replace
+its installation's active toast notices with one event:
+
+```json
+{"type":"event","event":{"capability":"notice","name":"set","data":{"notices":[{"id":"recording-42","tone":"warning","title":"Recording meeting","body":"Audio is being captured.","startedAt":1763540000000,"actions":[{"actionId":"stop-recording"}]}]}}}
+{"type":"event","event":{"capability":"notice","name":"set","data":{"notices":[]}}}
+```
+
+The schema is closed, with a 4,096-byte `data` limit. Field names match
+exactly, and unknown fields are rejected. Optional `body`, `startedAt` and
+`actions` must be omitted, not empty or null. `notices` holds at most 3
+entries with unique `id` values: lowercase identifiers of up to 64 bytes.
+`tone` is `info`, `warning` or `critical`. `title` (1–80 characters) and
+`body` (1–240 characters) are trimmed plain text without control characters,
+`<`, `>` or `://`. `startedAt` is a positive integer of Unix milliseconds.
+`actions` holds 1–2 unique declared action IDs. The host ignores a malformed
+snapshot and keeps the previous one. There are no acknowledgment messages,
+URLs, routes, labels or owner selectors.
+
+The supervisor keeps only the latest valid snapshot for the current child. It
+drops the snapshot when the child disconnects, including on automatic restart.
+Disable and grant revocation hide it. The host does not persist or replay it.
+
+The browser polls `GET /api/plugins/notices?ownerId=<owner>` for every
+plugin-managing owner. The response maps plugin IDs to
+`{"pluginLabel":…,"notices":[…]}`; missing IDs mean no notices. On each read
+the host resolves `actions` against the current declaration and grants. It
+returns `{actionId,label,placement}` only for granted `global`
+command-palette actions. The browser invokes them through
+`POST /api/plugins/actions/invoke`. A remote owner's read returns no actions,
+because global actions always run on the hub. An offline owner fails closed.
+
 ## pane.v1
 
 The `pane` capability, major 1 minor 0, contributes read-only project trees to

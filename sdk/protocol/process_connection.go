@@ -166,6 +166,7 @@ func (p *Process) serve(attempt int) error {
 	drainTimer.Stop()
 	defer drainTimer.Stop()
 	defer p.setNavBadge(NavBadge{})
+	defer p.setNotices(nil)
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -185,6 +186,7 @@ func (p *Process) serve(attempt int) error {
 		case <-exitSignal:
 			exitSignal = nil
 			p.setNavBadge(NavBadge{})
+			p.setNotices(nil)
 			drainTimer.Reset(100 * time.Millisecond)
 			drain = drainTimer.C
 		case <-drain:
@@ -290,6 +292,14 @@ func (p *Process) serve(attempt int) error {
 					// cannot restore the badge of the dead child.
 					if badge, err := DecodeNavBadge(*e.Event); err == nil && exitSignal != nil {
 						p.setNavBadge(badge)
+					}
+					continue
+				}
+				if e.Event.Capability == NoticeCapability.Name {
+					// Replace the whole set. A malformed snapshot keeps the
+					// previous valid one; frames drained after exit are ignored.
+					if snapshot, err := DecodeNoticeSnapshot(*e.Event); err == nil && exitSignal != nil {
+						p.setNotices(snapshot.Notices)
 					}
 					continue
 				}

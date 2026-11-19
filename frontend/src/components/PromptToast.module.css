@@ -3,6 +3,8 @@
 .toast { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; background: var(--bg-card); color: var(--text); border-left: 4px solid var(--accent); font-size: 13px; box-shadow: 0 6px 20px rgb(0 0 0 / 35%); }
 .toast[data-kind='permission'] { border-left-color: var(--warning); }
 .toast[data-kind='error'] { border-left-color: var(--danger); }
+.toast[data-tone='warning'] { border-left-color: var(--warning); }
+.toast[data-tone='critical'] { border-left-color: var(--danger); }
 .toast[data-state='open'] { animation: slide-in .18s ease-out; }
 .toast[data-state='closed'] { animation: slide-out .12s ease-in; }
 .toast[data-swipe='move'] { transform: translateX(var(--radix-toast-swipe-move-x)); }

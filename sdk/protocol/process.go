@@ -85,6 +85,7 @@ type Process struct {
 	mu       sync.Mutex
 	health   Health
 	navBadge NavBadge
+	notices  []Notice
 	stderr   []byte // Sensitive, bounded, memory-only; never exported or logged.
 	tokens   []string
 }

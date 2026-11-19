@@ -6,6 +6,7 @@ import { cleanTitle } from '../lib/format';
 import { Button } from './Control';
 import { PromptToast, PromptToastHeading, PromptToastBody, PromptToastActions, PromptToastClose, PromptToastViewport } from './PromptToast';
 import { FactoryActionNotify } from './FactoryActionNotify';
+import { PluginNoticeToasts } from './PluginNoticeToasts';
 import { useBetaFeatures } from '../lib/betaFeatures';
 
 /**
@@ -60,6 +61,7 @@ export function PromptToastNotify() {
   return (
     <Toast.Provider swipeDirection="right" duration={Infinity}>
       {factory && <FactoryActionNotify />}
+      <PluginNoticeToasts />
       {toasts.map((t) => {
         const { heading, body } = describe(t);
         return (

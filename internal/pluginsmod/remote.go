@@ -78,6 +78,11 @@ func (m *Module) localPluginOperation(ctx context.Context, req remote.PluginRequ
 			return pluginResponse(nil, plugins.ErrInvalidMessage)
 		}
 		return pluginResponse(m.localPluginNavBadges(ctx, fromRemote))
+	case "notices":
+		if !req.Read {
+			return pluginResponse(nil, plugins.ErrInvalidMessage)
+		}
+		return pluginResponse(m.localPluginNotices(ctx, fromRemote))
 	case "asset-read":
 		return pluginResponse(m.localPluginIcon(ctx, req.PluginID, req.Input.Values["asset"]))
 	case "model-catalog":

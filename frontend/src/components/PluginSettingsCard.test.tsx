@@ -56,3 +56,18 @@ it('keeps the no-grants state explicit without empty lists', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
   expect(screen.getByText('No grants requested.')).toBeInTheDocument();
 });
+
+it('discloses that notices appear on every page and can only run declared actions', () => {
+  const p = plugin(false);
+  p.description.requestedGrants = ['notice.toast'];
+  const { unmount } = render(<PluginSettingsCard plugin={p} owner="local" refresh={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+  const note = screen.getByRole('note', { name: 'Plugin notice disclosure' });
+  expect(note).toHaveTextContent('This plugin can show persistent notices on every ocman page.');
+  expect(note).toHaveTextContent('can only run actions the plugin already declared');
+  expect(note).not.toHaveTextContent('remote owners');
+  unmount();
+  render(<PluginSettingsCard plugin={p} owner="machine" refresh={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
+  expect(screen.getByRole('note', { name: 'Plugin notice disclosure' })).toHaveTextContent('Notices from remote owners show text only.');
+});

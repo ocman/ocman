@@ -157,6 +157,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("GET /api/plugins/panes", m.handlePluginPanes)
 	r.Handle("GET /api/plugins/pages", m.handlePluginPages)
 	r.Handle("GET /api/plugins/nav-badges", m.handlePluginNavBadges)
+	r.Handle("GET /api/plugins/notices", m.handlePluginNotices)
 	r.Handle("GET /api/plugins/model-catalog", m.handlePluginModelCatalog)
 	r.Handle("POST /api/plugins/pages/call", m.handlePluginPage)
 	r.Handle("GET /api/plugins/panes/read", m.handlePluginPaneRead)

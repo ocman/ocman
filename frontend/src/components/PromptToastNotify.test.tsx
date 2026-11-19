@@ -6,6 +6,7 @@ import { PromptToastNotify } from './PromptToastNotify';
 
 vi.mock('../lib/useGlobalEvents', () => ({ useGlobalEvents: vi.fn() }));
 vi.mock('./FactoryActionNotify', () => ({ FactoryActionNotify: () => null }));
+vi.mock('./PluginNoticeToasts', () => ({ PluginNoticeToasts: () => null }));
 vi.mock('../lib/useToastNotify', () => ({ useToastNotify: () => ({
   toasts: [{ toastId: 'permission', kind: 'permission', sessionId: 'child', title: 'Review' }, { toastId: 'question', kind: 'question', sessionId: 'question-session', title: 'Question' }],
   dismiss: vi.fn(),

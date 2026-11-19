@@ -185,6 +185,66 @@ serve startup, default to no badge until live capture is confirmed. Use no
 count, meeting ID, title, participant, transcript, or other meeting content.
 None of this depends on visiting the recorder page or on its entry redirect.
 
+## Toast notices
+
+Add `plugin.NoticeCapability` to `Description.Capabilities` and
+`plugin.NoticeGrant` (`notice.toast`) to `Description.RequestedGrants`. Once
+the owner approves the grant, the serve backend can show persistent toasts on
+every ocman page, even when no plugin UI is mounted.
+
+Build a snapshot of all currently active notices with `plugin.NewNotices` and
+send it on the backend event channel passed to `plugin.RunWithEvents` or
+`plugin.RunWithRequests`:
+
+```go
+event, err := plugin.NewNotices(plugin.Notice{
+	ID:        "recording-42",
+	Tone:      plugin.NoticeToneWarning,
+	Title:     "Recording meeting",
+	Body:      "Audio from this Mac is being captured.",
+	StartedAt: started.UnixMilli(),
+	Actions:   []plugin.NoticeAction{{ActionID: "stop-recording"}},
+})
+// Later, to remove every notice:
+event, err = plugin.NewNotices()
+```
+
+Handle the constructor's error before enqueueing the event. Each event
+replaces every notice the plugin published before; there is no add, update or
+remove event. The rules are:
+
+- At most `plugin.NoticeMaxNotices` (3) notices with distinct lowercase IDs.
+- `Tone` is `info`, `warning` or `critical`.
+- `Title` is required plain text of up to 80 characters. `Body` is optional,
+  up to 240 characters. Neither may contain line breaks, `<`, `>` or `://`.
+  The host renders both as text, never as HTML, markdown or links.
+- `StartedAt` is optional Unix milliseconds. The toast shows the elapsed time.
+- `Actions` lists up to two action IDs the plugin declared through `action.v1`.
+  The host shows each declared label and runs the action through the action
+  broker, with its confirmation and operation-ID deduplication. Only granted
+  actions with placement `global` appear, because a toast has no project,
+  session or workspace context. Other references are dropped without hiding the
+  notice. Global actions run on the hub, so notices from remote owners show text
+  only. A `global` action also appears in the command palette.
+
+Users can dismiss a toast in their browser. It stays hidden while its ID is
+active and shows again if the plugin publishes the ID after clearing it. Use a
+new ID for a new occurrence, such as one per recording.
+
+The SDK drops events if the capability was not negotiated (older host or
+missing grant). Ocman holds the notices only for the current serve connection.
+Process exit, restart, disable and grant revocation clear them. After a
+restart, the new backend must publish its state again.
+
+### Recorder stop toast
+
+Declare a `global` command-palette action, for example `stop-recording` with
+label `Stop recording` and a confirmation. Publish the notice only after live
+capture is confirmed active, with `StartedAt` set to the capture start. Publish
+an empty snapshot on stop, failure or loss of confirmation. On serve startup,
+publish nothing until capture is confirmed. Keep meeting titles, participants
+and transcript text out of the notice.
+
 ## In-app UI
 
 `ui.v1` lets a plugin ship a routed React index built with

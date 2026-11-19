@@ -223,6 +223,9 @@ func (d Description) Validate() error {
 	if d.offersNavBadge() && !d.NavBadgeAllowed(d.RequestedGrants) {
 		return ErrInvalidMessage
 	}
+	if d.offersNotice() && !d.NoticeAllowed(d.RequestedGrants) {
+		return ErrInvalidMessage
+	}
 	if err := d.validateActions(); err != nil {
 		return err
 	}

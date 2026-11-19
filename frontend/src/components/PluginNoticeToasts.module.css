@@ -1,0 +1,4 @@
+.title { display: block; }
+.body { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--text-dim); }
+.meta { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.elapsed { color: var(--text); }

@@ -115,6 +115,36 @@ flowchart LR
 See the [Go SDK badge contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md#navigation-badges)
 for the backend API and recorder integration notes.
 
+### Toast notices
+
+A plugin can request `notice.toast` to show persistent toasts on every ocman
+page, such as a meeting recorder's "Recording" notice with a **Stop recording**
+button. The toast stays until the plugin clears it.
+
+```mermaid
+flowchart LR
+    Plugin[Plugin serve backend] -->|Notice snapshot| Owner[Owner process supervisor]
+    Browser[Toasts on every page] -->|Read by owner| Hub[Ocman hub]
+    Hub -->|Local read or authenticated RPC| Owner
+    Browser -->|Toast button| Broker[Action broker]
+```
+
+- The backend publishes the full set of active notices: a tone, a short
+  plain-text title, an optional description and start time, and up to two
+  buttons. Ocman renders the text as text and shows elapsed time from the start.
+- Buttons can only run actions the plugin already declared. Ocman shows the
+  declared label and runs the action through the action broker, including any
+  confirmation. Notices cannot contain links or open pages.
+- The owner keeps notices in memory for that process. Disable, grant
+  revocation or process restart clears them.
+- The browser checks every few seconds and hides an owner's notices while the
+  owner cannot be reached. Dismissing a toast hides it in that browser until
+  the plugin clears or replaces that notice. Notices from remote owners show
+  text only, because their actions would run on the hub.
+
+See the [Go SDK notice contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md#toast-notices)
+for the backend API.
+
 ## In-app plugin UI
 
 `page.v1` and `pane.v1` are the declarative tier: the plugin returns typed data

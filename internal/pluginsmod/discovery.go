@@ -138,6 +138,9 @@ func (m *Module) syncPluginProcessesLocked(ctx context.Context) error {
 		if registration.Description.NavBadgeAllowed(registration.Grants) {
 			supported = append(supported, plugins.NavBadgeCapability)
 		}
+		if registration.Description.NoticeAllowed(registration.Grants) {
+			supported = append(supported, plugins.NoticeCapability)
+		}
 		process, err := plugins.StartProcess(m.ctx, plugins.LaunchConfig{
 			ReadyTimeout:  m.deps.ReadyTimeout,
 			Candidate:     plugins.Discovery{Path: registration.ExecutablePath, Checksum: registration.Checksum, Description: registration.Description},

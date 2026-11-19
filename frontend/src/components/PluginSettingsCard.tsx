@@ -10,6 +10,7 @@ import { Button, ButtonGroup } from './Control';
 import styles from './PluginSettingsCard.module.css';
 
 const UI_GRANT = 'ui.app';
+const NOTICE_GRANT = 'notice.toast';
 
 function PluginGrants({ grants, label }: { grants?: string[] | null; label: string }) {
   if (!grants?.length) return <span className={styles.emptyGrants}>None</span>;
@@ -46,6 +47,15 @@ function PluginUIDisclosure({ plugin: p, owner }: { plugin: PluginRegistration; 
     <p><strong>This plugin runs UI code with your ocman session.</strong> Approving <code>{UI_GRANT}</code> loads its interface into ocman, where it can do anything you can do in ocman.</p>
     {index && <p>Approved interface bundle SHA-256: <code className={styles.checksum}>{index.sha256}</code></p>}
     {owner !== 'local' && <p>Plugins on remote owners keep their declarative views. Their interface is not loaded in this version.</p>}
+  </div>;
+}
+
+/** Notices reach every page, so say what the plugin can and cannot put there. */
+function PluginNoticeDisclosure({ plugin: p, owner }: { plugin: PluginRegistration; owner: string }) {
+  if (!p.description.requestedGrants?.includes(NOTICE_GRANT)) return null;
+  return <div role="note" aria-label="Plugin notice disclosure">
+    <p><strong>This plugin can show persistent notices on every ocman page.</strong> Approving <code>{NOTICE_GRANT}</code> lets its backend publish up to three notices with a short plain-text title and description. They stay until the plugin clears them; you can dismiss one in your browser.</p>
+    <p>Notice buttons can only run actions the plugin already declared, with their usual confirmation. Notices cannot contain links, open pages or run code.{owner !== 'local' && ' Notices from remote owners show text only.'}</p>
   </div>;
 }
 
@@ -107,6 +117,7 @@ export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', 
           {d.requestedGrants?.length ? <PluginGrants grants={d.requestedGrants} label="Grants to approve" /> : <p>No grants requested.</p>}
           <PluginAgentToolsDisclosure plugin={p} owner={owner} />
           <PluginUIDisclosure plugin={p} owner={owner} />
+          <PluginNoticeDisclosure plugin={p} owner={owner} />
         </div>
         <ButtonGroup label="Plugin approval actions">
           <Button type="button" variant="accent" onClick={() => { void mutate(review, { ...(review === 'enable' ? { approval: p.approval } : {}), grants: d.requestedGrants ?? [] }); }}>{review === 'enable' ? 'Approve grants and enable' : 'Approve grants'}</Button>
