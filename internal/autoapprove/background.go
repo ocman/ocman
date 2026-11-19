@@ -178,13 +178,13 @@ func (s *Service) backgroundAutoApprove(
 	}
 	s.markAutoApproveChecking(sessionID, permissionID)
 	logger.Info("background auto-approve: judging permission")
-	inputs.sections = s.resolveJudgeSections(ctx, adapter, inputs.directory, sessionID)
+	inputs.sections = s.resolveJudgeSections(ctx, platformID, inputs.directory, sessionID)
 	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{
 		JudgeStartedAt:   time.Now().UnixMilli(),
 		EvaluationMethod: state.PermissionEvaluationJudge,
 	})
 	result := s.judgePermission(ctx, platformID, inputs.directory, permission, patterns, metadata, inputs.sections, s.emitChecking(sessionID, permissionID))
-	if result.Verdict == verdictSafe && !s.ruleReviewCurrent(ctx, adapter, inputs.directory, sessionID, inputs.sections, result) {
+	if result.Verdict == verdictSafe && !s.ruleReviewCurrent(ctx, platformID, inputs.directory, sessionID, inputs.sections, result) {
 		result = JudgeResult{Verdict: verdictUnsafe, Reasoning: "Reviewer policy or user context changed during evaluation. Human review required."}
 	}
 	s.completeJudgeLifecycle(asked, sessionID, permissionID, result)

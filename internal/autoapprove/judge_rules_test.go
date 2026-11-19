@@ -52,7 +52,7 @@ func TestTypeSafeUsesRuleQuestions(t *testing.T) {
 	svc := NewService(Deps{RecentUserMessages: func(_ context.Context, _ platforms.ID, _ string) ([]string, error) {
 		return []string{"push origin topic"}, nil
 	}})
-	sections := svc.resolveJudgeSections(t.Context(), &fakePlatform{id: "test"}, "/repo", "session")
+	sections := svc.resolveJudgeSections(t.Context(), "test", "/repo", "session")
 	result := judge.JudgeWithCallback(t.Context(), "/repo", "bash", nil, map[string]any{"command": "git status"}, sections, nil)
 	if result.Verdict != verdictSafe || result.EvaluationFailed {
 		t.Fatalf("result = %+v", result)

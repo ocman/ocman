@@ -19,6 +19,7 @@ import (
 
 type permissionJudgeHistory struct {
 	mu       sync.Mutex
+	id       string
 	messages []string
 	gate     <-chan struct{}
 	err      error
@@ -29,8 +30,15 @@ func (*permissionJudgeHistory) HistoryIdentity(context.Context) (platforms.Histo
 	return platforms.HistoryIdentity{Platform: "test", SourceKey: "judge-history"}, nil
 }
 
-func (*permissionJudgeHistory) HistoryInventory(context.Context) ([]db.HistoryEntry, error) {
-	return []db.HistoryEntry{{ID: "session", Version: "constant"}}, nil
+func (p *permissionJudgeHistory) sessionID() string {
+	if p.id != "" {
+		return p.id
+	}
+	return "session"
+}
+
+func (p *permissionJudgeHistory) HistoryInventory(context.Context) ([]db.HistoryEntry, error) {
+	return []db.HistoryEntry{{ID: p.sessionID(), Version: "constant"}}, nil
 }
 
 func (p *permissionJudgeHistory) set(messages []string, gate <-chan struct{}, err error) {
@@ -40,7 +48,7 @@ func (p *permissionJudgeHistory) set(messages []string, gate <-chan struct{}, er
 }
 
 func (p *permissionJudgeHistory) HistorySnapshot(ctx context.Context, id string) (*db.HistorySnapshot, error) {
-	if id != "session" {
+	if id != p.sessionID() {
 		return nil, db.ErrSessionNotFound
 	}
 	p.mu.Lock()
@@ -70,11 +78,18 @@ func (p *permissionJudgeHistory) HistorySnapshot(ctx context.Context, id string)
 	return snapshot, nil
 }
 
-func permissionJudgeFreshnessFixture(t *testing.T, messages []string) (*Server, *permissionJudgeHistory) {
+func permissionJudgeFreshnessFixture(t *testing.T, messages []string, connections ...platforms.ID) (*Server, *permissionJudgeHistory) {
 	t.Helper()
+	connection := platforms.ID("test")
+	if len(connections) > 0 {
+		connection = connections[0]
+	}
 	store := statev2test.Open(t)
 	source := &permissionJudgeHistory{messages: messages, started: make(chan struct{}, 1)}
-	ingest := conversationingest.NewModule(conversationingest.Deps{Store: store, OwnerID: "owner", Sources: []conversationingest.Source{{AdapterID: "test", Reader: source}}, Debounce: time.Millisecond, PollInterval: time.Hour})
+	if len(connections) > 0 {
+		source.id = "ocm_11111111-1111-4111-8111-111111111111"
+	}
+	ingest := conversationingest.NewModule(conversationingest.Deps{Store: store, OwnerID: "owner", Sources: []conversationingest.Source{{AdapterID: string(connection), Reader: source}}, Debounce: time.Millisecond, PollInterval: time.Hour})
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	if err := ingest.Start(ctx); err != nil {
@@ -84,14 +99,50 @@ func permissionJudgeFreshnessFixture(t *testing.T, messages []string) (*Server, 
 	t.Cleanup(func() { cancel(); <-done })
 	seed, stop := context.WithTimeout(ctx, 3*time.Second)
 	defer stop()
-	if err := ingest.RefreshStored(seed, "test", "session"); err != nil {
+	if err := ingest.RefreshStored(seed, string(connection), source.sessionID()); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case <-source.started:
 	default:
 	}
-	return &Server{registry: platforms.NewRegistry(), historyOwner: "owner", historyAnalytics: &analytics.HistoryAnalytics{Store: store}, historyIngest: ingest}, source
+	registry := platforms.NewRegistry()
+	if err := registry.RegisterConnection(connection, &permissionHistoryPlatform{fakePlatform: &fakePlatform{PlatformID: "test"}}); err != nil {
+		t.Fatal(err)
+	}
+	registry.RememberSessions(connection, []db.Session{{ID: source.sessionID()}})
+	return &Server{registry: registry, historyOwner: "owner", historyAnalytics: &analytics.HistoryAnalytics{Store: store}, historyIngest: ingest}, source
+}
+
+type permissionHistoryPlatform struct{ *fakePlatform }
+
+func (*permissionHistoryPlatform) CanonicalSessionIDs() bool { return true }
+
+func TestPermissionJudgeNamedConnectionHistory(t *testing.T) {
+	const connection platforms.ID = "cnx_review"
+	s, source := permissionJudgeFreshnessFixture(t, []string{"Check CVE impact."}, connection)
+	deps := s.autoapproveEngineDeps()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	sessionID := source.sessionID()
+	messages, err := deps.JudgeUserMessages(ctx, connection, sessionID)
+	if err != nil || len(messages.Messages) != 1 || messages.Messages[0] != "Check CVE impact." {
+		t.Fatalf("named connection review: %+v, %v", messages, err)
+	}
+	recent, err := deps.RecentUserMessages(ctx, connection, sessionID)
+	if err != nil || len(recent) != 1 || recent[0] != "Check CVE impact." {
+		t.Fatalf("named connection recent intent: %v, %v", recent, err)
+	}
+	source.set([]string{"Check CVE impact.", "Do not deploy."}, nil, nil)
+	messages, err = deps.JudgeUserMessages(ctx, connection, sessionID)
+	if err != nil || len(messages.Messages) != 2 || messages.Messages[1] != "Do not deploy." {
+		t.Fatalf("named connection stale intent: %+v, %v", messages, err)
+	}
+	// Headless provider events and older callbacks still carry the native kind.
+	messages, err = deps.JudgeUserMessages(ctx, "test", sessionID)
+	if err != nil || len(messages.Messages) != 2 {
+		t.Fatalf("native callback did not resolve canonical connection: %+v, %v", messages, err)
+	}
 }
 
 func TestPermissionJudgeWaitsForNewRestrictionBeforeEachRead(t *testing.T) {

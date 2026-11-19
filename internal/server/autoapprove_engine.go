@@ -53,6 +53,11 @@ func (s *Server) autoapproveEngineDepsFor(platformID platforms.ID, resolve func(
 			if owner != "" {
 				return nil, platforms.ErrUnsupported
 			}
+			if s.registry != nil {
+				if adapter, _, ok := s.registry.PermissionPlatform(ctx, platform, id); ok {
+					kind = string(adapter.ID())
+				}
+			}
 			return s.historyAnalytics.Store.RecentUserMessages(ctx, s.historyOwner, kind, id, 6)
 		},
 		OpenCodeAuth:     s.openCodeAuth,
@@ -140,6 +145,12 @@ func (s *Server) permissionJudgeUserMessages(ctx context.Context, platform platf
 	owner, kind := platforms.SplitPlatformID(string(platform))
 	if owner != "" {
 		return autoapprove.JudgeUserContext{}, platforms.ErrUnsupported
+	}
+	if s.registry != nil {
+		if adapter, key, ok := s.registry.PermissionPlatform(ctx, platform, id); ok {
+			platform = key
+			kind = string(adapter.ID())
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

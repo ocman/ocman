@@ -42,7 +42,7 @@ func TestTypeSafeContextPreflight(t *testing.T) {
 				}
 				return JudgeUserContext{Messages: []string{tc.message}}, tc.historyErr
 			}})
-			sections := s.resolveJudgeSections(t.Context(), &fakePlatform{id: "test"}, tc.directory, "session")
+			sections := s.resolveJudgeSections(t.Context(), "test", tc.directory, "session")
 			config, err := LoadJudgeEndpoint(t.Context(), store)
 			if err != nil {
 				t.Fatal(err)

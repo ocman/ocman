@@ -58,7 +58,7 @@ func (s *Service) resolveJudgeInputs(ctx context.Context, directory string, dire
 	return inputs, nil
 }
 
-func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Platform, directory, sessionID string) []PromptSection {
+func (s *Service) resolveJudgeSections(ctx context.Context, platformID platforms.ID, directory, sessionID string) []PromptSection {
 	var sections []PromptSection
 	if s.deps.Store != nil {
 		if stored, err := s.deps.Store.GetPromptSections(ctx); err == nil {
@@ -70,17 +70,17 @@ func (s *Service) resolveJudgeSections(ctx context.Context, adapter platforms.Pl
 		}
 	}
 	var messages []string
-	if s.deps.RecentUserMessages != nil && adapter != nil {
+	if s.deps.RecentUserMessages != nil && platformID != "" {
 		var err error
-		messages, err = s.deps.RecentUserMessages(ctx, adapter.ID(), sessionID)
+		messages, err = s.deps.RecentUserMessages(ctx, platformID, sessionID)
 		if err != nil {
 			messages = nil
 		}
 	}
 	judgeMessages := messages
 	var userContext JudgeUserContext
-	if config, err := LoadJudgeEndpoint(ctx, s.deps.Store); err == nil && config.Format == "typesafe" && s.deps.JudgeUserMessages != nil && adapter != nil {
-		userContext, err = s.deps.JudgeUserMessages(ctx, adapter.ID(), sessionID)
+	if config, err := LoadJudgeEndpoint(ctx, s.deps.Store); err == nil && config.Format == "typesafe" && s.deps.JudgeUserMessages != nil && platformID != "" {
+		userContext, err = s.deps.JudgeUserMessages(ctx, platformID, sessionID)
 		judgeMessages = userContext.Messages
 		if err != nil {
 			judgeMessages = nil
@@ -115,7 +115,7 @@ func (s *Service) emitChecking(sessionID, permissionID string) func(string) {
 }
 
 // A changed policy or user restriction invalidates an in-flight Jev approval.
-func (s *Service) ruleReviewCurrent(ctx context.Context, adapter platforms.Platform, directory, sessionID string, sections []PromptSection, result JudgeResult) bool {
+func (s *Service) ruleReviewCurrent(ctx context.Context, platformID platforms.ID, directory, sessionID string, sections []PromptSection, result JudgeResult) bool {
 	if len(result.ruleScores) == 0 {
 		return true
 	}
@@ -123,5 +123,5 @@ func (s *Service) ruleReviewCurrent(ctx context.Context, adapter platforms.Platf
 	if err != nil || config.Format != "typesafe" || endpointCacheScope(config) != result.cacheScope {
 		return false
 	}
-	return reflect.DeepEqual(sections, s.resolveJudgeSections(ctx, adapter, directory, sessionID))
+	return reflect.DeepEqual(sections, s.resolveJudgeSections(ctx, platformID, directory, sessionID))
 }

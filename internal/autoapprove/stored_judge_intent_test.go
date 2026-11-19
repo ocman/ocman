@@ -28,16 +28,16 @@ func TestJudgeIntentUsesStoredReaderAndNeverNativeFallback(t *testing.T) {
 		return []string{"stored intent", strings.Repeat("x", 301)}, nil
 	}})
 	s.judge.openCodePort = func(string) string { t.Fatal("judge intent discovered native instance"); return "" }
-	sections := s.resolveJudgeSections(t.Context(), p, "/repo", "canonical")
+	sections := s.resolveJudgeSections(t.Context(), p.ID(), "/repo", "canonical")
 	if len(sections) != 1 || !strings.Contains(sections[0].Content, "stored intent") || strings.Contains(sections[0].Content, strings.Repeat("x", 301)) {
 		t.Fatalf("%+v", sections)
 	}
 	s.deps.RecentUserMessages = func(context.Context, platforms.ID, string) ([]string, error) { return nil, errors.New("not ingested") }
-	if got := s.resolveJudgeSections(t.Context(), p, "/repo", "canonical"); len(got) != 0 {
+	if got := s.resolveJudgeSections(t.Context(), p.ID(), "/repo", "canonical"); len(got) != 0 {
 		t.Fatal("unavailable history fabricated intent")
 	}
 	s.deps.RecentUserMessages = nil
-	if got := s.resolveJudgeSections(t.Context(), p, "/repo", "canonical"); len(got) != 0 {
+	if got := s.resolveJudgeSections(t.Context(), p.ID(), "/repo", "canonical"); len(got) != 0 {
 		t.Fatal(got)
 	}
 }

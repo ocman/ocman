@@ -42,7 +42,7 @@ func TestResolveJudgeInputs(t *testing.T) {
 	if len(inputs.sections) != 0 {
 		t.Fatalf("prompt sections loaded before judge delay: %#v", inputs.sections)
 	}
-	sections := svc.resolveJudgeSections(t.Context(), nil, inputs.directory, "session")
+	sections := svc.resolveJudgeSections(t.Context(), "", inputs.directory, "session")
 	if len(sections) != 1 || sections[0].Title != "Local policy" || sections[0].Enabled != &enabled {
 		t.Fatalf("prompt sections = %#v", sections)
 	}

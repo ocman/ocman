@@ -51,7 +51,7 @@ func TestTypeSafeContextAndPolicyChangesInvalidateInflightReview(t *testing.T) {
 			return JudgeUserContext{Messages: full}, historyErr
 		},
 	})
-	p := &fakePlatform{id: "test"}
+	p := platforms.ID("test")
 	sections := s.resolveJudgeSections(t.Context(), p, "/repo", "session")
 	payload, _, available := typeSafePayload("/repo", "bash", nil, nil, sections)
 	if !available || !reflect.DeepEqual(payload["state"].(map[string]any)["user_messages"], full) {
@@ -102,7 +102,7 @@ func TestTypeSafeFullContextWithoutRecentExcerpts(t *testing.T) {
 	s := NewService(Deps{Store: store, JudgeUserMessages: func(context.Context, platforms.ID, string) (JudgeUserContext, error) {
 		return JudgeUserContext{Messages: []string{"Do not deploy."}}, nil
 	}})
-	sections := s.resolveJudgeSections(t.Context(), &fakePlatform{id: "test"}, "/repo", "session")
+	sections := s.resolveJudgeSections(t.Context(), "test", "/repo", "session")
 	if len(sections) != 1 || sections[0].Content != "" || !sections[0].userIntent {
 		t.Fatalf("%+v", sections)
 	}
