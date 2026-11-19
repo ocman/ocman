@@ -53,7 +53,6 @@ export interface UseSessionResult extends SessionView {
   refreshError: string | null;
   totalMessages: number;
   sseReconnecting: boolean;
-  sseReconnectAttempt: number;
   sseNextRetryAt: number | null;
   retryNow: () => void;
   sseDebugEvents: StreamDebugEvent[];

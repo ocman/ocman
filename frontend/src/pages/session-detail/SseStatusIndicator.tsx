@@ -5,8 +5,6 @@ export interface SseStatusIndicatorProps {
   active: boolean;
   /** True between an `onerror` and the subsequent successful open. */
   reconnecting: boolean;
-  /** Consecutive reconnect attempts since the last successful open. */
-  attempt: number;
   /** When the next reconnect is scheduled (epoch ms), or null when no
    *  retry is pending. */
   nextRetryAt: number | null;
@@ -29,7 +27,7 @@ function secondsUntil(target: number | null): number {
  * conversation. Three states:
  *
  *   1. healthy (active=true) — renders nothing.
- *   2. reconnecting after a disconnect — shows attempt count, a live
+ *   2. reconnecting after a disconnect — shows a live
  *      countdown to the next retry (driven by an internal 1s timer),
  *      and a "Retry now" button that bypasses the backoff.
  *   3. cold-start / never-connected — falls back to the original
@@ -38,7 +36,6 @@ function secondsUntil(target: number | null): number {
 export function SseStatusIndicator({
   active,
   reconnecting,
-  attempt,
   nextRetryAt,
   onRetryNow,
 }: SseStatusIndicatorProps) {
@@ -59,7 +56,7 @@ export function SseStatusIndicator({
 
   if (reconnecting) {
     const remaining = secondsUntil(nextRetryAt);
-    const message = `Reconnecting to live updates${attempt > 0 ? ` (${attempt}/n)` : ''}${remaining > 0 ? ` — retrying in ${remaining}s` : '…'}`;
+    const message = `Reconnecting to live updates${remaining > 0 ? ` — retrying in ${remaining}s` : '…'}`;
     return (
       <div
         className="oc-sse-indicator oc-sse-indicator-reconnecting"

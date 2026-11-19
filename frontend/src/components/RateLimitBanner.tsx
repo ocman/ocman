@@ -20,7 +20,7 @@ function remainingMs(retryAt: number): number {
  * Surfaces a transient provider condition (rate limit, overload,
  * error) inline above the composer. Shows
  * the backend-normalized message, a live countdown that ticks every
- * second until the retry time, and the attempt number when known.
+ * second until the retry time.
  *
  * Platform-agnostic: consumes the normalized `SessionNotice` from
  * the API without inspecting the platform field.
@@ -51,11 +51,10 @@ export function RateLimitBanner({ notice, onChangeModel }: RateLimitBannerProps)
   const retryText = remaining > 0
     ? ` · ${notice.kind === 'models_exhausted' ? 'Earliest recovers in' : 'Retrying in'} ~${formatDuration(remaining)}`
     : '';
-  const attemptText = notice.attempt > 0 ? ` (${notice.attempt}/n)` : '';
 
   return (
     <div className={`oc-sse-indicator oc-sse-indicator-reconnecting${title === 'Error' ? ' oc-sync-indicator-failed' : ''}`} role={title === 'Error' ? 'alert' : 'status'} data-testid="rate-limit-banner">
-      <span title={`${title} — ${notice.message}${retryText}${attemptText}`}>
+      <span title={`${title} — ${notice.message}${retryText}`}>
         <i className="bi bi-hourglass-split" aria-hidden="true" />
         {' '}
         <strong>{title}</strong>
@@ -65,11 +64,6 @@ export function RateLimitBanner({ notice, onChangeModel }: RateLimitBannerProps)
       {remaining > 0 && (
         <span className="oc-rate-limit-retry" title={retryText.trim()}>
           {retryText}
-        </span>
-      )}
-      {notice.attempt > 0 && (
-        <span className="oc-rate-limit-attempt" title={attemptText.trim()}>
-          {attemptText}
         </span>
       )}
       {notice.kind === 'rate_limit' && onChangeModel && (

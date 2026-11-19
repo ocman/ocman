@@ -53,7 +53,6 @@
 }
 
 .oc-composer-notices button,
-.oc-composer-notices .oc-rate-limit-attempt,
 .oc-composer-notices .oc-sse-indicator-dot {
   flex-shrink: 0;
 }

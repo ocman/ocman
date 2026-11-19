@@ -52,7 +52,6 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
   const [refreshing, setRefreshing] = useState(!!cached);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [sseReconnecting, setSseReconnecting] = useState(false);
-  const [sseReconnectAttempt, setSseReconnectAttempt] = useState(0);
   const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<StreamDebugEvent[]>([]);
   const [changesDirtyTick, setChangesDirtyTick] = useState(0);
@@ -240,7 +239,6 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         attempt = 0;
         setStatus(upstreamFailed ? 'reconnecting' : 'live');
         setSseReconnecting(upstreamFailed);
-        setSseReconnectAttempt(0);
         setSseNextRetryAt(null);
       };
       // Reconciling waits for the hello: a resumed stream needs no refetch.
@@ -255,7 +253,6 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
         attempt += 1;
         setStatus('reconnecting');
         setSseReconnecting(true);
-        setSseReconnectAttempt(attempt);
         setSseNextRetryAt(Date.now() + delay);
         reconnectTimer = setTimeout(connect, delay);
       };
@@ -299,7 +296,6 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       retryNowRef.current = () => {};
       setSseReconnecting(false);
-      setSseReconnectAttempt(0);
       setSseNextRetryAt(null);
       setSseDebugEvents([]);
     };
@@ -308,5 +304,5 @@ export function useSessionLifecycle({ sessionId, routedPlatform, fetchSession, r
   }, [sessionId, routedPlatform]);
 
   return { status, loading, loadError, refreshing, refreshError,
-    sseReconnecting, sseReconnectAttempt, sseNextRetryAt, sseDebugEvents, changesDirtyTick, reload, refresh, retryNow };
+    sseReconnecting, sseNextRetryAt, sseDebugEvents, changesDirtyTick, reload, refresh, retryNow };
 }

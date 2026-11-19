@@ -13,7 +13,6 @@ describe('SseStatusIndicator', () => {
       <SseStatusIndicator
         active={true}
         reconnecting={false}
-        attempt={0}
         nextRetryAt={null}
         onRetryNow={() => {}}
       />,
@@ -26,7 +25,6 @@ describe('SseStatusIndicator', () => {
       <SseStatusIndicator
         active={false}
         reconnecting={false}
-        attempt={0}
         nextRetryAt={null}
         onRetryNow={() => {}}
       />,
@@ -36,7 +34,7 @@ describe('SseStatusIndicator', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows attempt count and live countdown while reconnecting', () => {
+  it('shows the live countdown without an attempt count while reconnecting', () => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
     vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
 
@@ -44,20 +42,14 @@ describe('SseStatusIndicator', () => {
       <SseStatusIndicator
         active={false}
         reconnecting={true}
-        attempt={3}
         nextRetryAt={Date.now() + 4000}
         onRetryNow={() => {}}
       />,
     );
 
-    // Attempt count surfaces so users can see how long we've been
-    // disconnected.
-    expect(screen.getByText(/\(3\/n\)/i)).toBeInTheDocument();
-    expect(screen.getByTitle('Reconnecting to live updates (3/n) — retrying in 4s')).toBeInTheDocument();
-    // The countdown rounds *up* to whole seconds so it never reads "0s"
-    // before the retry actually fires.
-    expect(screen.getByText(/retrying in 4s/i)).toBeInTheDocument();
-
+    expect(screen.getByTitle('Reconnecting to live updates — retrying in 4s')).toHaveTextContent(
+      /^Reconnecting to live updates — retrying in 4s$/,
+    );
     // Tick one second; countdown should drop.
     act(() => {
       vi.advanceTimersByTime(1000);
@@ -73,7 +65,6 @@ describe('SseStatusIndicator', () => {
       <SseStatusIndicator
         active={false}
         reconnecting={true}
-        attempt={1}
         nextRetryAt={Date.now() - 100}
         onRetryNow={() => {}}
       />,
@@ -91,7 +82,6 @@ describe('SseStatusIndicator', () => {
       <SseStatusIndicator
         active={false}
         reconnecting={true}
-        attempt={2}
         nextRetryAt={Date.now() + 30_000}
         onRetryNow={onRetryNow}
       />,

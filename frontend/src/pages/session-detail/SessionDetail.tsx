@@ -192,7 +192,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     loadError,
     totalMessages,
     sseReconnecting,
-    sseReconnectAttempt,
     sseNextRetryAt,
     retryNow: sseRetryNow,
     sseDebugEvents,
@@ -864,7 +863,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         <SseStatusIndicator
                           active={sseActive}
                           reconnecting={sseReconnecting}
-                          attempt={sseReconnectAttempt}
                           nextRetryAt={sseNextRetryAt}
                           onRetryNow={sseRetryNow}
                         />
