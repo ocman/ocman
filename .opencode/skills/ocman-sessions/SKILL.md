@@ -78,7 +78,12 @@ to another machine as a fallback.
 Use the `sessions` MCP tool. Start with `{"action":"help","intent":"Check how to find or start the requested session"}` for current
 schemas, limits, examples, and errors. Its actions:
 
-- `list` — recent sessions, optionally scoped to a `directory`.
+- `list` — recent sessions as compact rows, optionally scoped to a `directory`.
+  Narrow it before raising `limit`: `since_days` keeps recently updated
+  sessions, and `origin` / `exclude_origin` select or drop `user`, `routine`,
+  `plugin`, `factory` or `external` sessions. For example,
+  `exclude_origin: "plugin,routine"` hides automation. Pass `detail: true` only
+  when you need costs, tokens or read state.
 - `search` — match a `query` against session IDs, titles, directories,
   platforms, and host names.
 - `get` — one session by `platform` and `session_id`, with its latest messages.

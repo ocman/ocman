@@ -212,6 +212,9 @@ func (s sessionMCPService) ListSessions(ctx context.Context, directory string) (
 			return nil, err
 		}
 	}
+	if err := s.server.applyCatalogueOrigins(ctx, sessions); err != nil {
+		return nil, err
+	}
 	applySessionNotice(sessions)
 	return sessions, nil
 }

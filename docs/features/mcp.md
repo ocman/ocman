@@ -158,6 +158,17 @@ sessions, before applying `limit` (default 100, maximum 500 results). It does no
 restrict matching to the newest 500 sessions. `since_days` only controls the
 content-search window, not title or other metadata matching.
 
+Session `list` returns compact rows by default: `id`, `platform`, `title`,
+`directory`, `branch`, `status`, `origin`, `routineId`, `parentId`,
+`timeCreated`, `timeUpdated`, `archived` and `remoteId`. Pass `detail: true` for
+the full metadata, including costs, tokens and read state. `since_days` keeps
+sessions updated in the last 1–365 days. `origin` selects and `exclude_origin`
+drops comma-separated creation origins (`user`, `routine`, `plugin`, `factory`,
+`external`). For example, `exclude_origin: "plugin,routine"` hides automated
+sessions. Rows without a recorded origin count as `user`, or as `routine` or
+`factory` when linked to one. Filters apply before `limit`, so automated sessions
+cannot push matching sessions past the cap.
+
 `sessions` with `action: "send"` wraps the prompt in an agent-message envelope
 before using the existing direct-send path. Native history retains that envelope;
 the dashboard renders it as an **Agent message**, not a user bubble. The source

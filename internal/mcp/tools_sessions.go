@@ -49,7 +49,7 @@ type sessionAction struct {
 
 var sessionActions = []sessionAction{
 	{name: "help", description: "Describes every available session action.", example: `{"action":"help"}`, output: "Session action documentation"},
-	{name: "list", description: "Lists recent sessions, optionally scoped to one directory.", example: `{"action":"list","directory":"/repo","limit":50}`, optional: []string{"directory", "limit"}, output: "Session[]"},
+	{name: "list", description: "Lists recent sessions, newest first, optionally scoped to one directory. since_days keeps sessions updated in the last N days (1-365). origin selects and exclude_origin drops comma-separated creation origins such as user, routine, plugin and external; for example exclude_origin \"plugin,routine\" hides automated sessions. Filters apply before limit. Rows are compact by default; detail true returns full Session metadata including costs and read state.", example: `{"action":"list","since_days":2,"exclude_origin":"plugin,routine","limit":50}`, optional: []string{"directory", "limit", "since_days", "origin", "exclude_origin", "detail"}, output: "{id, platform, title, directory, branch?, status, origin, routineId?, parentId?, timeCreated, timeUpdated, archived, remoteId?}[], or Session[] with detail"},
 	{name: "search", description: "Searches all available session IDs, titles, directories, platforms, and host names before applying the result limit, including older and archived sessions. With content true, also searches user and assistant message text (not tool output) of sessions updated in the last since_days; this is slow (tens of seconds).", example: `{"action":"search","query":"weave-cli","content":true,"since_days":7}`, required: []string{"query"}, optional: []string{"directory", "limit", "content", "since_days"}, output: "(Session & {matches?: {partId, messageId, role, snippet}[]})[]"},
 	{name: "get", description: "Gets one session with its latest messages and parts, plus an optional creator reference (platform, sessionId, createdAt) identifying the launching session. Creator provenance is separate from native parentId and sessionTree. Without platform, every platform is searched.", example: `{"action":"get","session_id":"ses_1","message_limit":20}`, required: []string{"session_id"}, optional: []string{"platform", "message_limit"}, output: "SessionDetail"},
 	{name: "send", description: "Sends prompt to an existing session immediately, including mid-turn, without waiting for its reply. session_id identifies the recipient, not the caller. Omit platform only when the recipient is unambiguous. Uses normal project/session model selection and the recipient's permissions; does not create a session or modify its held queue.", example: `{"action":"send","session_id":"ses_recipient","platform":"opencode","prompt":"The tests passed; continue with the review."}`, required: []string{"session_id", "prompt"}, optional: []string{"platform"}, output: "{platform, session_id, sent: true}"},
@@ -68,7 +68,10 @@ func sessionServerTools(tools *sessionTools) []server.ServerTool {
 		mcplib.WithString("directory"), mcplib.WithString("query"), mcplib.WithNumber("limit"), mcplib.WithNumber("message_limit"),
 		mcplib.WithString("prompt"), mcplib.WithString("model", mcplib.Description("provider/model")), mcplib.WithString("agent"), mcplib.WithString("title"),
 		mcplib.WithBoolean("worktree", mcplib.Description("Override automatic worktree selection; false uses the current checkout.")),
-		mcplib.WithBoolean("content"), mcplib.WithNumber("since_days")), Handler: tools.handle}}
+		mcplib.WithBoolean("content"), mcplib.WithNumber("since_days"),
+		mcplib.WithString("origin", mcplib.Description("list: comma-separated origins to include, e.g. user, routine, plugin or external.")),
+		mcplib.WithString("exclude_origin", mcplib.Description("list: comma-separated origins to exclude, e.g. plugin,routine.")),
+		mcplib.WithBoolean("detail", mcplib.Description("list: return full session metadata instead of compact rows."))), Handler: tools.handle}}
 }
 
 func (t *sessionTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
@@ -103,6 +106,12 @@ func (t *sessionTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		if sinceDays < 1 || sinceDays > 365 {
 			return mcplib.NewToolResultError("since_days must be between 1 and 365"), nil
 		}
+		var filter sessionListFilter
+		if action == "list" {
+			if filter, err = parseSessionListFilter(req); err != nil {
+				return mcplib.NewToolResultError(err.Error()), nil
+			}
+		}
 		directory := req.GetString("directory", "")
 		sessions, err := t.svc.ListSessions(ctx, directory)
 		if err != nil {
@@ -122,12 +131,17 @@ func (t *sessionTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		}
 		if action == "search" {
 			sessions = searchSessions(sessions, query)
+		} else {
+			sessions = filter.apply(sessions)
 		}
 		if len(sessions) > limit {
 			sessions = sessions[:limit]
 		}
 		if sessions == nil {
 			sessions = []db.Session{}
+		}
+		if action == "list" && !filter.detail {
+			return toolResultJSON(compactSessions(sessions)), nil
 		}
 		return toolResultJSON(sessions), nil
 	case "get":
@@ -174,8 +188,8 @@ func sessionHelp() map[string]any {
 		help[action.name] = map[string]any{"required": append([]string{}, action.required...), "optional": append([]string{}, action.optional...), "action": action.description, "example": action.example, "output_schema": action.output}
 	}
 	help["actions"] = actions
-	help["rules"] = []string{"create, send, archive, and unarchive change state; use them only when the user requests session creation, messaging, or archiving", "list and search return at most 500 results; search matches the full available catalogue before applying this limit, including older and archived sessions", "message_limit is between 0 and 100; 0 returns metadata without messages", "get and send: platform is optional; pass it when the session_id exists on multiple platforms", "send: session_id is the recipient; prompt is plain text; sends immediately without waiting for a reply or modifying the held queue; do not blindly retry uncertain delivery failures", "create: model is provider/model; directory is absolute; platform selects the target platform and machine; session_id is optional and requires platform to identify the calling session", "create: the new session uses the platform's default permissions", "search content: opt-in and slow; since_days is between 1 and 365 (default 7); only this machine's sessions are content-searched; at most 5 matches per session"}
-	help["errors"] = []string{"action is required", "unknown action", "session not found", "session_id exists on multiple platforms (<platforms>); pass platform", "session request failed", "prompt is required", "model must be provider/model", "directory must be absolute", "session_id requires platform", "invalid session request: <reason>", "session <id> was created on <platform> but setup or prompt delivery failed", "since_days must be between 1 and 365", "session_id is required", "platform must be a string", "session messaging is unavailable"}
+	help["rules"] = []string{"create, send, archive, and unarchive change state; use them only when the user requests session creation, messaging, or archiving", "list and search return at most 500 results; search matches the full available catalogue before applying this limit, including older and archived sessions; list applies since_days and origin filters before the limit", "message_limit is between 0 and 100; 0 returns metadata without messages", "get and send: platform is optional; pass it when the session_id exists on multiple platforms", "send: session_id is the recipient; prompt is plain text; sends immediately without waiting for a reply or modifying the held queue; do not blindly retry uncertain delivery failures", "create: model is provider/model; directory is absolute; platform selects the target platform and machine; session_id is optional and requires platform to identify the calling session", "create: the new session uses the platform's default permissions", "search content: opt-in and slow; since_days is between 1 and 365 (default 7); only this machine's sessions are content-searched; at most 5 matches per session"}
+	help["errors"] = []string{"action is required", "unknown action", "session not found", "session_id exists on multiple platforms (<platforms>); pass platform", "session request failed", "prompt is required", "model must be provider/model", "directory must be absolute", "session_id requires platform", "invalid session request: <reason>", "session <id> was created on <platform> but setup or prompt delivery failed", "since_days must be between 1 and 365", "<origin|exclude_origin> values must be <known origins>", "detail must be a boolean", "session_id is required", "platform must be a string", "session messaging is unavailable"}
 	help["rules"] = append(help["rules"].([]string), "create: supply caller platform and session_id, or explicit platform, model, and directory; directory alone never inherits caller context")
 	help["rules"] = append(help["rules"].([]string), "create: supplied caller identity is validated and saved as the new session's creator, including cross-project launches; this does not establish native subagent ancestry or inherit permissions")
 	help["rules"] = append(help["rules"].([]string), "create: transport caller context is resolved automatically from the local catalogue without reading conversation history; destination platform/model/directory never replace it. Invalid, ambiguous or conflicting caller context stops creation; do not retry without caller context")
