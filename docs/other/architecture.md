@@ -1521,6 +1521,8 @@ generation fences and recovery behavior.
 ```mermaid
 flowchart LR
     Tabs[Browser tabs] -->|stable relative windows + conditional GET| Snapshots[Bounded HTTP snapshots]
+    Lineage[Open Lineage pane] -->|compact global page| Snapshots
+    Detail[Conversation detail and stream] -->|native session tree| Lineage
     Snapshots -->|one request-owned refresh per query| Sidebar[Authoritative sidebar reader]
     Sidebar -->|directory or global recency index| Local[Local compact projection]
     Sidebar --> Remotes[Owner-routed remote reads]
@@ -1557,6 +1559,11 @@ flowchart LR
   unbounded inventories retain their existing query plan. Owner/publication,
   visibility and origin filters still run before pagination. The directory index
   is added by an append-only history migration without rewriting stored content.
+- The Lineage pane combines the active conversation's native tree with the most
+  recent 500 compact catalog rows, fetched only when the pane is open. It uses
+  a recorded creator when a session has no native parent, matches relationships
+  by connection and session ID, and keeps native links visible if the catalog
+  lookup fails. Older catalog-only relatives may not appear.
 
 Session list/detail responses carry `factoryAttemptId` from a single state.db
 attempt lookup. The sidebar filters these tagged rows and their descendants
