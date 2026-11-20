@@ -75,6 +75,29 @@ func (e *recoveryEnv) endpoint(t *testing.T) string {
 	return row.Endpoint
 }
 
+func TestDashboardReplacesPreCompanionFilterSupervisor(t *testing.T) {
+	e := newRecoveryEnv(t)
+	p, stop := e.start(t, "127.0.0.1:47311")
+	t.Cleanup(stop)
+	runtime := p.projects.mgr.Runtime
+	oldIdentity := strings.Replace(runtime.Identity(), "\x00stream-companion-filter/v1", "", 1)
+	runtime.Identity = func() string { return oldIdentity }
+	if _, err := p.CreateSession(t.Context(), platforms.CreateSessionRequest{Directory: e.repo}); err != nil {
+		t.Fatal(err)
+	}
+	oldEndpoint := e.endpoint(t)
+	if oldEndpoint == "" {
+		t.Fatal("legacy supervisor was not launched")
+	}
+	stop()
+
+	_, stopUpdated := e.start(t, "127.0.0.1:47311")
+	defer stopUpdated()
+	eventually(t, "pre-filter supervisor replaced", func() bool {
+		return e.endpoint(t) != "" && e.endpoint(t) != oldEndpoint
+	})
+}
+
 // turnsFixture answers n turns on one child, each echoed and completed.
 func turnsFixture(t *testing.T, n int) string {
 	t.Helper()

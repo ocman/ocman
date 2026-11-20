@@ -33,6 +33,29 @@ func liveParts(got *seen) map[string]map[string]any {
 	return parts
 }
 
+func TestLiveImageResizeNoteIsNotAUserMessage(t *testing.T) {
+	fixture := filepath.Join(t.TempDir(), "image-note.jsonl")
+	if err := os.WriteFile(fixture, []byte(`{"direction":"stdin","message":{"type":"user"}}
+{"direction":"stdout","message":{"type":"assistant","message":{"id":"reply","content":[{"type":"tool_use","id":"call","name":"Read","input":{}}]}}}
+{"direction":"stdout","message":{"type":"user","uuid":"result","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aW1hZ2U="}}]}]}}}
+{"direction":"stdout","message":{"type":"user","uuid":"resize-note","isSynthetic":true,"message":{"role":"user","content":"[Image: original 3220x2084, displayed at 2380x1540. Multiply coordinates by 1.35 to map to original image.]"}}}
+{"direction":"stdout","message":{"type":"result","subtype":"success","is_error":false}}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, got := promptHarness(t, fixture, nil)
+	h.turn(t, h.create(t), 1)
+	if _, leaked := liveCompleted(got)["resize-note"]; leaked {
+		t.Fatal("resize note was published as a user message")
+	}
+	for _, part := range liveParts(got) {
+		if part["callID"] == "call" && part["state"].(map[string]any)["status"] == "completed" {
+			return
+		}
+	}
+	t.Fatal("image tool result was not published")
+}
+
 // Forwarded subagent lines (parent_tool_use_id set) stream into the child
 // session linked to the spawning Agent call, never into the parent (FR-3).
 func TestLiveSubagentStaysUnderTask(t *testing.T) {
