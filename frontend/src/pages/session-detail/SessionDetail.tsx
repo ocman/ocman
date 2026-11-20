@@ -1040,6 +1040,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             remoteId={session?.remoteId ?? newConversation?.remoteId}
             dirtyTick={changesDirtyTick}
             session={session ?? undefined}
+            sessionTree={sessionTree}
             messageBookmarkGroups={messageBookmarkGroups}
             selectedMessageBookmarkKey={selectedMessageBookmarkKey}
             onRemoveMessageBookmark={handleRemoveMessageBookmark}

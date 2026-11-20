@@ -3,6 +3,7 @@ import type { ChangesSidebarTab } from '../lib/uiStore';
 import { SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
+import { SessionLineagePane } from './SessionLineagePane';
 import { UpstreamPane } from './upstream/UpstreamPane';
 import { ErrorBoundary } from './ErrorBoundary';
 import type { Session, SessionInfoCommit } from '../lib/api';
@@ -25,6 +26,7 @@ export interface PaneProps {
   // ignore it. Tokens and Todos for the same pane come from the
   // /api/session/{id}/info endpoint, not from props.
   session?: Session;
+  sessionTree?: readonly Session[];
   messageBookmarkGroups: MessageBookmarkGroup[];
   selectedMessageBookmarkKey: string | null;
   onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
@@ -59,6 +61,7 @@ export function Pane({
   directory,
   dirtyTick,
   session,
+  sessionTree,
   messageBookmarkGroups,
   selectedMessageBookmarkKey,
   onRemoveMessageBookmark,
@@ -166,6 +169,9 @@ export function Pane({
               onNavigateCommit={onNavigateCommit}
               commitSourceStatus={commitSourceStatus}
             />
+          )}
+          {tab === 'lineage' && (
+            <SessionLineagePane key={sessionKey} session={session?.id === sessionId ? session : undefined} sessionTree={sessionTree} />
           )}
           {tab === 'session' && (
             <SessionChangesSidebar

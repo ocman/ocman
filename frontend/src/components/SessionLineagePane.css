@@ -1,0 +1,115 @@
+.oc-lineage {
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.oc-lineage-note {
+  margin: 4px 0 10px;
+  color: var(--text-dim);
+}
+
+.oc-lineage-tree,
+.oc-lineage-branch {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.oc-lineage-branch:not(.oc-lineage-branch-flat) {
+  margin-inline-start: 13px;
+  padding-inline-start: 13px;
+}
+
+.oc-lineage-node {
+  position: relative;
+}
+
+.oc-lineage-branch:not(.oc-lineage-branch-flat) > .oc-lineage-node::before {
+  position: absolute;
+  inset: 0 auto 0 -13px;
+  border-inline-start: 1px solid var(--border);
+  content: '';
+}
+
+.oc-lineage-branch:not(.oc-lineage-branch-flat) > .oc-lineage-node:last-child::before {
+  bottom: auto;
+  height: 21px;
+  width: 13px;
+  border-bottom: 1px solid var(--border);
+  border-end-start-radius: 4px;
+}
+
+.oc-lineage-branch:not(.oc-lineage-branch-flat) > .oc-lineage-node:not(:last-child)::after {
+  position: absolute;
+  top: 21px;
+  inset-inline-start: -13px;
+  width: 13px;
+  border-top: 1px solid var(--border);
+  content: '';
+}
+
+.oc-lineage-row {
+  display: flex;
+  align-items: center;
+  min-height: 43px;
+  padding-inline: 3px 8px;
+  gap: 5px;
+  border-radius: 4px;
+}
+
+.oc-lineage-row:hover {
+  background: var(--bg-card);
+}
+
+.oc-lineage-row[data-current] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.oc-lineage-leaf {
+  flex: 0 0 24px;
+  display: grid;
+  place-items: center;
+}
+
+.oc-lineage-leaf::before {
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--text-dim);
+  border-radius: 50%;
+  content: '';
+}
+
+.oc-lineage-session {
+  flex: 1;
+  min-width: 0;
+  padding-block: 5px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.oc-lineage-session:hover .oc-lineage-title {
+  text-decoration: underline;
+}
+
+.oc-lineage-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-lineage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.oc-lineage-current {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}

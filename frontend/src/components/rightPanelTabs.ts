@@ -2,6 +2,7 @@ import type { ChangesSidebarTab } from '../lib/uiStore';
 
 export const TAB_LABELS: Record<string, string> = {
   info: 'Session info',
+  lineage: 'Lineage',
   session: 'Session changes',
   'working-tree': 'Working tree',
   bookmarks: 'Bookmarks',
@@ -17,6 +18,7 @@ export const TAB_LABELS: Record<string, string> = {
 // else in the app.
 export const TAB_ICONS: Record<string, string> = {
   info: 'bi-info-circle',
+  lineage: 'bi-diagram-3',
   session: 'bi-pencil-square',
   'working-tree': 'bi-git',
   bookmarks: 'bi-bookmarks',
@@ -34,6 +36,7 @@ const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
   'bookmarks',
   'upstream',
   'artifacts',
+  'lineage',
 ];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops

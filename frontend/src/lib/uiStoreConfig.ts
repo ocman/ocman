@@ -11,7 +11,7 @@ export const SESSION_HOURS_DEFAULT = 72;
 export const SESSION_HOURS_MIN = 1;
 export const SESSION_HOURS_MAX = 8760;
 
-export type BuiltinSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream' | 'artifacts';
+export type BuiltinSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream' | 'artifacts' | 'lineage';
 export type ChangesSidebarTab = BuiltinSidebarTab | `plugin:${string}/${string}`;
 export type ChangesSidebarTabSizes = Partial<Record<ChangesSidebarTab, number>>;
 export type ArtifactsSidebarScope = 'session' | 'project';

@@ -58,6 +58,7 @@ interface RightPanelProps {
   // changes summary, total cost) without re-fetching it. Undefined
   // while the parent is still loading.
   session?: Session;
+  sessionTree?: readonly Session[];
   messageBookmarkGroups: MessageBookmarkGroup[];
   selectedMessageBookmarkKey: string | null;
   onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
@@ -94,6 +95,7 @@ export function RightPanel({
   remoteId,
   dirtyTick,
   session,
+  sessionTree,
   messageBookmarkGroups,
   selectedMessageBookmarkKey,
   onRemoveMessageBookmark,
@@ -273,6 +275,7 @@ export function RightPanel({
             directory={directory}
             dirtyTick={dirtyTick}
             session={session}
+            sessionTree={sessionTree}
             messageBookmarkGroups={messageBookmarkGroups}
             selectedMessageBookmarkKey={selectedMessageBookmarkKey}
             onRemoveMessageBookmark={onRemoveMessageBookmark}
