@@ -58,6 +58,17 @@ describe('SessionLineagePane', () => {
     expect(prs).toHaveBeenCalledWith('other', 'test', expect.any(AbortSignal));
   });
 
+  it('reports a failed PR lookup and retries it', async () => {
+    vi.spyOn(api, 'sessions').mockResolvedValueOnce([]);
+    vi.spyOn(prWorkflowApi, 'background').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ pullRequests: [{
+      number: 9, remote: { host: 'forge.example', repo: 'acme/app' }, pr: { title: 'Fix', status: 'open', url: 'https://forge.example/acme/app/pulls/9' },
+    } as PRLink] });
+    show(current);
+    fireEvent.click(await screen.findByRole('button', { name: 'Could not load PRs for Current task. Retry' }));
+    expect(await screen.findByRole('link', { name: '#9' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Could not load PRs/ })).not.toBeInTheDocument();
+  });
+
   it('shows only the current session when it has no relatives', async () => {
     vi.spyOn(api, 'sessions').mockResolvedValueOnce([]);
     show(current);

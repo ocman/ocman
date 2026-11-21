@@ -58,13 +58,14 @@ function LineageNode({ session, family, currentKey, currentProject, depth }: {
   const open = expanded ?? family.path.has(key);
   const title = session.title || 'Untitled session';
   const project = projectRootForDirectory(session.directory || '');
-  const pullRequests = useQuery({
+  const prQuery = useQuery({
     queryKey: ['session-lineage-prs', session.platform, session.id],
     queryFn: ({ signal }) => prWorkflowApi.background(session.id, session.platform, signal),
     select: result => result.pullRequests,
     staleTime: 60_000,
     retry: false,
-  }).data ?? [];
+  });
+  const pullRequests = prQuery.data ?? [];
   const otherProject = !!project && project !== currentProject;
 
   return (
@@ -81,7 +82,7 @@ function LineageNode({ session, family, currentKey, currentProject, depth }: {
           <Link className="oc-lineage-session" to={`/session/${encodeURIComponent(session.id)}`} aria-current={current ? 'page' : undefined} title={title}>
             {title}
           </Link>
-          {(otherProject || pullRequests.length > 0) && (
+          {(otherProject || pullRequests.length > 0 || prQuery.isError) && (
             <span className="oc-lineage-details">
               {otherProject && <ProjectLabel className="oc-lineage-project" path={project} />}
               {pullRequests.map(link => (
@@ -92,6 +93,9 @@ function LineageNode({ session, family, currentKey, currentProject, depth }: {
                   <i className="bi bi-git" aria-hidden="true" />#{link.number}
                 </a>
               ))}
+              {prQuery.isError && <IconButton variant="ghost" size="compact" className="oc-lineage-pr-retry"
+                icon="bi-exclamation-circle" label={`Could not load PRs for ${title}. Retry`}
+                disabled={prQuery.isFetching} onClick={() => void prQuery.refetch()} />}
             </span>
           )}
         </span>

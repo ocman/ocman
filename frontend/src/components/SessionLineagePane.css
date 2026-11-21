@@ -119,6 +119,13 @@
   filter: brightness(1.2);
 }
 
+.oc-lineage-pr-retry {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  color: var(--warning);
+}
+
 .oc-lineage-pr[data-status='draft'] { color: var(--text-dim); }
 .oc-lineage-pr[data-status='merged'] { color: var(--accent3); }
 .oc-lineage-pr[data-status='closed'] { color: var(--danger); }
