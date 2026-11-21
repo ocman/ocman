@@ -17,6 +17,9 @@ type listedPluginPane struct {
 	PluginID string                 `json:"pluginId"`
 	OwnerID  string                 `json:"ownerId"`
 	Pane     plugins.PaneDescriptor `json:"pane"`
+	// Icon is the plugin's declared icon (the same descriptor navigation
+	// renders) so pane headers and tabs can identify the owning plugin.
+	Icon *plugins.IconDescriptor `json:"icon,omitempty"`
 }
 
 func (m *Module) handlePluginPanes(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +62,7 @@ func pluginPaneDeclarations(registrations []state.PluginRegistration, owner stri
 		}
 		for _, pane := range p.Description.Panes {
 			if p.Description.PaneAllowed(pane.ID, p.Grants) {
-				panes = append(panes, listedPluginPane{PluginID: p.Description.ID, OwnerID: owner, Pane: pane})
+				panes = append(panes, listedPluginPane{PluginID: p.Description.ID, OwnerID: owner, Pane: pane, Icon: p.Description.Icon})
 			}
 		}
 	}

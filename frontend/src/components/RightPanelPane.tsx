@@ -139,6 +139,7 @@ export function Pane({
       <PaneHeader
         tab={tab}
         tabLabels={tabLabels}
+        pluginPane={pluginPane}
         divider={divider}
         summary={summary}
         hasRefresh={hasRefresh}

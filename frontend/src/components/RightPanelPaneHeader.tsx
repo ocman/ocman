@@ -3,11 +3,16 @@ import type { ChangesSidebarTab } from '../lib/uiStore';
 import { FullscreenButton } from './DiffFullscreenModal';
 import type { PaneSummary } from './SessionChangesSidebar';
 import { RefreshButton } from './RefreshButton';
-import { MIN_PANE_FRACTION, TAB_ICONS, TAB_LABELS } from './rightPanelTabs';
+import { MIN_PANE_FRACTION, TAB_LABELS } from './rightPanelTabs';
+import type { PluginPane as PluginPaneDescriptor } from '../lib/pluginPanes';
+import { TabIcon } from './RightPanelTabIcon';
 
 interface PaneHeaderProps {
   tab: ChangesSidebarTab;
   tabLabels?: Record<string, string>;
+  // When set, this pane is plugin-owned: the title shows the plugin's
+  // own icon (the same one navigation renders) instead of a fixed icon.
+  pluginPane?: PluginPaneDescriptor;
   divider: boolean;
   summary: PaneSummary;
   hasRefresh: boolean;
@@ -32,6 +37,7 @@ interface PaneHeaderProps {
 export function PaneHeader({
   tab,
   tabLabels = TAB_LABELS,
+  pluginPane,
   divider,
   summary,
   hasRefresh,
@@ -153,7 +159,7 @@ export function PaneHeader({
       tabIndex={isResizable ? 0 : undefined}
     >
       <span className="oc-right-panel-pane-title">
-        <i className={`bi ${TAB_ICONS[tab] ?? 'bi-diagram-3'}`} aria-hidden="true" />
+        <TabIcon tab={tab} pluginPane={pluginPane} />
         {tabLabels[tab]}
       </span>
       <span className="oc-right-panel-pane-summary">

@@ -2064,7 +2064,10 @@ flowchart LR
   consult these leases.
 - **Plugin panes.** The right panel lists the active owner's enabled `pane.v1`
   declarations through `/api/plugins/panes`. Catalog reads never invoke the
-  plugin. An open pane mounts its data query, calling `/api/plugins/panes/read`
+  plugin. Each listed pane carries the plugin's own icon descriptor, which the
+  tab strip and pane header render so plugin panes identify their owner the
+  same way navigation does. An open pane mounts its data query, calling
+  `/api/plugins/panes/read`
   through the owner-routed `PluginOperation` RPC and the owner's grant checks.
   Closing it unmounts the query and cancels an outstanding read. Core renders
   bounded tree nodes as plain text. The optional Beads plugin owns all `bd`

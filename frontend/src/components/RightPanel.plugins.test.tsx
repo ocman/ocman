@@ -108,6 +108,17 @@ it('shows an unavailable workspace and supports retry after an initial error', a
   expect(await screen.findByText('This pane is unavailable for this project.')).toBeInTheDocument();
 });
 
+it('renders the owning plugin icon in the strip tab and pane header', async () => {
+  const withIcon = { ...pane, icon: { bootstrap: 'bug' } };
+  useUiStore.setState({ changesSidebarOpenTabs: [pluginPaneTab(withIcon)] });
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) =>
+    new Response(JSON.stringify(String(url).includes('/panes/read') ? tree : [withIcon])));
+  renderPanel();
+  await screen.findByText('item-1');
+  // One plugin icon in the strip tab and one in the pane header title.
+  expect(document.querySelectorAll('i.bi-bug').length).toBe(2);
+});
+
 it('offers catalog retry when the panel was collapsed', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch')
     .mockRejectedValueOnce(new Error('catalog offline'))

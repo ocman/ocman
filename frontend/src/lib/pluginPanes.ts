@@ -1,12 +1,14 @@
 import { fetchJSON } from './api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ChangesSidebarTab } from './uiStoreConfig';
+import type { PluginIconDescriptor } from './pluginIcons';
 import { useDocumentVisible } from './usePanelVisible';
 
 export type PluginPane = {
   pluginId: string;
   ownerId: string;
   pane: { id: string; label: string };
+  icon?: PluginIconDescriptor;
 };
 export type PluginTreeNode = {
   id: string;

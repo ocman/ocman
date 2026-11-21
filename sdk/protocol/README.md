@@ -919,8 +919,10 @@ Both endpoints require normal authentication. An explicit owner is required;
 disconnected owners fail closed. Remote projection uses the existing closed
 `PluginOperation` RPC. The receiver requires the claimed owner to match its
 instance ID and never forwards pane operations to another machine. Pane listing
-returns `{pluginId, ownerId, pane: {id, label}}`, with owner identity qualified
-by the hub.
+returns `{pluginId, ownerId, pane: {id, label}, icon?}`, with owner identity qualified
+by the hub. The optional `icon` is the plugin's own declared icon descriptor so
+pane headers and tabs can identify the owning plugin with the same glyph
+navigation renders.
 
 Discovery projects pane declarations from the owner's existing `catalog`
 operation. Older protocol-7 owners therefore contribute no panes without

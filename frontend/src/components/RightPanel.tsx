@@ -13,15 +13,16 @@ import { useUpstreams } from '../lib/useUpstreams';
 import { useProjectTarget } from '../lib/useProjectTarget';
 import type { Session, SessionInfoCommit } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
-import { pluginPaneTab, usePluginPanes } from '../lib/pluginPanes';
+import { pluginPaneTab, usePluginPanes, type PluginPane } from '../lib/pluginPanes';
 import { Pane } from './RightPanelPane';
+import { TabIcon } from './RightPanelTabIcon';
 import { countRender } from '../lib/perfMonitor';
 import { Button } from './Control';
 import { PhoneSessionTools } from './PhoneSessionTools';
 import { useIsPhone } from '../lib/useIsPhone';
 import { EmptyState } from './EmptyState';
 import { useDocumentVisible } from '../lib/usePanelVisible';
-import { TAB_ICONS, TAB_LABELS, mergeVisibleTabOrder, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
+import { TAB_LABELS, mergeVisibleTabOrder, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
 import {
   DndContext,
   DragOverlay,
@@ -214,6 +215,7 @@ export function RightPanel({
               key={t}
               tab={t}
               label={tabLabels[t]}
+              pluginPane={pluginPanes.find((pane) => pluginPaneTab(pane) === t)}
               active={orderedOpenTabs.includes(t)}
               onToggle={() => handleToggleTab(t)}
             />
@@ -227,7 +229,7 @@ export function RightPanel({
             className={`oc-changes-strip-icon active dragging-overlay`}
             aria-hidden="true"
           >
-            <i className={`bi ${TAB_ICONS[draggingTab] ?? 'bi-diagram-3'}`} aria-hidden="true" />
+            <TabIcon tab={draggingTab!} pluginPane={pluginPanes.find((pane) => pluginPaneTab(pane) === draggingTab)} />
           </div>
         ) : null}
       </DragOverlay>
@@ -316,11 +318,15 @@ export function RightPanel({
 function SortableStripIcon({
   tab,
   label,
+  pluginPane,
   active,
   onToggle,
 }: {
   tab: ChangesSidebarTab;
   label: string;
+  // When set, this tab belongs to a plugin pane: show the plugin's own
+  // icon (the same one navigation renders) instead of the fixed tab icon.
+  pluginPane?: PluginPane;
   active: boolean;
   onToggle: () => void;
 }) {
@@ -359,7 +365,7 @@ function SortableStripIcon({
       aria-selected={active}
       aria-label={label}
     >
-      <i className={`bi ${TAB_ICONS[tab] ?? 'bi-diagram-3'}`} aria-hidden="true" />
+      <TabIcon tab={tab} pluginPane={pluginPane} />
     </button>
   );
 }
