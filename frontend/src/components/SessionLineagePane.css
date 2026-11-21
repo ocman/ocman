@@ -1,10 +1,10 @@
 .oc-lineage {
-  padding: 10px 12px;
+  padding-block: 6px;
   font-size: 13px;
 }
 
 .oc-lineage-note {
-  margin: 4px 0 10px;
+  margin: 4px 12px 8px;
   color: var(--text-dim);
 }
 
@@ -15,101 +15,117 @@
   list-style: none;
 }
 
-.oc-lineage-branch:not(.oc-lineage-branch-flat) {
-  margin-inline-start: 13px;
-  padding-inline-start: 13px;
-}
-
-.oc-lineage-node {
-  position: relative;
-}
-
-.oc-lineage-branch:not(.oc-lineage-branch-flat) > .oc-lineage-node::before {
-  position: absolute;
-  inset: 0 auto 0 -13px;
-  border-inline-start: 1px solid var(--border);
-  content: '';
-}
-
-.oc-lineage-branch:not(.oc-lineage-branch-flat) > .oc-lineage-node:last-child::before {
-  bottom: auto;
-  height: 21px;
-  width: 13px;
-  border-bottom: 1px solid var(--border);
-  border-end-start-radius: 4px;
-}
-
-.oc-lineage-branch:not(.oc-lineage-branch-flat) > .oc-lineage-node:not(:last-child)::after {
-  position: absolute;
-  top: 21px;
-  inset-inline-start: -13px;
-  width: 13px;
-  border-top: 1px solid var(--border);
-  content: '';
-}
-
 .oc-lineage-row {
+  position: relative;
   display: flex;
-  align-items: center;
-  min-height: 43px;
-  padding-inline: 3px 8px;
-  gap: 5px;
-  border-radius: 4px;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px 6px calc(4px + var(--depth, 0) * 16px);
+}
+
+.oc-lineage-row > .oc-icon-button,
+.oc-lineage-row > .oc-lineage-meta {
+  position: relative;
+  z-index: 1;
+}
+
+.oc-lineage-row > .oc-icon-button {
+  margin-inline-end: -4px;
 }
 
 .oc-lineage-row:hover {
-  background: var(--bg-card);
+  background: var(--bg-hover);
 }
 
 .oc-lineage-row[data-current] {
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
-  box-shadow: inset 2px 0 var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.oc-lineage-row[data-current]:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg));
 }
 
 .oc-lineage-leaf {
-  flex: 0 0 24px;
-  display: grid;
-  place-items: center;
+  flex: 0 0 20px;
 }
 
-.oc-lineage-leaf::before {
-  width: 6px;
-  height: 6px;
-  border: 1px solid var(--text-dim);
-  border-radius: 50%;
-  content: '';
+.oc-lineage-row > .session-status-indicator {
+  margin-top: 6px;
+}
+
+.oc-lineage-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .oc-lineage-session {
-  flex: 1;
-  min-width: 0;
-  padding-block: 5px;
+  overflow: hidden;
   color: var(--text);
+  line-height: 20px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-lineage-session:hover {
   text-decoration: none;
 }
 
-.oc-lineage-session:hover .oc-lineage-title {
-  text-decoration: underline;
+/* The whole row opens the session; PR links and the toggle sit above it. */
+.oc-lineage-session::after {
+  position: absolute;
+  inset: 0;
+  content: '';
 }
 
-.oc-lineage-title {
-  display: block;
+.oc-lineage-row[data-current] .oc-lineage-session {
+  color: var(--accent);
+}
+
+.oc-lineage-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+}
+
+.oc-lineage-project {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.oc-lineage-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  color: var(--text-dim);
-  font-size: 11px;
+.oc-lineage-pr {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--accent2);
+  text-decoration: none;
 }
 
-.oc-lineage-current {
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
+.oc-lineage-pr:hover {
+  text-decoration: none;
+  filter: brightness(1.2);
+}
+
+.oc-lineage-pr[data-status='draft'] { color: var(--text-dim); }
+.oc-lineage-pr[data-status='merged'] { color: var(--accent3); }
+.oc-lineage-pr[data-status='closed'] { color: var(--danger); }
+
+.oc-lineage-meta {
+  flex-shrink: 0;
+  color: var(--overlay0);
+  font-size: 10px;
+  line-height: 20px;
 }

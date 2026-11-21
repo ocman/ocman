@@ -1563,7 +1563,10 @@ flowchart LR
   recent 500 compact catalog rows, fetched only when the pane is open. It uses
   a recorded creator when a session has no native parent, matches relationships
   by connection and session ID, and keeps native links visible if the catalog
-  lookup fails. Older catalog-only relatives may not appear.
+  lookup fails. Older catalog-only relatives may not appear. Each visible row
+  reads its saved PR links with `pull-requests?background=true`, which skips
+  forge lookups, and names the project only when it differs from the active
+  conversation's project.
 
 Session list/detail responses carry `factoryAttemptId` from a single state.db
 attempt lookup. The sidebar filters these tagged rows and their descendants

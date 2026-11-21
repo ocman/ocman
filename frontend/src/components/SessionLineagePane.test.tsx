@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type Session } from '../lib/api';
+import { prWorkflowApi, type PRLink } from '../lib/prWorkflowApi';
 import { SessionLineagePane } from './SessionLineagePane';
 
 const current = { id: 'current', platform: 'test', title: 'Current task', status: 'busy', timeCreated: 1 } as Session;
@@ -16,6 +17,11 @@ function show(session?: Session, sessionTree?: Session[]) {
 }
 
 describe('SessionLineagePane', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(prWorkflowApi, 'background').mockResolvedValue({ pullRequests: [] });
+  });
+
   it('does not load the catalog for an unstarted session', () => {
     const load = vi.spyOn(api, 'sessions');
     show();
@@ -36,10 +42,28 @@ describe('SessionLineagePane', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('shows an empty state only after a successful lookup', async () => {
+  it('labels other projects and links saved pull requests', async () => {
+    const worktree = { ...current, id: 'wt', title: 'Worktree child', parentId: current.id, directory: '/src/.worktrees/app/fix' };
+    const other = { ...current, id: 'other', title: 'Infra child', parentId: current.id, directory: '/src/infra' };
+    vi.spyOn(api, 'sessions').mockResolvedValueOnce([worktree, other]);
+    const prs = vi.spyOn(prWorkflowApi, 'background').mockImplementation(async id => ({ pullRequests: id === 'other' ? [{
+      number: 7, remote: { host: 'forge.example', repo: 'acme/infra' }, pr: { title: 'Rotate keys', status: 'merged', url: 'https://forge.example/acme/infra/pulls/7' },
+    } as PRLink] : [] }));
+    show({ ...current, directory: '/src/app' });
+    const pr = await screen.findByRole('link', { name: '#7' });
+    expect(pr).toHaveAttribute('href', 'https://forge.example/acme/infra/pulls/7');
+    expect(pr).toHaveAttribute('data-status', 'merged');
+    expect(screen.getByTitle('/src/infra')).toBeVisible();
+    expect(screen.queryByTitle('/src/app')).not.toBeInTheDocument();
+    expect(prs).toHaveBeenCalledWith('other', 'test', expect.any(AbortSignal));
+  });
+
+  it('shows only the current session when it has no relatives', async () => {
     vi.spyOn(api, 'sessions').mockResolvedValueOnce([]);
     show(current);
-    expect(await screen.findByText('No linked sessions found.')).toBeVisible();
+    await waitFor(() => expect(screen.queryByText(/looking up related sessions/i)).not.toBeInTheDocument());
+    expect(screen.getAllByRole('link')).toHaveLength(1);
     expect(screen.getByRole('link', { name: /Current task/ })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText(/no linked sessions/i)).not.toBeInTheDocument();
   });
 });
