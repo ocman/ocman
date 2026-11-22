@@ -11,7 +11,7 @@ import { useFailedSendRehydrate, type UseFailedSendRehydrateOptions } from './us
 const entry = (id: string, text: string): FailedSend => ({ id, text, error: 'boom', failedAt: 1, model: 'p/m' });
 
 function pendingMock(pendingValue: UsePendingSendResult['pending'] = null): UsePendingSendResult {
-  return { pending: pendingValue, begin: vi.fn(), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() };
+  return { pending: pendingValue, acknowledgedIds: new Map(), begin: vi.fn(), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() };
 }
 
 function opts(over: Partial<UseFailedSendRehydrateOptions> = {}): UseFailedSendRehydrateOptions {

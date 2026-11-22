@@ -1690,8 +1690,9 @@ flowchart TD
   lifecycle and content together, without a separate full-map context or store.
   The browser's optional collapsed activity view groups work by turn, using
   the same completion rule as read-aloud to keep the original final Markdown
-  inline. A pending send can start the timer before the first reply. Questions,
-  interactive results and turn errors stay outside the work disclosure.
+  inline. A pending send can start the timer before the first reply; the
+  acknowledged prompt keeps the same disclosure identity. Questions, interactive
+  results and turn errors stay outside the work disclosure.
   Transcript text does not invalidate sidebar project/draft
   derivations or row actions; list, prompt, owner and live-status inputs still do.
 

@@ -839,6 +839,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 <PreviewSessionContext.Provider value={session.id}>
                 <ConversationLaunchContext.Provider value={launchTimeline?.context ?? null}>
                 <AssistantThread
+                  activityPromptAliases={pending.acknowledgedIds}
                   scrollToBottomTick={sidebarScroll.sessionId === session.id ? sidebarScroll.tick : 0}
                   hasMore={hasMore}
                   oldestMessageId={messages[0]?.id}

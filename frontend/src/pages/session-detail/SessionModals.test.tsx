@@ -52,7 +52,7 @@ function renderModals(over: Partial<SessionModalsProps> = {}) {
     ],
     recentSessions: [{ id: 's2', directory: '/recent-local' } as Session],
     messageJumpHistory: null,
-    pending: { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
+    pending: { pending: null, acknowledgedIds: new Map(), begin: vi.fn(), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
     openModal: null,
     onClose: vi.fn(),
     onOpen: vi.fn(),

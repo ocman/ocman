@@ -47,6 +47,8 @@ export interface PendingSend {
 
 export interface UsePendingSendResult {
   pending: PendingSend | null;
+  /** Server prompt ID to optimistic ID, for stable turn UI keys. */
+  acknowledgedIds: ReadonlyMap<string, string>;
   /** Begin a new send. Generates an id and seeds `startedAt`. */
   begin: (
     text: string,
@@ -80,6 +82,7 @@ function generateId(): string {
 
 export function usePendingSend(sessionId: string | undefined): UsePendingSendResult {
   const [pending, setPending] = useState<PendingSend | null>(null);
+  const [acknowledgedIds, setAcknowledgedIds] = useState<ReadonlyMap<string, string>>(() => new Map());
   // Snapshot of the user-message ids that existed at the moment
   // `begin()` was called. The next `observeMessages` call clears
   // pending when it sees a user-message id that isn't in this set
@@ -102,6 +105,7 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPending(null);
+    setAcknowledgedIds(new Map());
     baselineUserIdsRef.current = null;
     pendingIdRef.current = null;
   }, [sessionId]);
@@ -153,6 +157,8 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     for (const m of messages) {
       if (m.data.role !== 'user') continue;
       if (!baseline.has(m.id) && (parts === undefined || parts.some((part) => part.messageId === m.id))) {
+        const optimisticId = pendingIdRef.current;
+        if (optimisticId && optimisticId !== m.id) setAcknowledgedIds((ids) => new Map(ids).set(m.id, optimisticId));
         setPending((prev) => (prev ? null : prev));
         baselineUserIdsRef.current = null;
         return;
@@ -163,5 +169,5 @@ export function usePendingSend(sessionId: string | undefined): UsePendingSendRes
     // prompt visible until its user message and parts arrive via stream/history.
   };
 
-  return { pending, begin, fail, clear, observeMessages };
+  return { pending, acknowledgedIds, begin, fail, clear, observeMessages };
 }

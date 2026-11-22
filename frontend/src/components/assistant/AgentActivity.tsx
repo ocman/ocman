@@ -6,11 +6,12 @@ import type { TurnAggregate } from '../../lib/turnStats';
 import { useUiStore } from '../../lib/uiStore';
 import { useIsPrinting } from '../../lib/useIsPrinting';
 import { usePrintCollapse } from '../../lib/printCollapseContext';
-import { AssistantMeta } from './AssistantMeta';
+import { AssistantFailureNote, AssistantMeta } from './AssistantMeta';
 import { ExplorationContent } from './ExplorationContent';
 import { MarkdownText } from './MarkdownText';
 import { TurnSummaryBar } from './TurnSummaryBar';
 import { ActivitySliceContext, type ActivitySlice } from './agentActivityState';
+import { hasAssistantError } from './useMessage';
 import './AgentActivity.css';
 
 type ThreadComponents = NonNullable<ComponentProps<typeof ThreadPrimitive.Messages>['components']>;
@@ -61,7 +62,7 @@ export function ActivityMessage({ slice, components, decorations, actions }: {
           {indices.map((index) => <MessagePrimitive.PartByIndex key={index} index={index} components={components} />)}
         </>}
       </div>
-      {!inline && <AssistantMeta />}
+      {inline ? <AssistantFailureNote /> : <AssistantMeta showFailure={false} />}
       {inline && !(message.metadata.custom?.turnStats as TurnAggregate | undefined)?.isLive && <TurnSummaryBar actions={actions} />}
     </MessagePrimitive.Root>
   </>;
@@ -93,7 +94,9 @@ function ActivityDetails({ startedAt, live, duration, children }: {
 
 type Turn = { startedAt: number; live: boolean; duration: number | null; work: number[] };
 
-function CompactMessages({ components }: { components: ThreadComponents }) {
+type ActivityMessagesProps = { components: ThreadComponents; promptAliases?: ReadonlyMap<string, string> };
+
+function CompactMessages({ components, promptAliases }: ActivityMessagesProps) {
   const messages = useAuiState((s) => s.thread.messages);
   const running = useAuiState((s) => s.thread.isRunning);
   const turns = new Map<string, Turn>();
@@ -125,10 +128,13 @@ function CompactMessages({ components }: { components: ThreadComponents }) {
   // In a paginated window without its user prompt, start at the first visible reply.
   const anchors = new Map([...turns].map(([id, turn]) => [ids.has(id) ? id : firstReply.get(id), turn]));
   return messages.map((message, index) => {
-    const turn = anchors.get(message.id);
+    const alias = promptAliases?.get(message.id);
+    // Props can pick up the receipt before assistant-ui drops the optimistic message.
+    const awaitingRemoval = alias !== undefined && ids.has(alias);
+    const turn = awaitingRemoval ? undefined : anchors.get(message.id);
     const row = <ThreadPrimitive.MessageByIndex index={index} components={components} />;
     const agent = message.role === 'assistant' && !!(message.metadata.custom?.turnStats as TurnAggregate | undefined)?.turnId;
-    return <Fragment key={message.id}>
+    return <Fragment key={awaitingRemoval ? message.id : alias ?? message.id}>
       {!agent && inline.has(index) && row}
       {turn && <ActivityDetails startedAt={turn.startedAt} live={turn.live} duration={turn.duration}>
         <ActivitySliceContext.Provider value="work">
@@ -141,12 +147,12 @@ function CompactMessages({ components }: { components: ThreadComponents }) {
   });
 }
 
-export function AgentActivityMessages({ components }: { components: ThreadComponents }) {
+export function AgentActivityMessages({ components, promptAliases }: ActivityMessagesProps) {
   const collapse = useUiStore((s) => s.collapseAgentActivity);
-  return collapse ? <CompactMessages components={components} /> : <ThreadPrimitive.Messages components={components} />;
+  return collapse ? <CompactMessages components={components} promptAliases={promptAliases} /> : <ThreadPrimitive.Messages components={components} />;
 }
 
 function hasInlineContent(message: ThreadMessage, parts: ReturnType<typeof activityParts>, stats: TurnAggregate) {
-  return (!stats.isLive && stats.isSummaryAnchor) || parts.inline.length || parts.text.inline
+  return hasAssistantError(message.status) || (!stats.isLive && stats.isSummaryAnchor) || parts.inline.length || parts.text.inline
     || message.metadata.custom?.timelineAt || message.metadata.custom?.modelChangedTo;
 }

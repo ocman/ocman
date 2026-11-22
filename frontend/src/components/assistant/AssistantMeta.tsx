@@ -4,9 +4,21 @@ import { useModelLabel } from '../../lib/turnStats';
 import { useUiStore } from '../../lib/uiStore';
 import { ModelLabel } from '../ModelLogo';
 import { Tooltip } from '../Tooltip';
-import { useMessage } from './useMessage';
+import { hasAssistantError, useMessage } from './useMessage';
 
-export function AssistantMeta() {
+export function AssistantFailureNote() {
+  const isError = useMessage((m) => hasAssistantError(m.status));
+  const errorName = useMessage((m) => m.metadata?.custom?.errorName);
+  const isAbort = errorName === 'MessageAbortedError' || errorName === 'AbortError';
+  if (!isError) return null;
+  return <div className={`oc-thread-error-note${isAbort ? ' oc-thread-error-note-abort' : ''}`}>
+    {isAbort
+      ? <><i className="bi bi-slash-circle" aria-hidden="true" /> Interrupted</>
+      : <><i className="bi bi-exclamation-triangle-fill" aria-hidden="true" /> Session ended with an error</>}
+  </div>;
+}
+
+export function AssistantMeta({ showFailure = true }: { showFailure?: boolean }) {
   const showMessageMetadata = useUiStore((s) => s.showMessageMetadata);
   const createdAt = useMessage((m) => m.createdAt);
   const status = useMessage((m) => m.status);
@@ -27,9 +39,7 @@ export function AssistantMeta() {
   );
   if (onlyReads) return null;
   const time = createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  const isError = status?.type === 'incomplete' && 'reason' in status && status.reason === 'error';
-  const errorName = custom?.errorName as string | undefined;
-  const isAbort = errorName === 'MessageAbortedError' || errorName === 'AbortError';
+  const isError = hasAssistantError(status);
 
   // Duration is elapsed time; TPS comes from the tool-adjusted sample.
   const msgTime = custom?.time as { created?: number; completed?: number } | undefined;
@@ -44,14 +54,7 @@ export function AssistantMeta() {
 
   return (
     <>
-      {isError && (
-        <div className={`oc-thread-error-note${isAbort ? ' oc-thread-error-note-abort' : ''}`}>
-          {isAbort
-            ? <><i className="bi bi-slash-circle" aria-hidden="true" /> Interrupted</>
-            : <><i className="bi bi-exclamation-triangle-fill" aria-hidden="true" /> Session ended with an error</>
-          }
-        </div>
-      )}
+      {showFailure && isError && <AssistantFailureNote />}
       {showMessageMetadata && <div className="oc-msg-meta">
         <span
           className="oc-meta-dot"

@@ -20,7 +20,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     session: { id: 's1', platform: 'opencode', directory: '/repo', timeUpdated: 1 },
     portAvailable: true,
     caps: { fork: true, move: false, revert: true, runtimeRestart: true },
-    pending: { pending: null, begin: vi.fn().mockReturnValue('command-id'), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
+    pending: { pending: null, acknowledgedIds: new Map(), begin: vi.fn().mockReturnValue('command-id'), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
     recentSessionsRef: { current: [] },
     messagesRef: { current: [] },
     partsRef: { current: [] },

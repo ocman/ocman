@@ -331,6 +331,7 @@ const THREAD_MESSAGE_COMPONENTS = { UserMessage, AssistantMessage };
 
 
 export function AssistantThread({
+  activityPromptAliases,
   hasMore,
   oldestMessageId,
   loadingMore,
@@ -345,6 +346,7 @@ export function AssistantThread({
   scrollToBottomTick,
   scrollToToolCall,
 }: {
+  activityPromptAliases?: ReadonlyMap<string, string>;
   hasMore?: boolean;
   oldestMessageId?: string;
   loadingMore?: boolean;
@@ -600,7 +602,7 @@ export function AssistantThread({
           {empty || <ThreadPrimitive.Empty>
             <div className="oc-empty">No messages yet.</div>
           </ThreadPrimitive.Empty>}
-          <AgentActivityMessages components={THREAD_MESSAGE_COMPONENTS} />
+          <AgentActivityMessages components={THREAD_MESSAGE_COMPONENTS} promptAliases={activityPromptAliases} />
           {speech.error && <div role="status" className="oc-thread-error-note">{speech.error}</div>}
           {footer && <div className="oc-thread-footer">{footer}</div>}
         </ThreadPrimitive.Viewport>
