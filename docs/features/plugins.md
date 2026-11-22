@@ -23,7 +23,9 @@ and filter by enabled, disabled or needs-attention status. The compact list show
 
 Plugin icons appear in the list and drawer header, with a puzzle fallback when
 an icon is absent or unavailable. The drawer's **Enabled** toggle disables a
-plugin immediately or opens explicit permission review before enabling it.
+plugin immediately. It also re-enables an unchanged plugin immediately if all
+requested grants are still approved. Otherwise, it opens permission review.
+Plugins that were already disabled before the upgrade may need one more review.
 **View logs** opens diagnostics directly from any tab.
 
 Open a plugin to manage it in a detail drawer. **Settings** contains its editable

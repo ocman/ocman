@@ -48,7 +48,7 @@ export function PluginSettingsDrawer({ plugin, owner, ownerName, refresh, tab, d
             disabled={busy || (!plugin.enabled && (plugin.removed || plugin.health.status === 'conflict'))}
             onChange={() => {
               if (plugin.enabled) void management.mutate('disable');
-              else if (management.reviewEnable()) void navigate('permissions').then((ok) => { if (!ok) management.setReview(null); });
+              else if (management.requestEnable()) void navigate('permissions').then((ok) => { if (!ok) management.setReview(null); });
             }} />
         </div>
       </div>

@@ -15,6 +15,7 @@ export interface PluginSetting {
 
 export interface PluginRegistration {
   approval: string;
+  canReenable?: boolean;
   ownerId: string;
   description: {
     id: string;

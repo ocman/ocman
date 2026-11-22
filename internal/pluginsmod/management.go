@@ -291,8 +291,16 @@ func (m *Module) mutatePluginLocked(ctx context.Context, p state.PluginRegistrat
 			return errPluginConflict
 		}
 		if action == "enable" {
-			if !approvedPluginGrants(p, input.Grants, true) {
+			grants := p.Grants
+			if input.Grants != nil {
+				if !approvedPluginGrants(p, input.Grants, true) {
+					return state.ErrPluginInvalid
+				}
+				grants = *input.Grants
+			} else if input.Approval == "" {
 				return state.ErrPluginInvalid
+			} else if !p.CanReenable {
+				return errPluginConflict
 			}
 			if input.Approval == "" || input.Approval != p.Approval {
 				return errPluginConflict
@@ -304,7 +312,7 @@ func (m *Module) mutatePluginLocked(ctx context.Context, p state.PluginRegistrat
 			if err := m.store.SetPluginConfiguration(ctx, id, values, nil); err != nil {
 				return err
 			}
-			if err := m.store.SetPluginEnabled(ctx, id, true, *input.Grants); err != nil {
+			if err := m.store.SetPluginEnabled(ctx, id, true, grants); err != nil {
 				return err
 			}
 		} else if !p.Enabled {

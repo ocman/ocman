@@ -60,9 +60,10 @@ func TestMigrateV114PreservesInterruptionHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	if _, err := database.Exec(`CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL); INSERT INTO schema_version VALUES (113, 0);
-		CREATE TABLE seen_session (session_id TEXT PRIMARY KEY, interrupted INTEGER NOT NULL DEFAULT 0);
-		INSERT INTO seen_session VALUES ('existing', 1)`); err != nil {
+	if err := migrateTo(database, 113); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO seen_session (platform,session_id,session_time_updated,seen_at,interrupted) VALUES ('opencode','existing',0,0,1)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrate(database); err != nil {
@@ -169,10 +170,10 @@ func TestV116DropsUnattributablePendingEvidenceOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	_, err = database.Exec(`CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
-		INSERT INTO schema_version VALUES (115,0);
-		CREATE TABLE session_interruption (platform TEXT, session_id TEXT, message_id TEXT, observed_at INTEGER, message TEXT, replacement_root TEXT, confirmed INTEGER);
-		INSERT INTO session_interruption VALUES ('opencode','s','pending',1,'pending','/root',0), ('opencode','s','confirmed',2,'confirmed','/root',1)`)
+	if err := migrateTo(database, 115); err != nil {
+		t.Fatal(err)
+	}
+	_, err = database.Exec(`INSERT INTO session_interruption VALUES ('opencode','s','pending',1,'pending','/root',0), ('opencode','s','confirmed',2,'confirmed','/root',1)`)
 	if err != nil {
 		t.Fatal(err)
 	}

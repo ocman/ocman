@@ -198,6 +198,22 @@ it('requires explicit grant and checksum review before enabling', async () => {
   await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Enabled · Healthy'));
 });
 
+it.each(['toggle', 'button'])('re-enables with retained approvals from the %s without opening review', async (control) => {
+  plugin.canReenable = true;
+  plugin.grants = ['context.project'];
+  await open();
+  vi.mocked(plugins.mutate).mockImplementation(async () => {
+    plugin.enabled = true;
+    plugin.health.status = 'ready';
+    return {};
+  });
+  if (control === 'toggle') fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Example' }));
+  else click('Enable');
+  expect(screen.queryByRole('button', { name: 'Approve grants and enable' })).not.toBeInTheDocument();
+  expect(plugins.mutate).toHaveBeenCalledExactlyOnceWith('local', plugin.description.id, 'enable', { approval: plugin.approval });
+  await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Enabled · Healthy'));
+});
+
 it('supports enabling without grants and settings', async () => {
   plugin.description.requestedGrants = undefined;
   plugin.description.capabilities = undefined;

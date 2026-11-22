@@ -9,6 +9,7 @@ import (
 	"errors"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	plugins "github.com/ocman/ocman/sdk/protocol"
@@ -63,6 +64,7 @@ type PluginConfiguration struct {
 
 type PluginRegistration struct {
 	Approval                 string               `json:"approval"`
+	CanReenable              bool                 `json:"canReenable,omitempty"`
 	Description              plugins.Description  `json:"description"`
 	ExecutablePath           string               `json:"executablePath"`
 	Checksum                 string               `json:"checksum"`
@@ -73,6 +75,19 @@ type PluginRegistration struct {
 	Configuration            PluginConfiguration  `json:"configuration"`
 	LastWorkingConfiguration *PluginConfiguration `json:"lastWorkingConfiguration,omitempty"`
 	Health                   PluginHealth         `json:"health"`
+}
+
+// The approval follows the same executable and declaration as discovery's identity check.
+const pluginEnableIdentity = `json_array(description_json,executable_path,checksum,instances_json)`
+
+func migratePluginEnableApproval(tx *sql.Tx) error {
+	if err := addColumnIfMissing(tx, "plugin_registration", "enabled_approval", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// Disabled legacy rows cannot distinguish reviewed code from a first install
+	// or a replacement with retained configuration.
+	_, err := tx.Exec(`UPDATE plugin_registration SET enabled_approval=` + pluginEnableIdentity + ` WHERE enabled=1 AND removed=0`)
+	return err
 }
 
 // DiscoverPlugin never enables a plugin. Changed code or declarations revoke
@@ -102,10 +117,12 @@ func (d *DB) DiscoverPlugin(ctx context.Context, description plugins.Description
 	}
 	desc, _ := json.Marshal(description)
 	caps, _ := json.Marshal(instances)
+	const unchanged = `description_json=excluded.description_json AND executable_path=excluded.executable_path AND checksum=excluded.checksum AND instances_json=excluded.instances_json AND removed=0`
 	_, err = d.db.ExecContext(ctx, `INSERT INTO plugin_registration(id,description_json,executable_path,checksum,instances_json)
 		VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
-		enabled=CASE WHEN description_json=excluded.description_json AND executable_path=excluded.executable_path AND checksum=excluded.checksum AND instances_json=excluded.instances_json AND removed=0 THEN enabled ELSE 0 END,
-		grants_json=CASE WHEN description_json=excluded.description_json AND executable_path=excluded.executable_path AND checksum=excluded.checksum AND instances_json=excluded.instances_json AND removed=0 THEN grants_json ELSE '[]' END,
+		enabled=CASE WHEN `+unchanged+` THEN enabled ELSE 0 END,
+		grants_json=CASE WHEN `+unchanged+` THEN grants_json ELSE '[]' END,
+		enabled_approval=CASE WHEN `+unchanged+` THEN enabled_approval ELSE '' END,
 		description_json=excluded.description_json, executable_path=excluded.executable_path,
 		checksum=excluded.checksum, instances_json=excluded.instances_json, removed=0`, description.ID, string(desc), path, checksum, string(caps))
 	return pluginStateError(err)
@@ -145,7 +162,7 @@ func (d *DB) SetPluginEnabled(ctx context.Context, id string, enabled bool, gran
 		return ErrPluginInvalid
 	}
 	data, _ := json.Marshal(grants)
-	return d.pluginUpdate(ctx, `UPDATE plugin_registration SET enabled=1,grants_json=? WHERE id=? AND removed=0`, string(data), id)
+	return d.pluginUpdate(ctx, `UPDATE plugin_registration SET enabled=1,grants_json=?,enabled_approval=`+pluginEnableIdentity+` WHERE id=? AND removed=0`, string(data), id)
 }
 
 func validPluginGrants(grants []string) bool {
@@ -173,7 +190,7 @@ func (d *DB) SetPluginGrants(ctx context.Context, id string, grants []string) er
 func (d *DB) RemovePlugin(ctx context.Context, id string) error {
 	d.pluginMu.Lock()
 	defer d.pluginMu.Unlock()
-	return d.pluginUpdate(ctx, `UPDATE plugin_registration SET enabled=0,removed=1 WHERE id=?`, id)
+	return d.pluginUpdate(ctx, `UPDATE plugin_registration SET enabled=0,removed=1,enabled_approval='' WHERE id=?`, id)
 }
 
 // WithPluginAuthorization serializes action admission with disable, rediscovery,
@@ -221,18 +238,19 @@ func (d *DB) GetPlugin(ctx context.Context, id string) (PluginRegistration, erro
 	return d.decodePlugin(row)
 }
 
-const pluginRegistrationColumns = `description_json,executable_path,checksum,enabled,removed,instances_json,grants_json,config_json,secret_file,working_config_json,working_secret_file,health_json`
+const pluginRegistrationColumns = `description_json,executable_path,checksum,enabled,removed,instances_json,grants_json,config_json,secret_file,working_config_json,working_secret_file,health_json,enabled_approval=` + pluginEnableIdentity
 
 type pluginRow struct {
 	p                                                   PluginRegistration
 	id, desc, instances, grants, config, secret, health string
 	working, workingSecret                              sql.NullString
+	enableApproved                                      bool
 }
 
 func scanPluginRow(scanner interface{ Scan(...any) error }) (pluginRow, error) {
 	var row pluginRow
 	p := &row.p
-	err := scanner.Scan(&row.id, &row.desc, &p.ExecutablePath, &p.Checksum, &p.Enabled, &p.Removed, &row.instances, &row.grants, &row.config, &row.secret, &row.working, &row.workingSecret, &row.health)
+	err := scanner.Scan(&row.id, &row.desc, &p.ExecutablePath, &p.Checksum, &p.Enabled, &p.Removed, &row.instances, &row.grants, &row.config, &row.secret, &row.working, &row.workingSecret, &row.health, &row.enableApproved)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, ErrPluginNotFound
 	}
@@ -255,6 +273,13 @@ func (d *DB) decodePlugin(row pluginRow) (PluginRegistration, error) {
 	approved, _ := json.Marshal([]any{p.Description, p.ExecutablePath, p.Checksum, p.Instances})
 	fingerprint := sha256.Sum256(approved)
 	p.Approval = hex.EncodeToString(fingerprint[:])
+	p.CanReenable = row.enableApproved && !p.Enabled && !p.Removed && p.Health.Status != "conflict" && len(p.Grants) == len(p.Description.RequestedGrants)
+	for _, grant := range p.Description.RequestedGrants {
+		if !slices.Contains(p.Grants, grant) {
+			p.CanReenable = false
+			break
+		}
+	}
 	var err error
 	p.Configuration, err = d.pluginConfiguration(row.id, row.config, row.secret)
 	if err != nil {
@@ -326,7 +351,7 @@ func (d *DB) setPluginHealth(ctx context.Context, id string, health PluginHealth
 	}
 	health.LastError = d.RedactPluginDiagnostics(id, health.LastError)
 	data, _ := json.Marshal(health)
-	return d.pluginUpdate(ctx, `UPDATE plugin_registration SET health_json=? WHERE id=?`+condition, string(data), id)
+	return d.pluginUpdate(ctx, `UPDATE plugin_registration SET health_json=?,enabled_approval=CASE WHEN ? THEN '' ELSE enabled_approval END WHERE id=?`+condition, string(data), health.Status == "conflict", id)
 }
 
 func (d *DB) MarkPluginConfigurationWorking(ctx context.Context, id string) error {

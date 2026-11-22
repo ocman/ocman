@@ -29,8 +29,12 @@ export function usePluginManagement(plugin: PluginRegistration, owner: string, r
     return true;
   }
 
-  function reviewEnable() {
+  function requestEnable() {
     if (busy) return false;
+    if (plugin.canReenable) {
+      void mutate('enable', { approval: plugin.approval });
+      return false;
+    }
     if (needsConfiguration()) { setEnableNeedsConfiguration(true); return false; }
     setReview('enable');
     return true;
@@ -66,7 +70,7 @@ export function usePluginManagement(plugin: PluginRegistration, owner: string, r
       finally { setBusy(false); setPendingAction(null); }
     }
   }
-  return { busy, error, review, setReview, reviewEnable, configurationAttempt, configurationSaved, configurationFocus, configurationRequested,
+  return { busy, error, review, setReview, requestEnable, configurationAttempt, configurationSaved, configurationFocus, configurationRequested,
     enableNeedsConfiguration, pendingAction, remove, setRemove, mutate };
 }
 

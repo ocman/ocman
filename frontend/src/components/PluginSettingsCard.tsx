@@ -72,7 +72,7 @@ export function PluginSettingsCard(props: Props) {
 }
 
 export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', onDirtyChange, onCancel, onOpenSettings, management }: Omit<Props, 'refresh'> & { management: PluginManagement }) {
-  const { busy, error, review, setReview, reviewEnable, configurationAttempt, configurationSaved, configurationFocus, configurationRequested, enableNeedsConfiguration, pendingAction, remove, setRemove, mutate } = management;
+  const { busy, error, review, setReview, requestEnable, configurationAttempt, configurationSaved, configurationFocus, configurationRequested, enableNeedsConfiguration, pendingAction, remove, setRemove, mutate } = management;
   const d = p.description;
   const blocked = p.removed || p.health.status === 'conflict';
   const permissions = view === 'permissions';
@@ -96,7 +96,7 @@ export function PluginSettingsContent({ plugin: p, owner, view = 'permissions', 
       {(permissions || diagnostics) && <SettingRow label={diagnostics ? 'Recovery' : 'Lifecycle'} block>
         <ButtonGroup label="Plugin lifecycle actions">
           {permissions && <>
-            <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={reviewEnable}>Enable</Button>
+            <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={requestEnable}>Enable</Button>
             <Button type="button" size="small" disabled={blocked || !d.requestedGrants?.some((grant) => !p.grants?.includes(grant))} onClick={() => setReview('grants')}>Grant permissions</Button>
             <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
           </>}

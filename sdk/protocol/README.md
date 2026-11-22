@@ -334,7 +334,7 @@ reads return only presence flags. The server exposes these endpoints:
 | POST | `/api/plugins/rescan` | Rescan executables and return the catalog |
 | GET | `/api/plugins/{id}/health` | Status, restart count and safe last error |
 | GET | `/api/plugins/{id}/grants` | Requested and approved grants |
-| POST | `/api/plugins/{id}/enable` | `{"approval":"<catalog fingerprint>","grants":["context.owner"]}`; approve the reviewed registration and exactly all requested grants |
+| POST | `/api/plugins/{id}/enable` | `{"approval":"<catalog fingerprint>","grants":["context.owner"]}`; approve the reviewed registration and exactly all requested grants. Omit `grants` to reuse existing approval when the catalog reports `canReenable`. |
 | POST | `/api/plugins/{id}/disable` | `{}`; stop execution, retain configuration, mappings and data |
 | POST | `/api/plugins/{id}/grants` | `{"grants":[]}`; replace approvals with a declared subset, stop in-flight work and restart |
 | GET | `/api/plugins/{id}/configuration` | Public `values` and boolean secret-presence indicators |
@@ -352,6 +352,11 @@ types, missing required values, enum violations, and secrets in public `values`
 are rejected. Secrets are never returned, including in the last-working snapshot.
 The catalog's `approval` fingerprint binds the executable path, checksum, description,
 and capability instances. Enable rejects missing or stale fingerprints with 409.
+When re-enabling without `grants`, the owner also checks that this registration
+was previously approved and that all requested grants are still present. If not,
+it returns 409 without granting anything. Installations already disabled when
+upgrading may need one explicit approval because older versions did not track
+whether the current executable had been approved.
 
 For an enabled, ready plugin, configuration activation checkpoints its working
 values, writes the candidate, restarts and waits for readiness. Failure restores
