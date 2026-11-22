@@ -41,7 +41,8 @@ flowchart LR
     Import -->|snapshots, deltas or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
     Rules[internal/analyticsdata<br/>shared accounting and timing] --> Commit
     Rules --> Analytics
-    Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox)]
+    Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox, optional replay inputs)]
+    Import -->|throttled sweep expires raw data only| History
     Commit -->|post-commit content receipts| Adapters
     Import -->|confirmed-absence refresh results| Adapters
     Import -->|first complete fresh import callback| Archive[autoarchive<br/>one-time session selection]
@@ -268,9 +269,11 @@ snapshots. No opt-in or legacy opt-out is available.
   their audit history. Source-deleted sessions remain readable after validation;
   explicitly purged sessions do not.
 - Composer defaults, context tokens, session trees and accounting come from
-  Ocman projections. Cost estimates still use current pricing. Full native
-  payloads stay stored, but opaque native-only messages do not consume visible
-  paging slots.
+  Ocman projections. Cost estimates still use current pricing. Opaque
+  native-only messages do not consume visible paging slots. Optional raw
+  retention expires OpenCode v2 message bodies and compressed Claude Code and
+  Codex replay snapshots after 30 days. Conversation reads never need those
+  replay inputs or a live source.
 
 ### Analytics reads
 

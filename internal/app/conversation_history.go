@@ -33,6 +33,16 @@ func conversationHistoryPath(statePath, override string, getenv func(string) str
 
 // openConversationHistory opens the mandatory owner-local conversation store.
 func openConversationHistory(statePath, override string, getenv func(string) string) (*statev2.DB, error) {
+	var retention statev2.RawHistoryRetentionMode
+	switch getenv("OCMAN_RAW_HISTORY_RETENTION") {
+	case "", "off":
+	case "report":
+		retention = statev2.RawHistoryRetentionReport
+	case "apply":
+		retention = statev2.RawHistoryRetentionApply
+	default:
+		return nil, fmt.Errorf("OCMAN_RAW_HISTORY_RETENTION must be off, report, or apply")
+	}
 	path, err := filepath.Abs(conversationHistoryPath(statePath, override, getenv))
 	if err != nil {
 		return nil, err
@@ -41,6 +51,7 @@ func openConversationHistory(statePath, override string, getenv func(string) str
 	if err != nil {
 		return nil, fmt.Errorf("opening conversation history: %w", err)
 	}
+	store.SetRawHistoryRetentionMode(retention)
 	log.WithField("path", path).Info("conversation history storage opened")
 	return store, nil
 }

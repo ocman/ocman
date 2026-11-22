@@ -8,6 +8,7 @@ import (
 
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
+	"github.com/ocman/ocman/internal/rawhistory"
 	"github.com/ocman/ocman/internal/statev2"
 )
 
@@ -62,6 +63,9 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		return importResult{}, fmt.Errorf("reading source history: %w", err)
 	}
 	if snapshot != nil && snapshot.SourceCursor != "" && snapshot.SourceCursor == saved.Source {
+		if err := store.SaveRawReplay(ctx, key, snapshot.RawReplay); err != nil {
+			return importResult{}, err
+		}
 		if err := w.confirmSnapshot(ctx, entry.ID, snapshot); err != nil {
 			return importResult{}, err
 		}
@@ -86,6 +90,11 @@ func (w *sourceWorker) importSession(ctx context.Context, entry db.HistoryEntry,
 		version = entry.Version
 	}
 	result := importResult{outcome: "unchanged", version: version}
+	if next == cursor && stored.ReadFormat == statev2.ConversationReadFormat {
+		if err := store.SaveRawReplay(ctx, key, batch.RawReplay); err != nil {
+			return importResult{}, err
+		}
+	}
 	var verify *statev2.Usage
 	if !snapshot.Partial {
 		usage := expectedUsage(batch)
@@ -128,6 +137,9 @@ func (w *sourceWorker) confirmSnapshot(ctx context.Context, id string, snapshot 
 }
 
 func (w *sourceWorker) sourceSnapshot(ctx context.Context, id, cursor string, full bool) (*db.HistorySnapshot, error) {
+	if w.module.deps.Store.RawHistoryRetentionMode() == statev2.RawHistoryRetentionApply {
+		ctx = rawhistory.WithCapture(ctx)
+	}
 	if w.journaled || !full {
 		if reader, ok := w.source.Reader.(platforms.HistoryDeltaReader); ok {
 			readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)

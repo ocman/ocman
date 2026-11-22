@@ -5,6 +5,8 @@ package statev2
 import (
 	"encoding/json"
 	"errors"
+
+	"github.com/ocman/ocman/internal/rawhistory"
 )
 
 var (
@@ -110,6 +112,7 @@ type Batch struct {
 	ExpectedRevision int64
 	Messages         []Message
 	Parts            []Part
+	RawReplay        *rawhistory.Snapshot
 	Checkpoint       *CheckpointUpdate
 	// Source commits ingestion bookkeeping with the content, including on a
 	// duplicate checkpoint.

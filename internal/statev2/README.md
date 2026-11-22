@@ -113,6 +113,12 @@ platform instances must not be removed by cascading database deletion.
 statev2 has no purge operation. Schema v20 dropped the never-written
 `purged_session` table.
 
+The optional raw history sweep expires `message.extensions.native.Data` for
+OpenCode v2 records and compressed session replay snapshots for Claude Code
+and Codex. It never removes normalized messages, parts, or data in a provider
+database. See the [configuration guide](../../docs/configuration/_index.md#raw-conversation-history-retention)
+for rollout and reporting.
+
 ## Application integration
 
 Canonical adapters serve persisted browsing from this store. Live observation

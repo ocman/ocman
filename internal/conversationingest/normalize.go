@@ -143,6 +143,7 @@ func Normalize(key statev2.Key, snapshot *db.HistorySnapshot) (statev2.Batch, st
 		return batch, "", err
 	}
 	digest := sha256.Sum256(raw)
+	batch.RawReplay = snapshot.RawReplay
 	return batch, hex.EncodeToString(digest[:]), nil
 }
 

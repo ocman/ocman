@@ -167,6 +167,31 @@ already-imported data while ingestion continues. **Background tasks** opens
 retries automatically; application reads do not fall back to native history
 when stored history is unavailable. Each remote imports its own history.
 
+### Raw conversation history retention
+
+`OCMAN_RAW_HISTORY_RETENTION` is off by default. Set it to `report` to log
+how many stored raw records and bytes qualify without modifying them. After
+reviewing the report and taking a SQLite-consistent backup, set it to `apply`
+to enable capture on imports and background cleanup. Both modes wait one
+minute after startup, then work in slices of about 30 seconds with five minutes
+between slices. Once a pass finishes, the next pass is due a day later. Apply
+mode saves its place across restarts and yields when ingestion needs the writer.
+Report mode saves nothing to disk; add the logged byte counts across slices
+for the full estimate.
+
+For OpenCode v2, the original message body expires 30 days after creation or
+its last source update, whichever is later. OpenCode v1 already supplies the
+message and part format used by Ocman and has no extra replay copy. For Claude
+Code and Codex, recent imports retain one compressed replay snapshot per
+session, including the context required to convert it offline. That snapshot
+expires 30 days after the session's last source update. The snapshots add
+short-term storage on installations that did not previously save these inputs.
+
+Normalized messages, tool outputs, diffs, attachments and provider databases
+are unchanged. If the platform has also deleted an expired original, Ocman
+can still render the saved conversation, but cannot recover fields it did not
+understand. SQLite can reuse freed pages; the sweep does not shrink the file.
+
 ### HTTP serving
 
 The HTTP server limits request-header read time and idle keep-alive connections, and bounds how
@@ -262,6 +287,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 |----------|-------------|
 | `OCMAN_AUTH_PASSWORD` | Auth password. Empty string is treated as unset. |
 | `OCMAN_CONVERSATIONS_DB` | Retained conversation database path, unless `-conversations-db` is supplied. `OCMAN_STATEV2_DB` is a deprecated fallback alias. |
+| `OCMAN_RAW_HISTORY_RETENTION` | `off`, `report`, or `apply`. See [raw conversation history retention](#raw-conversation-history-retention). |
 | `OCMAN_RELAY_URL` | Share relay base URL, unless `-relay-url` is supplied. |
 | `OCMAN_PUBLIC_BASE_URL` | Externally reachable base URL (same as `-public-base-url`, which takes precedence). Set it whenever something other than your own browser follows ocman's links — a shared session, or a [conversation plugin](../features/plugins/) posting attention notices into a chat thread. |
 | `OCMAN_AUTH_TRUST_LOCALHOST` | Truthy value enables the loopback auth bypass. |

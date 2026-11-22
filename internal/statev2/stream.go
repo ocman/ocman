@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ocman/ocman/internal/telemetry"
 )
@@ -81,7 +82,7 @@ func (d *DB) ApplyStream(ctx context.Context, u StreamUpdate) (_ StreamResult, r
 		return result, ErrConflict
 	}
 	for _, b := range u.Batches {
-		revision, err := applyStreamBatch(ctx, tx, b)
+		revision, err := d.applyStreamBatch(ctx, tx, b)
 		if err != nil {
 			return StreamResult{}, err
 		}
@@ -103,7 +104,7 @@ func (d *DB) ApplyStream(ctx context.Context, u StreamUpdate) (_ StreamResult, r
 	return result, nil
 }
 
-func applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (int64, error) {
+func (d *DB) applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (int64, error) {
 	key := b.key()
 	var revision int64
 	err := tx.QueryRowContext(ctx, `SELECT revision FROM session WHERE instance_id=? AND id=?`, key.InstanceID, key.SessionID).Scan(&revision)
@@ -112,6 +113,9 @@ func applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (int64, er
 		return 0, fmt.Errorf("%w: stream event for session %s without captured metadata", ErrNotFound, key.SessionID)
 	case err != nil && !errors.Is(err, sql.ErrNoRows):
 		return 0, err
+	}
+	if d.RawHistoryRetentionMode() == RawHistoryRetentionApply {
+		b.Messages = expireRawMessages(b.Messages, rawHistoryCutoff(time.Now()))
 	}
 	changes, err := projectionChanges(ctx, tx, b)
 	if err != nil {

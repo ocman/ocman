@@ -4,10 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"strings"
-
-	"github.com/ocman/ocman/internal/platforms/opencode/apiv2"
 )
 
 // readV2History uses the shared converter for supported messages, preserving
@@ -37,9 +34,9 @@ func readV2History(ctx context.Context, tx *sql.Tx, out *HistorySnapshot, only .
 		if err := rows.Scan(&id, &kind, &sequence, &created, &updated, &raw); err != nil {
 			return nil, err
 		}
-		var native map[string]any
-		if err := json.Unmarshal([]byte(raw), &native); err != nil || native == nil {
-			return nil, fmt.Errorf("invalid native message %s", id)
+		converted, ok, err := convertV2HistoryMessage(out.Session.ID, id, kind, json.RawMessage(raw))
+		if err != nil {
+			return nil, err
 		}
 		original, err := json.Marshal(struct {
 			Type                string
@@ -50,8 +47,6 @@ func readV2History(ctx context.Context, tx *sql.Tx, out *HistorySnapshot, only .
 			return nil, err
 		}
 		out.NativeMessages[id] = original
-		native["id"], native["type"] = id, kind
-		converted, ok := ocv2.ConvertMessage(out.Session.ID, native)
 		if !ok {
 			// This is opaque retention, not a second native converter. Its
 			// payload remains available when support is added in the future.

@@ -3,8 +3,12 @@ package claudeprovider
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ocman/ocman/internal/rawhistory"
 )
 
 func appendTranscript(t *testing.T, index *Index, id, record string) {
@@ -75,6 +79,26 @@ func TestHistorySnapshotSkipsUnknownRecordTypes(t *testing.T) {
 	}
 	if len(after.Messages) != len(before.Messages) || len(after.Parts) != len(before.Parts) {
 		t.Fatalf("ignored records changed history: %d/%d -> %d/%d", len(before.Messages), len(before.Parts), len(after.Messages), len(after.Parts))
+	}
+}
+
+func TestRawTranscriptReplaysAfterSourceDeletion(t *testing.T) {
+	index := openSynced(t, fixture(t))
+	appendTranscript(t, index, mainID, `{"type":"user","uuid":"u-replay","timestamp":"`+time.Now().UTC().Format(time.RFC3339Nano)+`","message":{"role":"user","content":"offline replay"}}`)
+	snapshot, err := (&HistoryReader{index: index}).Snapshot(rawhistory.WithCapture(t.Context()), mainID)
+	if err != nil || snapshot.RawReplay == nil {
+		t.Fatalf("missing raw transcript: %v", err)
+	}
+	e, err := index.get(t.Context(), mainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(e.Path); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplayHistory(mainID, *snapshot.RawReplay)
+	if err != nil || !reflect.DeepEqual(snapshot.Messages, replayed.Messages) || !reflect.DeepEqual(snapshot.Parts, replayed.Parts) {
+		t.Fatalf("replay did not match the original conversation: %v", err)
 	}
 }
 

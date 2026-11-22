@@ -3,7 +3,9 @@ package conversationread
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/ocman/ocman/internal/conversationingest"
 
@@ -28,7 +30,7 @@ func readFixture(t *testing.T) (*statev2.DB, statev2.Batch) {
 			{ID: "a", SessionID: "s", TimeCreated: 3, Data: json.RawMessage(`{"role":"assistant","finish":"stop","tokens":{"input":10,"output":5,"reasoning":3,"cache":{"read":2,"write":1}},"time":{"created":3,"completed":6}}`)}},
 		Parts: []db.Part{{ID: "text", MessageID: "a", SessionID: "s", TimeCreated: 4, Data: json.RawMessage(`{"type":"text","text":"","extra":1234567890123456789}`)},
 			{ID: "tool", MessageID: "a", SessionID: "s", TimeCreated: 5, Data: json.RawMessage(`{"type":"tool","tool":"bash","state":{"input":{"cmd":"ok"},"output":"done"}}`)}},
-		NativeMessages: map[string]json.RawMessage{"opaque": json.RawMessage(`{"kind":"system"}`), "a": json.RawMessage(`{"nativeOnly":true}`)}}
+		NativeMessages: map[string]json.RawMessage{"opaque": json.RawMessage(`{"Type":"system","UpdatedAt":2,"Data":{"text":"instructions"}}`), "a": json.RawMessage(`{"Type":"assistant","UpdatedAt":6,"Data":{"content":[]}}`)}}
 	batch, _, err := conversationingest.Normalize(statev2.Key{InstanceID: "source", SessionID: "s"}, snapshot)
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +82,20 @@ func TestStoredConversationRestoresWireFields(t *testing.T) {
 	// A settled stored read never reports a running turn on its own.
 	if d.Session.Status == db.StatusBusy {
 		t.Fatalf("stored inference claimed a running turn: %s", d.Session.Status)
+	}
+}
+
+func TestStoredConversationRendersIdenticallyAfterRawHistoryExpires(t *testing.T) {
+	store, _ := readFixture(t) // no provider is configured
+	head := &platforms.ConversationHead{DirectoryDefaults: true}
+	before := readStored(t, store, head, 10)
+	store.SetRawHistoryRetentionMode(statev2.RawHistoryRetentionApply)
+	result, err := store.SweepRawHistory(t.Context(), time.Now())
+	if err != nil || result.Messages != 2 {
+		t.Fatalf("sweep = %+v, %v", result, err)
+	}
+	if after := readStored(t, store, head, 10); !reflect.DeepEqual(before, after) {
+		t.Fatalf("stored response changed after raw history expiration\nbefore: %+v\nafter: %+v", before, after)
 	}
 }
 

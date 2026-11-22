@@ -3,14 +3,17 @@ package claudeprovider
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
 	"github.com/ocman/ocman/internal/db"
+	"github.com/ocman/ocman/internal/rawhistory"
 )
 
 // HistoryReader borrows the browsing supervisor's index. It never creates a
@@ -135,6 +138,19 @@ func (h *HistoryReader) snapshot(ctx context.Context, id string, resume *transcr
 	// Compute the cursor inside the same before/after consistency window.
 	snapshot := &db.HistorySnapshot{Session: e.session(time.Time{}), InferredStatus: db.SessionStatus(e.Inferred), Messages: c.Messages, Parts: c.Parts, Version: historyVersion(e),
 		Subagent: e.ID != e.RootID, Partial: partial, MessageOffset: position}
+	if updated := snapshot.Session.TimeUpdated; rawhistory.ShouldCapture(ctx, updated) && e.End > 0 {
+		snapshot.RawReplay, err = rawhistory.Encode(replayFormat, updated, func(w *gzip.Writer) error {
+			// The first line carries conversion context. Remaining bytes are the exact transcript.
+			if err := json.NewEncoder(w).Encode(children); err != nil {
+				return err
+			}
+			_, err := io.Copy(w, historyContextReader{ctx: ctx, reader: io.NewSectionReader(f, 0, e.End)})
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	if resume != nil {
 		snapshot.SourceCursor, err = h.nextCursor(ctx, f, before, e, children)
 		if err != nil {

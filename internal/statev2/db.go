@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"github.com/ocman/ocman/internal/sqliteutil"
@@ -19,12 +20,15 @@ import (
 // DB owns a separate state_conv.db. Callers supply the path explicitly so tests
 // and development never silently fall back to a live or another checkout's DB.
 type DB struct {
-	db          *sql.DB
-	read        *sql.DB
-	path        string
-	committed   atomic.Pointer[CommitObserver]
-	sidebarLive sidebarLive
-	poolMetrics []metric.Registration
+	db                *sql.DB
+	read              *sql.DB
+	path              string
+	committed         atomic.Pointer[CommitObserver]
+	rawRetention      atomic.Int32
+	rawSweepMu        sync.Mutex
+	rawReportProgress rawSweepProgress
+	sidebarLive       sidebarLive
+	poolMetrics       []metric.Registration
 }
 
 // Path places state_conv.db beside an explicitly resolved application database.

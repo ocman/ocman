@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/rawhistory"
 )
 
 type fakeHistory struct {
@@ -70,6 +72,19 @@ func recorded(t *testing.T) *fakeHistory {
 }
 
 var notLoaded = &codexappserver.RPCError{Code: -32600, Message: "thread not loaded: x"}
+
+func TestRawHistoryReplaysWithoutAppServer(t *testing.T) {
+	f := recorded(t)
+	f.threads[0].UpdatedAt = time.Now().Unix()
+	snapshot, err := (&HistoryReader{Client: f}).Snapshot(rawhistory.WithCapture(t.Context()), f.threads[0].ID)
+	if err != nil || snapshot.RawReplay == nil {
+		t.Fatalf("missing raw thread data: %v", err)
+	}
+	replayed, err := ReplayHistory(*snapshot.RawReplay)
+	if err != nil || !reflect.DeepEqual(snapshot.Messages, replayed.Messages) || !reflect.DeepEqual(snapshot.Parts, replayed.Parts) {
+		t.Fatalf("replay did not match the original conversation: %v", err)
+	}
+}
 
 func TestInventory(t *testing.T) {
 	f := &fakeHistory{lists: map[bool][]codexappserver.Thread{

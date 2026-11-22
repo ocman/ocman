@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/ocman/ocman/internal/rawhistory"
 )
 
 // HistoryEntry.Version is an opaque change hint, not a cursor or timestamp
@@ -34,6 +36,7 @@ type HistorySnapshot struct {
 	Parts            []Part
 	Version          string
 	NativeMessages   map[string]json.RawMessage // original v2 payloads, including unsupported native message types
+	RawReplay        *rawhistory.Snapshot
 	// Subagent marks a helper session the agent spawned. Each adapter
 	// decides it by its own convention; analytics leaves it out of session
 	// and prompt counts.

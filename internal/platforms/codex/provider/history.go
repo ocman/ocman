@@ -11,6 +11,7 @@ import (
 	"github.com/ocman/ocman/internal/db"
 	"github.com/ocman/ocman/internal/platforms"
 	codexappserver "github.com/ocman/ocman/internal/platforms/codex/appserver"
+	"github.com/ocman/ocman/internal/rawhistory"
 )
 
 // HistoryClient is the subset of the app-server client history reads use.
@@ -95,8 +96,15 @@ func (h *HistoryReader) snapshot(ctx context.Context, id string, verify bool) (*
 		}
 	}
 	c.AddHistory(after, turns, items)
-	return &db.HistorySnapshot{Session: Session(after), InferredStatus: inferStatus(c.Messages), Messages: c.Messages,
-		Parts: c.Parts, Version: version, Subagent: after.ParentThreadID != "" || after.Source.Kind == "subAgent"}, nil
+	snapshot := &db.HistorySnapshot{Session: Session(after), InferredStatus: inferStatus(c.Messages), Messages: c.Messages,
+		Parts: c.Parts, Version: version, Subagent: after.ParentThreadID != "" || after.Source.Kind == "subAgent"}
+	if updated := snapshot.Session.TimeUpdated; rawhistory.ShouldCapture(ctx, updated) {
+		snapshot.RawReplay, err = captureCodexReplay(after, turns, items, c.Usage, updated)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return snapshot, nil
 }
 
 // SessionIdentityMetadata reads only thread metadata, never content.

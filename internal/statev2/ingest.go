@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Commit durably applies one normalized batch. Acknowledgment and publication
@@ -43,12 +44,18 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 	if err := applySession(ctx, tx, batch, &result); err != nil {
 		return CommitResult{}, err
 	}
+	if d.RawHistoryRetentionMode() == RawHistoryRetentionApply {
+		batch.Messages = expireRawMessages(batch.Messages, rawHistoryCutoff(time.Now()))
+	}
 	if batch.Complete {
 		if err := markSnapshotContent(ctx, tx, s.Key); err != nil {
 			return CommitResult{}, err
 		}
 	}
 	if err := applyContent(ctx, tx, batch); err != nil {
+		return CommitResult{}, err
+	}
+	if err := d.saveRawReplay(ctx, tx, s.Key, batch.RawReplay); err != nil {
 		return CommitResult{}, err
 	}
 	if err := refreshSidebar(ctx, tx, s.Key); err != nil {
