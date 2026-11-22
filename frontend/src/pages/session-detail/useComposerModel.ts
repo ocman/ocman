@@ -52,10 +52,7 @@ export function useComposerModel({
 }: UseComposerModelOptions): UseComposerModelResult {
   const capabilities = useCapabilities();
   const modelKind = capabilities?.platforms?.find(entry => entry.id === session?.platform)?.kind ?? (session?.platform ? basePlatform(session.platform) : undefined);
-  const seededSessionRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    seededSessionRef.current = undefined;
-  }, [id]);
+  const seedRef = useRef<{ id?: string; seeded?: boolean }>({});
 
   // Prefer explicit session choices over models observed in message history.
   // A new session seeds the project's configured default, then the
@@ -70,8 +67,8 @@ export function useComposerModel({
       // session takes only its own platform's (prefix stripped).
       const own = (ref: string | undefined) => formatModelRef(undefined, modelRefForSession(ref || '', modelKind, session?.platform));
       const projectModel = own(session?.projectDefaultModel) || own(getProjectModel(session?.directory || ''));
-      return own(session?.id === id && id ? startModels.get(id) : '') ||
-        own(sessionModel) ||
+      return own(sessionModel) ||
+        own(session?.id === id && id ? startModels.get(id) : '') ||
         (latestUser ? messageModelRef(latestUser) : '') ||
         latestTurnModel(messages, turnStatsMap) ||
         (messages.length === 0 ? projectModel : '') ||
@@ -83,8 +80,8 @@ export function useComposerModel({
   );
 
   useEffect(() => {
-    if (!id) return;
-    if (seededSessionRef.current === id) return;
+    if (seedRef.current.id !== id) seedRef.current = { id };
+    if (!id || seedRef.current.seeded) return;
     // The page is not remounted on navigation, so for a render or two
     // after `id` flips `session`/`messages` still hold the previously
     // viewed session. Seeding from those would latch the old session's
@@ -94,14 +91,14 @@ export function useComposerModel({
     setSelectedModel(activeModel);
     if (startModels.has(id)) saveSessionModel(id, activeModel);
     startModels.delete(id);
-    seededSessionRef.current = id;
+    seedRef.current.seeded = true;
   }, [activeModel, id, session?.id, setSelectedModel]);
 
   const composerModels = Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].map((model) => formatModelRef(undefined, model)).filter(Boolean)));
 
   const directory = session?.directory;
   const handleModelChange = (model: string) => {
-    seededSessionRef.current = id;
+    seedRef.current = { id, seeded: true };
     if (id) {
       saveSessionModel(id, model);
       startModels.delete(id);
@@ -116,7 +113,7 @@ export function useComposerModel({
   // change overrides it; switching agents again re-applies the new
   // agent's model. Agents without a model leave the selection as-is.
   const handleAgentChange = (agent: string) => {
-    seededSessionRef.current = id;
+    seedRef.current = { id, seeded: true };
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) {

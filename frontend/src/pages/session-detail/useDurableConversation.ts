@@ -10,6 +10,7 @@ import { draftQueueAPI } from '../../lib/api.queue';
 import { uploadDraftFiles } from './uploadDraftFiles';
 import { APIError, postJSON } from '../../lib/api.requests';
 import { clearDraft } from '../../lib/composerDraft';
+import { startModels } from './startHandoffs';
 
 export function useDurableConversation(params: NewConversationProps['params'], navigate: NewConversationProps['navigate']) {
   const id = params.draftId ?? '';
@@ -59,6 +60,9 @@ export function useDurableConversation(params: NewConversationProps['params'], n
     pendingInitial.current = undefined;
     complete.current = id;
     const result = record.result;
+    // The accepted request also survives a reload or a failed browser write.
+    const model = record.request?.send?.model;
+    if (model) startModels.set(id, model);
     useApiStore.getState().seedNewSession(id, result.directory, result.platform, params.title, result.remoteId);
     void retireBackendDraft(id).then(() => { if (mounted.current) navigate(`/session/${id}`, { replace: true }); }).catch((error) => {
       complete.current = '';

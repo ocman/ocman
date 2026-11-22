@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NewConversation } from './NewConversation';
 import { api, fetchJSON } from '../../lib/api';
@@ -8,6 +9,10 @@ import { getConversationDraft, useNewConversationDrafts } from '../../lib/newCon
 import { resetDraftTextsForTests } from '../../lib/composerDraft';
 import { clearSettingsCache } from '../../lib/projectSettingsCache';
 import { useApiStore } from '../../lib/apiStore';
+import { startModels } from './startHandoffs';
+import { useComposerModel } from './useComposerModel';
+import { saveSessionModel } from '../../lib/sessionModel';
+import type { SessionMetadata } from '../../lib/sessionReducer';
 
 vi.mock('../../lib/useCapabilities', () => ({
   useCapabilities: () => ({ platforms: [] }), useMultiPlatform: () => false, useMultiHost: () => false,
@@ -59,7 +64,32 @@ beforeEach(() => {
     return json(url === '/api/session-drafts' ? [record] : record);
   }));
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { startModels.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it.each([false, true])('restores the admitted model as the draft becomes a session (later pick: %s)', async (laterPick) => {
+  const platform = 'cnx_work';
+  const directory = '/repo';
+  record = { ...record, phase: 'ready', request: { directory, platform, send: { message: 'first', model: `${platform}:openai/gpt-6.2-sol` } },
+    result: { sessionId: id, directory, platform, remoteId: 'local', firstMessageSent: true, firstMessageError: '' } };
+  if (laterPick) saveSessionModel(id, 'openai/later-pick');
+  else {
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === 'ocman.sessionModels.v1') throw new DOMException('Storage is full', 'QuotaExceededError');
+      setItem.call(this, key, value);
+    });
+  }
+  const navigate = vi.fn();
+  const draft = render(<NewConversation params={record.metadata} composerRef={null} navigate={navigate} navigateToSession={vi.fn()} />);
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/session/${id}`, { replace: true }));
+  draft.unmount();
+
+  const setSelectedModel = vi.fn();
+  const session = { id, directory, platform, defaultModel: 'openai/gpt-6.1-sol' } as SessionMetadata;
+  renderHook(() => useComposerModel({ id, session, messages: [], parts: [], modelOptions: [], agents: [],
+    setSelectedModel, setSelectedAgent: vi.fn(), setSelectedReasoning: vi.fn() }), { wrapper: StrictMode });
+  expect(setSelectedModel).toHaveBeenLastCalledWith(laterPick ? 'openai/later-pick' : 'openai/gpt-6.2-sol');
+});
 
 it('shows the saved message after a failed setup even when only send.message was persisted', async () => {
   record = { ...record, phase: 'failed', error: 'Session setup failed. git worktree add: context deadline exceeded',
