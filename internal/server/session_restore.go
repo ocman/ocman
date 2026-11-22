@@ -5,7 +5,39 @@ import (
 
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/projectsmod"
+	log "github.com/sirupsen/logrus"
 )
+
+// Resurface after direct delivery or queue admission, not after the turn ends.
+// Use the server lifetime so a disconnected client cannot lose the archive update
+// after delivery. A persistence failure must not make the client replay the send.
+func (s *Server) resurfaceAfterUserMessage(platform, sessionID string) {
+	if s.stateDB == nil {
+		return
+	}
+	ctx, cancel := s.lifetimeCall()
+	defer cancel()
+	if platform == "" {
+		p, ok := s.registry.PlatformForSession(ctx, sessionID)
+		if !ok {
+			return
+		}
+		key, _ := s.registry.KeyFor(p)
+		platform = string(key)
+	}
+	platform = s.sessionStatePlatform(platform)
+	unlock := s.deferredArchives.lock()
+	defer unlock()
+	changed, err := s.stateDB.UnarchiveAfterUserMessage(ctx, platform, sessionID)
+	if err != nil {
+		log.WithError(err).WithFields(log.Fields{"platform": platform, "sessionID": sessionID}).Warn("unarchiving session after user message")
+		return
+	}
+	if changed {
+		s.deferredArchives.cancelLocked(platform, sessionID)
+		s.broadcastSessionPatch(platform, sessionID, map[string]any{"archived": false})
+	}
+}
 
 // restoreSession clears project inheritance only for this session's owner.
 // Ordinary reads and activity-based resurfacing must not restore projects.

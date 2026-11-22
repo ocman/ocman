@@ -57,16 +57,18 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 	// Otherwise deliver now — mid-turn included, so a plain Enter
 	// send is picked up by the running turn instead of waiting for
 	// it to finish. Both paths validate message-or-images.
+	platform := httpx.PlatformHint(r)
 	var err error
 	if req.Queue {
-		err = s.enqueueFollowUp(r.Context(), httpx.PlatformHint(r), send)
+		err = s.enqueueFollowUp(r.Context(), platform, send)
 	} else {
-		err = s.sendNow(r.Context(), httpx.PlatformHint(r), send)
+		err = s.sendNow(r.Context(), platform, send)
 	}
 	if err != nil {
 		writeSessionSvcError(w, "sending message", err)
 		return
 	}
+	s.resurfaceAfterUserMessage(platform, sessionID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

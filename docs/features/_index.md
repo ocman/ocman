@@ -32,6 +32,8 @@ Under Settings → Sessions → **Show archived sessions again**, choose when
 new activity restores an archived session to the sidebar: **Session halts**
 is the default and waits for done, waiting, error, or interrupted status;
 **Any activity** restores it even while it is running.
+Sending or queuing a message in an archived session restores it without waiting
+for the turn to finish. This does not wake snoozed sessions.
 
 Conversations open with recent messages. While the oldest loaded message is
 visible, ocman automatically fetches earlier history until it leaves the

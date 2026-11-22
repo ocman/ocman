@@ -88,6 +88,33 @@ func (d *DB) UnarchiveSession(ctx context.Context, platform, sessionID string) e
 	return d.recordUnarchive(ctx, unarchiveKindSession, LocalRemoteID, sessionKey(platform, sessionID))
 }
 
+// UnarchiveAfterUserMessage restores a session without cancelling a snooze.
+// Record the unarchive in the same transaction so a concurrent auto-archive
+// scan cannot re-hide the session before its new message appears in history.
+func (d *DB) UnarchiveAfterUserMessage(ctx context.Context, platform, sessionID string) (bool, error) {
+	ctx, release := d.WorktreeActivity(ctx)
+	defer release()
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `DELETE FROM archived_session
+		WHERE platform = ? AND session_id = ? AND snoozed_until = 0`, platform, sessionID)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil || n == 0 {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, recordUnarchiveSQL,
+		unarchiveKindSession, LocalRemoteID, sessionKey(platform, sessionID), time.Now().UnixMilli()); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
 const (
 	unarchiveKindSession = "session"
 	unarchiveKindProject = "project"
@@ -123,14 +150,15 @@ func sessionKey(platform, sessionID string) string {
 	return platform + "\x00" + sessionID
 }
 
-// recordUnarchive stamps when the user last brought an entity back.
-func (d *DB) recordUnarchive(ctx context.Context, kind, remoteID, key string) error {
-	_, err := d.db.ExecContext(ctx, `
+const recordUnarchiveSQL = `
 		INSERT INTO unarchived_entity (kind, remote_id, entity_key, unarchived_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(kind, remote_id, entity_key) DO UPDATE SET
-			unarchived_at = excluded.unarchived_at
-	`, kind, NormalizeRemoteID(remoteID), key, time.Now().UnixMilli())
+			unarchived_at = excluded.unarchived_at`
+
+// recordUnarchive stamps when the user last brought an entity back.
+func (d *DB) recordUnarchive(ctx context.Context, kind, remoteID, key string) error {
+	_, err := d.db.ExecContext(ctx, recordUnarchiveSQL, kind, NormalizeRemoteID(remoteID), key, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("recording unarchive: %w", err)
 	}
