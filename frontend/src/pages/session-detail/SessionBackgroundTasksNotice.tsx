@@ -13,7 +13,7 @@ export function SessionBackgroundTasksNotice({ sessionId, platform, ...props }: 
   const query = useVisiblePollingQuery({
     queryKey: ['session-pr-background-tasks', platform, sessionId],
     run: signal => prWorkflowApi.background(sessionId, platform, signal),
-    intervalMs: (data) => data?.pullRequests.some(hasBackgroundTask) ? 5_000 : 30_000,
+    intervalMs: (data) => data?.pullRequests?.some(hasBackgroundTask) ? 5_000 : 30_000,
     timeoutMs: 10_000,
   });
   const refetch = query.refetch;
