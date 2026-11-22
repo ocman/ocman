@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => {
   };
   const apiState = {
     cachedSessions: [],
+    sessions: vi.fn(async () => [{ id: 'ocm_title', title: 'Needle fixes', directory: '/repo', timeUpdated: 10 }]),
     getProjects: vi.fn(async (): Promise<Project[]> => []),
     resolveProjectIdentities: vi.fn(),
     browseDirectories: vi.fn(),
@@ -66,7 +67,7 @@ vi.mock('../lib/uiStore', () => {
 
 vi.mock('../lib/api', async () => {
   const real = await vi.importActual<typeof import('../lib/api')>('../lib/api');
-  return { ...real, api: { ...real.api, projects: mocks.apiState.getProjects,
+  return { ...real, api: { ...real.api, sessions: mocks.apiState.sessions, projects: mocks.apiState.getProjects,
     resolveProjectIdentities: mocks.apiState.resolveProjectIdentities,
     browseDirectories: mocks.apiState.browseDirectories, searchDirectories: mocks.apiState.searchDirectories,
     tmuxSessions: mocks.apiState.getTmuxSessions, tmuxClients: mocks.apiState.getTmuxClients,
@@ -95,6 +96,52 @@ function renderPalette() {
   const view = render(tree());
   return { queryClient, rerenderPalette: () => view.rerender(tree()) };
 }
+
+describe('CommandPalette session search', () => {
+  beforeEach(() => {
+    mocks.uiState.paletteMode = 'search';
+    mocks.uiState.paletteOpen = true;
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.mocked(postJSON).mockReset();
+  });
+
+  it('shows title matches first and opens older sessions found in conversation text', async () => {
+    const older = { id: 'ocm_older', title: 'Unrelated title', directory: '/repo', timeUpdated: 1, snippet: 'An older reply about the needle' };
+    vi.mocked(postJSON).mockResolvedValueOnce({ indexing: false, matches: [
+      older,
+      { ...older, id: 'ocm_title', title: 'Needle fixes', snippet: 'Another needle reply' },
+    ] });
+    renderPalette();
+    await screen.findByText('Needle fixes');
+    expect(postJSON).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'needle' } });
+    expect(await screen.findByText(older.snippet)).toBeInTheDocument();
+    expect(postJSON).toHaveBeenCalledWith('/api/sessions/search', { query: 'needle' }, { signal: expect.any(AbortSignal) });
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveTextContent('Needle fixes');
+    expect(options[0]).toHaveTextContent('Another needle reply');
+    fireEvent.click(options[1]);
+    expect(screen.getByTestId('location')).toHaveTextContent('/session/ocm_older');
+  });
+
+  it('cancels stale searches and reports a failed content search', async () => {
+    let finish: (value: unknown) => void = () => {};
+    vi.mocked(postJSON).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    vi.mocked(postJSON).mockRejectedValueOnce(new Error('unavailable'));
+    renderPalette();
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: 'first phrase' } });
+    expect(screen.getByText('Searching conversations…')).toBeInTheDocument();
+    await waitFor(() => expect(postJSON).toHaveBeenCalledTimes(1));
+    const signal = vi.mocked(postJSON).mock.calls[0][2]?.signal;
+    fireEvent.change(input, { target: { value: 'second phrase' } });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { finish([{ id: 'stale', snippet: 'stale text' }]); });
+    expect(await screen.findByText('Conversation search unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('stale text')).not.toBeInTheDocument();
+  });
+});
 
 describe('CommandPalette project mode', () => {
   afterEach(() => vi.restoreAllMocks());

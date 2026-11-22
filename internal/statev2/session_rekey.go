@@ -15,6 +15,9 @@ import (
 var sessionKeyColumns = []struct{ table, column, prefix string }{
 	{"session", "id", ""}, {"session", "parent_id", ""},
 	{"message", "session_id", ""}, {"part", "session_id", ""},
+	// Part triggers rebuild moved search documents; the backfill cursor is a
+	// keyset boundary, not an identity reference, and must stay in place.
+	{"session_search_doc", "session_id", ""},
 	{"change_outbox", "session_id", ""},
 	{"analytics_message", "session_id", ""}, {"analytics_part", "session_id", ""},
 	{"analytics_session", "id", ""}, {"analytics_session", "parent_id", ""},

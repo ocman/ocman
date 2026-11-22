@@ -1,10 +1,56 @@
 package statev2
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
+
+func TestSearchSessionTextLimitsSessionsAndExcludesHiddenContent(t *testing.T) {
+	d := openTestDB(t)
+	if err := d.RegisterInstance(t.Context(), Instance{ID: "foreign", OwnerID: "other", Platform: "test", SourceKey: "foreign"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		instance, id, role, kind                     string
+		updated                                      int64
+		hidden, deleted, deletedMessage, deletedPart bool
+	}{
+		{instance: "first", id: "recent", role: "assistant", kind: "text", updated: 2},
+		{instance: "first", id: "old", role: "user", kind: "text", updated: 1},
+		{instance: "first", id: "tool", role: "assistant", kind: "tool", updated: 3},
+		{instance: "first", id: "system", role: "system", kind: "text", updated: 3},
+		{instance: "first", id: "hidden", role: "assistant", kind: "text", updated: 3, hidden: true},
+		{instance: "first", id: "deleted-session", role: "user", kind: "text", updated: 3, deleted: true},
+		{instance: "first", id: "deleted-message", role: "user", kind: "text", updated: 3, deletedMessage: true},
+		{instance: "first", id: "deleted-part", role: "user", kind: "text", updated: 3, deletedPart: true},
+		{instance: "foreign", id: "foreign", role: "user", kind: "text", updated: 3},
+	} {
+		batch := Batch{
+			Session:  Session{Key: Key{row.instance, row.id}, Title: "Unrelated title", Directory: "/repo", UpdatedAt: row.updated, ReadFormat: ConversationReadFormat, SourceDeleted: row.deleted},
+			Messages: []Message{{ID: "m", Role: row.role, ConversationVisible: !row.hidden, SourceDeleted: row.deletedMessage}},
+			Parts:    []Part{{ID: "p", MessageID: "m", Kind: row.kind, Text: "text with NEEDLE", SourceDeleted: row.deletedPart}},
+		}
+		if row.id == "recent" {
+			batch.Messages = append(batch.Messages, Message{ID: "hidden", Role: "assistant"})
+			batch.Parts = append(batch.Parts, Part{ID: "p24", MessageID: "hidden", Kind: "text", Text: "hidden needle"})
+			for i := range 25 {
+				batch.Parts = append(batch.Parts, Part{ID: fmt.Sprintf("p%d", i), MessageID: "m", Kind: "text", CreatedAt: int64(i + 1), Text: "latest needle"})
+			}
+		}
+		commit(t, d, batch)
+	}
+	matches, err := d.SearchSessionText(t.Context(), "owner", " Needle ")
+	if err != nil || len(matches) != 2 || matches[0].ID != "recent" || matches[0].Snippet != "latest needle" || matches[1].ID != "old" || matches[1].Snippet != "text with NEEDLE" {
+		t.Fatalf("unexpected matches: %+v, %v", matches, err)
+	}
+	for _, query := range []string{"", "Unrelated title", "missing"} {
+		if matches, err := d.SearchSessionText(t.Context(), "owner", query); err != nil || matches == nil || len(matches) != 0 {
+			t.Fatalf("%q: %+v, %v", query, matches, err)
+		}
+	}
+}
 
 func TestSearchTextUsesOwnerLocalRetainedProse(t *testing.T) {
 	d := openTestDB(t)

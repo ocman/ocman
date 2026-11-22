@@ -5,6 +5,26 @@ weight: 12
 
 Part of the [architecture overview](architecture.md).
 
+## Global session search
+
+```mermaid
+flowchart LR
+    Palette[Global session palette] -->|Debounced authenticated POST /api/sessions/search| Search[Session content search]
+    Search -->|Owner-scoped trigram lookup| History[(state_conv.db)]
+    Ingest[Conversation commits and background backfill] -->|Update search index| History
+    Search -->|One excerpt per matching session| Palette
+```
+
+- The contentless index stores terms, not a second copy of the conversation.
+  New or changed visible user and assistant text is indexed in the same
+  transaction that saves the part. Search checks source visibility and owner
+  again on read, and does not contact remote hosts.
+- Existing history is indexed in resumable batches after session preparation.
+  Until backfill finishes, text matches may be incomplete. Title and directory
+  matches do not wait for backfill or for the content request.
+- The palette merges these matches with its existing fuzzy title and directory
+  results. The content query is sent in the body, and excerpts are not cached.
+
 ## Statev2 history ingestion
 
 Each owning instance imports its own local platform history. Analytics and

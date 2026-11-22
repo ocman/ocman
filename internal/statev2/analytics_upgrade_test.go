@@ -125,6 +125,7 @@ func TestAnalyticsIdentityUpgradeBackfillsConflictsWithoutRebuildingSummaries(t 
 
 func removeConversationColumns(t *testing.T, d *DB) {
 	t.Helper()
+	removeSessionSearchSchema(t, d)
 	var summaries bool
 	if err := d.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='analytics_session')`).Scan(&summaries); err != nil {
 		t.Fatal(err)

@@ -19,6 +19,9 @@ func (s *Server) startSessionServices(ctx context.Context, workers *sync.WaitGro
 		return err
 	}
 	s.watchProviderPrompts(ctx, workers)
+	if s.hasStoredHistory() {
+		workers.Go(func() { s.runSessionSearchBackfill(ctx) })
+	}
 	workers.Go(func() { s.runProjectsIndexLoop(ctx) })
 	if _, enabled := s.registry.Get(opencode.PlatformID); enabled {
 		if health, ok := s.router().Local().(interface{ RunOpenCodeHealthChecks(context.Context) }); ok {

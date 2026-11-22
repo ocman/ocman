@@ -15,6 +15,7 @@ import { PluginActionDialog } from './PluginActionDialog';
 import { InlineAlert } from './InlineAlert';
 import { sessionProjectDirectory } from '../lib/oneOffProject';
 import { useOneOffProjects } from '../lib/useOneOffProjects';
+import { rankPaletteSessions, usePaletteContentSearch, type PaletteSession } from './paletteSessionSearch';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string; run?: () => void };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
@@ -30,7 +31,7 @@ const sessionScore = (query: string) => (s: Session) => {
 };
 
 type ResultItem =
-  | { kind: 'session'; session: Session }
+  | PaletteSession
   | { kind: 'project'; project: Project }
   | { kind: 'browse-parent'; directory: string }
   | { kind: 'browse-directory'; entry: DirectoryBrowseEntry }
@@ -183,6 +184,7 @@ export function CommandPalette() {
   // Fetched while the session search is open; the cached list stays
   // readable for route lookups after it closes.
   const sessions = useSessions({ limit: 100 }, { enabled: paletteOpen && mode === 'search' }).data ?? null;
+  const { matches: contentMatches, status: contentSearchStatus } = usePaletteContentSearch(paletteOpen && mode === 'search', query);
   const [actionInvocation, setActionInvocation] = useState<{ label: string; request: PluginActionRequest } | null>(null);
   const [worktreeError, setWorktreeError] = useState<string | null>(null);
   const worktreeLookup = useRef<AbortController | null>(null);
@@ -419,9 +421,8 @@ export function CommandPalette() {
 
   const results: ResultItem[] = useMemo(() => {
     if (mode === 'search') {
-      if (!sessions) return [];
       if (!query.trim()) {
-        return sessions
+        return (sessions ?? [])
           .slice()
           .sort((a, b) => {
               const bucket = 5 * 60 * 1000;
@@ -434,10 +435,7 @@ export function CommandPalette() {
           .slice(0, 20)
           .map((s) => ({ kind: 'session' as const, session: s }));
       }
-      return fuzzyRank(sessions, sessionScore(query)).slice(0, 20).map((session) => ({
-        kind: 'session' as const,
-        session,
-      }));
+      return rankPaletteSessions(sessions ?? [], contentMatches, sessionScore(query));
     }
 
     if (mode === 'project') {
@@ -510,7 +508,7 @@ export function CommandPalette() {
     }
 
     return uniqueResults;
-  }, [mode, query, sessions, staticCommands, projectBrowser, projectList]);
+  }, [mode, query, sessions, contentMatches, staticCommands, projectBrowser, projectList]);
 
   const awaitingProjectResolution = !!projectSessionInitialDirectory && preselectedFor !== `${projectSessionInitialDirectory}\0${projectSessionInitialRemoteId || 'local'}`;
   const selectedIndex = mode !== 'project-session' ? fallbackIndex
@@ -725,7 +723,7 @@ export function CommandPalette() {
                 : mode === 'project' && projectBrowser.open
                 ? 'No child directories'
                 : sessions === null && mode === 'search'
-                ? 'Loading sessions...'
+                ? contentSearchStatus || 'Loading sessions...'
                 : mode === 'project'
                 ? 'Loading directories...'
                 : mode === 'project-session' && projectListError
@@ -734,7 +732,7 @@ export function CommandPalette() {
                 ? 'Loading projects...'
                 : mode === 'project-session'
                 ? 'No projects found'
-                : 'No results'}
+                : contentSearchStatus || 'No results'}
             </div>
           )}
           {results.map((item, i) => {
@@ -764,6 +762,7 @@ export function CommandPalette() {
                       {shortPath(session.directory)} &middot;{' '}
                       {relativeTime(session.timeUpdated)}
                     </span>
+                    {item.snippet && <span className="oc-cmd-meta" title={item.snippet}>{item.snippet}</span>}
                   </div>
                 </div>
               );

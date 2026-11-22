@@ -29,6 +29,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	api.HandleFunc("GET /api/session-identity", auth(s.handleSessionIdentity))
 	api.HandleFunc("GET /api/sessions", auth(s.handleSessions))
 	api.HandleFunc("POST /api/sessions", auth(s.handleCreateSession))
+	api.HandleFunc("POST /api/sessions/search", auth(s.handleSessionContentSearch))
 	api.HandleFunc("GET /api/sessions/notify", auth(s.handleSessionsNotify))
 	api.HandleFunc("GET /api/events", auth(s.handleGlobalEvents))
 	api.HandleFunc("POST /api/client-activity", auth(s.handleClientActivity))

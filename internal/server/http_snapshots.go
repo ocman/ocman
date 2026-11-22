@@ -212,12 +212,12 @@ func sidebarSince(r *http.Request) int64 {
 
 // Fence publication after successful mutations, including module-owned writes
 // that do not yet publish events. Rejected/unauthenticated requests and telemetry
-// heartbeats must not flush the cache. Read-only POSTs invalidate conservatively.
+// heartbeats must not flush the cache. Other read-only POSTs invalidate conservatively.
 func (s *Server) invalidateSessionWrites(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		mutation := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
-		if mutation && (strings.HasPrefix(path, "/api/session") || strings.HasPrefix(path, "/api/project") || strings.HasPrefix(path, "/api/settings/")) {
+		if mutation && path != "/api/sessions/search" && (strings.HasPrefix(path, "/api/session") || strings.HasPrefix(path, "/api/project") || strings.HasPrefix(path, "/api/settings/")) {
 			recorded := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
 				if recorded.status >= http.StatusOK && recorded.status < http.StatusBadRequest {

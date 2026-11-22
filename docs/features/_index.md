@@ -99,8 +99,12 @@ as searches; Read counts as a file. The label changes to `Exploring` while
 a call is pending or running. Click the line to see the individual calls.
 
 **Command palette and slash commands.** <kbd>⌘K</kbd> jumps between sessions,
-settings and actions. `/new [title]`, `/clear` and `/wt` cover the common
-actions, and renaming is keyboard-driven.
+settings and actions. Global session search also finds phrases of three or more
+characters in stored prompts and replies on this machine, even in older sessions.
+Matching conversations show an excerpt. Sessions on remote machines still match
+by title or directory only.
+`/new [title]`, `/clear` and `/wt` cover the common actions, and renaming is
+keyboard-driven.
 
 Use [`/permissions`](session-permissions.md) to review requested permissions and
 create session-scoped allow, ask or deny rules, including editable command

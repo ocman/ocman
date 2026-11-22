@@ -14,6 +14,7 @@ func TestRekeySessionsPreservesHistoryReceiptsAndOtherSources(t *testing.T) {
 	d := openTestDB(t)
 	register(t, d, "second")
 	b := fixture("first")
+	b.Messages[0].ConversationVisible = true
 	b.Session.ParentID = "missing-parent"
 	b.Session.Extensions = json.RawMessage(`{"ParentID":"missing-parent","opaque":{"sessionID":"session"}}`)
 	b.Parts[0].Extensions = json.RawMessage(`{"input":{"sessionID":"session"}}`)
@@ -38,6 +39,9 @@ func TestRekeySessionsPreservesHistoryReceiptsAndOtherSources(t *testing.T) {
 	}
 	if err := d.rekeySessions(t.Context(), "first", ids); err != nil {
 		t.Fatal(err)
+	}
+	if hits, err := d.SearchSessionText(t.Context(), "owner", "retained content"); err != nil || len(hits) != 1 || hits[0].ID != "ocm_session" {
+		t.Fatalf("rekeyed search results: %+v %v", hits, err)
 	}
 	after := read(t, d, Key{"first", "ocm_session"})
 	if after.Session.Revision != before.Session.Revision || after.Session.Title != before.Session.Title || after.Session.ParentID != "ocm_parent" || after.Messages[0].ID != "message" || after.Parts[0].ID != "part" || after.Parts[0].MessageID != "message" || after.Parts[0].Text != before.Parts[0].Text || string(after.Parts[0].Extensions) != string(before.Parts[0].Extensions) {
