@@ -59,6 +59,7 @@ func TestRoutesWithoutStore(t *testing.T) {
 	mux := harnessOn(nil).mux()
 	for _, c := range []struct{ method, target string }{
 		{http.MethodGet, "/api/previews/providers"}, {http.MethodGet, "/api/previews/apps"},
+		{http.MethodGet, "/api/previews/availability"},
 		{http.MethodGet, previewCallback}, {http.MethodGet, "/api/settings/link-preview-rules"},
 		{http.MethodPost, "/api/previews/resolve"}, {http.MethodPost, "/api/previews/token"},
 		{http.MethodPost, "/api/previews/connect"}, {http.MethodPost, "/api/previews/disconnect"},

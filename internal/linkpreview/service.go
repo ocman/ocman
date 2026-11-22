@@ -32,7 +32,6 @@ const (
 	// Per viewer+provider+workspace outbound fetch budget.
 	fetchesPerMinute = 60
 	defaultBackoff   = time.Minute
-	maxBackoff       = 15 * time.Minute
 )
 
 type entry struct {
@@ -185,7 +184,7 @@ func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOn
 	if ctx.Value(previewRefreshKey{}) == true {
 		fresh = false
 	}
-	limited := !fresh && (now.Before(s.backoff[previewBackoffKey(gk, ref)]) || !s.spend(gk, now))
+	limited := !fresh && now.Before(s.backoff[previewBackoffKey(gk, ref)])
 	s.mu.Unlock()
 	if fresh {
 		return cached.p
@@ -256,6 +255,17 @@ func (s *Service) fetch(ctx context.Context, r Resolver, api *API, grant bool, v
 	case <-ctx.Done():
 		return Preview{Ref: ref, State: StateError}
 	}
+	// A queued lookup may have entered before another fetch was rate limited.
+	// Check again immediately before issuing provider work and charge only the
+	// singleflight leader, not every reader sharing the result.
+	backoffKey := previewBackoffKey(gk, ref)
+	s.mu.Lock()
+	now := s.now()
+	allowed := !now.Before(s.backoff[backoffKey]) && s.spend(gk, now)
+	s.mu.Unlock()
+	if !allowed {
+		return Preview{Ref: ref, State: StateRateLimited}
+	}
 	hosts := map[string]bool{}
 	for _, h := range r.APIHosts() {
 		hosts[strings.ToLower(h)] = true
@@ -274,12 +284,14 @@ func (s *Service) fetch(ctx context.Context, r Resolver, api *API, grant bool, v
 		s.Purge(viewerID, ownerID, ref.Provider)
 		return Preview{Ref: ref, State: StateConnect}
 	case he != nil && he.Status == http.StatusTooManyRequests:
-		wait := min(max(he.RetryAfter, time.Second), maxBackoff)
+		wait := max(he.RetryAfter, time.Second)
 		if he.RetryAfter <= 0 {
 			wait = defaultBackoff
 		}
 		s.mu.Lock()
-		s.backoff[previewBackoffKey(gk, ref)] = s.now().Add(wait)
+		if until := s.now().Add(wait); until.After(s.backoff[backoffKey]) {
+			s.backoff[backoffKey] = until
+		}
 		s.mu.Unlock()
 		return Preview{Ref: ref, State: StateRateLimited}
 	case he != nil && he.Status == http.StatusForbidden:

@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/ocman/ocman/internal/httpx"
 	"github.com/ocman/ocman/internal/linkpreview"
 )
@@ -67,8 +70,16 @@ func (m *Module) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid preview batch size", http.StatusBadRequest)
 		return
 	}
-	home, ok := m.previewHome(r)
+	home, ok, err := m.previewHome(r)
+	if err != nil {
+		if !httpx.WriteCancellation(w, "preview request canceled", err) {
+			trace.SpanFromContext(r.Context()).SetAttributes(attribute.String("preview.failure", "host_identity"))
+			httpx.ServerError(w, "could not read preview host identity", err)
+		}
+		return
+	}
 	if !ok {
+		trace.SpanFromContext(r.Context()).SetAttributes(attribute.String("preview.failure", "owner_disconnected"))
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
 		return
@@ -97,6 +108,17 @@ func (m *Module) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, result)
+}
+
+// Availability checks only ocman's connection state, never a forge or grant.
+func (m *Module) handlePreviewAvailability(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	_, connected, err := m.previewHome(r)
+	if err != nil {
+		httpx.ServerError(w, "could not check preview owner availability", err)
+		return
+	}
+	httpx.WriteJSON(w, map[string]bool{"connected": connected})
 }
 
 func (m *Module) resolvePreview(ctx context.Context, viewerID, home string, req previewRequest, access bool) previewResponse {

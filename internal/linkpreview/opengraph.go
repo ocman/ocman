@@ -130,6 +130,7 @@ func fetchPublicPage(ctx context.Context, client *http.Client, raw, accept strin
 }
 
 func publicPageRetryAfter(value string, now time.Time) time.Duration {
+	const maxBackoff = 15 * time.Minute
 	if secs, err := strconv.ParseInt(value, 10, 64); err == nil {
 		return time.Duration(min(max(secs, 0), int64(maxBackoff/time.Second))) * time.Second
 	}

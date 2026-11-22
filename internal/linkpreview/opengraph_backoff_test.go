@@ -62,7 +62,7 @@ func TestOpenGraphRetryAfterFormats(t *testing.T) {
 		want  time.Duration
 	}{
 		{"600", 10 * time.Minute}, {"-1", 0}, {"invalid", 0},
-		{"9223372036854775807", maxBackoff},
+		{"9223372036854775807", 15 * time.Minute},
 		{now.Add(10 * time.Minute).UTC().Format(http.TimeFormat), 10 * time.Minute},
 		{now.Add(-time.Minute).UTC().Format(http.TimeFormat), 0},
 	} {

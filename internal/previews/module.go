@@ -73,6 +73,7 @@ func (m *Module) Routes(r module.Router) {
 	r.Handle("POST /api/previews/connect", guard(m.handlePreviewConnect))
 	r.Handle("POST /api/previews/disconnect", guard(m.handlePreviewDisconnect))
 	r.Handle("POST /api/previews/resolve", guard(m.handlePreviewResolve))
+	r.Handle("GET /api/previews/availability", guard(m.handlePreviewAvailability))
 	r.Handle("GET /api/previews/image", guard(m.handlePreviewImage))
 	r.Handle("GET /api/previews/external-image", m.handleExternalImage)
 	r.Handle("POST /api/previews/token", guard(m.handlePreviewToken))

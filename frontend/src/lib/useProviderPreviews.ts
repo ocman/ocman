@@ -1,4 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { APIError, fetchJSON } from './api';
+import { queryClient } from './queryClient';
 import { useDocumentVisible } from './usePanelVisible';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, PreviewSessionContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
@@ -30,6 +33,26 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const [pending, setPending] = useState(false);
   const [generation, setGeneration] = useState(0);
+  const [outage, setOutage] = useState<{ lookup: string; since: number } | null>(null);
+  const [recoveredLookup, setRecoveredLookup] = useState<string | null>(null);
+  const lookup = JSON.stringify([owner, session, text, generation, openGraph]);
+  const recovered = recoveredLookup === lookup;
+  const waiting = visible && !recovered && outage?.lookup === lookup;
+  // Share the health probe across cards for this owner. It never calls a forge.
+  const availability = useQuery({
+    queryKey: ['preview-availability', owner],
+    queryFn: ({ signal }) => fetchJSON<{ connected: boolean }>(`/api/previews/availability?remoteId=${encodeURIComponent(owner)}`, signal),
+    enabled: waiting,
+    subscribed: waiting,
+    staleTime: 0,
+    refetchInterval: waiting ? 15_000 : false,
+    retry: false,
+  }, queryClient);
+  useEffect(() => {
+    if (!waiting || !availability.data?.connected || availability.dataUpdatedAt <= outage.since) return;
+    const timer = setTimeout(() => setRecoveredLookup(lookup), 0);
+    return () => clearTimeout(timer);
+  }, [waiting, availability.data, availability.dataUpdatedAt, outage, lookup]);
   const refreshPending = useRef(false);
   const refresh = () => {
     refreshPending.current = true;
@@ -60,7 +83,7 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
   }, [text, owner, session]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || waiting) return;
     const abort = new AbortController();
     const timer = setTimeout(() => {
       // Without app access the catalog is refused, but public forge links
@@ -80,14 +103,18 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
           lastResolved.current = result;
           setResolved(result);
         }
-      }).catch(() => {
+      }).catch((error: unknown) => {
         // Keep an existing card on refresh failure; initial failures use plain links.
+        if (!abort.signal.aborted && !recovered && owner !== 'local' &&
+            error instanceof APIError && error.status === 503 && error.message.trim() === 'owner unavailable') {
+          setOutage({ lookup, since: Date.now() });
+        }
       }).finally(() => {
         if (!abort.signal.aborted) setPending(false);
       });
     }, refreshPending.current ? 0 : RESOLVE_DELAY_MS);
     return () => { clearTimeout(timer); abort.abort(); };
-  }, [text, owner, session, generation, visible, openGraph]);
+  }, [text, owner, session, generation, visible, openGraph, lookup, recovered, waiting]);
 
   // Never show results for other text or another owner while reloading.
   const current = resolved && resolved.text === text && resolved.owner === owner && resolved.session === session ? resolved : null;

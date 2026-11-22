@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useProviderPreviews } from './useProviderPreviews';
-import { loadPreviewConfig, resolvePreviews } from './previews';
+import { loadPreviewConfig, PreviewOwnerContext, resolvePreviews } from './previews';
+import { APIError } from './api';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 
 vi.mock('./previews', async (original) => ({
@@ -11,7 +12,34 @@ vi.mock('./previews', async (original) => ({
   mayPreview: () => true,
   resolvePreviews: vi.fn().mockResolvedValue([]),
 }));
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+beforeEach(() => vi.clearAllMocks());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it('probes only ocman while the owner is offline, then retries the preview once', async () => {
+  vi.useFakeTimers();
+  vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  let connected = false;
+  const health = vi.fn(async () => new Response(JSON.stringify({ connected })));
+  vi.stubGlobal('fetch', health);
+  vi.mocked(resolvePreviews).mockClear().mockResolvedValue([])
+    .mockRejectedValueOnce(new APIError('owner unavailable\n', 503));
+  renderHook(() => useProviderPreviews('https://forge.example/repo/pulls/1'), {
+    wrapper: ({ children }) => <PreviewOwnerContext.Provider value="box">{children}</PreviewOwnerContext.Provider>,
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(health).toHaveBeenCalledWith('/api/previews/availability?remoteId=box', expect.anything());
+  expect(resolvePreviews).toHaveBeenCalledTimes(1);
+  connected = true;
+  await act(async () => vi.advanceTimersByTimeAsync(16_000));
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(resolvePreviews).toHaveBeenCalledTimes(2);
+  expect(resolvePreviews).toHaveBeenLastCalledWith(expect.any(String), 'box', expect.any(AbortSignal), false);
+  const probes = health.mock.calls.length;
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(health).toHaveBeenCalledTimes(probes);
+  expect(resolvePreviews).toHaveBeenCalledTimes(2);
+});
 
 it('resolves no previews while hidden, then resolves once on return', async () => {
   vi.useFakeTimers();

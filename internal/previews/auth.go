@@ -94,16 +94,16 @@ func (m *Module) previewAccessAllowed(r *http.Request) bool {
 
 // previewHome is this machine's instance ID, after checking that an
 // explicit remoteId names this machine or a connected remote.
-func (m *Module) previewHome(r *http.Request) (string, bool) {
+func (m *Module) previewHome(r *http.Request) (string, bool, error) {
 	ident, err := m.Store.InstanceIdentity(r.Context())
 	if err != nil {
-		return "", false
+		return "", false, err
 	}
 	switch id := r.URL.Query().Get("remoteId"); id {
 	case "", "local", ident.InstanceID:
-		return ident.InstanceID, true
+		return ident.InstanceID, true, nil
 	default:
-		return ident.InstanceID, m.RemoteConnected != nil && m.RemoteConnected(id)
+		return ident.InstanceID, m.RemoteConnected != nil && m.RemoteConnected(id), nil
 	}
 }
 
@@ -113,7 +113,11 @@ func (m *Module) previewContext(w http.ResponseWriter, r *http.Request) (string,
 		http.Error(w, errPreviewForbidden.Error(), http.StatusForbidden)
 		return "", false
 	}
-	home, ok := m.previewHome(r)
+	home, ok, err := m.previewHome(r)
+	if err != nil {
+		httpx.ServerError(w, "could not read preview host identity", err)
+		return "", false
+	}
 	if !ok {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)

@@ -96,6 +96,7 @@ type harness struct {
 	tokens *fakeTokens
 	hits   atomic.Int32
 	status atomic.Int32 // response status override
+	retry  atomic.Int32 // Retry-After override, in seconds
 	seen   sync.Map     // token -> true
 }
 
@@ -107,7 +108,7 @@ func newHarness(t *testing.T) *harness {
 		time.Sleep(20 * time.Millisecond)
 		if st := h.status.Load(); st != 0 {
 			if st == http.StatusTooManyRequests {
-				w.Header().Set("Retry-After", "30")
+				w.Header().Set("Retry-After", fmt.Sprint(max(30, h.retry.Load())))
 			}
 			w.WriteHeader(int(st))
 			return
@@ -319,6 +320,27 @@ func TestResolveFetchBudget(t *testing.T) {
 	}
 	if n := h.hits.Load(); n != fetchesPerMinute {
 		t.Fatalf("hits = %d", n)
+	}
+}
+
+func TestPreviewRefreshHonorsFullProviderCooldown(t *testing.T) {
+	h := newHarness(t)
+	clock := time.Now()
+	h.svc.now = func() time.Time { return clock }
+	h.retry.Store(3600)
+	h.status.Store(http.StatusTooManyRequests)
+	if p := h.one("alice", "ABC-1"); p.State != StateRateLimited {
+		t.Fatalf("first preview = %+v", p)
+	}
+	h.status.Store(0)
+	clock = clock.Add(30 * time.Minute)
+	ps := h.svc.Resolve(WithPreviewRefresh(t.Context()), "alice", "owner", []Ref{{Provider: "mock", Kind: "issue", ID: "ABC-2"}})
+	if len(ps) != 1 || ps[0].State != StateRateLimited || h.hits.Load() != 1 {
+		t.Fatalf("refresh during cooldown = %+v, provider calls = %d", ps, h.hits.Load())
+	}
+	clock = clock.Add(30 * time.Minute)
+	if p := h.one("alice", "ABC-2"); p.State != StateOK || h.hits.Load() != 2 {
+		t.Fatalf("after cooldown = %+v, provider calls = %d", p, h.hits.Load())
 	}
 }
 

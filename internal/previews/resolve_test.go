@@ -105,6 +105,51 @@ func TestPreviewResolve_RejectsOversizedAndRemote(t *testing.T) {
 	}
 }
 
+func TestPreviewAvailabilityTracksOnlyTheRequestedOwner(t *testing.T) {
+	h := newHarness(t)
+	mux := h.mux()
+	h.remotes["other"] = true
+	for _, connected := range []bool{false, true} {
+		h.remotes["box"] = connected
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/previews/availability?remoteId=box", nil))
+		var status struct{ Connected bool }
+		if err := json.Unmarshal(rr.Body.Bytes(), &status); err != nil || rr.Code != http.StatusOK || status.Connected != connected || rr.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("availability (connected=%v): HTTP %d %s", connected, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestPreviewRoutesDistinguishHostFailureFromDisconnectedOwner(t *testing.T) {
+	h := newHarness(t)
+	mux := h.mux()
+	if err := h.Store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/api/previews/resolve?remoteId=box"},
+		{http.MethodGet, "/api/previews/availability?remoteId=box"},
+		{http.MethodGet, "/api/previews/providers?remoteId=box"},
+	} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(route.method, route.path, strings.NewReader("{}")))
+		if rr.Code != http.StatusInternalServerError || strings.Contains(rr.Body.String(), "owner unavailable") {
+			t.Errorf("%s returned HTTP %d: %s", route.path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestPreviewResolveReportsCanceledOwnerLookup(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	rr := httptest.NewRecorder()
+	h.mux().ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/previews/resolve?remoteId=box", strings.NewReader("{}")).WithContext(ctx))
+	if rr.Code != 499 {
+		t.Fatalf("canceled request returned HTTP %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestPreviewResolveChecksTarget(t *testing.T) {
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/status") {

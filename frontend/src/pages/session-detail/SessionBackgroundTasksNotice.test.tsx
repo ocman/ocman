@@ -40,6 +40,25 @@ it('updates background watches immediately on live start and stop events', async
   await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
 });
 
+it('polls less often when idle but still responds to a live watch event', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(prWorkflowApi.background).mockResolvedValue({ pullRequests: [] });
+    renderWithQuery(<SessionBackgroundTasksNotice sessionId="s1" platform="fake" count={0} />);
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(prWorkflowApi.background).toHaveBeenCalledTimes(1);
+    vi.mocked(prWorkflowApi.background).mockResolvedValue({ pullRequests: [watch] });
+    act(() => __handleSessionChangedForTests(JSON.stringify({ sessionID: 's1', platform: 'fake' })));
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(screen.getByRole('button', { name: '1 background task running' })).toBeVisible();
+    expect(prWorkflowApi.background).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(prWorkflowApi.background).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('counts a queued PR update after watching stops and removes it after delivery', async () => {
   vi.mocked(prWorkflowApi.background).mockResolvedValue({ pullRequests: [{ ...watch, watching: false, backgroundTask: true }] });
   const { client } = renderWithQuery(<SessionBackgroundTasksNotice sessionId="s1" platform="fake" count={2}

@@ -6,7 +6,7 @@ interface VisiblePollingQuery<T> {
   queryKey: QueryKey;
   /** Receives a signal that aborts on unmount or after `timeoutMs`. */
   run: (signal: AbortSignal) => Promise<T>;
-  intervalMs: number;
+  intervalMs: number | ((data: T | undefined) => number);
   timeoutMs: number;
   enabled?: boolean;
 }
@@ -18,6 +18,6 @@ export function useVisiblePollingQuery<T>({ queryKey, run, intervalMs, timeoutMs
     queryKey,
     queryFn: ({ signal }) => withDeadline(timeoutMs, run, signal),
     enabled: enabled && visible,
-    refetchInterval: intervalMs,
+    refetchInterval: (query) => typeof intervalMs === 'number' ? intervalMs : intervalMs(query.state.data),
   });
 }

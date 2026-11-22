@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import { useCallback, type ComponentProps } from 'react';
 import { Button } from '../../components/Control';
 import { prWorkflowApi } from '../../lib/prWorkflowApi';
 import { useVisiblePollingQuery } from '../../lib/useVisiblePollingQuery';
@@ -7,14 +7,21 @@ import { BackgroundTasksNotice } from './BackgroundTasksNotice';
 
 type Props = ComponentProps<typeof BackgroundTasksNotice> & { sessionId: string; platform: string };
 
+const hasBackgroundTask = (link: { backgroundTask?: boolean; watching: boolean }) => link.backgroundTask ?? link.watching;
+
 export function SessionBackgroundTasksNotice({ sessionId, platform, ...props }: Props) {
   const query = useVisiblePollingQuery({
     queryKey: ['session-pr-background-tasks', platform, sessionId],
     run: signal => prWorkflowApi.background(sessionId, platform, signal),
-    intervalMs: 5_000, timeoutMs: 10_000,
+    intervalMs: (data) => data?.pullRequests.some(hasBackgroundTask) ? 5_000 : 30_000,
+    timeoutMs: 10_000,
   });
-  useSessionLiveRefresh(sessionId, platform, query.refetch);
-  const watches = (query.data?.pullRequests ?? []).filter(link => link.backgroundTask ?? link.watching);
+  const refetch = query.refetch;
+  // A session event can arrive during a fallback poll. Join that read instead
+  // of aborting and starting another HTTP request for the same session.
+  const refreshLive = useCallback(() => refetch({ cancelRefetch: false }), [refetch]);
+  useSessionLiveRefresh(sessionId, platform, refreshLive);
+  const watches = (query.data?.pullRequests ?? []).filter(hasBackgroundTask);
   return <><BackgroundTasksNotice {...props} sessionId={sessionId} platform={platform}
     additionalTasks={watches.map(link => ({
       id: `pr-watch:${link.remote.host}/${link.remote.repo}#${link.number}`,

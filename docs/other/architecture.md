@@ -197,6 +197,9 @@ flowchart LR
   grant budgets and backoff. GitHub also retains its credential-scoped request
   budget; batching browser requests does not bypass GitHub's limits or turn REST
   reads into one upstream call. Other provider metadata keeps its normal cache.
+  If a remote owner is disconnected, its visible cards share a temporary
+  `/api/previews/availability` probe against ocman only. Once connected, each
+  waiting card can retry once through the normal provider budget and backoff.
 - **Public web pages.** The hub reads Open Graph metadata on delayed markdown
   link hover and proxies preview images. Provider-specific cards take priority.
 - **Browser push services.** Opt-in device subscriptions receive encrypted Web
