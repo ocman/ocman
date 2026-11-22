@@ -94,12 +94,22 @@ func TestPluginNoticesFromBackendLifecycle(t *testing.T) {
 	send := func(data string) {
 		t.Helper()
 		tmp := filepath.Join(dataDir, "notice-tmp")
+		next := filepath.Join(dataDir, "notice-next")
 		if err := os.WriteFile(tmp, []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Rename(tmp, filepath.Join(dataDir, "notice-next")); err != nil {
+		if err := os.Rename(tmp, next); err != nil {
 			t.Fatal(err)
 		}
+		// The helper reads and then removes this file. Don't let the next
+		// send replace it between those operations.
+		testutil.WaitFor(t, 5*time.Second, "plugin helper to consume notice-next", func() bool {
+			_, err := os.Stat(next)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				t.Fatal(err)
+			}
+			return errors.Is(err, os.ErrNotExist)
+		})
 	}
 	read := func() map[string]listedPluginNotices {
 		t.Helper()
@@ -112,7 +122,7 @@ func TestPluginNoticesFromBackendLifecycle(t *testing.T) {
 	}
 	want := func(notices ...listedNotice) {
 		t.Helper()
-		waitForBadgeCondition(t, func() bool {
+		testutil.WaitFor(t, 5*time.Second, "plugin notice state", func() bool {
 			listed := read()
 			if len(notices) == 0 {
 				return len(listed) == 0
@@ -149,7 +159,7 @@ func TestPluginNoticesFromBackendLifecycle(t *testing.T) {
 	want(recording)
 	send("exit")
 	proc := m.Process(id)
-	waitForBadgeCondition(t, func() bool {
+	testutil.WaitFor(t, 5*time.Second, "plugin process restart", func() bool {
 		h := proc.Health()
 		return h.Status == "ready" && h.RestartCount == 1
 	})
