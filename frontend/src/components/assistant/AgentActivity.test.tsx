@@ -44,31 +44,93 @@ function PendingConversation({ messages, parts, status }: { messages: Message[];
   </>;
 }
 
-it('shows one ticking row before any agent events and keeps it open as work arrives', () => {
+it('ticks before work arrives and keeps an expanded work row open through completion', () => {
   vi.useFakeTimers();
   vi.setSystemTime(1000);
   useUiStore.setState({ collapseAgentActivity: true });
   const { rerender } = render(<PendingConversation messages={[]} parts={[]} status="done" />);
   screen.getByTestId('conversation-viewport').scrollTo = vi.fn();
   fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-  const row = screen.getByText('Working… 0:00');
-  fireEvent.click(row);
+  const timer = screen.getByText('Working… < 1s');
+  expect(timer.closest('details')).toBeNull();
   act(() => vi.advanceTimersByTime(2000));
-  expect(row).toHaveTextContent('Working… 0:02');
+  expect(timer).toHaveTextContent('Working… 2s');
   rerender(<PendingConversation messages={[user]} parts={[prompt]} status="busy" />);
-  expect(screen.getByText('Working… 0:02')).toBe(row);
-  rerender(<PendingConversation messages={[user, step]} parts={[prompt, part('step', 'progress', { type: 'text', text: 'Checking files' })]} status="busy" />);
+  expect(screen.getByText('Working… 2s')).toBe(timer);
+  rerender(<PendingConversation messages={[user, step]} parts={[prompt, part('step', 'progress', { type: 'text', synthetic: true, text: 'Checking files' })]} status="busy" />);
+  const row = screen.getByText('Working… 2s');
+  fireEvent.click(row);
   expect(screen.getByText('Checking files').closest('details')).toHaveAttribute('open');
   expect(screen.getAllByText(/Working…/)).toHaveLength(1);
-  rerender(<PendingConversation messages={[user, step, reply]} parts={[prompt, part('step', 'progress', { type: 'text', text: 'Checking files' })]} status="done" />);
+  rerender(<PendingConversation messages={[user, step, reply]} parts={[prompt, part('step', 'progress', { type: 'text', synthetic: true, text: 'Checking files' })]} status="done" />);
   act(() => vi.advanceTimersByTime(10000));
-  expect(row).toHaveTextContent('Worked for 0:04');
+  expect(row).toHaveTextContent('Worked for 4s');
+});
+
+it('does not show a work disclosure for a completed reply without hidden work', () => {
+  useUiStore.setState({ collapseAgentActivity: true });
+  render(conversation([user, reply], [prompt, part('reply', 'answer', { type: 'text', text: 'All done.' })], 'done'));
+  expect(screen.getByText('All done.')).toBeVisible();
+  expect(screen.queryByText(/Worked for/)).not.toBeInTheDocument();
+});
+
+it('keeps progress prose inline before the subsequent tool work in the same message', () => {
+  useUiStore.setState({ collapseAgentActivity: true });
+  render(conversation([user, step], [prompt,
+    part('step', 'comment', { type: 'text', text: 'I found the cause. I will check the fix.' }),
+    part('step', 'read', { type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: 'README.md' } } }),
+  ], 'busy'));
+  const prose = screen.getByText('I found the cause. I will check the fix.');
+  const work = screen.getByText('Read README.md');
+  expect(prose).toBeVisible();
+  expect(prose.closest('details')).toBeNull();
+  expect(work).not.toBeVisible();
+  expect(prose.compareDocumentPosition(work)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+});
+
+it('keeps both completed replies inline and groups the background shell with its follow-up', () => {
+  useUiStore.setState({ collapseAgentActivity: true });
+  const wake: Message = { id: 'wake', sessionId: 's', timeCreated: 7000, data: { role: 'user', synthetic: true } };
+  const followup: Message = { ...reply, id: 'followup', timeCreated: 9000, data: { ...reply.data, time: { created: 9000, completed: 11000 } } };
+  render(conversation([user, step, reply, wake, followup], [prompt,
+    part('step', 'progress', { type: 'text', synthetic: true, text: 'Preparing pull request' }),
+    part('reply', 'initial', { type: 'text', text: 'Opened the pull request.' }),
+    part('wake', 'shell', { type: 'text', synthetic: true, text: '<shell id="checks" state="completed" command="run test suite">\nTests passed\n</shell>' }),
+    part('followup', 'final', { type: 'text', text: 'Tests passed.' }),
+  ], 'done'));
+  const first = screen.getByText('Opened the pull request.');
+  const shell = screen.getByText(/run test suite/);
+  const followupWork = shell.closest('details');
+  expect(first).toBeVisible();
+  expect(screen.getByText('Tests passed.')).toBeVisible();
+  expect(screen.getAllByRole('button', { name: 'Read aloud' })).toHaveLength(2);
+  expect(followupWork).toHaveTextContent('Worked for 4s');
+  expect(shell).not.toBeVisible();
+  expect(first.compareDocumentPosition(followupWork!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  fireEvent.click(followupWork!.querySelector('summary')!);
+  expect(shell).toBeVisible();
+});
+
+it('folds a background shell completion that arrived before the turn finished', () => {
+  useUiStore.setState({ collapseAgentActivity: true });
+  const notice: Message = { id: 'notice', sessionId: 's', timeCreated: 2500, data: { role: 'user', synthetic: true } };
+  render(conversation([user, step, notice, reply], [prompt,
+    part('step', 'read', { type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: 'README.md' } } }),
+    part('notice', 'shell', { type: 'text', synthetic: true, text: '<shell id="lint" state="completed" command="run lint">\nOK\n</shell>' }),
+    part('reply', 'final', { type: 'text', text: 'All done.' }),
+  ], 'done'));
+  const work = screen.getByText('Worked for 4s');
+  const command = screen.getByText(/run lint/);
+  expect(command).not.toBeVisible();
+  fireEvent.click(work);
+  expect(command).toBeVisible();
+  expect(screen.getByText('Read README.md').compareDocumentPosition(command)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 });
 
 it('shows a finish-only error without opening the work details', () => {
   useUiStore.setState({ collapseAgentActivity: true });
   const failed: Message = { ...reply, data: { ...reply.data, finish: 'error' } };
-  render(conversation([user, failed], [prompt, part('reply', 'progress', { type: 'text', text: 'Checking files' })], 'error'));
+  render(conversation([user, failed], [prompt, part('reply', 'progress', { type: 'text', synthetic: true, text: 'Checking files' })], 'error'));
   expect(screen.getByText('Session ended with an error')).toBeVisible();
   expect(screen.getByText('Checking files')).not.toBeVisible();
 });
@@ -77,12 +139,12 @@ it('keeps only formatted final prose outside the work, and leaves it available t
   useUiStore.setState({ collapseAgentActivity: true });
   const { rerender } = render(conversation([user, step, reply], [
     prompt,
-    part('step', 'progress', { type: 'text', text: 'Checking files' }),
+    part('step', 'progress', { type: 'text', synthetic: true, text: 'Checking files' }),
     part('step', 'tool', { type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: 'README.md' } } }),
     part('reply', 'thought', { type: 'reasoning', text: 'Consider the timing' }),
     part('reply', 'answer', { type: 'text', text: '**All done.**' }),
   ], 'done'));
-  const summary = screen.getByText('Worked for 0:04');
+  const summary = screen.getByText('Worked for 4s');
   const details = summary.closest('details');
   expect(details).not.toHaveAttribute('open');
   expect(details).toContainElement(screen.getByText('Checking files'));
@@ -104,13 +166,44 @@ it('keeps only formatted final prose outside the work, and leaves it available t
 it('keeps questions inline while hiding other activity from the same message', () => {
   useUiStore.setState({ collapseAgentActivity: true });
   render(conversation([user, step], [prompt,
-    part('step', 'progress', { type: 'text', text: 'Checking files' }),
+    part('step', 'progress', { type: 'text', synthetic: true, text: 'Checking files' }),
     part('step', 'question', { type: 'tool', tool: 'question', state: { status: 'running', input: {
       questions: [{ header: 'Tests', question: 'Which tests?', options: [{ label: 'Unit', description: 'Run unit tests' }] }],
     } } }),
   ], 'waiting'));
   expect(screen.getByText('Asked 1 question')).toBeVisible();
   expect(screen.getByText('Checking files')).not.toBeVisible();
+});
+
+it('stops the work timer at a question and starts a separate disclosure after the answer', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(6000);
+  useUiStore.setState({ collapseAgentActivity: true });
+  const question = { ...step, id: 'question', timeCreated: 3000 };
+  const later = { ...step, id: 'later', timeCreated: 11000 };
+  const earlier = part('step', 'before', { type: 'text', synthetic: true, text: 'Before the question' });
+  const after = part('later', 'after', { type: 'text', synthetic: true, text: 'After the question' });
+  const asks = (answered: boolean) => part('question', 'ask', { type: 'tool', tool: 'question', time: { start: 4000 }, state: {
+    status: answered ? 'completed' : 'running', time: { start: 4000, ...(answered ? { end: 10000 } : {}) },
+    input: { questions: [{ header: 'Tests', question: 'Which tests?', options: [{ label: 'Unit', description: 'Run unit tests' }] }] },
+  } });
+  const { rerender } = render(conversation([user, step, question], [prompt, earlier, asks(false)], 'busy'));
+  screen.getByTestId('conversation-viewport').scrollTo = vi.fn();
+  const frozen = screen.getByText('Worked for 3s');
+  expect(screen.queryByText(/Working…/)).not.toBeInTheDocument();
+  act(() => vi.advanceTimersByTime(6000));
+  expect(frozen).toHaveTextContent('Worked for 3s');
+  rerender(conversation([user, step, question, later], [prompt, earlier, asks(true), after], 'busy'));
+  const resumed = screen.getByText('Working… 2s');
+  const firstDetails = frozen.closest('details');
+  const secondDetails = resumed.closest('details');
+  const asked = screen.getByText('Asked 1 question');
+  expect(frozen.compareDocumentPosition(asked)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(asked.compareDocumentPosition(resumed)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  fireEvent.click(resumed);
+  expect(secondDetails).toContainElement(screen.getByText('After the question'));
+  expect(firstDetails).not.toContainElement(screen.getByText('After the question'));
+  expect(screen.getByText('Before the question')).not.toBeVisible();
 });
 
 it('reveals collapsed work when jumping to a tool call', () => {

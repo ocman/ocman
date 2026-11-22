@@ -1,10 +1,26 @@
-.oc-agent-activity > summary {
-  color: var(--text-dim);
-  cursor: pointer;
+.oc-tool-compact-line.oc-agent-activity-label,
+.oc-tool-compact-line.oc-agent-activity-label:hover {
+  color: var(--overlay0);
   font-variant-numeric: tabular-nums;
+}
+
+.oc-agent-activity > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.oc-agent-activity > summary::-webkit-details-marker {
+  display: none;
 }
 
 .oc-agent-activity-children {
   border-inline-start: 1px solid var(--border);
   padding-inline-start: 12px;
+}
+
+/* Match the viewport gap that adjacent compact message rows offset. */
+.oc-agent-activity[open] > .oc-agent-activity-children {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }

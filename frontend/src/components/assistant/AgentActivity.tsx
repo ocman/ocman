@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useState, type ComponentProps, type ReactNode } from 'react';
-import { MessagePrimitive, ThreadPrimitive, useAuiState, type ThreadMessage } from '@assistant-ui/react';
+import { MessagePrimitive, ThreadPrimitive, useAuiState, type ThreadMessage, type ToolCallMessagePart } from '@assistant-ui/react';
 import { parseA2UIResult } from '../../lib/a2ui';
+import { formatDuration } from '../../lib/format';
+import type { QuestionTiming } from '../../lib/convertToolPart';
 import { isMutedTool } from '../../lib/mutedTools';
 import type { TurnAggregate } from '../../lib/turnStats';
 import { useUiStore } from '../../lib/uiStore';
@@ -68,11 +70,6 @@ export function ActivityMessage({ slice, components, decorations, actions }: {
   </>;
 }
 
-function formatElapsed(ms: number): string {
-  const seconds = Math.floor(Math.max(0, ms) / 1000);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
 function ActivityDetails({ startedAt, live, duration, children }: {
   startedAt: number; live: boolean; duration: number | null; children: ReactNode;
 }) {
@@ -85,14 +82,55 @@ function ActivityDetails({ startedAt, live, duration, children }: {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [live]);
+  const label = `${live ? 'Working…' : 'Worked for'} ${formatDuration(live ? now - startedAt : duration ?? 0)}`;
+  if (!children) return <div className="oc-tool-compact-line oc-agent-activity-label">{label}</div>;
   return <details className="oc-agent-activity" open={open || (printing && !printCollapse)}
     onToggle={(event) => { if (!printing) setOpen(event.currentTarget.open); }}>
-    <summary>{live ? 'Working…' : 'Worked for'} {formatElapsed(live ? now - startedAt : duration ?? 0)}</summary>
+    <summary className="oc-tool-compact-line oc-agent-activity-label">
+      <i className={`bi bi-chevron-${open ? 'down' : 'right'} oc-read-arrow`} aria-hidden="true" />
+      <span>{label}</span>
+    </summary>
     <div className="oc-agent-activity-children">{children}</div>
   </details>;
 }
 
-type Turn = { startedAt: number; live: boolean; duration: number | null; work: number[] };
+type WorkBlock = { startedAt: number; live: boolean; duration: number | null; work: number[] };
+type WorkBoundary = { index: number; startedAt: number; resumedAt?: number; question?: boolean };
+type Turn = WorkBlock & { boundaries: WorkBoundary[] };
+
+function questionBoundary(message: ThreadMessage, index: number): WorkBoundary | undefined {
+  const questions = message.content.filter((part): part is ToolCallMessagePart => part.type === 'tool-call' && part.toolName === '__question__');
+  if (!questions.length) return;
+  type Timing = { questionTiming?: QuestionTiming };
+  const first = questions[0].artifact as Timing | undefined;
+  const last = questions[questions.length - 1].artifact as Timing | undefined;
+  return { index, startedAt: first?.questionTiming?.startedAt ?? message.createdAt.getTime(), resumedAt: last?.questionTiming?.answeredAt, question: true };
+}
+
+function splitWork(turn: Turn, messages: readonly ThreadMessage[], afterInline: Map<number, WorkBlock>): WorkBlock {
+  if (!turn.boundaries.length) return turn;
+  let startedAt = turn.startedAt;
+  let offset = 0;
+  let first: WorkBlock | undefined;
+  let previous: WorkBoundary | undefined;
+  for (const boundary of turn.boundaries) {
+    const start = offset;
+    const limit = boundary.index + (boundary.question ? 1 : 0);
+    while (offset < turn.work.length && turn.work[offset] < limit) offset++;
+    const block = { startedAt, live: false, duration: boundary.startedAt - startedAt, work: turn.work.slice(start, offset) };
+    if (previous) afterInline.set(previous.index, block);
+    else first = block;
+    previous = boundary;
+    // With older history lacking answer timestamps, only count from the first recorded work.
+    startedAt = boundary.resumedAt ?? messages[turn.work[offset]]?.createdAt.getTime() ?? boundary.startedAt;
+  }
+  const work = turn.work.slice(offset);
+  if (previous && (work.length || previous.resumedAt !== undefined)) {
+    const endedAt = turn.startedAt + (turn.duration ?? 0);
+    afterInline.set(previous.index, { startedAt, live: turn.live, duration: endedAt - startedAt, work });
+  }
+  return first ?? turn;
+}
 
 type ActivityMessagesProps = { components: ThreadComponents; promptAliases?: ReadonlyMap<string, string> };
 
@@ -115,18 +153,40 @@ function CompactMessages({ components, promptAliases }: ActivityMessagesProps) {
     }
     const { turnId, startedAt, isLive, wallClockMs } = stats;
     if (!firstReply.has(turnId)) firstReply.set(turnId, message.id);
-    const turn = turns.get(turnId) ?? { startedAt, live: isLive, duration: wallClockMs, work: [] };
+    const turn = turns.get(turnId) ?? { startedAt, live: isLive, duration: wallClockMs, work: [], boundaries: [] };
     const parts = activityParts(message);
     if (parts.work.length || parts.text.work) turn.work.push(index);
+    const question = questionBoundary(message, index);
+    if (question) turn.boundaries.push(question);
+    else if (custom?.activityInlineText && !hasAssistantError(message.status) && (isLive || !stats.isSummaryAnchor)) {
+      const startedAt = message.createdAt.getTime();
+      turn.boundaries.push({ index, startedAt, resumedAt: startedAt });
+    }
     if (hasInlineContent(message, parts, stats)) inline.add(index);
     turns.set(turnId, turn);
   });
   if (latestPrompt && !turns.has(latestPrompt.id) && (running || latestPrompt.metadata.custom?.activityPending)) {
-    turns.set(latestPrompt.id, { startedAt: latestPrompt.createdAt.getTime(), live: true, duration: null, work: [] });
+    turns.set(latestPrompt.id, { startedAt: latestPrompt.createdAt.getTime(), live: true, duration: null, work: [], boundaries: [] });
   }
 
+  // A shell wake-up can start its own turn or arrive during an existing one.
+  let currentTurnId: string | undefined;
+  messages.forEach((message, index) => {
+    const custom = message.metadata.custom;
+    const stats = custom?.turnStats as TurnAggregate | undefined;
+    if (stats?.turnId) currentTurnId = stats.turnId;
+    if (custom?.activityPrompt || custom?.activityPending || turns.has(message.id)) currentTurnId = message.id;
+    if (!custom?.activityShell || !currentTurnId) return;
+    const turn = turns.get(currentTurnId);
+    if (!turn) return;
+    turn.work.push(index);
+    inline.delete(index);
+  });
+  for (const turn of turns.values()) turn.work.sort((a, b) => a - b);
+
   // In a paginated window without its user prompt, start at the first visible reply.
-  const anchors = new Map([...turns].map(([id, turn]) => [ids.has(id) ? id : firstReply.get(id), turn]));
+  const afterInline = new Map<number, WorkBlock>();
+  const anchors = new Map([...turns].map(([id, turn]) => [ids.has(id) ? id : firstReply.get(id), splitWork(turn, messages, afterInline)]));
   return messages.map((message, index) => {
     const alias = promptAliases?.get(message.id);
     // Props can pick up the receipt before assistant-ui drops the optimistic message.
@@ -136,15 +196,22 @@ function CompactMessages({ components, promptAliases }: ActivityMessagesProps) {
     const agent = message.role === 'assistant' && !!(message.metadata.custom?.turnStats as TurnAggregate | undefined)?.turnId;
     return <Fragment key={awaitingRemoval ? message.id : alias ?? message.id}>
       {!agent && inline.has(index) && row}
-      {turn && <ActivityDetails startedAt={turn.startedAt} live={turn.live} duration={turn.duration}>
-        <ActivitySliceContext.Provider value="work">
-          {turn.work.length ? turn.work.map((workIndex) => <ThreadPrimitive.MessageByIndex key={messages[workIndex].id} index={workIndex} components={components} />)
-            : <span>{turn.live ? 'No activity yet.' : 'No work details for this turn.'}</span>}
-        </ActivitySliceContext.Provider>
-      </ActivityDetails>}
+      <WorkDisclosure block={turn} messages={messages} components={components} />
       {agent && inline.has(index) && <ActivitySliceContext.Provider value="inline">{row}</ActivitySliceContext.Provider>}
+      <WorkDisclosure block={afterInline.get(index)} messages={messages} components={components} />
     </Fragment>;
   });
+}
+
+function WorkDisclosure({ block, messages, components }: {
+  block: WorkBlock | undefined; messages: readonly ThreadMessage[]; components: ThreadComponents;
+}) {
+  if (!block || (!block.live && !block.work.length)) return null;
+  return <ActivityDetails startedAt={block.startedAt} live={block.live} duration={block.duration}>
+    {block.work.length > 0 ? <ActivitySliceContext.Provider value="work">
+      {block.work.map(index => <ThreadPrimitive.MessageByIndex key={messages[index].id} index={index} components={components} />)}
+    </ActivitySliceContext.Provider> : null}
+  </ActivityDetails>;
 }
 
 export function AgentActivityMessages({ components, promptAliases }: ActivityMessagesProps) {

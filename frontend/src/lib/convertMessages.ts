@@ -5,8 +5,7 @@ import type { FailedSend } from './failedSends';
 import { messageModelRef, type TurnAggregate, type TurnStatsMap } from './turnStats';
 import { formatSeconds } from './format';
 import { isInjectedInstruction } from './injectedInstructions';
-import { isFinalAnswer } from './speechAnswers';
-import { isTurnNotification } from './turnNotification';
+import { isBackgroundShellNotification, isTurnNotification } from './turnNotification';
 import { parsePart } from './parsePart';
 export { parsePart } from './parsePart';
 import { extractTaskId, isTaskTool } from './taskId';
@@ -572,7 +571,6 @@ export function createConvertMessages(): ConvertMessagesFn {
     // with tool calls or images.
     const textPieces: string[] = [];
     const inlineText = new Set<number>();
-    const finalAnswer = isFinalAnswer(m, stats);
     const imageParts: ImageItem[] = [];
     const toolCalls: ToolCallItem[] = [];
 
@@ -600,7 +598,7 @@ export function createConvertMessages(): ConvertMessagesFn {
               toolCtx.pendingUserToolExecutionNotice = true;
               break;
             }
-            if (finalAnswer && !pd.synthetic && !pd.ignored) inlineText.add(textPieces.length);
+            if (role === 'assistant' && !pd.synthetic && !pd.ignored) inlineText.add(textPieces.length);
             textPieces.push(pd.text);
           }
           break;
@@ -683,6 +681,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     const customMeta = {
       ...(inlineText.size ? { activityInlineText: textPieces.filter((_, i) => inlineText.has(i)).join('\n\n'), activityWorkText: textPieces.filter((_, i) => !inlineText.has(i)).join('\n\n') } : {}),
       ...(role === 'user' && !isTurnNotification(m, msgParts) ? { activityPrompt: true } : {}),
+      ...(role === 'user' && isBackgroundShellNotification(msgParts) ? { activityShell: true } : {}),
       ...(stats ? { turnStats: stats } : {}),
       ...(role === 'assistant' ? { tokensPerSecond: modelMs > 0 ? output / (modelMs / 1000) : null } : {}),
       ...(m.data.tokens ? { tokens: m.data.tokens } : {}),

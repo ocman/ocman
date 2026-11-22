@@ -1688,11 +1688,14 @@ flowchart TD
   Turn accounting retains unchanged aggregates and attaches them to converted
   message metadata. Existing assistant-ui message selectors publish accounting,
   lifecycle and content together, without a separate full-map context or store.
-  The browser's optional collapsed activity view groups work by turn, using
-  the same completion rule as read-aloud to keep the original final Markdown
-  inline. A pending send can start the timer before the first reply; the
+  The browser's optional collapsed activity view keeps user-facing Markdown
+  inline and groups tool calls and reasoning between replies and questions.
+  Question wait time is excluded when answer timing is available. A pending
+  send can start the timer before the first reply; the
   acknowledged prompt keeps the same disclosure identity. Questions, interactive
-  results and turn errors stay outside the work disclosure.
+  results and turn errors stay outside the work disclosure. A background shell
+  result after a completed reply starts a separate follow-up turn. The shell
+  result belongs to that turn's disclosure when it has a reply.
   Transcript text does not invalidate sidebar project/draft
   derivations or row actions; list, prompt, owner and live-status inputs still do.
 

@@ -19,7 +19,7 @@ export interface ToolCallItem {
   toolCallId: string;
   toolName: string;
   argsText: string;
-  artifact?: { ocmanApprovals: ToolApproval[]; projectDirectory?: string; explorationStatus?: string };
+  artifact?: { ocmanApprovals: ToolApproval[]; projectDirectory?: string; explorationStatus?: string; questionTiming?: QuestionTiming };
   result?: string;
 }
 
@@ -46,6 +46,7 @@ export interface ToolPartContext {
 }
 
 type ToolState = NonNullable<PartData['state']>;
+export type QuestionTiming = { startedAt?: number; answeredAt?: number };
 
 // Build a time-suffix string for a tool part. `startedAt` is the
 // part's own timeCreated; `completedAt` is the next part's
@@ -232,6 +233,10 @@ function renderSpecialTool(
         type: 'tool-call',
         toolCallId,
         toolName: '__question__',
+        artifact: { ocmanApprovals: [], questionTiming: {
+          startedAt: st.time?.start ?? ctx.msgParts[partIdx]?.time?.start ?? ctx.msgPartsRaw[partIdx]?.timeCreated,
+          answeredAt: st.time?.end ?? ctx.msgParts[partIdx]?.time?.end,
+        } },
         argsText: `${toolStatus(ctx, st.status, partIdx)}\n${questionsJson}`,
         result: typeof st.output === 'string' && st.output.trim()
           ? st.output

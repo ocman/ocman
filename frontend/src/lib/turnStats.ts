@@ -3,7 +3,7 @@ import { useAuiState } from '@assistant-ui/react';
 import type { Message, Part, PartData } from './api';
 import { formatModelRef } from './sessionStatus';
 import { throughputSample } from './throughput';
-import { isTurnNotification } from './turnNotification';
+import { isBackgroundShellNotification, isCompletedReply, isTurnNotification } from './turnNotification';
 import { parsePart } from './parsePart';
 
 /**
@@ -112,10 +112,9 @@ export function createComputeTurnStats(): typeof computeTurnStats {
  * Compute per-turn aggregates from the flat messages + parts arrays.
  *
  * Turn boundaries are identified by real user prompts, not injected
- * user-role notifications. All assistant messages between two
- * consecutive user messages (or from the last user message to end of list)
- * belong to the same turn. The last assistant message in that group carries
- * the aggregated data.
+ * user-role notifications, except when a background shell result wakes the
+ * agent after a completed reply. The last assistant message in each turn
+ * carries the aggregated data.
  *
  * `isRunning` is the session-level "agent is working" signal (see
  * `computeIsRunning`). It is required to keep the *last* turn marked live
@@ -163,7 +162,12 @@ export function computeTurnStats(
 
   for (const m of filtered) {
     if (m.data.role === 'user') {
-      if (isTurnNotification(m, partsByMsg[m.id] ?? [])) continue;
+      const messageParts = partsByMsg[m.id] ?? [];
+      const prior = current?.assistantMsgs.at(-1);
+      const completedAt = prior?.data.time?.completed;
+      if (isTurnNotification(m, messageParts)
+        && !(isCompletedReply(prior) && completedAt !== undefined && completedAt <= m.timeCreated
+          && isBackgroundShellNotification(messageParts))) continue;
       current = { userMsg: m, assistantMsgs: [] };
       turns.push(current);
     } else if (m.data.role === 'assistant') {

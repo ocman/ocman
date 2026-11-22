@@ -2,14 +2,13 @@ import type { Message, Part } from './api';
 import { parsePart } from './parsePart';
 import { speechText } from './speechText';
 import type { TurnAggregate, TurnStatsMap } from './turnStats';
+import { isCompletedReply } from './turnNotification';
 
 const noParts: Part[] = [];
 const sameParts = (a: Part[], b: Part[]) => a.length === b.length && a.every((part, i) => part === b[i]);
 
 export function isFinalAnswer(message: Message, turn: TurnAggregate | undefined) {
-  return turn?.isSummaryAnchor && !turn.isLive && message.data.role === 'assistant'
-    && !message.data.error && !message.data.summary && message.data.agent !== 'compaction'
-    && ['stop', 'end_turn'].includes(message.data.finish ?? '');
+  return turn?.isSummaryAnchor && !turn.isLive && isCompletedReply(message);
 }
 
 /** Per-view index: one parts scan, retaining unchanged completed-answer buckets. */
