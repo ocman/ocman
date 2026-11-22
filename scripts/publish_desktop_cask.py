@@ -22,7 +22,7 @@ import sys
 import urllib.error
 import urllib.request
 
-TAG_PATTERN = re.compile(r"^v(\d+\.\d+\.\d+(-nightly\.\d+)?)$")
+TAG_PATTERN = re.compile(r"^v(\d+\.\d+\.\d+(-nightly\.\d+(?:\.\d+)?)?)$")
 DMG_NAME = "ocman-darwin-arm64.dmg"
 
 

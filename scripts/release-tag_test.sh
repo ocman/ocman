@@ -120,6 +120,17 @@ expect "" "B shipped as nightly" nightly 20261110
 tag v0.2.2-nightly.20261110 "$a_sha"
 expect "v0.2.2 ${b_sha} v0.2.2-nightly.20261109" "stable promotes the nearest nightly on main" stable
 
+commit "fix: another build on the same day"
+tag v0.2.2-dev.3
+expect "v0.2.2-nightly.20261109.2 $(head_sha)" "second nightly on the same day" nightly 20261109
+tag v0.2.2-nightly.20261109.2
+expect "" "numbered nightly is not cut twice" nightly 20261109
+expect "v0.2.2 $(head_sha) v0.2.2-nightly.20261109.2" "stable promotes numbered nightly" stable
+commit "fix: third build on the same day"
+tag v0.2.2-dev.4
+expect "v0.2.2-nightly.20261109.3 $(head_sha)" "third nightly on the same day" nightly 20261109
+expect "v0.2.2-nightly.20261111 $(head_sha)" "new date resets nightly numbering" nightly 20261111
+
 empty="$(mktemp -d)"
 git -C "$empty" init -q
 (cd "$empty" && "$SCRIPT" stable) > /dev/null 2>&1 && fail "stable without a nightly succeeded"

@@ -13,8 +13,8 @@
 #
 #   release-tag.sh nightly DATE [REV]
 #       The next vX.Y.Z-nightly.DATE tag, placed on the nearest dev-tagged
-#       commit in REV's history. Prints "TAG SHA", or nothing when that commit
-#       already shipped as a nightly or stable release.
+#       commit in REV's history. Additional builds use .2, .3, and so on.
+#       Prints "TAG SHA", or nothing when that commit already shipped.
 #
 #   release-tag.sh stable [VERSION]
 #       Promotes the nearest nightly in HEAD's history to vX.Y.Z (or
@@ -29,6 +29,7 @@
 set -euo pipefail
 
 stable_re='^v[0-9]+\.[0-9]+\.[0-9]+$'
+nightly_re='^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+(\.[0-9]+)?$'
 releasable_re='^(feat|fix|perf|refactor)(\([^)]*\))?!?:|^BREAKING[ -]CHANGE:'
 
 die() { echo "release-tag: $*" >&2; exit 1; }
@@ -98,18 +99,20 @@ cmd_nightly() {
 	dev="$(nearest_tag '-dev\.[0-9]+$' "$rev")"
 	[ -n "$dev" ] || return 0
 	sha="$(commit_of "$dev")"
-	[ -z "$(tags_containing "$sha" | first_matching "-nightly\\.|${stable_re}")" ] || return 0
+	[ -z "$(tags_containing "$sha" | first_matching "${nightly_re}|${stable_re}")" ] || return 0
 
-	local tag="${dev%-dev.*}-nightly.${date}"
-	if git rev-parse -q --verify "refs/tags/${tag}" > /dev/null; then
-		die "${tag} already exists for another commit; try again tomorrow"
-	fi
+	local base="${dev%-dev.*}-nightly.${date}" tag n=1
+	tag="$base"
+	while git show-ref --verify --quiet "refs/tags/${tag}"; do
+		n=$((n + 1))
+		tag="${base}.${n}"
+	done
 	echo "${tag} ${sha}"
 }
 
 cmd_stable() {
 	local override="${1:-}" nightly sha latest tag
-	nightly="$(nearest_tag '-nightly\.[0-9]+$' HEAD)"
+	nightly="$(nearest_tag "$nightly_re" HEAD)"
 	[ -n "$nightly" ] || die "no nightly to promote; stable releases ship a published nightly"
 	sha="$(commit_of "$nightly")"
 

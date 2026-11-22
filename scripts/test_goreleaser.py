@@ -99,7 +99,7 @@ class ReleaseConfigTest(unittest.TestCase):
         self.run_release('v1.2.3', 'ocman', 'ocman-nightly')
 
     def test_nightly_release(self):
-        self.run_release('v1.3.0-nightly.20261112', 'ocman-nightly', 'ocman')
+        self.run_release('v1.3.0-nightly.20261112.2', 'ocman-nightly', 'ocman')
 
 
 if __name__ == '__main__':

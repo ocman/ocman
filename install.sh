@@ -75,8 +75,10 @@ doctor() {
 
 # ----------------------------------------------------------------- build -----
 
+nightly_pattern='^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+(\.[0-9]+)?$'
+
 valid_version() {
-	[[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(nightly\.[0-9]+|dev\.[0-9]+))?$ ]]
+	[[ "$1" =~ $nightly_pattern || "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+)?$ ]]
 }
 
 resolve_version() {
@@ -100,7 +102,7 @@ resolve_version() {
 			[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && return
 			break
 		fi
-		TAG=$(printf '%s\n' "$tags" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+$' | head -n 1) || true
+		TAG=$(printf '%s\n' "$tags" | grep -E "$nightly_pattern" | head -n 1) || true
 		[ -z "$TAG" ] || return 0
 		[ -n "$tags" ] || break
 		page=$((page + 1))
@@ -108,9 +110,9 @@ resolve_version() {
 	have git || die "git is required to resolve $SELECTION when GitHub is unavailable"
 	tags=$(git ls-remote --tags --refs "$REPO") || die "cannot list source tags"
 	local pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
-	[ "$SELECTION" != nightly ] || pattern='^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+$'
+	[ "$SELECTION" != nightly ] || pattern="$nightly_pattern"
 	TAG=$(printf '%s\n' "$tags" | sed 's|.*refs/tags/||' | grep -E "$pattern" |
-		sort -t . -k1.2,1n -k2,2n -k3,3n -k4,4n | tail -n 1) || true
+		sort -t . -k1.2,1n -k2,2n -k3,3n -k4,4n -k5,5n | tail -n 1) || true
 	[ -n "$TAG" ] || die "no $SELECTION release found; refusing to install main"
 }
 

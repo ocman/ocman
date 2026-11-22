@@ -110,6 +110,12 @@ class PublishDesktopCaskTest(unittest.TestCase):
         self.assertIn('version "1.3.0-nightly.20261112"', cask)
         self.assertIn('conflicts_with cask: "ocman-desktop"', cask)
 
+    def test_numbered_nightly_cask(self):
+        tag = f"{NIGHTLY}.2"
+        cask = self.render(tag)
+        self.assertIn('cask "ocman-desktop-nightly" do', cask)
+        self.assertIn(f'version "{tag[1:]}"', cask)
+
     def test_creates_missing_cask(self):
         result = self.run_script(NIGHTLY, str(self.dmg))
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+NUMBERED_NIGHTLY = 'v1.3.0-nightly.20261108.10'
 FAKE = r'''#!/usr/bin/env python3
 import json, os, pathlib, shutil, sys
 cmd = pathlib.Path(sys.argv[0]).name
@@ -26,7 +27,8 @@ elif cmd == 'curl':
         elif '&page=1' in url and os.environ.get('PAGINATE'):
             print(json.dumps([{'tag_name': 'v9.0.0-dev.1'}], indent=2))
         elif '&page=1' in url or ('&page=2' in url and os.environ.get('PAGINATE')):
-            print(json.dumps([{'tag_name': 'v9.0.0-dev.1'}, {'tag_name': 'v1.3.0-nightly.20261108'}], indent=2))
+            nightly = os.environ.get('NIGHTLY', 'v1.3.0-nightly.20261108')
+            print(json.dumps([{'tag_name': 'v9.0.0-dev.1'}, {'tag_name': nightly}], indent=2))
         else: print('[]')
     elif '/download/' in url:
         if os.environ.get('DOWNLOAD_FAIL'): sys.exit(22)
@@ -36,6 +38,9 @@ elif cmd == 'curl':
 elif cmd == 'git':
     if args[0] == 'ls-remote':
         print('abc\trefs/tags/v1.2.3\nabc\trefs/tags/v1.3.0-nightly.20261108\nabc\trefs/tags/v10.0.0-dev.1')
+        if os.environ.get('NIGHTLY'):
+            print('abc\trefs/tags/' + os.environ['NIGHTLY'])
+            print('abc\trefs/tags/v1.3.0-nightly.20261108.2')
     elif args[0] == 'clone':
         p = pathlib.Path(args[-1])
         (p / 'frontend').mkdir(parents=True)
@@ -107,6 +112,20 @@ class InstallTest(unittest.TestCase):
         self.run_install('install', 'nightly', '--no-start')
         self.run_install('update', '--no-start')
         self.assertEqual(self.calls().count('/v1.3.0-nightly.20261108/ocman-linux-amd64.tar.gz'), 2)
+
+    def test_numbered_nightly_from_api(self):
+        self.env['NIGHTLY'] = NUMBERED_NIGHTLY
+        self.run_install('install', 'nightly', '--no-start')
+        self.assertIn(f'/{NUMBERED_NIGHTLY}/ocman-linux-amd64.tar.gz', self.calls())
+
+    def test_numbered_nightly_from_source_tags(self):
+        self.env.update(API_FAIL='1', NIGHTLY=NUMBERED_NIGHTLY)
+        self.run_install('install', 'nightly', '--source', '--no-start')
+        self.assertIn(f'--branch {NUMBERED_NIGHTLY}', self.calls())
+
+    def test_exact_numbered_nightly(self):
+        self.run_install('install', NUMBERED_NIGHTLY, '--no-start')
+        self.assertIn(f'/{NUMBERED_NIGHTLY}/ocman-linux-amd64.tar.gz', self.calls())
 
     def test_exact_version_and_macos_arm(self):
         self.env.update(TEST_OS='Darwin', TEST_ARCH='aarch64')

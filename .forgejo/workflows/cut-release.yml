@@ -3,8 +3,8 @@ name: Cut Release
 # Creates the tags that the GitHub release workflow builds and publishes:
 #
 # - nightly: daily, and on demand. Tags the nearest vX.Y.Z-dev.N commit on
-#   main (one that passed CI) as vX.Y.Z-nightly.YYYYMMDD, unless it already
-#   shipped.
+#   main (one that passed CI) as vX.Y.Z-nightly.YYYYMMDD, adding .2, .3, etc.
+#   for additional builds that day. Skips commits that already shipped.
 # - stable: on demand only. Promotes the nearest nightly on main to vX.Y.Z
 #   once its GitHub release is published, so a stable release always ships a
 #   build nightly users could already run.
@@ -92,7 +92,7 @@ jobs:
           git checkout --quiet --detach "${SHA}"
           pattern=()
           if [ "${CHANNEL}" != "stable" ]; then
-            pattern=(--tag-pattern '^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$')
+            pattern=(--tag-pattern '^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+(\.[0-9]+)?)?$')
           fi
           git-cliff --config cliff.toml "${pattern[@]}" --unreleased --tag "${TAG}" --output changelog.md
           printf -- '--- changelog.md ---\n'

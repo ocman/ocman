@@ -125,9 +125,17 @@ before publishing. See [installation](../introduction/installation.md#homebrew).
 ## Cutting a release
 
 1. Open **Actions → Cut Release** on Forgejo and choose **Run workflow** on `main`.
-2. Pick the `nightly` channel to publish the newest dev tag now, or `stable` to promote the newest nightly.
+2. Pick `nightly` to publish the newest dev tag now, or `stable` to promote
+   the newest nightly. Additional nightlies for the same version on the same
+   UTC day get `.2`, `.3`, and so on, for example `v0.274.0-nightly.20261107.2`.
+   If the commit already shipped, the nightly run does nothing.
 3. For a stable release, leave **version** empty to use the version the nightly previewed, or enter a newer `X.Y.Z`.
 4. Watch the **Release** workflow on GitHub publish the build.
+
+To ship the current tip of `main`, wait for its dev tag, run `nightly`, and
+verify the published nightly points at that commit before running `stable`.
+For the first numbered nightly, wait for a dev tag that includes support for
+numbered nightlies. GitHub runs the release workflow from the tagged commit.
 
 A stable release fails when the nightly is already part of a stable release,
 its GitHub release is not published yet or lacks assets, or the version is
