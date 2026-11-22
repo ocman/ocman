@@ -72,7 +72,9 @@ class CheckPublishedReleaseTest(unittest.TestCase):
 
     def run_check(self, *args, api=None, token=None):
         env = {k: v for k, v in os.environ.items() if k != "GITHUB_MIRROR_TOKEN"}
-        env["GITHUB_API_URL"] = api or self.api
+        env["RELEASE_MIRROR_API_URL"] = api or self.api
+        # Forgejo exports its own API URL under this compatibility name.
+        env["GITHUB_API_URL"] = self.api + "/api/v1"
         if token:
             env["GITHUB_MIRROR_TOKEN"] = token
         return subprocess.run(

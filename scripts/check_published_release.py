@@ -8,7 +8,7 @@ release only ships a build that nightly users could download. Any lookup
 error fails closed.
 
 Environment:
-    GITHUB_API_URL        API base (default https://api.github.com)
+    RELEASE_MIRROR_API_URL API base (default https://api.github.com)
     RELEASE_MIRROR_REPO   owner/name of the GitHub mirror (default ocman/ocman)
     GITHUB_MIRROR_TOKEN   optional token, to avoid the anonymous rate limit
 """
@@ -34,7 +34,8 @@ class NotPublished(Exception):
 
 
 def get(path):
-    base = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    # Forgejo Actions sets GITHUB_API_URL to its own API, not the mirror.
+    base = os.environ.get("RELEASE_MIRROR_API_URL", "https://api.github.com").rstrip("/")
     request = urllib.request.Request(base + path, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": "ocman-release",
