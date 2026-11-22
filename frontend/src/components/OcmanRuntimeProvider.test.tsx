@@ -75,7 +75,7 @@ describe('OcmanRuntimeProvider turn lifecycle', () => {
     expect(runtimeMessages).toEqual([expect.objectContaining({
       id: 'pending', role: 'user',
       content: [{ type: 'text', text: 'hello' }, { type: 'image', image: 'data:image/png;base64,a' }],
-      metadata: { custom: { agent: 'plan' } },
+      metadata: { custom: { agent: 'plan', activityPending: true } },
     })]);
     rerender(view('offline'));
     expect(runtimeMessages).toHaveLength(1);

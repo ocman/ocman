@@ -34,6 +34,8 @@ import { PRWatchNotification } from './assistant/PRWatchNotification';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { AssistantMeta } from './assistant/AssistantMeta';
 import { TurnSummaryBar } from './assistant/TurnSummaryBar';
+import { ActivityMessage, AgentActivityMessages } from './assistant/AgentActivity';
+import { findActivityTarget, useActivitySlice } from './assistant/agentActivityState';
 import { useMessage } from './assistant/useMessage';
 import { ExplorationContent } from './assistant/ExplorationContent';
 import { ModelLabel } from './ModelLogo';
@@ -231,6 +233,9 @@ const AssistantMessage: FC = () => {
   const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
   const timelineAt = typeof custom?.timelineAt === 'number' ? custom.timelineAt : 0;
   const turnStats = useTurnStats();
+  const slice = useActivitySlice();
+  if (slice) return <ActivityMessage slice={slice} components={ASSISTANT_PART_COMPONENTS} actions={<TurnActions messageId={messageId} />}
+    decorations={<>{!!timelineAt && <TimelineMarker timestamp={timelineAt} />}{modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}</>} />;
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
   );
@@ -482,8 +487,7 @@ export function AssistantThread({
     if (!scrollToMessageId || !scrollToMessageTick) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const escaped = CSS.escape(scrollToMessageId);
-    const target = viewport.querySelector<HTMLElement>(`[data-message-id="${escaped}"]`);
+    const target = findActivityTarget(viewport, scrollToMessageId);
     if (!target) {
       if (hasMore && !loadingMore) void onLoadMore?.();
       return;
@@ -502,8 +506,7 @@ export function AssistantThread({
     if (!scrollToToolCall) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const message = viewport.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(scrollToToolCall.messageId)}"]`);
-    const source = message?.querySelector<HTMLElement>(`[data-tool-call-id="${CSS.escape(scrollToToolCall.toolCallId)}"]`);
+    const source = findActivityTarget(viewport, scrollToToolCall.messageId, scrollToToolCall.toolCallId);
     if (!source?.firstElementChild) return;
     const exploration = source.closest('details.oc-exploration');
     if (exploration instanceof HTMLDetailsElement) exploration.open = true;
@@ -597,7 +600,7 @@ export function AssistantThread({
           {empty || <ThreadPrimitive.Empty>
             <div className="oc-empty">No messages yet.</div>
           </ThreadPrimitive.Empty>}
-          <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
+          <AgentActivityMessages components={THREAD_MESSAGE_COMPONENTS} />
           {speech.error && <div role="status" className="oc-thread-error-note">{speech.error}</div>}
           {footer && <div className="oc-thread-footer">{footer}</div>}
         </ThreadPrimitive.Viewport>

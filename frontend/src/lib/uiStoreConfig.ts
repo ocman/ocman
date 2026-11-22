@@ -38,6 +38,7 @@ export const uiStorePersistence: PersistOptions<UiStore, Partial<UiStore>> = {
     bellEnabled: s.bellEnabled,
     showToolDetails: s.showToolDetails,
     compactToolCalls: s.compactToolCalls,
+    collapseAgentActivity: s.collapseAgentActivity,
     showReasoning: s.showReasoning,
     showMessageMetadata: s.showMessageMetadata,
     autoReadAnswers: s.autoReadAnswers,

@@ -5,6 +5,8 @@ import type { FailedSend } from './failedSends';
 import { messageModelRef, type TurnAggregate, type TurnStatsMap } from './turnStats';
 import { formatSeconds } from './format';
 import { isInjectedInstruction } from './injectedInstructions';
+import { isFinalAnswer } from './speechAnswers';
+import { isTurnNotification } from './turnNotification';
 import { parsePart } from './parsePart';
 export { parsePart } from './parsePart';
 import { extractTaskId, isTaskTool } from './taskId';
@@ -569,6 +571,8 @@ export function createConvertMessages(): ConvertMessagesFn {
     // simple text, and the full content array format for messages
     // with tool calls or images.
     const textPieces: string[] = [];
+    const inlineText = new Set<number>();
+    const finalAnswer = isFinalAnswer(m, stats);
     const imageParts: ImageItem[] = [];
     const toolCalls: ToolCallItem[] = [];
 
@@ -596,6 +600,7 @@ export function createConvertMessages(): ConvertMessagesFn {
               toolCtx.pendingUserToolExecutionNotice = true;
               break;
             }
+            if (finalAnswer && !pd.synthetic && !pd.ignored) inlineText.add(textPieces.length);
             textPieces.push(pd.text);
           }
           break;
@@ -657,6 +662,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       const errName = m.data.error.name || 'Error';
       const isAbort = errName === 'MessageAbortedError' || errName === 'AbortError';
       const errMessage = displayErrorMessage(m.data.error.data?.message || (isAbort ? 'The message was aborted' : 'An unknown error occurred'));
+      inlineText.add(textPieces.length);
       textPieces.push(`**${errName}:** ${errMessage}`);
     }
 
@@ -675,6 +681,8 @@ export function createConvertMessages(): ConvertMessagesFn {
     const model = role === 'assistant' ? messageModelRef(m) : '';
     const [output, modelMs] = throughputSample(m, msgParts);
     const customMeta = {
+      ...(inlineText.size ? { activityInlineText: textPieces.filter((_, i) => inlineText.has(i)).join('\n\n'), activityWorkText: textPieces.filter((_, i) => !inlineText.has(i)).join('\n\n') } : {}),
+      ...(role === 'user' && !isTurnNotification(m, msgParts) ? { activityPrompt: true } : {}),
       ...(stats ? { turnStats: stats } : {}),
       ...(role === 'assistant' ? { tokensPerSecond: modelMs > 0 ? output / (modelMs / 1000) : null } : {}),
       ...(m.data.tokens ? { tokens: m.data.tokens } : {}),

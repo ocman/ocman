@@ -152,7 +152,7 @@ export function OcmanRuntimeProvider({
         ...(pendingSend.images ?? []).map((image) => ({ type: 'image' as const, image: image.url })),
       ],
       createdAt: new Date(pendingSend.startedAt),
-      metadata: { custom: { agent: pendingSend.agent, ...(pendingSend.error ? { failed: { error: pendingSend.error } } : {}) } },
+      metadata: { custom: { agent: pendingSend.agent, activityPending: !pendingSend.error, ...(pendingSend.error ? { failed: { error: pendingSend.error } } : {}) } },
     }] : [];
     return [...serverMessages, ...missingFailures.map((entry): ThreadMessageLike => ({
       id: entry.id,

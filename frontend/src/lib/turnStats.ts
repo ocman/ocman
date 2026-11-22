@@ -49,6 +49,7 @@ export interface TurnAggregate {
   promptCacheRebuilt: boolean;
   /** Unix ms of the prompt, or earliest loaded reply when the prompt is absent. */
   startedAt: number;
+  turnId?: string;
   /**
    * Raw `provider/model` reference for the turn, taken from the last
    * assistant message that carries model metadata. Empty string when no
@@ -263,6 +264,7 @@ export function computeTurnStats(
         isLive,
         promptCacheRebuilt,
         startedAt: userMsg.timeCreated,
+        turnId: userMsg.id,
         model,
         isSummaryAnchor: a.id === lastAsst.id,
       };

@@ -7,7 +7,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { featureSettings } from '../../features';
 import { searchSettings } from '../../lib/settingsCatalog';
 
-afterEach(() => useUiStore.setState({ compactToolCalls: false }));
+afterEach(() => useUiStore.setState({ compactToolCalls: false, collapseAgentActivity: false }));
 
 it('registers a searchable Conversation section', async () => {
   const group = featureSettings.find((g) => g.id === 'conversation');
@@ -34,4 +34,16 @@ it('defaults off and persists the compact tool-call preference across hydration'
   expect(useUiStore.getState().compactToolCalls).toBe(true);
   await userEvent.click(toggle);
   expect(useUiStore.getState().compactToolCalls).toBe(false);
+});
+
+it('saves the opt-in agent activity display preference', async () => {
+  render(<ConversationSection />);
+  const toggle = screen.getByRole('checkbox', { name: 'Collapse agent activity' });
+  expect(toggle).not.toBeChecked();
+  await userEvent.click(toggle);
+  await useUiStore.persist.rehydrate();
+  expect(toggle).toBeChecked();
+  expect(searchSettings('agent activity', { sessions: 'Sessions' })).toContainEqual(
+    expect.objectContaining({ id: 'collapse-agent-activity' }),
+  );
 });

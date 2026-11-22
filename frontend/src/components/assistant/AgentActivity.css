@@ -1,0 +1,10 @@
+.oc-agent-activity > summary {
+  color: var(--text-dim);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.oc-agent-activity-children {
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 12px;
+}

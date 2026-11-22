@@ -122,6 +122,9 @@ export function NotificationsSection() {
 export function ConversationSection() {
   const compactToolCalls = useUiStore((s) => s.compactToolCalls);
   const setCompactToolCalls = useUiStore((s) => s.setCompactToolCalls);
+  const collapseAgentActivity = useUiStore((s) => s.collapseAgentActivity);
+  const setCollapseAgentActivity = useUiStore((s) => s.setCollapseAgentActivity);
+  const activitySave = useSettingSave();
   const save = useSettingSave();
   const showMessageMetadata = useUiStore((s) => s.showMessageMetadata);
   const setShowMessageMetadata = useUiStore((s) => s.setShowMessageMetadata);
@@ -135,6 +138,10 @@ export function ConversationSection() {
         save={save}
         onSave={setCompactToolCalls}
       />
+    </SettingRow>
+    <SettingRow setting="collapse-agent-activity">
+      <SettingToggle ariaLabel="Collapse agent activity" checked={collapseAgentActivity}
+        save={activitySave} onSave={setCollapseAgentActivity} />
     </SettingRow>
     <SettingRow setting="message-metadata">
       <SettingToggle ariaLabel="Show metadata between message sections" checked={showMessageMetadata}

@@ -1688,6 +1688,10 @@ flowchart TD
   Turn accounting retains unchanged aggregates and attaches them to converted
   message metadata. Existing assistant-ui message selectors publish accounting,
   lifecycle and content together, without a separate full-map context or store.
+  The browser's optional collapsed activity view groups work by turn, using
+  the same completion rule as read-aloud to keep the original final Markdown
+  inline. A pending send can start the timer before the first reply. Questions,
+  interactive results and turn errors stay outside the work disclosure.
   Transcript text does not invalidate sidebar project/draft
   derivations or row actions; list, prompt, owner and live-status inputs still do.
 
@@ -1699,6 +1703,7 @@ flowchart LR
     Stats --> Convert
     Convert --> Select[Existing per-message runtime selectors]
     Select --> Thread[Conversation UI]
+    Thread --> Activity[Optional work disclosure and timer]
     Stream --> Answers[Indexed completed answers]
     Answers --> Text[Markdown tree to speech text]
     Text --> Speech[Browser speech synthesis]

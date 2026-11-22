@@ -6,7 +6,7 @@ import type { TurnAggregate, TurnStatsMap } from './turnStats';
 const noParts: Part[] = [];
 const sameParts = (a: Part[], b: Part[]) => a.length === b.length && a.every((part, i) => part === b[i]);
 
-function isFinalAnswer(message: Message, turn: TurnAggregate | undefined) {
+export function isFinalAnswer(message: Message, turn: TurnAggregate | undefined) {
   return turn?.isSummaryAnchor && !turn.isLive && message.data.role === 'assistant'
     && !message.data.error && !message.data.summary && message.data.agent !== 'compaction'
     && ['stop', 'end_turn'].includes(message.data.finish ?? '');

@@ -56,6 +56,12 @@ export const SETTINGS = {
     example: 'Keep test logs hidden while reading a conversation, then click Show full output to inspect them.',
     keywords: 'bash terminal collapse toolcalls',
   },
+  'collapse-agent-activity': {
+    group: 'sessions', title: 'Collapse agent activity',
+    description: 'Show a timer and the final reply instead of agent activity. Click the timer to see the work. Off by default. Saved for this browser.',
+    example: 'See “Working… 0:42” while the agent runs. Open the timer to inspect its tool calls and progress.',
+    keywords: 'working timer hide collapse progress tools reasoning final answer',
+  },
   'app-icon-badge': {
     group: 'app', title: 'App icon badge',
     description: 'Choose which items enable the installed app attention badge. The badge has no number. These settings apply to every device connected to this ocman instance, including background push.',
