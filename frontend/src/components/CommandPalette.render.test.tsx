@@ -141,6 +141,25 @@ describe('CommandPalette session search', () => {
     expect(await screen.findByText('Conversation search unavailable')).toBeInTheDocument();
     expect(screen.queryByText('stale text')).not.toBeInTheDocument();
   });
+
+  it('shows a conversation search failure alongside title matches', async () => {
+    vi.mocked(postJSON).mockRejectedValueOnce(new Error('unavailable'));
+    renderPalette();
+    await screen.findByText('Needle fixes');
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'needle' } });
+    expect(await screen.findByText('Conversation search unavailable')).toHaveAttribute('role', 'status');
+    expect(screen.getByRole('option', { name: /Needle fixes/ })).toBeInTheDocument();
+  });
+
+  it('shows an incomplete index warning alongside conversation matches', async () => {
+    vi.mocked(postJSON).mockResolvedValueOnce({ indexing: true, matches: [
+      { id: 'ocm_older', title: 'Old session', directory: '/repo', timeUpdated: 1, snippet: 'An older reply' },
+    ] });
+    renderPalette();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'older reply' } });
+    expect(await screen.findByText('An older reply')).toBeInTheDocument();
+    expect(screen.getByText('Still indexing older conversations…')).toHaveAttribute('role', 'status');
+  });
 });
 
 describe('CommandPalette project mode', () => {

@@ -707,8 +707,9 @@ export function CommandPalette() {
             )}
           </div>
         )}
+        {contentSearchStatus && <div className="oc-cmd-empty" role="status">{contentSearchStatus}</div>}
         <div className="oc-cmd-results" id={listId} role="listbox" aria-label="Results" ref={listRef}>
-          {results.length === 0 && (
+          {results.length === 0 && !contentSearchStatus && (
             <div className="oc-cmd-empty" role="presentation">
               {mode === 'project' && projectBrowser.open && projectBrowser.loading
                 ? 'Loading directories...'
@@ -723,7 +724,7 @@ export function CommandPalette() {
                 : mode === 'project' && projectBrowser.open
                 ? 'No child directories'
                 : sessions === null && mode === 'search'
-                ? contentSearchStatus || 'Loading sessions...'
+                ? 'Loading sessions...'
                 : mode === 'project'
                 ? 'Loading directories...'
                 : mode === 'project-session' && projectListError
@@ -732,7 +733,7 @@ export function CommandPalette() {
                 ? 'Loading projects...'
                 : mode === 'project-session'
                 ? 'No projects found'
-                : contentSearchStatus || 'No results'}
+                : 'No results'}
             </div>
           )}
           {results.map((item, i) => {
