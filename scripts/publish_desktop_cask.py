@@ -69,9 +69,9 @@ cask "{name}" do
 
   caveats <<~EOS
     ocman needs at least one agent CLI. Install the ones you use:
-      brew install opencode               # OpenCode v2 or later
-      brew install --cask claude-code     # Claude Code
-      brew install --cask codex           # Codex, also enable it in Settings > Platforms
+      brew install anomalyco/tap/opencode-v2  # OpenCode v2
+      brew install --cask claude-code         # Claude Code
+      brew install --cask codex               # Codex, also enable it in Settings > Platforms
   EOS
 end
 '''

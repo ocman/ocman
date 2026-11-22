@@ -45,9 +45,9 @@ homebrew_casks:
     description: Web dashboard for coding-agent sessions
     caveats: |
       ocman needs at least one agent CLI. Install the ones you use:
-        brew install opencode               # OpenCode v2 or later
-        brew install --cask claude-code     # Claude Code
-        brew install --cask codex           # Codex, also enable it in Settings > Platforms
+        brew install anomalyco/tap/opencode-v2  # OpenCode v2
+        brew install --cask claude-code         # Claude Code
+        brew install --cask codex               # Codex, also enable it in Settings > Platforms
     # Nightlies must publish too, rather than using skip_upload: auto.
     skip_upload: false
     repository:

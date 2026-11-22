@@ -70,7 +70,8 @@ class ReleaseConfigTest(unittest.TestCase):
             self.assertIn('/usr/bin/xattr', cask)
             self.assertIn('com.apple.quarantine', cask)
             self.assertIn('caveats <<~EOS', cask)
-            for package in ('brew install opencode', 'brew install --cask claude-code',
+            self.assertNotIn('brew install opencode', cask)
+            for package in ('brew install anomalyco/tap/opencode-v2', 'brew install --cask claude-code',
                             'brew install --cask codex'):
                 self.assertIn(package, cask)
             self.assertEqual(len(list(dist.glob('ocman-*.tar.gz'))), 4)
