@@ -3,6 +3,7 @@ package worktreecleanup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -121,18 +122,23 @@ func TestCleanupLogsUnavailableOwnersAndEmptySweeps(t *testing.T) {
 	for _, tc := range []struct {
 		name, reason string
 		setup        func(*fixture)
+		blocker      string
 	}{
-		{"empty", "", func(f *fixture) { f.p.SessionList = nil }},
-		{"inventory", "inventory_unavailable", func(f *fixture) { f.p.SessionsErr = errors.New("private-error-canary") }},
-		{"not ready", "inventory_unavailable", func(f *fixture) { f.m.d.Ready = func(string) bool { return false } }},
+		{"empty", "", func(f *fixture) { f.p.SessionList = nil }, ""},
+		{"inventory", "inventory_unavailable", func(f *fixture) { f.p.SessionsErr = errors.New("private-error-canary") }, "inventory_read_failed"},
+		{"deadline", "inventory_unavailable", func(f *fixture) {
+			f.p.SessionsErr = errors.Join(errors.New("private-error-canary"), context.DeadlineExceeded)
+		}, "inventory_read_timeout"},
+		{"cancelled read", "inventory_unavailable", func(f *fixture) { f.p.SessionsErr = context.Canceled }, "inventory_read_cancelled"},
+		{"not ready", "inventory_unavailable", func(f *fixture) { f.m.d.Ready = func(string) bool { return false } }, "initial_import_pending"},
 		{"disconnected", "owner_disconnected", func(f *fixture) {
 			f.p.PlatformID = "r-box:fake"
 			f.m.d.Router = func() *hostsvc.Router { return hostsvc.NewRouter(nil) }
-		}},
+		}, ""},
 		{"unsupported", "cleanup_unsupported", func(f *fixture) {
 			router := hostsvc.NewRouter(&legacyCleanupHost{Host: f.h})
 			f.m.d.Router = func() *hostsvc.Router { return router }
-		}},
+		}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -153,6 +159,17 @@ func TestCleanupLogsUnavailableOwnersAndEmptySweeps(t *testing.T) {
 				}
 				if owner.Data["reason_code"] != tc.reason || owner.Data["owner"] != wantOwner || owner.Data["sweep_id"] != summary.Data["sweep_id"] || summary.Data["unavailable-owners"] != int64(1) {
 					t.Fatalf("owner unavailable: %+v %+v", owner.Data, summary.Data)
+				}
+			}
+			if tc.blocker != "" {
+				blocker := cleanupLogEntry(t, hook, "worktree cleanup inventory blocked")
+				if blocker.Data["platform_id"] != string(f.p.ID()) || blocker.Data["owner"] != "local" || blocker.Data["reason_code"] != tc.blocker || blocker.Data["sweep_id"] != summary.Data["sweep_id"] {
+					t.Fatalf("inventory blocker: %+v", blocker.Data)
+				}
+				for _, value := range blocker.Data {
+					if strings.Contains(fmt.Sprint(value), "private-error-canary") {
+						t.Fatal("inventory blocker leaked the raw error")
+					}
 				}
 			}
 		})

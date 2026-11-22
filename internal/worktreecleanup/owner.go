@@ -52,7 +52,7 @@ func (m *Module) verifyOwner(ctx context.Context, req hostsvc.CleanupWorktreeReq
 		return err
 	}
 	owners, failed := m.inventory(ctx)
-	if failed[state.LocalRemoteID] {
+	if len(failed[state.LocalRemoteID]) != 0 {
 		return fmt.Errorf("owner inventory is incomplete")
 	}
 	seen := 0

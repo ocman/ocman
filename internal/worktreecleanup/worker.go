@@ -26,16 +26,20 @@ func within(root, path string) bool {
 	return path != "" && root != "" && (filepath.Clean(path) == filepath.Clean(root) || strings.HasPrefix(filepath.Clean(path), filepath.Clean(root)+string(filepath.Separator)))
 }
 
+type inventoryBlocker struct {
+	platformID, reason string
+}
+
 // inventory fails an entire owner closed if any of its adapters cannot provide
 // a complete inventory. A disconnected remote never falls back to local paths.
-func (m *Module) inventory(ctx context.Context) (map[string][]session, map[string]bool) {
-	owners, failed := map[string][]session{}, map[string]bool{}
+func (m *Module) inventory(ctx context.Context) (map[string][]session, map[string][]inventoryBlocker) {
+	owners, failed := map[string][]session{}, map[string][]inventoryBlocker{}
 	for _, p := range m.d.Platforms() {
 		id := string(p.ID())
 		remote, _ := platforms.SplitPlatformID(id)
 		owner := state.NormalizeRemoteID(remote)
 		if m.d.Ready != nil && !m.d.Ready(id) {
-			failed[owner] = true
+			failed[owner] = append(failed[owner], inventoryBlocker{id, "initial_import_pending"})
 			continue
 		}
 		readCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -48,7 +52,7 @@ func (m *Module) inventory(ctx context.Context) (map[string][]session, map[strin
 		}
 		cancel()
 		if err != nil {
-			failed[owner] = true
+			failed[owner] = append(failed[owner], inventoryBlocker{id, inventoryReadReason(err)})
 			continue
 		}
 		for _, row := range rows {
@@ -187,17 +191,18 @@ type sweepTarget struct {
 	maintenance hostsvc.WorktreeMaintenance
 }
 
-func (m *Module) sweepTargets(owners map[string][]session, failed map[string]bool, entry *log.Entry) ([]sweepTarget, int64) {
+func (m *Module) sweepTargets(owners map[string][]session, failed map[string][]inventoryBlocker, entry *log.Entry) ([]sweepTarget, int64) {
 	var targets []sweepTarget
 	var unavailable int64
-	for owner, incomplete := range failed {
-		if incomplete {
-			unavailable++
-			unavailableOwner(entry, owner, "inventory_unavailable")
+	for owner, blockers := range failed {
+		unavailable++
+		unavailableOwner(entry, owner, "inventory_unavailable")
+		for _, blocker := range blockers {
+			logInventoryBlocker(entry, owner, blocker)
 		}
 	}
 	for owner, rows := range owners {
-		if failed[owner] {
+		if len(failed[owner]) != 0 {
 			continue
 		}
 		host, ok := m.d.Router().LookupRemote(owner)

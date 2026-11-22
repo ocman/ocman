@@ -87,3 +87,19 @@ func (r *sweepReport) finish(err error) {
 func unavailableOwner(entry *log.Entry, owner, reason string) {
 	entry.WithFields(log.Fields{"owner": owner, "reason_code": reason}).Info("worktree cleanup owner unavailable")
 }
+
+func inventoryReadReason(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "inventory_read_timeout"
+	case errors.Is(err, context.Canceled):
+		return "inventory_read_cancelled"
+	default:
+		return "inventory_read_failed"
+	}
+}
+
+func logInventoryBlocker(entry *log.Entry, owner string, blocker inventoryBlocker) {
+	// Adapter errors can include session IDs, filesystem paths or RPC details.
+	entry.WithFields(log.Fields{"owner": owner, "platform_id": blocker.platformID, "reason_code": blocker.reason}).Info("worktree cleanup inventory blocked")
+}
