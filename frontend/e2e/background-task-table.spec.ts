@@ -29,6 +29,15 @@ for (const width of [1280, 390]) {
     await expect(page.getByRole('combobox', { name: 'Task machine' })).toHaveCount(0);
     await expect(page.getByRole('progressbar')).toHaveCount(0);
     const sync = table.getByRole('button', { name: 'Conversation sync', exact: true });
+    const syncRow = rows.filter({ has: page.getByRole('button', { name: 'Conversation sync', exact: true }) });
+    const cells = syncRow.getByRole('cell');
+    if (width === 390) {
+      await expect(cells.first()).toHaveCSS('padding-top', '12px');
+      await expect(cells.last()).toHaveCSS('padding-bottom', '12px');
+    } else {
+      expect((await syncRow.boundingBox())!.height).toBeLessThan(62);
+    }
+    await expect(cells.filter({ hasText: /running/i })).toHaveCSS('padding', '4px 12px');
     await sync.focus();
     await sync.press('Enter');
     const details = page.getByRole('region', { name: 'Task group details for Conversation sync' });
