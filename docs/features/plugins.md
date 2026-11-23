@@ -129,14 +129,16 @@ flowchart LR
     Browser[Toasts on every page] -->|Read by owner| Hub[Ocman hub]
     Hub -->|Local read or authenticated RPC| Owner
     Browser -->|Toast button| Broker[Action broker]
+    Browser -->|View| App[Plugin app]
 ```
 
 - The backend publishes the full set of active notices: a tone, a short
   plain-text title, an optional description and start time, and up to two
   buttons. Ocman renders the text as text and shows elapsed time from the start.
-- Buttons can only run actions the plugin already declared. Ocman shows the
+- Action buttons can only run actions the plugin already declared. Ocman shows the
   declared label and runs the action through the action broker, including any
-  confirmation. Notices cannot contain links or open pages.
+  confirmation. Notices cannot supply links. If the notice's plugin has an
+  available in-app UI on the hub, Ocman adds a **View** link to its app.
 - The owner keeps notices in memory for that process. Disable, grant
   revocation or process restart clears them.
 - The browser checks every few seconds and hides an owner's notices while the

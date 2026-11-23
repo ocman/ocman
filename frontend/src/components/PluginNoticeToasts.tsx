@@ -3,7 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { formatDuration } from '../lib/format';
 import { pluginNoticeKey, usePluginNotices, type ListedPluginNotice, type PluginNoticeAction } from '../lib/pluginNotices';
 import type { PluginActionRequest } from '../lib/plugins';
-import { Button } from './Control';
+import { usePluginUIs } from '../lib/pluginUI';
+import { Button, RouteButton } from './Control';
 import { PluginActionDialog } from './PluginActionDialog';
 import { PromptToast, PromptToastActions, PromptToastBody, PromptToastClose, PromptToastHeading } from './PromptToast';
 import styles from './PluginNoticeToasts.module.css';
@@ -28,6 +29,7 @@ function Elapsed({ since }: { since: number }) {
 export function PluginNoticeToasts() {
   const client = useQueryClient();
   const { notices } = usePluginNotices();
+  const { uis, error: uiError } = usePluginUIs();
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [action, setAction] = useState<{ label: string; request: PluginActionRequest } | null>(null);
 
@@ -56,6 +58,9 @@ export function PluginNoticeToasts() {
   return <>
     {notices.filter((item) => !dismissed.has(item.key)).map((item) => {
       const { notice } = item;
+      // In-app plugin UIs are hub-local. Never link a remote notice to a local plugin with the same ID.
+      const canView = !uiError && item.ownerId === 'local' && uis.some((ui) =>
+        ui.ownerId === item.ownerId && ui.pluginId === item.pluginId && ui.compatible && ui.index);
       return <PromptToast key={item.key} data-tone={notice.tone} open duration={Infinity}
         type={notice.tone === 'critical' ? 'foreground' : 'background'}
         onOpenChange={(open) => { if (!open) dismiss(item.key); }}>
@@ -66,8 +71,9 @@ export function PluginNoticeToasts() {
           {notice.body && <span className={styles.body}>{notice.body}</span>}
           {notice.startedAt ? <span className={styles.meta}>Elapsed <Elapsed since={notice.startedAt} /></span> : null}
         </PromptToastBody>
-        {notice.actions.length > 0 && <PromptToastActions label={`${notice.title} actions`}>
-          {notice.actions.map((declared, index) => <Button key={declared.actionId} type="button" size="small" variant={index === 0 ? 'accent' : 'default'}
+        {(canView || notice.actions.length > 0) && <PromptToastActions label={`${notice.title} actions`}>
+          {canView && <RouteButton to={`/plugins/${encodeURIComponent(item.pluginId)}`} size="small" variant="accent">View</RouteButton>}
+          {notice.actions.map((declared, index) => <Button key={declared.actionId} type="button" size="small" variant={!canView && index === 0 ? 'accent' : 'default'}
             onClick={() => run(item, declared)}>{declared.label}</Button>)}
         </PromptToastActions>}
       </PromptToast>;

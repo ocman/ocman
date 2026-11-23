@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import * as Toast from '@radix-ui/react-toast';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PluginActionRequest } from '../lib/plugins';
+import type { PluginUI } from '../lib/pluginUI';
 import { renderWithQuery } from '../test/renderWithQuery';
 import { PluginNoticeToasts } from './PluginNoticeToasts';
 
@@ -17,6 +18,7 @@ const recording = { id: 'recording', tone: 'warning', title: 'Recording meeting'
 let snapshots: Record<string, unknown>;
 let offline: Set<string>;
 let invocations: PluginActionRequest[];
+let uis: PluginUI[];
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
 beforeEach(() => {
@@ -26,8 +28,10 @@ beforeEach(() => {
   };
   offline = new Set();
   invocations = [];
+  uis = [];
   vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input), 'http://localhost');
+    if (url.pathname === '/api/plugins/ui') return json(uis);
     if (url.pathname === '/api/plugins/notices') {
       const owner = url.searchParams.get('ownerId')!;
       if (owner === 'viewer') throw new Error('viewer must not be polled');
@@ -47,10 +51,27 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 function mount() {
-  const result = renderWithQuery(<MemoryRouter><Toast.Provider duration={Infinity}><PluginNoticeToasts /><Toast.Viewport /></Toast.Provider></MemoryRouter>);
+  const result = renderWithQuery(<MemoryRouter>
+    <Toast.Provider duration={Infinity}><PluginNoticeToasts /><Toast.Viewport /></Toast.Provider>
+    <Routes><Route path={`/plugins/${recorder}`} element={<h1>Recorder app</h1>} /><Route path="/" element={null} /></Routes>
+  </MemoryRouter>);
   const refresh = () => act(async () => { await result.client.refetchQueries({ queryKey: ['plugin-notices'] }); });
   return { ...result, refresh };
 }
+
+it('opens the notice owner’s app from View without invoking Stop or dismissing the toast', async () => {
+  uis = [{ ownerId: 'local', pluginId: recorder, pluginLabel: 'Meeting recorder', compatible: true,
+    index: { url: '/bundle', sha256: 'digest' }, sdk: '^1.3.0', hostSdk: '1.3.0', actions: [] }];
+  snapshots.machine = { [recorder]: { pluginLabel: 'Remote recorder', notices: [{ ...recording, actions: [] }] } };
+  mount();
+  const toast = (await screen.findByText('Meeting recorder')).closest('li')!;
+  fireEvent.click(await within(toast).findByRole('link', { name: 'View' }));
+  expect(await screen.findByRole('heading', { name: 'Recorder app' })).toBeInTheDocument();
+  expect(within(toast).getByRole('button', { name: 'Stop recording' })).toBeInTheDocument();
+  expect(invocations).toEqual([]);
+  const remote = (await screen.findByText('Remote recorder')).closest('li')!;
+  expect(within(remote).queryByRole('link', { name: 'View' })).not.toBeInTheDocument();
+});
 
 it('shows each owner’s notices as plain text with declared actions and elapsed time', async () => {
   mount();
