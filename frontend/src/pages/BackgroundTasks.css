@@ -8,9 +8,10 @@
 .background-tasks-scroll { max-height: 65vh; overflow: auto; overscroll-behavior: contain; border-radius: 8px; }
 .background-tasks-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .background-tasks-overview .oc-data-table { table-layout: fixed; }
+.background-tasks-overview .oc-data-table td { padding: 4px 12px; }
 .background-tasks-overview th:first-child { width: 48%; }
 .background-tasks-overview th { text-transform: none; letter-spacing: normal; }
-.background-tasks-overview td { font-size: 12px; height: 62px; overflow-wrap: anywhere; }
+.background-tasks-overview td { font-size: 12px; overflow-wrap: anywhere; }
 .background-tasks-overview tr[data-selected="true"] { background: color-mix(in srgb, var(--accent) 8%, var(--bg)); box-shadow: inset 2px 0 var(--accent); }
 .background-tasks-overview td .oc-button { padding: 0; white-space: normal; text-align: left; height: auto; font-weight: 600; }
 .background-tasks-count { margin: 10px 0 0; color: var(--text-dim); font-size: 11px; }
@@ -58,7 +59,7 @@
   .background-tasks-overview td { display: block; width: 100%; }
   .background-tasks-overview .background-task-category th { display: block; width: 100%; }
   .background-tasks-overview thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .background-tasks-overview td { height: auto; border-bottom: 0; padding: 6px 12px; }
+  .background-tasks-overview td { border-bottom: 0; }
   .background-tasks-overview td:first-child { padding-top: 12px; }
   .background-tasks-overview td:last-child { padding-bottom: 12px; }
   .background-tasks-overview td[data-label]::before { content: attr(data-label) ': '; color: var(--text-dim); }
