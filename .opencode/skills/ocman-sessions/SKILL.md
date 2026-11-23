@@ -1,6 +1,6 @@
 ---
 name: ocman-sessions
-description: Use when creating a pull request in an ocman session, watching or babysitting a PR, waiting for CI, monitoring review comments or merge conflicts, inspecting, searching, starting, or messaging ocman sessions, or delegating work to an OpenCode subagent with an explicit model. Prefer ocman's persistent PR watch over CLI polling when available.
+description: Use when linking checkout files in ocman replies, creating a pull request in an ocman session, watching or babysitting a PR, waiting for CI, monitoring review comments or merge conflicts, inspecting, searching, starting, or messaging ocman sessions, or delegating work to an OpenCode subagent with an explicit model. Prefer ocman's persistent PR watch over CLI polling when available.
 ---
 
 # Ocman Sessions
@@ -9,6 +9,16 @@ Include a short, goal-focused `intent` on every ocman MCP call, including help
 and read-only calls, so the user sees why you are calling the tool. In Code Mode,
 write `intent` as an inline string literal, not a variable or computed value.
 This explains the call; it does not grant permission or change the operation.
+
+## Link to files in replies
+
+Use Markdown links to files in the current checkout, for example
+`[Session handler](ocman://explore/file/src/session.go)`. Use a path relative
+to the repository or worktree root, not the session's current subdirectory.
+Never include a host path. Encode spaces as `%20` and literal `#` and `?` as
+`%23` and `%3F`.
+Ocman opens the file in the session's Explorer. Use `embed_file` for inline
+previews or `artifacts` for a copy that should outlive the checkout.
 
 ## Link created pull requests
 

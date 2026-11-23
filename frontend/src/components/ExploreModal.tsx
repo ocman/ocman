@@ -31,7 +31,7 @@ function useLoad<T>(key: string | null, load: (signal: AbortSignal) => Promise<T
   return state.key === key ? { ...state, loading: false } : { loading: key !== null };
 }
 
-function RepoTree({ files, onSelect }: { files: string[]; onSelect: (path: string) => void }) {
+function RepoTree({ files, initialFile, onSelect }: { files: string[]; initialFile?: string; onSelect: (path: string) => void }) {
   const onSelectRef = useRef(onSelect);
   useLayoutEffect(() => { onSelectRef.current = onSelect; });
   const known = useRef(new Set(files));
@@ -39,6 +39,8 @@ function RepoTree({ files, onSelect }: { files: string[]; onSelect: (path: strin
     paths: files,
     flattenEmptyDirectories: true,
     initialExpansion: 'closed',
+    initialSelectedPaths: initialFile ? [initialFile] : [],
+    initialExpandedPaths: initialFile?.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/')),
     search: true,
     fileTreeSearchMode: 'hide-non-matches',
     unsafeCSS: FILE_TREE_SELECTION_CSS,
@@ -71,10 +73,13 @@ function FileBody({ file }: { file: RepoFileContent }) {
 // ExploreModal browses every non-ignored file of the repository that
 // contains `dir`, rooted at the repo (or worktree) root. A toggle adds
 // gitignored files.
-export function ExploreModal({ dir, remoteId, onClose }: { dir: string; remoteId: string; onClose: () => void }) {
+export function ExploreModal({ dir, remoteId, initialFile, onClose }: { dir: string; remoteId: string; initialFile?: string; onClose: () => void }) {
   const [ignored, setIgnored] = useState(false);
   const list = useLoad<RepoFileList>(`${ignored}:${dir}`, (signal) => api.repoFiles(dir, remoteId, signal, ignored));
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selection, setSelected] = useState<string | null | undefined>();
+  const selected = selection === undefined
+    ? initialFile && list.data?.files.includes(initialFile) ? initialFile : null
+    : selection;
   const file = useLoad<RepoFileContent>(selected, (signal) => api.repoFile(dir, selected ?? '', remoteId, signal, ignored));
   const toggleIgnored = () => { setIgnored((v) => !v); setSelected(null); };
 
@@ -86,7 +91,7 @@ export function ExploreModal({ dir, remoteId, onClose }: { dir: string; remoteId
           <div className={styles.options}>
             <CheckboxField label="Show ignored files" checked={ignored} onChange={toggleIgnored} />
           </div>
-          {list.data ? <RepoTree key={String(ignored)} files={list.data.files} onSelect={setSelected} />
+          {list.data ? <RepoTree key={String(ignored)} files={list.data.files} initialFile={selected ?? undefined} onSelect={setSelected} />
             : list.error ? <EmptyState className={styles.tree}>{list.error}</EmptyState>
             : <LoadingState className={styles.tree}>Loading files…</LoadingState>}
         </div>
@@ -94,6 +99,8 @@ export function ExploreModal({ dir, remoteId, onClose }: { dir: string; remoteId
       {file.data ? <FileBody key={file.data.path} file={file.data} />
         : file.error ? <EmptyState>{file.error}</EmptyState>
         : file.loading ? <LoadingState>Loading…</LoadingState>
+        : initialFile && selection === undefined
+          ? list.loading ? <LoadingState>Finding linked file…</LoadingState> : <EmptyState>{list.error ?? 'The linked file is not listed in this checkout.'}</EmptyState>
         : <EmptyState>Select a file to view it.</EmptyState>}
     </FileBrowserModal>
   );

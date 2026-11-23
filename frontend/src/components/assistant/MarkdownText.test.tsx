@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PreviewOwnerContext } from '../../lib/previews';
+import { ExploreLinksContext } from '../../lib/exploreLinks';
 
 class ResizeObserver {
   observe() {}
@@ -101,6 +102,32 @@ describe('MarkdownText', () => {
     expect(screen.getByText('100%')).toBeInTheDocument();
     fireEvent.wheel(viewport, { deltaY: -100 });
     await waitFor(() => expect(screen.queryByText('100%')).not.toBeInTheDocument());
+  });
+
+  it('rewrites only checkout-relative Ocman file links into session Explorer links', () => {
+    const text = '[Notes](ocman://explore/file/docs/My%20notes%23.md) [Host](ocman://host/file/path) [Absolute](ocman://explore/file//work/README.md) [Traversal](ocman://explore/file/docs/%2e%2e/README.md) [Separator](ocman://explore/file/docs%2FREADME.md) [Malformed](ocman://explore/file/docs/%FF.md) [Control](ocman://explore/file/docs/%00.md) [Local](file:///work/notes.md) ![Image](ocman://explore/file/image.png) [Web](https://example.com/)';
+    const { container } = render(
+      <MemoryRouter initialEntries={['/session/abc?platform=example#turn']}>
+        <ExploreLinksContext.Provider value>
+          <MarkdownContent text={text} />
+        </ExploreLinksContext.Provider>
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole('link', { name: 'Notes' });
+    const url = new URL((link as HTMLAnchorElement).href);
+    expect(url.pathname).toBe('/session/abc');
+    expect(url.searchParams.get('platform')).toBe('example');
+    expect(url.searchParams.get('exploreFile')).toBe('docs/My notes#.md');
+    expect(url.hash).toBe('#turn');
+    expect(screen.getByRole('link', { name: 'Web' })).toHaveAttribute('href', 'https://example.com/');
+    expect(screen.getAllByRole('link')).toHaveLength(2);
+    expect(container.querySelector('[href^="file:"], [href^="ocman:"], [src^="ocman:"]')).toBeNull();
+  });
+
+  it('leaves file links inactive outside a session', () => {
+    const { container } = render(<MarkdownContent text="[Notes](ocman://explore/file/docs/notes.md)" />);
+    expect(screen.getByText('Notes')).toBeInTheDocument();
+    expect(container.querySelector('[href^="ocman:"]')).toBeNull();
   });
 
   it('routes remote embeds and artifact pages through their owner', () => {

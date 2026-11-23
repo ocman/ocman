@@ -2,10 +2,11 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { HeaderContext } from '../lib/headerContext';
 import { api } from '../lib/api';
 import { AppHeader } from './AppHeader';
+import { LinkedFileExplorer } from './LinkedFileExplorer';
 import checkboxStyles from './CheckboxField.module.css';
 
 // Shiki highlighting is not the subject here.
@@ -61,6 +62,37 @@ it('opens from the header and shows the selected file', async () => {
 
   await user.click(screen.getByRole('button', { name: 'Close' }));
   expect(screen.queryByTestId('explore-modal')).not.toBeInTheDocument();
+});
+
+function renderLinkedFile(path: string) {
+  function LocationSearch() {
+    return <output>{useLocation().search}</output>;
+  }
+  render(<MemoryRouter initialEntries={[`/session/s1?platform=example&exploreFile=${encodeURIComponent(path)}`]}>
+    <LinkedFileExplorer dir="/repo/wt/src" remoteId="rem1" />
+    <LocationSearch />
+  </MemoryRouter>);
+}
+
+it('preselects a linked file relative to the checkout root and clears the link on close', async () => {
+  renderLinkedFile('src/a.ts');
+  expect(await screen.findByText('const a = 1;')).toBeInTheDocument();
+  expect(api.repoFile).toHaveBeenCalledWith('/repo/wt/src', 'src/a.ts', 'rem1', expect.anything(), false);
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Close' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByText('?platform=example')).toBeInTheDocument();
+});
+
+it.each(['src/missing.ts', '.env'])('does not read an unlisted linked path %s', async path => {
+  renderLinkedFile(path);
+  expect(await screen.findByText('The linked file is not listed in this checkout.')).toBeInTheDocument();
+  expect(api.repoFile).not.toHaveBeenCalled();
+});
+
+it('does not open Explorer for an absolute path in the query', () => {
+  renderLinkedFile('/repo/wt/src/a.ts');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(api.repoFiles).not.toHaveBeenCalled();
 });
 
 it('defaults the owner to local and surfaces a listing error', async () => {

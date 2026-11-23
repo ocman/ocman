@@ -2,12 +2,12 @@
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
 import { Children, cloneElement, Fragment, isValidElement, memo, useContext, useEffect, useId, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import type { ExtraProps } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
+import type { ExtraProps, UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import type { ComponentProps, FC, ReactNode } from 'react';
-import { Link, useInRouterContext } from 'react-router-dom';
+import { Link, useInRouterContext, useLocation } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
 import { MarkdownPreviewLink } from '../MarkdownPreviewLink';
 import { FactoryActionCard } from '../FactoryActionCard';
@@ -20,6 +20,7 @@ import { useBetaFeatures } from '../../lib/betaFeatures';
 import { lazyComponent } from '../lazyComponent';
 import { useFreshFileURL } from '../../lib/fileUrls';
 import { PreviewOwnerContext } from '../../lib/previews';
+import { EXPLORE_FILE_PARAM, ExploreLinksContext, fileLinkPath } from '../../lib/exploreLinks';
 import { publishedResourceURL } from '../../lib/publishedResources';
 import { PreviewImage } from '../ImagePreview';
 import { CopyButton } from '../CopyButton';
@@ -149,6 +150,16 @@ function CodeBlockPre(props: any) {
   );
 }
 
+const exploreUrlTransform: UrlTransform = (url, key, node) =>
+  key === 'href' && node.tagName === 'a' && /^ocman:/i.test(url) ? url : defaultUrlTransform(url);
+
+function ExploreFileLink({ path, children, ...props }: ComponentProps<'a'> & { path: string }) {
+  const { pathname, search, hash } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set(EXPLORE_FILE_PARAM, path);
+  return <Link {...props} to={{ pathname, search: params.toString(), hash }}>{children}</Link>;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MarkdownLink(props: any) {
   const { node: _node, href: originalHref, children, factoryCards = true, ...rest } = props;
@@ -156,6 +167,10 @@ function MarkdownLink(props: any) {
   const href = useFreshFileURL(relativeFileURL(originalHref, owner));
   const routed = useInRouterContext();
   const factoryEnabled = useBetaFeatures((s) => s.factory);
+  if (/^ocman:/i.test(originalHref ?? '')) {
+    const path = fileLinkPath(originalHref);
+    return path && routed ? <ExploreFileLink {...rest} path={path}>{children}</ExploreFileLink> : <>{children}</>;
+  }
   if (!factoryEnabled && (props['data-ocman-card'] || href?.startsWith('/factory/'))) return <>{children}</>;
   if (factoryCards && props['data-ocman-card'] && routed) {
     return <FactoryMarkerCard epicID={props['data-ocman-epic']} issueID={props['data-ocman-issue']} action={props['data-ocman-action']}>{children}</FactoryMarkerCard>;
@@ -284,11 +299,13 @@ type MarkdownContentProps = { text: string; preserveLineBreaks?: boolean; factor
 // One independently parsed chunk. memo: while an answer streams only the
 // last chunk's text changes, so earlier chunks skip re-parsing.
 const MarkdownBlock = memo(function MarkdownBlock({ text, preserveLineBreaks, factoryCards }: Required<MarkdownContentProps>) {
+  const exploreLinks = useContext(ExploreLinksContext);
   const plugins = factoryCards ? REMARK_PLUGINS : PROSE_PLUGINS;
   const pluginsWithBreaks = factoryCards ? REMARK_PLUGINS_WITH_BREAKS : PROSE_PLUGINS_WITH_BREAKS;
   const rehypePlugins = useLazyModule(highlightPlugins) ?? NO_REHYPE_PLUGINS;
   return (
     <ReactMarkdown
+      urlTransform={exploreLinks ? exploreUrlTransform : undefined}
       remarkPlugins={preserveLineBreaks ? pluginsWithBreaks : plugins}
       rehypePlugins={rehypePlugins}
       components={factoryCards ? MARKDOWN_COMPONENTS : PROSE_COMPONENTS}

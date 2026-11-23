@@ -11,6 +11,12 @@ It is rooted at the repository or worktree root
 that contains the session's directory, and for a session on another machine
 it reads that machine's files.
 
+In a session conversation, Markdown links such as
+`[README](ocman://explore/file/docs/README.md)` open Explore with that file
+selected. The link contains only a path relative to the session's repository
+or worktree root. The file must be listed in that checkout. Absolute paths,
+parent-directory segments, and `file://` links are not supported.
+
 ## What is shown
 
 Explore lists what `git ls-files --cached --others --exclude-standard` lists:

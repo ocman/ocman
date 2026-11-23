@@ -99,6 +99,8 @@ import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { SkeletonLines } from '../../components/Skeleton';
 import { PreviewOwnerContext, PreviewSessionContext } from '../../lib/previews';
+import { ExploreLinksContext } from '../../lib/exploreLinks';
+import { LinkedFileExplorer } from '../../components/LinkedFileExplorer';
 import { countRender, markSessionSwitchRendered, markSessionSwitchStart } from '../../lib/perfMonitor';
 import { PerfProfiler } from '../../components/PerfProfiler';
 
@@ -837,6 +839,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               >
                 <PreviewOwnerContext.Provider value={session.remoteId || 'local'}>
                 <PreviewSessionContext.Provider value={session.id}>
+                <ExploreLinksContext.Provider value={Boolean(session.directory)}>
                 <ConversationLaunchContext.Provider value={launchTimeline?.context ?? null}>
                 <AssistantThread
                   activityPromptAliases={pending.acknowledgedIds}
@@ -989,9 +992,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   ) : undefined}
                 />
                 </ConversationLaunchContext.Provider>
+                </ExploreLinksContext.Provider>
                 </PreviewSessionContext.Provider>
                 </PreviewOwnerContext.Provider>
               </ErrorBoundary>
+              {session.directory && <LinkedFileExplorer dir={session.directory} remoteId={session.remoteId || 'local'} />}
               <SessionPermissions key={`${session.platform}/${session.id}`} sessionId={session.id} platform={session.platform} />
               <SessionModals
                 session={session}
