@@ -63,7 +63,7 @@ interface ErrorBoundaryState {
  * ErrorBoundary catches render-time exceptions in its subtree, reports them
  * to the server log via remoteLog, and shows a fallback UI in place of the
  * crashed children. A boundary recovers when:
- *   - the user clicks the Try again button (default fallback), or
+ *   - the user clicks Try again, or refreshes after a module load failure, or
  *   - the parent passes a new `resetKey` value (typically the route path or
  *     session id), or
  *   - the caller invokes `reset()` from a `fallbackRender` prop.
@@ -116,10 +116,18 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return this.props.fallback;
     }
 
+    // A lazy component can keep the rejected import even when it remounts.
+    const moduleLoadFailed = /^(?:(?:Failed to fetch|error loading) dynamically imported module\b|Importing a module script failed\b)/i.test(error.message);
+    const description = moduleLoadFailed
+      ? 'The app may have been rebuilt or updated. Save any other work, then refresh this page.'
+      : error.message || 'An unexpected error occurred while rendering this view.';
     return (
-      <ErrorState title="Something went wrong" inline={this.props.inline}
-        description={error.message || 'An unexpected error occurred while rendering this view.'}>
-        <Button type="button" size={this.props.inline ? 'small' : 'normal'} onClick={this.reset}>Try again</Button>
+      <ErrorState title={moduleLoadFailed ? "Couldn't load this view" : 'Something went wrong'}
+        inline={this.props.inline} description={description}>
+        <Button type="button" size={this.props.inline ? 'small' : 'normal'}
+          onClick={moduleLoadFailed ? () => window.location.reload() : this.reset}>
+          {moduleLoadFailed ? 'Refresh page' : 'Try again'}
+        </Button>
       </ErrorState>
     );
   }

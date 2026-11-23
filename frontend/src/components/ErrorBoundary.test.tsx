@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ErrorInfo } from 'react';
+import { lazy, Suspense, type ErrorInfo } from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ErrorBoundary } from './ErrorBoundary';
 import styles from './PageState.module.css';
 
@@ -173,6 +175,34 @@ describe('ErrorBoundary', () => {
     expect(html).toContain('custom');
     expect(html).not.toContain('Something went wrong');
     expect(html).not.toContain('Try again');
+  });
+
+  it.each([
+    'Failed to fetch dynamically imported module: http://localhost:8228/assets/page-abc.js',
+    'error loading dynamically imported module: http://localhost:8228/assets/page-abc.js',
+    'Importing a module script failed.',
+  ])('offers a page refresh when a lazy import fails with %s', async message => {
+    const MissingPage = lazy(() => Promise.reject(new TypeError(message)));
+    render(
+      <ErrorBoundary>
+        <Suspense fallback={null}><MissingPage /></Suspense>
+      </ErrorBoundary>,
+      { onCaughtError: () => {} },
+    );
+
+    const refresh = await screen.findByRole('button', { name: 'Refresh page' });
+    expect(refresh).toBeVisible();
+    expect(screen.getByText(/the app may have been rebuilt or updated/i)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+
+    const reload = vi.fn();
+    vi.stubGlobal('window', { location: { reload } });
+    try {
+      fireEvent.click(refresh);
+      expect(reload).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('honours fallbackRender, passing the captured error and a reset handle', () => {
