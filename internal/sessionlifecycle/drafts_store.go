@@ -25,6 +25,13 @@ var Schema = state.ModuleSchema{
 			ALTER TABLE conversation_draft ADD COLUMN archived_error_version INTEGER NOT NULL DEFAULT -1;
 			UPDATE conversation_draft SET error_version=1 WHERE error<>''`)
 		return err
+	}, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`ALTER TABLE conversation_draft ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+		// Existing rows have no edit timestamp. Give them the full grace period.
+		_, err := tx.Exec(`UPDATE conversation_draft SET updated_at=? WHERE phase='draft'`, time.Now().UnixMilli())
+		return err
 	}},
 }
 
@@ -45,6 +52,7 @@ type ConversationDraft struct {
 	ErrorVersion      int64             `json:"errorVersion"`
 	ErrorAcknowledged bool              `json:"errorAcknowledged"`
 	SetupRetryable    bool              `json:"setupRetryable"`
+	updatedAt         int64
 }
 
 type draftStore struct{ db *sql.DB }
@@ -53,7 +61,7 @@ var errDraftSubmissionConflict = errors.New("the first submission is already per
 
 func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 	var meta, request, result, steps string
-	err = scan(&d.ID, &meta, &d.Phase, &request, &result, &steps, &d.Error, &d.CreatedAt, &d.SubmittedAt, &d.Archived, &d.ErrorVersion, &d.ErrorAcknowledged)
+	err = scan(&d.ID, &meta, &d.Phase, &request, &result, &steps, &d.Error, &d.CreatedAt, &d.SubmittedAt, &d.Archived, &d.ErrorVersion, &d.ErrorAcknowledged, &d.updatedAt)
 	d.Metadata = json.RawMessage(meta)
 	d.Revision = draftVersion(d.Metadata)
 	if request != "" {
@@ -73,7 +81,7 @@ func scanDraft(scan func(...any) error) (d ConversationDraft, err error) {
 
 // Ocman draft IDs are globally allocated, before an owner/native binding exists.
 const draftColumns = `id,metadata,phase,request,result,steps,error,created_at,submitted_at,
-	conversation_draft.id IN (SELECT session_id FROM archived_session), error_version, error_version<=archived_error_version`
+	conversation_draft.id IN (SELECT session_id FROM archived_session), error_version, error_version<=archived_error_version, updated_at`
 
 func (s draftStore) get(ctx context.Context, id string) (ConversationDraft, error) {
 	return scanDraft(s.db.QueryRowContext(ctx, `SELECT `+draftColumns+` FROM conversation_draft WHERE id=?`, id).Scan)
@@ -100,9 +108,10 @@ func (s draftStore) list(ctx context.Context) ([]ConversationDraft, error) {
 }
 
 func (s draftStore) save(ctx context.Context, id string, metadata json.RawMessage) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO conversation_draft(id,metadata,created_at) VALUES(?,?,?)
-		ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata WHERE conversation_draft.phase='draft'`,
-		id, string(metadata), time.Now().UnixMilli())
+	now := time.Now().UnixMilli()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO conversation_draft(id,metadata,created_at,updated_at) VALUES(?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,updated_at=excluded.updated_at WHERE conversation_draft.phase='draft'`,
+		id, string(metadata), now, now)
 	return err
 }
 

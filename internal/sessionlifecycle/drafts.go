@@ -102,7 +102,7 @@ func (m *Module) saveDraft(w http.ResponseWriter, r *http.Request) {
 	if !target.Validate(w) {
 		return
 	}
-	draft, err := (draftStore{m.d.DB}).saveVersion(r.Context(), id, meta, r.Header.Get("If-Match"))
+	draft, err := (draftStore{m.d.DB}).saveVersion(r.Context(), id, meta, r.Header.Get("If-Match"), r.Header.Get("X-Ocman-Draft-Intent") == "submit")
 	if errors.Is(err, errDraftVersionConflict) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return

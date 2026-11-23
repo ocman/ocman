@@ -7,10 +7,42 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/state/statetest"
 )
+
+func TestDraftSaveOverEmptyServerText(t *testing.T) {
+	for _, tc := range []struct {
+		name, metadata, revision string
+	}{
+		{"new editor", `{"directory":"/repo","text":""}`, ""},
+		{"stale editor", `{"directory":"/repo","text":""}`, "stale"},
+		{"omitted text", `{"directory":"/repo"}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := statetest.Open(t, Schema)
+			m := NewModule(Deps{DB: db.SQL()})
+			if w := draftCall(m, http.MethodPut, "/draft", tc.metadata); w.Code != http.StatusOK {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			const edit = `{"directory":"/repo","text":"first prompt"}`
+			r := httptest.NewRequest(http.MethodPut, "/draft", strings.NewReader(edit))
+			r.SetPathValue("id", draftID)
+			r.Header.Set("If-Match", tc.revision)
+			w := httptest.NewRecorder()
+			m.saveDraft(w, r)
+			if w.Code != http.StatusOK {
+				t.Fatalf("saving over an empty draft: got %d, want 200: %s", w.Code, w.Body.String())
+			}
+			row, err := (draftStore{db.SQL()}).get(t.Context(), draftID)
+			if err != nil || string(row.Metadata) != edit {
+				t.Fatalf("edit not persisted: %s (%v)", row.Metadata, err)
+			}
+		})
+	}
+}
 
 func TestDraftReversedArrivalRejectsStaleVersion(t *testing.T) {
 	db := statetest.Open(t, Schema)
@@ -46,6 +78,56 @@ func TestDraftReversedArrivalRejectsStaleVersion(t *testing.T) {
 	}
 }
 
+func TestDraftSubmitOnlyOverridesOldEdits(t *testing.T) {
+	for _, tc := range []struct {
+		name, intent string
+		age          time.Duration
+		status       int
+	}{
+		{"send over old draft", "submit", 6 * time.Minute, http.StatusOK},
+		{"send over recent edits to an old draft", "submit", time.Minute, http.StatusConflict},
+		{"autosave over old draft", "", 6 * time.Minute, http.StatusConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := statetest.Open(t, Schema)
+			m := NewModule(Deps{DB: db.SQL()})
+			const peer = `{"directory":"/repo","text":"peer edits"}`
+			const local = `{"directory":"/repo","text":"my prompt"}`
+			if w := draftCall(m, http.MethodPut, "/draft", peer); w.Code != http.StatusOK {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			now := time.Now()
+			if _, err := db.SQL().Exec(`UPDATE conversation_draft SET created_at=?,updated_at=? WHERE id=?`, now.Add(-time.Hour).UnixMilli(), now.Add(-tc.age).UnixMilli(), draftID); err != nil {
+				t.Fatal(err)
+			}
+			put := func(body string) *httptest.ResponseRecorder {
+				r := httptest.NewRequest(http.MethodPut, "/draft", strings.NewReader(body))
+				r.SetPathValue("id", draftID)
+				r.Header.Set("If-Match", "stale")
+				r.Header.Set("X-Ocman-Draft-Intent", tc.intent)
+				w := httptest.NewRecorder()
+				m.saveDraft(w, r)
+				return w
+			}
+			if w := put(local); w.Code != tc.status {
+				t.Fatalf("got %d, want %d: %s", w.Code, tc.status, w.Body.String())
+			}
+			want := peer
+			if tc.status == http.StatusOK {
+				want = local
+				if w := put(peer); w.Code != http.StatusConflict {
+					t.Fatalf("a second stale send must not overwrite the fresh save: %d %s", w.Code, w.Body.String())
+				}
+			}
+			var draft ConversationDraft
+			w := draftCall(m, http.MethodGet, "/draft", "")
+			if err := json.Unmarshal(w.Body.Bytes(), &draft); err != nil || string(draft.Metadata) != want {
+				t.Fatalf("got %s, want metadata %s (%v)", w.Body.String(), want, err)
+			}
+		})
+	}
+}
+
 func TestDraftVersionStorageFailureAndCanceledAdmission(t *testing.T) {
 	db := statetest.Open(t, Schema)
 	store := draftStore{db.SQL()}
@@ -54,10 +136,10 @@ func TestDraftVersionStorageFailureAndCanceledAdmission(t *testing.T) {
 	if _, _, err := store.accept(ctx, draftID, []byte(`{}`)); err == nil {
 		t.Fatal("canceled admission succeeded")
 	}
-	if _, err := store.saveVersion(ctx, draftID, json.RawMessage(`{}`), ""); err == nil {
+	if _, err := store.saveVersion(ctx, draftID, json.RawMessage(`{}`), "", false); err == nil {
 		t.Fatal("canceled save succeeded")
 	}
-	if _, err := store.saveVersion(t.Context(), draftID, json.RawMessage(`{}`), "missing"); err == nil {
+	if _, err := store.saveVersion(t.Context(), draftID, json.RawMessage(`{}`), "missing", false); err == nil {
 		t.Fatal("missing version succeeded")
 	}
 	if err := db.SQL().Close(); err != nil {
@@ -78,7 +160,7 @@ func TestDraftVersionRollsBackFailedWritesAndReceipts(t *testing.T) {
 			if _, err := db.SQL().Exec(trigger); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := (draftStore{db.SQL()}).saveVersion(t.Context(), draftID, json.RawMessage(`{}`), ""); err == nil {
+			if _, err := (draftStore{db.SQL()}).saveVersion(t.Context(), draftID, json.RawMessage(`{}`), "", false); err == nil {
 				t.Fatal("save failure hidden")
 			}
 			var count int

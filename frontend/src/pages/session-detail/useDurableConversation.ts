@@ -93,7 +93,7 @@ export function useDurableConversation(params: NewConversationProps['params'], n
       }
       const observed = useBackendConversationDrafts.getState().drafts[id];
       const initialSubmission = !observed || observed.phase === 'draft';
-      await persistBackendDraft(id);
+      await persistBackendDraft(id, initialSubmission ? 'submit' : undefined);
       await fetchBackendDraft(id);
       const current = useBackendConversationDrafts.getState().drafts[id];
       if (files?.length && request.send) request = { ...request, send: { ...request.send, message: await uploadDraftFiles(id, request.send.message, files) } };

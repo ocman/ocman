@@ -75,7 +75,7 @@ sequenceDiagram
     Note over B,S: inbox/notify event bursts coalesce;<br/>in-flight requests finish before one follow-up
     Note over S,E: queue snapshot invalidations coalesce;<br/>one owner-local read runs at a time
     B->>S: GET draft recovery before mounting composer
-    B->>S: serialized PUT with If-Match, then POST /start
+    B->>S: serialized PUT with If-Match and submit intent, then POST /start
     S->>I: persist complete first payload before acknowledgement
     S-->>B: 202 accepted, composer can clear
     B->>S: POST /api/session-drafts/{id}/messages
@@ -114,8 +114,10 @@ sequenceDiagram
   setup steps and final delivery receipt in `conversation_draft` in state.db.
   IndexedDB remains the offline composer cache. Saving a draft launches nothing.
   Initial server recovery finishes before composer defaults or autosave mount.
-  Saves serialize per identity and compare metadata revisions atomically, so
-  stale tabs receive a conflict instead of overwriting newer server text.
+  Saves serialize per identity and compare metadata revisions atomically. A save
+  can replace an editable draft with no server text even if its revision is stale.
+  Stale autosaves still conflict when the server draft contains text. An explicit
+  Send may replace it if the server draft hasn't changed for at least five minutes.
   Conflict Retry previews both versions without advancing the local revision.
   Users explicitly keep local edits or restore the server text and selections;
   restoring advances the browser text fence before remounting the composer.
