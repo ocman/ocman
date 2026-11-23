@@ -460,6 +460,17 @@ describe('SessionDetail — session tree usage', () => {
     for (const [params] of handle.api.sessions.mock.calls) expect(params).toHaveProperty('sinceHours');
   });
 
+  it.each(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'])('colors high context usage for %s without session info', async (model) => {
+    const session = makeSession({ totalInputTokens: 10, totalOutputTokens: 20 });
+    renderSessionPage({
+      detail: makeSessionDetail(session, { contextTokenCount: 554_499, defaultModel: `anthropic/${model}` }),
+    });
+
+    const usage = await screen.findByTitle('Click for token usage details');
+    expect(usage).toHaveTextContent('554.5K (55%)');
+    expect(usage).toHaveClass('oc-context-danger');
+  });
+
   it('shows estimated cost without requiring context usage', async () => {
     const session = makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20 });
     const treeSession = {

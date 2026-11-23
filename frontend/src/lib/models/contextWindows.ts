@@ -34,6 +34,10 @@ export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   'claude-sonnet-4': 200_000,
   'claude-opus-4-6': 200_000,
   'claude-opus-4': 200_000,
+  // Default windows: https://platform.claude.com/docs/en/models/overview
+  'claude-opus-5-5': 1_000_000,
+  'claude-sonnet-5-5': 1_000_000,
+  'claude-haiku-5-5': 1_000_000,
   'gemini-2.5-pro': 1_048_576,
   'gemini-2.5-flash': 1_048_576,
   'gemini-2.0-flash': 1_048_576,
