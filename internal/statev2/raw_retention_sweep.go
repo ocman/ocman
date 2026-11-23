@@ -23,28 +23,19 @@ type RawHistorySweep struct {
 	Pending   bool  // more work remains in this pass
 }
 
-// SweepRawHistory runs a time-bounded slice. Apply mode saves progress with
-// each committed page; report mode tracks progress in memory without writes.
+// SweepRawHistory runs a time-bounded slice and saves each page's progress.
 func (d *DB) SweepRawHistory(ctx context.Context, now time.Time) (RawHistorySweep, error) {
 	return d.sweepRawHistory(ctx, now, 0)
 }
 
 func (d *DB) sweepRawHistory(ctx context.Context, now time.Time, maxBatches int) (RawHistorySweep, error) {
 	var total RawHistorySweep
-	mode := d.RawHistoryRetentionMode()
-	if mode != RawHistoryRetentionApply && mode != RawHistoryRetentionReport {
-		return total, nil
-	}
 	d.rawSweepMu.Lock()
 	defer d.rawSweepMu.Unlock()
-	apply := mode == RawHistoryRetentionApply
-	p := d.rawReportProgress
-	if apply {
-		p = rawSweepProgress{}
-		err := d.reader().QueryRowContext(ctx, `SELECT cutoff,after_row,last_row,next_run FROM raw_sweep_progress WHERE id=1`).Scan(&p.cutoff, &p.after, &p.last, &p.nextRun)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return total, err
-		}
+	var p rawSweepProgress
+	err := d.reader().QueryRowContext(ctx, `SELECT cutoff,after_row,last_row,next_run FROM raw_sweep_progress WHERE id=1`).Scan(&p.cutoff, &p.after, &p.last, &p.nextRun)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return total, err
 	}
 	if p.nextRun > now.UnixMilli() {
 		return total, nil
@@ -59,16 +50,13 @@ func (d *DB) sweepRawHistory(ctx context.Context, now time.Time, maxBatches int)
 	started := time.Now()
 	for batch := 0; time.Since(started) < rawSweepBudget && (maxBatches == 0 || batch < maxBatches); batch++ {
 		stats := d.db.Stats()
-		if apply && stats.InUse != 0 {
+		if stats.InUse != 0 {
 			return total, nil // give the writer to ingestion already in flight
 		}
 		batchStart := time.Now()
-		page, err := d.rawSweepPage(ctx, &p, apply, now)
+		page, err := d.rawSweepPage(ctx, &p, now)
 		if err != nil {
 			return total, err
-		}
-		if !apply {
-			d.rawReportProgress = p
 		}
 		total.Messages += page.Messages
 		total.Snapshots += page.Snapshots
@@ -77,7 +65,7 @@ func (d *DB) sweepRawHistory(ctx context.Context, now time.Time, maxBatches int)
 			total.Pending = false
 			return total, nil
 		}
-		if apply && d.db.Stats().WaitCount > stats.WaitCount {
+		if d.db.Stats().WaitCount > stats.WaitCount {
 			return total, nil // foreground work queued while this batch ran
 		}
 		pause := min(max(10*time.Millisecond, 4*time.Since(batchStart)), time.Until(started.Add(rawSweepBudget)))
@@ -94,12 +82,8 @@ func (d *DB) sweepRawHistory(ctx context.Context, now time.Time, maxBatches int)
 	return total, ctx.Err()
 }
 
-func (d *DB) rawSweepPage(ctx context.Context, p *rawSweepProgress, apply bool, now time.Time) (RawHistorySweep, error) {
-	pool := d.reader()
-	if apply {
-		pool = d.db
-	}
-	tx, err := pool.BeginTx(ctx, &sql.TxOptions{ReadOnly: !apply})
+func (d *DB) rawSweepPage(ctx context.Context, p *rawSweepProgress, now time.Time) (RawHistorySweep, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return RawHistorySweep{}, err
 	}
@@ -107,32 +91,30 @@ func (d *DB) rawSweepPage(ctx context.Context, p *rawSweepProgress, apply bool, 
 	var result RawHistorySweep
 	next := *p
 	if p.after < p.last {
-		result, err = sweepRawMessages(ctx, tx, &next, apply)
+		result, err = sweepRawMessages(ctx, tx, &next)
 	} else {
-		result, err = sweepRawArchives(ctx, tx, p.cutoff, apply)
-		if !apply || result.Snapshots == 0 {
+		result, err = sweepRawArchives(ctx, tx, p.cutoff)
+		if result.Snapshots == 0 {
 			next.nextRun = now.Add(24 * time.Hour).UnixMilli()
 		}
 	}
 	if err != nil {
 		return RawHistorySweep{}, err
 	}
-	if apply {
-		_, err := tx.ExecContext(ctx, `INSERT INTO raw_sweep_progress(id,cutoff,after_row,last_row,next_run)
+	_, err = tx.ExecContext(ctx, `INSERT INTO raw_sweep_progress(id,cutoff,after_row,last_row,next_run)
 			VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET cutoff=excluded.cutoff,after_row=excluded.after_row,
 			last_row=excluded.last_row,next_run=excluded.next_run`, next.cutoff, next.after, next.last, next.nextRun)
-		if err != nil {
-			return RawHistorySweep{}, err
-		}
-		if err := tx.Commit(); err != nil {
-			return RawHistorySweep{}, err
-		}
+	if err != nil {
+		return RawHistorySweep{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return RawHistorySweep{}, err
 	}
 	*p = next
 	return result, nil
 }
 
-func sweepRawMessages(ctx context.Context, tx *sql.Tx, p *rawSweepProgress, apply bool) (RawHistorySweep, error) {
+func sweepRawMessages(ctx context.Context, tx *sql.Tx, p *rawSweepProgress) (RawHistorySweep, error) {
 	const byteBudget = 2 << 20
 	var result RawHistorySweep
 	through := min(p.last, p.after+256)
@@ -164,9 +146,7 @@ func sweepRawMessages(ctx context.Context, tx *sql.Tx, p *rawSweepProgress, appl
 		if compacted := expireRawHistory(json.RawMessage(ext), createdAt, p.cutoff); compacted != nil {
 			result.Messages++
 			result.Bytes += int64(len(ext) - len(compacted))
-			if apply {
-				updates = append(updates, update{id, compacted})
-			}
+			updates = append(updates, update{id, compacted})
 		}
 	}
 	if err := rows.Err(); err != nil {

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/ocman/ocman/internal/module"
-	"github.com/ocman/ocman/internal/statev2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -30,7 +29,6 @@ func (m *Module) sweepRawHistory(ctx context.Context) {
 	store := m.deps.Store
 	result, err := store.SweepRawHistory(ctx, time.Now())
 	entry := log.WithFields(log.Fields{
-		"dry_run":   store.RawHistoryRetentionMode() == statev2.RawHistoryRetentionReport,
 		"messages":  result.Messages,
 		"snapshots": result.Snapshots,
 		"bytes":     result.Bytes,

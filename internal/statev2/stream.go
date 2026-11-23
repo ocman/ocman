@@ -114,9 +114,7 @@ func (d *DB) applyStreamBatch(ctx context.Context, tx *sql.Tx, b StreamBatch) (i
 	case err != nil && !errors.Is(err, sql.ErrNoRows):
 		return 0, err
 	}
-	if d.RawHistoryRetentionMode() == RawHistoryRetentionApply {
-		b.Messages = expireRawMessages(b.Messages, rawHistoryCutoff(time.Now()))
-	}
+	b.Messages = expireRawMessages(b.Messages, rawHistoryCutoff(time.Now()))
 	changes, err := projectionChanges(ctx, tx, b)
 	if err != nil {
 		return 0, err

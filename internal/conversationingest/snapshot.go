@@ -137,9 +137,7 @@ func (w *sourceWorker) confirmSnapshot(ctx context.Context, id string, snapshot 
 }
 
 func (w *sourceWorker) sourceSnapshot(ctx context.Context, id, cursor string, full bool) (*db.HistorySnapshot, error) {
-	if w.module.deps.Store.RawHistoryRetentionMode() == statev2.RawHistoryRetentionApply {
-		ctx = rawhistory.WithCapture(ctx)
-	}
+	ctx = rawhistory.WithCapture(ctx)
 	if w.journaled || !full {
 		if reader, ok := w.source.Reader.(platforms.HistoryDeltaReader); ok {
 			readCtx, cancel := context.WithTimeout(ctx, w.module.deps.ReadTimeout)

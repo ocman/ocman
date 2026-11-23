@@ -17,7 +17,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 	register(t, d, "first")
 	b := fixture("first")
 	commit(t, d, b)
-	for pragma, want := range map[string]string{"journal_mode": "wal", "foreign_keys": "1", "synchronous": "2", "user_version": fmt.Sprint(len(migrations))} {
+	for pragma, want := range map[string]string{"journal_mode": "wal", "foreign_keys": "1", "synchronous": "2", "auto_vacuum": "2", "user_version": fmt.Sprint(len(migrations))} {
 		var got string
 		if err := d.db.QueryRow("PRAGMA " + pragma).Scan(&got); err != nil || got != want {
 			t.Fatalf("%s = %q, want %q: %v", pragma, got, want, err)
@@ -42,6 +42,42 @@ func TestDatabaseLifecycle(t *testing.T) {
 	}
 	if Path(filepath.Join("isolated", "state.db")) != filepath.Join("isolated", "state_conv.db") {
 		t.Fatal("statev2 path escaped the supplied state directory")
+	}
+}
+
+func TestOpenPreservesExistingAutoVacuumMode(t *testing.T) {
+	for _, mode := range []int{0, 1} {
+		t.Run(fmt.Sprint(mode), func(t *testing.T) {
+			d := openTestDB(t)
+			b := fixture("first")
+			commit(t, d, b)
+			path := d.FilePath()
+			if err := d.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// Prepare an isolated fixture in the mode chosen by an older install.
+			conn, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = conn.Exec(fmt.Sprintf("PRAGMA journal_mode=DELETE; PRAGMA auto_vacuum=%d; VACUUM", mode))
+			closeErr := conn.Close()
+			if err != nil || closeErr != nil {
+				t.Fatalf("preparing existing database: %v, %v", err, closeErr)
+			}
+			reopened, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			var got int
+			if err := reopened.reader().QueryRow("PRAGMA auto_vacuum").Scan(&got); err != nil || got != mode {
+				t.Fatalf("existing database auto_vacuum = %d, want %d: %v", got, mode, err)
+			}
+			if got := read(t, reopened, b.Session.Key); got.Parts[0].Text != "retained content" {
+				t.Fatal("history lost on reopen")
+			}
+		})
 	}
 }
 

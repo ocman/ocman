@@ -6,22 +6,6 @@ import (
 	"time"
 )
 
-type RawHistoryRetentionMode int32
-
-const (
-	RawHistoryRetentionOff RawHistoryRetentionMode = iota
-	RawHistoryRetentionReport
-	RawHistoryRetentionApply
-)
-
-func (d *DB) SetRawHistoryRetentionMode(mode RawHistoryRetentionMode) {
-	d.rawRetention.Store(int32(mode))
-}
-
-func (d *DB) RawHistoryRetentionMode() RawHistoryRetentionMode {
-	return RawHistoryRetentionMode(d.rawRetention.Load())
-}
-
 func rawHistoryCutoff(now time.Time) int64 { return now.Add(-30 * 24 * time.Hour).UnixMilli() }
 
 func expireRawMessages(messages []Message, cutoff int64) []Message {

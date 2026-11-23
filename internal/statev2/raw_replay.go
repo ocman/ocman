@@ -22,7 +22,7 @@ type rawReplayWriter interface {
 }
 
 func (d *DB) saveRawReplay(ctx context.Context, q rawReplayWriter, key Key, archive *rawhistory.Snapshot) error {
-	if d.RawHistoryRetentionMode() != RawHistoryRetentionApply || archive == nil || archive.UpdatedAt <= rawHistoryCutoff(time.Now()) {
+	if archive == nil || archive.UpdatedAt <= rawHistoryCutoff(time.Now()) {
 		return nil
 	}
 	_, err := q.ExecContext(ctx, `INSERT INTO raw_replay(instance_id,session_id,format,updated_at,gzip) VALUES(?,?,?,?,?)
@@ -45,12 +45,8 @@ func (d *DB) ReadRawReplay(ctx context.Context, key Key) (rawhistory.Snapshot, e
 	return out, err
 }
 
-func sweepRawArchives(ctx context.Context, tx *sql.Tx, cutoff int64, apply bool) (RawHistorySweep, error) {
+func sweepRawArchives(ctx context.Context, tx *sql.Tx, cutoff int64) (RawHistorySweep, error) {
 	var result RawHistorySweep
-	if !apply {
-		err := tx.QueryRowContext(ctx, `SELECT count(*),coalesce(sum(length(gzip)),0) FROM raw_replay WHERE updated_at<=?`, cutoff).Scan(&result.Snapshots, &result.Bytes)
-		return result, err
-	}
 	// A compressed snapshot can be large; never delete more than one per batch.
 	var row int64
 	err := tx.QueryRowContext(ctx, `SELECT rowid,length(gzip) FROM raw_replay

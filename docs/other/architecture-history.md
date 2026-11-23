@@ -41,7 +41,7 @@ flowchart LR
     Import -->|snapshots, deltas or changed messages| Commit[internal/statev2<br/>identity, revision and cursor guards]
     Rules[internal/analyticsdata<br/>shared accounting and timing] --> Commit
     Rules --> Analytics
-    Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox, optional replay inputs)]
+    Commit -->|one transaction| History[(state_conv.db<br/>history, checkpoint, change outbox, recent replay inputs)]
     Import -->|throttled sweep expires raw data only| History
     Commit -->|post-commit content receipts| Adapters
     Import -->|confirmed-absence refresh results| Adapters
@@ -270,7 +270,7 @@ snapshots. No opt-in or legacy opt-out is available.
   explicitly purged sessions do not.
 - Composer defaults, context tokens, session trees and accounting come from
   Ocman projections. Cost estimates still use current pricing. Opaque
-  native-only messages do not consume visible paging slots. Optional raw
+  native-only messages do not consume visible paging slots. Raw
   retention expires OpenCode v2 message bodies and compressed Claude Code and
   Codex replay snapshots after 30 days. Conversation reads never need those
   replay inputs or a live source.

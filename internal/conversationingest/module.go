@@ -98,7 +98,7 @@ func (m *Module) Run(ctx context.Context) {
 	for _, w := range m.workers {
 		workers.Go(func() { w.run(ctx) })
 	}
-	if m.deps.Store != nil && m.deps.Store.RawHistoryRetentionMode() != statev2.RawHistoryRetentionOff {
+	if m.deps.Store != nil {
 		workers.Go(func() { m.runRawHistoryRetention(ctx) })
 	}
 	workers.Wait()

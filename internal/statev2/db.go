@@ -20,15 +20,13 @@ import (
 // DB owns a separate state_conv.db. Callers supply the path explicitly so tests
 // and development never silently fall back to a live or another checkout's DB.
 type DB struct {
-	db                *sql.DB
-	read              *sql.DB
-	path              string
-	committed         atomic.Pointer[CommitObserver]
-	rawRetention      atomic.Int32
-	rawSweepMu        sync.Mutex
-	rawReportProgress rawSweepProgress
-	sidebarLive       sidebarLive
-	poolMetrics       []metric.Registration
+	db          *sql.DB
+	read        *sql.DB
+	path        string
+	committed   atomic.Pointer[CommitObserver]
+	rawSweepMu  sync.Mutex
+	sidebarLive sidebarLive
+	poolMetrics []metric.Registration
 }
 
 // Path places state_conv.db beside an explicitly resolved application database.
@@ -51,7 +49,7 @@ func Open(path string) (*DB, error) {
 	// temp_store keeps statement journals, temporary tables and sorter spills
 	// in memory. They only roll back or stage work inside an open transaction;
 	// committed history is durable in the synchronous WAL either way.
-	q := url.Values{"_pragma": {"busy_timeout(5000)", "journal_mode(WAL)", "foreign_keys(1)", "synchronous(FULL)", "temp_store(MEMORY)"}}
+	q := url.Values{"_pragma": {"busy_timeout(5000)", "foreign_keys(1)", "synchronous(FULL)", "temp_store(MEMORY)"}}
 	u.RawQuery = q.Encode()
 	conn, err := telemetry.OpenSQL(u.String(), "statev2")
 	if err != nil {
@@ -62,6 +60,12 @@ func Open(path string) (*DB, error) {
 	if err := d.migrate(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("opening statev2: %w", err)
+	}
+	// Enable persistent WAL mode after initialization: entering WAL on an
+	// empty file first prevents SQLite from setting its auto-vacuum format.
+	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("enabling statev2 WAL: %w", err)
 	}
 	if err := sqliteutil.SecurePaths(abs, "statev2"); err != nil {
 		conn.Close()
@@ -127,6 +131,11 @@ func (d *DB) migrate() error {
 		}
 		if count != 0 || version != 0 {
 			return fmt.Errorf("refusing to initialize a nonempty foreign database")
+		}
+		// Set the persistent file format before creating any tables. Existing
+		// stores keep their mode; changing from NONE would require a rebuild.
+		if _, err := tx.Exec("PRAGMA auto_vacuum=INCREMENTAL"); err != nil {
+			return fmt.Errorf("initializing incremental auto-vacuum: %w", err)
 		}
 	}
 	if version < 0 {

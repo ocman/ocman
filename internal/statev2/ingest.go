@@ -44,9 +44,7 @@ func (d *DB) Commit(ctx context.Context, batch Batch) (CommitResult, error) {
 	if err := applySession(ctx, tx, batch, &result); err != nil {
 		return CommitResult{}, err
 	}
-	if d.RawHistoryRetentionMode() == RawHistoryRetentionApply {
-		batch.Messages = expireRawMessages(batch.Messages, rawHistoryCutoff(time.Now()))
-	}
+	batch.Messages = expireRawMessages(batch.Messages, rawHistoryCutoff(time.Now()))
 	if batch.Complete {
 		if err := markSnapshotContent(ctx, tx, s.Key); err != nil {
 			return CommitResult{}, err

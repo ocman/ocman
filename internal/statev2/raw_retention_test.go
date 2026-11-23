@@ -15,8 +15,8 @@ import (
 func TestRawHistoryRetention(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Now()
-	old := now.Add(-31 * 24 * time.Hour).UnixMilli()
-	recent := now.Add(-29 * 24 * time.Hour).UnixMilli()
+	old := now.Add(-29 * 24 * time.Hour).UnixMilli()
+	recent := now.Add(-27 * 24 * time.Hour).UnixMilli()
 	b := fixture("first")
 	b.Checkpoint = nil
 	b.Messages[0].CreatedAt = old
@@ -47,23 +47,21 @@ func TestRawHistoryRetention(t *testing.T) {
 			}
 		}
 	}
-	d.SetRawHistoryRetentionMode(RawHistoryRetentionReport)
-	report, err := d.SweepRawHistory(t.Context(), now)
-	if err != nil || report.Messages != 1 || report.Bytes <= 0 {
-		t.Fatalf("report = %+v, %v", report, err)
-	}
 	check(true)
-	d.SetRawHistoryRetentionMode(RawHistoryRetentionApply)
-	result, err := d.SweepRawHistory(t.Context(), now)
-	if err != nil || result != report {
-		t.Fatalf("apply = %+v, %v; report = %+v", result, err, report)
+	sweepAt := now.Add(2 * 24 * time.Hour)
+	result, err := d.SweepRawHistory(t.Context(), sweepAt)
+	if err != nil || result.Messages != 1 || result.Bytes <= 0 {
+		t.Fatalf("sweep = %+v, %v", result, err)
 	}
 	check(false)
-	result, err = d.SweepRawHistory(t.Context(), now)
+	result, err = d.SweepRawHistory(t.Context(), sweepAt)
 	if err != nil || result.Messages != 0 {
 		t.Fatalf("repeat sweep = %+v, %v", result, err)
 	}
 	b.ExpectedRevision = 1
+	expired := now.Add(-31 * 24 * time.Hour).UnixMilli()
+	b.Messages[0].CreatedAt = expired
+	b.Messages[0].Extensions = json.RawMessage(fmt.Sprintf(`{"metadata":{"role":"assistant"},"native":{"Type":"assistant","UpdatedAt":%d,"Data":{"content":[]}}}`, expired))
 	commit(t, d, b)
 	check(false)
 	_, err = d.ApplyStream(t.Context(), StreamUpdate{InstanceID: b.Session.InstanceID,
@@ -80,7 +78,6 @@ func TestReplayArchiveExpiryLeavesConversation(t *testing.T) {
 	for _, format := range []string{"claude-jsonl-v1", "codex-appserver-v1"} {
 		t.Run(format, func(t *testing.T) {
 			d := openTestDB(t)
-			d.SetRawHistoryRetentionMode(RawHistoryRetentionApply)
 			b := fixture("first")
 			b.Messages[0].ConversationVisible = true
 			archive, err := rawhistory.EncodeJSON(format, now.UnixMilli(), "fixture")
@@ -109,7 +106,7 @@ func TestReplayArchiveExpiryLeavesConversation(t *testing.T) {
 func TestRawHistorySweepResumesAfterReopen(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Now()
-	old := now.Add(-31 * 24 * time.Hour).UnixMilli()
+	old := now.UnixMilli()
 	b := fixture("first")
 	b.Checkpoint = nil
 	m := b.Messages[0]
@@ -122,8 +119,8 @@ func TestRawHistorySweepResumesAfterReopen(t *testing.T) {
 	}
 	b.Parts = nil
 	commit(t, d, b)
-	d.SetRawHistoryRetentionMode(RawHistoryRetentionApply)
-	first, err := d.sweepRawHistory(t.Context(), now, 1)
+	sweepAt := now.Add(31 * 24 * time.Hour)
+	first, err := d.sweepRawHistory(t.Context(), sweepAt, 1)
 	if err != nil || !first.Pending || first.Messages != 256 {
 		t.Fatalf("first slice: %+v, %v", first, err)
 	}
@@ -136,8 +133,7 @@ func TestRawHistorySweepResumesAfterReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Close() })
-	d.SetRawHistoryRetentionMode(RawHistoryRetentionApply)
-	second, err := d.sweepRawHistory(t.Context(), now, 1)
+	second, err := d.sweepRawHistory(t.Context(), sweepAt, 1)
 	if err != nil || second.Messages != 1 {
 		t.Fatalf("resumed slice: %+v, %v", second, err)
 	}
@@ -149,15 +145,14 @@ func TestRawHistorySweepYieldsBetweenLargeMessages(t *testing.T) {
 	b := fixture("first")
 	b.Checkpoint = nil
 	m := b.Messages[0]
-	m.CreatedAt = now.Add(-31 * 24 * time.Hour).UnixMilli()
+	m.CreatedAt = now.UnixMilli()
 	m.Extensions = json.RawMessage(`{"metadata":{"role":"assistant"},"native":{"Type":"assistant","Data":{"text":"` + strings.Repeat("x", 2<<20) + `"}}}`)
 	b.Messages[0] = m
 	m.ID, m.Position = "second", 1
 	b.Messages = append(b.Messages, m)
 	commit(t, d, b)
-	d.SetRawHistoryRetentionMode(RawHistoryRetentionApply)
 	for range 2 {
-		page, err := d.sweepRawHistory(t.Context(), now, 1)
+		page, err := d.sweepRawHistory(t.Context(), now.Add(31*24*time.Hour), 1)
 		if err != nil || !page.Pending || page.Messages != 1 || page.Bytes < 2<<20 {
 			t.Fatalf("expected one oversized record to make progress on its own: %+v, %v", page, err)
 		}

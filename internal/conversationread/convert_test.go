@@ -2,6 +2,7 @@ package conversationread
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -30,7 +31,10 @@ func readFixture(t *testing.T) (*statev2.DB, statev2.Batch) {
 			{ID: "a", SessionID: "s", TimeCreated: 3, Data: json.RawMessage(`{"role":"assistant","finish":"stop","tokens":{"input":10,"output":5,"reasoning":3,"cache":{"read":2,"write":1}},"time":{"created":3,"completed":6}}`)}},
 		Parts: []db.Part{{ID: "text", MessageID: "a", SessionID: "s", TimeCreated: 4, Data: json.RawMessage(`{"type":"text","text":"","extra":1234567890123456789}`)},
 			{ID: "tool", MessageID: "a", SessionID: "s", TimeCreated: 5, Data: json.RawMessage(`{"type":"tool","tool":"bash","state":{"input":{"cmd":"ok"},"output":"done"}}`)}},
-		NativeMessages: map[string]json.RawMessage{"opaque": json.RawMessage(`{"Type":"system","UpdatedAt":2,"Data":{"text":"instructions"}}`), "a": json.RawMessage(`{"Type":"assistant","UpdatedAt":6,"Data":{"content":[]}}`)}}
+		NativeMessages: map[string]json.RawMessage{
+			"opaque": json.RawMessage(fmt.Sprintf(`{"Type":"system","UpdatedAt":%d,"Data":{"text":"instructions"}}`, time.Now().UnixMilli())),
+			"a":      json.RawMessage(fmt.Sprintf(`{"Type":"assistant","UpdatedAt":%d,"Data":{"content":[]}}`, time.Now().UnixMilli())),
+		}}
 	batch, _, err := conversationingest.Normalize(statev2.Key{InstanceID: "source", SessionID: "s"}, snapshot)
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +93,7 @@ func TestStoredConversationRendersIdenticallyAfterRawHistoryExpires(t *testing.T
 	store, _ := readFixture(t) // no provider is configured
 	head := &platforms.ConversationHead{DirectoryDefaults: true}
 	before := readStored(t, store, head, 10)
-	store.SetRawHistoryRetentionMode(statev2.RawHistoryRetentionApply)
-	result, err := store.SweepRawHistory(t.Context(), time.Now())
+	result, err := store.SweepRawHistory(t.Context(), time.Now().Add(31*24*time.Hour))
 	if err != nil || result.Messages != 2 {
 		t.Fatalf("sweep = %+v, %v", result, err)
 	}
