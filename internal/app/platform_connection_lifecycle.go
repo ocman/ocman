@@ -116,6 +116,8 @@ func connectionLifecycle(factory connectionFactory, router *platformconnections.
 			result.Status = "sign-in-required"
 			if inspection.Ready {
 				result.Status = "ready"
+			} else if c.LegacyKind != c.Kind && !inspection.IsolationSupported {
+				result.Status = "error"
 			}
 			result.Checks = append(result.Checks, hostsvc.ConnectionCheckItem{Label: "Native account", OK: inspection.Ready, Detail: inspection.Message})
 			return result, nil

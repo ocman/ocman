@@ -12,20 +12,35 @@ import (
 )
 
 func TestCodexNativeConnectionInspection(t *testing.T) {
+	// Effective defaults from a clean Codex 0.164.0 config/read with empty layers.
+	defaults := map[string]any{
+		"chatgpt_base_url":            "https://chatgpt.com/backend-api/",
+		"cli_auth_credentials_store":  "file",
+		"mcp_oauth_credentials_store": "auto",
+		"features": map[string]any{
+			"api_key_cyber_access_programs": true,
+			"api_key_model_discovery":       true,
+			"auth_elicitation":              true,
+		},
+	}
 	for _, tc := range []struct {
 		name, version, mode      string
-		config                   map[string]any
+		config, userConfig       map[string]any
 		logged, ready, supported bool
 	}{
-		{"subscription", "0.164.0", "chatgpt", map[string]any{}, true, true, true},
-		{"logged-out", "0.165.0", "chatgpt", map[string]any{}, false, false, true},
-		{"unsupported", "0.163.0", "chatgpt", map[string]any{}, true, false, false},
-		{"unknown-version", "0.166.0", "chatgpt", map[string]any{}, true, false, false},
-		{"keyring", "0.164.0", "chatgpt", map[string]any{"cli_auth_credentials_store": "keyring"}, true, false, false},
-		{"profile", "0.164.0", "chatgpt", map[string]any{"profile": "owner"}, true, false, false},
-		{"provider", "0.164.0", "chatgpt", map[string]any{"model_provider": "other"}, true, false, false},
-		{"credentials", "0.164.0", "chatgpt", map[string]any{"model_providers": map[string]any{"openai": map[string]any{"env_key": "OWNER_SECRET"}}}, true, false, false},
-		{"api-key", "0.164.0", "apiKey", map[string]any{}, true, false, false},
+		{"subscription", "0.164.0", "chatgpt", defaults, nil, true, true, true},
+		{"logged-out", "0.164.0", "chatgpt", defaults, nil, false, false, true},
+		{"unsupported", "0.163.0", "chatgpt", defaults, nil, true, false, false},
+		{"unknown-version", "0.166.0", "chatgpt", defaults, nil, true, false, false},
+		{"keyring", "0.164.0", "chatgpt", map[string]any{"cli_auth_credentials_store": "keyring"}, nil, true, false, false},
+		{"profile", "0.164.0", "chatgpt", map[string]any{"profile": "owner"}, nil, true, false, false},
+		{"provider", "0.164.0", "chatgpt", map[string]any{"model_provider": "other"}, nil, true, false, false},
+		{"credentials", "0.164.0", "chatgpt", map[string]any{"model_providers": map[string]any{"openai": map[string]any{"env_key": "OWNER_SECRET"}}}, nil, true, false, false},
+		{"api-key", "0.164.0", "apiKey", defaults, nil, true, false, false},
+		{"custom-endpoint", "0.164.0", "chatgpt", map[string]any{"chatgpt_base_url": "https://other.example.invalid"}, nil, true, false, false},
+		{"explicit-endpoint", "0.164.0", "chatgpt", defaults, map[string]any{"chatgpt_base_url": "https://chatgpt.com/backend-api/"}, true, false, false},
+		{"explicit-auth-feature", "0.164.0", "chatgpt", defaults, map[string]any{"features": map[string]any{"auth_elicitation": true}}, true, false, false},
+		{"nondefault-oauth-store", "0.164.0", "chatgpt", map[string]any{"mcp_oauth_credentials_store": "keyring"}, nil, true, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home, _ := filepath.EvalSymlinks(t.TempDir())
@@ -41,7 +56,14 @@ func TestCodexNativeConnectionInspection(t *testing.T) {
 				if params["includeLayers"] != true {
 					t.Error("configuration layers not inspected")
 				}
-				return map[string]any{"config": tc.config, "layers": []any{map[string]any{"name": map[string]any{"type": "user", "file": filepath.Join(home, "config.toml")}, "config": tc.config}}}, nil
+				userConfig := tc.userConfig
+				if userConfig == nil {
+					userConfig = map[string]any{}
+				}
+				return map[string]any{"config": tc.config, "layers": []any{
+					map[string]any{"name": map[string]any{"type": "user", "file": filepath.Join(home, "config.toml")}, "config": userConfig},
+					map[string]any{"name": map[string]any{"type": "system"}, "config": map[string]any{}},
+				}}, nil
 			})
 			s.Handle("account/read", func(raw json.RawMessage) (any, error) {
 				var params map[string]any

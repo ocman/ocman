@@ -37,7 +37,7 @@ func TestNativeUnreadySiblingRemainsInspectableInOwnerInventory(t *testing.T) {
 			t.Fatal(err)
 		}
 		keys = append(keys, platforms.ID(c.ID))
-		native = append(native, &lifecycleNative{Fake: &platformtest.Fake{PlatformID: "claudecode"}, inspection: platforms.ConnectionInspection{Ready: ready}})
+		native = append(native, &lifecycleNative{Fake: &platformtest.Fake{PlatformID: "claudecode"}, inspection: platforms.ConnectionInspection{Ready: ready, IsolationSupported: true}})
 	}
 	lifecycle := connectionLifecycle(connectionFactory{state: core}, platformconnections.NewRouter(store), keys, native)
 	host := local.New(local.Deps{ConnectionStore: store, ConnectionLifecycle: lifecycle})
@@ -111,7 +111,7 @@ func TestConnectionLifecycleNativeDrainCancellationRestoresAdmission(t *testing.
 func TestConnectionLifecycleInspectionUsesNativeAccountNotAvailability(t *testing.T) {
 	core := statetest.Open(t, platformconnections.Schema)
 	c := platformconnections.Connection{ID: "cnx_test", Kind: "claudecode", Directory: t.TempDir()}
-	p := &lifecycleNative{Fake: &platformtest.Fake{PlatformID: "claudecode"}, inspection: platforms.ConnectionInspection{Ready: true, AccountLabel: "Work", Message: "Native identity verified"}}
+	p := &lifecycleNative{Fake: &platformtest.Fake{PlatformID: "claudecode"}, inspection: platforms.ConnectionInspection{Ready: true, IsolationSupported: true, AccountLabel: "Work", Message: "Native identity verified"}}
 	lifecycle := connectionLifecycle(connectionFactory{state: core}, platformconnections.NewRouter(platformconnections.New(core)), []platforms.ID{platforms.ID(c.ID)}, []platforms.Integration{p})
 	result, err := lifecycle.Inspect(t.Context(), c)
 	if err != nil || result.Status != "ready" || result.Account != "Work" {
@@ -121,6 +121,11 @@ func TestConnectionLifecycleInspectionUsesNativeAccountNotAvailability(t *testin
 	result, err = lifecycle.Inspect(t.Context(), c)
 	if err != nil || result.Status != "sign-in-required" {
 		t.Fatalf("Available became readiness: %+v %v", result, err)
+	}
+	p.inspection = platforms.ConnectionInspection{Message: "Native configuration cannot isolate this account"}
+	result, err = lifecycle.Inspect(t.Context(), c)
+	if err != nil || result.Status != "error" || result.Instructions != p.inspection.Message {
+		t.Fatalf("unsupported configuration looked like a missing login: %+v %v", result, err)
 	}
 	p.err = errors.New("native inspection failed")
 	result, err = lifecycle.Inspect(t.Context(), c)

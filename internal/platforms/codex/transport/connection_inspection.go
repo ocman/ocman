@@ -143,7 +143,7 @@ type codexInspectionConfig struct {
 }
 
 func (c codexInspectionConfig) supported(home string) bool {
-	if c.Config == nil || c.Layers == nil || unsafeCodexConfig(c.Config) {
+	if c.Config == nil || c.Layers == nil || unsafeCodexConfig(c.Config, codexEffectiveConfig) {
 		return false
 	}
 	for _, layer := range c.Layers {
@@ -163,16 +163,38 @@ func (c codexInspectionConfig) supported(home string) bool {
 		default:
 			return false
 		}
-		if unsafeCodexConfig(layer.Config) {
+		if unsafeCodexConfig(layer.Config, codexNoDefaults) {
 			return false
 		}
 	}
 	return true
 }
 
-func unsafeCodexConfig(value map[string]any) bool {
+type codexConfigScope uint8
+
+const (
+	codexNoDefaults codexConfigScope = iota
+	codexEffectiveConfig
+	codexEffectiveFeatures
+)
+
+// config/read includes synthesized defaults in the effective configuration.
+// Only allow the exact built-in values there, never explicit layer overrides.
+func (scope codexConfigScope) isDefault(key string, value any) bool {
+	switch scope {
+	case codexEffectiveConfig:
+		return key == "chatgpt_base_url" && value == "https://chatgpt.com/backend-api/" ||
+			key == "mcp_oauth_credentials_store" && value == "auto"
+	case codexEffectiveFeatures:
+		return value == true && (key == "api_key_cyber_access_programs" || key == "api_key_model_discovery" || key == "auth_elicitation")
+	default:
+		return false
+	}
+}
+
+func unsafeCodexConfig(value map[string]any, scope codexConfigScope) bool {
 	for key, item := range value {
-		if item == nil {
+		if item == nil || scope.isDefault(key, item) {
 			continue
 		}
 		switch key {
@@ -197,8 +219,14 @@ func unsafeCodexConfig(value map[string]any) bool {
 			if strings.Contains(lower, "auth") || strings.Contains(lower, "bearer_token") || strings.Contains(lower, "access_token") || strings.Contains(lower, "refresh_token") || strings.Contains(lower, "id_token") || strings.Contains(lower, "api_key") || strings.Contains(lower, "base_url") || strings.Contains(lower, "profile") || strings.Contains(lower, "env_key") {
 				return true
 			}
-			if nested, ok := item.(map[string]any); ok && unsafeCodexConfig(nested) {
-				return true
+			if nested, ok := item.(map[string]any); ok {
+				childScope := codexNoDefaults
+				if scope == codexEffectiveConfig && key == "features" {
+					childScope = codexEffectiveFeatures
+				}
+				if unsafeCodexConfig(nested, childScope) {
+					return true
+				}
 			}
 		}
 	}

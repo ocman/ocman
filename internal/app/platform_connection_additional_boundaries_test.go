@@ -23,7 +23,7 @@ func TestUnsavedConnectionInspectionHandlesMissingNativeDependencies(t *testing.
 	lifecycle := connectionLifecycle(factory, platformconnections.NewRouter(platformconnections.New(core)), nil, nil)
 	for _, kind := range []string{"claudecode", "codex"} {
 		check, err := lifecycle.Inspect(t.Context(), platformconnections.Connection{ID: "cnx_unsaved", Kind: kind, Directory: t.TempDir()})
-		if err != nil || check.Status != "sign-in-required" || check.Command == "" {
+		if err != nil || check.Status != "error" || check.Command == "" {
 			t.Fatalf("missing native dependency: %+v %v", check, err)
 		}
 	}
