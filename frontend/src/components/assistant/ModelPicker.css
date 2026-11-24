@@ -13,13 +13,48 @@
   visibility: hidden;
 }
 
-/* Static title shown in place of the search input (searchable={false}). */
+.oc-model-picker--reasoning {
+  align-self: flex-start;
+  max-height: min(420px, 78dvh);
+}
+.oc-picker-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+.oc-picker-layout--with-sidebar { grid-template-columns: minmax(0, 1fr) minmax(130px, 29%); }
+.oc-picker-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.oc-picker-main .oc-cmd-input { min-width: 0; }
+.oc-model-reasoning {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  border-inline-start: 1px solid var(--border);
+  padding: 8px;
+}
+.oc-model-reasoning .oc-button { flex-shrink: 0; justify-content: space-between; color: var(--text); }
+.oc-model-reasoning .oc-button[aria-pressed="true"] { background: var(--bg-hover); color: var(--accent); }
+
+/* Static title for the non-searching picker and the reasoning sidebar. */
 .oc-model-picker .oc-model-picker-title {
   flex: 1;
   font-size: 12px;
   font-weight: 500;
   color: var(--subtext0);
   padding: 4px 0;
+}
+.oc-model-picker .oc-model-reasoning .oc-model-picker-title { flex: none; padding-inline: 6px; }
+
+@media (width <= 560px) {
+  .oc-picker-layout--with-sidebar { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .oc-model-reasoning { flex-flow: row wrap; max-height: 135px; border-inline-start: 0; border-top: 1px solid var(--border); }
+  .oc-model-picker .oc-model-reasoning .oc-model-picker-title { flex-basis: 100%; }
 }
 
 /* Section headers (Recent / Recommended / All models / Archived), and, in

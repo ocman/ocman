@@ -1,9 +1,88 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionModelEntry } from '../../lib/api';
 import { ModelPicker } from './ModelPicker';
+
+describe('ModelPicker reasoning sidebar', () => {
+  const modelEntries: SessionModelEntry[] = [
+    { provider: 'a', model: 'plain' },
+    { provider: 'a', model: 'think', reasoning: ['low', 'high'] },
+    { provider: 'b', model: 'deep', reasoning: ['max'] },
+  ];
+
+  function setup(initialModel = 'a/think') {
+    const onModel = vi.fn();
+    const onLevel = vi.fn();
+    const onClose = vi.fn();
+    function Picker() {
+      const [model, setModel] = useState(initialModel);
+      const [level, setLevel] = useState('high');
+      return <ModelPicker open models={[]} modelEntries={modelEntries} currentModel={model}
+        onSelect={(value) => { onModel(value); setModel(value); setLevel(''); }} onClose={onClose}
+        reasoning={{ current: level, onSelect: (value) => { onLevel(value); setLevel(value); } }} />;
+    }
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<Picker />);
+    return { onModel, onLevel, onClose };
+  }
+
+  it('marks the current level and clears the override with Default without reselecting the model', async () => {
+    const user = userEvent.setup();
+    const { onModel, onLevel, onClose } = setup();
+    expect(screen.getByRole('button', { name: 'high', pressed: true })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: /think/ }));
+    expect(onModel).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Default' }));
+    expect(onLevel).toHaveBeenCalledWith('');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the search, switches levels, and moves keyboard focus into the sidebar after choosing a model', async () => {
+    const user = userEvent.setup();
+    const { onModel, onLevel, onClose } = setup('a/plain');
+    expect(screen.queryByRole('group', { name: 'Reasoning level' })).not.toBeInTheDocument();
+    const search = screen.getByRole('combobox');
+    await user.type(search, 'deep{Enter}');
+    expect(onModel).toHaveBeenCalledWith('b/deep');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(search).toHaveValue('deep');
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Default', pressed: true })).toHaveFocus());
+    expect(screen.queryByRole('button', { name: 'high' })).not.toBeInTheDocument();
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(onLevel).toHaveBeenCalledWith('max');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('closes immediately for a model with no reasoning choices', () => {
+    const { onModel, onLevel, onClose } = setup();
+    fireEvent.click(screen.getByRole('option', { name: /plain/ }));
+    expect(onModel).toHaveBeenCalledWith('a/plain');
+    expect(onLevel).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('wraps backward from the active level and returns to search without applying a change', async () => {
+    const user = userEvent.setup();
+    const { onLevel, onClose } = setup();
+    const search = screen.getByRole('combobox');
+    expect(search).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'low' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'Default' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'high', pressed: true })).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    expect(search).toHaveFocus();
+    expect(onLevel).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
 
 describe('ModelPicker cooldown', () => {
   beforeAll(() => {

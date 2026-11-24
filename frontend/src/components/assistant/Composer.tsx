@@ -366,7 +366,7 @@ export function Composer({
             selectorsLoading={newConversation && !agentsLoaded && !modelPicker?.tabs}
             openAgentPicker={() => { if (!uiDisabled) openAgentPicker(); }} hasModels={hasModels} modelUnavailable={modelUnavailable}
             openModelPicker={() => { if (!uiDisabled) openModelPicker(); }} modelButtonLabel={modelButtonLabel} effectiveModel={effectiveModel}
-            hasReasoning={hasReasoning} openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}
+            hasReasoning={hasReasoning}
             selectedReasoning={selectedReasoning} permissionControl={permissionControl} onLaunchRequest={onLaunchRequest}
             launching={launching} fileInputRef={fileInputRef} addFiles={(selectedFiles) => { void attachments.addFiles(selectedFiles); }}
             isRunning={isRunning} hasContent={hasText || images.length > 0 || files.length > 0 || attachments.pending > 0} onAbort={onAbort} sending={sending} submit={submit} />

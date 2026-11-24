@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Composer } from './Composer';
@@ -99,8 +99,11 @@ it.each(['agent', 'reasoning', 'skills', 'routines', 'permission'])(
     else await user.keyboard(`/${menu}{Enter}`);
 
     if (menu === 'reasoning') {
-      await waitFor(() => expect(screen.getByRole('listbox')).toHaveFocus());
-      await user.keyboard('{ArrowDown}{Enter}');
+      const picker = screen.getByRole('dialog', { name: /Select a model/ });
+      await waitFor(() => expect(within(picker).getByRole('combobox')).toHaveFocus());
+      await user.tab();
+      expect(screen.getByRole('button', { name: 'high' })).toHaveFocus();
+      await user.keyboard('{Enter}');
       expect(changed).toHaveBeenCalledWith('high');
     } else {
       const search = screen.getByRole('combobox');

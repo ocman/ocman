@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { weightedSearch, type SearchKey } from '../../lib/weightedSearch';
 import { Modal } from '../Modal';
@@ -98,11 +98,14 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
   isCurrent: (e: T) => boolean;
   initialQuery?: string;
   onSelect: (value: string) => void;
+  keepOpenOnSelect?: (value: string) => boolean;
   onClose: () => void;
   /** Backspace-on-empty handler (model picker uses it to step back). */
   onBack?: () => void;
   tabs?: PickerTabsConfig;
   status?: ReactNode;
+  sidebar?: ReactNode;
+  onLayoutKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
 }
 
 /**
@@ -129,9 +132,12 @@ export function CommandListPicker<T extends PickerEntryBase>({
   isCurrent,
   initialQuery,
   onSelect,
+  keepOpenOnSelect,
   onClose,
   onBack,
   tabs,
+  sidebar,
+  onLayoutKeyDown,
 }: CommandListPickerProps<T>) {
   // Parent remounts on open (conditional render), so useState picks up
   // initialQuery fresh each invocation without resurrecting stale state.
@@ -141,7 +147,6 @@ export function CommandListPicker<T extends PickerEntryBase>({
   const [selectedIndex, setSelectedIndex] = useState(
     () => (searchable ? 0 : Math.max(0, entries.findIndex(isCurrent))),
   );
-  const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // The list is a listbox driven from the input (combobox +
   // aria-activedescendant): focus stays in the search field, which is
@@ -149,11 +154,6 @@ export function CommandListPicker<T extends PickerEntryBase>({
   // itself takes focus and hosts the same key handler.
   const listId = useId();
   const optionId = (index: number) => `${listId}-option-${index}`;
-
-  useEffect(() => {
-    if (!open) return;
-    requestAnimationFrame(() => (searchable ? inputRef.current : listRef.current)?.focus());
-  }, [open, searchable]);
 
   // Normalize whitespace and short-circuit empty queries.
   const extendedQuery = query.trim().split(/\s+/).filter(Boolean).join(' ');
@@ -183,7 +183,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
 
   const pick = (value: string) => {
     onSelect(value);
-    onClose();
+    if (!keepOpenOnSelect?.(value)) onClose();
   };
 
   const onInputKeyDown = (e: React.KeyboardEvent) => {
@@ -224,7 +224,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
           <>
             <i className="bi bi-search oc-cmd-search-icon" />
             <input
-              ref={inputRef}
+              data-autofocus
               className="oc-cmd-input"
               type="text"
               role="combobox"
@@ -249,6 +249,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
         role="listbox"
         aria-label={placeholder(total)}
         ref={listRef}
+        data-autofocus={searchable ? undefined : true}
         tabIndex={searchable ? undefined : 0}
         aria-activedescendant={!searchable && activeItemIndex >= 0 ? optionId(activeItemIndex) : undefined}
         onKeyDown={searchable ? undefined : onInputKeyDown}
@@ -290,6 +291,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
     </>
   );
 
+  const picker = <PickerTabs tabs={tabs} onChange={() => setSelectedIndex(0)}>{content}</PickerTabs>;
   return createPortal(
     <Modal
       label={placeholder(total)}
@@ -297,7 +299,12 @@ export function CommandListPicker<T extends PickerEntryBase>({
       backdropClassName="oc-cmd-backdrop"
       dialogClassName={`oc-cmd-palette oc-model-picker${dialogClassName ? ` ${dialogClassName}` : ''}`}
     >
-      <PickerTabs tabs={tabs} onChange={() => setSelectedIndex(0)}>{content}</PickerTabs>
+      {sidebar === undefined ? picker : (
+        <div className={`oc-picker-layout${sidebar ? ' oc-picker-layout--with-sidebar' : ''}`} onKeyDown={onLayoutKeyDown}>
+          <div className="oc-picker-main">{picker}</div>
+          {sidebar}
+        </div>
+      )}
     </Modal>,
     document.body,
   );

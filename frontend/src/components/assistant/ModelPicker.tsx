@@ -1,11 +1,13 @@
-import { useEffect, useReducer, type ReactNode } from 'react';
+import { useEffect, useReducer, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import type { SessionModelEntry } from '../../lib/api';
 import { ModelLabel } from '../ModelLogo';
 import { PlatformLogo } from '../PlatformBadge';
+import { Button } from '../Control';
 import { CommandListPicker } from './CommandListPicker';
 import { buildModelEntries, isPinnedModel, modelSearchKeys, modelSectionOf, type ModelEntry } from './modelEntries';
 import { ModelBadges } from './ModelBadges';
 import { useModelPlatformTabs } from './useModelPlatformTabs';
+import { describeModel } from './composerModel';
 import type { PickerTabsConfig } from '../PickerTabs';
 import './ModelPicker.css';
 
@@ -25,6 +27,7 @@ export interface ModelPickerProps {
   currentModel?: string;
   initialQuery?: string;
   onSelect: (model: string) => void;
+  reasoning?: { current?: string; onSelect: (value: string) => void };
   // Optional star-toggle handler. When provided, each row renders a
   // clickable star that calls back with the desired next state
   // (true = favorite, false = unfavorite). The parent owns the
@@ -33,6 +36,25 @@ export interface ModelPickerProps {
   onToggleFavorite?: (provider: string, model: string, nextFavorite: boolean, platform?: string) => void;
   onClose: () => void;
   onBack?: () => void;
+}
+
+function handleReasoningKey(event: KeyboardEvent<HTMLDivElement>) {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+  const { currentTarget, target, key } = event;
+  if (key !== 'Tab' && key !== 'ArrowLeft') return;
+  const levels = Array.from(currentTarget.querySelectorAll<HTMLButtonElement>('.oc-model-reasoning button'));
+  if (levels.length === 0) return;
+  const focused = levels.findIndex((button) => button === target);
+  if (key === 'Tab') {
+    const index = focused >= 0 ? focused : levels.findIndex((button) => button.getAttribute('aria-pressed') === 'true');
+    levels[(index + (event.shiftKey ? -1 : 1) + levels.length) % levels.length].focus();
+  } else if (key === 'ArrowLeft' && focused >= 0) {
+    currentTarget.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
+  } else {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 // Command-palette–style modal for picking a model. Reuses the visual styling
@@ -48,9 +70,28 @@ export function ModelPicker({
   onClose,
   onBack,
   context,
+  reasoning,
 }: ModelPickerProps) {
   const { rich: useRich, multiPlatform, entries } = buildModelEntries(models, modelEntries, currentModel);
   const { tabs, visibleEntries } = useModelPlatformTabs(entries);
+  const currentLevelRef = useRef<HTMLButtonElement>(null);
+  const optionsFor = (model: string) => describeModel(model, modelEntries).reasoningOptions;
+  const options = optionsFor(currentModel ?? '');
+  const level = reasoning?.current ?? '';
+  const activeLevel = options.includes(level) ? level : '';
+  const sidebar = !context?.status && reasoning && options.length > 0 && (
+    <div className="oc-model-reasoning" role="group" aria-label="Reasoning level">
+      <div className="oc-model-picker-title">Reasoning level</div>
+      {['', ...options].map((value) => (
+        <Button key={value} ref={value === activeLevel ? currentLevelRef : undefined}
+          type="button" variant="ghost" size="small" aria-pressed={value === activeLevel}
+          onClick={() => { reasoning.onSelect(value); onClose(); }}>
+          {value || 'Default'}
+          {value === activeLevel && <i className="bi bi-check2" aria-hidden="true" />}
+        </Button>
+      ))}
+    </div>
+  );
 
   // Re-render every second while a cooldown is running so the countdown
   // moves and the badge drops the moment it expires.
@@ -115,7 +156,16 @@ export function ModelPicker({
       emptyMessage="No models found"
       isCurrent={(e) => e.isCurrent}
       initialQuery={initialQuery}
-      onSelect={onSelect}
+      sidebar={reasoning ? sidebar || null : undefined}
+      onLayoutKeyDown={sidebar ? handleReasoningKey : undefined}
+      dialogClassName={reasoning ? 'oc-model-picker--reasoning' : undefined}
+      keepOpenOnSelect={(model) => !!reasoning && optionsFor(model).length > 0}
+      onSelect={(model) => {
+        if (!reasoning || model !== currentModel || options.length === 0) onSelect(model);
+        if (reasoning && optionsFor(model).length > 0) {
+          requestAnimationFrame(() => currentLevelRef.current?.focus());
+        }
+      }}
       onClose={onClose}
       onBack={onBack}
     />

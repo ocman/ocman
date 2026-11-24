@@ -187,7 +187,6 @@ interface ComposerToolbarProps {
   modelButtonLabel: string;
   effectiveModel: string;
   hasReasoning: boolean;
-  openReasoningPicker: () => void;
   selectedReasoning?: string;
   permissionControl?: ReactNode;
   onLaunchRequest?: () => void;
@@ -204,7 +203,7 @@ interface ComposerToolbarProps {
 export function ComposerToolbar({
   isBashMode, uiDisabled, disabled, disabledHint, effectiveAgent, agentsLoaded,
   agents, openAgentPicker, hasModels, modelUnavailable, openModelPicker,
-  modelButtonLabel, effectiveModel, hasReasoning, openReasoningPicker,
+  modelButtonLabel, effectiveModel, hasReasoning,
   selectedReasoning, permissionControl, onLaunchRequest, launching, fileInputRef,
   addFiles, machineControl,
   isRunning, onAbort, sending, hasContent, submit, selectorsLoading, platform, agentSelection = true,
@@ -241,7 +240,7 @@ export function ComposerToolbar({
               </button>
             )}
             {hasReasoning && (
-              <button type="button" className="oc-bar-select oc-bar-reasoning" disabled={uiDisabled} onClick={openReasoningPicker} title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}>
+              <button type="button" className="oc-bar-select oc-bar-reasoning" disabled={uiDisabled} onClick={openModelPicker} title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}>
                 {selectedReasoning || 'default'}
               </button>
             )}

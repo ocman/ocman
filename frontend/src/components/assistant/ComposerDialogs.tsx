@@ -27,6 +27,7 @@ export function ComposerDialogs({
   return <>
     {pickers.model.open && <ModelPicker open models={models || []} modelEntries={modelEntries} context={modelPicker}
       currentModel={effectiveModel} initialQuery={pickers.model.query} onSelect={(m) => onModelChange?.(m)}
+      reasoning={onReasoningChange ? { current: selectedReasoning, onSelect: onReasoningChange } : undefined}
       onToggleFavorite={onToggleFavorite} onClose={pickers.model.close}
       onBack={() => { pickers.model.setOpen(false); useUiStore.getState().openPalette('command'); }} />}
     {pickers.agent.open && <AgentPicker open agentNames={agentOptions} agents={agents}
