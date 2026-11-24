@@ -6,7 +6,7 @@ for (const width of [1280, 390]) {
     await page.addInitScript(() => localStorage.setItem('ocman:ui', JSON.stringify({
       state: { compactToolCalls: true, changesSidebarOpenTabs: [] }, version: 7,
     })));
-    const commands = ['git status --short', 'git add AGENTS.md && git commit -m "docs: clarify agent instructions"', 'pnpm test'];
+    const commands = ['git status --short', 'git diff | tee changes.log && git add AGENTS.md && git commit -m "docs: clarify agent instructions"', 'pnpm test'];
     const messages = [
       { id: 'a1', sessionId: MOCK_SESSION.id, timeCreated: 1000, data: { role: 'assistant', finish: 'stop', time: { created: 1000, completed: 20000 } } },
       ...['ai', 'user'].map((_, i) => ({ id: `ocman-notice-${i}`, sessionId: MOCK_SESSION.id, timeCreated: 6300 + i * 5000, data: { role: 'notice' } })),
@@ -17,9 +17,9 @@ for (const width of [1280, 390]) {
         state: { status: 'completed', input: { command }, output: 'Done', time: { start: 1000 + i * 5000, end: 2500 + i * 5000 } },
       } })),
       ...['ai', 'user'].map((approvedBy, i) => ({ id: `approval-${i}`, messageId: `ocman-notice-${i}`, sessionId: MOCK_SESSION.id, data: {
-        type: 'auto-approved', permission: 'bash', patterns: [commands[i + 1]], approvedBy,
+        type: 'auto-approved', permission: 'bash', patterns: i === 0 ? ['git diff', 'tee changes.log', 'git add AGENTS.md', 'git commit'] : [commands[i + 1]], approvedBy,
         reasoning: approvedBy === 'ai' ? 'Commits the requested instruction update in this repository.' : '',
-        metadata: { command: commands[i + 1] }, askedAt: 6200 + i * 5000, approvedAt: 6300 + i * 5000,
+        metadata: { command: i === 0 ? commands[1].replace(' | ', ' && ') : commands[2] }, askedAt: 6200 + i * 5000, approvedAt: 6300 + i * 5000,
       } })),
     ];
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), route => route.fulfill({ json: {
@@ -33,13 +33,17 @@ for (const width of [1280, 390]) {
     await expect(userLock).toBeVisible();
     await expect(viewport.getByText(/Permission approved by/)).toHaveCount(0);
     await page.evaluate(() => document.fonts.ready);
-    for (const lock of [aiLock, userLock]) {
-      const geometry = await lock.evaluate(el => {
-        const duration = el.previousElementSibling!.querySelector('.oc-tool-duration')!;
+    for (const [lock, command] of [[aiLock, commands[1]], [userLock, commands[2]]] as const) {
+      const geometry = await lock.evaluate((el, expectedCommand) => {
+        if (!el.previousElementSibling?.textContent?.includes(expectedCommand)) {
+          throw new Error('The approval lock should be on its own command row');
+        }
+        const duration = el.previousElementSibling?.querySelector('.oc-tool-duration');
+        if (!duration) throw new Error('The approval lock should sit beside its command duration');
         const time = duration.getBoundingClientRect();
         const icon = el.querySelector('i')!.getBoundingClientRect();
         return { gap: icon.left - time.right, topDelta: Math.abs(icon.top - time.top) };
-      });
+      }, command);
       expect(geometry.gap).toBeGreaterThanOrEqual(0);
       expect(geometry.gap).toBeLessThan(14);
       expect(geometry.topDelta).toBeLessThan(5);

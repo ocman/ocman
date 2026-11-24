@@ -249,6 +249,33 @@ describe('AI approval footnotes', () => {
   });
 
   it.each([
+    { name: 'one active call', calls: [['git diff | tee changes.log', 250]], matched: true },
+    { name: 'a completed call', calls: [['git diff | tee changes.log', 190]], matched: false },
+    { name: 'a call with different steps', calls: [['git diff | cat changes.log', 250]], matched: false },
+    { name: 'two possible calls', calls: [['git diff | tee changes.log', 250], ['git diff; tee changes.log', 250]], matched: false },
+  ] as const)('uses compound permission steps only for an unambiguous match: $name', ({ calls, matched }) => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 220, data: { role: 'notice' } },
+    ];
+    const parts = [
+      ...calls.map(([command, end], i) => makePart('a1', {
+        type: 'tool', tool: 'bash', state: { status: 'completed', input: { command }, time: { start: 150, end } },
+      }, `tool-${i}`, 150)),
+      makePart('ocman-notice-p1', {
+        ...approval, metadata: { command: 'git diff && tee changes.log' }, patterns: ['git diff', 'tee changes.log'],
+        askedAt: 200, approvedAt: 220,
+      }, 'notice', 220),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+    const tools = asContentArray(out[0].content).filter((item) => item.type === 'tool-call');
+
+    expect(tools.some((tool) => tool.artifact?.ocmanApprovals?.length)).toBe(matched);
+    expect(out.some((message) => message.id === 'ocman-notice-p1')).toBe(!matched);
+  });
+
+  it.each([
     ['edit', { filePath: '/repo/a.ts', oldString: 'a', newString: 'b' }, { path: '/repo/a.ts' }],
     ['read', { filePath: '/repo/a.ts' }, { path: '/repo/a.ts' }],
     ['webfetch', { url: 'https://example.com/docs' }, { url: 'https://example.com/docs' }],

@@ -7,6 +7,7 @@ import { formatSeconds } from './format';
 import { isInjectedInstruction } from './injectedInstructions';
 import { isBackgroundShellNotification, isTurnNotification } from './turnNotification';
 import { parsePart } from './parsePart';
+import { matchCompoundShellApproval, partStartedAt } from './matchCompoundShellApproval';
 export { parsePart } from './parsePart';
 import { extractTaskId, isTaskTool } from './taskId';
 import type { ToolApproval } from './threadHelpers';
@@ -173,17 +174,6 @@ export function isSynthesizedTerminal(msgParts: Part[]): boolean {
   return true;
 }
 
-/**
- * When a part was created, in unix ms. `timeCreated` comes from the DB
- * column and is therefore absent on live SSE part snapshots
- * (`reducePartSnapshot` builds the Part without it), so fall back to
- * the tool's own `time.start` — same fallback as `toolTimeSuffix`.
- * Returns 0 when neither is known.
- */
-function partStartedAt(p: Part): number {
-  return p.timeCreated || parsePart(p).time?.start || 0;
-}
-
 /** Permissions whose metadata only applies to the same named tool. */
 const TOOL_SPECIFIC_PERMISSIONS = new Set([
   'bash', 'edit', 'write', 'read', 'webfetch', 'glob', 'grep', 'skill', 'task',
@@ -262,7 +252,8 @@ function matchingToolPart(sortedToolParts: Part[], approval: PartData, noticeTim
     if (legacy || !claimed[part.id]) return part;
     fallback ??= part;
   }
-  return fallback;
+  return fallback ?? (toolSpecificPermission(approval.permission || '') === 'bash'
+    ? matchCompoundShellApproval(sortedToolParts, approval) : undefined);
 }
 
 /** Build (or rebuild) the `messageId → parts[]` index. */
