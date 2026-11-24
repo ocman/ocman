@@ -13,6 +13,8 @@ const LINK = 'https://tracker.example.com/browse/ABC-42';
 
 test('add a token, preview, reload and remove it', async ({ mockedPage: page }) => {
   let token = '';
+  let releasePreview!: () => void;
+  const holdPreview = new Promise<void>((resolve) => { releasePreview = resolve; });
   await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
     route.fulfill({
       json: {
@@ -40,9 +42,10 @@ test('add a token, preview, reload and remove it', async ({ mockedPage: page }) 
       rules: [], hostKinds: [],
     },
   }));
-  await page.route('/api/previews/resolve*', (route) => {
+  await page.route('/api/previews/resolve*', async (route) => {
     const ref = { provider: 'tracker', kind: 'issue', id: 'ABC-42', url: LINK };
     if (!(route.request().postDataJSON() as { text: string }).text.includes(LINK)) return route.fulfill({ json: { previews: [] } });
+    if (token) await holdPreview;
     return route.fulfill({ json: { previews: [token
       ? { ...ref, workspace: 'w1', title: 'Launch plan', status: 'In Progress', state: 'ok' }
       : { ...ref, state: 'connect' }] } });
@@ -74,8 +77,13 @@ test('add a token, preview, reload and remove it', async ({ mockedPage: page }) 
 
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const card = page.getByTestId('provider-preview-card');
+  const skeleton = page.getByTestId('link-preview-skeleton');
+  await expect(skeleton).toBeVisible();
+  const placeholderHeight = await skeleton.evaluate((el) => el.getBoundingClientRect().height);
+  releasePreview();
   await expect(card).toContainText('ABC-42 Launch plan');
   await expect(card).toHaveAttribute('href', LINK);
+  expect(await card.evaluate((el) => el.getBoundingClientRect().height)).toBeCloseTo(placeholderHeight);
   await page.reload();
   await expect(page.getByTestId('provider-preview-card')).toContainText('Launch plan');
 

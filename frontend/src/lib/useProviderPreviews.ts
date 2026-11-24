@@ -4,7 +4,7 @@ import { APIError, fetchJSON } from './api';
 import { queryClient } from './queryClient';
 import { useDocumentVisible } from './usePanelVisible';
 import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
-import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, PreviewSessionContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
+import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, PreviewSessionContext, loadPreviewConfig, previewCandidates, resolvePreviews } from './previews';
 import type { PreviewConfig, PreviewProvider, PreviewResult } from './previews';
 
 // The request batcher adds 20 ms, keeping the total initial delay at 300 ms.
@@ -26,12 +26,12 @@ interface Resolved {
  * which link hosts they preview, so text that cannot produce a preview is
  * never sent.
  */
-export function useProviderPreviews(text: string, openGraph = false): { previews: PreviewResult[]; providers: PreviewProvider[]; loading: boolean; refreshChecks: boolean; refresh: () => void } {
+export function useProviderPreviews(text: string, openGraph = false): { previews: PreviewResult[]; providers: PreviewProvider[]; pendingCandidates: string[]; refreshChecks: boolean; refresh: () => void } {
   const visible = useDocumentVisible();
   const owner = useContext(PreviewOwnerContext);
   const session = useContext(PreviewSessionContext);
   const [resolved, setResolved] = useState<Resolved | null>(null);
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<{ lookup: string; candidates: string[] } | null>(null);
   const [generation, setGeneration] = useState(0);
   const [outage, setOutage] = useState<{ lookup: string; since: number } | null>(null);
   const [recoveredLookup, setRecoveredLookup] = useState<string | null>(null);
@@ -85,14 +85,17 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
   useEffect(() => {
     if (!visible || waiting) return;
     const abort = new AbortController();
+    const configReady = loadPreviewConfig(owner).catch((): PreviewConfig | null => null).then((config) => {
+      const candidates = !openGraph && config ? previewCandidates(text, config) : [];
+      if (!abort.signal.aborted && candidates.length) setPending({ lookup, candidates });
+      return { config, candidates };
+    });
     const timer = setTimeout(() => {
       // Without app access the catalog is refused, but public forge links
       // may still resolve, so any https link is worth one call.
-      loadPreviewConfig(owner).catch((): PreviewConfig | null => null).then(async (config) => {
-        const worth = openGraph ? /^https?:\/\//.test(text) : config ? mayPreview(text, config) : /https:\/\//.test(text);
+      configReady.then(async ({ config, candidates }) => {
+        const worth = openGraph ? /^https?:\/\//.test(text) : config ? candidates.length > 0 : /https:\/\//.test(text);
         if (!worth || abort.signal.aborted) return;
-        // Public forge links resolve silently, as their cards always did.
-        if (config?.providers.some((p) => p.accounts.length)) setPending(true);
         const refresh = refreshPending.current;
         const previews = openGraph
           ? await resolvePreviews(text, owner, abort.signal, refresh, true)
@@ -110,7 +113,7 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
           setOutage({ lookup, since: Date.now() });
         }
       }).finally(() => {
-        if (!abort.signal.aborted) setPending(false);
+        if (!abort.signal.aborted) setPending(null);
       });
     }, refreshPending.current ? 0 : RESOLVE_DELAY_MS);
     return () => { clearTimeout(timer); abort.abort(); };
@@ -118,7 +121,8 @@ export function useProviderPreviews(text: string, openGraph = false): { previews
 
   // Never show results for other text or another owner while reloading.
   const current = resolved && resolved.text === text && resolved.owner === owner && resolved.session === session ? resolved : null;
-  return { previews: current?.previews ?? [], providers: current?.providers ?? [], loading: pending && !current, refreshChecks: current?.refreshChecks ?? false, refresh };
+  const pendingCandidates = visible && !waiting && !current && pending?.lookup === lookup ? pending.candidates : [];
+  return { previews: current?.previews ?? [], providers: current?.providers ?? [], pendingCandidates, refreshChecks: current?.refreshChecks ?? false, refresh };
 }
 
 export const hasRichPreview = (p: PreviewResult) => !!p.title && (p.state === 'ok' || p.stale);

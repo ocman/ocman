@@ -3,6 +3,7 @@ import type { FC } from 'react';
 import { extractCustomLinks, loadLinkPreviewRules } from '../lib/linkPreviewRules';
 import type { LinkPreviewRule } from '../lib/linkPreviewRules';
 import { ProviderPreview } from './ProviderLinkPreview';
+import { Skeleton } from './Skeleton';
 import { hasRichPreview, needsCard, useProviderPreviews } from '../lib/useProviderPreviews';
 import './GitHubLinkPreview.css';
 
@@ -33,15 +34,24 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
   const customLabels = new Set(allCustom.map(({ label }) => label));
   const providerPreviews = provider.previews.filter((p) => needsCard(p) || !customLabels.has(p.id));
 
-  // Only announce loading where a link or rule match could become a card.
-  const loading = provider.loading && (customLinks.length > 0 || /https?:\/\//.test(text));
-  if (customLinks.length === 0 && providerPreviews.length === 0 && !loading) return null;
+  // A custom fallback already takes up its card's space while the provider loads.
+  const fallbackKeys = new Set(customLinks.flatMap(({ label, url }) => [label, url.split('#')[0]]));
+  const skeletons = provider.pendingCandidates.filter((key) => !fallbackKeys.has(key));
+  if (customLinks.length === 0 && providerPreviews.length === 0 && skeletons.length === 0) return null;
   return (
-    <div className="gh-preview-strip" data-testid="gh-preview-strip">
+    <div className="gh-preview-strip" data-testid="gh-preview-strip" aria-busy={provider.pendingCandidates.length > 0 || undefined}>
       {providerPreviews.map((p) => (
         <ProviderPreview key={[p.provider, p.workspace, p.kind, p.id].join('\u0000')} preview={p} providers={provider.providers} refreshChecks={provider.refreshChecks} onReappear={provider.refresh} />
       ))}
-      {loading && <span className="gh-preview__meta" role="status">Loading previews…</span>}
+      {skeletons.map((key) => (
+        <div key={key} className="gh-preview gh-preview--skeleton" data-testid="link-preview-skeleton" aria-hidden="true">
+          <Skeleton className="gh-preview__skeleton-icon" />
+          <span className="gh-preview__body">
+            <span className="gh-preview__skeleton-row"><Skeleton className="oc-skeleton-line" style={{ width: '55%' }} /></span>
+            <span className="gh-preview__skeleton-row gh-preview__meta"><Skeleton className="oc-skeleton-line" style={{ width: '30%' }} /></span>
+          </span>
+        </div>
+      ))}
       {customLinks.map(({ url, label }) => (
         <a className="gh-preview gh-preview--commit" key={url} href={url} target="_blank" rel="noopener noreferrer">
           <span className="gh-preview__icon"><i className="bi bi-link-45deg" aria-hidden="true" /></span>

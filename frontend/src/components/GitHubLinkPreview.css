@@ -37,6 +37,28 @@
   text-decoration: none;
 }
 
+.gh-preview--skeleton {
+  pointer-events: none;
+}
+
+.gh-preview__skeleton-icon {
+  flex: 0 0 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.gh-preview__skeleton-row {
+  display: flex;
+  align-items: center;
+  min-height: 1.5em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-preview--skeleton .oc-skeleton {
+    animation: none;
+  }
+}
+
 /* State colours for left border */
 .gh-preview--open   { border-left-color: var(--gh-green); }
 .gh-preview--merged { border-left-color: var(--mauve); }

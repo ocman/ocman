@@ -47,8 +47,37 @@ it('renders public forge links as normalized cards without any connected provide
   expect(card).toHaveAttribute('href', 'https://github.com/o/r/pull/1');
   expect(card).toHaveClass('gh-preview--merged');
   expect(card).toHaveTextContent('Merged · ann');
-  // Public links alone never flash a loading status.
   expect(screen.queryByRole('status')).toBeNull();
+});
+
+it('reserves one card per distinct previewable link until the results arrive', async () => {
+  const second = { ...pr, id: 'o/r#2', title: 'Second PR', url: 'https://github.com/o/r/pull/2' };
+  const originalFetch = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { finish = resolve; });
+  fetchMock.mockImplementation((url: string) => url.startsWith('/api/previews/resolve') ? pending : originalFetch(url));
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text={`${pr.url} ${second.url} ${pr.url} https://example.com/article`} />);
+
+  expect(await screen.findAllByTestId('link-preview-skeleton')).toHaveLength(2);
+  expect(screen.queryByRole('link')).toBeNull();
+  await act(async () => finish(jsonResponse({ previews: [pr, second] })));
+  expect(await screen.findByRole('link', { name: /Second PR/ })).toBeInTheDocument();
+  expect(screen.getAllByRole('link')).toHaveLength(2);
+  expect(screen.queryByTestId('link-preview-skeleton')).toBeNull();
+});
+
+it('removes the placeholder when a candidate produces no preview', async () => {
+  const originalFetch = fetchMock.getMockImplementation() as (url: string) => Promise<Response>;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { finish = resolve; });
+  fetchMock.mockImplementation((url: string) => url.startsWith('/api/previews/resolve') ? pending : originalFetch(url));
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text="https://github.com/o/r" />);
+
+  expect(await screen.findByTestId('link-preview-skeleton')).toBeInTheDocument();
+  await act(async () => finish(jsonResponse({ previews: [] })));
+  await waitFor(() => expect(screen.queryByTestId('gh-preview-strip')).toBeNull());
 });
 
 it('still resolves public links when private-preview access is refused', async () => {

@@ -152,20 +152,33 @@ const hostMatches = (host: string, pattern: string) => pattern.startsWith('*.')
   : host === pattern;
 
 /**
- * Whether `text` can produce a preview: a link on a configured provider's
- * host, or a match for a routed rule. Anything else is never sent.
+ * Estimate which cards to reserve using configured hosts and routed rules.
+ * The server still decides which candidates are actual preview resources.
  */
-export function mayPreview(text: string, config: PreviewConfig): boolean {
+export function previewCandidates(text: string, config: PreviewConfig): string[] {
   const hosts = config.providers.filter((p) => p.configured).flatMap((p) => p.hosts);
+  const candidates = new Set<string>();
+  // Match the server's MaxRefs limit.
+  const limit = 20;
   for (const [raw] of text.matchAll(/https:\/\/[^\s<>()"'`]+/g)) {
-    let host: string;
-    try { host = new URL(raw).host.toLowerCase(); } catch { continue; }
-    if (hosts.some((h) => hostMatches(host, h))) return true;
+    let url: URL;
+    try { url = new URL(raw.replace(/[.,;:!?\])}]+$/, '')); } catch { continue; }
+    if (!hosts.some((h) => hostMatches(url.host.toLowerCase(), h))) continue;
+    url.hash = '';
+    candidates.add(url.href);
+    if (candidates.size >= limit) return [...candidates];
   }
-  return config.rules.some((pattern) => {
+  for (const pattern of config.rules) {
     // Go and JS regex syntax overlap; an untranslatable pattern asks the server.
-    try { return new RegExp(pattern).test(text); } catch { return true; }
-  });
+    try {
+      for (const [match] of text.matchAll(new RegExp(pattern, 'g'))) {
+        if (match) candidates.add(match);
+        if (candidates.size >= limit) return [...candidates];
+      }
+    } catch { candidates.add(''); }
+    if (candidates.size >= limit) break;
+  }
+  return [...candidates];
 }
 
 /** Checks a personal token with the provider and saves it for this machine. */

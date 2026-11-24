@@ -9,7 +9,7 @@ import { PR_CHECKS_REFRESH_EVENT } from './prChecksCache';
 vi.mock('./previews', async (original) => ({
   ...await original<typeof import('./previews')>(),
   loadPreviewConfig: vi.fn().mockResolvedValue({ providers: [] }),
-  mayPreview: () => true,
+  previewCandidates: () => ['https://forge.example/repo/pulls/1'],
   resolvePreviews: vi.fn().mockResolvedValue([]),
 }));
 beforeEach(() => vi.clearAllMocks());
