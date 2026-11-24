@@ -98,6 +98,58 @@ func TestProviderUsageColdCacheReturnsReadyProviders(t *testing.T) {
 	})
 }
 
+func TestProviderUsageDiscardsRefreshAcrossDisableAndReenable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := &delayedUsagePlatform{delayFirst: true, subscriptionPlatform: subscriptionPlatform{
+			id: "connection", account: &providerprotocol.Account{SubscriptionType: "retired"},
+		}}
+		enabled := true
+		m := newTestModule(Deps{Platforms: func() []platforms.Platform {
+			if !enabled {
+				return nil
+			}
+			return []platforms.Platform{p}
+		}})
+		defer m.Finalize()
+		mux := routes(m)
+		read := func() []subscriptionProviderUsage {
+			t.Helper()
+			r := moduletest.Do(mux, http.MethodGet, "/api/provider-usage", "", "")
+			var got subscriptionUsageResponse
+			if r.Code != http.StatusOK || json.Unmarshal(r.Body.Bytes(), &got) != nil {
+				t.Fatalf("usage = %d %s", r.Code, r.Body.String())
+			}
+			return got.Providers
+		}
+		if got := read(); len(got) != 1 || got[0].Status != "upstream_error" {
+			t.Fatalf("initial refresh still pending: %+v", got)
+		}
+		enabled = false
+		if got := read(); len(got) != 0 {
+			t.Fatalf("disabled connection still visible: %+v", got)
+		}
+		enabled = true
+		if got := read(); len(got) != 1 || got[0].Status != "upstream_error" {
+			t.Fatalf("re-enabled connection before old refresh completed: %+v", got)
+		}
+		synctest.Wait()
+		if p.calls != 1 {
+			t.Fatalf("re-enable started a duplicate read: %d calls", p.calls)
+		}
+		time.Sleep(3 * time.Second)
+		synctest.Wait()
+		p.account = &providerprotocol.Account{SubscriptionType: "current"}
+		p.delayFirst = false
+		if got := read(); len(got) != 1 || got[0].Status != "upstream_error" || got[0].Plan != "" {
+			t.Fatalf("retired refresh leaked into response: %+v", got)
+		}
+		time.Sleep(3 * time.Second)
+		if got := read(); len(got) != 1 || got[0].Plan != "current" || p.calls != 2 {
+			t.Fatalf("current connection did not refresh: %+v, %d calls", got, p.calls)
+		}
+	})
+}
+
 type subscriptionPlatform struct {
 	platforms.Platform
 	id      platforms.ID
