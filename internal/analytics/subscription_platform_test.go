@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ocman/ocman/internal/module"
@@ -17,6 +18,85 @@ import (
 	"github.com/ocman/ocman/internal/platforms"
 	"github.com/ocman/ocman/internal/providerprotocol"
 )
+
+type delayedUsagePlatform struct {
+	subscriptionPlatform
+	fail       bool
+	delayFirst bool
+}
+
+func (p *delayedUsagePlatform) Account(ctx context.Context) (*providerprotocol.Account, error) {
+	p.calls++
+	if p.calls != 1 || p.delayFirst {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+	}
+	if p.fail {
+		return nil, platforms.ErrPlatformUnreachable
+	}
+	return p.account, nil
+}
+
+func TestProviderUsageSharesRefreshAndServesLastGood(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := &delayedUsagePlatform{subscriptionPlatform: subscriptionPlatform{id: "slow", account: &providerprotocol.Account{SubscriptionType: "pro"}}}
+		m := newTestModule(Deps{Platforms: func() []platforms.Platform { return []platforms.Platform{p} }})
+		defer m.Finalize()
+		mux := routes(m)
+		read := func() subscriptionUsageResponse {
+			t.Helper()
+			r := moduletest.Do(mux, http.MethodGet, "/api/provider-usage", "", "")
+			var snapshot subscriptionUsageResponse
+			if r.Code != http.StatusOK || json.Unmarshal(r.Body.Bytes(), &snapshot) != nil || len(snapshot.Providers) != 1 {
+				t.Fatalf("usage = %d %s", r.Code, r.Body.String())
+			}
+			return snapshot
+		}
+		if got := read().Providers[0]; got.Plan != "pro" {
+			t.Fatalf("prime = %+v", got)
+		}
+		time.Sleep(time.Minute)
+		p.fail = true
+		start := time.Now()
+		if got := read().Providers[0]; got.Plan != "pro" || got.RefreshedAt == "" || time.Since(start) > time.Second {
+			t.Errorf("stale response = %+v after %v", got, time.Since(start))
+		}
+		if got := read().Providers[0]; got.Plan != "pro" || time.Since(start) > 2*time.Second {
+			t.Errorf("second caller did not share running refresh: %+v after %v", got, time.Since(start))
+		}
+		time.Sleep(3 * time.Second)
+		if got := read().Providers[0]; got.Plan != "pro" || p.calls != 2 {
+			t.Errorf("failed refresh replaced cache or retried early: %+v, calls=%d", got, p.calls)
+		}
+	})
+}
+
+func TestProviderUsageColdCacheReturnsReadyProviders(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		slow := &delayedUsagePlatform{delayFirst: true, subscriptionPlatform: subscriptionPlatform{id: "slow", account: &providerprotocol.Account{SubscriptionType: "pro"}}}
+		fast := &subscriptionPlatform{id: "fast", account: &providerprotocol.Account{SubscriptionType: "max"}}
+		m := newTestModule(Deps{Platforms: func() []platforms.Platform { return []platforms.Platform{slow, fast} }})
+		defer m.Finalize()
+		mux := routes(m)
+		start := time.Now()
+		r := moduletest.Do(mux, http.MethodGet, "/api/provider-usage", "", "")
+		var got subscriptionUsageResponse
+		if r.Code != http.StatusOK || json.Unmarshal(r.Body.Bytes(), &got) != nil || len(got.Providers) != 2 {
+			t.Fatalf("cold response = %d %s", r.Code, r.Body.String())
+		}
+		if time.Since(start) > time.Second || got.Providers[0].Status != "upstream_error" || got.Providers[0].RefreshedAt != "" || got.Providers[1].Plan != "max" {
+			t.Fatalf("cold response after %v = %+v", time.Since(start), got)
+		}
+		time.Sleep(3 * time.Second)
+		r = moduletest.Do(mux, http.MethodGet, "/api/provider-usage", "", "")
+		if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"plan":"pro"`) || slow.calls != 1 {
+			t.Fatalf("refresh did not finish after response: %d %s, calls=%d", r.Code, r.Body.String(), slow.calls)
+		}
+	})
+}
 
 type subscriptionPlatform struct {
 	platforms.Platform
@@ -77,8 +157,9 @@ func TestPlatformUsageCacheAndRegistryChanges(t *testing.T) {
 	q := &subscriptionPlatform{id: "claudecode", account: &providerprotocol.Account{SubscriptionType: "max"}}
 	unsupported := &subscriptionPlatform{id: "unsupported", err: platforms.ErrUnsupported}
 	var cache subscriptionUsageCache
+	defer cache.workers.Close()
 	for range 3 {
-		got := cache.get(t.Context(), usageSources(p, unsupported))
+		got := cache.get(t.Context(), usageSources(p, unsupported), nil)
 		if len(got.Providers) != 1 {
 			t.Fatalf("providers = %+v", got)
 		}
@@ -86,20 +167,18 @@ func TestPlatformUsageCacheAndRegistryChanges(t *testing.T) {
 	if p.calls != 1 {
 		t.Fatalf("calls=%d", p.calls)
 	}
-	entry := cache.entries[p.id]
-	entry.at = time.Now().Add(-subscriptionUsageTTL - time.Second)
-	cache.entries[p.id] = entry
-	got := cache.get(t.Context(), usageSources(p, q))
+	cache.entries[p.id].next = time.Now().Add(-time.Second)
+	got := cache.get(t.Context(), usageSources(p, q), nil)
 	if p.calls != 2 || q.calls != 1 || len(got.Providers) != 2 {
 		t.Fatalf("refresh = %+v, calls=%d/%d", got, p.calls, q.calls)
 	}
 	// Removed adapters must not survive in either the response or cache.
-	got = cache.get(t.Context(), usageSources(q))
+	got = cache.get(t.Context(), usageSources(q), nil)
 	if len(got.Providers) != 1 || got.Providers[0].ID != "claudecode" || len(cache.entries) != 1 {
 		t.Fatalf("registry change = %+v", got)
 	}
 	// Platforms without account support never need credentials or another app.
-	got = cache.get(t.Context(), usageSources(&noAccountPlatform{}))
+	got = cache.get(t.Context(), usageSources(&noAccountPlatform{}), nil)
 	if len(got.Providers) != 0 || len(cache.entries) != 0 {
 		t.Fatalf("unsupported = %+v", got)
 	}
@@ -110,18 +189,19 @@ type noAccountPlatform struct{ platforms.Platform }
 func (*noAccountPlatform) ID() platforms.ID    { return "no-account" }
 func (*noAccountPlatform) DisplayName() string { return "No account" }
 
-func TestPlatformUsageDoesNotCacheCanceledReads(t *testing.T) {
+func TestPlatformUsageDoesNotStartRefreshForCanceledRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	p := &subscriptionPlatform{id: "codex", err: context.Canceled}
 	var cache subscriptionUsageCache
-	cache.get(ctx, usageSources(p))
-	if len(cache.entries) != 0 {
-		t.Fatal("canceled platform read was cached")
+	defer cache.workers.Close()
+	cache.get(ctx, usageSources(p), nil)
+	if p.calls != 0 {
+		t.Fatal("canceled request started an account read")
 	}
 	p.err, p.account = nil, &providerprotocol.Account{SubscriptionType: "pro"}
-	got := cache.get(t.Context(), usageSources(p))
-	if p.calls != 2 || got.Providers[0].Status != "ok" {
+	got := cache.get(t.Context(), usageSources(p), nil)
+	if p.calls != 1 || got.Providers[0].Status != "ok" {
 		t.Fatalf("retry=%+v, calls=%d", got, p.calls)
 	}
 }

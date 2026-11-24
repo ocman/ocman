@@ -3,10 +3,10 @@ package analytics
 import (
 	"context"
 	"database/sql"
-	"slices"
 	"time"
 
 	"github.com/ocman/ocman/internal/state"
+	log "github.com/sirupsen/logrus"
 )
 
 // Schema owns local cost estimates and platform-reported subscription history.
@@ -83,23 +83,23 @@ func readTypeSafeSpend(ctx context.Context, db *sql.DB, now time.Time) (*provide
 	return spend, err
 }
 
-func (m *Module) appendTypeSafeUsage(ctx context.Context, usage *subscriptionUsageResponse) error {
-	if m.deps.Store == nil || m.deps.TypeSafeConfigured == nil {
-		return nil
-	}
+func (m *Module) fetchTypeSafeUsage(ctx context.Context) (subscriptionProviderUsage, bool) {
 	configured, err := m.deps.TypeSafeConfigured(ctx)
 	if err != nil {
-		return err
+		if ctx.Err() == nil {
+			log.Warn("failed to read reviewer configuration for TypeSafe usage")
+		}
+		return subscriptionProviderUsage{}, true
 	}
 	if !configured {
-		return nil
+		return subscriptionProviderUsage{}, false
 	}
 	spend, err := readTypeSafeSpend(ctx, m.deps.Store.SQL(), time.Now())
 	if err != nil {
-		return err
+		if ctx.Err() == nil {
+			log.WithError(err).Warn("failed to read TypeSafe usage ledger")
+		}
+		return subscriptionProviderUsage{}, true
 	}
-	usage.Providers = append(slices.Clone(usage.Providers), subscriptionProviderUsage{
-		ID: "typesafe", Name: "TypeSafe", Status: "ok", Windows: []subscriptionUsageWindow{}, Spend: spend,
-	})
-	return nil
+	return subscriptionProviderUsage{Status: "ok", Windows: []subscriptionUsageWindow{}, Spend: spend}, true
 }

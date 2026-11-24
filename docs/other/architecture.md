@@ -294,8 +294,13 @@ flowchart LR
   `/api/experimental/usage/limits`, including spent and remaining USD.
   Unsupported versions omit the account. Unavailable apps report unavailable;
   Ocman never reads provider credentials or falls back to another platform's login.
-  Each platform response is cached for one minute; removed platforms disappear
-  immediately. The browser receives usage, not credentials or workspace IDs.
+  Each connection has at most one live-usage refresh in flight, and its result
+  is fresh for one minute. The request waits at most one second for the batch,
+  then returns the last successful snapshots or an unavailable status for
+  connections without a snapshot. `refreshedAt` records when it was fetched.
+  Refreshes can complete after the response; failures leave cached usage intact.
+  Removed platforms disappear immediately. The browser receives usage, not
+  credentials or workspace IDs.
   An analytics worker also probes each enabled local platform at startup and
   every five minutes, independent of the dashboard and telemetry. Fresh
   normalized account snapshots are stored in the analytics-owned
@@ -320,6 +325,8 @@ flowchart LR
   page shows a rolling seven-day local estimate at the documented Jev 1.13/1.14
   input price, not account-wide billing. Unknown prices or missing counts stay
   unpriced, not zero. Other apps and pre-update requests cannot be backfilled.
+  The TypeSafe lookup shares the response budget; a failed lookup does not
+  prevent platform usage from being returned.
   Old records expire on the next recorded request. Provider tokens and account
   identifiers never reach the browser. The old `/subscription-usage` page path
   remains an alias for bookmarks.
@@ -499,12 +506,13 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    UI[Provider usage] --> Analytics[Analytics module]
-    Analytics --> Registry[Enabled platform adapters]
+    UI[Provider usage] -->|one-second wait| Cache[Live usage cache]
+    Cache -->|one refresh per connection| Registry[Enabled platform adapters]
+    Cache --> Ledger[Local TypeSafe estimate ledger]
+    Analytics[Analytics sampler] --> Registry
     Registry --> Codex[Installed Codex app-server]
     Registry --> Claude[Claude CLI account and observed limits]
     Registry --> OpenCode[OpenCode service usage limits]
-    Analytics --> Ledger[Local TypeSafe estimate ledger]
     Analytics -->|five-minute snapshots, hourly after 30 days| History[Subscription history in state.db]
     UI -->|History view| HistoryAPI[Local history endpoint]
     Models[Analytics Models graphs] -->|last seven days| HistoryAPI

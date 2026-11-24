@@ -103,8 +103,8 @@ func TestProviderUsageRouteWithNoOAuth(t *testing.T) {
 		t.Fatalf("disabled = %s", rec.Body.String())
 	}
 	m.deps.TypeSafeConfigured = func(context.Context) (bool, error) { return false, errors.New("settings unavailable") }
-	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusInternalServerError {
-		t.Fatalf("settings error = %d", rec.Code)
+	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("settings error blocked usage = %d", rec.Code)
 	}
 }
 
@@ -155,8 +155,8 @@ func TestTypeSafeSpendDatabaseFailures(t *testing.T) {
 	if err := m.RecordTypeSafeUsage(ctx, "jev-1.13.0", &input, nil); err == nil {
 		t.Fatal("expected retention delete error")
 	}
-	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusInternalServerError {
-		t.Fatalf("read error = %d", rec.Code)
+	if rec := moduletest.Do(routes(m), http.MethodGet, "/api/provider-usage", "", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"upstream_error"`) {
+		t.Fatalf("read error = %d %s", rec.Code, rec.Body.String())
 	}
 	// No configuration reader means the ledger is not accessed.
 	m.deps.TypeSafeConfigured = nil

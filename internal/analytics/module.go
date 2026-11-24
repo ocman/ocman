@@ -73,6 +73,11 @@ func NewModule(deps Deps) *Module {
 
 func (m *Module) Name() string { return "analytics" }
 
+func (m *Module) Start(ctx context.Context) error {
+	m.subscriptionCache.workers.Bind(ctx)
+	return nil
+}
+
 // Routes keeps each route's method check ahead of its guard, as before the
 // extraction.
 func (m *Module) Routes(r module.Router) {

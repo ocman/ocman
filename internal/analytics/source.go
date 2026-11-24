@@ -98,6 +98,7 @@ func (m *Module) analyticsRoute(next http.HandlerFunc) http.HandlerFunc {
 // Finalize closes the lazily opened projection readers once handlers are
 // fenced at shutdown.
 func (m *Module) Finalize() {
+	m.subscriptionCache.workers.Close()
 	if m.deps.HistoryAnalytics == nil {
 		return
 	}
