@@ -372,6 +372,32 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.browseDirectories).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { query: '', labels: ['work/notes', 'work/atlas-proxy-infra', 'work/my-api', 'work/api-tools', 'work/api', 'alt/api', 'one-off'] },
+    { query: ' AP ', labels: ['work/api-tools', 'work/api', 'alt/api', 'work/my-api', 'work/atlas-proxy-infra'] },
+    { query: 'api', labels: ['work/api', 'alt/api', 'work/api-tools', 'work/my-api', 'work/atlas-proxy-infra'] },
+    { query: 'work/api', labels: ['work/api', 'work/api-tools', 'work/atlas-proxy-infra', 'work/my-api'] },
+    { query: '/alt/api', labels: ['alt/api'] },
+  ])('ranks new-session projects for query "$query"', async ({ query, labels }) => {
+    mocks.uiState.paletteMode = 'project-session';
+    const stats = { messageCount: 0, totalTokensIn: 0, totalTokensOut: 0 };
+    mocks.apiState.getProjects.mockResolvedValue([
+      { ...stats, directory: '/alt/api', sessionCount: 2, lastUsed: 1 },
+      { ...stats, directory: '/work/api', sessionCount: 2, lastUsed: 6 },
+      { ...stats, directory: '/work/api-tools', sessionCount: 80, lastUsed: 5 },
+      { ...stats, directory: '/work/my-api', sessionCount: 150, lastUsed: 4 },
+      { ...stats, directory: '/work/atlas-proxy-infra', sessionCount: 200, lastUsed: 3 },
+      { ...stats, directory: '/work/notes', sessionCount: 300, lastUsed: 2 },
+    ]);
+    renderPalette();
+    await screen.findByText('work/api');
+    fireEvent.change(screen.getByPlaceholderText('Select a project to start a session...'), { target: { value: query } });
+
+    expect(screen.getAllByRole('option')).toEqual(
+      [...labels, 'Create new project'].map((label) => screen.getByText(label).closest('[role="option"]')),
+    );
+  });
+
   it('preselects a virtual one-off project for an unsaved temporary workspace', async () => {
     mocks.uiState.paletteMode = 'project-session';
     mocks.uiState.projectSessionInitialDirectory = '/tmp/ocman-one-off-123456';

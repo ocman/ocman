@@ -15,6 +15,7 @@ import { PluginActionDialog } from './PluginActionDialog';
 import { InlineAlert } from './InlineAlert';
 import { sessionProjectDirectory } from '../lib/oneOffProject';
 import { useOneOffProjects } from '../lib/useOneOffProjects';
+import { rankPaletteProjects } from './paletteProjectSearch';
 import { rankPaletteSessions, usePaletteContentSearch, type PaletteSession } from './paletteSessionSearch';
 
 type CommandItem = { kind: 'command'; id: string; label: string; description: string; run?: () => void };
@@ -461,10 +462,7 @@ export function CommandPalette() {
 
     if (mode === 'project-session') {
       if (!projectList) return [];
-      const q = query.trim().toLowerCase();
-      // Recency first so it breaks ties between equally good matches.
-      const byRecency = projectList.slice().sort((a, b) => b.lastUsed - a.lastUsed);
-      const projects = fuzzyRank(byRecency, (p) => fuzzyScore(q, p.directory))
+      const projects = rankPaletteProjects(projectList, query)
         .filter((project, index) => index < 20 || project.directory === 'one-off')
         .map((p) => ({ kind: 'project' as const, project: p }));
       // "Create new project" always stays at the end, unaffected by search.
