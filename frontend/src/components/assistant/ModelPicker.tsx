@@ -44,12 +44,21 @@ function handleReasoningKey(event: KeyboardEvent<HTMLDivElement>) {
   if (key !== 'Tab' && key !== 'ArrowLeft') return;
   const levels = Array.from(currentTarget.querySelectorAll<HTMLButtonElement>('.oc-model-reasoning button'));
   if (levels.length === 0) return;
+  const search = currentTarget.querySelector<HTMLInputElement>('[role="combobox"]');
   const focused = levels.findIndex((button) => button === target);
   if (key === 'Tab') {
+    if (focused < 0 && target !== search) return;
     const index = focused >= 0 ? focused : levels.findIndex((button) => button.getAttribute('aria-pressed') === 'true');
-    levels[(index + (event.shiftKey ? -1 : 1) + levels.length) % levels.length].focus();
+    const next = index + (event.shiftKey ? -1 : 1);
+    const firstFavorite = currentTarget.querySelector<HTMLButtonElement>('.oc-model-picker-fav');
+    // At the ends of the reasoning list, give keyboard users a way to reach
+    // the row actions. Backward traversal already follows DOM order.
+    if (focused >= 0 && next < 0 && firstFavorite) return;
+    const destination = focused >= 0 && next === levels.length && firstFavorite
+      ? firstFavorite : levels[(next + levels.length) % levels.length];
+    destination.focus();
   } else if (key === 'ArrowLeft' && focused >= 0) {
-    currentTarget.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
+    search?.focus();
   } else {
     return;
   }

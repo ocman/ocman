@@ -36,16 +36,21 @@ for (const width of [1280, 390]) {
     await expect(picker.getByRole('combobox')).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(levels.getByRole('button', { name: 'max', exact: true })).toBeFocused();
+    const favorites = picker.getByRole('button', { name: 'Add to favorites' });
+    await expect(favorites).toHaveCount(2);
+    for (const favorite of await favorites.all()) {
+      await page.keyboard.press('Tab');
+      await expect(favorite).toBeFocused();
+    }
     await page.keyboard.press('Tab');
     await expect(levels.getByRole('button', { name: 'Default' })).toBeFocused();
     await page.keyboard.press('Shift+Tab');
-    await expect(levels.getByRole('button', { name: 'max', exact: true })).toBeFocused();
+    await expect(favorites.last()).toBeFocused();
     await expect(levels.getByRole('button', { name: 'high', pressed: true })).toBeVisible();
+    await page.keyboard.press('Tab');
     await page.keyboard.press('ArrowLeft');
     await expect(picker.getByRole('combobox')).toBeFocused();
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Enter');
+    await levels.getByRole('button', { name: 'Default' }).click();
     await expect(picker).toBeHidden();
     await composer.getByRole('button', { name: 'Opus' }).click();
     await expect(levels.getByRole('button', { name: 'Default', pressed: true })).toBeVisible();

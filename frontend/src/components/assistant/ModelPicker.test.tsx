@@ -13,7 +13,7 @@ describe('ModelPicker reasoning sidebar', () => {
     { provider: 'b', model: 'deep', reasoning: ['max'] },
   ];
 
-  function setup(initialModel = 'a/think') {
+  function setup(initialModel = 'a/think', onToggleFavorite?: () => void) {
     const onModel = vi.fn();
     const onLevel = vi.fn();
     const onClose = vi.fn();
@@ -21,7 +21,7 @@ describe('ModelPicker reasoning sidebar', () => {
       const [model, setModel] = useState(initialModel);
       const [level, setLevel] = useState('high');
       return <ModelPicker open models={[]} modelEntries={modelEntries} currentModel={model}
-        onSelect={(value) => { onModel(value); setModel(value); setLevel(''); }} onClose={onClose}
+        onSelect={(value) => { onModel(value); setModel(value); setLevel(''); }} onClose={onClose} onToggleFavorite={onToggleFavorite}
         reasoning={{ current: level, onSelect: (value) => { onLevel(value); setLevel(value); } }} />;
     }
     Element.prototype.scrollIntoView = vi.fn();
@@ -81,6 +81,32 @@ describe('ModelPicker reasoning sidebar', () => {
     expect(search).toHaveFocus();
     expect(onLevel).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('can reach every favorite by tabbing past the reasoning levels', async () => {
+    const user = userEvent.setup();
+    const onToggleFavorite = vi.fn();
+    const { onLevel, onModel, onClose } = setup('a/think', onToggleFavorite);
+    const favorites = screen.getAllByRole('button', { name: 'Add to favorites' });
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Default' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(favorites.at(-1)).toHaveFocus();
+    await user.tab();
+    await user.tab();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'high' })).toHaveFocus();
+    for (const favorite of favorites) {
+      await user.tab();
+      expect(favorite).toHaveFocus();
+      await user.keyboard('{Enter}');
+    }
+    expect(onToggleFavorite.mock.calls.map(([, model]) => model)).toEqual(['plain', 'think', 'deep']);
+    expect(onLevel).not.toHaveBeenCalled();
+    expect(onModel).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Default' })).toHaveFocus();
   });
 });
 
