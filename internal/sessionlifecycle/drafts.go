@@ -214,7 +214,7 @@ func (m *Module) launchDraft(ctx context.Context, id string, raw []byte) {
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := m.finishDraft(write, id, response.Body.Bytes(), message); err != nil {
-		log.WithError(err).Error("persisting session setup outcome")
+		log.WithContext(ctx).WithField("session_id", id).WithError(err).Error("persisting session setup outcome")
 	}
 	m.draftChanged()
 	if message == "" && m.d.DispatchQueued != nil {

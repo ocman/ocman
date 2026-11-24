@@ -78,15 +78,16 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		}
 		creation.Agent, creation.Model, creation.Reasoning = req.Send.Agent, req.Send.Model, req.Send.Reasoning
 	}
-	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
 	ctx := r.Context()
+	logger := withSessionID(log.WithContext(ctx).WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}), req.DraftID)
+	logger.Info("hub: start session")
 	permissionRules, err := m.startPermissionRules(ctx, req)
 	if err != nil {
 		httpx.ServerError(w, "reading project defaults", err)
 		return
 	}
 	if req.StartID != "" {
-		ctx = hostsvc.WithProgress(ctx, m.startProgress(ctx, req.StartID))
+		ctx = hostsvc.WithProgress(ctx, m.startProgress(ctx, req.StartID, req.DraftID))
 		r = r.WithContext(ctx)
 	}
 
@@ -129,6 +130,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 			hostsvc.FinishStep(ctx, hostsvc.StepWorktree, err)
 		}
 		if err != nil {
+			logger.WithError(err).Warn("hub: start session failed")
 			httpx.WriteCreateError(w, err)
 			return
 		}
@@ -140,7 +142,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepActive)
-		_, port, ok := m.EnsureProjectForCreate(w, r, resolved, req.Directory)
+		_, port, ok := m.ensureProjectForCreate(w, r, resolved, req.Directory, req.DraftID)
 		if !ok {
 			hostsvc.ReportProgress(ctx, hostsvc.StepPlatform, hostsvc.StepError)
 			return
@@ -150,7 +152,7 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		resp, err := m.d.Sessions().CreateConfigured(ctx, resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port, Creation: creation}, permissionRules)
 		hostsvc.FinishStep(ctx, hostsvc.StepSession, err)
 		if err != nil {
-			log.WithError(err).WithFields(log.Fields{"platform": resolved, "directory": req.Directory}).Warn("hub: start session failed")
+			logger.WithField("platform", resolved).WithError(err).Warn("hub: start session failed")
 			writeSessionError(w, "creating session", err)
 			return
 		}
@@ -174,9 +176,12 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 	sent, sendErr := false, ""
 	if req.Send != nil {
+		if req.StartID != "" && req.DraftID == "" {
+			ctx = hostsvc.WithProgress(ctx, m.startProgress(ctx, req.StartID, sessionID))
+		}
 		err := m.deliverFirst(ctx, req, platform, sessionID)
 		if err != nil {
-			log.WithError(err).Warn("hub: sending first message")
+			logger.WithFields(log.Fields{"platform": platform, "session_id": sessionID}).WithError(err).Warn("hub: sending first message")
 			sendErr = err.Error()
 		} else {
 			sent = true
@@ -194,11 +199,18 @@ func (m *Module) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (m *Module) startProgress(ctx context.Context, startID string) hostsvc.ProgressFunc {
+func withSessionID(entry *log.Entry, id string) *log.Entry {
+	if id != "" {
+		return entry.WithField("session_id", id)
+	}
+	return entry
+}
+
+func (m *Module) startProgress(ctx context.Context, startID, sessionID string) hostsvc.ProgressFunc {
 	return func(step, state string) {
 		if m.d.DB != nil {
 			if err := (draftStore{m.d.DB}).progress(ctx, startID, step, state); err != nil {
-				log.WithError(err).Warn("persisting setup progress")
+				withSessionID(log.WithContext(ctx).WithField("start_id", startID), sessionID).WithError(err).Warn("persisting setup progress")
 			}
 		}
 		payload, err := json.Marshal(map[string]string{"startId": startID, "step": step, "state": state})

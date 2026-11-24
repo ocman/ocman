@@ -112,7 +112,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		return nil, fmt.Errorf("ensuring project opencode: %w", ensured.err)
 	}
 	if !res.Reused && req.Platform == string(platforms.OpenCodeID) {
-		seedOpencodeDeps(ctx, repoRoot, res.Path)
+		seedOpencodeDeps(ctx, repoRoot, res.Path, req.Creation)
 	}
 	port := ensured.res.Port()
 	if h.deps.CreateSession == nil && h.deps.CreatePlatformSession == nil {
@@ -152,7 +152,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		if bg, finish, ok := h.startDetached(ctx, 30*time.Second); ok {
 			go func() {
 				defer finish()
-				h.nameWorktree(bg, name, repoRoot, req.Branch, suffix, req.Prompt)
+				h.nameWorktree(bg, name, created.ID, repoRoot, req.Branch, suffix, req.Prompt)
 			}()
 		}
 	}
@@ -172,7 +172,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 // Only a real, checked-out .opencode directory is seeded (a tracked symlink
 // could redirect writes outside the worktree), existing entries are never
 // replaced, and everything is staged first so a failed copy publishes nothing.
-func seedOpencodeDeps(ctx context.Context, repoRoot, worktree string) {
+func seedOpencodeDeps(ctx context.Context, repoRoot, worktree string, creation *platforms.CreationIdentity) {
 	src, dst := filepath.Join(repoRoot, ".opencode"), filepath.Join(worktree, ".opencode")
 	if _, err := os.Stat(filepath.Join(src, "node_modules")); err != nil {
 		return
@@ -203,7 +203,11 @@ func seedOpencodeDeps(ctx context.Context, repoRoot, worktree string) {
 			args = append([]string{"-c"}, args...)
 		}
 		if out, err := exec.CommandContext(ctx, "cp", args...).CombinedOutput(); err != nil {
-			log.WithError(err).WithField("output", string(out)).Debug("worktree: seeding .opencode dependencies")
+			entry := log.WithContext(ctx).WithError(err).WithField("output", string(out))
+			if creation != nil && creation.SessionID != "" {
+				entry = entry.WithField("session_id", creation.SessionID)
+			}
+			entry.Debug("worktree: seeding .opencode dependencies")
 			return
 		}
 	}
@@ -232,14 +236,19 @@ func (h *Host) worktreeNamer(platform, port string) func(context.Context, string
 
 // nameWorktree asks the small model for a descriptive name and renames the
 // provisional branch. Best-effort: on any failure the provisional name stays.
-func (h *Host) nameWorktree(ctx context.Context, namer func(context.Context, string, string) (string, error), repoRoot, branch, suffix, prompt string) {
+func (h *Host) nameWorktree(ctx context.Context, namer func(context.Context, string, string) (string, error), sessionID, repoRoot, branch, suffix, prompt string) {
+	entry := log.WithContext(ctx).WithFields(log.Fields{"session_id": sessionID, "branch": branch})
 	name, err := namer(ctx, repoRoot, prompt)
 	if err != nil {
-		log.WithError(err).Warn("worktree: keeping provisional name")
+		var namingErr *opencode.WorktreeNameError
+		if errors.As(err, &namingErr) {
+			entry = entry.WithField("helper_session_id", namingErr.HelperSessionID)
+		}
+		entry.WithError(err).Warn("worktree: keeping provisional name")
 		return
 	}
 	renamed := name + "-" + suffix
 	if err := git.RenameBranch(ctx, repoRoot, branch, renamed); err != nil {
-		log.WithError(err).Warn("worktree: renaming provisional branch")
+		entry.WithError(err).Warn("worktree: renaming provisional branch")
 	}
 }

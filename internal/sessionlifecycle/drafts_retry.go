@@ -47,7 +47,7 @@ func (m *Module) retryDraftDelivery(w http.ResponseWriter, r *http.Request) {
 	}
 	if !m.workers.Go(func(ctx context.Context) {
 		m.runDraftWorker(ctx, id, func() {
-			ctx = hostsvc.WithProgress(ctx, m.startProgress(ctx, id))
+			ctx = hostsvc.WithProgress(ctx, m.startProgress(ctx, id, id))
 			err := m.deliverFirst(ctx, request, request.Platform, id)
 			message := ""
 			if err != nil {
@@ -58,7 +58,7 @@ func (m *Module) retryDraftDelivery(w http.ResponseWriter, r *http.Request) {
 			write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if err := m.finishDraft(write, id, raw, message); err != nil {
-				log.WithError(err).Error("persisting first-delivery retry")
+				log.WithContext(ctx).WithField("session_id", id).WithError(err).Error("persisting first-delivery retry")
 			}
 			m.draftChanged()
 			if err == nil && m.d.DispatchQueued != nil {

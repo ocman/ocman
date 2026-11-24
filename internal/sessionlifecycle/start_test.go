@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	log "github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
+
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
 )
@@ -55,6 +58,10 @@ func TestStartFirstDeliveryOrderingAndFailureReceipt(t *testing.T) {
 	for _, worktree := range []bool{false, true} {
 		for _, fail := range []bool{false, true} {
 			t.Run(strings.Join([]string{map[bool]string{false: "checkout", true: "worktree"}[worktree], map[bool]string{false: "sent", true: "failed"}[fail]}, "/"), func(t *testing.T) {
+				logger := log.StandardLogger()
+				oldHooks := logger.ReplaceHooks(make(log.LevelHooks))
+				t.Cleanup(func() { logger.ReplaceHooks(oldHooks) })
+				hook := logtest.NewGlobal()
 				var steps, progress []string
 				rules := []platforms.PermissionRule{{Permission: "*", Pattern: "*", Action: "allow"}}
 				host := &startHost{steps: &steps, rules: rules, selection: &platforms.CreationIdentity{Agent: "plan", Model: "claudecode:acme/m", Reasoning: "high"}}
@@ -128,6 +135,10 @@ func TestStartFirstDeliveryOrderingAndFailureReceipt(t *testing.T) {
 				wantFinal := "prompt:done"
 				if fail {
 					wantFinal = "prompt:error"
+					entry := hook.LastEntry()
+					if entry == nil || entry.Message != "hub: sending first message" || entry.Data["session_id"] != response.SessionID {
+						t.Fatalf("first delivery warning missing session ID: %v", entry)
+					}
 				}
 				if progress[len(progress)-1] != wantFinal || fail && response.FirstMessageError != "first delivery failed" {
 					t.Fatalf("progress=%v receipt=%+v", progress, response)

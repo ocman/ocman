@@ -52,7 +52,7 @@ func TestSeedOpencodeDepsGitignore(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			seedOpencodeDeps(context.Background(), repo, worktree)
+			seedOpencodeDeps(context.Background(), repo, worktree, nil)
 			got, err := os.ReadFile(filepath.Join(dst, ".gitignore"))
 			if err != nil || string(got) != string(want) {
 				t.Fatalf(".gitignore = %q, %v; want %q", got, err, want)
@@ -68,7 +68,7 @@ func TestSeedOpencodeDepsRejectsLinkedConfigDir(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(worktree, ".opencode")); err != nil {
 		t.Fatal(err)
 	}
-	seedOpencodeDeps(context.Background(), repo, worktree)
+	seedOpencodeDeps(context.Background(), repo, worktree, nil)
 	entries, _ := os.ReadDir(outside)
 	if len(entries) != 0 {
 		t.Fatalf("wrote through linked .opencode: %v", entries)
@@ -78,7 +78,7 @@ func TestSeedOpencodeDepsRejectsLinkedConfigDir(t *testing.T) {
 // Without a checked-out .opencode, OpenCode installs nothing there either.
 func TestSeedOpencodeDepsSkipsMissingConfigDir(t *testing.T) {
 	repo, worktree := seedFixture(t)
-	seedOpencodeDeps(context.Background(), repo, worktree)
+	seedOpencodeDeps(context.Background(), repo, worktree, nil)
 	if exists(filepath.Join(worktree, ".opencode")) {
 		t.Fatal("created .opencode in a worktree that has none")
 	}
@@ -95,7 +95,7 @@ func TestSeedOpencodeDepsPreservesExistingEntries(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dst, "package-lock.json")); err != nil {
 		t.Fatal(err)
 	}
-	seedOpencodeDeps(context.Background(), repo, worktree)
+	seedOpencodeDeps(context.Background(), repo, worktree, nil)
 	if exists(outside) {
 		t.Fatal("wrote through a dangling destination link")
 	}
@@ -122,7 +122,7 @@ func TestSeedOpencodeDepsFailedCopyLeavesNothing(t *testing.T) {
 	if err := os.Mkdir(dst, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	seedOpencodeDeps(context.Background(), repo, worktree)
+	seedOpencodeDeps(context.Background(), repo, worktree, nil)
 	if entries, _ := os.ReadDir(dst); len(entries) != 0 {
 		names := make([]string, 0, len(entries))
 		for _, e := range entries {

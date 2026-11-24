@@ -13,6 +13,9 @@ import (
 	"sync"
 	"testing"
 
+	log "github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
+
 	"github.com/ocman/ocman/internal/gitexec"
 	"github.com/ocman/ocman/internal/hostsvc"
 	"github.com/ocman/ocman/internal/platforms"
@@ -175,6 +178,63 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 			if len(titles) != 0 {
 				t.Fatalf("session retitled with the branch name: %v", titles)
 			}
+		})
+	}
+}
+
+func TestWorktreeNamingWarningLinksSessionAndHelper(t *testing.T) {
+	for _, afterCreate := range []bool{false, true} {
+		t.Run(map[bool]string{false: "before helper", true: "after helper"}[afterCreate], func(t *testing.T) {
+			const sessionID, helperID = "ocm_worktree", "ses_naming_helper"
+			logger := log.StandardLogger()
+			oldHooks := logger.ReplaceHooks(make(log.LevelHooks))
+			t.Cleanup(func() { logger.ReplaceHooks(oldHooks) })
+			hook := logtest.NewGlobal()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/config":
+					_, _ = io.WriteString(w, `{}`)
+				case "/session":
+					if !afterCreate {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					_, _ = io.WriteString(w, `{"id":"ses_naming_helper"}`)
+				case "/session/ses_naming_helper/message":
+					// The error text need not contain the helper ID.
+					_, _ = io.WriteString(w, `invalid JSON`)
+				default:
+					w.WriteHeader(http.StatusNoContent)
+				}
+			}))
+			defer srv.Close()
+			h := New(Deps{
+				Runtime: &fakeRuntime{endpoint: srv.URL},
+				CreateSession: func(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+					return &platforms.CreateSessionResponse{ID: sessionID}, nil
+				},
+			})
+			res, err := h.CreateWorktreeSession(t.Context(), hostsvc.WorktreeSessionRequest{
+				ProjectDir: initRepo(t), AutoName: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.background.Wait()
+			for _, entry := range hook.AllEntries() {
+				if entry.Message != "worktree: keeping provisional name" {
+					continue
+				}
+				if entry.Data["session_id"] != sessionID || entry.Data["branch"] != res.Branch {
+					t.Errorf("warning lacks session or branch: %v", entry.Data)
+				}
+				if got, ok := entry.Data["helper_session_id"]; ok != afterCreate || (ok && got != helperID) {
+					t.Errorf("warning helper_session_id = %v (present: %t)", got, ok)
+				}
+				return
+			}
+			t.Fatal("no provisional-name warning")
 		})
 	}
 }

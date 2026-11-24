@@ -5,6 +5,9 @@
 Read `internal/sessionlifecycle` for prepare/start and first delivery, and
 `internal/sessionsvc` for shared REST/gRPC session mutations.
 
+- Include the Ocman `session_id` on session-scoped log entries whenever it is
+  known, including an allocated draft ID before native binding. Log native
+  helper IDs in a separate field such as `helper_session_id`; omit unknown IDs.
 - New conversations allocate an Ocman draft ID and use `/session/{id}?dir=…`
   before native setup. `sessionlifecycle` persists their metadata in state.db.
   Saving a draft never launches a platform or creates a worktree. Legacy

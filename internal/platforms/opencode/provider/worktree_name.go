@@ -12,9 +12,18 @@ import (
 	"github.com/ocman/ocman/internal/git"
 )
 
+// WorktreeNameError identifies the temporary OpenCode session used by a failed naming request.
+type WorktreeNameError struct {
+	HelperSessionID string
+	err             error
+}
+
+func (e *WorktreeNameError) Error() string { return e.err.Error() }
+func (e *WorktreeNameError) Unwrap() error { return e.err }
+
 // WorktreeName uses the owner's small model in a temporary, tool-denied session.
 // The caller adds a unique suffix and can fall back when naming is unavailable.
-func (h *httpState) WorktreeName(ctx context.Context, port, directory, prompt string) (string, error) {
+func (h *httpState) WorktreeName(ctx context.Context, port, directory, prompt string) (_ string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	query := "?directory=" + url.QueryEscape(directory)
@@ -56,6 +65,9 @@ func (h *httpState) WorktreeName(ctx context.Context, port, directory, prompt st
 	}
 	path := "/session/" + url.PathEscape(session.ID)
 	defer func() {
+		if err != nil {
+			err = &WorktreeNameError{HelperSessionID: session.ID, err: err}
+		}
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
 		_ = h.postJSON(cleanup, port, path+"/abort"+query, nil)
